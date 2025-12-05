@@ -15,11 +15,10 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-use daft_arrow::bitmap::Bitmap;
+use daft_arrow::buffer::NullBuffer;
 use daft_arrow::{
     array::PrimitiveArray,
-    bitmap::{MutableBitmap, utils::SlicesIterator},
-    buffer::Buffer,
+    buffer::{Buffer, NullBufferBuilder},
     compute::sort::SortOptions,
     types::NativeType,
 };
@@ -59,53 +58,54 @@ where
 
 fn sort_nullable<T, F>(
     values: &[T],
-    validity: &Bitmap,
+    validity: &NullBuffer,
     cmp: F,
     options: &SortOptions,
     limit: usize,
-) -> (Buffer<T>, Option<Bitmap>)
+) -> (Buffer<T>, Option<NullBuffer>)
 where
     T: NativeType,
     F: FnMut(&T, &T) -> std::cmp::Ordering,
 {
     assert!(limit <= values.len());
-    if options.nulls_first && limit < validity.unset_bits() {
+    if options.nulls_first && limit < validity.null_count() {
         let buffer = vec![T::default(); limit];
-        let bitmap = MutableBitmap::from_trusted_len_iter(std::iter::repeat_n(false, limit));
-        return (buffer.into(), bitmap.into());
+        let bitmap = NullBuffer::new_null(limit);
+        return (buffer.into(), Some(bitmap));
     }
 
-    let nulls = std::iter::repeat_n(false, validity.unset_bits());
-    let valids = std::iter::repeat_n(true, values.len() - validity.unset_bits());
-
     let mut buffer = Vec::<T>::with_capacity(values.len());
-    let mut new_validity = MutableBitmap::with_capacity(values.len());
-    let slices = SlicesIterator::new(validity);
+    let mut new_validity = NullBufferBuilder::new(values.len());
+    let slices = validity.valid_slices();
 
     if options.nulls_first {
         // validity is [0,0,0,...,1,1,1,1]
-        new_validity.extend_from_trusted_len_iter(nulls.chain(valids).take(limit));
+        new_validity.append_n_nulls(validity.null_count());
+        new_validity.append_n_non_nulls(values.len() - validity.null_count());
+        new_validity.truncate(limit);
 
         // extend buffer with constants followed by non-null values
-        buffer.resize(validity.unset_bits(), T::default());
-        for (start, len) in slices {
-            buffer.extend_from_slice(&values[start..start + len]);
+        buffer.resize(validity.null_count(), T::default());
+        for (start, end) in slices {
+            buffer.extend_from_slice(&values[start..end]);
         }
 
         // sort values
         sort_values(
-            &mut buffer.as_mut_slice()[validity.unset_bits()..],
+            &mut buffer.as_mut_slice()[validity.null_count()..],
             cmp,
             options.descending,
-            limit - validity.unset_bits(),
+            limit - validity.null_count(),
         );
     } else {
         // validity is [1,1,1,...,0,0,0,0]
-        new_validity.extend_from_trusted_len_iter(valids.chain(nulls).take(limit));
+        new_validity.append_n_non_nulls(values.len() - validity.null_count());
+        new_validity.append_n_nulls(validity.null_count());
+        new_validity.truncate(limit);
 
         // extend buffer with non-null values
-        for (start, len) in slices {
-            buffer.extend_from_slice(&values[start..start + len]);
+        for (start, end) in slices {
+            buffer.extend_from_slice(&values[start..end]);
         }
 
         // sort all non-null values
@@ -113,19 +113,19 @@ where
             buffer.as_mut_slice(),
             cmp,
             options.descending,
-            limit - validity.unset_bits(),
+            limit - validity.null_count(),
         );
 
-        if limit > values.len() - validity.unset_bits() {
+        if limit > values.len() - validity.null_count() {
             // extend remaining with nulls
-            buffer.resize(buffer.len() + validity.unset_bits(), T::default());
+            buffer.resize(buffer.len() + validity.null_count(), T::default());
         }
     }
     // values are sorted, we can now truncate the remaining.
     buffer.truncate(limit);
     buffer.shrink_to_fit();
 
-    (buffer.into(), new_validity.into())
+    (buffer.into(), new_validity.finish())
 }
 
 /// Sorts a [`PrimitiveArray`] according to `cmp` comparator and [`SortOptions`].
@@ -143,10 +143,10 @@ where
     let limit = limit.min(array.len());
 
     let values = array.values();
-    let validity = array.validity();
+    let validity: Option<NullBuffer> = array.validity().map(|v| v.clone().into());
 
     let (buffer, validity) = if let Some(validity) = validity {
-        sort_nullable(values, validity, cmp, options, limit)
+        sort_nullable(values, &validity, cmp, options, limit)
     } else {
         let mut buffer = Vec::<T>::new();
         buffer.extend_from_slice(values);
@@ -157,7 +157,11 @@ where
 
         (buffer.into(), None)
     };
-    PrimitiveArray::<T>::new(array.data_type().clone(), buffer, validity)
+    PrimitiveArray::<T>::new(
+        array.data_type().clone(),
+        buffer,
+        daft_arrow::buffer::wrap_null_buffer(validity),
+    )
 }
 
 #[cfg(test)]

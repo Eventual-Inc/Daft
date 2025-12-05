@@ -2154,14 +2154,6 @@ class QueryEndState(Enum):
     Failed = 2
     Dead = 3
 
-class PyNodeInfo:
-    # Note, these are all read-only getters
-    id: int
-    name: str
-    node_type: str
-    node_category: str
-    context: dict[str, str]
-
 class PyQueryMetadata:
     output_schema: PySchema
     unoptimized_plan: str

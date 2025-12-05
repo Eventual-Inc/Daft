@@ -206,16 +206,27 @@ impl NativeExecutor {
         additional_context: Option<HashMap<String, String>>,
     ) -> DaftResult<ExecutionEngineResult> {
         let cancel = self.cancel.clone();
-        let ctx = RuntimeContext::new_with_context(additional_context.unwrap_or_default());
+        let additional_context = additional_context.unwrap_or_default();
+        let ctx = RuntimeContext::new_with_context(additional_context.clone());
         let pipeline =
             translate_physical_plan_to_pipeline(local_physical_plan, psets, &exec_cfg, &ctx)?;
 
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
         let enable_explain_analyze = self.enable_explain_analyze;
 
+        let query_id: common_metrics::QueryID = additional_context
+            .get("query_id")
+            .ok_or_else(|| {
+                common_error::DaftError::ValueError(
+                    "query_id not found in additional_context".to_string(),
+                )
+            })?
+            .clone()
+            .into();
+
         // Spawn execution on the global runtime - returns immediately
         let handle = get_global_runtime();
-        let stats_manager = RuntimeStatsManager::try_new(handle, &pipeline, subscribers)?;
+        let stats_manager = RuntimeStatsManager::try_new(handle, &pipeline, subscribers, query_id)?;
         let task = async move {
             let stats_manager_handle = stats_manager.handle();
             let execution_task = async {

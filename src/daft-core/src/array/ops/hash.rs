@@ -24,7 +24,6 @@ use crate::{
     },
     kernels,
     series::Series,
-    utils::arrow::arrow_bitmap_and_helper,
 };
 
 impl<T> DataArray<T>
@@ -130,7 +129,7 @@ fn hash_list(
     name: &str,
     offsets: &[i64],
     flat_child: &Series,
-    validity: Option<&daft_arrow::bitmap::Bitmap>,
+    validity: Option<&daft_arrow::buffer::NullBuffer>,
     seed: Option<&UInt64Array>,
     hash_function: HashFunctionKind,
 ) -> DaftResult<UInt64Array> {
@@ -140,7 +139,8 @@ fn hash_list(
     // if seed is provided, the sublists are hashed with the seed broadcasted
 
     if let Some(seed_arr) = seed {
-        let combined_validity = arrow_bitmap_and_helper(validity, seed.unwrap().validity());
+        let combined_validity =
+            daft_arrow::buffer::NullBuffer::union(validity, seed.unwrap().validity());
         UInt64Array::from_iter(
             Arc::new(Field::new(name, DataType::UInt64)),
             u64::range(0, offsets.len() - 1).unwrap().map(|i| {

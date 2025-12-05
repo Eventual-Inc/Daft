@@ -86,8 +86,8 @@ impl PythonArray {
 }
 
 /// From arrow2 private method (arrow2::compute::aggregate::validity_size)
-fn validity_size(validity: Option<&daft_arrow::bitmap::Bitmap>) -> usize {
-    validity.as_ref().map(|b| b.as_slice().0.len()).unwrap_or(0)
+fn validity_size(validity: Option<&daft_arrow::buffer::NullBuffer>) -> usize {
+    validity.map(|b| b.buffer().len()).unwrap_or(0)
 }
 
 fn offset_size(offsets: &daft_arrow::offset::OffsetsBuffer<i64>) -> usize {

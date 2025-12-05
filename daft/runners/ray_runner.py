@@ -101,7 +101,13 @@ else:
                 ArrowVariableShapedTensorType,
             )
 
-            _TENSOR_EXTENSION_TYPES = [ArrowTensorType, ArrowVariableShapedTensorType]
+            # ArrowTensorTypeV2 was introduced in later Ray versions
+            try:
+                from ray.data.extensions import ArrowTensorTypeV2
+
+                _TENSOR_EXTENSION_TYPES = [ArrowTensorType, ArrowTensorTypeV2, ArrowVariableShapedTensorType]
+            except ImportError:
+                _TENSOR_EXTENSION_TYPES = [ArrowTensorType, ArrowVariableShapedTensorType]
         else:
             from ray.data.extensions import ArrowTensorType
 
@@ -174,23 +180,49 @@ def _make_ray_block_from_micropartition(partition: MicroPartition) -> RayDataset
 def _series_from_arrow_with_ray_data_extensions(
     array: pa.Array[Any] | pa.ChunkedArray[Any], name: str = "arrow_series"
 ) -> Series:
-    if isinstance(array, pa.Array):
-        # TODO(desmond): This might be dead code since `ArrayTensorType`s are `numpy.ndarray` under
-        # the hood and are not instances of `pyarrow.Array`. Should follow up and check if this code
-        # can be removed.
-        array = ensure_array(array)
-        if _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(array.type, ArrowTensorType):
-            tensor_array = cast("ArrowTensorArray", array)
-            storage_series = _series_from_arrow_with_ray_data_extensions(tensor_array.storage, name=name)
-            series = storage_series.cast(
-                DataType.fixed_size_list(
-                    _from_arrow_type_with_ray_data_extensions(tensor_array.type.scalar_type),
-                    int(np.prod(array.type.shape)),
+    # Handle ChunkedArrays by checking the type of the first chunk
+    if isinstance(array, pa.ChunkedArray) and len(array.chunks) > 0:
+        array_type = array.chunks[0].type
+    elif isinstance(array, pa.Array):
+        array_type = array.type
+    else:
+        array_type = None
+
+    if (
+        _RAY_DATA_EXTENSIONS_AVAILABLE
+        and array_type is not None
+        and isinstance(array_type, tuple(_TENSOR_EXTENSION_TYPES))
+    ):
+        # Check if it's ArrowTensorTypeV2 (imported if available)
+        try:
+            from ray.data.extensions import ArrowTensorTypeV2
+
+            is_arrow_tensor_v2 = isinstance(array_type, ArrowTensorTypeV2)
+        except ImportError:
+            is_arrow_tensor_v2 = False
+
+        # ArrowTensorTypeV2 and ArrowVariableShapedTensorType should be converted via numpy
+        if isinstance(array_type, ArrowVariableShapedTensorType) or is_arrow_tensor_v2:
+            if isinstance(array, pa.ChunkedArray):
+                # Convert each chunk and concatenate
+                numpy_arrays = [chunk.to_numpy(zero_copy_only=False) for chunk in array.chunks]
+                numpy_data = np.concatenate(numpy_arrays, axis=0)
+            else:
+                numpy_data = array.to_numpy(zero_copy_only=False)
+            return Series.from_numpy(numpy_data, name=name)
+        elif isinstance(array, pa.Array):
+            # Handle ArrowTensorType (has storage attribute)
+            array = ensure_array(array)
+            if hasattr(array.type, "shape") and array.type.shape is not None and hasattr(array, "storage"):
+                tensor_array = cast("ArrowTensorArray", array)
+                storage_series = _series_from_arrow_with_ray_data_extensions(tensor_array.storage, name=name)
+                series = storage_series.cast(
+                    DataType.fixed_size_list(
+                        _from_arrow_type_with_ray_data_extensions(tensor_array.type.scalar_type),
+                        int(np.prod(array.type.shape)),
+                    )
                 )
-            )
-            return series.cast(DataType.from_arrow_type(array.type))
-        elif _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(array.type, ArrowVariableShapedTensorType):
-            return Series.from_numpy(array.to_numpy(zero_copy_only=False), name=name)
+                return series.cast(DataType.from_arrow_type(array.type))
     return Series.from_arrow(array, name)
 
 
@@ -346,7 +378,9 @@ def _from_arrow_type_with_ray_data_extensions(arrow_type: pa.DataType) -> DataTy
     if _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(arrow_type, tuple(_TENSOR_EXTENSION_TYPES)):
         tensor_types = cast("Union[ArrowTensorType, ArrowVariableShapedTensorType]", arrow_type)
         scalar_dtype = _from_arrow_type_with_ray_data_extensions(tensor_types.scalar_type)
-        shape = tensor_types.shape if isinstance(tensor_types, ArrowTensorType) else None
+        # Both ArrowTensorType and ArrowTensorTypeV2 have a shape attribute
+        # ArrowVariableShapedTensorType does not
+        shape = getattr(tensor_types, "shape", None)
         return DataType.tensor(scalar_dtype, shape)
     return DataType.from_arrow_type(arrow_type)
 

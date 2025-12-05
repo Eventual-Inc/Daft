@@ -1,7 +1,7 @@
 use common_error::{DaftError, DaftResult};
 use daft_arrow::{
     array::{BinaryArray, FixedSizeBinaryArray},
-    bitmap::MutableBitmap,
+    buffer::NullBufferBuilder,
     datatypes::DataType,
 };
 
@@ -55,7 +55,7 @@ pub fn add_fixed_size_binary_arrays(
         lval: Option<&[u8]>,
         rval: Option<&[u8]>,
         values: &mut Vec<u8>,
-        validity: &mut MutableBitmap,
+        validity: &mut NullBufferBuilder,
         combined_size: usize,
     ) {
         if let Some(l) = lval
@@ -63,15 +63,15 @@ pub fn add_fixed_size_binary_arrays(
         {
             values.extend_from_slice(l);
             values.extend_from_slice(r);
-            validity.push(true);
+            validity.append_non_null();
         } else {
             values.extend(std::iter::repeat_n(0u8, combined_size));
-            validity.push(false);
+            validity.append_null();
         }
     }
 
     let mut values = Vec::new();
-    let mut validity = daft_arrow::bitmap::MutableBitmap::new();
+    let mut validity = daft_arrow::buffer::NullBufferBuilder::new(lhs.len());
 
     if lhs.len() == 1 {
         let lval = lhs.get(0);
@@ -100,6 +100,6 @@ pub fn add_fixed_size_binary_arrays(
     Ok(FixedSizeBinaryArray::new(
         DataType::FixedSizeBinary(combined_size),
         values.into(),
-        Some(validity.into()),
+        daft_arrow::buffer::wrap_null_buffer(validity.finish()),
     ))
 }

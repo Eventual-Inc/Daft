@@ -21,12 +21,15 @@ impl SeriesLike for ArrayWrapper<PythonArray> {
         self
     }
 
-    fn with_validity(&self, validity: Option<daft_arrow::bitmap::Bitmap>) -> DaftResult<Series> {
+    fn with_validity(
+        &self,
+        validity: Option<daft_arrow::buffer::NullBuffer>,
+    ) -> DaftResult<Series> {
         Ok(self.0.with_validity(validity)?.into_series())
     }
 
-    fn validity(&self) -> Option<&daft_arrow::bitmap::Bitmap> {
-        self.0.validity()
+    fn validity(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
+        self.0.validity().map(|v| v.into())
     }
 
     fn broadcast(&self, num: usize) -> DaftResult<Series> {

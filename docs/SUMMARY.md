@@ -32,6 +32,7 @@
         * [Custom Connectors](connectors/custom.md)
         * [AWS Glue](connectors/glue.md)
         * [AWS S3 Tables](connectors/s3tables.md)
+        * [Apache Gravitino](connectors/gravitino.md)
         * [Apache Hudi](connectors/hudi.md)
         * [Apache Iceberg](connectors/iceberg.md)
         * [Azure Blob Store](connectors/azure.md)

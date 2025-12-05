@@ -10,7 +10,7 @@ pub struct MinMaxWindowState {
     deque: VecDeque<usize>,
     cur_idx: usize,
     result_idxs: Vec<u64>,
-    validity: daft_arrow::bitmap::MutableBitmap,
+    validity: daft_arrow::buffer::NullBufferBuilder,
     is_min: bool,
 }
 
@@ -22,7 +22,7 @@ impl MinMaxWindowState {
             deque: VecDeque::new(),
             cur_idx: 0,
             result_idxs: Vec::with_capacity(total_length),
-            validity: daft_arrow::bitmap::MutableBitmap::with_capacity(total_length),
+            validity: daft_arrow::buffer::NullBufferBuilder::new(total_length),
             is_min,
         }
     }
@@ -85,10 +85,10 @@ impl WindowAggStateOps for MinMaxWindowState {
 
     fn evaluate(&mut self) -> DaftResult<()> {
         if self.deque.is_empty() {
-            self.validity.push(false);
+            self.validity.append_null();
             self.result_idxs.push(0);
         } else {
-            self.validity.push(true);
+            self.validity.append_non_null();
             self.result_idxs.push(*self.deque.front().unwrap() as u64);
         }
         Ok(())
@@ -99,6 +99,6 @@ impl WindowAggStateOps for MinMaxWindowState {
             .source
             .take(&DataArray::<UInt64Type>::from(("", self.result_idxs.clone())).into_series())
             .unwrap();
-        result.with_validity(Some(self.validity.clone().into()))
+        result.with_validity(self.validity.finish_cloned())
     }
 }
