@@ -54,6 +54,25 @@ class ModelWithDefaults(BaseModel):
     optional_int: int = 42
 
 
+class ModelA(BaseModel):
+    """First model in mutual reference pair."""
+
+    name: str
+    b_ref: ModelB | None = None
+
+
+class ModelB(BaseModel):
+    """Second model in mutual reference pair."""
+
+    value: int
+    a_ref: ModelA | None = None
+
+
+# Rebuild models to resolve forward references
+ModelA.model_rebuild()
+ModelB.model_rebuild()
+
+
 def test_is_colab_returns_false_outside_colab():
     """Verify IS_COLAB is False when not running in Google Colab."""
     assert IS_COLAB is False
@@ -232,3 +251,39 @@ def test_cleaned_direct_self_referential_model_is_picklable():
     instance = unpickled(value="root", child={"value": "leaf", "child": None})
     assert instance.value == "root"
     assert instance.child.value == "leaf"
+
+
+def test_clean_mutually_referencing_models():
+    """Test cleaning models that reference each other (A -> B -> A).
+
+    This tests the fix for infinite recursion when two models have circular
+    references to each other, as identified by Codex review.
+    """
+    cleaned_a = clean_pydantic_model(ModelA)
+
+    assert cleaned_a.__name__ == "ModelA"
+    assert set(cleaned_a.model_fields.keys()) == {"name", "b_ref"}
+
+    # Verify the cleaned model works with nested mutual references
+    instance = cleaned_a(
+        name="a_instance",
+        b_ref={"value": 42, "a_ref": {"name": "nested_a", "b_ref": None}},
+    )
+    assert instance.name == "a_instance"
+    assert instance.b_ref.value == 42
+    assert instance.b_ref.a_ref.name == "nested_a"
+
+
+def test_cleaned_mutually_referencing_models_are_picklable():
+    """Test that cleaned mutually referencing models can be pickled."""
+    cleaned_a = clean_pydantic_model(ModelA)
+
+    pickled = cloudpickle.dumps(cleaned_a)
+    unpickled = cloudpickle.loads(pickled)
+
+    instance = unpickled(
+        name="a_instance",
+        b_ref={"value": 42, "a_ref": None},
+    )
+    assert instance.name == "a_instance"
+    assert instance.b_ref.value == 42
