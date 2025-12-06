@@ -170,16 +170,3 @@ pub fn cast_array_from_daft_if_needed(
         None => arrow_array,
     }
 }
-
-#[inline]
-pub fn arrow_bitmap_and_helper(
-    l_bitmap: Option<&daft_arrow::bitmap::Bitmap>,
-    r_bitmap: Option<&daft_arrow::bitmap::Bitmap>,
-) -> Option<daft_arrow::bitmap::Bitmap> {
-    match (l_bitmap, r_bitmap) {
-        (None, None) => None,
-        (Some(l), None) => Some(l.clone()),
-        (None, Some(r)) => Some(r.clone()),
-        (Some(l), Some(r)) => Some(daft_arrow::bitmap::and(l, r)),
-    }
-}

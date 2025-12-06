@@ -38,11 +38,14 @@ def read_huggingface(repo: str, io_config: IOConfig | None = None) -> DataFrame:
 
             # Load dataset using datasets library and convert to Daft
             import daft
+            from datasets import concatenate_datasets
 
-            ds = load_dataset(repo, split="train")
+            # Load all splits and concatenate them to match the main path behavior
+            ds = load_dataset(repo)
+            all_data = concatenate_datasets([ds[split] for split in ds.keys()])
             # Convert to arrow format for better compatibility
-            ds = ds.with_format("arrow")
-            arrow_table = ds.data.table
+            all_data = all_data.with_format("arrow")
+            arrow_table = all_data.data.table
             return daft.from_arrow(arrow_table)
         else:
             # Re-raise other errors

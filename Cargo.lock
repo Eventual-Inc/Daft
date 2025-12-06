@@ -2469,6 +2469,7 @@ dependencies = [
 name = "daft-arrow"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-buffer",
  "arrow2",
 ]
 

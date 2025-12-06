@@ -18,6 +18,12 @@ import { Status } from "./status";
 import { ExecutingState, OperatorInfo, QueryInfo } from "./types";
 import ProgressTable from "./progress-table";
 
+
+function formatPlanJSON(plan: string) {
+  const parsedPlan = JSON.parse(plan);
+  return JSON.stringify(parsedPlan, null, 2);
+}
+
 /**
  * Query detail page component
  * Displays details for a specific query by ID using query parameters
@@ -229,7 +235,7 @@ function QueryPageInner() {
                   className={`${main.className} text-sm font-mono text-zinc-300 whitespace-pre-wrap`}
                 >
                   {"plan_info" in query.state
-                    ? query.state.plan_info.optimized_plan
+                    ? formatPlanJSON(query.state.plan_info.optimized_plan)
                     : "No optimized plan available"}
                 </pre>
               )}
@@ -244,7 +250,7 @@ function QueryPageInner() {
               <pre
                 className={`${main.className} text-sm font-mono text-zinc-300 whitespace-pre-wrap`}
               >
-                {query.unoptimized_plan}
+                {formatPlanJSON(query.unoptimized_plan)}
               </pre>
             </div>
           </TabsContent>

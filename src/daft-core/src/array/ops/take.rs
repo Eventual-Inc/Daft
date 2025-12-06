@@ -227,9 +227,9 @@ impl StructArray {
     {
         let idx_as_u64 = idx.cast(&DataType::UInt64)?;
         let taken_validity = self.validity().map(|v| {
-            daft_arrow::bitmap::Bitmap::from_iter(idx.into_iter().map(|i| match i {
+            daft_arrow::buffer::NullBuffer::from_iter(idx.into_iter().map(|i| match i {
                 None => false,
-                Some(i) => v.get_bit(i.to_usize()),
+                Some(i) => v.is_valid(i.to_usize()),
             }))
         });
         Ok(Self::new(

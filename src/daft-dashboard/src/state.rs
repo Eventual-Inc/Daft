@@ -6,7 +6,7 @@ use std::{
     },
 };
 
-use common_metrics::{NodeID, QueryID, QueryPlan, Stat, ops::NodeInfo};
+use common_metrics::{NodeID, QueryID, QueryPlan, Stat};
 use daft_recordbatch::RecordBatch;
 use dashmap::DashMap;
 use serde::Serialize;
@@ -18,6 +18,14 @@ pub(crate) enum OperatorStatus {
     Pending,
     Executing,
     Finished,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct NodeInfo {
+    pub id: NodeID,
+    pub name: String,
+    pub node_type: Arc<str>,
+    pub node_category: Arc<str>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -39,6 +47,7 @@ pub(crate) struct PlanInfo {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ExecInfo {
     pub exec_start_sec: u64,
+    pub physical_plan: QueryPlan,
     pub operators: OperatorInfos,
     // TODO: Logs
 }

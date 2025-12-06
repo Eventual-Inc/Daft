@@ -218,7 +218,7 @@ fn encode_images<Arr: AsImageObj>(
     } else {
         let mut offsets = Vec::with_capacity(images.len() + 1);
         offsets.push(0i64);
-        let mut validity = daft_arrow::bitmap::MutableBitmap::with_capacity(images.len());
+        let mut validity = daft_arrow::buffer::NullBufferBuilder::new(images.len());
         let buf = Vec::new();
         let mut writer: CountingWriter<std::io::BufWriter<_>> =
             std::io::BufWriter::new(std::io::Cursor::new(buf)).into();
@@ -227,10 +227,10 @@ fn encode_images<Arr: AsImageObj>(
                 if let Some(img) = img {
                     img.encode(image_format, &mut writer)?;
                     offsets.push(writer.count() as i64);
-                    validity.push(true);
+                    validity.append_non_null();
                 } else {
                     offsets.push(*offsets.last().unwrap());
-                    validity.push(false);
+                    validity.append_null();
                 }
                 Ok(())
             })
@@ -247,15 +247,12 @@ fn encode_images<Arr: AsImageObj>(
             .into_inner();
         let encoded_data: daft_arrow::buffer::Buffer<u8> = values.into();
         let offsets_buffer = daft_arrow::offset::OffsetsBuffer::try_from(offsets)?;
-        let validity: Option<daft_arrow::bitmap::Bitmap> = match validity.unset_bits() {
-            0 => None,
-            _ => Some(validity.into()),
-        };
+        let validity = validity.finish();
         daft_arrow::array::BinaryArray::<i64>::new(
             daft_arrow::datatypes::DataType::LargeBinary,
             offsets_buffer,
             encoded_data,
-            validity,
+            daft_arrow::buffer::wrap_null_buffer(validity),
         )
     };
     BinaryArray::new(
