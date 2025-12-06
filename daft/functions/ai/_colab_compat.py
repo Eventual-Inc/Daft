@@ -53,6 +53,10 @@ def clean_pydantic_model(model_cls: type[BaseModel], _cleaned_cache: dict[type, 
     if model_cls in _cleaned_cache:
         return _cleaned_cache[model_cls]
 
+    # Add sentinel to cache before recursing to prevent infinite recursion
+    # with mutually referencing models (A -> B -> A)
+    _cleaned_cache[model_cls] = model_cls  # temporary placeholder
+
     # First pass: collect all referenced Pydantic models (excluding self-references)
     referenced_models = []
     for field_info in model_cls.model_fields.values():
