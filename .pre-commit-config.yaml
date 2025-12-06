@@ -6,7 +6,7 @@ repos:
   hooks:
   - id: mypy
     args: ['--strict', '--ignore-missing-imports']
-    additional_dependencies: [types-requests, types-PyYAML, types-tabulate, pandas-stubs]
+    additional_dependencies: [types-requests, types-PyYAML, types-tabulate, pandas-stubs, types-Deprecated]
     files: daft
     exclude: |
       (?x)^(
