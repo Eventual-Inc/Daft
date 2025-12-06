@@ -1465,6 +1465,8 @@ def batch_udf(
     use_process: bool | None,
     max_concurrency: int | None,
     batch_size: int | None,
+    min_batch_size: int | None,
+    max_batch_size: int | None,
     max_retries: int | None,
     on_error: str | None,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],

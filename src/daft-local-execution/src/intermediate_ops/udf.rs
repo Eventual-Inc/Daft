@@ -605,10 +605,7 @@ impl IntermediateOperator for UdfOperator {
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
-        self.params
-            .udf_properties
-            .batch_size
-            .map(MorselSizeRequirement::Strict)
+        self.try_get_morsel_size_requirement().ok()
     }
 
     fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
@@ -618,7 +615,7 @@ impl IntermediateOperator for UdfOperator {
             match cfg.dynamic_batching_strategy.as_str() {
                 "latency_constrained" | "auto" => {
                     // TODO: allow udf to accept a min/max batch size instead of just a strict batch size.
-                    let reqs = self.morsel_size_requirement().unwrap_or_default();
+                    let reqs = self.try_get_morsel_size_requirement()?;
                     let MorselSizeRequirement::Flexible(min_batch_size, max_batch_size) = reqs
                     else {
                         return Err(DaftError::ValueError(
@@ -640,6 +637,42 @@ impl IntermediateOperator for UdfOperator {
             }
         } else {
             StaticBatchingStrategy::new(self.morsel_size_requirement().unwrap_or_default()).into()
+        })
+    }
+}
+
+impl UdfOperator {
+    fn try_get_morsel_size_requirement(&self) -> DaftResult<MorselSizeRequirement> {
+        Ok(match self.params.udf_properties {
+            UDFProperties {
+                batch_size: Some(s),
+                min_batch_size: None,
+                max_batch_size: None,
+                ..
+            } => MorselSizeRequirement::Strict(s),
+            UDFProperties {
+                batch_size: None,
+                min_batch_size,
+                max_batch_size,
+                ..
+            } => {
+                let cfg = daft_context::get_context().execution_config();
+                if cfg.enable_dynamic_batching {
+                    let min = min_batch_size.unwrap_or(1);
+                    let max = max_batch_size.unwrap_or(128 * 1024);
+                    MorselSizeRequirement::Flexible(min, max)
+                } else {
+                    return Err(DaftError::ValueError(
+                        "Must enable dynamic batching to use min_batch_size | max_batch_size"
+                            .to_string(),
+                    ));
+                }
+            }
+            _ => {
+                return Err(DaftError::ValueError(
+                    "cannot have min_batch_size | max_batch_size with batch_size".to_string(),
+                ));
+            }
         })
     }
 }
