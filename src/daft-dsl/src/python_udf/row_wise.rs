@@ -1,7 +1,7 @@
-use std::{fmt::Display, num::NonZeroUsize, sync::Arc};
+use std::{collections::BTreeMap, fmt::Display, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
-use daft_core::prelude::*;
+use daft_core::{prelude::*, series::Series};
 use itertools::Itertools;
 use opentelemetry::logs::{AnyValue, LogRecord, Logger, LoggerProvider};
 #[cfg(feature = "python")]
@@ -29,6 +29,7 @@ pub fn row_wise_udf(
     on_error: crate::functions::python::OnError,
     original_args: RuntimePyObject,
     args: Vec<ExprRef>,
+    ray_options: Option<BTreeMap<String, String>>,
 ) -> Expr {
     Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
         function_name: Arc::from(name),
@@ -43,6 +44,8 @@ pub fn row_wise_udf(
         gpus,
         use_process,
         max_concurrency,
+
+        ray_options,
     })))
 }
 
@@ -60,6 +63,7 @@ pub struct RowWisePyFn {
     pub max_concurrency: Option<NonZeroUsize>,
     pub max_retries: Option<usize>,
     pub on_error: crate::functions::python::OnError,
+    pub ray_options: Option<BTreeMap<String, String>>,
 }
 
 impl Display for RowWisePyFn {
@@ -91,6 +95,7 @@ impl RowWisePyFn {
             max_concurrency: self.max_concurrency,
             max_retries: self.max_retries,
             on_error: self.on_error,
+            ray_options: self.ray_options.clone(),
         }
     }
 

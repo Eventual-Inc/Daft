@@ -1,7 +1,7 @@
 use std::{fmt::Display, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
-use daft_core::{prelude::DataType, series::Series};
+use daft_core::{prelude::*, series::Series};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 

@@ -682,6 +682,7 @@ mod tests {
                 batch_size: None,
                 concurrency: Some(NonZeroUsize::new(8).unwrap()),
                 use_process: None,
+                ray_options: None,
             }),
             inputs,
         }
@@ -703,6 +704,7 @@ mod tests {
                 batch_size: Some(32),
                 concurrency: None,
                 use_process: None,
+                ray_options: None,
             }),
             inputs,
         }
