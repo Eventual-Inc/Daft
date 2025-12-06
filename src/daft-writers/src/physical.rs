@@ -10,6 +10,7 @@ use daft_recordbatch::RecordBatch;
 
 use crate::{
     AsyncFileWriter, WriterFactory,
+    csv_writer::{create_native_csv_writer, native_csv_writer_supported},
     json_writer::{create_native_json_writer, native_json_writer_supported},
     parquet_writer::{create_native_parquet_writer, native_parquet_writer_supported},
 };
@@ -53,6 +54,7 @@ impl PhysicalWriterFactory {
                 Self::select_parquet_writer_type(output_file_info, file_schema, native_enabled)
             }
             FileFormat::Json => Self::select_json_writer_type(file_schema),
+            FileFormat::Csv => Self::select_csv_writer_type(file_schema),
             _ => Ok(WriterType::Pyarrow), // Default to PyArrow for unsupported formats.
         }
     }
@@ -84,6 +86,18 @@ impl PhysicalWriterFactory {
         }
         // There is only a native implementation of the JSON writer. PyArrow does not support JSON writes.
         Ok(WriterType::Native)
+    }
+
+    fn select_csv_writer_type(file_schema: &SchemaRef) -> DaftResult<WriterType> {
+        let native_supported = native_csv_writer_supported(file_schema)?;
+        if native_supported {
+            Ok(WriterType::Native)
+        } else {
+            // Currently, Both Pyarrow and native CSV writes don't support nested (struct/list/map) datatype, and since daft doesn't support convert
+            // timestamp with timezone from arrow2 to arrow-rs, so native csv writer also doesn't support timestamp with timezone.
+            // Once daft support it, we can return error directly instead of fallback to pyarrow writer.
+            Ok(WriterType::Pyarrow)
+        }
     }
 }
 
@@ -160,6 +174,9 @@ fn create_native_writer(
         }
         FileFormat::Json => {
             create_native_json_writer(root_dir, file_idx, partition_values, io_config)
+        }
+        FileFormat::Csv => {
+            create_native_csv_writer(root_dir, file_idx, partition_values, io_config)
         }
         _ => Err(DaftError::ComputeError(
             "Unsupported file format for native write".to_string(),

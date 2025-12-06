@@ -1,5 +1,6 @@
 [dependencies]
 arrow-array = {version = "54.2.1"}
+arrow-csv = {version = "54.2.1"}
 arrow-json = {version = "54.2.1"}
 arrow-schema = {version = "54.2.1"}
 async-trait = {workspace = true}

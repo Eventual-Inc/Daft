@@ -1,4 +1,6 @@
 mod batch;
+mod batch_file_writer;
+mod csv_writer;
 mod file;
 mod ipc;
 mod json_writer;
