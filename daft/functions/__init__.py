@@ -96,6 +96,7 @@ from .list import (
     to_list,
 )
 from .llm import llm_generate
+from .shell import shell_op
 from .misc import (
     monotonically_increasing_id,
     eq_null_safe,
@@ -385,6 +386,7 @@ __all__ = [
     "sec",
     "second",
     "serialize",
+    "shell_op",
     "shift_left",
     "shift_right",
     "sign",
