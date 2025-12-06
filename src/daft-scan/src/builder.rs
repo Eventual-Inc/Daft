@@ -102,6 +102,7 @@ impl ParquetScanBuilder {
             field_id_mapping: self.field_id_mapping,
             row_groups: self.row_groups,
             chunk_size: self.chunk_size,
+            ignore_corrupt_files: false,
         };
 
         let operator = Arc::new(
@@ -241,6 +242,7 @@ impl CsvScanBuilder {
             allow_variable_columns: self.allow_variable_columns,
             buffer_size: self.buffer_size,
             chunk_size: self.chunk_size,
+            ignore_corrupt_files: false,
         };
 
         let operator = Arc::new(

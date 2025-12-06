@@ -29,6 +29,7 @@ def _lancedb_table_factory_function(
     required_columns: Optional[list[str]] = None,
     filter: Optional["pa.compute.Expression"] = None,
     limit: Optional[int] = None,
+    ignore_corrupt_files: bool = False,
 ) -> Iterator[PyRecordBatch]:
     try:
         import lance
@@ -43,7 +44,14 @@ def _lancedb_table_factory_function(
     if not fragments:
         raise RuntimeError(f"Unable to find lance fragments {fragment_ids}")
     scanner = ds.scanner(fragments=fragments, columns=required_columns, filter=filter, limit=limit)
-    return (RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch for rb in scanner.to_batches())
+    try:
+        for rb in scanner.to_batches():
+            yield RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch
+    except Exception as e:
+        if ignore_corrupt_files:
+            logger.warning("Skipping unreadable/corrupt lance fragment(s) %s: %s", fragment_ids, e)
+            return
+        raise
 
 
 def _lancedb_count_result_function(
@@ -73,13 +81,14 @@ def _lancedb_count_result_function(
 
 
 class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
-    def __init__(self, ds: "lance.LanceDataset", fragment_group_size: Optional[int] = None):
+    def __init__(self, ds: "lance.LanceDataset", fragment_group_size: Optional[int] = None, ignore_corrupt_files: bool = False):
         self._ds = ds
         self._pushed_filters: Union[list[PyExpr], None] = None
         self._remaining_filters: Union[list[PyExpr], None] = None
         self._fragment_group_size = fragment_group_size
         self._enable_strict_filter_pushdown = get_context().daft_planning_config.enable_strict_filter_pushdown
         self._schema = Schema.from_pyarrow_schema(self._ds.schema)
+        self._ignore_error = ignore_corrupt_files
 
     def name(self) -> str:
         return "LanceDBScanOperator"
@@ -254,6 +263,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                         required_columns,
                         pushed_expr,
                         self._compute_limit_pushdown_with_filter(pushdowns),
+                        self._ignore_error,
                     ),
                     schema=self.schema()._schema,
                     num_rows=num_rows,
@@ -301,6 +311,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                         required_columns,
                         pushed_expr,
                         self._compute_limit_pushdown_with_filter(pushdowns),
+                        self._ignore_error,
                     ),
                     schema=self.schema()._schema,
                     num_rows=num_rows,

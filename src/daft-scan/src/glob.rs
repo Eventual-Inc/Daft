@@ -232,25 +232,86 @@ impl GlobScanOperator {
                             "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"
                         ));
 
-                        let (schema, metadata) =
-                            daft_parquet::read::read_parquet_schema_and_metadata(
-                                first_filepath.as_str(),
-                                io_client,
-                                Some(io_stats),
-                                ParquetSchemaInferenceOptions {
-                                    coerce_int96_timestamp_unit,
-                                    ..Default::default()
-                                },
-                                field_id_mapping.clone(),
+                        let mut schema_opt = None;
+                        let mut first_md_opt: Option<(String, TableMetadata)> = None;
+                        let ignore_flag = matches!(
+                            file_format_config.as_ref(),
+                            FileFormatConfig::Parquet(ParquetSourceConfig {
+                                ignore_corrupt_files: true,
+                                ..
+                            })
+                        );
+                        if ignore_flag {
+                            // Iterate all candidates to find first readable file
+                            let mut all_paths = run_glob(
+                                first_glob_path.clone(),
+                                None,
+                                io_client.clone(),
+                                Some(io_stats.clone()),
+                                file_format,
                             )
                             .await?;
-                        let metadata = Some((
-                            first_filepath,
-                            TableMetadata {
-                                length: metadata.num_rows,
-                            },
-                        ));
-                        (schema, metadata)
+                            while let Some(file_metadata) = all_paths.next().await {
+                                let fm = file_metadata?;
+                                let fp = fm.filepath.clone();
+                                match daft_parquet::read::read_parquet_schema_and_metadata(
+                                    fp.as_str(),
+                                    io_client.clone(),
+                                    Some(io_stats.clone()),
+                                    ParquetSchemaInferenceOptions {
+                                        coerce_int96_timestamp_unit,
+                                        ..Default::default()
+                                    },
+                                    field_id_mapping.clone(),
+                                )
+                                .await
+                                {
+                                    Ok((schema, metadata)) => {
+                                        schema_opt = Some(schema);
+                                        first_md_opt = Some((
+                                            fp,
+                                            TableMetadata {
+                                                length: metadata.num_rows,
+                                            },
+                                        ));
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        log::warn!(
+                                            "Skipping unreadable/corrupt parquet file {}: {}",
+                                            fp,
+                                            e
+                                        );
+                                    }
+                                }
+                            }
+                            let schema = schema_opt.ok_or_else(|| {
+                                DaftError::ValueError(
+                                    "No valid parquet file found for schema inference".to_string(),
+                                )
+                            })?;
+                            (schema, first_md_opt)
+                        } else {
+                            let (schema, metadata) =
+                                daft_parquet::read::read_parquet_schema_and_metadata(
+                                    first_filepath.as_str(),
+                                    io_client,
+                                    Some(io_stats),
+                                    ParquetSchemaInferenceOptions {
+                                        coerce_int96_timestamp_unit,
+                                        ..Default::default()
+                                    },
+                                    field_id_mapping.clone(),
+                                )
+                                .await?;
+                            let metadata = Some((
+                                first_filepath,
+                                TableMetadata {
+                                    length: metadata.num_rows,
+                                },
+                            ));
+                            (schema, metadata)
+                        }
                     }
                     FileFormatConfig::Csv(CsvSourceConfig {
                         delimiter,
@@ -262,23 +323,81 @@ impl GlobScanOperator {
                         allow_variable_columns,
                         ..
                     }) => {
-                        let (schema, _) = daft_csv::metadata::read_csv_schema(
-                            first_filepath.as_str(),
-                            Some(CsvParseOptions::new_with_defaults(
-                                *has_headers,
-                                *delimiter,
-                                *double_quote,
-                                *quote,
-                                *allow_variable_columns,
-                                *escape_char,
-                                *comment,
-                            )?),
-                            None,
-                            io_client,
-                            Some(io_stats),
-                        )
-                        .await?;
-                        (schema, None)
+                        let ignore_flag = matches!(
+                            file_format_config.as_ref(),
+                            FileFormatConfig::Csv(CsvSourceConfig {
+                                ignore_corrupt_files: true,
+                                ..
+                            })
+                        );
+                        if ignore_flag {
+                            let mut all_paths = run_glob(
+                                first_glob_path.clone(),
+                                None,
+                                io_client.clone(),
+                                Some(io_stats.clone()),
+                                file_format,
+                            )
+                            .await?;
+                            let mut schema_opt = None;
+                            while let Some(file_metadata) = all_paths.next().await {
+                                let fm = file_metadata?;
+                                let fp = fm.filepath.clone();
+                                match daft_csv::metadata::read_csv_schema(
+                                    fp.as_str(),
+                                    Some(CsvParseOptions::new_with_defaults(
+                                        *has_headers,
+                                        *delimiter,
+                                        *double_quote,
+                                        *quote,
+                                        *allow_variable_columns,
+                                        *escape_char,
+                                        *comment,
+                                    )?),
+                                    None,
+                                    io_client.clone(),
+                                    Some(io_stats.clone()),
+                                )
+                                .await
+                                {
+                                    Ok((schema, _)) => {
+                                        schema_opt = Some(schema);
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        log::warn!(
+                                            "Skipping unreadable/corrupt csv file {}: {}",
+                                            fp,
+                                            e
+                                        );
+                                    }
+                                }
+                            }
+                            let schema = schema_opt.ok_or_else(|| {
+                                DaftError::ValueError(
+                                    "No valid csv file found for schema inference".to_string(),
+                                )
+                            })?;
+                            (schema, None)
+                        } else {
+                            let (schema, _) = daft_csv::metadata::read_csv_schema(
+                                first_filepath.as_str(),
+                                Some(CsvParseOptions::new_with_defaults(
+                                    *has_headers,
+                                    *delimiter,
+                                    *double_quote,
+                                    *quote,
+                                    *allow_variable_columns,
+                                    *escape_char,
+                                    *comment,
+                                )?),
+                                None,
+                                io_client,
+                                Some(io_stats),
+                            )
+                            .await?;
+                            (schema, None)
+                        }
                     }
                     FileFormatConfig::Json(_) => {
                         let schema = daft_json::schema::read_json_schema(
