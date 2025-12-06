@@ -426,13 +426,6 @@ class DataType:
         """Infer Daft DataType from a Python object."""
         from daft.series import Series
 
-        try:
-            import cupy as cp
-
-            if isinstance(obj, cp.ndarray):
-                obj = obj.get()
-        except ImportError:
-            pass
         s = Series.from_pylist([obj])
         return s.datatype()
 
