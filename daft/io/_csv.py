@@ -31,7 +31,7 @@ def read_csv(
     io_config: Optional[IOConfig] = None,
     file_path_column: Optional[str] = None,
     hive_partitioning: bool = False,
-    ignore_error: bool = False,
+    ignore_corrupt_files: bool = False,
     _buffer_size: Optional[int] = None,
     _chunk_size: Optional[int] = None,
 ) -> DataFrame:
@@ -81,7 +81,7 @@ def read_csv(
         allow_variable_columns=allow_variable_columns,
         buffer_size=_buffer_size,
         chunk_size=_chunk_size,
-        ignore_error=ignore_error,
+        ignore_corrupt_files=ignore_corrupt_files,
     )
     file_format_config = FileFormatConfig.from_csv_config(csv_config)
     storage_config = StorageConfig(True, io_config)

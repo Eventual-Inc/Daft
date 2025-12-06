@@ -26,7 +26,7 @@ def read_parquet(
     file_path_column: Optional[str] = None,
     hive_partitioning: bool = False,
     coerce_int96_timestamp_unit: Optional[Union[str, TimeUnit]] = None,
-    ignore_error: bool = False,
+    ignore_corrupt_files: bool = False,
     _multithreaded_io: Optional[bool] = None,
     _chunk_size: Optional[int] = None,  # A hidden parameter for testing purposes.
 ) -> DataFrame:
@@ -82,7 +82,7 @@ def read_parquet(
             coerce_int96_timestamp_unit=pytimeunit,
             row_groups=row_groups,
             chunk_size=_chunk_size,
-            ignore_error=ignore_error,
+            ignore_corrupt_files=ignore_corrupt_files,
         )
     )
     storage_config = StorageConfig(multithreaded_io, io_config)

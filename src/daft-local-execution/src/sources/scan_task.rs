@@ -430,7 +430,7 @@ async fn forward_scan_task_stream(
         Ok(s) => s,
         Err(e) => match scan_task.file_format_config.as_ref() {
             FileFormatConfig::Parquet(ParquetSourceConfig {
-                ignore_error: true, ..
+                ignore_corrupt_files: true, ..
             }) => {
                 log::warn!(
                     "Skipping unreadable/corrupt parquet file {}: {}",
@@ -444,7 +444,7 @@ async fn forward_scan_task_stream(
                 return Ok(());
             }
             FileFormatConfig::Csv(CsvSourceConfig {
-                ignore_error: true, ..
+                ignore_corrupt_files: true, ..
             }) => {
                 log::warn!(
                     "Skipping unreadable/corrupt csv file {}: {}",
@@ -523,7 +523,7 @@ async fn stream_scan_task(
             coerce_int96_timestamp_unit,
             field_id_mapping,
             chunk_size: chunk_size_from_config,
-            ignore_error: _,
+            ignore_corrupt_files: _,
             ..
         }) => {
             if let Some(aggregation) = &scan_task.pushdowns.aggregation
@@ -687,7 +687,7 @@ async fn stream_scan_task(
     // Drop per-file read errors if ignore_bad_files is set
     match scan_task.file_format_config.as_ref() {
         FileFormatConfig::Parquet(ParquetSourceConfig {
-            ignore_error: true, ..
+            ignore_corrupt_files: true, ..
         }) => {
             use futures::StreamExt;
             let url_str = url.to_string();
@@ -709,7 +709,7 @@ async fn stream_scan_task(
             }));
         }
         FileFormatConfig::Csv(CsvSourceConfig {
-            ignore_error: true, ..
+            ignore_corrupt_files: true, ..
         }) => {
             use futures::StreamExt;
             let url_str = url.to_string();

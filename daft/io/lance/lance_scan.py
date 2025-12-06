@@ -29,7 +29,7 @@ def _lancedb_table_factory_function(
     required_columns: Optional[list[str]] = None,
     filter: Optional["pa.compute.Expression"] = None,
     limit: Optional[int] = None,
-    ignore_error: bool = False,
+    ignore_corrupt_files: bool = False,
 ) -> Iterator[PyRecordBatch]:
     try:
         import lance
@@ -48,7 +48,7 @@ def _lancedb_table_factory_function(
         for rb in scanner.to_batches():
             yield RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch
     except Exception as e:
-        if ignore_error:
+        if ignore_corrupt_files:
             logger.warning("Skipping unreadable/corrupt lance fragment(s) %s: %s", fragment_ids, e)
             return
         raise
@@ -81,14 +81,14 @@ def _lancedb_count_result_function(
 
 
 class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
-    def __init__(self, ds: "lance.LanceDataset", fragment_group_size: Optional[int] = None, ignore_error: bool = False):
+    def __init__(self, ds: "lance.LanceDataset", fragment_group_size: Optional[int] = None, ignore_corrupt_files: bool = False):
         self._ds = ds
         self._pushed_filters: Union[list[PyExpr], None] = None
         self._remaining_filters: Union[list[PyExpr], None] = None
         self._fragment_group_size = fragment_group_size
         self._enable_strict_filter_pushdown = get_context().daft_planning_config.enable_strict_filter_pushdown
         self._schema = Schema.from_pyarrow_schema(self._ds.schema)
-        self._ignore_error = ignore_error
+        self._ignore_error = ignore_corrupt_files
 
     def name(self) -> str:
         return "LanceDBScanOperator"

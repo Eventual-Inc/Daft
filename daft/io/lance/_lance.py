@@ -33,7 +33,7 @@ def read_lance(
     default_scan_options: Optional[dict[str, str]] = None,
     metadata_cache_size_bytes: Optional[int] = None,
     fragment_group_size: Optional[int] = None,
-    ignore_error: bool = False,
+    ignore_corrupt_files: bool = False,
 ) -> DataFrame:
     """Create a DataFrame from a LanceDB table.
 
@@ -136,7 +136,7 @@ def read_lance(
         "default_scan_options": default_scan_options,
         "metadata_cache_size_bytes": metadata_cache_size_bytes,
     }
-    lance_operator = LanceDBScanOperator(ds, fragment_group_size=fragment_group_size, ignore_error=ignore_error)
+    lance_operator = LanceDBScanOperator(ds, fragment_group_size=fragment_group_size, ignore_corrupt_files=ignore_corrupt_files)
     handle = ScanOperatorHandle.from_python_scan_operator(lance_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
     return DataFrame(builder)

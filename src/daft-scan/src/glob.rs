@@ -237,7 +237,7 @@ impl GlobScanOperator {
                         let ignore_flag = matches!(
                             file_format_config.as_ref(),
                             FileFormatConfig::Parquet(ParquetSourceConfig {
-                                ignore_error: true,
+                                ignore_corrupt_files: true,
                                 ..
                             })
                         );
@@ -326,7 +326,7 @@ impl GlobScanOperator {
                         let ignore_flag = matches!(
                             file_format_config.as_ref(),
                             FileFormatConfig::Csv(CsvSourceConfig {
-                                ignore_error: true,
+                                ignore_corrupt_files: true,
                                 ..
                             })
                         );

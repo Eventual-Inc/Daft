@@ -102,7 +102,7 @@ pub struct ParquetSourceConfig {
     pub field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     pub row_groups: Option<Vec<Option<Vec<i64>>>>,
     pub chunk_size: Option<usize>,
-    pub ignore_error: bool,
+    pub ignore_corrupt_files: bool,
 }
 
 impl ParquetSourceConfig {
@@ -153,7 +153,7 @@ impl Default for ParquetSourceConfig {
             field_id_mapping: None,
             row_groups: None,
             chunk_size: None,
-            ignore_error: false,
+            ignore_corrupt_files: false,
         }
     }
 }
@@ -169,7 +169,7 @@ impl ParquetSourceConfig {
         field_id_mapping: Option<BTreeMap<i32, PyField>>,
         row_groups: Option<Vec<Option<Vec<i64>>>>,
         chunk_size: Option<usize>,
-        ignore_error: Option<bool>,
+        ignore_corrupt_files: Option<bool>,
     ) -> Self {
         Self {
             coerce_int96_timestamp_unit: coerce_int96_timestamp_unit
@@ -179,7 +179,7 @@ impl ParquetSourceConfig {
                 .map(|map| Arc::new(map.into_iter().map(|(k, v)| (k, v.field)).collect())),
             row_groups,
             chunk_size,
-            ignore_error: ignore_error.unwrap_or(false),
+            ignore_corrupt_files: ignore_error.unwrap_or(false),
         }
     }
 
@@ -205,7 +205,7 @@ pub struct CsvSourceConfig {
     pub allow_variable_columns: bool,
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
-    pub ignore_error: bool,
+    pub ignore_corrupt_files: bool,
 }
 
 impl CsvSourceConfig {
@@ -275,7 +275,7 @@ impl CsvSourceConfig {
         comment: Option<char>,
         buffer_size: Option<usize>,
         chunk_size: Option<usize>,
-        ignore_error: Option<bool>,
+        ignore_corrupt_files: Option<bool>,
     ) -> PyResult<Self> {
         Ok(Self {
             delimiter,
@@ -287,7 +287,7 @@ impl CsvSourceConfig {
             allow_variable_columns,
             buffer_size,
             chunk_size,
-            ignore_error: ignore_error.unwrap_or(false),
+            ignore_corrupt_files: ignore_error.unwrap_or(false),
         })
     }
 }

@@ -18,11 +18,11 @@ def test_parquet_ignore_error(tmp_path):
     with open(bad_path, "wb") as f:
         f.write(b"not a parquet file")
 
-    # When ignore_error=True, only rows from valid file should be loaded
-    df = daft.read_parquet(str(tmp_path), ignore_error=True)
+    # When ignore_corrupt_files=True, only rows from valid file should be loaded
+    df = daft.read_parquet(str(tmp_path), ignore_corrupt_files=True)
     res = df.collect().to_pydict()
     assert res == {"a": [1, 2, 3]}
 
-    # When ignore_error=False, reading should raise
+    # When ignore_corrupt_files=False, reading should raise
     with pytest.raises(Exception):
-        daft.read_parquet(str(tmp_path), ignore_error=False).collect()
+        daft.read_parquet(str(tmp_path), ignore_corrupt_files=False).collect()

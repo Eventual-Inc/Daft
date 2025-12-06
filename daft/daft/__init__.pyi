@@ -257,7 +257,7 @@ class ParquetSourceConfig:
     field_id_mapping: dict[int, PyField] | None
     row_groups: list[list[int]] | None
     chunk_size: int | None
-    ignore_error: bool
+    ignore_corrupt_files: bool
 
     def __init__(
         self,
@@ -265,7 +265,7 @@ class ParquetSourceConfig:
         field_id_mapping: dict[int, PyField] | None = None,
         row_groups: list[list[int]] | None = None,
         chunk_size: int | None = None,
-        ignore_error: bool = False,
+        ignore_corrupt_files: bool = False,
     ): ...
 
 class CsvSourceConfig:
@@ -280,7 +280,7 @@ class CsvSourceConfig:
     allow_variable_columns: bool
     buffer_size: int | None
     chunk_size: int | None
-    ignore_error: bool
+    ignore_corrupt_files: bool
 
     def __init__(
         self,
@@ -293,7 +293,7 @@ class CsvSourceConfig:
         comment: str | None,
         buffer_size: int | None = None,
         chunk_size: int | None = None,
-        ignore_error: bool = False,
+        ignore_corrupt_files: bool = False,
     ): ...
 
 class JsonSourceConfig:
