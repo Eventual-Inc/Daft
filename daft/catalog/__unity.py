@@ -157,7 +157,7 @@ class UnityTable(Table):
     def read(self, **options: Any) -> DataFrame:
         Table._validate_options("Unity read", options, UnityTable._read_options)
 
-        return read_deltalake(self._inner, version=options.get("version"))
+        return read_deltalake(self._inner, **options)
 
     ###
     # write methods
