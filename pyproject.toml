@@ -47,7 +47,7 @@ lance = ["pylance<0.40.0"]
 numpy = ["numpy<2.4.0"]
 openai = ["openai<2.9.0"]
 pandas = ["pandas<2.4.0"]
-postgres = ["psycopg<3.4.0", "pgvector<0.5.0"]
+postgres = ["psycopg[binary]<3.4.0", "pgvector<0.5.0", "sqlglot<28.1.0", "connectorx>=0.4.4,<0.5.0"]
 ray = [
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
   'ray[data, client]>=2.0.0,<2.53.0; platform_system != "Windows"',
