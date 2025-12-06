@@ -1,6 +1,6 @@
 use daft_arrow::{
-    array::PrimitiveArray,
-    types::{Index, NativeType},
+    array::{PrimitiveArray, ArrowPrimitiveType},
+    types::{Index},
 };
 
 use super::common;
@@ -13,7 +13,7 @@ pub fn indices_sorted_unstable_by<T, F>(
     nulls_first: bool,
 ) -> PrimitiveArray<u64>
 where
-    T: NativeType,
+    T: ArrowPrimitiveType,
     F: Fn(&T, &T) -> std::cmp::Ordering,
 {
     let values = array.values().as_slice();

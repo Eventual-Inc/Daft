@@ -2,8 +2,8 @@ use chrono::{Datelike, Timelike};
 use csv_async;
 use daft_arrow::{
     array::{
-        Array, BinaryArray, BooleanArray, MutableBinaryArray, MutableUtf8Array, NullArray,
-        PrimitiveArray, Utf8Array,
+        Array, LargeBinaryArray, BooleanArray, NullArray,
+        PrimitiveArray, LargeStringArray,
     },
     datatypes::{DataType, TimeUnit},
     error::{Error, Result},
@@ -79,7 +79,8 @@ where
         }
         None => None,
     });
-    Box::new(PrimitiveArray::<T>::from_trusted_len_iter(iter).to(datatype))
+    todo!()
+    // Box::new(PrimitiveArray::<T>::from_trusted_len_iter(iter).to(datatype))
 }
 
 #[inline]
@@ -141,7 +142,9 @@ where
         }
         None => None,
     });
-    Box::new(BooleanArray::from_trusted_len_iter(iter))
+
+    todo!()
+    // Box::new(BooleanArray::from_trusted_len_iter(iter))
 }
 
 #[inline]
@@ -158,10 +161,11 @@ where
         None => None,
     });
 
-    let mut mu = MutableUtf8Array::<O>::with_capacities(expected_capacity, expected_size);
-    mu.extend_trusted_len(iter);
-    let array: Utf8Array<O> = mu.into();
-    Box::new(array)
+    todo!()
+    // let mut mu = MutableUtf8Array::<O>::with_capacities(expected_capacity, expected_size);
+    // mu.extend_trusted_len(iter);
+    // // let array: Utf8Array<O> = mu.into();
+    // Box::new(todo!())
 }
 
 #[inline]
@@ -173,10 +177,11 @@ fn deserialize_binary<'a, O: Offset, I>(
 where
     I: TrustedLen<Item = Option<&'a [u8]>>,
 {
-    let mut mu = MutableBinaryArray::<O>::with_capacities(expected_capacity, expected_size);
-    mu.extend_trusted_len(bytes_iter);
-    let array: BinaryArray<O> = mu.into();
-    Box::new(array)
+    todo!()
+    // let mut mu = MutableBinaryArray::<O>::with_capacities(expected_capacity, expected_size);
+    // mu.extend_trusted_len(bytes_iter);
+    // let array: BinaryArray<O> = mu.into();
+    // Box::new(todo!())
 }
 
 // Return the factor by how small is a time unit compared to seconds
@@ -364,7 +369,7 @@ where
         LargeUtf8 => deserialize_utf8::<i64, _>(bytes_iter, expected_capacity, expected_size),
         Binary => deserialize_binary::<i32, _>(bytes_iter, expected_capacity, expected_size),
         LargeBinary => deserialize_binary::<i64, _>(bytes_iter, expected_capacity, expected_size),
-        Null => Box::new(NullArray::new(DataType::Null, expected_capacity)),
+        Null => Box::new(NullArray::new(expected_capacity)),
         other => {
             return Err(Error::NotYetImplemented(format!(
                 "Deserializing type \"{other:?}\" is not implemented"

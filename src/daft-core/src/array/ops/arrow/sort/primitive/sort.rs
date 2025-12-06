@@ -17,7 +17,7 @@
 // under the License.
 use daft_arrow::buffer::NullBuffer;
 use daft_arrow::{
-    array::PrimitiveArray,
+    array::{PrimitiveArray, ArrowPrimitiveType},
     buffer::{Buffer, NullBufferBuilder},
     compute::sort::SortOptions,
     types::NativeType,
@@ -136,7 +136,7 @@ pub fn sort_by<T, F>(
     limit: Option<usize>,
 ) -> PrimitiveArray<T>
 where
-    T: NativeType,
+    T: ArrowPrimitiveType,
     F: FnMut(&T, &T) -> std::cmp::Ordering,
 {
     let limit = limit.unwrap_or_else(|| array.len());
@@ -158,10 +158,9 @@ where
         (buffer.into(), None)
     };
     PrimitiveArray::<T>::new(
-        array.data_type().clone(),
         buffer,
-        daft_arrow::buffer::wrap_null_buffer(validity),
-    )
+        validity,
+    ).with_data_type(array.data_type().clone())
 }
 
 #[cfg(test)]

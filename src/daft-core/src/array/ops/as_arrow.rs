@@ -53,9 +53,9 @@ macro_rules! impl_asarrow_logicalarray {
 }
 
 impl_asarrow_dataarray!(NullArray, array::NullArray);
-impl_asarrow_dataarray!(Utf8Array, array::Utf8Array<i64>);
+impl_asarrow_dataarray!(Utf8Array, array::LargeStringArray);
 impl_asarrow_dataarray!(BooleanArray, array::BooleanArray);
-impl_asarrow_dataarray!(BinaryArray, array::BinaryArray<i64>);
+impl_asarrow_dataarray!(BinaryArray, array::LargeBinaryArray);
 impl_asarrow_dataarray!(FixedSizeBinaryArray, array::FixedSizeBinaryArray);
 impl_asarrow_dataarray!(IntervalArray, array::PrimitiveArray<months_days_ns>);
 

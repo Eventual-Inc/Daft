@@ -2,28 +2,26 @@ use std::hash::{BuildHasher, Hasher};
 
 use daft_arrow::{
     array::{
-        Array, BinaryArray, BooleanArray, FixedSizeBinaryArray, NullArray, PrimitiveArray,
-        Utf8Array,
+        Array, ArrowPrimitiveType, BooleanArray, Decimal128Array, FixedSizeBinaryArray, GenericBinaryArray, GenericStringArray, Int64Array, NullArray, OffsetSizeTrait, PrimitiveArray, UInt64Array
     },
     datatypes::{DataType, PhysicalType},
     error::{Error, Result},
-    types::{NativeType, Offset},
 };
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
 use xxhash_rust::{
     const_xxh3, const_xxh32, const_xxh64, xxh3::xxh3_64_with_seed, xxh32::xxh32, xxh64::xxh64,
 };
 
-fn hash_primitive<T: NativeType>(
+fn hash_primitive<T: ArrowPrimitiveType>(
     array: &PrimitiveArray<T>,
-    seed: Option<&PrimitiveArray<u64>>,
+    seed: Option<&UInt64Array>,
     hash_function: HashFunctionKind,
-) -> PrimitiveArray<u64> {
-    fn xxhash<const NULL_HASH: u64, T: NativeType, F: Fn(&[u8], u64) -> u64>(
+) -> UInt64Array {
+    fn xxhash<const NULL_HASH: u64, T: ArrowPrimitiveType, F: Fn(&[u8], u64) -> u64>(
         array: &PrimitiveArray<T>,
-        seed: Option<&PrimitiveArray<u64>>,
+        seed: Option<&UInt64Array>,
         f: F,
-    ) -> PrimitiveArray<u64> {
+    ) -> UInt64Array {
         let hashes = if let Some(seed) = seed {
             array
                 .iter()
@@ -102,9 +100,9 @@ fn hash_primitive<T: NativeType>(
 
 fn hash_boolean(
     array: &BooleanArray,
-    seed: Option<&PrimitiveArray<u64>>,
+    seed: Option<&UInt64Array>,
     hash_function: HashFunctionKind,
-) -> PrimitiveArray<u64> {
+) -> UInt64Array {
     fn xxhash<
         const NULL_HASH: u64,
         const TRUE_HASH: u64,
@@ -112,9 +110,9 @@ fn hash_boolean(
         F: Fn(&[u8], u64) -> u64,
     >(
         array: &BooleanArray,
-        seed: Option<&PrimitiveArray<u64>>,
+        seed: Option<&UInt64Array>,
         f: F,
-    ) -> PrimitiveArray<u64> {
+    ) -> UInt64Array {
         let hashes = if let Some(seed) = seed {
             array
                 .iter()
@@ -211,20 +209,20 @@ fn hash_boolean(
 
 fn hash_null(
     array: &NullArray,
-    seed: Option<&PrimitiveArray<u64>>,
+    seed: Option<&UInt64Array>,
     hash_function: HashFunctionKind,
-) -> PrimitiveArray<u64> {
+) -> UInt64Array {
     fn xxhash<const NULL_HASH: u64, F: Fn(&[u8], u64) -> u64>(
         len: usize,
-        seed: Option<&PrimitiveArray<u64>>,
+        seed: Option<&UInt64Array>,
         f: F,
-    ) -> PrimitiveArray<u64> {
+    ) -> UInt64Array {
         let hashes = if let Some(seed) = seed {
             seed.values_iter().map(|s| f(b"", *s)).collect::<Vec<_>>()
         } else {
             (0..len).map(|_| NULL_HASH).collect::<Vec<_>>()
         };
-        PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+        UInt64Array::new(hashes.into(), None)
     }
 
     match hash_function {
@@ -237,7 +235,7 @@ fn hash_null(
                     hasher.finish()
                 })
                 .collect::<Vec<_>>();
-            PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+            UInt64Array::new(hashes.into(), None)
         }
         HashFunctionKind::Sha1 => {
             let hashes = (0..array.len())
@@ -247,7 +245,7 @@ fn hash_null(
                     hasher.finish()
                 })
                 .collect::<Vec<_>>();
-            PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+            UInt64Array::new(hashes.into(), None)
         }
         HashFunctionKind::XxHash32 => {
             const NULL_HASH: u64 = const_xxh32::xxh32(b"", 0) as u64;
@@ -264,16 +262,16 @@ fn hash_null(
     }
 }
 
-fn hash_binary<O: Offset>(
-    array: &BinaryArray<O>,
-    seed: Option<&PrimitiveArray<u64>>,
+fn hash_binary<O: OffsetSizeTrait>(
+    array: &GenericBinaryArray<O>,
+    seed: Option<&UInt64Array>,
     hash_function: HashFunctionKind,
-) -> PrimitiveArray<u64> {
-    fn xxhash<O: Offset, F: Fn(&[u8], u64) -> u64>(
-        array: &BinaryArray<O>,
-        seed: Option<&PrimitiveArray<u64>>,
+) -> UInt64Array {
+    fn xxhash<O: OffsetSizeTrait, F: Fn(&[u8], u64) -> u64>(
+        array: &GenericBinaryArray<O>,
+        seed: Option<&UInt64Array>,
         f: F,
-    ) -> PrimitiveArray<u64> {
+    ) -> UInt64Array {
         let hashes = if let Some(seed) = seed {
             array
                 .values_iter()
@@ -283,7 +281,7 @@ fn hash_binary<O: Offset>(
         } else {
             array.values_iter().map(|v| f(v, 0)).collect::<Vec<_>>()
         };
-        PrimitiveArray::<u64>::new(DataType::UInt64, hashes.into(), None)
+        UInt64Array::new(hashes.into(), None)
     }
 
     match hash_function {
@@ -318,14 +316,14 @@ fn hash_binary<O: Offset>(
 
 fn hash_fixed_size_binary(
     array: &FixedSizeBinaryArray,
-    seed: Option<&PrimitiveArray<u64>>,
+    seed: Option<&UInt64Array>,
     hash_function: HashFunctionKind,
-) -> PrimitiveArray<u64> {
+) -> UInt64Array {
     fn xxhash<F: Fn(&[u8], u64) -> u64>(
         array: &FixedSizeBinaryArray,
-        seed: Option<&PrimitiveArray<u64>>,
+        seed: Option<&UInt64Array>,
         f: F,
-    ) -> PrimitiveArray<u64> {
+    ) -> UInt64Array {
         let hashes = if let Some(seed) = seed {
             array
                 .values_iter()
@@ -368,16 +366,16 @@ fn hash_fixed_size_binary(
     }
 }
 
-fn hash_utf8<O: Offset>(
-    array: &Utf8Array<O>,
-    seed: Option<&PrimitiveArray<u64>>,
+fn hash_utf8<O: OffsetSizeTrait>(
+    array: &GenericStringArray<O>,
+    seed: Option<&UInt64Array>,
     hash_function: HashFunctionKind,
-) -> PrimitiveArray<u64> {
-    fn xxhash<O: Offset, F: Fn(&[u8], u64) -> u64>(
-        array: &Utf8Array<O>,
-        seed: Option<&PrimitiveArray<u64>>,
+) -> UInt64Array {
+    fn xxhash<O: OffsetSizeTrait, F: Fn(&[u8], u64) -> u64>(
+        array: &GenericStringArray<O>,
+        seed: Option<&UInt64Array>,
         f: F,
-    ) -> PrimitiveArray<u64> {
+    ) -> UInt64Array {
         let hashes = if let Some(seed) = seed {
             array
                 .values_iter()
@@ -424,17 +422,17 @@ fn hash_utf8<O: Offset>(
 }
 
 fn hash_timestamp_with_timezone(
-    array: &PrimitiveArray<i64>,
+    array: &Int64Array,
     timezone: &str,
-    seed: Option<&PrimitiveArray<u64>>,
+    seed: Option<&UInt64Array>,
     hash_function: HashFunctionKind,
-) -> PrimitiveArray<u64> {
+) -> UInt64Array {
     fn xxhash<const NULL_HASH: u64, F: Fn(&[u8], u64) -> u64>(
-        array: &PrimitiveArray<i64>,
+        array: &Int64Array,
         timezone: &str,
-        seed: Option<&PrimitiveArray<u64>>,
+        seed: Option<&UInt64Array>,
         f: F,
-    ) -> PrimitiveArray<u64> {
+    ) -> UInt64Array {
         let hashes = if let Some(seed) = seed {
             array
                 .iter()
@@ -530,11 +528,11 @@ fn hash_timestamp_with_timezone(
 }
 
 fn hash_decimal(
-    array: &PrimitiveArray<i128>,
-    seed: Option<&PrimitiveArray<u64>>,
+    array: &Decimal128Array,
+    seed: Option<&UInt64Array>,
     hash_function: HashFunctionKind,
     scale: usize,
-) -> PrimitiveArray<u64> {
+) -> UInt64Array {
     // For decimal hashing, we preserve the exact representation including scale
     // Different scales should produce different hashes (123, 123.0, 123.00 are different)
     // We convert to string representation that preserves the scale information
@@ -587,11 +585,11 @@ fn hash_decimal(
     }
 
     fn xxhash<const NULL_HASH: u64, F: Fn(&[u8], u64) -> u64>(
-        array: &PrimitiveArray<i128>,
-        seed: Option<&PrimitiveArray<u64>>,
+        array: &Decimal128Array,
+        seed: Option<&UInt64Array>,
         f: F,
         scale: usize,
-    ) -> PrimitiveArray<u64> {
+    ) -> UInt64Array {
         let hashes = if let Some(seed) = seed {
             array
                 .iter()
@@ -705,9 +703,9 @@ macro_rules! with_match_hashing_primitive_type {(
 
 pub fn hash(
     array: &dyn Array,
-    seed: Option<&PrimitiveArray<u64>>,
+    seed: Option<&UInt64Array>,
     hash_function: HashFunctionKind,
-) -> Result<PrimitiveArray<u64>> {
+) -> Result<UInt64Array> {
     if let Some(s) = seed {
         if s.len() != array.len() {
             return Err(Error::InvalidArgumentError(format!(

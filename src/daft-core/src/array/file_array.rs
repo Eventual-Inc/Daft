@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_io_config::IOConfig;
-use daft_arrow::array::{MutableArray, MutableBinaryArray, MutableUtf8Array};
+use daft_arrow::array::{LargeBinaryBuilder, LargeStringBuilder};
 use daft_schema::{dtype::DataType, field::Field, media_type::MediaType};
 
 use crate::{
@@ -63,8 +63,8 @@ where
         name: &str,
         iter: I,
     ) -> DaftResult<Self> {
-        let mut io_conf_arr = MutableBinaryArray::<i64>::new();
-        let mut urls_arr = MutableUtf8Array::<i64>::new();
+        let mut io_conf_arr = LargeBinaryBuilder::new();
+        let mut urls_arr = LargeStringBuilder::new();
 
         for value in iter {
             let value = value?;

@@ -170,7 +170,7 @@ impl ListArray {
 
     pub fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
         let arrow_dtype = self.data_type().to_arrow().unwrap();
-        Box::new(daft_arrow::array::ListArray::new(
+        Box::new(daft_arrow::array::LargeListArray::new(
             arrow_dtype,
             self.offsets().clone(),
             self.flat_child.to_arrow(),

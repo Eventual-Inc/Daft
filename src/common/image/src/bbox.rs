@@ -10,10 +10,10 @@ impl BBox {
             .unwrap()
             .iter();
         Self(
-            *iter.next().unwrap().unwrap(),
-            *iter.next().unwrap().unwrap(),
-            *iter.next().unwrap().unwrap(),
-            *iter.next().unwrap().unwrap(),
+            iter.next().unwrap().unwrap(),
+            iter.next().unwrap().unwrap(),
+            iter.next().unwrap().unwrap(),
+            iter.next().unwrap().unwrap(),
         )
     }
 }

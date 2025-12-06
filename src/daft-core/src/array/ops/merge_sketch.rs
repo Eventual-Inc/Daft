@@ -10,7 +10,7 @@ impl DaftMergeSketchAggable for &StructArray {
     type Output = DaftResult<StructArray>;
 
     fn merge_sketch(&self) -> Self::Output {
-        let sketches_array = daft_sketch::from_arrow2(self.to_arrow())?;
+        let sketches_array = daft_sketch::from_arrow(self.to_arrow())?;
         let sketch =
             sketches_array
                 .into_iter()
@@ -24,12 +24,12 @@ impl DaftMergeSketchAggable for &StructArray {
                         Ok(Some(acc))
                     }
                 })?;
-        let arrow_array = daft_sketch::into_arrow2(vec![sketch]);
+        let arrow_array = daft_sketch::into_arrow(vec![sketch]);
 
         StructArray::from_arrow(
             Field::new(
                 &self.field.name,
-                DataType::from(&*daft_sketch::ARROW2_DDSKETCH_DTYPE),
+                DataType::from(&*daft_sketch::ARROW_DDSKETCH_DTYPE),
             )
             .into(),
             arrow_array,
@@ -37,7 +37,7 @@ impl DaftMergeSketchAggable for &StructArray {
     }
 
     fn grouped_merge_sketch(&self, groups: &GroupIndices) -> Self::Output {
-        let sketches_array = daft_sketch::from_arrow2(self.to_arrow())?;
+        let sketches_array = daft_sketch::from_arrow(self.to_arrow())?;
 
         let sketch_per_group = groups
             .iter()
@@ -62,12 +62,12 @@ impl DaftMergeSketchAggable for &StructArray {
             })
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let arrow_array = daft_sketch::into_arrow2(sketch_per_group);
+        let arrow_array = daft_sketch::into_arrow(sketch_per_group);
 
         StructArray::from_arrow(
             Field::new(
                 &self.field.name,
-                DataType::from(&*daft_sketch::ARROW2_DDSKETCH_DTYPE),
+                DataType::from(&*daft_sketch::ARROW_DDSKETCH_DTYPE),
             )
             .into(),
             arrow_array,

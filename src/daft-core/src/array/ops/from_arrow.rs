@@ -101,7 +101,7 @@ impl FromArrow for ListArray {
 
                 let arrow_arr = arrow_arr
                     .as_any()
-                    .downcast_ref::<daft_arrow::array::ListArray<i64>>() // list array with i64 offsets
+                    .downcast_ref::<daft_arrow::array::LargeListArray>() // list array with i64 offsets
                     .unwrap();
 
                 let arrow_child_array = arrow_arr.values();
@@ -239,8 +239,8 @@ impl FromArrow for PythonArray {
 
         let physical_arrow_array = physical_arrow_array
             .as_any()
-            .downcast_ref::<daft_arrow::array::BinaryArray<i64>>() // list array with i64 offsets
-            .expect("PythonArray::from_arrow: Failed to downcast to BinaryArray<i64>");
+            .downcast_ref::<daft_arrow::array::LargeBinaryArray>() // list array with i64 offsets
+            .expect("PythonArray::from_arrow: Failed to downcast to LargeBinaryArray");
 
         Self::from_iter_pickled(&field.name, physical_arrow_array.iter())
     }

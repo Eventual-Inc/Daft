@@ -2,21 +2,20 @@ use std::{cmp::Ordering, iter::zip};
 
 use daft_arrow::{
     array::{
-        Array, BinaryArray, BooleanArray, FixedSizeBinaryArray, PrimitiveArray, Utf8Array,
-        ord::{DynComparator, build_compare},
+        Array, GenericBinaryArray, BooleanArray, FixedSizeBinaryArray, GenericStringArray, PrimitiveArray, UInt64Array, ArrowPrimitiveType,
+        ord::{DynComparator, build_compare}, OffsetSizeTrait
     },
     datatypes::{DataType, PhysicalType},
     error::{Error, Result},
-    types::{NativeType, Offset},
 };
 use num_traits::Float;
 
 #[allow(clippy::eq_op)]
-fn search_sorted_primitive_array<T: NativeType + PartialOrd>(
+fn search_sorted_primitive_array<T: ArrowPrimitiveType + PartialOrd>(
     sorted_array: &PrimitiveArray<T>,
     keys: &PrimitiveArray<T>,
     input_reversed: bool,
-) -> PrimitiveArray<u64>
+) -> UInt64Array
 where {
     let array_size = sorted_array.len();
 
@@ -79,11 +78,11 @@ where {
     PrimitiveArray::<u64>::new(DataType::UInt64, results.into(), None)
 }
 
-fn search_sorted_utf_array<O: Offset>(
-    sorted_array: &Utf8Array<O>,
-    keys: &Utf8Array<O>,
+fn search_sorted_utf_array<O: OffsetSizeTrait>(
+    sorted_array: &GenericStringArray<O>,
+    keys: &GenericStringArray<O>,
     input_reversed: bool,
-) -> PrimitiveArray<u64> {
+) -> UInt64Array {
     let array_size = sorted_array.len();
     let mut left = 0_usize;
     let mut right = array_size;
@@ -146,7 +145,7 @@ fn search_sorted_boolean_array(
     sorted_array: &BooleanArray,
     keys: &BooleanArray,
     input_reversed: bool,
-) -> PrimitiveArray<u64> {
+) -> UInt64Array {
     let array_size = sorted_array.len();
     let mut left = 0_usize;
     let mut right = array_size;
@@ -217,11 +216,11 @@ fn search_sorted_boolean_array(
     PrimitiveArray::<u64>::new(DataType::UInt64, results.into(), None)
 }
 
-fn search_sorted_binary_array<O: Offset>(
-    sorted_array: &BinaryArray<O>,
-    keys: &BinaryArray<O>,
+fn search_sorted_binary_array<O: OffsetSizeTrait>(
+    sorted_array: &GenericBinaryArray<O>,
+    keys: &GenericBinaryArray<O>,
     input_reversed: bool,
-) -> PrimitiveArray<u64> {
+) -> UInt64Array {
     let array_size = sorted_array.len();
     let mut left = 0_usize;
     let mut right = array_size;
@@ -284,7 +283,7 @@ fn search_sorted_fixed_size_binary_array(
     sorted_array: &FixedSizeBinaryArray,
     keys: &FixedSizeBinaryArray,
     input_reversed: bool,
-) -> PrimitiveArray<u64> {
+) -> UInt64Array {
     let array_size = sorted_array.len();
     let mut left = 0_usize;
     let mut right = array_size;
@@ -535,7 +534,7 @@ pub fn search_sorted_multi_array(
     sorted_arrays: &Vec<&dyn Array>,
     key_arrays: &Vec<&dyn Array>,
     input_reversed: &Vec<bool>,
-) -> Result<PrimitiveArray<u64>> {
+) -> Result<UInt64Array> {
     if sorted_arrays.is_empty() || key_arrays.is_empty() {
         return Err(Error::InvalidArgumentError(
             "Passed in empty number of columns".to_string(),
@@ -597,8 +596,7 @@ pub fn search_sorted_multi_array(
         }
         results.push(left.try_into().unwrap());
     }
-    Ok(PrimitiveArray::<u64>::new(
-        DataType::UInt64,
+    Ok(UInt64Array::new(
         results.into(),
         None,
     ))
@@ -608,7 +606,7 @@ pub fn search_sorted(
     sorted_array: &dyn Array,
     keys: &dyn Array,
     input_reversed: bool,
-) -> Result<PrimitiveArray<u64>> {
+) -> Result<UInt64Array> {
     if sorted_array.data_type() != keys.data_type() {
         let error_string = format!(
             "sorted array data type does not match keys data type: {:?} vs {:?}",

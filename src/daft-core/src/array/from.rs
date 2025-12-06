@@ -29,15 +29,15 @@ impl From<(&str, Box<daft_arrow::array::NullArray>)> for NullArray {
     }
 }
 
-impl From<(&str, Box<daft_arrow::array::Utf8Array<i64>>)> for Utf8Array {
-    fn from(item: (&str, Box<daft_arrow::array::Utf8Array<i64>>)) -> Self {
+impl From<(&str, Box<daft_arrow::array::LargeStringArray>)> for Utf8Array {
+    fn from(item: (&str, Box<daft_arrow::array::LargeStringArray>)) -> Self {
         let (name, array) = item;
         Self::new(Field::new(name, DataType::Utf8).into(), array).unwrap()
     }
 }
 
-impl From<(&str, Box<daft_arrow::array::BinaryArray<i64>>)> for BinaryArray {
-    fn from(item: (&str, Box<daft_arrow::array::BinaryArray<i64>>)) -> Self {
+impl From<(&str, Box<daft_arrow::array::LargeBinaryArray>)> for BinaryArray {
+    fn from(item: (&str, Box<daft_arrow::array::LargeBinaryArray>)) -> Self {
         let (name, array) = item;
         Self::new(Field::new(name, DataType::Binary).into(), array).unwrap()
     }
@@ -132,7 +132,6 @@ impl From<(&str, daft_arrow::bitmap::Bitmap)> for BooleanArray {
         Self::new(
             Field::new(name, DataType::Boolean).into(),
             Box::new(daft_arrow::array::BooleanArray::new(
-                daft_arrow::datatypes::DataType::Boolean,
                 bitmap,
                 None,
             )),
@@ -161,7 +160,7 @@ impl From<(&str, Vec<daft_arrow::types::months_days_ns>)> for IntervalArray {
 impl<T: AsRef<str>> From<(&str, &[T])> for DataArray<Utf8Type> {
     fn from(item: (&str, &[T])) -> Self {
         let (name, slice) = item;
-        let arrow_array = Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(slice));
+        let arrow_array = Box::new(daft_arrow::array::LargeStringArray::from_slice(slice));
         Self::new(Field::new(name, DataType::Utf8).into(), arrow_array).unwrap()
     }
 }
@@ -169,7 +168,7 @@ impl<T: AsRef<str>> From<(&str, &[T])> for DataArray<Utf8Type> {
 impl From<(&str, &[u8])> for BinaryArray {
     fn from(item: (&str, &[u8])) -> Self {
         let (name, slice) = item;
-        let arrow_array = Box::new(daft_arrow::array::BinaryArray::<i64>::from_slice([slice]));
+        let arrow_array = Box::new(daft_arrow::array::LargeBinaryArray::from_slice([slice]));
         Self::new(Field::new(name, DataType::Binary).into(), arrow_array).unwrap()
     }
 }
@@ -207,7 +206,7 @@ impl TryFrom<(&str, Vec<u8>, Vec<i64>)> for BinaryArray {
 
         assert_eq!(last_offset, data.len() as i64);
         let arrow_offsets = daft_arrow::offset::OffsetsBuffer::try_from(offsets)?;
-        let bin_array = daft_arrow::array::BinaryArray::<i64>::try_new(
+        let bin_array = daft_arrow::array::LargeBinaryArray::try_new(
             daft_arrow::datatypes::DataType::LargeBinary,
             arrow_offsets,
             data.into(),

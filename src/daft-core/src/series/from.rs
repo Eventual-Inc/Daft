@@ -120,13 +120,14 @@ mod tests {
                     ArrowField::new("value", ArrowDataType::Date32, true),
                 ]),
                 vec![
-                    Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(["key1"])),
+                    Box::new(daft_arrow::array::LargeStringArray::from_slice(["key1"])),
                     daft_arrow::array::Int32Array::from_slice([1])
                         .convert_logical_type(ArrowDataType::Date32),
                 ],
                 None,
             )),
             None,
+            false,
         );
 
         let series = Series::try_from((

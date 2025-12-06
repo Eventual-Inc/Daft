@@ -1,6 +1,6 @@
 use common_error::DaftResult;
 use daft_arrow::{
-    array::{Array, Utf8Array},
+    array::{Array, LargeStringArray},
     offset::OffsetsBuffer,
     types::Index,
 };
@@ -118,11 +118,10 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
 
         let arrow_array = self.as_arrow();
         let new_offsets = OffsetsBuffer::<i64>::try_from(vec![0, *arrow_array.offsets().last()])?;
-        let output = Utf8Array::new(
-            arrow_array.data_type().clone(),
+        let output = LargeStringArray::new(
             new_offsets,
             arrow_array.values().clone(),
-            daft_arrow::buffer::wrap_null_buffer(new_validity),
+            new_validity,
         );
 
         let result_box = Box::new(output);
@@ -132,7 +131,7 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
     fn grouped_concat(&self, groups: &super::GroupIndices) -> Self::Output {
         let arrow_array = self.as_arrow();
         let concat_per_group = if arrow_array.null_count() > 0 {
-            Box::new(Utf8Array::from_trusted_len_iter(groups.iter().map(|g| {
+            Box::new(LargeStringArray::from_trusted_len_iter(groups.iter().map(|g| {
                 let to_concat = g
                     .iter()
                     .filter_map(|index| {
@@ -147,7 +146,7 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
                 }
             })))
         } else {
-            Box::new(Utf8Array::from_trusted_len_values_iter(groups.iter().map(
+            Box::new(LargeStringArray::from_trusted_len_values_iter(groups.iter().map(
                 |g| {
                     g.iter()
                         .map(|index| {

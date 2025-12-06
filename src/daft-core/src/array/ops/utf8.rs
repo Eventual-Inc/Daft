@@ -1,6 +1,6 @@
 use common_error::DaftResult;
 use daft_arrow::{
-    array::BinaryArray as ArrowBinaryArray, datatypes::DataType as ArrowType, offset::Offsets,
+    array::LargeBinaryArray as ArrowBinaryArray, offset::Offsets,
 };
 
 use crate::prelude::{AsArrow, BinaryArray, Utf8Array};
@@ -27,7 +27,6 @@ impl Utf8Array {
         }
         //
         let array = ArrowBinaryArray::new(
-            ArrowType::LargeBinary,
             offsets.into(),
             values.into(),
             validity,

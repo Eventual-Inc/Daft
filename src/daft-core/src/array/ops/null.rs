@@ -25,7 +25,6 @@ where
                 _ => daft_arrow::array::BooleanArray::from_slice(vec![is_null; arrow_array.len()]), // true for is_null and false for not_null
             },
             Some(bitmap) => daft_arrow::array::BooleanArray::new(
-                daft_arrow::datatypes::DataType::Boolean,
                 if is_null { !bitmap } else { bitmap.clone() }, // flip the bitmap for is_null
                 None,
             ),
@@ -78,8 +77,7 @@ impl PythonArray {
         BooleanArray::new(
             Arc::new(Field::new(self.name(), DataType::Boolean)),
             Box::new(daft_arrow::array::BooleanArray::new(
-                daft_arrow::datatypes::DataType::Boolean,
-                daft_arrow::buffer::from_null_buffer(bitmap),
+                bitmap.into_inner(),
                 None,
             )),
         )
@@ -117,12 +115,11 @@ macro_rules! check_nullity_nested_array {
             Some(validity) => Ok(BooleanArray::from((
                 $arr.name(),
                 daft_arrow::array::BooleanArray::new(
-                    daft_arrow::datatypes::DataType::Boolean,
-                    daft_arrow::buffer::from_null_buffer(if $is_null {
+                    (if $is_null {
                         validity.inner().not().into()
                     } else {
                         validity.clone()
-                    }),
+                    }).into_inner(),
                     None,
                 ),
             ))),

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_arrow::{
-    array::{MutablePrimitiveArray, PrimitiveArray},
+    array::{PrimitiveBuilder, PrimitiveArray},
     types::months_days_ns,
 };
 #[cfg(feature = "python")]
@@ -25,7 +25,7 @@ where
         // this is a workaround to prevent overflow issues when dealing with i128 and decimal
         // typical behavior would be the result array would always be Decimal(32, 32)
         let field = field.into();
-        let mut array = MutablePrimitiveArray::<T::Native>::from(field.dtype.to_arrow().unwrap());
+        let mut array = PrimitiveBuilder::<T::Native>::from(field.dtype.to_arrow().unwrap());
         array.extend_trusted_len(iter);
         let data_array: PrimitiveArray<_> = array.into();
         Self::new(field, data_array.boxed()).unwrap()
@@ -38,7 +38,7 @@ where
         // this is a workaround to prevent overflow issues when dealing with i128 and decimal
         // typical behavior would be the result array would always be Decimal(32, 32)
         let field = field.into();
-        let mut array = MutablePrimitiveArray::<T::Native>::from(field.dtype.to_arrow().unwrap());
+        let mut array = PrimitiveBuilder::<T::Native>::from(field.dtype.to_arrow().unwrap());
         array.extend_trusted_len_values(iter);
         let data_array: PrimitiveArray<_> = array.into();
         Self::new(field, data_array.boxed()).unwrap()
@@ -51,7 +51,7 @@ where
     {
         let field = field.into();
         let data_type = field.dtype.to_arrow()?;
-        let mut array = MutablePrimitiveArray::<T::Native>::from(data_type);
+        let mut array = PrimitiveBuilder::<T::Native>::from(data_type);
         let (_, upper_bound) = iter.size_hint();
         if let Some(upper_bound) = upper_bound {
             array.reserve(upper_bound);
@@ -67,7 +67,7 @@ impl Utf8Array {
         name: &str,
         iter: impl daft_arrow::trusted_len::TrustedLen<Item = Option<S>>,
     ) -> Self {
-        let arrow_array = Box::new(daft_arrow::array::Utf8Array::<i64>::from_trusted_len_iter(
+        let arrow_array = Box::new(daft_arrow::array::LargeStringArray::from_trusted_len_iter(
             iter,
         ));
         Self::new(
@@ -84,7 +84,7 @@ impl BinaryArray {
         iter: impl daft_arrow::trusted_len::TrustedLen<Item = Option<S>>,
     ) -> Self {
         let arrow_array =
-            Box::new(daft_arrow::array::BinaryArray::<i64>::from_trusted_len_iter(iter));
+            Box::new(daft_arrow::array::LargeBinaryArray::from_trusted_len_iter(iter));
         Self::new(
             Field::new(name, crate::datatypes::DataType::Binary).into(),
             arrow_array,
@@ -144,7 +144,7 @@ impl Utf8Array {
         iter: impl daft_arrow::trusted_len::TrustedLen<Item = S>,
     ) -> Self {
         let arrow_array =
-            Box::new(daft_arrow::array::Utf8Array::<i64>::from_trusted_len_values_iter(iter));
+            Box::new(daft_arrow::array::LargeStringArray::from_trusted_len_values_iter(iter));
         Self::new(Field::new(name, DataType::Utf8).into(), arrow_array).unwrap()
     }
 }
@@ -155,7 +155,7 @@ impl BinaryArray {
         iter: impl daft_arrow::trusted_len::TrustedLen<Item = S>,
     ) -> Self {
         let arrow_array =
-            Box::new(daft_arrow::array::BinaryArray::<i64>::from_trusted_len_values_iter(iter));
+            Box::new(daft_arrow::array::LargeBinaryArray::from_trusted_len_values_iter(iter));
         Self::new(Field::new(name, DataType::Binary).into(), arrow_array).unwrap()
     }
 }

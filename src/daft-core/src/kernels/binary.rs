@@ -1,14 +1,14 @@
 use common_error::{DaftError, DaftResult};
 use daft_arrow::{
-    array::{BinaryArray, FixedSizeBinaryArray},
+    array::{LargeBinaryArray, FixedSizeBinaryArray},
     buffer::NullBufferBuilder,
     datatypes::DataType,
 };
 
 pub fn add_binary_arrays(
-    lhs: &BinaryArray<i64>,
-    rhs: &BinaryArray<i64>,
-) -> DaftResult<BinaryArray<i64>> {
+    lhs: &LargeBinaryArray,
+    rhs: &LargeBinaryArray,
+) -> DaftResult<LargeBinaryArray> {
     fn add_nullable(lval: Option<&[u8]>, rval: Option<&[u8]>) -> Option<Vec<u8>> {
         if let Some(l) = lval
             && let Some(r) = rval
@@ -23,12 +23,12 @@ pub fn add_binary_arrays(
         let lval = lhs.get(0);
         rhs.iter()
             .map(|rval| add_nullable(lval, rval))
-            .collect::<BinaryArray<i64>>()
+            .collect::<LargeBinaryArray>()
     } else if rhs.len() == 1 {
         let rval = rhs.get(0);
         lhs.iter()
             .map(|lval| add_nullable(lval, rval))
-            .collect::<BinaryArray<i64>>()
+            .collect::<LargeBinaryArray>()
     } else {
         if lhs.len() != rhs.len() {
             return Err(DaftError::ValueError(format!(
@@ -41,7 +41,7 @@ pub fn add_binary_arrays(
         lhs.iter()
             .zip(rhs)
             .map(|(lval, rval)| add_nullable(lval, rval))
-            .collect::<BinaryArray<i64>>()
+            .collect::<LargeBinaryArray>()
     })
 }
 

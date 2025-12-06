@@ -170,7 +170,7 @@ impl DateArray {
                 let year_array = compute::temporal::year(&date_array)?;
                 let month_array = compute::temporal::month(&date_array)?;
                 let day_array = compute::temporal::day(&date_array)?;
-                let date_str: daft_arrow::array::Utf8Array<i64> = year_array
+                let date_str: daft_arrow::array::LargeStringArray = year_array
                     .iter()
                     .zip(month_array.iter())
                     .zip(day_array.iter())
@@ -270,7 +270,7 @@ impl TimestampArray {
                     panic!("Wrong dtype for TimestampArray: {}", self.data_type())
                 };
 
-                let str_array: daft_arrow::array::Utf8Array<i64> = timezone.as_ref().map_or_else(
+                let str_array: daft_arrow::array::LargeStringArray = timezone.as_ref().map_or_else(
                     || {
                         self.as_arrow()
                             .iter()
@@ -340,7 +340,7 @@ impl TimeArray {
             }
             DataType::Utf8 => {
                 let time_array = self.as_arrow();
-                let time_str: daft_arrow::array::Utf8Array<i64> = time_array
+                let time_str: daft_arrow::array::LargeStringArray = time_array
                     .iter()
                     .map(|val| {
                         val.map(|val| {

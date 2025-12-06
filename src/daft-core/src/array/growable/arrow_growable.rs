@@ -17,7 +17,7 @@ pub struct ArrowBackedDataArrayGrowable<
 > {
     name: String,
     dtype: DataType,
-    arrow2_growable: G,
+    arrow_builder: G,
     _phantom: PhantomData<&'a T>,
 }
 
@@ -49,12 +49,12 @@ pub type ArrowNullGrowable<'a> =
 
 impl ArrowNullGrowable<'_> {
     pub fn new(name: &str, dtype: &DataType) -> Self {
-        let arrow2_growable =
+        let arrow_builder =
             daft_arrow::array::growable::GrowableNull::new(dtype.to_arrow().unwrap());
         Self {
             name: name.to_string(),
             dtype: dtype.clone(),
-            arrow2_growable,
+            arrow_builder,
             _phantom: PhantomData,
         }
     }

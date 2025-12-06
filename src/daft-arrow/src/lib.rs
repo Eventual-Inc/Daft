@@ -1,6 +1,8 @@
+pub mod array;
+
 // Re-export arrow2::* modules for centralized access
 pub use arrow2::{
-    array, chunk, compute, datatypes, error, ffi, io, offset, scalar, temporal_conversions,
+    chunk, compute, datatypes, error, ffi, io, offset, scalar, temporal_conversions,
     trusted_len, types,
 };
 

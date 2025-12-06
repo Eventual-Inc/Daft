@@ -3,7 +3,7 @@ use std::{borrow::Borrow, fmt::Write};
 use chrono::{Datelike, Timelike};
 use daft_arrow::{
     array::{
-        Array, MutableArray, MutableBooleanArray, MutableFixedSizeListArray, MutableListArray,
+        Array, MutableArray, BooleanBuilder, MutableFixedSizeListArray, MutableListArray,
         MutableNullArray, MutablePrimitiveArray, MutableStructArray, MutableUtf8Array,
     },
     bitmap::MutableBitmap,
@@ -82,7 +82,7 @@ pub fn allocate_array(f: &Field, length: usize) -> Box<dyn MutableArray> {
         DataType::Float16 => Box::new(MutablePrimitiveArray::<f16>::with_capacity(length)),
         DataType::Float32 => Box::new(MutablePrimitiveArray::<f32>::with_capacity(length)),
         DataType::Float64 => Box::new(MutablePrimitiveArray::<f64>::with_capacity(length)),
-        DataType::Boolean => Box::new(MutableBooleanArray::with_capacity(length)),
+        DataType::Boolean => Box::new(BooleanBuilder::with_capacity(length)),
         DataType::Utf8 => Box::new(MutableUtf8Array::<i32>::with_capacity(length)),
         DataType::LargeUtf8 => Box::new(MutableUtf8Array::<i64>::with_capacity(length)),
         DataType::FixedSizeList(inner, size) => Box::new(MutableFixedSizeListArray::new_from(
@@ -246,7 +246,7 @@ fn deserialize_utf8_into<'a, O: Offset, A: Borrow<BorrowedValue<'a>>>(
 }
 
 fn deserialize_boolean_into<'a, A: Borrow<BorrowedValue<'a>>>(
-    target: &mut MutableBooleanArray,
+    target: &mut BooleanBuilder,
     rows: &[A],
 ) {
     let iter = rows.iter().map(|row| match row.borrow() {

@@ -1,6 +1,6 @@
 use common_error::DaftResult;
 use daft_arrow::{
-    array::{Array, FixedSizeListArray, ListArray, PrimitiveArray, equal, ord::build_compare},
+    array::{Array, FixedSizeListArray, LargeListArray, PrimitiveArray, equal, ord::build_compare},
     datatypes::DataType,
     error::Result,
 };
@@ -39,12 +39,12 @@ fn build_is_equal_list(
 ) -> Box<dyn Fn(usize, usize) -> bool + Send + Sync> {
     let left = left
         .as_any()
-        .downcast_ref::<ListArray<i64>>()
+        .downcast_ref::<LargeListArray>()
         .unwrap()
         .clone();
     let right = right
         .as_any()
-        .downcast_ref::<ListArray<i64>>()
+        .downcast_ref::<LargeListArray>()
         .unwrap()
         .clone();
 

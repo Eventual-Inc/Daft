@@ -95,7 +95,6 @@ where
                 Ok(BooleanArray::from((
                     self.name(),
                     daft_arrow::array::BooleanArray::new(
-                        daft_arrow::datatypes::DataType::Boolean,
                         result_values,
                         None,
                     ),
@@ -112,7 +111,6 @@ where
                     Ok(BooleanArray::from((
                         self.name(),
                         daft_arrow::array::BooleanArray::new(
-                            daft_arrow::datatypes::DataType::Boolean,
                             result_values,
                             None,
                         ),
@@ -130,7 +128,6 @@ where
                     Ok(BooleanArray::from((
                         self.name(),
                         daft_arrow::array::BooleanArray::new(
-                            daft_arrow::datatypes::DataType::Boolean,
                             result_values,
                             None,
                         ),
@@ -429,7 +426,6 @@ where
         BooleanArray::from((
             self.name(),
             daft_arrow::array::BooleanArray::new(
-                daft_arrow::datatypes::DataType::Boolean,
                 final_values,
                 None,
             ),
@@ -659,7 +655,6 @@ impl DaftCompare<&Self> for BooleanArray {
                 Ok(Self::from((
                     self.name(),
                     daft_arrow::array::BooleanArray::new(
-                        daft_arrow::datatypes::DataType::Boolean,
                         result_values,
                         None,
                     ),
@@ -676,7 +671,6 @@ impl DaftCompare<&Self> for BooleanArray {
                     Ok(Self::from((
                         self.name(),
                         daft_arrow::array::BooleanArray::new(
-                            daft_arrow::datatypes::DataType::Boolean,
                             result_values,
                             None,
                         ),
@@ -694,7 +688,6 @@ impl DaftCompare<&Self> for BooleanArray {
                     Ok(Self::from((
                         self.name(),
                         daft_arrow::array::BooleanArray::new(
-                            daft_arrow::datatypes::DataType::Boolean,
                             result_values,
                             None,
                         ),
@@ -774,7 +767,6 @@ impl DaftCompare<bool> for BooleanArray {
         Ok(Self::from((
             self.name(),
             daft_arrow::array::BooleanArray::new(
-                daft_arrow::datatypes::DataType::Boolean,
                 final_values,
                 None,
             ),
@@ -787,7 +779,6 @@ impl Not for &BooleanArray {
     fn not(self) -> Self::Output {
         let new_bitmap = self.as_arrow().values().not();
         let arrow_array = daft_arrow::array::BooleanArray::new(
-            daft_arrow::datatypes::DataType::Boolean,
             new_bitmap,
             self.as_arrow().validity().cloned(),
         );
@@ -812,7 +803,6 @@ impl DaftLogical<&Self> for BooleanArray {
             BooleanArray::from((
                 name,
                 daft_arrow::array::BooleanArray::new(
-                    daft_arrow::datatypes::DataType::Boolean,
                     values.clone(),
                     Some(new_validity),
                 ),
@@ -842,7 +832,6 @@ impl DaftLogical<&Self> for BooleanArray {
                 Ok(Self::from((
                     self.name(),
                     daft_arrow::array::BooleanArray::new(
-                        daft_arrow::datatypes::DataType::Boolean,
                         result_bitmap,
                         validity,
                     ),
@@ -885,7 +874,6 @@ impl DaftLogical<&Self> for BooleanArray {
             BooleanArray::from((
                 name,
                 daft_arrow::array::BooleanArray::new(
-                    daft_arrow::datatypes::DataType::Boolean,
                     values.clone(),
                     Some(new_validity),
                 ),
@@ -915,7 +903,6 @@ impl DaftLogical<&Self> for BooleanArray {
                 Ok(Self::from((
                     self.name(),
                     daft_arrow::array::BooleanArray::new(
-                        daft_arrow::datatypes::DataType::Boolean,
                         result_bitmap,
                         validity,
                     ),
@@ -954,7 +941,6 @@ impl DaftLogical<&Self> for BooleanArray {
                 Ok(Self::from((
                     self.name(),
                     daft_arrow::array::BooleanArray::new(
-                        daft_arrow::datatypes::DataType::Boolean,
                         result_bitmap,
                         validity,
                     ),
@@ -1028,7 +1014,6 @@ impl DaftLogical<bool> for BooleanArray {
             Ok(Self::from((
                 self.name(),
                 daft_arrow::array::BooleanArray::new(
-                    daft_arrow::datatypes::DataType::Boolean,
                     daft_arrow::bitmap::Bitmap::new_zeroed(self.len()),
                     None, // false & x is always valid false for any x
                 ),
@@ -1041,7 +1026,6 @@ impl DaftLogical<bool> for BooleanArray {
             Ok(Self::from((
                 self.name(),
                 daft_arrow::array::BooleanArray::new(
-                    daft_arrow::datatypes::DataType::Boolean,
                     daft_arrow::bitmap::Bitmap::new_trued(self.len()),
                     None, // true | x is always valid true for any x
                 ),
@@ -1326,7 +1310,6 @@ impl DaftCompare<&Self> for Utf8Array {
                 Ok(BooleanArray::from((
                     self.name(),
                     daft_arrow::array::BooleanArray::new(
-                        daft_arrow::datatypes::DataType::Boolean,
                         result_values,
                         None,
                     ),
@@ -1343,7 +1326,6 @@ impl DaftCompare<&Self> for Utf8Array {
                     Ok(BooleanArray::from((
                         self.name(),
                         daft_arrow::array::BooleanArray::new(
-                            daft_arrow::datatypes::DataType::Boolean,
                             result_values,
                             None,
                         ),
@@ -1361,7 +1343,6 @@ impl DaftCompare<&Self> for Utf8Array {
                     Ok(BooleanArray::from((
                         self.name(),
                         daft_arrow::array::BooleanArray::new(
-                            daft_arrow::datatypes::DataType::Boolean,
                             result_values,
                             None,
                         ),
@@ -1443,7 +1424,6 @@ impl DaftCompare<&str> for Utf8Array {
         Ok(BooleanArray::from((
             self.name(),
             daft_arrow::array::BooleanArray::new(
-                daft_arrow::datatypes::DataType::Boolean,
                 final_values,
                 None,
             ),
@@ -1721,7 +1701,6 @@ impl DaftCompare<&Self> for BinaryArray {
                 Ok(BooleanArray::from((
                     self.name(),
                     daft_arrow::array::BooleanArray::new(
-                        daft_arrow::datatypes::DataType::Boolean,
                         result_values,
                         None,
                     ),
@@ -1738,7 +1717,6 @@ impl DaftCompare<&Self> for BinaryArray {
                     Ok(BooleanArray::from((
                         self.name(),
                         daft_arrow::array::BooleanArray::new(
-                            daft_arrow::datatypes::DataType::Boolean,
                             result_values,
                             None,
                         ),
@@ -1756,7 +1734,6 @@ impl DaftCompare<&Self> for BinaryArray {
                     Ok(BooleanArray::from((
                         self.name(),
                         daft_arrow::array::BooleanArray::new(
-                            daft_arrow::datatypes::DataType::Boolean,
                             result_values,
                             None,
                         ),
@@ -1838,7 +1815,6 @@ impl DaftCompare<&[u8]> for BinaryArray {
         Ok(BooleanArray::from((
             self.name(),
             daft_arrow::array::BooleanArray::new(
-                daft_arrow::datatypes::DataType::Boolean,
                 final_values,
                 None,
             ),
@@ -1870,9 +1846,8 @@ where
     BooleanArray::from_arrow(
         Field::new(lhs.name(), DataType::Boolean).into(),
         Box::new(daft_arrow::array::BooleanArray::new(
-            daft_arrow::datatypes::DataType::Boolean,
             values,
-            daft_arrow::buffer::wrap_null_buffer(validity),
+            validity,
         )),
     )
 }
@@ -1894,7 +1869,6 @@ where
     BooleanArray::from_arrow(
         Field::new(lhs.name(), DataType::Boolean).into(),
         Box::new(daft_arrow::array::BooleanArray::new(
-            daft_arrow::datatypes::DataType::Boolean,
             values,
             validity,
         )),
@@ -2134,7 +2108,6 @@ impl DaftCompare<&Self> for FixedSizeBinaryArray {
                 Ok(BooleanArray::from((
                     self.name(),
                     daft_arrow::array::BooleanArray::new(
-                        daft_arrow::datatypes::DataType::Boolean,
                         result_values,
                         None,
                     ),
@@ -2151,7 +2124,6 @@ impl DaftCompare<&Self> for FixedSizeBinaryArray {
                     Ok(BooleanArray::from((
                         self.name(),
                         daft_arrow::array::BooleanArray::new(
-                            daft_arrow::datatypes::DataType::Boolean,
                             result_values,
                             None,
                         ),
@@ -2169,7 +2141,6 @@ impl DaftCompare<&Self> for FixedSizeBinaryArray {
                     Ok(BooleanArray::from((
                         self.name(),
                         daft_arrow::array::BooleanArray::new(
-                            daft_arrow::datatypes::DataType::Boolean,
                             result_values,
                             None,
                         ),
@@ -2227,7 +2198,6 @@ impl DaftCompare<&[u8]> for FixedSizeBinaryArray {
         Ok(BooleanArray::from((
             self.name(),
             daft_arrow::array::BooleanArray::new(
-                daft_arrow::datatypes::DataType::Boolean,
                 final_values,
                 None,
             ),

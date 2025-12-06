@@ -182,7 +182,7 @@ pub fn binary_with_nulls<T, F>(
     op: F,
 ) -> PrimitiveArray<T>
 where
-    T: daft_arrow::types::NativeType,
+    T: daft_arrow::array::ArrowPrimitiveType,
     F: Fn(T, T) -> T,
 {
     assert!(lhs.len() == rhs.len(), "expected same length");
@@ -196,7 +196,7 @@ where
 
 fn rem_with_nulls<T>(lhs: &PrimitiveArray<T>, rhs: &PrimitiveArray<T>) -> PrimitiveArray<T>
 where
-    T: daft_arrow::types::NativeType + std::ops::Rem<Output = T>,
+    T: daft_arrow::array::ArrowPrimitiveType + std::ops::Rem<Output = T>,
 {
     binary_with_nulls(lhs, rhs, |a, b| a % b)
 }
@@ -251,7 +251,7 @@ where
 
 fn div_with_nulls<T>(lhs: &PrimitiveArray<T>, rhs: &PrimitiveArray<T>) -> PrimitiveArray<T>
 where
-    T: daft_arrow::types::NativeType + Div<Output = T>,
+    T: daft_arrow::array::ArrowPrimitiveType + Div<Output = T>,
 {
     binary_with_nulls(lhs, rhs, |a, b| a / b)
 }
