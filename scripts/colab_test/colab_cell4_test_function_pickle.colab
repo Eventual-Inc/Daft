@@ -1,0 +1,28 @@
+# Test function pickling WITH fix - runs after cell 3 (monkey patch already applied)
+import daft
+import daft.pickle
+
+print("Testing function pickling WITH fix...")
+
+# Test 1: Direct pickle of function with Pydantic return type annotation
+print("Test 1: dumps(analyze) - function without decorator")
+try:
+    def analyze(text: str) -> Result:
+        return Result(answer=text == "hello")
+
+    data = daft.pickle.dumps(analyze)
+    print("  ✓ SUCCESS")
+except Exception as e:
+    print(f"  ✗ FAILED: {e}")
+
+# Test 2: @daft.func decorated function with Pydantic return type
+print("Test 2: dumps(@daft.func analyze) - decorated function")
+try:
+    @daft.func
+    def analyze_decorated(text: str) -> Result:
+        return Result(answer=text == "hello")
+
+    data = daft.pickle.dumps(analyze_decorated)
+    print("  ✓ SUCCESS")
+except Exception as e:
+    print(f"  ✗ FAILED: {e}")
