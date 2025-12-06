@@ -3,10 +3,7 @@ use std::sync::Arc;
 use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
 use common_runtime::get_compute_pool_num_threads;
-use daft_core::{
-    prelude::{SchemaRef, UInt64Array},
-    series::IntoSeries,
-};
+use daft_core::prelude::{SchemaRef, UInt64Array};
 use daft_local_plan::SamplingMethod;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -157,7 +154,7 @@ fn collect_sample_rows(rows: Vec<SampleRow>) -> DaftResult<Vec<RecordBatch>> {
 
     let mut taken_batches = Vec::with_capacity(rows_needed_per_batch.len());
     for (_, (record_batch, rows_needed)) in rows_needed_per_batch {
-        let taken = record_batch.take(&UInt64Array::from(("idx", rows_needed)).into_series())?;
+        let taken = record_batch.take(&UInt64Array::from(("idx", rows_needed)))?;
         taken_batches.push(taken);
     }
     Ok(taken_batches)

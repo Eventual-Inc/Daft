@@ -5,7 +5,7 @@ use daft_core::{
     array::ops::as_arrow::AsArrow,
     count_mode::CountMode,
     datatypes::{DataType, UInt64Array},
-    series::{IntoSeries, Series},
+    series::Series,
 };
 use daft_dsl::{Expr, expr::bound_expr::BoundExpr, functions::scalar::ScalarFn};
 use daft_functions_list::SeriesListExtension;
@@ -83,7 +83,7 @@ impl RecordBatch {
             .collect::<DaftResult<Vec<_>>>()?;
 
         let capacity_expected = exploded_columns.first().unwrap().len();
-        let take_idx = lengths_to_indices(&first_len, capacity_expected)?.into_series();
+        let take_idx = lengths_to_indices(&first_len, capacity_expected)?;
 
         let mut new_series = Arc::unwrap_or_clone(self.columns.clone());
 

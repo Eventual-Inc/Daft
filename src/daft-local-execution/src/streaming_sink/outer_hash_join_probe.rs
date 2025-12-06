@@ -250,8 +250,8 @@ impl OuterHashJoinProbeSink {
 
                 let build_side_table = build_side_growable.build()?;
                 let probe_side_table = {
-                    let indices_as_series = UInt64Array::from(("", probe_side_idxs)).into_series();
-                    input_table.take(&indices_as_series)?
+                    let indices_arr = UInt64Array::from(("", probe_side_idxs));
+                    input_table.take(&indices_arr)?
                 };
 
                 let final_table = if join_type == JoinType::Left {
@@ -322,8 +322,8 @@ impl OuterHashJoinProbeSink {
                 let build_side_table = build_side_growable.build()?;
 
                 let probe_side_table = {
-                    let indices_as_series = UInt64Array::from(("", probe_side_idxs)).into_series();
-                    input_table.take(&indices_as_series)?
+                    let indices_arr = UInt64Array::from(("", probe_side_idxs));
+                    input_table.take(&indices_arr)?
                 };
 
                 let final_table = if join_type == JoinType::Left {
@@ -399,8 +399,8 @@ impl OuterHashJoinProbeSink {
                 let build_side_table = build_side_growable.build()?;
 
                 let probe_side_table = {
-                    let indices_as_series = UInt64Array::from(("", probe_side_idxs)).into_series();
-                    input_table.take(&indices_as_series)?
+                    let indices_arr = UInt64Array::from(("", probe_side_idxs));
+                    input_table.take(&indices_arr)?
                 };
 
                 #[allow(deprecated)]

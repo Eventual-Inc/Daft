@@ -205,7 +205,8 @@ impl PyMicroPartition {
 
     pub fn take(&self, py: Python, idx: &PySeries) -> PyResult<Self> {
         py.detach(|| {
-            let taken = self.inner.take(&idx.series)?;
+            let idx_arr = idx.series.u64()?;
+            let taken = self.inner.take(idx_arr)?;
             let mp = MicroPartition::new_loaded(
                 taken.schema.clone(),
                 Arc::new(vec![taken]),

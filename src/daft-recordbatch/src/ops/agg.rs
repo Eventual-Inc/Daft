@@ -54,8 +54,8 @@ impl RecordBatch {
 
         // Table with the aggregated (deduplicated) group keys.
         let groupkeys_table = {
-            let indices_as_series = UInt64Array::from(("", groupkey_indices)).into_series();
-            groupby_table.take(&indices_as_series)?
+            let indices_as_arr = UInt64Array::from(("", groupkey_indices));
+            groupby_table.take(&indices_as_arr)?
         };
 
         // Take fast path short circuit if there is only 1 group
@@ -130,8 +130,8 @@ impl RecordBatch {
         } else if groupvals_indices.len() == 1 {
             let grouped_col = udf.call_udf(evaluated_inputs.as_slice())?;
             let groupkeys_table = {
-                let indices_as_series = UInt64Array::from(("", groupkey_indices)).into_series();
-                groupby_table.take(&indices_as_series)?
+                let indices_as_arr = UInt64Array::from(("", groupkey_indices));
+                groupby_table.take(&indices_as_arr)?
             };
             (groupkeys_table, grouped_col)
         } else {
@@ -141,13 +141,12 @@ impl RecordBatch {
                 .map(|(groupkey_index, groupval_indices)| {
                     let evaluated_grouped_col = {
                         // Convert group indices to Series
-                        let indices_as_series =
-                            UInt64Array::from(("", groupval_indices.clone())).into_series();
+                        let indices_as_arr = UInt64Array::from(("", groupval_indices.clone()));
 
                         // Take each input Series by the group indices
                         let input_groups = evaluated_inputs
                             .iter()
-                            .map(|s| s.take(&indices_as_series))
+                            .map(|s| s.take(&indices_as_arr))
                             .collect::<DaftResult<Vec<_>>>()?;
 
                         // Call the UDF on the grouped inputs
@@ -156,11 +155,11 @@ impl RecordBatch {
 
                     let broadcasted_groupkeys_table = {
                         // Convert groupkey indices to Series
-                        let groupkey_indices_as_series =
-                            UInt64Array::from(("", vec![*groupkey_index])).into_series();
+                        let groupkey_indices_as_arr =
+                            UInt64Array::from(("", vec![*groupkey_index]));
 
                         // Take the group keys by the groupkey indices
-                        let groupkeys_table = groupby_table.take(&groupkey_indices_as_series)?;
+                        let groupkeys_table = groupby_table.take(&groupkey_indices_as_arr)?;
 
                         // Broadcast the group keys to the length of the grouped column, because output of UDF can be more than one row
                         let broadcasted_groupkeys = groupkeys_table
@@ -202,7 +201,7 @@ impl RecordBatch {
 
         let dedup_table = self.eval_expression_list(columns)?;
         let unique_indices = dedup_table.make_unique_idxs()?;
-        let indices_as_series = UInt64Array::from(("", unique_indices)).into_series();
-        self.take(&indices_as_series)
+        let indices_as_arr = UInt64Array::from(("", unique_indices));
+        self.take(&indices_as_arr)
     }
 }

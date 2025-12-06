@@ -63,7 +63,8 @@ impl PyRecordBatch {
     }
 
     pub fn take(&self, py: Python, idx: &PySeries) -> PyResult<Self> {
-        py.detach(|| Ok(self.record_batch.take(&idx.series)?.into()))
+        let idx = idx.series.u64()?;
+        py.detach(|| Ok(self.record_batch.take(idx)?.into()))
     }
 
     pub fn filter(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {

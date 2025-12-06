@@ -168,10 +168,9 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
                             let mut partitions = partitionvals_indices
                                 .iter()
                                 .map(|indices| {
-                                    let indices_series =
-                                        UInt64Array::from(("indices", indices.clone()))
-                                            .into_series();
-                                    input_data.take(&indices_series).unwrap()
+                                    let indices_arr =
+                                        UInt64Array::from(("indices", indices.clone()));
+                                    input_data.take(&indices_arr).unwrap()
                                 })
                                 .collect::<Vec<_>>();
 

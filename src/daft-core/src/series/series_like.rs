@@ -7,6 +7,7 @@ use crate::{
     array::ops::GroupIndices,
     datatypes::{BooleanArray, DataType, Field},
     lit::Literal,
+    prelude::UInt64Array,
 };
 pub trait SeriesLike: Send + Sync + Any + std::fmt::Debug {
     #[allow(clippy::wrong_self_convention)]
@@ -35,7 +36,7 @@ pub trait SeriesLike: Send + Sync + Any + std::fmt::Debug {
     fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Series>;
     fn head(&self, num: usize) -> DaftResult<Series>;
     fn slice(&self, start: usize, end: usize) -> DaftResult<Series>;
-    fn take(&self, idx: &Series) -> DaftResult<Series>;
+    fn take(&self, idx: &UInt64Array) -> DaftResult<Series>;
     fn str_value(&self, idx: usize) -> DaftResult<String>;
     fn get_lit(&self, idx: usize) -> Literal;
 }

@@ -6,14 +6,13 @@ use daft_arrow::{
 use super::common;
 
 /// Unstable sort of indices.
-pub fn indices_sorted_unstable_by<I, T, F>(
+pub fn indices_sorted_unstable_by<T, F>(
     array: &PrimitiveArray<T>,
     cmp: F,
     descending: bool,
     nulls_first: bool,
-) -> PrimitiveArray<I>
+) -> PrimitiveArray<u64>
 where
-    I: Index,
     T: NativeType,
     F: Fn(&T, &T) -> std::cmp::Ordering,
 {
@@ -22,7 +21,7 @@ where
     unsafe {
         common::idx_sort(
             array.validity(),
-            |l: &I, r: &I| {
+            |l: &u64, r: &u64| {
                 cmp(
                     values.get_unchecked((*l).to_usize()),
                     values.get_unchecked((*r).to_usize()),
