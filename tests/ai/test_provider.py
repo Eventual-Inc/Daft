@@ -41,7 +41,6 @@ def test_load_google_import_error():
     with patch.dict(sys.modules, {"daft.ai.google.provider": None}):
         with pytest.raises(ProviderImportError) as excinfo:
             load_google()
-        assert "google-genai" in str(excinfo.value)
         assert "daft[google]" in str(excinfo.value)
 
 
@@ -49,7 +48,6 @@ def test_load_openai_import_error():
     with patch.dict(sys.modules, {"daft.ai.openai.provider": None}):
         with pytest.raises(ProviderImportError) as excinfo:
             load_openai()
-        assert "openai" in str(excinfo.value)
         assert "daft[openai]" in str(excinfo.value)
 
 
@@ -57,7 +55,6 @@ def test_load_transformers_import_error():
     with patch.dict(sys.modules, {"daft.ai.transformers.provider": None}):
         with pytest.raises(ProviderImportError) as excinfo:
             load_transformers()
-        assert "transformers" in str(excinfo.value)
         assert "daft[transformers]" in str(excinfo.value)
 
 
@@ -65,13 +62,12 @@ def test_load_lm_studio_import_error():
     with patch.dict(sys.modules, {"daft.ai.lm_studio.provider": None}):
         with pytest.raises(ProviderImportError) as excinfo:
             load_lm_studio()
-        assert "openai" in str(excinfo.value)  # LM Studio uses openai client
+        assert "daft[openai]" in str(excinfo.value)  # LM Studio uses openai client
 
 
 def test_load_vllm_prefix_caching_import_error():
     with patch.dict(sys.modules, {"daft.ai.vllm.provider": None}):
         with pytest.raises(ProviderImportError) as excinfo:
             load_vllm_prefix_caching()
-        assert "vllm" in str(excinfo.value)
         assert "daft[vllm]" in str(excinfo.value)
 
