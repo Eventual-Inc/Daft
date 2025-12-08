@@ -1,6 +1,7 @@
 use std::{fmt::Display, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
+use common_metrics::MetricsCollector;
 use daft_core::prelude::*;
 use itertools::Itertools;
 use opentelemetry::logs::{AnyValue, LogRecord, Logger, LoggerProvider};
@@ -9,11 +10,10 @@ use pyo3::{PyErr, Python, prelude::*};
 use serde::{Deserialize, Serialize};
 
 #[cfg(feature = "python")]
-use crate::python_udf::retry_after_ms_from_error;
+use crate::python_udf::retry_with_backoff;
 use crate::{
     Expr, ExprRef,
     functions::{python::RuntimePyObject, scalar::ScalarFn},
-    operator_metrics::MetricsCollector,
     python_udf::PyScalarFn,
 };
 
@@ -158,38 +158,21 @@ impl RowWisePyFn {
         }
 
         let max_retries = self.max_retries.unwrap_or(0);
-
         let name = args[0].name();
 
-        // TODO(cory): consider exposing delay and max_delay to users.
-        let mut delay_ms: u64 = 100; // Start with 100 ms
-        const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
+        let result = crate::python_udf::retry::retry_with_backoff_async(
+            || async { self.call_async_batch_once(args, num_rows, name).await },
+            max_retries,
+        )
+        .await;
 
-        let mut result_series = self
-            .call_async_batch_once(args, num_rows, name, metrics)
-            .await;
-
-        for _attempt in 0..max_retries {
-            if result_series.is_ok() {
-                break;
-            }
-
-            if let Err(err) = &result_series
-                && let Some(retry_after_ms) = retry_after_ms_from_error(err)
-            {
-                delay_ms = retry_after_ms.min(MAX_DELAY_MS).max(delay_ms);
-            }
-
-            tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
-            delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
-
-            result_series = self
-                .call_async_batch_once(args, num_rows, name, metrics)
-                .await;
+        // Collect metrics from the final result (whether success or failure)
+        if let Ok((_, operator_metrics)) = &result {
+            crate::python_udf::collect_operator_metrics(operator_metrics, metrics);
         }
-        let name = args[0].name();
 
-        let result_series = result_series
+        let result_series = result
+            .map(|(series, _)| series)
             .map_err(DaftError::from)
             .and_then(|s| Ok(s.cast(&self.return_dtype)?.rename(name)));
 
@@ -301,72 +284,37 @@ impl RowWisePyFn {
         let name = args[0].name();
         let on_error = self.on_error;
         let max_retries = self.max_retries.unwrap_or(0);
-        let delay_ms: u64 = 100; // Start with 100 ms
-        const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
 
-        fn retry<F: FnMut() -> DaftResult<Literal>>(
+        fn handle_retry_result(
             py: Python,
-            mut func: F,
-            max_retries: usize,
+            result: DaftResult<Literal>,
             on_error: OnError,
-            mut delay_ms: u64,
         ) -> DaftResult<Literal> {
-            let mut res = Ok(Literal::Null);
+            match result {
+                Ok(literal) => Ok(literal),
+                Err(e) => match on_error {
+                    OnError::Raise => Err(e),
+                    OnError::Log => {
+                        let lg = common_tracing::GLOBAL_LOGGER_PROVIDER.lock().unwrap();
+                        if let Some(logger_provider) = lg.as_ref() {
+                            let logger = logger_provider.logger("python-udf-error");
+                            let mut log_record = logger.create_log_record();
 
-            for attempt in 0..=max_retries {
-                match func() {
-                    Ok(result) => {
-                        res = Ok(result);
-                        break;
-                    }
-                    Err(e) => {
-                        if attempt >= max_retries {
-                            match on_error {
-                                OnError::Raise => res = Err(e),
-                                OnError::Log => {
-                                    let lg = common_tracing::GLOBAL_LOGGER_PROVIDER.lock().unwrap();
-                                    if let Some(logger_provider) = lg.as_ref() {
-                                        let logger = logger_provider.logger("python-udf-error");
-                                        let mut log_record = logger.create_log_record();
-
-                                        if let DaftError::PyO3Error(py_err) = &e {
-                                            RowWisePyFn::capture_exception_details(
-                                                py,
-                                                py_err,
-                                                &mut log_record,
-                                            );
-                                        } else {
-                                            log_record.set_body(format!("{e}").into());
-                                        }
-
-                                        logger.emit(log_record);
-                                    }
-
-                                    log::warn!("Python UDF error: {}", e);
-                                    res = Ok(Literal::Null);
-                                }
-                                OnError::Ignore => {
-                                    res = Ok(Literal::Null);
-                                }
+                            if let DaftError::PyO3Error(py_err) = &e {
+                                RowWisePyFn::capture_exception_details(py, py_err, &mut log_record);
+                            } else {
+                                log_record.set_body(format!("{e}").into());
                             }
-                            break;
+
+                            logger.emit(log_record);
                         }
-                        // Update our failure map for next iteration
-                        if attempt < max_retries {
-                            if let Some(retry_after_ms) = retry_after_ms_from_error(&e) {
-                                delay_ms = retry_after_ms.min(MAX_DELAY_MS).max(delay_ms);
-                            }
-                            use std::{thread, time::Duration};
-                            py.detach(|| {
-                                thread::sleep(Duration::from_millis(delay_ms));
-                            });
-                            // Exponential backoff: multiply by 2, cap at MAX_DELAY_MS
-                            delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
-                        }
+
+                        log::warn!("Python UDF error: {}", e);
+                        Ok(Literal::Null)
                     }
-                }
+                    OnError::Ignore => Ok(Literal::Null),
+                },
             }
-            res
         }
         let s = Python::attach(|py| {
             let func = py
@@ -393,19 +341,18 @@ impl RowWisePyFn {
                                 res.extract()?;
                             let literal =
                                 Literal::from_pyobj(&value_obj, Some(&self.return_dtype))?;
-                            for (key, counter) in operator_metrics.inner {
-                                metrics.inc_counter(
-                                    &key,
-                                    counter.value,
-                                    counter.description.as_deref(),
-                                    Some(counter.attributes),
-                                );
-                            }
-                            Ok(literal)
+                            Ok((literal, operator_metrics))
                         })
                         .map_err(DaftError::from)
                 };
-                let res = retry(py, f, max_retries, on_error, delay_ms);
+                let retry_result = retry_with_backoff(Some(py), f, max_retries);
+
+                // Collect metrics from the final result (whether success or failure)
+                if let Ok((_, operator_metrics)) = &retry_result {
+                    crate::python_udf::collect_operator_metrics(operator_metrics, metrics);
+                }
+
+                let res = handle_retry_result(py, retry_result.map(|(lit, _)| lit), on_error);
                 py_args.clear();
                 res
             });
@@ -422,8 +369,7 @@ impl RowWisePyFn {
         args: &[Series],
         num_rows: usize,
         name: &str,
-        metrics: &mut dyn MetricsCollector,
-    ) -> DaftResult<Series> {
+    ) -> DaftResult<(Series, common_metrics::python::PyOperatorMetrics)> {
         use common_metrics::python::PyOperatorMetrics;
         use daft_core::python::PySeries;
         use pyo3::prelude::*;
@@ -467,16 +413,8 @@ impl RowWisePyFn {
             Ok(coroutine)
         })
         .await?;
-        for (key, counter) in operator_metrics.inner {
-            metrics.inc_counter(
-                &key,
-                counter.value,
-                counter.description.as_deref(),
-                Some(counter.attributes),
-            );
-        }
 
-        Ok(py_series.series.rename(name))
+        Ok((py_series.series.rename(name), operator_metrics))
     }
 }
 
