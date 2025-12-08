@@ -249,3 +249,19 @@ def test_table_if_else() -> None:
 
     result_table = table.eval_expression_list([when(col("pred"), col("ones")).otherwise(col("zeros"))])
     assert result_table.to_pydict() == {"ones": [1, 0, None]}
+
+
+def test_table_skip_empty_record_batch() -> None:
+    from daft.recordbatch.recordbatch import RecordBatch
+
+    pa_table = pa.Table.from_pydict({"enum": [0, 1, 2, 3, 4, 5]})
+    empty_pa_table = pa_table.slice(0, 0)
+    record_batchs = [RecordBatch.from_arrow_table(pa_table)] * 3 + [RecordBatch.from_arrow_table(empty_pa_table)] * 2
+    table = MicroPartition._from_record_batches(record_batchs)
+
+    assert len(table) == 18
+    assert len(table.get_record_batches()) == 5
+
+    result_table = table.eval_expression_list([col("enum") + 10])
+    assert len(result_table) == 18
+    assert len(result_table.get_record_batches()) == 3

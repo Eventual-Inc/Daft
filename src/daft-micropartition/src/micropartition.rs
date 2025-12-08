@@ -132,6 +132,20 @@ impl MicroPartition {
         self.chunks.as_slice()
     }
 
+    pub fn pruned_record_batches(&self) -> Arc<Vec<RecordBatch>> {
+        if !self.is_empty() {
+            let filtered = self
+                .chunks
+                .iter()
+                .filter(|table| !table.is_empty())
+                .cloned()
+                .collect::<Vec<_>>();
+            Arc::new(filtered)
+        } else {
+            Arc::new(vec![])
+        }
+    }
+
     pub fn size_bytes(&self) -> usize {
         self.record_batches()
             .iter()
