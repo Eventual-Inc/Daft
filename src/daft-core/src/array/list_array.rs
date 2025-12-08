@@ -14,8 +14,8 @@ pub struct ListArray {
     pub flat_child: Series,
 
     /// Where each row starts and ends. Null rows usually have the same start/end index, but this is not guaranteed.
-    offsets: arrow2::offset::OffsetsBuffer<i64>,
-    validity: Option<arrow2::bitmap::Bitmap>,
+    offsets: daft_arrow::offset::OffsetsBuffer<i64>,
+    validity: Option<daft_arrow::buffer::NullBuffer>,
 }
 
 impl DaftArrayType for ListArray {
@@ -28,8 +28,8 @@ impl ListArray {
     pub fn new<F: Into<Arc<Field>>>(
         field: F,
         flat_child: Series,
-        offsets: arrow2::offset::OffsetsBuffer<i64>,
-        validity: Option<arrow2::bitmap::Bitmap>,
+        offsets: daft_arrow::offset::OffsetsBuffer<i64>,
+        validity: Option<daft_arrow::buffer::NullBuffer>,
     ) -> Self {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
@@ -67,18 +67,18 @@ impl ListArray {
         }
     }
 
-    pub fn offsets(&self) -> &arrow2::offset::OffsetsBuffer<i64> {
+    pub fn offsets(&self) -> &daft_arrow::offset::OffsetsBuffer<i64> {
         &self.offsets
     }
 
-    pub fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
+    pub fn validity(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
         self.validity.as_ref()
     }
 
     pub fn null_count(&self) -> usize {
         match self.validity() {
             None => 0,
-            Some(validity) => validity.unset_bits(),
+            Some(validity) => validity.null_count(),
         }
     }
 
@@ -96,7 +96,7 @@ impl ListArray {
             arrays.to_vec(),
             arrays
                 .iter()
-                .map(|a| a.validity.as_ref().map_or(0usize, |v| v.unset_bits()))
+                .map(|a| a.validity.as_ref().map_or(0usize, |v| v.null_count()))
                 .sum::<usize>()
                 > 0,
             arrays.iter().map(|a| a.len()).sum(),
@@ -159,7 +159,7 @@ impl ListArray {
         let new_validity = self
             .validity
             .as_ref()
-            .map(|v| v.clone().sliced(start, end - start));
+            .map(|v| v.clone().slice(start, end - start));
         Ok(Self::new(
             self.field.clone(),
             self.flat_child.clone(),
@@ -168,17 +168,20 @@ impl ListArray {
         ))
     }
 
-    pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+    pub fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
         let arrow_dtype = self.data_type().to_arrow().unwrap();
-        Box::new(arrow2::array::ListArray::new(
+        Box::new(daft_arrow::array::ListArray::new(
             arrow_dtype,
             self.offsets().clone(),
             self.flat_child.to_arrow(),
-            self.validity.clone(),
+            daft_arrow::buffer::wrap_null_buffer(self.validity.clone()),
         ))
     }
 
-    pub fn with_validity(&self, validity: Option<arrow2::bitmap::Bitmap>) -> DaftResult<Self> {
+    pub fn with_validity(
+        &self,
+        validity: Option<daft_arrow::buffer::NullBuffer>,
+    ) -> DaftResult<Self> {
         if let Some(v) = &validity
             && v.len() != self.len()
         {
@@ -232,7 +235,7 @@ impl Iterator for ListArrayIter<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx < self.array.len() {
             if let Some(validity) = self.array.validity()
-                && !validity.get_bit(self.idx)
+                && validity.is_null(self.idx)
             {
                 self.idx += 1;
                 Some(None)

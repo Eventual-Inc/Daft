@@ -259,7 +259,7 @@ where
                 _ => Ok(None),
             }
         })
-        .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+        .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>()?;
 
     Ok(Utf8Array::from((name, Box::new(arrow_result))))
 }

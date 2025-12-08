@@ -6,6 +6,7 @@ import pytest
 
 import daft
 from daft import col, interval
+from daft.functions import hash as hash_fn
 
 
 def test_nested():
@@ -56,7 +57,7 @@ def test_hash_exprs():
     expected = (
         df.select(
             col("a").hash().alias("hash_a"),
-            col("a").hash(0).alias("hash_a_0"),
+            hash_fn(col("a"), 0).alias("hash_a_0"),
             col("a").hash(seed=0).alias("hash_a_seed_0"),
             col("a").minhash(num_hashes=10, ngram_size=100, seed=10).alias("minhash_a"),
             col("a").minhash(num_hashes=10, ngram_size=100).alias("minhash_a_no_seed"),

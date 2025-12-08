@@ -177,6 +177,7 @@ class Expression:
         batch_size: int | None,
         concurrency: int | None,
         use_process: bool | None,
+        ray_options: dict[builtins.str, builtins.str] | None = None,
     ) -> Expression:
         return Expression._from_pyexpr(
             _udf(
@@ -190,6 +191,7 @@ class Expression:
                 batch_size,
                 concurrency,
                 use_process,
+                ray_options,
             )
         )
 
@@ -1191,7 +1193,7 @@ class Expression:
         """Hashes the values in the Expression.
 
         Tip: See Also
-            [`daft.functions.hash`](https://docs.daft.ai/en/stable/api/functions/hash/)
+            [`daft.functions.hash`](https://docs.daft.ai/en/stable/api/functions/hash/): use the function for hashing multiple columns together.
         """
         from daft.functions import hash
 

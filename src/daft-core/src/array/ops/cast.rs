@@ -4,15 +4,14 @@ use std::{
     sync::Arc,
 };
 
-use arrow2::{
-    bitmap::utils::SlicesIterator,
+use common_error::{DaftError, DaftResult};
+use daft_arrow::{
     compute::{
         self,
         cast::{CastOptions, can_cast_types, cast},
     },
     offset::Offsets,
 };
-use common_error::{DaftError, DaftResult};
 use indexmap::IndexMap;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
@@ -166,12 +165,12 @@ impl DateArray {
                 let date_array = self
                     .as_arrow()
                     .clone()
-                    .to(arrow2::datatypes::DataType::Date32);
+                    .to(daft_arrow::datatypes::DataType::Date32);
                 // TODO: we should move this into our own strftime kernel
                 let year_array = compute::temporal::year(&date_array)?;
                 let month_array = compute::temporal::month(&date_array)?;
                 let day_array = compute::temporal::day(&date_array)?;
-                let date_str: arrow2::array::Utf8Array<i64> = year_array
+                let date_str: daft_arrow::array::Utf8Array<i64> = year_array
                     .iter()
                     .zip(month_array.iter())
                     .zip(day_array.iter())
@@ -209,7 +208,8 @@ impl DateArray {
 /// Example: 2021-01-01 00:00:00
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
 pub fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
-    let chrono_ts = arrow2::temporal_conversions::timestamp_to_naive_datetime(val, unit.to_arrow());
+    let chrono_ts =
+        daft_arrow::temporal_conversions::timestamp_to_naive_datetime(val, unit.to_arrow());
     let format_str = "%Y-%m-%d %H:%M:%S%.f";
     chrono_ts.format(format_str).to_string()
 }
@@ -219,7 +219,7 @@ pub fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
 pub fn timestamp_to_str_offset(val: i64, unit: &TimeUnit, offset: &chrono::FixedOffset) -> String {
     let chrono_ts =
-        arrow2::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow(), offset);
+        daft_arrow::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow(), offset);
     let format_str = "%Y-%m-%d %H:%M:%S%.f %:z";
     chrono_ts.format(format_str).to_string()
 }
@@ -228,7 +228,8 @@ pub fn timestamp_to_str_offset(val: i64, unit: &TimeUnit, offset: &chrono::Fixed
 /// Example: 2021-01-01 00:00:00 PST
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
 pub fn timestamp_to_str_tz(val: i64, unit: &TimeUnit, tz: &chrono_tz::Tz) -> String {
-    let chrono_ts = arrow2::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow(), tz);
+    let chrono_ts =
+        daft_arrow::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow(), tz);
     let format_str = "%Y-%m-%d %H:%M:%S%.f %Z";
     chrono_ts.format(format_str).to_string()
 }
@@ -269,7 +270,7 @@ impl TimestampArray {
                     panic!("Wrong dtype for TimestampArray: {}", self.data_type())
                 };
 
-                let str_array: arrow2::array::Utf8Array<i64> = timezone.as_ref().map_or_else(
+                let str_array: daft_arrow::array::Utf8Array<i64> = timezone.as_ref().map_or_else(
                     || {
                         self.as_arrow()
                             .iter()
@@ -277,7 +278,8 @@ impl TimestampArray {
                             .collect()
                     },
                     |timezone| {
-                        if let Ok(offset) = arrow2::temporal_conversions::parse_offset(timezone) {
+                        if let Ok(offset) = daft_arrow::temporal_conversions::parse_offset(timezone)
+                        {
                             self.as_arrow()
                                 .iter()
                                 .map(|val| {
@@ -285,7 +287,7 @@ impl TimestampArray {
                                 })
                                 .collect()
                         } else if let Ok(tz) =
-                            arrow2::temporal_conversions::parse_offset_tz(timezone)
+                            daft_arrow::temporal_conversions::parse_offset_tz(timezone)
                         {
                             self.as_arrow()
                                 .iter()
@@ -338,7 +340,7 @@ impl TimeArray {
             }
             DataType::Utf8 => {
                 let time_array = self.as_arrow();
-                let time_str: arrow2::array::Utf8Array<i64> = time_array
+                let time_str: daft_arrow::array::Utf8Array<i64> = time_array
                     .iter()
                     .map(|val| {
                         val.map(|val| {
@@ -697,12 +699,12 @@ impl ImageArray {
                     shapes.push(ca.value(i) as u64);
                 }
                 let shapes_dtype = DataType::List(Box::new(DataType::UInt64));
-                let shape_offsets = arrow2::offset::OffsetsBuffer::try_from(shape_offsets)?;
+                let shape_offsets = daft_arrow::offset::OffsetsBuffer::try_from(shape_offsets)?;
                 let shapes_array = ListArray::new(
                     Field::new("shape", shapes_dtype),
                     UInt64Array::from((
                         "shape",
-                        Box::new(arrow2::array::PrimitiveArray::from_vec(shapes)),
+                        Box::new(daft_arrow::array::PrimitiveArray::from_vec(shapes)),
                     ))
                     .into_series(),
                     shape_offsets,
@@ -829,7 +831,7 @@ impl TensorArray {
                 let mut non_zero_values = Vec::new();
                 let mut non_zero_indices = Vec::new();
                 for (i, (shape_series, data_series)) in shape_and_data_iter.enumerate() {
-                    let is_valid = validity.is_none_or(|v| v.get_bit(i));
+                    let is_valid = validity.is_none_or(|v| v.is_valid(i));
                     if !is_valid {
                         // Handle invalid row by populating dummy data.
                         non_zero_values.push(Series::empty("dummy", inner_dtype.as_ref()));
@@ -957,7 +959,7 @@ impl TensorArray {
                 let da = self.data_array();
                 let validity = da.validity();
                 for i in 0..num_rows {
-                    let is_valid = validity.is_none_or(|v| v.get_bit(i));
+                    let is_valid = validity.is_none_or(|v| v.is_valid(i));
                     if !is_valid {
                         // Handle invalid row by populating dummy data.
                         channels.push(1);
@@ -1051,12 +1053,12 @@ fn cast_sparse_to_dense_for_inner_dtype(
     non_zero_values_array: &ListArray,
     offsets: &Offsets<i64>,
     use_offset_indices: &bool,
-) -> DaftResult<Box<dyn arrow2::array::Array>> {
-    let item: Box<dyn arrow2::array::Array> = with_match_numeric_daft_types!(inner_dtype, |$T| {
+) -> DaftResult<Box<dyn daft_arrow::array::Array>> {
+    let item: Box<dyn daft_arrow::array::Array> = with_match_numeric_daft_types!(inner_dtype, |$T| {
             let mut values = vec![0 as <$T as DaftNumericType>::Native; n_values];
             let validity = non_zero_values_array.validity();
             for i in 0..non_zero_values_array.len() {
-                let is_valid = validity.is_none_or(|v| v.get_bit(i));
+                let is_valid = validity.is_none_or(|v| v.is_valid(i));
                 if !is_valid {
                     continue;
                 }
@@ -1084,7 +1086,7 @@ fn cast_sparse_to_dense_for_inner_dtype(
                     }
                 };
             }
-            Box::new(arrow2::array::PrimitiveArray::from_vec(values))
+            Box::new(daft_arrow::array::PrimitiveArray::from_vec(values))
     });
     Ok(item)
 }
@@ -1224,13 +1226,13 @@ impl FixedShapeSparseTensorArray {
                 let indices_arr = ia.cast(&DataType::List(Box::new(DataType::UInt64)))?;
 
                 // List -> Struct
-                let shape_offsets = arrow2::offset::OffsetsBuffer::try_from(shape_offsets)?;
+                let shape_offsets = daft_arrow::offset::OffsetsBuffer::try_from(shape_offsets)?;
                 let shapes_array = ListArray::new(
                     Field::new("shape", DataType::List(Box::new(DataType::UInt64))),
                     Series::try_from((
                         "shape",
-                        Box::new(arrow2::array::PrimitiveArray::from_vec(shapes))
-                            as Box<dyn arrow2::array::Array>,
+                        Box::new(daft_arrow::array::PrimitiveArray::from_vec(shapes))
+                            as Box<dyn daft_arrow::array::Array>,
                     ))?,
                     shape_offsets,
                     validity.cloned(),
@@ -1316,13 +1318,13 @@ impl FixedShapeTensorArray {
                     .rename("data");
 
                 // List -> Struct
-                let shape_offsets = arrow2::offset::OffsetsBuffer::try_from(shape_offsets)?;
+                let shape_offsets = daft_arrow::offset::OffsetsBuffer::try_from(shape_offsets)?;
                 let shapes_array = ListArray::new(
                     Field::new("shape", DataType::List(Box::new(DataType::UInt64))),
                     Series::try_from((
                         "shape",
-                        Box::new(arrow2::array::PrimitiveArray::from_vec(shapes))
-                            as Box<dyn arrow2::array::Array>,
+                        Box::new(daft_arrow::array::PrimitiveArray::from_vec(shapes))
+                            as Box<dyn daft_arrow::array::Array>,
                     ))?,
                     shape_offsets,
                     validity.cloned(),
@@ -1348,7 +1350,7 @@ impl FixedShapeTensorArray {
                 let mut non_zero_values = Vec::new();
                 let mut non_zero_indices = Vec::new();
                 for (i, data_series) in physical_arr.into_iter().enumerate() {
-                    let is_valid = validity.is_none_or(|v| v.get_bit(i));
+                    let is_valid = validity.is_none_or(|v| v.is_valid(i));
                     if !is_valid {
                         // Handle invalid row by populating dummy data.
                         non_zero_values.push(Series::empty("dummy", inner_dtype.as_ref()));
@@ -1594,11 +1596,12 @@ impl ListArray {
                         );
 
                         let mut invalid_ptr = 0;
-                        for (start, len) in SlicesIterator::new(validity) {
+                        for (start, end) in validity.valid_slices() {
+                            let len = end - start;
                             child_growable.add_nulls((start - invalid_ptr) * size);
                             let child_start = self.offsets().start_end(start).0;
                             child_growable.extend(0, child_start, len * size);
-                            invalid_ptr = start + len;
+                            invalid_ptr = end;
                         }
                         child_growable.add_nulls((self.len() - invalid_ptr) * size);
 
@@ -1767,7 +1770,7 @@ impl StructArray {
 
 #[cfg(test)]
 mod tests {
-    use arrow2::array::PrimitiveArray;
+    use daft_arrow::array::PrimitiveArray;
     use rand::{Rng, rng};
 
     use super::*;
@@ -1782,7 +1785,7 @@ mod tests {
         scale: usize,
     ) -> DataArray<Decimal128Type> {
         let arrow_array = PrimitiveArray::from_vec(values)
-            .to(arrow2::datatypes::DataType::Decimal(precision, scale));
+            .to(daft_arrow::datatypes::DataType::Decimal(precision, scale));
         let field = Arc::new(Field::new(
             "test_decimal",
             DataType::Decimal128(precision, scale),
@@ -1792,14 +1795,16 @@ mod tests {
     }
 
     fn create_test_f64_array(values: Vec<f64>) -> Float64Array {
-        let arrow_array = PrimitiveArray::from_vec(values).to(arrow2::datatypes::DataType::Float64);
+        let arrow_array =
+            PrimitiveArray::from_vec(values).to(daft_arrow::datatypes::DataType::Float64);
         let field = Arc::new(Field::new("test_float", DataType::Float64));
         Float64Array::from_arrow(field, Box::new(arrow_array))
             .expect("Failed to create test float array")
     }
 
     fn create_test_i64_array(values: Vec<i64>) -> Int64Array {
-        let arrow_array = PrimitiveArray::from_vec(values).to(arrow2::datatypes::DataType::Int64);
+        let arrow_array =
+            PrimitiveArray::from_vec(values).to(daft_arrow::datatypes::DataType::Int64);
         let field = Arc::new(Field::new("test_int", DataType::Int64));
         Int64Array::from_arrow(field, Box::new(arrow_array))
             .expect("Failed to create test int array")

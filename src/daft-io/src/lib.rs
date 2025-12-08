@@ -5,6 +5,7 @@ mod google_cloud;
 mod http;
 mod huggingface;
 mod local;
+pub mod multipart;
 mod object_io;
 mod object_store_glob;
 mod retry;
@@ -30,6 +31,7 @@ mod integrations;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod range;
+pub mod utils;
 
 use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
 
@@ -40,7 +42,7 @@ use object_io::StreamingRetryParams;
 pub use object_io::{FileMetadata, FileType, GetResult, ObjectSource};
 #[cfg(feature = "python")]
 pub use python::register_modules;
-pub use s3_like::{S3LikeSource, S3MultipartWriter, S3PartBuffer, s3_config_from_env};
+pub use s3_like::{S3LikeSource, S3MultipartWriter, s3_config_from_env};
 use snafu::{Snafu, prelude::*};
 pub use stats::{IOStatsContext, IOStatsRef};
 use url::ParseError;

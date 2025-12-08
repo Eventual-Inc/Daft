@@ -1,11 +1,10 @@
 [dependencies]
 async-trait = {workspace = true}
-arrow2 = {workspace = true}
+daft-arrow = {path = "../daft-arrow"}
 common-runtime = {path = "../common/runtime", default-features = false}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-metrics = {path = "../common/metrics", default-features = false}
-daft-io = {path = "../daft-io", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
@@ -25,7 +24,6 @@ python = [
   "common-daft-config/python",
   "common-error/python",
   "common-metrics/python",
-  "daft-io/python",
   "daft-core/python",
   "daft-logical-plan/python",
   "daft-micropartition/python",

@@ -3,8 +3,8 @@ use std::{
     sync::Arc,
 };
 
-use arrow2::types::Index;
 use common_error::{DaftError, DaftResult};
+use daft_arrow::types::Index;
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
 use daft_schema::{dtype::DataType, field::Field};
 use xxhash_rust::{
@@ -24,7 +24,6 @@ use crate::{
     },
     kernels,
     series::Series,
-    utils::arrow::arrow_bitmap_and_helper,
 };
 
 impl<T> DataArray<T>
@@ -130,7 +129,7 @@ fn hash_list(
     name: &str,
     offsets: &[i64],
     flat_child: &Series,
-    validity: Option<&arrow2::bitmap::Bitmap>,
+    validity: Option<&daft_arrow::buffer::NullBuffer>,
     seed: Option<&UInt64Array>,
     hash_function: HashFunctionKind,
 ) -> DaftResult<UInt64Array> {
@@ -140,7 +139,8 @@ fn hash_list(
     // if seed is provided, the sublists are hashed with the seed broadcasted
 
     if let Some(seed_arr) = seed {
-        let combined_validity = arrow_bitmap_and_helper(validity, seed.unwrap().validity());
+        let combined_validity =
+            daft_arrow::buffer::NullBuffer::union(validity, seed.unwrap().validity());
         UInt64Array::from_iter(
             Arc::new(Field::new(name, DataType::UInt64)),
             u64::range(0, offsets.len() - 1).unwrap().map(|i| {
@@ -423,7 +423,7 @@ impl Decimal128Array {
         let arr = self
             .data()
             .as_any()
-            .downcast_ref::<arrow2::array::PrimitiveArray<i128>>()
+            .downcast_ref::<daft_arrow::array::PrimitiveArray<i128>>()
             .expect("this should be a decimal array");
         let hashes = arr.into_iter().map(|d| {
             d.map(|d| {
@@ -436,7 +436,7 @@ impl Decimal128Array {
                 i32::from_ne_bytes(unsigned.to_ne_bytes())
             })
         });
-        let array = Box::new(arrow2::array::Int32Array::from_iter(hashes));
+        let array = Box::new(daft_arrow::array::Int32Array::from_iter(hashes));
         Ok(Int32Array::from((self.name(), array)))
     }
 }
@@ -451,7 +451,7 @@ fn murmur3_32_hash_from_iter_with_nulls<B: AsRef<[u8]>>(
             i32::from_ne_bytes(unsigned.to_ne_bytes())
         })
     });
-    let array = Box::new(arrow2::array::Int32Array::from_iter(hashes));
+    let array = Box::new(daft_arrow::array::Int32Array::from_iter(hashes));
     Ok(Int32Array::from((name, array)))
 }
 
