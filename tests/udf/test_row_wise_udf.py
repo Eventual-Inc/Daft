@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
 
 import numpy as np
 import pytest
 
 import daft
 from daft import DataType, col
+from daft.ai.utils import RetryAfterError
 from daft.recordbatch import MicroPartition, RecordBatch
 
 
@@ -231,6 +233,58 @@ def test_async_rowwise_retry():
 
     actual = df.select(raise_err_first_time_only(col("value"))).to_pydict()
     assert actual == expected
+
+
+@pytest.mark.parametrize("max_retries", [1, 2, 3])
+def test_rowwise_retry_after_delay_respected(max_retries):
+    call_count = 0
+    retry_delay = 0.2
+
+    @daft.func(max_retries=max_retries)
+    def sometimes_slow(x) -> int:
+        nonlocal call_count
+        call_count += 1
+        # Fail on first call, succeed on retry
+        if call_count == 1:
+            raise RetryAfterError(retry_delay)
+        return x * 3
+
+    df = daft.from_pydict({"value": [2]})
+
+    start = time.perf_counter()
+    result = df.select(sometimes_slow(col("value"))).to_pydict()
+    elapsed = time.perf_counter() - start
+
+    assert result == {"value": [6]}
+    assert call_count == 2  # Initial call + 1 retry
+    # Should honor the retry-after delay
+    assert elapsed >= retry_delay * 0.9  # Allow some tolerance for timing
+
+
+@pytest.mark.parametrize("max_retries", [2, 3])
+def test_rowwise_retry_after_multiple_retries(max_retries):
+    """Test that retry mechanism works correctly with multiple retries."""
+    call_count = 0
+    retry_delay = 0.1
+
+    @daft.func(max_retries=max_retries)
+    def sometimes_slow(x) -> int:
+        nonlocal call_count
+        call_count += 1
+        # Fail on first two calls, succeed on third
+        if call_count <= 2:
+            raise RetryAfterError(retry_delay)
+        return x * 3
+
+    df = daft.from_pydict({"value": [2]})
+
+    start = time.perf_counter()
+    result = df.select(sometimes_slow(col("value"))).to_pydict()
+    elapsed = time.perf_counter() - start
+
+    assert result == {"value": [6]}
+    assert call_count == 3  # Initial call + 2 retries
+    assert elapsed >= retry_delay * 2 * 0.9  # At least 2 retry delays
 
 
 def test_rowwise_retry_expected_to_fail():

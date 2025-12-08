@@ -4,6 +4,7 @@ import pytest
 
 import daft
 from daft import DataType, Series, col
+from daft.ai.utils import RetryAfterError
 
 
 def test_batch_udf():
@@ -229,6 +230,61 @@ def test_batch_retry_defaults_to_raise_and_zero_retries():
         pytest.fail("Expected ValueError")
     except ValueError:
         pass
+
+
+@pytest.mark.parametrize("max_retries", [1, 2, 3])
+def test_batch_retry_after_delay_respected(max_retries):
+    call_count = 0
+    retry_delay = 0.2
+
+    @daft.func.batch(return_dtype=DataType.int64(), max_retries=max_retries)
+    def sometimes_slow(x: Series) -> Series:
+        nonlocal call_count
+        call_count += 1
+        # Fail on first call, succeed on retry
+        if call_count == 1:
+            raise RetryAfterError(retry_delay)
+        return [x * 2 for x in x]
+
+    df = daft.from_pydict({"value": [1, 2, 3]})
+
+    import time
+
+    start = time.perf_counter()
+    result = df.select(sometimes_slow(col("value"))).to_pydict()
+    elapsed = time.perf_counter() - start
+
+    assert result == {"value": [2, 4, 6]}
+    assert call_count == 2  # Initial call + 1 retry
+    assert elapsed >= retry_delay * 0.9  # Allow some tolerance for timing
+
+
+@pytest.mark.parametrize("max_retries", [2, 3])
+def test_batch_retry_after_multiple_retries(max_retries):
+    """Test that retry mechanism works correctly with multiple retries."""
+    call_count = 0
+    retry_delay = 0.1
+
+    @daft.func.batch(return_dtype=DataType.int64(), max_retries=max_retries)
+    def sometimes_slow(x: Series) -> Series:
+        nonlocal call_count
+        call_count += 1
+        # Fail on first two calls, succeed on third
+        if call_count <= 2:
+            raise RetryAfterError(retry_delay)
+        return [x * 2 for x in x]
+
+    df = daft.from_pydict({"value": [1, 2, 3]})
+
+    import time
+
+    start = time.perf_counter()
+    result = df.select(sometimes_slow(col("value"))).to_pydict()
+    elapsed = time.perf_counter() - start
+
+    assert result == {"value": [2, 4, 6]}
+    assert call_count == 3  # Initial call + 2 retries
+    assert elapsed >= retry_delay * 2 * 0.9  # At least 2 retry delays
 
 
 def test_batch_max_retries():

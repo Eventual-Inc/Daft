@@ -1,9 +1,13 @@
 mod batch;
+#[cfg(feature = "python")]
+mod retry;
 mod row_wise;
 
 pub use batch::{BatchPyFn, batch_udf};
 use common_error::DaftResult;
 use daft_core::prelude::*;
+#[cfg(feature = "python")]
+pub use retry::retry_after_ms_from_error;
 pub use row_wise::{RowWisePyFn, row_wise_udf};
 use serde::{Deserialize, Serialize};
 

@@ -9,6 +9,7 @@ from openai.types.create_embedding_response import Usage
 
 from daft import DataType
 from daft.ai.metrics import record_token_metrics
+from daft.ai.openai.utils import execute_openai_call
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
 from daft.ai.typing import EmbeddingDimensions, Options, UDFOptions
 from daft.dependencies import np
@@ -205,20 +206,22 @@ class OpenAITextEmbedder(TextEmbedder):
     async def _embed_text(self, input_text: str) -> Embedding:
         """Embeds a single text input and possibly returns a zero vector."""
         try:
-            response: CreateEmbeddingResponse = await self._client.embeddings.create(
-                input=input_text,
-                model=self._model,
-                encoding_format="float",
-                dimensions=self._dimensions or NOT_GIVEN,
+            response = await execute_openai_call(
+                lambda: self._client.embeddings.create(
+                    input=input_text,
+                    model=self._model,
+                    encoding_format="float",
+                    dimensions=self._dimensions or NOT_GIVEN,
+                )
             )
             self._record_usage_metrics(response)
             return np.array(response.data[0].embedding)
-        except Exception as ex:
+        except Exception:
             if self._zero_on_failure:
                 size = self._dimensions or _models[self._model].dimensions.size
                 return np.zeros(size, dtype=np.float32)
             else:
-                raise ex
+                raise
 
     def _record_usage_metrics(self, response: CreateEmbeddingResponse) -> None:
         usage = getattr(response, "usage", None)

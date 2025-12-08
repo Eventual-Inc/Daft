@@ -5,6 +5,8 @@ use daft_core::{prelude::DataType, series::Series};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "python")]
+use crate::python_udf::retry_after_ms_from_error;
 use crate::{
     Expr, ExprRef,
     functions::{python::RuntimePyObject, scalar::ScalarFn},
@@ -134,7 +136,7 @@ impl BatchPyFn {
                     );
                 }
 
-                PyResult::Ok(result_series.series)
+                DaftResult::Ok(result_series.series)
             })
         };
 
@@ -145,14 +147,21 @@ impl BatchPyFn {
             if result_series.is_ok() {
                 break;
             }
-            result_series = try_call_batch();
 
             // Update our failure map for next iteration
             if attempt < max_retries {
+                if let Err(err) = &result_series
+                    && let Some(retry_after_ms) = retry_after_ms_from_error(err)
+                {
+                    delay_ms = retry_after_ms.min(MAX_DELAY_MS).max(delay_ms);
+                }
+
                 use std::{thread, time::Duration};
+
                 thread::sleep(Duration::from_millis(delay_ms));
                 // Exponential backoff: multiply by 2, cap at MAX_DELAY_MS
                 delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
+                result_series = try_call_batch();
             }
         }
         let name = args[0].name();
@@ -210,6 +219,12 @@ impl BatchPyFn {
         for _attempt in 0..max_retries {
             if result_series.is_ok() {
                 break;
+            }
+
+            if let Err(err) = &result_series
+                && let Some(retry_after_ms) = retry_after_ms_from_error(err)
+            {
+                delay_ms = retry_after_ms.min(MAX_DELAY_MS).max(delay_ms);
             }
 
             tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;

@@ -8,6 +8,8 @@ use opentelemetry::logs::{AnyValue, LogRecord, Logger, LoggerProvider};
 use pyo3::{PyErr, Python, prelude::*};
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "python")]
+use crate::python_udf::retry_after_ms_from_error;
 use crate::{
     Expr, ExprRef,
     functions::{python::RuntimePyObject, scalar::ScalarFn},
@@ -170,6 +172,12 @@ impl RowWisePyFn {
         for _attempt in 0..max_retries {
             if result_series.is_ok() {
                 break;
+            }
+
+            if let Err(err) = &result_series
+                && let Some(retry_after_ms) = retry_after_ms_from_error(err)
+            {
+                delay_ms = retry_after_ms.min(MAX_DELAY_MS).max(delay_ms);
             }
 
             tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
@@ -345,6 +353,9 @@ impl RowWisePyFn {
                         }
                         // Update our failure map for next iteration
                         if attempt < max_retries {
+                            if let Some(retry_after_ms) = retry_after_ms_from_error(&e) {
+                                delay_ms = retry_after_ms.min(MAX_DELAY_MS).max(delay_ms);
+                            }
                             use std::{thread, time::Duration};
                             py.detach(|| {
                                 thread::sleep(Duration::from_millis(delay_ms));

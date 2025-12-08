@@ -9,7 +9,7 @@ pytest.importorskip("openai")
 from unittest.mock import AsyncMock, Mock, patch
 
 import numpy as np
-from openai import NOT_GIVEN, RateLimitError
+from openai import NOT_GIVEN, OpenAIError, RateLimitError
 from openai.types.create_embedding_response import CreateEmbeddingResponse, Usage
 from openai.types.embedding import Embedding as OpenAIEmbedding
 
@@ -22,6 +22,15 @@ from daft.ai.openai.protocols.text_embedder import (
 )
 from daft.ai.protocols import TextEmbedder
 from daft.ai.typing import EmbeddingDimensions
+from daft.ai.utils import RetryAfterError
+
+
+class FakeOpenAIError(OpenAIError):
+    """Simple subclass to attach headers for tests."""
+
+    def __init__(self, status_code: int, retry_after: str):
+        super().__init__(f"http {status_code}")
+        self.response = Mock(headers={"Retry-After": retry_after}, status_code=status_code)
 
 
 def new_input(approx_tokens: int) -> str:
@@ -474,3 +483,30 @@ def test_embed_text_batch_rate_limit_fallback(mock_text_embedder, mock_client):
             assert isinstance(embedding, np.ndarray)
             assert embedding.shape == (1536,)
             assert embedding.dtype == np.float32
+
+
+def test_embed_text_batch_rate_limit_retry_after(mock_text_embedder, mock_client):
+    """If the API supplies Retry-After, surface it as RetryAfterError instead of per-item fallback."""
+    mock_client.embeddings.create.side_effect = RateLimitError(
+        message="Rate limit exceeded",
+        response=Mock(headers={"Retry-After": "2"}),
+        body=None,
+    )
+
+    with patch.object(mock_text_embedder, "_embed_text", new=AsyncMock()) as mock_embed_text:
+        with pytest.raises(RetryAfterError) as raised:
+            run(mock_text_embedder._embed_text_batch(["text1", "text2"]))
+
+    mock_embed_text.assert_not_called()
+    assert raised.value.retry_after == 2
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_embed_text_batch_other_http_retry_after(mock_text_embedder, mock_client, status):
+    """Non-rate-limit OpenAI errors with Retry-After should propagate RetryAfterError."""
+    mock_client.embeddings.create.side_effect = FakeOpenAIError(status_code=status, retry_after="1.5")
+
+    with pytest.raises(RetryAfterError) as raised:
+        run(mock_text_embedder._embed_text_batch(["text1"]))
+
+    assert raised.value.retry_after == pytest.approx(1.5)
