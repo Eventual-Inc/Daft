@@ -1871,7 +1871,6 @@ dependencies = [
  "bincode",
  "common-error",
  "common-ndarray",
- "daft-arrow",
  "daft-schema",
  "image",
  "ndarray",
