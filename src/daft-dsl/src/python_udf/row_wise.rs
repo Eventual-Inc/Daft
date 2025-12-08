@@ -254,7 +254,6 @@ impl RowWisePyFn {
                 let truncated: String = val.chars().take(100).collect();
                 return format!("{}...", truncated);
             }
-            }
             return val;
         }
 
@@ -284,7 +283,6 @@ impl RowWisePyFn {
             if val.len() > 100 {
                 let truncated: String = val.chars().take(100).collect();
                 return format!("{}...", truncated);
-            }
             }
             return val;
         }
