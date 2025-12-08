@@ -344,9 +344,10 @@ impl Literal {
             || isinstance!(ob, "torch", "Tensor")
             || isinstance!(ob, "tensorflow", "Tensor")
             || isinstance!(ob, "jax", "Array")
-            || isinstance!(ob, "cupy", "ndarray")
         {
             numpy_array_like_to_tensor_lit(ob)?
+        } else if isinstance!(ob, "cupy", "ndarray") {
+            cupy_array_to_tensor_lit(ob)?
         } else if isinstance!(ob, "numpy", "bool_") {
             Self::Boolean(get_numpy_scalar(ob)?.extract()?)
         } else if isinstance!(ob, "numpy", "int8") {
@@ -672,6 +673,11 @@ fn numpy_array_like_to_tensor_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
     let data = Series::from_ndarray_flattened(arr);
 
     Ok(Literal::Tensor { data, shape })
+}
+
+fn cupy_array_to_tensor_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
+    let numpy_array = ob.call_method0(intern!(ob.py(), "get"))?;
+    numpy_array_like_to_tensor_lit(&numpy_array)
 }
 
 fn pandas_series_to_list_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
