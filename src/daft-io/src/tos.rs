@@ -598,8 +598,6 @@ impl TosSource {
         let upload_id = self
             .retry_operation(
                 |attempt| {
-                    let bucket = bucket.clone();
-                    let key = key.clone();
                     let client = &self.client;
                     let max_retries = self.config.max_retries;
                     async move {
