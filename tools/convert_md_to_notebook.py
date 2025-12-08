@@ -442,10 +442,21 @@ Examples:
     parser.add_argument(
         "--update-source",
         action="store_true",
-        help="Also add Colab badge to the source markdown file (skips if already present)",
+        help="Also update the Colab badge in the source markdown file before conversion",
     )
 
     args = parser.parse_args()
+
+    # Determine output path for badge URL generation
+    output_path = args.output if args.output else args.input.with_suffix(".ipynb")
+
+    # Update source markdown first (if requested) so notebook gets the updated badge
+    if args.update_source and not args.no_colab_badge:
+        result = update_colab_badge_in_markdown(args.input, output_path, branch=args.branch)
+        if result == "added":
+            print(f"Added Colab badge to: {args.input}")
+        elif result == "updated":
+            print(f"Updated Colab badge in: {args.input}")
 
     output_path = convert_md_to_notebook(
         args.input,
@@ -455,16 +466,6 @@ Examples:
     )
 
     print(f"Created notebook: {output_path}")
-
-    # Optionally update the source markdown file
-    if args.update_source and not args.no_colab_badge:
-        result = update_colab_badge_in_markdown(args.input, output_path, branch=args.branch)
-        if result == "added":
-            print(f"Added Colab badge to: {args.input}")
-        elif result == "updated":
-            print(f"Updated Colab badge in: {args.input}")
-        else:
-            print(f"Colab badge unchanged in: {args.input}")
 
 
 if __name__ == "__main__":
