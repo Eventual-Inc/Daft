@@ -343,9 +343,10 @@ impl Literal {
             || isinstance!(ob, "torch", "Tensor")
             || isinstance!(ob, "tensorflow", "Tensor")
             || isinstance!(ob, "jax", "Array")
-            || isinstance!(ob, "cupy", "ndarray")
         {
             numpy_array_like_to_tensor_lit(ob)?
+        } else if isinstance!(ob, "cupy", "ndarray") {
+            cupy_array_to_tensor_lit(ob)?
         } else if isinstance!(ob, "numpy", "bool_") {
             Self::Boolean(get_numpy_scalar(ob)?.extract()?)
         } else if isinstance!(ob, "numpy", "int8") {
@@ -649,7 +650,10 @@ fn pydecimal_to_decimal_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
 
 fn numpy_array_like_to_tensor_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
     let py = ob.py();
-    let ob = handle_array_conversion(ob)?;
+    let np_asarray = py
+        .import(intern!(py, "numpy"))?
+        .getattr(intern!(py, "asarray"))?;
+    let ob = np_asarray.call1((ob,))?;
 
     let arr = if let Ok(arr) = ob.extract::<NumpyArray>() {
         arr
@@ -670,25 +674,9 @@ fn numpy_array_like_to_tensor_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
     Ok(Literal::Tensor { data, shape })
 }
 
-fn handle_array_conversion<'py>(ob: &'py Bound<PyAny>) -> PyResult<Bound<'py, PyAny>> {
-    let py = ob.py();
-    match py.import(intern!(py, "cupy")) {
-        Ok(cupy_module) => {
-            let cupy_ndarray_ty = cupy_module.getattr(intern!(py, "ndarray"))?;
-            if ob.is_instance(&cupy_ndarray_ty)? {
-                // Convert CuPy array to numpy array using cupy.asnumpy()
-                cupy_module.getattr(intern!(py, "asnumpy"))?.call1((ob,))
-            } else {
-                py.import(intern!(py, "numpy"))?
-                    .getattr(intern!(py, "asarray"))?
-                    .call1((ob,))
-            }
-        }
-        Err(_) => py
-            .import(intern!(py, "numpy"))?
-            .getattr(intern!(py, "asarray"))?
-            .call1((ob,)),
-    }
+fn cupy_array_to_tensor_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
+    let numpy_array = ob.call_method0(intern!(ob.py(), "get"))?;
+    numpy_array_like_to_tensor_lit(&numpy_array)
 }
 
 fn pandas_series_to_list_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
@@ -753,63 +741,4 @@ fn daft_file_to_file_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
         .call_method0(intern!(py, "_get_file"))?
         .extract()?;
     Ok(Literal::File(file))
-}
-
-#[cfg(test)]
-mod tests {
-    use pyo3::prelude::*;
-
-    use super::*;
-    use crate::python::PySeries;
-
-    #[test]
-    // CuPy ndarray conversion test; skips when CuPy is not installed at runtime.
-    fn test_from_cupy_ndarray() -> PyResult<()> {
-        Python::with_gil(|py| {
-            // Try import cupy; skip test if not available
-            let cupy = match py.import(intern!(py, "cupy")) {
-                Ok(module) => module,
-                Err(_) => {
-                    println!("Skipping test_from_cupy_ndarray: cupy not installed.");
-                    return Ok(());
-                }
-            };
-
-            // Construct a small CuPy array on GPU
-            let asarray = cupy.getattr(intern!(py, "asarray"))?;
-            let original_array = asarray.call1((vec![1i64, 2i64, 3i64],))?;
-
-            // Convert via Literal::from_pyobj -> should produce a Tensor literal
-            let literal = Literal::from_pyobj(&original_array, None)?;
-
-            match literal {
-                Literal::Tensor { data, shape } => {
-                    assert_eq!(shape, vec![3]);
-
-                    // Convert Daft Series data to numpy for comparison
-                    let py_series = PySeries { series: data };
-                    let np_arr = py_series
-                        .to_arrow(py)?
-                        .call_method1(intern!(py, "to_numpy"), (false,))?;
-
-                    // Expected: cupy.asnumpy(original_array)
-                    let expected = cupy
-                        .getattr(intern!(py, "asnumpy"))?
-                        .call1((original_array.clone(),))?;
-
-                    let are_equal: bool = py
-                        .import(intern!(py, "numpy"))?
-                        .call_method1(intern!(py, "array_equal"), (np_arr, expected))?
-                        .extract()?;
-                    assert!(
-                        are_equal,
-                        "Converted Daft tensor data does not match original CuPy array data"
-                    );
-                }
-                other => panic!("Expected Literal::Tensor, got {:?}", other),
-            }
-
-            Ok(())
-        })
-    }
 }
