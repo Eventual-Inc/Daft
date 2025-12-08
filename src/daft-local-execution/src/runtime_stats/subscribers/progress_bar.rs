@@ -329,7 +329,10 @@ mod python {
         }
 
         async fn finish(self: Box<Self>) -> DaftResult<()> {
-            Ok(())
+            Python::attach(|py| {
+                self.inner.call_method0(py, "close")?;
+                DaftResult::Ok(())
+            })
         }
     }
 }

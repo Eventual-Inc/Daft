@@ -127,7 +127,10 @@ class SwordfishProgressBar:
         if self.pbar is None:
             self.pbar = self.tqdm_mod(
                 bar_format="{desc}",
-                leave=False,
+                # leave=True keeps the progress bar visible after completion.
+                # This avoids output corruption in Jupyter notebooks where clearing
+                # the bar doesn't work reliably.
+                leave=True,
                 mininterval=0.5,
                 maxinterval=self._maxinterval,
             )
@@ -144,3 +147,4 @@ class SwordfishProgressBar:
         if self.pbar is not None:
             self.pbar.close()
             self.pbar = None
+            print()  # Empty line for cleaner separation
