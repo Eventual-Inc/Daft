@@ -133,7 +133,7 @@ class OpenAIPrompter(Prompter):
             from daft.dependencies import pil_image
 
             if not pil_image.module_available():
-                raise ProviderImportError("openai", "prompt")
+                raise ProviderImportError("openai", function="prompt")
 
             pil_image = pil_image.fromarray(msg)
             bio = io.BytesIO()

@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
 
 class ProviderImportError(ImportError):
-    def __init__(self, extra: str, function: str | None = None):
+    def __init__(self, extra: str, *, function: str | None = None):
         function_msg = f" to use the {function} function" if function is not None else ""
         super().__init__(f"Please `pip install 'daft[{extra}]'`{function_msg} with this provider.")
 

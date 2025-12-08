@@ -40,7 +40,7 @@ class TransformersProvider(Provider):
         from daft.dependencies import pil_image, torchvision
 
         if not torchvision.module_available() or not pil_image.module_available():
-            raise ProviderImportError("transformers", "get_image_embedder")
+            raise ProviderImportError("transformers", function="embed_image")
 
         from daft.ai.transformers.protocols.image_embedder import TransformersImageEmbedderDescriptor
 
@@ -76,7 +76,7 @@ class TransformersProvider(Provider):
         from daft.dependencies import pil_image, torchvision
 
         if not torchvision.module_available() or not pil_image.module_available():
-            raise ProviderImportError("transformers", "classify_image")
+            raise ProviderImportError("transformers", function="classify_image")
 
         from daft.ai.transformers.protocols.image_classifier import (
             TransformersImageClassifierDescriptor,
