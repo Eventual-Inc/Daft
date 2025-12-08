@@ -312,7 +312,7 @@ df_large = df_large.with_column(
 df_large = df_large.collect()
 
 # Count wooden products
-wooden_count = df_large.where(df_large["is_wooden"] == True).count_rows()
+wooden_count = df_large.where(df_large["is_wooden"]).count_rows()
 total_count = df_large.count_rows()
 
 print(f"Out of {total_count} products analyzed:")
