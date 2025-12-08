@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use common_metrics::MetricsCollector;
 #[cfg(feature = "python")]
 use common_metrics::python::PyOperatorMetrics;
-use daft_core::{prelude::DataType, series::Series};
+use daft_core::{prelude::*, series::Series};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
