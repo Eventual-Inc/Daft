@@ -141,8 +141,10 @@ impl SinkNode {
             self.config.schema.clone(),
             &(self as Arc<dyn PipelineNodeImpl>),
             move |input| {
+                let data_schema = input.schema().clone();
                 LocalPhysicalPlan::commit_write(
                     input,
+                    data_schema,
                     file_schema,
                     info,
                     StatsState::NotMaterialized,

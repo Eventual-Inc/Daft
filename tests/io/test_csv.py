@@ -94,6 +94,7 @@ def test_write_csv_unsupported_types_raise(tmp_path, data, pa_type):
         before = daft.from_arrow(pa.table({"id": pa.array(range(3)), "foo": pa.array(data, type=pa_type)}))
         before.write_csv(str(tmp_path))
 
+
 def test_write_and_read_empty_csv(tmp_path_factory):
     empty_csv_files = str(tmp_path_factory.mktemp("empty_csv"))
     df = daft.from_pydict({"a": []})
