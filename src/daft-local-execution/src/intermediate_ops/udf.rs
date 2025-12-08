@@ -614,14 +614,10 @@ impl IntermediateOperator for UdfOperator {
         Ok(if cfg.enable_dynamic_batching {
             match cfg.dynamic_batching_strategy.as_str() {
                 "latency_constrained" | "auto" => {
-                    // TODO: allow udf to accept a min/max batch size instead of just a strict batch size.
                     let reqs = self.try_get_morsel_size_requirement()?;
                     let MorselSizeRequirement::Flexible(min_batch_size, max_batch_size) = reqs
                     else {
-                        return Err(DaftError::ValueError(
-                            "cannot use strict batch size requirement with dynamic batching"
-                                .to_string(),
-                        ));
+                        return Ok(StaticBatchingStrategy::new(reqs).into());
                     };
                     LatencyConstrainedBatchingStrategy {
                         target_batch_latency: Duration::from_millis(5000),
