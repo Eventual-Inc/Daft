@@ -8,6 +8,7 @@ import pytest
 
 pytest.importorskip("openai")
 
+from openai import APIError
 from openai.types.completion_usage import CompletionUsage
 from openai.types.responses import ResponseUsage
 from pydantic import BaseModel
@@ -18,10 +19,13 @@ from daft.ai.protocols import Prompter
 from daft.ai.utils import RetryAfterError
 
 
-class DummyHttpError(Exception):
+class DummyHttpError(APIError):
     def __init__(self, status: int, retry_after: str):
-        super().__init__(f"http {status}")
+        # APIError requires message, request, and body
+        mock_request = Mock()
+        super().__init__(f"http {status}", request=mock_request, body=None)
         self.response = Mock(headers={"Retry-After": retry_after}, status_code=status)
+        self.code = str(status)  # APIError uses code as a string
 
 
 def run_async(coro):
