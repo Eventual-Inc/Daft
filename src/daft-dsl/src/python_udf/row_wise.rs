@@ -251,7 +251,9 @@ impl RowWisePyFn {
         if let Ok(val) = obj.extract::<String>() {
             // Limit string parameters to first 100 characters
             if val.len() > 100 {
-                return format!("{}...", &val[..100]);
+                let truncated: String = val.chars().take(100).collect();
+                return format!("{}...", truncated);
+            }
             }
             return val;
         }
@@ -280,7 +282,9 @@ impl RowWisePyFn {
         {
             // Limit string parameters to first 100 characters
             if val.len() > 100 {
-                return format!("{}...", &val[..100]);
+                let truncated: String = val.chars().take(100).collect();
+                return format!("{}...", truncated);
+            }
             }
             return val;
         }
