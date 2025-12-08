@@ -64,7 +64,7 @@ impl FromArrow for FixedSizeListArray {
                 Ok(Self::new(
                     field.clone(),
                     child_series,
-                    arrow_arr.validity().cloned().map(Into::into),
+                    arrow_arr.nulls().cloned().map(Into::into),
                 ))
             }
             (d, a) => Err(DaftError::TypeError(format!(

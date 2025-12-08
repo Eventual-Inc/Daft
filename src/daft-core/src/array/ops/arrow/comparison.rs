@@ -1,6 +1,7 @@
 use common_error::DaftResult;
 use daft_arrow::{
-    array::{Array, FixedSizeListArray, LargeListArray, PrimitiveArray, equal, ord::build_compare},
+    ord::{make_comparator, SortOptions},
+    array::{Array, FixedSizeListArray, LargeListArray, PrimitiveArray},
     datatypes::DataType,
     error::Result,
 };
@@ -11,11 +12,13 @@ use crate::{
     series::Series,
 };
 
-fn build_is_equal_float<F: Float + daft_arrow::types::NativeType>(
+fn build_is_equal_float<F>(
     left: &dyn Array,
     right: &dyn Array,
     nan_equal: bool,
-) -> Box<dyn Fn(usize, usize) -> bool + Send + Sync> {
+) -> Box<dyn Fn(usize, usize) -> bool + Send + Sync>
+    where F: daft_arrow::array::ArrowPrimitiveType, F::Native: Float
+{
     let left = left
         .as_any()
         .downcast_ref::<PrimitiveArray<F>>()
@@ -27,7 +30,7 @@ fn build_is_equal_float<F: Float + daft_arrow::types::NativeType>(
         .unwrap()
         .clone();
     if nan_equal {
-        Box::new(move |i, j| cmp_float::<F>(&left.value(i), &right.value(j)).is_eq())
+        Box::new(move |i, j| cmp_float::<F::Native>(&left.value(i), &right.value(j)).is_eq())
     } else {
         Box::new(move |i, j| left.value(i).eq(&right.value(j)))
     }
@@ -48,7 +51,7 @@ fn build_is_equal_list(
         .unwrap()
         .clone();
 
-    Box::new(move |i, j| equal(left.value(i).as_ref(), right.value(j).as_ref()))
+    Box::new(move |i, j| left.value(i).as_ref() == right.value(j).as_ref())
 }
 
 fn build_is_equal_fixed_size_list(
@@ -66,7 +69,7 @@ fn build_is_equal_fixed_size_list(
         .unwrap()
         .clone();
 
-    Box::new(move |i, j| equal(left.value(i).as_ref(), right.value(j).as_ref()))
+    Box::new(move |i, j| left.value(i).as_ref() == right.value(j).as_ref())
 }
 
 fn build_is_equal_with_nan(
@@ -90,7 +93,7 @@ fn build_is_equal_with_nan(
             Ok(build_is_equal_fixed_size_list(left, right))
         }
         _ => {
-            let comp = build_compare(left, right)?;
+            let comp = make_comparator(left, right, SortOptions::default())?;
             Ok(Box::new(move |i, j| comp(i, j).is_eq()))
         }
     }

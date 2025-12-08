@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use common_error::DaftResult;
-use daft_arrow::bitmap::utils::SlicesIterator;
+use daft_arrow::{array::Array};
 
 use super::{as_arrow::AsArrow, full::FullNull};
 #[cfg(feature = "python")]
@@ -33,19 +33,19 @@ fn generic_filter<Arr>(
 where
     Arr: FullNull + Clone + GrowableArray + DaftArrayType,
 {
-    let keep_bitmap = match mask.as_arrow().validity() {
+    let keep_bitmap = match mask.as_arrow().nulls() {
         None => Cow::Borrowed(mask.as_arrow().values()),
-        Some(validity) => Cow::Owned(mask.as_arrow().values() & validity),
+        Some(validity) => Cow::Owned(mask.as_arrow().values() & validity.inner()),
     };
 
-    let num_invalid = keep_bitmap.as_ref().unset_bits();
+    let num_invalid = keep_bitmap.as_ref().count_set_bits();
     if num_invalid == 0 {
         return Ok(arr.clone());
     } else if num_invalid == mask.len() {
         return Ok(Arr::empty(arr_name, arr_dtype));
     }
 
-    let slice_iter = SlicesIterator::new(keep_bitmap.as_ref());
+    let slice_iter = keep_bitmap.as_ref().bit_chunks();
     let mut growable =
         Arr::make_growable(arr_name, arr_dtype, vec![arr], false, slice_iter.slots());
 

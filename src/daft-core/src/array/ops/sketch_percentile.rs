@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_arrow::array::{Float64Builder, Float64Array as ArrowFloat64Array};
+use daft_arrow::array::{Float64Array as ArrowFloat64Array};
+use daft_arrow::array::builder::Float64Builder;
 
 use super::from_arrow::FromArrow;
 use crate::{

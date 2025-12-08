@@ -8,7 +8,7 @@ use crate::{
     with_match_daft_types,
 };
 
-mod arrow_growable;
+// mod arrow_growable;
 mod bitmap_growable;
 mod fixed_size_list_growable;
 mod list_growable;
@@ -102,7 +102,7 @@ impl GrowableArray for NullArray {
         _use_validity: bool,
         _capacity: usize,
     ) -> Self::GrowableType<'a> {
-        Self::GrowableType::new(name, dtype)
+        Self::GrowableType::new(name)
     }
 }
 
@@ -121,7 +121,8 @@ macro_rules! impl_growable_array {
                 use_validity: bool,
                 capacity: usize,
             ) -> Self::GrowableType<'a> {
-                Self::GrowableType::new(name, dtype, arrays, use_validity, capacity)
+                todo!()
+                // Self::GrowableType::new(name, dtype, arrays, use_validity, capacity)
             }
         }
     };

@@ -11,8 +11,7 @@ pub use agg_ops::{
     try_stddev_aggregation_supertype, try_sum_supertype,
 };
 use daft_arrow::{
-    compute::comparison::Simd8,
-    types::{NativeType, simd::Simd},
+    array::ArrowPrimitiveType, compute::comparison::Simd8,
 };
 // Import DataType enum
 pub use daft_schema::dtype::DataType;
@@ -289,11 +288,9 @@ impl DaftDataType for PythonType {
 
 pub trait NumericNative:
     PartialOrd
-    + NativeType
     + Num
     + NumCast
     + Zero
-    + Simd
     + Simd8
     + std::iter::Sum<Self>
     + Add<Output = Self>
@@ -312,6 +309,7 @@ pub trait NumericNative:
 /// Trait to express types that are native and can be vectorized
 pub trait DaftNumericType: Send + Sync + DaftArrowBackedType + 'static {
     type Native: NumericNative;
+    type Arrow: ArrowPrimitiveType;
 }
 
 impl NumericNative for i8 {
@@ -351,38 +349,49 @@ impl NumericNative for f64 {
 
 impl DaftNumericType for UInt8Type {
     type Native = u8;
+    type Arrow = daft_arrow::types::UInt8Type;
 }
 impl DaftNumericType for UInt16Type {
     type Native = u16;
+    type Arrow = daft_arrow::types::UInt16Type;
 }
 impl DaftNumericType for UInt32Type {
     type Native = u32;
+    type Arrow = daft_arrow::types::UInt32Type;
 }
 impl DaftNumericType for UInt64Type {
     type Native = u64;
+    type Arrow = daft_arrow::types::UInt64Type;
 }
 impl DaftNumericType for Int8Type {
     type Native = i8;
+    type Arrow = daft_arrow::types::Int8Type;
 }
 impl DaftNumericType for Int16Type {
     type Native = i16;
+    type Arrow = daft_arrow::types::Int16Type;
 }
 impl DaftNumericType for Int32Type {
     type Native = i32;
+    type Arrow = daft_arrow::types::Int32Type;
 }
 impl DaftNumericType for Int64Type {
     type Native = i64;
+    type Arrow = daft_arrow::types::Int64Type;
 }
 
 impl DaftNumericType for Int128Type {
     type Native = i128;
+    type Arrow = daft_arrow::types::Decimal128Type;
 }
 
 impl DaftNumericType for Float32Type {
     type Native = f32;
+    type Arrow = daft_arrow::types::Float32Type;
 }
 impl DaftNumericType for Float64Type {
     type Native = f64;
+    type Arrow = daft_arrow::types::Float64Type;
 }
 
 pub trait DaftIntegerType: DaftNumericType
@@ -393,14 +402,17 @@ where
 
 pub trait DaftPrimitiveType: Send + Sync + DaftArrowBackedType + 'static {
     type Native: NumericNative;
+    type Arrow: ArrowPrimitiveType;
 }
 
 impl<T: DaftNumericType> DaftPrimitiveType for T {
     type Native = T::Native;
+    type Arrow = T::Arrow;
 }
 
 impl DaftPrimitiveType for Decimal128Type {
     type Native = i128;
+    type Arrow = daft_arrow::types::Decimal128Type;
 }
 
 impl DaftIntegerType for UInt8Type {}

@@ -48,6 +48,10 @@ impl FixedSizeListArray {
             DataType::FixedSizeList(field, size as usize),
         )
     }
+    pub fn values(&self) -> &ArrayRef {
+        let arrow_arr = self.0.values().clone();
+        todo!()
+    }
 }
 
 impl Array for FixedSizeListArray {

@@ -1,6 +1,5 @@
 use daft_arrow::{
-    array::{PrimitiveArray, ArrowPrimitiveType},
-    types::{Index},
+    array::{Array, ArrowPrimitiveType, PrimitiveArray, UInt64Array},
 };
 
 use super::common;
@@ -11,20 +10,20 @@ pub fn indices_sorted_unstable_by<T, F>(
     cmp: F,
     descending: bool,
     nulls_first: bool,
-) -> PrimitiveArray<u64>
+) -> UInt64Array
 where
-    T: ArrowPrimitiveType,
-    F: Fn(&T, &T) -> std::cmp::Ordering,
+    T: ArrowPrimitiveType + std::fmt::Debug,
+    F: Fn(&T::Native, &T::Native) -> std::cmp::Ordering,
 {
-    let values = array.values().as_slice();
+    let values = array.values();
 
     unsafe {
         common::idx_sort(
-            array.validity(),
+            array.nulls(),
             |l: &u64, r: &u64| {
                 cmp(
-                    values.get_unchecked((*l).to_usize()),
-                    values.get_unchecked((*r).to_usize()),
+                    values.get_unchecked((*l) as usize),
+                    values.get_unchecked((*r) as usize),
                 )
             },
             array.len(),

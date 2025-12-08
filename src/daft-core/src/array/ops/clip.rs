@@ -36,7 +36,7 @@ where
                         (None, Some(r)) => Some(clamp_max(*value, *r)),
                         (None, None) => Some(*value),
                     });
-                let result = PrimitiveArray::<T::Native>::from_trusted_len_iter(result);
+                let result = PrimitiveArray::<T::Arrow>::from_trusted_len_iter(result);
                 let data_array = Self::from((self.name(), Box::new(result)))
                     .with_validity(self.validity().cloned())?;
                 Ok(data_array)
@@ -57,7 +57,7 @@ where
                                 Some(l) => Some(clamp(*value, *l, r)),
                                 None => Some(clamp_max(*value, r)), // If left is null, we can just clamp_max
                             });
-                        let result = PrimitiveArray::<T::Native>::from_trusted_len_iter(result);
+                        let result = PrimitiveArray::<T::Arrow>::from_trusted_len_iter(result);
                         let data_array = Self::from((self.name(), Box::new(result)))
                             .with_validity(self.validity().cloned())?;
                         Ok(data_array)
@@ -72,7 +72,7 @@ where
                                 Some(l) => Some(clamp_min(*value, *l)),
                                 None => Some(*value), // Left null, and right null, so we just don't do anything
                             });
-                        let result = PrimitiveArray::<T::Native>::from_trusted_len_iter(result);
+                        let result = PrimitiveArray::<T::Arrow>::from_trusted_len_iter(result);
                         let data_array = Self::from((self.name(), Box::new(result)))
                             .with_validity(self.validity().cloned())?;
                         Ok(data_array)
@@ -92,7 +92,7 @@ where
                                 Some(r) => Some(clamp(*value, l, *r)),
                                 None => Some(clamp_min(*value, l)), // Right null, so we can just clamp_min
                             });
-                        let result = PrimitiveArray::<T::Native>::from_trusted_len_iter(result);
+                        let result = PrimitiveArray::<T::Arrow>::from_trusted_len_iter(result);
                         let data_array = Self::from((self.name(), Box::new(result)))
                             .with_validity(self.validity().cloned())?;
                         Ok(data_array)
@@ -106,7 +106,7 @@ where
                                 Some(r) => Some(clamp_max(*value, *r)),
                                 None => Some(*value),
                             });
-                        let result = PrimitiveArray::<T::Native>::from_trusted_len_iter(result);
+                        let result = PrimitiveArray::<T::Arrow>::from_trusted_len_iter(result);
                         let data_array = Self::from((self.name(), Box::new(result)))
                             .with_validity(self.validity().cloned())?;
                         Ok(data_array)

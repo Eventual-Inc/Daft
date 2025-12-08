@@ -1,4 +1,4 @@
-use daft_arrow::{array, types::months_days_ns};
+use daft_arrow::{array};
 
 use crate::{
     array::DataArray,
@@ -22,7 +22,7 @@ impl<T> AsArrow for DataArray<T>
 where
     T: DaftPrimitiveType,
 {
-    type Output = array::PrimitiveArray<T::Native>;
+    type Output = array::PrimitiveArray<T::Arrow>;
 
     // For DataArray<T: DaftNumericType>, retrieve the underlying Arrow2 PrimitiveArray.
     fn as_arrow(&self) -> &Self::Output {
@@ -57,7 +57,7 @@ impl_asarrow_dataarray!(Utf8Array, array::LargeStringArray);
 impl_asarrow_dataarray!(BooleanArray, array::BooleanArray);
 impl_asarrow_dataarray!(BinaryArray, array::LargeBinaryArray);
 impl_asarrow_dataarray!(FixedSizeBinaryArray, array::FixedSizeBinaryArray);
-impl_asarrow_dataarray!(IntervalArray, array::PrimitiveArray<months_days_ns>);
+impl_asarrow_dataarray!(IntervalArray, array::MonthsDaysNsArray);
 
 impl_asarrow_logicalarray!(DateArray, array::PrimitiveArray<i32>);
 impl_asarrow_logicalarray!(TimeArray, array::PrimitiveArray<i64>);

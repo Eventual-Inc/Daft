@@ -1,13 +1,14 @@
 pub mod array;
+pub mod ord;
 
 // Re-export arrow2::* modules for centralized access
 pub use arrow2::{
     chunk, compute, datatypes, error, ffi, io, offset, scalar, temporal_conversions,
-    trusted_len, types,
+    trusted_len,
 };
 
 pub mod buffer {
-    pub use arrow_buffer::{BooleanBufferBuilder, NullBuffer, NullBufferBuilder};
+    pub use arrow_buffer::{BooleanBuffer, BooleanBufferBuilder, NullBuffer, NullBufferBuilder};
     pub use arrow2::buffer::*;
 
     /// Convert an arrow_buffer::buffer::NullBuffer to an arrow2::bitmap::Bitmap.
@@ -34,4 +35,10 @@ pub mod bitmap {
     // Uses come from arrow2::array::BooleanArray values buffer
     // And direct access to arrow2::array::Array objects
     pub use arrow2::bitmap::*;
+}
+
+pub mod types {
+    pub use arrow_array::types::*;
+
+    pub use arrow_buffer::ArrowNativeType;
 }

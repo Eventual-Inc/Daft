@@ -4,7 +4,6 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
-use daft_arrow::types::Index;
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
 use daft_schema::{dtype::DataType, field::Field};
 use xxhash_rust::{

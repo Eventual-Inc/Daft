@@ -1,4 +1,5 @@
 use common_error::DaftResult;
+use daft_arrow::array::Array;
 use hyperloglog::{HyperLogLog, NUM_REGISTERS};
 
 use crate::{
@@ -13,7 +14,7 @@ impl DaftHllSketchAggable for UInt64Array {
 
     fn hll_sketch(&self) -> Self::Output {
         let mut hll = HyperLogLog::default();
-        for &value in self.as_arrow().iter().flatten() {
+        for value in self.as_arrow().iter().flatten() {
             hll.add_already_hashed(value);
         }
         let array = (self.name(), hll.registers.as_ref(), NUM_REGISTERS).into();
@@ -26,8 +27,8 @@ impl DaftHllSketchAggable for UInt64Array {
         for group in group_indices {
             let mut hll = HyperLogLog::default();
             for &index in group {
-                if let Some(value) = data.get(index as _) {
-                    hll.add_already_hashed(value);
+                if data.is_valid(index as _) {
+                    hll.add_already_hashed(data.value(index as _));
                 }
             }
             bytes.extend(hll.registers.as_ref());

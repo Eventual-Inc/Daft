@@ -16,11 +16,12 @@
 // specific language governing permissions and limitations
 // under the License.
 use daft_arrow::buffer::NullBuffer;
+use daft_arrow::types::ArrowNativeType;
 use daft_arrow::{
-    array::{PrimitiveArray, ArrowPrimitiveType},
+    array::{PrimitiveArray},
     buffer::{Buffer, NullBufferBuilder},
     compute::sort::SortOptions,
-    types::NativeType,
+    types::ArrowPrimitiveType,
 };
 
 /// # Safety
@@ -28,7 +29,7 @@ use daft_arrow::{
 #[inline]
 fn k_element_sort_inner<T, F>(values: &mut [T], descending: bool, limit: usize, mut cmp: F)
 where
-    T: NativeType,
+    T: ArrowNativeType,
     F: FnMut(&T, &T) -> std::cmp::Ordering,
 {
     if descending {
@@ -42,7 +43,7 @@ where
 
 fn sort_values<T, F>(values: &mut [T], mut cmp: F, descending: bool, limit: usize)
 where
-    T: NativeType,
+    T: ArrowNativeType,
     F: FnMut(&T, &T) -> std::cmp::Ordering,
 {
     if limit != values.len() {
@@ -64,8 +65,8 @@ fn sort_nullable<T, F>(
     limit: usize,
 ) -> (Buffer<T>, Option<NullBuffer>)
 where
-    T: NativeType,
-    F: FnMut(&T, &T) -> std::cmp::Ordering,
+    T: ArrowPrimitiveType,
+    F: FnMut(&T::Native, &T::Native) -> std::cmp::Ordering,
 {
     assert!(limit <= values.len());
     if options.nulls_first && limit < validity.null_count() {
@@ -166,11 +167,15 @@ where
 #[cfg(test)]
 mod tests {
     use daft_arrow::{
-        array::{Array, ord},
+        array::{Array},
         datatypes::DataType,
     };
 
     use super::*;
+
+    fn total_cmp<T: Ord>(l: &T, r: &T) -> std::cmp::Ordering {
+        l.cmp(r)
+    }
 
     fn test_sort_primitive_arrays<T>(
         data: &[Option<T>],
@@ -178,7 +183,7 @@ mod tests {
         options: SortOptions,
         expected_data: &[Option<T>],
     ) where
-        T: NativeType + std::cmp::Ord,
+        T: ArrowPrimitiveType + std::cmp::Ord,
     {
         let input = PrimitiveArray::<T>::from(data)
             .to(data_type.clone())
@@ -192,7 +197,7 @@ mod tests {
             .downcast_ref::<PrimitiveArray<T>>()
             .unwrap()
             .clone();
-        let output = sort_by(&input, ord::total_cmp, &options, None);
+        let output = sort_by(&input, total_cmp, &options, None);
         assert_eq!(expected, output);
 
         // with limit
@@ -202,7 +207,7 @@ mod tests {
             .downcast_ref::<PrimitiveArray<T>>()
             .unwrap()
             .clone();
-        let output = sort_by(&input, ord::total_cmp, &options, Some(3));
+        let output = sort_by(&input, total_cmp, &options, Some(3));
         assert_eq!(expected, output);
     }
 

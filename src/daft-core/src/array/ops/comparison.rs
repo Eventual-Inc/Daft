@@ -18,7 +18,7 @@ where
     T: DaftArrowBackedType + 'static,
 {
     fn eq(&self, other: &Self) -> bool {
-        daft_arrow::array::equal(self.data(), other.data())
+        self.data() == other.data()
     }
 }
 

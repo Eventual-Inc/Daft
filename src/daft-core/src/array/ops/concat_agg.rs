@@ -2,7 +2,6 @@ use common_error::DaftResult;
 use daft_arrow::{
     array::{Array, LargeStringArray},
     offset::OffsetsBuffer,
-    types::Index,
 };
 
 use super::{DaftConcatAggable, as_arrow::AsArrow};

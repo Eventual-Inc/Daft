@@ -1,5 +1,4 @@
 use common_error::DaftResult;
-use daft_arrow::types::Index;
 
 use super::as_arrow::AsArrow;
 use crate::{

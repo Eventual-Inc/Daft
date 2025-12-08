@@ -2,13 +2,15 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use common_image::CowImage;
+use daft_arrow::array::builder::{BooleanBuilder, PrimitiveBuilder, Int64Builder, Int32Builder};
+use daft_arrow::types::ArrowPrimitiveType;
 use daft_arrow::{
     array::{
-        LargeBinaryBuilder, BooleanBuilder, PrimitiveBuilder, Int64Builder, Int32Builder,
+        LargeBinaryBuilder, 
         LargeStringBuilder,
     },
     trusted_len::TrustedLen,
-    types::{NativeType, months_days_ns},
+    types::{IntervalMonthDayNano},
 };
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -171,7 +173,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
     }
 
     #[inline(always)]
-    fn from_mutable_primitive<T: NativeType, I: Iterator<Item = (usize, DaftResult<Literal>)>>(
+    fn from_mutable_primitive<T: ArrowPrimitiveType, I: Iterator<Item = (usize, DaftResult<Literal>)>>(
         values: I,
         values_len: usize,
         field: Field,

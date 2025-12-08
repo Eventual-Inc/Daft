@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_arrow::{
-    array::{PrimitiveBuilder, PrimitiveArray},
+    array::{PrimitiveArray},
     types::months_days_ns,
 };
+use daft_arrow::array::builder::PrimitiveBuilder;
 #[cfg(feature = "python")]
 use pyo3::{Py, PyAny};
 

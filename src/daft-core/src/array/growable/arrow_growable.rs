@@ -13,7 +13,7 @@ use crate::{
 pub struct ArrowBackedDataArrayGrowable<
     'a,
     T: DaftArrowBackedType,
-    G: daft_arrow::array::growable::Growable<'a>,
+    G: daft_arrow::array::builder::Growable<'a>,
 > {
     name: String,
     dtype: DataType,
@@ -21,39 +21,39 @@ pub struct ArrowBackedDataArrayGrowable<
     _phantom: PhantomData<&'a T>,
 }
 
-impl<'a, T: DaftArrowBackedType, G: daft_arrow::array::growable::Growable<'a>> Growable
+impl<'a, T: DaftArrowBackedType, G: daft_arrow::array::builder::Growable<'a>> Growable
     for ArrowBackedDataArrayGrowable<'a, T, G>
 where
     DataArray<T>: IntoSeries,
 {
     #[inline]
     fn extend(&mut self, index: usize, start: usize, len: usize) {
-        self.arrow2_growable.extend(index, start, len);
+        self.arrow_builder.extend(index, start, len);
     }
 
     #[inline]
     fn add_nulls(&mut self, additional: usize) {
-        self.arrow2_growable.extend_validity(additional);
+        self.arrow_builder.extend_validity(additional);
     }
 
     #[inline]
     fn build(&mut self) -> DaftResult<Series> {
-        let arrow_array = self.arrow2_growable.as_box();
+        let arrow_array = self.arrow_builder.as_box();
         let field = Arc::new(Field::new(self.name.clone(), self.dtype.clone()));
         Ok(DataArray::<T>::from_arrow(field, arrow_array)?.into_series())
     }
 }
 
 pub type ArrowNullGrowable<'a> =
-    ArrowBackedDataArrayGrowable<'a, NullType, daft_arrow::array::growable::GrowableNull>;
+    ArrowBackedDataArrayGrowable<'a, NullType, daft_arrow::array::builder::NullBuilder>;
 
 impl ArrowNullGrowable<'_> {
-    pub fn new(name: &str, dtype: &DataType) -> Self {
+    pub fn new(name: &str) -> Self {
         let arrow_builder =
-            daft_arrow::array::growable::GrowableNull::new(dtype.to_arrow().unwrap());
+            daft_arrow::array::builder::NullBuilder::new();
         Self {
             name: name.to_string(),
-            dtype: dtype.clone(),
+            dtype: DataType::Null,
             arrow_builder,
             _phantom: PhantomData,
         }
@@ -61,9 +61,9 @@ impl ArrowNullGrowable<'_> {
 }
 
 macro_rules! impl_arrow_backed_data_array_growable {
-    ($growable_name:ident, $daft_type:ty, $arrow2_growable_type:ty) => {
+    ($growable_name:ident, $daft_type:ty, $arrow_builder_type:ty) => {
         pub type $growable_name<'a> =
-            ArrowBackedDataArrayGrowable<'a, $daft_type, $arrow2_growable_type>;
+            ArrowBackedDataArrayGrowable<'a, $daft_type, $arrow_builder_type>;
 
         impl<'a> $growable_name<'a> {
             pub fn new(
@@ -75,12 +75,12 @@ macro_rules! impl_arrow_backed_data_array_growable {
             ) -> Self {
                 let ref_arrays = arrays.to_vec();
                 let ref_arrow_arrays = ref_arrays.iter().map(|&a| a.as_arrow()).collect::<Vec<_>>();
-                let arrow2_growable =
-                    <$arrow2_growable_type>::new(ref_arrow_arrays, use_validity, capacity);
+                let arrow_builder =
+                    <$arrow_builder_type>::with_capacity(capacity);
                 Self {
                     name: name.to_string(),
                     dtype: dtype.clone(),
-                    arrow2_growable,
+                    arrow_builder,
                     _phantom: PhantomData,
                 }
             }
@@ -91,90 +91,90 @@ macro_rules! impl_arrow_backed_data_array_growable {
 impl_arrow_backed_data_array_growable!(
     ArrowBooleanGrowable,
     BooleanType,
-    daft_arrow::array::growable::GrowableBoolean<'a>
+    daft_arrow::array::builder::BooleanBuilder
 );
 impl_arrow_backed_data_array_growable!(
     ArrowInt8Growable,
     Int8Type,
-    daft_arrow::array::growable::GrowablePrimitive<'a, i8>
+    daft_arrow::array::builder::GrowablePrimitive<'a, i8>
 );
 impl_arrow_backed_data_array_growable!(
     ArrowInt16Growable,
     Int16Type,
-    daft_arrow::array::growable::GrowablePrimitive<'a, i16>
+    daft_arrow::array::builder::GrowablePrimitive<'a, i16>
 );
 impl_arrow_backed_data_array_growable!(
     ArrowInt32Growable,
     Int32Type,
-    daft_arrow::array::growable::GrowablePrimitive<'a, i32>
+    daft_arrow::array::builder::GrowablePrimitive<'a, i32>
 );
 impl_arrow_backed_data_array_growable!(
     ArrowInt64Growable,
     Int64Type,
-    daft_arrow::array::growable::GrowablePrimitive<'a, i64>
+    daft_arrow::array::builder::GrowablePrimitive<'a, i64>
 );
 impl_arrow_backed_data_array_growable!(
     ArrowUInt8Growable,
     UInt8Type,
-    daft_arrow::array::growable::GrowablePrimitive<'a, u8>
+    daft_arrow::array::builder::GrowablePrimitive<'a, u8>
 );
 impl_arrow_backed_data_array_growable!(
     ArrowUInt16Growable,
     UInt16Type,
-    daft_arrow::array::growable::GrowablePrimitive<'a, u16>
+    daft_arrow::array::builder::GrowablePrimitive<'a, u16>
 );
 impl_arrow_backed_data_array_growable!(
     ArrowUInt32Growable,
     UInt32Type,
-    daft_arrow::array::growable::GrowablePrimitive<'a, u32>
+    daft_arrow::array::builder::GrowablePrimitive<'a, u32>
 );
 impl_arrow_backed_data_array_growable!(
     ArrowUInt64Growable,
     UInt64Type,
-    daft_arrow::array::growable::GrowablePrimitive<'a, u64>
+    daft_arrow::array::builder::GrowablePrimitive<'a, u64>
 );
 impl_arrow_backed_data_array_growable!(
     ArrowFloat32Growable,
     Float32Type,
-    daft_arrow::array::growable::GrowablePrimitive<'a, f32>
+    daft_arrow::array::builder::GrowablePrimitive<'a, f32>
 );
 impl_arrow_backed_data_array_growable!(
     ArrowFloat64Growable,
     Float64Type,
-    daft_arrow::array::growable::GrowablePrimitive<'a, f64>
+    daft_arrow::array::builder::GrowablePrimitive<'a, f64>
 );
 impl_arrow_backed_data_array_growable!(
     ArrowBinaryGrowable,
     BinaryType,
-    daft_arrow::array::growable::GrowableBinary<'a, i64>
+    daft_arrow::array::builder::GrowableBinary<'a, i64>
 );
 impl_arrow_backed_data_array_growable!(
     ArrowFixedSizeBinaryGrowable,
     FixedSizeBinaryType,
-    daft_arrow::array::growable::GrowableFixedSizeBinary<'a>
+    daft_arrow::array::builder::GrowableFixedSizeBinary<'a>
 );
 impl_arrow_backed_data_array_growable!(
     ArrowUtf8Growable,
     Utf8Type,
-    daft_arrow::array::growable::GrowableUtf8<'a, i64>
+    daft_arrow::array::builder::GrowableUtf8<'a, i64>
 );
 impl_arrow_backed_data_array_growable!(
     ArrowMonthDayNanoIntervalGrowable,
     IntervalType,
-    daft_arrow::array::growable::GrowablePrimitive<'a, months_days_ns>
+    daft_arrow::array::builder::GrowablePrimitive<'a, months_days_ns>
 );
 
 impl_arrow_backed_data_array_growable!(
     ArrowDecimal128Growable,
     Decimal128Type,
-    daft_arrow::array::growable::GrowablePrimitive<'a, i128>
+    daft_arrow::array::builder::GrowablePrimitive<'a, i128>
 );
 
 /// ExtensionTypes are slightly different, because they have a dynamic inner type
 pub struct ArrowExtensionGrowable<'a> {
     name: String,
     dtype: DataType,
-    child_growable: Box<dyn daft_arrow::array::growable::Growable<'a> + 'a>,
+    child_growable: Box<dyn daft_arrow::array::builder::Growable<'a> + 'a>,
 }
 
 impl<'a> ArrowExtensionGrowable<'a> {
@@ -187,7 +187,7 @@ impl<'a> ArrowExtensionGrowable<'a> {
     ) -> Self {
         assert!(matches!(dtype, DataType::Extension(..)));
         let child_ref_arrays = arrays.iter().map(|&a| a.data()).collect::<Vec<_>>();
-        let child_growable = daft_arrow::array::growable::make_growable(
+        let child_growable = daft_arrow::array::builder::make_growable(
             child_ref_arrays.as_slice(),
             use_validity,
             capacity,

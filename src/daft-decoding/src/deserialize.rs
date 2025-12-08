@@ -11,7 +11,7 @@ use daft_arrow::{
     offset::Offset,
     temporal_conversions,
     trusted_len::TrustedLen,
-    types::NativeType,
+    types::ArrowPrimitiveType,
 };
 
 pub(crate) const ISO8601: &str = "%+";
@@ -66,7 +66,7 @@ fn deserialize_primitive<'a, T, I, F>(
     mut op: F,
 ) -> Box<dyn Array>
 where
-    T: NativeType,
+    T: ArrowPrimitiveType,
     I: TrustedLen<Item = Option<&'a [u8]>>,
     F: FnMut(&[u8]) -> Option<T>,
 {

@@ -3,8 +3,8 @@ use std::cmp::Ordering;
 use common_error::{DaftError, DaftResult};
 use daft_arrow::array::{
     Array,
-    dyn_ord::{DynArrayComparator, build_dyn_array_compare},
 };
+use daft_arrow::ord::{DynArrayComparator, build_dyn_array_compare};
 use daft_schema::schema::Schema;
 
 use crate::datatypes::DataType;

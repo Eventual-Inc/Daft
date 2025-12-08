@@ -2,11 +2,11 @@ use std::{cmp::Ordering, iter::zip};
 
 use daft_arrow::{
     array::{
-        Array, GenericBinaryArray, BooleanArray, FixedSizeBinaryArray, GenericStringArray, PrimitiveArray, UInt64Array, ArrowPrimitiveType,
-        ord::{DynComparator, build_compare}, OffsetSizeTrait
+        Array, ArrowPrimitiveType, BooleanArray, FixedSizeBinaryArray, GenericBinaryArray, GenericStringArray, OffsetSizeTrait, PrimitiveArray, UInt64Array
     },
     datatypes::{DataType, PhysicalType},
     error::{Error, Result},
+    ord::{DynComparator, SortOptions, make_comparator}
 };
 use num_traits::Float;
 
@@ -425,7 +425,7 @@ pub fn build_compare_with_nan(left: &dyn Array, right: &dyn Array) -> Result<Dyn
     {
         Ok(compare_f64(left, right))
     } else {
-        build_compare(left, right)
+        make_comparator(left, right, SortOptions::default())
     }
 }
 

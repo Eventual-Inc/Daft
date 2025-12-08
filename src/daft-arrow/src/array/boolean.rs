@@ -14,11 +14,17 @@ impl BooleanArray {
     pub fn new(values: BooleanBuffer, nulls: Option<NullBuffer>) -> Self {
         Self(arrow_array::BooleanArray::new(values, nulls))
     }
+    pub fn new_null(len: usize) -> Self {
+        Self(arrow_array::BooleanArray::new_null(len))
+    }
     pub fn value(&self, index: usize) -> bool {
         self.0.value(index)
     }
     pub unsafe fn value_unchecked(&self, index: usize) -> bool {
         unsafe { self.0.value_unchecked(index) }
+    }
+    pub fn values(&self) -> &BooleanBuffer {
+        self.0.values()
     }
 }
 
@@ -35,17 +41,5 @@ impl Array for BooleanArray {
 impl From<Vec<Option<bool>>> for BooleanArray {
     fn from(data: Vec<Option<bool>>) -> Self {
         Self(arrow_array::BooleanArray::from(data))
-    }
-}
-
-#[derive(Debug)]
-pub struct BooleanBuilder(pub(crate) arrow_array::builder::BooleanBuilder);
-
-impl BooleanBuilder {
-    pub fn new() -> Self {
-        Self(arrow_array::builder::BooleanBuilder::new())
-    }
-    pub fn with_capacity(capacity: usize) -> Self {
-        Self(arrow_array::builder::BooleanBuilder::with_capacity(capacity))
     }
 }
