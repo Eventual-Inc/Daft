@@ -3046,7 +3046,6 @@ name = "daft-local-plan"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
- "common-file-formats",
  "common-io-config",
  "common-py-serde",
  "common-resource-request",

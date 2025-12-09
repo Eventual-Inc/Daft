@@ -87,7 +87,7 @@ impl BlockingSink for CommitWriteSink {
                         })
                         .collect::<Vec<_>>();
 
-                    // If nothing was written, optionally create an empty file for Parquet/CSV when not partitioned
+                    // If nothing was written, create an empty file for Parquet/CSV when not partitioned
                     if written_file_path_record_batches.is_empty()
                         && file_info.partition_cols.is_none()
                     {
