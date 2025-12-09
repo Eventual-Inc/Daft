@@ -348,12 +348,9 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    use pyo3::wrap_pyfunction;
     use run::PyNativeExecutor;
-    use udf_process_pool::_get_process_pool_stats;
 
     parent.add_class::<PyNativeExecutor>()?;
-    parent.add_function(wrap_pyfunction!(_get_process_pool_stats, parent)?)?;
 
     Ok(())
 }

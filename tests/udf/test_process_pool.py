@@ -63,10 +63,6 @@ def test_basic_process_pool_execution():
     assert len(worker_pids) > 0, "Should have used at least one worker process"
     assert main_pid not in worker_pids, f"UDF should not execute in main process (PID {main_pid})"
 
-    # Test 2: Pool statistics reflect actual usage
-    _, total = daft.execution.udf.get_process_pool_stats()
-    assert total > 0, "Process pool should have created at least one worker"
-
     # Test 3: Multiple UDFs share the same pool
     # NOTE: Move this to different test.
     @daft.func(use_process=True)

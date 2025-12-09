@@ -248,18 +248,3 @@ class UdfWorkerHandle:
 
         if os.path.exists(self.socket_path):
             os.unlink(self.socket_path)
-
-
-def get_process_pool_stats() -> tuple[int, int, int]:
-    """Get statistics about the UDF process pool.
-
-    Returns:
-        Tuple of (max_workers, active_workers, total_workers)
-    """
-    try:
-        from daft.daft import _get_process_pool_stats  # type: ignore[attr-defined]
-
-        return _get_process_pool_stats()
-    except ImportError:
-        # Fallback if not available
-        return (0, 0, 0)

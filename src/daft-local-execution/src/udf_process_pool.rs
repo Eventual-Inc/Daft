@@ -27,14 +27,6 @@ pub(crate) fn get_or_init_process_pool() -> &'static Arc<ProcessPoolManager> {
     PROCESS_POOL.get_or_init(|| Arc::new(ProcessPoolManager::new()))
 }
 
-/// Get process pool statistics (exported to Python)
-#[cfg(feature = "python")]
-#[pyo3::pyfunction]
-#[pyo3(name = "_get_process_pool_stats")]
-pub fn _get_process_pool_stats() -> (usize, usize) {
-    get_or_init_process_pool().get_stats()
-}
-
 /// A task to be executed by a pool worker
 #[derive(Clone)]
 pub(crate) struct UdfTask {
@@ -230,14 +222,6 @@ impl ProcessPoolManager {
 
             condvar: Condvar::new(),
         }
-    }
-
-    /// Get pool statistics for testing/debugging
-    /// Returns: (max_workers, active_workers, total_workers_ever_created)
-    pub fn get_stats(&self) -> (usize, usize) {
-        let state = self.state.lock().unwrap();
-        let active_workers = state.available_workers.len() + state.workers_in_use;
-        (active_workers, state.total_created)
     }
 
     /// Submit a task for execution and return the result.
