@@ -21,7 +21,6 @@ def test_provider_import_error_message():
     assert "Please `pip install 'daft[tag]'` to use the function function with this provider." in str(err)
 
 
-
 def test_load_provider_invalid():
     with pytest.raises(ValueError, match="Provider 'invalid' is not yet supported"):
         load_provider("invalid")
