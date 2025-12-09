@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use daft_arrow::offset::OffsetsBuffer;
 
 use crate::{
-    array::growable::{Growable, GrowableArray},
+    array::ops::from_arrow::FromArrow,
     datatypes::{DaftArrayType, DataType, Field},
     prelude::ListArray,
     series::Series,
@@ -80,26 +80,17 @@ impl FixedSizeListArray {
             ));
         }
 
-        let first_array = arrays.first().unwrap();
-        let mut growable = <Self as GrowableArray>::make_growable(
-            first_array.field.name.as_str(),
-            &first_array.field.dtype,
-            arrays.to_vec(),
-            arrays
-                .iter()
-                .map(|a| a.validity.as_ref().map_or(0usize, |v| v.null_count()))
-                .sum::<usize>()
-                > 0,
-            arrays.iter().map(|a| a.len()).sum(),
-        );
-
-        for (i, arr) in arrays.iter().enumerate() {
-            growable.extend(i, 0, arr.len());
+        if arrays.len() == 1 {
+            return Ok((*arrays.first().unwrap()).clone());
         }
 
-        growable
-            .build()
-            .map(|s| s.downcast::<Self>().unwrap().clone())
+        let first_array = arrays.first().unwrap();
+        let field = first_array.field.clone();
+
+        let arrow_arrs_owned = arrays.iter().map(|arr| arr.to_arrow()).collect::<Vec<_>>();
+        let arrow_arrs = arrow_arrs_owned.iter().map(|arr| arr.as_ref()).collect::<Vec<_>>();
+        let concatenated = daft_arrow::compute::concatenate::concatenate(arrow_arrs.as_slice())?;
+        Self::from_arrow(field, concatenated)
     }
 
     pub fn len(&self) -> usize {

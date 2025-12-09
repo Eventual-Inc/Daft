@@ -1,7 +1,9 @@
 use common_error::DaftResult;
 use daft_arrow::types::Index;
 
-use super::as_arrow::AsArrow;
+use super::{as_arrow::AsArrow, from_arrow::FromArrow};
+#[cfg(feature = "python")]
+use crate::prelude::PythonArray;
 use crate::{
     array::{
         growable::{Growable, GrowableArray},
@@ -76,6 +78,7 @@ where
 
 impl FixedSizeBinaryArray {
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
+        // FixedSizeBinary is not supported by arrow-rs take, so we use growable
         let mut growable = Self::make_growable(
             self.name(),
             self.data_type(),
@@ -127,63 +130,17 @@ impl PythonArray {
 
 impl FixedSizeListArray {
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        let mut growable = Self::make_growable(
-            self.name(),
-            self.data_type(),
-            vec![self],
-            idx.data().null_count() > 0,
-            idx.len(),
-        );
-
-        for i in idx {
-            match i {
-                None => {
-                    growable.add_nulls(1);
-                }
-                Some(i) => {
-                    growable.extend(0, i.to_usize(), 1);
-                }
-            }
-        }
-
-        Ok(growable.build()?.downcast::<Self>()?.clone())
+        let arrow_arr = self.to_arrow();
+        let result = daft_arrow::compute::take::take(arrow_arr.as_ref(), idx.as_arrow())?;
+        Self::from_arrow(self.field().clone().into(), result)
     }
 }
 
 impl ListArray {
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        let child_capacity = idx
-            .as_arrow()
-            .iter()
-            .map(|idx| match idx {
-                None => 0,
-                Some(idx) => {
-                    let (start, end) = self.offsets().start_end(idx.to_usize());
-                    end - start
-                }
-            })
-            .sum();
-        let mut growable = <Self as GrowableArray>::GrowableType::new(
-            self.name(),
-            self.data_type(),
-            vec![self],
-            idx.data().null_count() > 0,
-            idx.len(),
-            child_capacity,
-        );
-
-        for i in idx {
-            match i {
-                None => {
-                    growable.add_nulls(1);
-                }
-                Some(i) => {
-                    growable.extend(0, i.to_usize(), 1);
-                }
-            }
-        }
-
-        Ok(growable.build()?.downcast::<Self>()?.clone())
+        let arrow_arr = self.to_arrow();
+        let result = daft_arrow::compute::take::take(arrow_arr.as_ref(), idx.as_arrow())?;
+        Self::from_arrow(self.field().clone().into(), result)
     }
 }
 
