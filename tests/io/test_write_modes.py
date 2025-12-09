@@ -197,6 +197,7 @@ def _run_write_modes_empty_test(
     }
 
     if write_mode == "overwrite" and partition_cols:
+        # there is no any file generated if write empty data with partition col
         with pytest.raises(FileNotFoundError):
             arrange_write_mode_test(
                 daft.from_pydict(existing_data),

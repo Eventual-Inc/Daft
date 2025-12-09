@@ -52,7 +52,6 @@ def test_empty_parquet_write_without_partitioning(tmp_path, write_mode, with_mor
     path = os.path.join(tmp_path, str(uuid.uuid4()))
     pd_df = df.write_parquet(path, write_mode=write_mode)
     read_back_pd_df = daft.read_parquet(path).to_pandas()
-    print(read_back_pd_df.head(10))
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
     assert len(pd_df) == 1

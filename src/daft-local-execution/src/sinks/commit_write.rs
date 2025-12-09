@@ -111,7 +111,12 @@ impl BlockingSink for CommitWriteSink {
                                     written_file_path_record_batches.push(rb);
                                 }
                             }
-                            _ => {}
+                            _ => {
+                                log::warn!(
+                                    "No data written for {:?} file format, and not empty file created.",
+                                    file_info.file_format
+                                );
+                            }
                         }
                     }
 
