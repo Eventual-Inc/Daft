@@ -126,7 +126,7 @@ class SwordfishProgressBar:
         # Create combined bar on first update
         if self.pbar is None:
             self.pbar = self.tqdm_mod(
-                bar_format="{desc}",
+                bar_format="[{elapsed}] {desc}",
                 # leave=True keeps the progress bar visible after completion.
                 # This avoids output corruption in Jupyter notebooks where clearing
                 # the bar doesn't work reliably.
