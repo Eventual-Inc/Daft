@@ -17,8 +17,14 @@ from daft.ai.provider import (
 
 
 def test_provider_import_error_message():
+<<<<<<< HEAD
     err = ProviderImportError("tag", function="function")
     assert "Please `pip install 'daft[tag]'` to use the function function with this provider." in str(err)
+=======
+    err = ProviderImportError("google")
+    assert "pip install 'daft[google]'" in str(err)
+    assert "with this provider" in str(err)
+>>>>>>> 4738581ba77f12028979598b8a9786ba86e8bd21
 
 
 def test_load_provider_invalid():
