@@ -1,5 +1,5 @@
 use common_error::{DaftError, DaftResult};
-use daft_core::series::Series;
+use daft_core::{prelude::UInt64Array, series::Series};
 use daft_dsl::expr::bound_expr::BoundExpr;
 
 use crate::RecordBatch;
@@ -12,7 +12,7 @@ impl RecordBatch {
         nulls_first: &[bool],
     ) -> DaftResult<Self> {
         let argsort = self.argsort(sort_keys, descending, nulls_first)?;
-        self.take(argsort.u64()?)
+        self.take(&argsort)
     }
 
     pub fn argsort(
@@ -20,7 +20,7 @@ impl RecordBatch {
         sort_keys: &[BoundExpr],
         descending: &[bool],
         nulls_first: &[bool],
-    ) -> DaftResult<Series> {
+    ) -> DaftResult<UInt64Array> {
         if sort_keys.len() != descending.len() {
             return Err(DaftError::ValueError(format!(
                 "sort_keys and descending length must match, got {} vs {}",
@@ -49,6 +49,6 @@ impl RecordBatch {
         let argsort = self.argsort(sort_keys, descending, nulls_first)?;
         let offset = offset.unwrap_or(0);
         let top_n = argsort.slice(offset, offset + limit)?;
-        self.take(top_n.u64()?)
+        self.take(&top_n)
     }
 }
