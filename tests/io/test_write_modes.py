@@ -196,28 +196,41 @@ def _run_write_modes_empty_test(
         "b": ["g", "h", "i", "j"],
     }
 
-    read_back = arrange_write_mode_test(
-        daft.from_pydict(existing_data),
-        daft.from_pydict(new_data).where(daft.lit(False)),  # Empty data
-        path,
-        format,
-        write_mode,
-        partition_cols,
-        io_config,
-        sort_cols=["a", "b"],
-    )
-
-    # Check the data
-    if write_mode == "append":
-        # The data should be the same as the existing data
-        assert read_back["a"] == ["a", "a", "b", "b"]
-        assert read_back["b"] == ["c", "d", "e", "f"]
-    elif write_mode == "overwrite":
-        # The data should be empty because we are overwriting the existing data
-        assert read_back["a"] == []
-        assert read_back["b"] == []
+    if write_mode == "overwrite" and partition_cols:
+        with pytest.raises(FileNotFoundError):
+            arrange_write_mode_test(
+                daft.from_pydict(existing_data),
+                daft.from_pydict(new_data).where(daft.lit(False)),  # Empty data
+                path,
+                format,
+                write_mode,
+                partition_cols,
+                io_config,
+                sort_cols=["a", "b"],
+            )
     else:
-        raise ValueError(f"Unsupported write_mode: {write_mode}")
+        read_back = arrange_write_mode_test(
+            daft.from_pydict(existing_data),
+            daft.from_pydict(new_data).where(daft.lit(False)),  # Empty data
+            path,
+            format,
+            write_mode,
+            partition_cols,
+            io_config,
+            sort_cols=["a", "b"],
+        )
+
+        # Check the data
+        if write_mode == "append":
+            # The data should be the same as the existing data
+            assert read_back["a"] == ["a", "a", "b", "b"]
+            assert read_back["b"] == ["c", "d", "e", "f"]
+        elif write_mode == "overwrite":
+            # The data should be empty because we are overwriting the existing data
+            assert read_back["a"] == []
+            assert read_back["b"] == []
+        else:
+            raise ValueError(f"Unsupported write_mode: {write_mode}")
 
 
 @pytest.mark.parametrize("write_mode", ["append", "overwrite"])
