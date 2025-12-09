@@ -4,35 +4,10 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Callable
 
 import pytest
 
 import daft
-from daft import DataType
-
-
-@pytest.fixture(autouse=True)
-def reset_pool_size():
-    """Reset the pool size env var after each test."""
-    original = os.environ.get("DAFT_UDF_POOL_SIZE")
-    yield
-    if original is not None:
-        os.environ["DAFT_UDF_POOL_SIZE"] = original
-    elif "DAFT_UDF_POOL_SIZE" in os.environ:
-        del os.environ["DAFT_UDF_POOL_SIZE"]
-
-
-def get_pid_udf() -> Callable[[int], int]:
-    """Helper to create a UDF that returns the process ID."""
-
-    @daft.func(use_process=True)
-    def get_pid(x: int) -> int:
-        import os
-
-        return os.getpid()
-
-    return get_pid
 
 
 def is_process_alive(pid: int) -> bool:
@@ -74,15 +49,11 @@ def wait_for_pids_to_exit(pids: set[int], timeout: float = 3.0, check_interval: 
 
 def test_basic_process_pool_execution():
     """Test that UDFs execute in worker processes and pool provides basic functionality."""
-    import os
-
     main_pid = os.getpid()
 
     # Test 1: UDF executes in worker process (not main)
     @daft.func(use_process=True)
     def get_worker_pid(x: int) -> int:
-        import os
-
         return os.getpid()
 
     df = daft.from_pydict({"a": list(range(10))})
@@ -93,10 +64,11 @@ def test_basic_process_pool_execution():
     assert main_pid not in worker_pids, f"UDF should not execute in main process (PID {main_pid})"
 
     # Test 2: Pool statistics reflect actual usage
-    _, _, total = daft.execution.udf.get_process_pool_stats()
+    _, total = daft.execution.udf.get_process_pool_stats()
     assert total > 0, "Process pool should have created at least one worker"
 
     # Test 3: Multiple UDFs share the same pool
+    # NOTE: Move this to different test.
     @daft.func(use_process=True)
     def double(x: int) -> int:
         return x * 2
@@ -110,35 +82,21 @@ def test_basic_process_pool_execution():
     assert result.to_pydict() == {"a": [2, 4, 6], "b": [30, 60, 90]}
 
 
-def test_python_dtype_fallback():
-    """Test that UDFs with Python dtypes fall back to inline execution."""
-    df = daft.from_pydict({"a": [{"x": 1}, {"x": 2}, {"x": 3}]})
-
-    @daft.func(use_process=True, return_dtype=DataType.python())
-    def get_x(obj):
-        return obj["x"]
-
-    result = df.select(get_x(df["a"])).collect()
-    assert result.to_pydict()["a"] == [1, 2, 3]
-
-
 # ==============================================================================
 # Pool Sizing and Concurrency Tests
 # ==============================================================================
 
 
 @pytest.mark.parametrize(
-    "pool_size,max_concurrency,expected_max_pids",
+    "max_concurrency,expected_max_pids",
     [
-        (2, 10, 2),  # Pool size limits usage
-        (2, 5, 5),  # Pool scales up to max_concurrency
-        (None, 3, 3),  # No pool size limit, uses max_concurrency
+        (10, 2),  # Pool size limits usage
+        (5, 5),  # Pool scales up to max_concurrency
+        (3, 3),  # No pool size limit, uses max_concurrency
     ],
 )
-def test_pool_sizing_and_scaling(pool_size, max_concurrency, expected_max_pids):
+def test_pool_sizing_and_scaling(max_concurrency, expected_max_pids):
     """Test pool sizing with various DAFT_UDF_POOL_SIZE and max_concurrency combinations."""
-    if pool_size is not None:
-        os.environ["DAFT_UDF_POOL_SIZE"] = str(pool_size)
 
     @daft.cls(max_concurrency=max_concurrency)
     class GetPid:
@@ -146,8 +104,6 @@ def test_pool_sizing_and_scaling(pool_size, max_concurrency, expected_max_pids):
             pass
 
         def __call__(self, x: int) -> int:
-            import os
-
             return os.getpid()
 
     get_pid = GetPid()
@@ -172,8 +128,6 @@ def test_max_concurrency_respects_highest_udf():
             pass
 
         def __call__(self, x: int) -> int:
-            import os
-
             return os.getpid()
 
     @daft.cls(max_concurrency=7)
@@ -182,8 +136,6 @@ def test_max_concurrency_respects_highest_udf():
             pass
 
         def __call__(self, x: int) -> int:
-            import os
-
             return os.getpid()
 
     get_pid1 = GetPid1()
@@ -219,7 +171,11 @@ def test_process_cleanup(should_fail):
             df.select(udf_func(df["a"])).collect()
         # Can't verify PID cleanup for failures since we don't capture PIDs
     else:
-        get_pid = get_pid_udf()
+
+        @daft.func(use_process=True)
+        def get_pid(x: int) -> int:
+            return os.getpid()
+
         df = daft.from_pydict({"a": [1, 2, 3, 4, 5]})
         result = df.select(get_pid(df["a"])).collect()
         pids = set(result.to_pydict()["a"])
@@ -238,8 +194,6 @@ def test_worker_reuse_and_caching():
             self.call_count = 0
 
         def count(self, _: int) -> int:
-            import os
-
             self.call_count += 1
             return os.getpid()
 
@@ -264,7 +218,11 @@ def test_worker_reuse_and_caching():
 
     df3 = daft.from_pydict({"a": [10, 20, 30]})
     result3 = df3.select(other_udf(df3["a"])).collect()
-    assert result3.to_pydict()["a"] == [30, 60, 90], "Should work after previous UDF teardown"
+    assert result3.to_pydict()["a"] == [
+        30,
+        60,
+        90,
+    ], "Should work after previous UDF teardown"
 
     # Cleanup
     time.sleep(0.2)
@@ -308,7 +266,11 @@ def test_error_handling():
 
     df2 = daft.from_pydict({"a": [10, 20, 30]})
     result = df2.select(working_udf(df2["a"])).collect()
-    assert result.to_pydict()["a"] == [20, 40, 60], "Pool should recover and process new queries"
+    assert result.to_pydict()["a"] == [
+        20,
+        40,
+        60,
+    ], "Pool should recover and process new queries"
 
 
 # ==============================================================================

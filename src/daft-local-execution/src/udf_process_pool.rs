@@ -9,7 +9,6 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_runtime::get_compute_pool_num_threads;
 use daft_core::series::Series;
 use daft_dsl::{ExprRef, operator_metrics::OperatorMetrics};
 use daft_recordbatch::RecordBatch;
@@ -32,20 +31,8 @@ pub(crate) fn get_or_init_process_pool() -> &'static Arc<ProcessPoolManager> {
 #[cfg(feature = "python")]
 #[pyo3::pyfunction]
 #[pyo3(name = "_get_process_pool_stats")]
-pub fn _get_process_pool_stats() -> (usize, usize, usize) {
+pub fn _get_process_pool_stats() -> (usize, usize) {
     get_or_init_process_pool().get_stats()
-}
-
-/// Environment variable for configuring pool size
-const POOL_SIZE_ENV_VAR: &str = "DAFT_UDF_POOL_SIZE";
-
-fn get_default_pool_size() -> usize {
-    if let Ok(val) = std::env::var(POOL_SIZE_ENV_VAR)
-        && let Ok(size) = val.parse::<usize>()
-    {
-        return size.max(1);
-    }
-    get_compute_pool_num_threads()
 }
 
 /// A task to be executed by a pool worker
@@ -209,6 +196,7 @@ type WorkerIndex = usize;
 
 /// State for managing UDF workers in the pool
 #[cfg(feature = "python")]
+#[derive(Default)]
 struct PoolState {
     /// Workers that are available for use
     available_workers: HashMap<WorkerIndex, UdfWorkerHandle>,
@@ -216,20 +204,6 @@ struct PoolState {
     workers_in_use: usize,
     /// Total number of workers ever created (for indexing)
     total_created: usize,
-    /// Maximum concurrency requested across all UDFs
-    max_concurrency: usize,
-}
-
-#[cfg(feature = "python")]
-impl Default for PoolState {
-    fn default() -> Self {
-        Self {
-            available_workers: HashMap::new(),
-            workers_in_use: 0,
-            total_created: 0,
-            max_concurrency: get_default_pool_size(),
-        }
-    }
 }
 
 /// Manager for the global process pool
@@ -260,10 +234,10 @@ impl ProcessPoolManager {
 
     /// Get pool statistics for testing/debugging
     /// Returns: (max_workers, active_workers, total_workers_ever_created)
-    pub fn get_stats(&self) -> (usize, usize, usize) {
+    pub fn get_stats(&self) -> (usize, usize) {
         let state = self.state.lock().unwrap();
         let active_workers = state.available_workers.len() + state.workers_in_use;
-        (state.max_concurrency, active_workers, state.total_created)
+        (active_workers, state.total_created)
     }
 
     /// Submit a task for execution and return the result.
@@ -335,14 +309,9 @@ impl ProcessPoolManager {
                 return Ok(worker_handle);
             }
 
-            // Update max_concurrency if needed
-            if udf_max_concurrency > state.max_concurrency {
-                state.max_concurrency = udf_max_concurrency;
-            }
-
             // Try to spawn a new worker if under the limit
             let total_workers = state.available_workers.len() + state.workers_in_use;
-            if total_workers < state.max_concurrency {
+            if total_workers < udf_max_concurrency {
                 let worker_idx = state.total_created;
                 state.total_created += 1;
                 state.workers_in_use += 1;
