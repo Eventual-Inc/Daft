@@ -236,90 +236,80 @@ def test_async_rowwise_retry():
 
 
 @pytest.mark.parametrize("max_retries", [1, 2, 3])
-def test_rowwise_retry_after_delay_respected(max_retries):
-    call_count = 0
-    retry_delay = 0.2
-
-    @daft.func(max_retries=max_retries)
-    def sometimes_slow(x) -> int:
-        nonlocal call_count
-        call_count += 1
-        # Fail on first call, succeed on retry
-        if call_count == 1:
-            raise RetryAfterError(retry_delay)
-        return x * 3
-
-    df = daft.from_pydict({"value": [2]})
-
-    start = time.perf_counter()
-    result = df.select(sometimes_slow(col("value"))).to_pydict()
-    elapsed = time.perf_counter() - start
-
-    assert result == {"value": [6]}
-    assert call_count == 2  # Initial call + 1 retry
-    # Should honor the retry-after delay
-    assert elapsed >= retry_delay * 0.9  # Allow some tolerance for timing
-
-
-@pytest.mark.parametrize("max_retries", [2, 3])
-def test_rowwise_retry_after_multiple_retries(max_retries):
-    """Test that retry mechanism works correctly with multiple retries."""
+@pytest.mark.parametrize("is_async", [False, True])
+def test_rowwise_retry_after_delay_respected(max_retries, is_async):
     call_count = 0
     retry_delay = 0.1
 
-    @daft.func(max_retries=max_retries)
-    def sometimes_slow(x) -> int:
+    def _retry_func_impl(x) -> int:
         nonlocal call_count
         call_count += 1
-        # Fail on first two calls, succeed on third
-        if call_count <= 2:
+        if call_count <= max_retries:
             raise RetryAfterError(retry_delay)
         return x * 3
+
+    if is_async:
+
+        @daft.func(max_retries=max_retries)
+        async def retry_func(x) -> int:
+            return _retry_func_impl(x)
+
+    else:
+
+        @daft.func(max_retries=max_retries)
+        def retry_func(x) -> int:
+            return _retry_func_impl(x)
 
     df = daft.from_pydict({"value": [2]})
 
     start = time.perf_counter()
-    result = df.select(sometimes_slow(col("value"))).to_pydict()
+    result = df.select(retry_func(col("value"))).to_pydict()
     elapsed = time.perf_counter() - start
 
     assert result == {"value": [6]}
-    assert call_count == 3  # Initial call + 2 retries
-    assert elapsed >= retry_delay * 2 * 0.9  # At least 2 retry delays
+    assert call_count == max_retries + 1
+    # Should honor the retry-after delay
+    assert elapsed >= retry_delay * max_retries
 
 
-@pytest.mark.parametrize("max_retries", [1, 2, 3])
-def test_rowwise_retry_after_max_retries_exceeded(max_retries):
+@pytest.mark.parametrize("is_async", [False, True])
+def test_rowwise_retry_after_max_retries_exceeded(is_async):
     """Test that when max retries is exceeded, the original exception from RetryAfterError is raised."""
     call_count = 0
     retry_delay = 0.1
     original_error_message = "Rate limit exceeded"
 
-    @daft.func(max_retries=max_retries)
-    def always_retry(x) -> int:
+    def _always_retry_impl(x) -> int:
         nonlocal call_count
         call_count += 1
         # Always raise RetryAfterError with an original exception until max retries is exceeded
         original_exc = ValueError(original_error_message)
         raise RetryAfterError(retry_delay, original=original_exc)
 
+    if is_async:
+
+        @daft.func(max_retries=1)
+        async def always_retry(x) -> int:
+            return _always_retry_impl(x)
+
+    else:
+
+        @daft.func(max_retries=1)
+        def always_retry(x) -> int:
+            return _always_retry_impl(x)
+
     df = daft.from_pydict({"value": [2]})
 
     start = time.perf_counter()
-    with pytest.raises(Exception) as exc_info:
+    with pytest.raises(ValueError, match=original_error_message) as exc_info:
         df.select(always_retry(col("value"))).to_pydict()
     elapsed = time.perf_counter() - start
 
-    # Verify the original exception (not RetryAfterError) is raised
-    # For row-wise UDFs, the error is wrapped in DaftCoreException, but the original ValueError
-    # should be visible in the error message, not RetryAfterError
-    error_str = str(exc_info.value)
-    assert "ValueError" in error_str
-    assert original_error_message in error_str
-    assert "RetryAfterError" not in error_str
+    assert original_error_message in str(exc_info.value)
     # Should have attempted initial call + max_retries retries
-    assert call_count == max_retries + 1
+    assert call_count == 2
     # Should have respected at least one retry delay
-    assert elapsed >= retry_delay * 0.9  # Allow some tolerance for timing
+    assert elapsed >= retry_delay
 
 
 def test_rowwise_retry_expected_to_fail():
@@ -396,92 +386,6 @@ def test_async_rowwise_retry_defaults_to_raise_and_zero_retries():
         pytest.fail("Expected ValueError")
     except ValueError:
         pass
-
-
-@pytest.mark.parametrize("max_retries", [1, 2, 3])
-def test_async_rowwise_retry_after_delay_respected(max_retries):
-    call_count = 0
-    retry_delay = 0.2
-
-    @daft.func(max_retries=max_retries)
-    async def sometimes_slow(x) -> int:
-        nonlocal call_count
-        call_count += 1
-        # Fail on first call, succeed on retry
-        if call_count == 1:
-            raise RetryAfterError(retry_delay)
-        await asyncio.sleep(0.01)  # Small delay to simulate async work
-        return x * 3
-
-    df = daft.from_pydict({"value": [2]})
-
-    start = time.perf_counter()
-    result = df.select(sometimes_slow(col("value"))).to_pydict()
-    elapsed = time.perf_counter() - start
-
-    assert result == {"value": [6]}
-    assert call_count == 2  # Initial call + 1 retry
-    # Should honor the retry-after delay
-    assert elapsed >= retry_delay * 0.9  # Allow some tolerance for timing
-
-
-@pytest.mark.parametrize("max_retries", [2, 3])
-def test_async_rowwise_retry_after_multiple_retries(max_retries):
-    """Test that async retry mechanism works correctly with multiple retries."""
-    call_count = 0
-    retry_delay = 0.1
-
-    @daft.func(max_retries=max_retries)
-    async def sometimes_slow(x) -> int:
-        nonlocal call_count
-        call_count += 1
-        # Fail on first two calls, succeed on third
-        if call_count <= 2:
-            raise RetryAfterError(retry_delay)
-        await asyncio.sleep(0.01)  # Small delay to simulate async work
-        return x * 3
-
-    df = daft.from_pydict({"value": [2]})
-
-    start = time.perf_counter()
-    result = df.select(sometimes_slow(col("value"))).to_pydict()
-    elapsed = time.perf_counter() - start
-
-    assert result == {"value": [6]}
-    assert call_count == 3  # Initial call + 2 retries
-    assert elapsed >= retry_delay * 2 * 0.9  # At least 2 retry delays
-
-
-@pytest.mark.parametrize("max_retries", [1, 2, 3])
-def test_async_rowwise_retry_after_max_retries_exceeded(max_retries):
-    """Test that when max retries is exceeded for async, the original exception from RetryAfterError is raised."""
-    call_count = 0
-    retry_delay = 0.1
-    original_error_message = "Rate limit exceeded"
-
-    @daft.func(max_retries=max_retries)
-    async def always_retry(x) -> int:
-        nonlocal call_count
-        call_count += 1
-        await asyncio.sleep(0.01)  # Small delay to simulate async work
-        # Always raise RetryAfterError with an original exception until max retries is exceeded
-        original_exc = ValueError(original_error_message)
-        raise RetryAfterError(retry_delay, original=original_exc)
-
-    df = daft.from_pydict({"value": [2]})
-
-    start = time.perf_counter()
-    with pytest.raises(ValueError, match=original_error_message) as exc_info:
-        df.select(always_retry(col("value"))).to_pydict()
-    elapsed = time.perf_counter() - start
-
-    # Verify the original exception (not RetryAfterError) is raised
-    assert isinstance(exc_info.value, ValueError)
-    assert str(exc_info.value) == original_error_message
-    # Should have attempted initial call + max_retries retries
-    assert call_count == max_retries + 1
-    # Should have respected at least one retry delay
-    assert elapsed >= retry_delay * 0.9  # Allow some tolerance for timing
 
 
 def test_row_wise_async_udf_use_process():

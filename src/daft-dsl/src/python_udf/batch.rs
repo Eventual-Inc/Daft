@@ -142,11 +142,12 @@ impl BatchPyFn {
         let result = retry_with_backoff(None, try_call_batch, max_retries);
         let name = args[0].name();
 
+        if let Ok((_, operator_metrics)) = &result {
+            collect_operator_metrics(operator_metrics, metrics_collector);
+        }
+
         match (result, self.on_error) {
-            (Ok((result_series, operator_metrics)), _) => {
-                collect_operator_metrics(&operator_metrics, metrics_collector);
-                Ok(result_series.cast(&self.return_dtype)?.rename(name))
-            }
+            (Ok((result_series, _)), _) => Ok(result_series.cast(&self.return_dtype)?.rename(name)),
             (Err(err), OnError::Raise) => Err(err),
             (Err(err), OnError::Log) => {
                 log::warn!("Python UDF error: {}", err);
@@ -187,11 +188,12 @@ impl BatchPyFn {
         )
         .await;
 
+        if let Ok((_, operator_metrics)) = &result {
+            collect_operator_metrics(operator_metrics, metrics);
+        }
+
         match (result, self.on_error) {
-            (Ok((result_series, operator_metrics)), _) => {
-                collect_operator_metrics(&operator_metrics, metrics);
-                Ok(result_series.cast(&self.return_dtype)?.rename(name))
-            }
+            (Ok((result_series, _)), _) => Ok(result_series.cast(&self.return_dtype)?.rename(name)),
             (Err(err), OnError::Raise) => Err(err),
             (Err(err), OnError::Log) => {
                 log::warn!("Python UDF error: {}", err);

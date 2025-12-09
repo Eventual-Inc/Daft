@@ -9,7 +9,7 @@ pytest.importorskip("openai")
 from unittest.mock import AsyncMock, Mock, patch
 
 import numpy as np
-from openai import NOT_GIVEN, InternalServerError, OpenAIError, RateLimitError
+from openai import NOT_GIVEN, InternalServerError, RateLimitError
 from openai.types.create_embedding_response import CreateEmbeddingResponse, Usage
 from openai.types.embedding import Embedding as OpenAIEmbedding
 
@@ -23,14 +23,6 @@ from daft.ai.openai.protocols.text_embedder import (
 from daft.ai.protocols import TextEmbedder
 from daft.ai.typing import EmbeddingDimensions
 from daft.ai.utils import RetryAfterError
-
-
-class FakeOpenAIError(OpenAIError):
-    """Simple subclass to attach headers for tests."""
-
-    def __init__(self, status_code: int, retry_after: str):
-        super().__init__(f"http {status_code}")
-        self.response = Mock(headers={"Retry-After": retry_after}, status_code=status_code)
 
 
 def new_input(approx_tokens: int) -> str:

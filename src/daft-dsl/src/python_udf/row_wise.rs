@@ -166,18 +166,12 @@ impl RowWisePyFn {
         )
         .await;
 
-        // Collect metrics from the final result (whether success or failure)
         if let Ok((_, operator_metrics)) = &result {
             crate::python_udf::collect_operator_metrics(operator_metrics, metrics);
         }
 
-        let result_series = result
-            .map(|(series, _)| series)
-            .map_err(DaftError::from)
-            .and_then(|s| Ok(s.cast(&self.return_dtype)?.rename(name)));
-
-        match (result_series, self.on_error) {
-            (Ok(result_series), _) => Ok(result_series),
+        match (result, self.on_error) {
+            (Ok((result_series, _)), _) => Ok(result_series.cast(&self.return_dtype)?.rename(name)),
             (Err(err), OnError::Raise) => Err(err),
             (Err(err), OnError::Log) => {
                 log::warn!("Python UDF error: {}", err);
@@ -347,7 +341,6 @@ impl RowWisePyFn {
                 };
                 let retry_result = retry_with_backoff(Some(py), f, max_retries);
 
-                // Collect metrics from the final result (whether success or failure)
                 if let Ok((_, operator_metrics)) = &retry_result {
                     crate::python_udf::collect_operator_metrics(operator_metrics, metrics);
                 }
