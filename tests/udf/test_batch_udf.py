@@ -8,6 +8,7 @@ import pytest
 import daft
 from daft import DataType, Series, col
 from daft.ai.utils import RetryAfterError
+from tests.conftest import get_tests_daft_runner_name
 
 
 def test_batch_udf():
@@ -238,13 +239,16 @@ def test_batch_retry_defaults_to_raise_and_zero_retries():
 @pytest.mark.parametrize("max_retries", [1, 2, 3])
 @pytest.mark.parametrize("is_async", [False, True])
 def test_batch_retry_after_delay_respected(max_retries, is_async):
-    call_count = 0
+    class RetryState:
+        def __init__(self):
+            self.call_count = 0
+
+    state = RetryState()
     retry_delay = 0.1
 
     def _retry_func_impl(x: Series) -> list:
-        nonlocal call_count
-        call_count += 1
-        if call_count <= max_retries:
+        state.call_count += 1
+        if state.call_count <= max_retries:
             raise RetryAfterError(retry_delay)
         return [val * 2 for val in x]
 
@@ -270,7 +274,10 @@ def test_batch_retry_after_delay_respected(max_retries, is_async):
     elapsed = time.perf_counter() - start
 
     assert result == {"value": [2, 4, 6]}
-    assert call_count == max_retries + 1
+    # call_count tracking doesn't work with Ray due to process serialization
+    # but retry behavior is verified through timing and result correctness
+    if get_tests_daft_runner_name() != "ray":
+        assert state.call_count == max_retries + 1
     # Should honor the retry-after delay
     assert elapsed >= retry_delay * max_retries
 
@@ -278,13 +285,17 @@ def test_batch_retry_after_delay_respected(max_retries, is_async):
 @pytest.mark.parametrize("is_async", [False, True])
 def test_batch_retry_after_max_retries_exceeded(is_async):
     """Test that when max retries is exceeded, the original exception from RetryAfterError is raised."""
-    call_count = 0
+
+    class RetryState:
+        def __init__(self):
+            self.call_count = 0
+
+    state = RetryState()
     retry_delay = 0.1
     original_error_message = "Rate limit exceeded"
 
     def _always_retry_impl(x: Series) -> list:
-        nonlocal call_count
-        call_count += 1
+        state.call_count += 1
         # Always raise RetryAfterError with an original exception until max retries is exceeded
         original_exc = ValueError(original_error_message)
         raise RetryAfterError(retry_delay, original=original_exc)
@@ -310,20 +321,26 @@ def test_batch_retry_after_max_retries_exceeded(is_async):
     elapsed = time.perf_counter() - start
 
     assert original_error_message in str(exc_info.value)
-    # Should have attempted initial call + max_retries retries
-    assert call_count == 2
+    # call_count tracking doesn't work with Ray due to process serialization
+    # but retry behavior is verified through exception and timing
+    if get_tests_daft_runner_name() != "ray":
+        # Should have attempted initial call + max_retries retries
+        assert state.call_count == 2
     # Should have respected at least one retry delay
     assert elapsed >= retry_delay
 
 
 def test_batch_max_retries():
-    first_time = True
+    class RetryState:
+        def __init__(self):
+            self.first_time = True
+
+    state = RetryState()
 
     @daft.func.batch(return_dtype=int, max_retries=1)
     def raise_err_first_time_only(x: Series):
-        nonlocal first_time
-        if first_time:
-            first_time = False
+        if state.first_time:
+            state.first_time = False
             raise ValueError("This is an error")
 
         return [val * 2 for val in x]
@@ -364,13 +381,16 @@ def test_async_batch_on_error_ignore():
 
 
 def test_async_batch_retry():
-    first_time = True
+    class RetryState:
+        def __init__(self):
+            self.first_time = True
+
+    state = RetryState()
 
     @daft.func.batch(on_error="ignore", max_retries=1, return_dtype=int)
     async def raise_err_first_time_only(x: Series) -> list:
-        nonlocal first_time
-        if first_time:
-            first_time = False
+        if state.first_time:
+            state.first_time = False
             raise ValueError("This is an error")
         else:
             return [val * 2 for val in x]
