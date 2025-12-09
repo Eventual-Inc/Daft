@@ -8,7 +8,7 @@ import pytest
 
 pytest.importorskip("openai")
 
-from openai import APIError
+from openai import InternalServerError, RateLimitError
 from openai.types.completion_usage import CompletionUsage
 from openai.types.responses import ResponseUsage
 from pydantic import BaseModel
@@ -17,15 +17,6 @@ from daft.ai.openai.protocols.prompter import OpenAIPrompter, OpenAIPrompterDesc
 from daft.ai.openai.provider import OpenAIProvider
 from daft.ai.protocols import Prompter
 from daft.ai.utils import RetryAfterError
-
-
-class DummyHttpError(APIError):
-    def __init__(self, status: int, retry_after: str):
-        # APIError requires message, request, and body
-        mock_request = Mock()
-        super().__init__(f"http {status}", request=mock_request, body=None)
-        self.response = Mock(headers={"Retry-After": retry_after}, status_code=status)
-        self.code = str(status)  # APIError uses code as a string
 
 
 def run_async(coro):
@@ -418,11 +409,27 @@ def test_openai_prompter_raises_retry_after(use_chat_completions: bool, status: 
     async def _test():
         prompter = create_prompter(use_chat_completions=use_chat_completions)
         mock_client = AsyncMock()
+
+        # Use the appropriate error type based on status code
+        if status == 429:
+            error_class = RateLimitError
+        elif status == 503:
+            error_class = InternalServerError
+        else:
+            raise ValueError(f"Unsupported status code: {status}")
+
+        retry_after_value = "3.0" if use_chat_completions else "4.0"
+        error = error_class(
+            message=f"HTTP {status}",
+            response=Mock(headers={"Retry-After": retry_after_value}, status_code=status),
+            body=None,
+        )
+
         if use_chat_completions:
-            mock_client.chat.completions.create.side_effect = DummyHttpError(status, "3.0")
+            mock_client.chat.completions.create.side_effect = error
             prompter.llm = mock_client
         else:
-            mock_client.responses.create.side_effect = DummyHttpError(status, "4.0")
+            mock_client.responses.create.side_effect = error
             prompter.llm = mock_client
 
         with pytest.raises(RetryAfterError) as excinfo:

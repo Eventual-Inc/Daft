@@ -14,12 +14,12 @@ async def execute_openai_call(
     coro_factory: Callable[[], Awaitable[T]],
 ) -> T:
     """Run an OpenAI async call, surfacing Retry-After hints."""
-    from openai import APIError
+    from openai import APIStatusError
 
     try:
         return await coro_factory()
-    except APIError as exc:
-        if exc.code is not None and exc.code in ("429", "503"):
+    except APIStatusError as exc:
+        if exc.status_code in (429, 503):
             raise_retry_after(exc.response, exc)
         raise
     except Exception:
