@@ -32,15 +32,15 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
 #[cfg(feature = "python")]
-use crate::process_pool::{ProcessPoolManager, get_or_init_process_pool};
+use crate::udf_process_pool::{ProcessPoolManager, get_or_init_process_pool};
 use crate::{
     ExecutionTaskSpawner,
     dynamic_batching::{
         DynBatchingStrategy, LatencyConstrainedBatchingStrategy, StaticBatchingStrategy,
     },
     pipeline::{MorselSizeRequirement, NodeName},
-    process_pool::UdfTask,
     runtime_stats::{Counter, RuntimeStats},
+    udf_process_pool::UdfTask,
 };
 
 /// Given an expression, extract the indexes of used columns and remap them to
@@ -193,7 +193,7 @@ enum UdfHandle {
     Thread {
         expr: BoundExpr,
     },
-    Pool {
+    Process {
         pool_manager: Arc<ProcessPoolManager>,
         udf_name: Arc<str>,
         expr: BoundExpr,
@@ -246,7 +246,7 @@ impl UdfHandle {
                     None,
                 )))
             }
-            Self::Pool {
+            Self::Process {
                 pool_manager,
                 udf_name,
                 expr,
@@ -298,7 +298,7 @@ impl UdfHandle {
 impl Drop for UdfHandle {
     fn drop(&mut self) {
         match self {
-            Self::Pool {
+            Self::Process {
                 pool_manager,
                 udf_name,
                 ..
@@ -508,7 +508,7 @@ impl IntermediateOperator for UdfOperator {
                 || self.params.udf_properties.use_process.unwrap_or(false);
 
             let handle = if use_pool && is_arrow_dtype {
-                UdfHandle::Pool {
+                UdfHandle::Process {
                     pool_manager: get_or_init_process_pool().clone(),
                     udf_name: self.params.udf_properties.name.clone().into(),
                     expr: self.expr.clone(),

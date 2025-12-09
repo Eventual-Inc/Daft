@@ -61,7 +61,7 @@ pub(crate) struct UdfTask {
 
 /// Rust-side handle to a pool worker
 #[cfg(feature = "python")]
-pub(crate) struct PoolWorkerHandle {
+pub(crate) struct UdfWorkerHandle {
     /// Python worker handle
     py_handle: Py<PyAny>,
     /// Set of active UDF names in this worker
@@ -71,14 +71,14 @@ pub(crate) struct PoolWorkerHandle {
 }
 
 #[cfg(feature = "python")]
-impl PoolWorkerHandle {
-    /// Create a new pool worker handle
+impl UdfWorkerHandle {
+    /// Create a new UDF worker handle
     fn new(index: usize) -> DaftResult<Self> {
         // Create Python worker handle
         let py_handle = Python::attach(|py| {
             Ok::<Py<PyAny>, PyErr>(
                 py.import(pyo3::intern!(py, "daft.execution.udf"))?
-                    .getattr(pyo3::intern!(py, "PoolWorkerHandle"))?
+                    .getattr(pyo3::intern!(py, "UdfWorkerHandle"))?
                     .call0()?
                     .unbind(),
             )
@@ -161,7 +161,7 @@ impl PoolWorkerHandle {
         Ok((result_batch.get_column(0).clone(), metrics))
     }
 
-    /// Clean up a UDF from this worker
+    /// Clean up a UDF from this UDF worker
     #[cfg(feature = "python")]
     pub fn cleanup_udf(&mut self, udf_name: &str) {
         if !self.active_udfs.contains(udf_name) {
@@ -207,11 +207,11 @@ impl PoolWorkerHandle {
 
 type WorkerIndex = usize;
 
-/// State for managing workers in the pool
+/// State for managing UDF workers in the pool
 #[cfg(feature = "python")]
 struct PoolState {
     /// Workers that are available for use
-    available_workers: HashMap<WorkerIndex, PoolWorkerHandle>,
+    available_workers: HashMap<WorkerIndex, UdfWorkerHandle>,
     /// Number of workers currently in use (not in available_workers)
     workers_in_use: usize,
     /// Total number of workers ever created (for indexing)
@@ -313,7 +313,7 @@ impl ProcessPoolManager {
         &self,
         udf_name: &str,
         udf_max_concurrency: usize,
-    ) -> DaftResult<PoolWorkerHandle> {
+    ) -> DaftResult<UdfWorkerHandle> {
         let mut state = self.state.lock().unwrap();
         loop {
             // Try to find a worker that already has the UDF cached
@@ -346,7 +346,7 @@ impl ProcessPoolManager {
                 let worker_idx = state.total_created;
                 state.total_created += 1;
                 state.workers_in_use += 1;
-                let worker_handle = PoolWorkerHandle::new(worker_idx)?;
+                let worker_handle = UdfWorkerHandle::new(worker_idx)?;
                 return Ok(worker_handle);
             }
 
@@ -356,7 +356,7 @@ impl ProcessPoolManager {
     }
 
     /// Release a worker handle back to the available pool
-    fn release_worker_handle(&self, worker_handle: PoolWorkerHandle) {
+    fn release_worker_handle(&self, worker_handle: UdfWorkerHandle) {
         let mut state = self.state.lock().unwrap();
         let worker_idx = worker_handle.index;
         // Put worker back in available_workers and decrement in-use count

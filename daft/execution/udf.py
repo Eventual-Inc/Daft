@@ -109,7 +109,7 @@ class UdfWorkerHandle:
 
     def is_alive(self) -> bool:
         """Check if the worker process is still running."""
-        return self.process.poll() is not None
+        return self.process.poll() is None
 
     def trace_output(self) -> list[str]:
         """Read any pending stdout from the worker process."""

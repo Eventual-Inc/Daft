@@ -4,7 +4,6 @@ mod dispatcher;
 mod dynamic_batching;
 mod intermediate_ops;
 mod pipeline;
-mod process_pool;
 mod resource_manager;
 mod run;
 mod runtime_stats;
@@ -12,6 +11,7 @@ mod sinks;
 mod sources;
 mod state_bridge;
 mod streaming_sink;
+mod udf_process_pool;
 use std::{
     future::Future,
     pin::Pin,
@@ -348,9 +348,9 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    use process_pool::_get_process_pool_stats;
     use pyo3::wrap_pyfunction;
     use run::PyNativeExecutor;
+    use udf_process_pool::_get_process_pool_stats;
 
     parent.add_class::<PyNativeExecutor>()?;
     parent.add_function(wrap_pyfunction!(_get_process_pool_stats, parent)?)?;
