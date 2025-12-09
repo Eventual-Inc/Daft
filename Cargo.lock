@@ -2469,6 +2469,7 @@ dependencies = [
 name = "daft-arrow"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
  "arrow-buffer",
  "arrow2",
 ]
@@ -2633,6 +2634,7 @@ dependencies = [
  "chrono",
  "csv-async",
  "daft-arrow",
+ "daft-schema",
  "fast-float2",
  "simdutf8",
 ]
@@ -3247,6 +3249,8 @@ dependencies = [
 name = "daft-schema"
 version = "0.3.0-dev0"
 dependencies = [
+ "chrono",
+ "chrono-tz",
  "common-arrow-ffi",
  "common-display",
  "common-error",

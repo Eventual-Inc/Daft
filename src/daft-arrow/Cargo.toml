@@ -1,5 +1,6 @@
 [dependencies]
 arrow-buffer = "54.2.1"
+arrow-array = "54.2.1"
 arrow2 = {workspace = true, features = [
   "arrow",
   "io_ipc_compression",
@@ -11,7 +12,6 @@ arrow2 = {workspace = true, features = [
   "io_json_write",
   "io_csv",
   "io_csv_async",
-  "chrono-tz",
   "compute_take",
   "compute_cast",
   "compute_aggregate",

@@ -76,16 +76,14 @@ impl<'py> IntoPyObject<'py> for Literal {
                 match tz {
                     None => naive_dt.into_bound_py_any(py),
                     Some(tz_str)
-                        if let Ok(fixed_offset) =
-                            daft_arrow::temporal_conversions::parse_offset(&tz_str) =>
+                        if let Ok(fixed_offset) = daft_schema::time_unit::parse_offset(&tz_str) =>
                     {
                         fixed_offset
                             .from_utc_datetime(&naive_dt)
                             .into_bound_py_any(py)
                     }
                     Some(tz_str)
-                        if let Ok(tz) =
-                            daft_arrow::temporal_conversions::parse_offset_tz(&tz_str) =>
+                        if let Ok(tz) = daft_schema::time_unit::parse_offset_tz(&tz_str) =>
                     {
                         tz.from_utc_datetime(&naive_dt).into_bound_py_any(py)
                     }
