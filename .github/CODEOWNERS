@@ -10,9 +10,3 @@
 /daft/io/lance/ @stayrascal @jay-ju @plotor @Eventual-Inc/daft-punqs
 /daft/io/mcap/ @stayrascal @jay-ju @plotor @Eventual-Inc/daft-punqs
 /src/daft-io/src/tos.rs @stayrascal @jay-ju @plotor @Eventual-Inc/daft-punqs
-
-# ============================================================================
-# Execution
-# ============================================================================
-/src/daft-distributed/ @colin-ho @slade
-/src/daft-local-execution/ @colin-ho @slade
