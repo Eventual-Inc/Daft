@@ -234,6 +234,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "arrow-csv"
+version = "54.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43d3cb0914486a3cae19a5cad2598e44e225d53157926d0ada03c20521191a65"
+dependencies = [
+ "arrow-array",
+ "arrow-cast",
+ "arrow-schema",
+ "chrono",
+ "csv",
+ "csv-core",
+ "lazy_static",
+ "regex",
+]
+
+[[package]]
 name = "arrow-data"
 version = "54.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1855,7 +1871,6 @@ dependencies = [
  "bincode",
  "common-error",
  "common-ndarray",
- "daft-arrow",
  "daft-schema",
  "image",
  "ndarray",
@@ -2519,7 +2534,6 @@ dependencies = [
  "common-error",
  "common-metrics",
  "common-runtime",
- "daft-arrow",
  "daft-core",
  "daft-dashboard",
  "daft-logical-plan",
@@ -3321,7 +3335,6 @@ dependencies = [
  "common-error",
  "common-io-config",
  "common-runtime",
- "daft-arrow",
  "daft-catalog",
  "daft-context",
  "daft-core",
@@ -3331,6 +3344,8 @@ dependencies = [
  "daft-functions-temporal",
  "daft-functions-utf8",
  "daft-logical-plan",
+ "daft-micropartition",
+ "daft-recordbatch",
  "daft-scan",
  "daft-session",
  "itertools 0.14.0",
@@ -3381,6 +3396,7 @@ name = "daft-writers"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
+ "arrow-csv",
  "arrow-json",
  "arrow-schema",
  "async-trait",

@@ -1,7 +1,7 @@
 mod runtime_py_object;
 mod udf;
 
-use std::{num::NonZeroUsize, str::FromStr, sync::Arc};
+use std::{hash::Hash, num::NonZeroUsize, str::FromStr, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use common_resource_request::ResourceRequest;
@@ -62,7 +62,7 @@ use crate::python::PyExpr;
 use crate::{
     Expr, ExprRef,
     functions::scalar::ScalarFn,
-    python_udf::{BatchPyFn, PyScalarFn, RowWisePyFn},
+    python_udf::{BatchPyFn, PyScalarFn},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -122,6 +122,7 @@ pub struct LegacyPythonUDF {
     pub batch_size: Option<usize>,
     pub concurrency: Option<NonZeroUsize>,
     pub use_process: Option<bool>,
+    pub ray_options: Option<RuntimePyObject>,
 }
 
 impl LegacyPythonUDF {
@@ -140,6 +141,7 @@ impl LegacyPythonUDF {
             batch_size: None,
             concurrency: Some(NonZeroUsize::new(4).unwrap()),
             use_process: None,
+            ray_options: None,
         }
     }
 }
@@ -156,6 +158,7 @@ pub fn udf(
     batch_size: Option<usize>,
     concurrency: Option<NonZeroUsize>,
     use_process: Option<bool>,
+    ray_options: Option<RuntimePyObject>,
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(LegacyPythonUDF {
@@ -168,6 +171,7 @@ pub fn udf(
             batch_size,
             concurrency,
             use_process,
+            ray_options,
         }),
         inputs: expressions.into(),
     })
@@ -275,6 +279,7 @@ pub struct UDFProperties {
     pub is_async: bool,
     pub is_scalar: bool,
     pub on_error: Option<OnError>,
+    pub ray_options: Option<RuntimePyObject>,
 }
 
 impl UDFProperties {
@@ -292,6 +297,7 @@ impl UDFProperties {
                             batch_size,
                             concurrency,
                             use_process,
+                            ray_options,
                             ..
                         }),
                     ..
@@ -307,33 +313,26 @@ impl UDFProperties {
                         is_async: false,
                         on_error: None,
                         is_scalar: false,
+                        ray_options: ray_options.clone(),
                     });
                 }
-                Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
-                    function_name,
-                    gpus,
-                    max_concurrency,
-                    use_process,
-                    max_retries,
-                    on_error,
-                    is_async,
-                    ..
-                }))) => {
+                Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(row_wise_fn))) => {
                     num_udfs += 1;
                     udf_properties = Some(Self {
-                        name: function_name.to_string(),
+                        name: row_wise_fn.function_name.to_string(),
                         resource_request: Some(ResourceRequest::try_new_internal(
                             None,
-                            Some(*gpus as f64),
+                            Some(row_wise_fn.gpus as f64),
                             None,
                         )?),
-                        batch_size: None,
-                        concurrency: *max_concurrency,
-                        use_process: *use_process,
-                        max_retries: *max_retries,
-                        is_async: *is_async,
-                        on_error: Some(*on_error),
-                        is_scalar: true,
+                        batch_size: None, // Row-wise functions don't have batch_size
+                        concurrency: row_wise_fn.max_concurrency,
+                        use_process: row_wise_fn.use_process,
+                        max_retries: row_wise_fn.max_retries,
+                        is_async: row_wise_fn.is_async,
+                        on_error: Some(row_wise_fn.on_error),
+                        is_scalar: false,
+                        ray_options: None,
                     });
                 }
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
@@ -362,6 +361,7 @@ impl UDFProperties {
                         is_async: *is_async,
                         on_error: Some(*on_error),
                         is_scalar: false,
+                        ray_options: None,
                     });
                 }
                 _ => {}
