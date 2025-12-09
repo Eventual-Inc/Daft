@@ -151,7 +151,7 @@ impl PoolWorkerHandle {
         // If call failed and UDF was new, remove from active_udfs if Python didn't cache it
         // (But actually, Python caches it when expr_bytes is provided, so we should keep it)
         // Actually, if the call fails before Python can cache it, we should remove it
-        // But we can't know that, so we'll keep it and let teardown handle it
+        // But we can't know that, so we'll keep it and let cleanup handle it
 
         let (result_batch, _stdout, metrics) = result?;
         debug_assert!(
@@ -161,22 +161,22 @@ impl PoolWorkerHandle {
         Ok((result_batch.get_column(0).clone(), metrics))
     }
 
-    /// Teardown a UDF from this worker
+    /// Clean up a UDF from this worker
     #[cfg(feature = "python")]
-    pub fn teardown_udf(&mut self, udf_name: &str) {
+    pub fn cleanup_udf(&mut self, udf_name: &str) {
         if !self.active_udfs.contains(udf_name) {
             return;
         }
 
-        // Call teardown on Python worker (no locks held during Python call)
+        // Call cleanup on Python worker (no locks held during Python call)
         let _ = Python::attach(|py| -> PyResult<()> {
             self.py_handle
                 .bind(py)
-                .call_method1(pyo3::intern!(py, "teardown_udf"), (udf_name,))?;
+                .call_method1(pyo3::intern!(py, "cleanup_udf"), (udf_name,))?;
             Ok(())
         });
 
-        // Remove from active UDFs after successful teardown
+        // Remove from active UDFs after successful cleanup
         self.active_udfs.remove(udf_name);
     }
 
@@ -210,7 +210,10 @@ type WorkerIndex = usize;
 /// State for managing workers in the pool
 #[cfg(feature = "python")]
 struct PoolState {
-    workers: HashMap<WorkerIndex, Option<PoolWorkerHandle>>,
+    /// Workers that are available for use
+    available_workers: HashMap<WorkerIndex, PoolWorkerHandle>,
+    /// Number of workers currently in use (not in available_workers)
+    workers_in_use: usize,
     /// Total number of workers ever created (for indexing)
     total_created: usize,
     /// Maximum concurrency requested across all UDFs
@@ -221,7 +224,8 @@ struct PoolState {
 impl Default for PoolState {
     fn default() -> Self {
         Self {
-            workers: HashMap::new(),
+            available_workers: HashMap::new(),
+            workers_in_use: 0,
             total_created: 0,
             max_concurrency: get_default_pool_size(),
         }
@@ -258,7 +262,7 @@ impl ProcessPoolManager {
     /// Returns: (max_workers, active_workers, total_workers_ever_created)
     pub fn get_stats(&self) -> (usize, usize, usize) {
         let state = self.state.lock().unwrap();
-        let active_workers = state.workers.len();
+        let active_workers = state.available_workers.len() + state.workers_in_use;
         (state.max_concurrency, active_workers, state.total_created)
     }
 
@@ -288,9 +292,9 @@ impl ProcessPoolManager {
                     .unwrap_or(false)
             });
             if !is_alive {
-                // Worker died, remove it from pool instead of releasing
+                // Worker died, decrement in-use count (don't release it back)
                 let mut state = self.state.lock().unwrap();
-                state.workers.remove(&worker_handle.index);
+                state.workers_in_use -= 1;
                 self.condvar.notify_one(); // Notify waiting threads
                 return result;
             }
@@ -305,7 +309,6 @@ impl ProcessPoolManager {
     /// Acquire a worker handle for executing a task.
     /// Prefers workers that already have the UDF cached.
     /// Will spawn a new worker if none are available and under the limit.
-    /// Returns (worker_handle, worker_idx) - worker is popped from available_workers
     fn acquire_worker_handle(
         &self,
         udf_name: &str,
@@ -315,20 +318,21 @@ impl ProcessPoolManager {
         loop {
             // Try to find a worker that already has the UDF cached
             if let Some(worker_idx) = state
-                .workers
+                .available_workers
                 .iter()
-                .filter_map(|(idx, w)| w.as_ref().map(|w| (*idx, w)))
                 .find(|(_, w)| w.has_udf(udf_name))
-                .map(|(idx, _)| idx)
+                .map(|(idx, _)| *idx)
             {
-                let worker_entry = state.workers.get_mut(&worker_idx).unwrap().take().unwrap();
-                return Ok(worker_entry);
+                let worker_handle = state.available_workers.remove(&worker_idx).unwrap();
+                state.workers_in_use += 1;
+                return Ok(worker_handle);
             }
 
             // Try to get any available worker
-            if let Some((&worker_idx, _)) = state.workers.iter().find(|(_, w)| w.is_some()) {
-                let worker_entry = state.workers.get_mut(&worker_idx).unwrap().take().unwrap();
-                return Ok(worker_entry);
+            if let Some((&worker_idx, _)) = state.available_workers.iter().next() {
+                let worker_handle = state.available_workers.remove(&worker_idx).unwrap();
+                state.workers_in_use += 1;
+                return Ok(worker_handle);
             }
 
             // Update max_concurrency if needed
@@ -337,16 +341,16 @@ impl ProcessPoolManager {
             }
 
             // Try to spawn a new worker if under the limit
-            if state.workers.len() < state.max_concurrency {
+            let total_workers = state.available_workers.len() + state.workers_in_use;
+            if total_workers < state.max_concurrency {
                 let worker_idx = state.total_created;
                 state.total_created += 1;
-                state.workers.insert(worker_idx, None);
-                let worker_entry = PoolWorkerHandle::new(worker_idx)?;
-                return Ok(worker_entry);
+                state.workers_in_use += 1;
+                let worker_handle = PoolWorkerHandle::new(worker_idx)?;
+                return Ok(worker_handle);
             }
 
             // No workers available, wait for one to be released
-            // Condition: available_workers is not empty
             state = self.condvar.wait(state).unwrap();
         }
     }
@@ -354,31 +358,29 @@ impl ProcessPoolManager {
     /// Release a worker handle back to the available pool
     fn release_worker_handle(&self, worker_handle: PoolWorkerHandle) {
         let mut state = self.state.lock().unwrap();
-        // Put worker back in available_workers hashmap
-        state
-            .workers
-            .get_mut(&worker_handle.index)
-            .unwrap()
-            .replace(worker_handle);
+        let worker_idx = worker_handle.index;
+        // Put worker back in available_workers and decrement in-use count
+        state.available_workers.insert(worker_idx, worker_handle);
+        state.workers_in_use -= 1;
         // Notify waiting threads that a worker is now available
         self.condvar.notify_one();
     }
 
     /// Signal that a UDF is complete and should be removed from all worker caches.
     /// Workers with empty caches after this will self-terminate.
-    pub fn teardown_udf(&self, udf_name: &str) {
+    pub fn cleanup_udf(&self, udf_name: &str) {
         let mut state = self.state.lock().unwrap();
 
         let mut workers_to_remove = Vec::new();
-        for worker in state.workers.values_mut().filter_map(|w| w.as_mut()) {
-            worker.teardown_udf(udf_name);
+        for worker in state.available_workers.values_mut() {
+            worker.cleanup_udf(udf_name);
             if worker.active_udfs_count() == 0 {
                 workers_to_remove.push(worker.index);
             }
         }
 
         for worker_idx in workers_to_remove {
-            let worker = state.workers.remove(&worker_idx).unwrap().unwrap();
+            let worker = state.available_workers.remove(&worker_idx).unwrap();
             worker.shutdown();
         }
     }

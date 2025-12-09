@@ -18,18 +18,15 @@ from daft.expressions import ExpressionsProjection
 
 logger = logging.getLogger(__name__)
 
-# Protocol message types
+_INIT = "__INIT__"
+_EVAL = "__EVAL__"
 _READY = "ready"
 _SUCCESS = "success"
 _UDF_ERROR = "udf_error"
+_CLEANUP_UDF = "__CLEANUP_UDF__"
 _ERROR = "error"
 _OUTPUT_DIVIDER = b"_DAFT_OUTPUT_DIVIDER_\n"
 _SENTINEL = ("__EXIT__", 0)
-
-# Pool protocol message types
-_INIT = "__INIT__"
-_EVAL = "__EVAL__"
-_TEARDOWN_UDF = "__TEARDOWN_UDF__"
 
 
 class SharedMemoryTransport:
@@ -55,15 +52,15 @@ class SharedMemoryTransport:
         return data
 
 
-class PoolWorkerHandle:
-    """Handle for a worker process in the global UDF process pool.
+class UdfWorkerHandle:
+    """Handle for a udf worker process in the global UDF process pool.
 
     This worker can cache and execute multiple UDFs, with state persisted
-    across invocations. Workers exit when their cache becomes empty.
+    across invocations.
     """
 
     def __init__(self) -> None:
-        """Start a new pool worker process."""
+        """Start a new udf worker process."""
         # Construct UNIX socket path for basic communication
         with tempfile.NamedTemporaryFile(delete=True) as tmp:
             self.socket_path = tmp.name
@@ -112,14 +109,14 @@ class PoolWorkerHandle:
 
     def is_alive(self) -> bool:
         """Check if the worker process is still running."""
-        return self.process.poll() is None
+        return self.process.poll() is not None
 
     def trace_output(self) -> list[str]:
         """Read any pending stdout from the worker process."""
         lines = []
         while True:
             line = cast("IO[bytes]", self.process.stdout).readline()
-            if line == b"" or line == _OUTPUT_DIVIDER or self.process.poll() is not None:
+            if line == b"" or line == _OUTPUT_DIVIDER or not self.is_alive():
                 break
             lines.append(line.decode().rstrip())
         return lines
@@ -131,8 +128,8 @@ class PoolWorkerHandle:
             udf_name: Unique identifier for the UDF
             py_expr: PyExpr object that will be pickled
         """
-        if self.process.poll() is not None:
-            raise RuntimeError("Pool worker process has terminated")
+        if not self.is_alive():
+            raise RuntimeError("UDF worker process has terminated")
 
         expression = Expression._from_pyexpr(py_expr)
         expr_projection = ExpressionsProjection([expression])
@@ -147,7 +144,7 @@ class PoolWorkerHandle:
             response = self.handle_conn.recv()
         except EOFError:
             stdout = self.trace_output()
-            raise RuntimeError(f"Pool worker closed connection unexpectedly, stdout: {stdout}")
+            raise RuntimeError(f"UDF worker closed connection unexpectedly, stdout: {stdout}")
 
         if response != _SUCCESS:
             raise RuntimeError(f"UDF initialization failed: {response}")
@@ -166,8 +163,8 @@ class PoolWorkerHandle:
         Returns:
             Tuple of (output data, stdout lines, metrics)
         """
-        if self.process.poll() is not None:
-            raise RuntimeError("Pool worker process has terminated")
+        if not self.is_alive():
+            raise RuntimeError("UDF worker process has terminated")
 
         # Serialize input data to shared memory
         serialized = input.to_ipc_stream()
@@ -180,7 +177,7 @@ class PoolWorkerHandle:
             response = self.handle_conn.recv()
         except EOFError:
             stdout = self.trace_output()
-            raise RuntimeError(f"Pool worker closed connection unexpectedly, stdout: {stdout}")
+            raise RuntimeError(f"UDF worker closed connection unexpectedly, stdout: {stdout}")
 
         stdout = self.trace_output()
 
@@ -212,64 +209,45 @@ class PoolWorkerHandle:
             deserialized = PyRecordBatch.from_ipc_stream(output_bytes)
             return (deserialized, stdout, metrics)
         else:
-            raise RuntimeError(f"Unknown response from pool worker: {response}")
+            raise RuntimeError(f"Unknown response from UDF worker: {response}")
 
-    def teardown_udf(self, udf_name: str) -> None:
-        """Remove a UDF from this worker's cache.
+    def cleanup_udf(self, udf_name: str) -> None:
+        """Clean up a UDF on this worker, removing it's state from the worker's cache.
 
         Args:
-            udf_name: The UDF to remove from cache
-
-        Returns:
-            True if the worker has exited (cache is empty), False otherwise
+            udf_name: Unique identifier for the UDF
         """
         if not self.is_alive():
-            return
+            raise RuntimeError("UDF worker process has terminated. Cannot cleanup UDF.")
 
         try:
-            self.handle_conn.send((_TEARDOWN_UDF, udf_name))
+            self.handle_conn.send((_CLEANUP_UDF, udf_name))
             response = self.handle_conn.recv()
 
             if response == _SUCCESS:
                 return
             else:
-                logger.warning("Unexpected response from teardown_udf: %s", response)
+                logger.warning("Unexpected response from cleanup_udf: %s", response)
         except Exception as e:
-            logger.warning("Error tearing down UDF: %s", e)
+            logger.warning("Error cleaning up UDF: %s", e)
 
     def shutdown(self, timeout: float = 5.0) -> None:
-        """Gracefully shut down the worker process."""
-        if not hasattr(self, "handle_conn") or not hasattr(self, "process") or not hasattr(self, "listener"):
-            return
-
+        """Gracefully shut down the UDF worker process."""
         try:
             self.handle_conn.send(_SENTINEL)
         except (BrokenPipeError, EOFError):
             pass
+        self.handle_conn.close()
+        self.listener.close()
 
-        try:
-            self.handle_conn.close()
-        except Exception:
-            pass
+        self.process.wait(timeout)
+        if not self.is_alive():
+            logger.warning("UDF worker did not shut down in time; terminating...")
+            self.process.terminate()
+            self.process.wait()
 
-        try:
-            self.listener.close()
-        except Exception:
-            pass
-
-        if self.process.poll() is None:
-            try:
-                self.process.wait(timeout)
-            except subprocess.TimeoutExpired:
-                logger.warning("UDF did not shut down in time; terminating...")
-                self.process.terminate()
-                self.process.wait()
-
-        if hasattr(self, "socket_path") and self.socket_path and os.path.exists(self.socket_path):
-            try:
-                os.unlink(self.socket_path)
-            except FileNotFoundError:
-                pass
+        if os.path.exists(self.socket_path):
+            os.unlink(self.socket_path)
 
 
 def get_process_pool_stats() -> tuple[int, int, int]:

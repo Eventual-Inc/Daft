@@ -31,13 +31,15 @@ use tracing::{Span, instrument};
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
+#[cfg(feature = "python")]
+use crate::process_pool::{ProcessPoolManager, get_or_init_process_pool};
 use crate::{
     ExecutionTaskSpawner,
     dynamic_batching::{
         DynBatchingStrategy, LatencyConstrainedBatchingStrategy, StaticBatchingStrategy,
     },
     pipeline::{MorselSizeRequirement, NodeName},
-    process_pool::{ProcessPoolManager, UdfTask},
+    process_pool::UdfTask,
     runtime_stats::{Counter, RuntimeStats},
 };
 
@@ -186,6 +188,7 @@ struct UdfParams {
     concurrency: usize,
 }
 
+#[cfg(feature = "python")]
 enum UdfHandle {
     Thread {
         expr: BoundExpr,
@@ -197,6 +200,7 @@ enum UdfHandle {
     },
 }
 
+#[cfg(feature = "python")]
 impl UdfHandle {
     async fn eval_input(
         &mut self,
@@ -205,7 +209,7 @@ impl UdfHandle {
         params: &UdfParams,
     ) -> DaftResult<Arc<MicroPartition>> {
         match self {
-            UdfHandle::Thread { expr } => {
+            Self::Thread { expr } => {
                 use daft_dsl::functions::python::initialize_udfs;
 
                 let input_batches = input.record_batches();
@@ -242,7 +246,7 @@ impl UdfHandle {
                     None,
                 )))
             }
-            UdfHandle::Pool {
+            Self::Pool {
                 pool_manager,
                 udf_name,
                 expr,
@@ -290,17 +294,18 @@ impl UdfHandle {
     }
 }
 
+#[cfg(feature = "python")]
 impl Drop for UdfHandle {
     fn drop(&mut self) {
         match self {
-            UdfHandle::Pool {
+            Self::Pool {
                 pool_manager,
                 udf_name,
                 ..
             } => {
-                pool_manager.teardown_udf(udf_name);
+                pool_manager.cleanup_udf(udf_name);
             }
-            UdfHandle::Thread { .. } => {
+            Self::Thread { .. } => {
                 // Nothing to do
             }
         }
@@ -308,6 +313,7 @@ impl Drop for UdfHandle {
 }
 
 pub(crate) struct UdfState {
+    #[cfg(feature = "python")]
     handle: UdfHandle,
 }
 
@@ -407,12 +413,19 @@ impl IntermediateOperator for UdfOperator {
         let fut = task_spawner.spawn_with_memory_request(
             memory_request,
             async move {
-                let result = state
-                    .handle
-                    .eval_input(input, runtime_stats, &params)
-                    .await?;
-                let res = IntermediateOperatorResult::NeedMoreInput(Some(result));
-                Ok((state, res))
+                #[cfg(feature = "python")]
+                {
+                    let result = state
+                        .handle
+                        .eval_input(input, runtime_stats, &params)
+                        .await?;
+                    let res = IntermediateOperatorResult::NeedMoreInput(Some(result));
+                    Ok((state, res))
+                }
+                #[cfg(not(feature = "python"))]
+                {
+                    unimplemented!("UdfOperator::execute is not implemented without Python");
+                }
             },
             Span::current(),
         );
@@ -474,43 +487,50 @@ impl IntermediateOperator for UdfOperator {
     }
 
     fn make_state(&self) -> DaftResult<Self::State> {
-        // Check if any inputs or the output are Python-dtype columns (non-serializable)
-        let fields = self.input_schema.fields();
-        let is_arrow_dtype = self
-            .params
-            .required_cols
-            .iter()
-            .all(|idx| fields[*idx].dtype.is_arrow())
-            && self
-                .expr
-                .inner()
-                .to_field(self.input_schema.as_ref())?
-                .dtype
-                .is_arrow();
+        #[cfg(feature = "python")]
+        {
+            // Check if any inputs or the output are Python-dtype columns (non-serializable)
+            let fields = self.input_schema.fields();
+            let is_arrow_dtype = self
+                .params
+                .required_cols
+                .iter()
+                .all(|idx| fields[*idx].dtype.is_arrow())
+                && self
+                    .expr
+                    .inner()
+                    .to_field(self.input_schema.as_ref())?
+                    .dtype
+                    .is_arrow();
 
-        // Determine execution mode based on UDF properties and input types
-        let use_pool = self.params.udf_properties.is_actor_pool_udf()
-            || self.params.udf_properties.use_process.unwrap_or(false);
+            // Determine execution mode based on UDF properties and input types
+            let use_pool = self.params.udf_properties.is_actor_pool_udf()
+                || self.params.udf_properties.use_process.unwrap_or(false);
 
-        let handle = if use_pool && is_arrow_dtype {
-            UdfHandle::Pool {
-                pool_manager: Arc::new(ProcessPoolManager::new()),
-                udf_name: self.params.udf_properties.name.clone().into(),
-                expr: self.expr.clone(),
-            }
-        } else {
-            if use_pool && !is_arrow_dtype {
-                log::warn!(
-                    "UDF `{}` requires a non-arrow-serializable input/output column. \
+            let handle = if use_pool && is_arrow_dtype {
+                UdfHandle::Pool {
+                    pool_manager: get_or_init_process_pool().clone(),
+                    udf_name: self.params.udf_properties.name.clone().into(),
+                    expr: self.expr.clone(),
+                }
+            } else {
+                if use_pool && !is_arrow_dtype {
+                    log::warn!(
+                        "UDF `{}` requires a non-arrow-serializable input/output column. \
                      The UDF will run inline instead of in the process pool.",
-                    self.params.udf_properties.name.as_str()
-                );
-            }
-            UdfHandle::Thread {
-                expr: self.expr.clone(),
-            }
-        };
-        Ok(UdfState { handle })
+                        self.params.udf_properties.name.as_str()
+                    );
+                }
+                UdfHandle::Thread {
+                    expr: self.expr.clone(),
+                }
+            };
+            Ok(UdfState { handle })
+        }
+        #[cfg(not(feature = "python"))]
+        {
+            unimplemented!("UdfOperator::make_state is not implemented without Python");
+        }
     }
 
     fn max_concurrency(&self) -> DaftResult<usize> {

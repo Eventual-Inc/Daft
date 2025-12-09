@@ -11,6 +11,7 @@ import daft.pickle
 from daft.daft import set_compute_runtime_num_worker_threads
 from daft.errors import UDFException
 from daft.execution.udf import (
+    _CLEANUP_UDF,
     _ERROR,
     _EVAL,
     _INIT,
@@ -18,7 +19,6 @@ from daft.execution.udf import (
     _READY,
     _SENTINEL,
     _SUCCESS,
-    _TEARDOWN_UDF,
     _UDF_ERROR,
     SharedMemoryTransport,
 )
@@ -26,14 +26,14 @@ from daft.expressions.expressions import ExpressionsProjection
 from daft.recordbatch import RecordBatch
 
 
-def pool_worker_event_loop(
+def udf_worker_event_loop(
     secret: bytes,
     socket_path: str,
 ) -> None:
-    """Multi-UDF pool worker event loop.
+    """UDF worker event loop.
 
     This worker can cache and execute multiple UDFs. It exits when its cache
-    becomes empty after a teardown operation.
+    becomes empty after a cleanup operation.
     """
     # Initialize the client-side communication
     conn = Client(socket_path, authkey=secret)
@@ -46,18 +46,14 @@ def pool_worker_event_loop(
     udf_cache: dict[str, ExpressionsProjection] = {}
 
     try:
-        # Signal ready immediately (no upfront UDF initialization)
         conn.send(_READY)
 
         while True:
             msg = conn.recv()
-
-            # Handle sentinel for graceful shutdown
             if msg == _SENTINEL:
                 break
 
             msg_type = msg[0]
-
             if msg_type == _INIT:
                 # INIT message: (msg_type, udf_name, expr_bytes)
                 _, udf_name, expr_bytes = msg
@@ -100,8 +96,8 @@ def pool_worker_event_loop(
 
                 conn.send((_SUCCESS, out_name, out_size, metrics))
 
-            elif msg_type == _TEARDOWN_UDF:
-                # TEARDOWN_UDF message: (msg_type, udf_name)
+            elif msg_type == _CLEANUP_UDF:
+                # CLEANUP_UDF message: (msg_type, udf_name)
                 _, udf_name = msg
 
                 # Remove UDF from cache
@@ -128,11 +124,16 @@ def pool_worker_event_loop(
         try:
             tb = "\n".join(TracebackException.from_exception(e).format())
         except Exception:
+            # If serialization fails, just send the exception's repr
+            # This sometimes happens on 3.10, but unclear why
+            # The repr doesn't contain the full traceback
             tb = repr(e)
 
         try:
             conn.send((_ERROR, tb))
         except Exception:
+            # If the connection is broken, it's because the parent process has died.
+            # We can just exit here.
             pass
     finally:
         conn.close()
@@ -155,4 +156,4 @@ if __name__ == "__main__":
         datefmt=os.getenv("LOG_DATE_FORMAT", "%Y-%m-%d %H:%M:%S"),
     )
 
-    pool_worker_event_loop(secret, socket_path)
+    udf_worker_event_loop(secret, socket_path)
