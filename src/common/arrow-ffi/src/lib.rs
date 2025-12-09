@@ -123,5 +123,5 @@ pub fn dtype_to_py<'py>(
         (schema_ptr as Py_uintptr_t,),
     )?;
 
-    Ok(field.into())
+    field.getattr(pyo3::intern!(py, "type"))
 }
