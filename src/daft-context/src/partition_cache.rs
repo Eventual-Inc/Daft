@@ -7,22 +7,11 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
-use daft_core::prelude::SchemaRef;
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
     MicroPartition,
     partitioning::{MicroPartitionSet, PartitionCacheEntry, PartitionSet},
 };
-
-/// Create an in-memory scan from arrow arrays, like `DataFrame._from_arrow`
-pub fn logical_plan_from_arrow<S: Into<SchemaRef>>(
-    schema: S,
-    arrays: Vec<Box<dyn daft_arrow::array::Array>>,
-) -> DaftResult<LogicalPlanBuilder> {
-    let schema = schema.into();
-    let part = MicroPartition::from_arrow(schema, arrays)?;
-    logical_plan_from_micropartitions(vec![part])
-}
 
 /// Create an in-memory scan from load micropartitions, like `DataFrame._from_micropartitions`
 pub fn logical_plan_from_micropartitions(
@@ -98,27 +87,4 @@ pub fn put_partition_set_into_cache(
     Err(DaftError::InternalError(
         "put_partition_set_into_cache requires 'python' feature".to_string(),
     ))
-}
-
-#[cfg(test)]
-mod test {
-    use std::sync::Arc;
-
-    use daft_arrow::array::Int64Array;
-    use daft_core::prelude::{DataType, Field, Schema};
-
-    use super::*;
-
-    #[test]
-    #[cfg(feature = "python")]
-    fn test_from_arrow_sanity() {
-        let schema = Schema::new(vec![Field::new("col1", DataType::Int64)]);
-        let schema = Arc::new(schema);
-        let array = Int64Array::from_vec(vec![1, 2, 3, 4]);
-        let arrays = vec![Box::new(array) as Box<dyn daft_arrow::array::Array>];
-        // verify from_arrow does not fail
-        let result = logical_plan_from_arrow(schema, arrays);
-        let builder = result.expect("from_arrow should have been ok");
-        assert!(builder.schema().len() == 1);
-    }
 }

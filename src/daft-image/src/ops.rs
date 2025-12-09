@@ -48,13 +48,14 @@ impl ImageOps for ImageArray {
     fn crop(&self, bboxes: &FixedSizeListArray) -> DaftResult<ImageArray> {
         let mut bboxes_iterator: Box<dyn Iterator<Item = Option<BBox>>> = if bboxes.len() == 1 {
             Box::new(std::iter::repeat(bboxes.get(0).map(|bbox| {
-                BBox::from_u32_arrow_array(bbox.u32().unwrap().data())
+                let data = bbox.u32().unwrap();
+                bbox_from_u32_arrow_array(data)
             })))
         } else {
             Box::new((0..bboxes.len()).map(|i| {
                 bboxes
                     .get(i)
-                    .map(|bbox| BBox::from_u32_arrow_array(bbox.u32().unwrap().data()))
+                    .map(|bbox| bbox_from_u32_arrow_array(bbox.u32().unwrap()))
             }))
         };
         let result = crop_images(self, &mut bboxes_iterator);
@@ -98,6 +99,13 @@ impl ImageOps for ImageArray {
     }
 }
 
+fn bbox_from_u32_arrow_array(arr: &UInt32Array) -> BBox {
+    assert!(arr.len() == 4);
+
+    let slice = arr.as_slice();
+
+    BBox(slice[0], slice[1], slice[2], slice[3])
+}
 impl ImageOps for FixedShapeImageArray {
     fn encode(&self, image_format: ImageFormat) -> DaftResult<BinaryArray> {
         encode_images(self, image_format)
@@ -117,14 +125,16 @@ impl ImageOps for FixedShapeImageArray {
         Self: Sized,
     {
         let mut bboxes_iterator: Box<dyn Iterator<Item = Option<BBox>>> = if bboxes.len() == 1 {
-            Box::new(std::iter::repeat(bboxes.get(0).map(|bbox| {
-                BBox::from_u32_arrow_array(bbox.u32().unwrap().data())
-            })))
+            Box::new(std::iter::repeat(
+                bboxes
+                    .get(0)
+                    .map(|bbox| bbox_from_u32_arrow_array(bbox.u32().unwrap())),
+            ))
         } else {
             Box::new((0..bboxes.len()).map(|i| {
                 bboxes
                     .get(i)
-                    .map(|bbox| BBox::from_u32_arrow_array(bbox.u32().unwrap().data()))
+                    .map(|bbox| bbox_from_u32_arrow_array(bbox.u32().unwrap()))
             }))
         };
         let result = crop_images(self, &mut bboxes_iterator);
