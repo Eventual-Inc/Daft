@@ -131,7 +131,7 @@ class SwordfishProgressBar:
                 # This avoids output corruption in Jupyter notebooks where clearing
                 # the bar doesn't work reliably.
                 leave=True,
-                mininterval=0.5,
+                mininterval=1.0,
                 maxinterval=self._maxinterval,
             )
 
