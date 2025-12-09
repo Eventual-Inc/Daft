@@ -213,6 +213,123 @@ pub const MAX_PIPELINE_NAME_LEN: usize = 22;
 pub fn make_progress_bar_manager(
     node_info_map: &HashMap<NodeID, Arc<NodeInfo>>,
 ) -> Box<dyn RuntimeStatsSubscriber> {
-    // Always use indicatif - the tqdm notebook version has rendering issues in Jupyter
-    Box::new(IndicatifProgressBarManager::new(node_info_map))
+    #[cfg(feature = "python")]
+    {
+        if python::in_notebook() {
+            Box::new(python::TqdmProgressBarManager::new(node_info_map))
+        } else {
+            Box::new(IndicatifProgressBarManager::new(node_info_map))
+        }
+    }
+
+    #[cfg(not(feature = "python"))]
+    {
+        Box::new(IndicatifProgressBarManager::new(node_info_map))
+    }
+}
+
+#[cfg(feature = "python")]
+mod python {
+    use std::collections::HashMap;
+
+    use common_metrics::ops::NodeInfo;
+    use pyo3::{Python, types::PyAnyMethods};
+
+    use super::*;
+
+    pub fn in_notebook() -> bool {
+        pyo3::Python::attach(|py| {
+            py.import(pyo3::intern!(py, "daft.utils"))
+                .and_then(|m| m.getattr(pyo3::intern!(py, "in_notebook")))
+                .and_then(|m| m.call0())
+                .and_then(|m| m.extract())
+                .expect("Failed to determine if running in notebook")
+        })
+    }
+
+    #[derive(Clone, Debug)]
+    pub struct TqdmProgressBarManager {
+        inner: Arc<pyo3::Py<pyo3::PyAny>>,
+        node_id_to_pb_id: HashMap<usize, usize>,
+    }
+
+    impl TqdmProgressBarManager {
+        pub fn new(node_info_map: &HashMap<NodeID, Arc<NodeInfo>>) -> Self {
+            let mut node_id_to_pb_id = HashMap::new();
+
+            Python::attach(|py| {
+                let module = py.import("daft.runners.progress_bar")?;
+                let progress_bar_class = module.getattr("SwordfishProgressBar")?;
+                let pb_object = progress_bar_class.call0()?;
+
+                // For Swordfish only, so node ids should be consecutive
+                for node_id in 0..node_info_map.len() {
+                    let node_info = node_info_map
+                        .get(&node_id)
+                        .expect("Expected node info for all node ids in range 0..total");
+                    let bar_format = format!(
+                        "🗡️ 🐟 {prefix}: {{elapsed}} {{desc}}",
+                        prefix = node_info.name
+                    );
+
+                    let pb_id = pb_object.call_method1("make_new_bar", (bar_format,))?;
+                    let pb_id = pb_id.extract::<usize>()?;
+
+                    node_id_to_pb_id.insert(node_info.id, pb_id);
+                }
+
+                DaftResult::Ok(Self {
+                    inner: Arc::new(pb_object.into()),
+                    node_id_to_pb_id,
+                })
+            })
+            .expect("Failed to create progress bar")
+        }
+
+        fn update_bar(&self, pb_id: usize, message: &str) -> DaftResult<()> {
+            Python::attach(|py| {
+                self.inner
+                    .call_method1(py, "update_bar", (pb_id, message))?;
+                DaftResult::Ok(())
+            })
+        }
+
+        fn close_bar(&self, pb_id: usize) -> DaftResult<()> {
+            Python::attach(|py| {
+                self.inner.call_method1(py, "close_bar", (pb_id,))?;
+                DaftResult::Ok(())
+            })
+        }
+    }
+
+    #[async_trait]
+    impl RuntimeStatsSubscriber for TqdmProgressBarManager {
+        #[cfg(test)]
+        #[allow(dead_code)]
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        async fn initialize_node(&self, _: NodeID) -> DaftResult<()> {
+            Ok(())
+        }
+
+        async fn finalize_node(&self, node_id: NodeID) -> DaftResult<()> {
+            let pb_id = self.node_id_to_pb_id.get(&node_id).unwrap();
+            self.close_bar(*pb_id)?;
+            Ok(())
+        }
+
+        async fn handle_event(&self, events: &[(NodeID, StatSnapshot)]) -> DaftResult<()> {
+            for (node_id, event) in events {
+                let pb_id = self.node_id_to_pb_id.get(node_id).unwrap();
+                self.update_bar(*pb_id, &event_to_message(event))?;
+            }
+            Ok(())
+        }
+
+        async fn finish(self: Box<Self>) -> DaftResult<()> {
+            Ok(())
+        }
+    }
 }

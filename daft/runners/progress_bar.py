@@ -101,3 +101,44 @@ class ProgressBar:
                 p.clear()
             p.close()
             del p
+
+
+# Progress Bar for local execution, should only be used in the native executor
+class SwordfishProgressBar:
+    def __init__(self) -> None:
+        self._maxinterval = 5.0
+        self.tqdm_mod = get_tqdm(False)
+        self.pbars: dict[int, Any] = dict()
+        self.bar_configs: dict[int, str] = dict()
+        self.next_id = 0
+
+    def make_new_bar(self, bar_format: str) -> int:
+        pbar_id = self.next_id
+        self.next_id += 1
+        self.bar_configs[pbar_id] = bar_format
+        return pbar_id
+
+    def update_bar(self, pbar_id: int, message: str) -> None:
+        if pbar_id not in self.pbars:
+            if pbar_id not in self.bar_configs:
+                raise ValueError(f"No bar configuration found for id {pbar_id}")
+            bar_format = self.bar_configs[pbar_id]
+            self.pbars[pbar_id] = self.tqdm_mod(
+                bar_format=bar_format,
+                position=pbar_id,
+                leave=False,
+                mininterval=1.0,
+                maxinterval=self._maxinterval,
+            )
+            del self.bar_configs[pbar_id]
+        self.pbars[pbar_id].set_description_str(message)
+
+    def close_bar(self, pbar_id: int) -> None:
+        if pbar_id in self.pbars:
+            self.pbars[pbar_id].close()
+            del self.pbars[pbar_id]
+
+    def close(self) -> None:
+        for p in self.pbars.values():
+            p.close()
+            del p
