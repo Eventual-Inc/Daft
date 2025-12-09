@@ -1,4 +1,6 @@
 [dependencies]
+arrow = {version = "54.1.0", features = ["ffi"]}
+arrow-schema = {version = "54.1.0"}
 daft-arrow = {path = "../../daft-arrow"}
 pyo3 = {workspace = true, optional = true}
 
