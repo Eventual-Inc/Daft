@@ -100,8 +100,7 @@ impl BlockingSink for CommitWriteSink {
                                         true,
                                     )?;
                                 let mut writer = writer_factory.create_writer(0, None)?;
-                                let empty_rb =
-                                    daft_recordbatch::RecordBatch::empty(Some(data_schema.clone()));
+                                let empty_rb = RecordBatch::empty(Some(data_schema.clone()));
                                 let empty_mp = Arc::new(MicroPartition::new_loaded(
                                     data_schema.clone(),
                                     vec![empty_rb].into(),
