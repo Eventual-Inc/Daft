@@ -48,7 +48,10 @@ impl RecordBatch {
     ) -> DaftResult<Self> {
         let argsort = self.argsort(sort_keys, descending, nulls_first)?;
         let offset = offset.unwrap_or(0);
-        let top_n = argsort.slice(offset, offset + limit)?;
+
+        // DataArray::slice doesn't bound the start and end, so we need to do it manually.
+        let len = argsort.len();
+        let top_n = argsort.slice(offset.min(len), (offset + limit).min(len))?;
         self.take(&top_n)
     }
 }
