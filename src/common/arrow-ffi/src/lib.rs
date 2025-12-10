@@ -1,18 +1,21 @@
-use std::io::Cursor;
+#![allow(deprecated, reason = "arrow2->arrow migration")]
 
-use daft_arrow::{array::Array, datatypes::Field, ffi};
+#[cfg(feature = "python")]
+use arrow::ffi::FFI_ArrowSchema;
+#[cfg(feature = "python")]
+use daft_arrow::datatypes::arrow2_field_to_arrow;
+use daft_arrow::{array::Array, datatypes::DataType as Arrow2DataType};
 #[cfg(feature = "python")]
 use pyo3::ffi::Py_uintptr_t;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-
 pub type ArrayRef = Box<dyn Array>;
 
 #[cfg(feature = "python")]
 pub fn array_to_rust(py: Python, arrow_array: Bound<PyAny>) -> PyResult<ArrayRef> {
     // prepare a pointer to receive the Array struct
-    let array = Box::new(ffi::ArrowArray::empty());
-    let schema = Box::new(ffi::ArrowSchema::empty());
+    let array = Box::new(arrow::ffi::FFI_ArrowArray::empty());
+    let schema = Box::new(arrow::ffi::FFI_ArrowSchema::empty());
 
     let array_ptr = &raw const *array;
     let schema_ptr = &raw const *schema;
@@ -24,11 +27,30 @@ pub fn array_to_rust(py: Python, arrow_array: Bound<PyAny>) -> PyResult<ArrayRef
         (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
     )?;
 
-    unsafe {
-        let field = ffi::import_field_from_c(schema.as_ref()).unwrap();
-        let array = ffi::import_array_from_c(*array, field.data_type).unwrap();
-        Ok(array)
+    let mut data = unsafe { arrow::ffi::from_ffi(*array, schema.as_ref()) }.map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+            "Failed to convert Arrow array to Rust: {}",
+            e
+        ))
+    })?;
+    data.align_buffers();
+    // this DOES not properly preserve metadata, so we need to update the fields with any extension types.
+    let mut arr = daft_arrow::array::from_data(&data);
+
+    let field = arrow_schema::Field::try_from(schema.as_ref()).unwrap();
+    if let Some(ext_name) = field.metadata().get("ARROW:extension:name") {
+        let metadata = field.metadata().get("ARROW:extension:metadata");
+        // I (cory) believe this would fail if you had nested extension types.
+        // I'm not sure we (or others) use nested extension types, or if this is even supported by arrow
+        let dtype = Arrow2DataType::Extension(
+            ext_name.clone(),
+            Box::new(field.data_type().clone().into()),
+            metadata.cloned(),
+        );
+        arr.change_type(dtype);
     }
+
+    Ok(arr)
 }
 
 #[cfg(feature = "python")]
@@ -37,21 +59,23 @@ pub fn to_py_array<'py>(
     array: ArrayRef,
     pyarrow: &Bound<'py, PyModule>,
 ) -> PyResult<Bound<'py, PyAny>> {
-    let schema = Box::new(ffi::export_field_to_c(&Field::new(
-        "",
-        array.data_type().clone(),
-        true,
-    )));
+    let field = daft_arrow::datatypes::Field::new("", array.data_type().clone(), true);
+    let field = arrow2_field_to_arrow(field);
+    let field = arrow::ffi::FFI_ArrowSchema::try_from(&field).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+            "Failed to convert Arrow field to FFI schema: {}",
+            e
+        ))
+    })?;
 
-    // fix_child_array_slice_offsets serializes and deserializes into ipc, and is a parallelizable operation.
-    // We allow threads here to avoid blocking the GIL.
-    let arrow_arr = py.detach(|| {
-        let fixed_array = fix_child_array_slice_offsets(array);
-        Box::new(ffi::export_array_to_c(fixed_array))
-    });
+    let schema = Box::new(field);
 
-    let schema_ptr: *const ffi::ArrowSchema = &raw const *schema;
-    let array_ptr: *const ffi::ArrowArray = &raw const *arrow_arr;
+    let mut data = daft_arrow::array::to_data(array.as_ref());
+    data.align_buffers();
+    let arrow_arr = Box::new(arrow::ffi::FFI_ArrowArray::new(&data));
+
+    let schema_ptr: *const arrow::ffi::FFI_ArrowSchema = &raw const *schema;
+    let array_ptr: *const arrow::ffi::FFI_ArrowArray = &raw const *arrow_arr;
 
     let array = pyarrow.getattr(pyo3::intern!(py, "Array"))?.call_method1(
         pyo3::intern!(py, "_import_from_c"),
@@ -71,8 +95,18 @@ pub fn field_to_py(
     field: &daft_arrow::datatypes::Field,
     pyarrow: &Bound<PyModule>,
 ) -> PyResult<Py<PyAny>> {
-    let schema = Box::new(ffi::export_field_to_c(field));
-    let schema_ptr: *const ffi::ArrowSchema = &raw const *schema;
+    let schema = Box::new(
+        FFI_ArrowSchema::try_from(arrow2_field_to_arrow(field.clone())).map_err(|e| {
+            use pyo3::exceptions::PyRuntimeError;
+
+            PyErr::new::<PyRuntimeError, _>(format!(
+                "Failed to convert field to FFI_ArrowSchema: {}",
+                e
+            ))
+        })?,
+    );
+
+    let schema_ptr: *const FFI_ArrowSchema = &raw const *schema;
 
     let field = pyarrow.getattr(pyo3::intern!(py, "Field"))?.call_method1(
         pyo3::intern!(py, "_import_from_c"),
@@ -88,8 +122,18 @@ pub fn dtype_to_py<'py>(
     dtype: &daft_arrow::datatypes::DataType,
     pyarrow: Bound<'py, PyModule>,
 ) -> PyResult<Bound<'py, PyAny>> {
-    let schema = Box::new(ffi::export_field_to_c(&Field::new("", dtype.clone(), true)));
-    let schema_ptr: *const ffi::ArrowSchema = &raw const *schema;
+    let field = daft_arrow::datatypes::Field::new("", dtype.clone(), true);
+    let field = arrow2_field_to_arrow(field);
+
+    let schema = Box::new(FFI_ArrowSchema::try_from(field).map_err(|e| {
+        use pyo3::exceptions::PyRuntimeError;
+
+        PyErr::new::<PyRuntimeError, _>(format!(
+            "Failed to convert field to FFI_ArrowSchema: {}",
+            e
+        ))
+    })?);
+    let schema_ptr: *const FFI_ArrowSchema = &raw const *schema;
 
     let field = pyarrow.getattr(pyo3::intern!(py, "Field"))?.call_method1(
         pyo3::intern!(py, "_import_from_c"),
@@ -97,71 +141,4 @@ pub fn dtype_to_py<'py>(
     )?;
 
     field.getattr(pyo3::intern!(py, "type"))
-}
-
-fn fix_child_array_slice_offsets(array: ArrayRef) -> ArrayRef {
-    /* Zero-copy slices of arrow2 struct/fixed-size list arrays are currently not correctly
-    converted to pyarrow struct/fixed-size list arrays when going over the FFI boundary;
-    this helper function ensures that such arrays' slice representation is changed to work
-    around this bug.
-
-    -- The Problem --
-
-    Arrow2 represents struct array and fixed-size list array slices by slicing the validity bitmap
-    and its children arrays; these slices will eventually propagate down to the underlying data
-    buffers. When converting to the Arrow C Data Interface struct, these offsets exist on the
-    validity bitmap and its children arrays, AND is also lifted to be a top-level offset on the
-    struct/fixed-size -list array. This means that the offset will be double-applied when imported
-    into a pyarrow array, where both the top-level array offset will be applied as well as the child
-    array offset.
-
-    -- The Workaround --
-
-    This helper ensures that such offsets are eliminated by ensuring that the underlying data
-    buffers are truncated to the slice; note that this creates a copy of the underlying data,
-    so FFI is not currently zero-copy for struct arrays or fixed-size list arrays. We accomplish
-    this buffer truncation by doing an IPC roundtrip on the array, which should result in a single
-    copy of the array's underlying data.
-    */
-    // TODO(Clark): Fix struct array and fixed-size list array slice FFI upstream in arrow2/pyarrow.
-    // TODO(Clark): Only apply this workaround if a slice offset exists for this array.
-    if ![
-        daft_arrow::datatypes::PhysicalType::Struct,
-        daft_arrow::datatypes::PhysicalType::FixedSizeList,
-    ]
-    .contains(&array.data_type().to_physical_type())
-    {
-        return array;
-    }
-    // Write the IPC representation to an in-memory buffer.
-    // TODO(Clark): Preallocate the vector with the requisite capacity, based on the array size?
-    let mut cursor = Cursor::new(Vec::new());
-    let options = daft_arrow::io::ipc::write::WriteOptions { compression: None };
-    let mut writer = daft_arrow::io::ipc::write::StreamWriter::new(&mut cursor, options);
-    // Construct a single-column schema.
-    let schema = daft_arrow::datatypes::Schema::from(vec![daft_arrow::datatypes::Field::new(
-        "struct",
-        array.data_type().clone(),
-        false,
-    )]);
-    // Write the schema to the stream.
-    writer.start(&schema, None).unwrap();
-    // Write the array to the stream.
-    let record = daft_arrow::chunk::Chunk::new(vec![array]);
-    writer.write(&record, None).unwrap();
-    writer.finish().unwrap();
-    // Reset the cursor to the beginning of the stream.
-    cursor.set_position(0);
-    // Read back the array from the IPC stream.
-    let stream_metadata = daft_arrow::io::ipc::read::read_stream_metadata(&mut cursor).unwrap();
-    let mut reader = daft_arrow::io::ipc::read::StreamReader::new(cursor, stream_metadata, None);
-    // There should only be a single chunk in the stream.
-    let state = reader.next().unwrap();
-    assert!(reader.next().is_none());
-    // Stream should be finished from the reader's perspective.
-    assert!(reader.is_finished());
-    match state {
-        Ok(daft_arrow::io::ipc::read::StreamState::Some(chunk)) => chunk.arrays()[0].clone(),
-        _ => panic!("shouldn't be reached"),
-    }
 }

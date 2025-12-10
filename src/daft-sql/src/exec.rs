@@ -1,6 +1,10 @@
 use std::{collections::HashMap, sync::Arc};
 
+use daft_context::partition_cache::logical_plan_from_micropartitions;
+use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_logical_plan::{LogicalPlan, LogicalPlanBuilder};
+use daft_micropartition::MicroPartition;
+use daft_recordbatch::RecordBatch;
 use daft_session::Session;
 
 use crate::{
@@ -68,25 +72,35 @@ fn execute_show_tables(
     ]);
 
     // build the result set
-    use daft_arrow::array::{MutableArray, MutableUtf8Array};
-    let mut cat_array = MutableUtf8Array::<i64>::with_capacity(tables.len());
-    let mut nsp_array = MutableUtf8Array::<i64>::with_capacity(tables.len());
-    let mut tbl_array = MutableUtf8Array::<i64>::with_capacity(tables.len());
+
+    let mut cat_array = Vec::with_capacity(tables.len());
+    let mut nsp_array = Vec::with_capacity(tables.len());
+    let mut tbl_array = Vec::with_capacity(tables.len());
+
     for ident in &tables {
         cat_array.push(Some(catalog.name()));
         if let Some(namespace) = ident.qualifier() {
             nsp_array.push(Some(namespace.join(".")));
         } else {
-            nsp_array.push_null();
+            nsp_array.push(None);
         }
         tbl_array.push(Some(ident.name().to_string()));
     }
+    let cat_array = Utf8Array::from_iter("catalog", cat_array.into_iter());
 
-    // create an in-memory scan arrow arrays
-    let scan = daft_context::partition_cache::logical_plan_from_arrow(
-        schema,
-        vec![cat_array.as_box(), nsp_array.as_box(), tbl_array.as_box()],
-    )?;
+    let nsp_array = Utf8Array::from_iter("namespace", nsp_array.into_iter());
+
+    let tbl_array = Utf8Array::from_iter("table", tbl_array.into_iter());
+
+    let rb = RecordBatch::from_nonempty_columns(vec![
+        cat_array.into_series(),
+        nsp_array.into_series(),
+        tbl_array.into_series(),
+    ])?;
+
+    let part = MicroPartition::new_loaded(schema.into(), Arc::new(vec![rb]), None);
+
+    let scan = logical_plan_from_micropartitions(vec![part])?;
 
     Ok(Some(scan.build()))
 }
