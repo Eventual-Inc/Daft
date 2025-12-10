@@ -56,10 +56,16 @@ impl UDFActors {
         };
 
         let actor_name = udf_properties.name.clone();
+        let ray_options = udf_properties.ray_options.clone();
         let result =
             common_runtime::python::execute_python_coroutine::<_, Vec<Py<PyAny>>>(move |py| {
                 let ray_actor_pool_udf_module =
                     py.import(pyo3::intern!(py, "daft.execution.ray_actor_pool_udf"))?;
+                // Convert RuntimePyObject option to a Python object (dict) or None
+                let py_ray_options = match &ray_options {
+                    Some(ro) => ro.as_ref().clone_ref(py),
+                    None => py.None(),
+                };
                 ray_actor_pool_udf_module.call_method1(
                     pyo3::intern!(py, "start_udf_actors"),
                     (
@@ -68,6 +74,7 @@ impl UDFActors {
                         gpu_request,
                         cpu_request,
                         memory_request,
+                        py_ray_options,
                         actor_ready_timeout,
                         actor_name.as_ref(),
                     ),
