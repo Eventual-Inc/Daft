@@ -27,12 +27,13 @@ pub fn array_to_rust(py: Python, arrow_array: Bound<PyAny>) -> PyResult<ArrayRef
         (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
     )?;
 
-    let data = unsafe { arrow::ffi::from_ffi(*array, schema.as_ref()) }.map_err(|e| {
+    let mut data = unsafe { arrow::ffi::from_ffi(*array, schema.as_ref()) }.map_err(|e| {
         PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
             "Failed to convert Arrow array to Rust: {}",
             e
         ))
     })?;
+    data.align_buffers();
     // this DOES not properly preserve metadata, so we need to update the fields with any extension types.
     let mut arr = daft_arrow::array::from_data(&data);
 
