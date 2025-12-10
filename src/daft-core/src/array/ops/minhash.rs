@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, hash::BuildHasher, iter::repeat_with};
 
 use common_error::{DaftError, DaftResult};
-use daft_arrow::array::{MutableArray, MutablePrimitiveArray, PrimitiveArray};
+use daft_arrow::array::builder::UInt32Builder;
 use daft_minhash::load_simd;
 
 use super::{DaftMinHash, as_arrow::AsArrow};
@@ -58,8 +58,7 @@ impl DaftMinHash for Utf8Array {
         let perm_b_simd = load_simd(perm_b, num_hashes);
 
         let internal_arrow_representation = self.as_arrow();
-        let mut output: MutablePrimitiveArray<u32> =
-            MutablePrimitiveArray::with_capacity(num_hashes * self.len());
+        let mut output = UInt32Builder::with_capacity(num_hashes * self.len());
 
         let mut alloc = VecDeque::new();
 
@@ -83,7 +82,7 @@ impl DaftMinHash for Utf8Array {
             output.extend(minhash_res.into_iter().map(Some));
         }
 
-        let immutable_output: PrimitiveArray<u32> = output.into();
+        let immutable_output = output.finish();
         let output_series = Series::from_arrow(
             Field::new(self.name(), DataType::UInt32).into(),
             Box::new(immutable_output),

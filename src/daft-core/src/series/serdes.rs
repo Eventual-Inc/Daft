@@ -1,6 +1,6 @@
 use std::{borrow::Cow, sync::Arc};
 
-use daft_arrow::{offset::OffsetsBuffer, types::months_days_ns};
+use daft_arrow::{offset::OffsetsBuffer, types::IntervalMonthDayNano};
 use serde::{Deserializer, de::Visitor};
 
 use crate::{
@@ -261,7 +261,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                     }
                     DataType::Interval => Ok(IntervalArray::from_iter(
                         field.name.as_str(),
-                        map.next_value::<Vec<Option<months_days_ns>>>()?.into_iter(),
+                        map.next_value::<Vec<Option<IntervalMonthDayNano>>>()?.into_iter(),
                     )
                     .into_series()),
 

@@ -26,7 +26,7 @@ pub fn array_to_rust(py: Python, arrow_array: Bound<PyAny>) -> PyResult<ArrayRef
 
     unsafe {
         let field = ffi::import_field_from_c(schema.as_ref()).unwrap();
-        let array = ffi::import_array_from_c(*array, field.data_type).unwrap();
+        let array = todo!(); //ffi::import_array_from_c(*array, field.data_type).unwrap();
         Ok(array)
     }
 }
@@ -47,7 +47,8 @@ pub fn to_py_array<'py>(
     // We allow threads here to avoid blocking the GIL.
     let arrow_arr = py.detach(|| {
         let fixed_array = fix_child_array_slice_offsets(array);
-        Box::new(ffi::export_array_to_c(fixed_array))
+        Box::new(todo!())
+        // Box::new(ffi::export_array_to_c(fixed_array))
     });
 
     let schema_ptr: *const ffi::ArrowSchema = &raw const *schema;
@@ -147,7 +148,7 @@ fn fix_child_array_slice_offsets(array: ArrayRef) -> ArrayRef {
     // Write the schema to the stream.
     writer.start(&schema, None).unwrap();
     // Write the array to the stream.
-    let record = daft_arrow::chunk::Chunk::new(vec![array]);
+    let record = todo!(); //daft_arrow::chunk::Chunk::new(vec![array]);
     writer.write(&record, None).unwrap();
     writer.finish().unwrap();
     // Reset the cursor to the beginning of the stream.
@@ -161,7 +162,7 @@ fn fix_child_array_slice_offsets(array: ArrayRef) -> ArrayRef {
     // Stream should be finished from the reader's perspective.
     assert!(reader.is_finished());
     match state {
-        Ok(daft_arrow::io::ipc::read::StreamState::Some(chunk)) => chunk.arrays()[0].clone(),
+        Ok(daft_arrow::io::ipc::read::StreamState::Some(chunk)) => todo!(), //chunk.arrays()[0].clone(),
         _ => panic!("shouldn't be reached"),
     }
 }

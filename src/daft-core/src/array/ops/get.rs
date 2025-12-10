@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use daft_arrow::types::months_days_ns;
+use daft_arrow::{array::Array, types::IntervalMonthDayNano};
 
 use super::as_arrow::AsArrow;
 #[cfg(feature = "python")]
@@ -32,8 +32,8 @@ where
         );
         let arrow_array = self.as_arrow();
         let is_valid = arrow_array
-            .validity()
-            .is_none_or(|validity| validity.get_bit(idx));
+            .nulls()
+            .is_none_or(|validity| validity.is_valid(idx));
         if is_valid {
             Some(unsafe { arrow_array.value_unchecked(idx) })
         } else {
@@ -57,8 +57,8 @@ macro_rules! impl_array_arrow_get {
 
                 let arrow_array = self.as_arrow();
                 let is_valid = arrow_array
-                    .validity()
-                    .is_none_or(|validity| validity.get_bit(idx));
+                    .nulls()
+                    .is_none_or(|validity| validity.is_valid(idx));
                 if is_valid {
                     Some(unsafe { arrow_array.value_unchecked(idx) })
                 } else {
@@ -83,7 +83,7 @@ impl_array_arrow_get!(FixedSizeBinaryArray, &[u8]);
 impl_array_arrow_get!(DateArray, i32);
 impl_array_arrow_get!(TimeArray, i64);
 impl_array_arrow_get!(DurationArray, i64);
-impl_array_arrow_get!(IntervalArray, months_days_ns);
+impl_array_arrow_get!(IntervalArray, IntervalMonthDayNano);
 impl_array_arrow_get!(TimestampArray, i64);
 
 impl NullArray {
@@ -110,8 +110,8 @@ impl ExtensionArray {
         );
         let is_valid = self
             .data
-            .validity()
-            .is_none_or(|validity| validity.get_bit(idx));
+            .nulls()
+            .is_none_or(|validity| validity.is_valid(idx));
         if is_valid {
             Some(daft_arrow::scalar::new_scalar(self.data(), idx))
         } else {

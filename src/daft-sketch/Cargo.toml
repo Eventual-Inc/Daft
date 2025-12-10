@@ -3,7 +3,7 @@ daft-arrow = {path = "../daft-arrow"}
 common-error = {path = "../common/error", default-features = false}
 # NOTE: The "arrow2-0-17" feature is supposed to build serde_arrow against arrow2=0.17, but when building Daft
 # we respect a [patch.crates.io] which overrides this behavior to use our arrow2 fork
-serde_arrow = {version = "0.11.0", features = ["arrow2-0-17"]}
+serde_arrow = {version = "0.11.0", features = ["arrow2-0-17", "arrow-51"]}
 sketches-ddsketch = {workspace = true}
 snafu = {workspace = true}
 

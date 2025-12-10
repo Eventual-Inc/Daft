@@ -747,7 +747,7 @@ impl AggExpr {
                                 field.dtype, field.name,
                             )));
                         }
-                        DataType::from(&*daft_sketch::ARROW2_DDSKETCH_DTYPE)
+                        DataType::from(&*daft_sketch::ARROW_DDSKETCH_DTYPE)
                     }
                     SketchType::HyperLogLog => daft_core::array::ops::HLL_SKETCH_DTYPE,
                 };

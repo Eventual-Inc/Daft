@@ -125,10 +125,10 @@ impl ImageArray {
         Ok(ImageArray::new(Field::new(name, data_type), struct_array))
     }
 
-    pub fn from_vecs<T: daft_arrow::types::NativeType>(
+    pub fn from_vecs<T: daft_arrow::types::ArrowPrimitiveType>(
         name: &str,
         data_type: DataType,
-        data: Vec<T>,
+        data: Vec<T::Native>,
         offsets: Vec<i64>,
         sidecar_data: ImageArraySidecarData,
     ) -> DaftResult<Self> {
@@ -136,7 +136,7 @@ impl ImageArray {
             return Ok(ImageArray::full_null(name, &data_type, offsets.len() - 1));
         }
         let offsets = daft_arrow::offset::OffsetsBuffer::try_from(offsets)?;
-        let arrow_dtype: daft_arrow::datatypes::DataType = T::PRIMITIVE.into();
+        let arrow_dtype: daft_arrow::datatypes::DataType = T::DATA_TYPE.into();
         if let DataType::Image(Some(mode)) = &data_type {
             assert!(
                 !(mode.get_dtype().to_arrow()? != arrow_dtype),

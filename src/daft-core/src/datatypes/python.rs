@@ -70,14 +70,14 @@ impl PythonArray {
         }
     }
 
-    pub fn to_pickled_arrow(&self) -> DaftResult<daft_arrow::array::BinaryArray<i64>> {
+    pub fn to_pickled_arrow(&self) -> DaftResult<daft_arrow::array::LargeBinaryArray> {
         let pickled = Python::attach(|py| {
             self.iter()
                 .map(|v| v.map(|obj| pickle_dumps(py, obj)).transpose())
                 .collect::<PyResult<Vec<_>>>()
         })?;
 
-        Ok(daft_arrow::array::BinaryArray::from(pickled))
+        Ok(daft_arrow::array::LargeBinaryArray::from(pickled))
     }
 
     pub fn to_arrow(&self) -> DaftResult<Box<dyn daft_arrow::array::Array>> {

@@ -64,7 +64,7 @@ impl<T> DataArray<T> {
             {
                 let utf8_arr = arrow_array
                     .as_any()
-                    .downcast_ref::<daft_arrow::array::Utf8Array<i32>>()
+                    .downcast_ref::<daft_arrow::array::StringArray>()
                     .unwrap();
 
                 let arr = Box::new(utf8_to_large_utf8(utf8_arr));
@@ -206,7 +206,7 @@ mod tests {
     #[test]
     fn from_small_utf8_arrow() {
         let data = vec![Some("hello"), Some("world")];
-        let data = Box::new(daft_arrow::array::Utf8Array::<i32>::from(data.as_slice()));
+        let data = Box::new(daft_arrow::array::StringArray::from(data.as_slice()));
         let daft_fld = Arc::new(Field::new("test", DataType::Utf8));
 
         let s = Series::from_arrow(daft_fld, data);

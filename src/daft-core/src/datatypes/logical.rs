@@ -176,6 +176,7 @@ impl MapArray {
             self.physical.offsets().try_into().unwrap(),
             arrow_field,
             daft_arrow::buffer::wrap_null_buffer(self.physical.validity().cloned()),
+            false,
         ))
     }
 }

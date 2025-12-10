@@ -1,8 +1,4 @@
 use common_error::DaftResult;
-use daft_arrow::{
-    array::ord::{self, DynComparator},
-    types::Index,
-};
 
 use super::{arrow::sort::primitive::common::multi_column_idx_sort, as_arrow::AsArrow};
 #[cfg(feature = "python")]
@@ -24,6 +20,7 @@ use crate::{
     prelude::UInt64Array,
     series::Series,
 };
+use crate::array::ops::arrow::sort::primitive::common::DynComparator;
 
 pub fn build_multi_array_compare(
     arrays: &[Series],
@@ -67,6 +64,10 @@ pub fn build_multi_array_bicompare(
     Ok(combined_comparator)
 }
 
+fn total_cmp<T: Ord>(l: &T, r: &T) -> std::cmp::Ordering {
+    l.cmp(r)
+}
+
 impl<T> DataArray<T>
 where
     T: DaftIntegerType,
@@ -78,7 +79,7 @@ where
         let result = crate::array::ops::arrow::sort::primitive::indices::indices_sorted_unstable_by::<
             T::Native,
             _,
-        >(arrow_array, ord::total_cmp, descending, nulls_first);
+        >(arrow_array, total_cmp, descending, nulls_first);
 
         Ok(UInt64Array::from((self.name(), Box::new(result))))
     }
@@ -105,7 +106,7 @@ where
                     let b = b.to_usize();
                     let l = unsafe { values.get_unchecked(a) };
                     let r = unsafe { values.get_unchecked(b) };
-                    match ord::total_cmp(r, l) {
+                    match total_cmp(r, l) {
                         std::cmp::Ordering::Equal => others_cmp(a, b),
                         v => v,
                     }
@@ -122,7 +123,7 @@ where
                     let b = b.to_usize();
                     let l = unsafe { values.get_unchecked(a) };
                     let r = unsafe { values.get_unchecked(b) };
-                    match ord::total_cmp(l, r) {
+                    match total_cmp(l, r) {
                         std::cmp::Ordering::Equal => others_cmp(a, b),
                         v => v,
                     }
@@ -146,7 +147,7 @@ where
 
         let result = crate::array::ops::arrow::sort::primitive::sort::sort_by::<T::Native, _>(
             arrow_array,
-            ord::total_cmp,
+            total_cmp,
             &options,
             None,
         );
@@ -330,7 +331,7 @@ impl Decimal128Array {
         let result = crate::array::ops::arrow::sort::primitive::indices::indices_sorted_unstable_by::<
             i128,
             _,
-        >(arrow_array, ord::total_cmp, descending, nulls_first);
+        >(arrow_array, total_cmp, descending, nulls_first);
 
         Ok(UInt64Array::from((self.name(), Box::new(result))))
     }
@@ -357,7 +358,7 @@ impl Decimal128Array {
                     let b = b.to_usize();
                     let l = unsafe { values.get_unchecked(a) };
                     let r = unsafe { values.get_unchecked(b) };
-                    match ord::total_cmp(r, l) {
+                    match total_cmp(r, l) {
                         std::cmp::Ordering::Equal => others_cmp(a, b),
                         v => v,
                     }
@@ -374,7 +375,7 @@ impl Decimal128Array {
                     let b = b.to_usize();
                     let l = unsafe { values.get_unchecked(a) };
                     let r = unsafe { values.get_unchecked(b) };
-                    match ord::total_cmp(l, r) {
+                    match total_cmp(l, r) {
                         std::cmp::Ordering::Equal => others_cmp(a, b),
                         v => v,
                     }
@@ -398,7 +399,7 @@ impl Decimal128Array {
 
         let result = crate::array::ops::arrow::sort::primitive::sort::sort_by::<i128, _>(
             arrow_array,
-            ord::total_cmp,
+            total_cmp,
             &options,
             None,
         );

@@ -10,7 +10,7 @@ use daft_arrow::{
         time::{add_interval, sub_interval},
     },
     datatypes::ArrowDataType,
-    types::months_days_ns,
+    types::IntervalMonthDayNano,
 };
 
 use super::as_arrow::AsArrow;
@@ -434,7 +434,7 @@ impl TimestampArray {
     fn interval_helper<
         F: FnOnce(
             &PrimitiveArray<i64>,
-            &PrimitiveArray<months_days_ns>,
+            &PrimitiveArray<IntervalMonthDayNano>,
         ) -> Result<PrimitiveArray<i64>, daft_arrow::error::Error>,
     >(
         &self,

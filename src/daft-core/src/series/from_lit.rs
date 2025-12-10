@@ -2,13 +2,15 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use common_image::CowImage;
+use daft_arrow::array::builder::{BooleanBuilder, PrimitiveBuilder, Int64Builder, Int32Builder};
+use daft_arrow::types::ArrowPrimitiveType;
 use daft_arrow::{
     array::{
-        MutableArray, MutableBinaryArray, MutableBooleanArray, MutablePrimitiveArray,
-        MutableUtf8Array,
+        LargeBinaryBuilder, 
+        LargeStringBuilder,
     },
     trusted_len::TrustedLen,
-    types::{NativeType, months_days_ns},
+    types::{IntervalMonthDayNano},
 };
 use indexmap::IndexMap;
 use itertools::Itertools;
@@ -171,13 +173,13 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
     }
 
     #[inline(always)]
-    fn from_mutable_primitive<T: NativeType, I: Iterator<Item = (usize, DaftResult<Literal>)>>(
+    fn from_mutable_primitive<T: ArrowPrimitiveType, I: Iterator<Item = (usize, DaftResult<Literal>)>>(
         values: I,
         values_len: usize,
         field: Field,
         mut f: impl FnMut(DaftResult<Literal>, usize) -> Option<T>,
     ) -> DaftResult<Series> {
-        let mut arr = MutablePrimitiveArray::<T>::with_capacity(values_len);
+        let mut arr = PrimitiveBuilder::<T>::with_capacity(values_len);
 
         for (i, value) in values {
             let value = f(value, i);
@@ -191,7 +193,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
     let s = match downcasted.clone() {
         DataType::Null => NullArray::full_null("literal", &dtype, len).into_series(),
         DataType::Boolean => {
-            let mut arr = MutableBooleanArray::with_capacity(len);
+            let mut arr = BooleanBuilder::with_capacity(len);
 
             for (i, value) in values {
                 let value = unwrap_inner!(value, i, Boolean);
@@ -200,7 +202,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
             Series::from_arrow(Arc::new(field), arr.as_box())?
         }
         DataType::Utf8 => {
-            let mut arr = MutableUtf8Array::<i64>::with_capacity(len);
+            let mut arr = LargeStringBuilder::with_capacity(0, len);
 
             for (i, value) in values {
                 let value = unwrap_inner!(value, i, Utf8);
@@ -210,7 +212,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
             Series::from_arrow(Arc::new(field), arr.as_box())?
         }
         DataType::Binary => {
-            let mut arr = MutableBinaryArray::<i64>::with_capacity(len);
+            let mut arr = LargeBinaryBuilder::with_capacity(0, len);
 
             for (i, value) in values {
                 let value = unwrap_inner!(value, i, Binary);
@@ -262,7 +264,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
         )
         .into_series(),
         DataType::Timestamp(_, _) => {
-            let mut arr = MutablePrimitiveArray::<i64>::with_capacity(len);
+            let mut arr = Int64Builder::with_capacity(len);
 
             for (i, value) in values {
                 let value = unwrap_inner!(value, i, Literal::Timestamp(ts, ..) => ts);
@@ -275,7 +277,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
             TimestampArray::new(field, physical).into_series()
         }
         DataType::Date => {
-            let mut arr = MutablePrimitiveArray::<i32>::with_capacity(len);
+            let mut arr = Int32Builder::with_capacity(len);
 
             for (i, value) in values {
                 let value = unwrap_inner!(value, i, Literal::Date(d) => d);

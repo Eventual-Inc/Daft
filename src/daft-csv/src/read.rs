@@ -1547,7 +1547,6 @@ mod tests {
         assert_eq!(
             null_column.to_arrow(),
             Box::new(daft_arrow::array::NullArray::new(
-                daft_arrow::datatypes::DataType::Null,
                 6
             )) as Box<dyn daft_arrow::array::Array>
         );
@@ -1603,7 +1602,6 @@ mod tests {
         assert_eq!(
             null_column.to_arrow(),
             Box::new(daft_arrow::array::NullArray::new(
-                daft_arrow::datatypes::DataType::Null,
                 6
             )) as Box<dyn daft_arrow::array::Array>
         );

@@ -63,10 +63,10 @@ macro_rules! impl_variable_length_concat {
 }
 impl_variable_length_concat!(
     utf8_concat,
-    daft_arrow::array::Utf8Array<i64>,
+    daft_arrow::array::LargeStringArray,
     try_new_unchecked
 );
-impl_variable_length_concat!(binary_concat, daft_arrow::array::BinaryArray<i64>, try_new);
+impl_variable_length_concat!(binary_concat, daft_arrow::array::LargeBinaryArray, try_new);
 
 impl<T> DataArray<T>
 where
