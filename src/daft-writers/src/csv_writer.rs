@@ -62,25 +62,11 @@ use crate::{
 };
 
 pub(crate) fn native_csv_writer_supported(file_schema: &SchemaRef) -> DaftResult<bool> {
-    #[allow(deprecated, reason = "arrow2 migration")]
-    let datatypes_convertable = file_schema.to_arrow2()?.fields.iter().all(|field| {
-        field.data_type().can_convert_to_arrow_rs() && !is_nested_type(field.data_type())
-    });
+    let datatypes_convertable = file_schema
+        .fields()
+        .iter()
+        .all(|field| !field.dtype.is_nested());
     Ok(datatypes_convertable)
-}
-
-/// Returns true if this type is nested (List, FixedSizeList, LargeList, Struct, Union, or Map), or a dictionary of a nested type
-pub(crate) fn is_nested_type(dt: &daft_arrow::datatypes::DataType) -> bool {
-    match dt {
-        daft_arrow::datatypes::DataType::Dictionary(_, v, ..) => is_nested_type(v),
-        daft_arrow::datatypes::DataType::List(_)
-        | daft_arrow::datatypes::DataType::FixedSizeList(_, _)
-        | daft_arrow::datatypes::DataType::LargeList(_)
-        | daft_arrow::datatypes::DataType::Struct(_)
-        | daft_arrow::datatypes::DataType::Union(_, _, _)
-        | daft_arrow::datatypes::DataType::Map(_, _) => true,
-        _ => false,
-    }
 }
 
 pub(crate) fn create_native_csv_writer(

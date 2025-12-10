@@ -1069,6 +1069,37 @@ impl DataType {
             ))),
         }
     }
+
+    /// Returns whether this datatype or any of its children contains a type that is incompatible with JSON writes.
+    /// Returns false if the datatype contains Duration or Binary types.
+    pub fn can_convert_to_json(&self) -> bool {
+        match self.to_physical() {
+            DataType::Extension(..) => false,
+            // Duration types are not currently supported in JSON.
+            DataType::Duration(_) => false,
+            // Binary types are not currently supported in JSON.
+            DataType::Binary | DataType::FixedSizeBinary(_) => false,
+            _ => {
+                let mut can_convert = true;
+                self.direct_children(|child| {
+                    can_convert = can_convert && child.can_convert_to_json();
+                });
+                can_convert
+            }
+        }
+    }
+
+    fn direct_children<'a>(&'a self, mut processor: impl FnMut(&'a DataType)) {
+        match self {
+            DataType::List(dtype) | DataType::FixedSizeList(dtype, _) => processor(&dtype),
+            DataType::Map { key, value } => {
+                processor(key);
+                processor(value);
+            }
+            DataType::Struct(fields) => fields.iter().for_each(|field| processor(&field.dtype)),
+            _ => {} // Other types don't have child data types
+        }
+    }
 }
 
 #[expect(

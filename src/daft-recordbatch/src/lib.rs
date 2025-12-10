@@ -1592,8 +1592,7 @@ impl TryFrom<RecordBatch> for arrow_array::RecordBatch {
     type Error = DaftError;
 
     fn try_from(record_batch: RecordBatch) -> DaftResult<Self> {
-        #[allow(deprecated, reason = "arrow2 migration")]
-        let schema = Arc::new(record_batch.schema.to_arrow2()?.into());
+        let schema = Arc::new(record_batch.schema.to_arrow()?);
         let columns = record_batch
             .columns
             .iter()

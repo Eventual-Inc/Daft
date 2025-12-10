@@ -40,18 +40,7 @@ pub(crate) fn native_parquet_writer_supported(
         _ => return Ok(false),
     }
     // TODO(desmond): Currently we do not support extension and timestamp types.
-    #[allow(deprecated, reason = "arrow2 migration")]
-    let arrow_schema = match file_schema.to_arrow2() {
-        Ok(schema)
-            if schema
-                .fields
-                .iter()
-                .all(|field| field.data_type().can_convert_to_arrow_rs()) =>
-        {
-            Arc::new(schema.into())
-        }
-        _ => return Ok(false),
-    };
+    let schema = file_schema.to_arrow()?;
     let writer_properties = Arc::new(
         WriterProperties::builder()
             .set_writer_version(WriterVersion::PARQUET_1_0)
@@ -60,7 +49,7 @@ pub(crate) fn native_parquet_writer_supported(
     );
     Ok(ArrowSchemaConverter::new()
         .with_coerce_types(writer_properties.coerce_types())
-        .convert(&arrow_schema)
+        .convert(&schema)
         .is_ok())
 }
 
@@ -91,8 +80,7 @@ pub(crate) fn create_native_parquet_writer(
             .build(),
     );
 
-    #[allow(deprecated, reason = "arrow2 migration")]
-    let arrow_schema = Arc::new(schema.to_arrow2()?.into());
+    let arrow_schema = Arc::new(schema.to_arrow()?);
 
     let parquet_schema = ArrowSchemaConverter::new()
         .with_coerce_types(writer_properties.coerce_types())
