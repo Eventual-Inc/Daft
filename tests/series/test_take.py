@@ -19,7 +19,7 @@ def test_series_take(dtype) -> None:
 
     s = Series.from_arrow(data.cast(dtype))
     pyidx = [2, 0, None, 5]
-    idx = Series.from_pylist(pyidx, dtype=DataType.uint64())
+    idx = Series.from_pylist(pyidx)
 
     result = s.take(idx)
     assert result.datatype() == s.datatype()
@@ -40,7 +40,7 @@ def test_series_date_take() -> None:
 
     days = list(map(date_maker, [5, 4, 1, None, 2, None]))
     s = Series.from_pylist(days)
-    taken = s.take(Series.from_pylist([5, 4, 3, 2, 1, 0], dtype=DataType.uint64()))
+    taken = s.take(Series.from_pylist([5, 4, 3, 2, 1, 0]))
     assert taken.datatype() == DataType.date()
     assert taken.to_pylist() == days[::-1]
 
@@ -57,7 +57,7 @@ def test_series_time_take(time_unit) -> None:
     times = list(map(time_maker, [0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0], [5, 4, 1, None, 2, None]))
     s = Series.from_pylist(times)
     s = s.cast(DataType.time(time_unit))
-    taken = s.take(Series.from_pylist([5, 4, 3, 2, 1, 0], dtype=DataType.uint64()))
+    taken = s.take(Series.from_pylist([5, 4, 3, 2, 1, 0]))
     assert taken.datatype() == DataType.time(time_unit)
     assert taken.to_pylist() == times[::-1]
 
@@ -68,7 +68,7 @@ def test_series_binary_take(type) -> None:
 
     s = Series.from_arrow(data)
     pyidx = [2, 0, None, 5]
-    idx = Series.from_pylist(pyidx, dtype=DataType.uint64())
+    idx = Series.from_pylist(pyidx)
 
     result = s.take(idx)
     assert result.datatype() == s.datatype()
@@ -84,7 +84,7 @@ def test_series_list_take() -> None:
 
     s = Series.from_arrow(data)
     pyidx = [2, 0, None, 5]
-    idx = Series.from_pylist(pyidx, dtype=DataType.uint64())
+    idx = Series.from_pylist(pyidx)
 
     result = s.take(idx)
     assert result.datatype() == s.datatype()
@@ -100,7 +100,7 @@ def test_series_fixed_size_list_take() -> None:
 
     s = Series.from_arrow(data)
     pyidx = [2, 0, None, 5]
-    idx = Series.from_pylist(pyidx, dtype=DataType.uint64())
+    idx = Series.from_pylist(pyidx)
 
     result = s.take(idx)
     assert result.datatype() == s.datatype()
@@ -127,7 +127,7 @@ def test_series_struct_take() -> None:
 
     s = Series.from_arrow(data)
     pyidx = [2, 0, None, 5]
-    idx = Series.from_pylist(pyidx, dtype=DataType.uint64())
+    idx = Series.from_pylist(pyidx)
 
     result = s.take(idx)
     assert result.datatype() == s.datatype()
@@ -153,7 +153,7 @@ def test_series_extension_type_take(uuid_ext_type) -> None:
         uuid_ext_type.NAME, DataType.from_arrow_type(uuid_ext_type.storage_type), ""
     )
     pyidx = [2, 0, None, 5]
-    idx = Series.from_pylist(pyidx, dtype=DataType.uint64())
+    idx = Series.from_pylist(pyidx)
 
     result = s.take(idx)
     assert result.datatype() == s.datatype()
@@ -178,7 +178,7 @@ def test_series_canonical_tensor_extension_type_take() -> None:
     s = Series.from_arrow(data)
     assert s.datatype() == DataType.tensor(DataType.from_arrow_type(tensor_type.storage_type.value_type), shape)
     pyidx = [2, 0, None, 5]
-    idx = Series.from_pylist(pyidx, dtype=DataType.uint64())
+    idx = Series.from_pylist(pyidx)
 
     result = s.take(idx)
     assert result.datatype() == s.datatype()
@@ -196,7 +196,7 @@ def test_series_deeply_nested_take() -> None:
 
     s = Series.from_arrow(data)
     assert s.datatype() == DataType.from_arrow_type(dtype)
-    idx = Series.from_pylist([1], dtype=DataType.uint64())
+    idx = Series.from_pylist([1])
 
     result = s.take(idx)
     assert result.datatype() == s.datatype()
