@@ -219,7 +219,8 @@ impl PySeries {
     }
 
     pub fn take(&self, idx: &Self) -> PyResult<Self> {
-        Ok(self.series.take(&idx.series)?.into())
+        let idx = idx.series.cast(&DataType::UInt64)?;
+        Ok(self.series.take(idx.u64()?)?.into())
     }
 
     pub fn slice(&self, start: i64, end: i64) -> PyResult<Self> {
@@ -256,7 +257,11 @@ impl PySeries {
     }
 
     pub fn argsort(&self, descending: bool, nulls_first: bool) -> PyResult<Self> {
-        Ok(self.series.argsort(descending, nulls_first)?.into())
+        Ok(self
+            .series
+            .argsort(descending, nulls_first)?
+            .into_series()
+            .into())
     }
 
     pub fn minhash(
