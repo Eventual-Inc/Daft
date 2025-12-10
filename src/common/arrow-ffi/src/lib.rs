@@ -69,8 +69,8 @@ pub fn to_py_array<'py>(
 
     let schema = Box::new(field);
 
-    let data = daft_arrow::array::to_data(array.as_ref());
-
+    let mut data = daft_arrow::array::to_data(array.as_ref());
+    data.align_buffers();
     let arrow_arr = Box::new(arrow::ffi::FFI_ArrowArray::new(&data));
 
     let schema_ptr: *const arrow::ffi::FFI_ArrowSchema = &raw const *schema;
