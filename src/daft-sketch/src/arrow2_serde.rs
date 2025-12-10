@@ -1,7 +1,7 @@
 use std::sync::LazyLock;
 
-use arrow2::array::Array;
 use common_error::{DaftError, DaftResult};
+use daft_arrow::array::Array;
 use serde_arrow::{
     schema::{SchemaLike, SerdeArrowSchema, TracingOptions},
     utils::{Item, Items},
@@ -26,15 +26,16 @@ impl From<Error> for DaftError {
     }
 }
 
-static ARROW2_DDSKETCH_ITEM_FIELDS: LazyLock<Vec<arrow2::datatypes::Field>> = LazyLock::new(|| {
-    SerdeArrowSchema::from_type::<Item<Option<DDSketch>>>(TracingOptions::default())
-        .unwrap()
-        .to_arrow2_fields()
-        .unwrap()
-});
+static ARROW2_DDSKETCH_ITEM_FIELDS: LazyLock<Vec<daft_arrow::datatypes::Field>> =
+    LazyLock::new(|| {
+        SerdeArrowSchema::from_type::<Item<Option<DDSketch>>>(TracingOptions::default())
+            .unwrap()
+            .to_arrow2_fields()
+            .unwrap()
+    });
 
 /// The corresponding arrow2 DataType of Vec<DDSketch> when serialized as an arrow2 array
-pub static ARROW2_DDSKETCH_DTYPE: LazyLock<arrow2::datatypes::DataType> = LazyLock::new(|| {
+pub static ARROW2_DDSKETCH_DTYPE: LazyLock<daft_arrow::datatypes::DataType> = LazyLock::new(|| {
     ARROW2_DDSKETCH_ITEM_FIELDS
         .first()
         .unwrap()
@@ -44,9 +45,9 @@ pub static ARROW2_DDSKETCH_DTYPE: LazyLock<arrow2::datatypes::DataType> = LazyLo
 
 /// Converts a Vec<Option<DDSketch>> into an arrow2 Array
 #[must_use]
-pub fn into_arrow2(sketches: Vec<Option<DDSketch>>) -> Box<dyn arrow2::array::Array> {
+pub fn into_arrow2(sketches: Vec<Option<DDSketch>>) -> Box<dyn daft_arrow::array::Array> {
     if sketches.is_empty() {
-        return arrow2::array::StructArray::new_empty(ARROW2_DDSKETCH_DTYPE.clone()).to_boxed();
+        return daft_arrow::array::StructArray::new_empty(ARROW2_DDSKETCH_DTYPE.clone()).to_boxed();
     }
 
     let wrapped_sketches: Items<Vec<Option<DDSketch>>> = Items(sketches);
@@ -58,7 +59,7 @@ pub fn into_arrow2(sketches: Vec<Option<DDSketch>>) -> Box<dyn arrow2::array::Ar
 
 /// Converts an arrow2 Array into a Vec<Option<DDSketch>>
 pub fn from_arrow2(
-    arrow_array: Box<dyn arrow2::array::Array>,
+    arrow_array: Box<dyn daft_arrow::array::Array>,
 ) -> DaftResult<Vec<Option<DDSketch>>> {
     if arrow_array.is_empty() {
         return Ok(vec![]);

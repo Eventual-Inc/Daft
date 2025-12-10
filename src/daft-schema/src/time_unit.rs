@@ -1,7 +1,7 @@
 use std::{fmt::Display, str::FromStr};
 
-use arrow2::datatypes::TimeUnit as ArrowTimeUnit;
 use common_error::DaftError;
+use daft_arrow::datatypes::TimeUnit as ArrowTimeUnit;
 use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]

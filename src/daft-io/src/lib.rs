@@ -5,6 +5,7 @@ mod google_cloud;
 mod http;
 mod huggingface;
 mod local;
+pub mod multipart;
 mod object_io;
 mod object_store_glob;
 mod retry;
@@ -30,6 +31,7 @@ mod integrations;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod range;
+pub mod utils;
 
 use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
 
@@ -40,13 +42,14 @@ use object_io::StreamingRetryParams;
 pub use object_io::{FileMetadata, FileType, GetResult, ObjectSource};
 #[cfg(feature = "python")]
 pub use python::register_modules;
-pub use s3_like::{S3LikeSource, S3MultipartWriter, S3PartBuffer, s3_config_from_env};
+pub use s3_like::{S3LikeSource, S3MultipartWriter, s3_config_from_env};
 use snafu::{Snafu, prelude::*};
 pub use stats::{IOStatsContext, IOStatsRef};
 use url::ParseError;
 
 use self::{http::HttpSource, local::LocalSource};
 pub use crate::range::GetRange;
+use crate::{Error::InvalidRangeRequest, range::InvalidGetRange};
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -208,6 +211,11 @@ impl IOClient {
             config,
         })
     }
+
+    pub fn support_suffix_range(&self) -> bool {
+        !self.config.disable_suffix_range
+    }
+
     pub async fn get_source_and_path(
         &self,
         input: &str,
@@ -312,6 +320,14 @@ impl IOClient {
     ) -> Result<GetResult> {
         let (_, path) = parse_url(&input)?;
         let source = self.get_source(&input).await?;
+
+        if let Some(GetRange::Suffix(_)) = range
+            && !self.support_suffix_range()
+        {
+            return Err(InvalidRangeRequest {
+                source: InvalidGetRange::UnsupportedSuffixRange,
+            });
+        }
 
         let get_result = source
             .get(path.as_ref(), range.clone(), io_stats.clone())

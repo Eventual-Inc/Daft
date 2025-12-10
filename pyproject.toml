@@ -5,9 +5,9 @@ requires = ["maturin>=1.5.0,<2.0.0"]
 [project]
 authors = [{name = "Eventual Inc", email = "daft@eventualcomputing.com"}]
 dependencies = [
-  "pyarrow >= 8.0.0",
-  "fsspec",
-  "tqdm",
+  "pyarrow >= 8.0.0,<23.0.0",
+  "fsspec<2025.11.0",
+  "tqdm<4.68.0",
   "typing-extensions >= 4.0.0; python_version < '3.11'",
   "packaging"
 ]
@@ -30,162 +30,156 @@ homepage = "https://www.daft.ai"
 repository = "https://github.com/Eventual-Inc/Daft"
 
 [project.optional-dependencies]
-all = ["daft[aws, azure, clickhouse, deltalake, gcp, hudi, huggingface, iceberg, lance, numpy, openai, pandas, postgres, ray, sentence-transformers, spark, sql, transformers, turbopuffer, unity, video]"]
-aws = ["boto3"]
+all = ["daft[aws, azure, clickhouse, deltalake, gcp, google, hudi, huggingface, iceberg, lance, numpy, openai, pandas, postgres, ray, sentence-transformers, sql, transformers, turbopuffer, unity, video]"]
+aws = ["boto3<1.43.0"]
 azure = []
-clickhouse = ["clickhouse_connect"]
-deltalake = ["deltalake <= 1.2.1"]
+clickhouse = ["clickhouse_connect<0.11.0"]
+deltalake = ["deltalake < 1.3.0"]
 gcp = []
-hudi = ["pyarrow >= 8.0.0"]
-huggingface = ["huggingface-hub"]
+google = ["google-genai<1.53.0"]
+hudi = ["pyarrow >= 8.0.0,<22.1.0"]
+huggingface = ["huggingface-hub<1.2.0", "datasets<4.5.0"]
 # TODO: pyiceberg 0.9.1 has a bug https://github.com/apache/iceberg-python/issues/1979. It was not
 # triggered because we specify pyiceberg == 0.7.0 in requrements-dev.txt which hide this problem.
 # See https://github.com/Eventual-Inc/Daft/issues/4868.
 iceberg = ["pyiceberg >= 0.7.0, < 0.9.1"]
-lance = ["pylance"]
-numpy = ["numpy"]
-openai = ["openai"]
-pandas = ["pandas"]
-postgres = ["psycopg", "pgvector"]
+lance = ["pylance<0.40.0"]
+numpy = ["numpy<2.4.0"]
+openai = ["openai<2.9.0"]
+pandas = ["pandas<2.4.0"]
+postgres = ["psycopg[binary]<3.4.0", "pgvector<0.5.0", "sqlglot<28.1.0", "connectorx>=0.4.4,<0.5.0"]
 ray = [
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
-  'ray[data, client]>=2.0.0; platform_system != "Windows"',
-  'ray[data, client]>=2.10.0; platform_system == "Windows"'  # ray 2.10 has the pyarrow upper pin removed
+  'ray[data, client]>=2.0.0,<2.53.0; platform_system != "Windows"',
+  'ray[data, client]>=2.10.0,<2.53.0; platform_system == "Windows"'  # ray 2.10 has the pyarrow upper pin removed
 ]
-transformers = ["transformers", "sentence-transformers", "torch", "torchvision"]
-spark = ["googleapis-common-protos >= 1.56.4", "grpcio >= 1.48", "grpcio-status >= 1.48", "numpy >= 1.15", "pandas >= 1.0.5", "py4j >= 0.10.9.7", "pyspark == 3.5.5"]
+transformers = ["transformers<4.58.0", "sentence-transformers<5.2.0", "torch<2.10.0", "torchvision<0.25.0"]
 # connectorx 0.4.4 is needed for pgvector support.
-sql = ["connectorx>=0.4.4", "sqlalchemy", "sqlglot"]
-turbopuffer = ["turbopuffer"]
-unity = ["httpx <= 0.27.2", "unitycatalog"]
-video = ["av >= 15.0.0"]
-audio = ["soundfile >= 0.13.0", "librosa >= 0.11.0"]
+sql = ["connectorx>=0.4.4,<0.5.0", "sqlalchemy<2.1.0", "sqlglot<28.1.0"]
+turbopuffer = ["turbopuffer<1.9.0"]
+unity = ["httpx<= 0.27.2", "unitycatalog<0.2.0"]
+video = ["av >= 15.0.0,<16.1.0"]
+audio = ["soundfile >= 0.13.0,<0.14.0", "librosa >= 0.11.0,<0.12.0"]
 viz = []
 
 [dependency-groups]
 dev = [
-  "ipdb",
-  "maturin",
-  "pre-commit",
-  "docker",
+  "ipdb==0.13.13",
+  "maturin==1.10.2",
+  "pre-commit==4.4.0",
+  "docker==7.1.0",
   # Pinned aiohttp due to Ray connection issue in aiohttp==3.12.6
   "aiohttp==3.12.4",
   # Pinned httpx due to unitycatalog-python issue: https://github.com/unitycatalog/unitycatalog-python/issues/9
   "httpx==0.27.2",
   # Tracing
-  "orjson==3.10.12",
-  "py-spy>=0.3.14",
-  "viztracer==0.15.6",
+  "orjson==3.11.4",
+  "py-spy==0.4.1",
+  "viztracer==1.1.1",
   # Testing frameworks
-  "hypothesis==6.79.2",
-  "pytest==7.4.3",
-  "pytest-benchmark==4.0.0",
-  "pytest-cov==4.1.0",
+  "hypothesis==6.148.1",
+  "pytest==7.4.4",
+  "pytest-benchmark==5.0.1",
+  "pytest-cov==7.0.0",
   "pytest-lazy-fixture==0.6.3",
-  "memray==1.17.2; platform_system != \"Windows\"",
-  "pytest-codspeed==2.2.1",
+  "memray==1.19.1; platform_system != \"Windows\"",
+  "pytest-codspeed==4.2.0",
   # Testing dependencies
-  "lxml==5.3.0",
-  "dask[dataframe]>=2025.10.0",
+  "lxml==6.0.2",
+  "dask[dataframe]==2025.11.0",
   "numpy==2.2.0; python_version >= '3.13'",
-  "numpy==1.26.2; python_version < '3.13'",
-  "pandas==2.2.3; python_version >= '3.13'",
-  "pandas==2.1.3; python_version < '3.13'",
+  "numpy==1.26.4; python_version < '3.13'",
+  "pandas==2.3.3; python_version >= '3.13'",
+  "pandas==2.2.3; python_version < '3.13'",
   "pandas-stubs==2.2.2.240807",
-  "xxhash>=3.0.0",
-  "Pillow==10.4.0",
-  "reportlab",
+  "xxhash==3.6.0",
+  "Pillow==11.0.0",
+  "reportlab==4.4.5",
   "opencv-python==4.10.0.84",
-  "tiktoken==0.9.0",
-  "duckdb==1.1.2",
-  "datasets==4.0.0",
-  "torch>=2.5.1",
-  "torchvision>=0.20.1",
-  "tensorflow>=2.18.1; python_version < '3.13'",
-  "tf-keras>=2.18.0; python_version < '3.13'",
-  "jax>=0.4.30",
-  "jaxtyping>=0.2.36",
+  "tiktoken==0.12.0",
+  "duckdb==1.4.2",
+  "datasets==4.4.1",
+  "torch==2.8.0",
+  "torchvision==0.23.0",
+  "jax==0.6.2",
+  "jaxtyping==0.3.3",
   # Pyarrow
-  "pyarrow==20.0.0",
+  "pyarrow==22.0.0",
   "pyarrow-stubs==19.4",
   # Ray
-  "ray[data, client]==2.48.0; python_version >= '3.13' or platform_system != \"Linux\" or platform_machine != \"x86_64\"",
-  "ray[data, client]==2.34.0; python_version < '3.13' and platform_system == \"Linux\" and platform_machine == \"x86_64\"",
+  "ray[data, client]==2.52.1",
   # Lance
-  "pylance>=0.37.0",
+  "pylance==0.39.0",
   # Iceberg
   "pyiceberg==0.7.0",
-  "pydantic==2.11.7",
-  "tenacity==8.2.3",
+  "pydantic==2.12.4",
+  "tenacity==8.5.0",
   # Delta Lake
   "deltalake==0.5.8; platform_system == \"Windows\"",
   "deltalake==1.2.1; platform_system != \"Windows\"",
   # Databricks
-  "databricks-sdk==0.12.0",
+  "databricks-sdk==0.73.0",
   "unitycatalog==0.1.1",
   # SQL
-  "sqlalchemy==2.0.36",
-  "connectorx>=0.4.4; platform_system == \"Linux\" and platform_machine == \"aarch64\"",
-  "connectorx>=0.4.4; platform_system != \"Linux\" or platform_machine != \"aarch64\"",
-  "trino[sqlalchemy]==0.328.0",
-  "PyMySQL==1.1.0",
-  "psycopg2-binary==2.9.10",
-  "sqlglot==23.3.0",
-  "pyodbc>=5.3.0",
+  "sqlalchemy==2.0.44",
+  "connectorx==0.4.4; platform_system == \"Linux\" and platform_machine == \"aarch64\"",
+  "connectorx==0.4.4; platform_system != \"Linux\" or platform_machine != \"aarch64\"",
+  "trino[sqlalchemy]==0.336.0",
+  "PyMySQL==1.1.2",
+  "psycopg2-binary==2.9.11",
+  "sqlglot==28.0.0",
+  "pyodbc==5.3.0",
   # AWS
-  "s3fs==2023.12.1",
-  "boto3==1.36.20",
+  "s3fs==2024.9.0",
+  "boto3==1.36.2",
   "boto3-stubs[essential,glue,s3,s3tables]==1.38.46",
   "moto[glue,s3,server]==5.1.1",
   # Azure
   "adlfs==2024.7.0",
-  "azure-storage-blob==12.24.0",
+  "azure-storage-blob==12.27.1",
   # GCS
-  "gcsfs==2023.12.1",
+  "gcsfs==2024.9.0.post1",
   # Hugging Face
-  "huggingface-hub==0.34.4",
-  # Daft connect testing
-  "pyspark==3.5.5",
-  "grpcio==1.68.1",
-  "grpcio-status==1.67.0",
+  "huggingface-hub==0.36.0",
   # AI
-  "vllm>=0.5.0; platform_system == \"Linux\" and platform_machine == \"x86_64\"",
-  "vllm==0.11.0; platform_system != \"Linux\" or platform_machine != \"x86_64\"",
-  "openai==1.100",
+  "vllm==0.11.0",
+  "openai==2.8.1",
+  # Downgraded to 1.2.0 for httpx 0.27.2 compatibility (1.3.0+ requires httpx>=0.28.1)
+  "google-genai==1.2.0",
   # AV
-  "av==15.0.0",
-  "soundfile>=0.13.0",
-  "librosa>=0.11.0",
+  "av==16.0.1",
+  "soundfile==0.13.1",
+  "librosa==0.11.0",
   # Clickhouse
-  "clickhouse-connect",
+  "clickhouse-connect==0.10.0",
   # mcap
   "mcap==1.3.0",
-  "mcap-ros2-support==0.5.5",
+  "mcap-ros2-support==0.5.6",
   "mcap-protobuf-support==0.5.3",
   # BigTable
-  "google-cloud-bigtable>=2.33.0"
+  "google-cloud-bigtable==2.34.0"
 ]
 docs = [
-  "markdown-exec",
-  "mkdocs-jupyter",
-  "mkdocs-material",
-  "mkdocs-macros-plugin",
-  "mkdocs-simple-hooks",
-  "pymdown-extensions",
-  "mkdocs-material[imaging]",
-  "mkdocstrings-python",
-  "mkdocs-minify-plugin",
-  "mkdocs-redirects",
-  "mkdocs-gen-files",
-  "griffe",
-  "mkdocs-literate-nav",
-  "Jinja2"
+  "markdown-exec==1.12.1",
+  "mkdocs-jupyter==0.25.1",
+  "mkdocs-material==9.7.0",
+  "mkdocs-macros-plugin==1.5.0",
+  "mkdocs-simple-hooks==0.1.5",
+  "pymdown-extensions==10.17.1",
+  "mkdocs-material[imaging]==9.7.0",
+  "mkdocstrings-python==1.19.0",
+  "mkdocs-minify-plugin==0.8.0",
+  "mkdocs-redirects==1.2.2",
+  "mkdocs-gen-files==0.5.0",
+  "griffe==1.15.0",
+  "mkdocs-literate-nav==0.6.2",
+  "Jinja2==3.1.6"
 ]
 lint = [
-  "ruff",
-  "black",
-  "isort",
-  "mypy"
+  "ruff==0.14.6",
+  "black==25.11.0",
+  "isort==7.0.0",
+  "mypy==1.18.2"
 ]
 
 [tool]
@@ -193,7 +187,7 @@ lint = [
 [tool.codespell]
 check-filenames = true
 check-hidden = true
-ignore-words-list = "crate,arithmetics,ser,acter,MOR"
+ignore-words-list = "crate,arithmetics,ser,acter,MOR,NotIn"
 # Feel free to un-skip examples, and experimental, you will just need to
 # work through many typos (--write-changes and --interactive will help)
 skip = "tests/series/*,target,.git,.venv,venv,data,*.csv,*.csv.*,*.html,*.json,*.jsonl,*.pdf,*.txt,*.ipynb,*.tiktoken,*.sql,tests/table/utf8/*,tests/table/binary/*,*.warc,tests/ai/*"

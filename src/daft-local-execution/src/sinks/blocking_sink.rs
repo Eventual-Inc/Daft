@@ -172,6 +172,10 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
 }
 
 impl<Op: BlockingSink + 'static> TreeDisplay for BlockingSinkNode<Op> {
+    fn id(&self) -> String {
+        self.node_id().to_string()
+    }
+
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -200,10 +204,18 @@ impl<Op: BlockingSink + 'static> TreeDisplay for BlockingSinkNode<Op> {
     }
 
     fn repr_json(&self) -> serde_json::Value {
+        let children: Vec<serde_json::Value> = self
+            .get_children()
+            .iter()
+            .map(|child| child.repr_json())
+            .collect();
+
         serde_json::json!({
-            "id": self.id(),
+            "id": self.node_id(),
+            "category": "BlockingSink",
             "type": self.op.op_type().to_string(),
             "name": self.name(),
+            "children": children,
         })
     }
 
@@ -245,7 +257,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         _maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
-        let child_results_receiver = self.child.start(false, runtime_handle)?;
+        let child_results_receiver = self.child.start(true, runtime_handle)?;
         let counting_receiver = InitializingCountingReceiver::new(
             child_results_receiver,
             self.node_id(),
@@ -261,6 +273,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         let num_workers = op.max_concurrency();
 
         let dispatch_spawner = op.dispatch_spawner(Some(self.morsel_size_requirement));
+
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             vec![counting_receiver],
             num_workers,

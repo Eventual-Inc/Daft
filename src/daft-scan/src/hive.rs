@@ -1,5 +1,5 @@
-use arrow2::datatypes::DataType;
 use common_error::DaftResult;
+use daft_arrow::datatypes::DataType;
 use daft_core::series::Series;
 use daft_decoding::{deserialize::deserialize_single_value_to_arrow, inference::infer};
 use daft_schema::{dtype::DaftDataType, field::Field, schema::Schema};

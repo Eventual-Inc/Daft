@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import daft
-from daft import col
+from daft import col, lit
 
 
 def test_utf8_exprs():
@@ -72,50 +72,45 @@ def test_utf8_exprs():
     actual = daft.sql(sql).collect()
     expected = (
         df.select(
-            col("a").str.endswith("a").alias("ends_with_a"),
-            col("a").str.startswith("a").alias("starts_with_a"),
-            col("a").str.contains("a").alias("contains_a"),
-            col("a").str.split(" ").alias("split_a"),
-            col("a").str.match("ba.").alias("match_a"),
-            col("a").str.extract("ba.").alias("extract_a"),
-            col("a").str.extract_all("ba.").alias("extract_all_a"),
-            col("a").str.split(r"\s+", regex=True).alias("regexp_split_a"),
-            col("a").str.replace("ba.", "foo", regex=True).alias("replace_a"),
-            col("a").str.length().alias("length_a"),
-            col("a").str.length_bytes().alias("length_bytes_a"),
-            col("a").str.lower().alias("lower_a"),
-            col("a").str.lstrip().alias("lstrip_a"),
-            col("a").str.rstrip().alias("rstrip_a"),
-            col("a").str.reverse().alias("reverse_a"),
-            col("a").str.capitalize().alias("capitalize_a"),
-            col("a").str.left(4).alias("left_a"),
-            col("a").str.right(4).alias("right_a"),
-            col("a").str.find("a").alias("find_a"),
-            col("a").str.rpad(10, "<").alias("rpad_a"),
-            col("a").str.lpad(10, ">").alias("lpad_a"),
-            col("a").str.repeat(2).alias("repeat_a"),
-            col("a").str.like("a%").alias("like_a"),
-            col("a").str.ilike("a%").alias("ilike_a"),
-            col("a").str.substr(1, 3).alias("substring_a"),
-            col("a").str.count_matches("a").alias("count_matches_a_0"),
-            col("a").str.count_matches("a", case_sensitive=True).alias("count_matches_a_1"),
-            col("a").str.count_matches("a", case_sensitive=False, whole_words=False).alias("count_matches_a_2"),
-            col("a").str.count_matches("a", case_sensitive=True, whole_words=True).alias("count_matches_a_3"),
-            col("a").str.normalize().alias("normalize_a"),
-            col("a").str.normalize(remove_punct=True).alias("normalize_remove_punct_a"),
-            col("a").str.normalize(remove_punct=True, lowercase=True).alias("normalize_remove_punct_lower_a"),
+            col("a").endswith("a").alias("ends_with_a"),
+            col("a").startswith("a").alias("starts_with_a"),
+            col("a").contains("a").alias("contains_a"),
+            col("a").split(" ").alias("split_a"),
+            col("a").regexp("ba.").alias("match_a"),
+            col("a").regexp_extract("ba.").alias("extract_a"),
+            col("a").regexp_extract_all("ba.").alias("extract_all_a"),
+            col("a").regexp_split(r"\s+").alias("regexp_split_a"),
+            col("a").regexp_replace("ba.", "foo").alias("replace_a"),
+            col("a").length().alias("length_a"),
+            col("a").length_bytes().alias("length_bytes_a"),
+            col("a").lower().alias("lower_a"),
+            col("a").lstrip().alias("lstrip_a"),
+            col("a").rstrip().alias("rstrip_a"),
+            col("a").reverse().alias("reverse_a"),
+            col("a").capitalize().alias("capitalize_a"),
+            col("a").left(4).alias("left_a"),
+            col("a").right(4).alias("right_a"),
+            col("a").find("a").alias("find_a"),
+            col("a").rpad(10, "<").alias("rpad_a"),
+            col("a").lpad(10, ">").alias("lpad_a"),
+            col("a").repeat(2).alias("repeat_a"),
+            col("a").like("a%").alias("like_a"),
+            col("a").ilike("a%").alias("ilike_a"),
+            col("a").substr(1, 3).alias("substring_a"),
+            col("a").count_matches("a").alias("count_matches_a_0"),
+            col("a").count_matches("a", case_sensitive=True).alias("count_matches_a_1"),
+            col("a").count_matches("a", case_sensitive=False, whole_words=False).alias("count_matches_a_2"),
+            col("a").count_matches("a", case_sensitive=True, whole_words=True).alias("count_matches_a_3"),
+            col("a").normalize().alias("normalize_a"),
+            col("a").normalize(remove_punct=True).alias("normalize_remove_punct_a"),
+            col("a").normalize(remove_punct=True, lowercase=True).alias("normalize_remove_punct_lower_a"),
             col("a")
-            .str.normalize(remove_punct=True, lowercase=True, white_space=True)
+            .normalize(remove_punct=True, lowercase=True, white_space=True)
             .alias("normalize_remove_punct_lower_ws_a"),
-            col("a").str.tokenize_encode("r50k_base").alias("tokenize_encode_a"),
-            col("a").str.tokenize_encode("r50k_base").str.tokenize_decode("r50k_base").alias("tokenize_decode_a"),
-            col("a").str.concat("---").alias("concat_a"),
-            daft.lit("--")
-            .str.concat(col("a"))
-            .str.concat(col("a"))
-            .str.concat(col("a"))
-            .str.concat("--")
-            .alias("concat_multi_a"),
+            col("a").tokenize_encode("r50k_base").alias("tokenize_encode_a"),
+            col("a").tokenize_encode("r50k_base").tokenize_decode("r50k_base").alias("tokenize_decode_a"),
+            col("a").concat("---").alias("concat_a"),
+            lit("--").concat(col("a")).concat(col("a")).concat(col("a")).concat("--").alias("concat_multi_a"),
         )
         .collect()
         .to_pydict()

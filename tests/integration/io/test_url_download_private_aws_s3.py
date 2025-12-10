@@ -27,7 +27,7 @@ def io_config(pytestconfig) -> IOConfig:
 def test_url_download_aws_s3_public_bucket_with_creds(small_images_s3_paths, io_config):
     data = {"urls": small_images_s3_paths}
     df = daft.from_pydict(data)
-    df = df.with_column("data", df["urls"].url.download(io_config=io_config))
+    df = df.with_column("data", df["urls"].download(io_config=io_config))
 
     data = df.to_pydict()
     assert len(data["data"]) == 12

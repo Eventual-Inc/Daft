@@ -1,9 +1,10 @@
 use std::{cmp, iter::repeat_n, ops::Not, sync::Arc};
 
-use arrow2::{bitmap::MutableBitmap, types::IndexRange};
+use arrow_array::builder::BooleanBufferBuilder;
 use common_error::DaftResult;
+use daft_arrow::{buffer::NullBufferBuilder, types::IndexRange};
 use daft_core::{
-    array::ops::{arrow2::comparison::build_multi_array_is_equal, as_arrow::AsArrow},
+    array::ops::{arrow::comparison::build_multi_array_is_equal, as_arrow::AsArrow},
     prelude::*,
 };
 use daft_dsl::{
@@ -48,7 +49,7 @@ pub(super) fn hash_inner_join(
         let probe_table = lkeys.to_probe_hash_table()?;
 
         let r_hashes = rkeys.hash_rows()?;
-        use daft_core::array::ops::arrow2::comparison::build_multi_array_is_equal;
+        use daft_core::array::ops::arrow::comparison::build_multi_array_is_equal;
         let is_equal = build_multi_array_is_equal(
             lkeys.columns.as_slice(),
             rkeys.columns.as_slice(),
@@ -150,7 +151,7 @@ pub(super) fn hash_left_right_join(
         let mut left_idx = Vec::with_capacity(min_rows);
         let mut right_idx = Vec::with_capacity(min_rows);
 
-        let mut l_valid = MutableBitmap::with_capacity(min_rows);
+        let mut l_valid = NullBufferBuilder::new(min_rows);
 
         for (r_idx, h) in r_hashes.as_arrow().values_iter().enumerate() {
             if let Some((_, indices)) = probe_table.raw_entry().from_hash(*h, |other| {
@@ -162,18 +163,18 @@ pub(super) fn hash_left_right_join(
                 for l_idx in indices {
                     left_idx.push(*l_idx);
                     right_idx.push(r_idx as u64);
-                    l_valid.push(true);
+                    l_valid.append_non_null();
                 }
             } else {
                 left_idx.push(0);
                 right_idx.push(r_idx as u64);
-                l_valid.push(false);
+                l_valid.append_null();
             }
         }
 
         (
             UInt64Array::from(("left_indices", left_idx))
-                .with_validity(Some(l_valid.into()))?
+                .with_validity(l_valid.finish())?
                 .into_series(),
             UInt64Array::from(("right_indices", right_idx)).into_series(),
         )
@@ -292,12 +293,10 @@ pub(super) fn hash_outer_join(
         let r_iter =
             repeat_n(None, lkeys.len()).chain(IndexRange::new(0, rkeys.len() as u64).map(Some));
 
-        let l_arrow = Box::new(arrow2::array::PrimitiveArray::<u64>::from_trusted_len_iter(
-            l_iter,
-        ));
-        let r_arrow = Box::new(arrow2::array::PrimitiveArray::<u64>::from_trusted_len_iter(
-            r_iter,
-        ));
+        let l_arrow =
+            Box::new(daft_arrow::array::PrimitiveArray::<u64>::from_trusted_len_iter(l_iter));
+        let r_arrow =
+            Box::new(daft_arrow::array::PrimitiveArray::<u64>::from_trusted_len_iter(r_iter));
 
         (
             UInt64Array::from(("left_indices", l_arrow)).into_series(),
@@ -330,10 +329,10 @@ pub(super) fn hash_outer_join(
         let mut left_idx = Vec::with_capacity(min_rows);
         let mut right_idx = Vec::with_capacity(min_rows);
 
-        let mut l_valid = MutableBitmap::with_capacity(min_rows);
-        let mut r_valid = MutableBitmap::with_capacity(min_rows);
+        let mut l_valid = NullBufferBuilder::new(min_rows);
+        let mut r_valid = NullBufferBuilder::new(min_rows);
 
-        let mut left_idx_used = MutableBitmap::from_len_zeroed(lkeys.len());
+        let mut left_idx_used = BooleanBufferBuilder::new(lkeys.len());
 
         for (r_idx, h) in r_hashes.as_arrow().values_iter().enumerate() {
             if let Some((_, indices)) = probe_table.raw_entry().from_hash(*h, |other| {
@@ -344,37 +343,37 @@ pub(super) fn hash_outer_join(
             }) {
                 for l_idx in indices {
                     left_idx.push(*l_idx);
-                    left_idx_used.set(*l_idx as usize, true);
+                    left_idx_used.set_bit(*l_idx as usize, true);
 
                     right_idx.push(r_idx as u64);
 
-                    l_valid.push(true);
-                    r_valid.push(true);
+                    l_valid.append_non_null();
+                    r_valid.append_non_null();
                 }
             } else {
                 left_idx.push(0);
                 right_idx.push(r_idx as u64);
 
-                l_valid.push(false);
-                r_valid.push(true);
+                l_valid.append_null();
+                r_valid.append_non_null();
             }
         }
 
-        for (l_idx, used) in left_idx_used.into_iter().enumerate() {
+        for (l_idx, used) in left_idx_used.finish().into_iter().enumerate() {
             if !used {
                 left_idx.push(l_idx as u64);
                 right_idx.push(0);
 
-                l_valid.push(true);
-                r_valid.push(false);
+                l_valid.append_non_null();
+                r_valid.append_null();
             }
         }
 
         let lseries = UInt64Array::from(("left_indices", left_idx))
-            .with_validity(Some(l_valid.into()))?
+            .with_validity(l_valid.finish())?
             .into_series();
         let rseries = UInt64Array::from(("right_indices", right_idx))
-            .with_validity(Some(r_valid.into()))?
+            .with_validity(r_valid.finish())?
             .into_series();
 
         if probe_left {

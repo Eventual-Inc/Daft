@@ -1,8 +1,8 @@
 use std::{cmp::max, collections::HashSet, fs::File, sync::Arc};
 
-use arrow2::{bitmap::Bitmap, io::parquet::read};
 use common_error::DaftResult;
 use common_runtime::{RuntimeTask, combine_stream, get_compute_runtime};
+use daft_arrow::{bitmap::Bitmap, io::parquet::read};
 use daft_core::prelude::*;
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use daft_io::{CountingReader, IOStatsRef};
@@ -24,9 +24,9 @@ use crate::{
 };
 
 fn prune_fields_from_schema(
-    schema: arrow2::datatypes::Schema,
+    schema: daft_arrow::datatypes::Schema,
     columns: Option<&[String]>,
-) -> super::Result<arrow2::datatypes::Schema> {
+) -> super::Result<daft_arrow::datatypes::Schema> {
     if let Some(columns) = columns {
         let avail_names = schema
             .fields
@@ -328,7 +328,7 @@ pub fn local_parquet_read_into_arrow(
     chunk_size: Option<usize>,
 ) -> super::Result<(
     Arc<parquet2::metadata::FileMetaData>,
-    arrow2::datatypes::Schema,
+    daft_arrow::datatypes::Schema,
     Vec<ArrowChunk>,
     usize,
 )> {
@@ -397,7 +397,7 @@ pub fn local_parquet_read_into_arrow(
                 None,
             );
             let single_rg_column_iter = single_rg_column_iter?;
-            arrow2::error::Result::Ok(
+            daft_arrow::error::Result::Ok(
                 single_rg_column_iter
                     .into_iter()
                     .enumerate()
@@ -612,7 +612,7 @@ pub async fn local_parquet_read_into_arrow_async(
     chunk_size: Option<usize>,
 ) -> super::Result<(
     Arc<parquet2::metadata::FileMetaData>,
-    arrow2::datatypes::Schema,
+    daft_arrow::datatypes::Schema,
     Vec<ArrowChunk>,
     usize,
 )> {

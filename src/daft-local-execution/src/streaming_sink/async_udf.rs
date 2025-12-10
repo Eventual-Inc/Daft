@@ -181,7 +181,7 @@ pub struct AsyncUdfState {
 
 impl StreamingSink for AsyncUdfSink {
     type State = AsyncUdfState;
-
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "AsyncUdfSink::execute")]
     fn execute(
         &self,
@@ -204,8 +204,6 @@ impl StreamingSink for AsyncUdfSink {
                         async move {
                             use daft_dsl::functions::python::initialize_udfs;
 
-                            let input_batches = input.get_tables()?;
-
                             if !state.udf_initialized {
                                 state.udf_expr = BoundExpr::new_unchecked(initialize_udfs(
                                     state.udf_expr.inner().clone(),
@@ -214,7 +212,7 @@ impl StreamingSink for AsyncUdfSink {
                             }
 
                             // Spawn tasks for each batch
-                            for batch in input_batches.as_ref() {
+                            for batch in input.record_batches() {
                                 let params = params.clone();
                                 let expr = state.udf_expr.clone();
                                 let batch = batch.clone();
@@ -379,5 +377,10 @@ impl StreamingSink for AsyncUdfSink {
                     None
                 }
             })
+    }
+    fn batching_strategy(&self) -> Self::BatchingStrategy {
+        crate::dynamic_batching::StaticBatchingStrategy::new(
+            self.morsel_size_requirement().unwrap_or_default(),
+        )
     }
 }

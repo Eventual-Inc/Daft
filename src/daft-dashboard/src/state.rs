@@ -6,7 +6,7 @@ use std::{
     },
 };
 
-use common_metrics::{NodeID, QueryID, QueryPlan, Stat, ops::NodeInfo};
+use common_metrics::{NodeID, QueryID, QueryPlan, Stat};
 use daft_recordbatch::RecordBatch;
 use dashmap::DashMap;
 use serde::Serialize;
@@ -18,6 +18,14 @@ pub(crate) enum OperatorStatus {
     Pending,
     Executing,
     Finished,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct NodeInfo {
+    pub id: NodeID,
+    pub name: String,
+    pub node_type: Arc<str>,
+    pub node_category: Arc<str>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -39,6 +47,7 @@ pub(crate) struct PlanInfo {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ExecInfo {
     pub exec_start_sec: u64,
+    pub physical_plan: QueryPlan,
     pub operators: OperatorInfos,
     // TODO: Logs
 }
@@ -46,12 +55,30 @@ pub(crate) struct ExecInfo {
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "status")]
 pub(crate) enum QueryStatus {
-    Pending { start_sec: u64 },
-    Optimizing { plan_start_sec: u64 },
+    Pending {
+        start_sec: u64,
+    },
+    Optimizing {
+        plan_start_sec: u64,
+    },
     Setup,
-    Executing { exec_start_sec: u64 },
+    Executing {
+        exec_start_sec: u64,
+    },
     Finalizing,
-    Finished { duration_sec: u64 },
+    Finished {
+        duration_sec: u64,
+    },
+    Canceled {
+        duration_sec: u64,
+        message: Option<String>,
+    },
+    Failed {
+        duration_sec: u64,
+        message: Option<String>,
+    },
+    /* TODO(void001): Implement dead state */
+    Dead {},
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -62,6 +89,7 @@ pub(crate) struct QuerySummary {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[allow(dead_code)]
 #[serde(tag = "status")]
 pub(crate) enum QueryState {
     Pending,
@@ -88,6 +116,20 @@ pub(crate) enum QueryState {
         #[serde(skip_serializing)]
         results: Option<RecordBatch>,
     },
+    Canceled {
+        plan_info: PlanInfo,
+        exec_info: ExecInfo,
+        end_sec: u64,
+        message: Option<String>,
+    },
+    Failed {
+        plan_info: PlanInfo,
+        exec_info: ExecInfo,
+        end_sec: u64,
+        message: Option<String>,
+    },
+    /* TODO(void001): Implement dead state */
+    Dead {},
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -117,6 +159,19 @@ impl QueryInfo {
             QueryState::Finished { end_sec, .. } => QueryStatus::Finished {
                 duration_sec: end_sec - self.start_sec,
             },
+            QueryState::Canceled {
+                end_sec, message, ..
+            } => QueryStatus::Canceled {
+                duration_sec: end_sec - self.start_sec,
+                message: message.clone(),
+            },
+            QueryState::Failed {
+                end_sec, message, ..
+            } => QueryStatus::Failed {
+                duration_sec: end_sec - self.start_sec,
+                message: message.clone(),
+            },
+            QueryState::Dead { .. } => QueryStatus::Dead {},
         }
     }
 

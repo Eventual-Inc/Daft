@@ -6,6 +6,7 @@ import pytest
 
 import daft
 from daft import col, interval
+from daft.functions import hash as hash_fn
 
 
 def test_nested():
@@ -56,7 +57,7 @@ def test_hash_exprs():
     expected = (
         df.select(
             col("a").hash().alias("hash_a"),
-            col("a").hash(0).alias("hash_a_0"),
+            hash_fn(col("a"), 0).alias("hash_a_0"),
             col("a").hash(seed=0).alias("hash_a_seed_0"),
             col("a").minhash(num_hashes=10, ngram_size=100, seed=10).alias("minhash_a"),
             col("a").minhash(num_hashes=10, ngram_size=100).alias("minhash_a_no_seed"),
@@ -221,7 +222,7 @@ def test_is_in_edge_cases():
 def test_interval_comparison(date_values, ts_values, expected_intervals):
     # Create DataFrame with date and timestamp columns
     df = daft.from_pydict({"date": date_values, "ts": ts_values}).select(
-        col("date").cast(daft.DataType.date()), col("ts").str.to_datetime("%Y-%m-%d %H:%M:%S")
+        col("date").cast(daft.DataType.date()), col("ts").to_datetime("%Y-%m-%d %H:%M:%S")
     )
     bindings = {"test": df}
 
@@ -278,7 +279,7 @@ def test_coalesce():
         }
     )
 
-    expected = df.select(daft.coalesce(col("a"), col("b"), col("c")).alias("result")).to_pydict()
+    expected = df.select(col("a").coalesce(col("b"), col("c")).alias("result")).to_pydict()
 
     bindings = {"df": df}
     actual = daft.sql(

@@ -1,5 +1,5 @@
-use arrow2::{array::PrimitiveArray, offset::OffsetsBuffer};
 use common_error::{DaftError, DaftResult};
+use daft_arrow::{array::PrimitiveArray, offset::OffsetsBuffer};
 
 use crate::{
     array::{
@@ -273,12 +273,12 @@ impl Series {
             Some(groups) => {
                 if self.data_type().is_null() {
                     Box::new(PrimitiveArray::new_null(
-                        arrow2::datatypes::DataType::UInt64,
+                        daft_arrow::datatypes::DataType::UInt64,
                         groups.len(),
                     ))
                 } else if ignore_nulls && let Some(validity) = self.validity() {
                     Box::new(PrimitiveArray::from_trusted_len_iter(groups.iter().map(
-                        |g| g.iter().find(|i| validity.get_bit(**i as usize)).copied(),
+                        |g| g.iter().find(|i| validity.is_valid(**i as usize)).copied(),
                     )))
                 } else {
                     Box::new(PrimitiveArray::from_trusted_len_iter(

@@ -35,6 +35,7 @@ Daft supports the following [AI Providers](../api/ai.md#providers):
 
 - **[OpenAI](https://platform.openai.com/docs/api-reference/introduction)** - State-of-the-art AI models for text generation, natural language processing, computer vision, and more.
 - **[Transformers](https://huggingface.co/docs/transformers/index)** - Hugging Face's model framework for machine learning models in text, computer vision, audio, video, and multimodal domains.
+- **[Google](https://ai.google.dev/gemini-api/docs)** - Google's Gemini API for text generation, natural language processing, computer vision, and more.
 - **[LM Studio](https://lmstudio.ai/)** - Run local AI models like gpt-oss, Qwen, Gemma, DeepSeek and many more on your computer, privately and for free.
 
 ## Setting a named OpenAI Provider within a Session
@@ -60,6 +61,46 @@ provider = sess.get_provider("OpenRouter")
 ```
 
 You can then specify the `name` of the provider in the
+
+## Using the Google Provider
+
+The Google provider enables you to use Google's Gemini models for text generation, multimodal processing, and structured outputs.
+
+```python
+import daft
+import os
+
+# Set up the Google provider with your API key
+with daft.session() as session:
+    session.set_provider("google", api_key=os.environ["GOOGLE_API_KEY"])
+
+    # Create a DataFrame with questions
+    df = daft.from_pydict({
+        "question": [
+            "What is the capital of France?",
+            "Explain quantum computing in simple terms.",
+            "What are the benefits of fusion energy?"
+        ]
+    })
+
+    # Use the prompt function with Google's Gemini model
+    df = df.with_column(
+        "answer",
+        daft.functions.prompt(
+            daft.col("question"),
+            provider="google",
+            model="gemini-2.5-flash"  # or "gemini-3-pro-preview"
+        )
+    )
+
+    df.show()
+```
+
+The Google provider supports all the same features as other providers:
+- **Structured outputs** with Pydantic models
+- **Multimodal inputs** (text, images, PDFs, documents)
+- **System messages** for custom instructions
+- **Custom generation config** (temperature, max_output_tokens, etc.)
 
 ## End-to-End Usage with Multiple Providers
 

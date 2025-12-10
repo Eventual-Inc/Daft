@@ -13,7 +13,6 @@ use daft_dsl::{
     },
     functions::python::RuntimePyObject,
 };
-use daft_io::IOStatsContext;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
@@ -23,6 +22,7 @@ use tracing::Span;
 
 use crate::{
     ExecutionTaskSpawner,
+    dynamic_batching::StaticBatchingStrategy,
     pipeline::{MorselSizeRequirement, NodeName},
     streaming_sink::base::{
         StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
@@ -231,7 +231,7 @@ impl VLLMSink {
         }
 
         let concatted = MicroPartition::concat(&state.buffer)?
-            .concat_or_get(IOStatsContext::new("VLLMSink::pop_tasks"))?
+            .concat_or_get()?
             .unwrap();
 
         let sorted = concatted.sort(std::slice::from_ref(&expr_input), &[false], &[false])?;
@@ -363,6 +363,7 @@ impl VLLMSink {
 
 impl StreamingSink for VLLMSink {
     type State = VLLMState;
+    type BatchingStrategy = StaticBatchingStrategy;
 
     fn execute(
         &self,
@@ -380,9 +381,7 @@ impl StreamingSink for VLLMSink {
                         state.buffer.push(input);
                         this.pop_and_submit_tasks(&mut state, this.expr.inner().max_buffer_size)?;
                     } else if !input.is_empty() {
-                        let batch = input
-                            .concat_or_get(IOStatsContext::new("VLLMSink::execute"))?
-                            .unwrap();
+                        let batch = input.concat_or_get()?.unwrap();
                         let prompts = this.get_prompts_for_batch(&batch)?;
 
                         state.executor.submit(None, prompts, batch)?;
@@ -468,5 +467,8 @@ impl StreamingSink for VLLMSink {
             .inner()
             .batch_size
             .map(MorselSizeRequirement::Strict)
+    }
+    fn batching_strategy(&self) -> Self::BatchingStrategy {
+        StaticBatchingStrategy::new(self.morsel_size_requirement().unwrap_or_default())
     }
 }

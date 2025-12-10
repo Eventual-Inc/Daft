@@ -43,7 +43,7 @@ jobs:
         sudo mkfs.ext4 /dev/nvme2n1
         sudo mount -t ext4 /dev/nvme2n1 /tmp
         sudo chmod 777 /tmp
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       with:
         submodules: true
     - name: Assume GitHub Actions AWS Credentials

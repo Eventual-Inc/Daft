@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow2::types::months_days_ns;
+use daft_arrow::types::months_days_ns;
 
 use super::as_arrow::AsArrow;
 #[cfg(feature = "python")]
@@ -101,7 +101,7 @@ impl NullArray {
 
 impl ExtensionArray {
     #[inline]
-    pub fn get(&self, idx: usize) -> Option<Box<dyn arrow2::scalar::Scalar>> {
+    pub fn get(&self, idx: usize) -> Option<Box<dyn daft_arrow::scalar::Scalar>> {
         assert!(
             idx < self.len(),
             "Out of bounds: {} vs len: {}",
@@ -113,7 +113,7 @@ impl ExtensionArray {
             .validity()
             .is_none_or(|validity| validity.get_bit(idx));
         if is_valid {
-            Some(arrow2::scalar::new_scalar(self.data(), idx))
+            Some(daft_arrow::scalar::new_scalar(self.data(), idx))
         } else {
             None
         }
@@ -130,7 +130,7 @@ impl PythonArray {
             idx,
             self.len()
         );
-        if self.validity().is_none_or(|v| v.get_bit(idx)) {
+        if self.validity().is_none_or(|v| v.is_valid(idx)) {
             self.values().get(idx).cloned()
         } else {
             None
@@ -267,7 +267,9 @@ mod tests {
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
         let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
         let raw_validity = vec![true, false, true];
-        let validity = Some(arrow2::bitmap::Bitmap::from(raw_validity.as_slice()));
+        let validity = Some(daft_arrow::buffer::NullBuffer::from(
+            raw_validity.as_slice(),
+        ));
         let arr = FixedSizeListArray::new(field, flat_child.into_series(), validity);
         assert_eq!(arr.len(), 3);
 
@@ -308,7 +310,9 @@ mod tests {
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
         let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
         let raw_validity = vec![true, false, true];
-        let validity = Some(arrow2::bitmap::Bitmap::from(raw_validity.as_slice()));
+        let validity = Some(daft_arrow::buffer::NullBuffer::from(
+            raw_validity.as_slice(),
+        ));
         let arr = FixedSizeListArray::new(field, flat_child.into_series(), validity);
         let list_dtype = DataType::List(Box::new(DataType::Int32));
         let list_arr = arr.cast(&list_dtype)?;
