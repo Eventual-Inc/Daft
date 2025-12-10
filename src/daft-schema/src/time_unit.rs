@@ -1,7 +1,7 @@
 use std::{fmt::Display, str::FromStr};
 
-use common_error::{DaftError, DaftResult};
-use daft_arrow::datatypes::TimeUnit as ArrowTimeUnit;
+use common_error::DaftError;
+use daft_arrow::{datatypes::TimeUnit as ArrowTimeUnit, error::Error};
 use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
@@ -126,7 +126,7 @@ pub fn timestamp_to_datetime<T: chrono::TimeZone>(
 /// Parses an offset of the form `"+WX:YZ"` or `"UTC"` into [`FixedOffset`].
 /// # Errors
 /// If the offset is not in any of the allowed forms.
-pub fn parse_offset(offset: &str) -> DaftResult<chrono::FixedOffset> {
+pub fn parse_offset(offset: &str) -> Result<chrono::FixedOffset, Error> {
     if offset == "UTC" {
         return Ok(chrono::FixedOffset::east_opt(0).expect("FixedOffset::east out of bounds"));
     }
@@ -136,17 +136,17 @@ pub fn parse_offset(offset: &str) -> DaftResult<chrono::FixedOffset> {
     let first = a
         .next()
         .map(Ok)
-        .unwrap_or_else(|| Err(DaftError::ValueError(error.to_string())))?;
+        .unwrap_or_else(|| Err(Error::InvalidArgumentError(error.to_string())))?;
     let last = a
         .next()
         .map(Ok)
-        .unwrap_or_else(|| Err(DaftError::ValueError(error.to_string())))?;
+        .unwrap_or_else(|| Err(Error::InvalidArgumentError(error.to_string())))?;
     let hours: i32 = first
         .parse()
-        .map_err(|_| DaftError::ValueError(error.to_string()))?;
+        .map_err(|_| Error::InvalidArgumentError(error.to_string()))?;
     let minutes: i32 = last
         .parse()
-        .map_err(|_| DaftError::ValueError(error.to_string()))?;
+        .map_err(|_| Error::InvalidArgumentError(error.to_string()))?;
 
     Ok(
         chrono::FixedOffset::east_opt(hours * 60 * 60 + minutes * 60)
@@ -154,10 +154,10 @@ pub fn parse_offset(offset: &str) -> DaftResult<chrono::FixedOffset> {
     )
 }
 
-pub fn parse_offset_tz(timezone: &str) -> DaftResult<chrono_tz::Tz> {
-    timezone
-        .parse::<chrono_tz::Tz>()
-        .map_err(|_| DaftError::ValueError(format!("timezone \"{timezone}\" cannot be parsed")))
+pub fn parse_offset_tz(timezone: &str) -> Result<chrono_tz::Tz, Error> {
+    timezone.parse::<chrono_tz::Tz>().map_err(|_| {
+        Error::InvalidArgumentError(format!("timezone \"{timezone}\" cannot be parsed"))
+    })
 }
 
 #[cfg(test)]

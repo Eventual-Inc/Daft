@@ -2471,6 +2471,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
+ "arrow-schema",
  "arrow2",
 ]
 
@@ -2951,6 +2952,7 @@ dependencies = [
  "daft-dsl",
  "daft-io",
  "daft-recordbatch",
+ "daft-schema",
  "futures",
  "indexmap 2.11.4",
  "memchr",

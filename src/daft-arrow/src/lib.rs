@@ -1,5 +1,6 @@
 // Re-export arrow2::* modules for centralized access
 pub use arrow_array::temporal_conversions;
+pub use arrow_schema::ArrowError;
 pub use arrow2::{
     array, chunk, compute, datatypes, error, ffi, io, offset, scalar, trusted_len, types,
 };
