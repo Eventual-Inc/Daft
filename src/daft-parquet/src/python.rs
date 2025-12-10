@@ -91,7 +91,7 @@ pub mod pylib {
         let fields = schema
             .fields
             .iter()
-            .map(|f| field_to_py(py, f, pyarrow))
+            .map(|f| field_to_py(py, f.clone().into(), pyarrow))
             .collect::<Result<Vec<_>, _>>()?;
         let metadata = &schema.metadata;
         Ok((fields, metadata.clone(), converted_arrays, num_rows))
