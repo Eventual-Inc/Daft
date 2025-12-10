@@ -14,10 +14,10 @@ use itertools::Itertools;
 pub(crate) enum BroadcastedStrIter<'a> {
     Repeat(std::iter::RepeatN<Option<&'a str>>),
     NonRepeat(
-        arrow2::bitmap::utils::ZipValidity<
+        daft_arrow::bitmap::utils::ZipValidity<
             &'a str,
-            arrow2::array::ArrayValuesIter<'a, arrow2::array::Utf8Array<i64>>,
-            arrow2::bitmap::utils::BitmapIter<'a>,
+            daft_arrow::array::ArrayValuesIter<'a, daft_arrow::array::Utf8Array<i64>>,
+            daft_arrow::bitmap::utils::BitmapIter<'a>,
         >,
     ),
 }
@@ -65,7 +65,7 @@ impl Utf8ArrayUtils for Utf8Array {
         let arrow_result = self_arrow
             .iter()
             .map(|val| Some(operation(val?)))
-            .collect::<arrow2::array::Utf8Array<i64>>()
+            .collect::<daft_arrow::array::Utf8Array<i64>>()
             .with_validity(self_arrow.validity().cloned());
         Ok(Self::from((self.name(), Box::new(arrow_result))))
     }
@@ -99,7 +99,7 @@ impl Utf8ArrayUtils for Utf8Array {
                 (Some(self_v), Some(other_v)) => operation(self_v, other_v).map(Some),
                 _ => Ok(None),
             })
-            .collect::<DaftResult<arrow2::array::BooleanArray>>();
+            .collect::<DaftResult<daft_arrow::array::BooleanArray>>();
 
         let result = BooleanArray::from((self.name(), arrow_result?));
         assert_eq!(result.len(), expected_size);

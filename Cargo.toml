@@ -14,10 +14,10 @@ common-tracing = {path = "src/common/tracing", default-features = false}
 common-version = {path = "src/common/version", default-features = false}
 daft-ai = {path = "src/daft-ai", default-features = false}
 daft-algebra = {path = "src/daft-algebra", default-features = false}
+daft-arrow = {path = "src/daft-arrow", default-features = false}
 daft-catalog = {path = "src/daft-catalog", default-features = false}
 daft-cli = {path = "src/daft-cli", default-features = false}
 daft-compression = {path = "src/daft-compression", default-features = false}
-daft-connect = {path = "src/daft-connect", optional = true}
 daft-context = {path = "src/daft-context", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
@@ -37,7 +37,6 @@ daft-functions-utf8 = {path = "src/daft-functions-utf8", default-features = fals
 daft-hash = {path = "src/daft-hash", default-features = false}
 daft-image = {path = "src/daft-image", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
-daft-ir = {path = "src/daft-ir", default-features = false}
 daft-json = {path = "src/daft-json", default-features = false}
 daft-local-execution = {path = "src/daft-local-execution", default-features = false}
 daft-local-plan = {path = "src/daft-local-plan", default-features = false}
@@ -45,12 +44,9 @@ daft-logical-plan = {path = "src/daft-logical-plan", default-features = false}
 daft-micropartition = {path = "src/daft-micropartition", default-features = false}
 daft-minhash = {path = "src/daft-minhash", default-features = false}
 daft-parquet = {path = "src/daft-parquet", default-features = false}
-daft-physical-plan = {path = "src/daft-physical-plan", default-features = false}
-daft-proto = {path = "src/daft-proto", default-features = false}
 daft-runners = {path = "src/daft-runners", default-features = false}
 daft-recordbatch = {path = "src/daft-recordbatch", default-features = false}
 daft-scan = {path = "src/daft-scan", default-features = false}
-daft-scheduler = {path = "src/daft-scheduler", default-features = false}
 daft-session = {path = "src/daft-session", default-features = false}
 daft-shuffles = {path = "src/daft-shuffles", default-features = false}
 daft-sql = {path = "src/daft-sql", default-features = false}
@@ -79,7 +75,6 @@ python = [
   "daft-ai/python",
   "daft-catalog/python",
   "daft-cli/python",
-  "daft-connect/python",
   "daft-context/python",
   "daft-core/python",
   "daft-csv/python",
@@ -94,16 +89,13 @@ python = [
   "daft-functions/python",
   "daft-image/python",
   "daft-io/python",
-  "daft-ir/python",
   "daft-json/python",
   "daft-local-execution/python",
   "daft-local-plan/python",
   "daft-logical-plan/python",
   "daft-micropartition/python",
   "daft-parquet/python",
-  "daft-physical-plan/python",
   "daft-scan/python",
-  "daft-scheduler/python",
   "daft-sql/python",
   "daft-session/python",
   "daft-shuffles/python",
@@ -121,6 +113,20 @@ edition = "2024"
 name = "daft"
 publish = false
 version = "0.3.0-dev0"
+# Exclude unnecessary files from sdist
+exclude = [
+  "tests/",
+  "benchmarking/",
+  "tutorials/",
+  "k8s/",
+  "ci/",
+  "docs/",
+  "assets/",
+  "tools/",
+  "*.md",
+  "codecov.yml",
+  "mkdocs.yml"
+]
 
 [package.metadata.cargo-machete]
 ignored = ["lzma-sys"]
@@ -179,8 +185,8 @@ members = [
   "src/common/metrics",
   "src/daft-ai",
   "src/daft-algebra",
+  "src/daft-arrow",
   "src/daft-catalog",
-  "src/daft-connect",
   "src/daft-context",
   "src/daft-core",
   "src/daft-csv",
@@ -198,18 +204,14 @@ members = [
   "src/daft-hash",
   "src/daft-image",
   "src/daft-io",
-  "src/daft-ir",
   "src/daft-json",
   "src/daft-local-execution",
   "src/daft-local-plan",
   "src/daft-logical-plan",
   "src/daft-micropartition",
   "src/daft-parquet",
-  "src/daft-physical-plan",
-  "src/daft-proto",
   "src/daft-runners",
   "src/daft-scan",
-  "src/daft-scheduler",
   "src/daft-session",
   "src/daft-shuffles",
   "src/daft-sketch",
@@ -220,7 +222,6 @@ members = [
   "src/hyperloglog",
   "src/parquet2",
   "src/parquet-format-safe",
-  "src/generated/spark-connect",
   "src/daft-cli"
 ]
 
@@ -249,6 +250,7 @@ common-ndarray = {path = "src/common/ndarray"}
 common-runtime = {path = "src/common/runtime", default-features = false}
 daft-ai = {path = "src/daft-ai"}
 daft-algebra = {path = "src/daft-algebra"}
+daft-arrow = {path = "src/daft-arrow"}
 daft-context = {path = "src/daft-context"}
 daft-core = {path = "src/daft-core"}
 daft-dsl = {path = "src/daft-dsl"}
@@ -263,11 +265,9 @@ daft-functions-uri = {path = "src/daft-functions-uri"}
 daft-functions-utf8 = {path = "src/daft-functions-utf8"}
 daft-hash = {path = "src/daft-hash"}
 daft-io = {path = "src/daft-io"}
-daft-ir = {path = "src/daft-ir"}
 daft-local-execution = {path = "src/daft-local-execution"}
 daft-logical-plan = {path = "src/daft-logical-plan"}
 daft-micropartition = {path = "src/daft-micropartition"}
-daft-proto = {path = "src/daft-proto"}
 daft-runners = {path = "src/daft-runners"}
 daft-recordbatch = {path = "src/daft-recordbatch"}
 daft-scan = {path = "src/daft-scan"}
@@ -293,9 +293,9 @@ num-derive = "0.4.2"
 num-format = "0.4.4"
 num-traits = "0.2"
 numpy = "0.27"
-opentelemetry = {version = "0.31", features = ["trace", "metrics"]}
-opentelemetry-otlp = {version = "0.31", features = ["grpc-tonic"]}
-opentelemetry_sdk = "0.31"
+opentelemetry = {version = "0.31", features = ["trace", "metrics", "logs"]}
+opentelemetry-otlp = {version = "0.31", features = ["grpc-tonic", "logs"]}
+opentelemetry_sdk = {version = "0.31", features = ["logs"]}
 parking_lot = "0.12.3"
 path_macro = "1.0.0"
 pretty_assertions = "1.4.1"
@@ -311,9 +311,8 @@ serde_json = "1.0.145"
 sha1 = "0.11.0-pre.4"
 simdutf8 = "0.1.5"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
-smallvec = {version = "1.15.1", features = ["serde"]}
+smallvec = {version = "1.15.1", features = ["serde", "impl_bincode"]}
 snafu = {version = "0.7.4", features = ["futures"]}
-spark-connect = {path = "src/generated/spark-connect", default-features = false}
 sqlparser = "0.51.0"
 sysinfo = "0.35.2"
 tango-bench = "0.6.0"
@@ -347,7 +346,8 @@ features = ["serde_types"]
 path = "src/arrow2"
 
 [workspace.dependencies.bincode]
-version = "1.3.3"
+version = "2.0.1"
+features = ["derive", "serde"]
 
 [workspace.dependencies.derive_more]
 features = ["display", "from"]
@@ -362,7 +362,6 @@ features = ['async']
 path = "src/parquet-format-safe"
 
 [workspace.dependencies.parquet2]
-# branch = "sammy/owned-page-stream"
 features = ['async']
 path = "src/parquet2"
 

@@ -77,14 +77,15 @@ impl<'py> IntoPyObject<'py> for Literal {
                     None => naive_dt.into_bound_py_any(py),
                     Some(tz_str)
                         if let Ok(fixed_offset) =
-                            arrow2::temporal_conversions::parse_offset(&tz_str) =>
+                            daft_arrow::temporal_conversions::parse_offset(&tz_str) =>
                     {
                         fixed_offset
                             .from_utc_datetime(&naive_dt)
                             .into_bound_py_any(py)
                     }
                     Some(tz_str)
-                        if let Ok(tz) = arrow2::temporal_conversions::parse_offset_tz(&tz_str) =>
+                        if let Ok(tz) =
+                            daft_arrow::temporal_conversions::parse_offset_tz(&tz_str) =>
                     {
                         tz.from_utc_datetime(&naive_dt).into_bound_py_any(py)
                     }
@@ -181,6 +182,7 @@ impl<'py> IntoPyObject<'py> for Literal {
                 let file_class = match f.media_type {
                     daft_schema::media_type::MediaType::Unknown => intern!(py, "File"),
                     daft_schema::media_type::MediaType::Video => intern!(py, "VideoFile"),
+                    daft_schema::media_type::MediaType::Audio => intern!(py, "AudioFile"),
                 };
 
                 let pytuple = f.into_bound_py_any(py)?;
@@ -342,9 +344,10 @@ impl Literal {
             || isinstance!(ob, "torch", "Tensor")
             || isinstance!(ob, "tensorflow", "Tensor")
             || isinstance!(ob, "jax", "Array")
-            || isinstance!(ob, "cupy", "ndarray")
         {
             numpy_array_like_to_tensor_lit(ob)?
+        } else if isinstance!(ob, "cupy", "ndarray") {
+            cupy_array_to_tensor_lit(ob)?
         } else if isinstance!(ob, "numpy", "bool_") {
             Self::Boolean(get_numpy_scalar(ob)?.extract()?)
         } else if isinstance!(ob, "numpy", "int8") {
@@ -670,6 +673,11 @@ fn numpy_array_like_to_tensor_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
     let data = Series::from_ndarray_flattened(arr);
 
     Ok(Literal::Tensor { data, shape })
+}
+
+fn cupy_array_to_tensor_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
+    let numpy_array = ob.call_method0(intern!(ob.py(), "get"))?;
+    numpy_array_like_to_tensor_lit(&numpy_array)
 }
 
 fn pandas_series_to_list_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {

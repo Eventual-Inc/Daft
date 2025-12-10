@@ -44,7 +44,7 @@ def sign(expr: Expression) -> Expression:
 
 def negate(expr: Expression) -> Expression:
     """The negative of a numeric expression."""
-    return Expression._call_builtin_scalar_fn("negative", expr)
+    return Expression._call_builtin_scalar_fn("negate", expr)
 
 
 def round(expr: Expression, decimals: Expression | int = 0) -> Expression:
@@ -191,6 +191,16 @@ def ln(expr: Expression) -> Expression:
 def log1p(expr: Expression) -> Expression:
     """The ln(expr + 1) of a numeric expression."""
     return Expression._call_builtin_scalar_fn("log1p", expr)
+
+
+def pow(base: Expression, expr: Expression) -> Expression:
+    """The base^expr of a numeric expression."""
+    return Expression._call_builtin_scalar_fn("pow", base, expr)
+
+
+def power(base: Expression, expr: Expression) -> Expression:
+    """The base^expr of a numeric expression."""
+    return Expression._call_builtin_scalar_fn("power", base, expr)
 
 
 def exp(expr: Expression) -> Expression:

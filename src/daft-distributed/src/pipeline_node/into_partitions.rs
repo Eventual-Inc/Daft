@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
@@ -43,11 +43,10 @@ impl IntoPartitionsNode {
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -124,16 +123,25 @@ impl IntoPartitionsNode {
             // Collect all the outputs from this task and coalesce them into a single task.
             let materialized_outputs = result??;
             let self_arc = self.clone();
+            let node_id = self_arc.node_id();
             let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((&self.context, task_id_counter.next())),
                 materialized_outputs,
                 self_arc.config.schema.clone(),
                 &(self_arc as Arc<dyn PipelineNodeImpl>),
                 move |input| {
-                    LocalPhysicalPlan::into_partitions(input, 1, StatsState::NotMaterialized)
+                    LocalPhysicalPlan::into_partitions(
+                        input,
+                        1,
+                        StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
+                    )
                 },
                 None,
-            )?;
+            );
             if result_tx.send(task).await.is_err() {
                 break;
             }
@@ -155,6 +163,7 @@ impl IntoPartitionsNode {
             tasks.len(),
             self.num_partitions
         );
+        let node_id = self.node_id();
 
         // Split partitions evenly with remainder handling
         // Example: 3 inputs, 10 partitions = 4, 3, 3
@@ -180,6 +189,10 @@ impl IntoPartitionsNode {
                         plan,
                         num_outputs,
                         StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
                     )
                 },
             );
@@ -204,7 +217,7 @@ impl IntoPartitionsNode {
                         self_arc.config.schema.clone(),
                         &(self_arc as Arc<dyn PipelineNodeImpl>),
                         None,
-                    )?;
+                    );
                     if result_tx.send(task).await.is_err() {
                         break;
                     }

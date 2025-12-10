@@ -35,11 +35,10 @@ impl GatherNode {
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -78,7 +77,7 @@ impl GatherNode {
             self_clone.config.schema.clone(),
             &(self_clone as Arc<dyn PipelineNodeImpl>),
             None,
-        )?;
+        );
 
         let _ = result_tx.send(task).await;
         Ok(())

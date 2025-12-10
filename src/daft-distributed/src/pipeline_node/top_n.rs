@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
@@ -41,11 +41,10 @@ impl TopNNode {
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
         );
         let config = PipelineNodeConfig::new(
             output_schema,
@@ -124,6 +123,10 @@ impl PipelineNodeImpl for TopNNode {
                 self_clone.limit,
                 self_clone.offset,
                 StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(self_clone.node_id() as usize),
+                    additional: None,
+                },
             )
         })
     }

@@ -1,5 +1,5 @@
-use arrow2::array::Array;
 use common_error::{DaftError, DaftResult};
+use daft_arrow::array::Array;
 use daft_core::{
     array::ListArray,
     prelude::{AsArrow, DataType, Field, FullNull, Schema, Utf8Array},
@@ -15,10 +15,10 @@ use crate::utils::{
     binary_utf8_evaluate, binary_utf8_to_field, create_broadcasted_str_iter, parse_inputs,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Split;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RegexpSplit;
 
 #[typetag::serde]
@@ -115,9 +115,9 @@ fn split_impl(arr: &Utf8Array, pattern: &Utf8Array, regex: bool) -> DaftResult<L
     let arr_arrow = arr.as_arrow();
     let buffer_len = arr_arrow.values().len();
     // This will overallocate by pattern_len * N_i, where N_i is the number of pattern occurrences in the ith string in arr_iter.
-    let mut splits = arrow2::array::MutableUtf8Array::with_capacity(buffer_len);
-    let mut offsets = arrow2::offset::Offsets::new();
-    let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(arr.len());
+    let mut splits = daft_arrow::array::MutableUtf8Array::with_capacity(buffer_len);
+    let mut offsets = daft_arrow::offset::Offsets::new();
+    let mut validity = daft_arrow::buffer::NullBufferBuilder::new(arr.len());
 
     let arr_iter = create_broadcasted_str_iter(arr, expected_size);
     match (regex, pattern.len()) {
@@ -158,12 +158,9 @@ fn split_impl(arr: &Utf8Array, pattern: &Utf8Array, regex: bool) -> DaftResult<L
     }
     // Shrink splits capacity to current length, since we will have overallocated if any of the patterns actually occurred in the strings.
     splits.shrink_to_fit();
-    let splits: arrow2::array::Utf8Array<i64> = splits.into();
-    let offsets: arrow2::offset::OffsetsBuffer<i64> = offsets.into();
-    let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
-        0 => None,
-        _ => Some(validity.into()),
-    };
+    let splits: daft_arrow::array::Utf8Array<i64> = splits.into();
+    let offsets: daft_arrow::offset::OffsetsBuffer<i64> = offsets.into();
+    let validity = validity.finish();
     let flat_child = Series::try_from(("splits", splits.to_boxed()))?;
     let result = ListArray::new(
         Field::new(arr.name(), DataType::List(Box::new(DataType::Utf8))),
@@ -178,9 +175,9 @@ fn split_impl(arr: &Utf8Array, pattern: &Utf8Array, regex: bool) -> DaftResult<L
 fn split_array_on_regex<'a>(
     arr_iter: impl Iterator<Item = Option<&'a str>>,
     regex_iter: impl Iterator<Item = Option<Result<regex::Regex, regex::Error>>>,
-    splits: &mut arrow2::array::MutableUtf8Array<i64>,
-    offsets: &mut arrow2::offset::Offsets<i64>,
-    validity: &mut arrow2::bitmap::MutableBitmap,
+    splits: &mut daft_arrow::array::MutableUtf8Array<i64>,
+    offsets: &mut daft_arrow::offset::Offsets<i64>,
+    validity: &mut daft_arrow::buffer::NullBufferBuilder,
 ) -> DaftResult<()> {
     for (val, re) in arr_iter.zip(regex_iter) {
         let mut num_splits = 0i64;
@@ -190,10 +187,10 @@ fn split_array_on_regex<'a>(
                     splits.push(Some(split));
                     num_splits += 1;
                 }
-                validity.push(true);
+                validity.append_non_null();
             }
             (_, _) => {
-                validity.push(false);
+                validity.append_null();
             }
         }
         offsets.try_push(num_splits)?;
@@ -203,9 +200,9 @@ fn split_array_on_regex<'a>(
 fn split_array_on_literal<'a>(
     arr_iter: impl Iterator<Item = Option<&'a str>>,
     pattern_iter: impl Iterator<Item = Option<&'a str>>,
-    splits: &mut arrow2::array::MutableUtf8Array<i64>,
-    offsets: &mut arrow2::offset::Offsets<i64>,
-    validity: &mut arrow2::bitmap::MutableBitmap,
+    splits: &mut daft_arrow::array::MutableUtf8Array<i64>,
+    offsets: &mut daft_arrow::offset::Offsets<i64>,
+    validity: &mut daft_arrow::buffer::NullBufferBuilder,
 ) -> DaftResult<()> {
     for (val, pat) in arr_iter.zip(pattern_iter) {
         let mut num_splits = 0i64;
@@ -215,10 +212,10 @@ fn split_array_on_literal<'a>(
                     splits.push(Some(split));
                     num_splits += 1;
                 }
-                validity.push(true);
+                validity.append_non_null();
             }
             (_, _) => {
-                validity.push(false);
+                validity.append_null();
             }
         }
         offsets.try_push(num_splits)?;

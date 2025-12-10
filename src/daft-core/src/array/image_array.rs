@@ -13,7 +13,7 @@ pub struct ImageArraySidecarData {
     pub heights: Vec<u32>,
     pub widths: Vec<u32>,
     pub modes: Vec<u8>,
-    pub validity: Option<arrow2::bitmap::Bitmap>,
+    pub validity: Option<daft_arrow::buffer::NullBuffer>,
 }
 
 impl ImageArray {
@@ -35,19 +35,19 @@ impl ImageArray {
         array.list().unwrap()
     }
 
-    pub fn channel_array(&self) -> &arrow2::array::UInt16Array {
+    pub fn channel_array(&self) -> &daft_arrow::array::UInt16Array {
         self.channels().as_arrow()
     }
 
-    pub fn height_array(&self) -> &arrow2::array::UInt32Array {
+    pub fn height_array(&self) -> &daft_arrow::array::UInt32Array {
         self.heights().as_arrow()
     }
 
-    pub fn width_array(&self) -> &arrow2::array::UInt32Array {
+    pub fn width_array(&self) -> &daft_arrow::array::UInt32Array {
         self.widths().as_arrow()
     }
 
-    pub fn mode_array(&self) -> &arrow2::array::UInt8Array {
+    pub fn mode_array(&self) -> &daft_arrow::array::UInt8Array {
         self.modes().as_arrow()
     }
 
@@ -82,32 +82,36 @@ impl ImageArray {
             UInt16Array::from((
                 "channel",
                 Box::new(
-                    arrow2::array::UInt16Array::from_vec(sidecar_data.channels)
-                        .with_validity(sidecar_data.validity.clone()),
+                    daft_arrow::array::UInt16Array::from_vec(sidecar_data.channels).with_validity(
+                        daft_arrow::buffer::wrap_null_buffer(sidecar_data.validity.clone()),
+                    ),
                 ),
             ))
             .into_series(),
             UInt32Array::from((
                 "height",
                 Box::new(
-                    arrow2::array::UInt32Array::from_vec(sidecar_data.heights)
-                        .with_validity(sidecar_data.validity.clone()),
+                    daft_arrow::array::UInt32Array::from_vec(sidecar_data.heights).with_validity(
+                        daft_arrow::buffer::wrap_null_buffer(sidecar_data.validity.clone()),
+                    ),
                 ),
             ))
             .into_series(),
             UInt32Array::from((
                 "width",
                 Box::new(
-                    arrow2::array::UInt32Array::from_vec(sidecar_data.widths)
-                        .with_validity(sidecar_data.validity.clone()),
+                    daft_arrow::array::UInt32Array::from_vec(sidecar_data.widths).with_validity(
+                        daft_arrow::buffer::wrap_null_buffer(sidecar_data.validity.clone()),
+                    ),
                 ),
             ))
             .into_series(),
             UInt8Array::from((
                 "mode",
                 Box::new(
-                    arrow2::array::UInt8Array::from_vec(sidecar_data.modes)
-                        .with_validity(sidecar_data.validity.clone()),
+                    daft_arrow::array::UInt8Array::from_vec(sidecar_data.modes).with_validity(
+                        daft_arrow::buffer::wrap_null_buffer(sidecar_data.validity.clone()),
+                    ),
                 ),
             ))
             .into_series(),
@@ -121,7 +125,7 @@ impl ImageArray {
         Ok(ImageArray::new(Field::new(name, data_type), struct_array))
     }
 
-    pub fn from_vecs<T: arrow2::types::NativeType>(
+    pub fn from_vecs<T: daft_arrow::types::NativeType>(
         name: &str,
         data_type: DataType,
         data: Vec<T>,
@@ -131,8 +135,8 @@ impl ImageArray {
         if data.is_empty() {
             return Ok(ImageArray::full_null(name, &data_type, offsets.len() - 1));
         }
-        let offsets = arrow2::offset::OffsetsBuffer::try_from(offsets)?;
-        let arrow_dtype: arrow2::datatypes::DataType = T::PRIMITIVE.into();
+        let offsets = daft_arrow::offset::OffsetsBuffer::try_from(offsets)?;
+        let arrow_dtype: daft_arrow::datatypes::DataType = T::PRIMITIVE.into();
         if let DataType::Image(Some(mode)) = &data_type {
             assert!(
                 !(mode.get_dtype().to_arrow()? != arrow_dtype),
@@ -143,8 +147,8 @@ impl ImageArray {
             Field::new("data", DataType::List(Box::new((&arrow_dtype).into()))),
             Series::try_from((
                 "data",
-                Box::new(arrow2::array::PrimitiveArray::from_vec(data))
-                    as Box<dyn arrow2::array::Array>,
+                Box::new(daft_arrow::array::PrimitiveArray::from_vec(data))
+                    as Box<dyn daft_arrow::array::Array>,
             ))?,
             offsets,
             sidecar_data.validity.clone(),

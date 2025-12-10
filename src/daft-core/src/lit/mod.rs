@@ -31,7 +31,7 @@ use crate::{
 
 /// Stores a literal value for queries and computations.
 /// We only need to support the limited types below since those are the types that we would get from python.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum Literal {
     Null,
     /// A binary true or false.
@@ -397,8 +397,8 @@ impl Literal {
             Self::Duration(v, tu) => Ok(Self::Duration(-v, *tu)),
             Self::Interval(v) => Ok(Self::Interval(-v)),
             _ => Err(DaftError::ValueError(format!(
-                "Cannot negate literal: {:?}",
-                self
+                "Cannot negate literal for type: {}",
+                self.get_type()
             ))),
         }
     }

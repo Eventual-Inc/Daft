@@ -2,7 +2,7 @@ use std::{collections::HashMap, future, sync::Arc};
 
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{TryStreamExt, future::try_join_all};
@@ -60,11 +60,10 @@ impl SortMergeJoinNode {
         output_schema: SchemaRef,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![left.node_id(), right.node_id()],
-            vec![left.name(), right.name()],
         );
         let config = PipelineNodeConfig::new(
             output_schema,
@@ -115,14 +114,14 @@ impl SortMergeJoinNode {
         let left_in_memory_source_plan = make_in_memory_scan_from_materialized_outputs(
             &left_partition_group,
             self.left.config().schema.clone(),
-            left_cache_key.clone(),
-        )?;
+            self.left.node_id(),
+        );
 
         let right_in_memory_source_plan = make_in_memory_scan_from_materialized_outputs(
             &right_partition_group,
             self.right.config().schema.clone(),
-            right_cache_key.clone(),
-        )?;
+            self.right.node_id(),
+        );
 
         let left_partition_refs = left_partition_group
             .into_iter()
@@ -148,6 +147,10 @@ impl SortMergeJoinNode {
             self.join_type,
             self.config.schema.clone(),
             StatsState::NotMaterialized,
+            LocalNodeContext {
+                origin_node_id: Some(self.node_id() as usize),
+                additional: None,
+            },
         );
 
         // Create the task
@@ -267,9 +270,9 @@ impl SortMergeJoinNode {
 
         // Transpose outputs to group by partition index
         let left_transposed_outputs =
-            transpose_materialized_outputs_from_vec(left_partitioned_outputs, num_partitions)?;
+            transpose_materialized_outputs_from_vec(left_partitioned_outputs, num_partitions);
         let right_transposed_outputs =
-            transpose_materialized_outputs_from_vec(right_partitioned_outputs, num_partitions)?;
+            transpose_materialized_outputs_from_vec(right_partitioned_outputs, num_partitions);
 
         // Emit sort-merge join tasks for each partition pair
         for (left_partition_group, right_partition_group) in left_transposed_outputs
@@ -298,13 +301,13 @@ impl SortMergeJoinNode {
         // Materialize both inputs
         let left_materialized = left_inputs
             .materialize(scheduler_handle.clone())
-            .try_filter(|output| future::ready(output.num_rows().unwrap_or(0) > 0))
+            .try_filter(|output| future::ready(output.num_rows() > 0))
             .try_collect::<Vec<_>>()
             .await?;
 
         let right_materialized = right_inputs
             .materialize(scheduler_handle.clone())
-            .try_filter(|output| future::ready(output.num_rows().unwrap_or(0) > 0))
+            .try_filter(|output| future::ready(output.num_rows() > 0))
             .try_collect::<Vec<_>>()
             .await?;
 

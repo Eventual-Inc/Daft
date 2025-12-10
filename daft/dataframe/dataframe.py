@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Callable, Concatenate, Literal, Optional,
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, WriteMode
+from daft.daft import DistributedPhysicalPlan, FileFormat, IOConfig, JoinStrategy, JoinType, WriteMode
 from daft.dataframe.display import MermaidOptions
 from daft.dataframe.preview import Preview, PreviewAlign, PreviewColumn, PreviewFormat, PreviewFormatter
 from daft.datatype import DataType
@@ -280,19 +280,15 @@ class DataFrame:
             print_to_file(builder.pretty_print(simple))
             print_to_file("\n== Physical Plan ==\n")
             if get_or_create_runner().name != "native":
-                if execution_config.use_legacy_ray_runner:
-                    physical_plan_scheduler = builder.to_physical_plan_scheduler(execution_config)
-                    print_to_file(physical_plan_scheduler.pretty_print(simple, format=format))
-                else:
-                    from daft.daft import DistributedPhysicalPlan
+                from daft.daft import DistributedPhysicalPlan
 
-                    distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
-                        builder._builder, execution_config
-                    )
-                    if format == "ascii":
-                        print_to_file(distributed_plan.repr_ascii(simple))
-                    elif format == "mermaid":
-                        print_to_file(distributed_plan.repr_mermaid(MermaidOptions(simple)))
+                distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
+                    builder._builder, "<tmp>", execution_config
+                )
+                if format == "ascii":
+                    print_to_file(distributed_plan.repr_ascii(simple))
+                elif format == "mermaid":
+                    print_to_file(distributed_plan.repr_mermaid(MermaidOptions(simple)))
             else:
                 native_executor = NativeExecutor()
                 print_to_file(
@@ -304,7 +300,7 @@ class DataFrame:
             )
         return None
 
-    def num_partitions(self) -> int:
+    def num_partitions(self) -> int | None:
         """Returns the number of partitions that will be used to execute this DataFrame.
 
         The query optimizer may change the partitioning strategy. This method runs the optimizer
@@ -317,21 +313,31 @@ class DataFrame:
         Examples:
             >>> import daft
             >>>
+            >>> daft.set_runner_ray()  # doctest: +SKIP
+            >>>
             >>> # Create a DataFrame with 1000 rows
             >>> df = daft.from_pydict({"x": list(range(1000))})
             >>>
             >>> # Partition count may depend on default config or optimizer decisions
-            >>> df.num_partitions()
+            >>> df.num_partitions()  # doctest: +SKIP
             1
             >>>
             >>> # You can repartition manually (if supported), and then inspect again:
-            >>> df2 = df.repartition(10)
-            >>> df2.num_partitions()
+            >>> df2 = df.repartition(10)  # doctest: +SKIP
+            >>> df2.num_partitions()  # doctest: +SKIP
             10
         """
-        # We need to run the optimizer since that could change the number of partitions
-        execution_config = get_context().daft_execution_config
-        return self.__builder.optimize(execution_config).to_physical_plan_scheduler(execution_config).num_partitions()
+        runner_name = get_or_create_runner().name
+        # Native runner does not support num_partitions
+        if runner_name == "native":
+            return None
+        else:
+            execution_config = get_context().daft_execution_config
+            optimized = self._builder.optimize(execution_config)
+            distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
+                optimized._builder, "<tmp>", execution_config
+            )
+            return distributed_plan.num_partitions()
 
     @DataframePublicAPI
     def schema(self) -> Schema:
@@ -571,7 +577,7 @@ class DataFrame:
         Examples:
             >>> import daft
             >>>
-            >>> daft.context.set_runner_ray()  # doctest: +SKIP
+            >>> daft.set_runner_ray()  # doctest: +SKIP
             >>>
             >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]}).into_partitions(2)
             >>> for part in df.iter_partitions():
@@ -619,11 +625,10 @@ class DataFrame:
         if results is None:
             return
 
-        preview_partition_invalid = (
-            self._preview.partition is None or len(self._preview.partition) < self._num_preview_rows
-        )
+        num_preview_rows = min(self._num_preview_rows, len(self))
+        preview_partition_invalid = self._preview.partition is None or len(self._preview.partition) != num_preview_rows
         if preview_partition_invalid:
-            preview_parts = results._get_preview_micropartitions(self._num_preview_rows)
+            preview_parts = results._get_preview_micropartitions(num_preview_rows)
             preview_results = LocalPartitionSet()
             for i, part in enumerate(preview_parts):
                 preview_results.set_partition_from_table(i, part)
@@ -1741,7 +1746,7 @@ class DataFrame:
             │ Int64 ┆ Int64 │
             ╰───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
             >>> df[["a", "c"]]  # Get multiple columns by name
             ╭───────┬───────╮
             │ a     ┆ c     │
@@ -1749,7 +1754,7 @@ class DataFrame:
             │ Int64 ┆ Int64 │
             ╰───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
             >>> df[["a", 1]]  # Get multiple columns by name and index
             ╭───────┬───────╮
             │ a     ┆ b     │
@@ -1757,7 +1762,7 @@ class DataFrame:
             │ Int64 ┆ Int64 │
             ╰───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
             >>> df[0:2]  # Get a slice of columns by index
             ╭───────┬───────╮
             │ a     ┆ b     │
@@ -1765,7 +1770,7 @@ class DataFrame:
             │ Int64 ┆ Int64 │
             ╰───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
             >>> df[["a", "b", 2]]  # Get a mix of column names and indices
             ╭───────┬───────┬───────╮
             │ a     ┆ b     ┆ c     │
@@ -1773,7 +1778,7 @@ class DataFrame:
             │ Int64 ┆ Int64 ┆ Int64 │
             ╰───────┴───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
 
         """
         result: Optional[Expression]
@@ -1829,7 +1834,7 @@ class DataFrame:
 
         Examples:
             >>> import daft
-            >>> daft.context.set_runner_ray()  # doctest: +SKIP
+            >>> daft.set_runner_ray()  # doctest: +SKIP
             >>>
             >>> df = daft.from_pydict({"a": [1, 2, 3, 4]}).into_partitions(2)
             >>> df = df._add_monotonically_increasing_id()
@@ -2057,23 +2062,33 @@ class DataFrame:
     @DataframePublicAPI
     def sample(
         self,
-        fraction: float,
+        fraction: Optional[float] = None,
+        size: Optional[int] = None,
         with_replacement: bool = False,
         seed: Optional[int] = None,
     ) -> "DataFrame":
-        """Samples a fraction of rows from the DataFrame.
+        """Samples rows from the DataFrame.
 
         Args:
-            fraction (float): fraction of rows to sample.
+            fraction (Optional[float]): fraction of rows to sample (between 0.0 and 1.0).
+                Must specify either `fraction` or `size`, but not both.
+                For backward compatibility, can also be passed as a positional argument.
+            size (Optional[int]): exact number of rows to sample.
+                Must specify either `fraction` or `size`, but not both.
+                If `size` exceeds the total number of rows:
+                - When `with_replacement=False`: raises ValueError
+                - When `with_replacement=True`: returns `size` rows (may contain duplicates)
+                Note: Sample by size only works on the native runner right now.
             with_replacement (bool, optional): whether to sample with replacement. Defaults to False.
             seed (Optional[int], optional): random seed. Defaults to None.
 
         Returns:
-            DataFrame: DataFrame with a fraction of rows.
+            DataFrame: DataFrame with sampled rows.
 
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
+            >>> # Sample by fraction (backward compatible positional argument)
             >>> sampled_df = df.sample(0.5)
             >>> sampled_df = sampled_df.collect()
             >>> # sampled_df.show()
@@ -2099,11 +2114,28 @@ class DataFrame:
             >>> # ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             >>> # │ 3     ┆ 6     ┆ 9     │
             >>> # ╰───────┴───────┴───────╯
+            >>> # Sample by exact number of rows
+            >>> sampled_df = df.sample(size=2)
+            >>> sampled_df = sampled_df.collect()
         """
-        if fraction < 0.0 or fraction > 1.0:
-            raise ValueError(f"fraction should be between 0.0 and 1.0, but got {fraction}")
+        if fraction is not None and size is not None:
+            raise ValueError("Must specify either `fraction` or `size`, but not both")
+        if fraction is None and size is None:
+            raise ValueError("Must specify either `fraction` or `size`")
+        if fraction is not None:
+            if fraction < 0.0 or fraction > 1.0:
+                raise ValueError(f"fraction should be between 0.0 and 1.0, but got {fraction}")
+        if size is not None:
+            if size < 0:
+                raise ValueError(f"size should be non-negative, but got {size}")
+            if get_or_create_runner().name == "ray":
+                raise ValueError(
+                    "Sample by size only works on the native runner right now. "
+                    "Please use `daft.set_runner_native()` to switch to the native runner, "
+                    "or use `fraction` instead of `size` for sampling."
+                )
 
-        builder = self._builder.sample(fraction, with_replacement, seed)
+        builder = self._builder.sample(fraction, size, with_replacement, seed)
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -2603,13 +2635,11 @@ class DataFrame:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
             >>> repartitioned_df = df.repartition(3)
-            >>> repartitioned_df.num_partitions()
-            3
 
         """
         if get_or_create_runner().name == "native":
             warnings.warn(
-                "DataFrame.repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.context.set_runner_ray()` instead if you need to repartition."
+                "DataFrame.repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.set_runner_ray()` instead if you need to repartition."
             )
         if len(partition_by) == 0:
             warnings.warn(
@@ -2634,17 +2664,10 @@ class DataFrame:
 
         Returns:
             DataFrame: Dataframe with `num` partitions.
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
-            >>> df_with_5_partitions = df.into_partitions(5)
-            >>> df_with_5_partitions.num_partitions()
-            5
         """
         if get_or_create_runner().name == "native":
             warnings.warn(
-                "DataFrame.into_partitions not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.context.set_runner_ray()` instead if you need to repartition."
+                "DataFrame.into_partitions not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.set_runner_ray()` instead if you need to repartition."
             )
 
         builder = self._builder.into_partitions(num)
@@ -2686,7 +2709,7 @@ class DataFrame:
         on: Optional[Union[list[ColumnInputType], ColumnInputType]] = None,
         left_on: Optional[Union[list[ColumnInputType], ColumnInputType]] = None,
         right_on: Optional[Union[list[ColumnInputType], ColumnInputType]] = None,
-        how: Literal["inner", "inner", "left", "right", "outer", "anti", "semi", "cross"] = "inner",
+        how: Literal["inner", "left", "right", "outer", "anti", "semi", "cross"] = "inner",
         strategy: Optional[Literal["hash", "sort_merge", "broadcast"]] = None,
         prefix: Optional[str] = None,
         suffix: Optional[str] = None,
@@ -2885,10 +2908,12 @@ class DataFrame:
         if not float_columns:
             return self
 
+        from daft.functions import is_nan, when
+
         return self.where(
             ~reduce(
-                lambda x, y: x.is_null().if_else(lit(False), x) | y.is_null().if_else(lit(False), y),
-                (x.float.is_nan() for x in float_columns),
+                lambda x, y: when(x.is_null(), lit(False)).otherwise(x) | when(y.is_null(), lit(False)).otherwise(y),
+                (is_nan(x) for x in float_columns),
             )
         )
 
@@ -3214,11 +3239,11 @@ class DataFrame:
         elif op == "any_value":
             return expr.any_value()
         elif op == "list":
-            return expr.agg_list()
+            return expr.list_agg()
         elif op == "set":
-            return expr.agg_set()
+            return expr.list_agg_distinct()
         elif op == "concat":
-            return expr.agg_concat()
+            return expr.string_agg()
         elif op == "skew":
             return expr.skew()
 
@@ -3499,7 +3524,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        return self._apply_agg_fn(Expression.agg_list, cols)
+        return self._apply_agg_fn(Expression.list_agg, cols)
 
     @DataframePublicAPI
     def agg_set(self, *cols: ColumnInputType) -> "DataFrame":
@@ -3527,7 +3552,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        return self._apply_agg_fn(Expression.agg_set, cols)
+        return self._apply_agg_fn(Expression.list_agg_distinct, cols)
 
     @DataframePublicAPI
     def agg_concat(self, *cols: ColumnInputType) -> "DataFrame":
@@ -3554,7 +3579,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        return self._apply_agg_fn(Expression.agg_concat, cols)
+        return self._apply_agg_fn(Expression.string_agg, cols)
 
     @DataframePublicAPI
     def agg(self, *to_agg: Union[Expression, Iterable[Expression]]) -> "DataFrame":
@@ -4053,7 +4078,7 @@ class DataFrame:
                 if seen >= n:
                     break
 
-            preview_partition = MicroPartition.concat(tables)
+            preview_partition = MicroPartition.concat_or_empty(tables, self.schema())
             if len(preview_partition) > n:
                 preview_partition = preview_partition.slice(0, n)
             elif len(preview_partition) < n:
@@ -4430,7 +4455,7 @@ class DataFrame:
 
         Examples:
             >>> import daft
-            >>> daft.context.set_runner_ray()  # doctest: +SKIP
+            >>> daft.set_runner_ray()  # doctest: +SKIP
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
             >>> ray_dataset = df.to_ray_dataset()  # doctest: +SKIP
 
@@ -4538,7 +4563,7 @@ class DataFrame:
 
         Examples:
             >>> import daft
-            >>> daft.context.set_runner_ray()  # doctest: +SKIP
+            >>> daft.set_runner_ray()  # doctest: +SKIP
             >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
             >>> dask_df = df.to_dask_dataframe()  # doctest: +SKIP
 
@@ -4739,14 +4764,6 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.list_agg, cols, self.group_by)
 
-    def agg_list(self, *cols: ColumnInputType) -> DataFrame:
-        """(DEPRECATED) Please use `DataFrame.list_agg` instead."""
-        warnings.warn(
-            "`DataFrame.agg_list` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `DataFrame.list_agg` instead.",
-            category=DeprecationWarning,
-        )
-        return self.list_agg(*cols)
-
     def list_agg_distinct(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped list distinct on this GroupedDataFrame (ignoring nulls).
 
@@ -4758,14 +4775,6 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.list_agg_distinct, cols, self.group_by)
 
-    def agg_set(self, *cols: ColumnInputType) -> DataFrame:
-        """(DEPRECATED) Please use `DataFrame.list_agg_distinct` instead."""
-        warnings.warn(
-            "`DataFrame.agg_set` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `DataFrame.list_agg_distinct` instead.",
-            category=DeprecationWarning,
-        )
-        return self.list_agg_distinct(*cols)
-
     def string_agg(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped string concat on this GroupedDataFrame.
 
@@ -4773,14 +4782,6 @@ class GroupedDataFrame:
             DataFrame: DataFrame with grouped string concatenated per column.
         """
         return self.df._apply_agg_fn(Expression.string_agg, cols, self.group_by)
-
-    def agg_concat(self, *cols: ColumnInputType) -> DataFrame:
-        """(DEPRECATED) Please use `DataFrame.string_agg` instead."""
-        warnings.warn(
-            "`DataFrame.agg_concat` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `DataFrame.string_agg` instead.",
-            category=DeprecationWarning,
-        )
-        return self.string_agg(*cols)
 
     def agg(self, *to_agg: Union[Expression, Iterable[Expression]]) -> DataFrame:
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.

@@ -6,7 +6,7 @@ services:
     - 8080:8080
 
   postgres:
-    image: postgres:17.2
+    image: pgvector/pgvector:pg18-trixie
     container_name: postgres
     environment:
       POSTGRES_DB: postgres

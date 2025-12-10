@@ -19,7 +19,8 @@ use crate::{
     stats::StatsState,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Project {
     pub plan_id: Option<usize>,
     pub node_id: Option<usize>,
@@ -28,6 +29,15 @@ pub struct Project {
     pub projection: Vec<ExprRef>,
     pub projected_schema: SchemaRef,
     pub stats_state: StatsState,
+}
+#[cfg(not(debug_assertions))]
+impl std::fmt::Debug for Project {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Project")
+            .field("plan_id", &self.plan_id)
+            .field("node_id", &self.node_id)
+            .finish()
+    }
 }
 
 impl Project {
@@ -535,6 +545,10 @@ fn replace_column_with_semantic_id_aggexpr(
         AggExpr::Sum(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Sum, |_| e)
+        }
+        AggExpr::Product(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::Product, |_| e)
         }
         AggExpr::ApproxPercentile(ApproxPercentileParams {
             ref child,

@@ -1,8 +1,13 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
-use pyo3::{Bound, IntoPyObject, PyAny, PyResult, Python, pyclass, pymethods};
+use common_py_serde::impl_bincode_py_state_serialization;
+use pyo3::{
+    Bound, IntoPyObject, PyAny, PyResult, Python, pyclass, pymethods,
+    types::{PyDict, PyDictMethods, PyList, PyListMethods},
+};
+use serde::{Deserialize, Serialize};
 
-use crate::{Stat, ops::NodeInfo};
+use crate::{Stat, operator_metrics::OperatorMetrics};
 
 #[pyclass(eq, eq_int)]
 #[derive(PartialEq, Eq)]
@@ -31,37 +36,50 @@ impl Stat {
     }
 }
 
-#[pyclass(frozen)]
-pub struct PyNodeInfo {
-    node_info: Arc<NodeInfo>,
+#[pyclass(module = "daft.daft", name = "OperatorMetrics")]
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct PyOperatorMetrics {
+    pub inner: OperatorMetrics,
 }
 
 #[pymethods]
-impl PyNodeInfo {
-    #[getter]
-    pub fn id(&self) -> usize {
-        self.node_info.id
+impl PyOperatorMetrics {
+    #[new]
+    pub fn new() -> Self {
+        Self {
+            inner: OperatorMetrics::default(),
+        }
     }
-    #[getter]
-    pub fn name(&self) -> String {
-        self.node_info.name.to_string()
+
+    #[pyo3(signature = (name, value, *, description=None, attributes=None))]
+    pub fn inc_counter(
+        &mut self,
+        name: &str,
+        value: u64,
+        description: Option<&str>,
+        attributes: Option<HashMap<String, String>>,
+    ) {
+        self.inner.inc_counter(name, value, description, attributes);
     }
-    #[getter]
-    pub fn node_type(&self) -> String {
-        self.node_info.node_type.to_string()
-    }
-    #[getter]
-    pub fn node_category(&self) -> String {
-        self.node_info.node_category.to_string()
-    }
-    #[getter]
-    pub fn context(&self) -> HashMap<String, String> {
-        self.node_info.context.clone()
+
+    pub fn snapshot<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let result = PyDict::new(py);
+        for (name, counters) in self.inner.snapshot() {
+            let counter_list = PyList::empty(py);
+            for counter in counters {
+                let counter_entry = PyDict::new(py);
+                counter_entry.set_item("value", counter.value)?;
+                match &counter.description {
+                    Some(description) => counter_entry.set_item("description", description)?,
+                    None => counter_entry.set_item("description", py.None())?,
+                }
+                counter_entry.set_item("attributes", counter.attributes.clone())?;
+                counter_list.append(counter_entry)?;
+            }
+            result.set_item(name, counter_list)?;
+        }
+        Ok(result.into_any())
     }
 }
 
-impl From<Arc<NodeInfo>> for PyNodeInfo {
-    fn from(node_info: Arc<NodeInfo>) -> Self {
-        Self { node_info }
-    }
-}
+impl_bincode_py_state_serialization!(PyOperatorMetrics);

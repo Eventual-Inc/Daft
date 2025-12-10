@@ -13,7 +13,7 @@ import daft
 import daft.recordbatch
 from daft.exceptions import ConnectTimeoutError, ReadTimeoutError
 from daft.filesystem import get_filesystem, get_protocol_from_path
-from daft.recordbatch import MicroPartition, RecordBatch
+from daft.recordbatch import MicroPartition
 
 
 def get_filesystem_from_path(path: str, **kwargs) -> fsspec.AbstractFileSystem:
@@ -214,18 +214,6 @@ def parquet_file(request) -> tuple[str, str]:
     return request.param
 
 
-@pytest.fixture(params=[(True, True), (True, False), (False, False)], ids=["split", "merge", "ignore"])
-def set_split_config(request):
-    max_size = 0 if request.param[0] else 384 * 1024 * 1024
-    min_size = 0 if request.param[1] else 96 * 1024 * 1024
-
-    with daft.execution_config_ctx(
-        scan_tasks_max_size_bytes=max_size,
-        scan_tasks_min_size_bytes=min_size,
-    ):
-        yield
-
-
 def read_parquet_with_pyarrow(path) -> pa.Table:
     kwargs = {}
     if get_protocol_from_path(path) == "s3" or get_protocol_from_path(path) == "s3a":
@@ -284,31 +272,6 @@ def test_parquet_read_table_into_pyarrow(parquet_file, public_storage_io_config,
     "multithreaded_io",
     [False, True],
 )
-def test_parquet_read_table_bulk(parquet_file, public_storage_io_config, multithreaded_io):
-    _, url = parquet_file
-    daft_native_reads = MicroPartition.read_parquet_bulk(
-        [url] * 2, io_config=public_storage_io_config, multithreaded_io=multithreaded_io
-    )
-    pa_read = MicroPartition.from_arrow(read_parquet_with_pyarrow(url))
-
-    # Legacy Table returns a list[Table]
-    if MicroPartition == RecordBatch:
-        for daft_native_read in daft_native_reads:
-            assert daft_native_read.schema() == pa_read.schema()
-            pd.testing.assert_frame_equal(daft_native_read.to_pandas(), pa_read.to_pandas())
-    # MicroPartitions returns a MicroPartition
-    else:
-        assert daft_native_reads.schema() == pa_read.schema()
-        pd.testing.assert_frame_equal(
-            daft_native_reads.to_pandas(), MicroPartition.concat([pa_read, pa_read]).to_pandas()
-        )
-
-
-@pytest.mark.integration()
-@pytest.mark.parametrize(
-    "multithreaded_io",
-    [False, True],
-)
 def test_parquet_into_pyarrow_bulk(parquet_file, public_storage_io_config, multithreaded_io):
     _, url = parquet_file
     daft_native_reads = daft.recordbatch.read_parquet_into_pyarrow_bulk(
@@ -321,7 +284,7 @@ def test_parquet_into_pyarrow_bulk(parquet_file, public_storage_io_config, multi
 
 
 @pytest.mark.integration()
-def test_parquet_read_df(parquet_file, public_storage_io_config, set_split_config):
+def test_parquet_read_df(parquet_file, public_storage_io_config):
     _, url = parquet_file
     daft_native_read = daft.read_parquet(url, io_config=public_storage_io_config)
     pa_read = MicroPartition.from_arrow(read_parquet_with_pyarrow(url))
@@ -364,34 +327,6 @@ def test_row_groups_selection(public_storage_io_config, multithreaded_io):
     assert len(out_of_order) == 20
     assert all_rows.to_arrow()[10:20] == out_of_order.to_arrow()[:10]
     assert all_rows.to_arrow()[0:10] == out_of_order.to_arrow()[10:20]
-
-
-@pytest.mark.integration()
-@pytest.mark.parametrize(
-    "multithreaded_io",
-    [False, True],
-)
-def test_row_groups_selection_bulk(public_storage_io_config, multithreaded_io):
-    url = ["s3://daft-public-data/test_fixtures/parquet-dev/mvp.parquet"] * 11
-    row_groups = [list(range(10))] + [[i] for i in range(10)]
-
-    if MicroPartition == RecordBatch:
-        first, *rest = MicroPartition.read_parquet_bulk(
-            url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io, row_groups_per_path=row_groups
-        )
-        assert len(first) == 100
-        assert len(rest) == 10
-
-        for i, t in enumerate(rest):
-            assert len(t) == 10
-            assert first.to_arrow()[i * 10 : (i + 1) * 10] == t.to_arrow()
-    else:
-        mp = MicroPartition.read_parquet_bulk(
-            url, io_config=public_storage_io_config, multithreaded_io=multithreaded_io, row_groups_per_path=row_groups
-        )
-        assert len(mp) == 100 + (
-            10 * 10
-        )  # 100 rows in first table (10 rgs), 10 rows each in subsequent tables (1 rg each)
 
 
 @pytest.mark.integration()

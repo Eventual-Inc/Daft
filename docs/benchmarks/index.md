@@ -6,7 +6,7 @@
 
     These benchmarks showcase [Flotilla](https://www.daft.ai/blog/introducing-flotilla-simplifying-multimodal-data-processing-at-scale), Daft's distributed engine optimized for multimodal data processing.
 
-    [Daft vs Spark vs Ray Data: Benchmarks for Multimodal AI Workloads](https://www.daft.ai/blog/benchmarks-for-modalities-workloads) - Full methodology and technical deep-dive.
+    [Daft vs Spark vs Ray Data: Benchmarks for Multimodal AI Workloads](https://www.daft.ai/blog/benchmarks-for-multimodal-ai-workloads) - Full methodology and technical deep-dive.
 
 Modern AI workloads demand simple, fast, and scalable data engines. Daft is purpose-built for these workloads, excelling where traditional big data frameworks fall short.
 
@@ -346,7 +346,7 @@ We note two interesting results here:
 Our benchmarking scripts and code can be found in the [distributed-query-benchmarks](https://github.com/Eventual-Inc/distributed-query-benchmarking) GitHub repository.
 
 - TPC-H queries for Daft were written by us.
-- TPC-H queries for SparkSQL was adapted from [this repository](https://github.com/bodo-ai/Bodo/blob/main/benchmarks/tpch/pyspark_notebook.ipynb).
+- TPC-H queries for SparkSQL was adapted from [this repository](https://github.com/bodo-ai/Bodo/blob/ec18c281c450ca463b55194c45ba11bcf986d04f/benchmarks/tpch/pyspark_notebook.ipynb).
 - TPC-H queries for Dask and Modin were adapted from these repositories for questions [Q1-7](https://github.com/pola-rs/tpch) and [Q8-10](https://github.com/xprobe-inc/benchmarks/tree/main/tpch).
 
 ### Infrastructure

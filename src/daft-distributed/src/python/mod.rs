@@ -71,23 +71,45 @@ impl PyDistributedPhysicalPlan {
     #[staticmethod]
     fn from_logical_plan_builder(
         builder: &PyLogicalPlanBuilder,
+        query_id: String,
         config: &PyDaftExecutionConfig,
     ) -> PyResult<Self> {
         let plan = DistributedPhysicalPlan::from_logical_plan_builder(
             &builder.builder,
+            query_id.into(),
             config.config.clone(),
         )?;
         Ok(Self { plan })
     }
 
-    fn id(&self) -> String {
-        self.plan.id().to_string()
+    fn idx(&self) -> String {
+        self.plan.idx().to_string()
+    }
+
+    fn num_partitions(&self) -> PyResult<usize> {
+        // Create pipeline nodes from the logical plan
+        let plan_config = PlanConfig::new(
+            self.plan.idx(),
+            self.plan.query_id(),
+            self.plan.execution_config().clone(),
+        );
+        let pipeline_node = logical_plan_to_pipeline_node(
+            plan_config,
+            self.plan.logical_plan().clone(),
+            Default::default(),
+        )?;
+
+        Ok(pipeline_node.num_partitions())
     }
 
     /// Visualize the distributed pipeline as ASCII text
     fn repr_ascii(&self, simple: bool) -> PyResult<String> {
         // Create pipeline nodes from the logical plan
-        let plan_config = PlanConfig::new(self.plan.id(), self.plan.execution_config().clone());
+        let plan_config = PlanConfig::new(
+            self.plan.idx(),
+            self.plan.query_id(),
+            self.plan.execution_config().clone(),
+        );
         let pipeline_node = logical_plan_to_pipeline_node(
             plan_config,
             self.plan.logical_plan().clone(),
@@ -100,7 +122,11 @@ impl PyDistributedPhysicalPlan {
     /// Visualize the distributed pipeline as Mermaid markdown
     fn repr_mermaid(&self, simple: bool, bottom_up: bool) -> PyResult<String> {
         // Create a pipeline node from the stage plan
-        let plan_config = PlanConfig::new(self.plan.id(), self.plan.execution_config().clone());
+        let plan_config = PlanConfig::new(
+            self.plan.idx(),
+            self.plan.query_id(),
+            self.plan.execution_config().clone(),
+        );
         let pipeline_node = logical_plan_to_pipeline_node(
             plan_config,
             self.plan.logical_plan().clone(),

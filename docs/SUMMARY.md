@@ -3,10 +3,13 @@
     * [Quickstart](quickstart.md)
     * [Installation](install.md)
     * AI Functions
-        * [Functions](ai-functions/index.md)
+        * [Overview](ai-functions/overview.md)
+        * [Prompt](ai-functions/prompt.md)
+        * [Embed](ai-functions/embed.md)
+        * [Classify](ai-functions/classify.md)
         * [Providers](ai-functions/providers.md)
     * Modalities
-        * [Modalities](modalities/index.md)
+        * [Overview](modalities/overview.md)
         * [Text](modalities/text.md)
         * [Images](modalities/images.md)
         * [Audio](modalities/audio.md)
@@ -18,7 +21,7 @@
         * [New UDF Overview](custom-code/index.md)
         * [Functions](custom-code/func.md)
         * [Classes & Methods](custom-code/cls.md)
-        * [Comparison Guide](custom-code/comparison.md)
+        * [Legacy UDF Migration Guide](custom-code/migration.md)
         * [Legacy UDFs](custom-code/udfs.md)
     * Common Use Cases
         * [Batch Inference](use-case/batch-inference.md)
@@ -29,12 +32,14 @@
         * [Custom Connectors](connectors/custom.md)
         * [AWS Glue](connectors/glue.md)
         * [AWS S3 Tables](connectors/s3tables.md)
+        * [Apache Gravitino](connectors/gravitino.md)
         * [Apache Hudi](connectors/hudi.md)
         * [Apache Iceberg](connectors/iceberg.md)
         * [Azure Blob Store](connectors/azure.md)
         * [Delta Lake](connectors/delta_lake.md)
         * [Lance](connectors/lance.md)
         * [Hugging Face Datasets](connectors/huggingface.md)
+        * [Postgres](connectors/postgres.md)
         * [S3](connectors/aws.md)
         * [SQL Databases](connectors/sql.md)
         * [Turbopuffer](connectors/turbopuffer.md)
@@ -50,8 +55,9 @@
         * [Partitioning and Batching](optimization/partitioning.md)
         * [Observability](optimization/observability.md)
     * Contributing
-        * [Contributing](contributing-to-daft.md)
-        * [AI Functions](contributing/contributing-ai-functions.md)
+        * [Overview](contributing/overview.md)
+        * [Development Guide](contributing/development.md)
+        * [Contributing AI Functions](contributing/contributing-ai-functions.md)
     * [Sessions, Catalogs, and Tables](configuration/sessions-usage.md)
     * [Roadmap](roadmap.md)
     * [Benchmarks](benchmarks/index.md)
@@ -89,7 +95,6 @@
     * [Schema](api/schema.md)
     * [Aggregations](api/aggregations.md)
     * [Series](api/series.md)
-    * [Spark Connect](api/spark_connect.md)
     * [Configuration](api/config.md)
     * [Miscellaneous](api/misc.md)
 * SQL Reference
@@ -100,7 +105,7 @@
         * [USE](sql/statements/use.md)
     * [Data Types](sql/datatypes.md)
     * [Window Functions](sql/window_functions.md)
-* [Try Daft Cloud](https://www.eventual.ai/early-access)
+* [Daft Cloud](https://www.daft.ai/cloud)
 
 <!--
 TODO

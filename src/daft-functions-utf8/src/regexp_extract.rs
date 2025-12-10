@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::{create_broadcasted_str_iter, parse_inputs};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RegexpExtract;
 
 #[typetag::serde]
@@ -133,7 +133,7 @@ fn regex_extract_first_match<'a>(
             }
             _ => Ok(None),
         })
-        .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>();
+        .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>();
 
     Ok(Utf8Array::from((name, Box::new(arrow_result?))))
 }

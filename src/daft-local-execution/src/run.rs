@@ -9,6 +9,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayLevel, mermaid::MermaidDisplayOptions};
 use common_error::DaftResult;
+use common_metrics::StatSnapshot;
 use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
 use daft_context::{DaftContext, Subscriber};
@@ -18,7 +19,7 @@ use daft_micropartition::{
     MicroPartition, MicroPartitionRef,
     partitioning::{InMemoryPartitionSetCache, MicroPartitionSet, PartitionSetCache},
 };
-use futures::{Stream, StreamExt, stream::BoxStream};
+use futures::Stream;
 use tokio::{runtime::Handle, sync::Mutex};
 use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
@@ -27,7 +28,7 @@ use {
     daft_context::python::PyDaftContext,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    pyo3::{Bound, IntoPyObject, Py, PyAny, PyRef, PyResult, Python, pyclass, pymethods},
+    pyo3::{Bound, IntoPyObject, PyAny, PyRef, PyResult, Python, pyclass, pymethods},
 };
 
 use crate::{
@@ -61,28 +62,6 @@ fn get_global_runtime() -> &'static Handle {
 #[cfg(not(feature = "python"))]
 fn get_global_runtime() -> &'static Handle {
     unimplemented!("get_global_runtime is not implemented without python feature");
-}
-
-#[cfg(feature = "python")]
-#[pyclass(module = "daft.daft", name = "PyLocalPartitionStream", frozen)]
-pub struct LocalPartitionStream {
-    stream: Arc<Mutex<BoxStream<'static, DaftResult<Py<PyAny>>>>>,
-}
-
-#[cfg(feature = "python")]
-#[pymethods]
-impl LocalPartitionStream {
-    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
-        slf
-    }
-    fn __anext__<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, pyo3::PyAny>> {
-        let stream = self.stream.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let mut stream = stream.lock().await;
-            let part = stream.next().await;
-            Ok(part.transpose()?)
-        })
-    }
 }
 
 #[cfg_attr(
@@ -147,18 +126,11 @@ impl PyNativeExecutor {
                 context,
             )
         })?;
-        let stream = Box::pin(res.into_stream().map(|part| {
-            pyo3::Python::attach(|py| {
-                Ok(PyMicroPartition::from(part?)
-                    .into_pyobject(py)?
-                    .unbind()
-                    .into_any())
-            })
-        }));
-        let stream = LocalPartitionStream {
-            stream: Arc::new(Mutex::new(stream)),
+
+        let py_execution_result = PyExecutionEngineResult {
+            result: Arc::new(Mutex::new(Some(res))),
         };
-        Ok(stream.into_pyobject(py)?.into_any())
+        Ok(py_execution_result.into_pyobject(py)?.into_any())
     }
 
     #[staticmethod]
@@ -234,40 +206,42 @@ impl NativeExecutor {
         additional_context: Option<HashMap<String, String>>,
     ) -> DaftResult<ExecutionEngineResult> {
         let cancel = self.cancel.clone();
-        let ctx = RuntimeContext::new_with_context(additional_context.unwrap_or_default());
+        let additional_context = additional_context.unwrap_or_default();
+        let ctx = RuntimeContext::new_with_context(additional_context.clone());
         let pipeline =
             translate_physical_plan_to_pipeline(local_physical_plan, psets, &exec_cfg, &ctx)?;
 
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
         let enable_explain_analyze = self.enable_explain_analyze;
 
+        let query_id: common_metrics::QueryID = additional_context
+            .get("query_id")
+            .ok_or_else(|| {
+                common_error::DaftError::ValueError(
+                    "query_id not found in additional_context".to_string(),
+                )
+            })?
+            .clone()
+            .into();
+
         // Spawn execution on the global runtime - returns immediately
         let handle = get_global_runtime();
-        let stats_manager = RuntimeStatsManager::try_new(handle, &pipeline, subscribers)?;
+        let stats_manager = RuntimeStatsManager::try_new(handle, &pipeline, subscribers, query_id)?;
         let task = async move {
             let stats_manager_handle = stats_manager.handle();
             let execution_task = async {
                 let memory_manager = get_or_init_memory_manager();
                 let mut runtime_handle =
                     ExecutionRuntimeContext::new(memory_manager.clone(), stats_manager_handle);
-                let receiver = pipeline.start(true, &mut runtime_handle)?;
+                let receiver = pipeline.start(exec_cfg.maintain_order, &mut runtime_handle)?;
 
                 while let Some(val) = receiver.recv().await {
                     if tx.send(val).await.is_err() {
-                        break;
+                        return Ok(());
                     }
                 }
 
-                while let Some(result) = runtime_handle.join_next().await {
-                    match result {
-                        Ok(Err(e)) | Err(e) => {
-                            runtime_handle.shutdown().await;
-                            return DaftResult::Err(e.into());
-                        }
-                        _ => {}
-                    }
-                }
-                Ok(())
+                runtime_handle.shutdown().await
             };
 
             let result = tokio::select! {
@@ -284,8 +258,9 @@ impl NativeExecutor {
             };
 
             // Finish the stats manager
-            stats_manager.finish().await;
+            let final_stats = stats_manager.finish().await;
 
+            // TODO: Move into a runtime stats subscriber
             if enable_explain_analyze {
                 let curr_ms = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
@@ -305,7 +280,7 @@ impl NativeExecutor {
                 )?;
             }
             flush_opentelemetry_providers();
-            result
+            result.map(|()| final_stats)
         };
 
         Ok(ExecutionEngineResult {
@@ -395,16 +370,34 @@ fn should_enable_explain_analyze() -> bool {
         false
     }
 }
+
+type ExecutionEngineFinalResult = DaftResult<Vec<(usize, StatSnapshot)>>;
+
 pub struct ExecutionEngineResult {
-    handle: RuntimeTask<DaftResult<()>>,
+    handle: RuntimeTask<ExecutionEngineFinalResult>,
     receiver: Receiver<Arc<MicroPartition>>,
 }
 
 impl ExecutionEngineResult {
+    async fn next(&self) -> Option<Arc<MicroPartition>> {
+        self.receiver.recv().await
+    }
+
+    async fn finish(self) -> ExecutionEngineFinalResult {
+        drop(self.receiver);
+        let result = self.handle.await;
+        match result {
+            Ok(Ok(final_stats)) => Ok(final_stats),
+            Ok(Err(e)) => Err(e),
+            Err(e) => Err(e),
+        }
+    }
+
+    // Should be used independently of next() and finish()
     pub fn into_stream(self) -> impl Stream<Item = DaftResult<Arc<MicroPartition>>> {
         struct StreamState {
             receiver: Receiver<Arc<MicroPartition>>,
-            handle: Option<RuntimeTask<DaftResult<()>>>,
+            handle: Option<RuntimeTask<ExecutionEngineFinalResult>>,
         }
 
         let state = StreamState {
@@ -419,7 +412,7 @@ impl ExecutionEngineResult {
                     if let Some(handle) = state.handle.take() {
                         let result = handle.await;
                         match result {
-                            Ok(Ok(())) => None,
+                            Ok(Ok(_final_stats)) => None,
                             Ok(Err(e)) => Some((Err(e), state)),
                             Err(e) => Some((Err(e), state)),
                         }
@@ -428,6 +421,49 @@ impl ExecutionEngineResult {
                     }
                 }
             }
+        })
+    }
+}
+
+#[cfg_attr(
+    feature = "python",
+    pyclass(module = "daft.daft", name = "PyExecutionEngineResult", frozen)
+)]
+pub struct PyExecutionEngineResult {
+    result: Arc<Mutex<Option<ExecutionEngineResult>>>,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl PyExecutionEngineResult {
+    fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __anext__<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, pyo3::PyAny>> {
+        let result = self.result.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let result = result.lock().await;
+            let part = result
+                .as_ref()
+                .expect("ExecutionEngineResult.__anext__() should not be called after finish().")
+                .next()
+                .await;
+            Ok(part.map(PyMicroPartition::from))
+        })
+    }
+
+    fn finish<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let result = self.result.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut result = result.lock().await;
+            let stats = result
+                .take()
+                .expect("ExecutionEngineResult.finish() should not be called more than once.")
+                .finish()
+                .await?;
+            Ok(bincode::encode_to_vec(&stats, bincode::config::legacy())
+                .expect("Failed to serialize stats object"))
         })
     }
 }

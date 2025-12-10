@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{LogicalPlan, logical_plan::Result, stats::StatsState};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct UDFProject {
     pub plan_id: Option<usize>,
     pub node_id: Option<usize>,
@@ -98,8 +99,12 @@ impl UDFProject {
                         .join(", ")
                 }
             ),
-            format!("Concurrency = {:?}", self.udf_properties.concurrency),
+            format!(
+                "Properties = {{ {} }}",
+                self.udf_properties.multiline_display(false).join(", ")
+            ),
         ];
+
         if let Some(resource_request) = &self.udf_properties.resource_request {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
@@ -107,9 +112,11 @@ impl UDFProject {
                 multiline_display.join(", ")
             ));
         }
+
         if let StatsState::Materialized(stats) = &self.stats_state {
             res.push(format!("Stats = {}", stats));
         }
+
         res
     }
 }

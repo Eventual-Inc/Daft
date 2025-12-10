@@ -2,23 +2,16 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from daft import (
-    DataType,
-    Expression,
-    Series,
-    col,
-    udf,
-    current_session,
-    current_provider,
-)
-from daft.ai.provider import Provider, ProviderType, load_provider, PROVIDERS
-from daft.functions.misc import when
+from daft.ai.provider import Provider, ProviderType, load_provider
+from daft.functions.ai._colab_compat import IS_COLAB, clean_pydantic_model
+from daft.datatype import DataType
+from daft.expressions import Expression
+from daft.session import current_provider, current_session
 from daft.udf import cls as daft_cls, method
 
 if TYPE_CHECKING:
-    from typing import Literal
     from pydantic import BaseModel
     from daft.ai.typing import Label
 
@@ -65,6 +58,7 @@ def embed_text(
     *,
     provider: str | Provider | None = None,
     model: str | None = None,
+    dimensions: int | None = None,
     **options: str,
 ) -> Expression:
     """Returns an expression that embeds text using the specified embedding model and provider.
@@ -76,6 +70,8 @@ def embed_text(
             The provider to use for the embedding model. If None, the default provider is used.
         model (str | None):
             The embedding model to use. Can be a model instance or a model name. If None, the default model is used.
+        dimensions (int | None):
+            Number of dimensions the output embeddings should have, if the provider and model support specifying. If None, will use the default for the model.
         **options: Any additional options to pass for the model.
 
     Note:
@@ -93,7 +89,7 @@ def embed_text(
         ...     "embeddings",
         ...     embed_text(
         ...         daft.col("text"),
-        ...         provider="sentence_transformers",
+        ...         provider="transformers",
         ...         model="sentence-transformers/all-MiniLM-L6-v2",
         ...     ),
         ... )
@@ -116,13 +112,17 @@ def embed_text(
     from daft.ai.protocols import TextEmbedder
 
     # load a TextEmbedderDescriptor from the resolved provider
-    text_embedder = _resolve_provider(provider, "transformers").get_text_embedder(model, **options)
+    text_embedder = _resolve_provider(provider, "transformers").get_text_embedder(model, dimensions, **options)
 
     udf_options = text_embedder.get_udf_options()
 
-    # Decorate the __call__ method with @daft.method to specify return_dtype
+    # Choose synchronous or asynchronous call implementation based on the embedder
+    is_async = text_embedder.is_async()
+    call_impl = _TextEmbedderExpression._call_async if is_async else _TextEmbedderExpression._call_sync
+
+    # Decorate the selected call method with @daft.method to specify return_dtype
     _TextEmbedderExpression.__call__ = method.batch(  # type: ignore[method-assign]
-        method=_TextEmbedderExpression.__call__, return_dtype=text_embedder.get_dimensions().as_dtype()
+        method=call_impl, return_dtype=text_embedder.get_dimensions().as_dtype()
     )
     wrapped_cls = daft_cls(
         _TextEmbedderExpression,
@@ -164,7 +164,7 @@ def embed_image(
         ...     # Discover a few images from HuggingFace
         ...     daft.from_glob_path("hf://datasets/datasets-examples/doc-image-3/images")
         ...     # Read the 4 PNG, JPEG, TIFF, WEBP Images
-        ...     .with_column("image_bytes", daft.col("path").url.download())
+        ...     .with_column("image_bytes", daft.col("path").download())
         ...     # Decode the image bytes into a daft Image DataType
         ...     .with_column("image_type", decode_image(daft.col("image_bytes")))
         ...     # Convert Image to RGB and resize the image to 288x288
@@ -203,7 +203,8 @@ def embed_image(
 
     # Decorate the __call__ method with @daft.method to specify return_dtype
     _ImageEmbedderExpression.__call__ = method.batch(  # type: ignore[method-assign] # type: ignore[method-assign] # type: ignore[method-assign]
-        method=_ImageEmbedderExpression.__call__, return_dtype=image_embedder.get_dimensions().as_dtype()
+        method=_ImageEmbedderExpression.__call__,
+        return_dtype=image_embedder.get_dimensions().as_dtype(),
     )
 
     wrapped_cls = daft_cls(
@@ -339,7 +340,7 @@ def classify_image(
         ...     # Discover a few images from HuggingFace
         ...     daft.from_glob_path("hf://datasets/datasets-examples/doc-image-3/images")
         ...     # Read the 4 PNG, JPEG, TIFF, WEBP Images
-        ...     .with_column("image_bytes", daft.col("path").url.download())
+        ...     .with_column("image_bytes", daft.col("path").download())
         ...     # Decode the image bytes into a daft Image DataType
         ...     .with_column("image_type", decode_image(daft.col("image_bytes")))
         ...     # Convert Image to RGB and resize the image to 288x288
@@ -351,7 +352,7 @@ def classify_image(
         ...             daft.col("image_resized"),
         ...             labels=["bulbasaur", "catapie", "voltorb", "electrode"],
         ...             provider="transformers",
-        ...             model="google/vit-base-patch16-224",
+        ...             model="openai/clip-vit-base-patch32",
         ...         ),
         ...     )
         ... )
@@ -426,6 +427,10 @@ def prompt(
 
     Returns:
         Expression (String Expression): An expression representing the prompt result.
+
+    Note:
+        For OpenAI providers, you can pass `use_chat_completions=True` as an option to use the Chat Completions API
+        instead of the new Responses API.
 
     Examples:
         Basic Usage:
@@ -525,6 +530,9 @@ def prompt(
 
     # Add return_format to options for the provider
     if return_format is not None:
+        # Clean the Pydantic model to avoid Colab serialization issues
+        if IS_COLAB:
+            return_format = clean_pydantic_model(return_format)
         options = {**options, "return_format": return_format}
     if system_message is not None:
         options = {**options, "system_message": system_message}

@@ -7,6 +7,8 @@ common-macros = {path = "../common/macros"}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 common-resource-request = {path = "../common/resource-request", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
+common-metrics = {path = "../common/metrics", default-features = false}
+common-tracing = {path = "../common/tracing", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
 derive_more = {workspace = true}
@@ -17,9 +19,11 @@ pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 tokio = {workspace = true, optional = true}
 typetag = {workspace = true}
+opentelemetry = {workspace = true}
 
 [dev-dependencies]
 rstest = {workspace = true}
+opentelemetry_sdk = {workspace = true, features = ["testing"]}
 
 [features]
 python = [
@@ -30,7 +34,8 @@ python = [
   "daft-core/python",
   "common-treenode/python",
   "common-py-serde/python",
-  "common-resource-request/python"
+  "common-resource-request/python",
+  "common-metrics/python"
 ]
 test-utils = []
 

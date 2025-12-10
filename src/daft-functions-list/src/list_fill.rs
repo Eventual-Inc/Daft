@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::series::SeriesListExtension;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ListFill;
 
 #[derive(FunctionArgs)]
@@ -62,7 +62,7 @@ pub fn list_fill(elem: ExprRef, n: ExprRef) -> ExprRef {
 #[cfg(test)]
 #[allow(deprecated)]
 mod tests {
-    use arrow2::offset::OffsetsBuffer;
+    use daft_arrow::offset::OffsetsBuffer;
     use daft_core::{
         array::ListArray,
         datatypes::{Int8Array, Utf8Array},

@@ -1,13 +1,17 @@
 use std::{fmt::Display, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
-use daft_core::prelude::*;
+use daft_core::{prelude::*, series::Series};
 use itertools::Itertools;
+use opentelemetry::logs::{AnyValue, LogRecord, Logger, LoggerProvider};
+#[cfg(feature = "python")]
+use pyo3::{PyErr, Python, prelude::*};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     Expr, ExprRef,
     functions::{python::RuntimePyObject, scalar::ScalarFn},
+    operator_metrics::MetricsCollector,
     python_udf::PyScalarFn,
 };
 
@@ -91,12 +95,16 @@ impl RowWisePyFn {
     }
 
     #[cfg(not(feature = "python"))]
-    pub fn call(&self, _args: &[Series]) -> DaftResult<Series> {
+    pub fn call(
+        &self,
+        _args: &[Series],
+        _metrics: &mut dyn MetricsCollector,
+    ) -> DaftResult<Series> {
         panic!("Cannot evaluate a RowWisePyFn without compiling for Python");
     }
 
     #[cfg(feature = "python")]
-    pub fn call(&self, args: &[Series]) -> DaftResult<Series> {
+    pub fn call(&self, args: &[Series], metrics: &mut dyn MetricsCollector) -> DaftResult<Series> {
         let num_rows = args
             .iter()
             .map(Series::len)
@@ -111,16 +119,24 @@ impl RowWisePyFn {
                 a.len()
             );
         }
-        self.call_serial(args, num_rows)
+        self.call_serial(args, num_rows, metrics)
     }
 
     #[cfg(not(feature = "python"))]
-    pub async fn call_async(&self, _args: &[Series]) -> DaftResult<Series> {
+    pub async fn call_async(
+        &self,
+        _args: &[Series],
+        _metrics: &mut dyn MetricsCollector,
+    ) -> DaftResult<Series> {
         panic!("Cannot evaluate a RowWisePyFn without compiling for Python");
     }
 
     #[cfg(feature = "python")]
-    pub async fn call_async(&self, args: &[Series]) -> DaftResult<Series> {
+    pub async fn call_async(
+        &self,
+        args: &[Series],
+        metrics: &mut dyn MetricsCollector,
+    ) -> DaftResult<Series> {
         use common_error::DaftError;
 
         use crate::functions::python::OnError;
@@ -147,7 +163,9 @@ impl RowWisePyFn {
         let mut delay_ms: u64 = 100; // Start with 100 ms
         const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
 
-        let mut result_series = self.call_async_batch_once(args, num_rows, name).await;
+        let mut result_series = self
+            .call_async_batch_once(args, num_rows, name, metrics)
+            .await;
 
         for _attempt in 0..max_retries {
             if result_series.is_ok() {
@@ -157,7 +175,9 @@ impl RowWisePyFn {
             tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
             delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
 
-            result_series = self.call_async_batch_once(args, num_rows, name).await;
+            result_series = self
+                .call_async_batch_once(args, num_rows, name, metrics)
+                .await;
         }
         let name = args[0].name();
 
@@ -172,6 +192,22 @@ impl RowWisePyFn {
                 log::warn!("Python UDF error: {}", err);
                 let num_rows = args.iter().map(Series::len).max().unwrap();
 
+                let logger_provider = common_tracing::GLOBAL_LOGGER_PROVIDER.lock().unwrap();
+                if let Some(logger_provider) = logger_provider.as_ref() {
+                    let logger = logger_provider.logger("python-udf-error");
+                    let mut log_record = logger.create_log_record();
+
+                    if let DaftError::PyO3Error(py_err) = &err {
+                        Python::attach(|py| {
+                            Self::capture_exception_details(py, py_err, &mut log_record);
+                        });
+                    } else {
+                        log_record.set_body(format!("{err}").into());
+                    }
+
+                    logger.emit(log_record);
+                }
+
                 Ok(Series::full_null(name, &self.return_dtype, num_rows))
             }
             (Err(_), OnError::Ignore) => {
@@ -182,7 +218,68 @@ impl RowWisePyFn {
     }
 
     #[cfg(feature = "python")]
-    fn call_serial(&self, args: &[Series], num_rows: usize) -> DaftResult<Series> {
+    pub(crate) fn capture_exception_details<R: LogRecord>(
+        py: Python,
+        py_err: &PyErr,
+        log_record: &mut R,
+    ) {
+        let exception_type = py_err.get_type(py);
+        let exception_value = py_err.value(py);
+
+        let type_str = exception_type
+            .name()
+            .and_then(|name| name.to_str().map(|s| s.to_string()));
+
+        let msg_str = exception_value
+            .str()
+            .and_then(|value| value.to_str().map(|s| s.to_string()));
+
+        if let Ok(msg_str) = msg_str {
+            log_record.set_body(AnyValue::String(msg_str.into()));
+        }
+
+        if let Ok(type_str) = type_str {
+            log_record.add_attribute("type", AnyValue::String(type_str.into()));
+        }
+
+        let format_exception = py
+            .import(pyo3::intern!(py, "traceback"))
+            .and_then(|module| module.getattr("format_exception"));
+
+        if let Ok(format_exception) = format_exception {
+            let exception_traceback = py_err.traceback(py);
+
+            let formatted =
+                format_exception.call1((exception_type, exception_value, exception_traceback));
+
+            if let Ok(formatted) = &formatted {
+                let formatted_list = formatted.cast::<pyo3::types::PyList>();
+
+                if let Ok(formatted_list) = formatted_list {
+                    let formatted_list: Vec<AnyValue> = formatted_list
+                        .iter()
+                        .map(|frame| {
+                            frame
+                                .extract::<String>()
+                                .unwrap_or_else(|_| "<unrepresentable frame>".to_string())
+                        })
+                        .map(|frame| frame.into())
+                        .collect();
+
+                    log_record
+                        .add_attribute("traceback", AnyValue::ListAny(Box::new(formatted_list)));
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "python")]
+    fn call_serial(
+        &self,
+        args: &[Series],
+        num_rows: usize,
+        metrics: &mut dyn MetricsCollector,
+    ) -> DaftResult<Series> {
         use common_error::DaftError;
         use daft_core::series::from_lit::series_from_literals_iter;
         use pyo3::prelude::*;
@@ -199,9 +296,9 @@ impl RowWisePyFn {
         let delay_ms: u64 = 100; // Start with 100 ms
         const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
 
-        fn retry<F: Fn() -> DaftResult<Literal>>(
+        fn retry<F: FnMut() -> DaftResult<Literal>>(
             py: Python,
-            func: F,
+            mut func: F,
             max_retries: usize,
             on_error: OnError,
             mut delay_ms: u64,
@@ -219,7 +316,25 @@ impl RowWisePyFn {
                             match on_error {
                                 OnError::Raise => res = Err(e),
                                 OnError::Log => {
-                                    log::warn!("Retrying function call after error: {}", e);
+                                    let lg = common_tracing::GLOBAL_LOGGER_PROVIDER.lock().unwrap();
+                                    if let Some(logger_provider) = lg.as_ref() {
+                                        let logger = logger_provider.logger("python-udf-error");
+                                        let mut log_record = logger.create_log_record();
+
+                                        if let DaftError::PyO3Error(py_err) = &e {
+                                            RowWisePyFn::capture_exception_details(
+                                                py,
+                                                py_err,
+                                                &mut log_record,
+                                            );
+                                        } else {
+                                            log_record.set_body(format!("{e}").into());
+                                        }
+
+                                        logger.emit(log_record);
+                                    }
+
+                                    log::warn!("Python UDF error: {}", e);
                                     res = Ok(Literal::Null);
                                 }
                                 OnError::Ignore => {
@@ -260,7 +375,23 @@ impl RowWisePyFn {
 
                 let f = || {
                     func.call1((cls_ref, method_ref, args_ref, &py_args))
-                        .and_then(|res| Literal::from_pyobj(&res, Some(&self.return_dtype)))
+                        .and_then(|res| {
+                            use common_metrics::python::PyOperatorMetrics;
+
+                            let (value_obj, operator_metrics): (Bound<PyAny>, PyOperatorMetrics) =
+                                res.extract()?;
+                            let literal =
+                                Literal::from_pyobj(&value_obj, Some(&self.return_dtype))?;
+                            for (key, counter) in operator_metrics.inner {
+                                metrics.inc_counter(
+                                    &key,
+                                    counter.value,
+                                    counter.description.as_deref(),
+                                    Some(counter.attributes),
+                                );
+                            }
+                            Ok(literal)
+                        })
                         .map_err(DaftError::from)
                 };
                 let res = retry(py, f, max_retries, on_error, delay_ms);
@@ -280,7 +411,9 @@ impl RowWisePyFn {
         args: &[Series],
         num_rows: usize,
         name: &str,
+        metrics: &mut dyn MetricsCollector,
     ) -> DaftResult<Series> {
+        use common_metrics::python::PyOperatorMetrics;
         use daft_core::python::PySeries;
         use pyo3::prelude::*;
 
@@ -288,9 +421,12 @@ impl RowWisePyFn {
         let method = self.method.clone();
         let original_args = self.original_args.clone();
         let args = args.to_vec();
-        let py_return_type = daft_core::python::PyDataType::from(self.return_dtype.clone());
+        let return_dtype = self.return_dtype.clone();
 
-        common_runtime::python::execute_python_coroutine::<_, PySeries>(move |py| {
+        let (py_series, operator_metrics) = common_runtime::python::execute_python_coroutine::<
+            _,
+            (PySeries, PyOperatorMetrics),
+        >(move |py| {
             let f = py
                 .import(pyo3::intern!(py, "daft.udf.execution"))?
                 .getattr(pyo3::intern!(py, "call_async_func_batched"))?;
@@ -309,15 +445,118 @@ impl RowWisePyFn {
 
                 evaluated_args.push(py_args_for_row);
             }
-            f.call1((
+            let py_return_type = daft_core::python::PyDataType::from(return_dtype.clone());
+            let coroutine = f.call1((
                 cls.as_ref(),
                 method.as_ref(),
                 py_return_type,
                 original_args.as_ref(),
                 evaluated_args,
-            ))
+            ))?;
+            Ok(coroutine)
         })
-        .await
-        .map(|py_series| py_series.series.rename(name))
+        .await?;
+        for (key, counter) in operator_metrics.inner {
+            metrics.inc_counter(
+                &key,
+                counter.value,
+                counter.description.as_deref(),
+                Some(counter.attributes),
+            );
+        }
+
+        Ok(py_series.series.rename(name))
+    }
+}
+
+#[cfg(all(test, feature = "python"))]
+mod tests {
+    use std::ffi::CString;
+
+    use opentelemetry::logs::{AnyValue, Logger, LoggerProvider};
+    use opentelemetry_sdk::{Resource, logs::SdkLoggerProvider};
+    use pyo3::prelude::*;
+
+    use crate::python_udf::RowWisePyFn;
+
+    #[test]
+    fn capture_exception_details_includes_type_and_traceback() {
+        Python::initialize();
+        Python::attach(|py| {
+            let code = r#"
+def failing():
+    raise RuntimeError("boom")
+"#;
+            let module = PyModule::new(py, "test_mod").unwrap();
+            let code_cstr = CString::new(code).unwrap();
+            py.run(code_cstr.as_c_str(), Some(&module.dict()), None)
+                .unwrap();
+            let func = module.getattr("failing").unwrap();
+
+            let result = func.call0();
+            assert!(result.is_err());
+            let err = result.unwrap_err();
+
+            // Create an in-memory logger provider for testing
+            let logger_provider = SdkLoggerProvider::builder()
+                .with_resource(Resource::builder().build())
+                .build();
+            let logger = logger_provider.logger("test-logger");
+            let mut log_record = logger.create_log_record();
+
+            RowWisePyFn::capture_exception_details(py, &err, &mut log_record);
+
+            // Verify the log record has a body with the error message
+            let body = log_record.body();
+            assert!(body.is_some(), "Log record should have a body");
+            if let Some(AnyValue::String(body_str)) = body {
+                assert!(
+                    body_str.as_str().contains("boom"),
+                    "Body should contain error message"
+                );
+            }
+
+            // Verify the log record has the "type" attribute
+            let type_attr = log_record.attributes_iter().find(|(key, value)| {
+                key.as_str() == "type"
+                    && if let AnyValue::String(s) = value {
+                        s.as_str() == "RuntimeError"
+                    } else {
+                        false
+                    }
+            });
+            assert!(
+                type_attr.is_some(),
+                "Log record should have a 'type' attribute with value 'RuntimeError'"
+            );
+
+            // Verify the log record has the "traceback" attribute
+            let traceback_attr = log_record
+                .attributes_iter()
+                .find(|(key, _)| key.as_str() == "traceback");
+            assert!(
+                traceback_attr.is_some(),
+                "Log record should have a 'traceback' attribute"
+            );
+
+            // Verify traceback contains the function name "failing"
+            if let Some((_, AnyValue::ListAny(traceback_list))) = traceback_attr {
+                assert!(!traceback_list.is_empty(), "Traceback should not be empty");
+                let traceback_str: String = traceback_list
+                    .iter()
+                    .map(|v| {
+                        if let AnyValue::String(s) = v {
+                            s.as_str().to_string()
+                        } else {
+                            String::new()
+                        }
+                    })
+                    .collect();
+                assert!(
+                    traceback_str.contains("failing"),
+                    "Traceback should contain function name 'failing'"
+                );
+            }
+        });
     }
 }

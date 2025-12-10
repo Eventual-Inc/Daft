@@ -36,11 +36,10 @@ impl VLLMNode {
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
         );
         let config = PipelineNodeConfig::new(
             schema.clone(),
@@ -98,12 +97,13 @@ impl VLLMNode {
             let output_column_name = self.output_column_name.clone();
             let schema = self.schema.clone();
             let llm_actors = llm_actors.clone();
+            let node_id = self.node_id();
 
             let modified_task = append_plan_to_existing_task(
                 task,
                 &(self.clone() as Arc<dyn PipelineNodeImpl>),
                 &move |input| {
-                    use daft_local_plan::LocalPhysicalPlan;
+                    use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
                     use daft_logical_plan::stats::StatsState;
 
                     LocalPhysicalPlan::vllm_project(
@@ -113,6 +113,10 @@ impl VLLMNode {
                         output_column_name.clone(),
                         schema.clone(),
                         StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
                     )
                 },
             );

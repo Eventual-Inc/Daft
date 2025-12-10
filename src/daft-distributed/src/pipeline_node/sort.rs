@@ -2,7 +2,7 @@ use std::{future, sync::Arc};
 
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::{LocalPhysicalPlan, SamplingMethod};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, SamplingMethod};
 use daft_logical_plan::{
     partitioning::{RangeRepartitionConfig, RepartitionSpec},
     stats::StatsState,
@@ -39,7 +39,6 @@ pub(crate) async fn get_partition_boundaries_from_samples(
     nulls_first: Vec<bool>,
     num_partitions: usize,
 ) -> DaftResult<RecordBatch> {
-    use daft_io::IOStatsContext;
     use pyo3::prelude::*;
 
     // Extract partition refs from samples
@@ -86,16 +85,11 @@ pub(crate) async fn get_partition_boundaries_from_samples(
     })
     .await?;
 
-    let boundaries = boundaries
-        .inner
-        .concat_or_get(IOStatsContext::new(
-            "daft-distributed::sort::get_boundaries".to_string(),
-        ))?
-        .ok_or_else(|| {
-            common_error::DaftError::InternalError(
-                "No boundaries found for daft-distributed::sort::get_boundaries".to_string(),
-            )
-        })?;
+    let boundaries = boundaries.inner.concat_or_get()?.ok_or_else(|| {
+        common_error::DaftError::InternalError(
+            "No boundaries found for daft-distributed::sort::get_boundaries".to_string(),
+        )
+    })?;
     Ok(boundaries)
 }
 
@@ -134,6 +128,7 @@ pub(crate) fn create_sample_tasks(
             let sample_by = sample_by.clone();
             let input_schema = input_schema.clone();
             let sample_schema = sample_schema.clone();
+            let node_id = pipeline_node.node_id();
             let task = make_new_task_from_materialized_outputs(
                 TaskContext::from((context, task_id_counter.next())),
                 vec![mo],
@@ -143,19 +138,27 @@ pub(crate) fn create_sample_tasks(
                     let sample = LocalPhysicalPlan::sample(
                         input,
                         SamplingMethod::Size(sample_size),
-                        false,
+                        true,
                         None,
                         StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
                     );
                     LocalPhysicalPlan::project(
                         sample,
                         sample_by,
                         sample_schema,
                         StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
                     )
                 },
                 None,
-            )?;
+            );
             let submitted_task = task.submit(scheduler_handle)?;
             Ok(submitted_task)
         })
@@ -177,6 +180,7 @@ pub(crate) fn create_range_repartition_tasks(
     scheduler_handle: &SchedulerHandle<SwordfishTask>,
 ) -> DaftResult<Vec<SubmittedTask>> {
     let context = pipeline_node.context();
+    let node_id = pipeline_node.node_id();
     materialized_outputs
         .into_iter()
         .map(|mo| {
@@ -201,10 +205,14 @@ pub(crate) fn create_range_repartition_tasks(
                         num_partitions,
                         input_schema,
                         StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
                     )
                 },
                 None,
-            )?;
+            );
             let submitted_task = task.submit(scheduler_handle)?;
             Ok(submitted_task)
         })
@@ -235,11 +243,10 @@ impl SortNode {
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
         );
 
         let config = PipelineNodeConfig::new(
@@ -270,13 +277,15 @@ impl SortNode {
     ) -> DaftResult<()> {
         let materialized_outputs = input_node
             .materialize(scheduler_handle.clone())
-            .try_filter(|mo| future::ready(mo.num_rows().unwrap_or(0) > 0))
+            .try_filter(|mo| future::ready(mo.num_rows() > 0))
             .try_collect::<Vec<_>>()
             .await?;
 
         if materialized_outputs.is_empty() {
             return Ok(());
         }
+
+        let node_id = self.node_id();
 
         if materialized_outputs.len() == 1 {
             let self_clone = self.clone();
@@ -292,10 +301,14 @@ impl SortNode {
                         self_clone.descending.clone(),
                         self_clone.nulls_first.clone(),
                         StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
                     )
                 },
                 None,
-            )?;
+            );
             let _ = result_tx.send(task).await;
             return Ok(());
         }
@@ -347,7 +360,7 @@ impl SortNode {
             .collect::<Vec<_>>();
 
         let transposed_outputs =
-            transpose_materialized_outputs_from_vec(partitioned_outputs, num_partitions)?;
+            transpose_materialized_outputs_from_vec(partitioned_outputs, num_partitions);
 
         for partition_group in transposed_outputs {
             let self_clone = self.clone();
@@ -364,10 +377,14 @@ impl SortNode {
                         self_clone.descending.clone(),
                         self_clone.nulls_first.clone(),
                         StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(self_clone.node_id() as usize),
+                            additional: None,
+                        },
                     )
                 },
                 None,
-            )?;
+            );
             let _ = result_tx.send(task).await;
         }
         Ok(())

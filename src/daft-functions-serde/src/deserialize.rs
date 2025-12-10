@@ -2,7 +2,7 @@ use daft_dsl::functions::prelude::*;
 
 use crate::format::Format;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Deserialize;
 
 #[derive(FunctionArgs)]
@@ -40,7 +40,7 @@ impl ScalarUDF for Deserialize {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct TryDeserialize;
 
 #[typetag::serde]

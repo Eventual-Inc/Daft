@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
+import uuid
+from typing import TYPE_CHECKING, Any
 
 from daft.expressions.expressions import Expression, ExpressionsProjection
 from daft.recordbatch.micropartition import MicroPartition
@@ -77,18 +78,32 @@ async def start_udf_actors(
     num_gpus_per_actor: float,
     num_cpus_per_actor: float,
     memory_per_actor: float,
+    ray_options: dict[str, Any] | None,
     timeout: int,
+    actor_name: str | None = None,
 ) -> list[UDFActorHandle]:
     expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
 
+    random_suffix = str(uuid.uuid4())[:8]
+    base_opts: dict[str, Any] = {
+        "scheduling_strategy": "SPREAD",
+        "num_gpus": num_gpus_per_actor,
+        "num_cpus": num_cpus_per_actor,
+        "memory": memory_per_actor,
+    }
+    if ray_options and isinstance(ray_options.get("label_selector"), dict):
+        base_opts["label_selector"] = ray_options["label_selector"]
+
+    # Normalize label_selector for older Ray versions
+    from daft.runners.ray_compat import normalize_ray_options_with_label_selector
+
+    normalized_opts = normalize_ray_options_with_label_selector(base_opts.copy())
     actors: list[RayActorHandle] = [
         UDFActor.options(  # type: ignore
-            scheduling_strategy="SPREAD",
-            num_gpus=num_gpus_per_actor,
-            num_cpus=num_cpus_per_actor,
-            memory=memory_per_actor,
+            name=None if actor_name is None else f"{actor_name}:{random_suffix}-{rank}",
+            **normalized_opts,
         ).remote(expr_projection)
-        for _ in range(num_actors)
+        for rank in range(num_actors)
     ]
 
     # Wait for actors to be ready

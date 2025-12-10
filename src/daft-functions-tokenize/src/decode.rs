@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::bpe::DaftBPE;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct TokenizeDecodeFunction;
 
 #[derive(FunctionArgs)]

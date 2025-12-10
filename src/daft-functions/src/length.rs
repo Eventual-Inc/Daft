@@ -9,7 +9,7 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Length;
 
 #[typetag::serde]
@@ -44,7 +44,7 @@ impl ScalarUDF for Length {
                     .map(|l| l as u64)
                     .collect::<Vec<_>>();
                 let length_arr = UInt64Array::from((input.name(), length_vec))
-                    .with_validity(arrow_arr.validity().cloned())?;
+                    .with_validity(arrow_arr.validity().cloned().map(Into::into))?;
                 length_arr.into_series()
             }
             DataType::List(_) => {

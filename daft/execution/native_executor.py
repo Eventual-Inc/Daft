@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 from daft.daft import (
     LocalPhysicalPlan,
     PyDaftExecutionConfig,
-    PyLocalPartitionStream,
     PyMicroPartition,
 )
 from daft.daft import (
@@ -16,7 +15,7 @@ from daft.event_loop import get_or_init_event_loop
 from daft.recordbatch import MicroPartition
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import AsyncGenerator, Iterator
 
     from daft.context import DaftContext
     from daft.logical.builder import LogicalPlanBuilder
@@ -25,17 +24,6 @@ if TYPE_CHECKING:
         MaterializedResult,
         PartitionT,
     )
-
-
-class LocalPartitionStream:
-    def __init__(self, stream: PyLocalPartitionStream) -> None:
-        self._stream = stream
-
-    def __aiter__(self) -> LocalPartitionStream:
-        return self
-
-    async def __anext__(self) -> PyMicroPartition:
-        return await self._stream.__anext__()
 
 
 class NativeExecutor:
@@ -55,22 +43,31 @@ class NativeExecutor:
         psets_mp = {
             part_id: [part.micropartition()._micropartition for part in parts] for part_id, parts in psets.items()
         }
+        result_handle = self._executor.run(
+            local_physical_plan,
+            psets_mp,
+            ctx._ctx,
+            results_buffer_size,
+            context,
+        )
 
-        async def run_executor() -> PyLocalPartitionStream:
-            return self._executor.run(
-                local_physical_plan,
-                psets_mp,
-                ctx._ctx,
-                results_buffer_size,
-                context,
-            )
+        async def stream_results() -> AsyncGenerator[PyMicroPartition | None, None]:
+            try:
+                async for batch in result_handle:
+                    yield batch
+            finally:
+                _ = await result_handle.finish()
 
-        async_iter = LocalPartitionStream(get_or_init_event_loop().run(run_executor()))
-        while True:
-            part = get_or_init_event_loop().run(async_iter.__anext__())
-            if part is None:
-                break
-            yield LocalMaterializedResult(MicroPartition._from_pymicropartition(part))
+        event_loop = get_or_init_event_loop()
+        async_exec = stream_results()
+        try:
+            while True:
+                part = event_loop.run(async_exec.__anext__())
+                if part is None:
+                    break
+                yield LocalMaterializedResult(MicroPartition._from_pymicropartition(part))
+        finally:
+            event_loop.run(async_exec.aclose())
 
     def pretty_print(
         self,

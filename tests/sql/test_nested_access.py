@@ -29,15 +29,12 @@ def test_nested_access():
 
     expected = df.select(
         daft.col("json").jq(".b.c").alias("json_b_c"),
-        daft.col("list").list.get(1).alias("list_1"),
-        daft.col("list").list.slice(0, 1).alias("list_slice"),
-        daft.col("dict").struct.get("a").alias("dict_a"),
-        daft.col("dict").struct.get("a").alias("dict_a_2"),
-        daft.col("list").cast(daft.DataType.fixed_size_list(daft.DataType.int32(), 3)).list.get(1).alias("fsl_1"),
-        daft.col("list")
-        .cast(daft.DataType.fixed_size_list(daft.DataType.int32(), 3))
-        .list.slice(0, 1)
-        .alias("fsl_slice"),
+        daft.col("list").get(1).alias("list_1"),
+        daft.col("list").slice(0, 1).alias("list_slice"),
+        daft.col("dict").get("a").alias("dict_a"),
+        daft.col("dict").get("a").alias("dict_a_2"),
+        daft.col("list").cast(daft.DataType.fixed_size_list(daft.DataType.int32(), 3)).get(1).alias("fsl_1"),
+        daft.col("list").cast(daft.DataType.fixed_size_list(daft.DataType.int32(), 3)).slice(0, 1).alias("fsl_slice"),
     ).collect()
 
     assert actual.to_pydict() == expected.to_pydict()

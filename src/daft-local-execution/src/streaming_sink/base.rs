@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
@@ -6,6 +6,7 @@ use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
 use daft_core::prelude::SchemaRef;
+use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
@@ -16,7 +17,8 @@ use crate::{
         OrderingAwareReceiver, Receiver, Sender, create_channel,
         create_ordering_aware_receiver_channel,
     },
-    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    dispatcher::{DispatchSpawner, DynamicUnorderedDispatcher, RoundRobinDispatcher},
+    dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
     runtime_stats::{
@@ -45,6 +47,8 @@ pub(crate) type StreamingSinkFinalizeResult<Op> =
     OperatorOutput<DaftResult<StreamingSinkFinalizeOutput<Op>>>;
 pub(crate) trait StreamingSink: Send + Sync {
     type State: Send + Sync + Unpin;
+    type BatchingStrategy: BatchingStrategy + 'static;
+
     /// Execute the StreamingSink operator on the morsel of input data,
     /// received from the child with the given index,
     /// with the given state.
@@ -76,8 +80,8 @@ pub(crate) trait StreamingSink: Send + Sync {
     fn make_state(&self) -> DaftResult<Self::State>;
 
     /// Create a new RuntimeStats for this StreamingSink.
-    fn make_runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        Arc::new(DefaultRuntimeStats::default())
+    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(DefaultRuntimeStats::new(id))
     }
 
     /// The maximum number of concurrent workers that can be spawned for this sink.
@@ -89,16 +93,16 @@ pub(crate) trait StreamingSink: Send + Sync {
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
         None
     }
-
+    fn batching_strategy(&self) -> Self::BatchingStrategy;
     fn dispatch_spawner(
         &self,
-        morsel_size_requirement: MorselSizeRequirement,
+        batch_manager: Arc<BatchManager<Self::BatchingStrategy>>,
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
         if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(morsel_size_requirement))
+            Arc::new(RoundRobinDispatcher::new(batch_manager))
         } else {
-            Arc::new(UnorderedDispatcher::new(morsel_size_requirement))
+            Arc::new(DynamicUnorderedDispatcher::new(batch_manager))
         }
     }
 }
@@ -119,15 +123,18 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         plan_stats: StatsState,
         ctx: &RuntimeContext,
         output_schema: SchemaRef,
+        context: &LocalNodeContext,
     ) -> Self {
-        let name = op.name().into();
+        let name: Arc<str> = op.name().into();
         let node_info = ctx.next_node_info(
             name,
             op.op_type(),
             NodeCategory::StreamingSink,
             output_schema,
+            context,
         );
-        let runtime_stats = op.make_runtime_stats();
+        let runtime_stats = op.make_runtime_stats(node_info.id);
+
         let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
             op,
@@ -150,18 +157,27 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         output_sender: Sender<Arc<MicroPartition>>,
         runtime_stats: Arc<dyn RuntimeStats>,
         memory_manager: Arc<MemoryManager>,
+        batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
     ) -> DaftResult<Op::State> {
         let span = info_span!("StreamingSink::Execute");
         let compute_runtime = get_compute_runtime();
         let spawner =
-            ExecutionTaskSpawner::new(compute_runtime, memory_manager, runtime_stats, span);
+            ExecutionTaskSpawner::new(compute_runtime, memory_manager, runtime_stats.clone(), span);
         let mut state = op.make_state()?;
         while let Some(morsel) = input_receiver.recv().await {
             loop {
+                let now = Instant::now();
                 let result = op.execute(morsel.clone(), state, &spawner).await??;
+                let elapsed = now.elapsed();
+
                 state = result.0;
                 match result.1 {
                     StreamingSinkOutput::NeedMoreInput(mp) => {
+                        batch_manager.record_execution_stats(
+                            runtime_stats.clone(),
+                            mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
+                            elapsed,
+                        );
                         if let Some(mp) = mp
                             && output_sender.send(mp).await.is_err()
                         {
@@ -170,6 +186,11 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                         break;
                     }
                     StreamingSinkOutput::HasMoreOutput(mp) => {
+                        batch_manager.record_execution_stats(
+                            runtime_stats.clone(),
+                            mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
+                            elapsed,
+                        );
                         if let Some(mp) = mp
                             && output_sender.send(mp).await.is_err()
                         {
@@ -177,6 +198,11 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                         }
                     }
                     StreamingSinkOutput::Finished(mp) => {
+                        batch_manager.record_execution_stats(
+                            runtime_stats.clone(),
+                            mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
+                            elapsed,
+                        );
                         if let Some(mp) = mp {
                             let _ = output_sender.send(mp).await;
                         }
@@ -196,6 +222,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         runtime_stats: Arc<dyn RuntimeStats>,
         maintain_order: bool,
         memory_manager: Arc<MemoryManager>,
+        batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
     ) -> OrderingAwareReceiver<Arc<MicroPartition>> {
         let (output_sender, output_receiver) =
             create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
@@ -206,6 +233,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                 output_sender,
                 runtime_stats.clone(),
                 memory_manager.clone(),
+                batch_manager.clone(),
             ));
         }
         output_receiver
@@ -213,6 +241,10 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
 }
 
 impl<Op: StreamingSink + 'static> TreeDisplay for StreamingSinkNode<Op> {
+    fn id(&self) -> String {
+        self.node_id().to_string()
+    }
+
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -232,7 +264,7 @@ impl<Op: StreamingSink + 'static> TreeDisplay for StreamingSinkNode<Op> {
                 if matches!(level, DisplayLevel::Verbose) {
                     let rt_result = self.runtime_stats.snapshot();
                     for (name, value) in rt_result {
-                        writeln!(display, "{} = {}", name.capitalize(), value).unwrap();
+                        writeln!(display, "{} = {}", name.as_ref().capitalize(), value).unwrap();
                     }
                 }
             }
@@ -241,10 +273,18 @@ impl<Op: StreamingSink + 'static> TreeDisplay for StreamingSinkNode<Op> {
     }
 
     fn repr_json(&self) -> serde_json::Value {
+        let children: Vec<serde_json::Value> = self
+            .get_children()
+            .iter()
+            .map(|child| child.repr_json())
+            .collect();
+
         serde_json::json!({
-            "id": self.id(),
+            "id": self.node_id(),
+            "category": "StreamingSink",
             "type": self.op.op_type().to_string(),
             "name": self.name(),
+            "children": children,
         })
     }
 
@@ -313,8 +353,9 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
-
-        let dispatch_spawner = op.dispatch_spawner(self.morsel_size_requirement, maintain_order);
+        let strategy = op.batching_strategy();
+        let batch_manager = Arc::new(BatchManager::new(strategy));
+        let dispatch_spawner = op.dispatch_spawner(batch_manager.clone(), maintain_order);
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             child_result_receivers,
             num_workers,
@@ -338,6 +379,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                     runtime_stats.clone(),
                     maintain_order,
                     memory_manager.clone(),
+                    batch_manager,
                 );
 
                 while let Some(morsel) = output_receiver.recv().await {

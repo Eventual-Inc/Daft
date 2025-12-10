@@ -1587,7 +1587,6 @@ impl SQLPlanner<'_> {
                 use regex::Regex;
 
                 /// A private struct represents a single parsed interval unit and its value
-                #[derive(Debug)]
                 struct IntervalPart {
                     count: i64,
                     unit: DateTimeField,

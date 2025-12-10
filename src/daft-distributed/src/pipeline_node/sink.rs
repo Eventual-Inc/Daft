@@ -3,7 +3,7 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_file_formats::WriteMode;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{OutputFileInfo, SinkInfo, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
@@ -41,11 +41,10 @@ impl SinkNode {
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
         );
         let config = PipelineNodeConfig::new(
             file_schema,
@@ -71,6 +70,7 @@ impl SinkNode {
         data_schema: SchemaRef,
     ) -> LocalPhysicalPlanRef {
         let file_schema = self.config.schema.clone();
+        let node_id = self.node_id();
         match self.sink_info.as_ref() {
             SinkInfo::OutputFileInfo(info) => LocalPhysicalPlan::physical_write(
                 input,
@@ -78,6 +78,10 @@ impl SinkNode {
                 file_schema,
                 info.clone(),
                 StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(node_id as usize),
+                    additional: None,
+                },
             ),
             #[cfg(feature = "python")]
             SinkInfo::CatalogInfo(info) => match &info.catalog {
@@ -88,6 +92,10 @@ impl SinkNode {
                     data_schema,
                     file_schema,
                     StatsState::NotMaterialized,
+                    LocalNodeContext {
+                        origin_node_id: Some(node_id as usize),
+                        additional: None,
+                    },
                 ),
                 daft_logical_plan::CatalogType::Lance(info) => LocalPhysicalPlan::lance_write(
                     input,
@@ -95,6 +103,10 @@ impl SinkNode {
                     data_schema,
                     file_schema,
                     StatsState::NotMaterialized,
+                    LocalNodeContext {
+                        origin_node_id: Some(node_id as usize),
+                        additional: None,
+                    },
                 ),
             },
             #[cfg(feature = "python")]
@@ -103,6 +115,10 @@ impl SinkNode {
                 data_sink_info.clone(),
                 file_schema,
                 StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(node_id as usize),
+                    additional: None,
+                },
             ),
         }
     }
@@ -118,6 +134,7 @@ impl SinkNode {
         let file_schema = self.config.schema.clone();
         let materialized_stream = input.materialize(scheduler);
         let materialized = materialized_stream.try_collect::<Vec<_>>().await?;
+        let node_id = self.node_id();
         let task = make_new_task_from_materialized_outputs(
             TaskContext::from((&self.context, task_id_counter.next())),
             materialized,
@@ -129,10 +146,14 @@ impl SinkNode {
                     file_schema,
                     info,
                     StatsState::NotMaterialized,
+                    LocalNodeContext {
+                        origin_node_id: Some(node_id as usize),
+                        additional: None,
+                    },
                 )
             },
             None,
-        )?;
+        );
         let _ = sender.send(task).await;
         Ok(())
     }

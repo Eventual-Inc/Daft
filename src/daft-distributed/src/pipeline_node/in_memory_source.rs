@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use common_partitioning::PartitionRef;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, InMemoryInfo, stats::StatsState};
 
 use super::{PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream};
@@ -33,11 +33,10 @@ impl InMemorySourceNode {
         input_psets: Arc<HashMap<String, Vec<PartitionRef>>>,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![],
-            vec![],
         );
 
         let num_partitions = input_psets.values().map(|pset| pset.len()).sum::<usize>();
@@ -70,7 +69,7 @@ impl InMemorySourceNode {
             let task = self.make_task_for_partition_refs(
                 vec![partition_ref],
                 TaskContext::from((&self.context, task_id_counter.next())),
-            )?;
+            );
             if result_tx.send(SubmittableTask::new(task)).await.is_err() {
                 break;
             }
@@ -82,12 +81,12 @@ impl InMemorySourceNode {
         &self,
         partition_refs: Vec<PartitionRef>,
         task_context: TaskContext,
-    ) -> DaftResult<SwordfishTask> {
+    ) -> SwordfishTask {
         let mut total_size_bytes = 0;
         let mut total_num_rows = 0;
         for partition_ref in &partition_refs {
-            total_size_bytes += partition_ref.size_bytes()?.unwrap_or(0);
-            total_num_rows += partition_ref.num_rows().unwrap_or(0);
+            total_size_bytes += partition_ref.size_bytes();
+            total_num_rows += partition_ref.num_rows();
         }
         let info = InMemoryInfo::new(
             self.info.source_schema.clone(),
@@ -99,10 +98,16 @@ impl InMemorySourceNode {
             None,
             None,
         );
-        let in_memory_source_plan =
-            LocalPhysicalPlan::in_memory_scan(info, StatsState::NotMaterialized);
+        let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
+            info,
+            StatsState::NotMaterialized,
+            LocalNodeContext {
+                origin_node_id: Some(self.node_id() as usize),
+                additional: None,
+            },
+        );
         let psets = HashMap::from([(self.info.cache_key.clone(), partition_refs.clone())]);
-        let task = SwordfishTask::new(
+        SwordfishTask::new(
             task_context,
             in_memory_source_plan,
             self.config.execution_config.clone(),
@@ -111,8 +116,7 @@ impl InMemorySourceNode {
             // Need to get that from `ray.experimental.get_object_locations(object_refs)`
             SchedulingStrategy::Spread,
             self.context.to_hashmap(),
-        );
-        Ok(task)
+        )
     }
 }
 

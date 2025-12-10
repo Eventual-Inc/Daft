@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use arrow2::array::Array;
 use common_error::{DaftError, DaftResult};
+use daft_arrow::array::Array;
 
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
@@ -9,7 +9,7 @@ use crate::{array::DataArray, datatypes::DaftPhysicalType};
 
 macro_rules! impl_variable_length_concat {
     ($fn_name:ident, $arrow_type:ty, $create_fn: ident) => {
-        fn $fn_name(arrays: &[&dyn arrow2::array::Array]) -> DaftResult<Box<$arrow_type>> {
+        fn $fn_name(arrays: &[&dyn daft_arrow::array::Array]) -> DaftResult<Box<$arrow_type>> {
             let mut num_rows: usize = 0;
             let mut num_bytes: usize = 0;
             let mut need_validity = false;
@@ -20,10 +20,10 @@ macro_rules! impl_variable_length_concat {
                 num_bytes += arr.values().len();
                 need_validity |= arr.validity().map(|v| v.unset_bits() > 0).unwrap_or(false);
             }
-            let mut offsets = arrow2::offset::Offsets::<i64>::with_capacity(num_rows);
+            let mut offsets = daft_arrow::offset::Offsets::<i64>::with_capacity(num_rows);
 
             let mut validity = if need_validity {
-                Some(arrow2::bitmap::MutableBitmap::with_capacity(num_rows))
+                Some(daft_arrow::buffer::NullBufferBuilder::new(num_rows))
             } else {
                 None
             };
@@ -33,10 +33,13 @@ macro_rules! impl_variable_length_concat {
                 let arr = arr.as_any().downcast_ref::<$arrow_type>().unwrap();
                 offsets.try_extend_from_slice(arr.offsets(), 0, arr.len())?;
                 if let Some(ref mut bitmap) = validity {
-                    if let Some(b) = arr.validity() {
-                        bitmap.extend_from_bitmap(b);
+                    if let Some(v) = arr.validity() {
+                        for b in v.iter() {
+                            // TODO: Replace with .append_buffer in v57.1.0
+                            bitmap.append(b);
+                        }
                     } else {
-                        bitmap.extend_constant(arr.len(), true);
+                        bitmap.append_n_non_nulls(arr.len());
                     }
                 }
                 let range = (*arr.offsets().first() as usize)..(*arr.offsets().last() as usize);
@@ -49,7 +52,9 @@ macro_rules! impl_variable_length_concat {
                     dtype,
                     offsets.into(),
                     buffer.into(),
-                    validity.map(|v| v.into()),
+                    daft_arrow::buffer::wrap_null_buffer(
+                        validity.map(|mut v| v.finish()).flatten(),
+                    ),
                 )
             }?;
             Ok(Box::new(result_array))
@@ -58,10 +63,10 @@ macro_rules! impl_variable_length_concat {
 }
 impl_variable_length_concat!(
     utf8_concat,
-    arrow2::array::Utf8Array<i64>,
+    daft_arrow::array::Utf8Array<i64>,
     try_new_unchecked
 );
-impl_variable_length_concat!(binary_concat, arrow2::array::BinaryArray<i64>, try_new);
+impl_variable_length_concat!(binary_concat, daft_arrow::array::BinaryArray<i64>, try_new);
 
 impl<T> DataArray<T>
 where
@@ -92,7 +97,7 @@ where
             }
             _ => {
                 let cat_array: Box<dyn Array> =
-                    arrow2::compute::concatenate::concatenate(arrow_arrays.as_slice())?;
+                    daft_arrow::compute::concatenate::concatenate(arrow_arrays.as_slice())?;
                 Self::try_from((field.clone(), cat_array))
             }
         }
@@ -102,7 +107,7 @@ where
 #[cfg(feature = "python")]
 impl PythonArray {
     pub fn concat(arrays: &[&Self]) -> DaftResult<Self> {
-        use arrow2::{bitmap::MutableBitmap, buffer::Buffer};
+        use daft_arrow::buffer::{Buffer, NullBufferBuilder};
         if arrays.is_empty() {
             return Err(DaftError::ValueError(
                 "Need at least 1 array to perform concat".to_string(),
@@ -118,17 +123,19 @@ impl PythonArray {
         let validity = if arrays.iter().any(|a| a.validity().is_some()) {
             let total_len = arrays.iter().map(|a| a.len()).sum();
 
-            let mut validity = MutableBitmap::with_capacity(total_len);
+            let mut validity = NullBufferBuilder::new(total_len);
 
             for a in arrays {
                 if let Some(v) = a.validity() {
-                    validity.extend_from_bitmap(v);
+                    for b in v {
+                        validity.append(b); // TODO: Replace with .append_buffer in v57.1.0
+                    }
                 } else {
-                    validity.extend_constant(a.len(), true);
+                    validity.append_n_non_nulls(a.len());
                 }
             }
 
-            Some(validity.into())
+            validity.finish()
         } else {
             None
         };

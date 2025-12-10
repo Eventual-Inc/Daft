@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
@@ -38,11 +38,10 @@ impl UnpivotNode {
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -110,6 +109,10 @@ impl PipelineNodeImpl for UnpivotNode {
                 self_clone.value_name.clone(),
                 self_clone.config.schema.clone(),
                 StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(self_clone.node_id() as usize),
+                    additional: None,
+                },
             )
         };
 

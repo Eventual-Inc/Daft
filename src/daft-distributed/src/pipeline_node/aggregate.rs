@@ -8,7 +8,7 @@ use daft_dsl::{
         bound_expr::{BoundAggExpr, BoundExpr},
     },
 };
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{
     partitioning::{HashRepartitionConfig, RepartitionSpec},
     stats::StatsState,
@@ -57,11 +57,10 @@ impl AggregateNode {
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::node_name(&group_by),
-            vec![child.node_id()],
-            vec![child.name()],
         );
         let config = PipelineNodeConfig::new(
             output_schema,
@@ -133,6 +132,10 @@ impl PipelineNodeImpl for AggregateNode {
                     self_clone.aggs.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
+                    LocalNodeContext {
+                        origin_node_id: Some(self_clone.node_id() as usize),
+                        additional: None,
+                    },
                 )
             } else {
                 LocalPhysicalPlan::hash_aggregate(
@@ -141,6 +144,10 @@ impl PipelineNodeImpl for AggregateNode {
                     self_clone.group_by.clone(),
                     self_clone.config.schema.clone(),
                     StatsState::NotMaterialized,
+                    LocalNodeContext {
+                        origin_node_id: Some(self_clone.node_id() as usize),
+                        additional: None,
+                    },
                 )
             }
         })
@@ -172,7 +179,7 @@ fn split_groupby_aggs(
         (first_stage_aggs, first_stage_schema),
         (second_stage_aggs, second_stage_schema),
         final_exprs,
-    ) = daft_physical_plan::populate_aggregation_stages_bound_with_schema(
+    ) = daft_local_plan::agg::populate_aggregation_stages_bound_with_schema(
         aggs,
         input_schema,
         group_by,

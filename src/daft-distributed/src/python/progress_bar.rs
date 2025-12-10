@@ -11,7 +11,7 @@ struct BarId(i64);
 
 impl From<&TaskContext> for BarId {
     fn from(task_context: &TaskContext) -> Self {
-        Self(((task_context.plan_id as i64) << 32) | (task_context.last_node_id as i64))
+        Self(((task_context.query_idx as i64) << 32) | (task_context.last_node_id as i64))
     }
 }
 
@@ -69,20 +69,20 @@ impl Drop for FlotillaProgressBar {
 impl StatisticsSubscriber for FlotillaProgressBar {
     fn handle_event(&mut self, event: &TaskEvent) -> DaftResult<()> {
         match event {
-            TaskEvent::TaskSubmitted { context, name } => {
+            TaskEvent::Submitted { context, name } => {
                 self.make_bar_or_update_total(BarId::from(context), name)?;
                 Ok(())
             }
             // For progress bar we don't care if it is scheduled, for now.
-            TaskEvent::TaskScheduled { .. } => Ok(()),
-            TaskEvent::TaskCompleted { context } => {
+            TaskEvent::Scheduled { .. } => Ok(()),
+            TaskEvent::Completed { context, .. } => {
                 self.update_bar(BarId::from(context))?;
                 Ok(())
             }
             // We don't care about failed tasks as they will be retried
-            TaskEvent::TaskFailed { .. } => Ok(()),
+            TaskEvent::Failed { .. } => Ok(()),
             // We consider cancelled tasks as finished tasks
-            TaskEvent::TaskCancelled { context } => {
+            TaskEvent::Cancelled { context } => {
                 self.update_bar(BarId::from(context))?;
                 Ok(())
             }

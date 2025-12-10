@@ -7,7 +7,7 @@ use clap::{Args, Parser, Subcommand, arg};
 use pyo3::prelude::*;
 use tracing_subscriber::{self, filter::Directive, layer::SubscriberExt, util::SubscriberInitExt};
 
-#[derive(Debug, Args)]
+#[derive(Args)]
 struct DashboardArgs {
     /// The address to launch the dashboard on
     #[arg(short, long, default_value = "0.0.0.0")]
@@ -20,13 +20,13 @@ struct DashboardArgs {
     verbose: bool,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand)]
 enum Commands {
     /// Start the Daft dashboard server
     Dashboard(DashboardArgs),
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
     #[command(subcommand)]
@@ -51,14 +51,14 @@ fn run_dashboard(py: Python, args: DashboardArgs) {
     let socket_addr = SocketAddr::from((args.addr, args.port));
 
     // Set the subscriber for the detached run
-    tracing_subscriber::registry()
+    let _ = tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::builder()
                 .with_default_directive(filter)
                 .from_env_lossy(),
         )
         .with(tracing_subscriber::fmt::layer())
-        .init();
+        .try_init();
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()

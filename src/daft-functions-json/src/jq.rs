@@ -10,7 +10,7 @@ use daft_dsl::functions::prelude::*;
 /// # Returns
 ///
 /// A `DaftResult` containing the resulting UTF-8 array after applying the filter.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Jq;
 
 #[derive(FunctionArgs)]
@@ -123,7 +123,7 @@ mod jaq {
         // be sure to apply the name and validity of the input
         values
             .rename(&name)
-            .with_validity(self_arrow.validity().cloned())
+            .with_validity(self_arrow.validity().cloned().map(Into::into))
     }
 
     /// We need serde_json to parse, but then convert to a jaq Val to be evaluated.

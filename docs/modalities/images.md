@@ -14,44 +14,42 @@ It also explains some concepts on [Dynamic execution for multimodal workloads](#
 To setup this example, let's read a Parquet file from a public S3 bucket containing sample dog owners, use [`daft.col()`][daft.expressions.col] with the [`df.with_column`][daft.DataFrame.with_column] method to create a new column `full_name`, and join the contents from the `last_name` column to the `first_name` column. Then, let's create a `dogs` DataFrame from a Python dictionary and use [`df.join`][daft.DataFrame.join] to join this with our dataframe of owners:
 
 
-=== "🐍 Python"
+```python
+import daft
+from daft import col
 
-    ```python
-    import daft
-    from daft import col
+# Read parquet file containing sample dog owners
+df = daft.read_parquet("s3://daft-public-data/tutorials/10-min/sample-data-dog-owners-partitioned.pq/**")
 
-    # Read parquet file containing sample dog owners
-    df = daft.read_parquet("s3://daft-public-data/tutorials/10-min/sample-data-dog-owners-partitioned.pq/**")
+# Combine "first_name" and "last_name" to create new column "full_name"
+df = df.with_column("full_name", col("first_name") + " " + col("last_name"))
+df.select("full_name", "age", "country", "has_dog").show()
 
-    # Combine "first_name" and "last_name" to create new column "full_name"
-    df = df.with_column("full_name", col("first_name") + " " + col("last_name"))
-    df.select("full_name", "age", "country", "has_dog").show()
+# Create dataframe of dogs
+df_dogs = daft.from_pydict(
+    {
+        "urls": [
+            "https://live.staticflickr.com/65535/53671838774_03ba68d203_o.jpg",
+            "https://live.staticflickr.com/65535/53671700073_2c9441422e_o.jpg",
+            "https://live.staticflickr.com/65535/53670606332_1ea5f2ce68_o.jpg",
+            "https://live.staticflickr.com/65535/53671838039_b97411a441_o.jpg",
+            "https://live.staticflickr.com/65535/53671698613_0230f8af3c_o.jpg",
+        ],
+        "full_name": [
+            "Ernesto Evergreen",
+            "James Jale",
+            "Wolfgang Winter",
+            "Shandra Shamas",
+            "Zaya Zaphora",
+        ],
+        "dog_name": ["Ernie", "Jackie", "Wolfie", "Shaggie", "Zadie"],
+    }
+)
 
-    # Create dataframe of dogs
-    df_dogs = daft.from_pydict(
-        {
-            "urls": [
-                "https://live.staticflickr.com/65535/53671838774_03ba68d203_o.jpg",
-                "https://live.staticflickr.com/65535/53671700073_2c9441422e_o.jpg",
-                "https://live.staticflickr.com/65535/53670606332_1ea5f2ce68_o.jpg",
-                "https://live.staticflickr.com/65535/53671838039_b97411a441_o.jpg",
-                "https://live.staticflickr.com/65535/53671698613_0230f8af3c_o.jpg",
-            ],
-            "full_name": [
-                "Ernesto Evergreen",
-                "James Jale",
-                "Wolfgang Winter",
-                "Shandra Shamas",
-                "Zaya Zaphora",
-            ],
-            "dog_name": ["Ernie", "Jackie", "Wolfie", "Shaggie", "Zadie"],
-        }
-    )
-
-    # Join owners with dogs, dropping some columns
-    df_family = df.join(df_dogs, on="full_name").exclude("first_name", "last_name", "DoB", "country", "age")
-    df_family.show()
-    ```
+# Join owners with dogs, dropping some columns
+df_family = df.join(df_dogs, on="full_name").exclude("first_name", "last_name", "DoB", "country", "age")
+df_family.show()
+```
 
 ```{title="Output"}
 ╭───────────────────┬─────────┬────────────────────────────────┬──────────╮
@@ -73,14 +71,12 @@ To setup this example, let's read a Parquet file from a public S3 bucket contain
 (Showing first 5 of 5 rows)
 ```
 
-You can use the [`url.download()`][daft.expressions.expressions.ExpressionUrlNamespace.download] expression to download the bytes from a URL. Let's store them in a new column using the [`df.with_column()`][daft.DataFrame.with_column] method:
-
-<!-- todo(docs - cc): add relative path to url.download after figure out url namespace-->
+You can use the [`download()`][daft.expressions.expressions.Expression.download] expression to download the bytes from a URL. Let's store them in a new column using the [`df.with_column()`][daft.DataFrame.with_column] method:
 
 === "🐍 Python"
 
     ```python
-    df_family = df_family.with_column("image_bytes", col("urls").url.download(on_error="null"))
+    df_family = df_family.with_column("image_bytes", col("urls").download(on_error="null"))
     df_family.show()
     ```
 
@@ -104,12 +100,12 @@ You can use the [`url.download()`][daft.expressions.expressions.ExpressionUrlNam
 (Showing first 5 of 5 rows)
 ```
 
-Let's turn the bytes into human-readable images using [`image.decode()`][daft.expressions.expressions.ExpressionImageNamespace.decode]:
+Let's turn the bytes into human-readable images using [`decode_image()`][daft.expressions.expressions.Expression.decode_image]:
 
 === "🐍 Python"
 
     ```python
-    df_family = df_family.with_column("image", daft.col("image_bytes").image.decode())
+    df_family = df_family.with_column("image", daft.col("image_bytes").decode_image())
     df_family.show()
     ```
 
@@ -133,7 +129,7 @@ from daft.functions.ai import embed_image
 
 (
     daft.read_huggingface("xai-org/RealworldQA")
-    .with_column("image", daft.col("image")["bytes"].image.decode())
+    .with_column("image", daft.col("image")["bytes"].decode_image())
     .with_column("embedding", embed_image(daft.col("image")))
     .show()
 )
@@ -278,8 +274,8 @@ This is necessary because multimodal data such as images, videos, and audio file
     ```python
     # Each operation uses different batch sizes automatically
     df = daft.read_parquet("metadata.parquet") # Large batches
-          .with_column("image_data", col("urls").url.download())  # Small batches
-          .with_column("resized", col("image_data").image.resize(224, 224))  # Medium batches
+          .with_column("image_data", col("urls").download())  # Small batches
+          .with_column("resized", col("image_data").resize(224, 224))  # Medium batches
     ```
 
 This approach allows processing of datasets larger than available memory, while maintaining optimal performance for each operation type.

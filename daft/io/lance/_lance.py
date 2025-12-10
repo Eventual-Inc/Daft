@@ -1,5 +1,6 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
+import pathlib
 from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 
 from daft import context
@@ -22,7 +23,7 @@ if TYPE_CHECKING:
 
 @PublicAPI
 def read_lance(
-    url: str,
+    uri: Union[str, pathlib.Path],
     io_config: Optional[IOConfig] = None,
     version: Optional[Union[str, int]] = None,
     asof: Optional[str] = None,
@@ -36,7 +37,7 @@ def read_lance(
     """Create a DataFrame from a LanceDB table.
 
     Args:
-        url: URL to the LanceDB table (supports remote URLs to object stores such as `s3://` or `gs://`)
+        uri: The URI of the Lance table to read from (supports remote URLs to object stores such as `s3://` or `gs://`)
         io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
         version : optional, int | str
             If specified, load a specific version of the Lance dataset. Else, loads the
@@ -111,10 +112,10 @@ def read_lance(
         ) from e
 
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
-    storage_options = io_config_to_storage_options(io_config, url)
+    storage_options = io_config_to_storage_options(io_config, str(uri) if isinstance(uri, pathlib.Path) else uri)
 
     ds = lance.dataset(
-        url,
+        uri,
         storage_options=storage_options,
         version=version,
         asof=asof,
@@ -124,8 +125,17 @@ def read_lance(
         default_scan_options=default_scan_options,
         metadata_cache_size_bytes=metadata_cache_size_bytes,
     )
-    lance_operator = LanceDBScanOperator(ds, fragment_group_size=fragment_group_size)
 
+    ds._lance_open_kwargs = {
+        "storage_options": storage_options,
+        "version": version,
+        "asof": asof,
+        "block_size": block_size,
+        "index_cache_size": index_cache_size,
+        "default_scan_options": default_scan_options,
+        "metadata_cache_size_bytes": metadata_cache_size_bytes,
+    }
+    lance_operator = LanceDBScanOperator(ds, fragment_group_size=fragment_group_size)
     handle = ScanOperatorHandle.from_python_scan_operator(lance_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)
     return DataFrame(builder)
@@ -133,7 +143,7 @@ def read_lance(
 
 @PublicAPI
 def merge_columns(
-    url: str,
+    uri: Union[str, pathlib.Path],
     io_config: Optional[IOConfig] = None,
     *,
     transform: Union[dict[str, str], "BatchUDF", Callable[["pa.lib.RecordBatch"], "pa.lib.RecordBatch"]] = None,
@@ -156,7 +166,7 @@ def merge_columns(
     from existing data using a transformation function. It does not return a DataFrame.
 
     Args:
-        url: URL to the LanceDB table (supports remote URLs to object stores such as `s3://` or `gs://`)
+        uri: The URI of the Lance table (supports remote URLs to object stores such as `s3://` or `gs://`)
         io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
         transform: A transformation function or UDF to apply to the data.
         read_columns: List of column names to read for the transformation.
@@ -195,10 +205,12 @@ def merge_columns(
             "Unable to import the `lance` package, please ensure that Daft is installed with the lance extra dependency: `pip install daft[lance]`"
         ) from e
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
-    storage_options = storage_options or io_config_to_storage_options(io_config, url)
+    storage_options = storage_options or io_config_to_storage_options(
+        io_config, str(uri) if isinstance(uri, pathlib.Path) else uri
+    )
 
     lance_ds = lance.dataset(
-        url,
+        uri,
         storage_options=storage_options,
         version=version,
         asof=asof,
@@ -211,7 +223,7 @@ def merge_columns(
 
     merge_columns_internal(
         lance_ds,
-        url,
+        uri,
         transform=transform,
         read_columns=read_columns,
         reader_schema=reader_schema,
@@ -223,7 +235,7 @@ def merge_columns(
 
 @PublicAPI
 def create_scalar_index(
-    url: str,
+    uri: Union[str, pathlib.Path],
     io_config: Optional[IOConfig] = None,
     *,
     column: str,
@@ -249,7 +261,7 @@ def create_scalar_index(
     merged and committed as a single index.
 
     Args:
-        url: URL to the LanceDB table (supports remote URLs to object stores such as `s3://` or `gs://`)
+        uri: The URI of the Lance table (supports remote URLs to object stores such as `s3://` or `gs://`)
         io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
         column: Column name to index
         index_type: Type of index to build ("INVERTED" or "FTS")
@@ -314,10 +326,12 @@ def create_scalar_index(
         ) from e
 
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
-    storage_options = storage_options or io_config_to_storage_options(io_config, url)
+    storage_options = storage_options or io_config_to_storage_options(
+        io_config, str(uri) if isinstance(uri, pathlib.Path) else uri
+    )
 
     lance_ds = lance.dataset(
-        url,
+        uri,
         storage_options=storage_options,
         version=version,
         asof=asof,
@@ -330,7 +344,7 @@ def create_scalar_index(
 
     create_scalar_index_internal(
         lance_ds=lance_ds,
-        uri=url,
+        uri=uri,
         column=column,
         index_type=index_type,
         name=name,
@@ -339,4 +353,91 @@ def create_scalar_index(
         daft_remote_args=daft_remote_args,
         concurrency=concurrency,
         **kwargs,
+    )
+
+
+@PublicAPI
+def compact_files(
+    uri: Union[str, pathlib.Path],
+    io_config: Optional[IOConfig] = None,
+    *,
+    storage_options: Optional[dict[str, Any]] = None,
+    version: Optional[Union[int, str]] = None,
+    asof: Optional[str] = None,
+    block_size: Optional[int] = None,
+    commit_lock: Optional[Any] = None,
+    index_cache_size: Optional[int] = None,
+    default_scan_options: Optional[dict[str, Any]] = None,
+    metadata_cache_size_bytes: Optional[int] = None,
+    compaction_options: Optional[dict[str, Any]] = None,
+    partition_num: Optional[int] = None,
+    concurrency: Optional[int] = None,
+) -> Any:
+    """Compact Lance dataset files using Daft UDF-style distributed execution.
+
+    This function maintains compatibility with the original interface but uses Daft's UDF
+    mechanism for distributed execution instead of Ray directly.
+
+    Args:
+        uri: The URI of the Lance table (supports remote URLs to object stores such as `s3://` or `gs://`)
+        io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
+        storage_options: Extra options for storage connection.
+        version: If specified, load a specific version of the Lance dataset.
+        asof: If specified, find the latest version created on or earlier than the given argument value.
+        block_size: Block size in bytes. Provide a hint for the size of the minimal I/O request.
+        commit_lock: A custom commit lock.
+        index_cache_size: Index cache size.
+        default_scan_options: Default scan options.
+        metadata_cache_size_bytes: Size of the metadata cache in bytes.
+        compaction_options: A dictionary of options to control compaction behavior. See `lance.optimize.CompactionOptions` for details. e.g.
+            target_rows_per_fragment: Target number of rows per fragment.
+            max_rows_per_group: Max number of rows per group.(default: 1024).
+            max_bytes_per_file: Max number of bytes in a single file.
+            materialize_deletions: Whether to compact fragments with soft deleted rows so they are no
+                longer present in the file.(default: True).
+            materialize_deletions_threadhold: The fraction of original rows that are soft deleted in a fragment
+                before the fragment is a candidate for compaction.(default: 0.1 = 10%).
+        partition_num: Number of partitions to use for compaction. Defaults to None.
+        concurrency: Number of concurrent compaction tasks to run. Defaults to None.
+
+    Returns:
+        CompactionMetrics: Compaction statistics; None if no compaction needed. The `CompactionMetrics` object contains the following fields:
+            - `fragments_removed`: Number of fragments removed during compaction.
+            - `fragments_added`: Number of fragments added during compaction.
+            - `files_removed`: Number of files removed during compaction.
+            - `files_added`: Number of files added during compaction.
+
+    Raises:
+        RuntimeError: When compaction fails or no successful results
+    """
+    try:
+        import lance
+
+        from daft.io.lance.lance_compaction import compact_files_internal
+    except ImportError as e:
+        raise ImportError(
+            "Unable to import the `lance` package, please ensure that Daft is installed with the lance extra dependency: `pip install daft[lance]`"
+        ) from e
+    io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+    storage_options = storage_options or io_config_to_storage_options(
+        io_config, str(uri) if isinstance(uri, pathlib.Path) else uri
+    )
+
+    lance_ds = lance.dataset(
+        uri,
+        storage_options=storage_options,
+        version=version,
+        asof=asof,
+        block_size=block_size,
+        commit_lock=commit_lock,
+        index_cache_size=index_cache_size,
+        default_scan_options=default_scan_options,
+        metadata_cache_size_bytes=metadata_cache_size_bytes,
+    )
+
+    return compact_files_internal(
+        lance_ds=lance_ds,
+        compaction_options=compaction_options,
+        partition_num=partition_num,
+        concurrency=concurrency,
     )

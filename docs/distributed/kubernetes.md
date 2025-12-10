@@ -92,3 +92,7 @@ helm uninstall distributed-job
 ## What's Next?
 
 Visit the [Helm chart documentation](https://github.com/Eventual-Inc/Daft/tree/main/k8s/charts/quickstart) to try out your own Daft workloads on Kubernetes.
+
+!!! tip "Daft Cloud"
+
+    Looking for a fully managed experience? [Daft Cloud](https://www.daft.ai/cloud) provides serverless execution with automatic scaling, so you can focus on your data pipelines without managing infrastructure.
