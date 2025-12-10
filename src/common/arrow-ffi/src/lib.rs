@@ -44,7 +44,7 @@ pub fn array_to_rust(py: Python, arrow_array: Bound<PyAny>) -> PyResult<ArrayRef
         let dtype = Arrow2DataType::Extension(
             ext_name.clone(),
             Box::new(field.data_type().clone().into()),
-            metadata.map(|s| s.clone()),
+            metadata.cloned(),
         );
         arr.change_type(dtype);
     }
