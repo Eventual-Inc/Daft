@@ -337,10 +337,10 @@ impl RowWisePyFn {
                 match func() {
                     Ok(result) => return Ok(result),
                     Err(e) => {
-                        attempt += 1;
                         if attempt >= max_retries {
                             return Err(e);
                         }
+
                         // Update our failure map for next iteration
                         use std::{thread, time::Duration};
                         py.detach(|| {
@@ -350,6 +350,7 @@ impl RowWisePyFn {
                         delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
                     }
                 }
+                attempt += 1;
             }
         }
 
