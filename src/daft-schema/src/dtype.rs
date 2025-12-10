@@ -1,4 +1,8 @@
-use std::fmt::{Display, Write};
+use std::{
+    collections::HashMap,
+    fmt::{Display, Write},
+    sync::Arc,
+};
 
 use common_error::{DaftError, DaftResult};
 use daft_arrow::datatypes::DataType as ArrowType;
@@ -246,6 +250,113 @@ impl DataType {
         Self::FixedSizeList(Box::new(datatype), size)
     }
 
+    pub fn to_arrow_field(&self) -> DaftResult<arrow_schema::Field> {
+        let dtype = match self {
+            Self::Null => arrow_schema::DataType::Null,
+            Self::Boolean => arrow_schema::DataType::Boolean,
+            Self::Int8 => arrow_schema::DataType::Int8,
+            Self::Int16 => arrow_schema::DataType::Int16,
+            Self::Int32 => arrow_schema::DataType::Int32,
+            Self::Int64 => arrow_schema::DataType::Int64,
+            Self::UInt8 => arrow_schema::DataType::UInt8,
+            Self::UInt16 => arrow_schema::DataType::UInt16,
+            Self::UInt32 => arrow_schema::DataType::UInt32,
+            Self::UInt64 => arrow_schema::DataType::UInt64,
+            Self::Float32 => arrow_schema::DataType::Float32,
+            Self::Float64 => arrow_schema::DataType::Float64,
+            Self::Timestamp(unit, tz) => {
+                arrow_schema::DataType::Timestamp(unit.to_arrow(), tz.clone().map(Arc::from))
+            }
+            Self::Duration(unit) => arrow_schema::DataType::Duration(unit.to_arrow()),
+            Self::Interval => {
+                arrow_schema::DataType::Interval(arrow_schema::IntervalUnit::MonthDayNano)
+            }
+            Self::Binary => arrow_schema::DataType::LargeBinary,
+            Self::FixedSizeBinary(size) => arrow_schema::DataType::FixedSizeBinary(*size as _),
+            Self::Utf8 => arrow_schema::DataType::LargeUtf8,
+            Self::List(f) => arrow_schema::DataType::LargeList(Arc::new(f.to_arrow_field()?)),
+            Self::FixedSizeList(f, size) => {
+                arrow_schema::DataType::FixedSizeList(Arc::new(f.to_arrow_field()?), *size as _)
+            }
+            Self::Struct(f) => arrow_schema::DataType::Struct(
+                f.iter()
+                    .map(|f| f.to_arrow())
+                    .collect::<DaftResult<Vec<_>>>()?
+                    .into(),
+            ),
+            Self::Map { key, value } => {
+                // To comply with the Arrow spec, Neither the "entries" field nor the "key" field may be nullable.
+                // See https://github.com/apache/arrow/blob/apache-arrow-20.0.0/format/Schema.fbs#L138
+                let struct_type = arrow_schema::DataType::Struct(
+                    vec![
+                        arrow_schema::Field::new(
+                            "key",
+                            key.to_arrow_field()?.data_type().clone(),
+                            false,
+                        ),
+                        arrow_schema::Field::new(
+                            "value",
+                            value.to_arrow_field()?.data_type().clone(),
+                            true,
+                        ),
+                    ]
+                    .into(),
+                );
+                let struct_field = arrow_schema::Field::new("entries", struct_type, false);
+
+                arrow_schema::DataType::Map(Arc::new(struct_field), false)
+            }
+            Self::Decimal128(precision, scale) => {
+                arrow_schema::DataType::Decimal128(*precision as _, *scale as _)
+            }
+            Self::Extension(name, d, metadata) => {
+                let mut metadata_map = HashMap::new();
+                metadata_map.insert("ARROW:extension:name".to_string(), name.clone());
+                if let Some(metadata) = metadata {
+                    metadata_map.insert("ARROW:extension:metadata".to_string(), metadata.clone());
+                }
+
+                return Ok(d.to_arrow_field()?.with_metadata(metadata_map));
+            }
+            Self::Date => arrow_schema::DataType::Date32,
+            Self::Time(time_unit) => arrow_schema::DataType::Time32(time_unit.to_arrow()),
+            Self::Embedding(..)
+            | Self::Image(..)
+            | Self::FixedShapeImage(..)
+            | Self::Tensor(..)
+            | Self::FixedShapeTensor(..)
+            | Self::SparseTensor(..)
+            | Self::FixedShapeSparseTensor(..)
+            | Self::File(..) => {
+                let physical = Box::new(self.to_physical());
+                let logical_extension = Self::Extension(
+                    DAFT_SUPER_EXTENSION_NAME.into(),
+                    physical,
+                    Some(self.to_json()?),
+                );
+                return logical_extension.to_arrow_field();
+            }
+            #[cfg(feature = "python")]
+            Self::Python => {
+                let physical = Box::new(Self::Binary);
+                let logical_extension = Self::Extension(
+                    DAFT_SUPER_EXTENSION_NAME.into(),
+                    physical,
+                    Some(self.to_json()?),
+                );
+                return logical_extension.to_arrow_field();
+            }
+            Self::Unknown => {
+                return Err(DaftError::TypeError(format!(
+                    "Can not convert {self:?} into arrow type"
+                )));
+            }
+        };
+        Ok(arrow_schema::Field::new("", dtype, true))
+    }
+
+    #[deprecated(note = "use `to_arrow_field` instead")]
+    #[allow(deprecated, reason = "arrow2 migration")]
     pub fn to_arrow(&self) -> DaftResult<ArrowType> {
         match self {
             Self::Null => Ok(ArrowType::Null),
@@ -263,11 +374,11 @@ impl DataType {
             Self::Float64 => Ok(ArrowType::Float64),
             Self::Decimal128(precision, scale) => Ok(ArrowType::Decimal(*precision, *scale)),
             Self::Timestamp(unit, timezone) => {
-                Ok(ArrowType::Timestamp(unit.to_arrow(), timezone.clone()))
+                Ok(ArrowType::Timestamp(unit.to_arrow2(), timezone.clone()))
             }
             Self::Date => Ok(ArrowType::Date32),
-            Self::Time(unit) => Ok(ArrowType::Time64(unit.to_arrow())),
-            Self::Duration(unit) => Ok(ArrowType::Duration(unit.to_arrow())),
+            Self::Time(unit) => Ok(ArrowType::Time64(unit.to_arrow2())),
+            Self::Duration(unit) => Ok(ArrowType::Duration(unit.to_arrow2())),
             Self::Interval => Ok(ArrowType::Interval(
                 daft_arrow::datatypes::IntervalUnit::MonthDayNano,
             )),
@@ -300,7 +411,7 @@ impl DataType {
             Self::Struct(fields) => Ok({
                 let fields = fields
                     .iter()
-                    .map(|f| f.to_arrow())
+                    .map(|f| f.to_arrow2())
                     .collect::<DaftResult<Vec<daft_arrow::datatypes::Field>>>()?;
                 ArrowType::Struct(fields)
             }),
@@ -418,6 +529,7 @@ impl DataType {
     #[inline]
     /// Is this DataType convertible to Arrow?
     pub fn is_arrow(&self) -> bool {
+        #[allow(deprecated, reason = "arrow2 migration")]
         self.to_arrow().is_ok()
     }
 

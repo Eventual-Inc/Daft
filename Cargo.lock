@@ -2567,6 +2567,7 @@ dependencies = [
 name = "daft-arrow"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
  "arrow-buffer",
  "arrow-schema",
  "arrow2",
@@ -3345,6 +3346,7 @@ dependencies = [
 name = "daft-schema"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-schema",
  "common-arrow-ffi",
  "common-display",
  "common-error",
