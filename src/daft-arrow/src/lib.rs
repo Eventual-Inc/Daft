@@ -1,5 +1,4 @@
 // Re-export arrow2::* modules for centralized access
-pub use arrow;
 pub use arrow2::{
     array, chunk, compute, error, io, offset, scalar, temporal_conversions, trusted_len, types,
 };

@@ -1,9 +1,8 @@
 use std::{fmt::Display, str::FromStr};
 
+use arrow_schema::TimeUnit as ArrowTimeUnit;
 use common_error::DaftError;
-use daft_arrow::{
-    arrow::datatypes::TimeUnit as ArrowTimeUnit, datatypes::TimeUnit as Arrow2TimeUnit,
-};
+use daft_arrow::datatypes::TimeUnit as Arrow2TimeUnit;
 use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
@@ -28,6 +27,7 @@ impl Display for TimeUnit {
 impl TimeUnit {
     #![allow(clippy::wrong_self_convention)]
     #[must_use]
+    #[deprecated(note = "use .to_arrow")]
     pub fn to_arrow2(&self) -> Arrow2TimeUnit {
         match self {
             Self::Nanoseconds => Arrow2TimeUnit::Nanosecond,
