@@ -23,9 +23,14 @@ impl PyScalarFn {
             | Self::Batch(BatchPyFn { function_name, .. }) => function_name,
         }
     }
-    pub fn call(&self, args: &[Series], metrics: &mut dyn MetricsCollector) -> DaftResult<Series> {
+    pub fn call(
+        &self,
+        args: &[Series],
+        provenance: Option<&Series>,
+        metrics: &mut dyn MetricsCollector,
+    ) -> DaftResult<Series> {
         match self {
-            Self::RowWise(func) => func.call(args, metrics),
+            Self::RowWise(func) => func.call(args, provenance, metrics),
             Self::Batch(func) => func.call(args, metrics),
         }
     }

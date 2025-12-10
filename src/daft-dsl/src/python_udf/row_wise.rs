@@ -101,13 +101,19 @@ impl RowWisePyFn {
     pub fn call(
         &self,
         _args: &[Series],
+        _provenance: Option<&Series>,
         _metrics: &mut dyn MetricsCollector,
     ) -> DaftResult<Series> {
         panic!("Cannot evaluate a RowWisePyFn without compiling for Python");
     }
 
     #[cfg(feature = "python")]
-    pub fn call(&self, args: &[Series], metrics: &mut dyn MetricsCollector) -> DaftResult<Series> {
+    pub fn call(
+        &self,
+        args: &[Series],
+        provenance: Option<&Series>,
+        metrics: &mut dyn MetricsCollector,
+    ) -> DaftResult<Series> {
         let num_rows = args
             .iter()
             .map(Series::len)
@@ -122,7 +128,7 @@ impl RowWisePyFn {
                 a.len()
             );
         }
-        self.call_serial(args, num_rows, metrics)
+        self.call_serial(args, num_rows, provenance, metrics)
     }
 
     #[cfg(not(feature = "python"))]
@@ -308,6 +314,7 @@ impl RowWisePyFn {
         &self,
         args: &[Series],
         num_rows: usize,
+        provenance: Option<&Series>,
         metrics: &mut dyn MetricsCollector,
     ) -> DaftResult<Series> {
         use common_error::DaftError;
@@ -444,6 +451,16 @@ impl RowWisePyFn {
                                     "udf_args",
                                     AnyValue::Map(Box::new(udf_args_map)),
                                 );
+
+                                // Add provenance information if available
+                                if let Some(prov_series) = provenance {
+                                    let idx = if prov_series.len() == 1 { 0 } else { i };
+                                    let lit = prov_series.get_lit(idx);
+                                    log_record.add_attribute(
+                                        "provenance",
+                                        AnyValue::String(lit.to_string().into()),
+                                    );
+                                }
 
                                 logger.emit(log_record);
                             }

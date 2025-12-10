@@ -995,10 +995,20 @@ impl RecordBatch {
                         .await?,
                     );
                 }
+                // Extract provenance column from RecordBatch if it exists
+                let provenance_series = self
+                    .schema
+                    .get_provenance_column_name()
+                    .and_then(|prov_name| {
+                        self.schema
+                            .get_fields_with_name(prov_name)
+                            .first()
+                            .map(|(idx, _)| self.get_column(*idx).clone())
+                    });
                 if python_udf.is_async() {
                     python_udf.call_async(args.as_slice(), metrics).await
                 } else {
-                    python_udf.call(args.as_slice(), metrics)
+                    python_udf.call(args.as_slice(), provenance_series.as_ref(), metrics)
                 }
             }
             Expr::Subquery(_subquery) => Err(DaftError::ComputeError(
@@ -1243,13 +1253,23 @@ impl RecordBatch {
                         metrics,
                     )?);
                 }
+                // Extract provenance column from RecordBatch if it exists
+                let provenance_series = self
+                    .schema
+                    .get_provenance_column_name()
+                    .and_then(|prov_name| {
+                        self.schema
+                            .get_fields_with_name(prov_name)
+                            .first()
+                            .map(|(idx, _)| self.get_column(*idx).clone())
+                    });
                 #[cfg(feature = "python")]
                 {
                     if python_udf.is_async() {
                             get_compute_runtime()
                                 .block_on_current_thread(python_udf.call_async(args.as_slice(), metrics))
                     } else {
-                        python_udf.call(args.as_slice(), metrics)
+                        python_udf.call(args.as_slice(), provenance_series.as_ref(), metrics)
                     }
                 }
                 #[cfg(not(feature = "python"))]
