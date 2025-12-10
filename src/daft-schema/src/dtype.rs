@@ -1074,11 +1074,11 @@ impl DataType {
     /// Returns false if the datatype contains Duration or Binary types.
     pub fn can_convert_to_json(&self) -> bool {
         match self.to_physical() {
-            DataType::Extension(..) => false,
+            Self::Extension(..) => false,
             // Duration types are not currently supported in JSON.
-            DataType::Duration(_) => false,
+            Self::Duration(_) => false,
             // Binary types are not currently supported in JSON.
-            DataType::Binary | DataType::FixedSizeBinary(_) => false,
+            Self::Binary | Self::FixedSizeBinary(_) => false,
             _ => {
                 let mut can_convert = true;
                 self.direct_children(|child| {
@@ -1089,14 +1089,14 @@ impl DataType {
         }
     }
 
-    fn direct_children<'a>(&'a self, mut processor: impl FnMut(&'a DataType)) {
+    fn direct_children<'a>(&'a self, mut processor: impl FnMut(&'a Self)) {
         match self {
-            DataType::List(dtype) | DataType::FixedSizeList(dtype, _) => processor(&dtype),
-            DataType::Map { key, value } => {
+            Self::List(dtype) | Self::FixedSizeList(dtype, _) => processor(dtype),
+            Self::Map { key, value } => {
                 processor(key);
                 processor(value);
             }
-            DataType::Struct(fields) => fields.iter().for_each(|field| processor(&field.dtype)),
+            Self::Struct(fields) => fields.iter().for_each(|field| processor(&field.dtype)),
             _ => {} // Other types don't have child data types
         }
     }
