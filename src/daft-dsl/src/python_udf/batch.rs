@@ -1,4 +1,4 @@
-use std::{fmt::Display, num::NonZeroUsize, sync::Arc};
+use std::{fmt::Display, num::NonZeroUsize};
 
 use common_error::DaftResult;
 use daft_core::{prelude::DataType, series::Series};
@@ -7,7 +7,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     Expr, ExprRef,
-    functions::{python::RuntimePyObject, scalar::ScalarFn},
+    functions::{
+        python::{RuntimePyObject, UDFName},
+        scalar::ScalarFn,
+    },
     operator_metrics::MetricsCollector,
     python_udf::PyScalarFn,
 };
@@ -29,7 +32,7 @@ pub fn batch_udf(
     on_error: crate::functions::python::OnError,
 ) -> Expr {
     Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
-        function_name: Arc::from(name),
+        function_name: name.into(),
         cls,
         method,
         is_async,
@@ -47,7 +50,7 @@ pub fn batch_udf(
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct BatchPyFn {
-    pub function_name: Arc<str>,
+    pub function_name: UDFName,
     pub cls: RuntimePyObject,
     pub method: RuntimePyObject,
     pub is_async: bool,

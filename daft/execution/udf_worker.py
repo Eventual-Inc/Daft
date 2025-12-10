@@ -11,7 +11,7 @@ import daft.pickle
 from daft.daft import set_compute_runtime_num_worker_threads
 from daft.errors import UDFException
 from daft.execution.udf import (
-    _CLEANUP_UDF,
+    _CLEANUP_UDFS,
     _ERROR,
     _EVAL,
     _INIT,
@@ -96,13 +96,14 @@ def udf_worker_event_loop(
 
                 conn.send((_SUCCESS, out_name, out_size, metrics))
 
-            elif msg_type == _CLEANUP_UDF:
-                # CLEANUP_UDF message: (msg_type, udf_name)
-                _, udf_name = msg
+            elif msg_type == _CLEANUP_UDFS:
+                # CLEANUP_UDFS message: (msg_type, udf_names)
+                _, udf_names = msg
 
                 # Remove UDF from cache
-                if udf_name in udf_cache:
-                    del udf_cache[udf_name]
+                for udf_name in udf_names:
+                    if udf_name in udf_cache:
+                        del udf_cache[udf_name]
 
                 conn.send(_SUCCESS)
             else:

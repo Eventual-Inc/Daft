@@ -69,7 +69,7 @@ impl UDFActors {
                         cpu_request,
                         memory_request,
                         actor_ready_timeout,
-                        actor_name,
+                        actor_name.as_ref(),
                     ),
                 )
             })

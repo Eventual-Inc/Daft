@@ -8,303 +8,295 @@ import time
 import pytest
 
 import daft
+from daft import DataType, col
+from daft.daft import get_process_pool_stats, reset_process_pool_total_created
+from tests.conftest import get_tests_daft_runner_name
 
 
-def is_process_alive(pid: int) -> bool:
-    """Check if a process is still alive."""
-    try:
-        os.kill(pid, 0)
-        return True
-    except (OSError, ProcessLookupError):
-        return False
+@pytest.fixture
+def reset_process_pool_total_created_fixture():
+    reset_process_pool_total_created()
+    yield
 
 
-def wait_for_pids_to_exit(pids: set[int], timeout: float = 3.0, check_interval: float = 0.1) -> None:
-    """Wait for all given process IDs to exit."""
-    if not pids:
+def check_process_pool_stats(expected_active_workers: int = 0, expected_total_workers: int | None = None):
+    """Check process pool stats only if running with native runner."""
+    if get_tests_daft_runner_name() != "native":
         return
 
-    start = time.time()
-    while time.time() - start < timeout:
-        alive_pids = {pid for pid in pids if is_process_alive(pid)}
-        if not alive_pids:
-            return
-        time.sleep(check_interval)
-
-    alive_pids = {pid for pid in pids if is_process_alive(pid)}
-    if alive_pids:
-        import warnings
-
-        warnings.warn(
-            f"Processes {alive_pids} did not exit within {timeout}s. "
-            f"These may be zombie processes or workers that weren't properly cleaned up.",
-            UserWarning,
-        )
+    active_workers, total_workers = get_process_pool_stats()
+    assert (
+        active_workers == expected_active_workers
+    ), f"Should have {expected_active_workers} active workers, got {active_workers}"
+    if expected_total_workers is not None:
+        assert (
+            total_workers == expected_total_workers
+        ), f"Should have {expected_total_workers} total workers, got {total_workers}"
 
 
-# ==============================================================================
-# Basic Functionality Tests
-# ==============================================================================
+def test_process_pool_scales_to_num_cores(reset_process_pool_total_created_fixture):
+    num_cores = os.cpu_count()
+
+    @daft.func.batch(return_dtype=DataType.int64(), batch_size=1, use_process=True)
+    def get_worker_pid(x: daft.Series) -> daft.Series:
+        return [os.getpid()]
+
+    df = daft.from_pydict({"a": list(range(num_cores * num_cores))})
+    result = df.select(get_worker_pid(df["a"])).to_pydict()
+    worker_pids = set(result["a"])
+
+    assert len(worker_pids) == num_cores, f"Should have used {num_cores} worker processes, got {len(worker_pids)}"
+
+    check_process_pool_stats(expected_total_workers=num_cores)
 
 
-def test_basic_process_pool_execution():
-    """Test that UDFs execute in worker processes and pool provides basic functionality."""
-    main_pid = os.getpid()
+def test_process_udfs_share_the_same_pool(reset_process_pool_total_created_fixture):
+    num_cores = os.cpu_count()
 
-    # Test 1: UDF executes in worker process (not main)
-    @daft.func(use_process=True)
-    def get_worker_pid(x: int) -> int:
-        return os.getpid()
+    @daft.func.batch(return_dtype=DataType.int64(), batch_size=1, use_process=True)
+    def get_worker_pid(x: daft.Series) -> daft.Series:
+        return [os.getpid()]
 
-    df = daft.from_pydict({"a": list(range(10))})
-    result = df.select(get_worker_pid(df["a"])).collect()
-    worker_pids = set(result.to_pydict()["a"])
-
-    assert len(worker_pids) > 0, "Should have used at least one worker process"
-    assert main_pid not in worker_pids, f"UDF should not execute in main process (PID {main_pid})"
-
-    # Test 3: Multiple UDFs share the same pool
-    # NOTE: Move this to different test.
-    @daft.func(use_process=True)
-    def double(x: int) -> int:
-        return x * 2
-
-    @daft.func(use_process=True)
-    def triple(x: int) -> int:
-        return x * 3
-
-    df = daft.from_pydict({"a": [1, 2, 3], "b": [10, 20, 30]})
-    result = df.select(double(df["a"]), triple(df["b"])).collect()
-    assert result.to_pydict() == {"a": [2, 4, 6], "b": [30, 60, 90]}
-
-
-# ==============================================================================
-# Pool Sizing and Concurrency Tests
-# ==============================================================================
-
-
-@pytest.mark.parametrize(
-    "max_concurrency,expected_max_pids",
-    [
-        (10, 2),  # Pool size limits usage
-        (5, 5),  # Pool scales up to max_concurrency
-        (3, 3),  # No pool size limit, uses max_concurrency
-    ],
-)
-def test_pool_sizing_and_scaling(max_concurrency, expected_max_pids):
-    """Test pool sizing with various DAFT_UDF_POOL_SIZE and max_concurrency combinations."""
-
-    @daft.cls(max_concurrency=max_concurrency)
-    class GetPid:
-        def __init__(self):
-            pass
-
-        def __call__(self, x: int) -> int:
-            return os.getpid()
-
-    get_pid = GetPid()
-    df = daft.from_pydict({"a": list(range(20))})
-    result = df.select(get_pid(df["a"])).collect()
-    pids = result.to_pydict()["a"]
-    distinct_pids = len(set(pids))
-
-    assert distinct_pids <= expected_max_pids, (
-        f"Should use at most {expected_max_pids} processes, got {distinct_pids} distinct PIDs. "
-        f"PIDs used: {set(pids)}"
+    df = daft.from_pydict({"a": list(range(num_cores * num_cores))})
+    result = (
+        df.with_column("worker_pid_1", get_worker_pid(df["a"]))
+        .with_column("worker_pid_2", get_worker_pid(df["a"]))
+        .to_pydict()
     )
-    assert distinct_pids > 0, "Should have used at least one process"
+    worker_pids_1 = set(result["worker_pid_1"])
+    worker_pids_2 = set(result["worker_pid_2"])
+
+    assert len(worker_pids_1) == num_cores, f"Should have used {num_cores} worker processes, got {len(worker_pids_1)}"
+    assert len(worker_pids_2) == num_cores, f"Should have used {num_cores} worker processes, got {len(worker_pids_2)}"
+    assert worker_pids_1 == worker_pids_2, "All UDFs should share the same worker process"
+
+    check_process_pool_stats(expected_total_workers=num_cores)
 
 
-def test_max_concurrency_respects_highest_udf():
-    """Test that pool size respects the UDF with highest max_concurrency."""
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() == "ray",
+    reason="Concurrent queries may start multiple different worker processes on ray runner",
+)
+def test_concurrent_queries_share_the_same_pool(
+    reset_process_pool_total_created_fixture,
+):
+    num_cores = os.cpu_count()
 
-    @daft.cls(max_concurrency=3)
+    @daft.func.batch(return_dtype=DataType.int64(), batch_size=1, use_process=True)
+    def get_worker_pid(x: daft.Series) -> daft.Series:
+        return [os.getpid()]
+
+    df1 = daft.from_pydict({"a": list(range(num_cores * num_cores))}).with_column(
+        "worker_pid", get_worker_pid(col("a"))
+    )
+    df2 = daft.from_pydict({"a": list(range(num_cores * num_cores))}).with_column(
+        "worker_pid", get_worker_pid(col("a"))
+    )
+
+    iters = [df1.__iter__(), df2.__iter__()]
+    pids = set()
+    while iters:
+        iter = iters.pop(0)
+        try:
+            res = next(iter)
+            pids.add(res["worker_pid"])
+        except StopIteration:
+            continue
+        iters.append(iter)
+
+    assert len(pids) == num_cores, f"Should use {num_cores} worker processes, got {len(pids)} distinct PIDs"
+
+    check_process_pool_stats(expected_total_workers=num_cores)
+
+
+@pytest.mark.parametrize("invocations", [1, os.cpu_count()])
+def test_pool_scales_based_on_invocation_count(invocations, reset_process_pool_total_created_fixture):
+    @daft.func.batch(return_dtype=DataType.int64(), batch_size=1, use_process=True)
+    def get_pid(x: daft.Series) -> daft.Series:
+        time.sleep(0.5)  # simulate work to ensure we can scale
+        return [os.getpid()]
+
+    df = daft.from_pydict({"a": list(range(invocations))})
+    result = df.select(get_pid(df["a"])).to_pydict()
+    pids = result["a"]
+    distinct_pids = len(set(pids))
+    assert distinct_pids == invocations, f"Should use {invocations} processes, got {distinct_pids} distinct PIDs"
+
+    check_process_pool_stats(expected_total_workers=invocations)
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() == "ray", reason="Max concurrency uses distributed actors on ray runner"
+)
+def test_pool_scales_to_udf_with_max_concurrency(
+    reset_process_pool_total_created_fixture,
+):
+    small_concurrency = 1
+    large_concurrency = os.cpu_count() - 1
+
+    @daft.cls(max_concurrency=small_concurrency)
     class GetPid1:
         def __init__(self):
             pass
 
-        def __call__(self, x: int) -> int:
-            return os.getpid()
+        @daft.method.batch(return_dtype=DataType.int64(), batch_size=1)
+        def __call__(self, x: daft.Series) -> daft.Series:
+            return [os.getpid()]
 
-    @daft.cls(max_concurrency=7)
+    @daft.cls(max_concurrency=large_concurrency)
     class GetPid2:
         def __init__(self):
             pass
 
-        def __call__(self, x: int) -> int:
-            return os.getpid()
+        @daft.method.batch(return_dtype=DataType.int64(), batch_size=1)
+        def __call__(self, x: daft.Series) -> daft.Series:
+            time.sleep(0.5)  # simulate work to ensure we can scale
+            return [os.getpid()]
 
     get_pid1 = GetPid1()
     get_pid2 = GetPid2()
-    df = daft.from_pydict({"a": list(range(20)), "b": list(range(20))})
+    num_rows = os.cpu_count() * os.cpu_count()
+    df = daft.from_pydict({"a": list(range(num_rows)), "b": list(range(num_rows))})
 
-    result = df.select(get_pid1(df["a"]), get_pid2(df["b"])).collect()
-    pids1 = result.to_pydict()["a"]
-    pids2 = result.to_pydict()["b"]
+    result = df.select(get_pid1(df["a"]), get_pid2(df["b"])).to_pydict()
+    pids1 = result["a"]
+    pids2 = result["b"]
     max_distinct_pids = max(len(set(pids1)), len(set(pids2)))
 
     assert (
-        max_distinct_pids <= 7
-    ), f"Should use at most highest max_concurrency (7) processes, got {max_distinct_pids} distinct PIDs"
+        max_distinct_pids == large_concurrency
+    ), f"Should use at most highest max_concurrency ({large_concurrency}) processes, got {max_distinct_pids} distinct PIDs"
+
+    check_process_pool_stats(expected_total_workers=large_concurrency)
 
 
-# ==============================================================================
-# Lifecycle and Cleanup Tests
-# ==============================================================================
-
-
-@pytest.mark.parametrize("should_fail", [False, True])
-def test_process_cleanup(should_fail):
+def test_pool_cleanup_on_failure(reset_process_pool_total_created_fixture):
     """Test that processes are cleaned up after query completion or failure."""
-    if should_fail:
 
-        @daft.func(use_process=True)
-        def udf_func(x: int) -> int:
-            raise ValueError(f"Intentional failure for value {x}")
-
-        df = daft.from_pydict({"a": [1, 2, 3, 4, 5]})
-        with pytest.raises(Exception):
-            df.select(udf_func(df["a"])).collect()
-        # Can't verify PID cleanup for failures since we don't capture PIDs
-    else:
-
-        @daft.func(use_process=True)
-        def get_pid(x: int) -> int:
-            return os.getpid()
-
-        df = daft.from_pydict({"a": [1, 2, 3, 4, 5]})
-        result = df.select(get_pid(df["a"])).collect()
-        pids = set(result.to_pydict()["a"])
-        assert len(pids) > 0, "Should have used at least one process"
-
-        time.sleep(0.2)
-        wait_for_pids_to_exit(pids, timeout=2.0)
-
-
-def test_worker_reuse_and_caching():
-    """Test that workers are reused across queries and properly cache UDF state."""
-
-    @daft.cls
-    class StatefulCounter:
-        def __init__(self):
-            self.call_count = 0
-
-        def count(self, _: int) -> int:
-            self.call_count += 1
-            return os.getpid()
-
-    counter = StatefulCounter()
-
-    # Run multiple queries
-    df1 = daft.from_pydict({"a": [1, 2, 3]})
-    result1 = df1.select(counter.count(df1["a"])).collect()
-    pids1 = set(result1.to_pydict()["a"])
-
-    df2 = daft.from_pydict({"a": [4, 5, 6]})
-    result2 = df2.select(counter.count(df2["a"])).collect()
-    pids2 = set(result2.to_pydict()["a"])
-
-    # Both queries should use worker processes
-    assert len(pids1) > 0 and len(pids2) > 0, "Both queries should use worker processes"
-
-    # Verify teardown doesn't break subsequent UDFs
     @daft.func(use_process=True)
-    def other_udf(x: int) -> int:
-        return x * 3
+    def udf_func(x: int) -> int:
+        raise ValueError(f"Intentional failure for value {x}")
 
-    df3 = daft.from_pydict({"a": [10, 20, 30]})
-    result3 = df3.select(other_udf(df3["a"])).collect()
-    assert result3.to_pydict()["a"] == [
-        30,
-        60,
-        90,
-    ], "Should work after previous UDF teardown"
+    df = daft.from_pydict({"a": [1, 2, 3, 4, 5]})
+    with pytest.raises(Exception):
+        df.select(udf_func(df["a"])).collect()
 
-    # Cleanup
-    time.sleep(0.2)
-    wait_for_pids_to_exit(pids1 | pids2, timeout=2.0)
+    check_process_pool_stats(expected_total_workers=1)
 
 
-# ==============================================================================
-# Error Handling Tests
-# ==============================================================================
+def test_segfault_handling(reset_process_pool_total_created_fixture):
+    """Test that segfaults are handled gracefully."""
+    import ctypes
 
-
-def test_error_handling():
-    """Test error handling for initialization failures and runtime errors."""
-
-    # Test 1: Initialization failure
     @daft.func(use_process=True)
-    def failing_init_udf(x: int) -> int:
-        import nonexistent_module  # noqa: F401
-
+    def segfault_udf(x: int) -> int:
+        if x == 3:
+            # Trigger segfault
+            ctypes.string_at(0)
         return x * 2
 
-    df = daft.from_pydict({"a": [1, 2, 3]})
-    with pytest.raises(Exception):
-        df.select(failing_init_udf(df["a"])).collect()
+    df = daft.from_pydict({"a": [1, 2, 3, 4, 5]})
 
-    # Test 2: Pool recovers after errors
+    with pytest.raises(Exception) as exc_info:
+        df.select(segfault_udf(df["a"])).collect()
+
+    # Should mention segfault in error message
+    error_msg = str(exc_info.value)
+    assert "SIGSEGV" in error_msg or "segmentation fault" in error_msg.lower()
+
+    # Worker should be cleaned up
+    check_process_pool_stats()
+
+
+def test_sigkill_handling(reset_process_pool_total_created_fixture):
+    """Test that SIGKILL is handled gracefully."""
+    import signal
+
     @daft.func(use_process=True)
-    def sometimes_fails(x: int) -> int:
-        if x == 2:
-            raise ValueError(f"Intentional failure for x={x}")
-        return x * 10
+    def kill_self_udf(x: int) -> int:
+        if x == 3:
+            os.kill(os.getpid(), signal.SIGKILL)
+        return x * 2
 
-    df = daft.from_pydict({"a": [1, 2, 3]})
-    with pytest.raises(Exception):
-        df.select(sometimes_fails(df["a"])).collect()
+    df = daft.from_pydict({"a": [1, 2, 3, 4, 5]})
 
-    # Pool should still work for subsequent queries
+    with pytest.raises(Exception) as exc_info:
+        df.select(kill_self_udf(df["a"])).collect()
+
+    # Should mention signal in error message
+    error_msg = str(exc_info.value)
+    assert "SIGKILL" in error_msg or "killed" in error_msg.lower()
+
+    # Worker should be cleaned up
+    check_process_pool_stats()
+
+
+def test_worker_not_recycled_after_death(reset_process_pool_total_created_fixture):
+    """Test that dead workers are not returned to the pool."""
+
+    @daft.func(use_process=True)
+    def failing_udf(x: int) -> int:
+        os._exit(1)
+
     @daft.func(use_process=True)
     def working_udf(x: int) -> int:
         return x * 2
 
-    df2 = daft.from_pydict({"a": [10, 20, 30]})
-    result = df2.select(working_udf(df2["a"])).collect()
-    assert result.to_pydict()["a"] == [
-        20,
-        40,
-        60,
-    ], "Pool should recover and process new queries"
+    df = daft.from_pydict({"a": [1]})
+
+    # First call should fail
+    with pytest.raises(Exception):
+        df.select(failing_udf(df["a"])).collect()
+
+    # Dead worker should be cleaned up
+    check_process_pool_stats()
+
+    # Second call with different UDF should spawn a new worker and succeed
+    result = df.select(working_udf(df["a"])).collect()
+    assert result.to_pydict()["a"] == [2]
 
 
-# ==============================================================================
-# Concurrency and Data Transfer Tests
-# ==============================================================================
-
-
-def test_concurrent_queries():
-    """Test multiple queries running concurrently using threading."""
-    import threading
+def test_multiple_failures_dont_exhaust_pool(reset_process_pool_total_created_fixture):
+    """Test that multiple process deaths don't permanently damage the pool."""
 
     @daft.func(use_process=True)
-    def slow_multiply(x: int) -> int:
-        import time
+    def always_exit_udf(_x: int) -> int:
+        os._exit(1)
 
-        time.sleep(0.05)
-        return x * 2
+    df = daft.from_pydict({"a": [1]})
 
-    results = []
-    errors = []
+    # Each attempt should fail and clean up
+    for _ in range(3):
+        with pytest.raises(Exception):
+            df.select(always_exit_udf(df["a"])).collect()
 
-    def run_query(query_id: int):
-        try:
-            df = daft.from_pydict({"a": list(range(5))})
-            result = df.select(slow_multiply(df["a"])).collect()
-            results.append((query_id, result.to_pydict()["a"]))
-        except Exception as e:
-            errors.append((query_id, e))
+        check_process_pool_stats()
 
-    threads = [threading.Thread(target=run_query, args=(i,)) for i in range(3)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
 
-    assert len(errors) == 0, f"Some queries failed: {errors}"
-    assert len(results) == 3, "All queries should complete"
+def test_concurrent_queries_after_worker_death(reset_process_pool_total_created_fixture):
+    """Test that the pool recovers when one query kills its worker."""
+    should_exit = [True]
 
-    expected = [0, 2, 4, 6, 8]
-    for query_id, result in results:
-        assert result == expected, f"Query {query_id} returned incorrect result"
+    @daft.func.batch(return_dtype=DataType.int64(), batch_size=1, use_process=True)
+    def conditional_exit_udf(x: daft.Series) -> daft.Series:
+        if should_exit[0]:
+            os._exit(1)
+        time.sleep(0.1)  # Simulate work
+        return [x[0] * 2]
+
+    df = daft.from_pydict({"a": list(range(10))})
+
+    # First query kills its worker
+    with pytest.raises(Exception):
+        df.select(conditional_exit_udf(df["a"])).collect()
+
+    check_process_pool_stats()
+
+    # Reset flag for subsequent queries
+    should_exit[0] = False
+
+    # Second query should work with new workers
+    result = df.select(conditional_exit_udf(df["a"])).collect()
+    assert len(result) == 10
+
+    check_process_pool_stats()

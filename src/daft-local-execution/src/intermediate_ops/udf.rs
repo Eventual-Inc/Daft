@@ -19,7 +19,7 @@ use daft_dsl::{
     Column, Expr, ExprRef,
     common_treenode::{Transformed, TreeNode},
     expr::{BoundColumn, bound_expr::BoundExpr},
-    functions::python::UDFProperties,
+    functions::python::{UDFName, UDFProperties},
     operator_metrics::OperatorMetrics,
 };
 use daft_micropartition::MicroPartition;
@@ -40,7 +40,6 @@ use crate::{
     },
     pipeline::{MorselSizeRequirement, NodeName},
     runtime_stats::{Counter, RuntimeStats},
-    udf_process_pool::UdfTask,
 };
 
 /// Given an expression, extract the indexes of used columns and remap them to
@@ -92,7 +91,7 @@ struct UdfRuntimeStats {
     cpu_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
-    custom_counters: Mutex<HashMap<Arc<str>, Counter>>,
+    custom_counters: Mutex<HashMap<UDFName, Counter>>,
 }
 
 impl RuntimeStats for UdfRuntimeStats {
@@ -195,7 +194,7 @@ enum UdfHandle {
     },
     Process {
         pool_manager: Arc<ProcessPoolManager>,
-        udf_name: Arc<str>,
+        udf_name: UDFName,
         expr: BoundExpr,
     },
 }
@@ -255,18 +254,17 @@ impl UdfHandle {
                 let mut output_batches = Vec::with_capacity(input_batches.len());
 
                 // Create task on demand (expr_bytes will be created in Python)
-                let task = UdfTask {
-                    udf_name: udf_name.clone(),
-                    expr: expr.inner().clone(),
-                    max_concurrency: params.concurrency,
-                };
-
                 for batch in input_batches {
                     // Prepare inputs
                     let func_input = batch.get_columns(params.required_cols.as_slice());
 
                     // Submit to pool (synchronous)
-                    let (result_series, metrics) = pool_manager.submit_task(&task, func_input)?;
+                    let (result_series, metrics) = pool_manager.submit_task(
+                        udf_name,
+                        expr.inner(),
+                        params.concurrency,
+                        func_input,
+                    )?;
 
                     runtime_stats.update_metrics(metrics);
 
@@ -303,7 +301,7 @@ impl Drop for UdfHandle {
                 udf_name,
                 ..
             } => {
-                pool_manager.cleanup_udf(udf_name);
+                pool_manager.unregister_udf_handle(udf_name);
             }
             Self::Thread { .. } => {
                 // Nothing to do
@@ -335,7 +333,7 @@ impl UdfOperator {
         // Determine optimal parallelism
         let resource_request = udf_properties.resource_request.as_ref();
         let max_concurrency =
-            Self::get_optimal_allocation(udf_properties.name.as_str(), resource_request)?;
+            Self::get_optimal_allocation(udf_properties.name.as_ref(), resource_request)?;
         // If parallelism is already specified, use that
         let concurrency = udf_properties
             .concurrency
@@ -437,7 +435,7 @@ impl IntermediateOperator for UdfOperator {
         {
             udf_name
         } else {
-            self.params.udf_properties.name.as_str()
+            self.params.udf_properties.name.as_ref()
         };
 
         format!("UDF {}", udf_name).into()
@@ -453,7 +451,7 @@ impl IntermediateOperator for UdfOperator {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![
-            format!("UDF: {}", self.params.udf_properties.name.as_str()),
+            format!("UDF: {}", self.params.udf_properties.name.as_ref()),
             format!("Expr = {}", self.expr),
             format!(
                 "Passthrough Columns = [{}]",
@@ -508,9 +506,13 @@ impl IntermediateOperator for UdfOperator {
                 || self.params.udf_properties.use_process.unwrap_or(false);
 
             let handle = if use_pool && is_arrow_dtype {
+                let pool_manager = get_or_init_process_pool().clone();
+                let udf_name = self.params.udf_properties.name.clone();
+                // Register the handle with the pool for reference counting
+                pool_manager.register_udf_handle(udf_name.clone());
                 UdfHandle::Process {
-                    pool_manager: get_or_init_process_pool().clone(),
-                    udf_name: self.params.udf_properties.name.clone().into(),
+                    pool_manager,
+                    udf_name,
                     expr: self.expr.clone(),
                 }
             } else {
@@ -518,7 +520,7 @@ impl IntermediateOperator for UdfOperator {
                     log::warn!(
                         "UDF `{}` requires a non-arrow-serializable input/output column. \
                      The UDF will run inline instead of in the process pool.",
-                        self.params.udf_properties.name.as_str()
+                        self.params.udf_properties.name.as_ref()
                     );
                 }
                 UdfHandle::Thread {
