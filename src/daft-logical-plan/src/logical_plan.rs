@@ -13,7 +13,11 @@ use daft_core::join::JoinSide;
 use daft_dsl::{
     Column, Expr, ResolvedColumn, Subquery, SubqueryPlan, optimization::get_required_columns,
 };
-use daft_schema::{field::Field, schema::SchemaRef};
+use daft_schema::{
+    dtype::DataType,
+    field::Field,
+    schema::{Schema, SchemaRef},
+};
 use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
 use snafu::Snafu;
@@ -783,7 +787,9 @@ impl LogicalPlan {
         let mut schema = None;
 
         self.apply(|node| {
-            if let Self::SubqueryAlias(SubqueryAlias { name, .. }) = node.as_ref() {
+            if let Self::SubqueryAlias(subquery_alias) = node.as_ref() {
+
+                let SubqueryAlias { name, input, .. } = subquery_alias;
                 if name.as_ref() == alias {
                     if schema.is_some() {
                         return Err(DaftError::ValueError(format!(
@@ -792,12 +798,31 @@ impl LogicalPlan {
                     }
 
                     schema = Some(node.schema());
+                    return Ok(TreeNodeRecursion::Jump);
                 }
 
-                Ok(TreeNodeRecursion::Jump)
-            } else {
-                Ok(TreeNodeRecursion::Continue)
+                let input_schema = input.schema();
+                let fields = input_schema.get_fields_with_name(alias);
+                for (_, field) in fields {
+                    if let DataType::Struct(struct_fields) = &field.dtype {
+                        if schema.is_some() {
+                            return Err(DaftError::ValueError(format!(
+                                "Plan must not have duplicate aliases in the same scope, found: {alias}"
+                            )));
+                        }
+
+                        let new_fields: Vec<Field> = struct_fields
+                            .iter()
+                            .map(|f| Field::new(f.name.clone(), f.dtype.clone()))
+                            .collect();
+
+                        let new_schema = Schema::new(new_fields);
+                        schema = Some(Arc::new(new_schema));
+                        return Ok(TreeNodeRecursion::Jump);
+                    }
+                }
             }
+            Ok(TreeNodeRecursion::Continue)
         })?;
 
         Ok(schema)
