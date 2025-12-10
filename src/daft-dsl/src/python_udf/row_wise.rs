@@ -332,12 +332,12 @@ impl RowWisePyFn {
             max_retries: usize,
             mut delay_ms: u64,
         ) -> DaftResult<Literal> {
-            let mut attempt = 0;
+            let mut retries = 0;
             loop {
                 match func() {
                     Ok(result) => return Ok(result),
                     Err(e) => {
-                        if attempt >= max_retries {
+                        if retries >= max_retries {
                             return Err(e);
                         }
 
@@ -350,7 +350,7 @@ impl RowWisePyFn {
                         delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
                     }
                 }
-                attempt += 1;
+                retries += 1;
             }
         }
 
