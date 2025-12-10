@@ -1,0 +1,12 @@
+# CODEOWNERS for Daft
+
+# Default owners for everything in the repo
+* @Eventual-Inc/daft-punqs
+
+# ============================================================================
+# Custom I/O Modules
+# ============================================================================
+/daft/io/clickhouse/ @stayrascal @jay-ju @plotor @Eventual-Inc/daft-punqs
+/daft/io/lance/ @stayrascal @jay-ju @plotor @Eventual-Inc/daft-punqs
+/daft/io/mcap/ @stayrascal @jay-ju @plotor @Eventual-Inc/daft-punqs
+/src/daft-io/src/tos.rs @stayrascal @jay-ju @plotor @Eventual-Inc/daft-punqs
