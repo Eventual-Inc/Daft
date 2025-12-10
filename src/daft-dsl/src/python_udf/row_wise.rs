@@ -8,7 +8,7 @@ use opentelemetry::{
     logs::{AnyValue, LogRecord, Logger, LoggerProvider},
 };
 #[cfg(feature = "python")]
-use pyo3::{PyErr, PyTypeCheck, Python, prelude::*};
+use pyo3::{PyErr, Python, prelude::*};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -228,76 +228,23 @@ impl RowWisePyFn {
     /// - Complex/arbitrary-size types (lists, dicts, numpy arrays, etc.) → placeholder string
     #[cfg(feature = "python")]
     fn serialize_pyobject_for_logging(obj: &pyo3::Bound<PyAny>) -> String {
-        use pyo3::types::{PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PyString};
+        // Use Python's str() to stringify the object
+        let str_result = obj
+            .str()
+            .and_then(|value| value.to_str().map(|s| s.to_string()));
 
-        // Check for None first
-        if obj.is_none() {
-            return "None".to_string();
-        }
-
-        // Try to extract simple types
-        if let Ok(val) = obj.extract::<bool>() {
-            return val.to_string();
-        }
-        if let Ok(val) = obj.extract::<i64>() {
-            return val.to_string();
-        }
-        if let Ok(val) = obj.extract::<u64>() {
-            return val.to_string();
-        }
-        if let Ok(val) = obj.extract::<f64>() {
-            return val.to_string();
-        }
-        if let Ok(val) = obj.extract::<String>() {
-            // Limit string parameters to first 100 characters
-            if val.len() > 100 {
-                let truncated: String = val.chars().take(100).collect();
-                return format!("{}...", truncated);
+        match str_result {
+            Ok(val) => {
+                // Limit string parameters to first 100 characters
+                if val.len() > 100 {
+                    let truncated: String = val.chars().take(100).collect();
+                    format!("{}...", truncated)
+                } else {
+                    val
+                }
             }
-            return val;
+            Err(_) => "<unable_to_stringify>".to_string(),
         }
-
-        // Check for specific Python types
-        if PyBool::type_check(obj)
-            && let Ok(val) = obj.extract::<bool>()
-        {
-            return val.to_string();
-        }
-        if PyInt::type_check(obj) {
-            if let Ok(val) = obj.extract::<i64>() {
-                return val.to_string();
-            }
-            if let Ok(val) = obj.extract::<u64>() {
-                return val.to_string();
-            }
-        }
-        if PyFloat::type_check(obj)
-            && let Ok(val) = obj.extract::<f64>()
-        {
-            return val.to_string();
-        }
-        if PyString::type_check(obj)
-            && let Ok(val) = obj.extract::<String>()
-        {
-            // Limit string parameters to first 100 characters
-            if val.len() > 100 {
-                let truncated: String = val.chars().take(100).collect();
-                return format!("{}...", truncated);
-            }
-            return val;
-        }
-        if PyBytes::type_check(obj) {
-            return "<binary>".to_string();
-        }
-        if PyList::type_check(obj) {
-            return "<list>".to_string();
-        }
-        if PyDict::type_check(obj) {
-            return "<dict>".to_string();
-        }
-
-        // For everything else, return a generic placeholder
-        "<complex_object>".to_string()
     }
 
     #[cfg(feature = "python")]
@@ -385,28 +332,27 @@ impl RowWisePyFn {
             max_retries: usize,
             mut delay_ms: u64,
         ) -> DaftResult<Literal> {
-            for attempt in 0..=max_retries {
+            let mut attempt = 0;
+            loop {
                 match func() {
                     Ok(result) => return Ok(result),
                     Err(e) => {
+                        attempt += 1;
                         if attempt >= max_retries {
                             return Err(e);
                         }
                         // Update our failure map for next iteration
-                        if attempt < max_retries {
-                            use std::{thread, time::Duration};
-                            py.detach(|| {
-                                thread::sleep(Duration::from_millis(delay_ms));
-                            });
-                            // Exponential backoff: multiply by 2, cap at MAX_DELAY_MS
-                            delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
-                        }
+                        use std::{thread, time::Duration};
+                        py.detach(|| {
+                            thread::sleep(Duration::from_millis(delay_ms));
+                        });
+                        // Exponential backoff: multiply by 2, cap at MAX_DELAY_MS
+                        delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
                     }
                 }
             }
-            // This should never be reached, but Rust requires it
-            unreachable!("retry loop should always return")
         }
+
         let s = Python::attach(|py| {
             let func = py
                 .import(pyo3::intern!(py, "daft.udf.execution"))?
