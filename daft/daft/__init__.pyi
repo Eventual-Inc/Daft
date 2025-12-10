@@ -1400,6 +1400,9 @@ class PyExpr:
     ###
 
     def as_py(self) -> Any: ...
+    def is_column(self) -> bool: ...
+    def is_literal(self) -> bool: ...
+    def column_name(self) -> builtins.str | None: ...
 
     ###
     # Helper methods required by optimizer:
@@ -1440,6 +1443,7 @@ def udf(
     batch_size: int | None,
     concurrency: int | None,
     use_process: bool | None,
+    ray_options: dict[str, Any] | None = None,
 ) -> PyExpr: ...
 def row_wise_udf(
     name: str,

@@ -454,7 +454,7 @@ impl TimestampArray {
 
     pub fn day_of_month(&self) -> DaftResult<UInt32Array> {
         let (tu, tz) = match self.data_type() {
-            DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow(), tz.clone()),
+            DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow2(), tz.clone()),
             _ => unreachable!("TimestampArray must have Timestamp datatype"),
         };
         let input_array = self
@@ -469,7 +469,7 @@ impl TimestampArray {
 
     pub fn day_of_year(&self) -> DaftResult<UInt32Array> {
         let (tu, tz) = match self.data_type() {
-            DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow(), tz.clone()),
+            DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow2(), tz.clone()),
             _ => unreachable!("TimestampArray must have Timestamp datatype"),
         };
         let input_array = self
@@ -484,7 +484,7 @@ impl TimestampArray {
 
     pub fn week_of_year(&self) -> DaftResult<UInt32Array> {
         let (tu, tz) = match self.data_type() {
-            DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow(), tz.clone()),
+            DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow2(), tz.clone()),
             _ => unreachable!("TimestampArray must have Timestamp datatype"),
         };
         let input_array = self
@@ -507,7 +507,7 @@ impl TimestampArray {
                 .as_arrow()
                 .clone()
                 .to(daft_arrow::datatypes::DataType::Timestamp(
-                    tu.to_arrow(),
+                    tu.to_arrow2(),
                     tz.clone(),
                 ));
         let date_arrow = unix_seconds_arr

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import itertools
+
 import pyarrow as pa
 import pytest
 
@@ -7,7 +9,7 @@ from daft import DataType, col
 from daft.logical.schema import Schema
 from daft.recordbatch import MicroPartition
 from daft.series import Series
-from tests.recordbatch import daft_numeric_types
+from tests.recordbatch import daft_int_types, daft_numeric_types
 
 
 @pytest.mark.parametrize(
@@ -68,8 +70,8 @@ def test_micropartitions_take(mp: MicroPartition) -> None:
     assert taken.to_pydict() == {"a": [4, 3, 3, 3, 4]}
 
 
-@pytest.mark.parametrize("data_dtype", daft_numeric_types)
-def test_table_take_numeric(data_dtype) -> None:
+@pytest.mark.parametrize("data_dtype,idx_dtype", itertools.product(daft_numeric_types, daft_int_types))
+def test_table_take_numeric(data_dtype, idx_dtype) -> None:
     pa_table = pa.Table.from_pydict({"a": [1, 2, 3, 4], "b": [5, 6, 7, 8]})
     daft_recordbatch = MicroPartition.from_arrow(pa_table)
     daft_recordbatch = daft_recordbatch.eval_expression_list([col("a").cast(data_dtype), col("b")])

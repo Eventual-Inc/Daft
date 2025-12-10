@@ -416,6 +416,7 @@ pub async fn stream_json(
     Ok(Box::pin(tables))
 }
 
+#[allow(deprecated, reason = "arrow2 migration")]
 async fn read_json_single_into_stream(
     uri: String,
     convert_options: JsonConvertOptions,
@@ -428,7 +429,7 @@ async fn read_json_single_into_stream(
     daft_arrow::datatypes::Schema,
 )> {
     let schema = match convert_options.schema {
-        Some(schema) => schema.to_arrow()?,
+        Some(schema) => schema.to_arrow2()?,
         None => read_json_schema_single(
             &uri,
             parse_options.clone(),
@@ -438,7 +439,7 @@ async fn read_json_single_into_stream(
             io_stats.clone(),
         )
         .await?
-        .to_arrow()?,
+        .to_arrow2()?,
     };
 
     let (reader, buffer_size, chunk_size): (Box<dyn AsyncBufRead + Unpin + Send>, usize, usize) =
@@ -647,6 +648,7 @@ mod tests {
         inference::{column_types_map_to_fields, infer_records_schema},
     };
 
+    #[allow(deprecated, reason = "arrow2 migration")]
     fn check_equal_local_arrow2(
         path: &str,
         out: &RecordBatch,
@@ -702,8 +704,8 @@ mod tests {
             .map(|c| cast_array_from_daft_if_needed(cast_array_for_daft_if_needed(c)))
             .collect::<Vec<_>>();
         // Roundtrip schema with Daft for casting.
-        let schema = Schema::try_from(&schema).unwrap().to_arrow().unwrap();
-        assert_eq!(out.schema.to_arrow().unwrap(), schema);
+        let schema = Schema::try_from(&schema).unwrap().to_arrow2().unwrap();
+        assert_eq!(out.schema.to_arrow2().unwrap(), schema);
         let out_columns = (0..out.num_columns())
             .map(|i| out.get_column(i).to_arrow())
             .collect::<Vec<_>>();

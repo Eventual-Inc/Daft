@@ -238,14 +238,26 @@ impl Schema {
         })
     }
 
-    pub fn to_arrow(&self) -> DaftResult<daft_arrow::datatypes::Schema> {
+    #[deprecated(note = "use .to_arrow instead")]
+    #[allow(deprecated, reason = "arrow2 migration")]
+    pub fn to_arrow2(&self) -> DaftResult<daft_arrow::datatypes::Schema> {
         let arrow_fields: DaftResult<Vec<daft_arrow::datatypes::Field>> =
-            self.fields.iter().map(Field::to_arrow).collect();
+            self.fields.iter().map(Field::to_arrow2).collect();
         let arrow_fields = arrow_fields?;
         Ok(daft_arrow::datatypes::Schema {
             fields: arrow_fields,
             metadata: Default::default(),
         })
+    }
+
+    pub fn to_arrow(&self) -> DaftResult<arrow_schema::Schema> {
+        let arrow_fields = self
+            .fields
+            .iter()
+            .map(Field::to_arrow)
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        Ok(arrow_schema::Schema::new(arrow_fields))
     }
 
     pub fn repr_html(&self) -> String {
