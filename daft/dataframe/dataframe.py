@@ -665,7 +665,9 @@ class DataFrame:
     ###
 
     @classmethod
-    def _from_pylist(cls, data: list[dict[str, Any]]) -> "DataFrame":
+    def _from_pylist(
+        cls, data: list[dict[str, Any]], provenance_fn: Callable[[dict[str, Any]], str] | None = None
+    ) -> "DataFrame":
         """Creates a DataFrame from a list of dictionaries."""
         headers: set[str] = set()
         for row in data:
@@ -673,7 +675,16 @@ class DataFrame:
                 raise ValueError(f"Expected list of dictionaries of {{column_name: value}}, received: {type(row)}")
             headers.update(row.keys())
         headers_ordered = sorted(list(headers))
-        return cls._from_pydict(data={header: [row.get(header, None) for row in data] for header in headers_ordered})
+
+        # Build the data dictionary
+        data_dict = {header: [row.get(header, None) for row in data] for header in headers_ordered}
+
+        # Add provenance column if provenance_fn is provided
+        if provenance_fn is not None:
+            provenance_values = [provenance_fn(row) for row in data]
+            data_dict["__provenance"] = provenance_values
+
+        return cls._from_pydict(data=data_dict)
 
     @classmethod
     def _from_pydict(cls, data: Mapping[str, InputListType]) -> "DataFrame":

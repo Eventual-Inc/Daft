@@ -1,7 +1,7 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, Any, Union
 
 from daft.api_annotations import PublicAPI
@@ -20,11 +20,16 @@ InputListType = Union[list[Any], "np.ndarray[Any, Any]", "pa.Array", "pa.Chunked
 
 
 @PublicAPI
-def from_pylist(data: list[dict[str, Any]]) -> "DataFrame":
+def from_pylist(
+    data: list[dict[str, Any]], provenance_fn: Callable[[dict[str, Any]], str] | None = None
+) -> "DataFrame":
     """Creates a DataFrame from a list of dictionaries.
 
     Args:
         data: List of dictionaries, where each key is a column name.
+        provenance_fn: Optional function that takes a row dictionary and returns a string
+            representing the provenance of that row. If provided, a hidden `__provenance` column
+            will be created with the provenance values.
 
     Returns:
         DataFrame: DataFrame created from list of dictionaries.
@@ -47,7 +52,7 @@ def from_pylist(data: list[dict[str, Any]]) -> "DataFrame":
     """
     from daft import DataFrame
 
-    return DataFrame._from_pylist(data)
+    return DataFrame._from_pylist(data, provenance_fn=provenance_fn)
 
 
 @PublicAPI
