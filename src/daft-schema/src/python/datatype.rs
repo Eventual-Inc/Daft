@@ -365,12 +365,17 @@ impl PyDataType {
                     // canonical tensor extension type.
                     Ok(
                         ffi::field_to_py(py, self.dtype.to_arrow_field()?, &pyarrow)?
+                            .getattr(py, pyo3::intern!(py, "type"))?
                             .into_bound(py),
                     )
                 }
             }
 
-            _ => Ok(ffi::field_to_py(py, self.dtype.to_arrow_field()?, &pyarrow)?.into_bound(py)),
+            _ => Ok(
+                ffi::field_to_py(py, self.dtype.to_arrow_field()?, &pyarrow)?
+                    .getattr(py, pyo3::intern!(py, "type"))?
+                    .into_bound(py),
+            ),
         }
     }
     pub fn is_null(&self) -> PyResult<bool> {
