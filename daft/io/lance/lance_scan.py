@@ -268,7 +268,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             )
 
         if self._should_use_index_for_point_lookup():
-            yield _python_factory_func_scan_task()
+            yield _python_factory_func_scan_task(fragment_ids=None, num_rows=None, size_bytes=None)
             return
 
         if self._fragment_group_size is None or self._fragment_group_size <= 1:
@@ -314,7 +314,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 yield _python_factory_func_scan_task(fragment_ids, num_rows=num_rows, size_bytes=size_bytes)
 
     def _combine_filters_to_arrow(self) -> Optional["pa.compute.Expression"]:
-        if self._pushed_filters is not None:
+        if self._pushed_filters is not None and len(self._pushed_filters) > 0:
             combined_filter = self._pushed_filters[0]
             for filter_expr in self._pushed_filters[1:]:
                 combined_filter = combined_filter & filter_expr
@@ -344,8 +344,8 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             point_columns = detect_point_lookup_columns(
                 [Expression._from_pyexpr(expr) for expr in self._pushed_filters]
             )
-        except Exception:
-            logger.warning("Failed to analyze filters for point lookup", exc_info=True)
+        except (ValueError, TypeError, AttributeError) as e:
+            logger.warning("Failed to analyze filters for point lookup: %s", e, exc_info=True)
             return False
 
         if not point_columns:
