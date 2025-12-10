@@ -31,8 +31,7 @@ For more advanced installations (e.g. installing from source or with extra depen
 Quickstart
 ^^^^^^^^^^
 
-.. TODO: Change /latest/ to /stable/ once the new quickstart is released
-Get started in minutes with our `Quickstart <https://docs.daft.ai/en/latest/quickstart/>`_ - load a real-world e-commerce dataset, process product images, and run AI inference at scale.
+Get started in minutes with our `Quickstart <https://docs.daft.ai/en/stable/quickstart/>`_ - load a real-world e-commerce dataset, process product images, and run AI inference at scale.
 
 
 More Resources
