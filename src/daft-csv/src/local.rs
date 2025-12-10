@@ -301,10 +301,11 @@ async fn get_schema_and_estimators(
     )
     .await?;
 
+    #[allow(deprecated, reason = "arrow2 migration")]
     let mut schema = if let Some(schema) = convert_options.schema.clone() {
-        schema.to_arrow()?
+        schema.to_arrow2()?
     } else {
-        inferred_schema.to_arrow()?
+        inferred_schema.to_arrow2()?
     };
     // Rename fields, if necessary.
     if let Some(column_names) = convert_options.column_names.clone() {

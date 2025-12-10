@@ -209,7 +209,7 @@ impl DateArray {
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
 pub fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
     let chrono_ts =
-        daft_arrow::temporal_conversions::timestamp_to_naive_datetime(val, unit.to_arrow());
+        daft_arrow::temporal_conversions::timestamp_to_naive_datetime(val, unit.to_arrow2());
     let format_str = "%Y-%m-%d %H:%M:%S%.f";
     chrono_ts.format(format_str).to_string()
 }
@@ -219,7 +219,7 @@ pub fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
 pub fn timestamp_to_str_offset(val: i64, unit: &TimeUnit, offset: &chrono::FixedOffset) -> String {
     let chrono_ts =
-        daft_arrow::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow(), offset);
+        daft_arrow::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow2(), offset);
     let format_str = "%Y-%m-%d %H:%M:%S%.f %:z";
     chrono_ts.format(format_str).to_string()
 }
@@ -229,7 +229,7 @@ pub fn timestamp_to_str_offset(val: i64, unit: &TimeUnit, offset: &chrono::Fixed
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
 pub fn timestamp_to_str_tz(val: i64, unit: &TimeUnit, tz: &chrono_tz::Tz) -> String {
     let chrono_ts =
-        daft_arrow::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow(), tz);
+        daft_arrow::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow2(), tz);
     let format_str = "%Y-%m-%d %H:%M:%S%.f %Z";
     chrono_ts.format(format_str).to_string()
 }

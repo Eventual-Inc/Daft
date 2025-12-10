@@ -194,7 +194,8 @@ impl MicroPartition {
 
     pub fn write_to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
         let buffer = Vec::with_capacity(self.size_bytes());
-        let schema = self.schema.to_arrow()?;
+        #[allow(deprecated, reason = "arrow2 migration")]
+        let schema = self.schema.to_arrow2()?;
         let options = daft_arrow::io::ipc::write::WriteOptions { compression: None };
         let mut writer = daft_arrow::io::ipc::write::StreamWriter::new(buffer, options);
         writer.start(&schema, None)?;
