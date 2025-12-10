@@ -32,7 +32,7 @@ use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
 #[cfg(feature = "python")]
-use crate::udf_process_pool::{ProcessPoolManager, get_or_init_process_pool};
+use crate::udf_process_pool::ProcessPoolManager;
 use crate::{
     ExecutionTaskSpawner,
     dynamic_batching::{
@@ -320,6 +320,8 @@ pub(crate) struct UdfOperator {
     params: Arc<UdfParams>,
     input_schema: SchemaRef,
     memory_request: u64,
+    #[cfg(feature = "python")]
+    process_pool: Arc<ProcessPoolManager>,
 }
 
 impl UdfOperator {
@@ -329,6 +331,7 @@ impl UdfOperator {
         passthrough_columns: Vec<BoundExpr>,
         output_schema: &SchemaRef,
         input_schema: &SchemaRef,
+        #[cfg(feature = "python")] process_pool: Arc<ProcessPoolManager>,
     ) -> DaftResult<Self> {
         // Determine optimal parallelism
         let resource_request = udf_properties.resource_request.as_ref();
@@ -358,6 +361,8 @@ impl UdfOperator {
             }),
             input_schema: input_schema.clone(),
             memory_request,
+            #[cfg(feature = "python")]
+            process_pool,
         })
     }
 
@@ -506,7 +511,7 @@ impl IntermediateOperator for UdfOperator {
                 || self.params.udf_properties.use_process.unwrap_or(false);
 
             let handle = if use_pool && is_arrow_dtype {
-                let pool_manager = get_or_init_process_pool().clone();
+                let pool_manager = self.process_pool.clone();
                 let udf_name = self.params.udf_properties.name.clone();
                 // Register the handle with the pool for reference counting
                 pool_manager.register_udf_handle(udf_name.clone());

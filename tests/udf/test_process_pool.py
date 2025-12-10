@@ -9,13 +9,18 @@ import pytest
 
 import daft
 from daft import DataType, col
-from daft.daft import get_process_pool_stats, reset_process_pool_total_created
+from daft.runners import get_or_create_runner
+from daft.runners.native_runner import NativeRunner
 from tests.conftest import get_tests_daft_runner_name
 
 
 @pytest.fixture
 def reset_process_pool_total_created_fixture():
-    reset_process_pool_total_created()
+    """Reset the process pool stats before each test."""
+    if get_tests_daft_runner_name() == "native":
+        runner = get_or_create_runner()
+        if isinstance(runner, NativeRunner):
+            runner.native_executor.reset_process_pool_total_created()
     yield
 
 
@@ -24,7 +29,11 @@ def check_process_pool_stats(expected_active_workers: int = 0, expected_total_wo
     if get_tests_daft_runner_name() != "native":
         return
 
-    active_workers, total_workers = get_process_pool_stats()
+    runner = get_or_create_runner()
+    if not isinstance(runner, NativeRunner):
+        return
+
+    active_workers, total_workers = runner.native_executor.get_process_pool_stats()
     assert (
         active_workers == expected_active_workers
     ), f"Should have {expected_active_workers} active workers, got {active_workers}"

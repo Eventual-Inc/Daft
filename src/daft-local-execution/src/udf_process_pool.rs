@@ -5,7 +5,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::{Arc, Condvar, Mutex, OnceLock},
+    sync::{Condvar, Mutex},
 };
 
 use common_error::DaftResult;
@@ -17,39 +17,25 @@ use pyo3::{Py, PyAny, Python, prelude::*};
 
 use crate::STDOUT;
 
-/// Global process pool instance
-#[cfg(feature = "python")]
-pub(super) static PROCESS_POOL: OnceLock<Arc<ProcessPoolManager>> = OnceLock::new();
-
-/// Get or initialize the global process pool
-#[cfg(feature = "python")]
-pub(super) fn get_or_init_process_pool() -> &'static Arc<ProcessPoolManager> {
-    PROCESS_POOL.get_or_init(|| Arc::new(ProcessPoolManager::new()))
-}
-
-/// Get process pool statistics
-#[cfg(feature = "python")]
-#[pyo3::pyfunction]
-pub(super) fn get_process_pool_stats() -> (usize, usize) {
-    get_or_init_process_pool().get_stats()
-}
-
-/// Reset the total number of workers ever created
-#[cfg(feature = "python")]
-#[pyo3::pyfunction]
-pub(super) fn reset_process_pool_total_created() {
-    get_or_init_process_pool().reset_total_created();
-}
-
 /// Rust-side handle to a pool worker
 #[cfg(feature = "python")]
-pub(super) struct UdfWorkerHandle {
+struct UdfWorkerHandle {
     /// Python worker handle
     py_handle: Py<PyAny>,
     /// Set of active UDF names in this worker
     active_udfs: HashSet<UDFName>,
     /// Worker index for logging
     index: usize,
+}
+
+#[cfg(feature = "python")]
+impl std::fmt::Debug for UdfWorkerHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("UdfWorkerHandle")
+            .field("active_udfs", &self.active_udfs)
+            .field("index", &self.index)
+            .finish_non_exhaustive()
+    }
 }
 
 #[cfg(feature = "python")]
@@ -86,7 +72,7 @@ impl UdfWorkerHandle {
     }
 
     /// Submit a UDF task for execution
-    pub fn submit(
+    fn submit(
         &mut self,
         udf_name: &UDFName,
         expr: &ExprRef,
@@ -127,7 +113,7 @@ impl UdfWorkerHandle {
 
         // Print stdout lines if call succeeded
         if let Ok((_, stdout_lines, _)) = &result {
-            let label = format!("[Pool Worker #{}]", self.index);
+            let label = format!("[`{}` Worker #{}]", udf_name, self.index);
             for line in stdout_lines {
                 STDOUT.print(&label, line);
             }
@@ -142,9 +128,10 @@ impl UdfWorkerHandle {
     }
 
     /// Clean up multiple UDFs from this UDF worker in batch
-    pub fn cleanup_udfs<'a>(&mut self, finished_udfs: impl Iterator<Item = &'a UDFName>) {
+    fn cleanup_udfs(&mut self, finished_udfs: &HashSet<UDFName>) {
         // Filter to only UDFs that are actually active in this worker
         let udfs_to_cleanup = finished_udfs
+            .iter()
             .filter(|finished_udf_name| self.active_udfs.contains(*finished_udf_name))
             .map(|finished_udf_name| finished_udf_name.as_ref())
             .collect::<Vec<_>>();
@@ -166,17 +153,17 @@ impl UdfWorkerHandle {
     }
 
     /// Get the number of active UDFs in this worker
-    pub fn active_udfs_count(&self) -> usize {
+    fn active_udfs_count(&self) -> usize {
         self.active_udfs.len()
     }
 
     /// Check if a UDF is active in this worker
-    pub fn has_udf(&self, udf_name: &str) -> bool {
+    fn has_udf(&self, udf_name: &str) -> bool {
         self.active_udfs.contains(udf_name)
     }
 
     /// Shutdown the worker
-    pub fn shutdown(&self) {
+    fn shutdown(&self) {
         // Shutdown the Python worker
         let _ = Python::attach(|py| -> PyResult<()> {
             self.py_handle
@@ -187,11 +174,18 @@ impl UdfWorkerHandle {
     }
 }
 
+#[cfg(feature = "python")]
+impl Drop for UdfWorkerHandle {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
 type WorkerIndex = usize;
 
 /// State for managing UDF workers in the pool
 #[cfg(feature = "python")]
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct PoolState {
     /// Workers that are available for use
     available_workers: HashMap<WorkerIndex, UdfWorkerHandle>,
@@ -207,6 +201,7 @@ struct PoolState {
 
 /// Manager for the global process pool
 #[cfg(feature = "python")]
+#[derive(Debug)]
 pub(super) struct ProcessPoolManager {
     /// Pool state (workers, availability, UDF tracking) with condition variable
     state: Mutex<PoolState>,
@@ -231,14 +226,14 @@ impl ProcessPoolManager {
     }
 
     /// Get pool statistics for testing/debugging
-    /// Returns: (max_workers, active_workers, total_workers_ever_created)
-    fn get_stats(&self) -> (usize, usize) {
+    /// Returns: (active_workers, total_workers_ever_created)
+    pub fn get_stats(&self) -> (usize, usize) {
         let state = self.state.lock().unwrap();
         let active_workers = state.available_workers.len() + state.workers_in_use;
         (active_workers, state.total_created)
     }
 
-    fn reset_total_created(&self) {
+    pub fn reset_total_created(&self) {
         let mut state = self.state.lock().unwrap();
         state.total_created = 0;
     }
@@ -352,10 +347,8 @@ impl ProcessPoolManager {
         // Cleanup completed UDFs from available workers, return workers that still have active UDFs
         let mut workers_to_return = Vec::new();
         for mut worker in std::mem::take(&mut state.available_workers).into_values() {
-            worker.cleanup_udfs(state.completed_udfs.iter());
-            if worker.active_udfs_count() == 0 {
-                worker.shutdown();
-            } else {
+            worker.cleanup_udfs(&state.completed_udfs);
+            if worker.active_udfs_count() > 0 {
                 workers_to_return.push(worker);
             }
         }

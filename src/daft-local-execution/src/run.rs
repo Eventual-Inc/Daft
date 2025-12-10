@@ -169,12 +169,25 @@ impl PyNativeExecutor {
             cfg.config,
         ))
     }
+
+    /// Get process pool statistics
+    /// Returns: (active_workers, total_workers_ever_created)
+    pub fn get_process_pool_stats(&self) -> (usize, usize) {
+        self.executor.get_process_pool_stats()
+    }
+
+    /// Reset the total number of workers ever created
+    pub fn reset_process_pool_total_created(&self) {
+        self.executor.reset_process_pool_total_created();
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct NativeExecutor {
     cancel: CancellationToken,
     enable_explain_analyze: bool,
+    #[cfg(feature = "python")]
+    process_pool: Arc<crate::udf_process_pool::ProcessPoolManager>,
 }
 
 impl Default for NativeExecutor {
@@ -182,6 +195,8 @@ impl Default for NativeExecutor {
         Self {
             cancel: CancellationToken::new(),
             enable_explain_analyze: should_enable_explain_analyze(),
+            #[cfg(feature = "python")]
+            process_pool: std::sync::Arc::new(crate::udf_process_pool::ProcessPoolManager::new()),
         }
     }
 }
@@ -207,6 +222,12 @@ impl NativeExecutor {
     ) -> DaftResult<ExecutionEngineResult> {
         let cancel = self.cancel.clone();
         let additional_context = additional_context.unwrap_or_default();
+        #[cfg(feature = "python")]
+        let ctx = RuntimeContext::new_with_process_pool(
+            additional_context.clone(),
+            self.process_pool.clone(),
+        );
+        #[cfg(not(feature = "python"))]
         let ctx = RuntimeContext::new_with_context(additional_context.clone());
         let pipeline =
             translate_physical_plan_to_pipeline(local_physical_plan, psets, &exec_cfg, &ctx)?;
@@ -351,6 +372,19 @@ impl NativeExecutor {
         )
         .unwrap();
         get_pipeline_relationship_mapping(&*pipeline_node)
+    }
+
+    /// Get process pool statistics
+    /// Returns: (active_workers, total_workers_ever_created)
+    #[cfg(feature = "python")]
+    pub fn get_process_pool_stats(&self) -> (usize, usize) {
+        self.process_pool.get_stats()
+    }
+
+    /// Reset the total number of workers ever created
+    #[cfg(feature = "python")]
+    pub fn reset_process_pool_total_created(&self) {
+        self.process_pool.reset_total_created();
     }
 }
 
