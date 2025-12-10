@@ -52,7 +52,7 @@ def test_explicit_schema_preserves_hive_partitions(tmpdir, file_format, partitio
         "value": daft.DataType.int64(),
     }
 
-    df = ()
+    df = None
     if file_format == "csv":
         df = daft.read_csv(glob_path, infer_schema=False, schema=schema_hint, hive_partitioning=True)
     elif file_format == "parquet":
@@ -63,6 +63,7 @@ def test_explicit_schema_preserves_hive_partitions(tmpdir, file_format, partitio
         pytest.skip("Unsupported format for this test")
 
     # Ensure partition columns are present and have expected values
+    assert df is not None, "DataFrame should be initialized"
     pdf = df.to_pydict()
     for col in partition_by:
         assert col in df.column_names, f"Missing partition column {col} when infer_schema=False"
@@ -90,7 +91,7 @@ def test_explicit_schema_preserves_file_path_column(tmpdir, file_format):
         "value": daft.DataType.int64(),
     }
 
-    df = ()
+    df = None
     if file_format == "csv":
         df = daft.read_csv(glob_path, infer_schema=False, schema=schema_hint, file_path_column="path")
     elif file_format == "parquet":
@@ -100,6 +101,7 @@ def test_explicit_schema_preserves_file_path_column(tmpdir, file_format):
     else:
         pytest.skip("Unsupported format for this test")
 
+    assert df is not None, "DataFrame should be initialized"
     assert "path" in df.column_names, "Missing file path column when infer_schema=False"
     paths = df.to_pydict()["path"]
     assert all(isinstance(p, str) and len(p) > 0 for p in paths)
