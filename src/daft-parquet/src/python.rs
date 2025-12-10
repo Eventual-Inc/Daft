@@ -4,6 +4,8 @@ pub mod pylib {
     use std::{collections::BTreeMap, sync::Arc};
 
     use common_arrow_ffi::{field_to_py, to_py_array};
+    #[allow(deprecated, reason = "arrow2 migration")]
+    use daft_arrow::datatypes::arrow2_field_to_arrow;
     use daft_core::python::{PySchema, PySeries, PyTimeUnit};
     use daft_dsl::python::PyExpr;
     use daft_io::{IOStatsContext, get_io_client, python::IOConfig};
@@ -88,10 +90,11 @@ pub mod pylib {
                     .collect::<PyResult<Vec<_>>>()
             })
             .collect::<PyResult<Vec<_>>>()?;
+        #[allow(deprecated, reason = "arrow2 migration")]
         let fields = schema
             .fields
             .iter()
-            .map(|f| field_to_py(py, f.clone().into(), pyarrow))
+            .map(|f| field_to_py(py, arrow2_field_to_arrow(f.clone()), pyarrow))
             .collect::<Result<Vec<_>, _>>()?;
         let metadata = &schema.metadata;
         Ok((fields, metadata.clone(), converted_arrays, num_rows))
