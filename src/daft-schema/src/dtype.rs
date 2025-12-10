@@ -319,7 +319,7 @@ impl DataType {
                 return Ok(d.to_arrow_field()?.with_metadata(metadata_map));
             }
             Self::Date => arrow_schema::DataType::Date32,
-            Self::Time(time_unit) => arrow_schema::DataType::Time32(time_unit.to_arrow()),
+            Self::Time(time_unit) => arrow_schema::DataType::Time64(time_unit.to_arrow()),
             Self::Embedding(..)
             | Self::Image(..)
             | Self::FixedShapeImage(..)
