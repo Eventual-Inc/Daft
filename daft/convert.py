@@ -1,8 +1,8 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from collections.abc import Callable, Iterable
-from typing import TYPE_CHECKING, Any, Union
+from collections.abc import Iterable
+from typing import TYPE_CHECKING, Any, Callable, Union
 
 from daft.api_annotations import PublicAPI
 

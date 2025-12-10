@@ -53,18 +53,38 @@ impl Project {
         let (factored_input, factored_projection) =
             Self::try_factor_subexpressions(input, projection)?;
 
-        let fields = factored_projection
+        // Check if input schema has provenance columns and if they're not already in the projection
+        let input_schema = factored_input.schema();
+        let provenance_columns = input_schema.provenance_columns();
+
+        // Find provenance columns that are not already in the projection
+        let mut final_projection = factored_projection;
+        for prov_col_name in provenance_columns {
+            let prov_col_name_str = prov_col_name.as_str();
+            let has_provenance_in_projection = final_projection
+                .iter()
+                .any(|expr| expr.name() == prov_col_name_str);
+
+            // If provenance column exists in input but not in projection, add it
+            if !has_provenance_in_projection && input_schema.has_field(prov_col_name_str) {
+                final_projection.push(resolved_col(prov_col_name_str));
+            }
+        }
+
+        let fields = final_projection
             .iter()
-            .map(|expr| expr.to_field(&factored_input.schema()))
+            .map(|expr| expr.to_field(&input_schema))
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let projected_schema = Schema::new(fields).into();
+        // Preserve provenance columns in the projected schema
+        let projected_schema =
+            Schema::new_with_provenance(fields, provenance_columns.clone()).into();
 
         Ok(Self {
             plan_id: None,
             node_id: None,
             input: factored_input,
-            projection: factored_projection,
+            projection: final_projection,
             projected_schema,
             stats_state: StatsState::NotMaterialized,
         })

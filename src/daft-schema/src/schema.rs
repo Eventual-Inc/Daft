@@ -25,6 +25,11 @@ pub struct Schema {
     #[educe(Hash(ignore))]
     #[educe(PartialEq(ignore))]
     name_to_indices: HashMap<String, Vec<usize>>,
+
+    /// Set of column names that are provenance columns (hidden from users)
+    #[educe(Hash(ignore))]
+    #[educe(PartialEq(ignore))]
+    provenance_columns: HashSet<String>,
 }
 
 impl std::fmt::Display for Schema {
@@ -35,6 +40,14 @@ impl std::fmt::Display for Schema {
 
 impl Schema {
     pub fn new<I, F>(fields: I) -> Self
+    where
+        I: IntoIterator<Item = F>,
+        F: Into<Field>,
+    {
+        Self::new_with_provenance(fields, HashSet::new())
+    }
+
+    pub fn new_with_provenance<I, F>(fields: I, provenance_columns: HashSet<String>) -> Self
     where
         I: IntoIterator<Item = F>,
         F: Into<Field>,
@@ -60,6 +73,7 @@ impl Schema {
         Self {
             fields: field_vec,
             name_to_indices,
+            provenance_columns,
         }
     }
 
@@ -67,6 +81,7 @@ impl Schema {
         Self {
             fields: vec![],
             name_to_indices: HashMap::new(),
+            provenance_columns: HashSet::new(),
         }
     }
 
@@ -88,6 +103,21 @@ impl Schema {
 
     pub fn is_empty(&self) -> bool {
         self.fields.is_empty()
+    }
+
+    /// Check if a column name is a provenance column
+    pub fn is_provenance_column(&self, column_name: &str) -> bool {
+        self.provenance_columns.contains(column_name)
+    }
+
+    /// Get the set of provenance column names
+    pub fn provenance_columns(&self) -> &HashSet<String> {
+        &self.provenance_columns
+    }
+
+    /// Get the first provenance column name, if any
+    pub fn get_provenance_column_name(&self) -> Option<&str> {
+        self.provenance_columns.iter().next().map(|s| s.as_str())
     }
 
     pub fn get_fields_with_name(&self, name: &str) -> Vec<(usize, &Field)> {
@@ -122,7 +152,7 @@ impl Schema {
             .cloned()
             .collect::<Vec<_>>();
 
-        Self::new(fields)
+        Self::new_with_provenance(fields, self.provenance_columns.clone())
     }
 
     #[deprecated(since = "TBD", note = "name-referenced columns")]
@@ -185,8 +215,13 @@ impl Schema {
             }
         }
 
-        Ok(Self::new(
+        // Union provenance columns from both schemas
+        let mut provenance_columns = self.provenance_columns.clone();
+        provenance_columns.extend(other.provenance_columns.iter().cloned());
+
+        Ok(Self::new_with_provenance(
             self.fields.iter().chain(other.fields.iter()).cloned(),
+            provenance_columns,
         ))
     }
 
@@ -208,7 +243,11 @@ impl Schema {
             !self.name_to_indices.contains_key(&f.name)
         }).cloned().map(Ok)).collect::<DaftResult<Vec<_>>>()?;
 
-        Ok(Self::new(fields))
+        // Union provenance columns from both schemas
+        let mut provenance_columns = self.provenance_columns.clone();
+        provenance_columns.extend(other.provenance_columns.iter().cloned());
+
+        Ok(Self::new_with_provenance(fields, provenance_columns))
     }
 
     #[deprecated(since = "TBD", note = "name-referenced columns")]
@@ -235,6 +274,7 @@ impl Schema {
         Ok(Self {
             fields: applied_fields,
             name_to_indices: self.name_to_indices.clone(),
+            provenance_columns: self.provenance_columns.clone(),
         })
     }
 

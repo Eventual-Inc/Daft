@@ -80,8 +80,12 @@ def type_check_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
 
         origin_T = get_origin(T)
 
-        # Handle Callable types
-        if (origin_T is CallableABC or T is CallableABC) and isinstance(CallableABC, type):
+        # Handle Callable types (both typing.Callable and collections.abc.Callable)
+        # In Python 3.9+, typing.Callable is an alias for collections.abc.Callable
+        # but get_origin might return either, so we check both
+        if (origin_T is CallableABC or T is CallableABC or origin_T is Callable or T is Callable) and isinstance(
+            CallableABC, type
+        ):
             return isinstance(value, CallableABC)
 
         # Handle generic types that are subclasses of Callable
