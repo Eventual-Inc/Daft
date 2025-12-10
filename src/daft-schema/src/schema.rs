@@ -250,6 +250,16 @@ impl Schema {
         })
     }
 
+    pub fn to_arrow(&self) -> DaftResult<arrow_schema::Schema> {
+        let arrow_fields = self
+            .fields
+            .iter()
+            .map(Field::to_arrow)
+            .collect::<DaftResult<Vec<_>>>()?;
+
+        Ok(arrow_schema::Schema::new(arrow_fields))
+    }
+
     pub fn repr_html(&self) -> String {
         // Produces a <table> HTML element.
 
