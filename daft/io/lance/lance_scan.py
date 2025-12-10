@@ -243,7 +243,10 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         pushed_expr = self._combine_filters_to_arrow()
 
         def _python_factory_func_scan_task(
-            fragment_ids: Optional[list[int]], *, num_rows: Optional[int] = None, size_bytes: Optional[int] = None
+            fragment_ids: Optional[list[int]] = None,
+            *,
+            num_rows: Optional[int] = None,
+            size_bytes: Optional[int] = None,
         ) -> ScanTask:
             return ScanTask.python_factory_func_scan_task(
                 module=_lancedb_table_factory_function.__module__,
@@ -265,7 +268,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             )
 
         if self._should_use_index_for_point_lookup():
-            yield _python_factory_func_scan_task(None)
+            yield _python_factory_func_scan_task()
             return
 
         if self._fragment_group_size is None or self._fragment_group_size <= 1:
@@ -276,7 +279,9 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     continue
 
                 yield _python_factory_func_scan_task(
-                    [fragment.fragment_id], num_rows=num_rows, size_bytes=sum(file.file_size_bytes for file in fragment.metadata.files),
+                    [fragment.fragment_id],
+                    num_rows=num_rows,
+                    size_bytes=sum(file.file_size_bytes for file in fragment.metadata.files),
                 )
         else:
             # Group fragments
@@ -306,9 +311,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             # Create scan tasks for each fragment group
             for fragment_group, num_rows, size_bytes in fragment_groups:
                 fragment_ids = [fragment.fragment_id for fragment in fragment_group]
-                yield _python_factory_func_scan_task(
-                    fragment_ids, num_rows=num_rows, size_bytes=size_bytes
-                )
+                yield _python_factory_func_scan_task(fragment_ids, num_rows=num_rows, size_bytes=size_bytes)
 
     def _combine_filters_to_arrow(self) -> Optional["pa.compute.Expression"]:
         if self._pushed_filters is not None:
