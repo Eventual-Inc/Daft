@@ -22,7 +22,6 @@ use crate::prelude::PythonArray;
 use crate::{
     array::{
         DataArray, FixedSizeListArray, ListArray, StructArray,
-        growable::make_growable,
         image_array::ImageArraySidecarData,
         ops::{DaftCompare, full::FullNull},
     },
@@ -1586,28 +1585,44 @@ impl ListArray {
                     }
                     // Some invalids, we need to insert nulls into the child
                     Some(validity) => {
-                        let mut child_growable = make_growable(
-                            "item",
-                            child_dtype.as_ref(),
-                            vec![&casted_child],
-                            true,
-                            self.validity()
-                                .map_or(self.len() * size, |v| v.len() * size),
-                        );
-
+                        let mut parts = Vec::new();
                         let mut invalid_ptr = 0;
+
                         for (start, end) in validity.valid_slices() {
-                            let len = end - start;
-                            child_growable.add_nulls((start - invalid_ptr) * size);
-                            let child_start = self.offsets().start_end(start).0;
-                            child_growable.extend(0, child_start, len * size);
+                            // Add nulls for invalid region before this valid slice
+                            if start > invalid_ptr {
+                                let null_count = (start - invalid_ptr) * size;
+                                if null_count > 0 {
+                                    parts.push(Series::full_null("item", child_dtype.as_ref(), null_count));
+                                }
+                            }
+
+                            // Add valid data for this slice
+                            let (child_start, child_end) = self.offsets().start_end(start);
+                            parts.push(casted_child.slice(child_start, child_end)?);
+
                             invalid_ptr = end;
                         }
-                        child_growable.add_nulls((self.len() - invalid_ptr) * size);
+
+                        // Add nulls for any remaining invalid region at the end
+                        if invalid_ptr < self.len() {
+                            let null_count = (self.len() - invalid_ptr) * size;
+                            if null_count > 0 {
+                                parts.push(Series::full_null("item", child_dtype.as_ref(), null_count));
+                            }
+                        }
+
+                        let final_child = if parts.is_empty() {
+                            Series::full_null("item", child_dtype.as_ref(), 0)
+                        } else if parts.len() == 1 {
+                            parts.into_iter().next().unwrap()
+                        } else {
+                            Series::concat(&parts.iter().collect::<Vec<_>>())?
+                        };
 
                         Ok(FixedSizeListArray::new(
                             Field::new(self.name(), dtype.clone()),
-                            child_growable.build()?,
+                            final_child,
                             self.validity().cloned(),
                         )
                         .into_series())

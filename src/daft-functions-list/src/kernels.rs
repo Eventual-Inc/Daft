@@ -5,7 +5,6 @@ use daft_arrow::offset::{Offsets, OffsetsBuffer};
 use daft_core::{
     array::{
         FixedSizeListArray, ListArray, StructArray,
-        growable::{Growable, make_growable},
         ops::arrow::comparison::build_is_equal,
     },
     datatypes::{try_mean_aggregation_supertype, try_sum_supertype},
@@ -223,38 +222,29 @@ impl ListArrayExtension for ListArray {
 
     fn explode(&self) -> DaftResult<Series> {
         let offsets = self.offsets();
-
-        let total_capacity: usize = (0..self.len())
-            .map(|i| {
-                let is_valid = self.is_valid(i);
-                let len: usize = (offsets.get(i + 1).unwrap() - offsets.get(i).unwrap()) as usize;
-                match (is_valid, len) {
-                    (false, _) => 1,
-                    (true, 0) => 1,
-                    (true, l) => l,
-                }
-            })
-            .sum();
-        let mut growable: Box<dyn Growable> = make_growable(
-            self.name(),
-            self.child_data_type(),
-            vec![&self.flat_child],
-            true,
-            total_capacity,
-        );
+        let child_dtype = self.child_data_type();
+        let mut segments = Vec::new();
 
         for i in 0..self.len() {
             let is_valid = self.is_valid(i);
-            let start = offsets.get(i).unwrap();
-            let len = offsets.get(i + 1).unwrap() - start;
+            let start = *offsets.get(i).unwrap() as usize;
+            let len = (*offsets.get(i + 1).unwrap() - *offsets.get(i).unwrap()) as usize;
             match (is_valid, len) {
-                (false, _) => growable.add_nulls(1),
-                (true, 0) => growable.add_nulls(1),
-                (true, l) => growable.extend(0, *start as usize, l as usize),
+                (false, _) | (true, 0) => {
+                    segments.push(Series::full_null(self.name(), child_dtype, 1));
+                }
+                (true, l) => {
+                    segments.push(self.flat_child.slice(start, start + l)?);
+                }
             }
         }
 
-        growable.build()
+        if segments.is_empty() {
+            Ok(Series::empty(self.name(), child_dtype))
+        } else {
+            let segment_refs: Vec<&Series> = segments.iter().collect();
+            Series::concat(&segment_refs)
+        }
     }
 
     fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array> {
@@ -541,29 +531,28 @@ impl ListArrayExtension for FixedSizeListArray {
 
     fn explode(&self) -> DaftResult<Series> {
         let list_size = self.fixed_element_len();
-        let total_capacity = if list_size == 0 {
-            self.len()
-        } else {
-            let null_count = self.validity().map(|v| v.null_count()).unwrap_or(0);
-            list_size * (self.len() - null_count)
-        };
-
-        let mut child_growable: Box<dyn Growable> = make_growable(
-            self.name(),
-            self.child_data_type(),
-            vec![&self.flat_child],
-            true,
-            total_capacity,
-        );
+        let child_dtype = self.child_data_type();
+        let mut segments = Vec::new();
 
         for i in 0..self.len() {
             let is_valid = self.is_valid(i) && (list_size > 0);
             match is_valid {
-                false => child_growable.add_nulls(1),
-                true => child_growable.extend(0, i * list_size, list_size),
+                false => {
+                    segments.push(Series::full_null(self.name(), child_dtype, 1));
+                }
+                true => {
+                    let start = i * list_size;
+                    segments.push(self.flat_child.slice(start, start + list_size)?);
+                }
             }
         }
-        child_growable.build()
+
+        if segments.is_empty() {
+            Ok(Series::empty(self.name(), child_dtype))
+        } else {
+            let segment_refs: Vec<&Series> = segments.iter().collect();
+            Series::concat(&segment_refs)
+        }
     }
 
     fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array> {
@@ -600,16 +589,9 @@ impl ListArrayExtension for FixedSizeListArray {
             "Only a single default value is supported"
         );
         let default = default.cast(self.child_data_type())?;
-
-        let mut growable = make_growable(
-            self.name(),
-            self.child_data_type(),
-            vec![&self.flat_child, &default],
-            true,
-            self.len(),
-        );
-
+        let child_dtype = self.child_data_type();
         let list_size = self.fixed_element_len();
+        let mut segments = Vec::new();
 
         for (i, child_idx) in idx_iter.enumerate() {
             let is_valid = self.is_valid(i);
@@ -621,14 +603,19 @@ impl ListArrayExtension for FixedSizeListArray {
                     ((i + 1) * list_size) as i64 + child_idx
                 };
 
-                growable.extend(0, idx_offset as usize, 1);
+                segments.push(self.flat_child.slice(idx_offset as usize, idx_offset as usize + 1)?);
             } else {
                 // uses the default value in the case where the row is invalid or the index is out of bounds
-                growable.extend(1, 0, 1);
+                segments.push(default.slice(0, 1)?);
             }
         }
 
-        growable.build()
+        if segments.is_empty() {
+            Ok(Series::empty(self.name(), child_dtype))
+        } else {
+            let segment_refs: Vec<&Series> = segments.iter().collect();
+            Series::concat(&segment_refs)
+        }
     }
 
     fn get_chunks(&self, size: usize) -> DaftResult<Series> {
@@ -810,22 +797,23 @@ fn get_chunks_helper(
         )
         .into_series())
     } else {
-        let mut growable: Box<dyn Growable> = make_growable(
-            &field.name,
-            &field.to_exploded_field()?.dtype,
-            vec![flat_child],
-            false, // There's no validity to set, see the comment above.
-            flat_child.len() - total_elements_to_skip,
-        );
+        let exploded_dtype = &field.to_exploded_field()?.dtype;
+        let mut segments = Vec::new();
         let mut starting_idx = 0;
         for (i, to_skip) in to_skip.unwrap().enumerate() {
             let num_chunks = new_offsets.get(i + 1).unwrap() - new_offsets.get(i).unwrap();
             let slice_len = num_chunks as usize * size;
-            growable.extend(0, starting_idx, slice_len);
+            segments.push(flat_child.slice(starting_idx, starting_idx + slice_len)?);
             starting_idx += slice_len + to_skip;
         }
         let inner_list_field = field.to_exploded_field()?.to_fixed_size_list_field(size)?;
-        let inner_list = FixedSizeListArray::new(inner_list_field.clone(), growable.build()?, None);
+        let segment_refs: Vec<&Series> = segments.iter().collect();
+        let concatenated = if segment_refs.is_empty() {
+            Series::empty(&field.name, exploded_dtype)
+        } else {
+            Series::concat(&segment_refs)?
+        };
+        let inner_list = FixedSizeListArray::new(inner_list_field.clone(), concatenated, None);
         Ok(ListArray::new(
             inner_list_field.to_list_field(),
             inner_list.into_series(),
@@ -900,16 +888,9 @@ fn get_children_helper(
         "Only a single default value is supported"
     );
     let default = default.cast(arr.child_data_type())?;
-
-    let mut growable = make_growable(
-        arr.name(),
-        arr.child_data_type(),
-        vec![&arr.flat_child, &default],
-        true,
-        arr.len(),
-    );
-
+    let child_dtype = arr.child_data_type();
     let offsets = arr.offsets();
+    let mut segments = Vec::new();
 
     for (i, child_idx) in idx_iter.enumerate() {
         let is_valid = arr.is_valid(i);
@@ -923,33 +904,29 @@ fn get_children_helper(
         };
 
         if is_valid && idx_offset >= start && idx_offset < end {
-            growable.extend(0, idx_offset as usize, 1);
+            segments.push(arr.flat_child.slice(idx_offset as usize, idx_offset as usize + 1)?);
         } else {
             // uses the default value in the case where the row is invalid or the index is out of bounds
-            growable.extend(1, 0, 1);
+            segments.push(default.slice(0, 1)?);
         }
     }
 
-    growable.build()
+    if segments.is_empty() {
+        Ok(Series::empty(arr.name(), child_dtype))
+    } else {
+        let segment_refs: Vec<&Series> = segments.iter().collect();
+        Series::concat(&segment_refs)
+    }
 }
 
 fn general_list_fill_helper(element: &Series, num_array: &Int64Array) -> DaftResult<Vec<Series>> {
     let num_iter = create_iter(num_array, element.len());
     let mut result = Vec::with_capacity(element.len());
-    let element_data = element.as_physical()?;
     for (row_index, num) in num_iter.enumerate() {
         let list_arr = if element.is_valid(row_index) {
-            let mut list_growable = make_growable(
-                element.name(),
-                element.data_type(),
-                vec![&element_data],
-                false,
-                num as usize,
-            );
-            for _ in 0..num {
-                list_growable.extend(0, row_index, 1);
-            }
-            list_growable.build()?
+            let single_element = element.slice(row_index, row_index + 1)?;
+            let repeated: Vec<&Series> = (0..num).map(|_| &single_element).collect();
+            Series::concat(&repeated)?
         } else {
             Series::full_null(element.name(), element.data_type(), num as usize)
         };
