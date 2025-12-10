@@ -17,7 +17,7 @@ from daft.catalog.__glue import GlueCatalog
 @pytest.mark.integration()
 def test_dataloading_from_glue_iceberg(pytestconfig):
     if pytestconfig.getoption("--credentials") is not True:
-        pytest.skip("Test can only run in a credentialled environment, and when run with the `--credentials` flag")
+        pytest.skip("Testcan only run in a credentialled environment, and when run with the `--credentials` flag")
 
     sess = session.Session()
     catalog = GlueCatalog.from_session(name="glue_catalog", session=sess)
