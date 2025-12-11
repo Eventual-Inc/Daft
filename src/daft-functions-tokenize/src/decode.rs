@@ -74,8 +74,7 @@ fn decode_list(series: &Series, bpe: &DaftBPE) -> DaftResult<String> {
         )));
     }
     let series = series.cast(&DataType::UInt32)?;
-    let data = series.u32()?.as_arrow2();
-    let tokens: &[u32] = data.values().as_slice();
+    let tokens: &[u32] = series.u32()?.as_slice();
     bpe.decode(tokens)
 }
 
