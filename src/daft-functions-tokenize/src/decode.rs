@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
@@ -74,8 +73,7 @@ fn decode_list(series: &Series, bpe: &DaftBPE) -> DaftResult<String> {
         )));
     }
     let series = series.cast(&DataType::UInt32)?;
-    let data = series.u32()?.as_arrow2();
-    let tokens: &[u32] = data.values().as_slice();
+    let tokens: &[u32] = series.u32()?.as_slice();
     bpe.decode(tokens)
 }
 
