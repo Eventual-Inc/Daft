@@ -28,8 +28,8 @@ use ve_tos_rust_sdk::{
     credential::{CommonCredentials, CommonCredentialsProvider},
     error::{GenericError, TosError},
     object::{
-        GetObjectInput, GetObjectOutput, HeadObjectInput, HeadObjectOutput, ListObjectsType2Input,
-        ListObjectsType2Output, PutObjectFromBufferInput,
+        DeleteObjectInput, GetObjectInput, GetObjectOutput, HeadObjectInput, HeadObjectOutput,
+        ListObjectsType2Input, ListObjectsType2Output, PutObjectFromBufferInput,
     },
 };
 
@@ -79,6 +79,9 @@ pub enum Error {
 
     #[snafu(display("Unable to put {}: {}", path, source))]
     UnableToPutFile { path: String, source: TosError },
+
+    #[snafu(display("Unable to delete {}: {}", path, source))]
+    UnableToDeleteFile { path: String, source: TosError },
 
     #[snafu(display("Unable to list {}: {}", path, source))]
     UnableToListObjects { path: String, source: TosError },
@@ -705,6 +708,40 @@ impl ObjectSource for TosSource {
 
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
         self
+    }
+
+    async fn delete(&self, uri: &str, io_stats: Option<IOStatsRef>) -> Result<()> {
+        let (bucket, key) = Self::parse_tos_url(uri, false)?;
+
+        // TODO: consider idempotence problem
+        self.retry_operation(
+            |attempt| {
+                let bucket = bucket.clone();
+                let key = key.clone();
+                let client = &self.client;
+                let max_retries = self.config.max_retries;
+
+                async move {
+                    let mut request = DeleteObjectInput::new(bucket, key);
+                    set_retry_header!(request, attempt, max_retries);
+                    client.delete_object(&request).await
+                }
+            },
+            "delete_object",
+            uri,
+            self.config.max_retries,
+            |err| Error::UnableToDeleteFile {
+                path: uri.to_string(),
+                source: err.into(),
+            },
+        )
+        .await?;
+
+        if let Some(is) = io_stats.as_ref() {
+            is.mark_delete_requests(1);
+        }
+
+        Ok(())
     }
 }
 

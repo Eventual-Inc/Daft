@@ -126,7 +126,7 @@ def _resolve_paths_and_filesystem(
             FileSystem
     """
     if isinstance(paths, pathlib.Path):
-        paths = str(paths)
+        paths = [str(paths)]
     if isinstance(paths, str):
         paths = [paths]
     assert isinstance(paths, list), paths
