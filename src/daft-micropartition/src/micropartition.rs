@@ -141,6 +141,8 @@ impl MicroPartition {
                 .cloned()
                 .collect::<Vec<_>>();
             Arc::new(filtered)
+        } else if !self.chunks.is_empty() {
+            Arc::new(vec![self.chunks[0].clone()])
         } else {
             Arc::new(vec![])
         }
