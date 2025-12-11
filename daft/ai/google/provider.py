@@ -8,7 +8,7 @@ if sys.version_info < (3, 11):
 else:
     from typing import Unpack
 
-from daft.ai.provider import Provider
+from daft.ai.provider import Provider, ProviderImportError
 
 if TYPE_CHECKING:
     from daft.ai.google.typing import GoogleProviderOptions
@@ -24,6 +24,16 @@ class GoogleProvider(Provider):
     def __init__(self, name: str | None = None, **options: Unpack[GoogleProviderOptions]):
         self._name = name if name else "google"
         self._options = options
+
+        try:
+            from google import genai  # noqa: F401
+        except ImportError:
+            raise ProviderImportError("google")
+
+        from daft.dependencies import np
+
+        if not np.module_available():  # type: ignore[attr-defined]
+            raise ProviderImportError("google")
 
     @property
     def name(self) -> str:

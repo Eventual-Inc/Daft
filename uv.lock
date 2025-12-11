@@ -1393,6 +1393,7 @@ all = [
     { name = "pandas", version = "2.2.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
     { name = "pgvector" },
+    { name = "pillow" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pyarrow" },
     { name = "pyiceberg" },
@@ -1423,6 +1424,9 @@ deltalake = [
 ]
 google = [
     { name = "google-genai" },
+    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
+    { name = "numpy", version = "2.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
+    { name = "pillow" },
 ]
 hudi = [
     { name = "pyarrow" },
@@ -1442,7 +1446,10 @@ numpy = [
     { name = "numpy", version = "2.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
 ]
 openai = [
+    { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
+    { name = "numpy", version = "2.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
     { name = "openai" },
+    { name = "pillow" },
 ]
 pandas = [
     { name = "pandas", version = "2.2.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
@@ -1463,6 +1470,7 @@ sql = [
     { name = "sqlglot" },
 ]
 transformers = [
+    { name = "pillow" },
     { name = "sentence-transformers" },
     { name = "torch" },
     { name = "torchvision" },
@@ -1593,11 +1601,16 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'unity'", specifier = "<=0.27.2" },
     { name = "huggingface-hub", marker = "extra == 'huggingface'", specifier = "<1.2.0" },
     { name = "librosa", marker = "extra == 'audio'", specifier = ">=0.11.0,<0.12.0" },
+    { name = "numpy", marker = "extra == 'google'", specifier = "<2.4.0" },
     { name = "numpy", marker = "extra == 'numpy'", specifier = "<2.4.0" },
+    { name = "numpy", marker = "extra == 'openai'", specifier = "<2.4.0" },
     { name = "openai", marker = "extra == 'openai'", specifier = "<2.9.0" },
     { name = "packaging" },
     { name = "pandas", marker = "extra == 'pandas'", specifier = "<2.4.0" },
     { name = "pgvector", marker = "extra == 'postgres'", specifier = "<0.5.0" },
+    { name = "pillow", marker = "extra == 'google'", specifier = "==11.0.0" },
+    { name = "pillow", marker = "extra == 'openai'", specifier = "==11.0.0" },
+    { name = "pillow", marker = "extra == 'transformers'", specifier = "==11.0.0" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'postgres'", specifier = "<3.4.0" },
     { name = "pyarrow", specifier = ">=8.0.0,<23.0.0" },
     { name = "pyarrow", marker = "extra == 'hudi'", specifier = ">=8.0.0,<22.1.0" },

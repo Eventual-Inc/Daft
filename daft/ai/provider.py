@@ -22,9 +22,9 @@ if TYPE_CHECKING:
 
 
 class ProviderImportError(ImportError):
-    def __init__(self, dependencies: list[str]):
-        deps = ", ".join(f"'{d}'" for d in dependencies)
-        super().__init__(f"Missing required dependencies: {deps}. Please install {deps} to use this provider.")
+    def __init__(self, extra: str, *, function: str | None = None):
+        function_msg = f" to use the {function} function" if function is not None else ""
+        super().__init__(f"Please `pip install 'daft[{extra}]'`{function_msg} with this provider.")
 
 
 def load_google(name: str | None = None, **options: Unpack[GoogleProviderOptions]) -> Provider:
@@ -33,7 +33,7 @@ def load_google(name: str | None = None, **options: Unpack[GoogleProviderOptions
 
         return GoogleProvider(name, **options)
     except ImportError as e:
-        raise ProviderImportError(["google"]) from e
+        raise ProviderImportError("google") from e
 
 
 def load_lm_studio(name: str | None = None, **options: Any) -> Provider:
@@ -42,7 +42,7 @@ def load_lm_studio(name: str | None = None, **options: Any) -> Provider:
 
         return LMStudioProvider(name, **options)
     except ImportError as e:
-        raise ProviderImportError(["openai"]) from e
+        raise ProviderImportError("openai") from e
 
 
 def load_openai(name: str | None = None, **options: Unpack[OpenAIProviderOptions]) -> Provider:
@@ -51,7 +51,7 @@ def load_openai(name: str | None = None, **options: Unpack[OpenAIProviderOptions
 
         return OpenAIProvider(name, **options)
     except ImportError as e:
-        raise ProviderImportError(["openai"]) from e
+        raise ProviderImportError("openai") from e
 
 
 def load_transformers(name: str | None = None, **options: Any) -> Provider:
@@ -60,7 +60,7 @@ def load_transformers(name: str | None = None, **options: Any) -> Provider:
 
         return TransformersProvider(name, **options)
     except ImportError as e:
-        raise ProviderImportError(["torch", "torchvision", "transformers", "sentence-transformers", "Pillow"]) from e
+        raise ProviderImportError("transformers") from e
 
 
 def load_vllm_prefix_caching(name: str | None = None, **options: Any) -> Provider:
@@ -69,7 +69,7 @@ def load_vllm_prefix_caching(name: str | None = None, **options: Any) -> Provide
 
         return VLLMPrefixCachingProvider(name, **options)
     except ImportError as e:
-        raise ProviderImportError(["vllm"]) from e
+        raise ProviderImportError("vllm") from e
 
 
 ProviderType = Literal["google", "lm_studio", "openai", "transformers", "vllm-prefix-caching"]
