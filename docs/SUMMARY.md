@@ -66,6 +66,8 @@
     * [Usage Telemetry](telemetry.md)
 * Examples
     * [Examples](examples/index.md)
+    * [Multimodal Structured Outputs: Evaluating Image Understanding at Scale](examples/mm_structured_outputs.md)
+    * [Voice AI Analytics with Faster-Whisper and embed_text](examples/voice-ai-analytics.md)
     * [Web Text Deduplication](examples/minhash-dedupe.md)
     * [Document Processing](examples/document-processing.md)
     * [Audio Transcription](examples/audio-transcription.md)
