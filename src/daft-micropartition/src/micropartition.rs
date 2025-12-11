@@ -200,6 +200,7 @@ impl MicroPartition {
         let mut writer = daft_arrow::io::ipc::write::StreamWriter::new(buffer, options);
         writer.start(&schema, None)?;
         for table in self.record_batches() {
+            #[allow(deprecated, reason = "arrow2 migration")]
             let chunk = table.to_chunk();
             writer.write(&chunk, None)?;
         }

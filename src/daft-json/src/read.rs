@@ -628,6 +628,7 @@ fn parse_into_column_array_chunk_stream(
 }
 
 #[cfg(test)]
+#[allow(deprecated, reason = "arrow2 migration")]
 mod tests {
     use std::{collections::HashSet, io::BufRead, sync::Arc};
 
@@ -648,7 +649,6 @@ mod tests {
         inference::{column_types_map_to_fields, infer_records_schema},
     };
 
-    #[allow(deprecated, reason = "arrow2 migration")]
     fn check_equal_local_arrow2(
         path: &str,
         out: &RecordBatch,
@@ -1048,6 +1048,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated, reason = "arrow2 migration")]
     fn test_json_read_local_all_null_column() -> DaftResult<()> {
         let file = format!(
             "{}/test/iris_tiny_all_null_column.jsonl",

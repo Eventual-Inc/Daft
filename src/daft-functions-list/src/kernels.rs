@@ -74,7 +74,7 @@ impl ListArrayExtension for ListArray {
         let original_name = self.name();
 
         let hashes = self.flat_child.hash(None)?;
-
+        #[allow(deprecated, reason = "arrow2 migration")]
         let flat_child = self.flat_child.to_arrow2();
         let flat_child = &*flat_child;
 
@@ -144,11 +144,12 @@ impl ListArrayExtension for ListArray {
 
         let keys = self.flat_child.filter(&include_mask)?;
 
+        #[allow(deprecated, reason = "arrow2 migration")]
         let keys = Series::try_from_field_and_arrow_array(
             Field::new("key", key_type.clone()),
             keys.to_arrow2(),
         )?;
-
+        #[allow(deprecated, reason = "arrow2 migration")]
         let values = Series::try_from_field_and_arrow_array(
             Field::new("value", count_type.clone()),
             values.to_arrow2(),

@@ -720,6 +720,7 @@ pub fn fields_to_projection_indices(
 }
 
 #[cfg(test)]
+#[allow(deprecated, reason = "arrow2 migration")]
 mod tests {
     use std::sync::Arc;
 
