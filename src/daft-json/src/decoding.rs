@@ -1,6 +1,7 @@
 use std::{borrow::Borrow, fmt::Write};
 
-use arrow2::{
+use chrono::{Datelike, Timelike};
+use daft_arrow::{
     array::{
         Array, MutableArray, MutableBooleanArray, MutableFixedSizeListArray, MutableListArray,
         MutableNullArray, MutablePrimitiveArray, MutableStructArray, MutableUtf8Array,
@@ -12,7 +13,6 @@ use arrow2::{
     temporal_conversions,
     types::{NativeType, Offset, f16},
 };
-use chrono::{Datelike, Timelike};
 use daft_decoding::deserialize::{
     deserialize_datetime, deserialize_naive_date, deserialize_naive_datetime,
     get_factor_from_timeunit,
@@ -281,7 +281,7 @@ fn deserialize_date_into<'a, A: Borrow<BorrowedValue<'a>>>(
                 })
             }
             DataType::Date32 => deserialize_naive_date(v, &mut last_fmt_idx)
-                .map(|x| x.num_days_from_ce() - temporal_conversions::EPOCH_DAYS_FROM_CE),
+                .map(|x| x.num_days_from_ce() - (temporal_conversions::UNIX_EPOCH_DAY as i32)),
             _ => unreachable!(),
         },
         _ => None,
@@ -323,7 +323,7 @@ fn deserialize_datetime_into<'a, A: Borrow<BorrowedValue<'a>>>(
                 }),
             DataType::Timestamp(tu, Some(ref tz)) => {
                 let tz = if tz == "Z" { "UTC" } else { tz };
-                let tz = temporal_conversions::parse_offset(tz).unwrap();
+                let tz = daft_schema::time_unit::parse_offset(tz).unwrap();
                 deserialize_datetime(v, &tz, &mut last_fmt_idx).and_then(|dt| match tu {
                     TimeUnit::Second => Some(dt.timestamp()),
                     TimeUnit::Millisecond => Some(dt.timestamp_millis()),

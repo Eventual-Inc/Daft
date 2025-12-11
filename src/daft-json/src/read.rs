@@ -416,6 +416,7 @@ pub async fn stream_json(
     Ok(Box::pin(tables))
 }
 
+#[allow(deprecated, reason = "arrow2 migration")]
 async fn read_json_single_into_stream(
     uri: String,
     convert_options: JsonConvertOptions,
@@ -425,10 +426,10 @@ async fn read_json_single_into_stream(
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<(
     BoxStream<'static, TableChunkResult>,
-    arrow2::datatypes::Schema,
+    daft_arrow::datatypes::Schema,
 )> {
     let schema = match convert_options.schema {
-        Some(schema) => schema.to_arrow()?,
+        Some(schema) => schema.to_arrow2()?,
         None => read_json_schema_single(
             &uri,
             parse_options.clone(),
@@ -438,7 +439,7 @@ async fn read_json_single_into_stream(
             io_stats.clone(),
         )
         .await?
-        .to_arrow()?,
+        .to_arrow2()?,
     };
 
     let (reader, buffer_size, chunk_size): (Box<dyn AsyncBufRead + Unpin + Send>, usize, usize) =
@@ -534,7 +535,8 @@ async fn read_json_single_into_stream(
                         .map(|f| (f.name.clone(), f))
                         .collect::<HashMap<_, _>>();
                     let projected_fields = projection.into_iter().map(|col| field_map.remove(col.as_str()).ok_or(DaftError::ValueError(format!("Column {} in the projection doesn't exist in the JSON file; existing columns = {:?}", col, field_map.keys())))).collect::<DaftResult<Vec<_>>>()?;
-                    arrow2::datatypes::Schema::from(projected_fields).with_metadata(schema.metadata)
+                    daft_arrow::datatypes::Schema::from(projected_fields)
+                        .with_metadata(schema.metadata)
                 }
                 None => schema,
             };
@@ -572,7 +574,7 @@ where
 
 fn parse_into_column_array_chunk_stream(
     stream: impl LineChunkStream + Send,
-    schema: Arc<arrow2::datatypes::Schema>,
+    schema: Arc<daft_arrow::datatypes::Schema>,
 ) -> DaftResult<impl TableChunkStream + Send> {
     let daft_schema: SchemaRef = Arc::new(schema.as_ref().into());
     let daft_fields = Arc::new(
@@ -646,6 +648,7 @@ mod tests {
         inference::{column_types_map_to_fields, infer_records_schema},
     };
 
+    #[allow(deprecated, reason = "arrow2 migration")]
     fn check_equal_local_arrow2(
         path: &str,
         out: &RecordBatch,
@@ -660,7 +663,7 @@ mod tests {
             .map(|record| crate::deserializer::to_value(unsafe { record.as_bytes_mut() }).unwrap())
             .collect::<Vec<_>>();
         // Get consolidated schema from parsed JSON.
-        let mut column_types: IndexMap<String, HashSet<arrow2::datatypes::DataType>> =
+        let mut column_types: IndexMap<String, HashSet<daft_arrow::datatypes::DataType>> =
             IndexMap::new();
         for record in &parsed {
             let schema = infer_records_schema(record).unwrap();
@@ -678,7 +681,7 @@ mod tests {
             }
         }
         let fields = column_types_map_to_fields(column_types);
-        let schema: arrow2::datatypes::Schema = fields.into();
+        let schema: daft_arrow::datatypes::Schema = fields.into();
         // Apply projection to schema.
         let mut field_map = schema
             .fields
@@ -701,8 +704,8 @@ mod tests {
             .map(|c| cast_array_from_daft_if_needed(cast_array_for_daft_if_needed(c)))
             .collect::<Vec<_>>();
         // Roundtrip schema with Daft for casting.
-        let schema = Schema::try_from(&schema).unwrap().to_arrow().unwrap();
-        assert_eq!(out.schema.to_arrow().unwrap(), schema);
+        let schema = Schema::try_from(&schema).unwrap().to_arrow2().unwrap();
+        assert_eq!(out.schema.to_arrow2().unwrap(), schema);
         let out_columns = (0..out.num_columns())
             .map(|i| out.get_column(i).to_arrow())
             .collect::<Vec<_>>();
@@ -1075,10 +1078,10 @@ mod tests {
         assert_eq!(null_column.len(), 6);
         assert_eq!(
             null_column.to_arrow(),
-            Box::new(arrow2::array::NullArray::new(
-                arrow2::datatypes::DataType::Null,
+            Box::new(daft_arrow::array::NullArray::new(
+                daft_arrow::datatypes::DataType::Null,
                 6
-            )) as Box<dyn arrow2::array::Array>
+            )) as Box<dyn daft_arrow::array::Array>
         );
 
         Ok(())
@@ -1132,10 +1135,10 @@ mod tests {
         assert_eq!(null_column.len(), 6);
         assert_eq!(
             null_column.to_arrow(),
-            Box::new(arrow2::array::NullArray::new(
-                arrow2::datatypes::DataType::Null,
+            Box::new(daft_arrow::array::NullArray::new(
+                daft_arrow::datatypes::DataType::Null,
                 6
-            )) as Box<dyn arrow2::array::Array>
+            )) as Box<dyn daft_arrow::array::Array>
         );
 
         Ok(())

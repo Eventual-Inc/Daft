@@ -123,7 +123,7 @@ mod jaq {
         // be sure to apply the name and validity of the input
         values
             .rename(&name)
-            .with_validity(self_arrow.validity().cloned())
+            .with_validity(self_arrow.validity().cloned().map(Into::into))
     }
 
     /// We need serde_json to parse, but then convert to a jaq Val to be evaluated.

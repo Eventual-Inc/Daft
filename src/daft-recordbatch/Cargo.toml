@@ -1,11 +1,11 @@
 [dependencies]
 async-recursion = "1.0.4"
 arrow-array = {version = "54.2.1"}
-arrow2 = {workspace = true, features = ["arrow"]}
 comfy-table = {workspace = true}
+daft-arrow = {path = "../daft-arrow"}
 common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false}
 common-display = {path = "../common/display", default-features = false}
-common-error = {path = "../common/error", default-features = false, features = ["arrow"]}
+common-error = {path = "../common/error", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
 common-metrics = {path = "../common/metrics", default-features = false}
@@ -24,7 +24,6 @@ serde = {workspace = true}
 serde_json = {workspace = true}
 
 [features]
-arrow = ["arrow2/arrow"]
 python = [
   "dep:pyo3",
   "common-error/python",

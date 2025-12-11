@@ -10,8 +10,8 @@ fn map_name_to_pivot_key_idx<'a>(
     names: &'a [String],
 ) -> DaftResult<std::collections::HashMap<&'a String, u64>> {
     let pivot_keys_series = {
-        let indices_as_series = UInt64Array::from(("", pivot_key_indices.to_owned())).into_series();
-        pivot_series.take(&indices_as_series)?
+        let indices_as_arr = UInt64Array::from(("", pivot_key_indices.to_owned()));
+        pivot_series.take(&indices_as_arr)?
     };
     let pivot_keys_str_values = pivot_keys_series.to_str_values()?;
     let pivot_key_str_to_idx_mapping = pivot_keys_str_values
@@ -104,10 +104,10 @@ impl RecordBatch {
             .map(|name| match name_to_pivot_key_idx.get(name) {
                 Some(pivot_key_idx) => {
                     let indices = pivot_key_idx_to_values_indices.get(pivot_key_idx).unwrap();
-                    let indices_as_arrow = arrow2::array::UInt64Array::from_iter(indices.iter());
-                    let indices_as_series =
-                        UInt64Array::from(("", Box::new(indices_as_arrow))).into_series();
-                    let values = value_series.take(&indices_as_series)?;
+                    let indices_as_arrow =
+                        daft_arrow::array::UInt64Array::from_iter(indices.iter());
+                    let indices_as_arr = UInt64Array::from(("", Box::new(indices_as_arrow)));
+                    let values = value_series.take(&indices_as_arr)?;
                     Ok(values.rename(name))
                 }
                 None => Ok(Series::full_null(
@@ -119,8 +119,8 @@ impl RecordBatch {
             .collect::<DaftResult<Vec<_>>>()?;
 
         let group_keys_table = {
-            let indices_as_series = UInt64Array::from(("", group_keys_indices)).into_series();
-            groupby_table.take(&indices_as_series)?
+            let indices_as_arr = UInt64Array::from(("", group_keys_indices));
+            groupby_table.take(&indices_as_arr)?
         };
 
         Self::from_nonempty_columns([&group_keys_table.columns[..], &pivoted_cols[..]].concat())

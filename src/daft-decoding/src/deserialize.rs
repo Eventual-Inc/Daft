@@ -1,4 +1,6 @@
-use arrow2::{
+use chrono::{Datelike, Timelike};
+use csv_async;
+use daft_arrow::{
     array::{
         Array, BinaryArray, BooleanArray, MutableBinaryArray, MutableUtf8Array, NullArray,
         PrimitiveArray, Utf8Array,
@@ -11,8 +13,6 @@ use arrow2::{
     trusted_len::TrustedLen,
     types::NativeType,
 };
-use chrono::{Datelike, Timelike};
-use csv_async;
 
 pub(crate) const ISO8601: &str = "%+";
 pub(crate) const ISO8601_NO_TIME_ZONE: &str = "%Y-%m-%dT%H:%M:%S%.f";
@@ -299,7 +299,7 @@ where
             let mut last_fmt_idx = 0;
             to_utf8(bytes)
                 .and_then(|x| deserialize_naive_date(x, &mut last_fmt_idx))
-                .map(|x| x.num_days_from_ce() - temporal_conversions::EPOCH_DAYS_FROM_CE)
+                .map(|x| x.num_days_from_ce() - (temporal_conversions::UNIX_EPOCH_DAY as i32))
         }),
         Date64 => deserialize_primitive(bytes_iter, datatype, |bytes| {
             let mut last_fmt_idx = 0;
@@ -344,7 +344,7 @@ where
             })
         }
         Timestamp(time_unit, Some(ref tz)) => {
-            let tz = temporal_conversions::parse_offset(tz)?;
+            let tz = daft_schema::time_unit::parse_offset(tz)?;
             let mut last_fmt_idx = 0;
             deserialize_primitive(bytes_iter, datatype, |bytes| {
                 to_utf8(bytes)

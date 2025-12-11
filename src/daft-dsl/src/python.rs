@@ -195,6 +195,7 @@ pub fn list_(items: Vec<PyExpr>) -> PyExpr {
     batch_size=None,
     concurrency=None,
     use_process=None,
+    ray_options=None,
 ))]
 pub fn udf(
     name: &str,
@@ -207,6 +208,7 @@ pub fn udf(
     batch_size: Option<usize>,
     concurrency: Option<usize>,
     use_process: Option<bool>,
+    ray_options: Option<Py<PyAny>>,
 ) -> PyResult<PyExpr> {
     use crate::functions::python::udf;
 
@@ -238,6 +240,7 @@ pub fn udf(
             batch_size,
             concurrency,
             use_process,
+            ray_options.map(|r| r.into()),
         )?
         .into(),
     })
@@ -354,14 +357,6 @@ pub fn initialize_udfs(expr: PyExpr) -> PyResult<PyExpr> {
     Ok(initialize_udfs(expr.expr)?.into())
 }
 
-/// Get the names of all UDFs in expression
-// TODO: Remove with the old Ray Runner
-#[pyfunction]
-pub fn try_get_udf_name(expr: PyExpr) -> Option<String> {
-    use crate::functions::python::try_get_udf_name;
-    try_get_udf_name(&expr.expr)
-}
-
 #[pyclass(module = "daft.daft")]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyExpr {
@@ -392,6 +387,23 @@ impl PyExpr {
 
 #[pymethods]
 impl PyExpr {
+    pub fn is_column(&self) -> PyResult<bool> {
+        Ok(matches!(self.expr.as_ref(), Expr::Column(_)))
+    }
+
+    pub fn is_literal(&self) -> PyResult<bool> {
+        Ok(matches!(self.expr.as_ref(), Expr::Literal(_)))
+    }
+
+    pub fn column_name(&self) -> PyResult<Option<String>> {
+        #[allow(deprecated)]
+        let name = match self.expr.as_ref() {
+            Expr::Column(column) => Some(column.name()),
+            _ => None,
+        };
+        Ok(name)
+    }
+
     pub fn _input_mapping(&self) -> PyResult<Option<String>> {
         Ok(self.expr.input_mapping())
     }

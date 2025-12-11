@@ -157,11 +157,11 @@ impl LimitNode {
         materialized_output: MaterializedOutput,
         limit_state: &mut LimitState,
         task_id_counter: &TaskIDCounter,
-    ) -> DaftResult<Vec<SubmittableTask<SwordfishTask>>> {
+    ) -> Vec<SubmittableTask<SwordfishTask>> {
         let node_id = self.node_id();
         let mut downstream_tasks = vec![];
         for next_input in materialized_output.split_into_materialized_outputs() {
-            let mut num_rows = next_input.num_rows()?;
+            let mut num_rows = next_input.num_rows();
 
             let skip_num_rows = limit_state.remaining_skip().min(num_rows);
             if !limit_state.is_skip_done() {
@@ -210,7 +210,7 @@ impl LimitNode {
                             }
                         },
                         None,
-                    )?
+                    )
                 }
                 Ordering::Greater => {
                     let remaining = limit_state.remaining_take();
@@ -232,7 +232,7 @@ impl LimitNode {
                             )
                         },
                         None,
-                    )?;
+                    );
                     limit_state.decrement_take(remaining);
                     self.stats.add_active_rows_out(remaining as u64);
                     task
@@ -243,7 +243,7 @@ impl LimitNode {
                 break;
             }
         }
-        Ok(downstream_tasks)
+        downstream_tasks
     }
 
     async fn limit_execution_loop(
@@ -309,7 +309,7 @@ impl LimitNode {
                         materialized_output,
                         &mut limit_state,
                         &task_id_counter,
-                    )?;
+                    );
 
                     // Send downstream tasks
                     for task in downstream_tasks {
@@ -325,8 +325,6 @@ impl LimitNode {
                         drop(local_limits); // Cancel all remaining futures
                         return Ok(());
                     }
-                } else if let Err(e) = maybe_result {
-                    return Err(e);
                 }
             }
 

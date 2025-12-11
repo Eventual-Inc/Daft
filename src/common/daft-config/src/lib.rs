@@ -105,13 +105,14 @@ impl DaftPlanningConfig {
 #[derive(Clone, Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct DaftExecutionConfig {
+    pub enable_scan_task_split_and_merge: bool,
     pub scan_tasks_min_size_bytes: usize,
     pub scan_tasks_max_size_bytes: usize,
     pub max_sources_per_scan_task: usize,
+    pub parquet_split_row_groups_max_files: usize,
     pub broadcast_join_size_bytes_threshold: usize,
     pub hash_join_partition_size_leniency: f64,
     pub sample_size_for_sort: usize,
-    pub parquet_split_row_groups_max_files: usize,
     pub num_preview_rows: usize,
     pub parquet_target_filesize: usize,
     pub parquet_target_row_group_size: usize,
@@ -124,16 +125,11 @@ pub struct DaftExecutionConfig {
     pub partial_aggregation_threshold: usize,
     pub high_cardinality_aggregation_threshold: f64,
     pub read_sql_partition_size_bytes: usize,
-    pub enable_aqe: bool,
     pub default_morsel_size: usize,
     pub shuffle_algorithm: String,
     pub pre_shuffle_merge_threshold: usize,
-    pub flight_shuffle_dirs: Vec<String>,
-    pub enable_ray_tracing: bool,
-    pub scantask_splitting_level: i32,
     pub scantask_max_parallel: usize,
     pub native_parquet_writer: bool,
-    pub use_legacy_ray_runner: bool,
     pub min_cpu_per_task: f64,
     pub actor_udf_ready_timeout: usize,
     pub maintain_order: bool,
@@ -152,13 +148,14 @@ impl std::fmt::Debug for DaftExecutionConfig {
 impl Default for DaftExecutionConfig {
     fn default() -> Self {
         Self {
-            scan_tasks_min_size_bytes: 96 * 1024 * 1024,  // 96MB
+            enable_scan_task_split_and_merge: false,
+            scan_tasks_min_size_bytes: 96 * 1024 * 1024, // 96MB
             scan_tasks_max_size_bytes: 384 * 1024 * 1024, // 384MB
             max_sources_per_scan_task: 10,
+            parquet_split_row_groups_max_files: 10,
             broadcast_join_size_bytes_threshold: 10 * 1024 * 1024, // 10 MiB
             hash_join_partition_size_leniency: 0.5,
             sample_size_for_sort: 20,
-            parquet_split_row_groups_max_files: 10,
             num_preview_rows: 8,
             parquet_target_filesize: 512 * 1024 * 1024, // 512MB
             parquet_target_row_group_size: 128 * 1024 * 1024, // 128MB
@@ -166,21 +163,16 @@ impl Default for DaftExecutionConfig {
             csv_target_filesize: 512 * 1024 * 1024, // 512MB
             csv_inflation_factor: 0.5,
             json_target_filesize: 512 * 1024 * 1024, // 512MB
-            json_inflation_factor: 0.25, // TODO(desmond): This can be tuned with more real world datasets.
+            json_inflation_factor: 0.25,
             shuffle_aggregation_default_partitions: 200,
             partial_aggregation_threshold: 10000,
             high_cardinality_aggregation_threshold: 0.8,
             read_sql_partition_size_bytes: 512 * 1024 * 1024, // 512MB
-            enable_aqe: false,
             default_morsel_size: 128 * 1024,
             shuffle_algorithm: "auto".to_string(),
             pre_shuffle_merge_threshold: 1024 * 1024 * 1024, // 1GB
-            flight_shuffle_dirs: vec!["/tmp".to_string()],
-            enable_ray_tracing: false,
-            scantask_splitting_level: 1,
             scantask_max_parallel: 8,
             native_parquet_writer: true,
-            use_legacy_ray_runner: false,
             min_cpu_per_task: 0.5,
             actor_udf_ready_timeout: 120,
             maintain_order: true,
@@ -192,13 +184,9 @@ impl Default for DaftExecutionConfig {
 }
 
 impl DaftExecutionConfig {
-    const ENV_DAFT_ENABLE_AQE: &'static str = "DAFT_ENABLE_AQE";
-    const ENV_DAFT_ENABLE_RAY_TRACING: &'static str = "DAFT_ENABLE_RAY_TRACING";
     const ENV_DAFT_SHUFFLE_ALGORITHM: &'static str = "DAFT_SHUFFLE_ALGORITHM";
-    const ENV_DAFT_SCANTASK_SPLITTING_LEVEL: &'static str = "DAFT_SCANTASK_SPLITTING_LEVEL";
     const ENV_DAFT_SCANTASK_MAX_PARALLEL: &'static str = "DAFT_SCANTASK_MAX_PARALLEL";
     const ENV_DAFT_NATIVE_PARQUET_WRITER: &'static str = "DAFT_NATIVE_PARQUET_WRITER";
-    const ENV_DAFT_FLOTILLA: &'static str = "DAFT_FLOTILLA";
     const ENV_DAFT_MIN_CPU_PER_TASK: &'static str = "DAFT_MIN_CPU_PER_TASK";
     const ENV_DAFT_ACTOR_UDF_READY_TIMEOUT: &'static str = "DAFT_ACTOR_UDF_READY_TIMEOUT";
     const ENV_PARQUET_INFLATION_FACTOR: &'static str = "DAFT_PARQUET_INFLATION_FACTOR";
@@ -212,20 +200,8 @@ impl DaftExecutionConfig {
     pub fn from_env() -> Self {
         let mut cfg = Self::default();
 
-        if let Some(val) = parse_bool_from_env(Self::ENV_DAFT_ENABLE_AQE) {
-            cfg.enable_aqe = val;
-        }
-
-        if let Some(val) = parse_bool_from_env(Self::ENV_DAFT_ENABLE_RAY_TRACING) {
-            cfg.enable_ray_tracing = val;
-        }
-
         if let Some(val) = parse_string_from_env(Self::ENV_DAFT_SHUFFLE_ALGORITHM, true) {
             cfg.shuffle_algorithm = val;
-        }
-
-        if let Some(val) = parse_number_from_env(Self::ENV_DAFT_SCANTASK_SPLITTING_LEVEL, 0) {
-            cfg.scantask_splitting_level = val;
         }
 
         if let Some(val) = parse_number_from_env_with_custom_parser(
@@ -240,10 +216,6 @@ impl DaftExecutionConfig {
 
         if let Some(val) = parse_bool_from_env(Self::ENV_DAFT_NATIVE_PARQUET_WRITER) {
             cfg.native_parquet_writer = val;
-        }
-
-        if let Some(val) = parse_bool_from_env(Self::ENV_DAFT_FLOTILLA) {
-            cfg.use_legacy_ray_runner = !val;
         }
 
         if let Some(val) =
@@ -387,50 +359,6 @@ mod tests {
 
     #[test]
     fn test_from_env_for_execution_config() {
-        // ENV_DAFT_ENABLE_AQE
-        {
-            let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.enable_aqe, false);
-
-            unsafe {
-                std::env::set_var(DaftExecutionConfig::ENV_DAFT_ENABLE_AQE, "true");
-            }
-            let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.enable_aqe, true);
-
-            unsafe {
-                std::env::set_var(DaftExecutionConfig::ENV_DAFT_ENABLE_AQE, "0");
-            }
-            let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.enable_aqe, false);
-
-            unsafe {
-                std::env::remove_var(DaftExecutionConfig::ENV_DAFT_ENABLE_AQE);
-            }
-        }
-
-        // ENV_DAFT_ENABLE_RAY_TRACING
-        {
-            let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.enable_ray_tracing, false);
-
-            unsafe {
-                std::env::set_var(DaftExecutionConfig::ENV_DAFT_ENABLE_RAY_TRACING, "1");
-            }
-            let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.enable_ray_tracing, true);
-
-            unsafe {
-                std::env::set_var(DaftExecutionConfig::ENV_DAFT_ENABLE_RAY_TRACING, "false");
-            }
-            let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.enable_ray_tracing, false);
-
-            unsafe {
-                std::env::remove_var(DaftExecutionConfig::ENV_DAFT_ENABLE_RAY_TRACING);
-            }
-        }
-
         // ENV_DAFT_SHUFFLE_ALGORITHM
         {
             let cfg = DaftExecutionConfig::from_env();
@@ -456,31 +384,6 @@ mod tests {
 
             unsafe {
                 std::env::remove_var(DaftExecutionConfig::ENV_DAFT_SHUFFLE_ALGORITHM);
-            }
-        }
-
-        // ENV_DAFT_SCANTASK_SPLITTING_LEVEL
-        {
-            let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.scantask_splitting_level, 1);
-
-            unsafe {
-                std::env::set_var(DaftExecutionConfig::ENV_DAFT_SCANTASK_SPLITTING_LEVEL, "5");
-            }
-            let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.scantask_splitting_level, 5);
-
-            unsafe {
-                std::env::set_var(
-                    DaftExecutionConfig::ENV_DAFT_SCANTASK_SPLITTING_LEVEL,
-                    "invalid",
-                );
-            }
-            let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.scantask_splitting_level, 0);
-
-            unsafe {
-                std::env::remove_var(DaftExecutionConfig::ENV_DAFT_SCANTASK_SPLITTING_LEVEL);
             }
         }
 
@@ -534,28 +437,6 @@ mod tests {
 
             unsafe {
                 std::env::remove_var(DaftExecutionConfig::ENV_DAFT_NATIVE_PARQUET_WRITER);
-            }
-        }
-
-        // ENV_DAFT_FLOTILLA
-        {
-            let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.use_legacy_ray_runner, false);
-
-            unsafe {
-                std::env::set_var(DaftExecutionConfig::ENV_DAFT_FLOTILLA, "0");
-            }
-            let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.use_legacy_ray_runner, true);
-
-            unsafe {
-                std::env::set_var(DaftExecutionConfig::ENV_DAFT_FLOTILLA, "true");
-            }
-            let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.use_legacy_ray_runner, false);
-
-            unsafe {
-                std::env::remove_var(DaftExecutionConfig::ENV_DAFT_FLOTILLA);
             }
         }
 

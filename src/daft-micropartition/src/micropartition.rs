@@ -3,83 +3,42 @@ use std::{
     fmt::Display,
     io::Cursor,
     pin::Pin,
-    sync::{Arc, Mutex},
+    sync::Arc,
     task::{Context, Poll},
 };
 
 use common_error::{DaftError, DaftResult};
-#[cfg(feature = "python")]
-use common_file_formats::DatabaseSourceConfig;
-use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_runtime::get_io_runtime;
-use common_scan_info::Pushdowns;
 use daft_core::prelude::*;
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{AggExpr, Expr, ExprRef};
-use daft_io::{IOClient, IOConfig, IOStatsContext, IOStatsRef};
+use daft_io::{IOClient, IOConfig, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_parquet::{
     infer_arrow_schema_from_metadata,
     read::{ParquetSchemaInferenceOptions, read_parquet_bulk, read_parquet_metadata_bulk},
 };
 use daft_recordbatch::RecordBatch;
-use daft_scan::{ChunkSpec, DataSource, ScanTask, storage_config::StorageConfig};
 use daft_stats::{ColumnRangeStatistics, PartitionSpec, TableMetadata, TableStatistics};
 use daft_warc::WarcConvertOptions;
 use futures::{Future, Stream};
 use parquet2::metadata::FileMetaData;
 use snafu::ResultExt;
 
-use crate::{DaftCSVSnafu, DaftCoreComputeSnafu};
+use crate::DaftCoreComputeSnafu;
 
-#[derive(Debug)]
-pub enum TableState {
-    Unloaded(Arc<ScanTask>),
-    Loaded(Arc<Vec<RecordBatch>>),
-}
-
-impl Display for TableState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Unloaded(scan_task) => {
-                write!(
-                    f,
-                    "TableState: Unloaded. To load from: {:#?}",
-                    scan_task
-                        .sources
-                        .iter()
-                        .map(daft_scan::DataSource::get_path)
-                        .collect::<Vec<_>>()
-                )
-            }
-            Self::Loaded(tables) => {
-                writeln!(f, "TableState: Loaded. {} tables", tables.len())?;
-                for tab in tables.iter() {
-                    if !tab.is_empty() {
-                        writeln!(f, "{tab}")?;
-                    }
-                }
-                Ok(())
-            }
-        }
-    }
-}
 pub type MicroPartitionRef = Arc<MicroPartition>;
 
 #[derive(Debug)]
 pub struct MicroPartition {
     /// Schema of the MicroPartition
     ///
-    /// This is technically redundant with the schema in `state`:
-    /// 1. If [`TableState::Loaded`]: the schema should match every underlying [`Table`]
-    /// 2. If [`TableState::Unloaded`]: the schema should match the underlying [`ScanTask::materialized_schema`]
-    ///
+    /// This is technically redundant with the schema of the record batches in `chunks`.
     /// However this is still useful as an easy-to-access copy of the schema, as well as to handle the corner-case
-    /// of having 0 underlying [`Table`] objects (in an empty [`MicroPartition`])
+    /// of having 0 record batches (in an empty [`MicroPartition`])
     pub(crate) schema: SchemaRef,
 
-    /// State of the MicroPartition. Can be Loaded or Unloaded.
-    pub(crate) state: Mutex<TableState>,
+    pub(crate) chunks: Arc<Vec<RecordBatch>>,
 
     /// Metadata about the MicroPartition
     pub(crate) metadata: TableMetadata,
@@ -91,294 +50,7 @@ pub struct MicroPartition {
     pub(crate) statistics: Option<TableStatistics>,
 }
 
-/// Helper to run all the IO and compute required to materialize a [`ScanTask`] into a `Vec<RecordBatch>`
-///
-/// All [`Table`] objects returned will have the same [`Schema`] as [`ScanTask::materialized_schema`].
-///
-/// # Arguments
-///
-/// * `scan_task` - a batch of ScanTasks to materialize as Tables
-/// * `io_stats` - an optional IOStats object to record the IO operations performed
-fn materialize_scan_task(
-    scan_task: Arc<ScanTask>,
-    io_stats: Option<IOStatsRef>,
-) -> crate::Result<(Vec<RecordBatch>, SchemaRef)> {
-    let pushdown_columns = scan_task.pushdowns.columns.as_ref().map(|v| {
-        v.iter()
-            .map(std::string::String::as_str)
-            .collect::<Vec<&str>>()
-    });
-    let file_column_names =
-        get_file_column_names(pushdown_columns.as_deref(), scan_task.partition_spec());
-
-    let urls = scan_task
-        .sources
-        .iter()
-        .map(daft_scan::DataSource::get_path);
-
-    let multithreaded_io = scan_task.storage_config.multithreaded_io;
-    let io_config = Arc::new(
-        scan_task
-            .storage_config
-            .io_config
-            .clone()
-            .unwrap_or_default(),
-    );
-    let io_client = daft_io::get_io_client(multithreaded_io, io_config).unwrap();
-
-    let mut table_values = match scan_task.file_format_config.as_ref() {
-        // ********************
-        // Native Parquet Reads
-        // ********************
-        FileFormatConfig::Parquet(ParquetSourceConfig {
-            coerce_int96_timestamp_unit,
-            field_id_mapping,
-            chunk_size,
-            ..
-        }) => {
-            let inference_options =
-                ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
-
-            // TODO: This is a hardcoded magic value but should be configurable
-            let num_parallel_tasks = 8;
-
-            let urls = urls.collect::<Vec<_>>();
-
-            // Create vec of all unique delete files in the scan task
-            let iceberg_delete_files = scan_task
-                .sources
-                .iter()
-                .filter_map(|s| s.get_iceberg_delete_files())
-                .flatten()
-                .map(String::as_str)
-                .collect::<HashSet<_>>()
-                .into_iter()
-                .collect::<Vec<_>>();
-
-            let delete_map = read_delete_files(
-                iceberg_delete_files.as_slice(),
-                urls.as_slice(),
-                io_client.clone(),
-                io_stats.clone(),
-                num_parallel_tasks,
-                multithreaded_io,
-                &inference_options,
-            )
-            .context(DaftCoreComputeSnafu)?;
-
-            let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
-            let metadatas = scan_task
-                .sources
-                .iter()
-                .map(|s| s.get_parquet_metadata().cloned())
-                .collect::<Option<Vec<_>>>();
-            daft_parquet::read::read_parquet_bulk(
-                urls.as_slice(),
-                file_column_names.as_deref(),
-                None,
-                scan_task.pushdowns.limit,
-                row_groups,
-                scan_task.pushdowns.filters.clone(),
-                io_client,
-                io_stats,
-                num_parallel_tasks,
-                multithreaded_io,
-                &inference_options,
-                field_id_mapping.clone(),
-                metadatas,
-                Some(delete_map),
-                *chunk_size,
-            )
-            .context(DaftCoreComputeSnafu)?
-        }
-
-        // ****************
-        // Native CSV Reads
-        // ****************
-        FileFormatConfig::Csv(cfg) => {
-            let schema_of_file = scan_task.schema.clone();
-            let col_names = if !cfg.has_headers {
-                Some(schema_of_file.field_names().collect::<Vec<_>>())
-            } else {
-                None
-            };
-            let convert_options = CsvConvertOptions::new_internal(
-                scan_task.pushdowns.limit,
-                file_column_names
-                    .as_ref()
-                    .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
-                col_names
-                    .as_ref()
-                    .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
-                Some(schema_of_file),
-                scan_task.pushdowns.filters.clone(),
-            );
-            let parse_options = CsvParseOptions::new_with_defaults(
-                cfg.has_headers,
-                cfg.delimiter,
-                cfg.double_quote,
-                cfg.quote,
-                cfg.allow_variable_columns,
-                cfg.escape_char,
-                cfg.comment,
-            )
-            .context(DaftCSVSnafu)?;
-            let read_options = CsvReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
-            let uris = urls.collect::<Vec<_>>();
-            daft_csv::read_csv_bulk(
-                uris.as_slice(),
-                Some(convert_options),
-                Some(parse_options),
-                Some(read_options),
-                io_client,
-                io_stats,
-                scan_task.storage_config.multithreaded_io,
-                None,
-                8,
-            )
-            .context(DaftCoreComputeSnafu)?
-        }
-
-        // ****************
-        // Native JSON Reads
-        // ****************
-        FileFormatConfig::Json(cfg) => {
-            let convert_options = JsonConvertOptions::new_internal(
-                scan_task.pushdowns.limit,
-                file_column_names
-                    .as_ref()
-                    .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
-                Some(scan_task.schema.clone()),
-                scan_task.pushdowns.filters.clone(),
-            );
-            let parse_options = JsonParseOptions::new_internal();
-            let read_options = JsonReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
-            let uris = urls.collect::<Vec<_>>();
-            daft_json::read_json_bulk(
-                uris.as_slice(),
-                Some(convert_options),
-                Some(parse_options),
-                Some(read_options),
-                io_client,
-                io_stats,
-                scan_task.storage_config.multithreaded_io,
-                None,
-                8,
-            )
-            .context(DaftCoreComputeSnafu)?
-        }
-
-        // ****************
-        // Native Warc Reads
-        // ****************
-        FileFormatConfig::Warc(_) => {
-            let schema_of_file = scan_task.schema.clone();
-            let convert_options = WarcConvertOptions {
-                limit: scan_task.pushdowns.limit,
-                include_columns: file_column_names
-                    .as_ref()
-                    .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
-                schema: schema_of_file,
-                predicate: scan_task.pushdowns.filters.clone(),
-            };
-            let uris = urls.collect::<Vec<_>>();
-            daft_warc::read_warc_bulk(
-                uris.as_slice(),
-                convert_options,
-                io_client,
-                io_stats,
-                scan_task.storage_config.multithreaded_io,
-                None,
-                8,
-            )
-            .context(DaftCoreComputeSnafu)?
-        }
-        #[cfg(feature = "python")]
-        FileFormatConfig::Database(DatabaseSourceConfig { sql, conn }) => {
-            let predicate = scan_task
-                .pushdowns
-                .filters
-                .as_ref()
-                .map(|p| (*p.as_ref()).clone().into());
-            pyo3::Python::attach(|py| {
-                let table = crate::python::read_sql_into_py_table(
-                    py,
-                    sql,
-                    conn,
-                    predicate.clone(),
-                    scan_task.schema.clone().into(),
-                    scan_task
-                        .pushdowns
-                        .columns
-                        .as_ref()
-                        .map(|cols| cols.as_ref().clone()),
-                    scan_task.pushdowns.limit,
-                )
-                .map(std::convert::Into::into)
-                .context(crate::PyIOSnafu)?;
-                Ok(vec![table])
-            })?
-        }
-        #[cfg(feature = "python")]
-        FileFormatConfig::PythonFunction {
-            source_type: _,
-            module_name: _,
-            function_name: _,
-        } => {
-            let tables = crate::python::read_pyfunc_into_table_iter(scan_task.clone())?;
-            tables.collect::<crate::Result<Vec<_>>>()?
-        }
-    };
-
-    // Ensure that all Tables have the schema as specified by [`ScanTask::materialized_schema`]
-    let cast_to_schema = scan_task.materialized_schema();
-
-    // If there is a partition spec and partition values aren't duplicated in the data, inline the partition values
-    // into the table when casting the schema.
-    let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
-
-    table_values = table_values
-        .iter()
-        .map(|tbl| {
-            #[allow(deprecated)]
-            tbl.cast_to_schema_with_fill(cast_to_schema.as_ref(), fill_map.as_ref())
-        })
-        .collect::<DaftResult<Vec<_>>>()
-        .context(DaftCoreComputeSnafu)?;
-    Ok((table_values, cast_to_schema))
-}
-
 impl MicroPartition {
-    /// Create a new "unloaded" MicroPartition using an associated [`ScanTask`]
-    ///
-    /// Invariants:
-    /// 1. Each Loaded column statistic in `statistics` must be castable to the corresponding column in the MicroPartition's schema
-    /// 2. Creating a new MicroPartition with a ScanTask that has any filter predicates or limits is not allowed and will panic
-    #[must_use]
-    pub fn new_unloaded(
-        scan_task: Arc<ScanTask>,
-        metadata: TableMetadata,
-        statistics: TableStatistics,
-    ) -> Self {
-        assert!(
-            scan_task.pushdowns.filters.is_none(),
-            "Cannot create unloaded MicroPartition from a ScanTask with pushdowns that have filters"
-        );
-
-        let schema = scan_task.materialized_schema();
-        let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
-        #[allow(deprecated)]
-        let statistics = statistics
-            .cast_to_schema_with_fill(&schema, fill_map.as_ref())
-            .expect("Statistics cannot be casted to schema");
-        Self {
-            schema,
-            state: Mutex::new(TableState::Unloaded(scan_task)),
-            metadata,
-            statistics: Some(statistics),
-        }
-    }
-
     /// Create a new "loaded" MicroPartition using the materialized record batches.
     ///
     /// Schema invariants:
@@ -418,7 +90,7 @@ impl MicroPartition {
 
         Self {
             schema,
-            state: Mutex::new(TableState::Loaded(record_batches)),
+            chunks: record_batches,
             metadata: TableMetadata { length },
             statistics,
         }
@@ -426,128 +98,12 @@ impl MicroPartition {
 
     pub fn from_arrow<S: Into<SchemaRef>>(
         schema: S,
-        arrays: Vec<Box<dyn arrow2::array::Array>>,
+        arrays: Vec<Box<dyn daft_arrow::array::Array>>,
     ) -> DaftResult<Self> {
         let schema = schema.into();
         let batch = RecordBatch::from_arrow(schema.clone(), arrays)?;
         let batches = Arc::new(vec![batch]);
         Ok(Self::new_loaded(schema, batches, None))
-    }
-
-    pub fn from_scan_task(scan_task: Arc<ScanTask>, io_stats: IOStatsRef) -> crate::Result<Self> {
-        let schema = scan_task.materialized_schema();
-        match (
-            &scan_task.metadata,
-            &scan_task.statistics,
-            scan_task.file_format_config.as_ref(),
-        ) {
-            // CASE: ScanTask provides all required metadata.
-            // If the scan_task provides metadata (e.g. retrieved from a catalog) we can use it to create an unloaded MicroPartition
-            (Some(metadata), Some(statistics), _) if scan_task.pushdowns.filters.is_none() => {
-                Ok(Self::new_unloaded(
-                    scan_task.clone(),
-                    scan_task
-                        .pushdowns
-                        .limit
-                        .map(|limit| TableMetadata {
-                            length: metadata.length.min(limit),
-                        })
-                        .unwrap_or_else(|| metadata.clone()),
-                    statistics.clone(),
-                ))
-            }
-
-            // CASE: ScanTask does not provide metadata, but the file format supports metadata retrieval
-            // We can perform an eager **metadata** read to create an unloaded MicroPartition
-            (
-                _,
-                _,
-                &FileFormatConfig::Parquet(ParquetSourceConfig {
-                    coerce_int96_timestamp_unit,
-                    ref field_id_mapping,
-                    chunk_size,
-                    ..
-                }),
-            ) => {
-                let uris = scan_task
-                    .sources
-                    .iter()
-                    .map(daft_scan::DataSource::get_path)
-                    .collect::<Vec<_>>();
-                let columns = scan_task.pushdowns.columns.as_ref().map(|cols| {
-                    cols.iter()
-                        .map(std::string::String::as_str)
-                        .collect::<Vec<&str>>()
-                });
-                let parquet_metadata = scan_task
-                    .sources
-                    .iter()
-                    .map(|s| s.get_parquet_metadata().cloned())
-                    .collect::<Option<Vec<_>>>();
-
-                let row_groups = parquet_sources_to_row_groups(scan_task.sources.as_slice());
-
-                let mut iceberg_delete_files: HashSet<&str> = HashSet::new();
-                for source in &scan_task.sources {
-                    if let Some(delete_files) = source.get_iceberg_delete_files() {
-                        iceberg_delete_files.extend(delete_files.iter().map(String::as_str));
-                    }
-                }
-
-                read_parquet_into_micropartition(
-                    uris.as_slice(),
-                    columns.as_deref(),
-                    None,
-                    scan_task.pushdowns.limit,
-                    Some(iceberg_delete_files.into_iter().collect()),
-                    row_groups,
-                    scan_task.pushdowns.filters.clone(),
-                    scan_task.partition_spec(),
-                    scan_task
-                        .storage_config
-                        .io_config
-                        .clone()
-                        .map(Arc::new)
-                        .unwrap_or_default(),
-                    Some(io_stats),
-                    if scan_task.sources.len() == 1 { 1 } else { 128 }, // Hardcoded for to 128 bulk reads
-                    scan_task.storage_config.multithreaded_io,
-                    &ParquetSchemaInferenceOptions {
-                        coerce_int96_timestamp_unit,
-                        ..Default::default()
-                    },
-                    Some(schema),
-                    field_id_mapping.clone(),
-                    parquet_metadata,
-                    chunk_size,
-                    scan_task.generated_fields.clone(),
-                    scan_task
-                        .pushdowns
-                        .aggregation
-                        .as_ref()
-                        .map(|agg| agg.as_ref()),
-                )
-                .context(DaftCoreComputeSnafu)
-            }
-
-            // CASE: Last resort fallback option
-            // Perform an eager **data** read
-            _ => {
-                let statistics = scan_task
-                    .statistics
-                    .clone()
-                    .map(|stats| {
-                        #[allow(deprecated)]
-                        stats
-                            .cast_to_schema(&scan_task.materialized_schema())
-                            .map_err(DaftError::from)
-                    })
-                    .transpose()
-                    .context(DaftCoreComputeSnafu)?;
-                let (tables, schema) = materialize_scan_task(scan_task, Some(io_stats))?;
-                Ok(Self::new_loaded(schema, Arc::new(tables), statistics))
-            }
-        }
     }
 
     #[must_use]
@@ -572,82 +128,29 @@ impl MicroPartition {
         self.len() == 0
     }
 
-    pub fn size_bytes(&self) -> Option<usize> {
-        let guard = self.state.lock().unwrap();
-        if let TableState::Loaded(tables) = &*guard {
-            let total_size: usize = tables
-                .iter()
-                .map(daft_recordbatch::RecordBatch::size_bytes)
-                .sum();
-            Some(total_size)
-        } else if let TableState::Unloaded(scan_task) = &*guard {
-            // TODO: pass in the execution config once we have it available
-            scan_task.estimate_in_memory_size_bytes(None)
-        } else {
-            // If the table is not loaded, we don't have stats, and we don't have the file size in bytes, return None.
-            // TODO(Clark): Should we pull in the table or trigger a file metadata fetch instead of returning None here?
-            None
-        }
+    pub fn record_batches(&self) -> &[RecordBatch] {
+        self.chunks.as_slice()
     }
 
-    /// Retrieves tables from the MicroPartition, reading data if not already loaded.
-    ///
-    /// This method:
-    /// 1. Returns cached tables if already loaded.
-    /// 2. If unloaded, reads data from the source, caches it, and returns the new tables.
-    ///
-    /// "Reading if necessary" means I/O operations only occur for unloaded data,
-    /// optimizing performance by avoiding redundant reads.
-    pub(crate) fn tables_or_read(
-        &self,
-        io_stats: IOStatsRef,
-    ) -> crate::Result<Arc<Vec<RecordBatch>>> {
-        let mut guard = self.state.lock().unwrap();
-        match &*guard {
-            TableState::Unloaded(scan_task) => {
-                let (tables, _) = materialize_scan_task(scan_task.clone(), Some(io_stats))?;
-                let table_values = Arc::new(tables);
+    pub fn size_bytes(&self) -> usize {
+        self.record_batches()
+            .iter()
+            .map(daft_recordbatch::RecordBatch::size_bytes)
+            .sum()
+    }
 
-                // Cache future accesses by setting the state to TableState::Loaded
-                *guard = TableState::Loaded(table_values.clone());
-
-                Ok(table_values)
+    pub fn concat_or_get(&self) -> crate::Result<Option<RecordBatch>> {
+        match self.record_batches() {
+            [] => Ok(None),
+            // Avoid the clone here?
+            [table] => Ok(Some(table.clone())),
+            tables => {
+                let new_table = RecordBatch::concat(tables.iter().collect::<Vec<_>>().as_slice())
+                    .context(DaftCoreComputeSnafu)?;
+                // Have a variant fn that updates the existing MicroPartition with new_table
+                // like concat_or_get_and_update?
+                Ok(Some(new_table))
             }
-            TableState::Loaded(tables) => Ok(tables.clone()),
-        }
-    }
-
-    pub fn get_tables(&self) -> crate::Result<Arc<Vec<RecordBatch>>> {
-        let tables = self.tables_or_read(IOStatsContext::new("get tables"))?;
-        Ok(tables)
-    }
-
-    pub fn concat_or_get(&self, io_stats: IOStatsRef) -> crate::Result<Option<RecordBatch>> {
-        let tables = self.tables_or_read(io_stats)?;
-        if tables.is_empty() {
-            Ok(None)
-        } else if tables.len() == 1 {
-            Ok(Some(tables[0].clone()))
-        } else {
-            Ok(Some(
-                RecordBatch::concat(tables.iter().collect::<Vec<_>>().as_slice())
-                    .context(DaftCoreComputeSnafu)?,
-            ))
-        }
-    }
-
-    pub fn concat_or_get_update(&self, io_stats: IOStatsRef) -> crate::Result<Option<RecordBatch>> {
-        let tables = self.tables_or_read(io_stats)?;
-        if tables.is_empty() {
-            Ok(None)
-        } else if tables.len() == 1 {
-            Ok(Some(tables[0].clone()))
-        } else {
-            let mut guard = self.state.lock().unwrap();
-            let new_table = RecordBatch::concat(tables.iter().collect::<Vec<_>>().as_slice())
-                .context(DaftCoreComputeSnafu)?;
-            *guard = TableState::Loaded(Arc::new(vec![new_table.clone()]));
-            Ok(Some(new_table))
         }
     }
 
@@ -656,8 +159,7 @@ impl MicroPartition {
         partition_num: u64,
         column_name: &str,
     ) -> DaftResult<Self> {
-        let io_stats = IOStatsContext::new("MicroPartition::add_monotonically_increasing_id");
-        let tables = self.tables_or_read(io_stats)?;
+        let tables = self.record_batches();
 
         let tables_with_id = tables
             .iter()
@@ -691,13 +193,13 @@ impl MicroPartition {
     }
 
     pub fn write_to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
-        let buffer = Vec::with_capacity(self.size_bytes().unwrap_or(0));
-        let schema = self.schema.to_arrow()?;
-        let options = arrow2::io::ipc::write::WriteOptions { compression: None };
-        let mut writer = arrow2::io::ipc::write::StreamWriter::new(buffer, options);
+        let buffer = Vec::with_capacity(self.size_bytes());
+        #[allow(deprecated, reason = "arrow2 migration")]
+        let schema = self.schema.to_arrow2()?;
+        let options = daft_arrow::io::ipc::write::WriteOptions { compression: None };
+        let mut writer = daft_arrow::io::ipc::write::StreamWriter::new(buffer, options);
         writer.start(&schema, None)?;
-        let tables = self.tables_or_read(IOStatsContext::new("write to stream"))?;
-        for table in tables.iter() {
+        for table in self.record_batches() {
             let chunk = table.to_chunk();
             writer.write(&chunk, None)?;
         }
@@ -709,15 +211,15 @@ impl MicroPartition {
 
     pub fn read_from_ipc_stream(buffer: &[u8]) -> DaftResult<Self> {
         let mut cursor = Cursor::new(buffer);
-        let stream_metadata = arrow2::io::ipc::read::read_stream_metadata(&mut cursor).unwrap();
+        let stream_metadata = daft_arrow::io::ipc::read::read_stream_metadata(&mut cursor).unwrap();
         let schema = Arc::new(Schema::from(stream_metadata.schema.clone()));
-        let reader = arrow2::io::ipc::read::StreamReader::new(cursor, stream_metadata, None);
+        let reader = daft_arrow::io::ipc::read::StreamReader::new(cursor, stream_metadata, None);
         let tables = reader
             .into_iter()
             .map(|state| {
                 let state = state?;
                 let arrow_chunk = match state {
-                    arrow2::io::ipc::read::StreamState::Some(chunk) => chunk,
+                    daft_arrow::io::ipc::read::StreamState::Some(chunk) => chunk,
                     _ => panic!("State should not be waiting when reading from IPC buffer"),
                 };
                 let record_batch =
@@ -755,24 +257,6 @@ fn prune_fields_from_schema(
         Ok(Arc::new(Schema::new(filtered_columns)))
     } else {
         Ok(schema)
-    }
-}
-
-fn parquet_sources_to_row_groups(sources: &[DataSource]) -> Option<Vec<Option<Vec<i64>>>> {
-    let row_groups = sources
-        .iter()
-        .map(|s| {
-            if let Some(ChunkSpec::Parquet(row_group)) = s.get_chunk_spec() {
-                Some(row_group.clone())
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-    if row_groups.iter().any(std::option::Option::is_some) {
-        Some(row_groups)
-    } else {
-        None
     }
 }
 
@@ -1116,7 +600,6 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     parquet_metadata: Option<Vec<Arc<FileMetaData>>>,
     chunk_size: Option<usize>,
-    generated_fields: Option<SchemaRef>,
     aggregation_pushdown: Option<&Expr>,
 ) -> DaftResult<MicroPartition> {
     if let Some(so) = start_offset
@@ -1128,7 +611,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
     }
 
     // Run the required I/O to retrieve all the Parquet FileMetaData
-    let io_client = daft_io::get_io_client(multithreaded_io, io_config.clone())?;
+    let io_client = daft_io::get_io_client(multithreaded_io, io_config)?;
 
     // If we have a predicate or deletion files then we no longer have an accurate accounting of required metadata
     // on the MicroPartition (e.g. its length). Hence we need to perform an eager read.
@@ -1161,7 +644,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
     let meta_io_client = io_client.clone();
     let meta_io_stats = io_stats.clone();
     let meta_field_id_mapping = field_id_mapping.clone();
-    let (metadata, schemas) = if let Some(metadata) = parquet_metadata {
+    let (metadata, _) = if let Some(metadata) = parquet_metadata {
         let schemas = metadata
             .iter()
             .map(|m| {
@@ -1221,171 +704,36 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
         ));
     }
 
-    let any_stats_avail = metadata
-        .iter()
-        .flat_map(|m| m.row_groups.values())
-        .flat_map(|rg| rg.columns().iter())
-        .any(|col| col.statistics().is_some());
-
-    // If statistics are provided by the Parquet file, we create an unloaded MicroPartition
-    // by constructing an appropriate ScanTask
-    if any_stats_avail {
-        // Prefer using the `catalog_provided_schema` but fall back onto inferred schema from Parquet files
-        let scan_task_daft_schema = if let Some(catalog_provided_schema) = catalog_provided_schema {
-            catalog_provided_schema
-        } else {
-            let unioned_schema = schemas
-                .iter()
-                .cloned()
-                .try_reduce(|l, r| l.non_distinct_union(&r).map(Arc::new))?;
-            unioned_schema.expect("we need at least 1 schema")
-        };
-
-        let stats = {
-            let stat_per_table = metadata
-                .iter()
-                .zip(schemas.iter())
-                .flat_map(|(fm, schema)| {
-                    fm.row_groups
-                        .values()
-                        .map(|rgm| daft_parquet::row_group_metadata_to_table_stats(rgm, schema))
-                })
-                .collect::<DaftResult<Vec<TableStatistics>>>()?;
-            stat_per_table
-                .into_iter()
-                .try_reduce(
-                    #[allow(deprecated)]
-                    |a, b| {
-                        let a = a.cast_to_schema(&scan_task_daft_schema)?;
-                        let b = b.cast_to_schema(&scan_task_daft_schema)?;
-                        a.union(&b)
-                    },
-                )?
-                .expect("stats should be available if any_stats_avail = true")
-        };
-
-        // Get total number of rows, accounting for selected `row_groups` and the indicated `num_rows`
-        let total_rows_no_limit = match &row_groups {
-            None => metadata.iter().map(|fm| fm.num_rows).sum(),
-            Some(row_groups) => metadata
-                .iter()
-                .zip(row_groups.iter())
-                .map(|(fm, rg)| match rg {
-                    Some(rg) => rg
-                        .iter()
-                        .map(|rg_idx| fm.row_groups.get(&(*rg_idx as usize)).unwrap().num_rows())
-                        .sum::<usize>(),
-                    None => fm.num_rows,
-                })
-                .sum(),
-        };
-        let total_rows = num_rows.map_or(total_rows_no_limit, |num_rows| {
-            num_rows.min(total_rows_no_limit)
-        });
-
-        let owned_urls = uris.iter().map(|s| (*s).to_string());
-        let size_bytes = metadata
-            .iter()
-            .map(|m| -> u64 {
-                std::iter::Sum::sum(m.row_groups.values().map(|m| m.total_byte_size() as u64))
-            })
-            .sum();
-
-        let scan_task = ScanTask::new(
-            owned_urls
-                .into_iter()
-                .zip(metadata)
-                .zip(
-                    row_groups
-                        .clone()
-                        .unwrap_or_else(|| std::iter::repeat_n(None, uris.len()).collect()),
-                )
-                .map(|((url, metadata), rgs)| DataSource::File {
-                    path: url,
-                    chunk_spec: rgs.map(ChunkSpec::Parquet),
-                    size_bytes: Some(size_bytes),
-                    iceberg_delete_files: None,
-                    metadata: None,
-                    partition_spec: partition_spec.cloned(),
-                    statistics: None,
-                    parquet_metadata: Some(metadata),
-                })
-                .collect::<Vec<_>>(),
-            FileFormatConfig::Parquet(ParquetSourceConfig {
-                coerce_int96_timestamp_unit: schema_infer_options.coerce_int96_timestamp_unit,
-                field_id_mapping,
-                row_groups,
-                chunk_size,
-            })
-            .into(),
-            scan_task_daft_schema,
-            StorageConfig::new_internal(multithreaded_io, Some(io_config.as_ref().clone())).into(),
-            Pushdowns::new(
-                None,
-                None,
-                columns.map(|cols| {
-                    Arc::new(
-                        cols.iter()
-                            .map(|v| v.as_ref().to_string())
-                            .collect::<Vec<_>>(),
-                    )
-                }),
-                num_rows,
-                None,
-                None,
-            ),
-            generated_fields,
-        );
-
-        let fill_map = scan_task.partition_spec().map(|pspec| pspec.to_fill_map());
-        #[allow(deprecated)]
-        let casted_stats =
-            stats.cast_to_schema_with_fill(&scan_task.materialized_schema(), fill_map.as_ref())?;
-
-        Ok(MicroPartition::new_unloaded(
-            Arc::new(scan_task),
-            TableMetadata { length: total_rows },
-            casted_stats,
-        ))
-    } else {
-        // If no TableStatistics are available, we perform an eager read
-        read_parquet_into_loaded_micropartition(
-            io_client,
-            multithreaded_io,
-            uris,
-            columns,
-            start_offset,
-            num_rows,
-            iceberg_delete_files,
-            row_groups,
-            predicate,
-            partition_spec,
-            io_stats,
-            num_parallel_tasks,
-            schema_infer_options,
-            catalog_provided_schema,
-            field_id_mapping,
-            chunk_size,
-        )
-    }
+    // If no TableStatistics are available, we perform an eager read
+    read_parquet_into_loaded_micropartition(
+        io_client,
+        multithreaded_io,
+        uris,
+        columns,
+        start_offset,
+        num_rows,
+        iceberg_delete_files,
+        row_groups,
+        predicate,
+        partition_spec,
+        io_stats,
+        num_parallel_tasks,
+        schema_infer_options,
+        catalog_provided_schema,
+        field_id_mapping,
+        chunk_size,
+    )
 }
 
 impl Display for MicroPartition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let guard = self.state.lock().unwrap();
-
         writeln!(f, "MicroPartition with {} rows:", self.len())?;
 
-        match &*guard {
-            TableState::Unloaded(..) => {
-                writeln!(f, "{}\n{}", self.schema, guard)?;
-            }
-            TableState::Loaded(tables) => {
-                if tables.is_empty() {
-                    writeln!(f, "{}", self.schema)?;
-                }
-                writeln!(f, "{guard}")?;
-            }
+        if self.chunks.is_empty() {
+            writeln!(f, "{}", self.schema)?;
+        }
+        for chunk in self.chunks.iter() {
+            writeln!(f, "{chunk}")?;
         }
 
         match &self.statistics {
@@ -1398,7 +746,7 @@ impl Display for MicroPartition {
 }
 
 struct MicroPartitionStreamAdapter {
-    state: TableState,
+    state: Arc<Vec<RecordBatch>>,
     current: usize,
     pending_task: Option<tokio::task::JoinHandle<DaftResult<Vec<RecordBatch>>>>,
 }
@@ -1413,7 +761,7 @@ impl Stream for MicroPartitionStreamAdapter {
             match Pin::new(handle).poll(cx) {
                 Poll::Ready(Ok(Ok(tables))) => {
                     let tables = Arc::new(tables);
-                    this.state = TableState::Loaded(tables.clone());
+                    this.state = tables.clone();
                     this.current = 0;
                     this.pending_task = None;
                     return Poll::Ready(tables.first().cloned().map(Ok));
@@ -1426,41 +774,20 @@ impl Stream for MicroPartitionStreamAdapter {
             }
         }
 
-        match &this.state {
-            // if the state is unloaded, we spawn a task to load the tables
-            // and set the state to loaded
-            TableState::Unloaded(scan_task) => {
-                let scan_task = scan_task.clone();
-                let handle = tokio::spawn(async move {
-                    materialize_scan_task(scan_task, None)
-                        .map(|(tables, _)| tables)
-                        .map_err(DaftError::from)
-                });
-                this.pending_task = Some(handle);
-                cx.waker().wake_by_ref();
-                Poll::Pending
-            }
-            TableState::Loaded(tables) => {
-                let current = this.current;
-                if current < tables.len() {
-                    this.current = current + 1;
-                    Poll::Ready(tables.get(current).cloned().map(Ok))
-                } else {
-                    Poll::Ready(None)
-                }
-            }
+        let current = this.current;
+        if current < this.state.len() {
+            this.current = current + 1;
+            Poll::Ready(this.state.get(current).cloned().map(Ok))
+        } else {
+            Poll::Ready(None)
         }
     }
 }
+
 impl MicroPartition {
     pub fn into_stream(self: Arc<Self>) -> DaftResult<impl Stream<Item = DaftResult<RecordBatch>>> {
-        let state = match &*self.state.lock().unwrap() {
-            TableState::Unloaded(scan_task) => TableState::Unloaded(scan_task.clone()),
-            TableState::Loaded(tables) => TableState::Loaded(tables.clone()),
-        };
-
         Ok(MicroPartitionStreamAdapter {
-            state,
+            state: self.chunks.clone(),
             current: 0,
             pending_task: None,
         })

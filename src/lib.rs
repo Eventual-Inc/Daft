@@ -90,7 +90,8 @@ pub mod pylib {
                 1..=10 => LevelFilter::Debug,
                 11..=20 => LevelFilter::Info,
                 21..=30 => LevelFilter::Warn,
-                _ => LevelFilter::Error,
+                31..=40 => LevelFilter::Error,
+                _ => LevelFilter::Error, // CRITICAL or anything above also becomes Error
             }
         };
 
@@ -118,7 +119,6 @@ pub mod pylib {
         common_metrics::register_modules(m)?;
         daft_ai::register_modules(m)?;
         daft_catalog::register_modules(m)?;
-        daft_connect::register_modules(m)?;
         daft_context::register_modules(m)?;
         daft_runners::register_modules(m)?;
         daft_core::register_modules(m)?;
@@ -128,7 +128,6 @@ pub mod pylib {
         daft_dsl::register_modules(m)?;
         daft_functions::register_modules(m)?;
         daft_io::register_modules(m)?;
-        daft_ir::register_modules(m)?;
         daft_json::register_modules(m)?;
         daft_local_execution::register_modules(m)?;
         daft_local_plan::register_modules(m)?;
@@ -137,7 +136,6 @@ pub mod pylib {
         daft_micropartition::register_modules(m)?;
         daft_recordbatch::register_modules(m)?;
         daft_scan::register_modules(m)?;
-        daft_scheduler::register_modules(m)?;
         daft_session::register_modules(m)?;
         daft_sql::register_modules(m)?;
         daft_shuffles::python::register_modules(m)?;

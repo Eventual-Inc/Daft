@@ -1,12 +1,9 @@
-use std::sync::Arc;
-
 use common_error::DaftResult;
 use daft_core::{
     array::ops::DaftCompare,
     join::{JoinSide, JoinType},
 };
 use daft_dsl::{expr::bound_expr::BoundExpr, join::infer_join_schema};
-use daft_io::IOStatsContext;
 use daft_recordbatch::RecordBatch;
 use daft_stats::TruthValue;
 
@@ -16,7 +13,6 @@ impl MicroPartition {
     fn join<F>(
         &self,
         right: &Self,
-        io_stats: Arc<IOStatsContext>,
         left_on: &[BoundExpr],
         right_on: &[BoundExpr],
         how: JoinType,
@@ -65,8 +61,8 @@ impl MicroPartition {
         }
 
         // TODO(Clark): Elide concatenations where possible by doing a chunk-aware local table join.
-        let lt = self.concat_or_get_update(io_stats.clone())?;
-        let rt = right.concat_or_get_update(io_stats)?;
+        let lt = self.concat_or_get()?;
+        let rt = right.concat_or_get()?;
 
         match (lt, rt) {
             (None, _) | (_, None) => Ok(Self::empty(Some(join_schema))),
@@ -89,7 +85,6 @@ impl MicroPartition {
         null_equals_nulls: Option<Vec<bool>>,
         how: JoinType,
     ) -> DaftResult<Self> {
-        let io_stats = IOStatsContext::new("MicroPartition::hash_join");
         let null_equals_nulls = null_equals_nulls.unwrap_or_else(|| vec![false; left_on.len()]);
 
         let table_join = |lt: &RecordBatch,
@@ -100,7 +95,7 @@ impl MicroPartition {
             RecordBatch::hash_join(lt, rt, lo, ro, null_equals_nulls.as_slice(), _how)
         };
 
-        self.join(right, io_stats, left_on, right_on, how, table_join)
+        self.join(right, left_on, right_on, how, table_join)
     }
 
     pub fn sort_merge_join(
@@ -111,7 +106,6 @@ impl MicroPartition {
         how: JoinType,
         is_sorted: bool,
     ) -> DaftResult<Self> {
-        let io_stats = IOStatsContext::new("MicroPartition::sort_merge_join");
         let table_join = |lt: &RecordBatch,
                           rt: &RecordBatch,
                           lo: &[BoundExpr],
@@ -120,17 +114,15 @@ impl MicroPartition {
             RecordBatch::sort_merge_join(lt, rt, lo, ro, is_sorted)
         };
 
-        self.join(right, io_stats, left_on, right_on, how, table_join)
+        self.join(right, left_on, right_on, how, table_join)
     }
 
     pub fn cross_join(&self, right: &Self, outer_loop_side: JoinSide) -> DaftResult<Self> {
-        let io_stats = IOStatsContext::new("MicroPartition::cross_join");
-
         let table_join =
             |lt: &RecordBatch, rt: &RecordBatch, _: &[BoundExpr], _: &[BoundExpr], _: JoinType| {
                 RecordBatch::cross_join(lt, rt, outer_loop_side)
             };
 
-        self.join(right, io_stats, &[], &[], JoinType::Inner, table_join)
+        self.join(right, &[], &[], JoinType::Inner, table_join)
     }
 }

@@ -1,5 +1,5 @@
-use arrow2::array::Array;
 use common_error::{DaftError, DaftResult, ensure};
+use daft_arrow::array::Array;
 use daft_core::{
     array::ListArray,
     prelude::{AsArrow, DataType, Field, FullNull, Schema, Utf8Array},
@@ -126,9 +126,9 @@ fn regex_extract_all_matches<'a>(
     len: usize,
     name: &str,
 ) -> DaftResult<ListArray> {
-    let mut matches = arrow2::array::MutableUtf8Array::new();
-    let mut offsets = arrow2::offset::Offsets::new();
-    let mut validity = arrow2::bitmap::MutableBitmap::with_capacity(len);
+    let mut matches = daft_arrow::array::MutableUtf8Array::new();
+    let mut offsets = daft_arrow::offset::Offsets::new();
+    let mut validity = daft_arrow::buffer::NullBufferBuilder::new(len);
 
     for (val, re) in arr_iter.zip(regex_iter) {
         let mut num_matches = 0i64;
@@ -150,21 +150,18 @@ fn regex_extract_all_matches<'a>(
                         }
                     }
                 }
-                validity.push(true);
+                validity.append_non_null();
             }
             (_, _) => {
-                validity.push(false);
+                validity.append_null();
             }
         }
         offsets.try_push(num_matches)?;
     }
 
-    let matches: arrow2::array::Utf8Array<i64> = matches.into();
-    let offsets: arrow2::offset::OffsetsBuffer<i64> = offsets.into();
-    let validity: Option<arrow2::bitmap::Bitmap> = match validity.unset_bits() {
-        0 => None,
-        _ => Some(validity.into()),
-    };
+    let matches: daft_arrow::array::Utf8Array<i64> = matches.into();
+    let offsets: daft_arrow::offset::OffsetsBuffer<i64> = offsets.into();
+    let validity = validity.finish();
     let flat_child = Series::try_from(("matches", matches.to_boxed()))?;
 
     Ok(ListArray::new(

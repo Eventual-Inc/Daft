@@ -4,7 +4,7 @@ mod approx_count_distinct;
 mod approx_sketch;
 mod arange;
 mod arithmetic;
-pub mod arrow2;
+pub mod arrow;
 pub mod as_arrow;
 mod between;
 mod bitwise;

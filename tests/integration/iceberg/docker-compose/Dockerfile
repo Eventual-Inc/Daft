@@ -65,8 +65,6 @@ RUN pip3 install -q ipython
 RUN pip3 install "pyiceberg[s3fs]==${PYICEBERG_VERSION}"
 RUN pip3 install "pydantic==2.11.0"
 
-RUN pip3 install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
-
 COPY entrypoint.sh .
 
 # Mount provision.py into the container instead of baking it in

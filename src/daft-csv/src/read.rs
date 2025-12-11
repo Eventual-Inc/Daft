@@ -1,17 +1,17 @@
 use core::str;
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
-use arrow2::{
+use async_compat::{Compat, CompatExt};
+use common_error::{DaftError, DaftResult};
+use common_runtime::get_io_runtime;
+use csv_async::AsyncReader;
+use daft_arrow::{
     datatypes::Field,
     io::csv::{
         read_async,
         read_async::{AsyncReaderBuilder, read_rows},
     },
 };
-use async_compat::{Compat, CompatExt};
-use common_error::{DaftError, DaftResult};
-use common_runtime::get_io_runtime;
-use csv_async::AsyncReader;
 use daft_compression::CompressionCodec;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_decoding::deserialize::deserialize_column;
@@ -311,7 +311,7 @@ async fn read_csv_single_into_table(
         fields
     };
 
-    let schema: arrow2::datatypes::Schema = schema_fields.into();
+    let schema: daft_arrow::datatypes::Schema = schema_fields.into();
     let schema: SchemaRef = Arc::new(schema.into());
 
     let include_column_indices = include_columns
@@ -483,9 +483,10 @@ async fn read_csv_single_into_stream(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<(impl TableStream + Send, Vec<Field>)> {
+    #[allow(deprecated, reason = "arrow2 migration")]
     let (mut schema, estimated_mean_row_size, estimated_std_row_size) =
         if let Some(schema) = convert_options.schema {
-            (schema.to_arrow()?, None, None)
+            (schema.to_arrow2()?, None, None)
         } else {
             let (schema, read_stats) = read_csv_schema_single(
                 &uri,
@@ -497,7 +498,7 @@ async fn read_csv_single_into_stream(
             )
             .await?;
             (
-                schema.to_arrow()?,
+                schema.to_arrow2()?,
                 Some(read_stats.mean_record_size_bytes),
                 Some(read_stats.stddev_record_size_bytes),
             )
@@ -642,7 +643,7 @@ where
 
 fn parse_into_column_array_chunk_stream(
     stream: impl ByteRecordChunkStream + Send,
-    fields: Arc<Vec<arrow2::datatypes::Field>>,
+    fields: Arc<Vec<daft_arrow::datatypes::Field>>,
     projection_indices: Arc<Vec<usize>>,
 ) -> DaftResult<impl TableStream + Send> {
     // Parsing stream: we spawn background tokio + rayon tasks so we can pipeline chunk parsing with chunk reading, and
@@ -697,7 +698,7 @@ fn parse_into_column_array_chunk_stream(
 }
 
 pub fn fields_to_projection_indices(
-    fields: &[arrow2::datatypes::Field],
+    fields: &[daft_arrow::datatypes::Field],
     include_columns: &Option<Vec<String>>,
 ) -> Arc<Vec<usize>> {
     let field_name_to_idx = fields
@@ -722,11 +723,11 @@ pub fn fields_to_projection_indices(
 mod tests {
     use std::sync::Arc;
 
-    use arrow2::io::csv::read::{
+    use common_error::{DaftError, DaftResult};
+    use daft_arrow::io::csv::read::{
         ByteRecord, ReaderBuilder, deserialize_batch, deserialize_column, infer, infer_schema,
         read_rows,
     };
-    use common_error::{DaftError, DaftResult};
     use daft_core::{
         prelude::*,
         utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
@@ -739,6 +740,7 @@ mod tests {
     use crate::{CsvConvertOptions, CsvParseOptions, CsvReadOptions, char_to_byte};
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(deprecated, reason = "arrow2 migration")]
     fn check_equal_local_arrow2(
         path: &str,
         out: &RecordBatch,
@@ -766,7 +768,7 @@ mod tests {
                 .into_iter()
                 .zip(column_names)
                 .map(|(field, name)| {
-                    arrow2::datatypes::Field::new(name, field.data_type, true)
+                    daft_arrow::datatypes::Field::new(name, field.data_type, true)
                         .with_metadata(field.metadata)
                 })
                 .collect::<Vec<_>>();
@@ -788,10 +790,10 @@ mod tests {
             // Roundtrip with Daft for casting.
             .map(|c| cast_array_from_daft_if_needed(cast_array_for_daft_if_needed(c)))
             .collect::<Vec<_>>();
-        let schema: arrow2::datatypes::Schema = fields.into();
+        let schema: daft_arrow::datatypes::Schema = fields.into();
         // Roundtrip with Daft for casting.
-        let schema = Schema::try_from(&schema).unwrap().to_arrow().unwrap();
-        assert_eq!(out.schema.to_arrow().unwrap(), schema);
+        let schema = Schema::try_from(&schema).unwrap().to_arrow2().unwrap();
+        assert_eq!(out.schema.to_arrow2().unwrap(), schema);
         let out_columns = (0..out.num_columns())
             .map(|i| out.get_column(i).to_arrow())
             .collect::<Vec<_>>();
@@ -1546,10 +1548,10 @@ mod tests {
         assert_eq!(null_column.len(), 6);
         assert_eq!(
             null_column.to_arrow(),
-            Box::new(arrow2::array::NullArray::new(
-                arrow2::datatypes::DataType::Null,
+            Box::new(daft_arrow::array::NullArray::new(
+                daft_arrow::datatypes::DataType::Null,
                 6
-            )) as Box<dyn arrow2::array::Array>
+            )) as Box<dyn daft_arrow::array::Array>
         );
 
         Ok(())
@@ -1602,10 +1604,10 @@ mod tests {
         assert_eq!(null_column.len(), 6);
         assert_eq!(
             null_column.to_arrow(),
-            Box::new(arrow2::array::NullArray::new(
-                arrow2::datatypes::DataType::Null,
+            Box::new(daft_arrow::array::NullArray::new(
+                daft_arrow::datatypes::DataType::Null,
                 6
-            )) as Box<dyn arrow2::array::Array>
+            )) as Box<dyn daft_arrow::array::Array>
         );
 
         Ok(())
@@ -1883,11 +1885,11 @@ mod tests {
 
         assert_eq!(
             table.get_column(4).to_arrow(),
-            Box::new(arrow2::array::Utf8Array::<i64>::from(vec![
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from(vec![
                 None,
                 Some("Seratosa"),
                 None,
-            ])) as Box<dyn arrow2::array::Array>
+            ])) as Box<dyn daft_arrow::array::Array>
         );
 
         Ok(())

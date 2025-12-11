@@ -89,11 +89,12 @@ impl PyDaftExecutionConfig {
 
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
+        enable_scan_task_split_and_merge=None,
         scan_tasks_min_size_bytes=None,
         scan_tasks_max_size_bytes=None,
         max_sources_per_scan_task=None,
-        broadcast_join_size_bytes_threshold=None,
         parquet_split_row_groups_max_files=None,
+        broadcast_join_size_bytes_threshold=None,
         hash_join_partition_size_leniency=None,
         sample_size_for_sort=None,
         num_preview_rows=None,
@@ -107,16 +108,11 @@ impl PyDaftExecutionConfig {
         partial_aggregation_threshold=None,
         high_cardinality_aggregation_threshold=None,
         read_sql_partition_size_bytes=None,
-        enable_aqe=None,
         default_morsel_size=None,
         shuffle_algorithm=None,
         pre_shuffle_merge_threshold=None,
-        flight_shuffle_dirs=None,
-        enable_ray_tracing=None,
-        scantask_splitting_level=None,
         scantask_max_parallel=None,
         native_parquet_writer=None,
-        use_legacy_ray_runner=None,
         min_cpu_per_task=None,
         actor_udf_ready_timeout=None,
         maintain_order=None,
@@ -126,11 +122,12 @@ impl PyDaftExecutionConfig {
     ))]
     fn with_config_values(
         &self,
+        enable_scan_task_split_and_merge: Option<bool>,
         scan_tasks_min_size_bytes: Option<usize>,
         scan_tasks_max_size_bytes: Option<usize>,
         max_sources_per_scan_task: Option<usize>,
-        broadcast_join_size_bytes_threshold: Option<usize>,
         parquet_split_row_groups_max_files: Option<usize>,
+        broadcast_join_size_bytes_threshold: Option<usize>,
         hash_join_partition_size_leniency: Option<f64>,
         sample_size_for_sort: Option<usize>,
         num_preview_rows: Option<usize>,
@@ -144,16 +141,11 @@ impl PyDaftExecutionConfig {
         partial_aggregation_threshold: Option<usize>,
         high_cardinality_aggregation_threshold: Option<f64>,
         read_sql_partition_size_bytes: Option<usize>,
-        enable_aqe: Option<bool>,
         default_morsel_size: Option<usize>,
         shuffle_algorithm: Option<&str>,
         pre_shuffle_merge_threshold: Option<usize>,
-        flight_shuffle_dirs: Option<Vec<String>>,
-        enable_ray_tracing: Option<bool>,
-        scantask_splitting_level: Option<i32>,
         scantask_max_parallel: Option<usize>,
         native_parquet_writer: Option<bool>,
-        use_legacy_ray_runner: Option<bool>,
         min_cpu_per_task: Option<f64>,
         actor_udf_ready_timeout: Option<usize>,
         maintain_order: Option<bool>,
@@ -163,20 +155,23 @@ impl PyDaftExecutionConfig {
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
-        if let Some(scan_tasks_max_size_bytes) = scan_tasks_max_size_bytes {
-            config.scan_tasks_max_size_bytes = scan_tasks_max_size_bytes;
+        if let Some(enable_scan_task_split_and_merge) = enable_scan_task_split_and_merge {
+            config.enable_scan_task_split_and_merge = enable_scan_task_split_and_merge;
         }
         if let Some(scan_tasks_min_size_bytes) = scan_tasks_min_size_bytes {
             config.scan_tasks_min_size_bytes = scan_tasks_min_size_bytes;
         }
+        if let Some(scan_tasks_max_size_bytes) = scan_tasks_max_size_bytes {
+            config.scan_tasks_max_size_bytes = scan_tasks_max_size_bytes;
+        }
         if let Some(max_sources_per_scan_task) = max_sources_per_scan_task {
             config.max_sources_per_scan_task = max_sources_per_scan_task;
         }
-        if let Some(broadcast_join_size_bytes_threshold) = broadcast_join_size_bytes_threshold {
-            config.broadcast_join_size_bytes_threshold = broadcast_join_size_bytes_threshold;
-        }
         if let Some(parquet_split_row_groups_max_files) = parquet_split_row_groups_max_files {
             config.parquet_split_row_groups_max_files = parquet_split_row_groups_max_files;
+        }
+        if let Some(broadcast_join_size_bytes_threshold) = broadcast_join_size_bytes_threshold {
+            config.broadcast_join_size_bytes_threshold = broadcast_join_size_bytes_threshold;
         }
         if let Some(hash_join_partition_size_leniency) = hash_join_partition_size_leniency {
             config.hash_join_partition_size_leniency = hash_join_partition_size_leniency;
@@ -220,9 +215,6 @@ impl PyDaftExecutionConfig {
             config.read_sql_partition_size_bytes = read_sql_partition_size_bytes;
         }
 
-        if let Some(enable_aqe) = enable_aqe {
-            config.enable_aqe = enable_aqe;
-        }
         if let Some(default_morsel_size) = default_morsel_size {
             config.default_morsel_size = default_morsel_size;
         }
@@ -240,22 +232,6 @@ impl PyDaftExecutionConfig {
         if let Some(pre_shuffle_merge_threshold) = pre_shuffle_merge_threshold {
             config.pre_shuffle_merge_threshold = pre_shuffle_merge_threshold;
         }
-        if let Some(flight_shuffle_dirs) = flight_shuffle_dirs {
-            config.flight_shuffle_dirs = flight_shuffle_dirs;
-        }
-
-        if let Some(enable_ray_tracing) = enable_ray_tracing {
-            config.enable_ray_tracing = enable_ray_tracing;
-        }
-
-        if let Some(scantask_splitting_level) = scantask_splitting_level {
-            if !matches!(scantask_splitting_level, 1 | 2) {
-                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "scantask_splitting_level must be 1 or 2",
-                ));
-            }
-            config.scantask_splitting_level = scantask_splitting_level;
-        }
 
         if let Some(scantask_max_parallel) = scantask_max_parallel {
             config.scantask_max_parallel = scantask_max_parallel;
@@ -263,10 +239,6 @@ impl PyDaftExecutionConfig {
 
         if let Some(native_parquet_writer) = native_parquet_writer {
             config.native_parquet_writer = native_parquet_writer;
-        }
-
-        if let Some(use_legacy_ray_runner) = use_legacy_ray_runner {
-            config.use_legacy_ray_runner = use_legacy_ray_runner;
         }
 
         if let Some(min_cpu_per_task) = min_cpu_per_task {
@@ -310,6 +282,11 @@ impl PyDaftExecutionConfig {
     }
 
     #[getter]
+    fn get_enable_scan_task_split_and_merge(&self) -> PyResult<bool> {
+        Ok(self.config.enable_scan_task_split_and_merge)
+    }
+
+    #[getter]
     fn get_scan_tasks_min_size_bytes(&self) -> PyResult<usize> {
         Ok(self.config.scan_tasks_min_size_bytes)
     }
@@ -325,6 +302,10 @@ impl PyDaftExecutionConfig {
     }
 
     #[getter]
+    fn get_parquet_split_row_groups_max_files(&self) -> PyResult<usize> {
+        Ok(self.config.parquet_split_row_groups_max_files)
+    }
+
     fn get_broadcast_join_size_bytes_threshold(&self) -> PyResult<usize> {
         Ok(self.config.broadcast_join_size_bytes_threshold)
     }
@@ -394,10 +375,6 @@ impl PyDaftExecutionConfig {
         Ok(self.config.read_sql_partition_size_bytes)
     }
     #[getter]
-    fn enable_aqe(&self) -> PyResult<bool> {
-        Ok(self.config.enable_aqe)
-    }
-    #[getter]
     fn default_morsel_size(&self) -> PyResult<usize> {
         Ok(self.config.default_morsel_size)
     }
@@ -411,23 +388,8 @@ impl PyDaftExecutionConfig {
     }
 
     #[getter]
-    fn enable_ray_tracing(&self) -> PyResult<bool> {
-        Ok(self.config.enable_ray_tracing)
-    }
-
-    #[getter]
-    fn scantask_splitting_level(&self) -> PyResult<i32> {
-        Ok(self.config.scantask_splitting_level)
-    }
-
-    #[getter]
     fn scantask_max_parallel(&self) -> PyResult<usize> {
         Ok(self.config.scantask_max_parallel)
-    }
-
-    #[getter]
-    fn use_legacy_ray_runner(&self) -> PyResult<bool> {
-        Ok(self.config.use_legacy_ray_runner)
     }
 
     #[getter]

@@ -32,6 +32,7 @@
         * [Custom Connectors](connectors/custom.md)
         * [AWS Glue](connectors/glue.md)
         * [AWS S3 Tables](connectors/s3tables.md)
+        * [Apache Gravitino](connectors/gravitino.md)
         * [Apache Hudi](connectors/hudi.md)
         * [Apache Iceberg](connectors/iceberg.md)
         * [Azure Blob Store](connectors/azure.md)
@@ -94,7 +95,6 @@
     * [Schema](api/schema.md)
     * [Aggregations](api/aggregations.md)
     * [Series](api/series.md)
-    * [Spark Connect](api/spark_connect.md)
     * [Configuration](api/config.md)
     * [Miscellaneous](api/misc.md)
 * SQL Reference
