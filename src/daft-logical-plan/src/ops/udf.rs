@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
 use daft_core::prelude::Schema;
@@ -44,12 +44,28 @@ impl UDFProject {
         let udf_properties = UDFProperties::from_expr(&expr)?;
         let output_field = expr.to_field(&input.schema())?;
 
+        let input_schema = input.schema();
         let fields = passthrough_columns
             .iter()
-            .map(|e| e.to_field(&input.schema()))
+            .map(|e| e.to_field(&input_schema))
             .chain(std::iter::once(Ok(output_field)))
             .collect::<DaftResult<Vec<_>>>()?;
-        let projected_schema = Arc::new(Schema::new(fields));
+
+        // Preserve provenance columns from input schema that are in the projected fields
+        let provenance_columns = input_schema.provenance_columns();
+        let projected_provenance_columns: HashSet<String> = provenance_columns
+            .iter()
+            .filter(|prov_col_name| {
+                // Check if this provenance column is in the projected fields
+                fields.iter().any(|field| field.name == **prov_col_name)
+            })
+            .cloned()
+            .collect();
+
+        let projected_schema = Arc::new(Schema::new_with_provenance(
+            fields,
+            projected_provenance_columns,
+        ));
 
         Ok(Self {
             plan_id: None,
