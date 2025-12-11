@@ -174,6 +174,7 @@ def set_execution_config(
     maintain_order: bool | None = None,
     enable_dynamic_batching: bool | None = None,
     dynamic_batching_strategy: str | None = None,
+    max_limit_tasks_submittable_in_parallel: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -226,6 +227,11 @@ def set_execution_config(
         enable_dynamic_batching:
             Whether to enable dynamic batching. Defaults to False.
         dynamic_batching_strategy: The strategy to use for dynamic batching. Defaults to 'auto'.
+        max_limit_tasks_submittable_in_parallel: Maximum number of limit tasks to submit in parallel. It must be a positive integer.
+            Controls the parallelism when executing queries with limit + filter on sparse data.
+            - 1 (default): Serial execution, submit tasks one batch at a time (low resource usage)
+            - Other positive values (e.g., 100, 500, 1000): Controlled parallelism
+            For sparse data (e.g., filter matches < 1% of rows), use larger values (e.g., 1000+) for best performance.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -266,6 +272,7 @@ def set_execution_config(
             maintain_order=maintain_order,
             enable_dynamic_batching=enable_dynamic_batching,
             dynamic_batching_strategy=dynamic_batching_strategy,
+            max_limit_tasks_submittable_in_parallel=max_limit_tasks_submittable_in_parallel,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config

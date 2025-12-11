@@ -2149,6 +2149,7 @@ class PyDaftExecutionConfig:
         maintain_order: bool | None = None,
         enable_dynamic_batching: bool | None = None,
         dynamic_batching_strategy: str | None = None,
+        max_limit_tasks_submittable_in_parallel: int | None = None,
     ) -> PyDaftExecutionConfig: ...
     @property
     def scan_tasks_min_size_bytes(self) -> int: ...

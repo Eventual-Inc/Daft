@@ -122,6 +122,7 @@ impl PyDaftExecutionConfig {
         maintain_order=None,
         enable_dynamic_batching=None,
         dynamic_batching_strategy=None,
+        max_limit_tasks_submittable_in_parallel=None,
     ))]
     fn with_config_values(
         &self,
@@ -158,6 +159,7 @@ impl PyDaftExecutionConfig {
         maintain_order: Option<bool>,
         enable_dynamic_batching: Option<bool>,
         dynamic_batching_strategy: Option<&str>,
+        max_limit_tasks_submittable_in_parallel: Option<usize>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -288,6 +290,18 @@ impl PyDaftExecutionConfig {
                 ));
             }
             config.dynamic_batching_strategy = dynamic_batching_strategy.to_string();
+        }
+
+        if let Some(max_limit_tasks_submittable_in_parallel) =
+            max_limit_tasks_submittable_in_parallel
+        {
+            if max_limit_tasks_submittable_in_parallel == 0 {
+                return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                    "max_limit_tasks_submittable_in_parallel must be a positive integer",
+                ));
+            }
+            config.max_limit_tasks_submittable_in_parallel =
+                max_limit_tasks_submittable_in_parallel;
         }
 
         Ok(Self {
@@ -438,6 +452,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn dynamic_batching_strategy(&self) -> PyResult<&str> {
         Ok(self.config.dynamic_batching_strategy.as_str())
+    }
+
+    #[getter]
+    fn max_limit_tasks_submittable_in_parallel(&self) -> PyResult<usize> {
+        Ok(self.config.max_limit_tasks_submittable_in_parallel)
     }
 }
 
