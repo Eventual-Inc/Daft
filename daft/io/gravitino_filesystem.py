@@ -118,24 +118,6 @@ class GravitinoOutputStream:
         """Return the file system path representation."""
         return self.path
 
-    def __getattr__(self, name: str) -> Any:
-        """Handle missing attributes."""
-        if name in ["__fspath__"]:
-            return lambda: self.path
-
-        # Return a dummy function for any missing method
-        def dummy_method(*args: Any, **kwargs: Any) -> Any:
-            if name in ["fileno", "isatty"]:
-                return False
-            elif name in ["mode"]:
-                return "wb"
-            elif name in ["name"]:
-                return self.path
-            else:
-                raise NotImplementedError(f"Method {name} not implemented")
-
-        return dummy_method
-
     def write(self, data: bytes) -> int:
         """Write data to the buffer."""
         if self._closed:
@@ -218,6 +200,11 @@ class GravitinoOutputStream:
     def isatty(self) -> bool:
         """Check if the stream is a TTY."""
         return False
+
+    @property
+    def name(self) -> str:
+        """Get the name/path of the stream."""
+        return self.path
 
     def truncate(self, size: int | None = None) -> int:
         """Truncate the stream."""

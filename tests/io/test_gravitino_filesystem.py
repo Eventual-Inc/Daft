@@ -404,10 +404,10 @@ class TestGravitinoOutputStream:
         # Stream should still be marked as closed
         assert output_stream.closed
 
-    def test_getattr_missing_attributes(self, output_stream):
-        """Test __getattr__ for missing attributes."""
-        # Test that accessing missing attributes returns dummy methods
-        result = output_stream.name()
+    def test_name_property(self, output_stream):
+        """Test name property returns the path."""
+        # Test that name property returns the path
+        result = output_stream.name
         assert result == output_stream.path
 
     def test_context_manager_protocol(self, output_stream_with_config):
