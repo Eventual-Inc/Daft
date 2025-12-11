@@ -78,7 +78,7 @@ impl Series {
 
         const DEFAULT_SIZE: usize = 20;
         let hashed_series = self.hash_with_validity(None)?;
-        let array = self.to_arrow();
+        let array = self.to_arrow2();
         let comparator = build_is_equal(&*array, &*array, true, false)?;
 
         let mut probe_table =
@@ -87,7 +87,7 @@ impl Series {
                 Default::default(),
             );
 
-        for (idx, hash) in hashed_series.as_arrow().iter().enumerate() {
+        for (idx, hash) in hashed_series.as_arrow2().iter().enumerate() {
             let hash = match hash {
                 Some(&hash) => hash,
                 None => continue,
@@ -111,11 +111,12 @@ impl Series {
 
     /// Exports this Series into an Arrow arrow that is corrected for the Arrow type system.
     /// For example, Daft's TimestampArray is a logical type that is backed by an Int64Array Physical array.
-    /// If we were to call `.as_arrow()` or `.physical`on the TimestampArray, we would get an Int64Array that represented the time units.
+    /// If we were to call `.as_arrow2()` or `.physical`on the TimestampArray, we would get an Int64Array that represented the time units.
     /// However if we want to export our Timestamp array to another arrow system like arrow2 kernels or python, duckdb or more.
     /// We should convert it back to the canonical arrow dtype of Timestamp rather than Int64.
-    /// To get the internal physical type without conversion, see `as_arrow()`.
-    pub fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
+    /// To get the internal physical type without conversion, see `as_arrow2()`.
+    #[deprecated(note = "arrow2 migration")]
+    pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
         self.inner.to_arrow()
     }
 

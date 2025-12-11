@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::sync::Arc;
 
 use common_error::DaftResult;
@@ -88,7 +89,7 @@ fn tokenize_encode_array(
     let mut flat_child = MutablePrimitiveArray::<u32>::new();
     let mut offsets: Vec<i64> = Vec::with_capacity(arr.len() + 1);
     offsets.push(0);
-    let self_arrow = arr.as_arrow();
+    let self_arrow = arr.as_arrow2();
     for s_opt in self_arrow {
         if let Some(s) = s_opt {
             let tokens = bpe.encode(s, use_special_tokens);

@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::{borrow::Borrow, sync::LazyLock};
 
 use common_error::{DaftError, DaftResult, ensure};
@@ -144,7 +145,7 @@ fn replace_impl(
         }
         (true, _) => {
             let regex_iter = pattern
-                .as_arrow()
+                .as_arrow2()
                 .iter()
                 .map(|pat| pat.map(regex::Regex::new));
             regex_replace(arr_iter, regex_iter, replacement_iter, arr.name())?

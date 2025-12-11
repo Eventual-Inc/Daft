@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use common_error::{DaftResult, ensure};
 use daft_core::{
     prelude::{AsArrow, Field, Schema, Utf8Array},
@@ -70,7 +71,7 @@ fn normalize_impl(
     input.with_utf8_array(|arr| {
         Ok(Utf8Array::from_iter(
             arr.name(),
-            arr.as_arrow().iter().map(|maybe_s| {
+            arr.as_arrow2().iter().map(|maybe_s| {
                 if let Some(s) = maybe_s {
                     let mut s = if white_space {
                         s.trim().to_string()

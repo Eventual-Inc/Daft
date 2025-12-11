@@ -12,7 +12,7 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
     type Output = DaftResult<StructArray>;
 
     fn approx_sketch(&self) -> Self::Output {
-        let primitive_arr = self.as_arrow();
+        let primitive_arr = self.as_arrow2();
         let arrow_array = if primitive_arr.is_empty() {
             daft_sketch::into_arrow2(vec![])
         } else if primitive_arr.null_count() > 0 {
@@ -54,7 +54,7 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
     }
 
     fn grouped_approx_sketch(&self, groups: &GroupIndices) -> Self::Output {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
         let sketch_per_group = if arrow_array.is_empty() {
             daft_sketch::into_arrow2(vec![])
         } else if arrow_array.null_count() > 0 {

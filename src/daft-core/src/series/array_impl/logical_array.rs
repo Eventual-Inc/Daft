@@ -28,7 +28,7 @@ macro_rules! impl_series_like_for_logical_array {
                 self.0.clone().into_series()
             }
             fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
-                self.0.to_arrow()
+                self.0.to_arrow2()
             }
 
             fn as_any(&self) -> &dyn std::any::Any {
@@ -207,7 +207,7 @@ where
         self.0.clone().into_series()
     }
     fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
-        self.0.to_arrow()
+        self.0.to_arrow2()
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self

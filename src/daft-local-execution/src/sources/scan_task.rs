@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::{
     collections::{HashMap, HashSet},
     future::Future,
@@ -382,9 +383,9 @@ async fn get_delete_map(
                 let positions = get_column_by_name("pos")?.downcast::<Int64Array>()?;
 
                 for (file, pos) in file_paths
-                    .as_arrow()
+                    .as_arrow2()
                     .values_iter()
-                    .zip(positions.as_arrow().values_iter())
+                    .zip(positions.as_arrow2().values_iter())
                 {
                     if delete_map.contains_key(file) {
                         delete_map.get_mut(file).unwrap().push(*pos);

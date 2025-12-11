@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use common_error::DaftResult;
 use daft_core::{
     prelude::{AsArrow, DataType, Field, Schema, UInt64Array, Utf8Array},
@@ -43,7 +44,7 @@ pub fn utf8_length_bytes(input: ExprRef) -> ExprRef {
 }
 
 fn length_bytes_impl(arr: &Utf8Array) -> DaftResult<UInt64Array> {
-    let self_arrow = arr.as_arrow();
+    let self_arrow = arr.as_arrow2();
     let arrow_result = self_arrow
         .iter()
         .map(|val| {
