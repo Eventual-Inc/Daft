@@ -70,6 +70,7 @@ df.show()
 2. **Google** - Take advantage of Google's latests models like *Gemini 3 Pro*.
 3. **vLLM Prefix Caching** (Beta) - Distributed batch inference on vLLM [built by the Daft Cloud team](https://www.daft.ai/blog/cutting-llm-batch-inference-time-in-half-dynamic-prefix-bucketing-at-scale).
 
+
 ## Prompt Basics
 
 The `prompt` function supports a wide range of tasks, from simple text generation to complex agentic workflows with tool calling. Daft's native multimodal data handling and scalable execution make it easy to process large datasets efficiently. This section covers core patterns for working with prompts, including templates, parameters, and model configuration.
@@ -132,6 +133,7 @@ df.show(format="fancy", max_width=120)
 (Showing first 2 of 2 rows)
 ```
 
+For more details on how to use OpenAI-compatible providers with the `prompt` function like OpenRouter, Hugging Face Inference Providers, Databricks, and more, check out the [Prompting OpenAI-Compatible Providers](providers.md#prompting-with-openai-compatible-providers) section. Additionally, check out the [Prompting with vLLM Online Serving](providers.md#prompting-with-vllm-online-serving) section for more details on how to use vLLM Online Serving.
 
 ### Building Prompt Templates with the `format` function
 
