@@ -8,7 +8,9 @@ mod list_array;
 pub mod ops;
 mod serdes;
 mod struct_array;
+use arrow_data::ArrayData;
 use daft_arrow::{
+    array::to_data,
     buffer::{NullBuffer, wrap_null_buffer},
     compute::cast::utf8_to_large_utf8,
 };
@@ -171,6 +173,10 @@ impl<T> DataArray<T> {
 
     pub fn data(&self) -> &dyn daft_arrow::array::Array {
         self.data.as_ref()
+    }
+
+    pub fn to_data(&self) -> ArrayData {
+        to_data(self.data())
     }
 
     pub fn name(&self) -> &str {
