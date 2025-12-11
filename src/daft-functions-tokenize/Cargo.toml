@@ -1,5 +1,5 @@
 [dependencies]
-daft-arrow = {path = "../daft-arrow"}
+arrow = "54.2.1"
 base64 = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}

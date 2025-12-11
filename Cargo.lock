@@ -2907,10 +2907,10 @@ dependencies = [
 name = "daft-functions-tokenize"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
  "base64 0.22.1",
  "common-error",
  "common-runtime",
- "daft-arrow",
  "daft-core",
  "daft-dsl",
  "daft-io",

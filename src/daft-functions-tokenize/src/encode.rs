@@ -1,10 +1,7 @@
 use std::sync::Arc;
 
+use arrow::array::{ArrayBuilder, ArrayRef, UInt32Builder};
 use common_error::DaftResult;
-use daft_arrow::{
-    array::{MutableArray, MutablePrimitiveArray, PrimitiveArray},
-    offset::OffsetsBuffer,
-};
 use daft_core::prelude::*;
 use daft_dsl::functions::prelude::*;
 use daft_io::IOConfig;
@@ -85,7 +82,7 @@ fn tokenize_encode_array(
 ) -> DaftResult<ListArray> {
     let bpe = DaftBPE::new(tokens_path, io_config, pattern, special_tokens)?;
 
-    let mut flat_child = MutablePrimitiveArray::<u32>::new();
+    let mut flat_child = UInt32Builder::new();
     let mut offsets: Vec<i64> = Vec::with_capacity(arr.len() + 1);
     offsets.push(0);
     for s_opt in arr {
@@ -96,16 +93,18 @@ fn tokenize_encode_array(
         }
         offsets.push(flat_child.len() as i64);
     }
-    let flat_child: PrimitiveArray<u32> = flat_child.into();
+
+    let flat_child: ArrayRef = Arc::new(flat_child.finish());
+
     let child_series = Series::from_arrow(
         Field::new("flat_child", DataType::UInt32).into(),
-        Box::new(flat_child),
+        flat_child.into(),
     )?;
-    let offsets = OffsetsBuffer::try_from(offsets)?;
+
     Ok(ListArray::new(
         Field::new(arr.name(), DataType::List(Box::new(DataType::UInt32))),
         child_series,
-        offsets,
+        offsets.try_into()?,
         arr.validity().cloned(),
     ))
 }
