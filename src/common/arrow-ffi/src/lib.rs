@@ -113,3 +113,29 @@ pub fn field_to_py(
 
     Ok(field.into())
 }
+#[cfg(feature = "python")]
+pub fn dtype_to_py<'py>(
+    py: Python<'py>,
+    dtype: &daft_arrow::datatypes::DataType,
+    pyarrow: Bound<'py, PyModule>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let field = daft_arrow::datatypes::Field::new("", dtype.clone(), true);
+    let field = arrow2_field_to_arrow(field);
+
+    let schema = Box::new(FFI_ArrowSchema::try_from(field).map_err(|e| {
+        use pyo3::exceptions::PyRuntimeError;
+
+        PyErr::new::<PyRuntimeError, _>(format!(
+            "Failed to convert field to FFI_ArrowSchema: {}",
+            e
+        ))
+    })?);
+    let schema_ptr: *const FFI_ArrowSchema = &raw const *schema;
+
+    let field = pyarrow.getattr(pyo3::intern!(py, "Field"))?.call_method1(
+        pyo3::intern!(py, "_import_from_c"),
+        (schema_ptr as Py_uintptr_t,),
+    )?;
+
+    field.getattr(pyo3::intern!(py, "type"))
+}
