@@ -38,6 +38,13 @@ use crate::{
     },
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueryEndState {
+    Finished,
+    Failed,
+    Cancelled,
+}
+
 fn should_enable_progress_bar() -> bool {
     if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
         return false;
@@ -78,7 +85,7 @@ impl RuntimeStatsManagerHandle {
 /// This prevents the subscribers from being overwhelmed by too many events.
 pub struct RuntimeStatsManager {
     node_tx: Arc<mpsc::UnboundedSender<(usize, bool)>>,
-    finish_tx: oneshot::Sender<()>,
+    finish_tx: oneshot::Sender<QueryEndState>,
     stats_manager_task: RuntimeTask<Vec<(usize, StatSnapshot)>>,
 }
 
@@ -140,7 +147,7 @@ impl RuntimeStatsManager {
     ) -> Self {
         let (node_tx, mut node_rx) = mpsc::unbounded_channel::<(usize, bool)>();
         let node_tx = Arc::new(node_tx);
-        let (finish_tx, mut finish_rx) = oneshot::channel::<()>();
+        let (finish_tx, mut finish_rx) = oneshot::channel::<QueryEndState>();
 
         let event_loop = async move {
             let mut interval = interval(throttle_interval);
@@ -174,8 +181,8 @@ impl RuntimeStatsManager {
                         }
                     }
 
-                    _ = &mut finish_rx => {
-                        if !active_nodes.is_empty() {
+                    finish_status = &mut finish_rx => {
+                        if let Ok(status) = finish_status && status == QueryEndState::Finished && !active_nodes.is_empty() {
                             log::error!(
                                 "RuntimeStatsManager finished with active nodes {{{}}}",
                                 active_nodes.iter().map(|id: &usize| id.to_string()).join(", ")
@@ -234,9 +241,9 @@ impl RuntimeStatsManager {
         RuntimeStatsManagerHandle(self.node_tx.clone())
     }
 
-    pub async fn finish(self) -> Vec<(usize, StatSnapshot)> {
+    pub async fn finish(self, status: QueryEndState) -> Vec<(usize, StatSnapshot)> {
         self.finish_tx
-            .send(())
+            .send(status)
             .expect("The finish_tx channel was closed");
         self.stats_manager_task
             .await
