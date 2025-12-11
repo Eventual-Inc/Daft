@@ -114,13 +114,68 @@ df = daft.from_pydict({"a": [1, 2, 3, 4]})
 meta = df.write_lance("/tmp/lance/my_table.lance")
 meta.show()  # Contains metadata such as num_fragments / num_deleted_rows / num_small_files / version
 
-# Overwrite write with extra parameters (passed to lance.write_fragments)
+# Overwrite existing table with extra parameters (passed to lance.write_fragments)
 meta2 = df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)
 meta2.show()
 
 # Append rows (must be compatible with the existing table schema)
 meta3 = df.write_lance("/tmp/lance/my_table.lance", mode="append")
 ```
+
+To access public S3/GCS buckets, configure IO options for authentication and endpoints. For S3-compatible services (e.g. Volcengine TOS), configure IO options for authentication and endpoints:
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+    from daft.io import IOConfig, S3Config
+
+    df = daft.from_pydict({"user_id": [1, 2, 3], "score": [0.5, 0.8, 0.9]})
+
+    io_config = IOConfig(
+        s3=S3Config(
+            endpoint_url="https://tos-s3-{region}.ivolces.com",
+            region_name="{region}",
+            force_virtual_addressing=True,
+            verify_ssl=True,
+            key_id="your-access-key-id",
+            access_key="your-secret-access-key",
+        )
+    )
+
+    meta = df.write_lance("s3://my-tos-bucket/lance/my_table.lance", io_config=io_config)
+    ```
+
+Note: the `{region}` placeholder in the `endpoint_url` should match the region of your TOS bucket. E.g. if your bucket is in `cn-beijing`, you should set `region_name="cn-beijing"` and `endpoint_url="https://tos-s3-cn-beijing.ivolces.com"`.
+
+### Writing with a specific schema
+
+You can provide a `pyarrow.Schema` to control the on-disk Lance schema. Daft will align the DataFrame to this schema (column order, types, and nullability) before writing:
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+    import pyarrow as pa
+
+    df = daft.from_pydict(
+        {
+            "id": [1, 2, 3],
+            "score": [0.5, 0.8, 0.9],
+        }
+    )
+
+    target_schema = pa.schema(
+        [
+            pa.field("id", pa.int64(), nullable=False),
+            pa.field("score", pa.float32(), nullable=True),
+        ]
+    )
+
+    meta = df.write_lance("/tmp/lance/typed_table.lance", schema=target_schema)
+    ```
+
+This ensures that the resulting Lance table uses the exact schema you specify, even if the in-memory DataFrame has compatible but different types or column ordering.
 
 !!! note "Write Schema Control"
 
@@ -177,6 +232,7 @@ daft.io.lance.compact_files(
     default_scan_options=None,
     metadata_cache_size_bytes=None,
     partition_num=None,
+    concurrency=None,
 )
 ```
 
@@ -188,6 +244,7 @@ daft.io.lance.compact_files(
     - `files_removed`: Number of files removed during compaction.
     - `files_added`: Number of files added during compaction.
 - **`partition_num`**: On the Ray Runner, this controls the number of parallel compaction tasks. Defaults to 1. On the native runner, this option is ignored.
+- **`concurrency`**: The maximum number of concurrent compaction task instances to run. This controls how many compaction tasks can be processed simultaneously. Defaults to None, which means no explicit concurrency limit.
 
 
 This example compacts a dataset with multiple fragments into a single, larger fragment, and uses `partition_num` to control the number of parallel compaction tasks.
@@ -221,4 +278,70 @@ This example compacts a dataset with multiple fragments into a single, larger fr
     dataset = lance.dataset(dataset_path)
     # The final row count is 800, and the final fragment count is 2
     print(f"Final row count: {dataset.count_rows()}, and final fragment count: {len(dataset.get_fragments())}")
+    ```
+
+
+### Creating Scalar Indexes
+
+Daft provides a distributed scalar indexing API on top of Lance through [`daft.io.lance.create_scalar_index`][daft.io.lance.create_scalar_index]. This allows you to build full-text and scalar indexes across all fragments in a Lance dataset.
+
+The `index_type` parameter controls the type of scalar index and supports INVERTED, FTS, and BTREE. For INVERTED and FTS indexes, the indexed column must be a string column or a large_string column. BTREE indexes support numeric and string columns. If the column has an incompatible type for the chosen `index_type`, Daft raises a `TypeError`.
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+
+    # Build an inverted index on a text column
+    daft.io.lance.create_scalar_index(
+        "/tmp/lance/my_table.lance",
+        column="text",
+        index_type="INVERTED",
+    )
+
+    # Build a full-text search index
+    daft.io.lance.create_scalar_index(
+        "/tmp/lance/my_table.lance",
+        column="text",
+        index_type="FTS",
+    )
+
+    # Build a BTREE index
+    daft.io.lance.create_scalar_index(
+        "/tmp/lance/my_table.lance",
+        column="text",
+        index_type="BTREE",
+    )
+    ```
+
+#### Concurrency and partitioning
+
+`daft.io.lance.create_scalar_index` builds the index in parallel by splitting the dataset into fragment batches and running workers across them.
+
+- **`concurrency`** controls the maximum number of workers that build fragment-level indexes in parallel. If `concurrency` is `None`, Daft defaults to `4`. Concurrency must be a positive integer; values larger than the number of fragments are clipped down to the fragment count.
+- **`partition_num`** On the Ray Runner, controls how many logical batches of fragment IDs are processed when dispatching work through Daft. If `partition_num` is `None` or less than or equal to `1`, Daft processes the fragment batches without additional repartitioning. On the native runner, this option is ignored.
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+
+    uri = "/tmp/lance/my_table.lance"
+
+    # Use a higher concurrency to speed up indexing on larger tables
+    daft.io.lance.create_scalar_index(
+        uri,
+        column="text",
+        index_type="INVERTED",
+        concurrency=8,
+    )
+
+    # Explicitly control how fragment batches are repartitioned
+    daft.io.lance.create_scalar_index(
+        uri,
+        column="text",
+        index_type="INVERTED",
+        concurrency=8,
+        partition_num=4,
+    )
     ```

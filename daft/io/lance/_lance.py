@@ -363,9 +363,10 @@ def create_scalar_index(
     index_cache_size: Optional[int] = None,
     default_scan_options: Optional[dict[str, Any]] = None,
     metadata_cache_size_bytes: Optional[int] = None,
+    partition_num: Optional[int] = None,
     **kwargs: Any,
 ) -> None:
-    """Build a distributed full-text search index using Daft's distributed computing.
+    """Build a distributed scalar index using Daft's distributed execution.
 
     This function distributes the index building process across multiple Daft workers,
     with each worker building indices for a subset of fragments. The indices are then
@@ -375,12 +376,14 @@ def create_scalar_index(
         uri: The URI of the Lance table (supports remote URLs to object stores such as `s3://` or `gs://`)
         io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
         column: Column name to index
-        index_type: Type of index to build ("INVERTED" or "FTS")
+        index_type: Type of index to build ("INVERTED", "FTS", or "BTREE")
         name: Name of the index (generated if None)
         replace: Whether to replace an existing index with the same name. Defaults to True.
         storage_options: Storage options for the dataset
         daft_remote_args: Options for Daft remote execution (e.g., num_cpus, num_gpus, memory_bytes)
-        concurrency: Number of Daft workers to use
+        concurrency: Number of Daft workers to use. If None, defaults to 4. Must be a positive
+            integer; values larger than the fragment count are clipped down to the number of
+            fragments.
         version: Version of the dataset to use
         asof: Timestamp to use for time travel queries
         block_size: Block size for the index
@@ -388,6 +391,7 @@ def create_scalar_index(
         index_cache_size: Size of the index cache
         default_scan_options: Default scan options for the dataset
         metadata_cache_size_bytes: Size of the metadata cache in bytes
+        partition_num: Number of partitions to use for repartitioning fragment batches
         **kwargs: Additional arguments to pass to create_scalar_index
 
     Returns:
@@ -395,7 +399,7 @@ def create_scalar_index(
 
     Raises:
         ValueError: If input parameters are invalid
-        TypeError: If column type is not string
+        TypeError: If column type is incompatible with the chosen ``index_type``
         RuntimeError: If index building fails
         ImportError: If lance package is not available
 
@@ -461,6 +465,7 @@ def create_scalar_index(
         storage_options=storage_options,
         daft_remote_args=daft_remote_args,
         concurrency=concurrency,
+        partition_num=partition_num,
         **kwargs,
     )
 
