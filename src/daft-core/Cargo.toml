@@ -1,4 +1,6 @@
 [dependencies]
+arrow = "54.2.1"
+arrow-buffer = "54.2.1"
 bincode = {workspace = true}
 daft-arrow = {path = "../daft-arrow"}
 chrono = {workspace = true}

@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
@@ -79,7 +78,7 @@ impl ProbeSet {
             .iter()
             .map(|s| Ok(s.as_physical()?.to_arrow2()))
             .collect::<DaftResult<Vec<_>>>()?;
-
+        #[allow(deprecated, reason = "arrow2 migration")]
         let iter = hashes.as_arrow2().clone().into_iter();
 
         Ok(iter.enumerate().map(move |(idx, h)| {
@@ -112,6 +111,7 @@ impl ProbeSet {
 
         assert!(table_idx < (1 << (64 - Self::TABLE_IDX_SHIFT)));
         assert!(table.len() < (1 << Self::TABLE_IDX_SHIFT));
+
         #[allow(deprecated, reason = "arrow2 migration")]
         let current_arrays = table
             .columns
@@ -120,7 +120,7 @@ impl ProbeSet {
             .collect::<DaftResult<Vec<_>>>()?;
         self.tables.push(ArrowTableEntry(current_arrays));
         let current_array_refs = self.tables.last().unwrap().0.as_slice();
-        for (i, h) in hashes.as_arrow2().values_iter().enumerate() {
+        for (i, h) in hashes.values().iter().enumerate() {
             let idx = table_offset | i;
             let entry = self.hash_table.raw_entry_mut().from_hash(*h, |other| {
                 (*h == other.hash) && {

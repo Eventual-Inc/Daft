@@ -186,15 +186,6 @@ impl<T> DataArray<T> {
     }
 }
 
-impl<T> DataArray<T>
-where
-    T: DaftPhysicalType + 'static,
-{
-    pub fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;

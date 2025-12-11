@@ -25,11 +25,11 @@ where
             (array_size, lbound_size, rbound_size)
                 if array_size == lbound_size && array_size == rbound_size =>
             {
-                let result = self
-                    .as_arrow2()
-                    .values_iter() // Fine to use values_iter since we will apply the validity later, saves us 1 branch.
-                    .zip(left_bound.as_arrow2().iter())
-                    .zip(right_bound.as_arrow2().iter())
+                let values = self.values();
+                let result = values
+                    .iter()
+                    .zip(left_bound.into_iter())
+                    .zip(right_bound.into_iter())
                     .map(|((value, left), right)| match (left, right) {
                         (Some(l), Some(r)) => Some(clamp(*value, *l, *r)),
                         (Some(l), None) => Some(clamp_min(*value, *l)),
@@ -48,30 +48,30 @@ where
                 // This avoids a validity check in the clamp function
                 match right {
                     Some(r) => {
+                        let values = self.values();
                         // Right is valid, so we just clamp/clamp_max the values depending on the left bound
-                        let result = self
-                            .as_arrow2()
-                            .values_iter()
-                            .zip(left_bound.as_arrow2().iter())
-                            .map(move |(value, left)| match left {
-                                Some(l) => Some(clamp(*value, *l, r)),
-                                None => Some(clamp_max(*value, r)), // If left is null, we can just clamp_max
-                            });
+                        let result =
+                            values
+                                .iter()
+                                .zip(left_bound.into_iter())
+                                .map(move |(value, left)| match left {
+                                    Some(l) => Some(clamp(*value, *l, r)),
+                                    None => Some(clamp_max(*value, r)), // If left is null, we can just clamp_max
+                                });
                         let result = PrimitiveArray::<T::Native>::from_trusted_len_iter(result);
                         let data_array = Self::from((self.name(), Box::new(result)))
                             .with_validity(self.validity().cloned())?;
                         Ok(data_array)
                     }
                     None => {
+                        let values = self.values();
                         // In this case, right_bound is null, so we can just do a simple clamp_min
-                        let result = self
-                            .as_arrow2()
-                            .values_iter()
-                            .zip(left_bound.as_arrow2().iter())
-                            .map(|(value, left)| match left {
+                        let result = values.iter().zip(left_bound.as_arrow2().iter()).map(
+                            |(value, left)| match left {
                                 Some(l) => Some(clamp_min(*value, *l)),
                                 None => Some(*value), // Left null, and right null, so we just don't do anything
-                            });
+                            },
+                        );
                         let result = PrimitiveArray::<T::Native>::from_trusted_len_iter(result);
                         let data_array = Self::from((self.name(), Box::new(result)))
                             .with_validity(self.validity().cloned())?;
@@ -84,28 +84,26 @@ where
                 let left = left_bound.get(0);
                 match left {
                     Some(l) => {
-                        let result = self
-                            .as_arrow2()
-                            .values_iter()
-                            .zip(right_bound.as_arrow2().iter())
-                            .map(move |(value, right)| match right {
+                        let values = self.values();
+                        let result = values.iter().zip(right_bound.as_arrow2().iter()).map(
+                            move |(value, right)| match right {
                                 Some(r) => Some(clamp(*value, l, *r)),
                                 None => Some(clamp_min(*value, l)), // Right null, so we can just clamp_min
-                            });
+                            },
+                        );
                         let result = PrimitiveArray::<T::Native>::from_trusted_len_iter(result);
                         let data_array = Self::from((self.name(), Box::new(result)))
                             .with_validity(self.validity().cloned())?;
                         Ok(data_array)
                     }
                     None => {
-                        let result = self
-                            .as_arrow2()
-                            .values_iter()
-                            .zip(right_bound.as_arrow2().iter())
-                            .map(|(value, right)| match right {
+                        let values = self.values();
+                        let result = values.iter().zip(right_bound.as_arrow2().iter()).map(
+                            |(value, right)| match right {
                                 Some(r) => Some(clamp_max(*value, *r)),
                                 None => Some(*value),
-                            });
+                            },
+                        );
                         let result = PrimitiveArray::<T::Native>::from_trusted_len_iter(result);
                         let data_array = Self::from((self.name(), Box::new(result)))
                             .with_validity(self.validity().cloned())?;
