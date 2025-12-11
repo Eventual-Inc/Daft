@@ -8,7 +8,7 @@ use common_error::DaftResult;
 use daft_core::{
     array::ops::from_arrow::FromArrow,
     datatypes::{BinaryArray, FixedSizeBinaryArray},
-    prelude::Utf8Array,
+    prelude::{DataType, Field, Utf8Array},
 };
 
 pub trait BinaryArrayExtension: Sized {
@@ -129,7 +129,10 @@ impl BinaryArrayExtension for BinaryArray {
         let array = LargeStringArray::new(offsets.into(), values.into(), validity);
         let array: ArrayRef = Arc::new(array);
 
-        Utf8Array::from_arrow(Arc::new(Field::new(self.name(), DataType::Utf8)), array.into())
+        Utf8Array::from_arrow(
+            Arc::new(Field::new(self.name(), DataType::Utf8)),
+            array.into(),
+        )
     }
 
     /// For binary-to-text decoding, but inserts null on failures.
@@ -181,7 +184,10 @@ impl BinaryArrayExtension for BinaryArray {
         );
         let array: ArrayRef = Arc::new(array);
 
-        Utf8Array::from_arrow(Arc::new(Field::new(self.name(), DataType::Utf8)), array.into())
+        Utf8Array::from_arrow(
+            Arc::new(Field::new(self.name(), DataType::Utf8)),
+            array.into(),
+        )
     }
 }
 
@@ -293,7 +299,10 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
         let array = LargeStringArray::new(offsets.into(), values.into(), validity);
         let array: ArrayRef = Arc::new(array);
 
-        Utf8Array::from_arrow(Arc::new(Field::new(self.name(), DataType::Utf8)), array.into())
+        Utf8Array::from_arrow(
+            Arc::new(Field::new(self.name(), DataType::Utf8)),
+            array.into(),
+        )
     }
 
     /// For binary-to-text decoding, but inserts null on failures.
@@ -347,6 +356,9 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
         );
         let array: ArrayRef = Arc::new(array);
 
-        Utf8Array::from_arrow(Arc::new(Field::new(self.name(), DataType::Utf8)), array.into())
+        Utf8Array::from_arrow(
+            Arc::new(Field::new(self.name(), DataType::Utf8)),
+            array.into(),
+        )
     }
 }
