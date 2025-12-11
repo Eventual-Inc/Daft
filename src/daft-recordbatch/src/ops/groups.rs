@@ -54,12 +54,11 @@ impl RecordBatch {
         // )
 
         // Begin by doing the argsort.
-        let argsort_series = Series::argsort_multikey(
+        let argsort_array = Series::argsort_multikey(
             self.columns.as_slice(),
             &vec![false; self.columns.len()],
             &vec![false; self.columns.len()],
         )?;
-        let argsort_array = argsort_series.downcast::<UInt64Array>()?;
 
         // The result indices.
         let mut key_indices: Vec<u64> = vec![];

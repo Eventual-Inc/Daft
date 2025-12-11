@@ -156,7 +156,7 @@ impl TimestampArray {
         let DataType::Timestamp(timeunit, tz) = self.data_type() else {
             unreachable!("Timestamp array must have Timestamp datatype")
         };
-        let tu = timeunit.to_arrow();
+        let tu = timeunit.to_arrow2();
         let epoch_date = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
         let date_arrow = match tz {
             Some(tz) => {
@@ -215,7 +215,7 @@ impl TimestampArray {
         let DataType::Timestamp(timeunit, tz) = self.data_type() else {
             unreachable!("Timestamp array must have Timestamp datatype")
         };
-        let tu = timeunit.to_arrow();
+        let tu = timeunit.to_arrow2();
         if !matches!(
             timeunit_for_cast,
             TimeUnit::Microseconds | TimeUnit::Nanoseconds
@@ -303,7 +303,7 @@ impl TimestampArray {
             // We can calculate this by taking the modulo of the timestamp with the duration.
             match tz {
                 Some(tz) => {
-                    let tu_arrow = tu.to_arrow();
+                    let tu_arrow = tu.to_arrow2();
                     let original_dt =
                         daft_arrow::temporal_conversions::timestamp_to_datetime(ts, tu_arrow, &tz);
                     let naive_ts = match tu {
@@ -465,7 +465,7 @@ impl TimestampArray {
 
     pub fn day_of_month(&self) -> DaftResult<UInt32Array> {
         let (tu, tz) = match self.data_type() {
-            DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow(), tz.clone()),
+            DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow2(), tz.clone()),
             _ => unreachable!("TimestampArray must have Timestamp datatype"),
         };
         let input_array = self
@@ -480,7 +480,7 @@ impl TimestampArray {
 
     pub fn day_of_year(&self) -> DaftResult<UInt32Array> {
         let (tu, tz) = match self.data_type() {
-            DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow(), tz.clone()),
+            DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow2(), tz.clone()),
             _ => unreachable!("TimestampArray must have Timestamp datatype"),
         };
         let input_array = self
@@ -495,7 +495,7 @@ impl TimestampArray {
 
     pub fn week_of_year(&self) -> DaftResult<UInt32Array> {
         let (tu, tz) = match self.data_type() {
-            DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow(), tz.clone()),
+            DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow2(), tz.clone()),
             _ => unreachable!("TimestampArray must have Timestamp datatype"),
         };
         let input_array = self
@@ -511,7 +511,7 @@ impl TimestampArray {
     pub fn unix_date(&self) -> DaftResult<UInt64Array> {
         const UNIX_EPOCH_DATE: NaiveDate = NaiveDateTime::UNIX_EPOCH.date();
         let (tu, tz) = match self.data_type() {
-            DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow(), tz.clone()),
+            DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow2(), tz.clone()),
             _ => unreachable!("TimestampArray must have Timestamp datatype"),
         };
         let unix_seconds_arr = self
@@ -557,7 +557,7 @@ impl TimeArray {
     pub fn hour(&self) -> DaftResult<UInt32Array> {
         let physical = self.physical.as_arrow();
         let tu = match self.data_type() {
-            DataType::Time(time_unit) => time_unit.to_arrow(),
+            DataType::Time(time_unit) => time_unit.to_arrow2(),
             _ => unreachable!("TimeArray must have Time datatype"),
         };
 
@@ -585,7 +585,7 @@ impl TimeArray {
     pub fn minute(&self) -> DaftResult<UInt32Array> {
         let physical = self.physical.as_arrow();
         let tu = match self.data_type() {
-            DataType::Time(time_unit) => time_unit.to_arrow(),
+            DataType::Time(time_unit) => time_unit.to_arrow2(),
             _ => unreachable!("TimeArray must have Time datatype"),
         };
 
@@ -613,7 +613,7 @@ impl TimeArray {
     pub fn second(&self) -> DaftResult<UInt32Array> {
         let physical = self.physical.as_arrow();
         let tu = match self.data_type() {
-            DataType::Time(time_unit) => time_unit.to_arrow(),
+            DataType::Time(time_unit) => time_unit.to_arrow2(),
             _ => unreachable!("TimeArray must have Time datatype"),
         };
 
@@ -642,7 +642,7 @@ impl TimeArray {
         const NANOS_PER_MILLI: u32 = 1_000_000;
         let physical = self.physical.as_arrow();
         let tu = match self.data_type() {
-            DataType::Time(time_unit) => time_unit.to_arrow(),
+            DataType::Time(time_unit) => time_unit.to_arrow2(),
             _ => unreachable!("TimeArray must have Time datatype"),
         };
 
@@ -671,7 +671,7 @@ impl TimeArray {
         const NANOS_PER_MICRO: u32 = 1_000;
         let physical = self.physical.as_arrow();
         let tu = match self.data_type() {
-            DataType::Time(time_unit) => time_unit.to_arrow(),
+            DataType::Time(time_unit) => time_unit.to_arrow2(),
             _ => unreachable!("TimeArray must have Time datatype"),
         };
 
@@ -699,7 +699,7 @@ impl TimeArray {
     pub fn nanosecond(&self) -> DaftResult<UInt32Array> {
         let physical = self.physical.as_arrow();
         let tu = match self.data_type() {
-            DataType::Time(time_unit) => time_unit.to_arrow(),
+            DataType::Time(time_unit) => time_unit.to_arrow2(),
             _ => unreachable!("TimeArray must have Time datatype"),
         };
 

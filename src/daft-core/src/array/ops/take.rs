@@ -15,11 +15,7 @@ impl<T> DataArray<T>
 where
     T: DaftNumericType,
 {
-    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: daft_arrow::types::Index,
-    {
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
         let result = daft_arrow::compute::take::take(self.data(), idx.as_arrow())?;
         Self::try_from((self.field.clone(), result))
     }
@@ -29,11 +25,7 @@ where
 macro_rules! impl_dataarray_take {
     ($ArrayT:ty) => {
         impl $ArrayT {
-            pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
-            where
-                I: DaftIntegerType,
-                <I as DaftNumericType>::Native: daft_arrow::types::Index,
-            {
+            pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
                 let result = daft_arrow::compute::take::take(self.data(), idx.as_arrow())?;
                 Self::try_from((self.field.clone(), result))
             }
@@ -44,11 +36,7 @@ macro_rules! impl_dataarray_take {
 macro_rules! impl_logicalarray_take {
     ($ArrayT:ty) => {
         impl $ArrayT {
-            pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
-            where
-                I: DaftIntegerType,
-                <I as DaftNumericType>::Native: daft_arrow::types::Index,
-            {
+            pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
                 let new_array = self.physical.take(idx)?;
                 Ok(Self::new(self.field.clone(), new_array))
             }
@@ -80,22 +68,14 @@ impl<T> FileArray<T>
 where
     T: DaftMediaType,
 {
-    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: daft_arrow::types::Index,
-    {
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
         let new_array = self.physical.take(idx)?;
         Ok(Self::new(self.field.clone(), new_array))
     }
 }
 
 impl FixedSizeBinaryArray {
-    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: daft_arrow::types::Index,
-    {
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
         let mut growable = Self::make_growable(
             self.name(),
             self.data_type(),
@@ -121,11 +101,7 @@ impl FixedSizeBinaryArray {
 
 #[cfg(feature = "python")]
 impl PythonArray {
-    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: daft_arrow::types::Index,
-    {
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
         let mut growable = Self::make_growable(
             self.name(),
             self.data_type(),
@@ -150,11 +126,7 @@ impl PythonArray {
 }
 
 impl FixedSizeListArray {
-    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: daft_arrow::types::Index,
-    {
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
         let mut growable = Self::make_growable(
             self.name(),
             self.data_type(),
@@ -179,11 +151,7 @@ impl FixedSizeListArray {
 }
 
 impl ListArray {
-    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: daft_arrow::types::Index,
-    {
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
         let child_capacity = idx
             .as_arrow()
             .iter()
@@ -220,12 +188,7 @@ impl ListArray {
 }
 
 impl StructArray {
-    pub fn take<I>(&self, idx: &DataArray<I>) -> DaftResult<Self>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: daft_arrow::types::Index,
-    {
-        let idx_as_u64 = idx.cast(&DataType::UInt64)?;
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
         let taken_validity = self.validity().map(|v| {
             daft_arrow::buffer::NullBuffer::from_iter(idx.into_iter().map(|i| match i {
                 None => false,
@@ -236,7 +199,7 @@ impl StructArray {
             self.field.clone(),
             self.children
                 .iter()
-                .map(|c| c.take(&idx_as_u64))
+                .map(|c| c.take(idx))
                 .collect::<DaftResult<Vec<_>>>()?,
             taken_validity,
         ))

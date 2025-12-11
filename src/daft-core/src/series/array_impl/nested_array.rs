@@ -10,8 +10,8 @@ use crate::{
     },
     datatypes::{BooleanArray, DataType, Field},
     lit::Literal,
+    prelude::UInt64Array,
     series::{IntoSeries, Series, SeriesLike},
-    with_match_integer_daft_types,
 };
 
 macro_rules! impl_series_like_for_nested_arrays {
@@ -149,13 +149,8 @@ macro_rules! impl_series_like_for_nested_arrays {
                 Ok(self.0.slice(start, end)?.into_series())
             }
 
-            fn take(&self, idx: &Series) -> DaftResult<Series> {
-                with_match_integer_daft_types!(idx.data_type(), |$S| {
-                    Ok(self
-                        .0
-                        .take(idx.downcast::<<$S as DaftDataType>::ArrayType>()?)?
-                        .into_series())
-                })
+            fn take(&self, idx: &UInt64Array) -> DaftResult<Series> {
+                Ok(self.0.take(idx)?.into_series())
             }
 
             fn str_value(&self, idx: usize) -> DaftResult<String> {

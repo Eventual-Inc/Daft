@@ -1,7 +1,8 @@
 use std::{fmt::Display, str::FromStr};
 
+use arrow_schema::TimeUnit as ArrowTimeUnit;
 use common_error::DaftError;
-use daft_arrow::datatypes::TimeUnit as ArrowTimeUnit;
+use daft_arrow::datatypes::TimeUnit as Arrow2TimeUnit;
 use serde::{Deserialize, Serialize};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Deserialize, Serialize)]
@@ -25,6 +26,16 @@ impl Display for TimeUnit {
 
 impl TimeUnit {
     #![allow(clippy::wrong_self_convention)]
+    #[must_use]
+    #[deprecated(note = "use .to_arrow")]
+    pub fn to_arrow2(&self) -> Arrow2TimeUnit {
+        match self {
+            Self::Nanoseconds => Arrow2TimeUnit::Nanosecond,
+            Self::Microseconds => Arrow2TimeUnit::Microsecond,
+            Self::Milliseconds => Arrow2TimeUnit::Millisecond,
+            Self::Seconds => Arrow2TimeUnit::Second,
+        }
+    }
     #[must_use]
     pub fn to_arrow(&self) -> ArrowTimeUnit {
         match self {
@@ -59,13 +70,13 @@ impl FromStr for TimeUnit {
     }
 }
 
-impl From<&ArrowTimeUnit> for TimeUnit {
-    fn from(tu: &ArrowTimeUnit) -> Self {
+impl From<&Arrow2TimeUnit> for TimeUnit {
+    fn from(tu: &Arrow2TimeUnit) -> Self {
         match tu {
-            ArrowTimeUnit::Nanosecond => Self::Nanoseconds,
-            ArrowTimeUnit::Microsecond => Self::Microseconds,
-            ArrowTimeUnit::Millisecond => Self::Milliseconds,
-            ArrowTimeUnit::Second => Self::Seconds,
+            Arrow2TimeUnit::Nanosecond => Self::Nanoseconds,
+            Arrow2TimeUnit::Microsecond => Self::Microseconds,
+            Arrow2TimeUnit::Millisecond => Self::Milliseconds,
+            Arrow2TimeUnit::Second => Self::Seconds,
         }
     }
 }

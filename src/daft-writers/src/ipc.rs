@@ -43,7 +43,8 @@ impl IPCWriter {
                 compression: self.compression,
             };
             let mut writer = daft_arrow::io::ipc::write::StreamWriter::new(file, options);
-            writer.start(&schema.to_arrow()?, None)?;
+            #[allow(deprecated, reason = "arrow2 migration")]
+            writer.start(&schema.to_arrow2()?, None)?;
             self.writer = Some(writer);
         }
         Ok(self.writer.as_mut().unwrap())
