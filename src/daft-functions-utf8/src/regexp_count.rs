@@ -66,7 +66,7 @@ fn regexp_count_impl(arr: &Utf8Array, patterns: &Utf8Array) -> DaftResult<UInt64
             .map_err(|e| DaftError::ValueError(format!("Invalid regex pattern: {}", e)))?;
 
         let iter = arr
-            .as_arrow()
+            .as_arrow2()
             .iter()
             // Note, this is optimized by the compiler to not materialize values
             .map(|opt| opt.map(|s| regex.find_iter(s).count() as u64));
@@ -77,9 +77,9 @@ fn regexp_count_impl(arr: &Utf8Array, patterns: &Utf8Array) -> DaftResult<UInt64
         ))
     } else {
         let res = arr
-            .as_arrow()
+            .as_arrow2()
             .iter()
-            .zip(patterns.as_arrow().iter())
+            .zip(patterns.as_arrow2().iter())
             .map(|(val, pat)| {
                 let Some(val) = val else { return Ok(None) };
                 let Some(pat) = pat else { return Ok(None) };

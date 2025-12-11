@@ -150,7 +150,7 @@ impl RecordBatch {
     pub fn get_inner_arrow_arrays(
         &self,
     ) -> impl Iterator<Item = Box<dyn daft_arrow::array::Array>> + '_ {
-        self.columns.iter().map(|s| s.to_arrow())
+        self.columns.iter().map(|s| s.to_arrow2())
     }
 
     /// Create a new [`RecordBatch`] and validate against `num_rows`
@@ -1545,7 +1545,7 @@ impl RecordBatch {
     }
 
     pub fn to_chunk(&self) -> Chunk<Box<dyn Array>> {
-        Chunk::new(self.columns.iter().map(|s| s.to_arrow()).collect())
+        Chunk::new(self.columns.iter().map(|s| s.to_arrow2()).collect())
     }
 
     pub fn to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
@@ -1597,7 +1597,7 @@ impl TryFrom<RecordBatch> for arrow_array::RecordBatch {
         let columns = record_batch
             .columns
             .iter()
-            .map(|s| s.to_arrow().into())
+            .map(|s| s.to_arrow2().into())
             .collect::<Vec<_>>();
         Self::try_new(schema, columns).map_err(DaftError::ArrowRsError)
     }

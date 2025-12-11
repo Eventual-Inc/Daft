@@ -37,7 +37,7 @@ pub(crate) fn create_broadcasted_str_iter(arr: &Utf8Array, len: usize) -> Broadc
     if arr.len() == 1 {
         BroadcastedStrIter::Repeat(std::iter::repeat_n(arr.get(0), len))
     } else {
-        BroadcastedStrIter::NonRepeat(arr.as_arrow().iter())
+        BroadcastedStrIter::NonRepeat(arr.as_arrow2().iter())
     }
 }
 
@@ -61,7 +61,7 @@ impl Utf8ArrayUtils for Utf8Array {
     where
         ScalarKernel: Fn(&str) -> Cow<'_, str>,
     {
-        let self_arrow = self.as_arrow();
+        let self_arrow = self.as_arrow2();
         let arrow_result = self_arrow
             .iter()
             .map(|val| Some(operation(val?)))

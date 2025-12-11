@@ -109,7 +109,7 @@ fn extract_all_impl(arr: &Utf8Array, pattern: &Utf8Array, index: usize) -> DaftR
         }
         _ => {
             let regex_iter = pattern
-                .as_arrow()
+                .as_arrow2()
                 .iter()
                 .map(|pat| pat.map(regex::Regex::new));
             regex_extract_all_matches(self_iter, regex_iter, index, expected_size, arr.name())?

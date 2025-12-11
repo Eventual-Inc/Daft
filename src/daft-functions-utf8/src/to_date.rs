@@ -57,7 +57,7 @@ pub fn to_date(input: ExprRef, format: ExprRef) -> ExprRef {
 
 fn to_date_impl(arr: &Utf8Array, format: &str) -> DaftResult<DateArray> {
     let len = arr.len();
-    let arr_iter = arr.as_arrow().iter();
+    let arr_iter = arr.as_arrow2().iter();
 
     let arrow_result = arr_iter
         .map(|val| match val {

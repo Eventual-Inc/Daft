@@ -1074,7 +1074,7 @@ pub fn read_parquet_statistics(
 
     let path_array: &Utf8Array = uris.downcast()?;
     use daft_core::array::ops::as_arrow::AsArrow;
-    let values = path_array.as_arrow();
+    let values = path_array.as_arrow2();
 
     let handles_iter = values.iter().map(|uri| {
         let owned_string = uri.map(std::string::ToString::to_string);

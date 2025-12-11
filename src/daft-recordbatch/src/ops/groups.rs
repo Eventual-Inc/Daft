@@ -79,7 +79,7 @@ impl RecordBatch {
 
         let mut group_begin_indices: Option<(usize, usize)> = None;
 
-        for (argarray_index, table_index) in argsort_array.as_arrow().iter().enumerate() {
+        for (argarray_index, table_index) in argsort_array.as_arrow2().iter().enumerate() {
             let table_index = *table_index.unwrap() as usize;
 
             match group_begin_indices {

@@ -352,7 +352,7 @@ impl VLLMSink {
                     prompts.data_type()
                 ))
             })?
-            .as_arrow()
+            .as_arrow2()
             .values_iter()
             .map(|s| s.to_string())
             .collect::<Vec<_>>();

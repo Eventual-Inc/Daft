@@ -99,7 +99,7 @@ fn extract_impl(s: &Utf8Array, pattern: &Utf8Array, index: usize) -> DaftResult<
         }
         _ => {
             let regex_iter = pattern
-                .as_arrow()
+                .as_arrow2()
                 .iter()
                 .map(|pat| pat.map(regex::Regex::new));
             regex_extract_first_match(self_iter, regex_iter, index, s.name())?

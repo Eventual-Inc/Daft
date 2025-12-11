@@ -3,6 +3,6 @@ use crate::datatypes::BooleanArray;
 
 impl BooleanArray {
     pub fn as_bitmap(&self) -> &daft_arrow::bitmap::Bitmap {
-        self.as_arrow().values()
+        self.as_arrow2().values()
     }
 }

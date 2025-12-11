@@ -179,12 +179,12 @@ impl StructArray {
                 .map(|v| v.clone().slice(start, end - start)),
         ))
     }
-
-    pub fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
+    #[deprecated(note = "arrow2 migration")]
+    pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
         let arrow_dtype = self.data_type().to_arrow().unwrap();
         Box::new(daft_arrow::array::StructArray::new(
             arrow_dtype,
-            self.children.iter().map(|s| s.to_arrow()).collect(),
+            self.children.iter().map(|s| s.to_arrow2()).collect(),
             daft_arrow::buffer::wrap_null_buffer(self.validity.clone()),
         ))
     }

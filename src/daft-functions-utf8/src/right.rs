@@ -112,7 +112,7 @@ where
         }
         _ => {
             let arrow_result = arr_iter
-                .zip(nchars.as_arrow().iter())
+                .zip(nchars.as_arrow2().iter())
                 .map(|(val, n)| match (val, n) {
                     (Some(val), Some(nchar)) => {
                         let nchar: usize = NumCast::from(*nchar).ok_or_else(|| {

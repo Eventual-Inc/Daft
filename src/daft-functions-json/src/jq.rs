@@ -98,7 +98,7 @@ mod jaq {
 
         // used for the output array
         let name = arr.name().to_string();
-        let self_arrow = arr.as_arrow();
+        let self_arrow = arr.as_arrow2();
 
         // execute the filter on each input, mapping to some string result
         let values = self_arrow
@@ -191,9 +191,9 @@ mod tests {
         let filter = r".foo.bar";
         let result = jaq::execute_jaq_filter(&data, filter)?;
         assert_eq!(result.len(), 3);
-        assert_eq!(result.as_arrow().value(0), "1");
-        assert_eq!(result.as_arrow().value(1), "2");
-        assert_eq!(result.as_arrow().value(2), "3");
+        assert_eq!(result.as_arrow2().value(0), "1");
+        assert_eq!(result.as_arrow2().value(1), "2");
+        assert_eq!(result.as_arrow2().value(2), "3");
         Ok(())
     }
 }

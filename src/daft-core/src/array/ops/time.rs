@@ -68,7 +68,7 @@ impl DateArray {
     pub fn day(&self) -> DaftResult<UInt32Array> {
         let input_array = self
             .physical
-            .as_arrow()
+            .as_arrow2()
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let day_arr = daft_arrow::compute::temporal::day(&input_array)?;
@@ -78,7 +78,7 @@ impl DateArray {
     pub fn month(&self) -> DaftResult<UInt32Array> {
         let input_array = self
             .physical
-            .as_arrow()
+            .as_arrow2()
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let month_arr = daft_arrow::compute::temporal::month(&input_array)?;
@@ -88,7 +88,7 @@ impl DateArray {
     pub fn quarter(&self) -> DaftResult<UInt32Array> {
         let input_array = self
             .physical
-            .as_arrow()
+            .as_arrow2()
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let month_arr = daft_arrow::compute::temporal::month(&input_array)?;
@@ -102,7 +102,7 @@ impl DateArray {
     pub fn year(&self) -> DaftResult<Int32Array> {
         let input_array = self
             .physical
-            .as_arrow()
+            .as_arrow2()
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let year_arr = daft_arrow::compute::temporal::year(&input_array)?;
@@ -112,7 +112,7 @@ impl DateArray {
     pub fn day_of_week(&self) -> DaftResult<UInt32Array> {
         let input_array = self
             .physical
-            .as_arrow()
+            .as_arrow2()
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let day_arr = daft_arrow::compute::temporal::weekday(&input_array)?;
@@ -122,7 +122,7 @@ impl DateArray {
     pub fn day_of_month(&self) -> DaftResult<UInt32Array> {
         let input_array = self
             .physical
-            .as_arrow()
+            .as_arrow2()
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let day_arr = daft_arrow::compute::temporal::day_of_month(&input_array)?;
@@ -132,7 +132,7 @@ impl DateArray {
     pub fn day_of_year(&self) -> DaftResult<UInt32Array> {
         let input_array = self
             .physical
-            .as_arrow()
+            .as_arrow2()
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let ordinal_day_arr = daft_arrow::compute::temporal::day_of_year(&input_array)?;
@@ -142,7 +142,7 @@ impl DateArray {
     pub fn week_of_year(&self) -> DaftResult<UInt32Array> {
         let input_array = self
             .physical
-            .as_arrow()
+            .as_arrow2()
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let day_arr = daft_arrow::compute::temporal::week_of_year(&input_array)?;
@@ -152,7 +152,7 @@ impl DateArray {
 
 impl TimestampArray {
     pub fn date(&self) -> DaftResult<DateArray> {
-        let physical = self.physical.as_arrow();
+        let physical = self.physical.as_arrow2();
         let DataType::Timestamp(timeunit, tz) = self.data_type() else {
             unreachable!("Timestamp array must have Timestamp datatype")
         };
@@ -206,7 +206,7 @@ impl TimestampArray {
     }
 
     pub fn time(&self, timeunit_for_cast: &TimeUnit) -> DaftResult<TimeArray> {
-        let physical = self.physical.as_arrow();
+        let physical = self.physical.as_arrow2();
         let DataType::Timestamp(timeunit, tz) = self.data_type() else {
             unreachable!("Timestamp array must have Timestamp datatype")
         };
@@ -278,7 +278,7 @@ impl TimestampArray {
     }
 
     pub fn truncate(&self, interval: &str, relative_to: Option<i64>) -> DaftResult<Self> {
-        let physical = self.physical.as_arrow();
+        let physical = self.physical.as_arrow2();
         let DataType::Timestamp(timeunit, tz) = self.data_type() else {
             unreachable!("Timestamp array must have Timestamp datatype")
         };
@@ -430,10 +430,10 @@ impl TimestampArray {
         interval: &IntervalArray,
         f: F,
     ) -> DaftResult<Self> {
-        let arrow_interval = interval.as_arrow();
+        let arrow_interval = interval.as_arrow2();
 
         let arrow_type = self.data_type().to_arrow()?;
-        let mut arrow_timestamp = self.physical.as_arrow().clone();
+        let mut arrow_timestamp = self.physical.as_arrow2().clone();
 
         // `f` expect the inner type to be a timestamp
         arrow_timestamp.change_type(arrow_type);
@@ -459,7 +459,7 @@ impl TimestampArray {
         };
         let input_array = self
             .physical
-            .as_arrow()
+            .as_arrow2()
             .clone()
             .to(daft_arrow::datatypes::DataType::Timestamp(tu, tz));
 
@@ -474,7 +474,7 @@ impl TimestampArray {
         };
         let input_array = self
             .physical
-            .as_arrow()
+            .as_arrow2()
             .clone()
             .to(daft_arrow::datatypes::DataType::Timestamp(tu, tz));
 
@@ -489,7 +489,7 @@ impl TimestampArray {
         };
         let input_array = self
             .physical
-            .as_arrow()
+            .as_arrow2()
             .clone()
             .to(daft_arrow::datatypes::DataType::Timestamp(tu, tz));
 
@@ -504,7 +504,7 @@ impl TimestampArray {
         };
         let unix_seconds_arr =
             self.physical
-                .as_arrow()
+                .as_arrow2()
                 .clone()
                 .to(daft_arrow::datatypes::DataType::Timestamp(
                     tu.to_arrow2(),
@@ -533,8 +533,8 @@ impl TimestampArray {
 
 impl IntervalArray {
     pub fn mul(&self, factor: &Int32Array) -> DaftResult<Self> {
-        let arrow_interval = self.as_arrow();
-        let arrow_factor = factor.as_arrow();
+        let arrow_interval = self.as_arrow2();
+        let arrow_factor = factor.as_arrow2();
         let result =
             daft_arrow::compute::arithmetics::time::mul_interval(arrow_interval, arrow_factor)?;
         Self::new(self.field.clone(), Box::new(result))
@@ -543,7 +543,7 @@ impl IntervalArray {
 
 impl TimeArray {
     pub fn hour(&self) -> DaftResult<UInt32Array> {
-        let physical = self.physical.as_arrow();
+        let physical = self.physical.as_arrow2();
         let DataType::Time(time_unit) = self.data_type() else {
             unreachable!("TimeArray must have Time datatype");
         };
@@ -570,7 +570,7 @@ impl TimeArray {
     }
 
     pub fn minute(&self) -> DaftResult<UInt32Array> {
-        let physical = self.physical.as_arrow();
+        let physical = self.physical.as_arrow2();
         let DataType::Time(time_unit) = self.data_type() else {
             unreachable!("TimeArray must have Time datatype");
         };
@@ -597,7 +597,7 @@ impl TimeArray {
     }
 
     pub fn second(&self) -> DaftResult<UInt32Array> {
-        let physical = self.physical.as_arrow();
+        let physical = self.physical.as_arrow2();
         let DataType::Time(time_unit) = self.data_type() else {
             unreachable!("TimeArray must have Time datatype")
         };
@@ -625,7 +625,7 @@ impl TimeArray {
 
     pub fn millisecond(&self) -> DaftResult<UInt32Array> {
         const NANOS_PER_MILLI: u32 = 1_000_000;
-        let physical = self.physical.as_arrow();
+        let physical = self.physical.as_arrow2();
         let DataType::Time(time_unit) = self.data_type() else {
             unreachable!("TimeArray must have Time datatype");
         };
@@ -653,7 +653,7 @@ impl TimeArray {
 
     pub fn microsecond(&self) -> DaftResult<UInt32Array> {
         const NANOS_PER_MICRO: u32 = 1_000;
-        let physical = self.physical.as_arrow();
+        let physical = self.physical.as_arrow2();
         let DataType::Time(time_unit) = self.data_type() else {
             unreachable!("TimeArray must have Time datatype");
         };
@@ -680,7 +680,7 @@ impl TimeArray {
     }
 
     pub fn nanosecond(&self) -> DaftResult<UInt32Array> {
-        let physical = self.physical.as_arrow();
+        let physical = self.physical.as_arrow2();
         let DataType::Time(time_unit) = self.data_type() else {
             unreachable!("TimeArray must have Time datatype");
         };

@@ -11,7 +11,7 @@ impl Utf8Array {
     where
         Encoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
-        let input = self.as_arrow();
+        let input = self.as_arrow2();
         let buffer = input.values();
         let validity = input.validity().cloned();
         //

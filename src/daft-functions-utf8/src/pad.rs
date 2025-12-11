@@ -129,7 +129,7 @@ where
             Utf8Array::from((arr.name(), Box::new(arrow_result)))
         }
         _ => {
-            let length_iter = length.as_arrow().iter();
+            let length_iter = length.as_arrow2().iter();
             let arrow_result = self_iter
                 .zip(length_iter)
                 .zip(padchar_iter)

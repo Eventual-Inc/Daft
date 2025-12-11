@@ -75,10 +75,10 @@ impl ProbeSet {
         let input_arrays = input
             .columns
             .iter()
-            .map(|s| Ok(s.as_physical()?.to_arrow()))
+            .map(|s| Ok(s.as_physical()?.to_arrow2()))
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let iter = hashes.as_arrow().clone().into_iter();
+        let iter = hashes.as_arrow2().clone().into_iter();
 
         Ok(iter.enumerate().map(move |(idx, h)| {
             if let Some(h) = h {
@@ -113,11 +113,11 @@ impl ProbeSet {
         let current_arrays = table
             .columns
             .iter()
-            .map(|s| Ok(s.as_physical()?.to_arrow()))
+            .map(|s| Ok(s.as_physical()?.to_arrow2()))
             .collect::<DaftResult<Vec<_>>>()?;
         self.tables.push(ArrowTableEntry(current_arrays));
         let current_array_refs = self.tables.last().unwrap().0.as_slice();
-        for (i, h) in hashes.as_arrow().values_iter().enumerate() {
+        for (i, h) in hashes.as_arrow2().values_iter().enumerate() {
             let idx = table_offset | i;
             let entry = self.hash_table.raw_entry_mut().from_hash(*h, |other| {
                 (*h == other.hash) && {

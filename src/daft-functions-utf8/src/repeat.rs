@@ -109,7 +109,7 @@ where
         }
         _ => {
             let arrow_result = self_iter
-                .zip(n.as_arrow().iter())
+                .zip(n.as_arrow2().iter())
                 .map(|(val, n)| match (val, n) {
                     (Some(val), Some(n)) => {
                         let n: usize = NumCast::from(*n).ok_or_else(|| {

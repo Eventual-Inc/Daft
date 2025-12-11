@@ -26,14 +26,14 @@ impl RecordBatch {
         }
         let mut output_to_input_idx =
             vec![Vec::with_capacity(self.len() / num_partitions); num_partitions];
-        if targets.as_arrow().null_count() != 0 {
+        if targets.as_arrow2().null_count() != 0 {
             return Err(DaftError::ComputeError(format!(
                 "target array can not contain nulls, contains {} nulls",
-                targets.as_arrow().null_count()
+                targets.as_arrow2().null_count()
             )));
         }
 
-        for (s_idx, t_idx) in targets.as_arrow().values_iter().enumerate() {
+        for (s_idx, t_idx) in targets.as_arrow2().values_iter().enumerate() {
             if *t_idx >= (num_partitions as u64) {
                 return Err(DaftError::ComputeError(format!(
                     "idx in target array is out of bounds, target idx {t_idx} at index {s_idx} out of {num_partitions} partitions"

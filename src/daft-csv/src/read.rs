@@ -795,7 +795,7 @@ mod tests {
         let schema = Schema::try_from(&schema).unwrap().to_arrow2().unwrap();
         assert_eq!(out.schema.to_arrow2().unwrap(), schema);
         let out_columns = (0..out.num_columns())
-            .map(|i| out.get_column(i).to_arrow())
+            .map(|i| out.get_column(i).to_arrow2())
             .collect::<Vec<_>>();
         assert_eq!(out_columns, columns);
     }
@@ -1547,7 +1547,7 @@ mod tests {
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
-            null_column.to_arrow(),
+            null_column.to_arrow2(),
             Box::new(daft_arrow::array::NullArray::new(
                 daft_arrow::datatypes::DataType::Null,
                 6
@@ -1603,7 +1603,7 @@ mod tests {
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
-            null_column.to_arrow(),
+            null_column.to_arrow2(),
             Box::new(daft_arrow::array::NullArray::new(
                 daft_arrow::datatypes::DataType::Null,
                 6
@@ -1687,7 +1687,7 @@ mod tests {
         // Check that all columns are all null.
         for idx in 0..table.num_columns() {
             let column = table.get_column(idx);
-            assert_eq!(column.to_arrow().null_count(), num_rows);
+            assert_eq!(column.to_arrow2().null_count(), num_rows);
         }
 
         Ok(())
@@ -1757,13 +1757,13 @@ mod tests {
         );
 
         // First 4 cols should have no nulls
-        assert_eq!(table.get_column(0).to_arrow().null_count(), 0);
-        assert_eq!(table.get_column(1).to_arrow().null_count(), 0);
-        assert_eq!(table.get_column(2).to_arrow().null_count(), 0);
-        assert_eq!(table.get_column(3).to_arrow().null_count(), 0);
+        assert_eq!(table.get_column(0).to_arrow2().null_count(), 0);
+        assert_eq!(table.get_column(1).to_arrow2().null_count(), 0);
+        assert_eq!(table.get_column(2).to_arrow2().null_count(), 0);
+        assert_eq!(table.get_column(3).to_arrow2().null_count(), 0);
 
         // Last col should have 3 nulls because of the missing data
-        assert_eq!(table.get_column(4).to_arrow().null_count(), 3);
+        assert_eq!(table.get_column(4).to_arrow2().null_count(), 3);
 
         Ok(())
     }
@@ -1884,7 +1884,7 @@ mod tests {
         assert_eq!(table.len(), 3);
 
         assert_eq!(
-            table.get_column(4).to_arrow(),
+            table.get_column(4).to_arrow2(),
             Box::new(daft_arrow::array::Utf8Array::<i64>::from(vec![
                 None,
                 Some("Seratosa"),

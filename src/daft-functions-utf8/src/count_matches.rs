@@ -126,13 +126,13 @@ fn count_matches_impl(
         .with_validity(arr.validity().cloned());
     }
 
-    let patterns = patterns.as_arrow().iter().flatten();
+    let patterns = patterns.as_arrow2().iter().flatten();
     let ac = AhoCorasickBuilder::new()
         .ascii_case_insensitive(!case_sensitive)
         .match_kind(MatchKind::LeftmostLongest)
         .build(patterns)
         .map_err(|e| DaftError::ComputeError(format!("Error creating string automaton: {}", e)))?;
-    let iter = arr.as_arrow().iter().map(|opt| {
+    let iter = arr.as_arrow2().iter().map(|opt| {
         opt.map(|s| {
             let results = ac.find_iter(s);
             if whole_word {
