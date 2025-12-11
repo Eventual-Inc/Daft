@@ -101,3 +101,51 @@ def test_write_and_read_empty_csv(tmp_path_factory):
     df.write_csv(empty_csv_files, write_mode="overwrite")
 
     assert daft.read_csv(empty_csv_files).to_pydict() == {"a": []}
+
+def _read_first_file_text(root: str) -> str:
+    import os
+
+    files = [os.path.join(root, f) for f in os.listdir(root)]
+    files = [f for f in files if os.path.isfile(f)]
+    assert len(files) > 0
+    with open(files[0], encoding="utf-8") as fh:
+        return fh.read()
+
+
+def test_write_csv_with_delimiter(tmp_path):
+    df = daft.from_pydict({"id": [1, 2, 3], "foo": ["a", "b|c", "d"]})
+    df.write_csv(str(tmp_path), write_mode="overwrite", delimiter="|")
+    text = _read_first_file_text(str(tmp_path))
+    assert text == 'id|foo\n1|a\n2|"b|c"\n3|d\n'
+
+    read_back = daft.read_csv(str(tmp_path), delimiter="|")
+    assert df.to_arrow() == read_back.to_arrow()
+
+
+def test_write_csv_without_header(tmp_path):
+    df = daft.from_pydict({"id": [1, 2, 3], "foo": ["a", "b|c", "d"]})
+    df.write_csv(str(tmp_path), write_mode="overwrite", header=False)
+    text = _read_first_file_text(str(tmp_path))
+    assert text == "1,a\n2,b|c\n3,d\n"
+
+
+def test_write_csv_with_quote_char(tmp_path):
+    df = daft.from_pydict({"id": [1, 2, 3], "foo": ["a", "b,c", "d"]})
+    df.write_csv(str(tmp_path), write_mode="overwrite", quote="'")
+    text = _read_first_file_text(str(tmp_path))
+    assert text == "id,foo\n1,a\n2,'b,c'\n3,d\n"
+
+    read_back = daft.read_csv(str(tmp_path), quote="'")
+    assert df.to_arrow() == read_back.to_arrow()
+
+
+def test_write_csv_with_escape_char(tmp_path):
+    df = daft.from_pydict({"id": [1, 2, 3], "foo": ["a", 'Say "hello"', "d"]})
+    df.show()
+    df.write_csv(str(tmp_path), write_mode="overwrite", escape="\\", quote="'")
+    text = _read_first_file_text(str(tmp_path))
+    assert text == 'id,foo\n1,a\n2,Say "hello"\n3,d\n'
+
+    read_back = daft.read_csv(str(tmp_path), escape_char="\\", quote="'")
+    read_back.show()
+    assert df.to_arrow() == read_back.to_arrow()

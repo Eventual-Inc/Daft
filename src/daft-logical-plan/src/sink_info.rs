@@ -28,6 +28,7 @@ pub struct OutputFileInfo<E = ExprRef> {
     pub root_dir: String,
     pub write_mode: WriteMode,
     pub file_format: FileFormat,
+    pub format_option: Option<FormatOption>,
     pub partition_cols: Option<Vec<E>>,
     pub compression: Option<String>,
     pub io_config: Option<IOConfig>,
@@ -188,6 +189,7 @@ where
         root_dir: String,
         write_mode: WriteMode,
         file_format: FileFormat,
+        format_option: Option<FormatOption>,
         partition_cols: Option<Vec<E>>,
         compression: Option<String>,
         io_config: Option<IOConfig>,
@@ -196,6 +198,7 @@ where
             root_dir,
             write_mode,
             file_format,
+            format_option,
             partition_cols,
             compression,
             io_config,
@@ -246,6 +249,7 @@ impl OutputFileInfo {
             root_dir: self.root_dir,
             write_mode: self.write_mode,
             file_format: self.file_format,
+            format_option: self.format_option,
             partition_cols: self
                 .partition_cols
                 .map(|cols| BoundExpr::bind_all(&cols, schema))
@@ -310,5 +314,108 @@ impl DeltaLakeCatalogInfo {
                 .transpose()?,
             io_config: self.io_config,
         })
+    }
+}
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct CsvFormatOption {
+    pub delimiter: Option<u8>,
+    pub quote: Option<u8>,
+    pub escape: Option<u8>,
+    pub header: Option<bool>,
+}
+
+impl Default for CsvFormatOption {
+    fn default() -> Self {
+        Self {
+            delimiter: Some(b','),
+            quote: Some(b'"'),
+            escape: Some(b'\\'),
+            header: Some(true),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct JsonFormatOption {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ParquetFormatOption {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum FormatOption {
+    Csv(CsvFormatOption),
+    Json(JsonFormatOption),
+    Parquet(ParquetFormatOption),
+}
+
+impl FormatOption {
+    pub fn to_csv(self) -> CsvFormatOption {
+        match self {
+            FormatOption::Csv(csv) => csv,
+            _ => CsvFormatOption::default(),
+        }
+    }
+}
+
+#[cfg(feature = "python")]
+#[pyo3::pyclass()]
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct PyFormatOption {
+    pub inner: FormatOption,
+}
+
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl PyFormatOption {
+    #[classmethod]
+    pub fn csv(
+        _cls: &pyo3::prelude::Bound<pyo3::types::PyType>,
+        delimiter: Option<char>,
+        quote: Option<char>,
+        escape: Option<char>,
+        header: Option<bool>,
+    ) -> Self {
+        let to_u8 = |c: Option<char>| -> Option<u8> {
+            c.and_then(|ch| if ch.is_ascii() { Some(ch as u8) } else { None })
+        };
+        Self {
+            inner: FormatOption::Csv(CsvFormatOption {
+                delimiter: to_u8(delimiter),
+                quote: to_u8(quote),
+                escape: to_u8(escape),
+                header,
+            }),
+        }
+    }
+
+    #[classmethod]
+    pub fn json(_cls: &pyo3::prelude::Bound<pyo3::types::PyType>) -> Self {
+        Self {
+            inner: FormatOption::Json(JsonFormatOption {}),
+        }
+    }
+
+    #[classmethod]
+    pub fn parquet(_cls: &pyo3::prelude::Bound<pyo3::types::PyType>) -> Self {
+        Self {
+            inner: FormatOption::Parquet(ParquetFormatOption {}),
+        }
+    }
+
+    pub fn kind(&self) -> String {
+        match &self.inner {
+            FormatOption::Csv(_) => "csv".to_string(),
+            FormatOption::Json(_) => "json".to_string(),
+            FormatOption::Parquet(_) => "parquet".to_string(),
+        }
+    }
+
+    pub fn csv_delimiter(&self) -> Option<String> {
+        match &self.inner {
+            FormatOption::Csv(csv) => csv
+                .delimiter
+                .map(|b| String::from_utf8(vec![b]).unwrap_or_else(|_| ",".to_string())),
+            _ => None,
+        }
     }
 }
