@@ -39,6 +39,30 @@ pub(crate) fn native_parquet_writer_supported(
         SourceType::S3 => {}
         _ => return Ok(false),
     }
+    // Prefer PyArrow writer when logical Duration exists to preserve ARROW:schema metadata.
+    fn has_duration(dt: &DataType) -> bool {
+        match dt {
+            DataType::Duration(_) => true,
+            DataType::List(child) | DataType::FixedSizeList(child, _) => has_duration(child),
+            DataType::Struct(fields) => fields.iter().any(|f| has_duration(&f.dtype)),
+            DataType::Map { key, value } => has_duration(key) || has_duration(value),
+            DataType::Extension(_, inner, _) => has_duration(inner),
+            DataType::Embedding(inner, _) => has_duration(inner),
+            DataType::Tensor(inner) => has_duration(inner),
+            DataType::SparseTensor(inner, _) => has_duration(inner),
+            DataType::FixedShapeTensor(inner, _) => has_duration(inner),
+            DataType::FixedShapeSparseTensor(inner, _, _) => has_duration(inner),
+            _ => false,
+        }
+    }
+    if file_schema
+        .fields()
+        .iter()
+        .any(|field| has_duration(&field.dtype))
+    {
+        return Ok(false);
+    }
+
     // TODO(desmond): Currently we do not support extension and timestamp types.
     #[allow(deprecated, reason = "arrow2 migration")]
     let arrow_schema = match file_schema.to_arrow2() {

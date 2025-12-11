@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
+use chrono::{Duration, NaiveDate, NaiveTime, Timelike};
 use common_error::{DaftError, DaftResult};
 use daft_arrow::{
     self,
@@ -509,7 +509,10 @@ impl TimestampArray {
     }
 
     pub fn unix_date(&self) -> DaftResult<UInt64Array> {
-        const UNIX_EPOCH_DATE: NaiveDate = NaiveDateTime::UNIX_EPOCH.date();
+        const UNIX_EPOCH_DATE: NaiveDate = match NaiveDate::from_ymd_opt(1970, 1, 1) {
+            Some(date) => date,
+            None => panic!("Invalid UNIX epoch date"),
+        };
         let (tu, tz) = match self.data_type() {
             DataType::Timestamp(time_unit, tz) => (time_unit.to_arrow2(), tz.clone()),
             _ => unreachable!("TimestampArray must have Timestamp datatype"),
