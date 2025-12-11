@@ -1,7 +1,6 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fmt::Display,
-    io::Cursor,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -192,44 +191,75 @@ impl MicroPartition {
         ))
     }
 
-    pub fn write_to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
-        let buffer = Vec::with_capacity(self.size_bytes());
+    pub fn write_to_ipc_stream(&self) -> DaftResult<Vec<u8>> {        
+        let mut buffer = Vec::with_capacity(self.size_bytes());
+        
+        // Convert daft schema to arrow-rs schema
         #[allow(deprecated, reason = "arrow2 migration")]
-        let schema = self.schema.to_arrow2()?;
-        let options = daft_arrow::io::ipc::write::WriteOptions { compression: None };
-        let mut writer = daft_arrow::io::ipc::write::StreamWriter::new(buffer, options);
-        writer.start(&schema, None)?;
+        let arrow2_schema = self.schema.to_arrow2()?;
+        let arrow_schema: Arc<daft_arrow::arrow_schema::Schema> = Arc::new(arrow2_schema.into());
+        
+        // Create arrow-ipc StreamWriter
+        let mut writer = daft_arrow::ipc::writer::StreamWriter::try_new(&mut buffer, &arrow_schema)?;
+        
+        // Write each record batch
         for table in self.record_batches() {
-            #[allow(deprecated, reason = "arrow2 migration")]
-            let chunk = table.to_chunk();
-            writer.write(&chunk, None)?;
+            // Convert daft RecordBatch to arrow-rs RecordBatch
+            let arrow_batch: daft_arrow::arrow_array::RecordBatch = table.clone().try_into()?;
+            writer.write(&arrow_batch)?;
         }
+        
         writer.finish()?;
-        let mut finished_buffer = writer.into_inner();
-        finished_buffer.shrink_to_fit();
-        Ok(finished_buffer)
+        buffer.shrink_to_fit();
+        Ok(buffer)
     }
 
     pub fn read_from_ipc_stream(buffer: &[u8]) -> DaftResult<Self> {
-        let mut cursor = Cursor::new(buffer);
-        let stream_metadata = daft_arrow::io::ipc::read::read_stream_metadata(&mut cursor).unwrap();
-        let schema = Arc::new(Schema::from(stream_metadata.schema.clone()));
-        let reader = daft_arrow::io::ipc::read::StreamReader::new(cursor, stream_metadata, None);
-        let tables = reader
-            .into_iter()
-            .map(|state| {
-                let state = state?;
-                let arrow_chunk = match state {
-                    daft_arrow::io::ipc::read::StreamState::Some(chunk) => chunk,
-                    _ => panic!("State should not be waiting when reading from IPC buffer"),
-                };
-                let record_batch =
-                    RecordBatch::from_arrow(schema.clone(), arrow_chunk.into_arrays())?;
-                Ok(record_batch)
+        use std::sync::Arc;
+        
+        let mut cursor = std::io::Cursor::new(buffer);
+        
+        // Create arrow-ipc StreamReader
+        let mut reader = daft_arrow::ipc::reader::StreamReader::try_new(&mut cursor, None)?;
+        
+        // Read the schema from the first message
+        let arrow_schema = reader.schema();
+        // Convert arrow-rs Schema to arrow2 Schema by converting fields
+        #[allow(deprecated, reason = "arrow2 migration")]
+        let arrow2_fields: Vec<daft_arrow::datatypes::Field> = arrow_schema
+            .fields()
+            .iter()
+            .map(|f| daft_arrow::datatypes::Field {
+                name: f.name().clone(),
+                data_type: f.data_type().clone().into(),
+                is_nullable: f.is_nullable(),
+                metadata: f.metadata().clone().into_iter().collect(),
             })
-            .collect::<DaftResult<Vec<_>>>()?;
+            .collect();
+        let arrow2_schema = daft_arrow::datatypes::Schema {
+            fields: arrow2_fields,
+            metadata: arrow_schema.metadata().clone().into_iter().collect(),
+        };
+        let schema = Arc::new(Schema::from(arrow2_schema));
+        
+        // Read all record batches
+        let mut tables = Vec::new();
+        while let Some(arrow_batch_result) = reader.next() {
+            let arrow_batch = arrow_batch_result?;
+            
+            // Convert arrow-rs RecordBatch to daft RecordBatch
+            // We need to convert the arrow-rs arrays to arrow2 arrays
+            let arrow2_arrays: Vec<Box<dyn daft_arrow::array::Array>> = arrow_batch
+                .columns()
+                .iter()
+                .map(|arr| daft_arrow::array::from_data(&arr.to_data()))
+                .collect();
+            
+            let record_batch = RecordBatch::from_arrow(schema.clone(), arrow2_arrays)?;
+            tables.push(record_batch);
+        }
 
-        Ok(Self::new_loaded(schema.into(), Arc::new(tables), None))
+        Ok(Self::new_loaded(schema, Arc::new(tables), None))
     }
 }
 
