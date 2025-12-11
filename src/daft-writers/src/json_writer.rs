@@ -20,7 +20,8 @@ type JsonFinishFn<B> =
 /// Helper function that checks if we support native writes given the file format, root directory, and schema.
 pub(crate) fn native_json_writer_supported(file_schema: &SchemaRef) -> DaftResult<bool> {
     // TODO(desmond): Currently we do not support extension and timestamp types.
-    let datatypes_convertable = file_schema.to_arrow()?.fields.iter().all(|field| {
+    #[allow(deprecated, reason = "arrow2 migration")]
+    let datatypes_convertable = file_schema.to_arrow2()?.fields.iter().all(|field| {
         field.data_type().can_convert_to_arrow_rs() && field.data_type().can_convert_to_json()
     });
     Ok(datatypes_convertable)

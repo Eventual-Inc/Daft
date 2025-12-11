@@ -483,9 +483,10 @@ async fn read_csv_single_into_stream(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<(impl TableStream + Send, Vec<Field>)> {
+    #[allow(deprecated, reason = "arrow2 migration")]
     let (mut schema, estimated_mean_row_size, estimated_std_row_size) =
         if let Some(schema) = convert_options.schema {
-            (schema.to_arrow()?, None, None)
+            (schema.to_arrow2()?, None, None)
         } else {
             let (schema, read_stats) = read_csv_schema_single(
                 &uri,
@@ -497,7 +498,7 @@ async fn read_csv_single_into_stream(
             )
             .await?;
             (
-                schema.to_arrow()?,
+                schema.to_arrow2()?,
                 Some(read_stats.mean_record_size_bytes),
                 Some(read_stats.stddev_record_size_bytes),
             )
@@ -739,6 +740,7 @@ mod tests {
     use crate::{CsvConvertOptions, CsvParseOptions, CsvReadOptions, char_to_byte};
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(deprecated, reason = "arrow2 migration")]
     fn check_equal_local_arrow2(
         path: &str,
         out: &RecordBatch,
@@ -790,8 +792,8 @@ mod tests {
             .collect::<Vec<_>>();
         let schema: daft_arrow::datatypes::Schema = fields.into();
         // Roundtrip with Daft for casting.
-        let schema = Schema::try_from(&schema).unwrap().to_arrow().unwrap();
-        assert_eq!(out.schema.to_arrow().unwrap(), schema);
+        let schema = Schema::try_from(&schema).unwrap().to_arrow2().unwrap();
+        assert_eq!(out.schema.to_arrow2().unwrap(), schema);
         let out_columns = (0..out.num_columns())
             .map(|i| out.get_column(i).to_arrow())
             .collect::<Vec<_>>();

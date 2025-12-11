@@ -71,8 +71,7 @@ impl RecordBatch {
                         .iter()
                         .map(|&idx| idx as u64)
                         .collect::<Vec<_>>(),
-                ))
-                .into_series();
+                ));
                 agg_col.rename(name).take(&take_indices)
             })
             .collect::<DaftResult<Vec<_>>>()?;
