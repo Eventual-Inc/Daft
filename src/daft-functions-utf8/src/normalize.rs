@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use common_error::{DaftResult, ensure};
 use daft_core::{
     prelude::{AsArrow, Field, Schema, Utf8Array},

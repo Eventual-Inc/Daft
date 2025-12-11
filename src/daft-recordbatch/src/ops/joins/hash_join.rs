@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::{cmp, iter::repeat_n, ops::Not, sync::Arc};
 
 use arrow_array::builder::BooleanBufferBuilder;

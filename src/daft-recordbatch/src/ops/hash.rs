@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::ops::{arrow::comparison::build_multi_array_is_equal, as_arrow::AsArrow},

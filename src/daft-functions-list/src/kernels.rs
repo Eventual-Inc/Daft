@@ -1,3 +1,5 @@
+#![allow(deprecated, reason = "arrow2 migration")]
+
 use std::{iter::repeat_n, sync::Arc};
 
 use common_error::DaftResult;
@@ -74,7 +76,7 @@ impl ListArrayExtension for ListArray {
         let original_name = self.name();
 
         let hashes = self.flat_child.hash(None)?;
-        #[allow(deprecated, reason = "arrow2 migration")]
+
         let flat_child = self.flat_child.to_arrow2();
         let flat_child = &*flat_child;
 
@@ -144,12 +146,11 @@ impl ListArrayExtension for ListArray {
 
         let keys = self.flat_child.filter(&include_mask)?;
 
-        #[allow(deprecated, reason = "arrow2 migration")]
         let keys = Series::try_from_field_and_arrow_array(
             Field::new("key", key_type.clone()),
             keys.to_arrow2(),
         )?;
-        #[allow(deprecated, reason = "arrow2 migration")]
+
         let values = Series::try_from_field_and_arrow_array(
             Field::new("value", count_type.clone()),
             values.to_arrow2(),
@@ -265,6 +266,7 @@ impl ListArrayExtension for ListArray {
             Box::new(repeat_n(delimiter.get(0), self.len()))
         } else {
             assert_eq!(delimiter.len(), self.len());
+
             Box::new(delimiter.as_arrow2().iter())
         };
         let self_iter = (0..self.len()).map(|i| self.get(i));

@@ -15,6 +15,7 @@ pub trait AsArrow {
     /// This does not correct for the logical types and will just yield the physical type of the array.
     /// For example, a TimestampArray will yield an arrow Int64Array rather than a arrow Timestamp Array.
     /// To get a corrected arrow type, see `.to_arrow()`.
+    #[deprecated(note = "arrow2 migration")]
     fn as_arrow2(&self) -> &Self::Output;
 }
 

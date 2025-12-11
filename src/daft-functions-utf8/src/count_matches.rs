@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::{iter, sync::Arc};
 
 use aho_corasick::{AhoCorasickBuilder, MatchKind};

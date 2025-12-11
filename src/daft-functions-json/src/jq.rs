@@ -98,6 +98,7 @@ mod jaq {
 
         // used for the output array
         let name = arr.name().to_string();
+        #[allow(deprecated, reason = "arrow2 migration")]
         let self_arrow = arr.as_arrow2();
 
         // execute the filter on each input, mapping to some string result
@@ -171,6 +172,7 @@ mod jaq {
 }
 
 #[cfg(test)]
+#[allow(deprecated, reason = "arrow2 migration")]
 mod tests {
     use daft_core::prelude::{AsArrow, Utf8Array};
 

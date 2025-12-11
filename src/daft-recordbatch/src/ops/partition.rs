@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::ops::Rem;
 
 use common_error::{DaftError, DaftResult};

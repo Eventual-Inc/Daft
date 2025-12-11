@@ -31,6 +31,7 @@ impl BinaryArrayExtension for BinaryArray {
     where
         Transform: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
+        #[allow(deprecated, reason = "arrow2 migration")]
         let input = self.as_arrow2();
         let buffer = input.values();
         let validity = input.validity().cloned();
@@ -61,6 +62,7 @@ impl BinaryArrayExtension for BinaryArray {
     where
         Transform: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
+        #[allow(deprecated, reason = "arrow2 migration")]
         let input = self.as_arrow2();
         let buffer = input.values();
         let mut validity = match input.validity() {
@@ -110,6 +112,7 @@ impl BinaryArrayExtension for BinaryArray {
     where
         Decoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
+        #[allow(deprecated, reason = "arrow2 migration")]
         let input = self.as_arrow2();
         let buffer = input.values();
         let validity = input.validity().cloned();
@@ -140,6 +143,7 @@ impl BinaryArrayExtension for BinaryArray {
     where
         Decoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
+        #[allow(deprecated, reason = "arrow2 migration")]
         let input = self.as_arrow2();
         let buffer = input.values();
         let mut validity = match input.validity() {
@@ -191,6 +195,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
     where
         Transform: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
+        #[allow(deprecated, reason = "arrow2 migration")]
         let input = self.as_arrow2();
         let size = input.size();
         let buffer = input.values();
@@ -223,6 +228,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
     where
         Transform: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
+        #[allow(deprecated, reason = "arrow2 migration")]
         let input = self.as_arrow2();
         let size = input.size();
         let buffer = input.values();
@@ -274,6 +280,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
     where
         Decoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
+        #[allow(deprecated, reason = "arrow2 migration")]
         let input = self.as_arrow2();
         let size = input.size();
         let buffer = input.values();
@@ -306,6 +313,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
     where
         Decoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
+        #[allow(deprecated, reason = "arrow2 migration")]
         let input = self.as_arrow2();
         let size = input.size();
         let buffer = input.values();
