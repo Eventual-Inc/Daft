@@ -25,7 +25,7 @@ mod tests {
     #[test]
     fn test_tensor_to_sparse_roundtrip() -> DaftResult<()> {
         let raw_validity = vec![true, false, true];
-        let validity = daft_arrow::bitmap::Bitmap::from(raw_validity.as_slice());
+        let validity = daft_arrow::buffer::NullBuffer::from(raw_validity.as_slice());
 
         let list_array = ListArray::new(
             Field::new("data", DataType::List(Box::new(DataType::Int64))),
@@ -82,7 +82,7 @@ mod tests {
     #[test]
     fn test_fixed_shape_tensor_to_fixed_shape_sparse_roundtrip() -> DaftResult<()> {
         let raw_validity = vec![true, false, true];
-        let validity = daft_arrow::bitmap::Bitmap::from(raw_validity.as_slice());
+        let validity = daft_arrow::buffer::NullBuffer::from(raw_validity.as_slice());
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int64), 3));
         let flat_child = Int64Array::from(("foo", (0..9).collect::<Vec<i64>>()));
         let arr = FixedSizeListArray::new(field, flat_child.into_series(), Some(validity));

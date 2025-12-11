@@ -48,13 +48,14 @@ impl ImageOps for ImageArray {
     fn crop(&self, bboxes: &FixedSizeListArray) -> DaftResult<ImageArray> {
         let mut bboxes_iterator: Box<dyn Iterator<Item = Option<BBox>>> = if bboxes.len() == 1 {
             Box::new(std::iter::repeat(bboxes.get(0).map(|bbox| {
-                BBox::from_u32_arrow_array(bbox.u32().unwrap().data())
+                let data = bbox.u32().unwrap();
+                bbox_from_u32_arrow_array(data)
             })))
         } else {
             Box::new((0..bboxes.len()).map(|i| {
                 bboxes
                     .get(i)
-                    .map(|bbox| BBox::from_u32_arrow_array(bbox.u32().unwrap().data()))
+                    .map(|bbox| bbox_from_u32_arrow_array(bbox.u32().unwrap()))
             }))
         };
         let result = crop_images(self, &mut bboxes_iterator);
@@ -98,6 +99,13 @@ impl ImageOps for ImageArray {
     }
 }
 
+fn bbox_from_u32_arrow_array(arr: &UInt32Array) -> BBox {
+    assert!(arr.len() == 4);
+
+    let slice = arr.as_slice();
+
+    BBox(slice[0], slice[1], slice[2], slice[3])
+}
 impl ImageOps for FixedShapeImageArray {
     fn encode(&self, image_format: ImageFormat) -> DaftResult<BinaryArray> {
         encode_images(self, image_format)
@@ -117,14 +125,16 @@ impl ImageOps for FixedShapeImageArray {
         Self: Sized,
     {
         let mut bboxes_iterator: Box<dyn Iterator<Item = Option<BBox>>> = if bboxes.len() == 1 {
-            Box::new(std::iter::repeat(bboxes.get(0).map(|bbox| {
-                BBox::from_u32_arrow_array(bbox.u32().unwrap().data())
-            })))
+            Box::new(std::iter::repeat(
+                bboxes
+                    .get(0)
+                    .map(|bbox| bbox_from_u32_arrow_array(bbox.u32().unwrap())),
+            ))
         } else {
             Box::new((0..bboxes.len()).map(|i| {
                 bboxes
                     .get(i)
-                    .map(|bbox| BBox::from_u32_arrow_array(bbox.u32().unwrap().data()))
+                    .map(|bbox| bbox_from_u32_arrow_array(bbox.u32().unwrap()))
             }))
         };
         let result = crop_images(self, &mut bboxes_iterator);
@@ -218,7 +228,7 @@ fn encode_images<Arr: AsImageObj>(
     } else {
         let mut offsets = Vec::with_capacity(images.len() + 1);
         offsets.push(0i64);
-        let mut validity = daft_arrow::bitmap::MutableBitmap::with_capacity(images.len());
+        let mut validity = daft_arrow::buffer::NullBufferBuilder::new(images.len());
         let buf = Vec::new();
         let mut writer: CountingWriter<std::io::BufWriter<_>> =
             std::io::BufWriter::new(std::io::Cursor::new(buf)).into();
@@ -227,10 +237,10 @@ fn encode_images<Arr: AsImageObj>(
                 if let Some(img) = img {
                     img.encode(image_format, &mut writer)?;
                     offsets.push(writer.count() as i64);
-                    validity.push(true);
+                    validity.append_non_null();
                 } else {
                     offsets.push(*offsets.last().unwrap());
-                    validity.push(false);
+                    validity.append_null();
                 }
                 Ok(())
             })
@@ -247,15 +257,12 @@ fn encode_images<Arr: AsImageObj>(
             .into_inner();
         let encoded_data: daft_arrow::buffer::Buffer<u8> = values.into();
         let offsets_buffer = daft_arrow::offset::OffsetsBuffer::try_from(offsets)?;
-        let validity: Option<daft_arrow::bitmap::Bitmap> = match validity.unset_bits() {
-            0 => None,
-            _ => Some(validity.into()),
-        };
+        let validity = validity.finish();
         daft_arrow::array::BinaryArray::<i64>::new(
             daft_arrow::datatypes::DataType::LargeBinary,
             offsets_buffer,
             encoded_data,
-            validity,
+            daft_arrow::buffer::wrap_null_buffer(validity),
         )
     };
     BinaryArray::new(

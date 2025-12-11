@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 import daft
 import daft.context
-from daft.daft import PyMicroPartition, PyNodeInfo
+from daft.daft import PyMicroPartition
 from daft.functions.ai import embed_text, prompt
 from daft.subscribers import StatType, Subscriber
 from tests.conftest import get_tests_daft_runner_name
@@ -79,7 +79,7 @@ class PromptMetricsSubscriber(Subscriber):
         """Called when planning for a query has completed."""
         pass
 
-    def on_exec_start(self, query_id: str, node_infos: list[PyNodeInfo]) -> None:
+    def on_exec_start(self, query_id: str, physical_plan: str) -> None:
         """Called when starting to execute a query."""
         pass
 

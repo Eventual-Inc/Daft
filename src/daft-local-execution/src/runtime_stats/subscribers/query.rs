@@ -1,8 +1,8 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use common_error::DaftResult;
-use common_metrics::{NodeID, QueryID, ops::NodeInfo};
+use common_metrics::{NodeID, QueryID, QueryPlan};
 use daft_context::Subscriber;
 
 use crate::runtime_stats::RuntimeStatsSubscriber;
@@ -16,21 +16,10 @@ pub(crate) struct SubscriberWrapper {
 impl SubscriberWrapper {
     pub fn try_new(
         inner: Arc<dyn Subscriber>,
-        node_info_map: &HashMap<NodeID, Arc<NodeInfo>>,
+        query_id: QueryID,
+        physical_plan: QueryPlan,
     ) -> DaftResult<Self> {
-        let random_node_info = node_info_map
-            .values()
-            .next()
-            .expect("Expected at least one node info");
-        let query_id: QueryID = random_node_info.context["query_id"].clone().into();
-        inner.on_exec_start(
-            query_id.clone(),
-            node_info_map
-                .values()
-                .cloned()
-                .collect::<Vec<_>>()
-                .as_slice(),
-        )?;
+        inner.on_exec_start(query_id.clone(), physical_plan)?;
         Ok(Self { inner, query_id })
     }
 }

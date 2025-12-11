@@ -400,7 +400,7 @@ impl RecordBatch {
         };
         let indices: daft_core::array::DataArray<daft_core::datatypes::UInt64Type> =
             UInt64Array::from(("idx", values));
-        self.take(&indices.into_series())
+        self.take(&indices)
     }
 
     pub fn add_monotonically_increasing_id(
@@ -424,7 +424,7 @@ impl RecordBatch {
 
         if num == 0 {
             let indices = UInt64Array::empty("idx", &DataType::UInt64);
-            return self.take(&indices.into_series());
+            return self.take(&indices);
         }
 
         let self_len = self.len();
@@ -439,7 +439,7 @@ impl RecordBatch {
             })
             .collect();
         let indices = UInt64Array::from(("idx", sample_points));
-        self.take(&indices.into_series())
+        self.take(&indices)
     }
 
     pub fn size_bytes(&self) -> usize {
@@ -491,7 +491,13 @@ impl RecordBatch {
             // num_filtered is the number of 'false' or null values in the mask
             let num_filtered = mask
                 .validity()
-                .map(|validity| daft_arrow::bitmap::and(validity, mask.as_bitmap()).unset_bits())
+                .map(|validity| {
+                    daft_arrow::bitmap::and(
+                        &daft_arrow::buffer::from_null_buffer(validity.clone()),
+                        mask.as_bitmap(),
+                    )
+                    .unset_bits()
+                })
                 .unwrap_or_else(|| mask.as_bitmap().unset_bits());
             mask.len() - num_filtered
         };
@@ -499,7 +505,7 @@ impl RecordBatch {
         Self::new_with_size(self.schema.clone(), new_series?, num_rows)
     }
 
-    pub fn take(&self, idx: &Series) -> DaftResult<Self> {
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
         let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.take(idx)).collect();
         Self::new_with_size(self.schema.clone(), new_series?, idx.len())
     }
@@ -1544,7 +1550,8 @@ impl RecordBatch {
 
     pub fn to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
         let buffer = Vec::with_capacity(self.size_bytes());
-        let schema = self.schema.to_arrow()?;
+        #[allow(deprecated, reason = "arrow2 migration")]
+        let schema = self.schema.to_arrow2()?;
         let options = daft_arrow::io::ipc::write::WriteOptions { compression: None };
         let mut writer = daft_arrow::io::ipc::write::StreamWriter::new(buffer, options);
         writer.start(&schema, None)?;
@@ -1585,7 +1592,8 @@ impl TryFrom<RecordBatch> for arrow_array::RecordBatch {
     type Error = DaftError;
 
     fn try_from(record_batch: RecordBatch) -> DaftResult<Self> {
-        let schema = Arc::new(record_batch.schema.to_arrow()?.into());
+        #[allow(deprecated, reason = "arrow2 migration")]
+        let schema = Arc::new(record_batch.schema.to_arrow2()?.into());
         let columns = record_batch
             .columns
             .iter()

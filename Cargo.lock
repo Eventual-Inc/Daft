@@ -187,6 +187,41 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
 
 [[package]]
+name = "arrow"
+version = "54.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc208515aa0151028e464cc94a692156e945ce5126abd3537bb7fd6ba2143ed1"
+dependencies = [
+ "arrow-arith",
+ "arrow-array",
+ "arrow-buffer",
+ "arrow-cast",
+ "arrow-csv",
+ "arrow-data",
+ "arrow-ipc",
+ "arrow-json",
+ "arrow-ord",
+ "arrow-row",
+ "arrow-schema",
+ "arrow-select",
+ "arrow-string",
+]
+
+[[package]]
+name = "arrow-arith"
+version = "54.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e07e726e2b3f7816a85c6a45b6ec118eeeabf0b2a8c208122ad949437181f49a"
+dependencies = [
+ "arrow-array",
+ "arrow-buffer",
+ "arrow-data",
+ "arrow-schema",
+ "chrono",
+ "num",
+]
+
+[[package]]
 name = "arrow-array"
 version = "54.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -231,6 +266,22 @@ dependencies = [
  "lexical-core 1.0.5",
  "num",
  "ryu",
+]
+
+[[package]]
+name = "arrow-csv"
+version = "54.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43d3cb0914486a3cae19a5cad2598e44e225d53157926d0ada03c20521191a65"
+dependencies = [
+ "arrow-array",
+ "arrow-cast",
+ "arrow-schema",
+ "chrono",
+ "csv",
+ "csv-core",
+ "lazy_static",
+ "regex",
 ]
 
 [[package]]
@@ -310,10 +361,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "arrow-ord"
+version = "54.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f841bfcc1997ef6ac48ee0305c4dfceb1f7c786fe31e67c1186edf775e1f1160"
+dependencies = [
+ "arrow-array",
+ "arrow-buffer",
+ "arrow-data",
+ "arrow-schema",
+ "arrow-select",
+]
+
+[[package]]
+name = "arrow-row"
+version = "54.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1eeb55b0a0a83851aa01f2ca5ee5648f607e8506ba6802577afdda9d75cdedcd"
+dependencies = [
+ "arrow-array",
+ "arrow-buffer",
+ "arrow-data",
+ "arrow-schema",
+ "half",
+]
+
+[[package]]
 name = "arrow-schema"
 version = "54.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "85934a9d0261e0fa5d4e2a5295107d743b543a6e0484a835d4b8db2da15306f9"
+dependencies = [
+ "bitflags 2.9.1",
+]
 
 [[package]]
 name = "arrow-select"
@@ -327,6 +407,23 @@ dependencies = [
  "arrow-data",
  "arrow-schema",
  "num",
+]
+
+[[package]]
+name = "arrow-string"
+version = "54.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "912e38bd6a7a7714c1d9b61df80315685553b7455e8a6045c27531d8ecd5b458"
+dependencies = [
+ "arrow-array",
+ "arrow-buffer",
+ "arrow-data",
+ "arrow-schema",
+ "arrow-select",
+ "memchr",
+ "num",
+ "regex",
+ "regex-syntax 0.8.6",
 ]
 
 [[package]]
@@ -1790,6 +1887,8 @@ dependencies = [
 name = "common-arrow-ffi"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
+ "arrow-schema",
  "daft-arrow",
  "pyo3",
 ]
@@ -1855,7 +1954,6 @@ dependencies = [
  "bincode",
  "common-error",
  "common-ndarray",
- "daft-arrow",
  "daft-schema",
  "image",
  "ndarray",
@@ -2469,6 +2567,8 @@ dependencies = [
 name = "daft-arrow"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-buffer",
+ "arrow-schema",
  "arrow2",
 ]
 
@@ -2518,7 +2618,6 @@ dependencies = [
  "common-error",
  "common-metrics",
  "common-runtime",
- "daft-arrow",
  "daft-core",
  "daft-dashboard",
  "daft-logical-plan",
@@ -3246,6 +3345,7 @@ dependencies = [
 name = "daft-schema"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-schema",
  "common-arrow-ffi",
  "common-display",
  "common-error",
@@ -3320,7 +3420,6 @@ dependencies = [
  "common-error",
  "common-io-config",
  "common-runtime",
- "daft-arrow",
  "daft-catalog",
  "daft-context",
  "daft-core",
@@ -3330,6 +3429,8 @@ dependencies = [
  "daft-functions-temporal",
  "daft-functions-utf8",
  "daft-logical-plan",
+ "daft-micropartition",
+ "daft-recordbatch",
  "daft-scan",
  "daft-session",
  "itertools 0.14.0",
@@ -3380,6 +3481,7 @@ name = "daft-writers"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
+ "arrow-csv",
  "arrow-json",
  "arrow-schema",
  "async-trait",

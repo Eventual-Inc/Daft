@@ -356,7 +356,7 @@ impl SparseTensorArray {
         let is_valid = self
             .values_array()
             .validity()
-            .is_none_or(|v| v.get_bit(idx));
+            .is_none_or(|v| v.is_valid(idx));
         let shape_element = if is_valid {
             self.shape_array().get(idx)
         } else {

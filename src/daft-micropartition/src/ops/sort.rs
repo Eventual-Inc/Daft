@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::series::Series;
+use daft_core::prelude::UInt64Array;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_recordbatch::RecordBatch;
 
@@ -32,7 +32,7 @@ impl MicroPartition {
         sort_keys: &[BoundExpr],
         descending: &[bool],
         nulls_first: &[bool],
-    ) -> DaftResult<Series> {
+    ) -> DaftResult<UInt64Array> {
         match self.concat_or_get()? {
             None => {
                 let empty_table = RecordBatch::empty(Some(self.schema.clone()));

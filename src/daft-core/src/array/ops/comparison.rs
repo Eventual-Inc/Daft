@@ -11,7 +11,6 @@ use crate::{
         BinaryArray, BooleanArray, DaftArrowBackedType, DaftPrimitiveType, DataType, Field,
         FixedSizeBinaryArray, NullArray, Utf8Array,
     },
-    utils::arrow::arrow_bitmap_and_helper,
 };
 
 impl<T> PartialEq for DataArray<T>
@@ -1857,12 +1856,10 @@ where
 {
     let lhs_arrow = lhs.as_arrow();
     let rhs_arrow = rhs.as_arrow();
-    let validity = match (lhs_arrow.validity(), rhs_arrow.validity()) {
-        (Some(lhs), None) => Some(lhs.clone()),
-        (None, Some(rhs)) => Some(rhs.clone()),
-        (None, None) => None,
-        (Some(lhs), Some(rhs)) => Some(lhs & rhs),
-    };
+    let lhs_validity = lhs_arrow.validity().cloned().map(|v| v.into());
+    let rhs_validity = rhs_arrow.validity().cloned().map(|v| v.into());
+    let validity =
+        daft_arrow::buffer::NullBuffer::union(lhs_validity.as_ref(), rhs_validity.as_ref());
 
     let values = lhs_arrow
         .values_iter()
@@ -1875,7 +1872,7 @@ where
         Box::new(daft_arrow::array::BooleanArray::new(
             daft_arrow::datatypes::DataType::Boolean,
             values,
-            validity,
+            daft_arrow::buffer::wrap_null_buffer(validity),
         )),
     )
 }
@@ -2729,5 +2726,17 @@ mod tests {
             DaftError::ValueError(msg) => assert!(msg.contains("different length arrays")),
             other => panic!("expected ValueError, got {other:?}"),
         }
+    }
+}
+
+fn arrow_bitmap_and_helper(
+    lhs: Option<&daft_arrow::bitmap::Bitmap>,
+    rhs: Option<&daft_arrow::bitmap::Bitmap>,
+) -> Option<daft_arrow::bitmap::Bitmap> {
+    match (lhs, rhs) {
+        (None, None) => None,
+        (None, Some(rhs)) => Some(rhs.clone()),
+        (Some(lhs), None) => Some(lhs.clone()),
+        (Some(lhs), Some(rhs)) => Some(daft_arrow::bitmap::and(lhs, rhs)),
     }
 }

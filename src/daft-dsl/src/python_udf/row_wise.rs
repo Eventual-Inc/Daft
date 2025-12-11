@@ -1,7 +1,7 @@
 use std::{fmt::Display, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
-use daft_core::prelude::*;
+use daft_core::{prelude::*, series::Series};
 use itertools::Itertools;
 use opentelemetry::logs::{AnyValue, LogRecord, Logger, LoggerProvider};
 #[cfg(feature = "python")]

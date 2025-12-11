@@ -1,22 +1,20 @@
 use daft_arrow::{
     array::{PrimitiveArray, ord::DynComparator},
     bitmap::Bitmap,
-    types::Index,
+    types::NativeType,
 };
 
-pub fn idx_sort<I, F>(
+pub fn idx_sort<F>(
     validity: Option<&Bitmap>,
     cmp: F,
     length: usize,
     descending: bool,
     nulls_first: bool,
-) -> PrimitiveArray<I>
+) -> PrimitiveArray<u64>
 where
-    I: Index,
-    F: Fn(&I, &I) -> std::cmp::Ordering,
+    F: Fn(&u64, &u64) -> std::cmp::Ordering,
 {
-    let (mut indices, start_idx, end_idx) =
-        generate_initial_indices::<I>(validity, length, nulls_first);
+    let (mut indices, start_idx, end_idx) = generate_initial_indices(validity, length, nulls_first);
     let indices_slice = &mut indices.as_mut_slice()[start_idx..end_idx];
 
     if !descending {
@@ -24,58 +22,54 @@ where
     } else {
         indices_slice.sort_unstable_by(|a, b| cmp(b, a));
     }
-    let data_type = I::PRIMITIVE.into();
-    PrimitiveArray::<I>::new(data_type, indices.into(), None)
+    let data_type = u64::PRIMITIVE.into();
+    PrimitiveArray::<u64>::new(data_type, indices.into(), None)
 }
 
-pub fn multi_column_idx_sort<I, F>(
+pub fn multi_column_idx_sort<F>(
     first_col_validity: Option<&Bitmap>,
     overall_cmp: F,
     others_cmp: &DynComparator,
     length: usize,
     first_col_nulls_first: bool,
-) -> PrimitiveArray<I>
+) -> PrimitiveArray<u64>
 where
-    I: Index,
-    F: Fn(&I, &I) -> std::cmp::Ordering,
+    F: Fn(&u64, &u64) -> std::cmp::Ordering,
 {
     let (mut indices, start_idx, end_idx) =
-        generate_initial_indices::<I>(first_col_validity, length, first_col_nulls_first);
+        generate_initial_indices(first_col_validity, length, first_col_nulls_first);
     let indices_slice = &mut indices.as_mut_slice()[start_idx..end_idx];
 
     indices_slice.sort_unstable_by(|a, b| overall_cmp(a, b));
     if start_idx > 0 {
         let preslice_indices = &mut indices.as_mut_slice()[..start_idx];
-        preslice_indices.sort_unstable_by(|a, b| others_cmp(a.to_usize(), b.to_usize()));
+        preslice_indices.sort_unstable_by(|a, b| others_cmp(*a as usize, *b as usize));
     }
     if end_idx < length {
         let postslice_indices = &mut indices.as_mut_slice()[end_idx..];
-        postslice_indices.sort_unstable_by(|a, b| others_cmp(a.to_usize(), b.to_usize()));
+        postslice_indices.sort_unstable_by(|a, b| others_cmp(*a as usize, *b as usize));
     }
 
-    let data_type = I::PRIMITIVE.into();
-    PrimitiveArray::<I>::new(data_type, indices.into(), None)
+    let data_type = u64::PRIMITIVE.into();
+    PrimitiveArray::<u64>::new(data_type, indices.into(), None)
 }
 
-fn generate_initial_indices<I>(
+fn generate_initial_indices(
     validity: Option<&Bitmap>,
     length: usize,
     nulls_first: bool,
-) -> (Vec<I>, usize, usize)
-where
-    I: Index,
-{
+) -> (Vec<u64>, usize, usize) {
     if let Some(validity) = validity {
         // number of null values
         let n_nulls = validity.unset_bits();
         // number of non null values
         let n_valid = length.saturating_sub(n_nulls);
-        let mut indices = vec![I::default(); length];
+        let mut indices = vec![u64::default(); length];
         let mut nulls = 0;
         let mut valids = 0;
         validity
             .iter()
-            .zip(I::range(0, length).unwrap())
+            .zip(0..length as u64)
             .for_each(|(is_not_null, index)| {
                 match (is_not_null, nulls_first) {
                     // value && nulls first
@@ -112,6 +106,6 @@ where
 
         (indices, start_idx, end_idx)
     } else {
-        (I::range(0, length).unwrap().collect::<Vec<_>>(), 0, length)
+        ((0..length as u64).collect::<Vec<u64>>(), 0, length)
     }
 }

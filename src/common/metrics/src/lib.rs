@@ -120,10 +120,9 @@ pub const CPU_US_KEY: &str = "cpu us";
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     use pyo3::types::PyModuleMethods;
 
-    use crate::python::{PyNodeInfo, PyOperatorMetrics, StatType};
+    use crate::python::{PyOperatorMetrics, StatType};
 
     parent.add_class::<StatType>()?;
-    parent.add_class::<PyNodeInfo>()?;
     parent.add_class::<PyOperatorMetrics>()?;
     parent.add_class::<QueryEndState>()?;
     Ok(())
