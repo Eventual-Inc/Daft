@@ -208,8 +208,7 @@ impl DateArray {
 /// Example: 2021-01-01 00:00:00
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
 pub fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
-    let chrono_ts =
-        daft_arrow::temporal_conversions::timestamp_to_naive_datetime(val, unit.to_arrow2());
+    let chrono_ts = daft_schema::time_unit::timestamp_to_naive_datetime(val, *unit);
     let format_str = "%Y-%m-%d %H:%M:%S%.f";
     chrono_ts.format(format_str).to_string()
 }
@@ -218,8 +217,7 @@ pub fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
 /// Example: 2021-01-01 00:00:00 -07:00
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
 pub fn timestamp_to_str_offset(val: i64, unit: &TimeUnit, offset: &chrono::FixedOffset) -> String {
-    let chrono_ts =
-        daft_arrow::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow2(), offset);
+    let chrono_ts = daft_schema::time_unit::timestamp_to_datetime(val, *unit, offset);
     let format_str = "%Y-%m-%d %H:%M:%S%.f %:z";
     chrono_ts.format(format_str).to_string()
 }
@@ -228,8 +226,7 @@ pub fn timestamp_to_str_offset(val: i64, unit: &TimeUnit, offset: &chrono::Fixed
 /// Example: 2021-01-01 00:00:00 PST
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
 pub fn timestamp_to_str_tz(val: i64, unit: &TimeUnit, tz: &chrono_tz::Tz) -> String {
-    let chrono_ts =
-        daft_arrow::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow2(), tz);
+    let chrono_ts = daft_schema::time_unit::timestamp_to_datetime(val, *unit, tz);
     let format_str = "%Y-%m-%d %H:%M:%S%.f %Z";
     chrono_ts.format(format_str).to_string()
 }
@@ -278,17 +275,14 @@ impl TimestampArray {
                             .collect()
                     },
                     |timezone| {
-                        if let Ok(offset) = daft_arrow::temporal_conversions::parse_offset(timezone)
-                        {
+                        if let Ok(offset) = daft_schema::time_unit::parse_offset(timezone) {
                             self.as_arrow()
                                 .iter()
                                 .map(|val| {
                                     val.map(|val| timestamp_to_str_offset(*val, unit, &offset))
                                 })
                                 .collect()
-                        } else if let Ok(tz) =
-                            daft_arrow::temporal_conversions::parse_offset_tz(timezone)
-                        {
+                        } else if let Ok(tz) = daft_schema::time_unit::parse_offset_tz(timezone) {
                             self.as_arrow()
                                 .iter()
                                 .map(|val| val.map(|val| timestamp_to_str_tz(*val, unit, &tz)))

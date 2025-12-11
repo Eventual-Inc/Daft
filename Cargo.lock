@@ -2567,6 +2567,7 @@ dependencies = [
 name = "daft-arrow"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
  "arrow-buffer",
  "arrow-schema",
  "arrow2",
@@ -2731,6 +2732,7 @@ dependencies = [
  "chrono",
  "csv-async",
  "daft-arrow",
+ "daft-schema",
  "fast-float2",
  "simdutf8",
 ]
@@ -3047,6 +3049,7 @@ dependencies = [
  "daft-dsl",
  "daft-io",
  "daft-recordbatch",
+ "daft-schema",
  "futures",
  "indexmap 2.11.4",
  "memchr",
@@ -3346,6 +3349,8 @@ name = "daft-schema"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow-schema",
+ "chrono",
+ "chrono-tz",
  "common-arrow-ffi",
  "common-display",
  "common-error",
