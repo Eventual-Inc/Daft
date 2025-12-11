@@ -183,13 +183,17 @@ If you're running this in Google Colab or Jupyter, run the following cell to set
 
 ```python
 import os
-try:
-    from google.colab import userdata
-    os.environ["OPENAI_API_KEY"] = userdata.get("OPENAI_API_KEY")
-except ImportError:
-    from getpass import getpass
-    if "OPENAI_API_KEY" not in os.environ:
-        os.environ["OPENAI_API_KEY"] = getpass("Enter your OpenAI API key: ")
+
+if "OPENAI_API_KEY" not in os.environ:
+    try:
+        from google.colab import userdata
+        os.environ["OPENAI_API_KEY"] = userdata.get("OPENAI_API_KEY")
+    except ImportError:
+        try:
+            from getpass import getpass
+            os.environ["OPENAI_API_KEY"] = getpass("Enter your OpenAI API key: ")
+        except Exception:
+            print("Not in an interactive environment. Please set the OPENAI_API_KEY environment variable.")
 ```
 
 ```python
