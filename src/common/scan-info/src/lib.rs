@@ -8,6 +8,7 @@ pub mod python;
 mod scan_operator;
 mod scan_task;
 mod sharder;
+mod storage_config;
 pub mod test;
 
 use std::{fmt::Debug, hash::Hash, sync::Arc};
@@ -22,6 +23,7 @@ pub use scan_operator::{ScanOperator, ScanOperatorRef};
 pub use scan_task::{SPLIT_AND_MERGE_PASS, ScanTaskLike, ScanTaskLikeRef};
 use serde::{Deserialize, Serialize};
 pub use sharder::{Sharder, ShardingStrategy};
+pub use storage_config::StorageConfig;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ScanState {

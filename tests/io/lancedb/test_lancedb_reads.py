@@ -7,11 +7,10 @@ import pytest
 import daft
 from daft import col
 
-TABLE_NAME = "my_table"
-data = {"vector": [[1.1, 1.2], [0.2, 1.8]], "lat": [45.5, 40.1], "long": [-122.7, -74.1], "big_int": [1, 2]}
-
 PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (9, 0, 0)
 pytestmark = pytest.mark.skipif(PYARROW_LOWER_BOUND_SKIP, reason="lance not supported on old versions of pyarrow")
+
+data = {"vector": [[1.1, 1.2], [0.2, 1.8]], "lat": [45.5, 40.1], "long": [-122.7, -74.1], "big_int": [1, 2]}
 
 
 @pytest.fixture(scope="function")
@@ -21,19 +20,31 @@ def lance_dataset_path(tmp_path_factory):
     yield str(tmp_dir)
 
 
-def test_lancedb_read(lance_dataset_path):
-    df = daft.read_lance(lance_dataset_path)
+@pytest.mark.parametrize(
+    "use_native_reader",
+    [False, True],
+)
+def test_lancedb_read(lance_dataset_path, use_native_reader):
+    df = daft.read_lance(uri=lance_dataset_path, use_native_reader=use_native_reader)
     assert df.to_pydict() == data
 
 
-def test_lancedb_read_column_selection(lance_dataset_path):
-    df = daft.read_lance(lance_dataset_path)
+@pytest.mark.parametrize(
+    "use_native_reader",
+    [False, True],
+)
+def test_lancedb_read_column_selection(lance_dataset_path, use_native_reader):
+    df = daft.read_lance(uri=lance_dataset_path, use_native_reader=use_native_reader)
     df = df.select("vector")
     assert df.to_pydict() == {"vector": data["vector"]}
 
 
-def test_lancedb_read_filter(lance_dataset_path):
-    df = daft.read_lance(lance_dataset_path)
+@pytest.mark.parametrize(
+    "use_native_reader",
+    [False, True],
+)
+def test_lancedb_read_filter(lance_dataset_path, use_native_reader):
+    df = daft.read_lance(uri=lance_dataset_path, use_native_reader=use_native_reader)
     df = df.where((df["lat"] > 45) & (df["lat"] < 90))
     df = df.select("vector")
     assert df.to_pydict() == {"vector": data["vector"][:1]}
@@ -100,13 +111,17 @@ def test_lancedb_read_limit_large_dataset(large_lance_dataset_path, limit_size, 
     assert result["big_int"] == expected_big_ints
 
 
-def test_lancedb_with_version(lance_dataset_path):
-    df = daft.read_lance(uri=lance_dataset_path, version=1)
+@pytest.mark.parametrize(
+    "use_native_reader",
+    [False, True],
+)
+def test_lancedb_with_version(lance_dataset_path, use_native_reader):
+    df = daft.read_lance(uri=lance_dataset_path, version=1, use_native_reader=use_native_reader)
     assert df.to_pydict() == data
 
     # test pushdown filters with limit and projection
     def test_lancedb_read_pushdown(lance_dataset_path, capsys):
-        df = daft.read_lance(lance_dataset_path)
+        df = daft.read_lance(uri=lance_dataset_path, use_native_reader=use_native_reader)
         df = daft.sql("SELECT vector, lat + 1 as lat_plus_1 FROM df where  long < 3 limit 1")
         df.explain(show_all=True)
         captured = capsys.readouterr()
@@ -118,14 +133,14 @@ def test_lancedb_with_version(lance_dataset_path):
         result = df.to_pydict()
         assert len(result["vector"]) == 1
 
-        df = daft.read_lance(lance_dataset_path)
+        df = daft.read_lance(uri=lance_dataset_path, use_native_reader=use_native_reader)
         df = df.select("vector", "lat")
         assert df.to_pydict() == {"vector": data["vector"], "lat": data["lat"]}
 
         # multi filter
         daft.context.set_planning_config(enable_strict_filter_pushdown=True)
 
-        df = daft.read_lance(lance_dataset_path)
+        df = daft.read_lance(uri=lance_dataset_path, use_native_reader=use_native_reader)
         df = daft.sql("SELECT vector, lat + 1 as lat_plus_1 FROM df where  lat is not null  and big_int in (1, 2, 3)")
         df.explain(show_all=True)
         captured = capsys.readouterr()

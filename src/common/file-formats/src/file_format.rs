@@ -1,3 +1,4 @@
+use std::fmt::Display;
 /// Defines FileFormat enum, which represents the format of a file, e.g. Parquet, CSV, JSON.
 ///
 /// NOTE: This is currently abused to also represent data being read from a Database or from a Python
@@ -20,6 +21,22 @@ pub enum FileFormat {
     Warc,
     Database,
     Python,
+    Lance,
+}
+
+impl Display for FileFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name = match self {
+            Self::Parquet => "Parquet",
+            Self::Csv => "CSV",
+            Self::Json => "JSON",
+            Self::Warc => "WARC",
+            Self::Database => "Database",
+            Self::Python => "Python",
+            Self::Lance => "Lance",
+        };
+        write!(f, "{}", name)
+    }
 }
 
 #[cfg(feature = "python")]
@@ -33,6 +50,7 @@ impl FileFormat {
             Self::Warc => "warc",
             Self::Database => "db",
             Self::Python => "py",
+            Self::Lance => "lance",
         }
     }
 }
@@ -41,7 +59,7 @@ impl FromStr for FileFormat {
     type Err = DaftError;
 
     fn from_str(file_format: &str) -> DaftResult<Self> {
-        use FileFormat::{Csv, Database, Json, Parquet, Warc};
+        use FileFormat::{Csv, Database, Json, Lance, Parquet, Warc};
 
         if file_format.trim().eq_ignore_ascii_case("parquet") {
             Ok(Parquet)
@@ -53,6 +71,8 @@ impl FromStr for FileFormat {
             Ok(Warc)
         } else if file_format.trim().eq_ignore_ascii_case("database") {
             Ok(Database)
+        } else if file_format.trim().eq_ignore_ascii_case("lance") {
+            Ok(Lance)
         } else {
             Err(DaftError::TypeError(format!(
                 "FileFormat {file_format} not supported!"

@@ -4,10 +4,9 @@ use std::{
 };
 
 use common_py_serde::{deserialize_py_object, serialize_py_object};
+use common_scan_info::StorageConfig;
 use pyo3::{prelude::*, types::PyTuple};
 use serde::{Deserialize, Serialize};
-
-use crate::storage_config::StorageConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PyObjectSerializableWrapper(
@@ -66,15 +65,16 @@ impl PartialEq for PythonTablesFactoryArgs {
 }
 
 pub mod pylib {
-    use std::{default, sync::Arc};
+    use std::{collections::HashMap, default, sync::Arc};
 
     use common_daft_config::PyDaftExecutionConfig;
     use common_error::DaftResult;
     use common_file_formats::{FileFormatConfig, python::PyFileFormatConfig};
+    use common_io_config::python::IOConfig as PyIOConfig;
     use common_py_serde::impl_bincode_py_state_serialization;
     use common_scan_info::{
         PartitionField, Pushdowns, ScanOperator, ScanOperatorRef, ScanTaskLike, ScanTaskLikeRef,
-        SupportsPushdownFilters,
+        StorageConfig, SupportsPushdownFilters,
         python::pylib::{PyPartitionField, PyPushdowns},
     };
     use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, python::PyExpr};
@@ -88,7 +88,7 @@ pub mod pylib {
     use super::PythonTablesFactoryArgs;
     use crate::{
         DataSource, ScanTask, anonymous::AnonymousScanOperator, glob::GlobScanOperator,
-        storage_config::StorageConfig,
+        native::NativeScanOperator,
     };
 
     #[pyclass(module = "daft.daft", frozen)]
@@ -165,6 +165,38 @@ pub mod pylib {
 
                 let operator = executor.block_within_async_context(task)??;
                 let operator = Arc::new(operator);
+
+                Ok(Self {
+                    scan_op: ScanOperatorRef(operator),
+                })
+            })
+        }
+
+        #[staticmethod]
+        pub fn native_scan(
+            py: Python,
+            uri: String,
+            file_format_config: PyFileFormatConfig,
+            storage_config: StorageConfig,
+        ) -> PyResult<Self> {
+            let os_module =
+                PyModule::import(py, pyo3::intern!(py, "daft.io.object_store_options"))?;
+            let os_method = os_module.getattr(pyo3::intern!(py, "io_config_to_storage_options"))?;
+            let py_io_config = storage_config.io_config.clone().map(PyIOConfig::from);
+            let result = os_method.call1((py_io_config, &uri))?;
+            let storage_options = Arc::new(
+                result
+                    .extract::<HashMap<String, String>>()
+                    .unwrap_or_default(),
+            );
+
+            py.detach(|| {
+                let operator = Arc::new(NativeScanOperator::try_new(
+                    uri,
+                    file_format_config.into(),
+                    storage_config.into(),
+                    storage_options,
+                )?);
 
                 Ok(Self {
                     scan_op: ScanOperatorRef(operator),

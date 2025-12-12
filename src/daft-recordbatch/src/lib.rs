@@ -51,6 +51,7 @@ pub use probeable::{ProbeState, Probeable, ProbeableBuilder, make_probeable_buil
 
 #[cfg(feature = "python")]
 pub mod python;
+use daft_arrow::datatypes::Schema as ArrowSchema;
 #[cfg(feature = "python")]
 pub use python::register_modules;
 use rand::seq::index::sample;
@@ -1605,6 +1606,26 @@ impl TryFrom<RecordBatch> for arrow_array::RecordBatch {
             .map(|s| s.to_arrow2().into())
             .collect::<Vec<_>>();
         Self::try_new(schema, columns).map_err(DaftError::ArrowRsError)
+    }
+}
+
+impl TryFrom<arrow_array::RecordBatch> for RecordBatch {
+    type Error = DaftError;
+
+    fn try_from(batch: arrow_array::RecordBatch) -> std::result::Result<Self, Self::Error> {
+        let arrow_schema: ArrowSchema = (*batch.schema()).clone().into();
+        let schema: Schema = arrow_schema.into();
+
+        let arrays: Vec<Box<dyn Array>> = batch
+            .columns()
+            .iter()
+            .map(|col| {
+                let arr: Box<dyn Array> = col.clone().into();
+                arr
+            })
+            .collect();
+
+        Self::from_arrow(SchemaRef::new(schema), arrays)
     }
 }
 

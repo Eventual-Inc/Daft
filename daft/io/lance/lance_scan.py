@@ -222,13 +222,18 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 rows_to_scan = min(remaining_limit, effective_rows)
                 remaining_limit -= rows_to_scan
 
+                size_bytes = sum(
+                    file.file_size_bytes
+                    for file in fragment.metadata.files
+                    if file is not None and file.file_size_bytes is not None
+                )
                 yield ScanTask.python_factory_func_scan_task(
                     module=_lancedb_table_factory_function.__module__,
                     func_name=_lancedb_table_factory_function.__name__,
                     func_args=(self._ds.uri, open_kwargs, [fragment.fragment_id], required_columns, None, rows_to_scan),
                     schema=self.schema()._schema,
                     num_rows=rows_to_scan,
-                    size_bytes=sum(file.file_size_bytes for file in fragment.metadata.files),
+                    size_bytes=size_bytes,
                     pushdowns=pushdowns,
                     stats=None,
                     source_type=self.name(),
@@ -297,7 +302,11 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
 
                 current_group.append(fragment)
                 group_num_rows += num_rows
-                group_size_bytes += sum(file.file_size_bytes for file in fragment.metadata.files)
+                group_size_bytes += sum(
+                    file.file_size_bytes
+                    for file in fragment.metadata.files
+                    if file is not None and file.file_size_bytes is not None
+                )
                 if len(current_group) >= self._fragment_group_size:
                     fragment_groups.append((current_group, group_num_rows, group_size_bytes))
                     current_group = []
