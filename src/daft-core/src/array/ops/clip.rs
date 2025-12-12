@@ -1,8 +1,9 @@
+use std::sync::Arc;
+
 use common_error::{DaftError, DaftResult};
-use daft_arrow::array::PrimitiveArray;
 use num_traits::{clamp, clamp_max, clamp_min};
 
-use crate::{array::DataArray, datatypes::DaftNumericType, prelude::AsArrow};
+use crate::{array::DataArray, datatypes::DaftNumericType};
 
 impl<T> DataArray<T>
 where
@@ -36,8 +37,7 @@ where
                         (None, Some(r)) => Some(clamp_max(*value, *r)),
                         (None, None) => Some(*value),
                     });
-                let result = PrimitiveArray::<T::Native>::from_trusted_len_iter(result);
-                let data_array = Self::from((self.name(), Box::new(result)))
+                let data_array = Self::from_iter(Arc::new(self.field().clone()), result)
                     .with_validity(self.validity().cloned())?;
                 Ok(data_array)
             }
@@ -58,22 +58,20 @@ where
                                     Some(l) => Some(clamp(*value, *l, r)),
                                     None => Some(clamp_max(*value, r)), // If left is null, we can just clamp_max
                                 });
-                        let result = PrimitiveArray::<T::Native>::from_trusted_len_iter(result);
-                        let data_array = Self::from((self.name(), Box::new(result)))
+                        let data_array = Self::from_iter(Arc::new(self.field().clone()), result)
                             .with_validity(self.validity().cloned())?;
                         Ok(data_array)
                     }
                     None => {
                         let values = self.values();
                         // In this case, right_bound is null, so we can just do a simple clamp_min
-                        let result = values.iter().zip(left_bound.as_arrow2().iter()).map(
+                        let result = values.iter().zip(left_bound.into_iter()).map(
                             |(value, left)| match left {
                                 Some(l) => Some(clamp_min(*value, *l)),
                                 None => Some(*value), // Left null, and right null, so we just don't do anything
                             },
                         );
-                        let result = PrimitiveArray::<T::Native>::from_trusted_len_iter(result);
-                        let data_array = Self::from((self.name(), Box::new(result)))
+                        let data_array = Self::from_iter(Arc::new(self.field().clone()), result)
                             .with_validity(self.validity().cloned())?;
                         Ok(data_array)
                     }
@@ -85,27 +83,27 @@ where
                 match left {
                     Some(l) => {
                         let values = self.values();
-                        let result = values.iter().zip(right_bound.as_arrow2().iter()).map(
+                        let result = values.iter().zip(right_bound.into_iter()).map(
                             move |(value, right)| match right {
                                 Some(r) => Some(clamp(*value, l, *r)),
                                 None => Some(clamp_min(*value, l)), // Right null, so we can just clamp_min
                             },
                         );
-                        let result = PrimitiveArray::<T::Native>::from_trusted_len_iter(result);
-                        let data_array = Self::from((self.name(), Box::new(result)))
+                        let data_array = Self::from_iter(Arc::new(self.field().clone()), result)
                             .with_validity(self.validity().cloned())?;
                         Ok(data_array)
                     }
                     None => {
                         let values = self.values();
-                        let result = values.iter().zip(right_bound.as_arrow2().iter()).map(
-                            |(value, right)| match right {
-                                Some(r) => Some(clamp_max(*value, *r)),
-                                None => Some(*value),
-                            },
-                        );
-                        let result = PrimitiveArray::<T::Native>::from_trusted_len_iter(result);
-                        let data_array = Self::from((self.name(), Box::new(result)))
+                        let result =
+                            values
+                                .iter()
+                                .zip(right_bound.into_iter())
+                                .map(|(value, right)| match right {
+                                    Some(r) => Some(clamp_max(*value, *r)),
+                                    None => Some(*value),
+                                });
+                        let data_array = Self::from_iter(Arc::new(self.field().clone()), result)
                             .with_validity(self.validity().cloned())?;
                         Ok(data_array)
                     }
