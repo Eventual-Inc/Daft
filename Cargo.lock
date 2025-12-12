@@ -2637,6 +2637,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow",
  "arrow-buffer",
+ "arrow-data",
  "bincode",
  "chrono",
  "chrono-tz",
@@ -2841,10 +2842,10 @@ dependencies = [
 name = "daft-functions-binary"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
  "base64 0.22.1",
  "common-error",
  "common-macros",
- "daft-arrow",
  "daft-core",
  "daft-dsl",
  "flate2",
@@ -2909,10 +2910,10 @@ dependencies = [
 name = "daft-functions-tokenize"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
  "base64 0.22.1",
  "common-error",
  "common-runtime",
- "daft-arrow",
  "daft-core",
  "daft-dsl",
  "daft-io",
@@ -2946,6 +2947,7 @@ name = "daft-functions-utf8"
 version = "0.3.0-dev0"
 dependencies = [
  "aho-corasick",
+ "arrow",
  "chrono",
  "chrono-tz",
  "common-error",

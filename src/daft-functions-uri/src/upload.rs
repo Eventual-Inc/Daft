@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::{collections::HashSet, iter::repeat_n, path::Path, sync::Arc};
 
 use common_error::{DaftError, DaftResult, ensure};
@@ -166,8 +165,7 @@ fn prepare_folder_paths(
     } else {
         debug_assert_eq!(arr.len(), len);
         Ok(arr
-            .as_arrow2()
-            .iter()
+            .into_iter()
             .map(|folder_path| {
                 instantiate_and_trim_path(
                     folder_path.unwrap(),
@@ -272,7 +270,6 @@ pub fn url_upload(
             let bytes_array = series
                 .binary()
                 .unwrap()
-                .as_arrow2()
                 .into_iter()
                 .map(|v| v.map(|b| bytes::Bytes::from(b.to_vec())))
                 .collect();
@@ -291,7 +288,6 @@ pub fn url_upload(
             let bytes_array = series
                 .fixed_size_binary()
                 .unwrap()
-                .as_arrow2()
                 .into_iter()
                 .map(|v| v.map(|b| bytes::Bytes::from(b.to_vec())))
                 .collect();
@@ -310,7 +306,6 @@ pub fn url_upload(
             let bytes_array = series
                 .utf8()
                 .unwrap()
-                .as_arrow2()
                 .into_iter()
                 .map(|utf8_slice| utf8_slice.map(|s| bytes::Bytes::from(s.as_bytes().to_vec())))
                 .collect();
