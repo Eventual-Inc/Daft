@@ -56,13 +56,13 @@ impl PyScalarFn {
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         match self {
             Self::RowWise(RowWisePyFn {
-                function_name,
+                func_id,
                 args,
                 return_dtype,
                 ..
             })
             | Self::Batch(BatchPyFn {
-                function_name,
+                func_id,
                 args,
                 return_dtype,
                 ..
@@ -70,7 +70,7 @@ impl PyScalarFn {
                 let field_name = if let Some(first_child) = args.first() {
                     first_child.get_name(schema)?
                 } else {
-                    function_name.to_string()
+                    func_id.to_string()
                 };
 
                 Ok(Field::new(field_name, return_dtype.clone()))
