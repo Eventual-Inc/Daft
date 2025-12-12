@@ -15,15 +15,12 @@ pub struct IPCWriter {
     is_closed: bool,
     bytes_written: usize,
     file_path: String,
-    compression: Option<daft_arrow::io::ipc::write::Compression>,
-    writer: Option<daft_arrow::io::ipc::write::StreamWriter<File>>,
+    compression: Option<daft_arrow::ipc::CompressionType>,
+    writer: Option<daft_arrow::ipc::writer::StreamWriter<File>>,
 }
 
 impl IPCWriter {
-    pub fn new(
-        file_path: &str,
-        compression: Option<daft_arrow::io::ipc::write::Compression>,
-    ) -> Self {
+    pub fn new(file_path: &str, compression: Option<daft_arrow::ipc::CompressionType>) -> Self {
         Self {
             is_closed: false,
             bytes_written: 0,
@@ -36,15 +33,26 @@ impl IPCWriter {
     fn get_or_create_writer(
         &mut self,
         schema: &Schema,
-    ) -> DaftResult<&mut daft_arrow::io::ipc::write::StreamWriter<File>> {
+    ) -> DaftResult<&mut daft_arrow::ipc::writer::StreamWriter<File>> {
         if self.writer.is_none() {
             let file = File::create(self.file_path.as_str())?;
-            let options = daft_arrow::io::ipc::write::WriteOptions {
-                compression: self.compression,
-            };
-            let mut writer = daft_arrow::io::ipc::write::StreamWriter::new(file, options);
+
+            // Convert daft schema to arrow-rs schema
             #[allow(deprecated, reason = "arrow2 migration")]
-            writer.start(&schema.to_arrow2()?, None)?;
+            let arrow2_schema = schema.to_arrow2()?;
+            let arrow_schema: Arc<daft_arrow::arrow_schema::Schema> =
+                Arc::new(arrow2_schema.into());
+
+            // Create write options with compression
+            let write_options = daft_arrow::ipc::writer::IpcWriteOptions::default()
+                .try_with_compression(self.compression)?;
+
+            // Create arrow-ipc StreamWriter
+            let writer = daft_arrow::ipc::writer::StreamWriter::try_new_with_options(
+                file,
+                &arrow_schema,
+                write_options,
+            )?;
             self.writer = Some(writer);
         }
         Ok(self.writer.as_mut().unwrap())
@@ -62,12 +70,16 @@ impl AsyncFileWriter for IPCWriter {
         let size_bytes = data.size_bytes();
         let rows_written = data.len();
         let writer = self.get_or_create_writer(&data.schema())?;
+
+        // Write each record batch
         for table in data.record_batches() {
-            #[allow(deprecated, reason = "arrow2 migration")]
-            let chunk = table.to_chunk();
-            writer.write(&chunk, None)?;
+            // Convert daft RecordBatch to arrow-rs RecordBatch
+            let arrow_batch: daft_arrow::arrow_array::RecordBatch = table.clone().try_into()?;
+            writer.write(&arrow_batch)?;
         }
-        self.bytes_written += writer.bytes_written();
+
+        // Track bytes written (approximate, since we can't easily get exact bytes from arrow-ipc)
+        self.bytes_written += size_bytes;
         Ok(WriteResult {
             bytes_written: size_bytes,
             rows_written,
@@ -100,11 +112,11 @@ impl AsyncFileWriter for IPCWriter {
 
 pub struct IPCWriterFactory {
     dir: String,
-    compression: Option<daft_arrow::io::ipc::write::Compression>,
+    compression: Option<daft_arrow::ipc::CompressionType>,
 }
 
 impl IPCWriterFactory {
-    pub fn new(dir: String, compression: Option<daft_arrow::io::ipc::write::Compression>) -> Self {
+    pub fn new(dir: String, compression: Option<daft_arrow::ipc::CompressionType>) -> Self {
         Self { dir, compression }
     }
 }
