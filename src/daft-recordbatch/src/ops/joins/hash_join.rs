@@ -1,11 +1,10 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::{cmp, iter::repeat_n, ops::Not, sync::Arc};
 
 use arrow_array::builder::BooleanBufferBuilder;
 use common_error::DaftResult;
 use daft_arrow::{buffer::NullBufferBuilder, types::IndexRange};
 use daft_core::{
-    array::ops::{DaftIsNull, arrow::comparison::build_multi_array_is_equal, as_arrow::AsArrow},
+    array::ops::{DaftIsNull, arrow::comparison::build_multi_array_is_equal},
     prelude::*,
 };
 use daft_dsl::{
@@ -61,7 +60,7 @@ pub(super) fn hash_inner_join(
         let mut left_idx = vec![];
         let mut right_idx = vec![];
 
-        for (r_idx, h) in r_hashes.as_arrow2().values_iter().enumerate() {
+        for (r_idx, h) in r_hashes.values().iter().enumerate() {
             if let Some((_, indices)) = probe_table.raw_entry().from_hash(*h, |other| {
                 *h == other.hash && {
                     let l_idx = other.idx;
@@ -153,7 +152,7 @@ pub(super) fn hash_left_right_join(
 
         let mut l_valid = NullBufferBuilder::new(min_rows);
 
-        for (r_idx, h) in r_hashes.as_arrow2().values_iter().enumerate() {
+        for (r_idx, h) in r_hashes.values().iter().enumerate() {
             if let Some((_, indices)) = probe_table.raw_entry().from_hash(*h, |other| {
                 *h == other.hash && {
                     let l_idx = other.idx;
@@ -248,7 +247,7 @@ pub(super) fn hash_semi_anti_join(
 
         let mut left_idx = Vec::with_capacity(rows);
         let is_semi = !is_anti;
-        for (l_idx, h) in l_hashes.as_arrow2().values_iter().enumerate() {
+        for (l_idx, h) in l_hashes.values().iter().enumerate() {
             let is_match = probe_table
                 .raw_entry()
                 .from_hash(*h, |other| {
@@ -332,7 +331,7 @@ pub(super) fn hash_outer_join(
 
         let mut left_idx_used = BooleanBufferBuilder::new(lkeys.len());
 
-        for (r_idx, h) in r_hashes.as_arrow2().values_iter().enumerate() {
+        for (r_idx, h) in r_hashes.values().iter().enumerate() {
             if let Some((_, indices)) = probe_table.raw_entry().from_hash(*h, |other| {
                 *h == other.hash && {
                     let l_idx = other.idx;

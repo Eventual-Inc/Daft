@@ -1,7 +1,6 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    array::ops::{arrow::comparison::build_multi_array_is_equal, as_arrow::AsArrow},
+    array::ops::arrow::comparison::build_multi_array_is_equal,
     datatypes::UInt64Array,
     utils::identity_hash_set::{IdentityBuildHasher, IndexHash},
 };
@@ -42,7 +41,7 @@ impl RecordBatch {
                 Default::default(),
             );
         // TODO(Sammy): Drop nulls using validity array if requested
-        for (i, h) in hashes.as_arrow2().values_iter().enumerate() {
+        for (i, h) in hashes.values().iter().enumerate() {
             let entry = probe_table.raw_entry_mut().from_hash(*h, |other| {
                 (*h == other.hash) && {
                     let j = other.idx;
@@ -85,7 +84,7 @@ impl RecordBatch {
                 Default::default(),
             );
         // TODO(Sammy): Drop nulls using validity array if requested
-        for (i, h) in hashes.as_arrow2().values_iter().enumerate() {
+        for (i, h) in hashes.values().iter().enumerate() {
             let entry = idx_hash_table.raw_entry_mut().from_hash(*h, |other| {
                 (*h == other.hash) && {
                     let j = other.idx;
@@ -128,7 +127,7 @@ impl RecordBatch {
                 Default::default(),
             );
         // TODO(Sammy): Drop nulls using validity array if requested
-        for (i, h) in hashes.as_arrow2().values_iter().enumerate() {
+        for (i, h) in hashes.values().iter().enumerate() {
             let entry = probe_table.raw_entry_mut().from_hash(*h, |other| {
                 (*h == other.hash) && {
                     let j = other.idx;

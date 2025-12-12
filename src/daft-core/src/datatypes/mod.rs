@@ -2,6 +2,7 @@ mod agg_ops;
 mod infer_datatype;
 mod matching;
 
+use arrow_buffer::{ArrowNativeType, ScalarBuffer};
 pub use infer_datatype::InferDataType;
 pub mod prelude;
 use std::ops::{Add, Div, Mul, Rem, Sub};
@@ -288,7 +289,8 @@ impl DaftDataType for PythonType {
 }
 
 pub trait NumericNative:
-    PartialOrd
+    ArrowNativeType
+    + PartialOrd
     + NativeType
     + Num
     + NumCast
@@ -448,6 +450,12 @@ pub type Decimal128Array = DataArray<Decimal128Type>;
 impl<T: DaftNumericType> DataArray<T> {
     pub fn as_slice(&self) -> &[T::Native] {
         self.as_arrow2().values().as_slice()
+    }
+
+    pub fn values(&self) -> ScalarBuffer<T::Native> {
+        // this is fully zero copy to convert the values into an arrow-rs ScalarBuffer
+        let arrow_buffer = arrow_buffer::Buffer::from(self.as_arrow2().values().clone());
+        ScalarBuffer::from(arrow_buffer)
     }
 }
 
