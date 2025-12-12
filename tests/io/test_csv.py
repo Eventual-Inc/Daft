@@ -102,6 +102,7 @@ def test_write_and_read_empty_csv(tmp_path_factory):
 
     assert daft.read_csv(empty_csv_files).to_pydict() == {"a": []}
 
+
 def _read_first_file_text(root: str) -> str:
     import os
 
