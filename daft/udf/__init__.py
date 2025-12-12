@@ -320,6 +320,7 @@ def cls(
     max_concurrency: int | None = None,
     max_retries: int | None = None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
+    name_override: str | None = None,
 ) -> Callable[[type], type]: ...
 @overload
 def cls(
@@ -330,6 +331,7 @@ def cls(
     max_concurrency: int | None = None,
     max_retries: int | None = None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
+    name_override: str | None = None,
 ) -> type: ...
 def cls(
     class_: type | None = None,
@@ -339,6 +341,7 @@ def cls(
     max_concurrency: int | None = None,
     max_retries: int | None = None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
+    name_override: str | None = None,
 ) -> type | Callable[[type], type]:
     """Decorator to convert a Python class into a Daft user-defined class.
 
@@ -346,6 +349,7 @@ def cls(
         gpus: The number of GPUs each instance of the class requires. Defaults to 0.
         use_process: Whether to run each instance of the class in a separate process. If unset, Daft will automatically choose based on runtime performance.
         max_concurrency: The maximum number of concurrent instances of the class.
+        name_override: The name to display for the UDF class in the plan and progress bars.
 
     Daft classes allow you to initialize a class instance once, and then reuse it for multiple rows of data.
     This is useful for expensive initializations that need to be amortized across multiple rows of data, such as loading a model or establishing a network connection.
@@ -413,7 +417,7 @@ def cls(
     """
 
     def partial_cls(c: type) -> type:
-        return wrap_cls(c, gpus, use_process, max_concurrency, max_retries, on_error)
+        return wrap_cls(c, gpus, use_process, max_concurrency, max_retries, on_error, name_override)
 
     return partial_cls if class_ is None else partial_cls(class_)
 

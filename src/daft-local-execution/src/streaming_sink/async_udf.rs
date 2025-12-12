@@ -314,13 +314,7 @@ impl StreamingSink for AsyncUdfSink {
     }
 
     fn name(&self) -> NodeName {
-        let udf_name = if let Some((_, udf_name)) = self.params.udf_properties.name.rsplit_once('.')
-        {
-            udf_name
-        } else {
-            self.params.udf_properties.name.as_str()
-        };
-        format!("Async UDF {}", udf_name).into()
+        self.params.udf_properties.name.clone().into()
     }
 
     fn op_type(&self) -> NodeType {
@@ -329,7 +323,7 @@ impl StreamingSink for AsyncUdfSink {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![
-            format!("Async UDF: {}", self.params.udf_properties.name.as_str()),
+            format!("{}", self.params.udf_properties.name.as_str()),
             format!("Expr = {}", self.params.expr),
             format!(
                 "Passthrough Columns = [{}]",
