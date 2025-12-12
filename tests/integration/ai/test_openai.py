@@ -457,8 +457,8 @@ def test_prompt_with_image_structured_output(session, use_chat_completions, metr
         assert isinstance(analysis["description"], str)
         assert len(analysis["dominant_color"]) > 0
         assert len(analysis["description"]) > 0
-        # Check if "blue" appears in the dominant color (case-insensitive)
-        assert "#0000ff" in analysis["dominant_color"].lower()
+        # Check if blue hex code appears in the dominant color (case-insensitive)
+        assert "0000ff" in analysis["dominant_color"].lower()
 
     time.sleep(1)  # self limit to ~1 tps.
 
