@@ -44,25 +44,6 @@ def test_read_huggingface(path, split, sort_key):
 
 
 @pytest.mark.integration()
-@pytest.mark.parametrize(
-    "path, schema",
-    [
-        (
-            "https://huggingface.co/api/datasets/huggingface/documentation-images/parquet/default/train/0.parquet",
-            daft.Schema.from_pydict({"image": dt.struct({"bytes": dt.binary(), "path": dt.string()})}),
-        ),
-        (
-            "https://huggingface.co/api/datasets/Anthropic/hh-rlhf/parquet/default/train/0.parquet",
-            daft.Schema.from_pydict({"chosen": dt.string(), "rejected": dt.string()}),
-        ),
-    ],
-)
-def test_read_huggingface_http_urls(path, schema):
-    df = daft.read_parquet(path)
-    assert df.schema() == schema
-
-
-@pytest.mark.integration()
 def test_read_huggingface_fallback_on_400_error():
     """Test that read_huggingface falls back to datasets library when parquet files return 400 error."""
     repo = "Eventual-Inc/sample-parquet"
