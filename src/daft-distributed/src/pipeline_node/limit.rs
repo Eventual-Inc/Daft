@@ -262,7 +262,7 @@ impl LimitNode {
             .config
             .execution_config
             .max_limit_tasks_submittable_in_parallel;
-        let should_auto_adaptive = max_concurrent_tasks > 1;
+        let should_auto_adaptive = max_concurrent_tasks == 1;
         let mut input_exhausted = self.limit == 0;
         let mut emitted_any = false;
 
@@ -303,7 +303,7 @@ impl LimitNode {
             // FuturesUnordered automatically handles this
             while let Some(maybe_result) = local_limits.next().await {
                 if let Ok(Some(materialized_output)) = maybe_result {
-                    total_num_rows += materialized_output.num_rows()?;
+                    total_num_rows += materialized_output.num_rows();
                     // Process the result and check if we should exit early
                     let downstream_tasks = self.process_materialized_output(
                         materialized_output,
@@ -333,7 +333,7 @@ impl LimitNode {
             if !limit_state.is_take_done()
                 && total_num_rows > 0
                 && num_local_limits > 0
-                && !should_auto_adaptive
+                && should_auto_adaptive
             {
                 let rows_per_task = total_num_rows.div_ceil(num_local_limits);
                 max_concurrent_tasks = limit_state.remaining_take().div_ceil(rows_per_task);
@@ -484,7 +484,7 @@ mod tests {
             materialized_output,
             &mut limit_state,
             &task_id_counter,
-        )?;
+        );
 
         // Only non-empty partitions should lead to downstream tasks
         assert_eq!(downstream.len(), 2);
@@ -522,7 +522,7 @@ mod tests {
             materialized_output,
             &mut limit_state,
             &task_id_counter,
-        )?;
+        );
 
         // Should only produce tasks up to the limit: first takes 5, second takes 1, then stop
         assert_eq!(downstream.len(), 2);
