@@ -26,6 +26,7 @@ def read_parquet(
     file_path_column: Optional[str] = None,
     hive_partitioning: bool = False,
     coerce_int96_timestamp_unit: Optional[Union[str, TimeUnit]] = None,
+    ignore_corrupt_files: bool = False,
     _multithreaded_io: Optional[bool] = None,
     _chunk_size: Optional[int] = None,  # A hidden parameter for testing purposes.
 ) -> DataFrame:
@@ -77,7 +78,12 @@ def read_parquet(
         raise ValueError("row_groups are only supported when reading multiple non-globbed/wildcarded files")
 
     file_format_config = FileFormatConfig.from_parquet_config(
-        ParquetSourceConfig(coerce_int96_timestamp_unit=pytimeunit, row_groups=row_groups, chunk_size=_chunk_size)
+        ParquetSourceConfig(
+            coerce_int96_timestamp_unit=pytimeunit,
+            row_groups=row_groups,
+            chunk_size=_chunk_size,
+            ignore_corrupt_files=ignore_corrupt_files,
+        )
     )
     storage_config = StorageConfig(multithreaded_io, io_config)
 
