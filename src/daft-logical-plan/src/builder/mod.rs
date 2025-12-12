@@ -696,6 +696,7 @@ impl LogicalPlanBuilder {
     }
 
     #[cfg(feature = "python")]
+    #[allow(clippy::too_many_arguments)]
     pub fn table_write(
         &self,
         root_dir: &str,
@@ -1359,6 +1360,7 @@ impl PyLogicalPlanBuilder {
             .into())
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
         root_dir,
         write_mode,
