@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 import warnings
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 if sys.version_info < (3, 11):
     from typing_extensions import Unpack
@@ -12,6 +12,7 @@ else:
 from daft.ai.openai.provider import OpenAIProvider
 
 if TYPE_CHECKING:
+    from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedderOptions
     from daft.ai.openai.typing import OpenAIProviderOptions
     from daft.ai.protocols import TextEmbedderDescriptor
 
@@ -40,7 +41,7 @@ class LMStudioProvider(OpenAIProvider):
         super().__init__(name or "lm_studio", **options)
 
     def get_text_embedder(
-        self, model: str | None = None, dimensions: int | None = None, **options: Any
+        self, model: str | None = None, dimensions: int | None = None, **options: Unpack[OpenAITextEmbedderOptions]
     ) -> TextEmbedderDescriptor:
         from daft.ai.lm_studio.protocols.text_embedder import LMStudioTextEmbedderDescriptor
 

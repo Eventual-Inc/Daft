@@ -2,24 +2,54 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generic, TypeAlias, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeAlias, TypedDict, TypeVar
 
 from daft.datatype import DataType
 
 if TYPE_CHECKING:
     from typing import Literal
 
+    from pydantic import BaseModel
 
 Options = dict[str, Any]
+
+
+class EmbedTextOptions(TypedDict, total=False):
+    max_retries: int
+
+
+class EmbedImageOptions(TypedDict, total=False):
+    max_retries: int
+
+
+class ClassifyTextOptions(TypedDict, total=False):
+    max_retries: int
+
+
+class ClassifyImageOptions(TypedDict, total=False):
+    max_retries: int
+
+
+class PromptOptions(TypedDict, total=False):
+    return_format: BaseModel
+    system_message: str
+    max_retries: int
+
 
 T = TypeVar("T")
 
 __all__ = [
+    "ClassifyImageOptions",
+    "ClassifyTextOptions",
     "Descriptor",
+    "EmbedImageOptions",
+    "EmbedTextOptions",
     "Embedding",
     "EmbeddingDimensions",
     "Image",
     "Label",
+    "Options",
+    "PromptOptions",
     "UDFOptions",
 ]
 

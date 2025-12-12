@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import sys
+from typing import TYPE_CHECKING, Any
+
+if sys.version_info < (3, 11):
+    from typing_extensions import Unpack
+else:
+    from typing import Unpack
 
 from daft.ai.provider import Provider, ProviderType, load_provider
 from daft.functions.ai._colab_compat import IS_COLAB, clean_pydantic_model
@@ -13,7 +19,14 @@ from daft.udf import cls as daft_cls, method
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
-    from daft.ai.typing import Label
+    from daft.ai.typing import (
+        ClassifyImageOptions,
+        ClassifyTextOptions,
+        EmbedImageOptions,
+        EmbedTextOptions,
+        Label,
+        PromptOptions,
+    )
 
 __all__ = [
     "classify_image",
@@ -59,7 +72,7 @@ def embed_text(
     provider: str | Provider | None = None,
     model: str | None = None,
     dimensions: int | None = None,
-    **options: str,
+    **options: Unpack[EmbedTextOptions],
 ) -> Expression:
     """Returns an expression that embeds text using the specified embedding model and provider.
 
@@ -109,7 +122,6 @@ def embed_text(
         (Showing first 3 of 3 rows)
     """
     from daft.ai._expressions import _TextEmbedderExpression
-    from daft.ai.protocols import TextEmbedder
 
     # load a TextEmbedderDescriptor from the resolved provider
     text_embedder = _resolve_provider(provider, "transformers").get_text_embedder(model, dimensions, **options)
@@ -141,7 +153,7 @@ def embed_image(
     *,
     provider: str | Provider | None = None,
     model: str | None = None,
-    **options: str,
+    **options: Unpack[EmbedImageOptions],
 ) -> Expression:
     """Returns an expression that embeds images using the specified image model and provider.
 
@@ -195,7 +207,6 @@ def embed_image(
         (Showing first 4 of 4 rows)
     """
     from daft.ai._expressions import _ImageEmbedderExpression
-    from daft.ai.protocols import ImageEmbedder
 
     image_embedder = _resolve_provider(provider, "transformers").get_image_embedder(model, **options)
 
@@ -230,7 +241,7 @@ def classify_text(
     *,
     provider: str | Provider | None = None,
     model: str | None = None,
-    **options: str,
+    **options: Unpack[ClassifyTextOptions],
 ) -> Expression:
     """Returns an expression that classifies text using the specified model and provider.
 
@@ -243,7 +254,7 @@ def classify_text(
             The provider to use for the embedding model.
             By default this will use 'transformers' provider
         model (str | None):
-            The embedding model to use. Can be a model instance or a model name.
+            The classifier model to use. Can be a model instance or a model name.
             By default this will use `zero-shot-classification` model
         **options:
             Any additional options to pass for the model.
@@ -279,7 +290,6 @@ def classify_text(
         (Showing first 1 of 1 rows)
     """
     from daft.ai._expressions import _TextClassificationExpression
-    from daft.ai.protocols import TextClassifier
 
     text_classifier = _resolve_provider(provider, "transformers").get_text_classifier(model, **options)
 
@@ -309,7 +319,7 @@ def classify_image(
     *,
     provider: str | Provider | None = None,
     model: str | None = None,
-    **options: str,
+    **options: Unpack[ClassifyImageOptions],
 ) -> Expression:
     """Returns an expression that classifies images using the specified model and provider.
 
@@ -322,7 +332,7 @@ def classify_image(
             The provider to use for the embedding model.
             By default this will use 'transformers' provider
         model (str | None):
-            The embedding model to use. Can be a model instance or a model name.
+            The classifier model to use. Can be a model instance or a model name.
             By default this will use `zero-shot-classification` model
         **options:
             Any additional options to pass for the model.
@@ -374,7 +384,6 @@ def classify_image(
         (Showing first 4 of 4 rows)
     """
     from daft.ai._expressions import _ImageClassificationExpression
-    from daft.ai.protocols import ImageClassifier
 
     image_classifier = _resolve_provider(provider, "transformers").get_image_classifier(model, **options)
 
@@ -410,7 +419,7 @@ def prompt(
     system_message: str | None = None,
     provider: str | Provider | None = None,
     model: str | None = None,
-    **options: str,
+    **options: Any,
 ) -> Expression:
     """Returns an expression that prompts a large language model using the specified model and provider.
 

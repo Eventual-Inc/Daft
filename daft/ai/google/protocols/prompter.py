@@ -9,15 +9,16 @@ from google.genai import types
 
 from daft.ai.metrics import record_token_metrics
 from daft.ai.protocols import Prompter, PrompterDescriptor
-from daft.ai.typing import UDFOptions
+from daft.ai.typing import Options, PromptOptions, UDFOptions
 from daft.dependencies import np
 from daft.file import File
 
 if TYPE_CHECKING:
-    from pydantic import BaseModel
-
     from daft.ai.google.typing import GoogleProviderOptions
-    from daft.ai.typing import Options
+
+
+class GooglePrompterOptions(PromptOptions, total=False):
+    pass
 
 
 @dataclass
@@ -25,10 +26,7 @@ class GooglePrompterDescriptor(PrompterDescriptor):
     provider_name: str
     provider_options: GoogleProviderOptions
     model_name: str
-    model_options: Options
-    system_message: str | None = None
-    return_format: BaseModel | None = None
-    udf_options: UDFOptions | None = None
+    prompt_options: GooglePrompterOptions
 
     def get_provider(self) -> str:
         return self.provider_name
@@ -37,19 +35,21 @@ class GooglePrompterDescriptor(PrompterDescriptor):
         return self.model_name
 
     def get_options(self) -> Options:
-        return self.model_options
+        return dict(self.prompt_options)
 
     def get_udf_options(self) -> UDFOptions:
-        return self.udf_options or UDFOptions(concurrency=None, num_gpus=None)
+        return UDFOptions(
+            concurrency=None,
+            num_gpus=None,
+            max_retries=self.prompt_options["max_retries"],
+        )
 
     def instantiate(self) -> Prompter:
         return GooglePrompter(
             provider_name=self.provider_name,
             provider_options=self.provider_options,
             model=self.model_name,
-            system_message=self.system_message,
-            return_format=self.return_format,
-            generation_config=self.model_options,
+            prompt_options=self.prompt_options,
         )
 
 
@@ -61,14 +61,12 @@ class GooglePrompter(Prompter):
         provider_name: str,
         provider_options: GoogleProviderOptions,
         model: str,
-        system_message: str | None = None,
-        return_format: BaseModel | None = None,
-        generation_config: dict[str, Any] = {},
+        prompt_options: GooglePrompterOptions = {},
     ) -> None:
         self.provider_name = provider_name
         self.model = model
-        self.return_format = return_format
-        self.system_message = system_message
+        self.return_format = prompt_options.get("return_format", None)
+        self.system_message = prompt_options.get("system_message", None)
 
         # Separate Client params from generation params
         client_params_keys = [
@@ -82,7 +80,7 @@ class GooglePrompter(Prompter):
             "http_options",
         ]
         client_params = {**provider_options}
-        for key, value in generation_config.items():
+        for key, value in prompt_options.items():
             if key in client_params_keys:
                 client_params[key] = value
 
@@ -90,7 +88,7 @@ class GooglePrompter(Prompter):
         generation_config_keys = types.GenerateContentConfig.model_fields.keys()
 
         config_params = {}
-        for key, value in generation_config.items():
+        for key, value in prompt_options.items():
             if key in generation_config_keys:
                 config_params[key] = value
 

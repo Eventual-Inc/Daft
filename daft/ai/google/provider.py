@@ -11,6 +11,7 @@ else:
 from daft.ai.provider import Provider
 
 if TYPE_CHECKING:
+    from daft.ai.google.protocols.prompter import GooglePrompterOptions
     from daft.ai.google.typing import GoogleProviderOptions
     from daft.ai.protocols import PrompterDescriptor, TextEmbedderDescriptor
 
@@ -35,22 +36,12 @@ class GoogleProvider(Provider):
         # TODO: Implement GoogleTextEmbedderDescriptor
         raise NotImplementedError("Google text embedder not implemented yet")
 
-    def get_prompter(self, model: str | None = None, **options: Any) -> PrompterDescriptor:
+    def get_prompter(self, model: str | None = None, **options: Unpack[GooglePrompterOptions]) -> PrompterDescriptor:
         from daft.ai.google.protocols.prompter import GooglePrompterDescriptor
-
-        # Extract return_format from options if provided
-        return_format = options.pop("return_format", None)
-        system_message = options.pop("system_message", None)
-
-        # Extract udf options from options if provided
-        udf_options = options.pop("udf_options", None)
 
         return GooglePrompterDescriptor(
             provider_name=self._name,
             provider_options=self._options,
             model_name=(model or self.DEFAULT_PROMPTER_MODEL),
-            model_options=options,
-            system_message=system_message,
-            return_format=return_format,
-            udf_options=udf_options,
+            prompt_options=options,
         )

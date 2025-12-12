@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypedDict
+from typing import TYPE_CHECKING, Any
 
 import transformers
 from transformers import pipeline
@@ -13,17 +13,18 @@ else:
     from typing import Unpack
 
 from daft.ai.protocols import ImageClassifier, ImageClassifierDescriptor
+from daft.ai.typing import ClassifyImageOptions, Options
 from daft.ai.utils import get_gpu_udf_options, get_torch_device
 from daft.dependencies import tf, torch
 
 if TYPE_CHECKING:
     from PIL import Image
 
-    from daft.ai.typing import Label, Options, UDFOptions
+    from daft.ai.typing import Label, UDFOptions
 
 
-class TransformersImageClassifierOptions(TypedDict, total=False):
-    batch_size: int | None
+class TransformersImageClassifierOptions(ClassifyImageOptions, total=False):
+    pass
 
 
 @dataclass
@@ -39,10 +40,12 @@ class TransformersImageClassifierDescriptor(ImageClassifierDescriptor):
         return self.model_name
 
     def get_options(self) -> Options:
-        return self.model_options  # type: ignore
+        return dict(self.model_options)
 
     def get_udf_options(self) -> UDFOptions:
-        return get_gpu_udf_options()
+        udf_options = get_gpu_udf_options()
+        udf_options.max_retries = self.model_options["max_retries"]
+        return udf_options
 
     def instantiate(self) -> ImageClassifier:
         return TransformersImageClassifier(self.model_name, **self.model_options)

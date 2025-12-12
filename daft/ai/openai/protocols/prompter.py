@@ -10,15 +10,16 @@ from openai.types.responses import ResponseUsage
 
 from daft.ai.metrics import record_token_metrics
 from daft.ai.protocols import Prompter, PrompterDescriptor
-from daft.ai.typing import UDFOptions
+from daft.ai.typing import Options, PromptOptions, UDFOptions
 from daft.dependencies import np
 from daft.file import File
 
 if TYPE_CHECKING:
-    from pydantic import BaseModel
-
     from daft.ai.openai.typing import OpenAIProviderOptions
-    from daft.ai.typing import Options
+
+
+class OpenAIPrompterOptions(PromptOptions, total=False):
+    use_chat_completions: bool
 
 
 @dataclass
@@ -26,11 +27,7 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
     provider_name: str
     provider_options: OpenAIProviderOptions
     model_name: str
-    model_options: Options
-    system_message: str | None = None
-    return_format: BaseModel | None = None
-    udf_options: UDFOptions | None = None
-    use_chat_completions: bool = False
+    model_options: OpenAIPrompterOptions
 
     def get_provider(self) -> str:
         return self.provider_name
@@ -39,20 +36,17 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
         return self.model_name
 
     def get_options(self) -> Options:
-        return self.model_options
+        return dict(self.model_options)
 
     def get_udf_options(self) -> UDFOptions:
-        return self.udf_options or UDFOptions(concurrency=None, num_gpus=None)
+        return UDFOptions(concurrency=None, num_gpus=None, max_retries=self.model_options["max_retries"])
 
     def instantiate(self) -> Prompter:
         return OpenAIPrompter(
             provider_name=self.provider_name,
             provider_options=self.provider_options,
             model=self.model_name,
-            system_message=self.system_message,
-            return_format=self.return_format,
-            generation_config=self.model_options,
-            use_chat_completions=self.use_chat_completions,
+            model_options=self.model_options,
         )
 
 
@@ -64,24 +58,21 @@ class OpenAIPrompter(Prompter):
         provider_name: str,
         provider_options: OpenAIProviderOptions,
         model: str,
-        system_message: str | None = None,
-        return_format: BaseModel | None = None,
-        generation_config: dict[str, Any] = {},
-        use_chat_completions: bool = False,
+        model_options: OpenAIPrompterOptions = {},
     ) -> None:
         self.provider_name = provider_name
         self.model = model
-        self.return_format = return_format
-        self.system_message = system_message
-        self.use_chat_completions = use_chat_completions
+        self.return_format = model_options.get("return_format", None)
+        self.system_message = model_options.get("system_message", None)
+        self.use_chat_completions = model_options["use_chat_completions"]
         # Separate client params from generation params
         client_params_keys = ["base_url", "api_key", "timeout", "max_retries"]
         client_params = {**provider_options}
-        for key, value in generation_config.items():
+        for key, value in model_options.items():
             if key in client_params_keys:
                 client_params[key] = value
 
-        self.generation_config = {k: v for k, v in generation_config.items() if k not in client_params_keys}
+        self.generation_config = {k: v for k, v in model_options.items() if k not in client_params_keys}
         self.llm = AsyncOpenAI(**client_params)
 
     @singledispatchmethod

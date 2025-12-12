@@ -10,7 +10,7 @@ from openai.types.create_embedding_response import Usage
 from daft import DataType
 from daft.ai.metrics import record_token_metrics
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
-from daft.ai.typing import EmbeddingDimensions, Options, UDFOptions
+from daft.ai.typing import EmbeddingDimensions, EmbedTextOptions, Options, UDFOptions
 from daft.dependencies import np
 
 if TYPE_CHECKING:
@@ -19,6 +19,10 @@ if TYPE_CHECKING:
 
     from daft.ai.openai.typing import OpenAIProviderOptions
     from daft.ai.typing import Embedding
+
+
+class OpenAITextEmbedderOptions(EmbedTextOptions, total=False):
+    pass
 
 
 @dataclass(frozen=True)
@@ -66,7 +70,7 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
     provider_options: OpenAIProviderOptions
     model_name: str
     dimensions: int | None
-    model_options: Options
+    model_options: OpenAITextEmbedderOptions
 
     def __post_init__(self) -> None:
         if self.provider_options.get("base_url") is None:
@@ -86,7 +90,7 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
         return self.model_name
 
     def get_options(self) -> Options:
-        return self.model_options
+        return dict(self.model_options)
 
     def get_dimensions(self) -> EmbeddingDimensions:
         if self.dimensions is not None:
@@ -94,7 +98,7 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
         return _models[self.model_name].dimensions
 
     def get_udf_options(self) -> UDFOptions:
-        return UDFOptions(concurrency=None, num_gpus=None)
+        return UDFOptions(concurrency=None, num_gpus=None, max_retries=self.model_options["max_retries"])
 
     def is_async(self) -> bool:
         return True

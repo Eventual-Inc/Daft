@@ -12,6 +12,7 @@ from daft.ai.typing import EmbeddingDimensions, Options, UDFOptions
 from daft.ai.utils import get_http_udf_options
 
 if TYPE_CHECKING:
+    from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedderOptions
     from daft.ai.openai.typing import OpenAIProviderOptions
 
 
@@ -26,7 +27,7 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
     provider_name: str
     provider_options: OpenAIProviderOptions
     model_name: str
-    model_options: Options
+    model_options: OpenAITextEmbedderOptions
 
     def get_provider(self) -> str:
         return "lm_studio"
@@ -35,10 +36,12 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
         return self.model_name
 
     def get_options(self) -> Options:
-        return self.model_options
+        return dict(self.model_options)
 
     def get_udf_options(self) -> UDFOptions:
-        return get_http_udf_options()
+        options = get_http_udf_options()
+        options.max_retries = self.model_options["max_retries"]
+        return options
 
     def is_async(self) -> bool:
         return True

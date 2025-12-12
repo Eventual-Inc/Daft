@@ -13,10 +13,11 @@ else:
     from typing import Unpack
 
 from daft.ai.protocols import TextClassifier, TextClassifierDescriptor
+from daft.ai.typing import ClassifyTextOptions, Options
 from daft.ai.utils import get_gpu_udf_options, get_torch_device
 
 if TYPE_CHECKING:
-    from daft.ai.typing import Label, Options, UDFOptions
+    from daft.ai.typing import Label, UDFOptions
 
 
 class TransformersTextClassiferResult(TypedDict):
@@ -25,8 +26,8 @@ class TransformersTextClassiferResult(TypedDict):
     scores: list[float]  # probability of each label
 
 
-class TransformersTextClassifierOptions(TypedDict, total=False):
-    batch_size: int | None
+class TransformersTextClassifierOptions(ClassifyTextOptions, total=False):
+    pass
 
 
 @dataclass
@@ -42,10 +43,12 @@ class TransformersTextClassifierDescriptor(TextClassifierDescriptor):
         return self.model_name
 
     def get_options(self) -> Options:
-        return self.model_options  # type: ignore
+        return dict(self.model_options)
 
     def get_udf_options(self) -> UDFOptions:
-        return get_gpu_udf_options()
+        udf_options = get_gpu_udf_options()
+        udf_options.max_retries = self.model_options["max_retries"]
+        return udf_options
 
     def instantiate(self) -> TextClassifier:
         return TransformersTextClassifier(self.model_name, **self.model_options)

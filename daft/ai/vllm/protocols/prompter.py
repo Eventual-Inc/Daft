@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from daft.ai.protocols import Prompter, PrompterDescriptor
 
 if TYPE_CHECKING:
     from daft.ai.typing import Options, UDFOptions
+
+
+class VLLMPrompterOptions(TypedDict, total=False):
+    pass
 
 
 @dataclass
