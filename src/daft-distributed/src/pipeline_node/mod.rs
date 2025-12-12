@@ -435,6 +435,29 @@ fn make_in_memory_task_from_materialized_outputs(
     )
 }
 
+fn make_empty_scan_task(
+    task_context: TaskContext,
+    input_schema: SchemaRef,
+    node: &Arc<dyn PipelineNodeImpl>,
+) -> SwordfishTask {
+    let transformed_plan = LocalPhysicalPlan::empty_scan(
+        input_schema,
+        LocalNodeContext {
+            origin_node_id: Some(node.node_id() as usize),
+            additional: None,
+        },
+    );
+    let psets = HashMap::new();
+    SwordfishTask::new(
+        task_context,
+        transformed_plan,
+        node.config().execution_config.clone(),
+        psets,
+        SchedulingStrategy::Spread,
+        node.context().to_hashmap(),
+    )
+}
+
 fn append_plan_to_existing_task<F>(
     submittable_task: SubmittableTask<SwordfishTask>,
     node: &Arc<dyn PipelineNodeImpl>,

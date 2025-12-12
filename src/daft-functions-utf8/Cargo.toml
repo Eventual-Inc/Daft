@@ -1,5 +1,6 @@
 [dependencies]
-aho-corasick = "1.1.4"
+arrow = "54.2.1"
+aho-corasick = "1.1.3"
 daft-arrow = {path = "../daft-arrow"}
 chrono = {workspace = true}
 chrono-tz = {workspace = true}
