@@ -144,15 +144,15 @@ fn make_csv_writer<B: StorageBackend + Send + Sync>(
         let mut builder = WriterBuilder::new().with_header(hdr);
 
         if let Some(quote) = quote {
-            builder = builder.with_quote(quote)
+            builder = builder.with_quote(quote);
         }
 
         if let Some(escape) = escape {
-            builder = builder.with_escape(escape)
+            builder = builder.with_escape(escape);
         }
 
         if let Some(delimiter) = delimiter {
-            builder = builder.with_delimiter(delimiter)
+            builder = builder.with_delimiter(delimiter);
         }
         builder.build(backend)
     });

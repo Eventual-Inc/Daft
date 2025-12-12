@@ -80,7 +80,7 @@ impl PyArrowWriter {
             };
             let delimiter = format_option
                 .delimiter
-                .map(|b| String::from_utf8(vec![b]).unwrap_or(",".to_string()));
+                .map(|b| String::from_utf8(vec![b]).unwrap_or_else(|_| ",".to_string()));
             let header = format_option.header;
             let py_writer = file_writer_class.call1((
                 root_dir,

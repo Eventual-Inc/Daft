@@ -351,7 +351,7 @@ pub enum FormatOption {
 impl FormatOption {
     pub fn to_csv(self) -> CsvFormatOption {
         match self {
-            FormatOption::Csv(csv) => csv,
+            Self::Csv(csv) => csv,
             _ => CsvFormatOption::default(),
         }
     }
@@ -399,23 +399,6 @@ impl PyFormatOption {
     pub fn parquet(_cls: &pyo3::prelude::Bound<pyo3::types::PyType>) -> Self {
         Self {
             inner: FormatOption::Parquet(ParquetFormatOption {}),
-        }
-    }
-
-    pub fn kind(&self) -> String {
-        match &self.inner {
-            FormatOption::Csv(_) => "csv".to_string(),
-            FormatOption::Json(_) => "json".to_string(),
-            FormatOption::Parquet(_) => "parquet".to_string(),
-        }
-    }
-
-    pub fn csv_delimiter(&self) -> Option<String> {
-        match &self.inner {
-            FormatOption::Csv(csv) => csv
-                .delimiter
-                .map(|b| String::from_utf8(vec![b]).unwrap_or_else(|_| ",".to_string())),
-            _ => None,
         }
     }
 }
