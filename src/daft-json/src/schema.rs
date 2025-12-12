@@ -141,7 +141,7 @@ async fn infer_schema<R>(
     mut reader: R,
     max_rows: Option<usize>,
     max_bytes: Option<usize>,
-) -> DaftResult<arrow2::datatypes::Schema>
+) -> DaftResult<daft_arrow::datatypes::Schema>
 where
     R: tokio::io::AsyncBufRead + Unpin + Send,
 {
@@ -198,7 +198,7 @@ where
                     infer_records_schema(&parsed_record).context(ArrowSnafu)
                 });
             // Collect all inferred dtypes for each column.
-            let mut column_types: IndexMap<String, HashSet<arrow2::datatypes::DataType>> =
+            let mut column_types: IndexMap<String, HashSet<daft_arrow::datatypes::DataType>> =
                 IndexMap::new();
             while let Some(schema) = schema_stream.next().await.transpose()? {
                 for field in schema.fields {

@@ -13,7 +13,7 @@ impl DaftHllSketchAggable for UInt64Array {
 
     fn hll_sketch(&self) -> Self::Output {
         let mut hll = HyperLogLog::default();
-        for &value in self.as_arrow().iter().flatten() {
+        for &value in self.as_arrow2().iter().flatten() {
             hll.add_already_hashed(value);
         }
         let array = (self.name(), hll.registers.as_ref(), NUM_REGISTERS).into();
@@ -21,7 +21,7 @@ impl DaftHllSketchAggable for UInt64Array {
     }
 
     fn grouped_hll_sketch(&self, group_indices: &GroupIndices) -> Self::Output {
-        let data = self.as_arrow();
+        let data = self.as_arrow2();
         let mut bytes = Vec::<u8>::with_capacity(group_indices.len() * NUM_REGISTERS);
         for group in group_indices {
             let mut hll = HyperLogLog::default();

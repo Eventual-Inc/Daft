@@ -70,7 +70,7 @@ impl Growable for PythonGrowable<'_> {
         let buffer = std::mem::take(&mut self.buffer);
 
         let grown_validity = std::mem::take(&mut self.growable_validity);
-        let built_validity = grown_validity.map(|v| v.build());
+        let built_validity = grown_validity.and_then(|v| v.build());
 
         Ok(PythonArray::new(field, buffer.into(), built_validity).into_series())
     }

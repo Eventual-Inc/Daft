@@ -8,10 +8,10 @@ use std::{
     sync::Arc,
 };
 
-use arrow2::{array::Array, chunk::Chunk};
 use common_display::table_display::{StrValue, make_comfy_table};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_compute_runtime;
+use daft_arrow::{array::Array, chunk::Chunk};
 use daft_core::{
     array::ops::{
         DaftApproxCountDistinctAggable, DaftHllSketchAggable, GroupIndices, full::FullNull,
@@ -147,10 +147,12 @@ impl RecordBatch {
         Ok(Self::new_unchecked(schema, columns?, num_rows))
     }
 
+    #[deprecated(note = "arrow2 migration")]
+    #[allow(deprecated, reason = "arrow2 migration")]
     pub fn get_inner_arrow_arrays(
         &self,
-    ) -> impl Iterator<Item = Box<dyn arrow2::array::Array>> + '_ {
-        self.columns.iter().map(|s| s.to_arrow())
+    ) -> impl Iterator<Item = Box<dyn daft_arrow::array::Array>> + '_ {
+        self.columns.iter().map(|s| s.to_arrow2())
     }
 
     /// Create a new [`RecordBatch`] and validate against `num_rows`
@@ -256,7 +258,7 @@ impl RecordBatch {
 
     pub fn from_arrow<S: Into<SchemaRef>>(
         schema: S,
-        arrays: Vec<Box<dyn arrow2::array::Array>>,
+        arrays: Vec<Box<dyn daft_arrow::array::Array>>,
     ) -> DaftResult<Self> {
         // validate we have at least one array
         if arrays.is_empty() {
@@ -400,7 +402,7 @@ impl RecordBatch {
         };
         let indices: daft_core::array::DataArray<daft_core::datatypes::UInt64Type> =
             UInt64Array::from(("idx", values));
-        self.take(&indices.into_series())
+        self.take(&indices)
     }
 
     pub fn add_monotonically_increasing_id(
@@ -424,7 +426,7 @@ impl RecordBatch {
 
         if num == 0 {
             let indices = UInt64Array::empty("idx", &DataType::UInt64);
-            return self.take(&indices.into_series());
+            return self.take(&indices);
         }
 
         let self_len = self.len();
@@ -439,7 +441,7 @@ impl RecordBatch {
             })
             .collect();
         let indices = UInt64Array::from(("idx", sample_points));
-        self.take(&indices.into_series())
+        self.take(&indices)
     }
 
     pub fn size_bytes(&self) -> usize {
@@ -491,7 +493,13 @@ impl RecordBatch {
             // num_filtered is the number of 'false' or null values in the mask
             let num_filtered = mask
                 .validity()
-                .map(|validity| arrow2::bitmap::and(validity, mask.as_bitmap()).unset_bits())
+                .map(|validity| {
+                    daft_arrow::bitmap::and(
+                        &daft_arrow::buffer::from_null_buffer(validity.clone()),
+                        mask.as_bitmap(),
+                    )
+                    .unset_bits()
+                })
                 .unwrap_or_else(|| mask.as_bitmap().unset_bits());
             mask.len() - num_filtered
         };
@@ -499,7 +507,7 @@ impl RecordBatch {
         Self::new_with_size(self.schema.clone(), new_series?, num_rows)
     }
 
-    pub fn take(&self, idx: &Series) -> DaftResult<Self> {
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
         let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.take(idx)).collect();
         Self::new_with_size(self.schema.clone(), new_series?, idx.len())
     }
@@ -1538,17 +1546,21 @@ impl RecordBatch {
         )
     }
 
+    #[deprecated(note = "arrow2 migration")]
+    #[allow(deprecated, reason = "arrow2 migration")]
     pub fn to_chunk(&self) -> Chunk<Box<dyn Array>> {
-        Chunk::new(self.columns.iter().map(|s| s.to_arrow()).collect())
+        Chunk::new(self.columns.iter().map(|s| s.to_arrow2()).collect())
     }
 
     pub fn to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
         let buffer = Vec::with_capacity(self.size_bytes());
-        let schema = self.schema.to_arrow()?;
-        let options = arrow2::io::ipc::write::WriteOptions { compression: None };
-        let mut writer = arrow2::io::ipc::write::StreamWriter::new(buffer, options);
+        #[allow(deprecated, reason = "arrow2 migration")]
+        let schema = self.schema.to_arrow2()?;
+        let options = daft_arrow::io::ipc::write::WriteOptions { compression: None };
+        let mut writer = daft_arrow::io::ipc::write::StreamWriter::new(buffer, options);
         writer.start(&schema, None)?;
 
+        #[allow(deprecated, reason = "arrow2 migration")]
         let chunk = self.to_chunk();
         writer.write(&chunk, None)?;
 
@@ -1560,16 +1572,16 @@ impl RecordBatch {
 
     pub fn from_ipc_stream(buffer: &[u8]) -> DaftResult<Self> {
         let mut cursor = Cursor::new(buffer);
-        let stream_metadata = arrow2::io::ipc::read::read_stream_metadata(&mut cursor)?;
+        let stream_metadata = daft_arrow::io::ipc::read::read_stream_metadata(&mut cursor)?;
         let schema = Arc::new(Schema::from(stream_metadata.schema.clone()));
-        let reader = arrow2::io::ipc::read::StreamReader::new(cursor, stream_metadata, None);
+        let reader = daft_arrow::io::ipc::read::StreamReader::new(cursor, stream_metadata, None);
 
         let mut tables = reader
             .into_iter()
             .map(|state| {
                 let state = state?;
                 let arrow_chunk = match state {
-                    arrow2::io::ipc::read::StreamState::Some(chunk) => chunk,
+                    daft_arrow::io::ipc::read::StreamState::Some(chunk) => chunk,
                     _ => panic!("State should not be waiting when reading from IPC buffer"),
                 };
                 Self::from_arrow(schema.clone(), arrow_chunk.into_arrays())
@@ -1581,16 +1593,16 @@ impl RecordBatch {
     }
 }
 
-#[cfg(feature = "arrow")]
 impl TryFrom<RecordBatch> for arrow_array::RecordBatch {
     type Error = DaftError;
 
+    #[allow(deprecated, reason = "arrow2 migration")]
     fn try_from(record_batch: RecordBatch) -> DaftResult<Self> {
-        let schema = Arc::new(record_batch.schema.to_arrow()?.into());
+        let schema = Arc::new(record_batch.schema.to_arrow2()?.into());
         let columns = record_batch
             .columns
             .iter()
-            .map(|s| s.to_arrow().into())
+            .map(|s| s.to_arrow2().into())
             .collect::<Vec<_>>();
         Self::try_new(schema, columns).map_err(DaftError::ArrowRsError)
     }
@@ -1615,7 +1627,7 @@ impl TryFrom<RecordBatch> for FileInfos {
             .utf8()?
             .data()
             .as_any()
-            .downcast_ref::<arrow2::array::Utf8Array<i64>>()
+            .downcast_ref::<daft_arrow::array::Utf8Array<i64>>()
             .unwrap()
             .iter()
             .map(|s| s.unwrap().to_string())
@@ -1624,7 +1636,7 @@ impl TryFrom<RecordBatch> for FileInfos {
             .i64()?
             .data()
             .as_any()
-            .downcast_ref::<arrow2::array::Int64Array>()
+            .downcast_ref::<daft_arrow::array::Int64Array>()
             .unwrap()
             .iter()
             .map(|n| n.copied())
@@ -1633,7 +1645,7 @@ impl TryFrom<RecordBatch> for FileInfos {
             .i64()?
             .data()
             .as_any()
-            .downcast_ref::<arrow2::array::Int64Array>()
+            .downcast_ref::<daft_arrow::array::Int64Array>()
             .unwrap()
             .iter()
             .map(|n| n.copied())
@@ -1649,16 +1661,16 @@ impl TryFrom<&FileInfos> for RecordBatch {
         let columns = vec![
             Series::try_from((
                 "path",
-                arrow2::array::Utf8Array::<i64>::from_iter_values(file_info.file_paths.iter())
+                daft_arrow::array::Utf8Array::<i64>::from_iter_values(file_info.file_paths.iter())
                     .to_boxed(),
             ))?,
             Series::try_from((
                 "size",
-                arrow2::array::PrimitiveArray::<i64>::from(&file_info.file_sizes).to_boxed(),
+                daft_arrow::array::PrimitiveArray::<i64>::from(&file_info.file_sizes).to_boxed(),
             ))?,
             Series::try_from((
                 "num_rows",
-                arrow2::array::PrimitiveArray::<i64>::from(&file_info.num_rows).to_boxed(),
+                daft_arrow::array::PrimitiveArray::<i64>::from(&file_info.num_rows).to_boxed(),
             ))?,
         ];
         Self::from_nonempty_columns(columns)

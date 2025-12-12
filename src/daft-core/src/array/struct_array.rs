@@ -14,7 +14,7 @@ pub struct StructArray {
 
     /// Column representations
     pub children: Vec<Series>,
-    validity: Option<arrow2::bitmap::Bitmap>,
+    validity: Option<daft_arrow::buffer::NullBuffer>,
     len: usize,
 }
 
@@ -28,7 +28,7 @@ impl StructArray {
     pub fn new<F: Into<Arc<Field>>>(
         field: F,
         children: Vec<Series>,
-        validity: Option<arrow2::bitmap::Bitmap>,
+        validity: Option<daft_arrow::buffer::NullBuffer>,
     ) -> Self {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
@@ -93,14 +93,14 @@ impl StructArray {
         }
     }
 
-    pub fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
+    pub fn validity(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
         self.validity.as_ref()
     }
 
     pub fn null_count(&self) -> usize {
         match self.validity() {
             None => 0,
-            Some(validity) => validity.unset_bits(),
+            Some(validity) => validity.null_count(),
         }
     }
 
@@ -118,7 +118,7 @@ impl StructArray {
             arrays.to_vec(),
             arrays
                 .iter()
-                .map(|a| a.validity.as_ref().map_or(0usize, |v| v.unset_bits()))
+                .map(|a| a.validity.as_ref().map_or(0usize, |v| v.null_count()))
                 .sum::<usize>()
                 > 0,
             arrays.iter().map(|a| a.len()).sum(),
@@ -176,20 +176,23 @@ impl StructArray {
                 .collect::<DaftResult<Vec<Series>>>()?,
             self.validity
                 .as_ref()
-                .map(|v| v.clone().sliced(start, end - start)),
+                .map(|v| v.clone().slice(start, end - start)),
         ))
     }
-
-    pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+    #[deprecated(note = "arrow2 migration")]
+    pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
         let arrow_dtype = self.data_type().to_arrow().unwrap();
-        Box::new(arrow2::array::StructArray::new(
+        Box::new(daft_arrow::array::StructArray::new(
             arrow_dtype,
-            self.children.iter().map(|s| s.to_arrow()).collect(),
-            self.validity.clone(),
+            self.children.iter().map(|s| s.to_arrow2()).collect(),
+            daft_arrow::buffer::wrap_null_buffer(self.validity.clone()),
         ))
     }
 
-    pub fn with_validity(&self, validity: Option<arrow2::bitmap::Bitmap>) -> DaftResult<Self> {
+    pub fn with_validity(
+        &self,
+        validity: Option<daft_arrow::buffer::NullBuffer>,
+    ) -> DaftResult<Self> {
         if let Some(v) = &validity
             && v.len() != self.len()
         {

@@ -127,7 +127,7 @@ impl BlockingSink for WindowOrderByOnlySink {
                     }
 
                     // Convert to RecordBatch for window operations
-                    let tables = sorted.get_tables()?;
+                    let tables = sorted.record_batches();
                     let mut out_batches = Vec::with_capacity(tables.len());
 
                     // Process each batch with window functions

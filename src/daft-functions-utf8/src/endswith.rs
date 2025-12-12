@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use common_error::DaftResult;
 use daft_core::{
     prelude::{DataType, Field, Schema},
@@ -71,7 +72,7 @@ mod tests {
     fn check_endswith_utf_arrays_broadcast() -> DaftResult<()> {
         let data = Utf8Array::from((
             "data",
-            Box::new(arrow2::array::Utf8Array::<i64>::from(vec![
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from(vec![
                 "x_foo".into(),
                 "y_foo".into(),
                 "z_bar".into(),
@@ -80,16 +81,18 @@ mod tests {
         .into_series();
         let pattern = Utf8Array::from((
             "pattern",
-            Box::new(arrow2::array::Utf8Array::<i64>::from(vec!["foo".into()])),
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from(vec![
+                "foo".into(),
+            ])),
         ))
         .into_series();
         let result = super::endswith_impl(&data, &pattern)?;
         let result = result.bool()?;
 
         assert_eq!(result.len(), 3);
-        assert!(result.as_arrow().value(0));
-        assert!(result.as_arrow().value(1));
-        assert!(!result.as_arrow().value(2));
+        assert!(result.as_arrow2().value(0));
+        assert!(result.as_arrow2().value(1));
+        assert!(!result.as_arrow2().value(2));
         Ok(())
     }
 
@@ -97,7 +100,7 @@ mod tests {
     fn check_endswith_utf_arrays() -> DaftResult<()> {
         let data = Utf8Array::from((
             "data",
-            Box::new(arrow2::array::Utf8Array::<i64>::from(vec![
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from(vec![
                 "x_foo".into(),
                 "y_foo".into(),
                 "z_bar".into(),
@@ -106,7 +109,7 @@ mod tests {
         .into_series();
         let pattern = Utf8Array::from((
             "pattern",
-            Box::new(arrow2::array::Utf8Array::<i64>::from(vec![
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from(vec![
                 "foo".into(),
                 "wrong".into(),
                 "bar".into(),
@@ -118,9 +121,9 @@ mod tests {
         let result = result.bool()?;
 
         assert_eq!(result.len(), 3);
-        assert!(result.as_arrow().value(0));
-        assert!(!result.as_arrow().value(1));
-        assert!(result.as_arrow().value(2));
+        assert!(result.as_arrow2().value(0));
+        assert!(!result.as_arrow2().value(1));
+        assert!(result.as_arrow2().value(2));
         Ok(())
     }
 }

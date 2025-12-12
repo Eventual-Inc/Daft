@@ -10,7 +10,7 @@ impl DaftMergeSketchAggable for &StructArray {
     type Output = DaftResult<StructArray>;
 
     fn merge_sketch(&self) -> Self::Output {
-        let sketches_array = daft_sketch::from_arrow2(self.to_arrow())?;
+        let sketches_array = daft_sketch::from_arrow2(self.to_arrow2())?;
         let sketch =
             sketches_array
                 .into_iter()
@@ -37,7 +37,7 @@ impl DaftMergeSketchAggable for &StructArray {
     }
 
     fn grouped_merge_sketch(&self, groups: &GroupIndices) -> Self::Output {
-        let sketches_array = daft_sketch::from_arrow2(self.to_arrow())?;
+        let sketches_array = daft_sketch::from_arrow2(self.to_arrow2())?;
 
         let sketch_per_group = groups
             .iter()

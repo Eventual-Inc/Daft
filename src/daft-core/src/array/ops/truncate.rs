@@ -17,7 +17,7 @@ macro_rules! impl_int_truncate {
     ($DT:ty) => {
         impl DataArray<$DT> {
             pub fn iceberg_truncate(&self, w: i64) -> DaftResult<DataArray<$DT>> {
-                let as_arrowed = self.as_arrow();
+                let as_arrowed = self.as_arrow2();
 
                 let trun_value = as_arrowed.into_iter().map(|v| {
                     v.map(|v| {
@@ -26,7 +26,7 @@ macro_rules! impl_int_truncate {
                         t as <$DT as DaftNumericType>::Native
                     })
                 });
-                let array = Box::new(arrow2::array::PrimitiveArray::from_iter(trun_value));
+                let array = Box::new(daft_arrow::array::PrimitiveArray::from_iter(trun_value));
                 Ok(<DataArray<$DT>>::from((self.name(), array)))
             }
         }
@@ -45,7 +45,7 @@ impl_int_truncate!(UInt64Type);
 
 impl Decimal128Array {
     pub fn iceberg_truncate(&self, w: i64) -> DaftResult<Self> {
-        let as_arrow = self.as_arrow();
+        let as_arrow = self.as_arrow2();
         let trun_value = as_arrow.into_iter().map(|v| {
             v.map(|i| {
                 let w = w as i128;
@@ -59,16 +59,16 @@ impl Decimal128Array {
 
 impl Utf8Array {
     pub fn iceberg_truncate(&self, w: i64) -> DaftResult<Self> {
-        let as_arrow = self.as_arrow();
-        let substring = arrow2::compute::substring::utf8_substring(as_arrow, 0, &Some(w));
+        let as_arrow = self.as_arrow2();
+        let substring = daft_arrow::compute::substring::utf8_substring(as_arrow, 0, &Some(w));
         Ok(Self::from((self.name(), Box::new(substring))))
     }
 }
 
 impl BinaryArray {
     pub fn iceberg_truncate(&self, w: i64) -> DaftResult<Self> {
-        let as_arrow = self.as_arrow();
-        let substring = arrow2::compute::substring::binary_substring(as_arrow, 0, &Some(w));
+        let as_arrow = self.as_arrow2();
+        let substring = daft_arrow::compute::substring::binary_substring(as_arrow, 0, &Some(w));
         Ok(Self::from((self.name(), Box::new(substring))))
     }
 }

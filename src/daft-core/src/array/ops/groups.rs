@@ -3,8 +3,8 @@ use std::{
     hash::{BuildHasherDefault, Hash},
 };
 
-use arrow2::array::Array;
 use common_error::DaftResult;
+use daft_arrow::array::Array;
 use fnv::FnvHashMap;
 
 use super::{IntoGroups, as_arrow::AsArrow};
@@ -101,7 +101,8 @@ where
     <T as DaftNumericType>::Native: std::cmp::Eq,
 {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        let array: &arrow2::array::PrimitiveArray<<T as DaftNumericType>::Native> = self.as_arrow();
+        let array: &daft_arrow::array::PrimitiveArray<<T as DaftNumericType>::Native> =
+            self.as_arrow2();
         if array.null_count() > 0 {
             make_groups(array.iter())
         } else {
@@ -118,7 +119,8 @@ where
     <T as DaftNumericType>::Native: std::cmp::Eq,
 {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
-        let array: &arrow2::array::PrimitiveArray<<T as DaftNumericType>::Native> = self.as_arrow();
+        let array: &daft_arrow::array::PrimitiveArray<<T as DaftNumericType>::Native> =
+            self.as_arrow2();
         if array.null_count() > 0 {
             make_unique_idxs(array.iter())
         } else {
@@ -129,7 +131,7 @@ where
 
 impl IntoGroups for Decimal128Array {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        let array = self.as_arrow();
+        let array = self.as_arrow2();
         if array.null_count() > 0 {
             make_groups(array.iter())
         } else {
@@ -140,7 +142,7 @@ impl IntoGroups for Decimal128Array {
 
 impl IntoUniqueIdxs for Decimal128Array {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
-        let array = self.as_arrow();
+        let array = self.as_arrow2();
         if array.null_count() > 0 {
             make_unique_idxs(array.iter())
         } else {
@@ -151,7 +153,7 @@ impl IntoUniqueIdxs for Decimal128Array {
 
 impl IntoGroups for Float32Array {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        let array = self.as_arrow();
+        let array = self.as_arrow2();
         if array.null_count() > 0 {
             make_groups(array.iter().map(move |f| {
                 f.map(|v| {
@@ -176,7 +178,7 @@ impl IntoGroups for Float32Array {
 
 impl IntoUniqueIdxs for Float32Array {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
-        let array = self.as_arrow();
+        let array = self.as_arrow2();
         if array.null_count() > 0 {
             make_unique_idxs(array.iter().map(move |f| {
                 f.map(|v| {
@@ -201,7 +203,7 @@ impl IntoUniqueIdxs for Float32Array {
 
 impl IntoGroups for Float64Array {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        let array = self.as_arrow();
+        let array = self.as_arrow2();
         if array.null_count() > 0 {
             make_groups(array.iter().map(move |f| {
                 f.map(|v| {
@@ -226,7 +228,7 @@ impl IntoGroups for Float64Array {
 
 impl IntoUniqueIdxs for Float64Array {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
-        let array = self.as_arrow();
+        let array = self.as_arrow2();
         if array.null_count() > 0 {
             make_unique_idxs(array.iter().map(move |f| {
                 f.map(|v| {
@@ -251,7 +253,7 @@ impl IntoUniqueIdxs for Float64Array {
 
 impl IntoGroups for Utf8Array {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        let array = self.as_arrow();
+        let array = self.as_arrow2();
         if array.null_count() > 0 {
             make_groups(array.iter())
         } else {
@@ -262,7 +264,7 @@ impl IntoGroups for Utf8Array {
 
 impl IntoUniqueIdxs for Utf8Array {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
-        let array = self.as_arrow();
+        let array = self.as_arrow2();
         if array.null_count() > 0 {
             make_unique_idxs(array.iter())
         } else {
@@ -273,7 +275,7 @@ impl IntoUniqueIdxs for Utf8Array {
 
 impl IntoGroups for BinaryArray {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        let array = self.as_arrow();
+        let array = self.as_arrow2();
         if array.null_count() > 0 {
             make_groups(array.iter())
         } else {
@@ -284,7 +286,7 @@ impl IntoGroups for BinaryArray {
 
 impl IntoUniqueIdxs for BinaryArray {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
-        let array = self.as_arrow();
+        let array = self.as_arrow2();
         if array.null_count() > 0 {
             make_unique_idxs(array.iter())
         } else {
@@ -295,7 +297,7 @@ impl IntoUniqueIdxs for BinaryArray {
 
 impl IntoGroups for FixedSizeBinaryArray {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        let array = self.as_arrow();
+        let array = self.as_arrow2();
         if array.null_count() > 0 {
             make_groups(array.iter())
         } else {
@@ -306,7 +308,7 @@ impl IntoGroups for FixedSizeBinaryArray {
 
 impl IntoUniqueIdxs for FixedSizeBinaryArray {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
-        let array = self.as_arrow();
+        let array = self.as_arrow2();
         if array.null_count() > 0 {
             make_unique_idxs(array.iter())
         } else {
@@ -317,7 +319,7 @@ impl IntoUniqueIdxs for FixedSizeBinaryArray {
 
 impl IntoGroups for BooleanArray {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        let array = self.as_arrow();
+        let array = self.as_arrow2();
         if array.null_count() > 0 {
             make_groups(array.iter())
         } else {
@@ -328,7 +330,7 @@ impl IntoGroups for BooleanArray {
 
 impl IntoUniqueIdxs for BooleanArray {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
-        let array = self.as_arrow();
+        let array = self.as_arrow2();
         if array.null_count() > 0 {
             make_unique_idxs(array.iter())
         } else {

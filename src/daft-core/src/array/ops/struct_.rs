@@ -1,4 +1,5 @@
 use common_error::{DaftError, DaftResult};
+use daft_arrow::buffer::NullBuffer;
 
 use crate::{array::StructArray, series::Series};
 
@@ -8,12 +9,8 @@ impl StructArray {
             if child.name() == name {
                 return match self.validity() {
                     Some(valid) => {
-                        let all_valid = match child.validity() {
-                            Some(child_valid) => child_valid & valid,
-                            None => valid.clone(),
-                        };
-
-                        child.with_validity(Some(all_valid))
+                        let all_valid = NullBuffer::union(child.validity(), Some(valid));
+                        child.with_validity(all_valid)
                     }
                     None => Ok(child.clone()),
                 };
@@ -33,16 +30,16 @@ impl StructArray {
 
 #[cfg(test)]
 mod tests {
-    use arrow2::bitmap::Bitmap;
     use common_error::DaftResult;
+    use daft_arrow::buffer::NullBuffer;
 
     use crate::prelude::*;
 
     #[test]
     fn test_struct_get_invalid() -> DaftResult<()> {
-        let child_validity = Bitmap::from(&[true, true, false, false]);
-        let parent_validity = Bitmap::from(&[true, false, false, true]);
-        let combined_validity = Bitmap::from(&[true, false, false, false]);
+        let child_validity = NullBuffer::from(&[true, true, false, false]);
+        let parent_validity = NullBuffer::from(&[true, false, false, true]);
+        let combined_validity = NullBuffer::from(&[true, false, false, false]);
 
         let child = Int64Array::from(("bar", (0..4).collect::<Vec<i64>>()))
             .with_validity(Some(child_validity.clone()))?;

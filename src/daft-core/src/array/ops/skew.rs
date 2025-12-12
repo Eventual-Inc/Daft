@@ -1,5 +1,5 @@
-use arrow2::array::PrimitiveArray;
 use common_error::DaftResult;
+use daft_arrow::array::PrimitiveArray;
 
 use crate::{
     array::{

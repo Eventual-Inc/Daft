@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::DataArray,
@@ -107,12 +108,12 @@ where
             })?;
             let arrow_result = arr_iter
                 .map(|val| Some(right_most_chars(val?, n)))
-                .collect::<arrow2::array::Utf8Array<i64>>();
+                .collect::<daft_arrow::array::Utf8Array<i64>>();
             Utf8Array::from((arr.name(), Box::new(arrow_result)))
         }
         _ => {
             let arrow_result = arr_iter
-                .zip(nchars.as_arrow().iter())
+                .zip(nchars.as_arrow2().iter())
                 .map(|(val, n)| match (val, n) {
                     (Some(val), Some(nchar)) => {
                         let nchar: usize = NumCast::from(*nchar).ok_or_else(|| {
@@ -124,7 +125,7 @@ where
                     }
                     _ => Ok(None),
                 })
-                .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+                .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>()?;
 
             Utf8Array::from((arr.name(), Box::new(arrow_result)))
         }

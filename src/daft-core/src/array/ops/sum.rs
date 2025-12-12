@@ -1,5 +1,5 @@
-use arrow2::array::Array;
 use common_error::DaftResult;
+use daft_arrow::array::Array;
 
 use super::{DaftSumAggable, as_arrow::AsArrow};
 use crate::{array::ops::GroupIndices, datatypes::*};
@@ -9,8 +9,8 @@ macro_rules! impl_daft_numeric_agg {
             type Output = DaftResult<DataArray<$T>>;
 
             fn sum(&self) -> Self::Output {
-                let primitive_arr = self.as_arrow();
-                let sum_value = arrow2::compute::aggregate::sum_primitive(primitive_arr);
+                let primitive_arr = self.as_arrow2();
+                let sum_value = daft_arrow::compute::aggregate::sum_primitive(primitive_arr);
                 Ok(DataArray::<$T>::from_iter(
                     self.field.clone(),
                     std::iter::once(sum_value),
@@ -18,7 +18,7 @@ macro_rules! impl_daft_numeric_agg {
             }
 
             fn grouped_sum(&self, groups: &GroupIndices) -> Self::Output {
-                let arrow_array = self.as_arrow();
+                let arrow_array = self.as_arrow2();
                 let sum_per_group = if arrow_array.null_count() > 0 {
                     DataArray::<$T>::from_iter(
                         self.field.clone(),

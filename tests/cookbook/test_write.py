@@ -55,6 +55,8 @@ def test_empty_parquet_write_without_partitioning(tmp_path, write_mode, with_mor
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
     assert len(pd_df) == 1
+    assert pd_df._preview.partition is None
+    pd_df.__repr__()
     assert len(pd_df._preview.partition) == 1
 
 
@@ -66,11 +68,10 @@ def test_empty_parquet_write_with_partitioning(tmp_path, write_mode, with_morsel
     # Create a unique path to make sure that the writer is comfortable with nonexistent directories
     path = os.path.join(tmp_path, str(uuid.uuid4()))
     output_files = df.write_parquet(path, partition_cols=["Borough"], write_mode=write_mode)
-    read_back_pd_df = daft.read_parquet(os.path.join(path, "**/*.parquet")).to_pandas()
-    assert_df_equals(df.to_pandas(), read_back_pd_df)
+    assert len(output_files) == 0
 
-    assert len(output_files) == 1
-    assert len(output_files._preview.partition) == 1
+    with pytest.raises(FileNotFoundError):
+        daft.read_parquet(os.path.join(path, "**/*.parquet")).to_pandas()
 
 
 def test_parquet_write_with_partitioning_readback_values(tmp_path, with_morsel_size):
@@ -264,6 +265,8 @@ def test_empty_csv_write(tmp_path, with_morsel_size):
     assert_df_equals(df.to_pandas().fillna(""), read_back_pd_df.fillna(""))
 
     assert len(pd_df) == 1
+    assert pd_df._preview.partition is None
+    pd_df.__repr__()
     assert len(pd_df._preview.partition) == 1
 
 
@@ -278,11 +281,9 @@ def test_empty_csv_write_with_partitioning(tmp_path, with_morsel_size):
         types[n] = schema[n].dtype
 
     pd_df = df.write_csv(tmp_path, partition_cols=["Borough"])
-    read_back_pd_df = daft.read_csv(tmp_path.as_posix() + "/**/*.csv", schema=types).to_pandas()
-    assert_df_equals(df.to_pandas().fillna(""), read_back_pd_df.fillna(""))
-
-    assert len(pd_df) == 1
-    assert len(pd_df._preview.partition) == 1
+    assert len(pd_df) == 0
+    with pytest.raises(FileNotFoundError):
+        daft.read_csv(tmp_path.as_posix() + "/**/*.csv", schema=types).to_pandas()
 
 
 def test_csv_write_with_some_empty_partitions(tmp_path, with_morsel_size):

@@ -1,22 +1,18 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
-use daft_core::series::Series;
-use daft_io::IOStatsContext;
+use daft_core::prelude::UInt64Array;
 use daft_recordbatch::RecordBatch;
 
 use crate::micropartition::MicroPartition;
 
 impl MicroPartition {
-    pub fn take(&self, idx: &Series) -> DaftResult<RecordBatch> {
-        let io_stats = IOStatsContext::new("MicroPartition::take");
-
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<RecordBatch> {
         if idx.is_empty() {
             return Ok(RecordBatch::empty(Some(self.schema.clone())));
         }
 
-        let tables = self.concat_or_get_update(io_stats)?;
-        match tables {
+        match self.concat_or_get()? {
             // Fallback onto `[empty_table]` behavior
             None => {
                 let empty_table = RecordBatch::empty(Some(self.schema.clone()));
@@ -32,15 +28,11 @@ impl MicroPartition {
         with_replacement: bool,
         seed: Option<u64>,
     ) -> DaftResult<Self> {
-        let io_stats = IOStatsContext::new(format!("MicroPartition::sample({fraction})"));
-
         if fraction == 0.0 {
             return Ok(Self::empty(Some(self.schema.clone())));
         }
 
-        let tables = self.concat_or_get(io_stats)?;
-
-        match tables {
+        match self.concat_or_get()? {
             None => Ok(Self::empty(Some(self.schema.clone()))),
             Some(single) => {
                 let taken = single.sample_by_fraction(fraction, with_replacement, seed)?;
@@ -59,15 +51,11 @@ impl MicroPartition {
         with_replacement: bool,
         seed: Option<u64>,
     ) -> DaftResult<Self> {
-        let io_stats = IOStatsContext::new(format!("MicroPartition::sample({size})"));
-
         if size == 0 {
             return Ok(Self::empty(Some(self.schema.clone())));
         }
 
-        let tables = self.concat_or_get(io_stats)?;
-
-        match tables {
+        match self.concat_or_get()? {
             None => {
                 // Empty dataframe: check with_replacement
                 if !with_replacement {
@@ -91,14 +79,11 @@ impl MicroPartition {
     }
 
     pub fn quantiles(&self, num: usize) -> DaftResult<Self> {
-        let io_stats = IOStatsContext::new(format!("MicroPartition::quantiles({num})"));
-
         if num <= 1 {
             return Ok(Self::empty(Some(self.schema.clone())));
         }
 
-        let tables = self.concat_or_get(io_stats)?;
-        match tables {
+        match self.concat_or_get()? {
             None => Ok(Self::empty(Some(self.schema.clone()))),
             Some(single) => {
                 let taken = single.quantiles(num)?;

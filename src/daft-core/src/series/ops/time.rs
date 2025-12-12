@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use arrow2::array::Array;
 use common_error::{DaftError, DaftResult};
+use daft_arrow::array::Array;
 use daft_schema::field::Field;
 
 use crate::{
@@ -364,8 +364,8 @@ impl Series {
     pub fn dt_strftime(&self, format: Option<&str>) -> DaftResult<Self> {
         match self.data_type() {
             DataType::Timestamp(..) | DataType::Date | DataType::Time(_) => {
-                let arrow_arr = self.to_arrow();
-                let out = arrow2::compute::temporal::strftime(arrow_arr.as_ref(), format)?;
+                let arrow_arr = self.to_arrow2();
+                let out = daft_arrow::compute::temporal::strftime(arrow_arr.as_ref(), format)?;
                 let arc_field = Arc::new(Field::new(self.name().to_string(), DataType::Utf8));
                 Self::from_arrow(arc_field, out.to_boxed())
             }
