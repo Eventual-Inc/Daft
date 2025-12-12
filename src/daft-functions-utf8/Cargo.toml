@@ -12,7 +12,7 @@ num-traits = {workspace = true}
 regex = {workspace = true}
 serde = {workspace = true}
 typetag = {workspace = true}
-unicode-normalization = "0.1.24"
+unicode-normalization = "0.1.25"
 
 [features]
 python = [
