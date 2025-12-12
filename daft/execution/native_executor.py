@@ -83,3 +83,15 @@ class NativeExecutor:
             return _NativeExecutor.repr_mermaid(builder._builder, daft_execution_config, MermaidOptions(simple))
         else:
             raise ValueError(f"Unknown format: {format}")
+
+    def get_process_pool_stats(self) -> tuple[int, int]:
+        """Get process pool statistics.
+
+        Returns:
+            tuple[int, int]: A tuple of (active_workers, total_workers_ever_created)
+        """
+        return self._executor.get_process_pool_stats()
+
+    def reset_process_pool_total_created(self) -> None:
+        """Reset the total number of workers ever created in the process pool."""
+        self._executor.reset_process_pool_total_created()
