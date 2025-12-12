@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use common_error::DaftResult;
 use daft_core::{
     prelude::{DataType, Field, Schema},
@@ -89,9 +90,9 @@ mod tests {
         let result = result.bool()?;
 
         assert_eq!(result.len(), 3);
-        assert!(result.as_arrow().value(0));
-        assert!(result.as_arrow().value(1));
-        assert!(!result.as_arrow().value(2));
+        assert!(result.as_arrow2().value(0));
+        assert!(result.as_arrow2().value(1));
+        assert!(!result.as_arrow2().value(2));
         Ok(())
     }
 
@@ -120,9 +121,9 @@ mod tests {
         let result = result.bool()?;
 
         assert_eq!(result.len(), 3);
-        assert!(result.as_arrow().value(0));
-        assert!(!result.as_arrow().value(1));
-        assert!(result.as_arrow().value(2));
+        assert!(result.as_arrow2().value(0));
+        assert!(!result.as_arrow2().value(1));
+        assert!(result.as_arrow2().value(2));
         Ok(())
     }
 }

@@ -10,7 +10,7 @@ use opentelemetry::{global, metrics::Counter};
 
 use super::{
     DistributedPipelineNode, MaterializedOutput, PipelineNodeImpl, SubmittableTaskStream,
-    make_new_task_from_materialized_outputs,
+    make_empty_scan_task, make_new_task_from_materialized_outputs,
 };
 use crate::{
     pipeline_node::{
@@ -291,10 +291,24 @@ impl LimitNode {
                         &mut limit_state,
                         &task_id_counter,
                     );
-                    // Send the next tasks to the result channel
-                    for task in next_tasks {
-                        if result_tx.send(task).await.is_err() {
+                    if next_tasks.is_empty() {
+                        // If all rows need to be skipped, send an empty scan task to allow downstream tasks to
+                        // continue running, such as aggregate tasks
+                        let empty_scan_task = SubmittableTask::new(make_empty_scan_task(
+                            TaskContext::from((&self.context, task_id_counter.next())),
+                            self.config.schema.clone(),
+                            &(self.clone() as Arc<dyn PipelineNodeImpl>),
+                        ));
+
+                        if result_tx.send(empty_scan_task).await.is_err() {
                             return Ok(());
+                        }
+                    } else {
+                        // Send the next tasks to the result channel
+                        for task in next_tasks {
+                            if result_tx.send(task).await.is_err() {
+                                return Ok(());
+                            }
                         }
                     }
 

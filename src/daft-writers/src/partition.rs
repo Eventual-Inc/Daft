@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -74,7 +75,7 @@ impl AsyncFileWriter for PartitionedWriter {
         let mut rows_written = 0;
         for (idx, (table, partition_value_hash)) in split_tables
             .into_iter()
-            .zip(partition_values_hash.as_arrow().values_iter())
+            .zip(partition_values_hash.as_arrow2().values_iter())
             .enumerate()
         {
             let partition_value_row = partition_values.slice(idx, idx + 1)?;

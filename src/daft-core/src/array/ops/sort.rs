@@ -48,8 +48,8 @@ pub fn build_multi_array_bicompare(
         .zip(nulls_first.iter())
     {
         cmp_list.push(build_nulls_first_compare_with_nulls(
-            l.to_arrow().as_ref(),
-            r.to_arrow().as_ref(),
+            l.to_arrow2().as_ref(),
+            r.to_arrow2().as_ref(),
             *desc,
             *nf,
         )?);
@@ -73,7 +73,7 @@ where
     <T as DaftNumericType>::Native: Ord,
 {
     pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
 
         let result = crate::array::ops::arrow::sort::primitive::indices::indices_sorted_unstable_by::<
             T::Native,
@@ -89,7 +89,7 @@ where
         descending: &[bool],
         nulls_first: &[bool],
     ) -> DaftResult<UInt64Array> {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
         let first_desc = *descending.first().unwrap();
         let first_nulls_first = *nulls_first.first().unwrap();
 
@@ -142,7 +142,7 @@ where
             nulls_first,
         };
 
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
 
         let result = crate::array::ops::arrow::sort::primitive::sort::sort_by::<T::Native, _>(
             arrow_array,
@@ -157,7 +157,7 @@ where
 
 impl Float32Array {
     pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
 
         let result = crate::array::ops::arrow::sort::primitive::indices::indices_sorted_unstable_by::<
             f32,
@@ -173,7 +173,7 @@ impl Float32Array {
         descending: &[bool],
         nulls_first: &[bool],
     ) -> DaftResult<UInt64Array> {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
         let first_desc = *descending.first().unwrap();
         let first_nulls_first = *nulls_first.first().unwrap();
 
@@ -226,7 +226,7 @@ impl Float32Array {
             nulls_first,
         };
 
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
 
         let result = crate::array::ops::arrow::sort::primitive::sort::sort_by::<f32, _>(
             arrow_array,
@@ -241,7 +241,7 @@ impl Float32Array {
 
 impl Float64Array {
     pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
 
         let result = crate::array::ops::arrow::sort::primitive::indices::indices_sorted_unstable_by::<
             f64,
@@ -257,7 +257,7 @@ impl Float64Array {
         descending: &[bool],
         nulls_first: &[bool],
     ) -> DaftResult<UInt64Array> {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
         let first_desc = *descending.first().unwrap();
         let first_nulls_first = *nulls_first.first().unwrap();
 
@@ -310,7 +310,7 @@ impl Float64Array {
             nulls_first,
         };
 
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
 
         let result = crate::array::ops::arrow::sort::primitive::sort::sort_by::<f64, _>(
             arrow_array,
@@ -325,7 +325,7 @@ impl Float64Array {
 
 impl Decimal128Array {
     pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
 
         let result = crate::array::ops::arrow::sort::primitive::indices::indices_sorted_unstable_by::<
             i128,
@@ -341,7 +341,7 @@ impl Decimal128Array {
         descending: &[bool],
         nulls_first: &[bool],
     ) -> DaftResult<UInt64Array> {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
         let first_desc = *descending.first().unwrap();
         let first_nulls_first = *nulls_first.first().unwrap();
 
@@ -394,7 +394,7 @@ impl Decimal128Array {
             nulls_first,
         };
 
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
 
         let result = crate::array::ops::arrow::sort::primitive::sort::sort_by::<i128, _>(
             arrow_array,
@@ -551,7 +551,7 @@ macro_rules! impl_binary_like_sort {
                 let others_cmp =
                     build_multi_array_compare(others, &descending[1..], &nulls_first[1..])?;
 
-                let values = self.as_arrow();
+                let values = self.as_arrow2();
 
                 let result = if first_desc {
                     multi_column_idx_sort(

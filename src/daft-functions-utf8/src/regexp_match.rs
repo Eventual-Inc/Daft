@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use common_error::DaftResult;
 use daft_core::{
     prelude::{AsArrow, BooleanArray, DataType, Field, FullNull, Schema, Utf8Array},
@@ -66,7 +67,7 @@ fn match_impl(arr: &Utf8Array, pattern: &Utf8Array) -> DaftResult<BooleanArray> 
             Some(pattern_v) => {
                 let re = regex::Regex::new(pattern_v)?;
                 let arrow_result: daft_arrow::array::BooleanArray = arr
-                    .as_arrow()
+                    .as_arrow2()
                     .into_iter()
                     .map(|arr_v| Some(re.is_match(arr_v?)))
                     .collect();

@@ -8,7 +8,7 @@ if sys.version_info < (3, 11):
 else:
     from typing import Unpack
 
-from daft.ai.provider import Provider
+from daft.ai.provider import Provider, ProviderImportError
 
 if TYPE_CHECKING:
     from daft.ai.openai.protocols.prompter import OpenAIPrompterOptions
@@ -26,6 +26,16 @@ class OpenAIProvider(Provider):
     def __init__(self, name: str | None = None, **options: Unpack[OpenAIProviderOptions]):
         self._name = name if name else "openai"
         self._options = options
+
+        try:
+            import openai  # noqa: F401
+        except ImportError:
+            raise ProviderImportError("openai")
+
+        from daft.dependencies import np
+
+        if not np.module_available():  # type: ignore[attr-defined]
+            raise ProviderImportError("openai")
 
     @property
     def name(self) -> str:

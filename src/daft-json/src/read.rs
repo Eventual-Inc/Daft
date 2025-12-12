@@ -628,6 +628,7 @@ fn parse_into_column_array_chunk_stream(
 }
 
 #[cfg(test)]
+#[allow(deprecated, reason = "arrow2 migration")]
 mod tests {
     use std::{collections::HashSet, io::BufRead, sync::Arc};
 
@@ -648,7 +649,6 @@ mod tests {
         inference::{column_types_map_to_fields, infer_records_schema},
     };
 
-    #[allow(deprecated, reason = "arrow2 migration")]
     fn check_equal_local_arrow2(
         path: &str,
         out: &RecordBatch,
@@ -707,7 +707,7 @@ mod tests {
         let schema = Schema::try_from(&schema).unwrap().to_arrow2().unwrap();
         assert_eq!(out.schema.to_arrow2().unwrap(), schema);
         let out_columns = (0..out.num_columns())
-            .map(|i| out.get_column(i).to_arrow())
+            .map(|i| out.get_column(i).to_arrow2())
             .collect::<Vec<_>>();
         assert_eq!(out_columns, columns);
     }
@@ -1048,6 +1048,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated, reason = "arrow2 migration")]
     fn test_json_read_local_all_null_column() -> DaftResult<()> {
         let file = format!(
             "{}/test/iris_tiny_all_null_column.jsonl",
@@ -1077,7 +1078,7 @@ mod tests {
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
-            null_column.to_arrow(),
+            null_column.to_arrow2(),
             Box::new(daft_arrow::array::NullArray::new(
                 daft_arrow::datatypes::DataType::Null,
                 6
@@ -1134,7 +1135,7 @@ mod tests {
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
-            null_column.to_arrow(),
+            null_column.to_arrow2(),
             Box::new(daft_arrow::array::NullArray::new(
                 daft_arrow::datatypes::DataType::Null,
                 6
@@ -1190,7 +1191,7 @@ mod tests {
         let null_column = table.get_column(2);
         assert_eq!(null_column.data_type(), &DataType::Float64);
         assert_eq!(null_column.len(), 6);
-        assert_eq!(null_column.to_arrow().null_count(), 6);
+        assert_eq!(null_column.to_arrow2().null_count(), 6);
 
         Ok(())
     }
@@ -1227,7 +1228,7 @@ mod tests {
         // Check that all columns are all null.
         for idx in 0..table.num_columns() {
             let column = table.get_column(idx);
-            assert_eq!(column.to_arrow().null_count(), num_rows);
+            assert_eq!(column.to_arrow2().null_count(), num_rows);
         }
 
         Ok(())

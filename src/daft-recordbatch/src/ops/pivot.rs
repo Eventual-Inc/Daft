@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use common_error::{DaftError, DaftResult};
 use daft_core::{array::ops::IntoGroups, prelude::*};
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -16,7 +17,7 @@ fn map_name_to_pivot_key_idx<'a>(
     let pivot_keys_str_values = pivot_keys_series.to_str_values()?;
     let pivot_key_str_to_idx_mapping = pivot_keys_str_values
         .utf8()?
-        .as_arrow()
+        .as_arrow2()
         .iter()
         .zip(pivot_key_indices.iter())
         .map(|(key_str, idx)| (key_str.unwrap(), *idx))

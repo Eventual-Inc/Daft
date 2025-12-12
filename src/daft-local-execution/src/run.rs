@@ -39,7 +39,7 @@ use crate::{
         translate_physical_plan_to_pipeline, viz_pipeline_ascii, viz_pipeline_mermaid,
     },
     resource_manager::get_or_init_memory_manager,
-    runtime_stats::RuntimeStatsManager,
+    runtime_stats::{QueryEndState, RuntimeStatsManager},
 };
 
 /// Global tokio runtime shared by all NativeExecutor instances
@@ -244,21 +244,28 @@ impl NativeExecutor {
                 runtime_handle.shutdown().await
             };
 
-            let result = tokio::select! {
+            let (result, finish_status) = tokio::select! {
                 biased;
                 () = cancel.cancelled() => {
                     log::info!("Execution engine cancelled");
-                    Ok(())
+                    (Ok(()), QueryEndState::Cancelled)
                 }
                 _ = tokio::signal::ctrl_c() => {
                     log::info!("Received Ctrl-C, shutting down execution engine");
-                    Ok(())
+                    (Ok(()), QueryEndState::Cancelled)
                 }
-                result = execution_task => result,
+                result = execution_task => {
+                    let status = if result.is_err() {
+                        QueryEndState::Failed
+                    } else {
+                        QueryEndState::Finished
+                    };
+                    (result, status)
+                },
             };
 
             // Finish the stats manager
-            let final_stats = stats_manager.finish().await;
+            let final_stats = stats_manager.finish(finish_status).await;
 
             // TODO: Move into a runtime stats subscriber
             if enable_explain_analyze {

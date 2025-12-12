@@ -26,10 +26,10 @@ where
                 if array_size == lbound_size && array_size == rbound_size =>
             {
                 let result = self
-                    .as_arrow()
+                    .as_arrow2()
                     .values_iter() // Fine to use values_iter since we will apply the validity later, saves us 1 branch.
-                    .zip(left_bound.as_arrow().iter())
-                    .zip(right_bound.as_arrow().iter())
+                    .zip(left_bound.as_arrow2().iter())
+                    .zip(right_bound.as_arrow2().iter())
                     .map(|((value, left), right)| match (left, right) {
                         (Some(l), Some(r)) => Some(clamp(*value, *l, *r)),
                         (Some(l), None) => Some(clamp_min(*value, *l)),
@@ -50,9 +50,9 @@ where
                     Some(r) => {
                         // Right is valid, so we just clamp/clamp_max the values depending on the left bound
                         let result = self
-                            .as_arrow()
+                            .as_arrow2()
                             .values_iter()
-                            .zip(left_bound.as_arrow().iter())
+                            .zip(left_bound.as_arrow2().iter())
                             .map(move |(value, left)| match left {
                                 Some(l) => Some(clamp(*value, *l, r)),
                                 None => Some(clamp_max(*value, r)), // If left is null, we can just clamp_max
@@ -65,9 +65,9 @@ where
                     None => {
                         // In this case, right_bound is null, so we can just do a simple clamp_min
                         let result = self
-                            .as_arrow()
+                            .as_arrow2()
                             .values_iter()
-                            .zip(left_bound.as_arrow().iter())
+                            .zip(left_bound.as_arrow2().iter())
                             .map(|(value, left)| match left {
                                 Some(l) => Some(clamp_min(*value, *l)),
                                 None => Some(*value), // Left null, and right null, so we just don't do anything
@@ -85,9 +85,9 @@ where
                 match left {
                     Some(l) => {
                         let result = self
-                            .as_arrow()
+                            .as_arrow2()
                             .values_iter()
-                            .zip(right_bound.as_arrow().iter())
+                            .zip(right_bound.as_arrow2().iter())
                             .map(move |(value, right)| match right {
                                 Some(r) => Some(clamp(*value, l, *r)),
                                 None => Some(clamp_min(*value, l)), // Right null, so we can just clamp_min
@@ -99,9 +99,9 @@ where
                     }
                     None => {
                         let result = self
-                            .as_arrow()
+                            .as_arrow2()
                             .values_iter()
-                            .zip(right_bound.as_arrow().iter())
+                            .zip(right_bound.as_arrow2().iter())
                             .map(|(value, right)| match right {
                                 Some(r) => Some(clamp_max(*value, *r)),
                                 None => Some(*value),

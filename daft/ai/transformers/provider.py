@@ -9,7 +9,7 @@ if sys.version_info < (3, 11):
 else:
     from typing import Unpack
 
-from daft.ai.provider import Provider
+from daft.ai.provider import Provider, ProviderImportError
 
 if TYPE_CHECKING:
     from daft.ai.protocols import (
@@ -45,6 +45,11 @@ class TransformersProvider(Provider):
         self._name = name if name else "transformers"
         self._options = options
 
+        from daft.dependencies import np, torch
+
+        if not torch.module_available() or not np.module_available():  # type: ignore[attr-defined]
+            raise ProviderImportError("transformers")
+
     @property
     def name(self) -> str:
         return self._name
@@ -54,6 +59,11 @@ class TransformersProvider(Provider):
         model: str | None = None,
         **options: Unpack[TransformersImageEmbedderOptions],
     ) -> ImageEmbedderDescriptor:
+        from daft.dependencies import pil_image, torchvision
+
+        if not torchvision.module_available() or not pil_image.module_available():
+            raise ProviderImportError("transformers", function="embed_image")
+
         from daft.ai.transformers.protocols.image_embedder import (
             TransformersImageEmbedderDescriptor,
         )
@@ -101,6 +111,11 @@ class TransformersProvider(Provider):
         model: str | None = None,
         **options: Unpack[TransformersImageClassifierOptions],
     ) -> ImageClassifierDescriptor:
+        from daft.dependencies import pil_image, torchvision
+
+        if not torchvision.module_available() or not pil_image.module_available():
+            raise ProviderImportError("transformers", function="classify_image")
+
         from daft.ai.transformers.protocols.image_classifier import (
             TransformersImageClassifierDescriptor,
         )

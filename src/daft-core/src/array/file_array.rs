@@ -199,7 +199,7 @@ mod tests {
 
         let arr =
             FileArray::<MediaTypeUnknown>::new_from_reference_array("urls", urls, io_conf.clone());
-        let arrow_data = arr.to_arrow();
+        let arrow_data = arr.to_arrow2();
 
         let new_arr = FileArray::<MediaTypeUnknown>::from_arrow(arr.field.clone(), arrow_data)
             .expect("Failed to create FileArray from arrow data");

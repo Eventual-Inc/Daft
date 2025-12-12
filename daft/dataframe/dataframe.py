@@ -820,25 +820,11 @@ class DataFrame:
         write_df.collect()
         assert write_df._result is not None
 
-        if len(write_df) > 0:
-            # Populate and return a new disconnected DataFrame
-            result_df = DataFrame(write_df._builder)
-            result_df._result_cache = write_df._result_cache
-            result_df._preview = write_df._preview
-            return result_df
-        else:
-            from daft import from_pydict
-            from daft.recordbatch.recordbatch_io import write_empty_tabular
-
-            file_path = write_empty_tabular(
-                root_dir, FileFormat.Parquet, self.schema(), compression=compression, io_config=io_config
-            )
-
-            return from_pydict(
-                {
-                    "path": [file_path],
-                }
-            )
+        # Populate and return a new disconnected DataFrame
+        result_df = DataFrame(write_df._builder)
+        result_df._result_cache = write_df._result_cache
+        result_df._preview = write_df._preview
+        return result_df
 
     @DataframePublicAPI
     def write_csv(
@@ -900,23 +886,11 @@ class DataFrame:
         write_df.collect()
         assert write_df._result is not None
 
-        if len(write_df) > 0:
-            # Populate and return a new disconnected DataFrame
-            result_df = DataFrame(write_df._builder)
-            result_df._result_cache = write_df._result_cache
-            result_df._preview = write_df._preview
-            return result_df
-        else:
-            from daft import from_pydict
-            from daft.recordbatch.recordbatch_io import write_empty_tabular
-
-            file_path = write_empty_tabular(root_dir, FileFormat.Csv, self.schema(), io_config=io_config)
-
-            return from_pydict(
-                {
-                    "path": [file_path],
-                }
-            )
+        # Populate and return a new disconnected DataFrame
+        result_df = DataFrame(write_df._builder)
+        result_df._result_cache = write_df._result_cache
+        result_df._preview = write_df._preview
+        return result_df
 
     @DataframePublicAPI
     def write_json(
@@ -975,23 +949,11 @@ class DataFrame:
         write_df.collect()
         assert write_df._result is not None
 
-        if len(write_df) > 0:
-            # Populate and return a new disconnected DataFrame
-            result_df = DataFrame(write_df._builder)
-            result_df._result_cache = write_df._result_cache
-            result_df._preview = write_df._preview
-            return result_df
-        else:
-            from daft import from_pydict
-            from daft.recordbatch.recordbatch_io import write_empty_tabular
-
-            file_path = write_empty_tabular(root_dir, FileFormat.Json, self.schema(), io_config=io_config)
-
-            return from_pydict(
-                {
-                    "path": [file_path],
-                }
-            )
+        # Populate and return a new disconnected DataFrame
+        result_df = DataFrame(write_df._builder)
+        result_df._result_cache = write_df._result_cache
+        result_df._preview = write_df._preview
+        return result_df
 
     @DataframePublicAPI
     def write_iceberg(

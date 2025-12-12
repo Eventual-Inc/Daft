@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use common_file_formats::WriteMode;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{OutputFileInfo, SinkInfo, stats::StatsState};
@@ -125,6 +124,7 @@ impl SinkNode {
 
     async fn finish_writes_and_commit(
         self: Arc<Self>,
+        data_schema: SchemaRef,
         info: OutputFileInfo<BoundExpr>,
         input: SubmittableTaskStream,
         scheduler: SchedulerHandle<SwordfishTask>,
@@ -143,6 +143,7 @@ impl SinkNode {
             move |input| {
                 LocalPhysicalPlan::commit_write(
                     input,
+                    data_schema,
                     file_schema,
                     info,
                     StatsState::NotMaterialized,
@@ -220,18 +221,15 @@ impl PipelineNodeImpl for SinkNode {
 
         let pipelined_node_with_writes =
             input_node.pipeline_instruction(self.clone(), plan_builder);
-        if let SinkInfo::OutputFileInfo(info) = self.sink_info.as_ref()
-            && matches!(
-                info.write_mode,
-                WriteMode::Overwrite | WriteMode::OverwritePartitions
-            )
-        {
+        if let SinkInfo::OutputFileInfo(info) = self.sink_info.as_ref() {
             let sink_node = self.clone();
             let scheduler = plan_context.scheduler_handle();
             let task_id_counter = plan_context.task_id_counter();
+            let data_schema = sink_node.data_schema.clone();
             let (sender, receiver) = create_channel(1);
             plan_context.spawn(Self::finish_writes_and_commit(
                 sink_node,
+                data_schema,
                 info.clone(),
                 pipelined_node_with_writes,
                 scheduler,

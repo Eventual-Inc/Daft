@@ -74,7 +74,10 @@ macro_rules! impl_arrow_backed_data_array_growable {
                 capacity: usize,
             ) -> Self {
                 let ref_arrays = arrays.to_vec();
-                let ref_arrow_arrays = ref_arrays.iter().map(|&a| a.as_arrow()).collect::<Vec<_>>();
+                let ref_arrow_arrays = ref_arrays
+                    .iter()
+                    .map(|&a| a.as_arrow2())
+                    .collect::<Vec<_>>();
                 let arrow2_growable =
                     <$arrow2_growable_type>::new(ref_arrow_arrays, use_validity, capacity);
                 Self {

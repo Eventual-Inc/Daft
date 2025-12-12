@@ -1,7 +1,7 @@
 // Re-export arrow2::* modules for centralized access
-pub use arrow2::{
-    array, chunk, compute, error, io, offset, scalar, temporal_conversions, trusted_len, types,
-};
+pub use arrow_array::temporal_conversions;
+pub use arrow_schema::ArrowError;
+pub use arrow2::{array, chunk, compute, error, io, offset, scalar, trusted_len, types};
 
 pub mod buffer {
     pub use arrow_buffer::{BooleanBufferBuilder, NullBuffer, NullBufferBuilder};
