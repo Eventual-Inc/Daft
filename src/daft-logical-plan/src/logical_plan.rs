@@ -785,6 +785,7 @@ impl LogicalPlan {
         use common_treenode::TreeNode;
 
         let mut schema = None;
+        let mut found_match = false;
 
         self.apply(|node| {
             if let Self::SubqueryAlias(subquery_alias) = node.as_ref() {
@@ -798,6 +799,7 @@ impl LogicalPlan {
                     }
 
                     schema = Some(node.schema());
+                    found_match = true;
                     return Ok(TreeNodeRecursion::Jump);
                 }
 
@@ -818,8 +820,12 @@ impl LogicalPlan {
 
                         let new_schema = Schema::new(new_fields);
                         schema = Some(Arc::new(new_schema));
+                        found_match = true;
                         return Ok(TreeNodeRecursion::Jump);
                     }
+                }
+                if !found_match {
+                    return Ok(TreeNodeRecursion::Jump);
                 }
             }
             Ok(TreeNodeRecursion::Continue)
