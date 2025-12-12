@@ -11,12 +11,22 @@ env:
 jobs:
   notebook-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         python-version: ['3.10']
     steps:
+    - name: Free Disk Space (Ubuntu)
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: false
+        android: true
+        dotnet: false
+        haskell: true
+        large-packages: false
+        docker-images: false
+        swap-storage: true
     - uses: actions/checkout@v6
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v6
@@ -31,7 +41,7 @@ jobs:
         sudo apt install tesseract-ocr
         sudo apt install libtesseract-dev
     - name: Clean all notebook output
-      run: find . -name "*.ipynb" -print0 | xargs -0 nb-clean clean
+      run: find . -name "*.ipynb" -print0 | xargs -0 nb-clean clean --preserve-cell-metadata tags --
     - name: Run notebooks in docs
       run: find docs -name "*.ipynb" -not -path "*/quickstart.ipynb" -print0 | xargs -0 -I {} papermill {} /tmp/out.ipynb -p CI True --kernel python3 --no-progress-bar --cwd /tmp/
     - name: Run notebooks in tutorials
