@@ -3279,6 +3279,7 @@ dependencies = [
  "common-runtime",
  "common-scan-info",
  "ctor",
+ "daft-compression",
  "daft-core",
  "daft-csv",
  "daft-decoding",
@@ -3300,6 +3301,7 @@ dependencies = [
  "snafu",
  "tokio",
  "typetag",
+ "url",
  "urlencoding",
 ]
 
