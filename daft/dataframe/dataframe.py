@@ -1404,16 +1404,22 @@ class DataFrame:
     def write_lance(
         self,
         uri: Union[str, pathlib.Path],
-        mode: Literal["create", "append", "overwrite"] = "create",
+        mode: Literal["create", "append", "overwrite", "merge"] = "create",
         io_config: Optional[IOConfig] = None,
         schema: Optional[Union[Schema, "pyarrow.Schema"]] = None,
+        left_on: Optional[str] = None,
+        right_on: Optional[str] = None,
         **kwargs: Any,
     ) -> "DataFrame":
         """Writes the DataFrame to a Lance table.
 
         Args:
           uri: The URI of the Lance table to write to
-          mode: The write mode. One of "create", "append", or "overwrite"
+          mode: The write mode. One of "create", "append", "overwrite", or "merge".
+          - "create" will create the dataset if it does not exist, otherwise raise an error.
+          - "append" will append to the existing dataset if it exists, otherwise raise an error.
+          - "overwrite" will overwrite the existing dataset if it exists, otherwise raise an error.
+          - "merge" will add new columns to the existing dataset.
           io_config (IOConfig, optional): configurations to use when interacting with remote storage.
           schema (Schema | pyarrow.Schema, optional): Desired schema to enforce during write.
             - If omitted, Daft will use the DataFrame's current schema.
@@ -1422,6 +1428,10 @@ class DataFrame:
               on the pyarrow schema is preserved during create/overwrite.
             - If the target Lance dataset already exists, the data will be cast to the existing table schema
               to ensure compatibility unless ``mode="overwrite"``.
+          left_on/right_on (Optional[str]): Only supported in ``mode="merge"``. Specify the join key for aligning rows when merging new columns.
+              - If omitted, defaults to ``"_rowaddr"``.
+              - If ``right_on`` is omitted, it defaults to the value of ``left_on``.
+              - The DataFrame passed to ``write_lance(mode="merge")`` must contain ``fragment_id`` and the join key column specified by ``right_on`` (or ``_rowaddr`` by default).
           **kwargs: Additional keyword arguments to pass to the Lance writer.
 
         Returns:
@@ -1473,12 +1483,111 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
+        from daft import context as _context
         from daft.io.lance.lance_data_sink import LanceDataSink
+        from daft.io.object_store_options import io_config_to_storage_options
 
         if schema is None:
             schema = self.schema()
-        sink = LanceDataSink(uri, schema, mode, io_config, **kwargs)
-        return self.write_sink(sink)
+
+        # Non-merge modes do not support schema evolution or custom join keys
+        if mode != "merge":
+            sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
+            sink = LanceDataSink(uri, schema, mode, io_config, **sanitized_kwargs)
+            return self.write_sink(sink)
+
+        # Merge mode semantics
+        try:
+            import lance
+        except ImportError as e:
+            raise ImportError(
+                "Unable to import the `lance` package, please ensure that Daft is installed with the lance extra dependency: `pip install daft[lance]`"
+            ) from e
+
+        io_config = _context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+        storage_options = io_config_to_storage_options(io_config, str(uri) if isinstance(uri, pathlib.Path) else uri)
+
+        # Attempt to load dataset; if not exists, behave like create
+        lance_ds = None
+        try:
+            lance_ds = lance.dataset(uri, storage_options=storage_options)
+        except (ValueError, FileNotFoundError, OSError) as _e:
+            lance_ds = None
+
+        if lance_ds is None:
+            sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
+            sink = LanceDataSink(uri, schema, "create", io_config, **sanitized_kwargs)
+            return self.write_sink(sink)
+
+        # Dataset exists: detect schema evolution by checking new columns in incoming DF
+        existing_fields: set[str] = set()
+        try:
+            existing_fields = {getattr(f, "name", str(f)) for f in lance_ds.schema}
+        except Exception:
+            names = []
+            try:
+                names = list(getattr(lance_ds.schema, "names", []))
+            except Exception:
+                try:
+                    names = [getattr(f, "name", str(f)) for f in getattr(lance_ds.schema, "fields", [])]
+                except Exception:
+                    names = []
+            existing_fields = set(names)
+
+        meta_exclusions = {"fragment_id", "_rowaddr", "_rowid"}
+        new_cols = [c for c in self.column_names if c not in existing_fields and c not in meta_exclusions]
+
+        if len(new_cols) == 0:
+            # Pure append: no schema evolution. Ensure merge-specific params are not forwarded.
+            sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
+
+            sink = LanceDataSink(uri, schema, "append", io_config, **sanitized_kwargs)
+            return self.write_sink(sink)
+
+        # Schema evolution: route to per-fragment merge keyed by provided business key or default '_rowaddr'
+        join_left = left_on or "_rowaddr"
+        join_right = right_on or join_left
+        if "fragment_id" not in self.column_names:
+            raise ValueError(
+                "DataFrame must contain 'fragment_id' column for per-fragment merge in mode='merge'. Read from Lance to include 'fragment_id'."
+            )
+        if join_right not in self.column_names:
+            hint = (
+                " Read from Lance with default_scan_options={'with_rowaddr': True} to include '_rowaddr'."
+                if join_right == "_rowaddr"
+                else ""
+            )
+            raise ValueError(
+                f"DataFrame must contain join key column '{join_right}' for per-fragment merge in mode='merge'." + hint
+            )
+
+        from daft.io.lance.lance_merge_column import merge_columns_from_df
+
+        merge_columns_from_df(
+            df=self,
+            lance_ds=lance_ds,
+            uri=uri,
+            left_on=join_left,
+            right_on=join_right,
+            storage_options=storage_options,
+        )
+
+        # Build and return stats DataFrame similar to sink.finalize
+        dataset = lance.dataset(uri, storage_options=storage_options)
+        stats = dataset.stats.dataset_stats()
+        from daft.dependencies import pa as _pa
+        from daft.recordbatch import MicroPartition
+
+        return DataFrame._from_micropartitions(
+            MicroPartition.from_pydict(
+                {
+                    "num_fragments": _pa.array([stats["num_fragments"]], type=_pa.int64()),
+                    "num_deleted_rows": _pa.array([stats["num_deleted_rows"]], type=_pa.int64()),
+                    "num_small_files": _pa.array([stats["num_small_files"]], type=_pa.int64()),
+                    "version": _pa.array([dataset.version], type=_pa.int64()),
+                }
+            )
+        )
 
     @DataframePublicAPI
     def write_turbopuffer(
