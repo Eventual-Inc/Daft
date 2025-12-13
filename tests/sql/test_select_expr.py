@@ -48,3 +48,16 @@ def test_select_struct_lit():
     actual = daft.sql("select {'a': 'hello'}").collect()
     expect = daft.from_pydict({"literal": [{"a": "hello"}]})
     assert_eq(actual, expect)
+
+
+def test_select_struct_wildcard():
+    df = daft.from_pydict(
+        {"person": [{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}, {"name": "Charlie", "age": 35}]}
+    )
+
+    assert len(df.collect().to_pydict()["person"]) == 3
+
+    actual = daft.sql("SELECT person.* FROM df").collect().to_pydict()
+    expected = {"name": ["Alice", "Bob", "Charlie"], "age": [30, 25, 35]}
+
+    assert actual == expected
