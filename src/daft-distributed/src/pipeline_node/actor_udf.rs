@@ -267,6 +267,13 @@ impl PipelineNodeImpl for ActorUDF {
             res.push("Resource request = None".to_string());
         }
 
+        if let Some(runtime_env) = self.udf_properties.runtime_env.clone() {
+            res.push(format!(
+                "Runtime env = {{ {} }}",
+                runtime_env.multiline_display().join(", ")
+            ));
+        }
+
         res
     }
 

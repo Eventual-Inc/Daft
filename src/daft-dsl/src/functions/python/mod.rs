@@ -1,3 +1,4 @@
+mod runtime_env;
 mod runtime_py_object;
 mod udf;
 
@@ -303,6 +304,10 @@ impl UDFProperties {
                     ..
                 } => {
                     num_udfs += 1;
+                    let runtime_env = runtime_env
+                        .as_ref()
+                        .map(|env| env.clone().try_into())
+                        .transpose()?;
                     udf_properties = Some(Self {
                         name: name.as_ref().clone(),
                         resource_request: resource_request.clone(),

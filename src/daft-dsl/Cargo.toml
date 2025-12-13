@@ -17,6 +17,7 @@ itertools = {workspace = true}
 log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
+serde_yaml = {workspace = true}
 tokio = {workspace = true, optional = true}
 typetag = {workspace = true}
 opentelemetry = {workspace = true}
