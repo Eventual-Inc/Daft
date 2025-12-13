@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use common_runtime::get_io_runtime;
 use daft_compression::CompressionCodec;
 use daft_core::prelude::Schema;
-use daft_io::{GetResult, IOClient, IOStatsRef};
+use daft_io::{GetRange, GetResult, IOClient, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
 use indexmap::IndexMap;
 use snafu::ResultExt;
@@ -63,6 +63,7 @@ pub async fn read_json_schema(
         max_bytes.or(Some(1024 * 1024)),
         io_client,
         io_stats,
+        None,
     )
     .await
 }
@@ -90,6 +91,7 @@ pub async fn read_json_schema_bulk(
                         max_bytes,
                         owned_client,
                         owned_io_stats,
+                        None,
                     )
                     .await
                 })
@@ -109,9 +111,10 @@ pub(crate) async fn read_json_schema_single(
     max_bytes: Option<usize>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
+    range: Option<GetRange>,
 ) -> DaftResult<Schema> {
     let (reader, max_bytes): (Box<dyn AsyncBufRead + Unpin + Send>, Option<usize>) = match io_client
-        .single_url_get(uri.to_string(), None, io_stats)
+        .single_url_get(uri.to_string(), range, io_stats)
         .await?
     {
         GetResult::File(file) => (
