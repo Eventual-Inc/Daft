@@ -2,22 +2,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import singledispatchmethod
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from openai import AsyncOpenAI
 from openai.types.completion_usage import CompletionUsage
 from openai.types.responses import ResponseUsage
 
 from daft.ai.metrics import record_token_metrics
+from daft.ai.openai.typing import OpenAIProviderOptions
 from daft.ai.protocols import Prompter, PrompterDescriptor
 from daft.ai.provider import ProviderImportError
 from daft.ai.typing import Options, PromptOptions, UDFOptions
 from daft.dependencies import np
 from daft.file import File
 from daft.utils import from_dict
-
-if TYPE_CHECKING:
-    from daft.ai.openai.typing import OpenAIProviderOptions
 
 
 class OpenAIPromptOptions(PromptOptions, total=False):
@@ -71,12 +69,14 @@ class OpenAIPrompter(Prompter):
         self.use_chat_completions = prompt_options.pop("use_chat_completions", False)
 
         # Separate client params from generation params
+        provider_options_dict = dict(provider_options)
+        provider_option_keys = set(OpenAIProviderOptions.__annotations__.keys())
         for key, value in prompt_options.items():
-            if key in provider_options.__annotations__.keys():
-                provider_options[key] = value  # type: ignore[literal-required]
-        self.llm = AsyncOpenAI(**provider_options)
+            if key in provider_option_keys:
+                provider_options_dict[key] = value
+        self.llm = AsyncOpenAI(**provider_options_dict)
 
-        self.generation_config = {k: v for k, v in prompt_options.items() if k not in provider_options}
+        self.generation_config = {k: v for k, v in prompt_options.items() if k not in provider_option_keys}
 
     @singledispatchmethod
     def _process_message(self, msg: Any) -> dict[str, Any]:

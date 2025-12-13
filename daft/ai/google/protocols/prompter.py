@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import singledispatchmethod
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from google import genai
 from google.genai import types
 
+from daft.ai.google.typing import GoogleProviderOptions
 from daft.ai.metrics import record_token_metrics
 from daft.ai.protocols import Prompter, PrompterDescriptor
 from daft.ai.provider import ProviderImportError
@@ -14,9 +15,6 @@ from daft.ai.typing import Options, PromptOptions, UDFOptions
 from daft.dependencies import np
 from daft.file import File
 from daft.utils import from_dict
-
-if TYPE_CHECKING:
-    from daft.ai.google.typing import GoogleProviderOptions
 
 
 class GooglePromptOptions(PromptOptions, total=False):
@@ -66,9 +64,11 @@ class GooglePrompter(Prompter):
         self.return_format = prompt_options.pop("return_format", None)
         self.system_message = prompt_options.pop("system_message", None)
 
+        provider_options_dict = dict(provider_options)
+        provider_option_keys = set(GoogleProviderOptions.__annotations__.keys())
         for key, value in prompt_options.items():
-            if key in provider_options.__annotations__.keys():
-                provider_options[key] = value  # type: ignore[literal-required]
+            if key in provider_option_keys:
+                provider_options_dict[key] = value
 
         # Prepare generation config
         generation_config_keys = types.GenerateContentConfig.model_fields.keys()
@@ -88,7 +88,7 @@ class GooglePrompter(Prompter):
         self.generation_config = types.GenerateContentConfig(**config_params)
 
         # Initialize client
-        self.client = genai.Client(**provider_options)
+        self.client = genai.Client(**provider_options_dict)
 
     @singledispatchmethod
     def _process_message(self, msg: Any) -> types.Part:

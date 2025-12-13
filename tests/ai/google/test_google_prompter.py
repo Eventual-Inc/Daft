@@ -49,11 +49,16 @@ def create_prompter(
 ) -> GooglePrompter:
     """Helper to instantiate GooglePrompter with sensible defaults."""
     opts = dict(provider_options) if provider_options is not None else dict(DEFAULT_PROVIDER_OPTIONS)
+    # Unpack generation_config if it's passed as a dict
+    prompt_options = dict(kwargs)
+    if "generation_config" in prompt_options and isinstance(prompt_options["generation_config"], dict):
+        generation_config = prompt_options.pop("generation_config")
+        prompt_options.update(generation_config)
     return GooglePrompter(
         provider_name=provider_name,
         provider_options=opts,
         model=model,
-        **kwargs,
+        prompt_options=prompt_options,
     )
 
 
@@ -66,7 +71,7 @@ def test_google_provider_get_prompter_default():
     assert descriptor.get_provider() == "google"
     assert descriptor.get_model() == "gemini-2.5-flash"
     assert descriptor.get_options() == {}
-    assert descriptor.return_format is None
+    assert descriptor.prompt_options.get("return_format") is None
 
 
 def test_google_provider_get_prompter_with_model():
@@ -84,7 +89,7 @@ def test_google_provider_get_prompter_with_return_format():
     descriptor = provider.get_prompter(model="gemini-2.5-flash", return_format=SimpleResponse)
 
     assert isinstance(descriptor, GooglePrompterDescriptor)
-    assert descriptor.return_format == SimpleResponse
+    assert descriptor.prompt_options.get("return_format") == SimpleResponse
 
 
 def test_google_provider_get_prompter_with_options():
@@ -108,13 +113,13 @@ def test_google_prompter_descriptor_instantiation():
         provider_name="google",
         provider_options={"api_key": "test-key"},
         model_name="gemini-2.5-flash",
-        model_options={},
+        prompt_options={},
     )
 
     assert descriptor.get_provider() == "google"
     assert descriptor.get_model() == "gemini-2.5-flash"
     assert descriptor.get_options() == {}
-    assert descriptor.return_format is None
+    assert descriptor.prompt_options.get("return_format") is None
 
 
 def test_google_prompter_descriptor_with_return_format():
@@ -123,11 +128,10 @@ def test_google_prompter_descriptor_with_return_format():
         provider_name="google",
         provider_options={"api_key": "test-key"},
         model_name="gemini-2.5-flash",
-        model_options={},
-        return_format=SimpleResponse,
+        prompt_options={"return_format": SimpleResponse},
     )
 
-    assert descriptor.return_format == SimpleResponse
+    assert descriptor.prompt_options.get("return_format") == SimpleResponse
 
 
 def test_google_prompter_descriptor_get_udf_options():
@@ -136,7 +140,7 @@ def test_google_prompter_descriptor_get_udf_options():
         provider_name="google",
         provider_options={"api_key": "test-key"},
         model_name="gemini-2.5-flash",
-        model_options={},
+        prompt_options={},
     )
 
     udf_options = descriptor.get_udf_options()
@@ -150,7 +154,7 @@ def test_google_prompter_instantiate():
         provider_name="google",
         provider_options={"api_key": "test-key"},
         model_name="gemini-2.5-flash",
-        model_options={},
+        prompt_options={},
     )
 
     with patch("daft.ai.google.protocols.prompter.genai.Client"):
@@ -168,7 +172,7 @@ def test_google_prompter_descriptor_custom_provider_name():
         provider_name="vertex-ai",
         provider_options={"api_key": "test-key"},
         model_name="gemini-2.5-flash",
-        model_options={},
+        prompt_options={},
     )
 
     with patch("daft.ai.google.protocols.prompter.genai.Client"):

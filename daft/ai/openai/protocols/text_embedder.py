@@ -9,6 +9,7 @@ from openai.types.create_embedding_response import Usage
 
 from daft import DataType
 from daft.ai.metrics import record_token_metrics
+from daft.ai.openai.typing import OpenAIProviderOptions
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
 from daft.ai.typing import EmbeddingDimensions, EmbedTextOptions, Options, UDFOptions
 from daft.dependencies import np
@@ -18,7 +19,6 @@ if TYPE_CHECKING:
     from openai.types import EmbeddingModel
     from openai.types.create_embedding_response import CreateEmbeddingResponse
 
-    from daft.ai.openai.typing import OpenAIProviderOptions
     from daft.ai.typing import Embedding
 
 
@@ -144,11 +144,13 @@ class OpenAITextEmbedder(TextEmbedder):
         self._dimensions = dimensions
         self._provider_name = provider_name
 
+        provider_options_dict = dict(provider_options)
+        provider_option_keys = set(OpenAIProviderOptions.__annotations__.keys())
         for key, value in embed_options.items():
-            if key in provider_options.__annotations__.keys():
-                provider_options[key] = value  # type: ignore[literal-required]
+            if key in provider_option_keys:
+                provider_options_dict[key] = value
 
-        self._client = AsyncOpenAI(**provider_options)
+        self._client = AsyncOpenAI(**provider_options_dict)
 
     async def embed_text(self, text: list[str]) -> list[Embedding]:
         embeddings: list[Embedding] = []
