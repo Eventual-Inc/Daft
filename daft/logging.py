@@ -41,7 +41,7 @@ def setup_logger(
     """Setup Daft logger with a specific log level, optional prefix filtering, and Rust sync.
 
     Args:
-        level (str, optional): The log level to use. Valid options are "DEBUG", "INFO", "WARNING", "ERROR". Defaults to "INFO".
+        level (str, optional): The log level to use. Valid options are `DEBUG`, `INFO`, `WARNING`, `ERROR`. Defaults to `DEBUG`.
         exclude_prefix (typing.Iterable[str] | None, optional): A list of prefixes to exclude from logging. Defaults to None.
         daft_only (bool, optional): Whether to only log messages from the Daft module. Defaults to True.
 
