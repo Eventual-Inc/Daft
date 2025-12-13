@@ -13,10 +13,11 @@ else:
     from typing import Unpack
 
 from daft.ai.protocols import TextClassifier, TextClassifierDescriptor
+from daft.ai.typing import ClassifyTextOptions, Options
 from daft.ai.utils import get_gpu_udf_options, get_torch_device
 
 if TYPE_CHECKING:
-    from daft.ai.typing import Label, Options, UDFOptions
+    from daft.ai.typing import Label, UDFOptions
 
 
 class TransformersTextClassiferResult(TypedDict):
@@ -25,15 +26,15 @@ class TransformersTextClassiferResult(TypedDict):
     scores: list[float]  # probability of each label
 
 
-class TransformersTextClassifierOptions(TypedDict, total=False):
-    batch_size: int | None
+class TransformersTextClassifyOptions(ClassifyTextOptions, total=False):
+    pass
 
 
 @dataclass
 class TransformersTextClassifierDescriptor(TextClassifierDescriptor):
     provider_name: str
     model_name: str
-    model_options: TransformersTextClassifierOptions
+    classify_options: TransformersTextClassifyOptions
 
     def get_provider(self) -> str:
         return self.provider_name
@@ -42,13 +43,17 @@ class TransformersTextClassifierDescriptor(TextClassifierDescriptor):
         return self.model_name
 
     def get_options(self) -> Options:
-        return self.model_options  # type: ignore
+        return dict(self.classify_options)
 
     def get_udf_options(self) -> UDFOptions:
-        return get_gpu_udf_options()
+        udf_options = get_gpu_udf_options()
+        for key, value in self.classify_options.items():
+            if key in udf_options.__annotations__.keys():
+                setattr(udf_options, key, value)
+        return udf_options
 
     def instantiate(self) -> TextClassifier:
-        return TransformersTextClassifier(self.model_name, **self.model_options)
+        return TransformersTextClassifier(self.model_name, **self.classify_options)
 
 
 class TransformersTextClassifier(TextClassifier):
@@ -60,10 +65,10 @@ class TransformersTextClassifier(TextClassifier):
     """
 
     _model: str
-    _options: TransformersTextClassifierOptions
+    _options: TransformersTextClassifyOptions
     _pipeline: transformers.ZeroShotClassificationPipeline
 
-    def __init__(self, model_name_or_path: str, **options: Unpack[TransformersTextClassifierOptions]):
+    def __init__(self, model_name_or_path: str, **options: Unpack[TransformersTextClassifyOptions]):
         self._model = model_name_or_path
         self._options = options
         self._pipeline = pipeline(

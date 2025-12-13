@@ -55,11 +55,16 @@ def create_prompter(
 ) -> OpenAIPrompter:
     """Helper to instantiate OpenAIPrompter with sensible defaults."""
     opts = dict(provider_options) if provider_options is not None else dict(DEFAULT_PROVIDER_OPTIONS)
+    # Unpack generation_config if it's passed as a dict
+    prompt_options = dict(kwargs)
+    if "generation_config" in prompt_options and isinstance(prompt_options["generation_config"], dict):
+        generation_config = prompt_options.pop("generation_config")
+        prompt_options.update(generation_config)
     return OpenAIPrompter(
         provider_name=provider_name,
         provider_options=opts,
         model=model,
-        **kwargs,
+        prompt_options=prompt_options,
     )
 
 
@@ -72,7 +77,7 @@ def test_openai_provider_get_prompter_default():
     assert descriptor.get_provider() == "openai"
     assert descriptor.get_model() == "gpt-4o-mini"
     assert descriptor.get_options() == {}
-    assert descriptor.return_format is None
+    assert descriptor.prompt_options.get("return_format") is None
 
 
 def test_openai_provider_get_prompter_with_model():
@@ -90,7 +95,7 @@ def test_openai_provider_get_prompter_with_return_format():
     descriptor = provider.get_prompter(model="gpt-4o-mini", return_format=SimpleResponse)
 
     assert isinstance(descriptor, OpenAIPrompterDescriptor)
-    assert descriptor.return_format == SimpleResponse
+    assert descriptor.prompt_options.get("return_format") == SimpleResponse
 
 
 def test_openai_provider_get_prompter_with_options():
@@ -111,13 +116,13 @@ def test_openai_prompter_descriptor_instantiation():
         provider_name="openai",
         provider_options={"api_key": "test-key"},
         model_name="gpt-4o-mini",
-        model_options={},
+        prompt_options={},
     )
 
     assert descriptor.get_provider() == "openai"
     assert descriptor.get_model() == "gpt-4o-mini"
     assert descriptor.get_options() == {}
-    assert descriptor.return_format is None
+    assert descriptor.prompt_options.get("return_format") is None
 
 
 def test_openai_prompter_descriptor_with_return_format():
@@ -126,11 +131,10 @@ def test_openai_prompter_descriptor_with_return_format():
         provider_name="openai",
         provider_options={"api_key": "test-key"},
         model_name="gpt-4o-mini",
-        model_options={},
-        return_format=SimpleResponse,
+        prompt_options={"return_format": SimpleResponse},
     )
 
-    assert descriptor.return_format == SimpleResponse
+    assert descriptor.prompt_options.get("return_format") == SimpleResponse
 
 
 def test_openai_prompter_descriptor_get_udf_options():
@@ -139,7 +143,7 @@ def test_openai_prompter_descriptor_get_udf_options():
         provider_name="openai",
         provider_options={"api_key": "test-key"},
         model_name="gpt-4o-mini",
-        model_options={},
+        prompt_options={},
     )
 
     udf_options = descriptor.get_udf_options()
@@ -154,7 +158,7 @@ def test_openai_prompter_instantiate():
         provider_name="openai",
         provider_options={"api_key": "test-key"},
         model_name="gpt-4o-mini",
-        model_options={},
+        prompt_options={},
     )
 
     prompter = descriptor.instantiate()
@@ -171,7 +175,7 @@ def test_openai_prompter_descriptor_custom_provider_name():
         provider_name="azure-openai",
         provider_options={"api_key": "test-key"},
         model_name="gpt-4o-mini",
-        model_options={},
+        prompt_options={},
     )
 
     prompter = descriptor.instantiate()
@@ -1133,7 +1137,7 @@ def test_openai_provider_get_prompter_with_use_chat_completions():
     descriptor = provider.get_prompter(model="gpt-4o-mini", use_chat_completions=True)
 
     assert isinstance(descriptor, OpenAIPrompterDescriptor)
-    assert descriptor.use_chat_completions is True
+    assert descriptor.prompt_options.get("use_chat_completions") is True
 
     # Test instantiation
     prompter = descriptor.instantiate()

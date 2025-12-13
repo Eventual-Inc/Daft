@@ -2,24 +2,63 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generic, TypeAlias, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeAlias, TypedDict, TypeVar
 
 from daft.datatype import DataType
 
 if TYPE_CHECKING:
     from typing import Literal
 
+    from pydantic import BaseModel
 
 Options = dict[str, Any]
+
+
+class EmbedTextOptions(TypedDict, total=False):
+    batch_size: int
+    max_retries: int
+    on_error: Literal["raise", "log", "ignore"]
+
+
+class EmbedImageOptions(TypedDict, total=False):
+    batch_size: int
+    max_retries: int
+    on_error: Literal["raise", "log", "ignore"]
+
+
+class ClassifyTextOptions(TypedDict, total=False):
+    batch_size: int
+    max_retries: int
+    on_error: Literal["raise", "log", "ignore"]
+
+
+class ClassifyImageOptions(TypedDict, total=False):
+    batch_size: int
+    max_retries: int
+    on_error: Literal["raise", "log", "ignore"]
+
+
+class PromptOptions(TypedDict, total=False):
+    return_format: BaseModel
+    system_message: str
+    max_retries: int
+    on_error: Literal["raise", "log", "ignore"]
+
 
 T = TypeVar("T")
 
 __all__ = [
+    "ClassifyImageOptions",
+    "ClassifyTextOptions",
     "Descriptor",
+    "EmbedImageOptions",
+    "EmbedTextOptions",
     "Embedding",
     "EmbeddingDimensions",
     "Image",
     "Label",
+    "Options",
+    "PromptOptions",
     "UDFOptions",
 ]
 
@@ -80,6 +119,7 @@ class UDFOptions:
     num_gpus: int | None = None
     max_retries: int = 3
     on_error: Literal["raise", "log", "ignore"] = "raise"
+    batch_size: int | None = None
 
 
 Label = str

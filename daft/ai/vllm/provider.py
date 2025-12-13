@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import sys
 from typing import TYPE_CHECKING, Any
+
+if sys.version_info < (3, 11):
+    from typing_extensions import Unpack
+else:
+    from typing import Unpack
 
 from daft.ai.provider import Provider
 
 if TYPE_CHECKING:
     from daft.ai.protocols import PrompterDescriptor
-    from daft.ai.typing import Options
+    from daft.ai.typing import Options, PromptOptions
 
 
 class VLLMPrefixCachingProvider(Provider):
@@ -27,13 +33,31 @@ class VLLMPrefixCachingProvider(Provider):
     def name(self) -> str:
         return self._name
 
-    def get_prompter(self, model: str | None = None, **options: Any) -> PrompterDescriptor:
+    def get_prompter(self, model: str | None = None, **options: Unpack[PromptOptions]) -> PrompterDescriptor:
         from daft.ai.vllm.protocols.prompter import VLLMPrefixCachingPrompterDescriptor
 
-        descriptor_kwargs = {
+        # Collect all options
+        all_options = {**self._options, **options}
+
+        # Extract vLLM-specific options
+        vllm_option_keys = {
+            "concurrency",
+            "gpus_per_actor",
+            "do_prefix_routing",
+            "max_buffer_size",
+            "min_bucket_size",
+            "prefix_match_threshold",
+            "load_balance_threshold",
+            "batch_size",
+            "engine_args",
+            "generate_args",
+            "num_gpus",
+        }
+        vllm_options: dict[str, Any] = {k: v for k, v in all_options.items() if k in vllm_option_keys}
+
+        descriptor_kwargs: dict[str, Any] = {
             "provider_name": self._name,
-            **self._options,
-            **options,
+            "options": vllm_options,
         }
 
         if model is not None:

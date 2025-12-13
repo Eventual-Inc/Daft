@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, Callable, Union
+from dataclasses import fields, is_dataclass
+from typing import TYPE_CHECKING, Any, Callable, TypeVar, Union, cast
 
 from daft.daft import PyTimeUnit
 from daft.dependencies import pa
@@ -184,3 +185,13 @@ def np_datetime64_to_timestamp(dt: np.datetime64) -> tuple[int, PyTimeUnit | Non
         # unit is too small, just convert to nanoseconds
         val = np.datetime64(dt, "ns").astype(np.int64)  # type: ignore
         return val.item(), PyTimeUnit.nanoseconds()
+
+
+T = TypeVar("T")
+
+
+def from_dict(cls: type[T], data: dict[str, Any]) -> T:
+    if not is_dataclass(cls):
+        raise TypeError(f"{cls} is not a dataclass")
+    field_names = {f.name for f in fields(cls)}
+    return cast("T", cls(**{k: v for k, v in data.items() if k in field_names}))

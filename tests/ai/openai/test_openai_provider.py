@@ -60,7 +60,7 @@ def test_openai_text_embedder_instantiation():
         provider_options={"api_key": "test_key"},
         model_name="text-embedding-ada-002",
         dimensions=None,
-        model_options={},
+        embed_options={},
     )
 
     embedder = descriptor.instantiate()
@@ -74,7 +74,7 @@ def test_openai_text_embedder_dimensions():
         provider_options={"api_key": "test_key"},
         model_name="text-embedding-ada-002",
         dimensions=None,
-        model_options={},
+        embed_options={},
     )
     assert descriptor_ada.get_dimensions().size == 1536
 
@@ -83,7 +83,7 @@ def test_openai_text_embedder_dimensions():
         provider_options={"api_key": "test_key"},
         model_name="text-embedding-3-small",
         dimensions=None,
-        model_options={},
+        embed_options={},
     )
     assert descriptor_small.get_dimensions().size == 1536
 
@@ -92,7 +92,7 @@ def test_openai_text_embedder_dimensions():
         provider_options={"api_key": "test_key"},
         model_name="text-embedding-3-large",
         dimensions=None,
-        model_options={},
+        embed_options={},
     )
     assert descriptor_large.get_dimensions().size == 3072
 
@@ -103,7 +103,7 @@ def test_openai_text_embedder_descriptor_overridden_dimensions():
         provider_options={"api_key": "test_key"},
         model_name="text-embedding-3-large",
         dimensions=256,
-        model_options={},
+        embed_options={},
     )
 
     assert descriptor.get_dimensions().size == 256

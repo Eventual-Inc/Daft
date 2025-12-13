@@ -9,16 +9,21 @@ from openai.types.create_embedding_response import Usage
 
 from daft import DataType
 from daft.ai.metrics import record_token_metrics
+from daft.ai.openai.typing import OpenAIProviderOptions
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
-from daft.ai.typing import EmbeddingDimensions, Options, UDFOptions
+from daft.ai.typing import EmbeddingDimensions, EmbedTextOptions, Options, UDFOptions
 from daft.dependencies import np
+from daft.utils import from_dict
 
 if TYPE_CHECKING:
     from openai.types import EmbeddingModel
     from openai.types.create_embedding_response import CreateEmbeddingResponse
 
-    from daft.ai.openai.typing import OpenAIProviderOptions
     from daft.ai.typing import Embedding
+
+
+class OpenAITextEmbedOptions(EmbedTextOptions, total=False):
+    pass
 
 
 @dataclass(frozen=True)
@@ -66,7 +71,7 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
     provider_options: OpenAIProviderOptions
     model_name: str
     dimensions: int | None
-    model_options: Options
+    embed_options: OpenAITextEmbedOptions
 
     def __post_init__(self) -> None:
         if self.provider_options.get("base_url") is None:
@@ -86,7 +91,7 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
         return self.model_name
 
     def get_options(self) -> Options:
-        return self.model_options
+        return dict(self.embed_options)
 
     def get_dimensions(self) -> EmbeddingDimensions:
         if self.dimensions is not None:
@@ -94,17 +99,21 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
         return _models[self.model_name].dimensions
 
     def get_udf_options(self) -> UDFOptions:
-        return UDFOptions(concurrency=None, num_gpus=None)
+        options = from_dict(UDFOptions, dict(self.embed_options))
+        options.max_retries = 0  # OpenAI client handles retries internally
+        return options
 
     def is_async(self) -> bool:
         return True
 
     def instantiate(self) -> TextEmbedder:
         return OpenAITextEmbedder(
-            client=AsyncOpenAI(**self.provider_options),
+            provider_options=self.provider_options,
             model=self.model_name,
+            embed_options=self.embed_options,
             dimensions=self.dimensions,
             provider_name=self.provider_name,
+            zero_on_failure=False,
         )
 
 
@@ -123,17 +132,25 @@ class OpenAITextEmbedder(TextEmbedder):
 
     def __init__(
         self,
-        client: AsyncOpenAI,
+        provider_options: OpenAIProviderOptions,
         model: str,
+        embed_options: OpenAITextEmbedOptions,
         dimensions: int | None = None,
         zero_on_failure: bool = False,
         provider_name: str = "openai",
     ):
-        self._client = client
         self._model = model
         self._zero_on_failure = zero_on_failure
         self._dimensions = dimensions
         self._provider_name = provider_name
+
+        provider_options_dict = dict(provider_options)
+        provider_option_keys = set(OpenAIProviderOptions.__annotations__.keys())
+        for key, value in embed_options.items():
+            if key in provider_option_keys:
+                provider_options_dict[key] = value
+
+        self._client = AsyncOpenAI(**provider_options_dict)
 
     async def embed_text(self, text: list[str]) -> list[Embedding]:
         embeddings: list[Embedding] = []
