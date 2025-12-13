@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, overload
 
 if sys.version_info < (3, 11):
     from typing_extensions import Unpack
 else:
     from typing import Unpack
 
+from daft.ai.openai.protocols.prompter import OpenAIPromptOptions
+from daft.ai.openai.provider import OpenAIProvider
 from daft.ai.provider import Provider, ProviderType, load_provider
 from daft.functions.ai._colab_compat import IS_COLAB, clean_pydantic_model
 from daft.datatype import DataType
@@ -134,7 +136,7 @@ def embed_text(
 
     # Decorate the selected call method with @daft.method to specify return_dtype
     _TextEmbedderExpression.__call__ = method.batch(  # type: ignore[method-assign]
-        method=call_impl, return_dtype=text_embedder.get_dimensions().as_dtype()
+        method=call_impl, return_dtype=text_embedder.get_dimensions().as_dtype(), batch_size=udf_options.batch_size
     )
     wrapped_cls = daft_cls(
         _TextEmbedderExpression,
@@ -562,19 +564,20 @@ def prompt(
         if isinstance(messages, list):
             raise ValueError("vLLM provider does not support multiple messages")
 
+        vllm_options = prompter_descriptor.get_options()
         return Expression._from_pyexpr(
             messages._expr.vllm(
                 prompter_descriptor.model_name,
-                prompter_descriptor.concurrency,
-                prompter_descriptor.gpus_per_actor,
-                prompter_descriptor.do_prefix_routing,
-                prompter_descriptor.max_buffer_size,
-                prompter_descriptor.min_bucket_size,
-                prompter_descriptor.prefix_match_threshold,
-                prompter_descriptor.load_balance_threshold,
-                prompter_descriptor.batch_size,
-                prompter_descriptor.engine_args,
-                prompter_descriptor.generate_args,
+                vllm_options["concurrency"],
+                vllm_options["gpus_per_actor"],
+                vllm_options["do_prefix_routing"],
+                vllm_options["max_buffer_size"],
+                vllm_options["min_bucket_size"],
+                vllm_options["prefix_match_threshold"],
+                vllm_options["load_balance_threshold"],
+                vllm_options["batch_size"],
+                vllm_options["engine_args"],
+                vllm_options["generate_args"],
             )
         )
 

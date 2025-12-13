@@ -13,12 +13,13 @@ from daft.ai.provider import ProviderImportError
 from daft.ai.typing import Options, PromptOptions, UDFOptions
 from daft.dependencies import np
 from daft.file import File
+from daft.utils import from_dict
 
 if TYPE_CHECKING:
     from daft.ai.google.typing import GoogleProviderOptions
 
 
-class GooglePrompterOptions(PromptOptions, total=False):
+class GooglePromptOptions(PromptOptions, total=False):
     pass
 
 
@@ -27,7 +28,7 @@ class GooglePrompterDescriptor(PrompterDescriptor):
     provider_name: str
     provider_options: GoogleProviderOptions
     model_name: str
-    prompt_options: GooglePrompterOptions
+    prompt_options: GooglePromptOptions
 
     def get_provider(self) -> str:
         return self.provider_name
@@ -39,11 +40,7 @@ class GooglePrompterDescriptor(PrompterDescriptor):
         return dict(self.prompt_options)
 
     def get_udf_options(self) -> UDFOptions:
-        return UDFOptions(
-            concurrency=None,
-            num_gpus=None,
-            max_retries=self.prompt_options["max_retries"],
-        )
+        return from_dict(UDFOptions, dict(self.prompt_options))
 
     def instantiate(self) -> Prompter:
         return GooglePrompter(
@@ -62,28 +59,16 @@ class GooglePrompter(Prompter):
         provider_name: str,
         provider_options: GoogleProviderOptions,
         model: str,
-        prompt_options: GooglePrompterOptions = {},
+        prompt_options: GooglePromptOptions = {},
     ) -> None:
         self.provider_name = provider_name
         self.model = model
-        self.return_format = prompt_options.get("return_format", None)
-        self.system_message = prompt_options.get("system_message", None)
+        self.return_format = prompt_options.pop("return_format", None)
+        self.system_message = prompt_options.pop("system_message", None)
 
-        # Separate Client params from generation params
-        client_params_keys = [
-            "base_url",
-            "vertexai",
-            "api_key",
-            "credentials",
-            "project",
-            "location",
-            "debug_config",
-            "http_options",
-        ]
-        client_params = {**provider_options}
         for key, value in prompt_options.items():
-            if key in client_params_keys:
-                client_params[key] = value
+            if key in provider_options.__annotations__.keys():
+                provider_options[key] = value  # type: ignore[literal-required]
 
         # Prepare generation config
         generation_config_keys = types.GenerateContentConfig.model_fields.keys()
@@ -103,7 +88,7 @@ class GooglePrompter(Prompter):
         self.generation_config = types.GenerateContentConfig(**config_params)
 
         # Initialize client
-        self.client = genai.Client(**client_params)
+        self.client = genai.Client(**provider_options)
 
     @singledispatchmethod
     def _process_message(self, msg: Any) -> types.Part:

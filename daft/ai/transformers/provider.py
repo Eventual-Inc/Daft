@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 import warnings
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 if sys.version_info < (3, 11):
     from typing_extensions import Unpack
@@ -19,16 +19,16 @@ if TYPE_CHECKING:
         TextEmbedderDescriptor,
     )
     from daft.ai.transformers.protocols.image_classifier import (
-        TransformersImageClassifierOptions,
+        TransformersImageClassifyOptions,
     )
     from daft.ai.transformers.protocols.image_embedder import (
-        TransformersImageEmbedderOptions,
+        TransformersImageEmbedOptions,
     )
     from daft.ai.transformers.protocols.text_classifier import (
-        TransformersTextClassifierOptions,
+        TransformersTextClassifyOptions,
     )
     from daft.ai.transformers.protocols.text_embedder import (
-        TransformersTextEmbedderOptions,
+        TransformersTextEmbedOptions,
     )
     from daft.ai.typing import Options
 
@@ -57,7 +57,7 @@ class TransformersProvider(Provider):
     def get_image_embedder(
         self,
         model: str | None = None,
-        **options: Unpack[TransformersImageEmbedderOptions],
+        **options: Unpack[TransformersImageEmbedOptions],
     ) -> ImageEmbedderDescriptor:
         from daft.dependencies import pil_image, torchvision
 
@@ -68,14 +68,12 @@ class TransformersProvider(Provider):
             TransformersImageEmbedderDescriptor,
         )
 
-        return TransformersImageEmbedderDescriptor(
-            model or self.DEFAULT_IMAGE_EMBEDDER, cast("TransformersImageEmbedderOptions", options)
-        )
+        return TransformersImageEmbedderDescriptor(model or self.DEFAULT_IMAGE_EMBEDDER, embed_options=options)
 
     def get_text_classifier(
         self,
         model: str | None = None,
-        **options: Unpack[TransformersTextClassifierOptions],
+        **options: Unpack[TransformersTextClassifyOptions],
     ) -> TextClassifierDescriptor:
         from daft.ai.transformers.protocols.text_classifier import (
             TransformersTextClassifierDescriptor,
@@ -84,14 +82,14 @@ class TransformersProvider(Provider):
         return TransformersTextClassifierDescriptor(
             provider_name=self._name,
             model_name=(model or self.DEFAULT_TEXT_CLASSIFIER),
-            model_options=cast("TransformersTextClassifierOptions", options),
+            classify_options=options,
         )
 
     def get_text_embedder(
         self,
         model: str | None = None,
         dimensions: int | None = None,
-        **options: Unpack[TransformersTextEmbedderOptions],
+        **options: Unpack[TransformersTextEmbedOptions],
     ) -> TextEmbedderDescriptor:
         from daft.ai.transformers.protocols.text_embedder import (
             TransformersTextEmbedderDescriptor,
@@ -102,14 +100,12 @@ class TransformersProvider(Provider):
                 f"embed_text dimensions was specified but provider {self.name} currently ignores this property: see https://github.com/Eventual-Inc/Daft/issues/5555"
             )
 
-        return TransformersTextEmbedderDescriptor(
-            model or self.DEFAULT_TEXT_EMBEDDER, cast("TransformersTextEmbedderOptions", options)
-        )
+        return TransformersTextEmbedderDescriptor(model or self.DEFAULT_TEXT_EMBEDDER, embed_options=options)
 
     def get_image_classifier(
         self,
         model: str | None = None,
-        **options: Unpack[TransformersImageClassifierOptions],
+        **options: Unpack[TransformersImageClassifyOptions],
     ) -> ImageClassifierDescriptor:
         from daft.dependencies import pil_image, torchvision
 
@@ -123,5 +119,5 @@ class TransformersProvider(Provider):
         return TransformersImageClassifierDescriptor(
             provider_name=self._name,
             model_name=(model or self.DEFAULT_IMAGE_CLASSIFIER),
-            model_options=cast("TransformersImageClassifierOptions", options),
+            classify_options=options,
         )

@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
+
+if sys.version_info < (3, 11):
+    from typing_extensions import Unpack
+else:
+    from typing import Unpack
 
 import torch
 from sentence_transformers import SentenceTransformer
@@ -16,14 +22,14 @@ if TYPE_CHECKING:
     from daft.ai.typing import Embedding
 
 
-class TransformersTextEmbedderOptions(EmbedTextOptions, total=False):
+class TransformersTextEmbedOptions(EmbedTextOptions, total=False):
     pass
 
 
 @dataclass
 class TransformersTextEmbedderDescriptor(TextEmbedderDescriptor):
     model: str
-    options: TransformersTextEmbedderOptions
+    embed_options: TransformersTextEmbedOptions
 
     def get_provider(self) -> str:
         return "transformers"
@@ -32,7 +38,7 @@ class TransformersTextEmbedderDescriptor(TextEmbedderDescriptor):
         return self.model
 
     def get_options(self) -> Options:
-        return dict(self.options)
+        return dict(self.embed_options)
 
     def get_dimensions(self) -> EmbeddingDimensions:
         dimensions = AutoConfig.from_pretrained(self.model, trust_remote_code=True).hidden_size
@@ -40,22 +46,24 @@ class TransformersTextEmbedderDescriptor(TextEmbedderDescriptor):
 
     def get_udf_options(self) -> UDFOptions:
         udf_options = get_gpu_udf_options()
-        udf_options.max_retries = self.options["max_retries"]
+        for key, value in self.embed_options.items():
+            if key in udf_options.__annotations__.keys():
+                setattr(udf_options, key, value)
         return udf_options
 
     def instantiate(self) -> TextEmbedder:
-        return TransformersTextEmbedder(self.model, **self.options)
+        return TransformersTextEmbedder(self.model, **self.embed_options)
 
 
 class TransformersTextEmbedder(TextEmbedder):
     model: SentenceTransformer
-    options: TransformersTextEmbedderOptions
+    embed_options: TransformersTextEmbedOptions
 
-    def __init__(self, model_name_or_path: str, **options: Any):
+    def __init__(self, model_name_or_path: str, **embed_options: Unpack[TransformersTextEmbedOptions]):
         # Let SentenceTransformer handle device selection automatically.
         self.model = SentenceTransformer(model_name_or_path, trust_remote_code=True, backend="torch")
         self.model.eval()
-        self.options = cast("TransformersTextEmbedderOptions", options)
+        self.embed_options = embed_options
 
     def embed_text(self, text: list[str]) -> list[Embedding]:
         with torch.inference_mode():

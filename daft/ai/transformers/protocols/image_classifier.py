@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     from daft.ai.typing import Label, UDFOptions
 
 
-class TransformersImageClassifierOptions(ClassifyImageOptions, total=False):
+class TransformersImageClassifyOptions(ClassifyImageOptions, total=False):
     pass
 
 
@@ -31,7 +31,7 @@ class TransformersImageClassifierOptions(ClassifyImageOptions, total=False):
 class TransformersImageClassifierDescriptor(ImageClassifierDescriptor):
     provider_name: str
     model_name: str
-    model_options: TransformersImageClassifierOptions
+    classify_options: TransformersImageClassifyOptions
 
     def get_provider(self) -> str:
         return self.provider_name
@@ -40,15 +40,17 @@ class TransformersImageClassifierDescriptor(ImageClassifierDescriptor):
         return self.model_name
 
     def get_options(self) -> Options:
-        return dict(self.model_options)
+        return dict(self.classify_options)
 
     def get_udf_options(self) -> UDFOptions:
         udf_options = get_gpu_udf_options()
-        udf_options.max_retries = self.model_options["max_retries"]
+        for key, value in self.classify_options.items():
+            if key in udf_options.__annotations__.keys():
+                setattr(udf_options, key, value)
         return udf_options
 
     def instantiate(self) -> ImageClassifier:
-        return TransformersImageClassifier(self.model_name, **self.model_options)
+        return TransformersImageClassifier(self.model_name, **self.classify_options)
 
 
 class TransformersImageClassifierPipeline(transformers.ZeroShotImageClassificationPipeline):  # type: ignore
@@ -84,10 +86,10 @@ class TransformersImageClassifier(ImageClassifier):
     """Pipeline based zero-shot image classification."""
 
     _model: str
-    _options: TransformersImageClassifierOptions
+    _options: TransformersImageClassifyOptions
     _pipeline: transformers.ZeroShotImageClassificationPipeline
 
-    def __init__(self, model_name_or_path: str, **options: Unpack[TransformersImageClassifierOptions]):
+    def __init__(self, model_name_or_path: str, **options: Unpack[TransformersImageClassifyOptions]):
         self._model = model_name_or_path
         self._options = options
 

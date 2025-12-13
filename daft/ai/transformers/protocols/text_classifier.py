@@ -26,7 +26,7 @@ class TransformersTextClassiferResult(TypedDict):
     scores: list[float]  # probability of each label
 
 
-class TransformersTextClassifierOptions(ClassifyTextOptions, total=False):
+class TransformersTextClassifyOptions(ClassifyTextOptions, total=False):
     pass
 
 
@@ -34,7 +34,7 @@ class TransformersTextClassifierOptions(ClassifyTextOptions, total=False):
 class TransformersTextClassifierDescriptor(TextClassifierDescriptor):
     provider_name: str
     model_name: str
-    model_options: TransformersTextClassifierOptions
+    classify_options: TransformersTextClassifyOptions
 
     def get_provider(self) -> str:
         return self.provider_name
@@ -43,15 +43,17 @@ class TransformersTextClassifierDescriptor(TextClassifierDescriptor):
         return self.model_name
 
     def get_options(self) -> Options:
-        return dict(self.model_options)
+        return dict(self.classify_options)
 
     def get_udf_options(self) -> UDFOptions:
         udf_options = get_gpu_udf_options()
-        udf_options.max_retries = self.model_options["max_retries"]
+        for key, value in self.classify_options.items():
+            if key in udf_options.__annotations__.keys():
+                setattr(udf_options, key, value)
         return udf_options
 
     def instantiate(self) -> TextClassifier:
-        return TransformersTextClassifier(self.model_name, **self.model_options)
+        return TransformersTextClassifier(self.model_name, **self.classify_options)
 
 
 class TransformersTextClassifier(TextClassifier):
@@ -63,10 +65,10 @@ class TransformersTextClassifier(TextClassifier):
     """
 
     _model: str
-    _options: TransformersTextClassifierOptions
+    _options: TransformersTextClassifyOptions
     _pipeline: transformers.ZeroShotClassificationPipeline
 
-    def __init__(self, model_name_or_path: str, **options: Unpack[TransformersTextClassifierOptions]):
+    def __init__(self, model_name_or_path: str, **options: Unpack[TransformersTextClassifyOptions]):
         self._model = model_name_or_path
         self._options = options
         self._pipeline = pipeline(

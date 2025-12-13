@@ -11,8 +11,8 @@ else:
 from daft.ai.provider import Provider, ProviderImportError
 
 if TYPE_CHECKING:
-    from daft.ai.openai.protocols.prompter import OpenAIPrompterOptions
-    from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedderOptions
+    from daft.ai.openai.protocols.prompter import OpenAIPromptOptions
+    from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedOptions
     from daft.ai.openai.typing import OpenAIProviderOptions
     from daft.ai.protocols import PrompterDescriptor, TextEmbedderDescriptor
 
@@ -42,7 +42,7 @@ class OpenAIProvider(Provider):
         return self._name
 
     def get_text_embedder(
-        self, model: str | None = None, dimensions: int | None = None, **options: Unpack[OpenAITextEmbedderOptions]
+        self, model: str | None = None, dimensions: int | None = None, **options: Unpack[OpenAITextEmbedOptions]
     ) -> TextEmbedderDescriptor:
         from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedderDescriptor
 
@@ -51,15 +51,15 @@ class OpenAIProvider(Provider):
             provider_options=self._options,
             model_name=(model or self.DEFAULT_TEXT_EMBEDDER),
             dimensions=dimensions,
-            model_options=options,
+            embed_options=options,
         )
 
-    def get_prompter(self, model: str | None = None, **options: Unpack[OpenAIPrompterOptions]) -> PrompterDescriptor:
+    def get_prompter(self, model: str | None = None, **options: Unpack[OpenAIPromptOptions]) -> PrompterDescriptor:
         from daft.ai.openai.protocols.prompter import OpenAIPrompterDescriptor
 
         return OpenAIPrompterDescriptor(
             provider_name=self._name,
             provider_options=self._options,
             model_name=(model or self.DEFAULT_PROMPTER_MODEL),
-            model_options=options,
+            prompt_options=options,
         )

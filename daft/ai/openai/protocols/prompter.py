@@ -14,12 +14,13 @@ from daft.ai.provider import ProviderImportError
 from daft.ai.typing import Options, PromptOptions, UDFOptions
 from daft.dependencies import np
 from daft.file import File
+from daft.utils import from_dict
 
 if TYPE_CHECKING:
     from daft.ai.openai.typing import OpenAIProviderOptions
 
 
-class OpenAIPrompterOptions(PromptOptions, total=False):
+class OpenAIPromptOptions(PromptOptions, total=False):
     use_chat_completions: bool
 
 
@@ -28,7 +29,7 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
     provider_name: str
     provider_options: OpenAIProviderOptions
     model_name: str
-    model_options: OpenAIPrompterOptions
+    prompt_options: OpenAIPromptOptions
 
     def get_provider(self) -> str:
         return self.provider_name
@@ -37,17 +38,19 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
         return self.model_name
 
     def get_options(self) -> Options:
-        return dict(self.model_options)
+        return dict(self.prompt_options)
 
     def get_udf_options(self) -> UDFOptions:
-        return UDFOptions(concurrency=None, num_gpus=None, max_retries=self.model_options["max_retries"])
+        options = from_dict(UDFOptions, dict(self.prompt_options))
+        options.max_retries = 0  # OpenAI client handles retries internally
+        return options
 
     def instantiate(self) -> Prompter:
         return OpenAIPrompter(
             provider_name=self.provider_name,
             provider_options=self.provider_options,
             model=self.model_name,
-            model_options=self.model_options,
+            prompt_options=self.prompt_options,
         )
 
 
@@ -59,22 +62,21 @@ class OpenAIPrompter(Prompter):
         provider_name: str,
         provider_options: OpenAIProviderOptions,
         model: str,
-        model_options: OpenAIPrompterOptions = {},
+        prompt_options: OpenAIPromptOptions = {},
     ) -> None:
         self.provider_name = provider_name
         self.model = model
-        self.return_format = model_options.get("return_format", None)
-        self.system_message = model_options.get("system_message", None)
-        self.use_chat_completions = model_options["use_chat_completions"]
-        # Separate client params from generation params
-        client_params_keys = ["base_url", "api_key", "timeout", "max_retries"]
-        client_params = {**provider_options}
-        for key, value in model_options.items():
-            if key in client_params_keys:
-                client_params[key] = value
+        self.return_format = prompt_options.pop("return_format", None)
+        self.system_message = prompt_options.pop("system_message", None)
+        self.use_chat_completions = prompt_options.pop("use_chat_completions", False)
 
-        self.generation_config = {k: v for k, v in model_options.items() if k not in client_params_keys}
-        self.llm = AsyncOpenAI(**client_params)
+        # Separate client params from generation params
+        for key, value in prompt_options.items():
+            if key in provider_options.__annotations__.keys():
+                provider_options[key] = value  # type: ignore[literal-required]
+        self.llm = AsyncOpenAI(**provider_options)
+
+        self.generation_config = {k: v for k, v in prompt_options.items() if k not in provider_options}
 
     @singledispatchmethod
     def _process_message(self, msg: Any) -> dict[str, Any]:
