@@ -1,6 +1,6 @@
 # Partitioning and Batching
 
-Daft provides two complementary mechanisms for controlling parallelism: partitions and batches. Partitions let you split data into a fixed number of units, while batches split data based on by size.
+Daft provides two complementary mechanisms for controlling parallelism: partitions and batches. Partitions let you split data into a fixed number of units, while batches split data based on size.
 
 > **TL;DR**
 >
