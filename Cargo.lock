@@ -435,6 +435,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "comfy-table 6.2.0",
+ "common-pattern",
  "criterion",
  "crossbeam-channel",
  "csv",
@@ -465,7 +466,6 @@ dependencies = [
  "proptest",
  "rand 0.8.5",
  "regex",
- "regex-syntax 0.8.8",
  "rustc_version",
  "sample-arrow2",
  "sample-std",
@@ -2006,6 +2006,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-pattern"
+version = "0.3.0-dev0"
+dependencies = [
+ "regex",
+]
+
+[[package]]
 name = "common-py-serde"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2561,6 +2568,7 @@ name = "daft-catalog"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "common-pattern",
  "daft-context",
  "daft-core",
  "daft-logical-plan",
@@ -2928,11 +2936,13 @@ dependencies = [
 name = "daft-functions-utf8"
 version = "0.3.0-dev0"
 dependencies = [
+ "ahash",
  "aho-corasick",
  "arrow",
  "chrono",
  "chrono-tz",
  "common-error",
+ "common-pattern",
  "daft-arrow",
  "daft-core",
  "daft-dsl",
@@ -7042,7 +7052,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "76009fbe0614077fc1a2ce255e3a1881a2e3a3527097d5dc6d8212c585e7e38b"
 dependencies = [
  "quote",
- "syn 2.0.106",
+ "syn 2.0.111",
 ]
 
 [[package]]

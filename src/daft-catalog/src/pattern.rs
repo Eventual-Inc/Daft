@@ -1,3 +1,4 @@
+use common_pattern::like_pattern_to_regex;
 use regex::Regex;
 
 /// Parsed components of a qualified table pattern.
@@ -37,31 +38,10 @@ pub(crate) fn parse_qualified_pattern(pattern: &str) -> QualifiedPattern<'_> {
 
 /// Matches a SQL `LIKE` pattern against a value.
 pub(crate) fn match_pattern(value: &str, pattern: &str) -> bool {
-    translate_like_to_regex(pattern)
+    like_pattern_to_regex(pattern)
         .and_then(|re| Regex::new(&re).ok())
         .map(|re| re.is_match(value))
         .unwrap_or(false)
-}
-
-fn translate_like_to_regex(pattern: &str) -> Option<String> {
-    let mut regex = String::from("^");
-    let mut chars = pattern.chars();
-    while let Some(ch) = chars.next() {
-        match ch {
-            '\\' => {
-                if let Some(next_ch) = chars.next() {
-                    regex.push_str(&regex::escape(&next_ch.to_string()));
-                } else {
-                    return None;
-                }
-            }
-            '%' => regex.push_str(".*"),
-            '_' => regex.push('.'),
-            _ => regex.push_str(&regex::escape(&ch.to_string())),
-        }
-    }
-    regex.push('$');
-    Some(regex)
 }
 
 #[cfg(test)]
