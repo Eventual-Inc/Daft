@@ -48,7 +48,7 @@ def test_read_huggingface(path, split, sort_key):
     "path, schema",
     [
         (
-            "http://huggingface.co/api/datasets/Eventual-Inc/sample-parquet/parquet/default/train/0.parquet",
+            "https://huggingface.co/api/datasets/Eventual-Inc/sample-parquet/parquet/default/train/0.parquet",
             daft.Schema.from_pydict({"image": dt.struct({"bytes": dt.binary(), "path": dt.string()})}),
         ),
     ],
