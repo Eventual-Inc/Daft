@@ -141,6 +141,9 @@ pub enum Error {
     #[snafu(display("Source not yet implemented: {}", store))]
     NotImplementedSource { store: String },
 
+    #[snafu(display("Method not implemented: {}", method))]
+    NotImplementedMethod { method: String },
+
     #[snafu(display("Unhandled Error for path: {}\nDetails:\n{}", path, msg))]
     Unhandled { path: String, msg: String },
 

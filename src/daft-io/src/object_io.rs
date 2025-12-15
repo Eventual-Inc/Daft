@@ -239,11 +239,10 @@ pub trait ObjectSource: Sync + Send {
 
     /// Delete the object with the given uri.
     /// Return OK if the object is deleted successfully or the object does not exist.
-    async fn delete(&self, uri: &str, _io_stats: Option<IOStatsRef>) -> super::Result<()> {
-        todo!(
-            "Deletes {} is not yet supported! Please file an issue.",
-            uri
-        );
+    async fn delete(&self, _uri: &str, _io_stats: Option<IOStatsRef>) -> super::Result<()> {
+        Err(super::Error::NotImplementedMethod {
+            method: "Deletes is not yet supported! Please file an issue.".to_string(),
+        })
     }
 
     async fn iter_dir(
