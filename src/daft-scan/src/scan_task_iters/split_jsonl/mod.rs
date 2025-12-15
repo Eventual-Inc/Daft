@@ -174,17 +174,25 @@ fn local_path_from_uri(path: &str) -> Option<PathBuf> {
     if let Ok((SourceType::File, resolved)) = parse_url(path) {
         let owned = resolved.into_owned();
 
-        if let Ok(url) = Url::parse(&owned)
+        // Strip query params and fragments before processing
+        let clean_path = strip_url_params(&owned);
+
+        if let Ok(url) = Url::parse(clean_path)
             && let Ok(path_buf) = url.to_file_path()
         {
             return Some(path_buf);
         }
 
-        if let Some(stripped) = owned.strip_prefix("file://") {
+        // Fallback for when Url::to_file_path() fails
+        if let Some(stripped) = clean_path.strip_prefix("file://") {
+            // On Windows, "file:///C:/path" becomes "/C:/path" after stripping "file://".
+            // We need to remove the leading "/" to get a valid Windows path "C:/path".
+            #[cfg(windows)]
+            let stripped = stripped.strip_prefix('/').unwrap_or(stripped);
             return Some(PathBuf::from(decode_path_component(stripped)));
         }
 
-        return Some(PathBuf::from(decode_path_component(&owned)));
+        return Some(PathBuf::from(decode_path_component(clean_path)));
     }
 
     if !path.contains("://") {
