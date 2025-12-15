@@ -423,9 +423,9 @@ def prompt(
     return_format: BaseModel | None = None,
     *,
     system_message: str | None = None,
-    provider: str | None = None,
+    provider: Literal["openai"] | OpenAIProvider,
     model: str | None = None,
-    **options: Unpack[PromptOptions],
+    **options: Unpack[OpenAIPromptOptions],
 ) -> Expression: ...
 
 
@@ -435,9 +435,9 @@ def prompt(
     return_format: BaseModel | None = None,
     *,
     system_message: str | None = None,
-    provider: Literal["openai"] | OpenAIProvider | None = None,
+    provider: str | None,
     model: str | None = None,
-    **options: Unpack[OpenAIPromptOptions],
+    **options: Unpack[PromptOptions],
 ) -> Expression: ...
 
 
