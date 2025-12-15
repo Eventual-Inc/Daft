@@ -1,6 +1,6 @@
 use std::cmp::max;
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr, is_partition_compatible};
 use daft_logical_plan::{
     ClusteringSpec, JoinStrategy, JoinType,
@@ -10,6 +10,8 @@ use daft_logical_plan::{
 };
 use daft_schema::schema::SchemaRef;
 
+#[cfg(feature = "python")]
+use crate::pipeline_node::join::KeyFilteringJoinNode;
 use crate::pipeline_node::{
     DistributedPipelineNode,
     join::{BroadcastJoinNode, CrossJoinNode, HashJoinNode, SortMergeJoinNode},
@@ -330,6 +332,32 @@ impl LogicalPlanToPipelineNodeTranslator {
             ),
             JoinStrategy::Cross => {
                 self.gen_cross_join_node(left_node, right_node, join.output_schema.clone())
+            }
+            JoinStrategy::KeyFiltering => {
+                #[cfg(feature = "python")]
+                {
+                    let spec = join.skip_existing_spec.clone().ok_or_else(|| {
+                        DaftError::InternalError(
+                            "KeyFiltering join must have a skip_existing_spec".to_string(),
+                        )
+                    })?;
+                    // KeyFiltering anti-join only uses the left (input) side.
+                    // The right side (PlaceHolder) is not needed — actors are lazily created during execution.
+                    Ok(KeyFilteringJoinNode::new(
+                        self.get_next_pipeline_node_id(),
+                        &self.plan_config,
+                        spec,
+                        join.output_schema.clone(),
+                        left_node,
+                    )
+                    .into_node())
+                }
+                #[cfg(not(feature = "python"))]
+                {
+                    Err(DaftError::InternalError(
+                        "KeyFiltering join requires Python feature".to_string(),
+                    ))
+                }
             }
         }
     }

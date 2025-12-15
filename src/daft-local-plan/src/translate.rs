@@ -411,6 +411,11 @@ fn translate_helper(
                             "Sort merge join is not supported on the native runner, falling back to hash join."
                         );
                     }
+                    JoinStrategy::KeyFiltering => {
+                        return Err(DaftError::not_implemented(
+                            "DataFrame.skip_existing() is only supported on the Ray runner. Please use daft.set_runner_ray().",
+                        ));
+                    }
                     _ => {}
                 }
             }

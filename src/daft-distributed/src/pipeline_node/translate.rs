@@ -150,9 +150,29 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                         info.io_config.clone().map(|c| *c),
                     )?
                     .into_node(),
-                    SourceInfo::PlaceHolder(_) => unreachable!(
-                        "PlaceHolder should not be present in the logical plan for pipeline node translation"
-                    ),
+                    SourceInfo::PlaceHolder(info) => {
+                        // PlaceHolder sources are used as the right side of KeyFiltering anti-joins.
+                        // They produce no data — the actual filtering is handled by KeyFilteringJoinNode
+                        // which lazily creates Ray actors. We create a dummy InMemorySourceNode here
+                        // so the tree visitor can push a node onto the stack for the Join to pop.
+                        let dummy_info = daft_logical_plan::InMemoryInfo::new(
+                            info.source_schema.clone(),
+                            "__placeholder__".to_string(),
+                            None,
+                            0,
+                            0,
+                            0,
+                            None,
+                            None,
+                        );
+                        InMemorySourceNode::new(
+                            self.get_next_pipeline_node_id(),
+                            &self.plan_config,
+                            dummy_info,
+                            self.psets.clone(),
+                        )
+                        .into_node()
+                    }
                 }
             }
             LogicalPlan::UDFProject(udf) if udf.is_actor_pool_udf() => {

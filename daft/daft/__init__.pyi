@@ -167,6 +167,8 @@ class JoinStrategy(Enum):
     Hash = 1
     SortMerge = 2
     Broadcast = 3
+    Cross = 4
+    KeyFiltering = 5
 
     @staticmethod
     def from_join_strategy_str(join_strategy: str) -> JoinStrategy:
@@ -2005,6 +2007,31 @@ class PyFormatSinkOption:
     @classmethod
     def parquet(cls) -> PyFormatSinkOption: ...
 
+class SkipExistingSpec:
+    existing_path: list[str]
+    file_format: FileFormat
+    key_column: list[str]
+    io_config: IOConfig | None
+    read_kwargs: dict[str, Any] | None
+    num_workers: int | None
+    cpus_per_worker: float | None
+    keys_load_batch_size: int | None
+    max_concurrency_per_worker: int | None
+    filter_batch_size: int | None
+    def __init__(
+        self,
+        existing_path: str | list[str],
+        file_format: FileFormat,
+        key_column: str | list[str],
+        io_config: IOConfig | None = None,
+        read_kwargs: dict[str, Any] | None = None,
+        num_workers: int | None = None,
+        cpus_per_worker: float | None = None,
+        keys_load_batch_size: int | None = None,
+        max_concurrency_per_worker: int | None = None,
+        filter_batch_size: int | None = None,
+    ) -> None: ...
+
 class LogicalPlanBuilder:
     """A logical plan builder, which simplifies constructing logical plans via a fluent interface.
 
@@ -2023,6 +2050,8 @@ class LogicalPlanBuilder:
         size_bytes: int,
         num_rows: int,
     ) -> LogicalPlanBuilder: ...
+    @staticmethod
+    def placeholder_scan(schema: PySchema) -> LogicalPlanBuilder: ...
     @staticmethod
     def from_glob_scan(
         glob_paths: list[str],
@@ -2079,6 +2108,17 @@ class LogicalPlanBuilder:
         join_strategy: JoinStrategy | None = None,
         prefix: str | None = None,
         suffix: str | None = None,
+    ) -> LogicalPlanBuilder: ...
+    def join_with_skip_existing(
+        self,
+        right: LogicalPlanBuilder,
+        left_on: list[PyExpr],
+        right_on: list[PyExpr],
+        join_type: JoinType,
+        join_strategy: JoinStrategy | None = None,
+        prefix: str | None = None,
+        suffix: str | None = None,
+        skip_existing_spec: SkipExistingSpec = ...,
     ) -> LogicalPlanBuilder: ...
     def concat(self, other: LogicalPlanBuilder) -> LogicalPlanBuilder: ...
     def union(self, other: LogicalPlanBuilder, is_all: bool, is_by_name: bool) -> LogicalPlanBuilder: ...

@@ -60,6 +60,7 @@ pub enum NodeType {
     // Specific to distributed only
     DistributedHashJoin,
     BroadcastJoin,
+    KeyFilteringJoin,
     SortMergeJoin,
 }
 

@@ -46,9 +46,10 @@ use crate::{
         join::{JoinOptions, JoinPredicate},
     },
     optimization::{OptimizerBuilder, OptimizerConfig},
-    partitioning::{HashRepartitionConfig, RandomShuffleConfig, RepartitionSpec},
+    partitioning::{ClusteringSpec, HashRepartitionConfig, RandomShuffleConfig, RepartitionSpec},
     sink_info::{FormatSinkOption, OutputFileInfo, SinkInfo},
-    source_info::{GlobScanInfo, InMemoryInfo, SourceInfo},
+    source_info::{GlobScanInfo, InMemoryInfo, PlaceHolderInfo, SourceInfo},
+    stats::StatsState,
 };
 
 /// A logical plan builder, which simplifies constructing logical plans via
@@ -165,6 +166,20 @@ impl LogicalPlanBuilder {
         let logical_plan: LogicalPlan = ops::Source::new(schema, source_info.into()).into();
 
         Ok(Self::from(Arc::new(logical_plan)))
+    }
+
+    pub fn placeholder_scan(schema: SchemaRef) -> Self {
+        let source = LogicalPlan::Source(ops::Source {
+            plan_id: None,
+            node_id: None,
+            output_schema: schema.clone(),
+            source_info: Arc::new(SourceInfo::PlaceHolder(PlaceHolderInfo::new(
+                schema,
+                Arc::new(ClusteringSpec::unknown()),
+            ))),
+            stats_state: StatsState::NotMaterialized,
+        });
+        Self::from(Arc::new(source))
     }
 
     /// Creates a `LogicalPlan::Source` from glob paths.
@@ -642,6 +657,31 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn join_with_skip_existing<Right: Into<LogicalPlanRef>>(
+        &self,
+        right: Right,
+        on: Option<ExprRef>,
+        using: Vec<String>,
+        join_type: JoinType,
+        join_strategy: Option<JoinStrategy>,
+        options: JoinOptions,
+        skip_existing_spec: ops::SkipExistingSpec,
+    ) -> DaftResult<Self> {
+        let result = self.join(right, on, using, join_type, join_strategy, options)?;
+        // Attach the skip_existing_spec to the Join node
+        match result.plan.as_ref() {
+            LogicalPlan::Join(join) => {
+                let new_join = join
+                    .clone()
+                    .with_skip_existing_spec(Some(skip_existing_spec));
+                let logical_plan: LogicalPlan = new_join.into();
+                Ok(result.with_new_plan(logical_plan))
+            }
+            _ => unreachable!("join() must return a Join node"),
+        }
+    }
+
     pub fn cross_join<Right: Into<LogicalPlanRef>>(
         &self,
         right: Right,
@@ -1093,6 +1133,11 @@ impl PyLogicalPlanBuilder {
     }
 
     #[staticmethod]
+    pub fn placeholder_scan(schema: PySchema) -> Self {
+        LogicalPlanBuilder::placeholder_scan(schema.into()).into()
+    }
+
+    #[staticmethod]
     pub fn from_glob_scan(
         glob_paths: Vec<String>,
         io_config: Option<PyIOConfig>,
@@ -1291,7 +1336,7 @@ impl PyLogicalPlanBuilder {
         join_type,
         join_strategy,
         prefix,
-        suffix
+        suffix,
     ))]
     pub fn join(
         &self,
@@ -1338,6 +1383,66 @@ impl PyLogicalPlanBuilder {
                 join_type,
                 join_strategy,
                 JoinOptions { prefix, suffix },
+            )?
+            .into())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        right,
+        left_on,
+        right_on,
+        join_type,
+        join_strategy,
+        prefix,
+        suffix,
+        skip_existing_spec,
+    ))]
+    pub fn join_with_skip_existing(
+        &self,
+        right: &Self,
+        left_on: Vec<PyExpr>,
+        right_on: Vec<PyExpr>,
+        join_type: JoinType,
+        join_strategy: Option<JoinStrategy>,
+        prefix: Option<String>,
+        suffix: Option<String>,
+        skip_existing_spec: ops::PySkipExistingSpec,
+    ) -> PyResult<Self> {
+        let left_on = left_on.into_iter().map(|expr| expr.expr);
+        let right_on = right_on.into_iter().map(|expr| expr.expr);
+
+        let mut on_exprs = Vec::new();
+        let mut using = Vec::new();
+
+        for (l, r) in left_on.zip(right_on) {
+            if let (
+                Expr::Column(Column::Unresolved(UnresolvedColumn { name: l_name, .. })),
+                Expr::Column(Column::Unresolved(UnresolvedColumn { name: r_name, .. })),
+            ) = (l.as_ref(), r.as_ref())
+                && l_name == r_name
+            {
+                using.push(l_name.to_string());
+            } else {
+                let l = l.to_left_cols(self.builder.schema())?;
+                let r = r.to_right_cols(right.builder.schema())?;
+
+                on_exprs.push(l.eq(r));
+            }
+        }
+
+        let on = combine_conjunction(on_exprs);
+
+        Ok(self
+            .builder
+            .join_with_skip_existing(
+                &right.builder,
+                on,
+                using,
+                join_type,
+                join_strategy,
+                JoinOptions { prefix, suffix },
+                skip_existing_spec.spec,
             )?
             .into())
     }

@@ -36,6 +36,7 @@ impl OptimizerRule for PushDownJoinPredicate {
                 on,
                 join_type,
                 join_strategy,
+                skip_existing_spec,
                 ..
             }) = node.as_ref()
             {
@@ -82,6 +83,7 @@ impl OptimizerRule for PushDownJoinPredicate {
 
                     let new_join =
                         Join::try_new(new_left, new_right, new_on, *join_type, *join_strategy)?
+                            .with_skip_existing_spec(skip_existing_spec.clone())
                             .into();
 
                     return Ok(Transformed::yes(new_join));

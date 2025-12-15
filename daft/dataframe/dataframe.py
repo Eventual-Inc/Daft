@@ -6,6 +6,7 @@
 # For technical details, see https://github.com/Eventual-Inc/Daft/pull/630
 
 import io
+import logging
 import multiprocessing
 import os
 import pathlib
@@ -71,6 +72,8 @@ if TYPE_CHECKING:
     from daft.unity_catalog import UnityCatalogTable
 
 from daft.schema import Schema
+
+logger = logging.getLogger(__name__)
 
 UDFReturnType = TypeVar("UDFReturnType", covariant=True)
 T = TypeVar("T")
@@ -2618,6 +2621,151 @@ class DataFrame:
 
             predicate = sql_expr(predicate)
         builder = self._builder.filter(predicate)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def skip_existing(
+        self,
+        existing_path: str | pathlib.Path | list[str | pathlib.Path],
+        key_column: str | list[str],
+        file_format: str | FileFormat,
+        io_config: IOConfig | None = None,
+        num_workers: int = 4,
+        cpus_per_worker: float = 1.0,
+        keys_load_batch_size: int = 100000,
+        max_concurrency_per_worker: int = 1,
+        filter_batch_size: int = 10000,
+        strict_path_check: bool = False,
+        **reader_args: Any,
+    ) -> "DataFrame":
+        """Filter out rows whose key(s) already exist in existing data (i.e., already processed rows).
+
+        This method reads existing data from the given path(s), builds an in-memory key filter,
+        and filters the current DataFrame to only include rows whose key(s) are not present
+        in the existing data. This is useful for incremental data processing pipelines where
+        you want to avoid re-processing data that has already been written.
+
+        Args:
+            existing_path: Path or list of paths to the existing data directory/file(s).
+            key_column: Column name(s) to use as the key for matching. Can be a single column name
+                or a list of column names for composite keys.
+            file_format: Format of the existing data files. Supported formats: Parquet, CSV, JSON.
+            io_config: IO configuration for reading the existing data.
+            num_workers: Number of Ray actors to spawn for key filtering. Each actor holds a
+                shard of existing keys and filters incoming partitions in parallel. Higher values
+                increase parallelism and typically reduce per-actor memory usage.
+            cpus_per_worker: Number of CPUs to allocate per Ray actor.
+            keys_load_batch_size: Batch size when loading keys from existing data into actors.
+            max_concurrency_per_worker: Maximum concurrency for per-actor operations.
+            filter_batch_size: Batch size for the key filter operation. Controls how many rows
+                are sent to the key filter actors per RPC call. Larger values reduce RPC
+                overhead but increase memory usage proportionally across all concurrent tasks
+                (total memory ≈ num_tasks × filter_batch_size × avg_key_size). For lightweight
+                keys (int, short string), 10000-50000 works well. For large keys (URLs, long
+                strings), keep this lower to avoid excessive memory usage. Defaults to 10000.
+            strict_path_check: If True, raise an error when the path doesn't exist.
+                If False (default), log a warning and process all rows (useful for first run).
+            **reader_args: Additional arguments passed to the file reader (e.g., delimiter for CSV).
+
+        Returns:
+            DataFrame: A new DataFrame with rows filtered to exclude those whose keys exist
+                in the existing data.
+
+        Raises:
+            ValueError: If key columns are invalid, paths are empty, or parameters are out of range.
+            RuntimeError: If the existing data cannot be read or key filter resources cannot be allocated.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"id": [1, 2, 3, 4], "value": ["a", "b", "c", "d"]})
+            >>> # Filter out rows where 'id' already exists in existing Parquet data
+            >>> filtered_df = df.skip_existing(
+            ...     existing_path="s3://bucket/existing_data/",
+            ...     key_column="id",
+            ...     file_format="parquet",
+            ... )
+        """
+        if isinstance(file_format, str):
+            fmt = file_format.strip().lower()
+            if fmt == "parquet":
+                file_format = FileFormat.Parquet
+            elif fmt == "csv":
+                file_format = FileFormat.Csv
+            elif fmt in ("json", "jsonl", "ndjson"):
+                file_format = FileFormat.Json
+            else:
+                raise ValueError(f"[skip_existing] Unsupported format: {file_format}")
+
+        if file_format not in (FileFormat.Parquet, FileFormat.Csv, FileFormat.Json):
+            raise ValueError(f"[skip_existing] Unsupported format: {file_format}")
+
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+        existing_path_strs: list[str]
+        if isinstance(existing_path, list):
+            existing_path_strs = [str(p) for p in existing_path]
+        else:
+            existing_path_strs = [str(existing_path)]
+
+        # Path existence check:
+        # If the existing data path doesn't exist, it means there's nothing to skip.
+        if not strict_path_check:
+            from pyarrow.fs import FileType
+
+            from daft.filesystem import _resolve_paths_and_filesystem
+
+            try:
+                resolved_paths, fs = _resolve_paths_and_filesystem(existing_path_strs, io_config=io_config)
+                infos = fs.get_file_info(resolved_paths)
+                all_exist = all(info.type != FileType.NotFound for info in infos)
+            except Exception:
+                all_exist = False
+
+            if not all_exist:
+                logger.warning(
+                    "[skip_existing] No existing data found at %s, processing all rows.",
+                    existing_path_strs,
+                )
+                return self
+
+        if not isinstance(key_column, list):
+            key_column = [key_column]
+
+        from daft.daft import LogicalPlanBuilder as _LogicalPlanBuilder
+        from daft.daft import PySchema, SkipExistingSpec
+
+        # Build SkipExistingSpec
+        spec = SkipExistingSpec(
+            existing_path=existing_path_strs,
+            file_format=file_format,
+            key_column=key_column,
+            io_config=io_config,
+            read_kwargs=(reader_args or None),
+            num_workers=num_workers,
+            cpus_per_worker=cpus_per_worker,
+            keys_load_batch_size=keys_load_batch_size,
+            max_concurrency_per_worker=max_concurrency_per_worker,
+            filter_batch_size=filter_batch_size,
+        )
+
+        # Build a PlaceHolder source with key-only schema as the right side of the anti-join
+        current_schema = self._builder.schema()
+        key_fields = [current_schema._schema[col_name] for col_name in key_column]
+        key_schema = PySchema.from_fields(key_fields)
+        placeholder = _LogicalPlanBuilder.placeholder_scan(key_schema)
+        right_builder = LogicalPlanBuilder(placeholder)
+
+        # Build anti-join on key columns with KeyFiltering strategy
+        left_on = [col(c) for c in key_column]
+        right_on = [col(c) for c in key_column]
+        builder = self._builder.join_with_skip_existing(
+            right_builder,
+            left_on=left_on,
+            right_on=right_on,
+            how=JoinType.Anti,
+            strategy=JoinStrategy.KeyFiltering,
+            skip_existing_spec=spec,
+        )
         return DataFrame(builder)
 
     @DataframePublicAPI

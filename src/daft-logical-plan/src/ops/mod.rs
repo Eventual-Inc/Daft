@@ -16,6 +16,7 @@ mod sample;
 mod set_operations;
 mod shard;
 mod sink;
+pub mod skip_existing;
 mod sort;
 mod source;
 mod summarize;
@@ -43,6 +44,9 @@ pub use sample::Sample;
 pub use set_operations::{Except, Intersect, SetQuantifier, Union, UnionStrategy};
 pub use shard::Shard;
 pub use sink::Sink;
+#[cfg(feature = "python")]
+pub use skip_existing::PySkipExistingSpec;
+pub use skip_existing::SkipExistingSpec;
 pub use sort::Sort;
 pub use source::Source;
 pub use summarize::summarize;
