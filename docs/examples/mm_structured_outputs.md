@@ -4,7 +4,7 @@
 
 ## Introduction
 
-We'll evaluate [Qwen3-VL](https://github.com/QwenLM/Qwen3-VL)'s image understanding using a multiple choice subset of HuggingFace's [The Cauldron dataset](https://huggingface.co/datasets/HuggingFaceM4/the_cauldron), a massive collection of 50 vision-language datasets. 
+We'll evaluate [Qwen3-VL](https://github.com/QwenLM/Qwen3-VL)'s image understanding using a multiple choice subset of HuggingFace's [The Cauldron dataset](https://huggingface.co/datasets/HuggingFaceM4/the_cauldron), a massive collection of 50 vision-language datasets.
 
 Our pipeline will:
 
@@ -109,7 +109,7 @@ df_text = df_img.explode(col("texts")).select(unnest(col("texts")), "image")
 
 # Parse the answer letter from "Answer: C" format
 df_prep = df_text.with_column(
-    "answer", 
+    "answer",
     col("assistant").regexp_replace("Answer: ", "").lstrip().rstrip()
 ).collect()
 
@@ -155,7 +155,7 @@ Evaluate correctness:
 ```python
 # Evaluate correctness
 df_eval = df_results.with_column(
-    "is_correct", 
+    "is_correct",
     col("result")["choice"].lstrip().rstrip() == col("answer").lstrip().rstrip()
 )
 
@@ -245,7 +245,7 @@ Inspect cases where the image helped:
 ```python
 # Inspect cases where the image helped
 df_classified.where(col("quadrant") == "Image Helped").select(
-    "user", "image", "answer", 
+    "user", "image", "answer",
     col("result")["choice"].alias("with_image"),
     col("result_no_image")["choice"].alias("without_image")
 ).show(3)
@@ -389,7 +389,7 @@ print(f"Judge rows: {df_judged.count_rows()}")
 
 But The Cauldron contains **millions of rows across 50 subsets**. To run this evaluation at scale with strong consistent performance we can scale on [Daft Cloud](https://daft.ai/cloud). The python script version of this notebook is available in the [daft-examples](https://github.com/Eventual-Inc/daft-examples) repo in the [use_cases/image_understanding_eval](https://github.com/Eventual-Inc/daft-examples/tree/main/use_cases/image_understanding_eval) directory.
 
-👉 [**Sign up for early access**](https://daft.ai/cloud) | [**Book a demo**](https://www.daft.ai/demo) 
+👉 [**Sign up for early access**](https://daft.ai/cloud) | [**Book a demo**](https://www.daft.ai/demo)
 
 ### Take this one step further with LLM-as-a-judge
 
@@ -429,4 +429,3 @@ for subset in subsets:
 **Canonical References:**
 - [Getting Structured LLM Output (DeepLearning.ai)](https://learn.deeplearning.ai/courses/getting-structured-llm-output/information)
 - [Judging LLM-as-a-Judge (NeurIPS 2023)](https://arxiv.org/abs/2306.05685)
-
