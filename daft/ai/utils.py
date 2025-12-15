@@ -55,15 +55,15 @@ def get_gpu_udf_options() -> UDFOptions:
         return UDFOptions(concurrency=None, num_gpus=None)
 
 
-def merge_provider_and_user_options(
+def merge_provider_and_api_options(
     provider_options: dict[str, Any] | Any,
-    user_options: dict[str, Any] | Any,
+    api_options: dict[str, Any] | Any,
     provider_option_type: type,
 ) -> dict[str, Any]:
     result: dict[str, Any] = dict(provider_options)
     provider_option_keys = set(provider_option_type.__annotations__.keys())
 
-    for key, value in user_options.items():
+    for key, value in api_options.items():
         if key in provider_option_keys:
             result[key] = value
 

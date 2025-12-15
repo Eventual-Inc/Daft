@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import singledispatchmethod
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any
 
 from google import genai
 from google.genai import types
@@ -11,10 +11,14 @@ from daft.ai.google.typing import GoogleProviderOptions
 from daft.ai.metrics import record_token_metrics
 from daft.ai.protocols import Prompter, PrompterDescriptor
 from daft.ai.provider import ProviderImportError
-from daft.ai.typing import Options, PromptOptions, UDFOptions
+from daft.ai.utils import merge_provider_and_api_options
 from daft.dependencies import np
 from daft.file import File
-from daft.utils import from_dict
+
+if TYPE_CHECKING:
+    from pydantic import BaseModel
+
+    from daft.ai.typing import Options, PromptOptions
 
 
 @dataclass
@@ -22,9 +26,9 @@ class GooglePrompterDescriptor(PrompterDescriptor):
     provider_name: str
     provider_options: GoogleProviderOptions
     model_name: str
-    return_format: Any | None = None
+    prompt_options: PromptOptions
     system_message: str | None = None
-    prompt_options: PromptOptions = field(default_factory=lambda: cast("PromptOptions", {}))
+    return_format: BaseModel | None = None
 
     def get_provider(self) -> str:
         return self.provider_name
@@ -35,16 +39,13 @@ class GooglePrompterDescriptor(PrompterDescriptor):
     def get_options(self) -> Options:
         return dict(self.prompt_options)
 
-    def get_udf_options(self) -> UDFOptions:
-        return from_dict(UDFOptions, dict(self.prompt_options))
-
     def instantiate(self) -> Prompter:
         return GooglePrompter(
             provider_name=self.provider_name,
             provider_options=self.provider_options,
             model=self.model_name,
-            return_format=self.return_format,
             system_message=self.system_message,
+            return_format=self.return_format,
             prompt_options=self.prompt_options,
         )
 
@@ -57,24 +58,19 @@ class GooglePrompter(Prompter):
         provider_name: str,
         provider_options: GoogleProviderOptions,
         model: str,
-        return_format: Any | None = None,
         system_message: str | None = None,
+        return_format: BaseModel | None = None,
         prompt_options: PromptOptions = {},
     ) -> None:
-        from daft.ai.utils import merge_provider_and_user_options
-
         self.provider_name = provider_name
         self.model = model
         self.return_format = return_format
         self.system_message = system_message
 
-        # Make mutable copy
-        prompt_options_dict: dict[str, Any] = dict(prompt_options)
-
         # Merge provider and remaining user options
-        provider_options_dict = merge_provider_and_user_options(
+        merged_provider_options = merge_provider_and_api_options(
             provider_options=provider_options,
-            user_options=prompt_options_dict,
+            api_options=prompt_options,
             provider_option_type=GoogleProviderOptions,
         )
 
@@ -82,7 +78,7 @@ class GooglePrompter(Prompter):
         generation_config_keys = types.GenerateContentConfig.model_fields.keys()
 
         config_params = {}
-        for key, value in prompt_options_dict.items():
+        for key, value in prompt_options.items():
             if key in generation_config_keys:
                 config_params[key] = value
 
@@ -96,7 +92,7 @@ class GooglePrompter(Prompter):
         self.generation_config = types.GenerateContentConfig(**config_params)
 
         # Initialize client
-        self.client = genai.Client(**provider_options_dict)
+        self.client = genai.Client(**merged_provider_options)
 
     @singledispatchmethod
     def _process_message(self, msg: Any) -> types.Part:

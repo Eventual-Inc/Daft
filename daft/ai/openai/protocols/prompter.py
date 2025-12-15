@@ -67,7 +67,7 @@ class OpenAIPrompter(Prompter):
         system_message: str | None = None,
         prompt_options: OpenAIPromptOptions = {},
     ) -> None:
-        from daft.ai.utils import merge_provider_and_user_options
+        from daft.ai.utils import merge_provider_and_api_options
 
         self.provider_name = provider_name
         self.model = model
@@ -79,9 +79,9 @@ class OpenAIPrompter(Prompter):
         self.use_chat_completions = prompt_options_dict.pop("use_chat_completions", False)
 
         # Merge provider and remaining user options
-        provider_options_dict = merge_provider_and_user_options(
+        provider_options_dict = merge_provider_and_api_options(
             provider_options=provider_options,
-            user_options=prompt_options_dict,
+            api_options=prompt_options_dict,
             provider_option_type=OpenAIProviderOptions,
         )
         self.llm = AsyncOpenAI(**provider_options_dict)

@@ -134,7 +134,7 @@ class OpenAITextEmbedder(TextEmbedder):
         zero_on_failure: bool = False,
         provider_name: str = "openai",
     ):
-        from daft.ai.utils import merge_provider_and_user_options
+        from daft.ai.utils import merge_provider_and_api_options
 
         self._model = model
         self._zero_on_failure = zero_on_failure
@@ -142,9 +142,9 @@ class OpenAITextEmbedder(TextEmbedder):
         self._provider_name = provider_name
 
         # Use utility to merge options
-        provider_options_dict: dict[str, Any] = merge_provider_and_user_options(
+        provider_options_dict: dict[str, Any] = merge_provider_and_api_options(
             provider_options=provider_options,
-            user_options=embed_options,
+            api_options=embed_options,
             provider_option_type=OpenAIProviderOptions,
         )
 
