@@ -251,7 +251,7 @@ fn materialize_scan_task(
                 Some(scan_task.schema.clone()),
                 scan_task.pushdowns.filters.clone(),
             );
-            let parse_options = JsonParseOptions::new_internal();
+            let parse_options = JsonParseOptions::new_internal(cfg.skip_empty_files);
             let read_options = JsonReadOptions::new_internal(cfg.buffer_size, cfg.chunk_size);
             let uris = urls.collect::<Vec<_>>();
             daft_json::read_json_bulk(
