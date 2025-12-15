@@ -2,7 +2,7 @@
 
 <div class="grid cards" markdown>
 
-- [Multimodal Structured Outputs: Evaluating Image Understanding at Scale](mm_structured_outputs.md)
+- [Multimodal Structured Outputs: Evaluating Image Understanding](mm_structured_outputs.md)
 
     Leverage image ablation to analyze textual bias in image understanding datasets.
 

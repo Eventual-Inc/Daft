@@ -4,7 +4,7 @@
 
 ## Introduction
 
-In this notebook, we'll evaluate [Qwen3-VL](https://github.com/QwenLM/Qwen3-VL)'s image understanding using a multiple choice subset of HuggingFace's [The Cauldron dataset](https://huggingface.co/datasets/HuggingFaceM4/the_cauldron), a massive collection of 50 vision-language datasets.
+We'll evaluate [Qwen3-VL](https://github.com/QwenLM/Qwen3-VL)'s image understanding using a multiple choice subset of HuggingFace's [The Cauldron dataset](https://huggingface.co/datasets/HuggingFaceM4/the_cauldron), a massive collection of 50 vision-language datasets. 
 
 Our pipeline will:
 
@@ -13,7 +13,21 @@ Our pipeline will:
 3. Classify results into diagnostic quadrants
 4. Use **VLM-as-a-Judge** to explain failures
 
-The steps we'll take in this notebook are a simplified version of the [production-ready pipeline](https://github.com/Eventual-Inc/daft-examples/blob/main/use_cases/image_understanding_eval/eval_image_understanding.py) used to evaluate Qwen3-VL-4B on 20k rows. Check out the [blog post](https://www.daft.ai/blog/multimodal-structured-outputs-evaluating-vlm-image-understanding-at-scale) for the full results and implementation.
+Check out the [blog post](https://www.daft.ai/blog/multimodal-structured-outputs-evaluating-vlm-image-understanding-at-scale) where we use the [production-ready version](https://github.com/Eventual-Inc/daft-examples/blob/main/use_cases/image_understanding_eval/eval_image_understanding.py) of this pipeline to evaluate Qwen3-VL-4B on 20k rows across 3 datasets.
+
+## Notebook vs. Production Pipeline (How this maps)
+
+This document is the **interactive companion** to the production evaluation pipeline in [`use_cases/image_understanding_eval/eval_image_understanding.py`](../use_cases/image_understanding_eval/eval_image_understanding.py) and the methodology described in the blog post: [Multimodal Structured Outputs: Evaluating VLM Image Understanding at Scale](https://www.daft.ai/blog/multimodal-structured-outputs-evaluating-vlm-image-understanding-at-scale).
+
+The notebook keeps `LIMIT` small so you can inspect examples, but the stages are the same:
+
+| Notebook section | Pipeline function | Purpose |
+|---|---|---|
+| Preprocessing | `preprocess()` | Extract `answer` from Cauldron text format and track config |
+| Structured Outputs (with image) | `run_inference(with_image=True)` | Predict multiple-choice letter with the image attached |
+| Ablation (no image) | `run_inference(with_image=False)` | Predict the same question *without* the image |
+| Quadrant classification | `classify_quadrants()` | Bucket behavior into Both Correct / Image Helped / Image Hurt / Both Incorrect |
+| LLM-as-a-Judge | `run_judge()` | Diagnose failure modes on the “Image Hurt” + “Both Incorrect” subsets |
 
 ### Table of Contents
 
@@ -22,8 +36,9 @@ The steps we'll take in this notebook are a simplified version of the [productio
 3. [Preprocessing](#3-preprocessing)
 4. [Structured Outputs with `prompt`](#4-structured-outputs-with-prompt)
 5. [Ablation Study](#5-ablation-study)
-6. [Scale with Daft Cloud](#6-scale-with-daft-cloud)
-7. [Conclusion](#7-conclusion)
+6. [LLM-as-a-Judge](#6-llm-as-a-judge)
+7. [Scale with Daft Cloud](#7-scale-with-daft-cloud)
+8. [Conclusion](#8-conclusion)
 
 ## 1. Setup
 
@@ -94,7 +109,7 @@ df_text = df_img.explode(col("texts")).select(unnest(col("texts")), "image")
 
 # Parse the answer letter from "Answer: C" format
 df_prep = df_text.with_column(
-    "answer",
+    "answer", 
     col("assistant").regexp_replace("Answer: ", "").lstrip().rstrip()
 ).collect()
 
@@ -105,12 +120,15 @@ df_prep.show(3)
 
 Daft's `prompt` function scales OpenAI-compatible calls across dataframes. We'll use a Pydantic model to enforce structured output.
 
-For more info: [API docs](../api/functions/prompt.md) | [User Guide](../ai-functions/prompt.md)
+For more info: [API docs](https://docs.daft.ai/en/stable/api/functions/prompt/) | [User Guide](https://docs.daft.ai/en/stable/ai-functions/prompt/)
 
 ```python
 from daft.functions import prompt
 from pydantic import BaseModel, Field
 import time
+
+# Deterministic inference params (matches the production pipeline defaults)
+PARAMS = {"temperature": 0.0, "max_tokens": 2}
 
 class ChoiceResponse(BaseModel):
     """Structured output for multiple choice answers."""
@@ -124,6 +142,7 @@ df_results = df_prep.with_column(
         model=MODEL_ID,
         use_chat_completions=True,
         return_format=ChoiceResponse,
+        **PARAMS,
     )
 ).limit(LIMIT).collect()
 elapsed = time.time() - start
@@ -136,7 +155,7 @@ Evaluate correctness:
 ```python
 # Evaluate correctness
 df_eval = df_results.with_column(
-    "is_correct",
+    "is_correct", 
     col("result")["choice"].lstrip().rstrip() == col("answer").lstrip().rstrip()
 )
 
@@ -167,14 +186,19 @@ This lets us classify each example into four quadrants:
 Run the same inference without images:
 
 ```python
+# Run without images
+SYSTEM_PROMPT_NO_IMAGE = "Respond to the multiple choice question with just the letter corresponding to the correct answer."
+
 start = time.time()
 df_ablation = df_eval.with_column(
     "result_no_image",
     prompt(
         messages=col("user"),
+        system_message=SYSTEM_PROMPT_NO_IMAGE,
         model=MODEL_ID,
         use_chat_completions=True,
         return_format=ChoiceResponse,
+        **PARAMS,
     )
 ).with_column(
     "is_correct_no_image",
@@ -221,7 +245,7 @@ Inspect cases where the image helped:
 ```python
 # Inspect cases where the image helped
 df_classified.where(col("quadrant") == "Image Helped").select(
-    "user", "image", "answer",
+    "user", "image", "answer", 
     col("result")["choice"].alias("with_image"),
     col("result_no_image")["choice"].alias("without_image")
 ).show(3)
@@ -255,25 +279,145 @@ df_results = df_classified.groupby("quadrant").count().select(
 df_results.show()
 ```
 
-## 6. Scale with Daft Cloud
+## 6. LLM-as-a-Judge
+
+We can go beyond pass/fail metrics by using **LLM-as-a-Judge** to explain *why* the model failed—especially on the most informative failure subsets:
+- **Image Hurt**: correct without the image, incorrect with the image
+- **Both Incorrect**: incorrect with and without the image
+
+We'll use a structured output schema so the judge reliably returns fields we can analyze.
+
+```python
+from daft.functions import prompt, format
+from pydantic import BaseModel, Field
+
+from daft import col
+
+JUDGE_SYSTEM_PROMPT = """
+You are an impartial judge reviewing the results of a textbook academic questions multiple choice benchmark.
+Inspect the attached image and provide high-signal feedback on why the model chose its answer.
+First, reason about the model's answer with the image and the model's answer without the image.
+Second, develop a hypothesis for why the model made the choice it did.
+Third, attribute the failure to a 'question' issue or an 'image' understanding issue.
+Finally, assign whether the model's answer with the image is correct and whether the model's answer without the image is correct.
+"""
+
+
+class JudgeResponse(BaseModel):
+    """Structured diagnostic feedback from the VLM judge."""
+
+    reasoning: str = Field(..., description="Why did the model choose the answer it did?")
+    hypothesis: str = Field(..., description="What caused the divergence from the correct answer?")
+    attribution: str = Field(
+        ...,
+        description="Was this a 'question' issue or an 'image' understanding issue or 'other'?",
+    )
+```
+
+Run judge on failures (matching the production pipeline semantics):
+
+```python
+judge_template = format(
+    """Given the image attached and the multiple choice question of <question>{}</question>,
+The model chose the following prediction <model_answer>{}</model_answer> and without the image, the model chose the following prediction <no_image_model_answer>{}</no_image_model_answer>, but the correct answer is <correct_answer>{}</correct_answer>.
+
+Provide diagnostic feedback.
+""",
+    col("user"),
+    col("result")["choice"],
+    col("result_no_image")["choice"],
+    col("answer"),
+)
+
+df_failures = df_classified.where(
+    (col("quadrant") == "Image Hurt") | (col("quadrant") == "Both Incorrect")
+)
+
+# Judge needs more tokens than the multiple-choice inference passes.
+JUDGE_PARAMS = {"temperature": 0.0, "max_tokens": 512}
+
+df_judged = df_failures.with_column(
+    "judge_response",
+    prompt(
+        messages=[col("image"), judge_template],
+        system_message=JUDGE_SYSTEM_PROMPT,
+        model=MODEL_ID,
+        use_chat_completions=True,
+        return_format=JudgeResponse,
+        **JUDGE_PARAMS,
+    ),
+).collect()
+
+print(f"Judged {df_judged.count_rows()} failure rows")
+```
+
+### Interpreting Judge Feedback
+
+Use the judge’s `attribution` signal to quickly separate **question issues** (ambiguous prompt/choices) from **image understanding issues** (missed labels, small text, visual ambiguity). For more on these failure modes and what we observed at scale, see the accompanying blog post: [Multimodal Structured Outputs: Evaluating VLM Image Understanding at Scale](https://www.daft.ai/blog/multimodal-structured-outputs-evaluating-vlm-image-understanding-at-scale).
+
+Inspect a few judged failures:
+
+```python
+from daft.functions import unnest
+
+df_judged.select(
+    "quadrant",
+    "user",
+    "image",
+    "answer",
+    col("result")["choice"].alias("with_image"),
+    col("result_no_image")["choice"].alias("without_image"),
+    unnest(col("judge_response")),
+).show(3)
+```
+
+Sanity-check that we ran every stage:
+
+```python
+print(f"Accuracy (with image):    {accuracy:.1%}")
+print(f"Accuracy (without image): {accuracy_no_image:.1%}")
+print(f"Delta:                   {accuracy - accuracy_no_image:+.1%}")
+
+df_classified.groupby("quadrant").count().show()
+
+print(f"Judge rows: {df_judged.count_rows()}")
+```
+
+## 7. Scale with Daft Cloud
 
 **Everything above runs locally on 50 rows.**
 
 But The Cauldron contains **millions of rows across 50 subsets**. To run this evaluation at scale with strong consistent performance we can scale on [Daft Cloud](https://daft.ai/cloud). The python script version of this notebook is available in the [daft-examples](https://github.com/Eventual-Inc/daft-examples) repo in the [use_cases/image_understanding_eval](https://github.com/Eventual-Inc/daft-examples/tree/main/use_cases/image_understanding_eval) directory.
 
-👉 [**Sign up for early access**](https://daft.ai/cloud) | [**Book a demo**](https://www.daft.ai/demo)
+👉 [**Sign up for early access**](https://daft.ai/cloud) | [**Book a demo**](https://www.daft.ai/demo) 
 
 ### Take this one step further with LLM-as-a-judge
 
 For a daft cloud ready-to-run script with a bonus LLM-as-a-judge section, check out [`eval_image_understanding.py`](https://github.com/Eventual-Inc/daft-examples/blob/main/use_cases/image_understanding_eval/eval_image_understanding.py) in the [daft-examples](https://github.com/Eventual-Inc/daft-examples) repo.
 
-## 7. Conclusion
+## 8. Conclusion
 
 In this notebook, we built a small pipeline to evaluate Qwen3-VL's image understanding:
 
 1. **Structured Outputs**: Used Pydantic models to enforce consistent responses
 2. **Ablation Study**: Isolated image understanding from general reasoning
 3. **Quadrant Analysis**: Classified results into actionable categories
+4. **LLM-as-a-Judge**: Diagnosed failures on the most informative subsets ("Image Hurt" + "Both Incorrect")
+
+### Next Steps
+
+**Multi-Dataset Evaluation**: Extend across all 50 Cauldron subsets
+
+```python
+subsets = ["ai2d", "chartqa", "docvqa", "infographicvqa", ...]
+for subset in subsets:
+    df = run_full_pipeline(subset, MODEL_ID)
+    df.write_parquet(f"results/{subset}.parquet")
+```
+
+**Experiment Tracking**: Wire judge feedback into MLflow or W&B to track improvements over time.
+
+**RLVR Training**: Use the `is_correct` signal and judge attributions for reinforcement learning with verifiable rewards.
 
 ### Resources
 
@@ -285,3 +429,4 @@ In this notebook, we built a small pipeline to evaluate Qwen3-VL's image underst
 **Canonical References:**
 - [Getting Structured LLM Output (DeepLearning.ai)](https://learn.deeplearning.ai/courses/getting-structured-llm-output/information)
 - [Judging LLM-as-a-Judge (NeurIPS 2023)](https://arxiv.org/abs/2306.05685)
+
