@@ -120,7 +120,7 @@ class UnityCatalog(Catalog):
 class UnityTable(Table):
     _inner: InnerTable
 
-    _read_options = {"version"}
+    _read_options = {"version", "ignore_deletion_vectors"}
     _write_options = {
         "schema_mode",
         "partition_col",
@@ -157,7 +157,7 @@ class UnityTable(Table):
     def read(self, **options: Any) -> DataFrame:
         Table._validate_options("Unity read", options, UnityTable._read_options)
 
-        return read_deltalake(self._inner, version=options.get("version"))
+        return read_deltalake(self._inner, **options)
 
     ###
     # write methods
