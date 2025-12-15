@@ -51,13 +51,21 @@ def create_prompter(
     opts = dict(provider_options) if provider_options is not None else dict(DEFAULT_PROVIDER_OPTIONS)
     # Unpack generation_config if it's passed as a dict
     prompt_options = dict(kwargs)
+
+    # Extract return_format and system_message to pass as explicit parameters
+    return_format = prompt_options.pop("return_format", None)
+    system_message = prompt_options.pop("system_message", None)
+
     if "generation_config" in prompt_options and isinstance(prompt_options["generation_config"], dict):
         generation_config = prompt_options.pop("generation_config")
         prompt_options.update(generation_config)
+
     return GooglePrompter(
         provider_name=provider_name,
         provider_options=opts,
         model=model,
+        return_format=return_format,
+        system_message=system_message,
         prompt_options=prompt_options,
     )
 
@@ -71,7 +79,7 @@ def test_google_provider_get_prompter_default():
     assert descriptor.get_provider() == "google"
     assert descriptor.get_model() == "gemini-2.5-flash"
     assert descriptor.get_options() == {}
-    assert descriptor.prompt_options.get("return_format") is None
+    assert descriptor.return_format is None
 
 
 def test_google_provider_get_prompter_with_model():
@@ -89,7 +97,7 @@ def test_google_provider_get_prompter_with_return_format():
     descriptor = provider.get_prompter(model="gemini-2.5-flash", return_format=SimpleResponse)
 
     assert isinstance(descriptor, GooglePrompterDescriptor)
-    assert descriptor.prompt_options.get("return_format") == SimpleResponse
+    assert descriptor.return_format == SimpleResponse
 
 
 def test_google_provider_get_prompter_with_options():
@@ -119,7 +127,7 @@ def test_google_prompter_descriptor_instantiation():
     assert descriptor.get_provider() == "google"
     assert descriptor.get_model() == "gemini-2.5-flash"
     assert descriptor.get_options() == {}
-    assert descriptor.prompt_options.get("return_format") is None
+    assert descriptor.return_format is None
 
 
 def test_google_prompter_descriptor_with_return_format():
@@ -128,10 +136,10 @@ def test_google_prompter_descriptor_with_return_format():
         provider_name="google",
         provider_options={"api_key": "test-key"},
         model_name="gemini-2.5-flash",
-        prompt_options={"return_format": SimpleResponse},
+        return_format=SimpleResponse,
     )
 
-    assert descriptor.prompt_options.get("return_format") == SimpleResponse
+    assert descriptor.return_format == SimpleResponse
 
 
 def test_google_prompter_descriptor_get_udf_options():

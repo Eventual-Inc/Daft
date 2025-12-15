@@ -13,11 +13,10 @@ else:
     from typing import Unpack
 
 from daft.ai.protocols import TextClassifier, TextClassifierDescriptor
-from daft.ai.typing import ClassifyTextOptions, Options
 from daft.ai.utils import get_gpu_udf_options, get_torch_device
 
 if TYPE_CHECKING:
-    from daft.ai.typing import Label, UDFOptions
+    from daft.ai.typing import ClassifyTextOptions, Label, Options, UDFOptions
 
 
 class TransformersTextClassiferResult(TypedDict):
@@ -26,15 +25,11 @@ class TransformersTextClassiferResult(TypedDict):
     scores: list[float]  # probability of each label
 
 
-class TransformersTextClassifyOptions(ClassifyTextOptions, total=False):
-    pass
-
-
 @dataclass
 class TransformersTextClassifierDescriptor(TextClassifierDescriptor):
     provider_name: str
     model_name: str
-    classify_options: TransformersTextClassifyOptions
+    classify_options: ClassifyTextOptions
 
     def get_provider(self) -> str:
         return self.provider_name
@@ -65,10 +60,10 @@ class TransformersTextClassifier(TextClassifier):
     """
 
     _model: str
-    _options: TransformersTextClassifyOptions
+    _options: ClassifyTextOptions
     _pipeline: transformers.ZeroShotClassificationPipeline
 
-    def __init__(self, model_name_or_path: str, **options: Unpack[TransformersTextClassifyOptions]):
+    def __init__(self, model_name_or_path: str, **options: Unpack[ClassifyTextOptions]):
         self._model = model_name_or_path
         self._options = options
         self._pipeline = pipeline(

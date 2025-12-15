@@ -142,6 +142,12 @@ class Provider(ABC):
         """Returns a TextClassifierDescriptor for this provider."""
         raise not_implemented_err(self, method="classify_text")
 
-    def get_prompter(self, model: str | None = None, **options: Unpack[PromptOptions]) -> PrompterDescriptor:
+    def get_prompter(
+        self,
+        model: str | None = None,
+        return_format: Any | None = None,
+        system_message: str | None = None,
+        **options: Unpack[PromptOptions],
+    ) -> PrompterDescriptor:
         """Returns a PrompterDescriptor for this provider."""
         raise not_implemented_err(self, method="prompt")

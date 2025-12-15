@@ -22,14 +22,10 @@ if TYPE_CHECKING:
     from daft.ai.typing import Embedding, Image
 
 
-class TransformersImageEmbedOptions(EmbedImageOptions, total=False):
-    pass
-
-
 @dataclass
 class TransformersImageEmbedderDescriptor(ImageEmbedderDescriptor):
     model: str
-    embed_options: TransformersImageEmbedOptions
+    embed_options: EmbedImageOptions
 
     def get_provider(self) -> str:
         return "transformers"
@@ -59,9 +55,9 @@ class TransformersImageEmbedderDescriptor(ImageEmbedderDescriptor):
 
 class TransformersImageEmbedder(ImageEmbedder):
     model: Any
-    embed_options: TransformersImageEmbedOptions
+    embed_options: EmbedImageOptions
 
-    def __init__(self, model_name_or_path: str, **embed_options: Unpack[TransformersImageEmbedOptions]):
+    def __init__(self, model_name_or_path: str, **embed_options: Unpack[EmbedImageOptions]):
         self.device = get_torch_device()
         self.model = AutoModel.from_pretrained(
             model_name_or_path,
@@ -69,7 +65,7 @@ class TransformersImageEmbedder(ImageEmbedder):
             use_safetensors=True,
         ).to(self.device)
         self.processor = AutoProcessor.from_pretrained(model_name_or_path, trust_remote_code=True, use_fast=True)
-        self.embed_options: TransformersImageEmbedOptions = embed_options
+        self.embed_options: EmbedImageOptions = embed_options
 
     def embed_image(self, images: list[Image]) -> list[Embedding]:
         # TODO(desmond): There's potential for image decoding and processing on the GPU with greater

@@ -13,25 +13,20 @@ else:
     from typing import Unpack
 
 from daft.ai.protocols import ImageClassifier, ImageClassifierDescriptor
-from daft.ai.typing import ClassifyImageOptions, Options
 from daft.ai.utils import get_gpu_udf_options, get_torch_device
 from daft.dependencies import tf, torch
 
 if TYPE_CHECKING:
     from PIL import Image
 
-    from daft.ai.typing import Label, UDFOptions
-
-
-class TransformersImageClassifyOptions(ClassifyImageOptions, total=False):
-    pass
+    from daft.ai.typing import ClassifyImageOptions, Label, Options, UDFOptions
 
 
 @dataclass
 class TransformersImageClassifierDescriptor(ImageClassifierDescriptor):
     provider_name: str
     model_name: str
-    classify_options: TransformersImageClassifyOptions
+    classify_options: ClassifyImageOptions
 
     def get_provider(self) -> str:
         return self.provider_name
@@ -86,10 +81,10 @@ class TransformersImageClassifier(ImageClassifier):
     """Pipeline based zero-shot image classification."""
 
     _model: str
-    _options: TransformersImageClassifyOptions
+    _options: ClassifyImageOptions
     _pipeline: transformers.ZeroShotImageClassificationPipeline
 
-    def __init__(self, model_name_or_path: str, **options: Unpack[TransformersImageClassifyOptions]):
+    def __init__(self, model_name_or_path: str, **options: Unpack[ClassifyImageOptions]):
         self._model = model_name_or_path
         self._options = options
 

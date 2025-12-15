@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import singledispatchmethod
-from typing import Any
+from typing import Any, cast
 
 from google import genai
 from google.genai import types
@@ -17,16 +17,14 @@ from daft.file import File
 from daft.utils import from_dict
 
 
-class GooglePromptOptions(PromptOptions, total=False):
-    pass
-
-
 @dataclass
 class GooglePrompterDescriptor(PrompterDescriptor):
     provider_name: str
     provider_options: GoogleProviderOptions
     model_name: str
-    prompt_options: GooglePromptOptions
+    return_format: Any | None = None
+    system_message: str | None = None
+    prompt_options: PromptOptions = field(default_factory=lambda: cast("PromptOptions", {}))
 
     def get_provider(self) -> str:
         return self.provider_name
@@ -45,6 +43,8 @@ class GooglePrompterDescriptor(PrompterDescriptor):
             provider_name=self.provider_name,
             provider_options=self.provider_options,
             model=self.model_name,
+            return_format=self.return_format,
+            system_message=self.system_message,
             prompt_options=self.prompt_options,
         )
 
@@ -57,24 +57,32 @@ class GooglePrompter(Prompter):
         provider_name: str,
         provider_options: GoogleProviderOptions,
         model: str,
-        prompt_options: GooglePromptOptions = {},
+        return_format: Any | None = None,
+        system_message: str | None = None,
+        prompt_options: PromptOptions = {},
     ) -> None:
+        from daft.ai.utils import merge_provider_and_user_options
+
         self.provider_name = provider_name
         self.model = model
-        self.return_format = prompt_options.pop("return_format", None)
-        self.system_message = prompt_options.pop("system_message", None)
+        self.return_format = return_format
+        self.system_message = system_message
 
-        provider_options_dict = dict(provider_options)
-        provider_option_keys = set(GoogleProviderOptions.__annotations__.keys())
-        for key, value in prompt_options.items():
-            if key in provider_option_keys:
-                provider_options_dict[key] = value
+        # Make mutable copy
+        prompt_options_dict: dict[str, Any] = dict(prompt_options)
+
+        # Merge provider and remaining user options
+        provider_options_dict = merge_provider_and_user_options(
+            provider_options=provider_options,
+            user_options=prompt_options_dict,
+            provider_option_type=GoogleProviderOptions,
+        )
 
         # Prepare generation config
         generation_config_keys = types.GenerateContentConfig.model_fields.keys()
 
         config_params = {}
-        for key, value in prompt_options.items():
+        for key, value in prompt_options_dict.items():
             if key in generation_config_keys:
                 config_params[key] = value
 

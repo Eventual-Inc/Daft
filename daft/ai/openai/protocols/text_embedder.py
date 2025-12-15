@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from openai import NOT_GIVEN, AsyncOpenAI, OpenAIError, RateLimitError
 from openai.types.create_embedding_response import Usage
@@ -13,17 +13,12 @@ from daft.ai.openai.typing import OpenAIProviderOptions
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
 from daft.ai.typing import EmbeddingDimensions, EmbedTextOptions, Options, UDFOptions
 from daft.dependencies import np
-from daft.utils import from_dict
 
 if TYPE_CHECKING:
     from openai.types import EmbeddingModel
     from openai.types.create_embedding_response import CreateEmbeddingResponse
 
     from daft.ai.typing import Embedding
-
-
-class OpenAITextEmbedOptions(EmbedTextOptions, total=False):
-    pass
 
 
 @dataclass(frozen=True)
@@ -71,7 +66,7 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
     provider_options: OpenAIProviderOptions
     model_name: str
     dimensions: int | None
-    embed_options: OpenAITextEmbedOptions
+    embed_options: EmbedTextOptions
 
     def __post_init__(self) -> None:
         if self.provider_options.get("base_url") is None:
@@ -99,7 +94,7 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
         return _models[self.model_name].dimensions
 
     def get_udf_options(self) -> UDFOptions:
-        options = from_dict(UDFOptions, dict(self.embed_options))
+        options = super().get_udf_options()
         options.max_retries = 0  # OpenAI client handles retries internally
         return options
 
@@ -134,21 +129,24 @@ class OpenAITextEmbedder(TextEmbedder):
         self,
         provider_options: OpenAIProviderOptions,
         model: str,
-        embed_options: OpenAITextEmbedOptions,
+        embed_options: EmbedTextOptions,
         dimensions: int | None = None,
         zero_on_failure: bool = False,
         provider_name: str = "openai",
     ):
+        from daft.ai.utils import merge_provider_and_user_options
+
         self._model = model
         self._zero_on_failure = zero_on_failure
         self._dimensions = dimensions
         self._provider_name = provider_name
 
-        provider_options_dict = dict(provider_options)
-        provider_option_keys = set(OpenAIProviderOptions.__annotations__.keys())
-        for key, value in embed_options.items():
-            if key in provider_option_keys:
-                provider_options_dict[key] = value
+        # Use utility to merge options
+        provider_options_dict: dict[str, Any] = merge_provider_and_user_options(
+            provider_options=provider_options,
+            user_options=embed_options,
+            provider_option_type=OpenAIProviderOptions,
+        )
 
         self._client = AsyncOpenAI(**provider_options_dict)
 

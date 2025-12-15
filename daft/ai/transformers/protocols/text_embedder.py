@@ -22,14 +22,10 @@ if TYPE_CHECKING:
     from daft.ai.typing import Embedding
 
 
-class TransformersTextEmbedOptions(EmbedTextOptions, total=False):
-    pass
-
-
 @dataclass
 class TransformersTextEmbedderDescriptor(TextEmbedderDescriptor):
     model: str
-    embed_options: TransformersTextEmbedOptions
+    embed_options: EmbedTextOptions
 
     def get_provider(self) -> str:
         return "transformers"
@@ -57,9 +53,9 @@ class TransformersTextEmbedderDescriptor(TextEmbedderDescriptor):
 
 class TransformersTextEmbedder(TextEmbedder):
     model: SentenceTransformer
-    embed_options: TransformersTextEmbedOptions
+    embed_options: EmbedTextOptions
 
-    def __init__(self, model_name_or_path: str, **embed_options: Unpack[TransformersTextEmbedOptions]):
+    def __init__(self, model_name_or_path: str, **embed_options: Unpack[EmbedTextOptions]):
         # Let SentenceTransformer handle device selection automatically.
         self.model = SentenceTransformer(model_name_or_path, trust_remote_code=True, backend="torch")
         self.model.eval()

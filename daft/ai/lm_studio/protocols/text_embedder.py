@@ -12,8 +12,8 @@ from daft.ai.typing import EmbeddingDimensions, Options, UDFOptions
 from daft.utils import from_dict
 
 if TYPE_CHECKING:
-    from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedOptions
     from daft.ai.openai.typing import OpenAIProviderOptions
+    from daft.ai.typing import EmbedTextOptions
 
 
 @dataclass
@@ -27,7 +27,7 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
     provider_name: str
     provider_options: OpenAIProviderOptions
     model_name: str
-    embed_options: OpenAITextEmbedOptions
+    embed_options: EmbedTextOptions
 
     def get_provider(self) -> str:
         return "lm_studio"

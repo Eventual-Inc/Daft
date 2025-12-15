@@ -33,7 +33,13 @@ class VLLMPrefixCachingProvider(Provider):
     def name(self) -> str:
         return self._name
 
-    def get_prompter(self, model: str | None = None, **options: Unpack[PromptOptions]) -> PrompterDescriptor:
+    def get_prompter(
+        self,
+        model: str | None = None,
+        return_format: Any | None = None,
+        system_message: str | None = None,
+        **options: Unpack[PromptOptions],
+    ) -> PrompterDescriptor:
         from daft.ai.vllm.protocols.prompter import VLLMPrefixCachingPrompterDescriptor
 
         # Collect all options
@@ -57,6 +63,8 @@ class VLLMPrefixCachingProvider(Provider):
 
         descriptor_kwargs: dict[str, Any] = {
             "provider_name": self._name,
+            "return_format": return_format,
+            "system_message": system_message,
             "options": vllm_options,
         }
 

@@ -5,13 +5,13 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING, Any, Literal, overload
 
+
 if sys.version_info < (3, 11):
     from typing_extensions import Unpack
 else:
     from typing import Unpack
 
 from daft.ai.openai.protocols.prompter import OpenAIPromptOptions
-from daft.ai.openai.provider import OpenAIProvider
 from daft.ai.provider import Provider, ProviderType, load_provider
 from daft.functions.ai._colab_compat import IS_COLAB, clean_pydantic_model
 from daft.datatype import DataType
@@ -29,6 +29,8 @@ if TYPE_CHECKING:
         Label,
         PromptOptions,
     )
+    from daft.ai.openai.provider import OpenAIProvider
+    from daft.ai.openai.protocols.prompter import OpenAIPromptOptions
 
 __all__ = [
     "classify_image",
@@ -136,7 +138,9 @@ def embed_text(
 
     # Decorate the selected call method with @daft.method to specify return_dtype
     _TextEmbedderExpression.__call__ = method.batch(  # type: ignore[method-assign]
-        method=call_impl, return_dtype=text_embedder.get_dimensions().as_dtype(), batch_size=udf_options.batch_size
+        method=call_impl,
+        return_dtype=text_embedder.get_dimensions().as_dtype(),
+        batch_size=udf_options.batch_size,
     )
     wrapped_cls = daft_cls(
         _TextEmbedderExpression,
@@ -414,6 +418,30 @@ def classify_image(
 ##
 
 
+@overload
+def prompt(
+    messages: list[Expression] | Expression,
+    return_format: BaseModel | None = None,
+    *,
+    system_message: str | None = None,
+    provider: None,
+    model: str | None = None,
+    **options: Unpack[PromptOptions],
+) -> Expression: ...
+
+
+@overload
+def prompt(
+    messages: list[Expression] | Expression,
+    return_format: BaseModel | None = None,
+    *,
+    system_message: str | None = None,
+    provider: Literal["openai"] | OpenAIProvider,
+    model: str | None = None,
+    **options: Unpack[OpenAIPromptOptions],
+) -> Expression: ...
+
+
 def prompt(
     messages: list[Expression] | Expression,
     return_format: BaseModel | None = None,
@@ -539,17 +567,18 @@ def prompt(
     """
     from daft.ai._expressions import _PrompterExpression
 
-    # Add return_format to options for the provider
-    if return_format is not None:
-        # Clean the Pydantic model to avoid Colab serialization issues
-        if IS_COLAB:
-            return_format = clean_pydantic_model(return_format)
-        options = {**options, "return_format": return_format}
-    if system_message is not None:
-        options = {**options, "system_message": system_message}
+    # Clean the Pydantic model to avoid Colab serialization issues
+    if return_format is not None and IS_COLAB:
+        return_format = clean_pydantic_model(return_format)
 
     # Load a PrompterDescriptor from the resolved provider
-    prompter_descriptor = _resolve_provider(provider, "openai").get_prompter(model, **options)
+    # Pass return_format and system_message as explicit named arguments
+    prompter_descriptor = _resolve_provider(provider, "openai").get_prompter(
+        model,
+        return_format=return_format,
+        system_message=system_message,
+        **options,
+    )
 
     # Check if this is a vLLM provider - if so, use PyExpr.vllm directly
     from daft.ai.vllm.protocols.prompter import VLLMPrefixCachingPrompterDescriptor

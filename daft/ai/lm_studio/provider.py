@@ -12,9 +12,9 @@ else:
 from daft.ai.openai.provider import OpenAIProvider
 
 if TYPE_CHECKING:
-    from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedOptions
     from daft.ai.openai.typing import OpenAIProviderOptions
     from daft.ai.protocols import TextEmbedderDescriptor
+    from daft.ai.typing import EmbedTextOptions
 
 
 class LMStudioProvider(OpenAIProvider):
@@ -44,7 +44,7 @@ class LMStudioProvider(OpenAIProvider):
         self,
         model: str | None = None,
         dimensions: int | None = None,
-        **options: Unpack[OpenAITextEmbedOptions],
+        **options: Unpack[EmbedTextOptions],
     ) -> TextEmbedderDescriptor:
         from daft.ai.lm_studio.protocols.text_embedder import (
             LMStudioTextEmbedderDescriptor,

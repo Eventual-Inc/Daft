@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from daft.ai.typing import UDFOptions
 from daft.daft import get_or_infer_runner_type
@@ -53,3 +53,44 @@ def get_gpu_udf_options() -> UDFOptions:
     # make the UDF run on CPU threads
     else:
         return UDFOptions(concurrency=None, num_gpus=None)
+
+
+def merge_provider_and_user_options(
+    provider_options: dict[str, Any] | Any,
+    user_options: dict[str, Any] | Any,
+    provider_option_type: type,
+) -> dict[str, Any]:
+    result: dict[str, Any] = dict(provider_options)
+    provider_option_keys = set(provider_option_type.__annotations__.keys())
+
+    for key, value in user_options.items():
+        if key in provider_option_keys:
+            result[key] = value
+
+    return result
+
+
+def warn_unknown_options(
+    options: dict[str, Any],
+    known_option_types: list[type],
+    context: str,
+    exclude_keys: set[str] | None = None,
+) -> None:
+    import warnings
+
+    all_known_keys: set[str] = set()
+    for opt_type in known_option_types:
+        all_known_keys.update(opt_type.__annotations__.keys())
+
+    # Add excluded keys to known keys so they don't trigger warnings
+    if exclude_keys:
+        all_known_keys.update(exclude_keys)
+
+    unknown_keys = set(options.keys()) - all_known_keys
+
+    if unknown_keys:
+        warnings.warn(
+            f"Unknown options for {context} will be ignored: {unknown_keys}. " f"Valid options are: {all_known_keys}",
+            UserWarning,
+            stacklevel=3,
+        )

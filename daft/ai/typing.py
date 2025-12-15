@@ -9,7 +9,6 @@ from daft.datatype import DataType
 if TYPE_CHECKING:
     from typing import Literal
 
-    from pydantic import BaseModel
 
 Options = dict[str, Any]
 
@@ -39,8 +38,6 @@ class ClassifyImageOptions(TypedDict, total=False):
 
 
 class PromptOptions(TypedDict, total=False):
-    return_format: BaseModel
-    system_message: str
     max_retries: int
     on_error: Literal["raise", "log", "ignore"]
 
@@ -85,10 +82,10 @@ class Descriptor(ABC, Generic[T]):
     def instantiate(self) -> T:
         """Instantiates and returns a concrete model instance corresponding to this descriptor."""
 
-    @abstractmethod
     def get_udf_options(self) -> UDFOptions:
-        """Returns the UDF options for this descriptor."""
-        ...
+        from daft.utils import from_dict
+
+        return from_dict(UDFOptions, self.get_options())
 
 
 # temp definition to defer complexity of a more generic embedding type to later PRs

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, TypedDict
+from dataclasses import dataclass, field
+from typing import Any, TypedDict, cast
 
 from daft.ai.protocols import Prompter, PrompterDescriptor
 from daft.ai.typing import Options, UDFOptions
@@ -32,7 +32,9 @@ class VLLMPrefixCachingPrompterDescriptor(PrompterDescriptor):
     """
 
     provider_name: str
-    options: VLLMPromptOptions
+    return_format: Any | None = None
+    system_message: str | None = None
+    options: VLLMPromptOptions = field(default_factory=lambda: cast("VLLMPromptOptions", {}))
     model_name: str = "facebook/opt-125m"
 
     def get_provider(self) -> str:
