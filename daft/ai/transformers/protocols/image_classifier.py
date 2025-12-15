@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 import transformers
@@ -13,20 +13,21 @@ else:
     from typing import Unpack
 
 from daft.ai.protocols import ImageClassifier, ImageClassifierDescriptor
+from daft.ai.typing import ClassifyImageOptions
 from daft.ai.utils import get_gpu_udf_options, get_torch_device
 from daft.dependencies import tf, torch
 
 if TYPE_CHECKING:
     from PIL import Image
 
-    from daft.ai.typing import ClassifyImageOptions, Label, Options, UDFOptions
+    from daft.ai.typing import Label, Options, UDFOptions
 
 
 @dataclass
 class TransformersImageClassifierDescriptor(ImageClassifierDescriptor):
     provider_name: str
     model_name: str
-    classify_options: ClassifyImageOptions
+    classify_options: ClassifyImageOptions = field(default_factory=lambda: ClassifyImageOptions(batch_size=16))
 
     def get_provider(self) -> str:
         return self.provider_name

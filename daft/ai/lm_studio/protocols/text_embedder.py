@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from openai import OpenAI
@@ -8,12 +8,11 @@ from openai import OpenAI
 from daft import DataType
 from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedder
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
-from daft.ai.typing import EmbeddingDimensions, Options, UDFOptions
+from daft.ai.typing import EmbeddingDimensions, EmbedTextOptions, Options, UDFOptions
 from daft.utils import from_dict
 
 if TYPE_CHECKING:
     from daft.ai.openai.typing import OpenAIProviderOptions
-    from daft.ai.typing import EmbedTextOptions
 
 
 @dataclass
@@ -27,7 +26,9 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
     provider_name: str
     provider_options: OpenAIProviderOptions
     model_name: str
-    embed_options: EmbedTextOptions
+    embed_options: EmbedTextOptions = field(
+        default_factory=lambda: EmbedTextOptions(batch_size=64, max_retries=3, on_error="raise")
+    )
 
     def get_provider(self) -> str:
         return "lm_studio"

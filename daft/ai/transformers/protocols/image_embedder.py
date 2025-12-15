@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if sys.version_info < (3, 11):
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 @dataclass
 class TransformersImageEmbedderDescriptor(ImageEmbedderDescriptor):
     model: str
-    embed_options: EmbedImageOptions
+    embed_options: EmbedImageOptions = field(default_factory=lambda: EmbedImageOptions(batch_size=16))
 
     def get_provider(self) -> str:
         return "transformers"

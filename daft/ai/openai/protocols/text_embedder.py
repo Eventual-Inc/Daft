@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from openai import NOT_GIVEN, AsyncOpenAI, OpenAIError, RateLimitError
@@ -67,7 +67,9 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
     provider_options: OpenAIProviderOptions
     model_name: str
     dimensions: int | None
-    embed_options: EmbedTextOptions
+    embed_options: EmbedTextOptions = field(
+        default_factory=lambda: EmbedTextOptions(batch_size=64, max_retries=3, on_error="raise")
+    )
 
     def __post_init__(self) -> None:
         if self.provider_options.get("base_url") is None:

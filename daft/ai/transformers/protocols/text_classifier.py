@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, TypedDict
 
 import transformers
@@ -13,10 +13,11 @@ else:
     from typing import Unpack
 
 from daft.ai.protocols import TextClassifier, TextClassifierDescriptor
+from daft.ai.typing import ClassifyTextOptions
 from daft.ai.utils import get_gpu_udf_options, get_torch_device
 
 if TYPE_CHECKING:
-    from daft.ai.typing import ClassifyTextOptions, Label, Options, UDFOptions
+    from daft.ai.typing import Label, Options, UDFOptions
 
 
 class TransformersTextClassiferResult(TypedDict):
@@ -29,7 +30,7 @@ class TransformersTextClassiferResult(TypedDict):
 class TransformersTextClassifierDescriptor(TextClassifierDescriptor):
     provider_name: str
     model_name: str
-    classify_options: ClassifyTextOptions
+    classify_options: ClassifyTextOptions = field(default_factory=lambda: ClassifyTextOptions(batch_size=64))
 
     def get_provider(self) -> str:
         return self.provider_name

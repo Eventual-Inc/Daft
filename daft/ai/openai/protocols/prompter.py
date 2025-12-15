@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import singledispatchmethod
 from typing import TYPE_CHECKING, Any
 
@@ -42,7 +42,9 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
     provider_name: str
     provider_options: OpenAIProviderOptions
     model_name: str
-    prompt_options: OpenAIPromptOptions
+    prompt_options: OpenAIPromptOptions = field(
+        default_factory=lambda: OpenAIPromptOptions(use_chat_completions=False, max_retries=3, on_error="raise")
+    )
     system_message: str | None = None
     return_format: BaseModel | None = None
 
