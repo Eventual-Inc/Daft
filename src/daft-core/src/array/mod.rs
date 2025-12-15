@@ -8,7 +8,7 @@ mod list_array;
 pub mod ops;
 mod serdes;
 mod struct_array;
-use arrow_data::ArrayData;
+
 use daft_arrow::{
     array::to_data,
     buffer::{NullBuffer, wrap_null_buffer},
@@ -175,7 +175,7 @@ impl<T> DataArray<T> {
         self.data.as_ref()
     }
 
-    pub fn to_data(&self) -> ArrayData {
+    pub fn to_data(&self) -> arrow::array::ArrayData {
         to_data(self.data())
     }
 
