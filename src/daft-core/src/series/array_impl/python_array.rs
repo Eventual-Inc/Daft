@@ -4,9 +4,8 @@ use daft_schema::dtype::DataType;
 use crate::{
     array::ops::{DaftListAggable, DaftSetAggable, GroupIndices, broadcast::Broadcastable},
     lit::Literal,
-    prelude::PythonArray,
+    prelude::{PythonArray, UInt64Array},
     series::{ArrayWrapper, IntoSeries, Series, SeriesLike},
-    with_match_integer_daft_types,
 };
 
 impl SeriesLike for ArrayWrapper<PythonArray> {
@@ -21,12 +20,15 @@ impl SeriesLike for ArrayWrapper<PythonArray> {
         self
     }
 
-    fn with_validity(&self, validity: Option<daft_arrow::bitmap::Bitmap>) -> DaftResult<Series> {
+    fn with_validity(
+        &self,
+        validity: Option<daft_arrow::buffer::NullBuffer>,
+    ) -> DaftResult<Series> {
         Ok(self.0.with_validity(validity)?.into_series())
     }
 
-    fn validity(&self) -> Option<&daft_arrow::bitmap::Bitmap> {
-        self.0.validity()
+    fn validity(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
+        self.0.validity().map(|v| v.into())
     }
 
     fn broadcast(&self, num: usize) -> DaftResult<Series> {
@@ -93,13 +95,8 @@ impl SeriesLike for ArrayWrapper<PythonArray> {
         self.0.str_value(idx)
     }
 
-    fn take(&self, idx: &Series) -> DaftResult<Series> {
-        with_match_integer_daft_types!(idx.data_type(), |$S| {
-            Ok(self
-                .0
-                .take(idx.downcast::<<$S as DaftDataType>::ArrayType>()?)?
-                .into_series())
-        })
+    fn take(&self, idx: &UInt64Array) -> DaftResult<Series> {
+        Ok(self.0.take(idx)?.into_series())
     }
 
     fn min(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {

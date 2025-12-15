@@ -13,7 +13,7 @@ pub struct ImageArraySidecarData {
     pub heights: Vec<u32>,
     pub widths: Vec<u32>,
     pub modes: Vec<u8>,
-    pub validity: Option<daft_arrow::bitmap::Bitmap>,
+    pub validity: Option<daft_arrow::buffer::NullBuffer>,
 }
 
 impl ImageArray {
@@ -36,19 +36,19 @@ impl ImageArray {
     }
 
     pub fn channel_array(&self) -> &daft_arrow::array::UInt16Array {
-        self.channels().as_arrow()
+        self.channels().as_arrow2()
     }
 
     pub fn height_array(&self) -> &daft_arrow::array::UInt32Array {
-        self.heights().as_arrow()
+        self.heights().as_arrow2()
     }
 
     pub fn width_array(&self) -> &daft_arrow::array::UInt32Array {
-        self.widths().as_arrow()
+        self.widths().as_arrow2()
     }
 
     pub fn mode_array(&self) -> &daft_arrow::array::UInt8Array {
-        self.modes().as_arrow()
+        self.modes().as_arrow2()
     }
 
     pub fn channels(&self) -> &DataArray<UInt16Type> {
@@ -82,32 +82,36 @@ impl ImageArray {
             UInt16Array::from((
                 "channel",
                 Box::new(
-                    daft_arrow::array::UInt16Array::from_vec(sidecar_data.channels)
-                        .with_validity(sidecar_data.validity.clone()),
+                    daft_arrow::array::UInt16Array::from_vec(sidecar_data.channels).with_validity(
+                        daft_arrow::buffer::wrap_null_buffer(sidecar_data.validity.clone()),
+                    ),
                 ),
             ))
             .into_series(),
             UInt32Array::from((
                 "height",
                 Box::new(
-                    daft_arrow::array::UInt32Array::from_vec(sidecar_data.heights)
-                        .with_validity(sidecar_data.validity.clone()),
+                    daft_arrow::array::UInt32Array::from_vec(sidecar_data.heights).with_validity(
+                        daft_arrow::buffer::wrap_null_buffer(sidecar_data.validity.clone()),
+                    ),
                 ),
             ))
             .into_series(),
             UInt32Array::from((
                 "width",
                 Box::new(
-                    daft_arrow::array::UInt32Array::from_vec(sidecar_data.widths)
-                        .with_validity(sidecar_data.validity.clone()),
+                    daft_arrow::array::UInt32Array::from_vec(sidecar_data.widths).with_validity(
+                        daft_arrow::buffer::wrap_null_buffer(sidecar_data.validity.clone()),
+                    ),
                 ),
             ))
             .into_series(),
             UInt8Array::from((
                 "mode",
                 Box::new(
-                    daft_arrow::array::UInt8Array::from_vec(sidecar_data.modes)
-                        .with_validity(sidecar_data.validity.clone()),
+                    daft_arrow::array::UInt8Array::from_vec(sidecar_data.modes).with_validity(
+                        daft_arrow::buffer::wrap_null_buffer(sidecar_data.validity.clone()),
+                    ),
                 ),
             ))
             .into_series(),

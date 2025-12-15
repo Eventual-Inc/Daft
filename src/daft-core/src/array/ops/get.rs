@@ -30,7 +30,7 @@ where
             idx,
             self.len()
         );
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
         let is_valid = arrow_array
             .validity()
             .is_none_or(|validity| validity.get_bit(idx));
@@ -55,7 +55,7 @@ macro_rules! impl_array_arrow_get {
                     self.len()
                 );
 
-                let arrow_array = self.as_arrow();
+                let arrow_array = self.as_arrow2();
                 let is_valid = arrow_array
                     .validity()
                     .is_none_or(|validity| validity.get_bit(idx));
@@ -130,7 +130,7 @@ impl PythonArray {
             idx,
             self.len()
         );
-        if self.validity().is_none_or(|v| v.get_bit(idx)) {
+        if self.validity().is_none_or(|v| v.is_valid(idx)) {
             self.values().get(idx).cloned()
         } else {
             None
@@ -267,7 +267,9 @@ mod tests {
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
         let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
         let raw_validity = vec![true, false, true];
-        let validity = Some(daft_arrow::bitmap::Bitmap::from(raw_validity.as_slice()));
+        let validity = Some(daft_arrow::buffer::NullBuffer::from(
+            raw_validity.as_slice(),
+        ));
         let arr = FixedSizeListArray::new(field, flat_child.into_series(), validity);
         assert_eq!(arr.len(), 3);
 
@@ -308,7 +310,9 @@ mod tests {
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
         let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
         let raw_validity = vec![true, false, true];
-        let validity = Some(daft_arrow::bitmap::Bitmap::from(raw_validity.as_slice()));
+        let validity = Some(daft_arrow::buffer::NullBuffer::from(
+            raw_validity.as_slice(),
+        ));
         let arr = FixedSizeListArray::new(field, flat_child.into_series(), validity);
         let list_dtype = DataType::List(Box::new(DataType::Int32));
         let list_arr = arr.cast(&list_dtype)?;

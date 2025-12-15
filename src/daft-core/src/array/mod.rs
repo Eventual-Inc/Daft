@@ -8,7 +8,12 @@ mod list_array;
 pub mod ops;
 mod serdes;
 mod struct_array;
-use daft_arrow::{bitmap::Bitmap, compute::cast::utf8_to_large_utf8};
+use arrow_data::ArrayData;
+use daft_arrow::{
+    array::to_data,
+    buffer::{NullBuffer, wrap_null_buffer},
+    compute::cast::utf8_to_large_utf8,
+};
 pub use fixed_size_list_array::FixedSizeListArray;
 pub use list_array::ListArray;
 pub use struct_array::StructArray;
@@ -26,6 +31,7 @@ use crate::datatypes::{DaftArrayType, DaftPhysicalType, DataType, Field};
 pub struct DataArray<T> {
     pub field: Arc<Field>,
     pub data: Box<dyn daft_arrow::array::Array>,
+    validity: Option<daft_arrow::buffer::NullBuffer>,
     marker_: PhantomData<T>,
 }
 
@@ -64,10 +70,11 @@ impl<T> DataArray<T> {
                     .unwrap();
 
                 let arr = Box::new(utf8_to_large_utf8(utf8_arr));
-
+                let validity = arr.validity().cloned().map(Into::into);
                 return Ok(Self {
                     field: physical_field,
                     data: arr,
+                    validity,
                     marker_: PhantomData,
                 });
             }
@@ -93,9 +100,11 @@ impl<T> DataArray<T> {
             );
         }
 
+        let validity = arrow_array.validity().cloned().map(Into::into);
         Ok(Self {
             field: physical_field,
             data: arrow_array,
+            validity,
             marker_: PhantomData,
         })
     }
@@ -124,11 +133,13 @@ impl<T> DataArray<T> {
                 self.data.len()
             )));
         }
-        let with_bitmap = self.data.with_validity(Some(Bitmap::from(validity)));
+        let with_bitmap = self
+            .data
+            .with_validity(wrap_null_buffer(Some(NullBuffer::from(validity))));
         Self::new(self.field.clone(), with_bitmap)
     }
 
-    pub fn with_validity(&self, validity: Option<Bitmap>) -> DaftResult<Self> {
+    pub fn with_validity(&self, validity: Option<NullBuffer>) -> DaftResult<Self> {
         if let Some(v) = &validity
             && v.len() != self.data.len()
         {
@@ -138,12 +149,12 @@ impl<T> DataArray<T> {
                 self.data.len()
             )));
         }
-        let with_bitmap = self.data.with_validity(validity);
+        let with_bitmap = self.data.with_validity(wrap_null_buffer(validity));
         Self::new(self.field.clone(), with_bitmap)
     }
 
-    pub fn validity(&self) -> Option<&Bitmap> {
-        self.data.validity()
+    pub fn validity(&self) -> Option<&NullBuffer> {
+        self.validity.as_ref()
     }
 
     pub fn slice(&self, start: usize, end: usize) -> DaftResult<Self> {
@@ -162,6 +173,10 @@ impl<T> DataArray<T> {
 
     pub fn data(&self) -> &dyn daft_arrow::array::Array {
         self.data.as_ref()
+    }
+
+    pub fn to_data(&self) -> ArrayData {
+        to_data(self.data())
     }
 
     pub fn name(&self) -> &str {

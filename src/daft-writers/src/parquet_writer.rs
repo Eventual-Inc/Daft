@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime, get_io_runtime};
 use daft_core::prelude::*;
-use daft_io::{IOConfig, SourceType, parse_url};
+use daft_io::{IOConfig, SourceType, parse_url, utils::ObjectPath};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use parquet::{
@@ -22,7 +22,7 @@ use parquet::{
 
 use crate::{
     AsyncFileWriter, WriteResult,
-    storage_backend::{FileStorageBackend, S3StorageBackend, StorageBackend},
+    storage_backend::{FileStorageBackend, ObjectStorageBackend, StorageBackend},
     utils::build_filename,
 };
 
@@ -40,7 +40,8 @@ pub(crate) fn native_parquet_writer_supported(
         _ => return Ok(false),
     }
     // TODO(desmond): Currently we do not support extension and timestamp types.
-    let arrow_schema = match file_schema.to_arrow() {
+    #[allow(deprecated, reason = "arrow2 migration")]
+    let arrow_schema = match file_schema.to_arrow2() {
         Ok(schema)
             if schema
                 .fields
@@ -90,7 +91,8 @@ pub(crate) fn create_native_parquet_writer(
             .build(),
     );
 
-    let arrow_schema = Arc::new(schema.to_arrow()?.into());
+    #[allow(deprecated, reason = "arrow2 migration")]
+    let arrow_schema = Arc::new(schema.to_arrow2()?.into());
 
     let parquet_schema = ArrowSchemaConverter::new()
         .with_coerce_types(writer_properties.coerce_types())
@@ -110,11 +112,11 @@ pub(crate) fn create_native_parquet_writer(
             )))
         }
         SourceType::S3 => {
-            let (scheme, _, _) = daft_io::s3_like::parse_s3_url(root_dir.as_ref())?;
+            let ObjectPath { scheme, .. } = daft_io::utils::parse_object_url(root_dir.as_ref())?;
             let io_config = io_config.ok_or_else(|| {
                 DaftError::InternalError("IO config is required for S3 writes".to_string())
             })?;
-            let storage_backend = S3StorageBackend::new(scheme, io_config);
+            let storage_backend = ObjectStorageBackend::new(scheme, io_config);
             Ok(Box::new(ParquetWriter::new(
                 filename,
                 writer_properties,
@@ -187,6 +189,7 @@ impl<B: StorageBackend> ParquetWriter<B> {
             .collect();
         // Iterate through each record batch and extract its leaf columns.
         for record_batch in record_batches {
+            #[allow(deprecated, reason = "arrow2 migration")]
             let arrays = record_batch.get_inner_arrow_arrays();
             let mut leaf_column_slots = leaf_columns.iter_mut();
 

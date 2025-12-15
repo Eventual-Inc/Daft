@@ -111,8 +111,8 @@ impl AntiSemiProbeSink {
             .into_iter()
             .zip(input_tables.iter())
             .map(|(idxs, table)| {
-                let idxs_as_series = UInt64Array::from(("idxs", idxs)).into_series();
-                table.take(&idxs_as_series)
+                let idxs_arr = UInt64Array::from(("idxs", idxs));
+                table.take(&idxs_arr)
             })
             .collect::<DaftResult<Vec<_>>>()?;
         Ok(Arc::new(MicroPartition::new_loaded(

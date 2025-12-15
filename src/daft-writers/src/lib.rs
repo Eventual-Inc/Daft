@@ -1,10 +1,12 @@
 mod batch;
+mod batch_file_writer;
+mod csv_writer;
 mod file;
 mod ipc;
 mod json_writer;
 mod parquet_writer;
 mod partition;
-mod physical;
+pub mod physical;
 mod storage_backend;
 #[cfg(test)]
 mod test;

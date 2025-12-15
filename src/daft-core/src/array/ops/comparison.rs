@@ -11,7 +11,6 @@ use crate::{
         BinaryArray, BooleanArray, DaftArrowBackedType, DaftPrimitiveType, DataType, Field,
         FixedSizeBinaryArray, NullArray, Utf8Array,
     },
-    utils::arrow::arrow_bitmap_and_helper,
 };
 
 impl<T> PartialEq for DataArray<T>
@@ -32,11 +31,13 @@ where
     fn equal(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(BooleanArray::from((
                     self.name(),
-                    comparison::eq(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::eq(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -72,10 +73,10 @@ where
     fn eq_null_safe(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let l_validity = self.as_arrow().validity();
-                let r_validity = rhs.as_arrow().validity();
+                let l_validity = self.as_arrow2().validity();
+                let r_validity = rhs.as_arrow2().validity();
 
-                let mut result_values = comparison::eq(self.as_arrow(), rhs.as_arrow())
+                let mut result_values = comparison::eq(self.as_arrow2(), rhs.as_arrow2())
                     .values()
                     .clone();
 
@@ -106,7 +107,7 @@ where
                 if let Some(value) = rhs.get(0) {
                     Ok(self.eq_null_safe(value))
                 } else {
-                    let result_values = match self.as_arrow().validity() {
+                    let result_values = match self.as_arrow2().validity() {
                         None => daft_arrow::bitmap::Bitmap::new_zeroed(l_size),
                         Some(validity) => validity.not(),
                     };
@@ -124,7 +125,7 @@ where
                 if let Some(value) = self.get(0) {
                     Ok(rhs.eq_null_safe(value))
                 } else {
-                    let result_values = match rhs.as_arrow().validity() {
+                    let result_values = match rhs.as_arrow2().validity() {
                         None => daft_arrow::bitmap::Bitmap::new_zeroed(r_size),
                         Some(validity) => validity.not(),
                     };
@@ -149,11 +150,13 @@ where
     fn not_equal(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(BooleanArray::from((
                     self.name(),
-                    comparison::neq(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::neq(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -189,11 +192,13 @@ where
     fn lt(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(BooleanArray::from((
                     self.name(),
-                    comparison::lt(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::lt(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -229,11 +234,13 @@ where
     fn lte(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(BooleanArray::from((
                     self.name(),
-                    comparison::lt_eq(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::lt_eq(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -269,11 +276,13 @@ where
     fn gt(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(BooleanArray::from((
                     self.name(),
-                    comparison::gt(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::gt(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -309,11 +318,13 @@ where
     fn gte(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(BooleanArray::from((
                     self.name(),
-                    comparison::gt_eq(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::gt_eq(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -359,13 +370,13 @@ where
             &dyn daft_arrow::scalar::Scalar,
         ) -> daft_arrow::array::BooleanArray,
     ) -> BooleanArray {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
 
         let scalar = PrimitiveScalar::new(arrow_array.data_type().clone(), Some(rhs));
 
-        let validity = self.as_arrow().validity().cloned();
+        let validity = self.as_arrow2().validity().cloned();
 
-        let arrow_result = func(self.as_arrow(), &scalar).with_validity(validity);
+        let arrow_result = func(self.as_arrow2(), &scalar).with_validity(validity);
         DataArray::from((self.name(), arrow_result))
     }
 }
@@ -417,7 +428,7 @@ where
         let rhs: T::Native =
             NumCast::from(rhs).expect("could not cast to underlying DataArray type");
 
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
         let scalar = PrimitiveScalar::new(arrow_array.data_type().clone(), Some(rhs));
 
         let result_values = comparison::eq_scalar(arrow_array, &scalar).values().clone();
@@ -444,11 +455,13 @@ impl DaftCompare<&Self> for BooleanArray {
     fn equal(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(Self::from((
                     self.name(),
-                    comparison::eq(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::eq(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -476,11 +489,13 @@ impl DaftCompare<&Self> for BooleanArray {
     fn not_equal(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(Self::from((
                     self.name(),
-                    comparison::neq(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::neq(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -508,11 +523,13 @@ impl DaftCompare<&Self> for BooleanArray {
     fn lt(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(Self::from((
                     self.name(),
-                    comparison::lt(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::lt(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -540,11 +557,13 @@ impl DaftCompare<&Self> for BooleanArray {
     fn lte(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(Self::from((
                     self.name(),
-                    comparison::lt_eq(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::lt_eq(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -572,11 +591,13 @@ impl DaftCompare<&Self> for BooleanArray {
     fn gt(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(Self::from((
                     self.name(),
-                    comparison::gt(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::gt(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -604,11 +625,13 @@ impl DaftCompare<&Self> for BooleanArray {
     fn gte(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(Self::from((
                     self.name(),
-                    comparison::gt_eq(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::gt_eq(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -636,10 +659,10 @@ impl DaftCompare<&Self> for BooleanArray {
     fn eq_null_safe(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let l_validity = self.as_arrow().validity();
-                let r_validity = rhs.as_arrow().validity();
+                let l_validity = self.as_arrow2().validity();
+                let r_validity = rhs.as_arrow2().validity();
 
-                let mut result_values = comparison::eq(self.as_arrow(), rhs.as_arrow())
+                let mut result_values = comparison::eq(self.as_arrow2(), rhs.as_arrow2())
                     .values()
                     .clone();
 
@@ -670,7 +693,7 @@ impl DaftCompare<&Self> for BooleanArray {
                 if let Some(value) = rhs.get(0) {
                     Ok(self.eq_null_safe(value)?)
                 } else {
-                    let result_values = match self.as_arrow().validity() {
+                    let result_values = match self.as_arrow2().validity() {
                         None => daft_arrow::bitmap::Bitmap::new_zeroed(l_size),
                         Some(validity) => validity.not(),
                     };
@@ -688,7 +711,7 @@ impl DaftCompare<&Self> for BooleanArray {
                 if let Some(value) = self.get(0) {
                     Ok(rhs.eq_null_safe(value)?)
                 } else {
-                    let result_values = match rhs.as_arrow().validity() {
+                    let result_values = match rhs.as_arrow2().validity() {
                         None => daft_arrow::bitmap::Bitmap::new_zeroed(r_size),
                         Some(validity) => validity.not(),
                     };
@@ -715,59 +738,59 @@ impl DaftCompare<bool> for BooleanArray {
     type Output = DaftResult<Self>;
 
     fn equal(&self, rhs: bool) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
+        let validity = self.as_arrow2().validity().cloned();
         let arrow_result =
-            comparison::boolean::eq_scalar(self.as_arrow(), rhs).with_validity(validity);
+            comparison::boolean::eq_scalar(self.as_arrow2(), rhs).with_validity(validity);
 
         Ok(Self::from((self.name(), arrow_result)))
     }
 
     fn not_equal(&self, rhs: bool) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
+        let validity = self.as_arrow2().validity().cloned();
         let arrow_result =
-            comparison::boolean::neq_scalar(self.as_arrow(), rhs).with_validity(validity);
+            comparison::boolean::neq_scalar(self.as_arrow2(), rhs).with_validity(validity);
 
         Ok(Self::from((self.name(), arrow_result)))
     }
 
     fn lt(&self, rhs: bool) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
+        let validity = self.as_arrow2().validity().cloned();
         let arrow_result =
-            comparison::boolean::lt_scalar(self.as_arrow(), rhs).with_validity(validity);
+            comparison::boolean::lt_scalar(self.as_arrow2(), rhs).with_validity(validity);
 
         Ok(Self::from((self.name(), arrow_result)))
     }
 
     fn lte(&self, rhs: bool) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
+        let validity = self.as_arrow2().validity().cloned();
         let arrow_result =
-            comparison::boolean::lt_eq_scalar(self.as_arrow(), rhs).with_validity(validity);
+            comparison::boolean::lt_eq_scalar(self.as_arrow2(), rhs).with_validity(validity);
 
         Ok(Self::from((self.name(), arrow_result)))
     }
 
     fn gt(&self, rhs: bool) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
+        let validity = self.as_arrow2().validity().cloned();
         let arrow_result =
-            comparison::boolean::gt_scalar(self.as_arrow(), rhs).with_validity(validity);
+            comparison::boolean::gt_scalar(self.as_arrow2(), rhs).with_validity(validity);
 
         Ok(Self::from((self.name(), arrow_result)))
     }
 
     fn gte(&self, rhs: bool) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
+        let validity = self.as_arrow2().validity().cloned();
         let arrow_result =
-            comparison::boolean::gt_eq_scalar(self.as_arrow(), rhs).with_validity(validity);
+            comparison::boolean::gt_eq_scalar(self.as_arrow2(), rhs).with_validity(validity);
 
         Ok(Self::from((self.name(), arrow_result)))
     }
 
     fn eq_null_safe(&self, rhs: bool) -> Self::Output {
-        let result_values = comparison::boolean::eq_scalar(self.as_arrow(), rhs)
+        let result_values = comparison::boolean::eq_scalar(self.as_arrow2(), rhs)
             .values()
             .clone();
 
-        let final_values = match self.as_arrow().validity() {
+        let final_values = match self.as_arrow2().validity() {
             None => result_values,
             Some(valid) => daft_arrow::bitmap::and(&result_values, valid),
         };
@@ -786,11 +809,11 @@ impl DaftCompare<bool> for BooleanArray {
 impl Not for &BooleanArray {
     type Output = DaftResult<BooleanArray>;
     fn not(self) -> Self::Output {
-        let new_bitmap = self.as_arrow().values().not();
+        let new_bitmap = self.as_arrow2().values().not();
         let arrow_array = daft_arrow::array::BooleanArray::new(
             daft_arrow::datatypes::DataType::Boolean,
             new_bitmap,
-            self.as_arrow().validity().cloned(),
+            self.as_arrow2().validity().cloned(),
         );
         Ok(BooleanArray::from((self.name(), arrow_array)))
     }
@@ -803,9 +826,9 @@ impl DaftLogical<&Self> for BooleanArray {
         // - If the non-null value is false, the result is false (not null)
         // - If the non-null value is true, the result is null
         fn and_with_null(name: &str, arr: &BooleanArray) -> BooleanArray {
-            let values = arr.as_arrow().values();
+            let values = arr.as_arrow2().values();
 
-            let new_validity = match arr.as_arrow().validity() {
+            let new_validity = match arr.as_arrow2().validity() {
                 None => values.not(),
                 Some(validity) => daft_arrow::bitmap::and(&values.not(), validity),
             };
@@ -822,11 +845,11 @@ impl DaftLogical<&Self> for BooleanArray {
 
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let l_values = self.as_arrow().values();
-                let r_values = rhs.as_arrow().values();
+                let l_values = self.as_arrow2().values();
+                let r_values = rhs.as_arrow2().values();
 
                 // (false & NULL) should be false, compute validity to ensure that
-                let validity = match (self.as_arrow().validity(), rhs.as_arrow().validity()) {
+                let validity = match (self.as_arrow2().validity(), rhs.as_arrow2().validity()) {
                     (None, None) => None,
                     (None, Some(r_valid)) => Some(daft_arrow::bitmap::or(&l_values.not(), r_valid)),
                     (Some(l_valid), None) => Some(daft_arrow::bitmap::or(l_valid, &r_values.not())),
@@ -876,9 +899,9 @@ impl DaftLogical<&Self> for BooleanArray {
         // - If the non-null value is false, the result is null
         // - If the non-null value is true, the result is true (not null)
         fn or_with_null(name: &str, arr: &BooleanArray) -> BooleanArray {
-            let values = arr.as_arrow().values();
+            let values = arr.as_arrow2().values();
 
-            let new_validity = match arr.as_arrow().validity() {
+            let new_validity = match arr.as_arrow2().validity() {
                 None => values.clone(),
                 Some(validity) => daft_arrow::bitmap::and(values, validity),
             };
@@ -895,11 +918,11 @@ impl DaftLogical<&Self> for BooleanArray {
 
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let l_values = self.as_arrow().values();
-                let r_values = rhs.as_arrow().values();
+                let l_values = self.as_arrow2().values();
+                let r_values = rhs.as_arrow2().values();
 
                 // (true | NULL) should be true, compute validity to ensure that
-                let validity = match (self.as_arrow().validity(), rhs.as_arrow().validity()) {
+                let validity = match (self.as_arrow2().validity(), rhs.as_arrow2().validity()) {
                     (None, None) => None,
                     (None, Some(r_valid)) => Some(daft_arrow::bitmap::or(l_values, r_valid)),
                     (Some(l_valid), None) => Some(daft_arrow::bitmap::or(l_valid, r_values)),
@@ -947,11 +970,13 @@ impl DaftLogical<&Self> for BooleanArray {
     fn xor(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
 
                 let result_bitmap =
-                    daft_arrow::bitmap::xor(self.as_arrow().values(), rhs.as_arrow().values());
+                    daft_arrow::bitmap::xor(self.as_arrow2().values(), rhs.as_arrow2().values());
                 Ok(Self::from((
                     self.name(),
                     daft_arrow::array::BooleanArray::new(
@@ -1063,11 +1088,13 @@ impl DaftCompare<&Self> for Utf8Array {
     fn equal(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(BooleanArray::from((
                     self.name(),
-                    comparison::eq(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::eq(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -1103,11 +1130,13 @@ impl DaftCompare<&Self> for Utf8Array {
     fn not_equal(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(BooleanArray::from((
                     self.name(),
-                    comparison::neq(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::neq(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -1143,11 +1172,13 @@ impl DaftCompare<&Self> for Utf8Array {
     fn lt(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(BooleanArray::from((
                     self.name(),
-                    comparison::lt(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::lt(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -1183,11 +1214,13 @@ impl DaftCompare<&Self> for Utf8Array {
     fn lte(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(BooleanArray::from((
                     self.name(),
-                    comparison::lt_eq(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::lt_eq(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -1223,11 +1256,13 @@ impl DaftCompare<&Self> for Utf8Array {
     fn gt(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(BooleanArray::from((
                     self.name(),
-                    comparison::gt(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::gt(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -1263,11 +1298,13 @@ impl DaftCompare<&Self> for Utf8Array {
     fn gte(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(BooleanArray::from((
                     self.name(),
-                    comparison::gt_eq(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::gt_eq(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -1303,10 +1340,10 @@ impl DaftCompare<&Self> for Utf8Array {
     fn eq_null_safe(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let l_validity = self.as_arrow().validity();
-                let r_validity = rhs.as_arrow().validity();
+                let l_validity = self.as_arrow2().validity();
+                let r_validity = rhs.as_arrow2().validity();
 
-                let mut result_values = comparison::eq(self.as_arrow(), rhs.as_arrow())
+                let mut result_values = comparison::eq(self.as_arrow2(), rhs.as_arrow2())
                     .values()
                     .clone();
 
@@ -1337,7 +1374,7 @@ impl DaftCompare<&Self> for Utf8Array {
                 if let Some(value) = rhs.get(0) {
                     Ok(self.eq_null_safe(value)?)
                 } else {
-                    let result_values = match self.as_arrow().validity() {
+                    let result_values = match self.as_arrow2().validity() {
                         None => daft_arrow::bitmap::Bitmap::new_zeroed(l_size),
                         Some(validity) => validity.not(),
                     };
@@ -1355,7 +1392,7 @@ impl DaftCompare<&Self> for Utf8Array {
                 if let Some(value) = self.get(0) {
                     Ok(rhs.eq_null_safe(value)?)
                 } else {
-                    let result_values = match rhs.as_arrow().validity() {
+                    let result_values = match rhs.as_arrow2().validity() {
                         None => daft_arrow::bitmap::Bitmap::new_zeroed(r_size),
                         Some(validity) => validity.not(),
                     };
@@ -1382,55 +1419,55 @@ impl DaftCompare<&str> for Utf8Array {
     type Output = DaftResult<BooleanArray>;
 
     fn equal(&self, rhs: &str) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
+        let validity = self.as_arrow2().validity().cloned();
         let arrow_result =
-            comparison::utf8::eq_scalar(self.as_arrow(), rhs).with_validity(validity);
+            comparison::utf8::eq_scalar(self.as_arrow2(), rhs).with_validity(validity);
 
         Ok(BooleanArray::from((self.name(), arrow_result)))
     }
 
     fn not_equal(&self, rhs: &str) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
+        let validity = self.as_arrow2().validity().cloned();
         let arrow_result =
-            comparison::utf8::neq_scalar(self.as_arrow(), rhs).with_validity(validity);
+            comparison::utf8::neq_scalar(self.as_arrow2(), rhs).with_validity(validity);
 
         Ok(BooleanArray::from((self.name(), arrow_result)))
     }
 
     fn lt(&self, rhs: &str) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
+        let validity = self.as_arrow2().validity().cloned();
         let arrow_result =
-            comparison::utf8::lt_scalar(self.as_arrow(), rhs).with_validity(validity);
+            comparison::utf8::lt_scalar(self.as_arrow2(), rhs).with_validity(validity);
 
         Ok(BooleanArray::from((self.name(), arrow_result)))
     }
 
     fn lte(&self, rhs: &str) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
+        let validity = self.as_arrow2().validity().cloned();
         let arrow_result =
-            comparison::utf8::lt_eq_scalar(self.as_arrow(), rhs).with_validity(validity);
+            comparison::utf8::lt_eq_scalar(self.as_arrow2(), rhs).with_validity(validity);
 
         Ok(BooleanArray::from((self.name(), arrow_result)))
     }
 
     fn gt(&self, rhs: &str) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
+        let validity = self.as_arrow2().validity().cloned();
         let arrow_result =
-            comparison::utf8::gt_scalar(self.as_arrow(), rhs).with_validity(validity);
+            comparison::utf8::gt_scalar(self.as_arrow2(), rhs).with_validity(validity);
 
         Ok(BooleanArray::from((self.name(), arrow_result)))
     }
 
     fn gte(&self, rhs: &str) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
+        let validity = self.as_arrow2().validity().cloned();
         let arrow_result =
-            comparison::utf8::gt_eq_scalar(self.as_arrow(), rhs).with_validity(validity);
+            comparison::utf8::gt_eq_scalar(self.as_arrow2(), rhs).with_validity(validity);
 
         Ok(BooleanArray::from((self.name(), arrow_result)))
     }
 
     fn eq_null_safe(&self, rhs: &str) -> Self::Output {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
 
         let result_values = comparison::utf8::eq_scalar(arrow_array, rhs)
             .values()
@@ -1458,11 +1495,13 @@ impl DaftCompare<&Self> for BinaryArray {
     fn equal(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(BooleanArray::from((
                     self.name(),
-                    comparison::eq(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::eq(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -1498,11 +1537,13 @@ impl DaftCompare<&Self> for BinaryArray {
     fn not_equal(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(BooleanArray::from((
                     self.name(),
-                    comparison::neq(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::neq(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -1538,11 +1579,13 @@ impl DaftCompare<&Self> for BinaryArray {
     fn lt(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(BooleanArray::from((
                     self.name(),
-                    comparison::lt(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::lt(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -1578,11 +1621,13 @@ impl DaftCompare<&Self> for BinaryArray {
     fn lte(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(BooleanArray::from((
                     self.name(),
-                    comparison::lt_eq(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::lt_eq(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -1618,11 +1663,13 @@ impl DaftCompare<&Self> for BinaryArray {
     fn gt(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(BooleanArray::from((
                     self.name(),
-                    comparison::gt(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::gt(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -1658,11 +1705,13 @@ impl DaftCompare<&Self> for BinaryArray {
     fn gte(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let validity =
-                    arrow_bitmap_and_helper(self.as_arrow().validity(), rhs.as_arrow().validity());
+                let validity = arrow_bitmap_and_helper(
+                    self.as_arrow2().validity(),
+                    rhs.as_arrow2().validity(),
+                );
                 Ok(BooleanArray::from((
                     self.name(),
-                    comparison::gt_eq(self.as_arrow(), rhs.as_arrow()).with_validity(validity),
+                    comparison::gt_eq(self.as_arrow2(), rhs.as_arrow2()).with_validity(validity),
                 )))
             }
             (l_size, 1) => {
@@ -1698,10 +1747,10 @@ impl DaftCompare<&Self> for BinaryArray {
     fn eq_null_safe(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let l_validity = self.as_arrow().validity();
-                let r_validity = rhs.as_arrow().validity();
+                let l_validity = self.as_arrow2().validity();
+                let r_validity = rhs.as_arrow2().validity();
 
-                let mut result_values = comparison::eq(self.as_arrow(), rhs.as_arrow())
+                let mut result_values = comparison::eq(self.as_arrow2(), rhs.as_arrow2())
                     .values()
                     .clone();
 
@@ -1732,7 +1781,7 @@ impl DaftCompare<&Self> for BinaryArray {
                 if let Some(value) = rhs.get(0) {
                     Ok(self.eq_null_safe(value)?)
                 } else {
-                    let result_values = match self.as_arrow().validity() {
+                    let result_values = match self.as_arrow2().validity() {
                         None => daft_arrow::bitmap::Bitmap::new_zeroed(l_size),
                         Some(validity) => validity.not(),
                     };
@@ -1750,7 +1799,7 @@ impl DaftCompare<&Self> for BinaryArray {
                 if let Some(value) = self.get(0) {
                     Ok(rhs.eq_null_safe(value)?)
                 } else {
-                    let result_values = match rhs.as_arrow().validity() {
+                    let result_values = match rhs.as_arrow2().validity() {
                         None => daft_arrow::bitmap::Bitmap::new_zeroed(r_size),
                         Some(validity) => validity.not(),
                     };
@@ -1777,55 +1826,55 @@ impl DaftCompare<&[u8]> for BinaryArray {
     type Output = DaftResult<BooleanArray>;
 
     fn equal(&self, rhs: &[u8]) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
+        let validity = self.as_arrow2().validity().cloned();
         let arrow_result =
-            comparison::binary::eq_scalar(self.as_arrow(), rhs).with_validity(validity);
+            comparison::binary::eq_scalar(self.as_arrow2(), rhs).with_validity(validity);
 
         Ok(BooleanArray::from((self.name(), arrow_result)))
     }
 
     fn not_equal(&self, rhs: &[u8]) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
+        let validity = self.as_arrow2().validity().cloned();
         let arrow_result =
-            comparison::binary::neq_scalar(self.as_arrow(), rhs).with_validity(validity);
+            comparison::binary::neq_scalar(self.as_arrow2(), rhs).with_validity(validity);
 
         Ok(BooleanArray::from((self.name(), arrow_result)))
     }
 
     fn lt(&self, rhs: &[u8]) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
+        let validity = self.as_arrow2().validity().cloned();
         let arrow_result =
-            comparison::binary::lt_scalar(self.as_arrow(), rhs).with_validity(validity);
+            comparison::binary::lt_scalar(self.as_arrow2(), rhs).with_validity(validity);
 
         Ok(BooleanArray::from((self.name(), arrow_result)))
     }
 
     fn lte(&self, rhs: &[u8]) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
+        let validity = self.as_arrow2().validity().cloned();
         let arrow_result =
-            comparison::binary::lt_eq_scalar(self.as_arrow(), rhs).with_validity(validity);
+            comparison::binary::lt_eq_scalar(self.as_arrow2(), rhs).with_validity(validity);
 
         Ok(BooleanArray::from((self.name(), arrow_result)))
     }
 
     fn gt(&self, rhs: &[u8]) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
+        let validity = self.as_arrow2().validity().cloned();
         let arrow_result =
-            comparison::binary::gt_scalar(self.as_arrow(), rhs).with_validity(validity);
+            comparison::binary::gt_scalar(self.as_arrow2(), rhs).with_validity(validity);
 
         Ok(BooleanArray::from((self.name(), arrow_result)))
     }
 
     fn gte(&self, rhs: &[u8]) -> Self::Output {
-        let validity = self.as_arrow().validity().cloned();
+        let validity = self.as_arrow2().validity().cloned();
         let arrow_result =
-            comparison::binary::gt_eq_scalar(self.as_arrow(), rhs).with_validity(validity);
+            comparison::binary::gt_eq_scalar(self.as_arrow2(), rhs).with_validity(validity);
 
         Ok(BooleanArray::from((self.name(), arrow_result)))
     }
 
     fn eq_null_safe(&self, rhs: &[u8]) -> Self::Output {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
 
         let result_values = comparison::binary::eq_scalar(arrow_array, rhs)
             .values()
@@ -1855,14 +1904,12 @@ fn compare_fixed_size_binary<F>(
 where
     F: Fn(&[u8], &[u8]) -> bool,
 {
-    let lhs_arrow = lhs.as_arrow();
-    let rhs_arrow = rhs.as_arrow();
-    let validity = match (lhs_arrow.validity(), rhs_arrow.validity()) {
-        (Some(lhs), None) => Some(lhs.clone()),
-        (None, Some(rhs)) => Some(rhs.clone()),
-        (None, None) => None,
-        (Some(lhs), Some(rhs)) => Some(lhs & rhs),
-    };
+    let lhs_arrow = lhs.as_arrow2();
+    let rhs_arrow = rhs.as_arrow2();
+    let lhs_validity = lhs_arrow.validity().cloned().map(|v| v.into());
+    let rhs_validity = rhs_arrow.validity().cloned().map(|v| v.into());
+    let validity =
+        daft_arrow::buffer::NullBuffer::union(lhs_validity.as_ref(), rhs_validity.as_ref());
 
     let values = lhs_arrow
         .values_iter()
@@ -1875,7 +1922,7 @@ where
         Box::new(daft_arrow::array::BooleanArray::new(
             daft_arrow::datatypes::DataType::Boolean,
             values,
-            validity,
+            daft_arrow::buffer::wrap_null_buffer(validity),
         )),
     )
 }
@@ -1888,7 +1935,7 @@ fn cmp_fixed_size_binary_scalar<F>(
 where
     F: Fn(&[u8], &[u8]) -> bool,
 {
-    let lhs_arrow = lhs.as_arrow();
+    let lhs_arrow = lhs.as_arrow2();
     let validity = lhs_arrow.validity().cloned();
 
     let values = lhs_arrow.values_iter().map(|lhs| op(lhs, rhs));
@@ -2108,8 +2155,8 @@ impl DaftCompare<&Self> for FixedSizeBinaryArray {
     fn eq_null_safe(&self, rhs: &Self) -> Self::Output {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let lhs_arrow = self.as_arrow();
-                let rhs_arrow = rhs.as_arrow();
+                let lhs_arrow = self.as_arrow2();
+                let rhs_arrow = rhs.as_arrow2();
                 let l_validity = lhs_arrow.validity();
                 let r_validity = rhs_arrow.validity();
 
@@ -2147,7 +2194,7 @@ impl DaftCompare<&Self> for FixedSizeBinaryArray {
                 if let Some(value) = rhs.get(0) {
                     Ok(self.eq_null_safe(value)?)
                 } else {
-                    let result_values = match self.as_arrow().validity() {
+                    let result_values = match self.as_arrow2().validity() {
                         None => daft_arrow::bitmap::Bitmap::new_zeroed(l_size),
                         Some(validity) => validity.not(),
                     };
@@ -2165,7 +2212,7 @@ impl DaftCompare<&Self> for FixedSizeBinaryArray {
                 if let Some(value) = self.get(0) {
                     Ok(rhs.eq_null_safe(value)?)
                 } else {
-                    let result_values = match rhs.as_arrow().validity() {
+                    let result_values = match rhs.as_arrow2().validity() {
                         None => daft_arrow::bitmap::Bitmap::new_zeroed(r_size),
                         Some(validity) => validity.not(),
                     };
@@ -2216,7 +2263,7 @@ impl DaftCompare<&[u8]> for FixedSizeBinaryArray {
     }
 
     fn eq_null_safe(&self, rhs: &[u8]) -> Self::Output {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
 
         let result_values = daft_arrow::bitmap::Bitmap::from_trusted_len_iter(
             arrow_array.values_iter().map(|lhs| lhs == rhs),
@@ -2729,5 +2776,17 @@ mod tests {
             DaftError::ValueError(msg) => assert!(msg.contains("different length arrays")),
             other => panic!("expected ValueError, got {other:?}"),
         }
+    }
+}
+
+fn arrow_bitmap_and_helper(
+    lhs: Option<&daft_arrow::bitmap::Bitmap>,
+    rhs: Option<&daft_arrow::bitmap::Bitmap>,
+) -> Option<daft_arrow::bitmap::Bitmap> {
+    match (lhs, rhs) {
+        (None, None) => None,
+        (None, Some(rhs)) => Some(rhs.clone()),
+        (Some(lhs), None) => Some(lhs.clone()),
+        (Some(lhs), Some(rhs)) => Some(daft_arrow::bitmap::and(lhs, rhs)),
     }
 }

@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
+import pytest
+
 from daft.ai.google.protocols.prompter import GooglePrompterDescriptor
 from daft.ai.google.provider import GoogleProvider
 
@@ -35,3 +39,9 @@ def test_google_provider_get_prompter_with_options():
     )
 
     assert descriptor.get_options() == {"temperature": 0.7, "max_output_tokens": 100}
+
+
+def test_google_provider_raises_import_error_without_numpy():
+    with patch("daft.dependencies.np.module_available", return_value=False):
+        with pytest.raises(ImportError, match=r"Please `pip install 'daft\[google\]'` with this provider"):
+            GoogleProvider(api_key="test-key")

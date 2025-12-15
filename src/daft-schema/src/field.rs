@@ -81,11 +81,20 @@ impl Field {
         }
     }
 
-    pub fn to_arrow(&self) -> DaftResult<ArrowField> {
+    #[deprecated(note = "use .to_arrow")]
+    #[allow(deprecated, reason = "arrow2 migration")]
+    pub fn to_arrow2(&self) -> DaftResult<ArrowField> {
         Ok(
             ArrowField::new(self.name.clone(), self.dtype.to_arrow()?, true)
                 .with_metadata(self.metadata.as_ref().clone()),
         )
+    }
+    pub fn to_arrow(&self) -> DaftResult<arrow_schema::Field> {
+        Ok(self
+            .dtype
+            .to_arrow_field()?
+            .with_name(&self.name)
+            .with_metadata(self.metadata.as_ref().clone().into_iter().collect()))
     }
 
     pub fn to_physical(&self) -> Self {

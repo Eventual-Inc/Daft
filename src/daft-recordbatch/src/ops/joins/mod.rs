@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::{collections::HashSet, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
@@ -44,8 +45,8 @@ fn match_types_for_tables(
 fn add_non_join_key_columns(
     left: &RecordBatch,
     right: &RecordBatch,
-    lidx: Series,
-    ridx: Series,
+    lidx: UInt64Array,
+    ridx: UInt64Array,
     mut join_series: Vec<Series>,
 ) -> DaftResult<Vec<Series>> {
     let join_keys = join_series
@@ -53,7 +54,6 @@ fn add_non_join_key_columns(
         .map(|s| s.name().to_string())
         .collect::<HashSet<_>>();
 
-    // TODO(Clark): Parallelize with rayon.
     for field in left.schema.as_ref() {
         if join_keys.contains(&field.name) {
             continue;
@@ -171,7 +171,7 @@ impl RecordBatch {
                 let mut growable =
                     make_growable(name, lcol.data_type(), vec![lcol, rcol], false, lcol.len());
 
-                for (li, ri) in lidx.u64()?.into_iter().zip(ridx.u64()?) {
+                for (li, ri) in lidx.as_arrow2().iter().zip(ridx.as_arrow2().iter()) {
                     match (li, ri) {
                         (Some(i), _) => growable.extend(0, *i as usize, 1),
                         (None, Some(i)) => growable.extend(1, *i as usize, 1),
@@ -202,9 +202,8 @@ impl RecordBatch {
                 .flat_map(|i| std::iter::repeat_n(i, inner_len))
                 .collect::<Vec<_>>();
 
-            let idx_series = UInt64Array::from(("inner_indices", idx)).into_series();
-
-            input.take(&idx_series)
+            let idx_arr = UInt64Array::from(("inner_indices", idx));
+            input.take(&idx_arr)
         }
 
         /// Create a enw table by repeating the entire table `outer_len` number of times

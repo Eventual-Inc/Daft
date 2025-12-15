@@ -43,7 +43,8 @@ impl IPCWriter {
                 compression: self.compression,
             };
             let mut writer = daft_arrow::io::ipc::write::StreamWriter::new(file, options);
-            writer.start(&schema.to_arrow()?, None)?;
+            #[allow(deprecated, reason = "arrow2 migration")]
+            writer.start(&schema.to_arrow2()?, None)?;
             self.writer = Some(writer);
         }
         Ok(self.writer.as_mut().unwrap())
@@ -62,6 +63,7 @@ impl AsyncFileWriter for IPCWriter {
         let rows_written = data.len();
         let writer = self.get_or_create_writer(&data.schema())?;
         for table in data.record_batches() {
+            #[allow(deprecated, reason = "arrow2 migration")]
             let chunk = table.to_chunk();
             writer.write(&chunk, None)?;
         }

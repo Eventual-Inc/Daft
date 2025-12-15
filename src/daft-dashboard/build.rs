@@ -32,7 +32,7 @@ fn default_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("cargo:rerun-if-changed=frontend/src/");
-    println!("cargo:rerun-if-changed=frontend/bun.lockb");
+    println!("cargo:rerun-if-changed=frontend/bun.lock");
     println!("cargo:rerun-if-changed=build.rs");
 
     // Check if bun is installed

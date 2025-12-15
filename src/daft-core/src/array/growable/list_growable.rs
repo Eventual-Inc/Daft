@@ -92,7 +92,7 @@ impl Growable for ListGrowable<'_> {
         let grown_validity = std::mem::take(&mut self.growable_validity);
 
         let built_child = self.child_growable.build()?;
-        let built_validity = grown_validity.map(|v| v.build());
+        let built_validity = grown_validity.and_then(|v| v.build());
         let built_offsets = grown_offsets.into();
         Ok(ListArray::new(
             Field::new(self.name.clone(), self.dtype.clone()),

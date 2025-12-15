@@ -1,4 +1,5 @@
 [dependencies]
+arrow-schema = "54.2.1"
 common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false}
 daft-arrow = {path = "../daft-arrow"}
 common-display = {path = "../common/display", default-features = false}
@@ -14,6 +15,8 @@ num-traits = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true, features = ["rc"]}
 serde_json = {workspace = true}
+chrono = {workspace = true}
+chrono-tz = {workspace = true}
 
 [features]
 python = [

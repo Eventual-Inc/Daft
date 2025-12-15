@@ -44,25 +44,6 @@ def test_read_huggingface(path, split, sort_key):
 
 
 @pytest.mark.integration()
-@pytest.mark.parametrize(
-    "path, schema",
-    [
-        (
-            "https://huggingface.co/api/datasets/huggingface/documentation-images/parquet/default/train/0.parquet",
-            daft.Schema.from_pydict({"image": dt.struct({"bytes": dt.binary(), "path": dt.string()})}),
-        ),
-        (
-            "https://huggingface.co/api/datasets/Anthropic/hh-rlhf/parquet/default/train/0.parquet",
-            daft.Schema.from_pydict({"chosen": dt.string(), "rejected": dt.string()}),
-        ),
-    ],
-)
-def test_read_huggingface_http_urls(path, schema):
-    df = daft.read_parquet(path)
-    assert df.schema() == schema
-
-
-@pytest.mark.integration()
 def test_read_huggingface_fallback_on_400_error():
     """Test that read_huggingface falls back to datasets library when parquet files return 400 error."""
     repo = "Eventual-Inc/sample-parquet"
@@ -89,3 +70,30 @@ def test_read_huggingface_fallback_on_400_error():
         # Compare the results
         actual = df.to_pandas()
         assert_df_equals(actual, expected, "foo")
+
+
+@pytest.mark.integration()
+def test_read_huggingface_multi_split_dataset():
+    """Test that read_huggingface works with datasets that have multiple splits.
+
+    This tests both the main path (read_parquet) and fallback path (datasets library)
+    to ensure they return the same data for a multi-split dataset.
+    """
+    repo = "stanfordnlp/imdb"
+
+    # Main path: read_huggingface uses read_parquet internally
+    df_main = daft.read_huggingface(repo)
+    main_result = df_main.to_pandas()
+
+    # Fallback path: mock read_parquet to force fallback to datasets library
+    with patch("daft.io.huggingface.read_parquet") as mock_read_parquet:
+        mock_read_parquet.side_effect = DaftCoreException(
+            f"DaftError::External Unable to open file https://huggingface.co/api/datasets/{repo}/parquet: "
+            f'reqwest::Error {{ kind: Status(400, None), url: "https://huggingface.co/api/datasets/{repo}/parquet" }}'
+        )
+
+        df_fallback = daft.read_huggingface(repo)
+        fallback_result = df_fallback.to_pandas()
+
+    # Both paths should return the same data
+    assert_df_equals(main_result, fallback_result, sort_key=["text", "label"])

@@ -1,4 +1,7 @@
 [dependencies]
+arrow-array = "54.2.1"
+arrow-buffer = "54.2.1"
+arrow-schema = "54.2.1"
 arrow2 = {workspace = true, features = [
   "arrow",
   "io_ipc_compression",

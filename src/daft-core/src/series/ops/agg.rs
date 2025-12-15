@@ -272,18 +272,15 @@ impl Series {
         let indices = match groups {
             Some(groups) => {
                 if self.data_type().is_null() {
-                    Box::new(PrimitiveArray::new_null(
-                        daft_arrow::datatypes::DataType::UInt64,
-                        groups.len(),
-                    ))
+                    PrimitiveArray::new_null(daft_arrow::datatypes::DataType::UInt64, groups.len())
                 } else if ignore_nulls && let Some(validity) = self.validity() {
-                    Box::new(PrimitiveArray::from_trusted_len_iter(groups.iter().map(
-                        |g| g.iter().find(|i| validity.get_bit(**i as usize)).copied(),
-                    )))
+                    PrimitiveArray::from_trusted_len_iter(
+                        groups
+                            .iter()
+                            .map(|g| g.iter().find(|i| validity.is_valid(**i as usize)).copied()),
+                    )
                 } else {
-                    Box::new(PrimitiveArray::from_trusted_len_iter(
-                        groups.iter().map(|g| g.first().copied()),
-                    ))
+                    PrimitiveArray::from_trusted_len_iter(groups.iter().map(|g| g.first().copied()))
                 }
             }
             None => {
@@ -295,14 +292,11 @@ impl Series {
                     Some(0)
                 };
 
-                Box::new(PrimitiveArray::from([idx]))
+                PrimitiveArray::from([idx])
             }
         };
 
-        self.take(&Self::from_arrow(
-            Field::new("", DataType::UInt64).into(),
-            indices,
-        )?)
+        self.take(&UInt64Array::from(("", Box::new(indices))))
     }
 
     pub fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
@@ -416,7 +410,7 @@ impl DaftSetAggable for Series {
     fn set(&self) -> Self::Output {
         let child_series = self.clone();
         let unique_indices = deduplicate_indices(&child_series)?;
-        let indices_array = UInt64Array::from(("", unique_indices)).into_series();
+        let indices_array = UInt64Array::from(("", unique_indices));
         let deduped_series = child_series.take(&indices_array)?;
 
         let offsets = OffsetsBuffer::try_from(vec![0, deduped_series.len() as i64])?;
@@ -444,7 +438,7 @@ impl DaftSetAggable for Series {
                 continue;
             }
 
-            let group_indices = UInt64Array::from(("", group.clone())).into_series();
+            let group_indices = UInt64Array::from(("", group.clone()));
             let group_series = series.take(&group_indices)?;
 
             let unique_indices = deduplicate_indices(&group_series)?;

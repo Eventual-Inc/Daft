@@ -483,9 +483,10 @@ async fn read_csv_single_into_stream(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<(impl TableStream + Send, Vec<Field>)> {
+    #[allow(deprecated, reason = "arrow2 migration")]
     let (mut schema, estimated_mean_row_size, estimated_std_row_size) =
         if let Some(schema) = convert_options.schema {
-            (schema.to_arrow()?, None, None)
+            (schema.to_arrow2()?, None, None)
         } else {
             let (schema, read_stats) = read_csv_schema_single(
                 &uri,
@@ -497,7 +498,7 @@ async fn read_csv_single_into_stream(
             )
             .await?;
             (
-                schema.to_arrow()?,
+                schema.to_arrow2()?,
                 Some(read_stats.mean_record_size_bytes),
                 Some(read_stats.stddev_record_size_bytes),
             )
@@ -719,6 +720,7 @@ pub fn fields_to_projection_indices(
 }
 
 #[cfg(test)]
+#[allow(deprecated, reason = "arrow2 migration")]
 mod tests {
     use std::sync::Arc;
 
@@ -739,6 +741,7 @@ mod tests {
     use crate::{CsvConvertOptions, CsvParseOptions, CsvReadOptions, char_to_byte};
 
     #[allow(clippy::too_many_arguments)]
+    #[allow(deprecated, reason = "arrow2 migration")]
     fn check_equal_local_arrow2(
         path: &str,
         out: &RecordBatch,
@@ -790,10 +793,10 @@ mod tests {
             .collect::<Vec<_>>();
         let schema: daft_arrow::datatypes::Schema = fields.into();
         // Roundtrip with Daft for casting.
-        let schema = Schema::try_from(&schema).unwrap().to_arrow().unwrap();
-        assert_eq!(out.schema.to_arrow().unwrap(), schema);
+        let schema = Schema::try_from(&schema).unwrap().to_arrow2().unwrap();
+        assert_eq!(out.schema.to_arrow2().unwrap(), schema);
         let out_columns = (0..out.num_columns())
-            .map(|i| out.get_column(i).to_arrow())
+            .map(|i| out.get_column(i).to_arrow2())
             .collect::<Vec<_>>();
         assert_eq!(out_columns, columns);
     }
@@ -1545,7 +1548,7 @@ mod tests {
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
-            null_column.to_arrow(),
+            null_column.to_arrow2(),
             Box::new(daft_arrow::array::NullArray::new(
                 daft_arrow::datatypes::DataType::Null,
                 6
@@ -1601,7 +1604,7 @@ mod tests {
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
-            null_column.to_arrow(),
+            null_column.to_arrow2(),
             Box::new(daft_arrow::array::NullArray::new(
                 daft_arrow::datatypes::DataType::Null,
                 6
@@ -1685,7 +1688,7 @@ mod tests {
         // Check that all columns are all null.
         for idx in 0..table.num_columns() {
             let column = table.get_column(idx);
-            assert_eq!(column.to_arrow().null_count(), num_rows);
+            assert_eq!(column.to_arrow2().null_count(), num_rows);
         }
 
         Ok(())
@@ -1755,13 +1758,13 @@ mod tests {
         );
 
         // First 4 cols should have no nulls
-        assert_eq!(table.get_column(0).to_arrow().null_count(), 0);
-        assert_eq!(table.get_column(1).to_arrow().null_count(), 0);
-        assert_eq!(table.get_column(2).to_arrow().null_count(), 0);
-        assert_eq!(table.get_column(3).to_arrow().null_count(), 0);
+        assert_eq!(table.get_column(0).to_arrow2().null_count(), 0);
+        assert_eq!(table.get_column(1).to_arrow2().null_count(), 0);
+        assert_eq!(table.get_column(2).to_arrow2().null_count(), 0);
+        assert_eq!(table.get_column(3).to_arrow2().null_count(), 0);
 
         // Last col should have 3 nulls because of the missing data
-        assert_eq!(table.get_column(4).to_arrow().null_count(), 3);
+        assert_eq!(table.get_column(4).to_arrow2().null_count(), 3);
 
         Ok(())
     }
@@ -1882,7 +1885,7 @@ mod tests {
         assert_eq!(table.len(), 3);
 
         assert_eq!(
-            table.get_column(4).to_arrow(),
+            table.get_column(4).to_arrow2(),
             Box::new(daft_arrow::array::Utf8Array::<i64>::from(vec![
                 None,
                 Some("Seratosa"),
