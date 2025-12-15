@@ -187,8 +187,9 @@ fn local_path_from_uri(path: &str) -> Option<PathBuf> {
         if let Some(stripped) = clean_path.strip_prefix("file://") {
             // On Windows, "file:///C:/path" becomes "/C:/path" after stripping "file://".
             // We need to remove the leading "/" to get a valid Windows path "C:/path".
+            // Only strip if followed by a drive letter (e.g., "/C:" -> "C:").
             #[cfg(windows)]
-            let stripped = stripped.strip_prefix('/').unwrap_or(stripped);
+            let stripped = strip_leading_slash_before_drive(stripped);
             return Some(PathBuf::from(decode_path_component(stripped)));
         }
 
