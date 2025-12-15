@@ -441,6 +441,26 @@ impl std::fmt::Display for SourceType {
     }
 }
 
+/// On Windows, strips the leading "/" from paths like "/C:/Users/..." to produce "C:/Users/...".
+/// This is needed because stripping "file://" from "file:///C:/path" leaves "/C:/path".
+/// Returns the path unchanged if it doesn't match the pattern "/X:" where X is a drive letter.
+#[cfg(windows)]
+pub fn strip_leading_slash_before_drive(path: &str) -> &str {
+    let bytes = path.as_bytes();
+    // Check for pattern: starts with '/', followed by ASCII letter, followed by ':'
+    if bytes.len() >= 3 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() && bytes[2] == b':' {
+        &path[1..]
+    } else {
+        path
+    }
+}
+
+/// No-op on non-Windows platforms.
+#[cfg(not(windows))]
+pub fn strip_leading_slash_before_drive(path: &str) -> &str {
+    path
+}
+
 pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
     let mut fixed_input = Cow::Borrowed(input);
     // handle tilde `~` expansion

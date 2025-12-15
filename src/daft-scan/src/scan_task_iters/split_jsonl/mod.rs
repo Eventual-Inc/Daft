@@ -4,7 +4,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormatConfig, JsonSourceConfig};
 use daft_compression::CompressionCodec;
-use daft_io::{GetRange, SourceType, parse_url};
+use daft_io::{GetRange, SourceType, parse_url, strip_leading_slash_before_drive};
 use url::Url;
 use urlencoding::decode;
 
@@ -188,14 +188,12 @@ fn local_path_from_uri(path: &str) -> Option<PathBuf> {
             // On Windows, "file:///C:/path" becomes "/C:/path" after stripping "file://".
             // We need to remove the leading "/" to get a valid Windows path "C:/path".
             // Only strip if followed by a drive letter (e.g., "/C:" -> "C:").
-            #[cfg(windows)]
             let stripped = strip_leading_slash_before_drive(stripped);
             return Some(PathBuf::from(decode_path_component(stripped)));
         }
 
         // Fallback: parse_url may return a path like "/C:/Users/..." on Windows
         // which needs the leading "/" stripped to be a valid Windows path.
-        #[cfg(windows)]
         let clean_path = strip_leading_slash_before_drive(clean_path);
         return Some(PathBuf::from(decode_path_component(clean_path)));
     }
@@ -218,19 +216,6 @@ fn strip_url_params(path: &str) -> &str {
     without_query
         .split_once('#')
         .map_or(without_query, |(prefix, _)| prefix)
-}
-
-/// On Windows, strips the leading "/" from paths like "/C:/Users/..." to produce "C:/Users/...".
-/// Returns the path unchanged if it doesn't match the pattern "/X:" where X is a drive letter.
-#[cfg(windows)]
-fn strip_leading_slash_before_drive(path: &str) -> &str {
-    let bytes = path.as_bytes();
-    // Check for pattern: starts with '/', followed by ASCII letter, followed by ':'
-    if bytes.len() >= 3 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() && bytes[2] == b':' {
-        &path[1..]
-    } else {
-        path
-    }
 }
 
 fn ends_with_ignore_ascii_case(value: &str, suffix: &str) -> bool {

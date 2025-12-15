@@ -30,24 +30,7 @@ use crate::{
 /// as long as there is no "mix" of "\" and "/".
 const PATH_SEGMENT_DELIMITER: &str = "/";
 
-/// On Windows, strips the leading "/" from paths like "/C:/Users/..." to produce "C:/Users/...".
-/// This is needed because stripping "file://" from "file:///C:/path" leaves "/C:/path".
-/// Returns the path unchanged if it doesn't match the pattern "/X:" where X is a drive letter.
-#[cfg(windows)]
-fn strip_leading_slash_before_drive(path: &str) -> &str {
-    let bytes = path.as_bytes();
-    // Check for pattern: starts with '/', followed by ASCII letter, followed by ':'
-    if bytes.len() >= 3 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() && bytes[2] == b':' {
-        &path[1..]
-    } else {
-        path
-    }
-}
-
-#[cfg(not(windows))]
-fn strip_leading_slash_before_drive(path: &str) -> &str {
-    path
-}
+use crate::strip_leading_slash_before_drive;
 
 pub struct LocalSource {}
 
