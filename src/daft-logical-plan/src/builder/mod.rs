@@ -14,7 +14,7 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
 use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
-use common_treenode::TreeNode;
+use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{
@@ -333,6 +333,68 @@ impl LogicalPlanBuilder {
 
         let logical_plan: LogicalPlan = ops::Filter::try_new(self.plan.clone(), predicate)?.into();
         Ok(self.with_new_plan(logical_plan))
+    }
+
+    /// Insert a Filter immediately after the unique Source node in the plan.
+    /// If the plan contains zero or more than one Source nodes, this will raise an error.
+    pub fn insert_filter_after_source(&self, predicate: ExprRef) -> DaftResult<Self> {
+        // First, count number of Source nodes in the tree.
+        struct CountSources {
+            count: usize,
+        }
+        impl TreeNodeRewriter for CountSources {
+            type Node = Arc<LogicalPlan>;
+            fn f_down(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
+                if matches!(node.as_ref(), LogicalPlan::Source(_)) {
+                    self.count += 1;
+                }
+                Ok(Transformed::no(node))
+            }
+            fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
+                Ok(Transformed::no(node))
+            }
+        }
+        let mut counter = CountSources { count: 0 };
+        let _ = self.plan.clone().rewrite(&mut counter)?;
+        if counter.count != 1 {
+            // Not exactly one source: return error
+            return Err(DaftError::InternalError(format!(
+                "Checkpoint requires single-source logical plan, found {} sources",
+                counter.count
+            )));
+        }
+
+        // Exactly one Source: rewrite that node to Filter(Source, predicate).
+        struct InsertFilter<'a> {
+            predicate: &'a ExprRef,
+            inserted: bool,
+        }
+        impl TreeNodeRewriter for InsertFilter<'_> {
+            type Node = Arc<LogicalPlan>;
+            fn f_down(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
+                if self.inserted {
+                    return Ok(Transformed::no(node));
+                }
+                if let LogicalPlan::Source(_) = node.as_ref() {
+                    let expr_resolver = ExprResolver::builder().allow_actor_pool_udf(true).build();
+                    let resolved =
+                        expr_resolver.resolve_single(self.predicate.clone(), node.clone())?;
+                    let new_lp: LogicalPlan = ops::Filter::try_new(node.clone(), resolved)?.into();
+                    self.inserted = true;
+                    return Ok(Transformed::yes(Arc::new(new_lp)));
+                }
+                Ok(Transformed::no(node))
+            }
+            fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
+                Ok(Transformed::no(node))
+            }
+        }
+        let mut inserter = InsertFilter {
+            predicate: &predicate,
+            inserted: false,
+        };
+        let transformed = self.plan.clone().rewrite(&mut inserter)?;
+        Ok(self.with_new_plan(transformed.data))
     }
 
     pub fn resolve_window_spec(&self, window_spec: WindowSpec) -> DaftResult<WindowSpec> {
@@ -1112,6 +1174,13 @@ impl PyLogicalPlanBuilder {
 
     pub fn filter(&self, predicate: PyExpr) -> PyResult<Self> {
         Ok(self.builder.filter(predicate.expr)?.into())
+    }
+
+    pub fn insert_filter_after_source(&self, predicate: PyExpr) -> PyResult<Self> {
+        Ok(self
+            .builder
+            .insert_filter_after_source(predicate.into())?
+            .into())
     }
 
     pub fn limit(&self, limit: i64, eager: bool) -> PyResult<Self> {
