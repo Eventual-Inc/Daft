@@ -137,6 +137,7 @@ def test_google_prompter_descriptor_with_return_format():
         provider_options={"api_key": "test-key"},
         model_name="gemini-2.5-flash",
         return_format=SimpleResponse,
+        prompt_options={},
     )
 
     assert descriptor.return_format == SimpleResponse

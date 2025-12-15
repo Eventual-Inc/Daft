@@ -140,6 +140,7 @@ def test_openai_prompter_descriptor_with_return_format():
         provider_options={"api_key": "test-key"},
         model_name="gpt-4o-mini",
         return_format=SimpleResponse,
+        prompt_options={},
     )
 
     assert descriptor.return_format == SimpleResponse
