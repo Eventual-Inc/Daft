@@ -1,7 +1,7 @@
-use arrow2::{
+use common_error::DaftResult;
+use daft_arrow::{
     array::BinaryArray as ArrowBinaryArray, datatypes::DataType as ArrowType, offset::Offsets,
 };
-use common_error::DaftResult;
 
 use crate::prelude::{AsArrow, BinaryArray, Utf8Array};
 
@@ -11,7 +11,7 @@ impl Utf8Array {
     where
         Encoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
-        let input = self.as_arrow();
+        let input = self.as_arrow2();
         let buffer = input.values();
         let validity = input.validity().cloned();
         //

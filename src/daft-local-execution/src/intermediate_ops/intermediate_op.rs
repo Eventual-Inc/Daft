@@ -207,6 +207,10 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
 }
 
 impl<Op: IntermediateOperator + 'static> TreeDisplay for IntermediateNode<Op> {
+    fn id(&self) -> String {
+        self.node_id().to_string()
+    }
+
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -236,10 +240,18 @@ impl<Op: IntermediateOperator + 'static> TreeDisplay for IntermediateNode<Op> {
     }
 
     fn repr_json(&self) -> serde_json::Value {
+        let children: Vec<serde_json::Value> = self
+            .get_children()
+            .iter()
+            .map(|child| child.repr_json())
+            .collect();
+
         serde_json::json!({
-            "id": self.id(),
+            "id": self.node_id(),
+            "category": "Intermediate",
             "type": self.intermediate_op.op_type().to_string(),
             "name": self.name(),
+            "children": children,
         })
     }
 

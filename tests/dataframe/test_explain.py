@@ -28,7 +28,7 @@ def test_explain_with_empty_scantask(input_df):
 
     * ScanTaskSource:
     |   Num Scan Tasks = 1
-    |   Estimated Scan Bytes = 0
+    |   Estimated Scan Bytes = 347
     |   Schema: {id#Int64}
     |   Scan Tasks: [
     |   {daft.io.lance.lance_scan:_lancedb_table_factory_function}
@@ -41,6 +41,8 @@ def test_explain_with_empty_scantask(input_df):
     input_df.limit(0).explain(True, file=string_io)
     expected = """
 
+* Limit: 0
+|
 * ScanTaskSource:
 |   Num Scan Tasks = 0
 |   Estimated Scan Bytes = 0

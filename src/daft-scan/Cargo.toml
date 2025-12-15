@@ -1,5 +1,5 @@
 [dependencies]
-arrow2 = {workspace = true}
+daft-arrow = {path = "../daft-arrow"}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
@@ -8,7 +8,7 @@ common-io-config = {path = "../common/io-config", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
 common-scan-info = {path = "../common/scan-info", default-features = false}
-ctor = "0.5.0"
+ctor = "0.6.1"
 either = "1.9"
 daft-core = {path = "../daft-core", default-features = false}
 daft-csv = {path = "../daft-csv", default-features = false}
@@ -21,6 +21,7 @@ daft-parquet = {path = "../daft-parquet", default-features = false}
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 daft-schema = {path = "../daft-schema", default-features = false}
 daft-stats = {path = "../daft-stats", default-features = false}
+daft-compression = {path = "../daft-compression", default-features = false}
 futures = {workspace = true}
 indexmap = {workspace = true}
 itertools = {workspace = true}
@@ -29,6 +30,7 @@ pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 snafu = {workspace = true}
 typetag = {workspace = true}
+url = {workspace = true}
 urlencoding = "2.1.3"
 
 [dev-dependencies]

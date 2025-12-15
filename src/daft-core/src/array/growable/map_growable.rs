@@ -116,7 +116,7 @@ mod tests {
                 ]))),
             ),
             struct_array.into_series(),
-            arrow2::offset::OffsetsBuffer::try_from(vec![0i64, num_entries as i64]).unwrap(),
+            daft_arrow::offset::OffsetsBuffer::try_from(vec![0i64, num_entries as i64]).unwrap(),
             None,
         );
 
@@ -181,7 +181,7 @@ mod tests {
                 ]))),
             ),
             outer_struct_array.into_series(),
-            arrow2::offset::OffsetsBuffer::try_from(vec![0i64, 1i64]).unwrap(),
+            daft_arrow::offset::OffsetsBuffer::try_from(vec![0i64, 1i64]).unwrap(),
             None,
         );
 

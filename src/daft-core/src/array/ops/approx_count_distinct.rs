@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
-use arrow2::array::PrimitiveArray;
 use common_error::DaftResult;
+use daft_arrow::array::PrimitiveArray;
 
 use crate::{
     array::ops::{DaftApproxCountDistinctAggable, as_arrow::AsArrow},
@@ -14,7 +14,7 @@ impl DaftApproxCountDistinctAggable for UInt64Array {
 
     fn approx_count_distinct(&self) -> Self::Output {
         let mut set = HashSet::with_capacity_and_hasher(self.len(), IdentityBuildHasher::default());
-        for &value in self.as_arrow().iter().flatten() {
+        for &value in self.as_arrow2().iter().flatten() {
             set.insert(value);
         }
         let count = set.len() as u64;
@@ -24,7 +24,7 @@ impl DaftApproxCountDistinctAggable for UInt64Array {
     }
 
     fn grouped_approx_count_distinct(&self, groups: &super::GroupIndices) -> Self::Output {
-        let data = self.as_arrow();
+        let data = self.as_arrow2();
         let count_iter = groups.iter().map(|group| {
             let mut set = HashSet::<_, IdentityBuildHasher>::with_capacity_and_hasher(
                 group.len(),

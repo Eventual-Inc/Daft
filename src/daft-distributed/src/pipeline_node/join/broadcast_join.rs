@@ -102,7 +102,7 @@ impl BroadcastJoinNode {
             &materialized_broadcast_data,
             self.broadcaster_schema.clone(),
             self.node_id(),
-        )?;
+        );
         let broadcast_psets = HashMap::from([(
             self.node_id().to_string(),
             materialized_broadcast_data

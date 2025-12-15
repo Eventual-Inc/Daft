@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from daft.ai.provider import Provider, ProviderType, load_provider
+from daft.functions.ai._colab_compat import IS_COLAB, clean_pydantic_model
 from daft.datatype import DataType
 from daft.expressions import Expression
 from daft.session import current_provider, current_session
@@ -529,6 +530,9 @@ def prompt(
 
     # Add return_format to options for the provider
     if return_format is not None:
+        # Clean the Pydantic model to avoid Colab serialization issues
+        if IS_COLAB:
+            return_format = clean_pydantic_model(return_format)
         options = {**options, "return_format": return_format}
     if system_message is not None:
         options = {**options, "system_message": system_message}

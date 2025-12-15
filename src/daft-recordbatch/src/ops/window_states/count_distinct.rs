@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use common_error::DaftResult;
 use daft_core::{
-    array::ops::arrow2::comparison::build_is_equal,
+    array::ops::arrow::comparison::build_is_equal,
     prelude::*,
     utils::identity_hash_set::{IdentityBuildHasher, IndexHash},
 };
@@ -20,7 +20,8 @@ impl CountDistinctWindowState {
     pub fn new(source: &Series, total_length: usize) -> Self {
         let hashed = source.hash_with_validity(None).unwrap();
 
-        let array = source.to_arrow();
+        #[allow(deprecated, reason = "arrow2 migration")]
+        let array = source.to_arrow2();
         let comparator = build_is_equal(&*array, &*array, true, false).unwrap();
 
         Self {

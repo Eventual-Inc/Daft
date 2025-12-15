@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use arrow2::array::{MutablePrimitiveArray, PrimitiveArray};
 use common_error::DaftResult;
+use daft_arrow::array::{MutablePrimitiveArray, PrimitiveArray};
 
 use super::from_arrow::FromArrow;
 use crate::{
@@ -21,7 +21,7 @@ impl StructArray {
 
         let mut flat_child =
             MutablePrimitiveArray::<f64>::with_capacity(percentiles.len() * self.len());
-        daft_sketch::from_arrow2(self.to_arrow())?
+        daft_sketch::from_arrow2(self.to_arrow2())?
             .iter()
             .for_each(|sketch| match sketch {
                 None => {

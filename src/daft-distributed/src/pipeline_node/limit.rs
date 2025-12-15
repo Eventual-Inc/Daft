@@ -10,7 +10,7 @@ use opentelemetry::{global, metrics::Counter};
 
 use super::{
     DistributedPipelineNode, MaterializedOutput, PipelineNodeImpl, SubmittableTaskStream,
-    make_new_task_from_materialized_outputs,
+    make_empty_scan_task, make_new_task_from_materialized_outputs,
 };
 use crate::{
     pipeline_node::{
@@ -157,11 +157,11 @@ impl LimitNode {
         materialized_output: MaterializedOutput,
         limit_state: &mut LimitState,
         task_id_counter: &TaskIDCounter,
-    ) -> DaftResult<Vec<SubmittableTask<SwordfishTask>>> {
+    ) -> Vec<SubmittableTask<SwordfishTask>> {
         let node_id = self.node_id();
         let mut downstream_tasks = vec![];
         for next_input in materialized_output.split_into_materialized_outputs() {
-            let mut num_rows = next_input.num_rows()?;
+            let mut num_rows = next_input.num_rows();
 
             let skip_num_rows = limit_state.remaining_skip().min(num_rows);
             if !limit_state.is_skip_done() {
@@ -200,7 +200,7 @@ impl LimitNode {
                             }
                         },
                         None,
-                    )?
+                    )
                 }
                 Ordering::Greater => {
                     let remaining = limit_state.remaining_take();
@@ -222,7 +222,7 @@ impl LimitNode {
                             )
                         },
                         None,
-                    )?;
+                    );
                     limit_state.decrement_take(remaining);
                     self.stats.add_active_rows_out(remaining as u64);
                     task
@@ -233,7 +233,7 @@ impl LimitNode {
                 break;
             }
         }
-        Ok(downstream_tasks)
+        downstream_tasks
     }
 
     async fn limit_execution_loop(
@@ -284,17 +284,31 @@ impl LimitNode {
             for future in local_limits {
                 let maybe_result = future.await?;
                 if let Some(materialized_output) = maybe_result {
-                    total_num_rows += materialized_output.num_rows()?;
+                    total_num_rows += materialized_output.num_rows();
                     // Process the result and get the next tasks
                     let next_tasks = self.process_materialized_output(
                         materialized_output,
                         &mut limit_state,
                         &task_id_counter,
-                    )?;
-                    // Send the next tasks to the result channel
-                    for task in next_tasks {
-                        if result_tx.send(task).await.is_err() {
+                    );
+                    if next_tasks.is_empty() {
+                        // If all rows need to be skipped, send an empty scan task to allow downstream tasks to
+                        // continue running, such as aggregate tasks
+                        let empty_scan_task = SubmittableTask::new(make_empty_scan_task(
+                            TaskContext::from((&self.context, task_id_counter.next())),
+                            self.config.schema.clone(),
+                            &(self.clone() as Arc<dyn PipelineNodeImpl>),
+                        ));
+
+                        if result_tx.send(empty_scan_task).await.is_err() {
                             return Ok(());
+                        }
+                    } else {
+                        // Send the next tasks to the result channel
+                        for task in next_tasks {
+                            if result_tx.send(task).await.is_err() {
+                                return Ok(());
+                            }
                         }
                     }
 

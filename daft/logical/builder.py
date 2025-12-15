@@ -79,6 +79,10 @@ class LogicalPlanBuilder:
         else:
             raise ValueError(f"Unknown format: {format}")
 
+    def repr_json(self, include_schema: bool = False) -> str:
+        """Returns the JSON representation of the current underlying logical plan."""
+        return self._builder.repr_json(include_schema)
+
     def __repr__(self) -> str:
         return self._builder.repr_ascii(simple=False)
 

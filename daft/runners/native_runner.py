@@ -96,13 +96,10 @@ class NativeRunner(Runner[MicroPartition]):
         output_schema = builder.schema()
 
         # Optimize the logical plan.
-        ctx._notify_query_start(query_id, PyQueryMetadata(output_schema._schema, repr(builder)))
+        ctx._notify_query_start(query_id, PyQueryMetadata(output_schema._schema, builder.repr_json()))
         ctx._notify_optimization_start(query_id)
         builder = builder.optimize(ctx.daft_execution_config)
-        ctx._notify_optimization_end(query_id, repr(builder))
-
-        # NOTE: ENABLE FOR DAFT-PROTO TESTING
-        # builder = _to_from_proto(builder)
+        ctx._notify_optimization_end(query_id, builder.repr_json())
 
         plan = LocalPhysicalPlan.from_logical_plan_builder(builder._builder)
         executor = NativeExecutor()
@@ -141,12 +138,3 @@ class NativeRunner(Runner[MicroPartition]):
     ) -> Iterator[MicroPartition]:
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield result.partition()
-
-
-def _to_from_proto(builder: LogicalPlanBuilder) -> LogicalPlanBuilder:
-    """This is a testing utility which mutably roundtrips an *optimized* plan through daft-proto."""
-    from daft.daft import to_from_proto
-    from daft.logical.builder import LogicalPlanBuilder
-
-    print("!! TO-FROM PROTO CALLED !!")
-    return LogicalPlanBuilder(to_from_proto(builder._builder))

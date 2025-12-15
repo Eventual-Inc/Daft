@@ -5,7 +5,7 @@ use common_runtime::get_io_runtime;
 use daft_compression::CompressionCodec;
 use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
 use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns};
-use daft_io::{GetResult, IOClient, IOStatsRef, SourceType, parse_url};
+use daft_io::{GetRange, GetResult, IOClient, IOStatsRef, SourceType, parse_url};
 use daft_recordbatch::RecordBatch;
 use futures::{
     Stream, StreamExt, TryStreamExt,
@@ -226,6 +226,7 @@ async fn read_json_single_into_table(
         read_options,
         io_client,
         io_stats,
+        None,
     )
     .await?;
     // Default max chunks in flight is set to 2x the number of cores, which should ensure pipelining of reading chunks
@@ -303,6 +304,7 @@ async fn read_json_single_into_table(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn stream_json(
     uri: String,
     convert_options: Option<JsonConvertOptions>,
@@ -311,6 +313,7 @@ pub async fn stream_json(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
+    range: Option<GetRange>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let (source_type, fixed_uri) = parse_url(&uri)?;
     let is_compressed = CompressionCodec::from_uri(&uri).is_some();
@@ -360,6 +363,7 @@ pub async fn stream_json(
         read_options,
         io_client,
         io_stats,
+        range,
     )
     .await?;
 
@@ -416,6 +420,7 @@ pub async fn stream_json(
     Ok(Box::pin(tables))
 }
 
+#[allow(deprecated, reason = "arrow2 migration")]
 async fn read_json_single_into_stream(
     uri: String,
     convert_options: JsonConvertOptions,
@@ -423,12 +428,13 @@ async fn read_json_single_into_stream(
     read_options: Option<JsonReadOptions>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
+    range: Option<GetRange>,
 ) -> DaftResult<(
     BoxStream<'static, TableChunkResult>,
-    arrow2::datatypes::Schema,
+    daft_arrow::datatypes::Schema,
 )> {
     let schema = match convert_options.schema {
-        Some(schema) => schema.to_arrow()?,
+        Some(schema) => schema.to_arrow2()?,
         None => read_json_schema_single(
             &uri,
             parse_options.clone(),
@@ -436,14 +442,15 @@ async fn read_json_single_into_stream(
             Some(1024 * 1024),
             io_client.clone(),
             io_stats.clone(),
+            range.clone(),
         )
         .await?
-        .to_arrow()?,
+        .to_arrow2()?,
     };
 
     let (reader, buffer_size, chunk_size): (Box<dyn AsyncBufRead + Unpin + Send>, usize, usize) =
         match io_client
-            .single_url_get(uri.clone(), None, io_stats)
+            .single_url_get(uri.clone(), range, io_stats)
             .await?
         {
             GetResult::File(file) => {
@@ -470,24 +477,24 @@ async fn read_json_single_into_stream(
                         .unwrap_or(64),
                 )
             }
-            GetResult::Stream(stream, ..) => (
-                Box::new(StreamReader::new(stream)),
-                // Use user-provided buffer size, falling back to 8 * the user-provided chunk size if that exists, otherwise falling back to 512 KiB as the default.
-                read_options
+            GetResult::Stream(stream, ..) => {
+                // Use user-provided buffer size, falling back to 8 * the user-provided chunk size if that exists, otherwise falling back to 8 MiB as the default for streams.
+                let buffer_size = read_options
                     .as_ref()
                     .and_then(|opt| {
                         opt.buffer_size
                             .or_else(|| opt.chunk_size.map(|cs| (256 * cs).min(256 * 1024 * 1024)))
                     })
-                    .unwrap_or(8 * 1024 * 1024),
-                read_options
+                    .unwrap_or(8 * 1024 * 1024);
+                let chunk_size = read_options
                     .as_ref()
                     .and_then(|opt| {
                         opt.chunk_size
                             .or_else(|| opt.buffer_size.map(|bs| (bs / 256).max(16)))
                     })
-                    .unwrap_or(64),
-            ),
+                    .unwrap_or(64);
+                (Box::new(StreamReader::new(stream)), buffer_size, chunk_size)
+            }
         };
     // If file is compressed, wrap stream in decoding stream.
     let mut reader: Box<dyn AsyncBufRead + Unpin + Send> = match CompressionCodec::from_uri(&uri) {
@@ -537,7 +544,8 @@ async fn read_json_single_into_stream(
                         .map(|f| (f.name.clone(), f))
                         .collect::<HashMap<_, _>>();
                     let projected_fields = projection.into_iter().map(|col| field_map.remove(col.as_str()).ok_or(DaftError::ValueError(format!("Column {} in the projection doesn't exist in the JSON file; existing columns = {:?}", col, field_map.keys())))).collect::<DaftResult<Vec<_>>>()?;
-                    arrow2::datatypes::Schema::from(projected_fields).with_metadata(schema.metadata)
+                    daft_arrow::datatypes::Schema::from(projected_fields)
+                        .with_metadata(schema.metadata)
                 }
                 None => schema,
             };
@@ -575,7 +583,7 @@ where
 
 fn parse_into_column_array_chunk_stream(
     stream: impl LineChunkStream + Send,
-    schema: Arc<arrow2::datatypes::Schema>,
+    schema: Arc<daft_arrow::datatypes::Schema>,
 ) -> DaftResult<impl TableChunkStream + Send> {
     let daft_schema: SchemaRef = Arc::new(schema.as_ref().into());
     let daft_fields = Arc::new(
@@ -629,6 +637,7 @@ fn parse_into_column_array_chunk_stream(
 }
 
 #[cfg(test)]
+#[allow(deprecated, reason = "arrow2 migration")]
 mod tests {
     use std::{collections::HashSet, io::BufRead, sync::Arc};
 
@@ -663,7 +672,7 @@ mod tests {
             .map(|record| crate::deserializer::to_value(unsafe { record.as_bytes_mut() }).unwrap())
             .collect::<Vec<_>>();
         // Get consolidated schema from parsed JSON.
-        let mut column_types: IndexMap<String, HashSet<arrow2::datatypes::DataType>> =
+        let mut column_types: IndexMap<String, HashSet<daft_arrow::datatypes::DataType>> =
             IndexMap::new();
         for record in &parsed {
             let schema = infer_records_schema(record).unwrap();
@@ -681,7 +690,7 @@ mod tests {
             }
         }
         let fields = column_types_map_to_fields(column_types);
-        let schema: arrow2::datatypes::Schema = fields.into();
+        let schema: daft_arrow::datatypes::Schema = fields.into();
         // Apply projection to schema.
         let mut field_map = schema
             .fields
@@ -704,10 +713,10 @@ mod tests {
             .map(|c| cast_array_from_daft_if_needed(cast_array_for_daft_if_needed(c)))
             .collect::<Vec<_>>();
         // Roundtrip schema with Daft for casting.
-        let schema = Schema::try_from(&schema).unwrap().to_arrow().unwrap();
-        assert_eq!(out.schema.to_arrow().unwrap(), schema);
+        let schema = Schema::try_from(&schema).unwrap().to_arrow2().unwrap();
+        assert_eq!(out.schema.to_arrow2().unwrap(), schema);
         let out_columns = (0..out.num_columns())
-            .map(|i| out.get_column(i).to_arrow())
+            .map(|i| out.get_column(i).to_arrow2())
             .collect::<Vec<_>>();
         assert_eq!(out_columns, columns);
     }
@@ -1048,6 +1057,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated, reason = "arrow2 migration")]
     fn test_json_read_local_all_null_column() -> DaftResult<()> {
         let file = format!(
             "{}/test/iris_tiny_all_null_column.jsonl",
@@ -1077,11 +1087,11 @@ mod tests {
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
-            null_column.to_arrow(),
-            Box::new(arrow2::array::NullArray::new(
-                arrow2::datatypes::DataType::Null,
+            null_column.to_arrow2(),
+            Box::new(daft_arrow::array::NullArray::new(
+                daft_arrow::datatypes::DataType::Null,
                 6
-            )) as Box<dyn arrow2::array::Array>
+            )) as Box<dyn daft_arrow::array::Array>
         );
 
         Ok(())
@@ -1134,11 +1144,11 @@ mod tests {
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
-            null_column.to_arrow(),
-            Box::new(arrow2::array::NullArray::new(
-                arrow2::datatypes::DataType::Null,
+            null_column.to_arrow2(),
+            Box::new(daft_arrow::array::NullArray::new(
+                daft_arrow::datatypes::DataType::Null,
                 6
-            )) as Box<dyn arrow2::array::Array>
+            )) as Box<dyn daft_arrow::array::Array>
         );
 
         Ok(())
@@ -1190,7 +1200,7 @@ mod tests {
         let null_column = table.get_column(2);
         assert_eq!(null_column.data_type(), &DataType::Float64);
         assert_eq!(null_column.len(), 6);
-        assert_eq!(null_column.to_arrow().null_count(), 6);
+        assert_eq!(null_column.to_arrow2().null_count(), 6);
 
         Ok(())
     }
@@ -1227,7 +1237,7 @@ mod tests {
         // Check that all columns are all null.
         for idx in 0..table.num_columns() {
             let column = table.get_column(idx);
-            assert_eq!(column.to_arrow().null_count(), num_rows);
+            assert_eq!(column.to_arrow2().null_count(), num_rows);
         }
 
         Ok(())

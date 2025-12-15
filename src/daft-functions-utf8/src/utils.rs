@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::borrow::Cow;
 
 use common_error::{DaftError, DaftResult, ensure};
@@ -14,10 +15,10 @@ use itertools::Itertools;
 pub(crate) enum BroadcastedStrIter<'a> {
     Repeat(std::iter::RepeatN<Option<&'a str>>),
     NonRepeat(
-        arrow2::bitmap::utils::ZipValidity<
+        daft_arrow::bitmap::utils::ZipValidity<
             &'a str,
-            arrow2::array::ArrayValuesIter<'a, arrow2::array::Utf8Array<i64>>,
-            arrow2::bitmap::utils::BitmapIter<'a>,
+            daft_arrow::array::ArrayValuesIter<'a, daft_arrow::array::Utf8Array<i64>>,
+            daft_arrow::bitmap::utils::BitmapIter<'a>,
         >,
     ),
 }
@@ -37,7 +38,7 @@ pub(crate) fn create_broadcasted_str_iter(arr: &Utf8Array, len: usize) -> Broadc
     if arr.len() == 1 {
         BroadcastedStrIter::Repeat(std::iter::repeat_n(arr.get(0), len))
     } else {
-        BroadcastedStrIter::NonRepeat(arr.as_arrow().iter())
+        BroadcastedStrIter::NonRepeat(arr.as_arrow2().iter())
     }
 }
 
@@ -61,11 +62,11 @@ impl Utf8ArrayUtils for Utf8Array {
     where
         ScalarKernel: Fn(&str) -> Cow<'_, str>,
     {
-        let self_arrow = self.as_arrow();
+        let self_arrow = self.as_arrow2();
         let arrow_result = self_arrow
             .iter()
             .map(|val| Some(operation(val?)))
-            .collect::<arrow2::array::Utf8Array<i64>>()
+            .collect::<daft_arrow::array::Utf8Array<i64>>()
             .with_validity(self_arrow.validity().cloned());
         Ok(Self::from((self.name(), Box::new(arrow_result))))
     }
@@ -99,7 +100,7 @@ impl Utf8ArrayUtils for Utf8Array {
                 (Some(self_v), Some(other_v)) => operation(self_v, other_v).map(Some),
                 _ => Ok(None),
             })
-            .collect::<DaftResult<arrow2::array::BooleanArray>>();
+            .collect::<DaftResult<daft_arrow::array::BooleanArray>>();
 
         let result = BooleanArray::from((self.name(), arrow_result?));
         assert_eq!(result.len(), expected_size);

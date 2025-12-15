@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arrow::array::{ArrayRef, UInt64Builder};
 use common_error::{DaftError, DaftResult, ensure};
 use daft_core::prelude::*;
 use daft_dsl::{
@@ -66,8 +67,7 @@ fn regexp_count_impl(arr: &Utf8Array, patterns: &Utf8Array) -> DaftResult<UInt64
             .map_err(|e| DaftError::ValueError(format!("Invalid regex pattern: {}", e)))?;
 
         let iter = arr
-            .as_arrow()
-            .iter()
+            .into_iter()
             // Note, this is optimized by the compiler to not materialize values
             .map(|opt| opt.map(|s| regex.find_iter(s).count() as u64));
 
@@ -76,21 +76,25 @@ fn regexp_count_impl(arr: &Utf8Array, patterns: &Utf8Array) -> DaftResult<UInt64
             iter,
         ))
     } else {
-        let res = arr
-            .as_arrow()
-            .iter()
-            .zip(patterns.as_arrow().iter())
-            .map(|(val, pat)| {
-                let Some(val) = val else { return Ok(None) };
-                let Some(pat) = pat else { return Ok(None) };
+        let mut arr_builder = UInt64Builder::with_capacity(arr.len());
+        for (val, pattern) in arr.into_iter().zip(patterns.into_iter()) {
+            let Some(val) = val else {
+                arr_builder.append_null();
+                continue;
+            };
+            let Some(pat) = pattern else {
+                arr_builder.append_null();
+                continue;
+            };
+            let regex = regex::Regex::new(pat)
+                .map_err(|e| DaftError::ValueError(format!("Invalid regex pattern: {}", e)))?;
 
-                let regex = regex::Regex::new(pat)
-                    .map_err(|e| DaftError::ValueError(format!("Invalid regex pattern: {}", e)))?;
+            arr_builder.append_value(regex.find_iter(val).count() as u64);
+        }
 
-                Ok(Some(regex.find_iter(val).count() as u64))
-            })
-            .collect::<DaftResult<arrow2::array::UInt64Array>>()?;
+        let field = Arc::new(Field::new(arr.name(), DataType::UInt64));
+        let arr: ArrayRef = Arc::new(arr_builder.finish());
 
-        Ok(UInt64Array::from((arr.name(), Box::new(res))))
+        UInt64Array::from_arrow(field, arr.into())
     }
 }

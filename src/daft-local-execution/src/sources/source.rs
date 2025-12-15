@@ -134,6 +134,10 @@ impl SourceNode {
 }
 
 impl TreeDisplay for SourceNode {
+    fn id(&self) -> String {
+        self.node_id().to_string()
+    }
+
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         use std::fmt::Write;
         let mut display = String::new();
@@ -166,7 +170,9 @@ impl TreeDisplay for SourceNode {
 
     fn repr_json(&self) -> serde_json::Value {
         serde_json::json!({
-            "id": self.id(),
+            "id": self.node_id(),
+            "category": "Source",
+            "type": self.source.op_type().to_string(),
             "name": self.name(),
         })
     }

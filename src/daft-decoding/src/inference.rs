@@ -1,5 +1,5 @@
-use arrow2::datatypes::{DataType, TimeUnit};
 use chrono::Timelike;
+use daft_arrow::datatypes::{DataType, TimeUnit};
 
 use crate::deserialize::{ALL_NAIVE_DATE_FMTS, ALL_NAIVE_TIMESTAMP_FMTS, ALL_TIMESTAMP_FMTS};
 
@@ -16,7 +16,7 @@ use crate::deserialize::{ALL_NAIVE_DATE_FMTS, ALL_NAIVE_TIMESTAMP_FMTS, ALL_TIME
 /// * other utf8 is mapped to [`DataType::Utf8`]
 /// * invalid utf8 is mapped to [`DataType::Binary`]
 #[must_use]
-pub fn infer(bytes: &[u8]) -> arrow2::datatypes::DataType {
+pub fn infer(bytes: &[u8]) -> daft_arrow::datatypes::DataType {
     if is_null(bytes) {
         DataType::Null
     } else if is_boolean(bytes) {

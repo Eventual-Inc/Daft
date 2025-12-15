@@ -1,15 +1,16 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::{
     collections::{BTreeMap, HashMap},
     sync::Arc,
     time::Duration,
 };
 
-use arrow2::{
+use common_error::DaftResult;
+use common_runtime::get_io_runtime;
+use daft_arrow::{
     bitmap::Bitmap,
     io::parquet::read::schema::{SchemaInferenceOptions, StringEncoding},
 };
-use common_error::DaftResult;
-use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
 #[cfg(feature = "python")]
 use daft_core::python::PyTimeUnit;
@@ -96,7 +97,8 @@ impl Default for ParquetSchemaInferenceOptions {
 impl From<ParquetSchemaInferenceOptions> for SchemaInferenceOptions {
     fn from(value: ParquetSchemaInferenceOptions) -> Self {
         Self {
-            int96_coerce_to_timeunit: value.coerce_int96_timestamp_unit.to_arrow(),
+            #[allow(deprecated, reason = "arrow2 migration")]
+            int96_coerce_to_timeunit: value.coerce_int96_timestamp_unit.to_arrow2(),
             string_encoding: value.string_encoding,
         }
     }
@@ -708,11 +710,15 @@ pub fn read_parquet(
         .await
     })
 }
-pub type ArrowChunk = Vec<Box<dyn arrow2::array::Array>>;
+pub type ArrowChunk = Vec<Box<dyn daft_arrow::array::Array>>;
 pub type ArrowChunkIters = Vec<
-    Box<dyn Iterator<Item = arrow2::error::Result<Box<dyn arrow2::array::Array>>> + Send + Sync>,
+    Box<
+        dyn Iterator<Item = daft_arrow::error::Result<Box<dyn daft_arrow::array::Array>>>
+            + Send
+            + Sync,
+    >,
 >;
-pub type ParquetPyarrowChunk = (arrow2::datatypes::SchemaRef, Vec<ArrowChunk>, usize);
+pub type ParquetPyarrowChunk = (daft_arrow::datatypes::SchemaRef, Vec<ArrowChunk>, usize);
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet_into_pyarrow(
     uri: &str,
@@ -1069,7 +1075,7 @@ pub fn read_parquet_statistics(
 
     let path_array: &Utf8Array = uris.downcast()?;
     use daft_core::array::ops::as_arrow::AsArrow;
-    let values = path_array.as_arrow();
+    let values = path_array.as_arrow2();
 
     let handles_iter = values.iter().map(|uri| {
         let owned_string = uri.map(std::string::ToString::to_string);
@@ -1112,19 +1118,19 @@ pub fn read_parquet_statistics(
 
     let row_count_series = UInt64Array::from((
         "row_count",
-        Box::new(arrow2::array::UInt64Array::from_iter(
+        Box::new(daft_arrow::array::UInt64Array::from_iter(
             all_tuples.iter().map(|v| v.0.map(|v| v as u64)),
         )),
     ));
     let row_group_series = UInt64Array::from((
         "row_group_count",
-        Box::new(arrow2::array::UInt64Array::from_iter(
+        Box::new(daft_arrow::array::UInt64Array::from_iter(
             all_tuples.iter().map(|v| v.1.map(|v| v as u64)),
         )),
     ));
     let version_series = Int32Array::from((
         "version",
-        Box::new(arrow2::array::Int32Array::from_iter(
+        Box::new(daft_arrow::array::Int32Array::from_iter(
             all_tuples.iter().map(|v| v.2),
         )),
     ));
@@ -1141,8 +1147,8 @@ pub fn read_parquet_statistics(
 mod tests {
     use std::{path::PathBuf, sync::Arc};
 
-    use arrow2::{datatypes::DataType, io::parquet::read::schema::StringEncoding};
     use common_error::DaftResult;
+    use daft_arrow::{datatypes::DataType, io::parquet::read::schema::StringEncoding};
     use daft_io::{IOClient, IOConfig};
     use futures::StreamExt;
     use parquet2::{

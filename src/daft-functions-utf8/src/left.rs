@@ -1,9 +1,7 @@
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::DataArray,
-    prelude::{
-        AsArrow, DaftIntegerType, DaftNumericType, DataType, Field, FullNull, Schema, Utf8Array,
-    },
+    prelude::{DaftIntegerType, DaftNumericType, DataType, Field, FullNull, Schema, Utf8Array},
     series::{IntoSeries, Series},
     with_match_integer_daft_types,
 };
@@ -106,12 +104,12 @@ where
             })?;
             let arrow_result = self_iter
                 .map(|val| Some(left_most_chars(val?, n)))
-                .collect::<arrow2::array::Utf8Array<i64>>();
+                .collect::<daft_arrow::array::Utf8Array<i64>>();
             Utf8Array::from((arr.name(), Box::new(arrow_result)))
         }
         _ => {
             let arrow_result = self_iter
-                .zip(nchars.as_arrow().iter())
+                .zip(nchars.into_iter())
                 .map(|(val, n)| match (val, n) {
                     (Some(val), Some(nchar)) => {
                         let nchar: usize = NumCast::from(*nchar).ok_or_else(|| {
@@ -123,7 +121,7 @@ where
                     }
                     _ => Ok(None),
                 })
-                .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+                .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>()?;
 
             Utf8Array::from((arr.name(), Box::new(arrow_result)))
         }

@@ -3,7 +3,7 @@ use std::{
     slice::{ChunksExact, Iter},
 };
 
-use arrow2::{
+use daft_arrow::{
     array::ArrayValuesIter,
     bitmap::utils::{BitmapIter, ZipValidity},
 };
@@ -29,7 +29,7 @@ macro_rules! impl_into_iter {
 
             #[inline]
             fn into_iter(self) -> Self::IntoIter {
-                self.as_arrow().into_iter()
+                self.as_arrow2().into_iter()
             }
         }
     };
@@ -41,7 +41,7 @@ impl_into_iter!(BooleanArray, ZipValidity<bool, BitmapIter<'a>, BitmapIter<'a>>)
 // both yield `&[u8]`s
 impl_into_iter!(
     BinaryArray,
-    ZipValidity<&'a [u8], ArrayValuesIter<'a, arrow2::array::BinaryArray<i64>>, BitmapIter<'a>>,
+    ZipValidity<&'a [u8], ArrayValuesIter<'a, daft_arrow::array::BinaryArray<i64>>, BitmapIter<'a>>,
 );
 impl_into_iter!(
     FixedSizeBinaryArray,
@@ -51,7 +51,7 @@ impl_into_iter!(
 // yields `&str`s
 impl_into_iter!(
     Utf8Array,
-    ZipValidity<&'a str, ArrayValuesIter<'a, arrow2::array::Utf8Array<i64>>, BitmapIter<'a>>,
+    ZipValidity<&'a str, ArrayValuesIter<'a, daft_arrow::array::Utf8Array<i64>>, BitmapIter<'a>>,
 );
 
 impl<'a, T> IntoIterator for &'a DataArray<T>
@@ -63,7 +63,7 @@ where
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
-        self.as_arrow().into_iter()
+        self.as_arrow2().into_iter()
     }
 }
 

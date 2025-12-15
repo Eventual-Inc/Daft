@@ -187,6 +187,7 @@ def _run_write_modes_empty_test(
     path,
     write_mode,
     format,
+    partition_cols,
     io_config,
 ):
     existing_data = {"a": ["a", "a", "b", "b"], "b": ["c", "d", "e", "f"]}
@@ -195,37 +196,53 @@ def _run_write_modes_empty_test(
         "b": ["g", "h", "i", "j"],
     }
 
-    read_back = arrange_write_mode_test(
-        daft.from_pydict(existing_data),
-        daft.from_pydict(new_data).where(daft.lit(False)),  # Empty data
-        path,
-        format,
-        write_mode,
-        None,
-        io_config,
-        sort_cols=["a", "b"],
-    )
-
-    # Check the data
-    if write_mode == "append":
-        # The data should be the same as the existing data
-        assert read_back["a"] == ["a", "a", "b", "b"]
-        assert read_back["b"] == ["c", "d", "e", "f"]
-    elif write_mode == "overwrite":
-        # The data should be empty because we are overwriting the existing data
-        assert read_back["a"] == []
-        assert read_back["b"] == []
+    if write_mode == "overwrite" and partition_cols:
+        # there is no any file generated if write empty data with partition col
+        with pytest.raises(FileNotFoundError):
+            arrange_write_mode_test(
+                daft.from_pydict(existing_data),
+                daft.from_pydict(new_data).where(daft.lit(False)),  # Empty data
+                path,
+                format,
+                write_mode,
+                partition_cols,
+                io_config,
+                sort_cols=["a", "b"],
+            )
     else:
-        raise ValueError(f"Unsupported write_mode: {write_mode}")
+        read_back = arrange_write_mode_test(
+            daft.from_pydict(existing_data),
+            daft.from_pydict(new_data).where(daft.lit(False)),  # Empty data
+            path,
+            format,
+            write_mode,
+            partition_cols,
+            io_config,
+            sort_cols=["a", "b"],
+        )
+
+        # Check the data
+        if write_mode == "append":
+            # The data should be the same as the existing data
+            assert read_back["a"] == ["a", "a", "b", "b"]
+            assert read_back["b"] == ["c", "d", "e", "f"]
+        elif write_mode == "overwrite":
+            # The data should be empty because we are overwriting the existing data
+            assert read_back["a"] == []
+            assert read_back["b"] == []
+        else:
+            raise ValueError(f"Unsupported write_mode: {write_mode}")
 
 
 @pytest.mark.parametrize("write_mode", ["append", "overwrite"])
 @pytest.mark.parametrize("format", ["csv", "parquet"])
-def test_write_modes_local_empty_data(tmp_path, write_mode, format):
+@pytest.mark.parametrize("partition_cols", [None, ["a"]])
+def test_write_modes_local_empty_data(tmp_path, write_mode, format, partition_cols):
     _run_write_modes_empty_test(
         path=str(tmp_path),
         write_mode=write_mode,
         format=format,
+        partition_cols=partition_cols,
         io_config=None,
     )
 
@@ -233,16 +250,19 @@ def test_write_modes_local_empty_data(tmp_path, write_mode, format):
 @pytest.mark.integration()
 @pytest.mark.parametrize("write_mode", ["append", "overwrite"])
 @pytest.mark.parametrize("format", ["csv", "parquet"])
+@pytest.mark.parametrize("partition_cols", [None, ["a"]])
 def test_write_modes_s3_minio_empty_data(
     minio_io_config,
     bucket,
     write_mode,
     format,
+    partition_cols,
 ):
     _run_write_modes_empty_test(
         path=f"s3://{bucket}/{uuid.uuid4()!s}",
         write_mode=write_mode,
         format=format,
+        partition_cols=partition_cols,
         io_config=minio_io_config,
     )
 

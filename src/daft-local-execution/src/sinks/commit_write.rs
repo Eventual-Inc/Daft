@@ -1,13 +1,14 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
-use common_file_formats::WriteMode;
+use common_file_formats::{FileFormat, WriteMode};
 use common_metrics::ops::NodeType;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::OutputFileInfo;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
+use daft_writers::WriterFactory;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
@@ -34,13 +35,19 @@ impl CommitWriteState {
 }
 
 pub(crate) struct CommitWriteSink {
+    data_schema: SchemaRef,
     file_schema: SchemaRef,
     file_info: OutputFileInfo<BoundExpr>,
 }
 
 impl CommitWriteSink {
-    pub(crate) fn new(file_schema: SchemaRef, file_info: OutputFileInfo<BoundExpr>) -> Self {
+    pub(crate) fn new(
+        data_schema: SchemaRef,
+        file_schema: SchemaRef,
+        file_info: OutputFileInfo<BoundExpr>,
+    ) -> Self {
         Self {
+            data_schema,
             file_schema,
             file_info,
         }
@@ -57,13 +64,7 @@ impl BlockingSink for CommitWriteSink {
         mut state: Self::State,
         _spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
-        let tables = match input.get_tables() {
-            Ok(tables) => tables,
-            Err(e) => {
-                return Err(e.into()).into();
-            }
-        };
-        state.append(tables.iter().cloned());
+        state.append(input.record_batches().iter().cloned());
         Ok(BlockingSinkStatus::NeedMoreInput(state)).into()
     }
 
@@ -73,17 +74,51 @@ impl BlockingSink for CommitWriteSink {
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkFinalizeResult<Self> {
+        let data_schema = self.data_schema.clone();
         let file_schema = self.file_schema.clone();
         let file_info = self.file_info.clone();
         spawner
             .spawn(
                 async move {
-                    let written_file_path_record_batches = states
+                    let mut written_file_path_record_batches = states
                         .into_iter()
                         .flat_map(|mut state| {
                             std::mem::take(&mut state.written_file_path_record_batches)
                         })
                         .collect::<Vec<_>>();
+
+                    // If nothing was written, create an empty file for Parquet/CSV when not partitioned
+                    if written_file_path_record_batches.is_empty()
+                        && file_info.partition_cols.is_none()
+                    {
+                        match file_info.file_format {
+                            FileFormat::Parquet | FileFormat::Csv => {
+                                let writer_factory =
+                                    daft_writers::physical::PhysicalWriterFactory::new(
+                                        file_info.clone(),
+                                        data_schema.clone(),
+                                        true,
+                                    )?;
+                                let mut writer = writer_factory.create_writer(0, None)?;
+                                let empty_rb = RecordBatch::empty(Some(data_schema.clone()));
+                                let empty_mp = Arc::new(MicroPartition::new_loaded(
+                                    data_schema.clone(),
+                                    vec![empty_rb].into(),
+                                    None,
+                                ));
+                                writer.write(empty_mp).await?;
+                                if let Some(rb) = writer.close().await? {
+                                    written_file_path_record_batches.push(rb);
+                                }
+                            }
+                            _ => {
+                                log::warn!(
+                                    "No data written for {:?} file format, and not empty file created.",
+                                    file_info.file_format
+                                );
+                            }
+                        }
+                    }
 
                     if matches!(
                         file_info.write_mode,

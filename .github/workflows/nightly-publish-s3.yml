@@ -52,7 +52,7 @@ jobs:
       contents: read
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       with:
         submodules: true
     - uses: actions/download-artifact@v6
@@ -120,7 +120,7 @@ jobs:
         runner-name: [ubuntu-latest, ubuntu-24.04-arm]
         daft-runner: [ray, native]
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       with:
         submodules: true
         fetch-depth: 0
@@ -199,7 +199,18 @@ jobs:
       id-token: write
       contents: read
     steps:
-    - uses: actions/checkout@v5
+    - name: Free Disk Space (Ubuntu)
+      if: ${{ (runner.os == 'Linux') }}
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: false
+        android: true
+        dotnet: false
+        haskell: true
+        large-packages: false
+        docker-images: false
+        swap-storage: true
+    - uses: actions/checkout@v6
       with:
         submodules: true
         fetch-depth: 0

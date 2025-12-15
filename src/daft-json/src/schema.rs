@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use common_runtime::get_io_runtime;
 use daft_compression::CompressionCodec;
 use daft_core::prelude::Schema;
-use daft_io::{GetResult, IOClient, IOStatsRef};
+use daft_io::{GetRange, GetResult, IOClient, IOStatsRef};
 use futures::{StreamExt, TryStreamExt};
 use indexmap::IndexMap;
 use snafu::ResultExt;
@@ -63,6 +63,7 @@ pub async fn read_json_schema(
         max_bytes.or(Some(1024 * 1024)),
         io_client,
         io_stats,
+        None,
     )
     .await
 }
@@ -90,6 +91,7 @@ pub async fn read_json_schema_bulk(
                         max_bytes,
                         owned_client,
                         owned_io_stats,
+                        None,
                     )
                     .await
                 })
@@ -109,9 +111,10 @@ pub(crate) async fn read_json_schema_single(
     max_bytes: Option<usize>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
+    range: Option<GetRange>,
 ) -> DaftResult<Schema> {
     let (reader, max_bytes): (Box<dyn AsyncBufRead + Unpin + Send>, Option<usize>) = match io_client
-        .single_url_get(uri.to_string(), None, io_stats)
+        .single_url_get(uri.to_string(), range, io_stats)
         .await?
     {
         GetResult::File(file) => (
@@ -142,7 +145,7 @@ async fn infer_schema<R>(
     max_rows: Option<usize>,
     max_bytes: Option<usize>,
     skip_empty_files: bool,
-) -> DaftResult<arrow2::datatypes::Schema>
+) -> DaftResult<daft_arrow::datatypes::Schema>
 where
     R: tokio::io::AsyncBufRead + Unpin + Send,
 {
@@ -153,7 +156,7 @@ where
 
     if buf.is_empty() {
         if skip_empty_files {
-            // 返回空 schema
+            // return empty schema
             return Ok(arrow2::datatypes::Schema::from(vec![]));
         } else {
             return Err(super::Error::JsonDeserializationError {
@@ -204,7 +207,7 @@ where
                     infer_records_schema(&parsed_record).context(ArrowSnafu)
                 });
             // Collect all inferred dtypes for each column.
-            let mut column_types: IndexMap<String, HashSet<arrow2::datatypes::DataType>> =
+            let mut column_types: IndexMap<String, HashSet<daft_arrow::datatypes::DataType>> =
                 IndexMap::new();
             while let Some(schema) = schema_stream.next().await.transpose()? {
                 for field in schema.fields {

@@ -10,6 +10,7 @@ import daft
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import col, lit
 from daft.expressions.testing import expr_structurally_equal
+from daft.functions import hash as hash_fn
 from daft.recordbatch import MicroPartition
 from daft.series import Series
 
@@ -423,7 +424,7 @@ def test_repr_functions_hash() -> None:
 
 def test_repr_functions_hash_2() -> None:
     a = col("a")
-    y = a.hash(lit(1))
+    y = hash_fn(a, lit(1))
     repr_out = repr(y)
     assert repr_out == 'hash(col(a), lit(1), lit("xxhash"))'
     copied = copy.deepcopy(y)
