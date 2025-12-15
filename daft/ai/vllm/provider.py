@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING, Any
 
+from daft.ai.vllm.protocols.prompter import VLLMPromptOptions
+
 if sys.version_info < (3, 11):
     from typing_extensions import Unpack
 else:
@@ -44,22 +46,9 @@ class VLLMPrefixCachingProvider(Provider):
 
         # Collect all options
         all_options = {**self._options, **options}
-
-        # Extract vLLM-specific options
-        vllm_option_keys = {
-            "concurrency",
-            "gpus_per_actor",
-            "do_prefix_routing",
-            "max_buffer_size",
-            "min_bucket_size",
-            "prefix_match_threshold",
-            "load_balance_threshold",
-            "batch_size",
-            "engine_args",
-            "generate_args",
-            "num_gpus",
+        vllm_options: dict[str, Any] = {
+            k: v for k, v in all_options.items() if k in VLLMPromptOptions.__annotations__.keys()
         }
-        vllm_options: dict[str, Any] = {k: v for k, v in all_options.items() if k in vllm_option_keys}
 
         descriptor_kwargs: dict[str, Any] = {
             "provider_name": self._name,

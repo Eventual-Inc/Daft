@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, TypedDict, cast
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from daft.ai.protocols import Prompter, PrompterDescriptor
-from daft.ai.typing import Options, UDFOptions
-from daft.utils import from_dict
+
+if TYPE_CHECKING:
+    from daft.ai.typing import Options
 
 
 class VLLMPromptOptions(TypedDict, total=False):
@@ -32,9 +33,9 @@ class VLLMPrefixCachingPrompterDescriptor(PrompterDescriptor):
     """
 
     provider_name: str
+    options: VLLMPromptOptions
     return_format: Any | None = None
     system_message: str | None = None
-    options: VLLMPromptOptions = field(default_factory=lambda: cast("VLLMPromptOptions", {}))
     model_name: str = "facebook/opt-125m"
 
     def get_provider(self) -> str:
@@ -58,9 +59,6 @@ class VLLMPrefixCachingPrompterDescriptor(PrompterDescriptor):
             "num_gpus": 1,
         }
         return {**defaults, **self.options}
-
-    def get_udf_options(self) -> UDFOptions:
-        return from_dict(UDFOptions, dict(self.get_options()))
 
     def instantiate(self) -> Prompter:
         """This method should not be called for vLLM provider.

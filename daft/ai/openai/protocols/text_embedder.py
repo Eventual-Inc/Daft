@@ -12,6 +12,7 @@ from daft.ai.metrics import record_token_metrics
 from daft.ai.openai.typing import OpenAIProviderOptions
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
 from daft.ai.typing import EmbeddingDimensions, EmbedTextOptions, Options, UDFOptions
+from daft.ai.utils import merge_provider_and_api_options
 from daft.dependencies import np
 
 if TYPE_CHECKING:
@@ -108,7 +109,6 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
             embed_options=self.embed_options,
             dimensions=self.dimensions,
             provider_name=self.provider_name,
-            zero_on_failure=False,
         )
 
 
@@ -134,21 +134,18 @@ class OpenAITextEmbedder(TextEmbedder):
         zero_on_failure: bool = False,
         provider_name: str = "openai",
     ):
-        from daft.ai.utils import merge_provider_and_api_options
-
         self._model = model
         self._zero_on_failure = zero_on_failure
         self._dimensions = dimensions
         self._provider_name = provider_name
 
-        # Use utility to merge options
-        provider_options_dict: dict[str, Any] = merge_provider_and_api_options(
+        merged_provider_options: dict[str, Any] = merge_provider_and_api_options(
             provider_options=provider_options,
             api_options=embed_options,
             provider_option_type=OpenAIProviderOptions,
         )
 
-        self._client = AsyncOpenAI(**provider_options_dict)
+        self._client = AsyncOpenAI(**merged_provider_options)
 
     async def embed_text(self, text: list[str]) -> list[Embedding]:
         embeddings: list[Embedding] = []
