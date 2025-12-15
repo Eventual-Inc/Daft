@@ -30,6 +30,25 @@ use crate::{
 /// as long as there is no "mix" of "\" and "/".
 const PATH_SEGMENT_DELIMITER: &str = "/";
 
+/// On Windows, strips the leading "/" from paths like "/C:/Users/..." to produce "C:/Users/...".
+/// This is needed because stripping "file://" from "file:///C:/path" leaves "/C:/path".
+/// Returns the path unchanged if it doesn't match the pattern "/X:" where X is a drive letter.
+#[cfg(windows)]
+fn strip_leading_slash_before_drive(path: &str) -> &str {
+    let bytes = path.as_bytes();
+    // Check for pattern: starts with '/', followed by ASCII letter, followed by ':'
+    if bytes.len() >= 3 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() && bytes[2] == b':' {
+        &path[1..]
+    } else {
+        path
+    }
+}
+
+#[cfg(not(windows))]
+fn strip_leading_slash_before_drive(path: &str) -> &str {
+    path
+}
+
 pub struct LocalSource {}
 
 #[derive(Debug, Snafu)]
@@ -152,6 +171,7 @@ impl ObjectSource for LocalSource {
     ) -> super::Result<GetResult> {
         const LOCAL_PROTOCOL: &str = "file://";
         if let Some(file) = uri.strip_prefix(LOCAL_PROTOCOL) {
+            let file = strip_leading_slash_before_drive(file);
             let size = self.get_size(uri, io_stats).await?;
             let range = range
                 .map(|r| r.as_range(size))
@@ -174,6 +194,7 @@ impl ObjectSource for LocalSource {
     ) -> super::Result<()> {
         const LOCAL_PROTOCOL: &str = "file://";
         if let Some(stripped_uri) = uri.strip_prefix(LOCAL_PROTOCOL) {
+            let stripped_uri = strip_leading_slash_before_drive(stripped_uri);
             let mut file = std::fs::OpenOptions::new()
                 .create(true)
                 .truncate(true) // truncate file if it already exists...
@@ -193,6 +214,7 @@ impl ObjectSource for LocalSource {
         let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) else {
             return Err(Error::InvalidFilePath { path: uri.into() }.into());
         };
+        let uri = strip_leading_slash_before_drive(uri);
         let meta = tokio::fs::metadata(uri)
             .await
             .context(UnableToFetchFileMetadataSnafu {
@@ -278,7 +300,7 @@ impl ObjectSource for LocalSource {
                     .to_string(),
             )
         } else if let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) {
-            std::borrow::Cow::Borrowed(uri)
+            std::borrow::Cow::Borrowed(strip_leading_slash_before_drive(uri))
         } else {
             return Err(Error::InvalidFilePath { path: uri.into() }.into());
         };
