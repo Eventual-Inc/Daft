@@ -85,7 +85,7 @@ def test_openai_provider_get_prompter_default():
     assert descriptor.get_provider() == "openai"
     assert descriptor.get_model() == "gpt-4o-mini"
     assert descriptor.get_options() == {}
-    assert descriptor.prompt_options.get("return_format") is None
+    assert descriptor.return_format is None
 
 
 def test_openai_provider_get_prompter_with_model():
@@ -130,7 +130,7 @@ def test_openai_prompter_descriptor_instantiation():
     assert descriptor.get_provider() == "openai"
     assert descriptor.get_model() == "gpt-4o-mini"
     assert descriptor.get_options() == {}
-    assert descriptor.prompt_options.get("return_format") is None
+    assert descriptor.return_format is None
 
 
 def test_openai_prompter_descriptor_with_return_format():

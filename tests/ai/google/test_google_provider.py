@@ -17,7 +17,7 @@ def test_google_provider_get_prompter_default():
     assert descriptor.get_provider() == "google"
     assert descriptor.get_model() == "gemini-2.5-flash"
     assert descriptor.get_options() == {}
-    assert descriptor.prompt_options.get("return_format") is None
+    assert descriptor.return_format is None
 
 
 def test_google_provider_get_prompter_with_model():

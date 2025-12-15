@@ -11,7 +11,6 @@ if sys.version_info < (3, 11):
 else:
     from typing import Unpack
 
-from daft.ai.openai.protocols.prompter import OpenAIPromptOptions
 from daft.ai.provider import Provider, ProviderType, load_provider
 from daft.functions.ai._colab_compat import IS_COLAB, clean_pydantic_model
 from daft.datatype import DataType
@@ -424,7 +423,7 @@ def prompt(
     return_format: BaseModel | None = None,
     *,
     system_message: str | None = None,
-    provider: None,
+    provider: str | None = None,
     model: str | None = None,
     **options: Unpack[PromptOptions],
 ) -> Expression: ...
@@ -436,7 +435,7 @@ def prompt(
     return_format: BaseModel | None = None,
     *,
     system_message: str | None = None,
-    provider: Literal["openai"] | OpenAIProvider,
+    provider: Literal["openai"] | OpenAIProvider | None = None,
     model: str | None = None,
     **options: Unpack[OpenAIPromptOptions],
 ) -> Expression: ...
