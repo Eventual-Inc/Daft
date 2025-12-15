@@ -16,7 +16,7 @@ use common_scan_info::{Pushdowns, ScanTaskLike};
 use daft_core::prelude::{AsArrow, Int64Array, SchemaRef, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{AggExpr, Expr};
-use daft_io::IOStatsRef;
+use daft_io::{GetRange, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::{ParquetSchemaInferenceOptions, read_parquet_bulk_async};
@@ -586,6 +586,10 @@ async fn stream_scan_task(
             let json_chunk_size = cfg.chunk_size.or(Some(chunk_size));
             let read_options = JsonReadOptions::new_internal(cfg.buffer_size, json_chunk_size);
 
+            let range = source.get_chunk_spec().and_then(|spec| match spec {
+                daft_scan::ChunkSpec::Bytes { start, end } => Some(GetRange::Bounded(*start..*end)),
+                _ => None,
+            });
             daft_json::read::stream_json(
                 url.to_string(),
                 Some(convert_options),
@@ -594,6 +598,7 @@ async fn stream_scan_task(
                 io_client,
                 Some(io_stats),
                 None,
+                range,
                 // maintain_order, TODO: Implement maintain_order for JSON
             )
             .await?
