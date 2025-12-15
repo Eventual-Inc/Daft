@@ -460,6 +460,21 @@ impl<T: DaftNumericType> DataArray<T> {
         let arrow_buffer = Buffer::from(self.as_arrow2().values().clone());
         ScalarBuffer::from(arrow_buffer)
     }
+
+    /// Maps the values only without changing the null bitmaps
+    pub fn map_values<F>(&self, f: F) -> Self
+    where
+        F: Fn(&T::Native) -> T::Native,
+    {
+        let arrow_buffer = Buffer::from(self.as_arrow2().values().clone());
+
+        Self::from_values_iter(
+            self.field.clone(),
+            ScalarBuffer::from(arrow_buffer).into_iter().map(f),
+        )
+        .with_validity(self.validity().cloned())
+        .expect("Failed to set nulls")
+    }
 }
 
 impl<P: AsRef<str>> FromIterator<Option<P>> for Utf8Array {
