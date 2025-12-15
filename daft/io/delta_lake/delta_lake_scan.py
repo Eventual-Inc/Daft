@@ -64,6 +64,7 @@ class DeltaLakeScanOperator(ScanOperator):
         table_uri: str,
         storage_config: StorageConfig,
         version: int | str | datetime | None = None,
+        ignore_deletion_vectors: bool = False,
     ) -> None:
         super().__init__()
 
@@ -140,6 +141,7 @@ class DeltaLakeScanOperator(ScanOperator):
         self._partition_keys = [
             PyPartitionField(field._field) for field in self._schema if field.name in partition_columns
         ]
+        self._ignore_deletion_vectors = ignore_deletion_vectors
 
     def schema(self) -> Schema:
         return self._schema
@@ -177,10 +179,11 @@ class DeltaLakeScanOperator(ScanOperator):
 
         # TODO(Clark): Add support for deletion vectors.
         # Issue: https://github.com/Eventual-Inc/Daft/issues/1954
-        if "deletionVector" in add_actions.schema.names:
+        if not self._ignore_deletion_vectors and "deletionVector" in add_actions.schema.names:
             raise NotImplementedError(
                 "Delta Lake deletion vectors are not yet supported; please let the Daft team know if you'd like to see this feature!\n"
-                "Deletion records can be dropped from this table to allow it to be read with Daft: https://docs.delta.io/latest/delta-drop-feature.html"
+                "Deletion records can be dropped from this table to allow it to be read with Daft: https://docs.delta.io/latest/delta-drop-feature.html\n"
+                "Alternatively, you can set ignore_deletion_vectors=True to skip checking for deletion vectors."
             )
 
         # TODO(Clark): Add support for column mappings.

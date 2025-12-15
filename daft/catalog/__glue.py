@@ -537,8 +537,8 @@ class GlueDeltaTable(GlueTable):
 
         return read_deltalake(
             table=self._unity_catalog_table,
-            version=options.get("version"),
             io_config=self._io_config,
+            **options,
         )
 
     def append(self, df: DataFrame, **options: Any) -> None:
