@@ -129,7 +129,7 @@ impl PySeries {
     }
 
     pub fn to_arrow<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
-        let arrow_array = self.series.to_arrow();
+        let arrow_array = self.series.to_arrow2();
         let arrow_array = cast_array_from_daft_if_needed(arrow_array);
         let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
         ffi::to_py_array(py, arrow_array, &pyarrow)

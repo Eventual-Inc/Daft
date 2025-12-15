@@ -91,7 +91,8 @@ macro_rules! impl_logical_type {
 impl<L: DaftLogicalType> LogicalArrayImpl<L, DataArray<L::PhysicalType>> {
     impl_logical_type!(DataArray);
 
-    pub fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
+    #[deprecated(note = "arrow2 migration")]
+    pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
         let daft_type = self.data_type();
         let arrow_logical_type = daft_type.to_arrow().unwrap();
         let physical_arrow_array = self.physical.data();
@@ -128,8 +129,9 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, DataArray<L::PhysicalType>> {
 impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
     impl_logical_type!(FixedSizeListArray);
 
-    pub fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
-        let mut fixed_size_list_arrow_array = self.physical.to_arrow();
+    #[deprecated(note = "arrow2 migration")]
+    pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
+        let mut fixed_size_list_arrow_array = self.physical.to_arrow2();
         let arrow_logical_type = self.data_type().to_arrow().unwrap();
         fixed_size_list_arrow_array.change_type(arrow_logical_type);
         fixed_size_list_arrow_array
@@ -140,8 +142,9 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
 impl<L: DaftLogicalType> LogicalArrayImpl<L, StructArray> {
     impl_logical_type!(StructArray);
 
-    pub fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
-        let mut struct_arrow_array = self.physical.to_arrow();
+    #[deprecated(note = "arrow2 migration")]
+    pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
+        let mut struct_arrow_array = self.physical.to_arrow2();
         let arrow_logical_type = self.data_type().to_arrow().unwrap();
         struct_arrow_array.change_type(arrow_logical_type);
         struct_arrow_array
@@ -151,7 +154,8 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, StructArray> {
 impl MapArray {
     impl_logical_type!(ListArray);
 
-    pub fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
+    #[deprecated(note = "arrow2 migration")]
+    pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
         let arrow_dtype = self.data_type().to_arrow().unwrap();
         let inner_struct_arrow_dtype = match &arrow_dtype {
             daft_arrow::datatypes::DataType::Map(field, _) => field.data_type().clone(),
@@ -167,7 +171,7 @@ impl MapArray {
             inner_struct_array
                 .children
                 .iter()
-                .map(|s| s.to_arrow())
+                .map(|s| s.to_arrow2())
                 .collect(),
             daft_arrow::buffer::wrap_null_buffer(inner_struct_array.validity().cloned()),
         ));

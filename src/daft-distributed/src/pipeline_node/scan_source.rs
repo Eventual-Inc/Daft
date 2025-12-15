@@ -1,7 +1,8 @@
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use common_display::{DisplayAs, DisplayLevel};
 use common_error::DaftResult;
+#[cfg(feature = "python")]
 use common_file_formats::FileFormatConfig;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
@@ -10,6 +11,7 @@ use daft_schema::schema::SchemaRef;
 
 use super::{
     NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream,
+    make_empty_scan_task,
 };
 use crate::{
     pipeline_node::{DistributedPipelineNode, NodeID},
@@ -69,8 +71,11 @@ impl ScanSourceNode {
         task_id_counter: TaskIDCounter,
     ) -> DaftResult<()> {
         if self.scan_tasks.is_empty() {
-            let empty_scan_task = self
-                .make_empty_scan_task(TaskContext::from((&self.context, task_id_counter.next())))?;
+            let empty_scan_task = make_empty_scan_task(
+                TaskContext::from((&self.context, task_id_counter.next())),
+                self.config.schema.clone(),
+                &(self.clone() as Arc<dyn PipelineNodeImpl>),
+            );
             let _ = result_tx.send(SubmittableTask::new(empty_scan_task)).await;
             return Ok(());
         }
@@ -110,26 +115,6 @@ impl ScanSourceNode {
             physical_scan,
             self.config.execution_config.clone(),
             Default::default(),
-            SchedulingStrategy::Spread,
-            self.context.to_hashmap(),
-        );
-        Ok(task)
-    }
-
-    fn make_empty_scan_task(&self, task_context: TaskContext) -> DaftResult<SwordfishTask> {
-        let transformed_plan = LocalPhysicalPlan::empty_scan(
-            self.config.schema.clone(),
-            LocalNodeContext {
-                origin_node_id: Some(self.node_id() as usize),
-                additional: None,
-            },
-        );
-        let psets = HashMap::new();
-        let task = SwordfishTask::new(
-            task_context,
-            transformed_plan,
-            self.config.execution_config.clone(),
-            psets,
             SchedulingStrategy::Spread,
             self.context.to_hashmap(),
         );

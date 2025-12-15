@@ -7,6 +7,7 @@ common-runtime = {path = "../common/runtime", default-features = false}
 daft-compression = {path = "../daft-compression", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-decoding = {path = "../daft-decoding"}
+daft-schema = {path = "../daft-schema", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}

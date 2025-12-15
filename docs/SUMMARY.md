@@ -54,6 +54,7 @@
         * [Managing Memory Usage](optimization/memory.md)
         * [Partitioning and Batching](optimization/partitioning.md)
         * [Observability](optimization/observability.md)
+        * [Logging](optimization/logging.md)
     * Contributing
         * [Overview](contributing/overview.md)
         * [Development Guide](contributing/development.md)

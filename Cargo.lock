@@ -2567,6 +2567,7 @@ dependencies = [
 name = "daft-arrow"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
  "arrow-buffer",
  "arrow-schema",
  "arrow2",
@@ -2634,6 +2635,7 @@ dependencies = [
 name = "daft-core"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-data",
  "bincode",
  "chrono",
  "chrono-tz",
@@ -2731,6 +2733,7 @@ dependencies = [
  "chrono",
  "csv-async",
  "daft-arrow",
+ "daft-schema",
  "fast-float2",
  "simdutf8",
 ]
@@ -2837,10 +2840,10 @@ dependencies = [
 name = "daft-functions-binary"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
  "base64 0.22.1",
  "common-error",
  "common-macros",
- "daft-arrow",
  "daft-core",
  "daft-dsl",
  "flate2",
@@ -2905,10 +2908,10 @@ dependencies = [
 name = "daft-functions-tokenize"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
  "base64 0.22.1",
  "common-error",
  "common-runtime",
- "daft-arrow",
  "daft-core",
  "daft-dsl",
  "daft-io",
@@ -2942,6 +2945,7 @@ name = "daft-functions-utf8"
 version = "0.3.0-dev0"
 dependencies = [
  "aho-corasick",
+ "arrow",
  "chrono",
  "chrono-tz",
  "common-error",
@@ -3047,6 +3051,7 @@ dependencies = [
  "daft-dsl",
  "daft-io",
  "daft-recordbatch",
+ "daft-schema",
  "futures",
  "indexmap 2.11.4",
  "memchr",
@@ -3128,7 +3133,6 @@ name = "daft-local-plan"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
- "common-file-formats",
  "common-io-config",
  "common-py-serde",
  "common-resource-request",
@@ -3317,6 +3321,7 @@ dependencies = [
  "common-scan-info",
  "ctor",
  "daft-arrow",
+ "daft-compression",
  "daft-core",
  "daft-csv",
  "daft-decoding",
@@ -3338,6 +3343,7 @@ dependencies = [
  "snafu",
  "tokio",
  "typetag",
+ "url",
  "urlencoding",
 ]
 
@@ -3346,6 +3352,8 @@ name = "daft-schema"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow-schema",
+ "chrono",
+ "chrono-tz",
  "common-arrow-ffi",
  "common-display",
  "common-error",

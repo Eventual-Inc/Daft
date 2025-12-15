@@ -66,7 +66,8 @@ pub fn try_parse_item(item: Option<&str>) -> Value<'_> {
 pub fn serialize(input: Series) -> DaftResult<Utf8Array> {
     // setup inputs
     let name = input.name();
-    let input = input.to_arrow();
+    #[allow(deprecated, reason = "arrow2 migration")]
+    let input = input.to_arrow2();
     let validity = input.validity().cloned();
     // setup outputs
     let mut values = Vec::<u8>::new();

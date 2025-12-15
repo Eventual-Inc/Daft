@@ -447,7 +447,7 @@ pub type Decimal128Array = DataArray<Decimal128Type>;
 
 impl<T: DaftNumericType> DataArray<T> {
     pub fn as_slice(&self) -> &[T::Native] {
-        self.as_arrow().values().as_slice()
+        self.as_arrow2().values().as_slice()
     }
 }
 

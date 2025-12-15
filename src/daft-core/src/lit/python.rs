@@ -76,16 +76,14 @@ impl<'py> IntoPyObject<'py> for Literal {
                 match tz {
                     None => naive_dt.into_bound_py_any(py),
                     Some(tz_str)
-                        if let Ok(fixed_offset) =
-                            daft_arrow::temporal_conversions::parse_offset(&tz_str) =>
+                        if let Ok(fixed_offset) = daft_schema::time_unit::parse_offset(&tz_str) =>
                     {
                         fixed_offset
                             .from_utc_datetime(&naive_dt)
                             .into_bound_py_any(py)
                     }
                     Some(tz_str)
-                        if let Ok(tz) =
-                            daft_arrow::temporal_conversions::parse_offset_tz(&tz_str) =>
+                        if let Ok(tz) = daft_schema::time_unit::parse_offset_tz(&tz_str) =>
                     {
                         tz.from_utc_datetime(&naive_dt).into_bound_py_any(py)
                     }
@@ -204,7 +202,7 @@ impl<'py> IntoPyObject<'py> for Literal {
             }
             Self::Tensor { data, shape } => {
                 let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-                ffi::to_py_array(py, data.to_arrow(), &pyarrow)?
+                ffi::to_py_array(py, data.to_arrow2(), &pyarrow)?
                     .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
                     .call_method1(pyo3::intern!(py, "reshape"), (shape,))
             }
@@ -215,9 +213,9 @@ impl<'py> IntoPyObject<'py> for Literal {
                 ..
             } => {
                 let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-                let values_arr = ffi::to_py_array(py, values.to_arrow(), &pyarrow)?
+                let values_arr = ffi::to_py_array(py, values.to_arrow2(), &pyarrow)?
                     .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
-                let indices_arr = ffi::to_py_array(py, indices.to_arrow(), &pyarrow)?
+                let indices_arr = ffi::to_py_array(py, indices.to_arrow2(), &pyarrow)?
                     .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
 
                 let seq = (
@@ -231,7 +229,7 @@ impl<'py> IntoPyObject<'py> for Literal {
             }
             Self::Embedding(series) => {
                 let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-                ffi::to_py_array(py, series.to_arrow(), &pyarrow)?
+                ffi::to_py_array(py, series.to_arrow2(), &pyarrow)?
                     .call_method1(pyo3::intern!(py, "to_numpy"), (false,))
             }
             Self::Image(image) => {
@@ -247,7 +245,7 @@ impl<'py> IntoPyObject<'py> for Literal {
 
                 let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
 
-                let arrow_array = series.to_arrow();
+                let arrow_array = series.to_arrow2();
                 let arrow_array = cast_array_from_daft_if_needed(arrow_array);
 
                 ffi::to_py_array(py, arrow_array, &pyarrow)?

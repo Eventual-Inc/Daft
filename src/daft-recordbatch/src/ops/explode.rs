@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
@@ -14,7 +15,7 @@ use crate::RecordBatch;
 
 fn lengths_to_indices(lengths: &UInt64Array, capacity: usize) -> DaftResult<UInt64Array> {
     let mut indices = Vec::with_capacity(capacity);
-    for (i, l) in lengths.as_arrow().iter().enumerate() {
+    for (i, l) in lengths.as_arrow2().iter().enumerate() {
         let l = std::cmp::max(*l.unwrap_or(&1), 1u64);
         (0..l).for_each(|_| indices.push(i as u64));
     }

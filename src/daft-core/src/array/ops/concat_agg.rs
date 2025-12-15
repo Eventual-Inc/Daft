@@ -116,7 +116,7 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
             _ => None,
         };
 
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
         let new_offsets = OffsetsBuffer::<i64>::try_from(vec![0, *arrow_array.offsets().last()])?;
         let output = Utf8Array::new(
             arrow_array.data_type().clone(),
@@ -130,7 +130,7 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
     }
 
     fn grouped_concat(&self, groups: &super::GroupIndices) -> Self::Output {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
         let concat_per_group = if arrow_array.null_count() > 0 {
             Box::new(Utf8Array::from_trusted_len_iter(groups.iter().map(|g| {
                 let to_concat = g
