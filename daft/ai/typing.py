@@ -14,30 +14,89 @@ Options = dict[str, Any]
 
 
 class EmbedTextOptions(TypedDict, total=False):
+    """Options for text embedding.
+
+    Attributes:
+        batch_size (int): Number of texts to process in a single batch.
+        max_retries (int): Maximum number of retry attempts for failed requests.
+        on_error (Literal["raise", "log", "ignore"]): Behavior when an error occurs.
+
+    Note:
+        Any additional arguments defined here will be forwarded directly to
+        the provider-specific client when making embedding calls.
+    """
+
     batch_size: int
     max_retries: int
     on_error: Literal["raise", "log", "ignore"]
 
 
 class EmbedImageOptions(TypedDict, total=False):
+    """Options for image embedding.
+
+    Attributes:
+        batch_size (int): Number of images to process in a single batch.
+        max_retries (int): Maximum number of retry attempts for failed requests.
+        on_error (Literal["raise", "log", "ignore"]): Behavior when an error occurs.
+
+    Note:
+        Any additional arguments defined here will be forwarded directly to
+        the provider-specific client when making embedding calls.
+    """
+
     batch_size: int
     max_retries: int
     on_error: Literal["raise", "log", "ignore"]
 
 
 class ClassifyTextOptions(TypedDict, total=False):
+    """Options for text classification.
+
+    Attributes:
+        batch_size (int): Number of texts to process in a single batch.
+        max_retries (int): Maximum number of retry attempts for failed requests.
+        on_error (Literal["raise", "log", "ignore"]): Behavior when an error occurs.
+
+    Note:
+        Any additional arguments defined here will be forwarded directly to
+        the provider-specific client when making classification calls.
+    """
+
     batch_size: int
     max_retries: int
     on_error: Literal["raise", "log", "ignore"]
 
 
 class ClassifyImageOptions(TypedDict, total=False):
+    """Options for image classification.
+
+    Attributes:
+        batch_size (int): Number of images to process in a single batch.
+        max_retries (int): Maximum number of retry attempts for failed requests.
+        on_error (Literal["raise", "log", "ignore"]): Behavior when an error occurs.
+
+    Note:
+        Any additional arguments defined here will be forwarded directly to
+        the provider-specific client when making classification calls.
+    """
+
     batch_size: int
     max_retries: int
     on_error: Literal["raise", "log", "ignore"]
 
 
 class PromptOptions(TypedDict, total=False):
+    """Options for prompting.
+
+    Attributes:
+        max_retries (int): Maximum number of retry attempts for failed requests.
+        on_error (Literal["raise", "log", "ignore"]): Behavior when an error occurs.
+
+    Note:
+        Any additional arguments defined here will be forwarded directly to
+        the provider-specific client when making prompt calls.
+    """
+
     max_retries: int
     on_error: Literal["raise", "log", "ignore"]
 
