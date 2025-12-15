@@ -157,7 +157,7 @@ where
     if buf.is_empty() {
         if skip_empty_files {
             // return empty schema
-            return Ok(arrow2::datatypes::Schema::from(vec![]));
+            return Ok(daft_arrow::datatypes::Schema::from(vec![]));
         } else {
             return Err(super::Error::JsonDeserializationError {
                 string: "Empty JSON file".to_string(),
