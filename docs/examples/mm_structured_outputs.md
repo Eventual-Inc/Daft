@@ -17,7 +17,7 @@ Check out the [blog post](https://www.daft.ai/blog/multimodal-structured-outputs
 
 ## Notebook vs. Production Pipeline (How this maps)
 
-This document is the **interactive companion** to the production evaluation pipeline in [`use_cases/image_understanding_eval/eval_image_understanding.py`](../use_cases/image_understanding_eval/eval_image_understanding.py) and the methodology described in the blog post: [Multimodal Structured Outputs: Evaluating VLM Image Understanding at Scale](https://www.daft.ai/blog/multimodal-structured-outputs-evaluating-vlm-image-understanding-at-scale).
+This document is the **interactive companion** to the production evaluation pipeline in [daft-examples](https://github.com/Eventual-Inc/daft-examples/tree/main/use_cases/image_understanding_eval/eval_image_understanding.py) and the methodology described in the blog post: [Multimodal Structured Outputs: Evaluating VLM Image Understanding at Scale](https://www.daft.ai/blog/multimodal-structured-outputs-evaluating-vlm-image-understanding-at-scale).
 
 The notebook keeps `LIMIT` small so you can inspect examples, but the stages are the same:
 
