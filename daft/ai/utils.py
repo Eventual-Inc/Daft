@@ -68,29 +68,3 @@ def merge_provider_and_api_options(
             result[key] = value
 
     return result
-
-
-def warn_unknown_options(
-    options: dict[str, Any],
-    known_option_types: list[type],
-    context: str,
-    exclude_keys: set[str] | None = None,
-) -> None:
-    import warnings
-
-    all_known_keys: set[str] = set()
-    for opt_type in known_option_types:
-        all_known_keys.update(opt_type.__annotations__.keys())
-
-    # Add excluded keys to known keys so they don't trigger warnings
-    if exclude_keys:
-        all_known_keys.update(exclude_keys)
-
-    unknown_keys = set(options.keys()) - all_known_keys
-
-    if unknown_keys:
-        warnings.warn(
-            f"Unknown options for {context} will be ignored: {unknown_keys}. " f"Valid options are: {all_known_keys}",
-            UserWarning,
-            stacklevel=3,
-        )
