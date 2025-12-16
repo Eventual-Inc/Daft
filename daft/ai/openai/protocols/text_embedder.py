@@ -1,15 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from openai import NOT_GIVEN, AsyncOpenAI
+from openai import NOT_GIVEN, AsyncOpenAI, OpenAIError, RateLimitError
 from openai.types.create_embedding_response import Usage
 
 from daft import DataType
 from daft.ai.metrics import record_token_metrics
 from daft.ai.openai.typing import OpenAIProviderOptions
-from daft.ai.openai.utils import execute_openai_call
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
 from daft.ai.typing import EmbeddingDimensions, EmbedTextOptions, Options, UDFOptions
 from daft.ai.utils import merge_provider_and_api_options
@@ -199,24 +199,40 @@ class OpenAITextEmbedder(TextEmbedder):
         return embeddings
 
     async def _embed_text_batch(self, input_batch: list[str]) -> list[Embedding]:
-        """Embeds text as a batch call."""
+        """Embeds text as a batch call, falling back to _embed_text on rate limit exceptions."""
         try:
-            response = await execute_openai_call(
-                lambda: self._client.embeddings.create(
-                    input=input_batch,
-                    model=self._model,
-                    encoding_format="float",
-                    dimensions=self._dimensions or NOT_GIVEN,
-                )
+            response = await self._client.embeddings.create(
+                input=input_batch,
+                model=self._model,
+                encoding_format="float",
+                dimensions=self._dimensions or NOT_GIVEN,
             )
             self._record_usage_metrics(response)
             return [np.array(embedding.embedding) for embedding in response.data]
-        except Exception:
+        except RateLimitError:
+            # fall back to individual calls when rate limited
+            # consider sleeping or other backoff mechanisms
+            return await asyncio.gather(*(self._embed_text(text) for text in input_batch))
+        except OpenAIError as ex:
+            raise ValueError("The `embed_text` method encountered an OpenAI error.") from ex
+
+    async def _embed_text(self, input_text: str) -> Embedding:
+        """Embeds a single text input and possibly returns a zero vector."""
+        try:
+            response: CreateEmbeddingResponse = await self._client.embeddings.create(
+                input=input_text,
+                model=self._model,
+                encoding_format="float",
+                dimensions=self._dimensions or NOT_GIVEN,
+            )
+            self._record_usage_metrics(response)
+            return np.array(response.data[0].embedding)
+        except Exception as ex:
             if self._zero_on_failure:
                 size = self._dimensions or _models[self._model].dimensions.size
-                return [np.zeros(size, dtype=np.float32) for _ in input_batch]
+                return np.zeros(size, dtype=np.float32)
             else:
-                raise
+                raise ex
 
     def _record_usage_metrics(self, response: CreateEmbeddingResponse) -> None:
         usage = getattr(response, "usage", None)

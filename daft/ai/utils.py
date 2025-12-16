@@ -6,8 +6,13 @@ from typing import TYPE_CHECKING, Any, NoReturn
 
 from daft.ai.typing import UDFOptions
 from daft.daft import get_or_infer_runner_type
+from daft.errors import RetryAfterError
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    import httpx
+    import requests
     import torch
 
 
@@ -72,16 +77,7 @@ def merge_provider_and_api_options(
     return result
 
 
-class RetryAfterError(RuntimeError):
-    """Retryable error carrying the requested wait time (in seconds)."""
-
-    def __init__(self, retry_after: float, original: Exception | None = None) -> None:
-        super().__init__(str(original) if original else "Retryable HTTP error")
-        self.retry_after = retry_after
-        self.__cause__ = original
-
-
-def _parse_retry_after(value: Any) -> float | None:
+def _parse_retry_after_header(value: Any) -> float | None:
     """Parse Retry-After header value (seconds or HTTP-date)."""
     try:
         seconds = float(value)
@@ -103,12 +99,14 @@ def _parse_retry_after(value: Any) -> float | None:
     return None
 
 
-def raise_retry_after(response: Any | None, original: Exception) -> NoReturn:
+def raise_retry_after_from_response(
+    response: requests.Response | httpx.Response | Any | None, original: Exception
+) -> NoReturn:
     """Raise RetryAfterError from a response object's Retry-After header."""
     if response is None:
         raise original
 
-    headers = getattr(response, "headers", None)
+    headers: Mapping[str, Any] | None = getattr(response, "headers", None)
     if headers is None:
         raise original
 
@@ -116,7 +114,7 @@ def raise_retry_after(response: Any | None, original: Exception) -> NoReturn:
     if retry_after_header is None:
         raise original
 
-    retry_after = _parse_retry_after(retry_after_header)
+    retry_after = _parse_retry_after_header(retry_after_header)
     if retry_after is not None:
         raise RetryAfterError(retry_after=retry_after, original=original) from original
     else:

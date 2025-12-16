@@ -10,7 +10,6 @@ from openai.types.responses import ResponseUsage
 
 from daft.ai.metrics import record_token_metrics
 from daft.ai.openai.typing import OpenAIProviderOptions
-from daft.ai.openai.utils import execute_openai_call
 from daft.ai.protocols import Prompter, PrompterDescriptor
 from daft.ai.provider import ProviderImportError
 from daft.ai.typing import Options, PromptOptions, UDFOptions
@@ -243,23 +242,19 @@ class OpenAIPrompter(Prompter):
         """Generate responses using the Chat Completions API."""
         if self.return_format is not None:
             # Use structured outputs with Pydantic model
-            response = await execute_openai_call(
-                lambda: self.llm.chat.completions.parse(
-                    model=self.model,
-                    messages=messages_list,
-                    response_format=self.return_format,
-                    **self.generation_config,
-                )
+            response = await self.llm.chat.completions.parse(
+                model=self.model,
+                messages=messages_list,
+                response_format=self.return_format,
+                **self.generation_config,
             )
             result = response.choices[0].message.parsed
         else:
             # Return plain text
-            response = await execute_openai_call(
-                lambda: self.llm.chat.completions.create(
-                    model=self.model,
-                    messages=messages_list,
-                    **self.generation_config,
-                )
+            response = await self.llm.chat.completions.create(
+                model=self.model,
+                messages=messages_list,
+                **self.generation_config,
             )
             result = response.choices[0].message.content
 
@@ -275,22 +270,18 @@ class OpenAIPrompter(Prompter):
     async def _prompt_with_responses(self, messages_list: list[dict[str, Any]]) -> Any:
         """Generate responses using the Responses API."""
         if self.return_format is not None:
-            response = await execute_openai_call(
-                lambda: self.llm.responses.parse(
-                    model=self.model,
-                    input=messages_list,
-                    text_format=self.return_format,
-                    **self.generation_config,
-                )
+            response = await self.llm.responses.parse(
+                model=self.model,
+                input=messages_list,
+                text_format=self.return_format,
+                **self.generation_config,
             )
             result = response.output_parsed
         else:
-            response = await execute_openai_call(
-                lambda: self.llm.responses.create(
-                    model=self.model,
-                    input=messages_list,
-                    **self.generation_config,
-                )
+            response = await self.llm.responses.create(
+                model=self.model,
+                input=messages_list,
+                **self.generation_config,
             )
             result = response.output_text
 

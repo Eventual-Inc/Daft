@@ -9,7 +9,7 @@ pytest.importorskip("openai")
 from unittest.mock import AsyncMock, Mock, patch
 
 import numpy as np
-from openai import NOT_GIVEN, InternalServerError, RateLimitError
+from openai import NOT_GIVEN, RateLimitError
 from openai.types.create_embedding_response import CreateEmbeddingResponse, Usage
 from openai.types.embedding import Embedding as OpenAIEmbedding
 
@@ -22,7 +22,6 @@ from daft.ai.openai.protocols.text_embedder import (
 )
 from daft.ai.protocols import TextEmbedder
 from daft.ai.typing import EmbeddingDimensions
-from daft.ai.utils import RetryAfterError
 
 
 def new_input(approx_tokens: int) -> str:
@@ -274,12 +273,11 @@ def test_embed_text_failure_with_zero_on_failure(mock_text_embedder, mock_client
     mock_client.embeddings.create.side_effect = Exception("API Error")
     mock_text_embedder._zero_on_failure = True
 
-    result = run(mock_text_embedder._embed_text_batch(["Hello world"]))
+    result = run(mock_text_embedder._embed_text("Hello world"))
 
-    assert len(result) == 1
-    assert isinstance(result[0], np.ndarray)
-    assert result[0].shape == (1536,)
-    assert np.all(result[0] == 0)  # Should be zero array
+    assert isinstance(result, np.ndarray)
+    assert result.shape == (1536,)
+    assert np.all(result == 0)  # Should be zero array
 
 
 def test_embed_text_failure_with_zero_on_failure_and_dimensions(mock_text_embedder, mock_client):
@@ -288,12 +286,11 @@ def test_embed_text_failure_with_zero_on_failure_and_dimensions(mock_text_embedd
     mock_text_embedder._zero_on_failure = True
     mock_text_embedder._dimensions = 256
 
-    result = run(mock_text_embedder._embed_text_batch(["Hello world"]))
+    result = run(mock_text_embedder._embed_text("Hello world"))
 
-    assert len(result) == 1
-    assert isinstance(result[0], np.ndarray)
-    assert result[0].shape == (256,)
-    assert np.all(result[0] == 0)  # Should be zero array
+    assert isinstance(result, np.ndarray)
+    assert result.shape == (256,)
+    assert np.all(result == 0)  # Should be zero array
 
 
 def test_embed_text_failure_without_zero_on_failure(mock_client):
@@ -331,20 +328,19 @@ def test_embed_text_batch_method(mock_text_embedder, mock_client):
         assert embedding[0] == float(i)
 
 
-def test_embed_text_batch_single_item(mock_text_embedder, mock_client):
-    """Test the _embed_text_batch method with a single item."""
+def test_embed_text_single_method(mock_text_embedder, mock_client):
+    """Test the _embed_text method directly."""
     mock_response = Mock(spec=CreateEmbeddingResponse)
     mock_embedding = Mock(spec=OpenAIEmbedding)
     mock_embedding.embedding = np.array([0.1, 0.2, 0.3] * 512, dtype=np.float32)
     mock_response.data = [mock_embedding]
     mock_client.embeddings.create.return_value = mock_response
 
-    result = run(mock_text_embedder._embed_text_batch(["Hello world"]))
+    result = run(mock_text_embedder._embed_text("Hello world"))
 
-    assert len(result) == 1
-    assert isinstance(result[0], np.ndarray)
-    assert result[0].shape == (1536,)
-    assert result[0].dtype == np.float32
+    assert isinstance(result, np.ndarray)
+    assert result.shape == (1536,)
+    assert result.dtype == np.float32
 
 
 def test_different_model_dimensions(mock_client):
@@ -468,37 +464,24 @@ def test_embed_text_records_usage_metrics(mock_text_embedder, mock_client):
 
 
 def test_embed_text_batch_rate_limit_fallback(mock_text_embedder, mock_client):
-    """Test that _embed_text_batch raises RateLimitError when rate limited without Retry-After header."""
+    """Test that _embed_text_batch falls back to individual calls when rate limited."""
     mock_client.embeddings.create.side_effect = RateLimitError(
         message="Rate limit exceeded",
-        response=Mock(status_code=429),
+        response=Mock(),
         body=None,
     )
 
-    with pytest.raises(RateLimitError, match="Rate limit exceeded"):
-        run(mock_text_embedder._embed_text_batch(["text1", "text2", "text3"]))
+    with patch.object(
+        mock_text_embedder,
+        "_embed_text",
+        new=AsyncMock(return_value=np.array([0.1, 0.2, 0.3] * 512, dtype=np.float32)),
+    ) as mock_embed_text:
+        result = run(mock_text_embedder._embed_text_batch(["text1", "text2", "text3"]))
 
-
-@pytest.mark.parametrize("status", [429, 503])
-def test_embed_text_batch_retry_after(mock_text_embedder, mock_client, status):
-    """If the API supplies Retry-After, surface it as RetryAfterError."""
-    # Use the appropriate error type based on status code
-    if status == 429:
-        error_class = RateLimitError
-        message = "Rate limit exceeded"
-    elif status == 503:
-        error_class = InternalServerError
-        message = "Internal server error"
-    else:
-        raise ValueError(f"Unsupported status code: {status}")
-
-    mock_client.embeddings.create.side_effect = error_class(
-        message=message,
-        response=Mock(status_code=status, headers={"Retry-After": "2"}),
-        body=None,
-    )
-
-    with pytest.raises(RetryAfterError) as raised:
-        run(mock_text_embedder._embed_text_batch(["text1", "text2"]))
-
-    assert raised.value.retry_after == 2
+        # should have called _embed_text for each input
+        assert mock_embed_text.await_count == 3
+        assert len(result) == 3
+        for embedding in result:
+            assert isinstance(embedding, np.ndarray)
+            assert embedding.shape == (1536,)
+            assert embedding.dtype == np.float32

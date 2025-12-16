@@ -12,7 +12,7 @@ from daft.ai.google.typing import GoogleProviderOptions
 from daft.ai.metrics import record_token_metrics
 from daft.ai.protocols import Prompter, PrompterDescriptor
 from daft.ai.provider import ProviderImportError
-from daft.ai.utils import merge_provider_and_api_options, raise_retry_after
+from daft.ai.utils import merge_provider_and_api_options, raise_retry_after_from_response
 from daft.dependencies import np
 from daft.file import File
 
@@ -200,7 +200,7 @@ class GooglePrompter(Prompter):
             )
         except genai_errors.APIError as exc:
             if exc.code == 429 or exc.code == 503:
-                raise_retry_after(exc.response, exc)
+                raise_retry_after_from_response(exc.response, exc)
             raise
         except Exception:
             raise

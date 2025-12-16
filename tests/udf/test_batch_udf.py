@@ -278,8 +278,8 @@ def test_batch_retry_after_delay_respected(max_retries, is_async):
     # but retry behavior is verified through timing and result correctness
     if get_tests_daft_runner_name() != "ray":
         assert state.call_count == max_retries + 1
-    # Should honor the retry-after delay
-    assert elapsed >= retry_delay * max_retries
+    # Should honor the retry-after delay (accounting for ±25% jitter, so minimum is 75% of base delay)
+    assert elapsed >= retry_delay * 0.7 * max_retries
 
 
 @pytest.mark.parametrize("is_async", [False, True])
@@ -326,8 +326,8 @@ def test_batch_retry_after_max_retries_exceeded(is_async):
     if get_tests_daft_runner_name() != "ray":
         # Should have attempted initial call + max_retries retries
         assert state.call_count == 2
-    # Should have respected at least one retry delay
-    assert elapsed >= retry_delay
+    # Should have respected at least one retry delay (accounting for ±25% jitter, so minimum is 75% of base delay)
+    assert elapsed >= retry_delay * 0.7
 
 
 def test_batch_max_retries():

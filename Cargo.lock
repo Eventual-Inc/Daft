@@ -2781,6 +2781,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry_sdk",
  "pyo3",
+ "rand 0.8.5",
  "rstest",
  "serde",
  "tokio",

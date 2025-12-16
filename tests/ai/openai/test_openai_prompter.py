@@ -8,7 +8,6 @@ import pytest
 
 pytest.importorskip("openai")
 
-from openai import InternalServerError, RateLimitError
 from openai.types.completion_usage import CompletionUsage
 from openai.types.responses import ResponseUsage
 from pydantic import BaseModel
@@ -16,7 +15,6 @@ from pydantic import BaseModel
 from daft.ai.openai.protocols.prompter import OpenAIPrompter, OpenAIPrompterDescriptor
 from daft.ai.openai.provider import OpenAIProvider
 from daft.ai.protocols import Prompter
-from daft.ai.utils import RetryAfterError
 
 
 def run_async(coro):
@@ -410,46 +408,6 @@ def test_openai_prompter_multiple_messages():
         assert result1 == "First response"
         assert result2 == "Second response"
         assert mock_client.responses.create.call_count == 2
-
-    run_async(_test())
-
-
-@pytest.mark.parametrize("use_chat_completions", [False, True])
-@pytest.mark.parametrize("status", [429, 503])
-def test_openai_prompter_raises_retry_after(use_chat_completions: bool, status: int):
-    """Ensure retry-after hints propagate as RetryAfterError for HTTP errors."""
-
-    async def _test():
-        prompter = create_prompter(use_chat_completions=use_chat_completions)
-        mock_client = AsyncMock()
-
-        # Use the appropriate error type based on status code
-        if status == 429:
-            error_class = RateLimitError
-        elif status == 503:
-            error_class = InternalServerError
-        else:
-            raise ValueError(f"Unsupported status code: {status}")
-
-        retry_after_value = "3.0" if use_chat_completions else "4.0"
-        error = error_class(
-            message=f"HTTP {status}",
-            response=Mock(headers={"Retry-After": retry_after_value}, status_code=status),
-            body=None,
-        )
-
-        if use_chat_completions:
-            mock_client.chat.completions.create.side_effect = error
-            prompter.llm = mock_client
-        else:
-            mock_client.responses.create.side_effect = error
-            prompter.llm = mock_client
-
-        with pytest.raises(RetryAfterError) as excinfo:
-            await prompter.prompt(("Hello",))
-
-        # Should parse the Retry-After header
-        assert excinfo.value.retry_after in (3.0, 4.0)
 
     run_async(_test())
 

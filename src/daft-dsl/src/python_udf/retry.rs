@@ -2,6 +2,8 @@
 use common_error::{DaftError, DaftResult};
 #[cfg(feature = "python")]
 use pyo3::{Python, import_exception, types::PyAnyMethods};
+#[cfg(feature = "python")]
+use rand::Rng;
 
 #[cfg(feature = "python")]
 import_exception!(daft.ai.utils, RetryAfterError);
@@ -92,7 +94,11 @@ where
             }
         }
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+        // Add ±25% jitter to avoid thundering herd problems
+        // This results in a delay between 75% and 125% of the base delay
+        let jitter = rand::thread_rng().gen_range(0..=(delay_ms / 2));
+        let jittered_delay_ms = (delay_ms * 3 / 4) + jitter;
+        tokio::time::sleep(tokio::time::Duration::from_millis(jittered_delay_ms)).await;
         delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
         result = func().await;
     }
@@ -135,11 +141,16 @@ where
             }
         }
 
+        // Add ±25% jitter to avoid thundering herd problems
+        // This results in a delay between 75% and 125% of the base delay
+        let jitter = rand::thread_rng().gen_range(0..=(delay_ms / 2));
+        let jittered_delay_ms = (delay_ms * 3 / 4) + jitter;
+
         // Release GIL during sleep if Python instance is provided
         if let Some(py) = py {
-            py.detach(|| thread::sleep(Duration::from_millis(delay_ms)));
+            py.detach(|| thread::sleep(Duration::from_millis(jittered_delay_ms)));
         } else {
-            thread::sleep(Duration::from_millis(delay_ms));
+            thread::sleep(Duration::from_millis(jittered_delay_ms));
         }
         delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
         result = func();
