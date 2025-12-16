@@ -8,19 +8,19 @@ Created test PR #5820 with Windows CI enabled to verify the fix.
 
 ## Changes Made (on `test-windows-ci-fix` branch)
 
-1. **`src/daft-io/src/lib.rs`**: Added `strip_leading_slash_before_drive()` function (`#[cfg(windows)]` only)
-   - Strips leading `/` from paths like `/C:/Users/...` → `C:/Users/...`
-   - Docstring explains the purpose; no redundant inline comments needed
+1. **`src/daft-io/src/lib.rs`**: Added `strip_file_uri_to_path()` helper function
+   - Strips `file://` prefix and handles Windows drive letter paths in one call
+   - Internal `strip_leading_slash_before_drive()` is now private
 
-2. **`src/daft-io/src/local.rs`**: Added `#[cfg(windows)]` guarded calls at 4 locations where `file://` prefix is stripped
+2. **`src/daft-io/src/local.rs`**: Uses `strip_file_uri_to_path()` at 4 call sites (simplified, no `#[cfg(windows)]` needed at call sites)
 
-3. **`src/daft-scan/src/scan_task_iters/split_jsonl/mod.rs`**: Added `#[cfg(windows)]` guarded calls at 2 locations in `local_path_from_uri()`
+3. **`src/daft-scan/src/scan_task_iters/split_jsonl/mod.rs`**: Uses `strip_file_uri_to_path()` in `local_path_from_uri()`
 
 4. **`.github/workflows/pr-test-suite.yml`**: Temporarily removed Windows exclusion (**must revert before merging**)
 
 ## Current Status
 - Waiting for Windows CI on PR #5820 to pass
-- Latest commit: `0c19dbd2d` (removed redundant comments)
+- Latest commit: `f58607d51` (consolidated into strip_file_uri_to_path helper)
 
 ## Next Steps
 

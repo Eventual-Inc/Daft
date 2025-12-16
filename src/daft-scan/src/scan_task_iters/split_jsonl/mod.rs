@@ -184,25 +184,9 @@ fn local_path_from_uri(path: &str) -> Option<PathBuf> {
         }
 
         // Fallback for when Url::to_file_path() fails
-        if let Some(stripped) = strip_file_uri_to_path(clean_path) {
-            return Some(PathBuf::from(decode_path_component(stripped)));
-        }
-
-        // Edge case: path without file:// prefix but still a file path
-        #[cfg(windows)]
-        let clean_path = {
-            let bytes = clean_path.as_bytes();
-            if bytes.len() >= 3
-                && bytes[0] == b'/'
-                && bytes[1].is_ascii_alphabetic()
-                && bytes[2] == b':'
-            {
-                &clean_path[1..]
-            } else {
-                clean_path
-            }
-        };
-        return Some(PathBuf::from(decode_path_component(clean_path)));
+        // parse_url always returns file paths with "file://" prefix, so this should always succeed
+        let stripped = strip_file_uri_to_path(clean_path)?;
+        return Some(PathBuf::from(decode_path_component(stripped)));
     }
 
     if !path.contains("://") {

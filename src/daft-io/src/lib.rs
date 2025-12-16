@@ -442,6 +442,7 @@ impl std::fmt::Display for SourceType {
 }
 
 /// On Windows, strips the leading "/" from paths like "/C:/Users/..." to produce "C:/Users/...".
+///
 /// This is needed because stripping "file://" from "file:///C:/path" leaves "/C:/path".
 /// Returns the path unchanged if it doesn't match the pattern "/X:" where X is a drive letter.
 #[cfg(windows)]
