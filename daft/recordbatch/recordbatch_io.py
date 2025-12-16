@@ -496,7 +496,9 @@ def write_lance(
 
     arrow_table = mp.to_arrow()
 
-    fragments = lance.fragment.write_fragments(arrow_table, base_path, mode, storage_options=storage_options, **kwargs)
+    fragments = lance.fragment.write_fragments(
+        arrow_table, base_path, mode, storage_options=storage_options, **(kwargs or {})
+    )
 
     mp = MicroPartition.from_pydict({"fragments": fragments})
 
