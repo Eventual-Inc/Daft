@@ -189,10 +189,10 @@ impl ObjectSource for LocalSource {
     }
 
     async fn get_size(&self, uri: &str, _io_stats: Option<IOStatsRef>) -> super::Result<usize> {
-        let Some(path) = strip_file_uri_to_path(uri) else {
+        let Some(uri) = strip_file_uri_to_path(uri) else {
             return Err(Error::InvalidFilePath { path: uri.into() }.into());
         };
-        let meta = tokio::fs::metadata(path)
+        let meta = tokio::fs::metadata(uri)
             .await
             .context(UnableToFetchFileMetadataSnafu {
                 path: uri.to_string(),
@@ -269,52 +269,52 @@ impl ObjectSource for LocalSource {
         }
 
         const LOCAL_PROTOCOL: &str = "file://";
-        let path = if uri.is_empty() {
+        let uri = if uri.is_empty() {
             std::borrow::Cow::Owned(
                 std::env::current_dir()
                     .with_context(|_| UnableToFetchDirectoryEntriesSnafu { path: uri })?
                     .to_string_lossy()
                     .to_string(),
             )
-        } else if let Some(path) = strip_file_uri_to_path(uri) {
-            std::borrow::Cow::Borrowed(path)
+        } else if let Some(uri) = strip_file_uri_to_path(uri) {
+            std::borrow::Cow::Borrowed(uri)
         } else {
             return Err(Error::InvalidFilePath { path: uri.into() }.into());
         };
 
-        let meta = tokio::fs::metadata(path.as_ref()).await.with_context(|_| {
+        let meta = tokio::fs::metadata(uri.as_ref()).await.with_context(|_| {
             UnableToFetchFileMetadataSnafu {
-                path: path.to_string(),
+                path: uri.to_string(),
             }
         })?;
         if meta.file_type().is_file() {
             // Provided uri points to a file, so only return that file.
             return Ok(futures::stream::iter([Ok(FileMetadata {
-                filepath: format!("{LOCAL_PROTOCOL}{path}"),
+                filepath: format!("{LOCAL_PROTOCOL}{uri}"),
                 size: Some(meta.len()),
                 filetype: object_io::FileType::File,
             })])
             .boxed());
         }
-        let dir_entries = tokio::fs::read_dir(path.as_ref()).await.with_context(|_| {
+        let dir_entries = tokio::fs::read_dir(uri.as_ref()).await.with_context(|_| {
             UnableToFetchDirectoryEntriesSnafu {
-                path: path.to_string(),
+                path: uri.to_string(),
             }
         })?;
         let dir_stream = tokio_stream::wrappers::ReadDirStream::new(dir_entries);
-        let path = Arc::new(path.to_string());
+        let uri = Arc::new(uri.to_string());
         let file_meta_stream = dir_stream.then(move |entry| {
-            let path = path.clone();
+            let uri = uri.clone();
             async move {
                 let entry = entry.with_context(|_| UnableToFetchDirectoryEntriesSnafu {
-                    path: path.to_string(),
+                    path: uri.to_string(),
                 })?;
 
                 // NOTE: `entry` returned by ReadDirStream can potentially mix posix-delimiters ("/") and windows-delimiter ("\")
                 // on Windows machines if we naively use `entry.path()`. Manually concatting the entries to the uri is safer.
-                let entry_path = format!(
+                let path = format!(
                     "{}{PATH_SEGMENT_DELIMITER}{}",
-                    path.trim_end_matches(PATH_SEGMENT_DELIMITER),
+                    uri.trim_end_matches(PATH_SEGMENT_DELIMITER),
                     entry.file_name().to_string_lossy()
                 );
 
@@ -327,7 +327,7 @@ impl ObjectSource for LocalSource {
                     filepath: format!(
                         "{}{}{}",
                         LOCAL_PROTOCOL,
-                        entry_path,
+                        path,
                         if meta.is_dir() {
                             PATH_SEGMENT_DELIMITER
                         } else {
