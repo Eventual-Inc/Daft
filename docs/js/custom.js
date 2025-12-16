@@ -78,8 +78,10 @@ window.copyPageMarkdown = async function(btn) {
   if (!encodedMd) return;
 
   try {
-    // Decode base64 markdown
-    const markdown = atob(encodedMd);
+    // Decode base64 markdown (with proper UTF-8 handling)
+    const binary = atob(encodedMd);
+    const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+    const markdown = new TextDecoder('utf-8').decode(bytes);
     await navigator.clipboard.writeText(markdown);
 
     // Success feedback
