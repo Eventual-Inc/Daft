@@ -72,66 +72,28 @@ document.querySelectorAll(".highlight button").forEach((btn) => {
   });
 });
 
-// Copy page as markdown functionality
-(function() {
-  function createCopyPageButton() {
-    const sourceEl = document.getElementById("page-markdown-source");
-    if (!sourceEl) return; // Only show button on pages with embedded markdown
+// Copy page as markdown functionality (button is injected at build time)
+window.copyPageMarkdown = async function(btn) {
+  const sourceEl = document.getElementById("page-markdown-source");
+  if (!sourceEl) return;
 
-    // Don't create duplicate buttons
-    if (document.querySelector(".copy-page-btn")) return;
+  try {
+    const markdown = JSON.parse(sourceEl.textContent);
+    await navigator.clipboard.writeText(markdown);
 
-    const btn = document.createElement("button");
-    btn.className = "copy-page-btn";
-    btn.title = "Copy page as Markdown";
-    btn.innerHTML = `
-      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16">
-        <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
-      </svg>
-      <span class="copy-page-btn-text">Copy page</span>
-    `;
+    // Success feedback
+    btn.querySelector(".copy-page-btn-text").textContent = "Copied";
+    btn.classList.add("copied");
 
-    btn.addEventListener("click", async function() {
-      try {
-        const markdown = JSON.parse(sourceEl.textContent);
-        await navigator.clipboard.writeText(markdown);
-
-        // Success feedback
-        btn.querySelector(".copy-page-btn-text").textContent = "Copied";
-        btn.classList.add("copied");
-
-        setTimeout(() => {
-          btn.querySelector(".copy-page-btn-text").textContent = "Copy page";
-          btn.classList.remove("copied");
-        }, 2000);
-      } catch (error) {
-        console.error("Failed to copy markdown:", error);
-        btn.querySelector(".copy-page-btn-text").textContent = "Error";
-        setTimeout(() => {
-          btn.querySelector(".copy-page-btn-text").textContent = "Copy page";
-        }, 2000);
-      }
-    });
-
-    // Insert button next to the h1 title
-    const h1 = document.querySelector(".md-content h1");
-    if (h1) {
-      // Create wrapper to position button inline with h1
-      const wrapper = document.createElement("div");
-      wrapper.className = "copy-page-header";
-      h1.parentNode.insertBefore(wrapper, h1);
-      wrapper.appendChild(h1);
-      wrapper.appendChild(btn);
-    }
+    setTimeout(() => {
+      btn.querySelector(".copy-page-btn-text").textContent = "Copy page";
+      btn.classList.remove("copied");
+    }, 2000);
+  } catch (error) {
+    console.error("Failed to copy markdown:", error);
+    btn.querySelector(".copy-page-btn-text").textContent = "Error";
+    setTimeout(() => {
+      btn.querySelector(".copy-page-btn-text").textContent = "Copy page";
+    }, 2000);
   }
-
-  // Initialize on page load and on navigation (for MkDocs instant loading)
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", createCopyPageButton);
-  } else {
-    createCopyPageButton();
-  }
-
-  // Re-run on instant navigation
-  document.addEventListener("DOMContentSwitch", createCopyPageButton);
-})();
+}
