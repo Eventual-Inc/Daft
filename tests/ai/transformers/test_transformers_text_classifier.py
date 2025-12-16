@@ -89,7 +89,7 @@ def test_instantiate():
     descriptor = TransformersTextClassifierDescriptor(
         provider_name="transformers",
         model_name="facebook/bart-large-mnli",
-        model_options={},
+        classify_options={},
     )
 
     classifier = descriptor.instantiate()

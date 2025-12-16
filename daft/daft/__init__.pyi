@@ -297,11 +297,13 @@ class JsonSourceConfig:
 
     buffer_size: int | None
     chunk_size: int | None
+    skip_empty_files: bool
 
     def __init__(
         self,
         buffer_size: int | None = None,
         chunk_size: int | None = None,
+        skip_empty_files: bool = False,
     ): ...
 
 class WarcSourceConfig:
@@ -1400,6 +1402,9 @@ class PyExpr:
     ###
 
     def as_py(self) -> Any: ...
+    def is_column(self) -> bool: ...
+    def is_literal(self) -> bool: ...
+    def column_name(self) -> builtins.str | None: ...
 
     ###
     # Helper methods required by optimizer:
@@ -1440,6 +1445,7 @@ def udf(
     batch_size: int | None,
     concurrency: int | None,
     use_process: bool | None,
+    ray_options: dict[str, Any] | None = None,
 ) -> PyExpr: ...
 def row_wise_udf(
     name: str,

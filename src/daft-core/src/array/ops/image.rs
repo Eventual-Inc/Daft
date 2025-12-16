@@ -84,7 +84,7 @@ impl AsImageObj for FixedShapeImageArray {
                     .flat_child
                     .downcast::<UInt8Array>()
                     .unwrap()
-                    .as_arrow();
+                    .as_arrow2();
                 let num_channels = mode.num_channels();
                 let size = height * width * u32::from(num_channels);
                 let start = idx * size as usize;

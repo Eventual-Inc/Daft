@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use common_error::{DaftError, DaftResult};
 use daft_arrow::array::Array;
 use daft_core::{
@@ -112,7 +113,7 @@ fn split_impl(arr: &Utf8Array, pattern: &Utf8Array, regex: bool) -> DaftResult<L
         ));
     }
 
-    let arr_arrow = arr.as_arrow();
+    let arr_arrow = arr.as_arrow2();
     let buffer_len = arr_arrow.values().len();
     // This will overallocate by pattern_len * N_i, where N_i is the number of pattern occurrences in the ith string in arr_iter.
     let mut splits = daft_arrow::array::MutableUtf8Array::with_capacity(buffer_len);
@@ -134,7 +135,7 @@ fn split_impl(arr: &Utf8Array, pattern: &Utf8Array, regex: bool) -> DaftResult<L
         }
         (true, _) => {
             let regex_iter = pattern
-                .as_arrow()
+                .as_arrow2()
                 .iter()
                 .map(|pat| pat.map(regex::Regex::new));
             split_array_on_regex(

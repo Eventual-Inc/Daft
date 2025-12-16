@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::{
     collections::{BTreeMap, HashMap},
     sync::Arc,
@@ -96,7 +97,8 @@ impl Default for ParquetSchemaInferenceOptions {
 impl From<ParquetSchemaInferenceOptions> for SchemaInferenceOptions {
     fn from(value: ParquetSchemaInferenceOptions) -> Self {
         Self {
-            int96_coerce_to_timeunit: value.coerce_int96_timestamp_unit.to_arrow(),
+            #[allow(deprecated, reason = "arrow2 migration")]
+            int96_coerce_to_timeunit: value.coerce_int96_timestamp_unit.to_arrow2(),
             string_encoding: value.string_encoding,
         }
     }
@@ -1073,7 +1075,7 @@ pub fn read_parquet_statistics(
 
     let path_array: &Utf8Array = uris.downcast()?;
     use daft_core::array::ops::as_arrow::AsArrow;
-    let values = path_array.as_arrow();
+    let values = path_array.as_arrow2();
 
     let handles_iter = values.iter().map(|uri| {
         let owned_string = uri.map(std::string::ToString::to_string);

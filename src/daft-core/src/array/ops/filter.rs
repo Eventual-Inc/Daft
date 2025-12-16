@@ -13,7 +13,7 @@ where
     T: DaftArrowBackedType,
 {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let result = daft_arrow::compute::filter::filter(self.data(), mask.as_arrow())?;
+        let result = daft_arrow::compute::filter::filter(self.data(), mask.as_arrow2())?;
         Self::try_from((self.field.clone(), result))
     }
 }

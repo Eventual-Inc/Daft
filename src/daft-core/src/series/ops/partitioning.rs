@@ -97,7 +97,7 @@ impl Series {
         assert!(n >= 0, "Expected n to be non negative, got {n}");
         let hashes = self.murmur3_32()?;
         let buckets = hashes
-            .as_arrow()
+            .as_arrow2()
             .into_iter()
             .map(|v| v.map(|v| (v & i32::MAX) % n));
         let array = Box::new(daft_arrow::array::Int32Array::from_iter(buckets));

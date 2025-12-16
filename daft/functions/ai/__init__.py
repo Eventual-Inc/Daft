@@ -2,9 +2,17 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import sys
+from typing import TYPE_CHECKING, Any, Literal, overload
+
+
+if sys.version_info < (3, 11):
+    from typing_extensions import Unpack
+else:
+    from typing import Unpack
 
 from daft.ai.provider import Provider, ProviderType, load_provider
+from daft.functions.ai._colab_compat import IS_COLAB, clean_pydantic_model
 from daft.datatype import DataType
 from daft.expressions import Expression
 from daft.session import current_provider, current_session
@@ -12,7 +20,16 @@ from daft.udf import cls as daft_cls, method
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
-    from daft.ai.typing import Label
+    from daft.ai.typing import (
+        ClassifyImageOptions,
+        ClassifyTextOptions,
+        EmbedImageOptions,
+        EmbedTextOptions,
+        Label,
+        PromptOptions,
+    )
+    from daft.ai.openai.provider import OpenAIProvider
+    from daft.ai.openai.protocols.prompter import OpenAIPromptOptions
 
 __all__ = [
     "classify_image",
@@ -58,7 +75,7 @@ def embed_text(
     provider: str | Provider | None = None,
     model: str | None = None,
     dimensions: int | None = None,
-    **options: str,
+    **options: Unpack[EmbedTextOptions],
 ) -> Expression:
     """Returns an expression that embeds text using the specified embedding model and provider.
 
@@ -108,7 +125,6 @@ def embed_text(
         (Showing first 3 of 3 rows)
     """
     from daft.ai._expressions import _TextEmbedderExpression
-    from daft.ai.protocols import TextEmbedder
 
     # load a TextEmbedderDescriptor from the resolved provider
     text_embedder = _resolve_provider(provider, "transformers").get_text_embedder(model, dimensions, **options)
@@ -121,7 +137,9 @@ def embed_text(
 
     # Decorate the selected call method with @daft.method to specify return_dtype
     _TextEmbedderExpression.__call__ = method.batch(  # type: ignore[method-assign]
-        method=call_impl, return_dtype=text_embedder.get_dimensions().as_dtype()
+        method=call_impl,
+        return_dtype=text_embedder.get_dimensions().as_dtype(),
+        batch_size=udf_options.batch_size,
     )
     wrapped_cls = daft_cls(
         _TextEmbedderExpression,
@@ -140,7 +158,7 @@ def embed_image(
     *,
     provider: str | Provider | None = None,
     model: str | None = None,
-    **options: str,
+    **options: Unpack[EmbedImageOptions],
 ) -> Expression:
     """Returns an expression that embeds images using the specified image model and provider.
 
@@ -194,7 +212,6 @@ def embed_image(
         (Showing first 4 of 4 rows)
     """
     from daft.ai._expressions import _ImageEmbedderExpression
-    from daft.ai.protocols import ImageEmbedder
 
     image_embedder = _resolve_provider(provider, "transformers").get_image_embedder(model, **options)
 
@@ -229,7 +246,7 @@ def classify_text(
     *,
     provider: str | Provider | None = None,
     model: str | None = None,
-    **options: str,
+    **options: Unpack[ClassifyTextOptions],
 ) -> Expression:
     """Returns an expression that classifies text using the specified model and provider.
 
@@ -242,7 +259,7 @@ def classify_text(
             The provider to use for the embedding model.
             By default this will use 'transformers' provider
         model (str | None):
-            The embedding model to use. Can be a model instance or a model name.
+            The classifier model to use. Can be a model instance or a model name.
             By default this will use `zero-shot-classification` model
         **options:
             Any additional options to pass for the model.
@@ -278,7 +295,6 @@ def classify_text(
         (Showing first 1 of 1 rows)
     """
     from daft.ai._expressions import _TextClassificationExpression
-    from daft.ai.protocols import TextClassifier
 
     text_classifier = _resolve_provider(provider, "transformers").get_text_classifier(model, **options)
 
@@ -308,7 +324,7 @@ def classify_image(
     *,
     provider: str | Provider | None = None,
     model: str | None = None,
-    **options: str,
+    **options: Unpack[ClassifyImageOptions],
 ) -> Expression:
     """Returns an expression that classifies images using the specified model and provider.
 
@@ -321,7 +337,7 @@ def classify_image(
             The provider to use for the embedding model.
             By default this will use 'transformers' provider
         model (str | None):
-            The embedding model to use. Can be a model instance or a model name.
+            The classifier model to use. Can be a model instance or a model name.
             By default this will use `zero-shot-classification` model
         **options:
             Any additional options to pass for the model.
@@ -373,7 +389,6 @@ def classify_image(
         (Showing first 4 of 4 rows)
     """
     from daft.ai._expressions import _ImageClassificationExpression
-    from daft.ai.protocols import ImageClassifier
 
     image_classifier = _resolve_provider(provider, "transformers").get_image_classifier(model, **options)
 
@@ -402,6 +417,30 @@ def classify_image(
 ##
 
 
+@overload
+def prompt(
+    messages: list[Expression] | Expression,
+    return_format: BaseModel | None = None,
+    *,
+    system_message: str | None = None,
+    provider: Literal["openai"] | OpenAIProvider,
+    model: str | None = None,
+    **options: Unpack[OpenAIPromptOptions],
+) -> Expression: ...
+
+
+@overload
+def prompt(
+    messages: list[Expression] | Expression,
+    return_format: BaseModel | None = None,
+    *,
+    system_message: str | None = None,
+    provider: str | None,
+    model: str | None = None,
+    **options: Unpack[PromptOptions],
+) -> Expression: ...
+
+
 def prompt(
     messages: list[Expression] | Expression,
     return_format: BaseModel | None = None,
@@ -409,7 +448,7 @@ def prompt(
     system_message: str | None = None,
     provider: str | Provider | None = None,
     model: str | None = None,
-    **options: str,
+    **options: Any,
 ) -> Expression:
     """Returns an expression that prompts a large language model using the specified model and provider.
 
@@ -426,10 +465,6 @@ def prompt(
 
     Returns:
         Expression (String Expression): An expression representing the prompt result.
-
-    Note:
-        For OpenAI providers, you can pass `use_chat_completions=True` as an option to use the Chat Completions API
-        instead of the new Responses API.
 
     Examples:
         Basic Usage:
@@ -527,14 +562,18 @@ def prompt(
     """
     from daft.ai._expressions import _PrompterExpression
 
-    # Add return_format to options for the provider
-    if return_format is not None:
-        options = {**options, "return_format": return_format}
-    if system_message is not None:
-        options = {**options, "system_message": system_message}
+    # Clean the Pydantic model to avoid Colab serialization issues
+    if return_format is not None and IS_COLAB:
+        return_format = clean_pydantic_model(return_format)
 
     # Load a PrompterDescriptor from the resolved provider
-    prompter_descriptor = _resolve_provider(provider, "openai").get_prompter(model, **options)
+    # Pass return_format and system_message as explicit named arguments
+    prompter_descriptor = _resolve_provider(provider, "openai").get_prompter(
+        model,
+        return_format=return_format,
+        system_message=system_message,
+        **options,
+    )
 
     # Check if this is a vLLM provider - if so, use PyExpr.vllm directly
     from daft.ai.vllm.protocols.prompter import VLLMPrefixCachingPrompterDescriptor
@@ -549,19 +588,20 @@ def prompt(
         if isinstance(messages, list):
             raise ValueError("vLLM provider does not support multiple messages")
 
+        vllm_options = prompter_descriptor.get_options()
         return Expression._from_pyexpr(
             messages._expr.vllm(
                 prompter_descriptor.model_name,
-                prompter_descriptor.concurrency,
-                prompter_descriptor.gpus_per_actor,
-                prompter_descriptor.do_prefix_routing,
-                prompter_descriptor.max_buffer_size,
-                prompter_descriptor.min_bucket_size,
-                prompter_descriptor.prefix_match_threshold,
-                prompter_descriptor.load_balance_threshold,
-                prompter_descriptor.batch_size,
-                prompter_descriptor.engine_args,
-                prompter_descriptor.generate_args,
+                vllm_options["concurrency"],
+                vllm_options["gpus_per_actor"],
+                vllm_options["do_prefix_routing"],
+                vllm_options["max_buffer_size"],
+                vllm_options["min_bucket_size"],
+                vllm_options["prefix_match_threshold"],
+                vllm_options["load_balance_threshold"],
+                vllm_options["batch_size"],
+                vllm_options["engine_args"],
+                vllm_options["generate_args"],
             )
         )
 

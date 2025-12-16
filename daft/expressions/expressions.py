@@ -148,6 +148,15 @@ class Expression:
         expr._expr = pyexpr
         return expr
 
+    def is_column(self) -> bool:
+        return self._expr.is_column()
+
+    def is_literal(self) -> bool:
+        return self._expr.is_literal()
+
+    def column_name(self) -> builtins.str | None:
+        return self._expr.column_name()
+
     @staticmethod
     def _to_expression(obj: object) -> Expression:
         if isinstance(obj, Expression):
@@ -177,6 +186,7 @@ class Expression:
         batch_size: int | None,
         concurrency: int | None,
         use_process: bool | None,
+        ray_options: dict[builtins.str, builtins.str] | None = None,
     ) -> Expression:
         return Expression._from_pyexpr(
             _udf(
@@ -190,6 +200,7 @@ class Expression:
                 batch_size,
                 concurrency,
                 use_process,
+                ray_options,
             )
         )
 

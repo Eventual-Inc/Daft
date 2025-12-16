@@ -106,8 +106,8 @@ mod tests {
             sparse_tensor_array.cast(&fixed_shape_sparse_tensor_dtype)?;
         let roundtrip_tensor = fixed_shape_sparse_tensor_array.cast(&dtype)?;
 
-        let round_trip_tensor_arrow = roundtrip_tensor.to_arrow();
-        let sparse_tensor_array_arrow = sparse_tensor_array.to_arrow();
+        let round_trip_tensor_arrow = roundtrip_tensor.to_arrow2();
+        let sparse_tensor_array_arrow = sparse_tensor_array.to_arrow2();
 
         assert_eq!(round_trip_tensor_arrow, sparse_tensor_array_arrow);
 

@@ -147,10 +147,12 @@ impl RecordBatch {
         Ok(Self::new_unchecked(schema, columns?, num_rows))
     }
 
+    #[deprecated(note = "arrow2 migration")]
+    #[allow(deprecated, reason = "arrow2 migration")]
     pub fn get_inner_arrow_arrays(
         &self,
     ) -> impl Iterator<Item = Box<dyn daft_arrow::array::Array>> + '_ {
-        self.columns.iter().map(|s| s.to_arrow())
+        self.columns.iter().map(|s| s.to_arrow2())
     }
 
     /// Create a new [`RecordBatch`] and validate against `num_rows`
@@ -1544,17 +1546,21 @@ impl RecordBatch {
         )
     }
 
+    #[deprecated(note = "arrow2 migration")]
+    #[allow(deprecated, reason = "arrow2 migration")]
     pub fn to_chunk(&self) -> Chunk<Box<dyn Array>> {
-        Chunk::new(self.columns.iter().map(|s| s.to_arrow()).collect())
+        Chunk::new(self.columns.iter().map(|s| s.to_arrow2()).collect())
     }
 
     pub fn to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
         let buffer = Vec::with_capacity(self.size_bytes());
-        let schema = self.schema.to_arrow()?;
+        #[allow(deprecated, reason = "arrow2 migration")]
+        let schema = self.schema.to_arrow2()?;
         let options = daft_arrow::io::ipc::write::WriteOptions { compression: None };
         let mut writer = daft_arrow::io::ipc::write::StreamWriter::new(buffer, options);
         writer.start(&schema, None)?;
 
+        #[allow(deprecated, reason = "arrow2 migration")]
         let chunk = self.to_chunk();
         writer.write(&chunk, None)?;
 
@@ -1590,12 +1596,13 @@ impl RecordBatch {
 impl TryFrom<RecordBatch> for arrow_array::RecordBatch {
     type Error = DaftError;
 
+    #[allow(deprecated, reason = "arrow2 migration")]
     fn try_from(record_batch: RecordBatch) -> DaftResult<Self> {
-        let schema = Arc::new(record_batch.schema.to_arrow()?.into());
+        let schema = Arc::new(record_batch.schema.to_arrow2()?.into());
         let columns = record_batch
             .columns
             .iter()
-            .map(|s| s.to_arrow().into())
+            .map(|s| s.to_arrow2().into())
             .collect::<Vec<_>>();
         Self::try_new(schema, columns).map_err(DaftError::ArrowRsError)
     }

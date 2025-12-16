@@ -1,11 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_arrow::{
-    array::MutableFixedSizeBinaryArray,
-    buffer::Buffer,
-    types::Index,
-};
+use daft_arrow::{array::MutableFixedSizeBinaryArray, buffer::Buffer, types::Index};
 
 use super::{as_arrow::AsArrow, from_arrow::FromArrow};
 #[cfg(feature = "python")]
@@ -21,7 +17,7 @@ where
     T: DaftNumericType,
 {
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        let result = daft_arrow::compute::take::take(self.data(), idx.as_arrow())?;
+        let result = daft_arrow::compute::take::take(self.data(), idx.as_arrow2())?;
         Self::try_from((self.field.clone(), result))
     }
 }
@@ -31,7 +27,7 @@ macro_rules! impl_dataarray_take {
     ($ArrayT:ty) => {
         impl $ArrayT {
             pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-                let result = daft_arrow::compute::take::take(self.data(), idx.as_arrow())?;
+                let result = daft_arrow::compute::take::take(self.data(), idx.as_arrow2())?;
                 Self::try_from((self.field.clone(), result))
             }
         }
@@ -81,7 +77,7 @@ where
 
 impl FixedSizeBinaryArray {
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
         let size = arrow_array.size();
         let mut mutable = MutableFixedSizeBinaryArray::with_capacity(size, idx.len());
 
@@ -159,16 +155,16 @@ impl PythonArray {
 
 impl FixedSizeListArray {
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        let arrow_arr = self.to_arrow();
-        let result = daft_arrow::compute::take::take(arrow_arr.as_ref(), idx.as_arrow())?;
+        let arrow_arr = self.to_arrow2();
+        let result = daft_arrow::compute::take::take(arrow_arr.as_ref(), idx.as_arrow2())?;
         Self::from_arrow(self.field().clone().into(), result)
     }
 }
 
 impl ListArray {
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        let arrow_arr = self.to_arrow();
-        let result = daft_arrow::compute::take::take(arrow_arr.as_ref(), idx.as_arrow())?;
+        let arrow_arr = self.to_arrow2();
+        let result = daft_arrow::compute::take::take(arrow_arr.as_ref(), idx.as_arrow2())?;
         Self::from_arrow(self.field().clone().into(), result)
     }
 }

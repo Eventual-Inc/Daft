@@ -63,10 +63,6 @@ PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumer
             # NOTE: Duration ends up being written as int64
             DataType.int64(),
         ),
-        # TODO: Verify that these types throw an error when we write dataframes with them
-        # ([[1, 2, 3], [], None], pa.large_list(pa.int64()), DataType.list(DataType.int64())),
-        # ([[1, 2, 3], [4, 5, 6], None], pa.list_(pa.int64(), list_size=3), DataType.fixed_size_list(DataType.int64(), 3)),
-        # ([{"bar": 1}, {"bar": None}, None], pa.struct({"bar": pa.int64()}), DataType.struct({"bar": DataType.int64()})),
     ],
 )
 def test_roundtrip_simple_arrow_types(tmp_path, data, pa_type, expected_dtype, expected_inferred_dtype):
@@ -77,3 +73,31 @@ def test_roundtrip_simple_arrow_types(tmp_path, data, pa_type, expected_dtype, e
     assert before.schema()["foo"].dtype == expected_dtype
     assert after.schema()["foo"].dtype == expected_inferred_dtype
     assert before.to_arrow() == after.with_column("foo", after["foo"].cast(expected_dtype)).to_arrow()
+
+
+@pytest.mark.skipif(
+    not PYARROW_GE_11_0_0,
+    reason="PyArrow writing to CSV does not have good coverage for all types for versions <11.0.0",
+)
+@pytest.mark.parametrize(
+    ["data", "pa_type"],
+    [
+        ([[1, 2, 3], [], None], pa.large_list(pa.int64())),
+        ([[1, 2, 3], [4, 5, 6], None], pa.list_(pa.int64(), list_size=3)),
+        ([{"bar": 1}, {"bar": None}, None], pa.struct([("bar", pa.int64())])),
+        ([{"k": 1}, {"k": None}, None], pa.map_(pa.large_string(), pa.int64())),
+        ([b"\xff\xfe", b"\x80\x81", None], pa.large_binary()),
+    ],
+)
+def test_write_csv_unsupported_types_raise(tmp_path, data, pa_type):
+    with pytest.raises(Exception):
+        before = daft.from_arrow(pa.table({"id": pa.array(range(3)), "foo": pa.array(data, type=pa_type)}))
+        before.write_csv(str(tmp_path))
+
+
+def test_write_and_read_empty_csv(tmp_path_factory):
+    empty_csv_files = str(tmp_path_factory.mktemp("empty_csv"))
+    df = daft.from_pydict({"a": []})
+    df.write_csv(empty_csv_files, write_mode="overwrite")
+
+    assert daft.read_csv(empty_csv_files).to_pydict() == {"a": []}

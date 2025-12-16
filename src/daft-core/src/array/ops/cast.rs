@@ -162,7 +162,7 @@ impl DateArray {
             DataType::Date => Ok(self.clone().into_series()),
             DataType::Utf8 => {
                 let date_array = self
-                    .as_arrow()
+                    .as_arrow2()
                     .clone()
                     .to(daft_arrow::datatypes::DataType::Date32);
                 // TODO: we should move this into our own strftime kernel
@@ -207,8 +207,7 @@ impl DateArray {
 /// Example: 2021-01-01 00:00:00
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
 pub fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
-    let chrono_ts =
-        daft_arrow::temporal_conversions::timestamp_to_naive_datetime(val, unit.to_arrow());
+    let chrono_ts = daft_schema::time_unit::timestamp_to_naive_datetime(val, *unit);
     let format_str = "%Y-%m-%d %H:%M:%S%.f";
     chrono_ts.format(format_str).to_string()
 }
@@ -217,8 +216,7 @@ pub fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
 /// Example: 2021-01-01 00:00:00 -07:00
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
 pub fn timestamp_to_str_offset(val: i64, unit: &TimeUnit, offset: &chrono::FixedOffset) -> String {
-    let chrono_ts =
-        daft_arrow::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow(), offset);
+    let chrono_ts = daft_schema::time_unit::timestamp_to_datetime(val, *unit, offset);
     let format_str = "%Y-%m-%d %H:%M:%S%.f %:z";
     chrono_ts.format(format_str).to_string()
 }
@@ -227,8 +225,7 @@ pub fn timestamp_to_str_offset(val: i64, unit: &TimeUnit, offset: &chrono::Fixed
 /// Example: 2021-01-01 00:00:00 PST
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
 pub fn timestamp_to_str_tz(val: i64, unit: &TimeUnit, tz: &chrono_tz::Tz) -> String {
-    let chrono_ts =
-        daft_arrow::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow(), tz);
+    let chrono_ts = daft_schema::time_unit::timestamp_to_datetime(val, *unit, tz);
     let format_str = "%Y-%m-%d %H:%M:%S%.f %Z";
     chrono_ts.format(format_str).to_string()
 }
@@ -271,24 +268,21 @@ impl TimestampArray {
 
                 let str_array: daft_arrow::array::Utf8Array<i64> = timezone.as_ref().map_or_else(
                     || {
-                        self.as_arrow()
+                        self.as_arrow2()
                             .iter()
                             .map(|val| val.map(|val| timestamp_to_str_naive(*val, unit)))
                             .collect()
                     },
                     |timezone| {
-                        if let Ok(offset) = daft_arrow::temporal_conversions::parse_offset(timezone)
-                        {
-                            self.as_arrow()
+                        if let Ok(offset) = daft_schema::time_unit::parse_offset(timezone) {
+                            self.as_arrow2()
                                 .iter()
                                 .map(|val| {
                                     val.map(|val| timestamp_to_str_offset(*val, unit, &offset))
                                 })
                                 .collect()
-                        } else if let Ok(tz) =
-                            daft_arrow::temporal_conversions::parse_offset_tz(timezone)
-                        {
-                            self.as_arrow()
+                        } else if let Ok(tz) = daft_schema::time_unit::parse_offset_tz(timezone) {
+                            self.as_arrow2()
                                 .iter()
                                 .map(|val| val.map(|val| timestamp_to_str_tz(*val, unit, &tz)))
                                 .collect()
@@ -338,7 +332,7 @@ impl TimeArray {
                 Ok(TimeArray::new(Field::new(self.name(), dtype.clone()), physical).into_series())
             }
             DataType::Utf8 => {
-                let time_array = self.as_arrow();
+                let time_array = self.as_arrow2();
                 let time_str: daft_arrow::array::Utf8Array<i64> = time_array
                     .iter()
                     .map(|val| {
@@ -587,7 +581,7 @@ where
 //                 // Use the arrow2 Decimal128 casting logic.
 //                 let target_arrow_type = dtype.to_arrow()?;
 //                 let arrow_decimal_array = self
-//                     .as_arrow()
+//                     .as_arrow2()
 //                     .clone()
 //                     .to(self.data_type().to_arrow()?)
 //                     .to_boxed();
@@ -784,7 +778,7 @@ impl TensorArray {
                     s.is_none_or(|s| {
                         s.u64()
                             .unwrap()
-                            .as_arrow()
+                            .as_arrow2()
                             .iter()
                             .eq(shape.iter().map(Some))
                     })
@@ -936,7 +930,7 @@ impl TensorArray {
                             return false;
                         }
                         if let Some(mode) = mode
-                            && s.u64().unwrap().as_arrow().get(s.len() - 1).unwrap()
+                            && s.u64().unwrap().as_arrow2().get(s.len() - 1).unwrap()
                                 != mode.num_channels() as u64
                         {
                             // If type-level mode is defined, each image must have the implied number of channels.
@@ -968,7 +962,7 @@ impl TensorArray {
                         continue;
                     }
                     let shape = sa.get(i).unwrap();
-                    let shape = shape.u64().unwrap().as_arrow();
+                    let shape = shape.u64().unwrap().as_arrow2();
                     assert!(shape.validity().is_none_or(|v| v.iter().all(|b| b)));
                     let mut shape = shape.values().to_vec();
                     if shape.len() == 2 {
@@ -1062,11 +1056,11 @@ fn cast_sparse_to_dense_for_inner_dtype(
                     continue;
                 }
                 let index_series: Series = non_zero_indices_array.get(i).unwrap().cast(&DataType::UInt64)?;
-                let index_array = index_series.u64().unwrap().as_arrow();
+                let index_array = index_series.u64().unwrap().as_arrow2();
                 let values_series: Series = non_zero_values_array.get(i).unwrap();
                 let values_array = values_series.downcast::<<$T as DaftDataType>::ArrayType>()
                 .unwrap()
-                .as_arrow();
+                .as_arrow2();
                 match use_offset_indices {
                     true => {
                         let mut old_idx: u64 = 0;
@@ -1113,7 +1107,7 @@ impl SparseTensorArray {
                     .into_iter()
                     .map(|shape| {
                         shape.map_or(0, |shape| {
-                            let shape = shape.u64().unwrap().as_arrow();
+                            let shape = shape.u64().unwrap().as_arrow2();
                             shape.values().clone().into_iter().product::<u64>() as usize
                         })
                     })
@@ -1161,7 +1155,7 @@ impl SparseTensorArray {
                     s.is_none_or(|s| {
                         s.u64()
                             .unwrap()
-                            .as_arrow()
+                            .as_arrow2()
                             .iter()
                             .eq(shape.iter().map(Some))
                     })
@@ -1593,7 +1587,11 @@ impl ListArray {
                             if start > invalid_ptr {
                                 let null_count = (start - invalid_ptr) * size;
                                 if null_count > 0 {
-                                    parts.push(Series::full_null("item", child_dtype.as_ref(), null_count));
+                                    parts.push(Series::full_null(
+                                        "item",
+                                        child_dtype.as_ref(),
+                                        null_count,
+                                    ));
                                 }
                             }
 
@@ -1608,7 +1606,11 @@ impl ListArray {
                         if invalid_ptr < self.len() {
                             let null_count = (self.len() - invalid_ptr) * size;
                             if null_count > 0 {
-                                parts.push(Series::full_null("item", child_dtype.as_ref(), null_count));
+                                parts.push(Series::full_null(
+                                    "item",
+                                    child_dtype.as_ref(),
+                                    null_count,
+                                ));
                             }
                         }
 

@@ -1,16 +1,13 @@
 use common_error::{DaftError, DaftResult};
 
-use crate::{
-    series::{Series, array_impl::IntoSeries},
-    with_match_comparable_daft_types,
-};
+use crate::{prelude::UInt64Array, series::Series, with_match_comparable_daft_types};
 
 impl Series {
-    pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
+    pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
         let series = self.as_physical()?;
         with_match_comparable_daft_types!(series.data_type(), |$T| {
             let downcasted = series.downcast::<<$T as DaftDataType>::ArrayType>()?;
-            Ok(downcasted.argsort(descending, nulls_first)?.into_series())
+            downcasted.argsort(descending, nulls_first)
         })
     }
 
@@ -18,7 +15,7 @@ impl Series {
         sort_keys: &[Self],
         descending: &[bool],
         nulls_first: &[bool],
-    ) -> DaftResult<Self> {
+    ) -> DaftResult<UInt64Array> {
         if sort_keys.len() != descending.len() {
             return Err(DaftError::ValueError(format!(
                 "sort_keys and descending length must match, got {} vs {}",
@@ -37,8 +34,7 @@ impl Series {
         let first = sort_keys.first().unwrap().as_physical()?;
         with_match_comparable_daft_types!(first.data_type(), |$T| {
             let downcasted = first.downcast::<<$T as DaftDataType>::ArrayType>()?;
-            let result = downcasted.argsort_multikey(&sort_keys[1..], descending, nulls_first)?;
-            Ok(result.into_series())
+            downcasted.argsort_multikey(&sort_keys[1..], descending, nulls_first)
         })
     }
 

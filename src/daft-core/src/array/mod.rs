@@ -8,7 +8,9 @@ mod list_array;
 pub mod ops;
 mod serdes;
 mod struct_array;
+
 use daft_arrow::{
+    array::to_data,
     buffer::{NullBuffer, wrap_null_buffer},
     compute::cast::utf8_to_large_utf8,
 };
@@ -173,6 +175,10 @@ impl<T> DataArray<T> {
         self.data.as_ref()
     }
 
+    pub fn to_data(&self) -> arrow::array::ArrayData {
+        to_data(self.data())
+    }
+
     pub fn name(&self) -> &str {
         self.field.name.as_str()
     }
@@ -183,15 +189,6 @@ impl<T> DataArray<T> {
 
     pub fn field(&self) -> &Field {
         &self.field
-    }
-}
-
-impl<T> DataArray<T>
-where
-    T: DaftPhysicalType + 'static,
-{
-    pub fn as_any(&self) -> &dyn std::any::Any {
-        self
     }
 }
 

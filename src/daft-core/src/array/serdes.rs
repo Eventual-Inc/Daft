@@ -58,7 +58,7 @@ impl<T: DaftPrimitiveType> serde::Serialize for DataArray<T> {
     {
         let mut s = serializer.serialize_map(Some(2))?;
         s.serialize_entry("field", self.field())?;
-        s.serialize_entry("values", &IterSer::new(self.as_arrow().iter()))?;
+        s.serialize_entry("values", &IterSer::new(self.as_arrow2().iter()))?;
         s.end()
     }
 }
@@ -70,7 +70,7 @@ impl serde::Serialize for Utf8Array {
     {
         let mut s = serializer.serialize_map(Some(2))?;
         s.serialize_entry("field", self.field())?;
-        s.serialize_entry("values", &IterSer::new(self.as_arrow().iter()))?;
+        s.serialize_entry("values", &IterSer::new(self.as_arrow2().iter()))?;
         s.end()
     }
 }
@@ -82,7 +82,7 @@ impl serde::Serialize for BooleanArray {
     {
         let mut s = serializer.serialize_map(Some(2))?;
         s.serialize_entry("field", self.field())?;
-        s.serialize_entry("values", &IterSer::new(self.as_arrow().iter()))?;
+        s.serialize_entry("values", &IterSer::new(self.as_arrow2().iter()))?;
         s.end()
     }
 }
@@ -94,7 +94,7 @@ impl serde::Serialize for BinaryArray {
     {
         let mut s = serializer.serialize_map(Some(2))?;
         s.serialize_entry("field", self.field())?;
-        s.serialize_entry("values", &IterSer::new(self.as_arrow().iter()))?;
+        s.serialize_entry("values", &IterSer::new(self.as_arrow2().iter()))?;
         s.end()
     }
 }
@@ -106,7 +106,7 @@ impl serde::Serialize for FixedSizeBinaryArray {
     {
         let mut s = serializer.serialize_map(Some(2))?;
         s.serialize_entry("field", self.field())?;
-        s.serialize_entry("values", &IterSer::new(self.as_arrow().iter()))?;
+        s.serialize_entry("values", &IterSer::new(self.as_arrow2().iter()))?;
         s.end()
     }
 }
@@ -253,7 +253,7 @@ impl serde::Serialize for IntervalArray {
     {
         let mut s = serializer.serialize_map(Some(2))?;
         s.serialize_entry("field", self.field())?;
-        s.serialize_entry("values", &IterSer::new(self.as_arrow().iter()))?;
+        s.serialize_entry("values", &IterSer::new(self.as_arrow2().iter()))?;
         s.end()
     }
 }

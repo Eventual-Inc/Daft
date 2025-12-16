@@ -88,7 +88,10 @@ impl FixedSizeListArray {
         let field = first_array.field.clone();
 
         let arrow_arrs_owned = arrays.iter().map(|arr| arr.to_arrow()).collect::<Vec<_>>();
-        let arrow_arrs = arrow_arrs_owned.iter().map(|arr| arr.as_ref()).collect::<Vec<_>>();
+        let arrow_arrs = arrow_arrs_owned
+            .iter()
+            .map(|arr| arr.as_ref())
+            .collect::<Vec<_>>();
         let concatenated = daft_arrow::compute::concatenate::concatenate(arrow_arrs.as_slice())?;
         Self::from_arrow(field, concatenated)
     }
@@ -147,11 +150,12 @@ impl FixedSizeListArray {
         ))
     }
 
-    pub fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
+    #[deprecated(note = "arrow2 migration")]
+    pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
         let arrow_dtype = self.data_type().to_arrow().unwrap();
         Box::new(daft_arrow::array::FixedSizeListArray::new(
             arrow_dtype,
-            self.flat_child.to_arrow(),
+            self.flat_child.to_arrow2(),
             daft_arrow::buffer::wrap_null_buffer(self.validity.clone()),
         ))
     }

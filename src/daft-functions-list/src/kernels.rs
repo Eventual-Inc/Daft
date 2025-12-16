@@ -1,12 +1,11 @@
+#![allow(deprecated, reason = "arrow2 migration")]
+
 use std::{iter::repeat_n, sync::Arc};
 
 use common_error::DaftResult;
 use daft_arrow::offset::{Offsets, OffsetsBuffer};
 use daft_core::{
-    array::{
-        FixedSizeListArray, ListArray, StructArray,
-        ops::arrow::comparison::build_is_equal,
-    },
+    array::{FixedSizeListArray, ListArray, StructArray, ops::arrow::comparison::build_is_equal},
     datatypes::{try_mean_aggregation_supertype, try_sum_supertype},
     kernels::search_sorted::build_is_valid,
     prelude::{
@@ -74,7 +73,7 @@ impl ListArrayExtension for ListArray {
 
         let hashes = self.flat_child.hash(None)?;
 
-        let flat_child = self.flat_child.to_arrow();
+        let flat_child = self.flat_child.to_arrow2();
         let flat_child = &*flat_child;
 
         let is_equal = build_is_equal(
@@ -145,12 +144,12 @@ impl ListArrayExtension for ListArray {
 
         let keys = Series::try_from_field_and_arrow_array(
             Field::new("key", key_type.clone()),
-            keys.to_arrow(),
+            keys.to_arrow2(),
         )?;
 
         let values = Series::try_from_field_and_arrow_array(
             Field::new("value", count_type.clone()),
-            values.to_arrow(),
+            values.to_arrow2(),
         )?;
 
         let struct_type = DataType::Struct(vec![
@@ -254,7 +253,8 @@ impl ListArrayExtension for ListArray {
             Box::new(repeat_n(delimiter.get(0), self.len()))
         } else {
             assert_eq!(delimiter.len(), self.len());
-            Box::new(delimiter.as_arrow().iter())
+
+            Box::new(delimiter.as_arrow2().iter())
         };
         let self_iter = (0..self.len()).map(|i| self.get(i));
 
@@ -330,8 +330,8 @@ impl ListArrayExtension for ListArray {
                 )?
             }
         } else {
-            let desc_iter = desc.as_arrow().values_iter();
-            let nulls_first_iter = nulls_first.as_arrow().values_iter();
+            let desc_iter = desc.as_arrow2().values_iter();
+            let nulls_first_iter = nulls_first.as_arrow2().values_iter();
             if let Some(validity) = self.validity() {
                 list_sort_helper(
                     &self.flat_child,
@@ -405,7 +405,7 @@ impl ListArrayExtension for ListArray {
             let mut all_true = true;
             let bool_slice = slice.bool()?;
             let bool_validity = bool_slice.validity();
-            let bool_data = bool_slice.as_arrow().values();
+            let bool_data = bool_slice.as_arrow2().values();
             for j in 0..bool_slice.len() {
                 if bool_validity.is_none_or(|v| v.is_valid(j)) && !bool_data.get_bit(j) {
                     all_true = false;
@@ -462,7 +462,7 @@ impl ListArrayExtension for ListArray {
             let mut any_true = false;
             let bool_slice = slice.bool()?;
             let bool_validity = bool_slice.validity();
-            let bool_data = bool_slice.as_arrow().values();
+            let bool_data = bool_slice.as_arrow2().values();
             for j in 0..bool_slice.len() {
                 if bool_validity.is_none_or(|v| v.is_valid(j)) && bool_data.get_bit(j) {
                     any_true = true;
@@ -562,7 +562,7 @@ impl ListArrayExtension for FixedSizeListArray {
             Box::new(repeat_n(delimiter.get(0), self.len()))
         } else {
             assert_eq!(delimiter.len(), self.len());
-            Box::new(delimiter.as_arrow().iter())
+            Box::new(delimiter.as_arrow2().iter())
         };
         let self_iter = (0..self.len()).map(|i| self.get(i));
 
@@ -603,7 +603,10 @@ impl ListArrayExtension for FixedSizeListArray {
                     ((i + 1) * list_size) as i64 + child_idx
                 };
 
-                segments.push(self.flat_child.slice(idx_offset as usize, idx_offset as usize + 1)?);
+                segments.push(
+                    self.flat_child
+                        .slice(idx_offset as usize, idx_offset as usize + 1)?,
+                );
             } else {
                 // uses the default value in the case where the row is invalid or the index is out of bounds
                 segments.push(default.slice(0, 1)?);
@@ -671,8 +674,8 @@ impl ListArrayExtension for FixedSizeListArray {
                 )?
             }
         } else {
-            let desc_iter = desc.as_arrow().values_iter();
-            let nulls_first_iter = nulls_first.as_arrow().values_iter();
+            let desc_iter = desc.as_arrow2().values_iter();
+            let nulls_first_iter = nulls_first.as_arrow2().values_iter();
             if let Some(validity) = self.validity() {
                 list_sort_helper_fixed_size(
                     &self.flat_child,
@@ -740,7 +743,7 @@ fn create_iter<'a>(arr: &'a Int64Array, len: usize) -> Box<dyn Iterator<Item = i
         1 => Box::new(repeat_n(arr.get(0).unwrap(), len)),
         arr_len => {
             assert_eq!(arr_len, len);
-            Box::new(arr.as_arrow().iter().map(|x| *x.unwrap()))
+            Box::new(arr.as_arrow2().iter().map(|x| *x.unwrap()))
         }
     }
 }
@@ -904,7 +907,10 @@ fn get_children_helper(
         };
 
         if is_valid && idx_offset >= start && idx_offset < end {
-            segments.push(arr.flat_child.slice(idx_offset as usize, idx_offset as usize + 1)?);
+            segments.push(
+                arr.flat_child
+                    .slice(idx_offset as usize, idx_offset as usize + 1)?,
+            );
         } else {
             // uses the default value in the case where the row is invalid or the index is out of bounds
             segments.push(default.slice(0, 1)?);
