@@ -67,6 +67,15 @@ impl Session {
         }
     }
 
+    /// Returns true if two `Session` instances share the same underlying state.
+    ///
+    /// This is useful when we need to determine whether two session handles are
+    /// simply different views over the same logical session (i.e. they point to
+    /// the same `Arc<RwLock<SessionState>>`).
+    pub fn shares_state(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.state, &other.state)
+    }
+
     /// Creates a new empty session
     pub fn empty() -> Self {
         let state = SessionState {
