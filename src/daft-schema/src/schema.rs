@@ -26,10 +26,10 @@ pub struct Schema {
     #[educe(PartialEq(ignore))]
     name_to_indices: HashMap<String, Vec<usize>>,
 
-    /// Set of column names that are provenance columns (hidden from users)
+    /// Set of column indices that are provenance columns (hidden from users)
     #[educe(Hash(ignore))]
     #[educe(PartialEq(ignore))]
-    provenance_columns: HashSet<String>,
+    provenance_columns: HashSet<usize>,
 }
 
 impl std::fmt::Display for Schema {
@@ -47,7 +47,7 @@ impl Schema {
         Self::new_with_provenance(fields, HashSet::new())
     }
 
-    pub fn new_with_provenance<I, F>(fields: I, provenance_columns: HashSet<String>) -> Self
+    pub fn new_with_provenance<I, F>(fields: I, provenance_columns: HashSet<usize>) -> Self
     where
         I: IntoIterator<Item = F>,
         F: Into<Field>,
@@ -67,6 +67,54 @@ impl Schema {
                 }
 
                 field
+            })
+            .collect();
+
+        Self {
+            fields: field_vec,
+            name_to_indices,
+            provenance_columns,
+        }
+    }
+
+    /// Create a new schema with provenance columns specified by name (converts to indices)
+    pub fn new_with_provenance_by_name<I, F>(
+        fields: I,
+        provenance_column_names: HashSet<String>,
+    ) -> Self
+    where
+        I: IntoIterator<Item = F>,
+        F: Into<Field>,
+    {
+        let mut name_to_indices = HashMap::<String, Vec<usize>>::new();
+
+        let field_vec: Vec<Field> = fields
+            .into_iter()
+            .enumerate()
+            .map(|(idx, field)| {
+                let field = field.into();
+
+                if let Some(indices) = name_to_indices.get_mut(&field.name) {
+                    indices.push(idx);
+                } else {
+                    name_to_indices.insert(field.name.clone(), vec![idx]);
+                }
+
+                field
+            })
+            .collect();
+
+        // Convert provenance column names to indices
+        let provenance_columns: HashSet<usize> = provenance_column_names
+            .iter()
+            .filter_map(|name| {
+                name_to_indices.get(name).and_then(|indices| {
+                    if indices.len() == 1 {
+                        Some(indices[0])
+                    } else {
+                        None // Ambiguous or not found
+                    }
+                })
             })
             .collect();
 
@@ -105,19 +153,39 @@ impl Schema {
         self.fields.is_empty()
     }
 
-    /// Check if a column name is a provenance column
-    pub fn is_provenance_column(&self, column_name: &str) -> bool {
-        self.provenance_columns.contains(column_name)
+    /// Check if a column index is a provenance column
+    pub fn is_provenance_column(&self, column_index: usize) -> bool {
+        self.provenance_columns.contains(&column_index)
     }
 
-    /// Get the set of provenance column names
-    pub fn provenance_columns(&self) -> &HashSet<String> {
+    /// Check if a column name is a provenance column
+    pub fn is_provenance_column_by_name(&self, column_name: &str) -> bool {
+        if let Some(indices) = self.name_to_indices.get(column_name) {
+            indices
+                .iter()
+                .any(|idx| self.provenance_columns.contains(idx))
+        } else {
+            false
+        }
+    }
+
+    /// Get the set of provenance column indices
+    pub fn provenance_columns(&self) -> &HashSet<usize> {
         &self.provenance_columns
+    }
+
+    /// Get the first provenance column index, if any
+    pub fn get_provenance_column_index(&self) -> Option<usize> {
+        self.provenance_columns.iter().next().copied()
     }
 
     /// Get the first provenance column name, if any
     pub fn get_provenance_column_name(&self) -> Option<&str> {
-        self.provenance_columns.iter().next().map(|s| s.as_str())
+        self.provenance_columns
+            .iter()
+            .next()
+            .and_then(|idx| self.fields.get(*idx))
+            .map(|field| field.name.as_str())
     }
 
     pub fn get_fields_with_name(&self, name: &str) -> Vec<(usize, &Field)> {
@@ -145,14 +213,21 @@ impl Schema {
     #[deprecated(since = "TBD", note = "name-referenced columns")]
     pub fn exclude<S: AsRef<str>>(&self, names: &[S]) -> Self {
         let names = names.iter().map(|s| s.as_ref()).collect::<HashSet<&str>>();
-        let fields = self
-            .fields
-            .iter()
-            .filter(|field| !names.contains(field.name.as_str()))
-            .cloned()
-            .collect::<Vec<_>>();
+        let mut new_fields = Vec::new();
+        let mut new_provenance_columns = HashSet::new();
 
-        Self::new_with_provenance(fields, self.provenance_columns.clone())
+        for (old_idx, field) in self.fields.iter().enumerate() {
+            if !names.contains(field.name.as_str()) {
+                let new_idx = new_fields.len();
+                new_fields.push(field.clone());
+                // Remap provenance index if this field was provenance
+                if self.provenance_columns.contains(&old_idx) {
+                    new_provenance_columns.insert(new_idx);
+                }
+            }
+        }
+
+        Self::new_with_provenance(new_fields, new_provenance_columns)
     }
 
     #[deprecated(since = "TBD", note = "name-referenced columns")]
@@ -216,8 +291,13 @@ impl Schema {
         }
 
         // Union provenance columns from both schemas
+        // Need to remap other's provenance indices to new positions
+        let self_field_count = self.fields.len();
         let mut provenance_columns = self.provenance_columns.clone();
-        provenance_columns.extend(other.provenance_columns.iter().cloned());
+        // Remap other's provenance indices to account for self's fields
+        for other_idx in &other.provenance_columns {
+            provenance_columns.insert(self_field_count + other_idx);
+        }
 
         Ok(Self::new_with_provenance(
             self.fields.iter().chain(other.fields.iter()).cloned(),
@@ -244,8 +324,35 @@ impl Schema {
         }).cloned().map(Ok)).collect::<DaftResult<Vec<_>>>()?;
 
         // Union provenance columns from both schemas
-        let mut provenance_columns = self.provenance_columns.clone();
-        provenance_columns.extend(other.provenance_columns.iter().cloned());
+        // For non_distinct_union, we need to map provenance indices correctly
+        // Since fields are matched by name, provenance indices need to be remapped
+        let mut provenance_columns = HashSet::new();
+
+        // Map self's provenance columns
+        for (new_idx, field) in fields.iter().enumerate() {
+            let fields_with_name = self.get_fields_with_name(&field.name);
+            if let Some((old_idx, _)) = fields_with_name.first() {
+                if fields_with_name.len() == 1 && self.provenance_columns.contains(old_idx) {
+                    provenance_columns.insert(new_idx);
+                }
+            }
+        }
+
+        // Map other's provenance columns for fields not in self
+        let self_field_names: HashSet<&str> = self.fields.iter().map(|f| f.name.as_str()).collect();
+        for field in &other.fields {
+            if !self_field_names.contains(field.name.as_str()) {
+                let fields_with_name = other.get_fields_with_name(&field.name);
+                if let Some((old_idx, _)) = fields_with_name.first() {
+                    if fields_with_name.len() == 1 && other.provenance_columns.contains(old_idx) {
+                        // Find the new index for this field
+                        if let Some(new_idx) = fields.iter().position(|f| f.name == field.name) {
+                            provenance_columns.insert(new_idx);
+                        }
+                    }
+                }
+            }
+        }
 
         Ok(Self::new_with_provenance(fields, provenance_columns))
     }
@@ -271,6 +378,7 @@ impl Schema {
             })
             .collect::<DaftResult<_>>()?;
 
+        // Provenance columns are preserved as-is since field positions don't change
         Ok(Self {
             fields: applied_fields,
             name_to_indices: self.name_to_indices.clone(),
@@ -371,11 +479,24 @@ impl Schema {
         if self.is_empty() {
             return "EMPTY".to_string();
         }
-        self.fields
+        let so_far = self
+            .fields
             .iter()
             .map(|field| format!("{}#{:?}", field.name, field.dtype))
             .collect::<Vec<String>>()
-            .join(", ")
+            .join(", ");
+
+        if !self.provenance_columns.is_empty() {
+            let prov_names: Vec<String> = self
+                .provenance_columns
+                .iter()
+                .filter_map(|idx| self.fields.get(*idx))
+                .map(|field| format!("\"{}\"", field.name))
+                .collect();
+            format!("{} (provenance: {})", so_far, prov_names.join(", "))
+        } else {
+            so_far
+        }
     }
 
     pub fn truncated_table_string(&self) -> String {

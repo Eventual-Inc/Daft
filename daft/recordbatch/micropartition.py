@@ -111,8 +111,8 @@ class MicroPartition:
         return MicroPartition._from_record_batches([table])
 
     @staticmethod
-    def from_pydict(data: Mapping[str, Any]) -> MicroPartition:
-        table = RecordBatch.from_pydict(data)
+    def from_pydict(data: Mapping[str, Any], provenance_columns: set[str] | None = None) -> MicroPartition:
+        table = RecordBatch.from_pydict(data, provenance_columns=provenance_columns)
         return MicroPartition._from_record_batches([table])
 
     @staticmethod

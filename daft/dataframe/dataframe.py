@@ -681,24 +681,14 @@ class DataFrame:
 
         # Add provenance column if provenance_fn is provided
         has_provenance = provenance_fn is not None
+        provenance_columns = None
         if has_provenance:
             provenance_values = [provenance_fn(row) for row in data]
             data_dict["__provenance"] = provenance_values
+            provenance_columns = {"__provenance"}
 
-        # Create MicroPartition from the data
-        data_micropartition = MicroPartition.from_pydict(data_dict)
-
-        # If provenance was added, mark it in the schema
-        if has_provenance:
-            current_schema = data_micropartition.schema()
-            # Mark __provenance as a provenance column in the schema
-            # mark_provenance_column returns a _PySchema (Rust struct), which we can use directly
-            new_schema_py = current_schema._schema.mark_provenance_column("__provenance")
-            # Cast MicroPartition to the new schema with provenance marked
-            # Use the Rust method directly since cast_to_schema expects _PySchema
-            data_micropartition = MicroPartition._from_pymicropartition(
-                data_micropartition._micropartition.cast_to_schema(new_schema_py)
-            )
+        # Create MicroPartition from the data with provenance columns
+        data_micropartition = MicroPartition.from_pydict(data_dict, provenance_columns=provenance_columns)
 
         return cls._from_micropartitions(data_micropartition)
 

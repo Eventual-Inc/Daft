@@ -582,7 +582,6 @@ impl RecordBatch {
             .collect::<Vec<_>>();
 
         let new_schema = Schema::new(indices.iter().map(|i| self.schema[*i].clone()));
-
         Self::new_unchecked(new_schema, new_columns, self.num_rows)
     }
 
@@ -998,13 +997,8 @@ impl RecordBatch {
                 // Extract provenance column from RecordBatch if it exists
                 let provenance_series = self
                     .schema
-                    .get_provenance_column_name()
-                    .and_then(|prov_name| {
-                        self.schema
-                            .get_fields_with_name(prov_name)
-                            .first()
-                            .map(|(idx, _)| self.get_column(*idx).clone())
-                    });
+                    .get_provenance_column_index()
+                    .map(|idx| self.get_column(idx).clone());
                 if python_udf.is_async() {
                     python_udf.call_async(args.as_slice(), metrics).await
                 } else {
@@ -1256,13 +1250,8 @@ impl RecordBatch {
                 // Extract provenance column from RecordBatch if it exists
                 let provenance_series = self
                     .schema
-                    .get_provenance_column_name()
-                    .and_then(|prov_name| {
-                        self.schema
-                            .get_fields_with_name(prov_name)
-                            .first()
-                            .map(|(idx, _)| self.get_column(*idx).clone())
-                    });
+                    .get_provenance_column_index()
+                    .map(|idx| self.get_column(idx).clone());
                 #[cfg(feature = "python")]
                 {
                     if python_udf.is_async() {

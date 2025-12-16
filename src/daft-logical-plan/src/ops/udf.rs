@@ -52,19 +52,22 @@ impl UDFProject {
             .collect::<DaftResult<Vec<_>>>()?;
 
         // Preserve provenance columns from input schema that are in the projected fields
-        let provenance_columns = input_schema.provenance_columns();
-        let projected_provenance_columns: HashSet<String> = provenance_columns
-            .iter()
-            .filter(|prov_col_name| {
-                // Check if this provenance column is in the projected fields
-                fields.iter().any(|field| field.name == **prov_col_name)
-            })
-            .cloned()
-            .collect();
+        let provenance_indices = input_schema.provenance_columns();
+        let mut projected_provenance_indices = HashSet::new();
+
+        for (new_idx, field) in fields.iter().enumerate() {
+            // Check if this field was a provenance column in the input
+            let fields_with_name = input_schema.get_fields_with_name(&field.name);
+            if let Some((old_idx, _)) = fields_with_name.first() {
+                if fields_with_name.len() == 1 && provenance_indices.contains(old_idx) {
+                    projected_provenance_indices.insert(new_idx);
+                }
+            }
+        }
 
         let projected_schema = Arc::new(Schema::new_with_provenance(
             fields,
-            projected_provenance_columns,
+            projected_provenance_indices,
         ));
 
         Ok(Self {
@@ -131,6 +134,20 @@ impl UDFProject {
 
         if let StatsState::Materialized(stats) = &self.stats_state {
             res.push(format!("Stats = {}", stats));
+        }
+
+        if !self.projected_schema.provenance_columns().is_empty() {
+            res.push(format!(
+                "Projected schema = {}",
+                self.projected_schema.short_string()
+            ));
+        }
+
+        if !self.input.schema().provenance_columns().is_empty() {
+            res.push(format!(
+                "Input schema = {}",
+                self.input.schema().short_string()
+            ));
         }
 
         res

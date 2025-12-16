@@ -1,0 +1,36 @@
+{
+    "configurations": [
+        {
+            "name": "Debug Rust/Python",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/tools/attach_debugger.py",
+            "args": [
+                "${file}"
+            ],
+            "env": {
+                "DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317"
+            }
+            "console": "internalConsole",
+            "serverReadyAction": {
+                "pattern": "pID = ([0-9]+)",
+                "action": "startDebugging",
+                "name": "Rust LLDB"
+            }
+        },
+        {
+            "name": "Rust LLDB",
+            "pid": "56105",
+            "type": "lldb",
+            "request": "attach",
+            "program": "${command:python.interpreterPath}",
+            "stopOnEntry": false,
+            "sourceLanguages": [
+                "rust"
+            ],
+            "presentation": {
+                "hidden": true
+            }
+        }
+    ]
+}

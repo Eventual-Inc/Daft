@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use common_metrics::python::PyOperatorMetrics;
@@ -468,7 +468,11 @@ impl PyRecordBatch {
     }
 
     #[staticmethod]
-    pub fn from_pylist_series(dict: IndexMap<String, PySeries>) -> PyResult<Self> {
+    #[pyo3(signature = (dict, provenance_columns = None))]
+    pub fn from_pylist_series(
+        dict: IndexMap<String, PySeries>,
+        provenance_columns: Option<HashSet<String>>,
+    ) -> PyResult<Self> {
         let mut fields: Vec<Field> = Vec::new();
         let mut columns: Vec<Series> = Vec::new();
         fields.reserve(dict.len());
@@ -495,8 +499,11 @@ impl PyRecordBatch {
             }
         }
 
+        let provenance_columns = provenance_columns.unwrap_or_default();
+        let schema = Schema::new_with_provenance_by_name(fields, provenance_columns);
+
         Ok(Self {
-            record_batch: RecordBatch::new_with_broadcast(Schema::new(fields), columns, num_rows)?,
+            record_batch: RecordBatch::new_with_broadcast(schema, columns, num_rows)?,
         })
     }
     #[staticmethod]

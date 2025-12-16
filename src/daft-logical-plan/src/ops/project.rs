@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
@@ -55,12 +55,13 @@ impl Project {
 
         // Check if input schema has provenance columns and if they're not already in the projection
         let input_schema = factored_input.schema();
-        let provenance_columns = input_schema.provenance_columns();
+        let provenance_indices = input_schema.provenance_columns();
 
         // Find provenance columns that are not already in the projection
         let mut final_projection = factored_projection;
-        for prov_col_name in provenance_columns {
-            let prov_col_name_str = prov_col_name.as_str();
+        for prov_idx in provenance_indices {
+            let prov_field = &input_schema[*prov_idx];
+            let prov_col_name_str = prov_field.name.as_str();
             let has_provenance_in_projection = final_projection
                 .iter()
                 .any(|expr| expr.name() == prov_col_name_str);
@@ -76,9 +77,21 @@ impl Project {
             .map(|expr| expr.to_field(&input_schema))
             .collect::<DaftResult<Vec<_>>>()?;
 
+        // Map provenance indices from input schema to projected schema
+        let mut projected_provenance_indices = HashSet::new();
+        for (new_idx, field) in fields.iter().enumerate() {
+            // Check if this field was a provenance column in the input
+            let fields_with_name = input_schema.get_fields_with_name(&field.name);
+            if let Some((old_idx, _)) = fields_with_name.first() {
+                if fields_with_name.len() == 1 && provenance_indices.contains(old_idx) {
+                    projected_provenance_indices.insert(new_idx);
+                }
+            }
+        }
+
         // Preserve provenance columns in the projected schema
         let projected_schema =
-            Schema::new_with_provenance(fields, provenance_columns.clone()).into();
+            Schema::new_with_provenance(fields, projected_provenance_indices).into();
 
         Ok(Self {
             plan_id: None,

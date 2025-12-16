@@ -322,8 +322,9 @@ impl UdfHandle {
             // Prepare inputs
             let mut required_cols = params.required_cols.clone();
 
-            for prov_col_name in input.schema().provenance_columns() {
-                if let Some((idx, _)) = batch.schema.get_fields_with_name(prov_col_name).first()
+            for prov_idx in input.schema().provenance_columns() {
+                let prov_field = &input.schema()[*prov_idx];
+                if let Some((idx, _)) = batch.schema.get_fields_with_name(&prov_field.name).first()
                     && !required_cols.contains(idx)
                 {
                     required_cols.push(*idx);

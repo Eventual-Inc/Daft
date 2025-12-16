@@ -876,14 +876,14 @@ impl LogicalPlanBuilder {
                             rule_batch,
                             pass,
                             if seen { "an already seen" } else { "a new" },
-                            new_plan.repr_ascii(true),
+                            new_plan.repr_ascii(false),
                         );
                     } else {
                         log::debug!(
                             "Rule batch {:?} did NOT transform plan on pass {} for plan:\n{}",
                             rule_batch,
                             pass,
-                            new_plan.repr_ascii(true),
+                            new_plan.repr_ascii(false),
                         );
                     }
                 },
@@ -944,14 +944,14 @@ impl LogicalPlanBuilder {
                         rule_batch,
                         pass,
                         if seen { "an already seen" } else { "a new" },
-                        new_plan.repr_ascii(true),
+                        new_plan.repr_ascii(false),
                     );
                 } else {
                     log::debug!(
                         "Rule batch {:?} did NOT transform plan on pass {} for plan:\n{}",
                         rule_batch,
                         pass,
-                        new_plan.repr_ascii(true),
+                        new_plan.repr_ascii(false),
                     );
                 }
             },

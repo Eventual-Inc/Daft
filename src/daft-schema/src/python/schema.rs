@@ -113,19 +113,6 @@ impl PySchema {
     pub fn min_estimated_size_column(&self) -> Option<&str> {
         self.schema.min_estimated_size_column()
     }
-
-    /// Mark a column as a provenance column
-    pub fn mark_provenance_column(&self, column_name: &str) -> PyResult<Self> {
-        let mut provenance_columns = self.schema.provenance_columns().clone();
-        provenance_columns.insert(column_name.to_string());
-        let new_schema = schema::Schema::new_with_provenance(
-            self.schema.fields().iter().cloned(),
-            provenance_columns,
-        );
-        Ok(Self {
-            schema: Arc::new(new_schema),
-        })
-    }
 }
 
 impl_bincode_py_state_serialization!(PySchema);

@@ -1,46 +1,31 @@
 #!/usr/bin/env python3
-"""Test script for provenance tracking in Project operations."""
-
 from __future__ import annotations
 
 import daft
+from daft.logging import setup_logger
 
-# Create a dataframe with provenance
+setup_logger("debug")
+
+
+@daft.cls(on_error="log")
+class BonusCalculator:
+    def __init__(self, factor: int):
+        self.factor = factor
+
+    def calculate(self, score: int, age: int) -> int:
+        raise RuntimeError(f"cls boom: {score}, {age}, factor={self.factor}")
+
+
 data = [
-    {"id": 1, "name": "Alice"},
-    {"id": 2, "name": "Bob"},
-    {"id": 3, "name": "Charlie"},
+    {"id": 1, "name": "Alice", "age": 25, "score": 85},
+    {"id": 2, "name": "Bob", "age": 30, "score": 90},
+    {"id": 3, "name": "Charlie", "age": 35, "score": 95},
 ]
 
-# Create dataframe with provenance function
 df = daft.from_pylist(data, provenance_fn=lambda row: f"source1_row_{row['id']}")
 
-print("=== Original DataFrame ===")
-print(f"Column names: {df.column_names()}")
-print(f"Schema fields: {[f.name for f in df.schema()]}")
-print()
+calc = BonusCalculator(factor=10)
 
-# Perform a projection/select operation
-df_projected = df.select(["name"])
+df2 = df.with_column("bonus", calc.calculate(df["score"], df["age"]))
 
-print("=== After Project (select name only) ===")
-print(f"Column names: {df_projected.column_names()}")
-print(f"Schema fields: {[f.name for f in df_projected.schema()]}")
-print()
-
-# Check if provenance is in the underlying schema
-# Note: Once step 2 is implemented, this will be filtered from column_names()
-# but we can still check the underlying schema
-print("=== Checking for __provenance in schema ===")
-schema_field_names = [f.name for f in df_projected.schema()]
-has_provenance = "__provenance" in schema_field_names
-print(f"__provenance in schema: {has_provenance}")
-
-if has_provenance:
-    print("✓ Provenance was automatically forwarded through Project!")
-else:
-    print("✗ Provenance was NOT forwarded (this is a bug)")
-
-print()
-print("=== Full DataFrame Preview ===")
-df_projected.show()
+results = df2.to_pydict()

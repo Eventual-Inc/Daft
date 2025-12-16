@@ -134,12 +134,13 @@ class RecordBatch:
         return RecordBatch.from_pydict(df_as_dict_str)
 
     @staticmethod
-    def from_pydict(data: Mapping[str, Any]) -> RecordBatch:
+    def from_pydict(data: Mapping[str, Any], provenance_columns: set[str] | None = None) -> RecordBatch:
         series_dict: dict[str, PySeries] = dict()
         for k, v in data.items():
             series = item_to_series(k, v)
             series_dict[k] = series._series
-        return RecordBatch._from_pyrecordbatch(_PyRecordBatch.from_pylist_series(series_dict))
+        provenance_set = set(provenance_columns) if provenance_columns else None
+        return RecordBatch._from_pyrecordbatch(_PyRecordBatch.from_pylist_series(series_dict, provenance_set))
 
     @staticmethod
     def from_ipc_stream(bytes: bytes) -> RecordBatch:
