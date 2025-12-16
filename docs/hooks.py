@@ -24,10 +24,6 @@ def _should_inject_markdown(src_path):
     if src_path.startswith("examples/") and src_path != "examples/index.md":
         return True
 
-    # Python API pages (not index pages)
-    if src_path.startswith("api/") and not src_path.endswith("index.md"):
-        return True
-
     # AI function pages (not overview)
     if src_path.startswith("ai-functions/") and src_path != "ai-functions/overview.md":
         return True
