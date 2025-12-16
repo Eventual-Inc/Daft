@@ -19,7 +19,7 @@ where
         F: Fn(T::Native) -> T::Native + Copy,
     {
         let arr: &PrimitiveArray<T::Native> = self.data().as_any().downcast_ref().unwrap();
-        let iter = arr.values_iter().map(|v| func(*v));
+        let iter = arr.values().iter().map(|v| func(*v));
 
         Self::from_values_iter(self.field.clone(), iter)
             .with_validity(arr.validity().cloned().map(Into::into))
@@ -49,8 +49,8 @@ where
                     rhs_validity.as_ref(),
                 );
 
-                let iter =
-                    zip(lhs_arr.values_iter(), rhs_arr.values_iter()).map(|(a, b)| func(*a, *b));
+                let iter = zip(lhs_arr.values().iter(), rhs_arr.values().iter())
+                    .map(|(a, b)| func(*a, *b));
                 Self::from_values_iter(self.field.clone(), iter).with_validity(validity)
             }
             (l_size, 1) => {
@@ -64,7 +64,7 @@ where
                 let rhs_arr: &PrimitiveArray<R::Native> =
                     rhs.data().as_any().downcast_ref().unwrap();
                 if let Some(value) = self.get(0) {
-                    let iter = rhs_arr.values_iter().map(|v| func(value, *v));
+                    let iter = rhs_arr.values().iter().map(|v| func(value, *v));
                     Self::from_values_iter(self.field.clone(), iter)
                         .with_validity(rhs_arr.validity().cloned().map(Into::into))
                 } else {

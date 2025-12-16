@@ -32,7 +32,7 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
                 });
             daft_sketch::into_arrow2(vec![sketch])
         } else {
-            let sketch = primitive_arr.values_iter().fold(
+            let sketch = primitive_arr.values().iter().fold(
                 DDSketch::new(Config::defaults()),
                 |mut acc, value| {
                     acc.add(*value);
