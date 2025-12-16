@@ -30,6 +30,7 @@ use crate::{
 /// as long as there is no "mix" of "\" and "/".
 const PATH_SEGMENT_DELIMITER: &str = "/";
 
+#[cfg(windows)]
 use crate::strip_leading_slash_before_drive;
 
 pub struct LocalSource {}
@@ -154,6 +155,7 @@ impl ObjectSource for LocalSource {
     ) -> super::Result<GetResult> {
         const LOCAL_PROTOCOL: &str = "file://";
         if let Some(file) = uri.strip_prefix(LOCAL_PROTOCOL) {
+            #[cfg(windows)]
             let file = strip_leading_slash_before_drive(file);
             let size = self.get_size(uri, io_stats).await?;
             let range = range
@@ -177,6 +179,7 @@ impl ObjectSource for LocalSource {
     ) -> super::Result<()> {
         const LOCAL_PROTOCOL: &str = "file://";
         if let Some(stripped_uri) = uri.strip_prefix(LOCAL_PROTOCOL) {
+            #[cfg(windows)]
             let stripped_uri = strip_leading_slash_before_drive(stripped_uri);
             let mut file = std::fs::OpenOptions::new()
                 .create(true)
@@ -197,6 +200,7 @@ impl ObjectSource for LocalSource {
         let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) else {
             return Err(Error::InvalidFilePath { path: uri.into() }.into());
         };
+        #[cfg(windows)]
         let uri = strip_leading_slash_before_drive(uri);
         let meta = tokio::fs::metadata(uri)
             .await
@@ -283,7 +287,9 @@ impl ObjectSource for LocalSource {
                     .to_string(),
             )
         } else if let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) {
-            std::borrow::Cow::Borrowed(strip_leading_slash_before_drive(uri))
+            #[cfg(windows)]
+            let uri = strip_leading_slash_before_drive(uri);
+            std::borrow::Cow::Borrowed(uri)
         } else {
             return Err(Error::InvalidFilePath { path: uri.into() }.into());
         };

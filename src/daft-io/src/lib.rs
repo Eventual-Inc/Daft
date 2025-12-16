@@ -455,12 +455,6 @@ pub fn strip_leading_slash_before_drive(path: &str) -> &str {
     }
 }
 
-/// No-op on non-Windows platforms.
-#[cfg(not(windows))]
-pub fn strip_leading_slash_before_drive(path: &str) -> &str {
-    path
-}
-
 pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
     let mut fixed_input = Cow::Borrowed(input);
     // handle tilde `~` expansion
