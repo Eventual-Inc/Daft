@@ -323,14 +323,12 @@ impl UdfHandle {
             let mut required_cols = params.required_cols.clone();
 
             for prov_idx in input.schema().provenance_columns() {
-                let prov_field = &input.schema()[*prov_idx];
-                if let Some((idx, _)) = batch.schema.get_fields_with_name(&prov_field.name).first()
-                    && !required_cols.contains(idx)
+                if !required_cols.contains(prov_idx)
                 {
-                    required_cols.push(*idx);
+                    required_cols.push(*prov_idx);
                 }
             }
-            let func_input = batch.get_columns(params.required_cols.as_slice());
+            let func_input = batch.get_columns(required_cols.as_slice());
 
             // Call the UDF
             let mut result_series = match self {

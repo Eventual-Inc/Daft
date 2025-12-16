@@ -581,7 +581,15 @@ impl RecordBatch {
             .map(|i| self.columns[*i].clone())
             .collect::<Vec<_>>();
 
-        let new_schema = Schema::new(indices.iter().map(|i| self.schema[*i].clone()));
+        let mut provenance_columns = HashSet::new();
+        for (new_idx, old_idx) in indices.iter().enumerate() {
+            if self.schema.is_provenance_column(*old_idx) {
+                provenance_columns.insert(new_idx);
+            }
+        }
+        
+        let new_schema = Schema::new_with_provenance(new_columns.iter().map(|c| c.field().clone()), provenance_columns);
+
         Self::new_unchecked(new_schema, new_columns, self.num_rows)
     }
 
