@@ -41,6 +41,7 @@ impl FixedShapeSparseTensorArray {
 mod tests {
     use std::vec;
 
+    use arrow::buffer::OffsetBuffer;
     use common_error::DaftResult;
 
     use crate::{array::prelude::*, datatypes::prelude::*, series::IntoSeries};
@@ -59,7 +60,7 @@ mod tests {
                 )),
             ))
             .into_series(),
-            daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 2, 3, 4])?,
+            OffsetBuffer::from_lengths(vec![0, 2, 3, 4]),
             Some(validity.clone()),
         )
         .into_series();
@@ -73,7 +74,7 @@ mod tests {
                 )),
             ))
             .into_series(),
-            daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 2, 3, 4])?,
+            OffsetBuffer::from_lengths(vec![0, 2, 3, 4]),
             Some(validity.clone()),
         )
         .into_series();
@@ -87,7 +88,7 @@ mod tests {
                 )),
             ))
             .into_series(),
-            daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 2, 3])?,
+            OffsetBuffer::from_lengths(vec![0, 1, 2, 3]),
             Some(validity.clone()),
         )
         .into_series();

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use arrow::{array::OffsetBufferBuilder, buffer::OffsetBuffer};
 use common_error::{DaftError, DaftResult};
-use daft_arrow::offset::OffsetsBuffer;
 use daft_core::{
     array::{ListArray, growable::make_growable, ops::GroupIndices},
     prelude::{CountMode, DataType, Field, Int64Array, UInt64Array, Utf8Array},
@@ -278,9 +278,9 @@ impl SeriesListExtension for Series {
         };
 
         let list = input.list()?;
-        let mut offsets = Vec::new();
-        offsets.push(0i64);
-        let mut current_offset = 0i64;
+        let mut offsets = OffsetBufferBuilder::new(input.len());
+        offsets.push_length(0);
+        let mut current_offset = 0;
 
         let field = Arc::new(input.field().to_exploded_field()?);
         let child_data_type = if let DataType::List(inner_type) = input.data_type() {
@@ -309,15 +309,15 @@ impl SeriesListExtension for Series {
                 for idx in indices {
                     growable.extend(0, *start_offset as usize + idx as usize, 1);
                 }
-                current_offset += unique_count as i64;
+                current_offset += unique_count;
             }
-            offsets.push(current_offset);
+            offsets.push_length(current_offset);
         }
 
         let list_array = ListArray::new(
             Arc::new(Field::new(input.name(), input.data_type().clone())),
             growable.build()?,
-            OffsetsBuffer::try_from(offsets)?,
+            offsets.finish(),
             input.validity().cloned(),
         );
 
@@ -358,11 +358,11 @@ impl SeriesListExtension for Series {
         }
 
         let child_arr = growable.build()?;
-        let new_offsets = daft_arrow::offset::Offsets::try_from_lengths(new_lengths.into_iter())?;
+        let new_offsets = OffsetBuffer::from_lengths(offsets.into_iter().map(|v| *v as usize));
         let list_array = ListArray::new(
             input.field.clone(),
             child_arr,
-            new_offsets.into(),
+            new_offsets,
             None, // All outputs are valid because of the append
         );
 

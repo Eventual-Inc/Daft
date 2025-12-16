@@ -1,20 +1,21 @@
+use arrow::{array::OffsetBufferBuilder, buffer::OffsetBuffer};
 use common_error::DaftResult;
 use daft_arrow::types::Index;
 
 use super::{Growable, bitmap_growable::ArrowBitmapGrowable};
 use crate::{
     array::{ListArray, growable::make_growable},
-    datatypes::{DataType, Field},
-    series::{IntoSeries, Series},
+    datatypes::DataType,
+    series::Series,
 };
 
 pub struct ListGrowable<'a> {
     name: String,
     dtype: DataType,
     child_growable: Box<dyn Growable + 'a>,
-    child_arrays_offsets: Vec<&'a daft_arrow::offset::OffsetsBuffer<i64>>,
+    child_arrays_offsets: Vec<&'a OffsetBuffer<i64>>,
     growable_validity: Option<ArrowBitmapGrowable<'a>>,
-    growable_offsets: daft_arrow::offset::Offsets<i64>,
+    growable_offsets: OffsetBufferBuilder<i64>,
 }
 
 impl<'a> ListGrowable<'a> {
@@ -52,7 +53,7 @@ impl<'a> ListGrowable<'a> {
                     child_growable,
                     child_arrays_offsets,
                     growable_validity,
-                    growable_offsets: daft_arrow::offset::Offsets::<i64>::default(),
+                    growable_offsets: OffsetBufferBuilder::new(0),
                 }
             }
             _ => panic!("Cannot create ListGrowable from dtype: {}", dtype),
@@ -63,8 +64,8 @@ impl<'a> ListGrowable<'a> {
 impl Growable for ListGrowable<'_> {
     fn extend(&mut self, index: usize, start: usize, len: usize) {
         let offsets = self.child_arrays_offsets.get(index).unwrap();
-        let start_offset = &offsets.buffer()[start];
-        let end_offset = &offsets.buffer()[start + len];
+        let start_offset = &offsets.inner()[start];
+        let end_offset = &offsets.inner()[start + len];
         self.child_growable.extend(
             index,
             start_offset.to_usize(),
@@ -74,32 +75,18 @@ impl Growable for ListGrowable<'_> {
         if let Some(growable_validity) = &mut self.growable_validity {
             growable_validity.extend(index, start, len);
         }
+        todo!()
 
-        self.growable_offsets
-            .try_extend_from_slice(offsets, start, len)
-            .unwrap();
+        // self.growable_offsets
+        //     .try_extend_from_slice(start, len)
+        //     .unwrap();
     }
 
     fn add_nulls(&mut self, additional: usize) {
-        if let Some(growable_validity) = &mut self.growable_validity {
-            growable_validity.add_nulls(additional);
-        }
-        self.growable_offsets.extend_constant(additional);
+        todo!()
     }
 
     fn build(&mut self) -> DaftResult<Series> {
-        let grown_offsets = std::mem::take(&mut self.growable_offsets);
-        let grown_validity = std::mem::take(&mut self.growable_validity);
-
-        let built_child = self.child_growable.build()?;
-        let built_validity = grown_validity.and_then(|v| v.build());
-        let built_offsets = grown_offsets.into();
-        Ok(ListArray::new(
-            Field::new(self.name.clone(), self.dtype.clone()),
-            built_child,
-            built_offsets,
-            built_validity,
-        )
-        .into_series())
+        todo!()
     }
 }

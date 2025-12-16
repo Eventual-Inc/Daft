@@ -158,7 +158,8 @@ impl ListArray {
             .map(|idx| match idx {
                 None => 0,
                 Some(idx) => {
-                    let (start, end) = self.offsets().start_end(idx.to_usize());
+                    let start = self.offsets()[idx.to_usize()] as usize;
+                    let end = start + 1;
                     end - start
                 }
             })

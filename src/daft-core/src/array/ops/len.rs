@@ -1,5 +1,6 @@
 use std::cmp::min;
 
+use arrow::buffer::OffsetBuffer;
 #[cfg(feature = "python")]
 use common_py_serde::pickle_dumps;
 use rand::{SeedableRng, rngs::StdRng};
@@ -90,8 +91,8 @@ fn validity_size(validity: Option<&daft_arrow::buffer::NullBuffer>) -> usize {
     validity.map(|b| b.buffer().len()).unwrap_or(0)
 }
 
-fn offset_size(offsets: &daft_arrow::offset::OffsetsBuffer<i64>) -> usize {
-    offsets.len_proxy() * std::mem::size_of::<i64>()
+fn offset_size(offsets: &OffsetBuffer<i64>) -> usize {
+    (offsets.len() - 1) * std::mem::size_of::<i64>()
 }
 
 impl FixedSizeListArray {

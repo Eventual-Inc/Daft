@@ -1,13 +1,11 @@
 use std::{borrow::Cow, sync::Arc};
 
-use daft_arrow::{offset::OffsetsBuffer, types::months_days_ns};
+use arrow::buffer::OffsetBuffer;
+use daft_arrow::types::months_days_ns;
 use serde::{Deserializer, de::Visitor};
 
 use crate::{
-    array::{
-        ListArray, StructArray,
-        ops::{as_arrow::AsArrow, full::FullNull},
-    },
+    array::{ListArray, StructArray, ops::full::FullNull},
     datatypes::{
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
@@ -193,10 +191,8 @@ impl<'d> serde::Deserialize<'d> for Series {
                             .ok_or_else(|| serde::de::Error::missing_field("offsets"))?
                             .unwrap();
                         let offsets_array = offsets_series.i64().unwrap();
-                        let offsets = OffsetsBuffer::<i64>::try_from(
-                            offsets_array.as_arrow2().values().clone(),
-                        )
-                        .unwrap();
+                        let values = offsets_array.values();
+                        let offsets = OffsetBuffer::new(values);
                         let flat_child = all_series
                             .pop()
                             .ok_or_else(|| serde::de::Error::missing_field("flat_child"))?

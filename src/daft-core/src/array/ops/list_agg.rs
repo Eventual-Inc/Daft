@@ -1,3 +1,4 @@
+use arrow::buffer::OffsetBuffer;
 use common_error::DaftResult;
 
 use super::{DaftListAggable, GroupIndices};
@@ -18,8 +19,7 @@ macro_rules! impl_daft_list_agg {
 
         fn list(&self) -> Self::Output {
             let child_series = self.clone().into_series();
-            let offsets =
-                daft_arrow::offset::OffsetsBuffer::try_from(vec![0, child_series.len() as i64])?;
+            let offsets = OffsetBuffer::from_lengths(vec![0, child_series.len()]);
             let list_field = self.field().to_list_field();
             Ok(ListArray::new(list_field, child_series, offsets, None))
         }
@@ -52,7 +52,7 @@ macro_rules! impl_daft_list_agg {
             Ok(ListArray::new(
                 list_field,
                 growable.build()?,
-                daft_arrow::offset::OffsetsBuffer::try_from(offsets)?,
+                OffsetBuffer::from_lengths(offsets.into_iter().map(|v| v as usize)),
                 None,
             ))
         }

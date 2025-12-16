@@ -5,6 +5,10 @@
 
 use std::{borrow::Cow, sync::Arc};
 
+use arrow::{
+    array::{ArrayRef, LargeBinaryArray},
+    buffer::{Buffer, OffsetBuffer},
+};
 use common_error::{DaftError, DaftResult};
 
 use crate::{
@@ -206,17 +210,12 @@ impl TryFrom<(&str, Vec<u8>, Vec<i64>)> for BinaryArray {
         }
 
         assert_eq!(last_offset, data.len() as i64);
-        let arrow_offsets = daft_arrow::offset::OffsetsBuffer::try_from(offsets)?;
-        let bin_array = daft_arrow::array::BinaryArray::<i64>::try_new(
-            daft_arrow::datatypes::DataType::LargeBinary,
-            arrow_offsets,
-            data.into(),
-            None,
-        )?;
-        Self::new(
-            Field::new(name, DataType::Binary).into(),
-            Box::new(bin_array),
-        )
+        let offsets = OffsetBuffer::from_lengths(offsets.into_iter().map(|v| v as _));
+        let values_buffer = Buffer::from_vec(data);
+
+        let bin_array: ArrayRef = Arc::new(LargeBinaryArray::new(offsets, values_buffer, None));
+
+        Self::new(Field::new(name, DataType::Binary).into(), bin_array.into())
     }
 }
 
@@ -227,7 +226,7 @@ impl TryFrom<(&str, &[&Series])> for ListArray {
         let (name, data) = item;
 
         let lengths = data.iter().map(|s| s.len());
-        let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)?.into();
+        let offsets = OffsetBuffer::from_lengths(lengths);
         let flat_child = Series::concat(data)?;
 
         Ok(Self::new(
@@ -246,7 +245,8 @@ impl TryFrom<(&str, &[Option<&Series>])> for ListArray {
         let (name, data) = item;
 
         let lengths = data.iter().map(|s| s.map_or(0, Series::len));
-        let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)?.into();
+
+        let offsets = OffsetBuffer::from_lengths(lengths);
 
         let validity = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
@@ -268,7 +268,7 @@ impl TryFrom<(&str, &[Option<Series>])> for ListArray {
         let (name, data) = item;
 
         let lengths = data.iter().map(|s| s.as_ref().map_or(0, |s| s.len()));
-        let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)?.into();
+        let offsets = OffsetBuffer::from_lengths(lengths);
 
         let validity = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
@@ -300,9 +300,7 @@ impl ListArray {
         let flat_child = DataArray::<T::DAFTTYPE>::from((name, flat_child_vec)).into_series();
 
         let lengths = data.iter().map(|d| d.map_or(0, |d| d.len()));
-        let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)
-            .unwrap()
-            .into();
+        let offsets = OffsetBuffer::from_lengths(lengths);
 
         let validity = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
@@ -324,9 +322,7 @@ impl ListArray {
         let flat_child = DataArray::<T::DAFTTYPE>::from((name, flat_child_vec)).into_series();
 
         let lengths = data.iter().map(|d| d.as_ref().map_or(0, |d| d.len()));
-        let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)
-            .unwrap()
-            .into();
+        let offsets = OffsetBuffer::from_lengths(lengths);
 
         let validity = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 

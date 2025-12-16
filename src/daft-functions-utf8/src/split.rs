@@ -1,4 +1,5 @@
 #![allow(deprecated, reason = "arrow2 migration")]
+use arrow::array::OffsetBufferBuilder;
 use common_error::{DaftError, DaftResult};
 use daft_arrow::array::Array;
 use daft_core::{
@@ -117,7 +118,7 @@ fn split_impl(arr: &Utf8Array, pattern: &Utf8Array, regex: bool) -> DaftResult<L
     let buffer_len = arr_arrow.values().len();
     // This will overallocate by pattern_len * N_i, where N_i is the number of pattern occurrences in the ith string in arr_iter.
     let mut splits = daft_arrow::array::MutableUtf8Array::with_capacity(buffer_len);
-    let mut offsets = daft_arrow::offset::Offsets::new();
+    let mut offsets = OffsetBufferBuilder::new(buffer_len);
     let mut validity = daft_arrow::buffer::NullBufferBuilder::new(arr.len());
 
     let arr_iter = create_broadcasted_str_iter(arr, expected_size);
@@ -160,13 +161,13 @@ fn split_impl(arr: &Utf8Array, pattern: &Utf8Array, regex: bool) -> DaftResult<L
     // Shrink splits capacity to current length, since we will have overallocated if any of the patterns actually occurred in the strings.
     splits.shrink_to_fit();
     let splits: daft_arrow::array::Utf8Array<i64> = splits.into();
-    let offsets: daft_arrow::offset::OffsetsBuffer<i64> = offsets.into();
+
     let validity = validity.finish();
     let flat_child = Series::try_from(("splits", splits.to_boxed()))?;
     let result = ListArray::new(
         Field::new(arr.name(), DataType::List(Box::new(DataType::Utf8))),
         flat_child,
-        offsets,
+        offsets.finish(),
         validity,
     );
     assert_eq!(result.len(), expected_size);
@@ -177,7 +178,7 @@ fn split_array_on_regex<'a>(
     arr_iter: impl Iterator<Item = Option<&'a str>>,
     regex_iter: impl Iterator<Item = Option<Result<regex::Regex, regex::Error>>>,
     splits: &mut daft_arrow::array::MutableUtf8Array<i64>,
-    offsets: &mut daft_arrow::offset::Offsets<i64>,
+    offsets: &mut OffsetBufferBuilder<i64>,
     validity: &mut daft_arrow::buffer::NullBufferBuilder,
 ) -> DaftResult<()> {
     for (val, re) in arr_iter.zip(regex_iter) {
@@ -194,7 +195,7 @@ fn split_array_on_regex<'a>(
                 validity.append_null();
             }
         }
-        offsets.try_push(num_splits)?;
+        offsets.push_length(num_splits as _);
     }
     Ok(())
 }
@@ -202,7 +203,7 @@ fn split_array_on_literal<'a>(
     arr_iter: impl Iterator<Item = Option<&'a str>>,
     pattern_iter: impl Iterator<Item = Option<&'a str>>,
     splits: &mut daft_arrow::array::MutableUtf8Array<i64>,
-    offsets: &mut daft_arrow::offset::Offsets<i64>,
+    offsets: &mut OffsetBufferBuilder<i64>,
     validity: &mut daft_arrow::buffer::NullBufferBuilder,
 ) -> DaftResult<()> {
     for (val, pat) in arr_iter.zip(pattern_iter) {
@@ -219,7 +220,7 @@ fn split_array_on_literal<'a>(
                 validity.append_null();
             }
         }
-        offsets.try_push(num_splits)?;
+        offsets.push_length(num_splits as _);
     }
     Ok(())
 }

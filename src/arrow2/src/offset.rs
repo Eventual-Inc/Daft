@@ -55,6 +55,35 @@ impl<O: Offset> From<Offsets<O>> for OffsetsBuffer<O> {
     }
 }
 
+#[cfg(feature = "arrow")]
+impl<O: Offset + arrow_buffer::ArrowNativeType> TryFrom<arrow_buffer::OffsetBuffer<O>>
+    for OffsetsBuffer<O>
+{
+    type Error = Error;
+
+    #[inline]
+    fn try_from(offsets: arrow_buffer::OffsetBuffer<O>) -> Result<Self, Self::Error> {
+        let scalar_buffer = offsets.into_inner();
+        let arrow_buffer: arrow_buffer::Buffer = scalar_buffer.into();
+        let buffer: Buffer<O> = arrow_buffer.into();
+
+        buffer.try_into()
+    }
+}
+
+#[cfg(feature = "arrow")]
+impl<O: Offset + arrow_buffer::ArrowNativeType> From<OffsetsBuffer<O>>
+    for arrow_buffer::OffsetBuffer<O>
+{
+    #[inline]
+    fn from(value: OffsetsBuffer<O>) -> Self {
+        let buffer = value.0;
+        let arrow_buffer: arrow_buffer::Buffer = buffer.into();
+        let scalar_buffer = arrow_buffer::ScalarBuffer::from(arrow_buffer);
+        Self::new(scalar_buffer)
+    }
+}
+
 impl<O: Offset> Offsets<O> {
     /// Returns an empty [`Offsets`] (i.e. with a single element, the zero)
     #[inline]
@@ -346,7 +375,6 @@ impl<O: Offset> Default for OffsetsBuffer<O> {
 }
 
 impl<O: Copy> OffsetsBuffer<O> {
-
     /// Maps each offset to a new value, creating a new [`Self`].
     ///
     /// # Safety

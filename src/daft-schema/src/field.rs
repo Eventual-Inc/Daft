@@ -155,3 +155,14 @@ impl From<&ArrowField> for Field {
         }
     }
 }
+impl TryFrom<&arrow_schema::Field> for Field {
+    type Error = DaftError;
+
+    fn try_from(value: &arrow_schema::Field) -> Result<Self, Self::Error> {
+        Ok(Self {
+            name: value.name().clone(),
+            dtype: value.data_type().try_into()?,
+            metadata: Arc::new(value.metadata().clone().into_iter().collect()),
+        })
+    }
+}

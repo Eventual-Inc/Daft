@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 
+use daft_arrow::buffer::Buffer;
 use serde::ser::SerializeMap;
 
 use super::{DataArray, FixedSizeListArray, ListArray, StructArray, ops::as_arrow::AsArrow};
@@ -191,10 +192,13 @@ impl serde::Serialize for ListArray {
         let mut values = Vec::with_capacity(3);
 
         values.push(Some(&self.flat_child));
+        let scalar_buffer = self.offsets().inner().clone();
+        let buffer: arrow::buffer::Buffer = scalar_buffer.into();
+        let arrow2_buffer: Buffer<i64> = buffer.into();
 
         let arrow2_offsets = daft_arrow::array::Int64Array::new(
             daft_arrow::datatypes::DataType::Int64,
-            self.offsets().buffer().clone(),
+            arrow2_buffer,
             None,
         );
         let offsets = Int64Array::from(("offsets", Box::new(arrow2_offsets))).into_series();
