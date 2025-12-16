@@ -358,7 +358,7 @@ impl SeriesListExtension for Series {
         }
 
         let child_arr = growable.build()?;
-        let new_offsets = OffsetBuffer::from_lengths(offsets.into_iter().map(|v| *v as usize));
+        let new_offsets = OffsetBuffer::from_lengths(new_lengths);
         let list_array = ListArray::new(
             input.field.clone(),
             child_arr,

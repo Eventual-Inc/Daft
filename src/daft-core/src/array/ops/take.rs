@@ -159,7 +159,8 @@ impl ListArray {
                 None => 0,
                 Some(idx) => {
                     let start = self.offsets()[idx.to_usize()] as usize;
-                    let end = start + 1;
+                    let end = self.offsets()[idx.to_usize() + 1] as usize;
+
                     end - start
                 }
             })

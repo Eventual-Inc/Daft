@@ -1,7 +1,6 @@
 use std::{
     collections::HashMap,
     fmt::{Display, Write},
-    ops::Deref,
     sync::Arc,
 };
 
@@ -1213,7 +1212,7 @@ impl TryFrom<&arrow_schema::DataType> for DataType {
                     ));
                 };
 
-                let [key, value] = fields.deref() else {
+                let [key, value] = &**fields else {
                     return Err(DaftError::ValueError(
                         "Map should have two fields".to_string(),
                     ));

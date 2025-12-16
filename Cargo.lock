@@ -2959,6 +2959,7 @@ dependencies = [
 name = "daft-image"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
  "base64 0.22.1",
  "common-error",
  "common-image",

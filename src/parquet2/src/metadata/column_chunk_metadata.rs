@@ -1,17 +1,20 @@
+pub use std::io::Cursor;
 use std::sync::Arc;
 
+pub use parquet_format_safe::thrift::protocol::{TCompactInputProtocol, TCompactOutputProtocol};
 use parquet_format_safe::{ColumnChunk, ColumnMetaData, Encoding};
+pub use serde::{
+    de::Error as DeserializeError, ser::Error as SerializeError, Deserialize, Deserializer,
+    Serialize, Serializer,
+};
 
 use super::column_descriptor::ColumnDescriptor;
-use crate::compression::Compression;
-use crate::error::{Error, Result};
-use crate::schema::types::PhysicalType;
-use crate::statistics::{deserialize_statistics, Statistics};
-pub use parquet_format_safe::thrift::protocol::{TCompactInputProtocol, TCompactOutputProtocol};
-pub use serde::de::Error as DeserializeError;
-pub use serde::ser::Error as SerializeError;
-pub use serde::{Deserialize, Deserializer, Serialize, Serializer};
-pub use std::io::Cursor;
+use crate::{
+    compression::Compression,
+    error::{Error, Result},
+    schema::types::PhysicalType,
+    statistics::{deserialize_statistics, Statistics},
+};
 
 /// Metadata for a column chunk.
 // This contains the `ColumnDescriptor` associated with the chunk so that deserializers have

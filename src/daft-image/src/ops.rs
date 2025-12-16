@@ -1,3 +1,9 @@
+use std::sync::Arc;
+
+use arrow::{
+    array::ArrayRef,
+    buffer::{Buffer, OffsetBuffer, ScalarBuffer},
+};
 use base64::Engine;
 use common_error::{DaftError, DaftResult};
 use common_image::{BBox, CowImage};
@@ -198,7 +204,7 @@ fn encode_images<Arr: AsImageObj>(
     images: &Arr,
     image_format: ImageFormat,
 ) -> DaftResult<BinaryArray> {
-    let arrow_array = if image_format == ImageFormat::TIFF {
+    if image_format == ImageFormat::TIFF {
         // NOTE: A single writer/buffer can't be used for TIFF files because the encoder will overwrite the
         // IFD offset for the first image instead of writing it for all subsequent images, producing corrupted
         // TIFF files. We work around this by writing out a new buffer for each image.
@@ -224,7 +230,8 @@ fn encode_images<Arr: AsImageObj>(
                 .transpose()
             })
             .collect::<DaftResult<Vec<_>>>()?;
-        daft_arrow::array::BinaryArray::<i64>::from_iter(values)
+
+        Ok(BinaryArray::from_iter("", values.into_iter()).rename(images.name()))
     } else {
         let mut offsets = Vec::with_capacity(images.len() + 1);
         offsets.push(0i64);
@@ -255,20 +262,18 @@ fn encode_images<Arr: AsImageObj>(
                 ))
             })?
             .into_inner();
-        let encoded_data: daft_arrow::buffer::Buffer<u8> = values.into();
-        let offsets_buffer = daft_arrow::offset::OffsetsBuffer::try_from(offsets)?;
-        let validity = validity.finish();
-        daft_arrow::array::BinaryArray::<i64>::new(
-            daft_arrow::datatypes::DataType::LargeBinary,
-            offsets_buffer,
-            encoded_data,
-            daft_arrow::buffer::wrap_null_buffer(validity),
+        let encoded_data: ScalarBuffer<u8> = values.into();
+        let buffer = Buffer::from(encoded_data);
+        let offsets = OffsetBuffer::from_lengths(offsets.into_iter().map(|v| v as usize));
+        let nulls = validity.finish();
+        let arrow_array: ArrayRef =
+            Arc::new(arrow::array::LargeBinaryArray::new(offsets, buffer, nulls));
+
+        BinaryArray::from_arrow(
+            Arc::new(Field::new("", arrow_array.data_type().try_into()?)),
+            arrow_array.into(),
         )
-    };
-    BinaryArray::new(
-        Field::new(images.name(), arrow_array.data_type().into()).into(),
-        arrow_array.boxed(),
-    )
+    }
 }
 
 fn resize_images<Arr: AsImageObj>(images: &Arr, w: u32, h: u32) -> Vec<Option<CowImage<'_>>> {

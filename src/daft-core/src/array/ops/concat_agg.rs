@@ -2,7 +2,6 @@ use arrow::buffer::OffsetBuffer;
 use common_error::DaftResult;
 use daft_arrow::{
     array::{Array, Utf8Array},
-    offset::OffsetsBuffer,
     types::Index,
 };
 
@@ -81,7 +80,7 @@ impl DaftConcatAggable for ListArray {
             for idx in group {
                 if all_valid || self.is_valid(idx.to_usize()) {
                     let start = self.offsets()[*idx as usize] as usize;
-                    let end = start + 1;
+                    let end = self.offsets()[*idx as usize + 1] as usize;
 
                     let len = end - start;
                     child_array_growable.extend(0, start, len);
@@ -120,10 +119,14 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
         };
 
         let arrow_array = self.as_arrow2();
-        let new_offsets = OffsetsBuffer::<i64>::try_from(vec![0, *arrow_array.offsets().last()])?;
+        let new_offsets = arrow::buffer::OffsetBuffer::<i64>::from_lengths(vec![
+            0,
+            *arrow_array.offsets().last() as usize,
+        ]);
+
         let output = Utf8Array::new(
             arrow_array.data_type().clone(),
-            new_offsets,
+            new_offsets.try_into().unwrap(),
             arrow_array.values().clone(),
             daft_arrow::buffer::wrap_null_buffer(new_validity),
         );
