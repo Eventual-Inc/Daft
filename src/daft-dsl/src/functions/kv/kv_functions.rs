@@ -16,6 +16,8 @@ struct KVGetArgs<T> {
     keys: T,
     store_name: T,
     #[arg(optional)]
+    on_error: Option<T>,
+    #[arg(optional)]
     columns: Option<T>,
 }
 
@@ -24,6 +26,10 @@ struct KVBatchGetArgs<T> {
     keys: T,
     store_name: T,
     batch_size: T,
+    #[arg(optional)]
+    on_error: Option<T>,
+    #[arg(optional)]
+    columns: Option<T>,
 }
 
 #[derive(FunctionArgsDerive)]
@@ -49,9 +55,11 @@ impl ScalarUDF for KVGetWithStoreName {
     }
 
     fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+        #[cfg_attr(not(feature = "python"), allow(unused_variables))]
         let KVGetArgs {
             keys,
             store_name: store_name_series,
+            on_error: on_error_series_opt,
             columns: columns_series_opt,
         } = args.try_into()?;
 
@@ -70,6 +78,21 @@ impl ScalarUDF for KVGetWithStoreName {
                 .get(0)
                 .ok_or_else(|| DaftError::ValueError("Missing store name".to_string()))?;
 
+            let on_error = if let Some(on_error_series) = on_error_series_opt.as_ref() {
+                if on_error_series.len() != 1 {
+                    return Err(DaftError::ValueError(
+                        "on_error series must contain exactly one element".to_string(),
+                    ));
+                }
+                on_error_series
+                    .utf8()?
+                    .get(0)
+                    .ok_or_else(|| DaftError::ValueError("Missing on_error".to_string()))?
+                    .to_string()
+            } else {
+                "raise".to_string()
+            };
+
             // Parse columns if provided
             let requested: Option<Vec<String>> = if let Some(cols_ser) = columns_series_opt.as_ref()
             {
@@ -87,40 +110,30 @@ impl ScalarUDF for KVGetWithStoreName {
 
             let k_py = keys.cast(&DataType::Python)?;
             let _k_arr = k_py.downcast::<PythonArray>()?;
-            let mut result_series_opt: Option<Series> = None;
-            Python::attach(|py| {
-                let daft_mod = py.import("daft.daft").unwrap();
+            let s = Python::attach(|py| -> DaftResult<Series> {
+                let daft_mod = py.import("daft.daft")?;
                 let py_keys = pyo3::Py::new(
                     py,
                     daft_core::python::PySeries {
                         series: keys.clone(),
                     },
-                )
-                .unwrap();
-                let func = daft_mod.getattr("kv_get_direct_series").unwrap();
+                )?;
+                let func = daft_mod.getattr("kv_get_direct_series")?;
                 let py_res = match requested.clone() {
-                    Some(cols) => func.call1((name, py_keys, cols)).unwrap(),
-                    None => func.call1((name, py_keys, None::<Vec<String>>)).unwrap(),
+                    Some(cols) => func.call1((name, py_keys, on_error.as_str(), cols))?,
+                    None => func.call1((name, py_keys, on_error.as_str(), None::<Vec<String>>))?,
                 };
-                let py_series: pyo3::PyRef<daft_core::python::PySeries> = py_res.extract().unwrap();
+                let py_series: pyo3::PyRef<daft_core::python::PySeries> = py_res.extract()?;
                 let mut s = py_series.series.clone();
                 s = s.rename(keys.name());
-                result_series_opt = Some(s);
-            });
-            let s = result_series_opt.ok_or_else(|| {
-                DaftError::ValueError("kv_get_direct_series returned None".to_string())
+                Ok(s)
             })?;
             Ok(s)
         }
 
         #[cfg(not(feature = "python"))]
         {
-            let result_series = Series::full_null(
-                keys.name(),
-                &daft_core::datatypes::DataType::Binary,
-                keys.len(),
-            );
-            Ok(result_series)
+            panic!("KVGetWithStoreName is only supported with the 'python' feature enabled");
         }
     }
 
@@ -129,12 +142,15 @@ impl ScalarUDF for KVGetWithStoreName {
         args: FunctionArgs<ExprRef>,
         schema: &Schema,
     ) -> DaftResult<daft_core::datatypes::Field> {
+        #[cfg_attr(not(feature = "python"), allow(unused_variables))]
         let KVGetArgs {
             keys,
             store_name: _store_name,
+            on_error: _,
             columns: _columns,
         } = args.try_into()?;
 
+        #[cfg_attr(not(feature = "python"), allow(unused_variables))]
         let keys = keys.to_field(schema)?;
         #[cfg(feature = "python")]
         {
@@ -161,40 +177,138 @@ impl ScalarUDF for KVBatchGetWithStoreName {
     }
 
     fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+        #[cfg_attr(not(feature = "python"), allow(unused_variables))]
         let KVBatchGetArgs {
             keys,
             store_name: store_name_series,
-            batch_size: _batch_size_series,
+            batch_size: batch_size_series,
+            on_error: on_error_series_opt,
+            columns: columns_series_opt,
         } = args.try_into()?;
 
-        let input_length = keys.len();
         if store_name_series.len() != 1 {
             return Err(DaftError::ValueError(
                 "Store name series must contain exactly one element".to_string(),
             ));
         }
-        let result_series = Series::full_null(
-            "result",
-            &daft_core::datatypes::DataType::Binary,
-            input_length,
-        );
-        Ok(result_series)
+        if batch_size_series.len() != 1 {
+            return Err(DaftError::ValueError(
+                "Batch size series must contain exactly one element".to_string(),
+            ));
+        }
+
+        #[cfg(feature = "python")]
+        {
+            use daft_core::prelude::*;
+
+            let name = store_name_series
+                .utf8()?
+                .get(0)
+                .ok_or_else(|| DaftError::ValueError("Missing store name".to_string()))?;
+
+            let batch_size = batch_size_series
+                .i64()?
+                .get(0)
+                .ok_or_else(|| DaftError::ValueError("Missing batch size".to_string()))?;
+            if batch_size <= 0 {
+                return Err(DaftError::ValueError(
+                    "batch_size must be a positive integer".to_string(),
+                ));
+            }
+            let batch_size_usize = batch_size as usize;
+
+            let on_error = if let Some(on_error_series) = on_error_series_opt.as_ref() {
+                if on_error_series.len() != 1 {
+                    return Err(DaftError::ValueError(
+                        "on_error series must contain exactly one element".to_string(),
+                    ));
+                }
+                on_error_series
+                    .utf8()?
+                    .get(0)
+                    .ok_or_else(|| DaftError::ValueError("Missing on_error".to_string()))?
+                    .to_string()
+            } else {
+                "raise".to_string()
+            };
+
+            let requested: Option<Vec<String>> = if let Some(cols_ser) = columns_series_opt.as_ref()
+            {
+                let arr = cols_ser.binary()?;
+                let bytes = arr.get(0).ok_or_else(|| {
+                    DaftError::ValueError("columns must contain exactly one element".to_string())
+                })?;
+                let cols: Vec<String> = serde_json::from_slice(bytes).map_err(|e| {
+                    DaftError::ValueError(format!("Failed to deserialize columns: {}", e))
+                })?;
+                Some(cols)
+            } else {
+                None
+            };
+
+            let k_py = keys.cast(&DataType::Python)?;
+            let _k_arr = k_py.downcast::<PythonArray>()?;
+
+            let s = Python::attach(|py| -> DaftResult<Series> {
+                let daft_mod = py.import("daft.daft")?;
+                let py_keys = pyo3::Py::new(
+                    py,
+                    daft_core::python::PySeries {
+                        series: keys.clone(),
+                    },
+                )?;
+                let func = daft_mod.getattr("kv_batch_get_direct_series")?;
+                let py_res = match requested.clone() {
+                    Some(cols) => {
+                        func.call1((name, py_keys, batch_size_usize, on_error.as_str(), cols))?
+                    }
+                    None => func.call1((
+                        name,
+                        py_keys,
+                        batch_size_usize,
+                        on_error.as_str(),
+                        None::<Vec<String>>,
+                    ))?,
+                };
+                let py_series: pyo3::PyRef<daft_core::python::PySeries> = py_res.extract()?;
+                Ok(py_series.series.clone().rename(keys.name()))
+            })?;
+            Ok(s)
+        }
+
+        #[cfg(not(feature = "python"))]
+        {
+            panic!("KVBatchGetWithStoreName is only supported with the 'python' feature enabled");
+        }
     }
 
     fn get_return_field(
         &self,
         args: FunctionArgs<ExprRef>,
-        _schema: &Schema,
+        schema: &Schema,
     ) -> DaftResult<daft_core::datatypes::Field> {
         let KVBatchGetArgs {
-            keys: _keys,
+            keys,
             store_name: _store_name,
             batch_size: _batch_size,
+            on_error: _,
+            columns: _columns,
         } = args.try_into()?;
-        Ok(daft_core::datatypes::Field::new(
-            "result",
-            daft_core::datatypes::DataType::Binary,
-        ))
+
+        #[cfg_attr(not(feature = "python"), allow(unused_variables))]
+        let keys = keys.to_field(schema)?;
+        #[cfg(feature = "python")]
+        {
+            Ok(daft_core::datatypes::Field::new(
+                keys.name,
+                daft_core::datatypes::DataType::Python,
+            ))
+        }
+
+        #[cfg(not(feature = "python"))]
+        {
+            panic!("KVBatchGetWithStoreName is only supported with the 'python' feature enabled");
+        }
     }
 }
 
@@ -208,33 +322,76 @@ impl ScalarUDF for KVExistsWithStoreName {
     }
 
     fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+        #[cfg_attr(not(feature = "python"), allow(unused_variables))]
         let KVExistsArgs {
             keys,
-            store_name: _store_name,
+            store_name: store_name_series,
         } = args.try_into()?;
 
-        let input_length = keys.len();
-        let result_series = Series::full_null(
-            "result",
-            &daft_core::datatypes::DataType::Binary,
-            input_length,
-        );
-        Ok(result_series)
+        if store_name_series.len() != 1 {
+            return Err(DaftError::ValueError(
+                "Store name series must contain exactly one element".to_string(),
+            ));
+        }
+
+        #[cfg(feature = "python")]
+        {
+            use daft_core::prelude::*;
+
+            let name = store_name_series
+                .utf8()?
+                .get(0)
+                .ok_or_else(|| DaftError::ValueError("Missing store name".to_string()))?;
+
+            let k_py = keys.cast(&DataType::Python)?;
+            let _k_arr = k_py.downcast::<PythonArray>()?;
+            let s = Python::attach(|py| -> DaftResult<Series> {
+                let daft_mod = py.import("daft.daft")?;
+                let py_keys = pyo3::Py::new(
+                    py,
+                    daft_core::python::PySeries {
+                        series: keys.clone(),
+                    },
+                )?;
+                let func = daft_mod.getattr("kv_exists_direct_series")?;
+                let py_res = func.call1((name, py_keys))?;
+                let py_series: pyo3::PyRef<daft_core::python::PySeries> = py_res.extract()?;
+                Ok(py_series.series.clone().rename(keys.name()))
+            })?;
+            Ok(s)
+        }
+
+        #[cfg(not(feature = "python"))]
+        {
+            panic!("KVExistsWithStoreName is only supported with the 'python' feature enabled");
+        }
     }
 
     fn get_return_field(
         &self,
         args: FunctionArgs<ExprRef>,
-        _schema: &Schema,
+        schema: &Schema,
     ) -> DaftResult<daft_core::datatypes::Field> {
         let KVExistsArgs {
-            keys: _keys,
+            keys,
             store_name: _store_name,
         } = args.try_into()?;
-        Ok(daft_core::datatypes::Field::new(
-            "result",
-            daft_core::datatypes::DataType::Binary,
-        ))
+
+        #[cfg_attr(not(feature = "python"), allow(unused_variables))]
+        let keys = keys.to_field(schema)?;
+
+        #[cfg(feature = "python")]
+        {
+            Ok(daft_core::datatypes::Field::new(
+                keys.name,
+                daft_core::datatypes::DataType::Boolean,
+            ))
+        }
+
+        #[cfg(not(feature = "python"))]
+        {
+            panic!("KVExistsWithStoreName is only supported with the 'python' feature enabled");
+        }
     }
 }
 
@@ -248,6 +405,7 @@ impl ScalarUDF for KVPutWithStoreName {
     }
 
     fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+        #[cfg_attr(not(feature = "python"), allow(unused_variables))]
         let KVPutArgs {
             key,
             value,
@@ -262,7 +420,6 @@ impl ScalarUDF for KVPutWithStoreName {
         #[cfg(feature = "python")]
         {
             use daft_core::prelude::*;
-            use pyo3::PyResult;
 
             let name = store_name_series
                 .utf8()?
@@ -270,8 +427,7 @@ impl ScalarUDF for KVPutWithStoreName {
                 .ok_or_else(|| DaftError::ValueError("Missing store name".to_string()))?;
 
             // Build PySeries for key and value
-            let mut result_series_opt: Option<Series> = None;
-            Python::attach(|py| -> PyResult<()> {
+            let s = Python::attach(|py| -> DaftResult<Series> {
                 let daft_mod = py.import("daft.daft")?;
                 let py_key = pyo3::Py::new(
                     py,
@@ -290,11 +446,7 @@ impl ScalarUDF for KVPutWithStoreName {
                 let py_series: pyo3::PyRef<daft_core::python::PySeries> = py_res.extract()?;
                 let mut s = py_series.series.clone();
                 s = s.rename("result");
-                result_series_opt = Some(s);
-                Ok(())
-            })?;
-            let s = result_series_opt.ok_or_else(|| {
-                DaftError::ValueError("kv_put_direct_series returned None".to_string())
+                Ok(s)
             })?;
             Ok(s)
         }

@@ -52,17 +52,6 @@ impl LanceConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct LMDBConfig {
-    path: String,
-}
-
-impl LMDBConfig {
-    pub fn new(path: String) -> Self {
-        Self { path }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct MemoryConfig {
     name: String,
 }
@@ -76,7 +65,6 @@ impl MemoryConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct KVConfig {
     lance: Option<LanceConfig>,
-    lmdb: Option<LMDBConfig>,
     memory: Option<MemoryConfig>,
 }
 
@@ -84,18 +72,12 @@ impl KVConfig {
     pub fn new() -> Self {
         Self {
             lance: None,
-            lmdb: None,
             memory: None,
         }
     }
 
     pub fn with_lance(mut self, config: LanceConfig) -> Self {
         self.lance = Some(config);
-        self
-    }
-
-    pub fn with_lmdb(mut self, config: LMDBConfig) -> Self {
-        self.lmdb = Some(config);
         self
     }
 

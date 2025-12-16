@@ -12,6 +12,6 @@ impl FunctionModule for KVModule {
         parent.add_fn(KVGetWithStoreName);
         parent.add_fn(KVBatchGetWithStoreName);
         parent.add_fn(KVExistsWithStoreName);
-        parent.add_fn(KVPutWithStoreName); // 添加这一行来注册KVPutWithStoreName
+        parent.add_fn(KVPutWithStoreName);
     }
 }
