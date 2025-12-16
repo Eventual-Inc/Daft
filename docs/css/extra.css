@@ -218,8 +218,8 @@ code.doc-symbol-method::after {
 .copy-page-btn {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
-    padding: 0.4rem 0.8rem;
+    gap: 0.35rem;
+    padding: 0.28rem 0.55rem;
     font-size: 0.75rem;
     font-weight: 500;
     color: var(--md-default-fg-color--light);
@@ -238,8 +238,8 @@ code.doc-symbol-method::after {
 }
 
 .copy-page-btn.copied {
-    color: #22c55e;
-    border-color: #22c55e;
+    color: var(--daft-magenta);
+    border-color: var(--daft-magenta);
 }
 
 .copy-page-btn svg {

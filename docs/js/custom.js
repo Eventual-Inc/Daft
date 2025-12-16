@@ -97,7 +97,7 @@ document.querySelectorAll(".highlight button").forEach((btn) => {
         await navigator.clipboard.writeText(markdown);
 
         // Success feedback
-        btn.querySelector(".copy-page-btn-text").textContent = "Copied!";
+        btn.querySelector(".copy-page-btn-text").textContent = "Copied";
         btn.classList.add("copied");
 
         setTimeout(() => {
