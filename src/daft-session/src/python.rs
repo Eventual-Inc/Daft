@@ -171,7 +171,21 @@ impl PySession {
     }
 
     pub fn attach_kv(&self, kv_store: Bound<PyAny>, alias: String) -> PyResult<()> {
-        Ok(self.0.attach_kv(pyobj_to_kv_store(kv_store)?, alias)?)
+        let kv_ref = pyobj_to_kv_store(kv_store)?;
+        // Attach to this session first
+        self.0.attach_kv(kv_ref.clone(), alias.clone())?;
+
+        // Best-effort: also mirror the attachment into the global CURRENT_SESSION if it
+        // refers to a different underlying session. This ensures that Rust-side KV
+        // helpers that rely on CURRENT_SESSION (e.g. kv_get_direct_series /
+        // kv_put_direct_series) can see KV stores attached via Python Session helpers.
+        if let Some(global) = CURRENT_SESSION.get()
+            && !self.0.shares_state(global)
+        {
+            let _ = global.attach_kv(kv_ref, alias);
+        }
+
+        Ok(())
     }
 
     pub fn detach_kv(&self, alias: &str) -> PyResult<()> {
@@ -237,11 +251,12 @@ pub fn set_current_session(sess: Bound<PyAny>) -> PyResult<()> {
 }
 
 /// Direct KV get by store name and keys Series (Rust-side)
-#[pyfunction(signature = (store_name, keys, columns=None))]
+#[pyfunction(signature = (store_name, keys, on_error, columns=None))]
 pub fn kv_get_direct_series(
     py: Python<'_>,
     store_name: &str,
     keys: daft_core::python::PySeries,
+    on_error: &str,
     columns: Option<Vec<String>>,
 ) -> PyResult<daft_core::python::PySeries> {
     // Resolve current session
@@ -277,10 +292,33 @@ pub fn kv_get_direct_series(
             ));
         };
 
-        // Assemble dict with selected fields
         let pydict = pyo3::types::PyDict::new(py);
-        for f in &fields {
-            let _ = pydict.set_item(f.clone(), obj.clone_ref(py));
+        let obj_bound = obj.bind(py);
+        if obj_bound.is_none() {
+            if on_error == "null" {
+                for f in &fields {
+                    pydict.set_item(f, pyo3::types::PyNone::get(py))?;
+                }
+            } else {
+                return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                    "Missing key: {key_str}"
+                )));
+            }
+        } else if obj_bound.is_instance_of::<pyo3::types::PyDict>() {
+            let dict = obj_bound.cast::<pyo3::types::PyDict>()?;
+            for f in &fields {
+                if let Some(value) = dict.get_item(f)? {
+                    pydict.set_item(f, value)?;
+                } else {
+                    pydict.set_item(f, pyo3::types::PyNone::get(py))?;
+                }
+            }
+        } else if fields.len() == 1 {
+            pydict.set_item(fields[0].as_str(), obj.clone_ref(py))?;
+        } else {
+            return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                "Expected dict result for multi-column KV get",
+            ));
         }
         let dict_obj: pyo3::Py<PyAny> = pydict.into_pyobject(py)?.into();
         out.push(Literal::Python(common_py_serde::PyObjectWrapper(
@@ -343,6 +381,122 @@ pub fn kv_put_direct_series(
     Ok(daft_core::python::PySeries { series: s })
 }
 
+#[pyfunction(signature = (store_name, keys, batch_size, on_error, columns=None))]
+pub fn kv_batch_get_direct_series(
+    py: Python<'_>,
+    store_name: &str,
+    keys: daft_core::python::PySeries,
+    batch_size: usize,
+    on_error: &str,
+    columns: Option<Vec<String>>,
+) -> PyResult<daft_core::python::PySeries> {
+    let _ = batch_size;
+    let sess = CURRENT_SESSION.get().ok_or_else(|| {
+        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("No current session set")
+    })?;
+    let kv = sess.get_kv(store_name)?;
+
+    let fields: Vec<String> = if let Some(cols) = columns {
+        cols
+    } else {
+        kv.schema_fields()
+    };
+
+    use daft_core::prelude::*;
+    let k_py = keys.series.cast(&DataType::Python)?;
+    let k_arr = k_py.downcast::<PythonArray>()?;
+    let mut out: Vec<Literal> = Vec::with_capacity(k_arr.len());
+
+    for i in 0..k_arr.len() {
+        let key_str = k_arr.str_value(i).unwrap_or_else(|_| String::new());
+        let obj = if let Some(ms) = kv.as_any().downcast_ref::<crate::kv::MemoryKVStore>() {
+            ms.get(py, &key_str)?
+        } else if let Some(pywrap) = kv.as_any().downcast_ref::<crate::kv::PyKVStoreWrapper>() {
+            let py_kv = pywrap.inner().bind(py);
+            let obj = py_kv.call_method1("get_one", (key_str.clone(),))?;
+            obj.unbind()
+        } else {
+            return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                "Unsupported KV store for kv_batch_get_direct_series",
+            ));
+        };
+
+        let pydict = pyo3::types::PyDict::new(py);
+        let obj_bound = obj.bind(py);
+        if obj_bound.is_none() {
+            if on_error == "null" {
+                for f in &fields {
+                    pydict.set_item(f, pyo3::types::PyNone::get(py))?;
+                }
+            } else {
+                return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                    "Missing key: {key_str}"
+                )));
+            }
+        } else if obj_bound.is_instance_of::<pyo3::types::PyDict>() {
+            let dict = obj_bound.cast::<pyo3::types::PyDict>()?;
+            for f in &fields {
+                if let Some(value) = dict.get_item(f)? {
+                    pydict.set_item(f, value)?;
+                } else {
+                    pydict.set_item(f, pyo3::types::PyNone::get(py))?;
+                }
+            }
+        } else if fields.len() == 1 {
+            pydict.set_item(fields[0].as_str(), obj.clone_ref(py))?;
+        } else {
+            return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                "Expected dict result for multi-column KV batch_get",
+            ));
+        }
+        let dict_obj: pyo3::Py<PyAny> = pydict.into_pyobject(py)?.into();
+        out.push(Literal::Python(common_py_serde::PyObjectWrapper(
+            std::sync::Arc::new(dict_obj),
+        )));
+    }
+
+    let mut s = Series::from_literals(out)?;
+    s = s.rename(keys.series.name());
+    Ok(daft_core::python::PySeries { series: s })
+}
+
+#[pyfunction(signature = (store_name, keys))]
+pub fn kv_exists_direct_series(
+    py: Python<'_>,
+    store_name: &str,
+    keys: daft_core::python::PySeries,
+) -> PyResult<daft_core::python::PySeries> {
+    let sess = CURRENT_SESSION.get().ok_or_else(|| {
+        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("No current session set")
+    })?;
+    let kv = sess.get_kv(store_name)?;
+
+    use daft_core::prelude::*;
+    let k_py = keys.series.cast(&DataType::Python)?;
+    let k_arr = k_py.downcast::<PythonArray>()?;
+    let mut out: Vec<Literal> = Vec::with_capacity(k_arr.len());
+
+    for i in 0..k_arr.len() {
+        let key_str = k_arr.str_value(i).unwrap_or_else(|_| String::new());
+        let obj = if let Some(ms) = kv.as_any().downcast_ref::<crate::kv::MemoryKVStore>() {
+            ms.get(py, &key_str)?
+        } else if let Some(pywrap) = kv.as_any().downcast_ref::<crate::kv::PyKVStoreWrapper>() {
+            let py_kv = pywrap.inner().bind(py);
+            py_kv.call_method1("get_one", (key_str.clone(),))?.unbind()
+        } else {
+            return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                "Unsupported KV store for kv_exists_direct_series",
+            ));
+        };
+
+        out.push(Literal::Boolean(!obj.is_none(py)));
+    }
+
+    let mut s = Series::from_literals(out)?;
+    s = s.rename(keys.series.name());
+    Ok(daft_core::python::PySeries { series: s })
+}
+
 fn pyobj_to_provider(obj: Bound<PyAny>) -> PyResult<ProviderRef> {
     // no current rust-based providers, so just wrap
     Ok(Arc::new(PyProviderWrapper::from(obj.unbind())))
@@ -370,5 +524,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(set_current_session, parent)?)?;
     parent.add_function(wrap_pyfunction!(kv_get_direct_series, parent)?)?;
     parent.add_function(wrap_pyfunction!(kv_put_direct_series, parent)?)?;
+    parent.add_function(wrap_pyfunction!(kv_batch_get_direct_series, parent)?)?;
+    parent.add_function(wrap_pyfunction!(kv_exists_direct_series, parent)?)?;
     Ok(())
 }

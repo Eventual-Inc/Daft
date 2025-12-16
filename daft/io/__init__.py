@@ -26,7 +26,6 @@ from daft.io._range import _range
 from daft.io.catalog import DataCatalogTable, DataCatalogType
 from daft.io.file_path import from_glob_path
 from daft.io.sink import DataSink
-from daft.io.kv import KVDataSink
 from daft.io.source import DataSource, DataSourceTask
 from daft.io.av import read_video_frames
 
@@ -35,7 +34,6 @@ __all__ = [
     "DataCatalogTable",
     "DataCatalogType",
     "DataSink",
-    "KVDataSink",
     "DataSource",
     "DataSourceTask",
     "GCSConfig",

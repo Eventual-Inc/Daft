@@ -24,7 +24,7 @@ pub trait KVStore: Send + Sync + std::fmt::Debug {
     /// Returns the name of the KV store
     fn name(&self) -> &str;
 
-    /// Returns the backend type (e.g., "lance", "lmdb", "redis", "memory")
+    /// Returns the backend type (e.g., "lance", "redis", "memory")
     fn backend_type(&self) -> &str;
 
     /// Returns self as Any for downcasting

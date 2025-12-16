@@ -72,6 +72,12 @@ if TYPE_CHECKING:
     from types import ModuleType
 
     class _NativeModule(ModuleType):
+        def kv_get_with_name(self, keys: Any, store_name: Any, on_error: Any, columns: Any = ...) -> Any: ...
+        def kv_batch_get_with_name(
+            self, keys: Any, store_name: Any, batch_size: Any, on_error: Any, columns: Any = ...
+        ) -> Any: ...
+        def kv_exists_with_name(self, keys: Any, store_name: Any) -> Any: ...
+        def kv_put_with_name(self, key: Any, value: Any, store_name: Any) -> Any: ...
         def kv_get_with_config(self, keys: Any, kv_config: Any) -> Any: ...
         def kv_batch_get_with_config(self, keys: Any, kv_config: Any, batch_size: Any) -> Any: ...
         def kv_exists_with_config(self, keys: Any, kv_config: Any) -> Any: ...
@@ -142,6 +148,7 @@ def kv_get(
         store_name = getattr(kv_store_optional, "name", "")
 
     name_expr = lit(store_name)
+    on_error_expr = lit(on_error)
     columns_expr = None
     if columns is not None:
         import json
@@ -151,8 +158,10 @@ def kv_get(
         columns_expr = lit(columns_bytes)
 
     if columns_expr is None:
-        return Expression._from_pyexpr(native.kv_get_with_name(keys._expr, name_expr._expr))
-    return Expression._from_pyexpr(native.kv_get_with_name(keys._expr, name_expr._expr, columns_expr._expr))
+        return Expression._from_pyexpr(native.kv_get_with_name(keys._expr, name_expr._expr, on_error_expr._expr))
+    return Expression._from_pyexpr(
+        native.kv_get_with_name(keys._expr, name_expr._expr, on_error_expr._expr, columns_expr._expr)
+    )
 
 
 def kv_batch_get(
@@ -187,25 +196,28 @@ def kv_batch_get(
             )
         kv_store = kv_store_optional
 
-    # All backends: use KVConfig and ScalarUDF path
-    kv_config = kv_store.get_config()
-
-    import json
-
-    kv_config_json = kv_config.to_json()
-    kv_config_dict = json.loads(kv_config_json)
-    kv_config_dict["return_type"] = "struct"
-    kv_config_dict["requested_columns"] = (
-        None if columns is None else (columns if isinstance(columns, list) else [columns])
-    )
-
-    enhanced_kv_config_json = json.dumps(kv_config_dict, ensure_ascii=False, separators=(",", ":"))
-    kv_config_bytes = enhanced_kv_config_json.encode("utf-8")
-    kv_config_expr = lit(kv_config_bytes)
     batch_size_expr = lit(batch_size)
+    on_error_expr = lit(on_error)
 
+    store_name = getattr(kv_store, "name", "")
+    name_expr = lit(store_name)
+
+    columns_expr = None
+    if columns is not None:
+        import json
+
+        cols = columns if isinstance(columns, list) else [columns]
+        columns_bytes = json.dumps(cols, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        columns_expr = lit(columns_bytes)
+
+    if columns_expr is None:
+        return Expression._from_pyexpr(
+            native.kv_batch_get_with_name(keys._expr, name_expr._expr, batch_size_expr._expr, on_error_expr._expr)
+        )
     return Expression._from_pyexpr(
-        native.kv_batch_get_with_config(keys._expr, kv_config_expr._expr, batch_size_expr._expr)
+        native.kv_batch_get_with_name(
+            keys._expr, name_expr._expr, batch_size_expr._expr, on_error_expr._expr, columns_expr._expr
+        )
     )
 
 
@@ -239,13 +251,9 @@ def kv_exists(
             )
         kv_store = kv_store_optional
 
-    # All backends: use KVConfig and ScalarUDF path
-    kv_config = kv_store.get_config()
-    kv_config_json = kv_config.to_json()
-    kv_config_bytes = kv_config_json.encode("utf-8")
-    kv_config_expr = lit(kv_config_bytes)
-
-    return Expression._from_pyexpr(native.kv_exists_with_config(keys._expr, kv_config_expr._expr))
+    store_name = getattr(kv_store, "name", "")
+    name_expr = lit(store_name)
+    return Expression._from_pyexpr(native.kv_exists_with_name(keys._expr, name_expr._expr))
 
 
 def kv_get_with_config(
@@ -406,32 +414,29 @@ def kv_get_with_store_name(
     if isinstance(keys, str):
         keys = col(keys)
 
-    # Get KV store from session using the store name
     try:
-        kv_store = get_kv(store_name)
+        _ = get_kv(store_name)
     except ValueError as e:
         raise ValueError(
             f"KV store '{store_name}' not found in session. "
             f"Please attach the KV store using daft.attach() first. Original error: {e}"
         )
 
-    # All backends: use KVConfig and ScalarUDF path
-    kv_config = kv_store.get_config()
-    import json
+    name_expr = lit(store_name)
+    on_error_expr = lit(on_error)
+    columns_expr = None
+    if columns is not None:
+        import json
 
-    kv_config_json = kv_config.to_json()
-    kv_config_dict = json.loads(kv_config_json)
-    kv_config_dict["return_type"] = "struct"
-    kv_config_dict["requested_columns"] = (
-        None if columns is None else (columns if isinstance(columns, list) else [columns])
+        cols = columns if isinstance(columns, list) else [columns]
+        columns_bytes = json.dumps(cols, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        columns_expr = lit(columns_bytes)
+
+    if columns_expr is None:
+        return Expression._from_pyexpr(native.kv_get_with_name(keys._expr, name_expr._expr, on_error_expr._expr))
+    return Expression._from_pyexpr(
+        native.kv_get_with_name(keys._expr, name_expr._expr, on_error_expr._expr, columns_expr._expr)
     )
-
-    # Serialize enhanced config
-    enhanced_kv_config_json = json.dumps(kv_config_dict, ensure_ascii=False, separators=(",", ":"))
-    kv_config_bytes = enhanced_kv_config_json.encode("utf-8")
-    kv_config_expr = lit(kv_config_bytes)
-
-    return Expression._from_pyexpr(native.kv_get_with_store_name(keys._expr, kv_config_expr._expr))
 
 
 def kv_batch_get_with_store_name(
@@ -448,34 +453,38 @@ def kv_batch_get_with_store_name(
     if isinstance(keys, str):
         keys = col(keys)
 
-    # Get KV store from session using the store name
+    batch_size_expr = lit(batch_size)
     try:
-        kv_store = get_kv(store_name)
+        _ = get_kv(store_name)
     except ValueError as e:
         raise ValueError(
             f"KV store '{store_name}' not found in session. "
             f"Please attach the KV store using daft.attach() first. Original error: {e}"
         )
 
-    # All backends: use KVConfig and ScalarUDF path
-    kv_config = kv_store.get_config()
+    name_expr = lit(store_name)
+    on_error_expr = lit(on_error)
 
-    import json
+    columns_expr = None
+    if columns is not None:
+        import json
 
-    kv_config_json = kv_config.to_json()
-    kv_config_dict = json.loads(kv_config_json)
-    kv_config_dict["return_type"] = "struct"
-    kv_config_dict["requested_columns"] = (
-        None if columns is None else (columns if isinstance(columns, list) else [columns])
-    )
+        cols = columns if isinstance(columns, list) else [columns]
+        columns_bytes = json.dumps(cols, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        columns_expr = lit(columns_bytes)
 
-    enhanced_kv_config_json = json.dumps(kv_config_dict, ensure_ascii=False, separators=(",", ":"))
-    kv_config_bytes = enhanced_kv_config_json.encode("utf-8")
-    kv_config_expr = lit(kv_config_bytes)
-    batch_size_expr = lit(batch_size)
-
+    if columns_expr is None:
+        return Expression._from_pyexpr(
+            native.kv_batch_get_with_name(keys._expr, name_expr._expr, batch_size_expr._expr, on_error_expr._expr)
+        )
     return Expression._from_pyexpr(
-        native.kv_batch_get_with_store_name(keys._expr, kv_config_expr._expr, batch_size_expr._expr)
+        native.kv_batch_get_with_name(
+            keys._expr,
+            name_expr._expr,
+            batch_size_expr._expr,
+            on_error_expr._expr,
+            columns_expr._expr,
+        )
     )
 
 
@@ -491,22 +500,16 @@ def kv_exists_with_store_name(
     if isinstance(keys, str):
         keys = col(keys)
 
-    # Get KV store from session using the store name
     try:
-        kv_store = get_kv(store_name)
+        _ = get_kv(store_name)
     except ValueError as e:
         raise ValueError(
             f"KV store '{store_name}' not found in session. "
             f"Please attach the KV store using daft.attach() first. Original error: {e}"
         )
 
-    # All backends: use KVConfig and ScalarUDF path
-    kv_config = kv_store.get_config()
-    kv_config_json = kv_config.to_json()
-    kv_config_bytes = kv_config_json.encode("utf-8")
-    kv_config_expr = lit(kv_config_bytes)
-
-    return Expression._from_pyexpr(native.kv_exists_with_store_name(keys._expr, kv_config_expr._expr))
+    name_expr = lit(store_name)
+    return Expression._from_pyexpr(native.kv_exists_with_name(keys._expr, name_expr._expr))
 
 
 def kv_put_with_store_name(
@@ -532,29 +535,16 @@ def kv_put_with_store_name(
     if not isinstance(value, Expression):
         value = lit(value)
 
-    # Get KV store from session using the store name
     try:
-        kv_store = get_kv(store_name)
+        _ = get_kv(store_name)
     except ValueError as e:
         raise ValueError(
             f"KV store '{store_name}' not found in session. "
             f"Please attach the KV store using daft.attach() first. Original error: {e}"
         )
 
-    # All backends: use KVConfig and ScalarUDF path
-    kv_config = kv_store.get_config()
-    import json
-
-    kv_config_json = kv_config.to_json()
-    kv_config_dict = json.loads(kv_config_json)
-    kv_config_dict["return_type"] = "struct"
-
-    # Serialize enhanced config
-    enhanced_kv_config_json = json.dumps(kv_config_dict, ensure_ascii=False, separators=(",", ":"))
-    kv_config_bytes = enhanced_kv_config_json.encode("utf-8")
-    kv_config_expr = lit(kv_config_bytes)
-
-    return Expression._from_pyexpr(native.kv_put_with_store_name(key._expr, value._expr, kv_config_expr._expr))
+    name_expr = lit(store_name)
+    return Expression._from_pyexpr(native.kv_put_with_name(key._expr, value._expr, name_expr._expr))
 
 
 def kv_get_with_name(
@@ -576,6 +566,7 @@ def kv_get_with_name(
 
     # Create expression for the store name
     name_expr = lit(name)
+    on_error_expr = lit(on_error)
 
     # Optional columns selection
     if columns is not None:
@@ -584,10 +575,12 @@ def kv_get_with_name(
         cols = columns if isinstance(columns, list) else [columns]
         columns_bytes = json.dumps(cols, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         columns_expr = lit(columns_bytes)
-        return Expression._from_pyexpr(native.kv_get_with_name(keys._expr, name_expr._expr, columns_expr._expr))
+        return Expression._from_pyexpr(
+            native.kv_get_with_name(keys._expr, name_expr._expr, on_error_expr._expr, columns_expr._expr)
+        )
 
     # All backends: use ScalarUDF path with name parameter
-    return Expression._from_pyexpr(native.kv_get_with_name(keys._expr, name_expr._expr))
+    return Expression._from_pyexpr(native.kv_get_with_name(keys._expr, name_expr._expr, on_error_expr._expr))
 
 
 def kv_batch_get_with_name(
@@ -606,9 +599,28 @@ def kv_batch_get_with_name(
     # Create expression for the store name
     name_expr = lit(name)
     batch_size_expr = lit(batch_size)
+    on_error_expr = lit(on_error)
+
+    if columns is not None:
+        import json
+
+        cols = columns if isinstance(columns, list) else [columns]
+        columns_bytes = json.dumps(cols, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        columns_expr = lit(columns_bytes)
+        return Expression._from_pyexpr(
+            native.kv_batch_get_with_name(
+                keys._expr,
+                name_expr._expr,
+                batch_size_expr._expr,
+                on_error_expr._expr,
+                columns_expr._expr,
+            )
+        )
 
     # All backends: use ScalarUDF path with name parameter
-    return Expression._from_pyexpr(native.kv_batch_get_with_name(keys._expr, name_expr._expr, batch_size_expr._expr))
+    return Expression._from_pyexpr(
+        native.kv_batch_get_with_name(keys._expr, name_expr._expr, batch_size_expr._expr, on_error_expr._expr)
+    )
 
 
 def kv_exists_with_name(
