@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from daft.ai.openai.protocols.prompter import OpenAIPrompter, OpenAIPrompterDescriptor
 from daft.ai.openai.provider import OpenAIProvider
 from daft.ai.protocols import Prompter
+from daft.errors import UDFException
 
 
 def run_async(coro):
@@ -1196,3 +1197,115 @@ def test_openai_prompter_chat_completions_with_image_structured_output():
         assert messages[0]["content"][1]["type"] == "image_url"
 
     run_async(_test())
+
+
+# Tests for daft.functions.prompt error propagation
+
+
+def test_daft_functions_prompt_authentication_error():
+    """Test that AuthenticationError (invalid API key) is propagated when using daft.functions.prompt."""
+    from openai import AuthenticationError
+
+    import daft
+    from daft.functions.ai import prompt
+
+    # Create a DataFrame with test data
+    df = daft.from_pydict({"text": ["Hello, world!", "Test message"]})
+
+    # Mock the AsyncOpenAI client to raise AuthenticationError
+    mock_client = AsyncMock()
+    mock_client.responses.create = AsyncMock(
+        side_effect=AuthenticationError(
+            message="Incorrect API key provided",
+            response=Mock(status_code=401),
+            body=None,
+        )
+    )
+
+    # Patch AsyncOpenAI to return our mock client
+    with patch("daft.ai.openai.protocols.prompter.AsyncOpenAI", return_value=mock_client):
+        df = df.with_column(
+            "response",
+            prompt(df["text"], provider="openai", model="gpt-4o-mini"),
+        )
+
+        # Collect should raise UDFException wrapping AuthenticationError
+        with pytest.raises(UDFException) as exc_info:
+            df.collect()
+
+        # Verify the underlying exception is AuthenticationError
+        assert isinstance(exc_info.value.original_exception, AuthenticationError)
+        assert "Incorrect API key provided" in str(exc_info.value.original_exception)
+
+
+def test_daft_functions_prompt_rate_limit_error():
+    """Test that RateLimitError is propagated when using daft.functions.prompt."""
+    from openai import RateLimitError
+
+    import daft
+    from daft.functions.ai import prompt
+
+    # Create a DataFrame with test data
+    df = daft.from_pydict({"text": ["Hello, world!"]})
+
+    # Mock the AsyncOpenAI client to raise RateLimitError
+    mock_client = AsyncMock()
+    mock_client.responses.create = AsyncMock(
+        side_effect=RateLimitError(
+            message="Rate limit exceeded",
+            response=Mock(status_code=429),
+            body=None,
+        )
+    )
+
+    # Patch AsyncOpenAI to return our mock client
+    with patch("daft.ai.openai.protocols.prompter.AsyncOpenAI", return_value=mock_client):
+        df = df.with_column(
+            "response",
+            prompt(df["text"], provider="openai", model="gpt-4o-mini", max_retries=0),
+        )
+
+        # Collect should raise UDFException wrapping RateLimitError
+        with pytest.raises(UDFException) as exc_info:
+            df.collect()
+
+        # Verify the underlying exception is RateLimitError
+        assert isinstance(exc_info.value.original_exception, RateLimitError)
+        assert "Rate limit exceeded" in str(exc_info.value.original_exception)
+
+
+def test_daft_functions_prompt_api_error():
+    """Test that generic APIError is propagated when using daft.functions.prompt."""
+    from openai import APIError
+
+    import daft
+    from daft.functions.ai import prompt
+
+    # Create a DataFrame with test data
+    df = daft.from_pydict({"text": ["Hello, world!"]})
+
+    # Mock the AsyncOpenAI client to raise APIError
+    mock_client = AsyncMock()
+    mock_request = Mock()
+    mock_client.responses.create = AsyncMock(
+        side_effect=APIError(
+            message="API error occurred",
+            request=mock_request,
+            body=None,
+        )
+    )
+
+    # Patch AsyncOpenAI to return our mock client
+    with patch("daft.ai.openai.protocols.prompter.AsyncOpenAI", return_value=mock_client):
+        df = df.with_column(
+            "response",
+            prompt(df["text"], provider="openai", model="gpt-4o-mini"),
+        )
+
+        # Collect should raise UDFException wrapping APIError
+        with pytest.raises(UDFException) as exc_info:
+            df.collect()
+
+        # Verify the underlying exception is APIError
+        assert isinstance(exc_info.value.original_exception, APIError)
+        assert "API error occurred" in str(exc_info.value.original_exception)

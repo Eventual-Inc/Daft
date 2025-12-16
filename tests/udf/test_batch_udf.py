@@ -4,6 +4,7 @@ import pytest
 
 import daft
 from daft import DataType, Series, col
+from daft.errors import UDFException
 
 
 def test_batch_udf():
@@ -226,9 +227,10 @@ def test_batch_retry_defaults_to_raise_and_zero_retries():
 
     try:
         df.select(raise_err(col("value"))).to_pydict()
-        pytest.fail("Expected ValueError")
-    except ValueError:
-        pass
+        pytest.fail("Expected UDFException")
+    except UDFException as e:
+        assert isinstance(e.original_exception, ValueError)
+        assert str(e.original_exception) == "This is an error"
 
 
 def test_batch_max_retries():
@@ -307,9 +309,10 @@ def test_async_batch_retry_expected_to_fail_with_raise():
 
     try:
         df.select(raise_err(col("value"))).to_pydict()
-        pytest.fail("Expected ValueError")
-    except ValueError:
-        pass
+        pytest.fail("Expected UDFException")
+    except UDFException as e:
+        assert isinstance(e.original_exception, ValueError)
+        assert str(e.original_exception) == "This is an error"
 
 
 def test_async_batch_retry_defaults_to_raise_and_zero_retries():
@@ -321,6 +324,7 @@ def test_async_batch_retry_defaults_to_raise_and_zero_retries():
 
     try:
         df.select(raise_err(col("value"))).to_pydict()
-        pytest.fail("Expected ValueError")
-    except ValueError:
-        pass
+        pytest.fail("Expected UDFException")
+    except UDFException as e:
+        assert isinstance(e.original_exception, ValueError)
+        assert str(e.original_exception) == "This is an error"
