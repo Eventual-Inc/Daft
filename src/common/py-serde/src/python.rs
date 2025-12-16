@@ -113,7 +113,11 @@ macro_rules! impl_bincode_py_state_serialization {
                         .into(),
                     (PyBytes::new(
                         py,
-                        &$crate::bincode::serialize(&self).map_err(|error| {
+                        &$crate::bincode::serde::encode_to_vec(
+                            &self,
+                            $crate::bincode::config::legacy(),
+                        )
+                        .map_err(|error| {
                             PyErr::new::<PyRuntimeError, _>(format!(
                                 "Failed to serialize: {}",
                                 error.to_string()
@@ -125,7 +129,12 @@ macro_rules! impl_bincode_py_state_serialization {
 
             #[staticmethod]
             pub fn _from_serialized(serialized: &[u8]) -> Self {
-                $crate::bincode::deserialize(serialized).unwrap()
+                $crate::bincode::serde::decode_from_slice(
+                    serialized,
+                    $crate::bincode::config::legacy(),
+                )
+                .unwrap()
+                .0
             }
         }
     };
@@ -161,8 +170,8 @@ impl Hash for PyObjectWrapper {
             Ok(py_obj_hash) => py_obj_hash.hash(state),
             // Fall back to hashing the pickled Python object.
             Err(_) => {
-                let hasher = HashWriter { state };
-                bincode::serialize_into(hasher, self)
+                let mut hasher = HashWriter { state };
+                bincode::serde::encode_into_std_write(self, &mut hasher, bincode::config::legacy())
                     .expect("Pickling error occurred when computing hash of Pyobject");
             }
         }

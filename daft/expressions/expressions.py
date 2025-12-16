@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import builtins
 import math
-import warnings
 from collections.abc import Iterable, Iterator
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
     Literal,
-    TypeVar,
     overload,
 )
 
@@ -121,30 +119,6 @@ def _resolved_col(name: str) -> Expression:
     return Expression._from_pyexpr(resolved_col(name))
 
 
-def list_(*items: Expression | str) -> Expression:
-    """(DEPRECATED) Please use `daft.functions.to_list` instead."""
-    from daft.functions import to_list
-
-    warnings.warn(
-        "`daft.expressions.list_`/`daft.list_` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.to_list` instead.",
-        category=DeprecationWarning,
-    )
-    items_list = [col(i) if isinstance(i, str) else i for i in items]
-    return to_list(*items_list)
-
-
-def struct(*fields: Expression | str) -> Expression:
-    """(DEPRECATED) Please use `daft.functions.to_struct` instead."""
-    from daft.functions import to_struct
-
-    warnings.warn(
-        "`daft.expressions.struct`/`daft.struct` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.to_struct` instead.",
-        category=DeprecationWarning,
-    )
-    fields_list = [col(f) if isinstance(f, str) else f for f in fields]
-    return to_struct(*fields_list)
-
-
 def interval(
     years: int | None = None,
     months: int | None = None,
@@ -162,87 +136,26 @@ def interval(
     return Expression._from_pyexpr(lit_value)
 
 
-def coalesce(*args: Expression) -> Expression:
-    """(DEPRECATED) Please use `daft.functions.coalesce` instead."""
-    warnings.warn(
-        "`daft.coalesce` and `daft.expressions.coalesce` are deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.coalesce` instead.",
-        category=DeprecationWarning,
-    )
-    from daft.functions import coalesce
-
-    return coalesce(*args)
-
-
 class Expression:
     _expr: _PyExpr = None  # type: ignore
 
     def __init__(self) -> None:
         raise NotImplementedError("We do not support creating a Expression via __init__ ")
 
-    @property
-    def str(self) -> ExpressionStringNamespace:
-        """Access methods that work on columns of strings."""
-        return ExpressionStringNamespace.from_expression(self)
-
-    @property
-    def dt(self) -> ExpressionDatetimeNamespace:
-        """Access methods that work on columns of datetimes."""
-        return ExpressionDatetimeNamespace.from_expression(self)
-
-    @property
-    def embedding(self) -> ExpressionEmbeddingNamespace:
-        """Access methods that work on columns of embeddings."""
-        return ExpressionEmbeddingNamespace.from_expression(self)
-
-    @property
-    def float(self) -> ExpressionFloatNamespace:
-        """Access methods that work on columns of floats."""
-        return ExpressionFloatNamespace.from_expression(self)
-
-    @property
-    def url(self) -> ExpressionUrlNamespace:
-        """Access methods that work on columns of URLs."""
-        return ExpressionUrlNamespace.from_expression(self)
-
-    @property
-    def list(self) -> ExpressionListNamespace:
-        """Access methods that work on columns of lists."""
-        return ExpressionListNamespace.from_expression(self)
-
-    @property
-    def struct(self) -> ExpressionStructNamespace:
-        """Access methods that work on columns of structs."""
-        return ExpressionStructNamespace.from_expression(self)
-
-    @property
-    def map(self) -> ExpressionMapNamespace:
-        """Access methods that work on columns of maps."""
-        return ExpressionMapNamespace.from_expression(self)
-
-    @property
-    def image(self) -> ExpressionImageNamespace:
-        """Access methods that work on columns of images."""
-        return ExpressionImageNamespace.from_expression(self)
-
-    @property
-    def partitioning(self) -> ExpressionPartitioningNamespace:
-        """Access methods that support partitioning operators."""
-        return ExpressionPartitioningNamespace.from_expression(self)
-
-    @property
-    def binary(self) -> ExpressionBinaryNamespace:
-        """Access binary string operations for this expression.
-
-        Returns:
-            ExpressionBinaryNamespace: A namespace containing binary string operations
-        """
-        return ExpressionBinaryNamespace.from_expression(self)
-
     @staticmethod
     def _from_pyexpr(pyexpr: _PyExpr) -> Expression:
         expr = Expression.__new__(Expression)
         expr._expr = pyexpr
         return expr
+
+    def is_column(self) -> bool:
+        return self._expr.is_column()
+
+    def is_literal(self) -> bool:
+        return self._expr.is_literal()
+
+    def column_name(self) -> builtins.str | None:
+        return self._expr.column_name()
 
     @staticmethod
     def _to_expression(obj: object) -> Expression:
@@ -273,6 +186,7 @@ class Expression:
         batch_size: int | None,
         concurrency: int | None,
         use_process: bool | None,
+        ray_options: dict[builtins.str, builtins.str] | None = None,
     ) -> Expression:
         return Expression._from_pyexpr(
             _udf(
@@ -286,6 +200,7 @@ class Expression:
                 batch_size,
                 concurrency,
                 use_process,
+                ray_options,
             )
         )
 
@@ -627,14 +542,6 @@ class Expression:
 
         return sign(self)
 
-    def signum(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.sign` instead."""
-        warnings.warn(
-            "`Expression.image.signum` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.sign` instead.",
-            category=DeprecationWarning,
-        )
-        return self.sign()
-
     def negate(self) -> Expression:
         """The negative of a numeric expression.
 
@@ -644,14 +551,6 @@ class Expression:
         from daft.functions import negate
 
         return negate(self)
-
-    def negative(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.negate` instead."""
-        warnings.warn(
-            "`Expression.image.negative` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.negate` instead.",
-            category=DeprecationWarning,
-        )
-        return self.negate()
 
     def round(self, decimals: Expression | int = 0) -> Expression:
         """The round of a numeric expression.
@@ -913,6 +812,26 @@ class Expression:
 
         return log1p(self)
 
+    def pow(self, exp: Expression) -> Expression:
+        """The elementwise exponentiation of a numeric series.
+
+        Args:
+            exp: The exponent to raise each element to.
+        """
+        from daft.functions import pow
+
+        return pow(self, exp)
+
+    def power(self, exp: Expression) -> Expression:
+        """The elementwise exponentiation of a numeric series.
+
+        Args:
+            exp: The exponent to raise each element to.
+        """
+        from daft.functions import power
+
+        return power(self, exp)
+
     def exp(self) -> Expression:
         """The e^self of a numeric expression.
 
@@ -1012,6 +931,16 @@ class Expression:
         from daft.functions import sum
 
         return sum(self)
+
+    def product(self) -> Expression:
+        """Calculates the product of the values in the expression.
+
+        Tip: See Also
+            [`daft.functions.product`](https://docs.daft.ai/en/stable/api/functions/product/)
+        """
+        from daft.functions import product
+
+        return product(self)
 
     def approx_count_distinct(self) -> Expression:
         """Calculates the approximate number of non-`NULL` distinct values in the expression.
@@ -1129,14 +1058,6 @@ class Expression:
 
         return list_agg(self)
 
-    def agg_list(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.list_agg` instead."""
-        warnings.warn(
-            "`Expression.agg_list` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.list_agg` instead.",
-            category=DeprecationWarning,
-        )
-        return self.list_agg()
-
     def list_agg_distinct(self) -> Expression:
         """Aggregates the values in the expression into a list of distinct values (ignoring nulls).
 
@@ -1146,14 +1067,6 @@ class Expression:
         from daft.functions import list_agg_distinct
 
         return list_agg_distinct(self)
-
-    def agg_set(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.list_agg_distinct` instead."""
-        warnings.warn(
-            "`Expression.agg_set` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.list_agg_distinct` instead.",
-            category=DeprecationWarning,
-        )
-        return self.list_agg_distinct()
 
     def string_agg(self) -> Expression:
         """Aggregates the values in the expression into a single string by concatenating them.
@@ -1165,27 +1078,9 @@ class Expression:
 
         return string_agg(self)
 
-    def agg_concat(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.string_agg` instead."""
-        warnings.warn(
-            "`Expression.agg_concat` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.string_agg` instead.",
-            category=DeprecationWarning,
-        )
-        return self.string_agg()
-
     def _explode(self) -> Expression:
         f = native.get_function_from_registry("explode")
         return Expression._from_pyexpr(f(self._expr))
-
-    def if_else(self, if_true: Expression, if_false: Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.when` instead."""
-        warnings.warn(
-            "`Expression.if_else` is deprecated since Daft version >= 0.6.4 and will be removed in >= 0.7.0. Please use `daft.functions.when` instead.",
-            category=DeprecationWarning,
-        )
-        from daft.functions import when
-
-        return when(self, if_true).otherwise(if_false)
 
     def apply(self, func: Callable[..., Any], return_dtype: DataTypeLike) -> Expression:
         """Apply a function on each value in a given expression.
@@ -1307,7 +1202,7 @@ class Expression:
         """Hashes the values in the Expression.
 
         Tip: See Also
-            [`daft.functions.hash`](https://docs.daft.ai/en/stable/api/functions/hash/)
+            [`daft.functions.hash`](https://docs.daft.ai/en/stable/api/functions/hash/): use the function for hashing multiple columns together.
         """
         from daft.functions import hash
 
@@ -1513,14 +1408,6 @@ class Expression:
         from daft.functions import parse_url
 
         return parse_url(self)
-
-    def url_parse(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.parse_url` instead."""
-        warnings.warn(
-            "`Expression.url_parse` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.parse_url` instead.",
-            category=DeprecationWarning,
-        )
-        return self.parse_url()
 
     def explode(self) -> Expression:
         """Explode a list expression.
@@ -2683,808 +2570,6 @@ class WhenExpr(Expression):
         return Expression._from_pyexpr(self._construct_pyexpr(self._cases, value._expr))
 
 
-SomeExpressionNamespace = TypeVar("SomeExpressionNamespace", bound="ExpressionNamespace")
-
-
-class ExpressionNamespace:
-    _expr: _PyExpr
-
-    def __init__(self) -> None:
-        raise NotImplementedError("We do not support creating a ExpressionNamespace via __init__ ")
-
-    def _to_expression(self) -> Expression:
-        return Expression._from_pyexpr(self._expr)
-
-    @classmethod
-    def from_expression(cls: type[SomeExpressionNamespace], expr: Expression) -> SomeExpressionNamespace:
-        ns = cls.__new__(cls)
-        ns._expr = expr._expr
-        return ns
-
-    def _eval_expressions(self, func_name: str, *args: Any, **kwargs: Any) -> Expression:
-        e = Expression._from_pyexpr(self._expr)
-        return e._eval_expressions(func_name, *args, **kwargs)
-
-
-class ExpressionUrlNamespace(ExpressionNamespace):
-    """The following methods are available under the `expr.url` attribute."""
-
-    def download(
-        self,
-        max_connections: int = 32,
-        on_error: Literal["raise", "null"] = "raise",
-        io_config: IOConfig | None = None,
-    ) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.download` instead."""
-        warnings.warn(
-            "`Expression.url.download` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.download` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().download(
-            max_connections=max_connections,
-            on_error=on_error,
-            io_config=io_config,
-        )
-
-    def upload(
-        self,
-        location: str | Expression,
-        max_connections: int = 32,
-        on_error: Literal["raise", "null"] = "raise",
-        io_config: IOConfig | None = None,
-    ) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.upload` instead."""
-        warnings.warn(
-            "`Expression.url.upload` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.upload` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().upload(
-            location=location,
-            max_connections=max_connections,
-            on_error=on_error,
-            io_config=io_config,
-        )
-
-
-class ExpressionFloatNamespace(ExpressionNamespace):
-    """The following methods are available under the `expr.float` attribute."""
-
-    def is_nan(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.is_nan` instead."""
-        warnings.warn(
-            "`Expression.float.is_nan` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.is_nan` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().is_nan()
-
-    def is_inf(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.is_inf` instead."""
-        warnings.warn(
-            "`Expression.float.is_inf` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.is_inf` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().is_inf()
-
-    def not_nan(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.not_nan` instead."""
-        warnings.warn(
-            "`Expression.float.not_nan` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.not_nan` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().not_nan()
-
-    def fill_nan(self, fill_value: Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.fill_nan` instead."""
-        warnings.warn(
-            "`Expression.float.fill_nan` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.fill_nan` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().fill_nan(fill_value)
-
-
-class ExpressionDatetimeNamespace(ExpressionNamespace):
-    """The following methods are available under the `expr.dt` attribute."""
-
-    def date(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.date` instead."""
-        warnings.warn(
-            "`Expression.dt.date` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.date` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().date()
-
-    def day(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.day` instead."""
-        warnings.warn(
-            "`Expression.dt.day` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.day` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().day()
-
-    def hour(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.hour` instead."""
-        warnings.warn(
-            "`Expression.dt.hour` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.hour` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().hour()
-
-    def minute(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.minute` instead."""
-        warnings.warn(
-            "`Expression.dt.minute` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.minute` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().minute()
-
-    def second(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.second` instead."""
-        warnings.warn(
-            "`Expression.dt.second` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.second` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().second()
-
-    def millisecond(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.millisecond` instead."""
-        warnings.warn(
-            "`Expression.dt.millisecond` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.millisecond` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().millisecond()
-
-    def microsecond(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.microsecond` instead."""
-        warnings.warn(
-            "`Expression.dt.microsecond` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.microsecond` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().microsecond()
-
-    def nanosecond(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.nanosecond` instead."""
-        warnings.warn(
-            "`Expression.dt.nanosecond` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.nanosecond` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().nanosecond()
-
-    def unix_date(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.unix_date` instead."""
-        warnings.warn(
-            "`Expression.dt.unix_date` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.unix_date` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().unix_date()
-
-    def time(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.time` instead."""
-        warnings.warn(
-            "`Expression.dt.time` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.time` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().time()
-
-    def month(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.month` instead."""
-        warnings.warn(
-            "`Expression.dt.month` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.month` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().month()
-
-    def quarter(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.quarter` instead."""
-        warnings.warn(
-            "`Expression.dt.quarter` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.quarter` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().quarter()
-
-    def year(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.year` instead."""
-        warnings.warn(
-            "`Expression.dt.year` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.year` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().year()
-
-    def day_of_week(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.day_of_week` instead."""
-        warnings.warn(
-            "`Expression.dt.day_of_week` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.day_of_week` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().day_of_week()
-
-    def day_of_month(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.day_of_month` instead."""
-        warnings.warn(
-            "`Expression.dt.day_of_month` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.day_of_month` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().day_of_month()
-
-    def day_of_year(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.day_of_year` instead."""
-        warnings.warn(
-            "`Expression.dt.day_of_year` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.day_of_year` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().day_of_year()
-
-    def week_of_year(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.week_of_year` instead."""
-        warnings.warn(
-            "`Expression.dt.week_of_year` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.week_of_year` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().week_of_year()
-
-    def truncate(self, interval: str, relative_to: Expression | None = None) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.date_trunc` instead."""
-        warnings.warn(
-            "`Expression.dt.truncate` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.date_trunc` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().date_trunc(interval, relative_to=relative_to)
-
-    def to_unix_epoch(self, time_unit: str | TimeUnit | None = None) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.to_unix_epoch` instead."""
-        warnings.warn(
-            "`Expression.dt.to_unix_epoch` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.to_unix_epoch` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().to_unix_epoch(time_unit=time_unit)
-
-    def strftime(self, format: str | None = None) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.strftime` instead."""
-        warnings.warn(
-            "`Expression.dt.strftime` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.strftime` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().strftime(format=format)
-
-    def total_seconds(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.total_seconds` instead."""
-        warnings.warn(
-            "`Expression.dt.total_seconds` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.total_seconds` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().total_seconds()
-
-    def total_milliseconds(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.total_milliseconds` instead."""
-        warnings.warn(
-            "`Expression.dt.total_milliseconds` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.total_milliseconds` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().total_milliseconds()
-
-    def total_microseconds(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.total_microseconds` instead."""
-        warnings.warn(
-            "`Expression.dt.total_microseconds` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.total_microseconds` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().total_microseconds()
-
-    def total_nanoseconds(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.total_nanoseconds` instead."""
-        warnings.warn(
-            "`Expression.dt.total_nanoseconds` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.total_nanoseconds` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().total_nanoseconds()
-
-    def total_minutes(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.total_minutes` instead."""
-        warnings.warn(
-            "`Expression.dt.total_minutes` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.total_minutes` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().total_minutes()
-
-    def total_hours(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.total_hours` instead."""
-        warnings.warn(
-            "`Expression.dt.total_hours` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.total_hours` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().total_hours()
-
-    def total_days(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.total_days` instead."""
-        warnings.warn(
-            "`Expression.dt.total_days` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.total_days` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().total_days()
-
-
-class ExpressionStringNamespace(ExpressionNamespace):
-    """The following methods are available under the `expr.str` attribute."""
-
-    def contains(self, substr: str | Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.contains` instead."""
-        warnings.warn(
-            "`Expression.str.contains` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.contains` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().contains(substr)
-
-    def match(self, pattern: str | Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.regexp` instead."""
-        warnings.warn(
-            "`Expression.str.match` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.regexp` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().regexp(pattern)
-
-    def endswith(self, suffix: str | Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.endswith` instead."""
-        warnings.warn(
-            "`Expression.str.endswith` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.endswith` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().endswith(suffix)
-
-    def startswith(self, prefix: str | Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.startswith` instead."""
-        warnings.warn(
-            "`Expression.str.startswith` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.startswith` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().startswith(prefix)
-
-    def split(self, pattern: str | Expression, regex: bool = False) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.split` or `daft.functions.regexp_split` instead."""
-        warnings.warn(
-            "`Expression.str.split` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.split` or `daft.functions.regexp_split` instead.",
-            category=DeprecationWarning,
-        )
-        if regex:
-            return self._to_expression().regexp_split(pattern)
-        else:
-            return self._to_expression().split(pattern)
-
-    def concat(self, other: str | Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.concat` instead."""
-        warnings.warn(
-            "`Expression.str.concat` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.concat` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().concat(other)
-
-    def extract(self, pattern: str | Expression, index: int = 0) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.regexp_extract` instead."""
-        warnings.warn(
-            "`Expression.str.extract` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.regexp_extract` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().regexp_extract(pattern, index)
-
-    def extract_all(self, pattern: str | Expression, index: int = 0) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.regexp_extract_all` instead."""
-        warnings.warn(
-            "`Expression.str.extract_all` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.regexp_extract_all` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().regexp_extract_all(pattern, index)
-
-    def replace(
-        self,
-        pattern: str | Expression,
-        replacement: str | Expression,
-        regex: bool = False,
-    ) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.replace` or `daft.functions.regexp_replace` instead."""
-        warnings.warn(
-            "`Expression.str.replace` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.replace` or `daft.functions.regexp_replace` instead.",
-            category=DeprecationWarning,
-        )
-        if regex:
-            return self._to_expression().regexp_replace(pattern, replacement)
-        else:
-            return self._to_expression().replace(pattern, replacement)
-
-    def length(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.length` instead."""
-        warnings.warn(
-            "`Expression.str.length` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.length` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().length()
-
-    def length_bytes(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.length_bytes` instead."""
-        warnings.warn(
-            "`Expression.str.length_bytes` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.length_bytes` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().length_bytes()
-
-    def lower(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.lower` instead."""
-        warnings.warn(
-            "`Expression.str.lower` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.lower` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().lower()
-
-    def upper(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.upper` instead."""
-        warnings.warn(
-            "`Expression.str.upper` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.upper` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().upper()
-
-    def lstrip(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.lstrip` instead."""
-        warnings.warn(
-            "`Expression.str.lstrip` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.lstrip` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().lstrip()
-
-    def rstrip(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.rstrip` instead."""
-        warnings.warn(
-            "`Expression.str.rstrip` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.rstrip` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().rstrip()
-
-    def reverse(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.reverse` instead."""
-        warnings.warn(
-            "`Expression.str.reverse` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.reverse` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().reverse()
-
-    def capitalize(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.capitalize` instead."""
-        warnings.warn(
-            "`Expression.str.capitalize` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.capitalize` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().capitalize()
-
-    def left(self, nchars: int | Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.left` instead."""
-        warnings.warn(
-            "`Expression.str.left` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.left` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().left(nchars)
-
-    def right(self, nchars: int | Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.right` instead."""
-        warnings.warn(
-            "`Expression.str.right` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.right` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().right(nchars)
-
-    def find(self, substr: str | Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.find` instead."""
-        warnings.warn(
-            "`Expression.str.find` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.find` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().find(substr)
-
-    def rpad(self, length: int | Expression, pad: str | Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.rpad` instead."""
-        warnings.warn(
-            "`Expression.str.rpad` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.rpad` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().rpad(length, pad)
-
-    def lpad(self, length: int | Expression, pad: str | Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.lpad` instead."""
-        warnings.warn(
-            "`Expression.str.lpad` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.lpad` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().lpad(length, pad)
-
-    def repeat(self, n: int | Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.repeat` instead."""
-        warnings.warn(
-            "`Expression.str.repeat` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.repeat` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().repeat(n)
-
-    def like(self, pattern: str | Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.like` instead."""
-        warnings.warn(
-            "`Expression.str.like` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.like` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().like(pattern)
-
-    def ilike(self, pattern: str | Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.ilike` instead."""
-        warnings.warn(
-            "`Expression.str.ilike` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.ilike` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().ilike(pattern)
-
-    def substr(self, start: int | Expression, length: int | Expression | None = None) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.substr` instead."""
-        warnings.warn(
-            "`Expression.str.substr` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.substr` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().substr(start, length)
-
-    def to_date(self, format: str) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.to_date` instead."""
-        warnings.warn(
-            "`Expression.str.to_date` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.to_date` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().to_date(format)
-
-    def to_datetime(self, format: str, timezone: str | None = None) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.to_datetime` instead."""
-        warnings.warn(
-            "`Expression.str.to_datetime` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.to_datetime` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().to_datetime(format, timezone)
-
-    def normalize(
-        self,
-        *,
-        remove_punct: bool = False,
-        lowercase: bool = False,
-        nfd_unicode: bool = False,
-        white_space: bool = False,
-    ) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.normalize` instead."""
-        warnings.warn(
-            "`Expression.str.normalize` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.normalize` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().normalize(
-            remove_punct=remove_punct,
-            lowercase=lowercase,
-            nfd_unicode=nfd_unicode,
-            white_space=white_space,
-        )
-
-    def tokenize_encode(
-        self,
-        tokens_path: str,
-        *,
-        io_config: IOConfig | None = None,
-        pattern: str | None = None,
-        special_tokens: str | None = None,
-        use_special_tokens: bool | None = None,
-    ) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.tokenize_encode` instead."""
-        warnings.warn(
-            "`Expression.str.tokenize_encode` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.tokenize_encode` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().tokenize_encode(
-            tokens_path=tokens_path,
-            io_config=io_config,
-            pattern=pattern,
-            special_tokens=special_tokens,
-            use_special_tokens=use_special_tokens,
-        )
-
-    def tokenize_decode(
-        self,
-        tokens_path: str,
-        *,
-        io_config: IOConfig | None = None,
-        pattern: str | None = None,
-        special_tokens: str | None = None,
-    ) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.tokenize_decode` instead."""
-        warnings.warn(
-            "`Expression.str.tokenize_decode` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.tokenize_decode` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().tokenize_decode(
-            tokens_path=tokens_path,
-            io_config=io_config,
-            pattern=pattern,
-            special_tokens=special_tokens,
-        )
-
-    def count_matches(
-        self,
-        patterns: Any,
-        *,
-        whole_words: bool = False,
-        case_sensitive: bool = True,
-    ) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.count_matches` instead."""
-        warnings.warn(
-            "`Expression.str.count_matches` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.count_matches` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().count_matches(
-            patterns,
-            whole_words=whole_words,
-            case_sensitive=case_sensitive,
-        )
-
-
-class ExpressionListNamespace(ExpressionNamespace):
-    """The following methods are available under the `expr.list` attribute."""
-
-    def map(self, expr: Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.list_map` instead."""
-        warnings.warn(
-            "`Expression.list.map` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.list_map` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().list_map(expr)
-
-    def join(self, delimiter: str | Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.list_join` instead."""
-        warnings.warn(
-            "`Expression.list.join` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.list_join` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().list_join(delimiter)
-
-    def value_counts(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.value_counts` instead."""
-        warnings.warn(
-            "`Expression.list.value_counts` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.value_counts` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().value_counts()
-
-    def count(self, mode: Literal["all", "valid", "null"] | CountMode = CountMode.Valid) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.list_count` instead."""
-        warnings.warn(
-            "`Expression.list.count` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.list_count` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().list_count(mode)
-
-    def length(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.length` instead."""
-        warnings.warn(
-            "`Expression.list.length` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.length` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().length()
-
-    def get(self, idx: int | Expression, default: object = None) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.get` instead."""
-        warnings.warn(
-            "`Expression.list.get` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.get` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().get(idx, default=default)
-
-    def slice(self, start: int | Expression, end: int | Expression | None = None) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.slice` instead."""
-        warnings.warn(
-            "`Expression.list.slice` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.slice` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().slice(start, end=end)
-
-    def chunk(self, size: int) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.chunk` instead."""
-        warnings.warn(
-            "`Expression.list.chunk` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.chunk` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().chunk(size)
-
-    def sum(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.list_sum` instead."""
-        warnings.warn(
-            "`Expression.list.sum` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.list_sum` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().list_sum()
-
-    def mean(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.list_mean` instead."""
-        warnings.warn(
-            "`Expression.list.mean` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.list_mean` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().list_mean()
-
-    def min(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.list_min` instead."""
-        warnings.warn(
-            "`Expression.list.min` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.list_min` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().list_min()
-
-    def max(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.list_max` instead."""
-        warnings.warn(
-            "`Expression.list.max` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.list_max` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().list_max()
-
-    def bool_and(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.list_bool_and` instead."""
-        warnings.warn(
-            "`Expression.list.bool_and` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.list_bool_and` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().list_bool_and()
-
-    def bool_or(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.list_bool_or` instead."""
-        warnings.warn(
-            "`Expression.list.bool_or` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.list_bool_or` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().list_bool_or()
-
-    def sort(self, desc: bool | Expression | None = None, nulls_first: bool | Expression | None = None) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.list_sort` instead."""
-        warnings.warn(
-            "`Expression.list.sort` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.list_sort` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().list_sort(desc=desc, nulls_first=nulls_first)
-
-    def distinct(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.list_distinct` instead."""
-        warnings.warn(
-            "`Expression.list.distinct` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.list_distinct` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().list_distinct()
-
-    def unique(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.list_distinct` instead."""
-        warnings.warn(
-            "`Expression.list.distinct` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.list_distinct` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().list_distinct()
-
-
-class ExpressionStructNamespace(ExpressionNamespace):
-    """The following methods are available under the `expr.struct` attribute."""
-
-    def get(self, name: str) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.get` instead."""
-        warnings.warn(
-            "`Expression.struct.get` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.get` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().get(name)
-
-
-class ExpressionMapNamespace(ExpressionNamespace):
-    """The following methods are available under the `expr.map` attribute."""
-
-    def get(self, key: Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.map_get` instead."""
-        warnings.warn(
-            "`Expression.map.get` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.map_get` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().map_get(key)
-
-
 class ExpressionsProjection(Iterable[Expression]):
     """A collection of Expressions that can be projected onto a Table to produce another Table.
 
@@ -3600,215 +2685,3 @@ class ExpressionsProjection(Iterable[Expression]):
         self,
     ) -> tuple[Callable[[dict[str, Expression]], ExpressionsProjection], tuple[dict[str, Expression]]]:
         return ExpressionsProjection._from_serialized, (self._output_name_to_exprs,)
-
-
-class ExpressionImageNamespace(ExpressionNamespace):
-    """Expression operations for image columns. The following methods are available under the `expr.image` attribute."""
-
-    def decode(
-        self,
-        on_error: Literal["raise", "null"] = "raise",
-        mode: str | ImageMode | None = None,
-    ) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.decode_image` instead."""
-        warnings.warn(
-            "`Expression.image.decode` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.decode_image` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().decode_image(on_error=on_error, mode=mode)
-
-    def encode(self, image_format: str | ImageFormat) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.encode_image` instead."""
-        warnings.warn(
-            "`Expression.image.encode` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.encode_image` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().encode_image(image_format)
-
-    def resize(self, w: int, h: int) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.resize` instead."""
-        warnings.warn(
-            "`Expression.image.resize` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.resize` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().resize(w, h)
-
-    def crop(self, bbox: tuple[int, int, int, int] | Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.crop` instead."""
-        warnings.warn(
-            "`Expression.image.crop` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.crop` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().crop(bbox)
-
-    def to_mode(self, mode: str | ImageMode) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.convert_image` instead."""
-        warnings.warn(
-            "`Expression.image.to_mode` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.convert_image` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().convert_image(mode)
-
-    def attribute(self, name: Literal["width", "height", "channel", "mode"] | ImageProperty) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.image_attribute` instead."""
-        warnings.warn(
-            "`Expression.image.attribute` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.image_attribute` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().image_attribute(name)
-
-    def width(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.image_width` instead."""
-        warnings.warn(
-            "`Expression.image.width` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.image_width` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().image_width()
-
-    def height(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.image_height` instead."""
-        warnings.warn(
-            "`Expression.image.height` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.image_height` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().image_height()
-
-    def channel(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.image_channel` instead."""
-        warnings.warn(
-            "`Expression.image.channel` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.image_channel` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().image_channel()
-
-    def mode(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.image_mode` instead."""
-        warnings.warn(
-            "`Expression.image.mode` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.image_mode` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().image_mode()
-
-
-class ExpressionPartitioningNamespace(ExpressionNamespace):
-    """The following methods are available under the `expr.partition` attribute."""
-
-    def days(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.partition_days` instead."""
-        warnings.warn(
-            "`Expression.partition.days` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.partition_days` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().partition_days()
-
-    def hours(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.partition_hours` instead."""
-        warnings.warn(
-            "`Expression.partition.hours` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.partition_hours` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().partition_hours()
-
-    def months(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.partition_months` instead."""
-        warnings.warn(
-            "`Expression.partition.months` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.partition_months` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().partition_months()
-
-    def years(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.partition_years` instead."""
-        warnings.warn(
-            "`Expression.partition.years` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.partition_years` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().partition_years()
-
-    def iceberg_bucket(self, n: int) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.partition_iceberg_bucket` instead."""
-        warnings.warn(
-            "`Expression.partition.iceberg_bucket` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.partition_iceberg_bucket` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().partition_iceberg_bucket(n)
-
-    def iceberg_truncate(self, w: int) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.partition_iceberg_truncate` instead."""
-        warnings.warn(
-            "`Expression.partition.iceberg_truncate` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.partition_iceberg_truncate` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().partition_iceberg_truncate(w)
-
-
-class ExpressionEmbeddingNamespace(ExpressionNamespace):
-    """The following methods are available under the `expr.embedding` attribute."""
-
-    def cosine_distance(self, other: Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.cosine_distance` instead."""
-        warnings.warn(
-            "`Expression.embedding.cosine_distance` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.cosine_distance` instead.",
-            category=DeprecationWarning,
-        )
-
-        return self._to_expression().cosine_distance(other)
-
-
-class ExpressionBinaryNamespace(ExpressionNamespace):
-    """The following methods are available under the `expr.binary` attribute."""
-
-    def length(self) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.length` instead."""
-        warnings.warn(
-            "`Expression.binary.length` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.length` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().length()
-
-    def concat(self, other: Expression) -> Expression:
-        """(DEPRECATED) Please use `daft.functions.concat` instead."""
-        warnings.warn(
-            "`Expression.binary.concat` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.concat` instead.",
-            category=DeprecationWarning,
-        )
-        return self._to_expression().concat(other)
-
-    def slice(self, start: Expression | int, length: Expression | int | None = None) -> Expression:
-        r"""(DEPRECATED) Please use `daft.functions.slice` instead.
-
-        Returns a slice of each binary string.
-
-        Args:
-            start: The starting position (0-based) of the slice.
-            length: The length of the slice. If None, returns all characters from start to the end.
-
-        Returns:
-            A new expression representing the slice.
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": [b"Hello World", b"\xff\xfe\x00", b"empty"]})
-            >>> df = df.select(df["x"].binary.slice(1, 3))
-            >>> df.show()
-            ╭─────────────╮
-            │ x           │
-            │ ---         │
-            │ Binary      │
-            ╞═════════════╡
-            │ b"ell"      │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ b"\xfe\x00" │
-            ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-            │ b"mpt"      │
-            ╰─────────────╯
-            <BLANKLINE>
-            (Showing first 3 of 3 rows)
-
-        """
-        warnings.warn(
-            "`Expression.binary.slice` is deprecated since Daft version >= 0.6.2 and will be removed in >= 0.7.0. Please use `daft.functions.slice` instead.",
-            category=DeprecationWarning,
-        )
-        end = None if length is None else Expression._to_expression(start) + Expression._to_expression(length)
-        return self._to_expression().slice(start, end=end)

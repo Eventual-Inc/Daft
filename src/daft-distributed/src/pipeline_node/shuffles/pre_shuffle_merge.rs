@@ -31,19 +31,16 @@ impl PreShuffleMergeNode {
 
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         pre_shuffle_merge_threshold: usize,
         schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -128,11 +125,7 @@ impl PreShuffleMergeNode {
             // Check if this bucket has reached the threshold
             if bucket
                 .iter()
-                .map(|output| {
-                    output
-                        .size_bytes()
-                        .unwrap_or(self.pre_shuffle_merge_threshold) // If the size is not available, err on the safe side and use the threshold as a fallback
-                })
+                .map(|output| output.size_bytes())
                 .sum::<usize>()
                 >= self.pre_shuffle_merge_threshold
             {
@@ -148,7 +141,7 @@ impl PreShuffleMergeNode {
                             worker_id,
                             soft: false,
                         }),
-                    )?;
+                    );
 
                     // Send the task directly to result_tx
                     if result_tx.send(task).await.is_err() {
@@ -171,7 +164,7 @@ impl PreShuffleMergeNode {
                         worker_id,
                         soft: false,
                     }),
-                )?;
+                );
 
                 if result_tx.send(task).await.is_err() {
                     break;

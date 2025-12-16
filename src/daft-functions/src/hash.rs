@@ -4,12 +4,13 @@ use daft_dsl::functions::{prelude::*, scalar::ScalarFn};
 use daft_hash::HashFunctionKind;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub(super) struct HashFunction;
 
 #[derive(FunctionArgs)]
 struct Args<T> {
-    input: T,
+    #[arg(variadic)]
+    input: Vec<T>,
 
     #[arg(optional)]
     seed: Option<T>,
@@ -31,59 +32,44 @@ impl ScalarUDF for HashFunction {
             hash_function,
         } = inputs.try_into()?;
 
+        if input.is_empty() {
+            return Err(DaftError::ValueError(
+                "hash() requires at least one expression".to_string(),
+            ));
+        }
+
         let hash_function = hash_function
             .map(|s| s.parse::<HashFunctionKind>())
             .transpose()?
             .unwrap_or(HashFunctionKind::XxHash3_64);
 
-        if let Some(seed) = seed {
-            match seed.len() {
-                1 if seed.data_type().is_list() => {
-                    let seed = seed.list()?;
-                    ensure!(
-                        seed.len() == 1,
-                        "Seed must be a single value or the same length as the input"
-                    );
-                    let seed = seed.get(0).unwrap();
-                    ensure!(
-                        seed.len() == input.len(),
-                        ValueError: "Seed must be a single value or the same length as the input"
-                    );
-                    let seed = seed.cast(&DataType::UInt64)?;
-                    let seed = seed.u64().unwrap();
-                    input
-                        .hash_with(Some(seed), hash_function)
-                        .map(IntoSeries::into_series)
-                }
-                1 => {
-                    let seed = seed.cast(&DataType::UInt64)?;
-                    // There's no way to natively extend the array, so we extract the element and repeat it.
-                    let seed = seed.u64().unwrap();
-                    let seed = seed.get(0).unwrap();
-                    let seed = UInt64Array::from_iter(
-                        Field::new("seed", DataType::UInt64),
-                        std::iter::repeat_n(Some(seed), input.len()),
-                    );
-                    input
-                        .hash_with(Some(&seed), hash_function)
-                        .map(IntoSeries::into_series)
-                }
-                _ if seed.len() == input.len() => {
-                    let seed = seed.cast(&DataType::UInt64)?;
-                    let seed = seed.u64().unwrap();
-                    input
-                        .hash_with(Some(seed), hash_function)
-                        .map(IntoSeries::into_series)
-                }
-                _ => Err(DaftError::ValueError(
-                    "Seed must be a single value or the same length as the input".to_string(),
-                )),
-            }
-        } else {
-            input
-                .hash_with(None, hash_function)
-                .map(IntoSeries::into_series)
+        let first_name = input[0].name().to_string();
+        let num_rows = input[0].len();
+
+        let input: DaftResult<Vec<Series>> = input
+            .into_iter()
+            .map(|series| match series.len() {
+                len if len == num_rows => Ok(series),
+                1 => series.broadcast(num_rows),
+                len => Err(DaftError::ValueError(format!(
+                    "hash() requires all inputs to be length 1 or match the first input length. Column {} had length {} vs expected {}",
+                    series.name(),
+                    len,
+                    num_rows
+                ))),
+            })
+            .collect();
+        let input = input?;
+
+        let (first_column, rest) = input
+            .split_first()
+            .expect("validated batch must contain at least one column");
+
+        let mut hash_array = hash_with_seed(first_column, seed, hash_function)?;
+        for column in rest {
+            hash_array = hash_with_seed(column, Some(hash_array), hash_function)?;
         }
+        Ok(hash_array.rename(&first_name))
     }
 
     fn get_return_field(
@@ -92,7 +78,11 @@ impl ScalarUDF for HashFunction {
         schema: &Schema,
     ) -> DaftResult<Field> {
         let Args { input, seed, .. } = inputs.try_into()?;
-        let input = input.to_field(schema)?;
+        let mut args_iter = input.into_iter();
+        let first = args_iter.next().ok_or_else(|| {
+            DaftError::ValueError("hash() requires at least one expression".to_string())
+        })?;
+        let input = first.to_field(schema)?;
 
         if let Some(seed) = seed {
             let seed = seed.to_field(schema)?;
@@ -120,4 +110,69 @@ pub fn hash(input: ExprRef, seed: Option<ExprRef>, hash_function: Option<ExprRef
     }
 
     ScalarFn::builtin(HashFunction, inputs).into()
+}
+
+fn hash_with_seed(
+    series: &Series,
+    seed: Option<Series>,
+    hash_function: HashFunctionKind,
+) -> DaftResult<Series> {
+    let seed = match seed {
+        Some(seed_series) => match seed_series.len() {
+            len if len == series.len() => seed_series,
+            1 if !seed_series.data_type().is_list() => seed_series.broadcast(series.len())?,
+            1 => seed_series,
+            _ => {
+                return Err(DaftError::ValueError(
+                    "Seed must be a single value or the same length as the input".to_string(),
+                ));
+            }
+        },
+        None => {
+            let arr = series.hash_with(None, hash_function)?;
+            return Ok(arr.into_series());
+        }
+    };
+
+    match seed.len() {
+        1 if seed.data_type().is_list() => {
+            let seed = seed.list()?;
+            ensure!(
+                seed.len() == 1,
+                "Seed must be a single value or the same length as the input"
+            );
+            let seed = seed.get(0).unwrap();
+            ensure!(
+                seed.len() == series.len(),
+                ValueError: "Seed must be a single value or the same length as the input"
+            );
+            let seed = seed.cast(&DataType::UInt64)?;
+            let seed = seed.u64().unwrap();
+            series
+                .hash_with(Some(seed), hash_function)
+                .map(|arr| arr.into_series())
+        }
+        1 => {
+            let seed = seed.cast(&DataType::UInt64)?;
+            let seed = seed.u64().unwrap();
+            let seed = seed.get(0).unwrap();
+            let seed = UInt64Array::from_iter(
+                Field::new("seed", DataType::UInt64),
+                std::iter::repeat_n(Some(seed), series.len()),
+            );
+            series
+                .hash_with(Some(&seed), hash_function)
+                .map(|arr| arr.into_series())
+        }
+        _ if seed.len() == series.len() => {
+            let seed = seed.cast(&DataType::UInt64)?;
+            let seed = seed.u64().unwrap();
+            series
+                .hash_with(Some(seed), hash_function)
+                .map(|arr| arr.into_series())
+        }
+        _ => Err(DaftError::ValueError(
+            "Seed must be a single value or the same length as the input".to_string(),
+        )),
+    }
 }

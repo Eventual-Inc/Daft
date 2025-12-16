@@ -4,7 +4,7 @@ use daft_dsl::functions::prelude::*;
 use daft_hash::HashFunctionKind;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct MinHashFunction;
 
 #[derive(FunctionArgs)]

@@ -9,7 +9,7 @@ import daft
 def test_url_download_public_azure(azure_storage_public_config) -> None:
     data = {"urls": ["az://public-anonymous/mvp.parquet"]}
     df = daft.from_pydict(data)
-    df = df.with_column("data", df["urls"].url.download(io_config=azure_storage_public_config))
+    df = df.with_column("data", df["urls"].download(io_config=azure_storage_public_config))
 
     data = df.to_pydict()
     assert len(data["data"]) == 1

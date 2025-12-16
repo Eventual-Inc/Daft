@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
@@ -8,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::bpe::DaftBPE;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct TokenizeDecodeFunction;
 
 #[derive(FunctionArgs)]
@@ -73,8 +74,7 @@ fn decode_list(series: &Series, bpe: &DaftBPE) -> DaftResult<String> {
         )));
     }
     let series = series.cast(&DataType::UInt32)?;
-    let data = series.u32()?.as_arrow();
-    let tokens: &[u32] = data.values().as_slice();
+    let tokens: &[u32] = series.u32()?.as_slice();
     bpe.decode(tokens)
 }
 

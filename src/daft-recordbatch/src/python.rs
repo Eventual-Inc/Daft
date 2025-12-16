@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
+use common_metrics::python::PyOperatorMetrics;
 use daft_core::{
     join::JoinType,
     prelude::*,
@@ -44,8 +45,28 @@ impl PyRecordBatch {
         })
     }
 
+    pub fn eval_expression_list_with_metrics(
+        &self,
+        py: Python,
+        exprs: Vec<PyExpr>,
+    ) -> PyResult<(Self, PyOperatorMetrics)> {
+        let converted_exprs = BoundExpr::bind_all(&exprs, &self.record_batch.schema)?;
+        let record_batch = self.record_batch.clone();
+        py.detach(move || {
+            let mut metrics_collector = PyOperatorMetrics::new();
+            let evaluated = record_batch.eval_expression_list_with_metrics(
+                converted_exprs.as_slice(),
+                &mut metrics_collector.inner,
+            )?;
+            PyResult::Ok((evaluated.into(), metrics_collector))
+        })
+    }
+
     pub fn take(&self, py: Python, idx: &PySeries) -> PyResult<Self> {
-        py.detach(|| Ok(self.record_batch.take(&idx.series)?.into()))
+        py.detach(|| {
+            let idx = idx.series.cast(&DataType::UInt64)?;
+            Ok(self.record_batch.take(idx.u64()?)?.into())
+        })
     }
 
     pub fn filter(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
@@ -89,6 +110,7 @@ impl PyRecordBatch {
                     descending.as_slice(),
                     nulls_first.as_slice(),
                 )?
+                .into_series()
                 .into())
         })
     }

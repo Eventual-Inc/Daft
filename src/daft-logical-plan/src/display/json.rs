@@ -6,6 +6,123 @@ use daft_dsl::resolved_col;
 use serde_json::json;
 
 use crate::{LogicalPlan, LogicalPlanRef};
+
+pub(crate) fn to_json_value(node: &LogicalPlan) -> serde_json::Value {
+    match node {
+        LogicalPlan::Source(_) => json!({}),
+        // TODO(desmond): is this correct?
+        LogicalPlan::Shard(shard) => json!({
+            "sharder": shard.sharder,
+        }),
+        LogicalPlan::Project(project) => json!({
+            "projection": project.projection.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
+        }),
+        LogicalPlan::UDFProject(project) => json!({
+            "expr": project.expr.to_string(),
+        }),
+        LogicalPlan::Filter(filter) => json!({
+            "predicate": vec![&filter.predicate.to_string()],
+        }),
+        LogicalPlan::IntoBatches(into_batches) => json!({
+            "batch_size": into_batches.batch_size,
+        }),
+        LogicalPlan::Limit(limit) => {
+            let mut obj = serde_json::Map::new();
+            obj.insert("limit".to_string(), json!(limit.limit));
+            if let Some(offset) = &limit.offset {
+                obj.insert("offset".to_string(), json!(offset));
+            }
+            json!(obj)
+        }
+        LogicalPlan::Offset(offset) => json!({
+            "offset": &offset.offset,
+        }),
+        LogicalPlan::Explode(explode) => json!({
+            "to_explode": explode.to_explode.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
+        }),
+        LogicalPlan::Unpivot(unpivot) => json!({
+            "ids": unpivot.ids.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
+            "values": unpivot.values.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
+            "variable_name": unpivot.variable_name,
+            "value_name": unpivot.value_name,
+        }),
+        LogicalPlan::Sort(sort) => json!({
+            "sort_by": sort.sort_by.iter().map(|c| c.to_string()).collect::<Vec<_>>(),
+            "nulls_first": sort.nulls_first,
+            "descending": sort.descending,
+        }),
+        LogicalPlan::Repartition(repartition) => json!({
+            "repartition_spec": repartition.repartition_spec,
+        }),
+        LogicalPlan::Distinct(_) => json!({}),
+        LogicalPlan::Aggregate(aggregate) => json!({
+            "aggregations": aggregate.aggregations.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
+            "groupby": aggregate.groupby.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
+        }),
+        LogicalPlan::Pivot(pivot) => json!({
+            "pivot_column": pivot.pivot_column.to_string(),
+            "value_column": pivot.value_column.to_string(),
+            "aggregation": pivot.aggregation,
+            "group_by": pivot.group_by.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
+            "names": pivot.names.iter().map(|e| resolved_col(e.clone()).to_string()).collect::<Vec<_>>(),
+        }),
+        LogicalPlan::Concat(_) => json!({}),
+        LogicalPlan::Intersect(intersect) => json!({
+            "is_all": intersect.is_all,
+        }),
+        LogicalPlan::Union(union_) => json!({
+            "quantifier": union_.quantifier,
+            "strategy": union_.strategy,
+        }),
+        LogicalPlan::Join(join) => json!({
+            "on": vec![&join.on.inner().map(|e| e.to_string())],
+            "type": join.join_type,
+            "strategy": join.join_strategy,
+        }),
+        LogicalPlan::Sink(_) => json!({}),
+        LogicalPlan::Sample(sample) => json!({
+            "fraction": sample.fraction,
+            "size": sample.size,
+            "with_replacement": sample.with_replacement,
+            "seed": sample.seed,
+        }),
+        LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => json!({
+            "column_name": vec![resolved_col(monotonically_increasing_id.column_name.clone()).to_string()]
+        }),
+        LogicalPlan::SubqueryAlias(subquery_alias) => json!({
+            "name": subquery_alias.name,
+        }),
+        LogicalPlan::Window(window) => json!({
+            "exprs": window.window_functions.iter().map(|e| e.to_string()).collect::<Vec<String>>(),
+            "aliases": window.aliases,
+            "window_spec": window.window_spec,
+        }),
+        LogicalPlan::TopN(top_n) => {
+            let mut obj = serde_json::Map::with_capacity(5);
+            obj.insert(
+                "sort_by".to_string(),
+                json!(
+                    top_n
+                        .sort_by
+                        .iter()
+                        .map(|c| c.to_string())
+                        .collect::<Vec<_>>()
+                ),
+            );
+            obj.insert("nulls_first".to_string(), json!(top_n.nulls_first));
+            obj.insert("descending".to_string(), json!(top_n.descending));
+            obj.insert("limit".to_string(), json!(top_n.limit));
+            if let Some(offset) = &top_n.offset {
+                obj.insert("offset".to_string(), json!(offset));
+            }
+            json!(obj)
+        }
+        LogicalPlan::VLLMProject(vllm_project) => json!({
+            "expr": vllm_project.expr.to_string(),
+        }),
+    }
+}
+
 pub struct JsonVisitor<'a, W>
 where
     W: std::fmt::Write,
@@ -34,117 +151,6 @@ where
     pub fn with_schema(&mut self, with_schema: bool) {
         self.with_schema = with_schema;
     }
-    fn to_json_value(node: &LogicalPlan) -> serde_json::Value {
-        match node {
-            LogicalPlan::Source(_) => json!({}),
-            // TODO(desmond): is this correct?
-            LogicalPlan::Shard(shard) => json!({
-                "sharder": shard.sharder,
-            }),
-            LogicalPlan::Project(project) => json!({
-                "projection": project.projection.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
-            }),
-            LogicalPlan::UDFProject(project) => json!({
-                "expr": project.expr.to_string(),
-            }),
-            LogicalPlan::Filter(filter) => json!({
-                "predicate": vec![&filter.predicate.to_string()],
-            }),
-            LogicalPlan::IntoBatches(into_batches) => json!({
-                "batch_size": into_batches.batch_size,
-            }),
-            LogicalPlan::Limit(limit) => {
-                let mut obj = serde_json::Map::new();
-                obj.insert("limit".to_string(), json!(limit.limit));
-                if let Some(offset) = &limit.offset {
-                    obj.insert("offset".to_string(), json!(offset));
-                }
-                json!(obj)
-            }
-            LogicalPlan::Offset(offset) => json!({
-                "offset": &offset.offset,
-            }),
-            LogicalPlan::Explode(explode) => json!({
-                "to_explode": explode.to_explode.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
-            }),
-            LogicalPlan::Unpivot(unpivot) => json!({
-                "ids": unpivot.ids.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
-                "values": unpivot.values.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
-                "variable_name": unpivot.variable_name,
-                "value_name": unpivot.value_name,
-            }),
-            LogicalPlan::Sort(sort) => json!({
-                "sort_by": sort.sort_by.iter().map(|c| c.to_string()).collect::<Vec<_>>(),
-                "nulls_first": sort.nulls_first,
-                "descending": sort.descending,
-            }),
-            LogicalPlan::Repartition(repartition) => json!({
-                "repartition_spec": repartition.repartition_spec,
-            }),
-            LogicalPlan::Distinct(_) => json!({}),
-            LogicalPlan::Aggregate(aggregate) => json!({
-                "aggregations": aggregate.aggregations.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
-                "groupby": aggregate.groupby.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
-            }),
-            LogicalPlan::Pivot(pivot) => json!({
-                "pivot_column": pivot.pivot_column.to_string(),
-                "value_column": pivot.value_column.to_string(),
-                "aggregation": pivot.aggregation,
-                "group_by": pivot.group_by.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
-                "names": pivot.names.iter().map(|e| resolved_col(e.clone()).to_string()).collect::<Vec<_>>(),
-            }),
-            LogicalPlan::Concat(_) => json!({}),
-            LogicalPlan::Intersect(intersect) => json!({
-                "is_all": intersect.is_all,
-            }),
-            LogicalPlan::Union(union_) => json!({
-                "quantifier": union_.quantifier,
-                "strategy": union_.strategy,
-            }),
-            LogicalPlan::Join(join) => json!({
-                "on": vec![&join.on.inner().map(|e| e.to_string())],
-                "type": join.join_type,
-                "strategy": join.join_strategy,
-            }),
-            LogicalPlan::Sink(_) => json!({}),
-            LogicalPlan::Sample(sample) => json!({
-                "fraction": sample.fraction,
-                "with_replacement": sample.with_replacement,
-                "seed": sample.seed,
-            }),
-            LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => json!({
-                "column_name": vec![resolved_col(monotonically_increasing_id.column_name.clone()).to_string()]
-            }),
-            LogicalPlan::SubqueryAlias(subquery_alias) => json!({
-                "name": subquery_alias.name,
-            }),
-            LogicalPlan::Window(window) => json!({
-                "exprs": window.window_functions.iter().map(|e| e.to_string()).collect::<Vec<String>>(),
-                "aliases": window.aliases,
-                "window_spec": window.window_spec,
-            }),
-            LogicalPlan::TopN(top_n) => {
-                let mut obj = serde_json::Map::with_capacity(5);
-                obj.insert(
-                    "sort_by".to_string(),
-                    json!(
-                        top_n
-                            .sort_by
-                            .iter()
-                            .map(|c| c.to_string())
-                            .collect::<Vec<_>>()
-                    ),
-                );
-                obj.insert("nulls_first".to_string(), json!(top_n.nulls_first));
-                obj.insert("descending".to_string(), json!(top_n.descending));
-                obj.insert("limit".to_string(), json!(top_n.limit));
-                if let Some(offset) = &top_n.offset {
-                    obj.insert("offset".to_string(), json!(offset));
-                }
-                json!(obj)
-            }
-        }
-    }
 }
 
 impl<W> JsonVisitor<'_, W> where W: Write {}
@@ -158,7 +164,7 @@ where
     fn f_down(&mut self, node: &Self::Node) -> DaftResult<common_treenode::TreeNodeRecursion> {
         let id = self.next_id;
         self.next_id += 1;
-        let mut object = Self::to_json_value(node.as_ref());
+        let mut object = to_json_value(node.as_ref());
         // handle all common properties here
         object["type"] = json!(node.name());
         object["children"] = serde_json::Value::Array(vec![]);

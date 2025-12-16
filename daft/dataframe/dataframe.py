@@ -9,19 +9,18 @@ import io
 import multiprocessing
 import os
 import pathlib
-import sys
 import typing
 import warnings
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial, reduce
-from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypeVar, Union, overload
+from typing import TYPE_CHECKING, Any, Callable, Concatenate, Literal, Optional, ParamSpec, TypeVar, Union, overload
 
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import FileFormat, IOConfig, JoinStrategy, JoinType, WriteMode
+from daft.daft import DistributedPhysicalPlan, FileFormat, IOConfig, JoinStrategy, JoinType, WriteMode
 from daft.dataframe.display import MermaidOptions
 from daft.dataframe.preview import Preview, PreviewAlign, PreviewColumn, PreviewFormat, PreviewFormatter
 from daft.datatype import DataType
@@ -53,11 +52,6 @@ if TYPE_CHECKING:
     from daft.io.catalog import DataCatalogTable
     from daft.io.sink import WriteResultType
     from daft.unity_catalog import UnityCatalogTable
-
-if sys.version_info < (3, 10):
-    from typing_extensions import Concatenate, ParamSpec
-else:
-    from typing import Concatenate, ParamSpec
 
 from daft.schema import Schema
 
@@ -281,24 +275,20 @@ class DataFrame:
         print_to_file(builder.pretty_print(simple, format=format))
         if show_all:
             print_to_file("\n== Optimized Logical Plan ==\n")
-            builder = builder.optimize()
+            execution_config = get_context().daft_execution_config
+            builder = builder.optimize(execution_config)
             print_to_file(builder.pretty_print(simple))
             print_to_file("\n== Physical Plan ==\n")
             if get_or_create_runner().name != "native":
-                daft_execution_config = get_context().daft_execution_config
-                if daft_execution_config.use_legacy_ray_runner:
-                    physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
-                    print_to_file(physical_plan_scheduler.pretty_print(simple, format=format))
-                else:
-                    from daft.daft import DistributedPhysicalPlan
+                from daft.daft import DistributedPhysicalPlan
 
-                    distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
-                        builder._builder, daft_execution_config
-                    )
-                    if format == "ascii":
-                        print_to_file(distributed_plan.repr_ascii(simple))
-                    elif format == "mermaid":
-                        print_to_file(distributed_plan.repr_mermaid(MermaidOptions(simple)))
+                distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
+                    builder._builder, "<tmp>", execution_config
+                )
+                if format == "ascii":
+                    print_to_file(distributed_plan.repr_ascii(simple))
+                elif format == "mermaid":
+                    print_to_file(distributed_plan.repr_mermaid(MermaidOptions(simple)))
             else:
                 native_executor = NativeExecutor()
                 print_to_file(
@@ -310,7 +300,7 @@ class DataFrame:
             )
         return None
 
-    def num_partitions(self) -> int:
+    def num_partitions(self) -> int | None:
         """Returns the number of partitions that will be used to execute this DataFrame.
 
         The query optimizer may change the partitioning strategy. This method runs the optimizer
@@ -323,22 +313,31 @@ class DataFrame:
         Examples:
             >>> import daft
             >>>
+            >>> daft.set_runner_ray()  # doctest: +SKIP
+            >>>
             >>> # Create a DataFrame with 1000 rows
             >>> df = daft.from_pydict({"x": list(range(1000))})
             >>>
             >>> # Partition count may depend on default config or optimizer decisions
-            >>> df.num_partitions()
+            >>> df.num_partitions()  # doctest: +SKIP
             1
             >>>
             >>> # You can repartition manually (if supported), and then inspect again:
-            >>> df2 = df.repartition(10)
-            >>> df2.num_partitions()
+            >>> df2 = df.repartition(10)  # doctest: +SKIP
+            >>> df2.num_partitions()  # doctest: +SKIP
             10
         """
-        # We need to run the optimizer since that could change the number of partitions
-        return (
-            self.__builder.optimize().to_physical_plan_scheduler(get_context().daft_execution_config).num_partitions()
-        )
+        runner_name = get_or_create_runner().name
+        # Native runner does not support num_partitions
+        if runner_name == "native":
+            return None
+        else:
+            execution_config = get_context().daft_execution_config
+            optimized = self._builder.optimize(execution_config)
+            distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
+                optimized._builder, "<tmp>", execution_config
+            )
+            return distributed_plan.num_partitions()
 
     @DataframePublicAPI
     def schema(self) -> Schema:
@@ -578,7 +577,7 @@ class DataFrame:
         Examples:
             >>> import daft
             >>>
-            >>> daft.context.set_runner_ray()  # doctest: +SKIP
+            >>> daft.set_runner_ray()  # doctest: +SKIP
             >>>
             >>> df = daft.from_pydict({"foo": [1, 2, 3], "bar": ["a", "b", "c"]}).into_partitions(2)
             >>> for part in df.iter_partitions():
@@ -626,11 +625,10 @@ class DataFrame:
         if results is None:
             return
 
-        preview_partition_invalid = (
-            self._preview.partition is None or len(self._preview.partition) < self._num_preview_rows
-        )
+        num_preview_rows = min(self._num_preview_rows, len(self))
+        preview_partition_invalid = self._preview.partition is None or len(self._preview.partition) != num_preview_rows
         if preview_partition_invalid:
-            preview_parts = results._get_preview_micropartitions(self._num_preview_rows)
+            preview_parts = results._get_preview_micropartitions(num_preview_rows)
             preview_results = LocalPartitionSet()
             for i, part in enumerate(preview_parts):
                 preview_results.set_partition_from_table(i, part)
@@ -822,25 +820,11 @@ class DataFrame:
         write_df.collect()
         assert write_df._result is not None
 
-        if len(write_df) > 0:
-            # Populate and return a new disconnected DataFrame
-            result_df = DataFrame(write_df._builder)
-            result_df._result_cache = write_df._result_cache
-            result_df._preview = write_df._preview
-            return result_df
-        else:
-            from daft import from_pydict
-            from daft.recordbatch.recordbatch_io import write_empty_tabular
-
-            file_path = write_empty_tabular(
-                root_dir, FileFormat.Parquet, self.schema(), compression=compression, io_config=io_config
-            )
-
-            return from_pydict(
-                {
-                    "path": [file_path],
-                }
-            )
+        # Populate and return a new disconnected DataFrame
+        result_df = DataFrame(write_df._builder)
+        result_df._result_cache = write_df._result_cache
+        result_df._preview = write_df._preview
+        return result_df
 
     @DataframePublicAPI
     def write_csv(
@@ -902,23 +886,11 @@ class DataFrame:
         write_df.collect()
         assert write_df._result is not None
 
-        if len(write_df) > 0:
-            # Populate and return a new disconnected DataFrame
-            result_df = DataFrame(write_df._builder)
-            result_df._result_cache = write_df._result_cache
-            result_df._preview = write_df._preview
-            return result_df
-        else:
-            from daft import from_pydict
-            from daft.recordbatch.recordbatch_io import write_empty_tabular
-
-            file_path = write_empty_tabular(root_dir, FileFormat.Csv, self.schema(), io_config=io_config)
-
-            return from_pydict(
-                {
-                    "path": [file_path],
-                }
-            )
+        # Populate and return a new disconnected DataFrame
+        result_df = DataFrame(write_df._builder)
+        result_df._result_cache = write_df._result_cache
+        result_df._preview = write_df._preview
+        return result_df
 
     @DataframePublicAPI
     def write_json(
@@ -977,23 +949,11 @@ class DataFrame:
         write_df.collect()
         assert write_df._result is not None
 
-        if len(write_df) > 0:
-            # Populate and return a new disconnected DataFrame
-            result_df = DataFrame(write_df._builder)
-            result_df._result_cache = write_df._result_cache
-            result_df._preview = write_df._preview
-            return result_df
-        else:
-            from daft import from_pydict
-            from daft.recordbatch.recordbatch_io import write_empty_tabular
-
-            file_path = write_empty_tabular(root_dir, FileFormat.Json, self.schema(), io_config=io_config)
-
-            return from_pydict(
-                {
-                    "path": [file_path],
-                }
-            )
+        # Populate and return a new disconnected DataFrame
+        result_df = DataFrame(write_df._builder)
+        result_df._result_cache = write_df._result_cache
+        result_df._preview = write_df._preview
+        return result_df
 
     @DataframePublicAPI
     def write_iceberg(
@@ -1444,16 +1404,22 @@ class DataFrame:
     def write_lance(
         self,
         uri: Union[str, pathlib.Path],
-        mode: Literal["create", "append", "overwrite"] = "create",
+        mode: Literal["create", "append", "overwrite", "merge"] = "create",
         io_config: Optional[IOConfig] = None,
         schema: Optional[Union[Schema, "pyarrow.Schema"]] = None,
+        left_on: Optional[str] = None,
+        right_on: Optional[str] = None,
         **kwargs: Any,
     ) -> "DataFrame":
         """Writes the DataFrame to a Lance table.
 
         Args:
           uri: The URI of the Lance table to write to
-          mode: The write mode. One of "create", "append", or "overwrite"
+          mode: The write mode. One of "create", "append", "overwrite", or "merge".
+          - "create" will create the dataset if it does not exist, otherwise raise an error.
+          - "append" will append to the existing dataset if it exists, otherwise raise an error.
+          - "overwrite" will overwrite the existing dataset if it exists, otherwise raise an error.
+          - "merge" will add new columns to the existing dataset.
           io_config (IOConfig, optional): configurations to use when interacting with remote storage.
           schema (Schema | pyarrow.Schema, optional): Desired schema to enforce during write.
             - If omitted, Daft will use the DataFrame's current schema.
@@ -1462,11 +1428,11 @@ class DataFrame:
               on the pyarrow schema is preserved during create/overwrite.
             - If the target Lance dataset already exists, the data will be cast to the existing table schema
               to ensure compatibility unless ``mode="overwrite"``.
+          left_on/right_on (Optional[str]): Only supported in ``mode="merge"``. Specify the join key for aligning rows when merging new columns.
+              - If omitted, defaults to ``"_rowaddr"``.
+              - If ``right_on`` is omitted, it defaults to the value of ``left_on``.
+              - The DataFrame passed to ``write_lance(mode="merge")`` must contain ``fragment_id`` and the join key column specified by ``right_on`` (or ``_rowaddr`` by default).
           **kwargs: Additional keyword arguments to pass to the Lance writer.
-
-        Note:
-            `write_lance` requires python 3.9 or higher
-            This call is **blocking** and will execute the DataFrame when called
 
         Returns:
             DataFrame: A DataFrame containing metadata about the written Lance table, such as number of fragments, number of deleted rows, number of small files, and version.
@@ -1517,12 +1483,111 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
+        from daft import context as _context
         from daft.io.lance.lance_data_sink import LanceDataSink
+        from daft.io.object_store_options import io_config_to_storage_options
 
         if schema is None:
             schema = self.schema()
-        sink = LanceDataSink(uri, schema, mode, io_config, **kwargs)
-        return self.write_sink(sink)
+
+        # Non-merge modes do not support schema evolution or custom join keys
+        if mode != "merge":
+            sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
+            sink = LanceDataSink(uri, schema, mode, io_config, **sanitized_kwargs)
+            return self.write_sink(sink)
+
+        # Merge mode semantics
+        try:
+            import lance
+        except ImportError as e:
+            raise ImportError(
+                "Unable to import the `lance` package, please ensure that Daft is installed with the lance extra dependency: `pip install daft[lance]`"
+            ) from e
+
+        io_config = _context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+        storage_options = io_config_to_storage_options(io_config, str(uri) if isinstance(uri, pathlib.Path) else uri)
+
+        # Attempt to load dataset; if not exists, behave like create
+        lance_ds = None
+        try:
+            lance_ds = lance.dataset(uri, storage_options=storage_options)
+        except (ValueError, FileNotFoundError, OSError) as _e:
+            lance_ds = None
+
+        if lance_ds is None:
+            sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
+            sink = LanceDataSink(uri, schema, "create", io_config, **sanitized_kwargs)
+            return self.write_sink(sink)
+
+        # Dataset exists: detect schema evolution by checking new columns in incoming DF
+        existing_fields: set[str] = set()
+        try:
+            existing_fields = {getattr(f, "name", str(f)) for f in lance_ds.schema}
+        except Exception:
+            names = []
+            try:
+                names = list(getattr(lance_ds.schema, "names", []))
+            except Exception:
+                try:
+                    names = [getattr(f, "name", str(f)) for f in getattr(lance_ds.schema, "fields", [])]
+                except Exception:
+                    names = []
+            existing_fields = set(names)
+
+        meta_exclusions = {"fragment_id", "_rowaddr", "_rowid"}
+        new_cols = [c for c in self.column_names if c not in existing_fields and c not in meta_exclusions]
+
+        if len(new_cols) == 0:
+            # Pure append: no schema evolution. Ensure merge-specific params are not forwarded.
+            sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
+
+            sink = LanceDataSink(uri, schema, "append", io_config, **sanitized_kwargs)
+            return self.write_sink(sink)
+
+        # Schema evolution: route to per-fragment merge keyed by provided business key or default '_rowaddr'
+        join_left = left_on or "_rowaddr"
+        join_right = right_on or join_left
+        if "fragment_id" not in self.column_names:
+            raise ValueError(
+                "DataFrame must contain 'fragment_id' column for per-fragment merge in mode='merge'. Read from Lance to include 'fragment_id'."
+            )
+        if join_right not in self.column_names:
+            hint = (
+                " Read from Lance with default_scan_options={'with_rowaddr': True} to include '_rowaddr'."
+                if join_right == "_rowaddr"
+                else ""
+            )
+            raise ValueError(
+                f"DataFrame must contain join key column '{join_right}' for per-fragment merge in mode='merge'." + hint
+            )
+
+        from daft.io.lance.lance_merge_column import merge_columns_from_df
+
+        merge_columns_from_df(
+            df=self,
+            lance_ds=lance_ds,
+            uri=uri,
+            left_on=join_left,
+            right_on=join_right,
+            storage_options=storage_options,
+        )
+
+        # Build and return stats DataFrame similar to sink.finalize
+        dataset = lance.dataset(uri, storage_options=storage_options)
+        stats = dataset.stats.dataset_stats()
+        from daft.dependencies import pa as _pa
+        from daft.recordbatch import MicroPartition
+
+        return DataFrame._from_micropartitions(
+            MicroPartition.from_pydict(
+                {
+                    "num_fragments": _pa.array([stats["num_fragments"]], type=_pa.int64()),
+                    "num_deleted_rows": _pa.array([stats["num_deleted_rows"]], type=_pa.int64()),
+                    "num_small_files": _pa.array([stats["num_small_files"]], type=_pa.int64()),
+                    "version": _pa.array([dataset.version], type=_pa.int64()),
+                }
+            )
+        )
 
     @DataframePublicAPI
     def write_turbopuffer(
@@ -1656,6 +1721,52 @@ class DataFrame:
         )
         return self.write_sink(sink)
 
+    def write_bigtable(
+        self,
+        project_id: str,
+        instance_id: str,
+        table_id: str,
+        row_key_column: str,
+        column_family_mappings: dict[str, str],
+        client_kwargs: Optional[dict[str, Any]] = None,
+        write_kwargs: Optional[dict[str, Any]] = None,
+        serialize_incompatible_types: bool = True,
+    ) -> "DataFrame":
+        """Write a DataFrame into a Google Cloud Bigtable table.
+
+        Bigtable only accepts datatypes that can be converted to bytes in cells (for more details, please consult the Bigtable documentation: https://cloud.google.com/bigtable/docs/overview#data-types).
+        By default, `write_bigtable` automatically serializes incompatible types to JSON. This can be disabled by setting `auto_convert=False`.
+
+        This data sink transforms each row of the dataframe into Bigtable rows.
+        A row key is always required. The `row_key_column` parameter can be used to specify the column name to use for the row key.
+
+        Every column must also belong to a column family. The `column_family_mappings` parameter can be used to specify the column family to use for each column.
+        For example, if you have a column "name" and a column "age", you can specify a "user_data" column family by passing a dictionary like {"name": "user_data", "age": "user_data"}.
+
+        EXPERIMENTAL: This features is early in development and will change.
+
+        Args:
+            project_id: The Google Cloud project ID.
+            instance_id: The Bigtable instance ID.
+            table_id: The table to write to.
+            row_key_column: Column name for the row key.
+            column_family_mappings: Mapping of column names to column families.
+            client_kwargs: Optional dictionary of arguments to pass to the Bigtable Client constructor.
+            write_kwargs: Optional dictionary of arguments to pass to the Bigtable MutationsBatcher.
+            serialize_incompatible_types: Whether to automatically convert non-bytes/int values to Bigtable-compatible formats.
+                                          If False, will raise an error for unsupported types. Defaults to True.
+        """
+        from daft.io.bigtable.bigtable_data_sink import BigtableDataSink
+
+        sink = BigtableDataSink(
+            project_id, instance_id, table_id, row_key_column, column_family_mappings, client_kwargs, write_kwargs
+        )
+
+        # Preprocess the DataFrame using the sink's validation and preprocessing logic
+        df_to_write = sink._preprocess_dataframe(self, serialize_incompatible_types)
+
+        return df_to_write.write_sink(sink)
+
     ###
     # DataFrame operations
     ###
@@ -1706,7 +1817,7 @@ class DataFrame:
             │ Int64 ┆ Int64 │
             ╰───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
             >>> df[["a", "c"]]  # Get multiple columns by name
             ╭───────┬───────╮
             │ a     ┆ c     │
@@ -1714,7 +1825,7 @@ class DataFrame:
             │ Int64 ┆ Int64 │
             ╰───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
             >>> df[["a", 1]]  # Get multiple columns by name and index
             ╭───────┬───────╮
             │ a     ┆ b     │
@@ -1722,7 +1833,7 @@ class DataFrame:
             │ Int64 ┆ Int64 │
             ╰───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
             >>> df[0:2]  # Get a slice of columns by index
             ╭───────┬───────╮
             │ a     ┆ b     │
@@ -1730,7 +1841,7 @@ class DataFrame:
             │ Int64 ┆ Int64 │
             ╰───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
             >>> df[["a", "b", 2]]  # Get a mix of column names and indices
             ╭───────┬───────┬───────╮
             │ a     ┆ b     ┆ c     │
@@ -1738,7 +1849,7 @@ class DataFrame:
             │ Int64 ┆ Int64 ┆ Int64 │
             ╰───────┴───────┴───────╯
             <BLANKLINE>
-            (No data to display: Dataframe not materialized)
+            (No data to display: Dataframe not materialized, use .collect() to materialize)
 
         """
         result: Optional[Expression]
@@ -1794,7 +1905,7 @@ class DataFrame:
 
         Examples:
             >>> import daft
-            >>> daft.context.set_runner_ray()  # doctest: +SKIP
+            >>> daft.set_runner_ray()  # doctest: +SKIP
             >>>
             >>> df = daft.from_pydict({"a": [1, 2, 3, 4]}).into_partitions(2)
             >>> df = df._add_monotonically_increasing_id()
@@ -1889,7 +2000,7 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
-            >>> df.summarize().show()
+            >>> df.summarize().show()  # doctest: +SKIP
             ╭────────┬────────┬────────┬────────────┬────────┬─────────────┬───────────────────────╮
             │ column ┆ type   ┆ min    ┆      …     ┆ count  ┆ count_nulls ┆ approx_count_distinct │
             │ ---    ┆ ---    ┆ ---    ┆            ┆ ---    ┆ ---         ┆ ---                   │
@@ -2022,23 +2133,33 @@ class DataFrame:
     @DataframePublicAPI
     def sample(
         self,
-        fraction: float,
+        fraction: Optional[float] = None,
+        size: Optional[int] = None,
         with_replacement: bool = False,
         seed: Optional[int] = None,
     ) -> "DataFrame":
-        """Samples a fraction of rows from the DataFrame.
+        """Samples rows from the DataFrame.
 
         Args:
-            fraction (float): fraction of rows to sample.
+            fraction (Optional[float]): fraction of rows to sample (between 0.0 and 1.0).
+                Must specify either `fraction` or `size`, but not both.
+                For backward compatibility, can also be passed as a positional argument.
+            size (Optional[int]): exact number of rows to sample.
+                Must specify either `fraction` or `size`, but not both.
+                If `size` exceeds the total number of rows:
+                - When `with_replacement=False`: raises ValueError
+                - When `with_replacement=True`: returns `size` rows (may contain duplicates)
+                Note: Sample by size only works on the native runner right now.
             with_replacement (bool, optional): whether to sample with replacement. Defaults to False.
             seed (Optional[int], optional): random seed. Defaults to None.
 
         Returns:
-            DataFrame: DataFrame with a fraction of rows.
+            DataFrame: DataFrame with sampled rows.
 
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
+            >>> # Sample by fraction (backward compatible positional argument)
             >>> sampled_df = df.sample(0.5)
             >>> sampled_df = sampled_df.collect()
             >>> # sampled_df.show()
@@ -2064,11 +2185,28 @@ class DataFrame:
             >>> # ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
             >>> # │ 3     ┆ 6     ┆ 9     │
             >>> # ╰───────┴───────┴───────╯
+            >>> # Sample by exact number of rows
+            >>> sampled_df = df.sample(size=2)
+            >>> sampled_df = sampled_df.collect()
         """
-        if fraction < 0.0 or fraction > 1.0:
-            raise ValueError(f"fraction should be between 0.0 and 1.0, but got {fraction}")
+        if fraction is not None and size is not None:
+            raise ValueError("Must specify either `fraction` or `size`, but not both")
+        if fraction is None and size is None:
+            raise ValueError("Must specify either `fraction` or `size`")
+        if fraction is not None:
+            if fraction < 0.0 or fraction > 1.0:
+                raise ValueError(f"fraction should be between 0.0 and 1.0, but got {fraction}")
+        if size is not None:
+            if size < 0:
+                raise ValueError(f"size should be non-negative, but got {size}")
+            if get_or_create_runner().name == "ray":
+                raise ValueError(
+                    "Sample by size only works on the native runner right now. "
+                    "Please use `daft.set_runner_native()` to switch to the native runner, "
+                    "or use `fraction` instead of `size` for sampling."
+                )
 
-        builder = self._builder.sample(fraction, with_replacement, seed)
+        builder = self._builder.sample(fraction, size, with_replacement, seed)
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -2568,13 +2706,11 @@ class DataFrame:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
             >>> repartitioned_df = df.repartition(3)
-            >>> repartitioned_df.num_partitions()
-            3
 
         """
         if get_or_create_runner().name == "native":
             warnings.warn(
-                "DataFrame.repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.context.set_runner_ray()` instead if you need to repartition."
+                "DataFrame.repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.set_runner_ray()` instead if you need to repartition."
             )
         if len(partition_by) == 0:
             warnings.warn(
@@ -2599,17 +2735,10 @@ class DataFrame:
 
         Returns:
             DataFrame: Dataframe with `num` partitions.
-
-        Examples:
-            >>> import daft
-            >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6], "z": [7, 8, 9]})
-            >>> df_with_5_partitions = df.into_partitions(5)
-            >>> df_with_5_partitions.num_partitions()
-            5
         """
         if get_or_create_runner().name == "native":
             warnings.warn(
-                "DataFrame.into_partitions not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.context.set_runner_ray()` instead if you need to repartition."
+                "DataFrame.into_partitions not supported on the NativeRunner. This will be a no-op. Please use the RayRunner via `daft.set_runner_ray()` instead if you need to repartition."
             )
 
         builder = self._builder.into_partitions(num)
@@ -2651,7 +2780,7 @@ class DataFrame:
         on: Optional[Union[list[ColumnInputType], ColumnInputType]] = None,
         left_on: Optional[Union[list[ColumnInputType], ColumnInputType]] = None,
         right_on: Optional[Union[list[ColumnInputType], ColumnInputType]] = None,
-        how: Literal["inner", "inner", "left", "right", "outer", "anti", "semi", "cross"] = "inner",
+        how: Literal["inner", "left", "right", "outer", "anti", "semi", "cross"] = "inner",
         strategy: Optional[Literal["hash", "sort_merge", "broadcast"]] = None,
         prefix: Optional[str] = None,
         suffix: Optional[str] = None,
@@ -2850,10 +2979,12 @@ class DataFrame:
         if not float_columns:
             return self
 
+        from daft.functions import is_nan, when
+
         return self.where(
             ~reduce(
-                lambda x, y: x.is_null().if_else(lit(False), x) | y.is_null().if_else(lit(False), y),
-                (x.float.is_nan() for x in float_columns),
+                lambda x, y: when(x.is_null(), lit(False)).otherwise(x) | when(y.is_null(), lit(False)).otherwise(y),
+                (is_nan(x) for x in float_columns),
             )
         )
 
@@ -3179,11 +3310,11 @@ class DataFrame:
         elif op == "any_value":
             return expr.any_value()
         elif op == "list":
-            return expr.agg_list()
+            return expr.list_agg()
         elif op == "set":
-            return expr.agg_set()
+            return expr.list_agg_distinct()
         elif op == "concat":
-            return expr.agg_concat()
+            return expr.string_agg()
         elif op == "skew":
             return expr.skew()
 
@@ -3464,7 +3595,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        return self._apply_agg_fn(Expression.agg_list, cols)
+        return self._apply_agg_fn(Expression.list_agg, cols)
 
     @DataframePublicAPI
     def agg_set(self, *cols: ColumnInputType) -> "DataFrame":
@@ -3492,7 +3623,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        return self._apply_agg_fn(Expression.agg_set, cols)
+        return self._apply_agg_fn(Expression.list_agg_distinct, cols)
 
     @DataframePublicAPI
     def agg_concat(self, *cols: ColumnInputType) -> "DataFrame":
@@ -3519,7 +3650,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        return self._apply_agg_fn(Expression.agg_concat, cols)
+        return self._apply_agg_fn(Expression.string_agg, cols)
 
     @DataframePublicAPI
     def agg(self, *to_agg: Union[Expression, Iterable[Expression]]) -> "DataFrame":
@@ -4018,7 +4149,7 @@ class DataFrame:
                 if seen >= n:
                     break
 
-            preview_partition = MicroPartition.concat(tables)
+            preview_partition = MicroPartition.concat_or_empty(tables, self.schema())
             if len(preview_partition) > n:
                 preview_partition = preview_partition.slice(0, n)
             elif len(preview_partition) < n:
@@ -4395,7 +4526,7 @@ class DataFrame:
 
         Examples:
             >>> import daft
-            >>> daft.context.set_runner_ray()  # doctest: +SKIP
+            >>> daft.set_runner_ray()  # doctest: +SKIP
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
             >>> ray_dataset = df.to_ray_dataset()  # doctest: +SKIP
 
@@ -4503,7 +4634,7 @@ class DataFrame:
 
         Examples:
             >>> import daft
-            >>> daft.context.set_runner_ray()  # doctest: +SKIP
+            >>> daft.set_runner_ray()  # doctest: +SKIP
             >>> df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
             >>> dask_df = df.to_dask_dataframe()  # doctest: +SKIP
 
@@ -4704,14 +4835,6 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.list_agg, cols, self.group_by)
 
-    def agg_list(self, *cols: ColumnInputType) -> DataFrame:
-        """(DEPRECATED) Please use `DataFrame.list_agg` instead."""
-        warnings.warn(
-            "`DataFrame.agg_list` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `DataFrame.list_agg` instead.",
-            category=DeprecationWarning,
-        )
-        return self.list_agg(*cols)
-
     def list_agg_distinct(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped list distinct on this GroupedDataFrame (ignoring nulls).
 
@@ -4723,14 +4846,6 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.list_agg_distinct, cols, self.group_by)
 
-    def agg_set(self, *cols: ColumnInputType) -> DataFrame:
-        """(DEPRECATED) Please use `DataFrame.list_agg_distinct` instead."""
-        warnings.warn(
-            "`DataFrame.agg_set` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `DataFrame.list_agg_distinct` instead.",
-            category=DeprecationWarning,
-        )
-        return self.list_agg_distinct(*cols)
-
     def string_agg(self, *cols: ColumnInputType) -> DataFrame:
         """Performs grouped string concat on this GroupedDataFrame.
 
@@ -4738,14 +4853,6 @@ class GroupedDataFrame:
             DataFrame: DataFrame with grouped string concatenated per column.
         """
         return self.df._apply_agg_fn(Expression.string_agg, cols, self.group_by)
-
-    def agg_concat(self, *cols: ColumnInputType) -> DataFrame:
-        """(DEPRECATED) Please use `DataFrame.string_agg` instead."""
-        warnings.warn(
-            "`DataFrame.agg_concat` is deprecated since Daft version >= 0.6.0 and will be removed in >= 0.7.0. Please use `DataFrame.string_agg` instead.",
-            category=DeprecationWarning,
-        )
-        return self.string_agg(*cols)
 
     def agg(self, *to_agg: Union[Expression, Iterable[Expression]]) -> DataFrame:
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.

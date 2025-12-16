@@ -1,9 +1,10 @@
-use arrow2::types::IndexRange;
 use common_display::table_display::StrValue;
 use common_error::DaftResult;
+use daft_arrow::types::IndexRange;
 
 use crate::{
     datatypes::Utf8Array,
+    prelude::UInt64Array,
     series::{IntoSeries, Series},
 };
 
@@ -20,7 +21,7 @@ impl Series {
         self.inner.slice(start.min(l), end.min(l))
     }
 
-    pub fn take(&self, idx: &Self) -> DaftResult<Self> {
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
         self.inner.take(idx)
     }
 

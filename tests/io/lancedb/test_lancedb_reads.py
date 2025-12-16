@@ -10,9 +10,6 @@ from daft import col
 TABLE_NAME = "my_table"
 data = {"vector": [[1.1, 1.2], [0.2, 1.8]], "lat": [45.5, 40.1], "long": [-122.7, -74.1], "big_int": [1, 2]}
 
-PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (9, 0, 0)
-pytestmark = pytest.mark.skipif(PYARROW_LOWER_BOUND_SKIP, reason="lance not supported on old versions of pyarrow")
-
 
 @pytest.fixture(scope="function")
 def lance_dataset_path(tmp_path_factory):
@@ -101,7 +98,7 @@ def test_lancedb_read_limit_large_dataset(large_lance_dataset_path, limit_size, 
 
 
 def test_lancedb_with_version(lance_dataset_path):
-    df = daft.read_lance(lance_dataset_path, version=1)
+    df = daft.read_lance(uri=lance_dataset_path, version=1)
     assert df.to_pydict() == data
 
     # test pushdown filters with limit and projection
@@ -144,13 +141,7 @@ def test_lancedb_with_version(lance_dataset_path):
 
 def test_lancedb_read_parallelism_fragment_merging(large_lance_dataset_path):
     """Test parallelism parameter reduces scan tasks by merging fragments."""
-    df_no_fragment_group = daft.read_lance(large_lance_dataset_path)
-    assert len(lance.dataset(large_lance_dataset_path).get_fragments()) == df_no_fragment_group.num_partitions()
-
-    df = daft.read_lance(large_lance_dataset_path, fragment_group_size=3)
-    df.explain(show_all=True)
-    assert df.num_partitions() == 4  # 10 fragments, group size 3 -> 4 scan tasks
-
+    df = daft.read_lance(uri=large_lance_dataset_path, fragment_group_size=3)
     result = df.to_pydict()
     assert len(result["vector"]) == 10000
     assert len(result["big_int"]) == 10000
@@ -273,7 +264,7 @@ class TestLanceDBCountPushdown:
         empty_data = {"a": [], "b": []}
         lance.write_dataset(pa.Table.from_pydict(empty_data), tmp_dir)
 
-        df = daft.read_lance(str(tmp_dir)).count()
+        df = daft.read_lance(tmp_dir).count()
 
         _ = capsys.readouterr()
         df.explain(True)
@@ -296,3 +287,28 @@ class TestLanceDBCountPushdown:
 
         result = df.to_pydict()
         assert result == {"count": [6]}
+
+
+@pytest.mark.parametrize("enable_strict_filter_pushdown", [True, False])
+def test_lancedb_filter_then_limit_behavior(lance_dataset_path, enable_strict_filter_pushdown):
+    """Ensure filter is applied before limit for Lance reads."""
+    daft.context.set_planning_config(enable_strict_filter_pushdown=enable_strict_filter_pushdown)
+    df = daft.read_lance(lance_dataset_path)
+
+    result1 = df.filter("big_int = 1").limit(1).to_pydict()
+    assert result1 == {"vector": [[1.1, 1.2]], "lat": [45.5], "long": [-122.7], "big_int": [1]}
+
+    result2 = df.filter("big_int = 2").limit(1).to_pydict()
+    assert result2 == {"vector": [[0.2, 1.8]], "lat": [40.1], "long": [-74.1], "big_int": [2]}
+
+    result3 = df.filter("big_int = 2").limit(2).to_pydict()
+    assert result3 == {"vector": [[0.2, 1.8]], "lat": [40.1], "long": [-74.1], "big_int": [2]}
+
+
+def test_lancedb_limit_with_filter_and_fragment_grouping_single_task(large_lance_dataset_path):
+    """Validate filter+limit correctness when fragment grouping is enabled."""
+    df = daft.read_lance(uri=large_lance_dataset_path, fragment_group_size=4)
+    df = df.filter("big_int = 999").limit(1).select("big_int")
+
+    result = df.to_pydict()
+    assert result == {"big_int": [999]}

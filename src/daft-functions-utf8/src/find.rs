@@ -13,7 +13,7 @@ use crate::utils::{
     binary_utf8_evaluate, binary_utf8_to_field, create_broadcasted_str_iter, parse_inputs,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Find;
 
 #[typetag::serde]
@@ -79,7 +79,7 @@ fn find_impl(arr: &Utf8Array, substr: &Utf8Array) -> DaftResult<Int64Array> {
             (Some(val), Some(substr)) => Some(val.find(substr).map(|pos| pos as i64).unwrap_or(-1)),
             _ => None,
         })
-        .collect::<arrow2::array::Int64Array>();
+        .collect::<daft_arrow::array::Int64Array>();
 
     let result = Int64Array::from((arr.name(), Box::new(arrow_result)));
     assert_eq!(result.len(), expected_size);

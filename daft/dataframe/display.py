@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from daft.context import get_context
+from daft.daft import DistributedPhysicalPlan
 from daft.runners import get_or_create_runner
 
 if TYPE_CHECKING:
@@ -67,14 +68,18 @@ class MermaidFormatter:
             )
             output += "\n"
 
-            builder = builder.optimize()
+            execution_config = get_context().daft_execution_config
+            builder = builder.optimize(execution_config)
             output += builder._builder.repr_mermaid(
                 display_opts.with_subgraph_options(name="Optimized LogicalPlan", subgraph_id="optimized")
             )
             output += "\n"
             if get_or_create_runner().name != "native":
-                physical_plan_scheduler = builder.to_physical_plan_scheduler(get_context().daft_execution_config)
-                output += physical_plan_scheduler._scheduler.repr_mermaid(
+                daft_execution_config = execution_config
+                distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
+                    builder._builder, "<tmp>", daft_execution_config
+                )
+                output += distributed_plan.repr_mermaid(
                     display_opts.with_subgraph_options(name="Physical Plan", subgraph_id="physical")
                 )
             else:
@@ -83,7 +88,7 @@ class MermaidFormatter:
                 native_executor = NativeExecutor()
                 output += native_executor._executor.repr_mermaid(
                     builder._builder,
-                    get_context().daft_execution_config,
+                    execution_config,
                     display_opts.with_subgraph_options(name="Physical Plan", subgraph_id="physical"),
                 )
             output += "\n"

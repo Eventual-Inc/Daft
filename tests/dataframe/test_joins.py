@@ -913,7 +913,7 @@ def test_join_true_join_keys(join_type, expected_dtypes, make_df, with_morsel_si
         }
     )
 
-    result = daft_df.join(daft_df2, left_on=["id", "values"], right_on=["id", col("values").str.left(1)], how=join_type)
+    result = daft_df.join(daft_df2, left_on=["id", "values"], right_on=["id", col("values").left(1)], how=join_type)
 
     assert result.schema().column_names() == ["id", "values", "right.values"]
     assert result.schema()["id"].dtype == expected_dtypes["id"]
@@ -1131,6 +1131,20 @@ def test_join_same_name_alias_with_compute(join_strategy, join_type, expected, m
     assert sort_arrow_table(pa.Table.from_pydict(daft_df.to_pydict()), "a") == sort_arrow_table(
         pa.Table.from_pydict(expected), "a"
     )
+
+
+def test_sort_merge_join_small_partitions(make_df, with_morsel_size):
+    # Small partitions should not fail even if sample_size_for_sort > partition size
+    left = make_df({"k": [1, 2, 3], "lv": [10, 20, 30]}, repartition=3, repartition_columns=["k"])
+    right = make_df({"k": [2, 3], "rv": [200, 300]}, repartition=2, repartition_columns=["k"])
+
+    out = left.join(right, on=["k"], how="inner", strategy="sort_merge").sort("k")
+    out.collect()
+
+    pd = out.to_pydict()
+    assert pd["k"] == [2, 3]
+    assert pd["lv"] == [20, 30]
+    assert pd["rv"] == [200, 300]
 
 
 @pytest.mark.parametrize(

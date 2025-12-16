@@ -1,6 +1,6 @@
 use common_error::{DaftResult, ensure};
 use daft_core::{
-    prelude::{AsArrow, Field, Schema, Utf8Array},
+    prelude::{Field, Schema, Utf8Array},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
@@ -10,7 +10,7 @@ use daft_dsl::{
 use serde::{Deserialize, Serialize};
 use unicode_normalization::{IsNormalized, UnicodeNormalization, is_nfd_quick};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Normalize;
 
 #[derive(FunctionArgs)]
@@ -70,7 +70,7 @@ fn normalize_impl(
     input.with_utf8_array(|arr| {
         Ok(Utf8Array::from_iter(
             arr.name(),
-            arr.as_arrow().iter().map(|maybe_s| {
+            arr.into_iter().map(|maybe_s| {
                 if let Some(s) = maybe_s {
                     let mut s = if white_space {
                         s.trim().to_string()

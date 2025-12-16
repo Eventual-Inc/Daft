@@ -109,7 +109,7 @@ impl<W: Worker> Dispatcher<W> {
                 match task_result {
                     Ok(task_status) => match task_status {
                         // Task completed successfully, send the result to the result_tx
-                        TaskStatus::Success { result } => {
+                        TaskStatus::Success { result, .. } => {
                             if result_tx.send(Ok(Some(result))).is_err() {
                                 tracing::error!(target: DISPATCHER_LOG_TARGET, error = "Failed to send result of task to result_tx", task_context = ?task.task_context());
                             }
@@ -272,8 +272,8 @@ mod tests {
         for (i, submitted_task) in submitted_tasks.into_iter().enumerate() {
             let result = submitted_task.await?;
             let partition = result.unwrap().partitions()[0].clone();
-            assert_eq!(partition.num_rows().unwrap(), 100 + i);
-            assert_eq!(partition.size_bytes().unwrap(), Some(1024 * (i + 1)));
+            assert_eq!(partition.num_rows(), 100 + i);
+            assert_eq!(partition.size_bytes(), 1024 * (i + 1));
         }
 
         Ok(())

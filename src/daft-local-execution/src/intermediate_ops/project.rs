@@ -1,15 +1,14 @@
-use std::{cmp::max, sync::Arc};
+use std::{cmp::max, sync::Arc, time::Duration};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
 use common_runtime::get_compute_pool_num_threads;
 use daft_dsl::{
     Expr,
     common_treenode::{self, TreeNode},
     expr::bound_expr::BoundExpr,
-    functions::{BuiltinScalarFn, scalar::ScalarFn},
+    functions::{BuiltinScalarFn, BuiltinScalarFnVariant, scalar::ScalarFn},
 };
-use daft_functions_uri::download::UrlDownloadArgs;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
@@ -19,8 +18,12 @@ use super::intermediate_op::{
 };
 use crate::{
     ExecutionTaskSpawner,
+    dynamic_batching::{
+        DynBatchingStrategy, LatencyConstrainedBatchingStrategy, StaticBatchingStrategy,
+    },
     pipeline::{MorselSizeRequirement, NodeName},
 };
+
 fn num_parallel_exprs(projection: &[BoundExpr]) -> usize {
     max(
         projection
@@ -40,9 +43,6 @@ fn smallest_batch_size(prev: Option<usize>, next: Option<usize>) -> Option<usize
     }
 }
 
-const CONNECTION_BATCH_FACTOR: usize = 4;
-const DEFAULT_URL_MAX_CONNECTIONS: usize = 32;
-
 /// Gets the batch size from the first UDF encountered in a given slice of expressions
 pub fn try_get_batch_size(exprs: &[BoundExpr]) -> Option<usize> {
     let mut projection_batch_size = None;
@@ -50,16 +50,11 @@ pub fn try_get_batch_size(exprs: &[BoundExpr]) -> Option<usize> {
         expr.inner()
             .apply(|e| {
                 let found_batch_size = match e.as_ref() {
-                    Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { udf, inputs, .. }))
-                        if udf.name() == "url_download" =>
-                    {
-                        let UrlDownloadArgs {
-                            max_connections, ..
-                        } = inputs.clone().try_into()?;
-                        let max_connections =
-                            max_connections.unwrap_or(DEFAULT_URL_MAX_CONNECTIONS);
-                        Some(max_connections * CONNECTION_BATCH_FACTOR)
-                    }
+                    Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn {
+                        func: BuiltinScalarFnVariant::Async(udf),
+                        inputs,
+                        ..
+                    })) => udf.preferred_batch_size(inputs.clone()).unwrap_or(None),
                     _ => None,
                 };
 
@@ -114,6 +109,7 @@ impl ProjectOperator {
 
 impl IntermediateOperator for ProjectOperator {
     type State = ();
+    type BatchingStrategy = DynBatchingStrategy;
 
     #[instrument(skip_all, name = "ProjectOperator::execute")]
     fn execute(
@@ -124,6 +120,7 @@ impl IntermediateOperator for ProjectOperator {
     ) -> IntermediateOpExecuteResult<Self> {
         let projection = self.projection.clone();
         let num_parallel_exprs = self.parallel_exprs;
+
         task_spawner
             .spawn(
                 async move {
@@ -132,7 +129,9 @@ impl IntermediateOperator for ProjectOperator {
                             .par_eval_expression_list(&projection, num_parallel_exprs)
                             .await?
                     } else {
-                        input.eval_expression_list(&projection)?
+                        input
+                            .eval_expression_list_async(Arc::unwrap_or_clone(projection))
+                            .await?
                     };
                     Ok((
                         state,
@@ -173,6 +172,38 @@ impl IntermediateOperator for ProjectOperator {
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(())
     }
+
+    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
+        let cfg = daft_context::get_context().execution_config();
+
+        Ok(if cfg.enable_dynamic_batching {
+            match cfg.dynamic_batching_strategy.as_str() {
+                "latency_constrained" | "auto" => {
+                    let reqs = self.morsel_size_requirement().unwrap_or_default();
+
+                    let MorselSizeRequirement::Flexible(min_batch_size, max_batch_size) = reqs
+                    else {
+                        return Err(DaftError::ValueError(
+                            "cannot use strict batch size requirement with dynamic batching"
+                                .to_string(),
+                        ));
+                    };
+                    LatencyConstrainedBatchingStrategy {
+                        target_batch_latency: Duration::from_millis(5000),
+                        latency_tolerance: Duration::from_millis(1000),
+                        step_size_alpha: 2048,
+                        correction_delta: 64,
+                        b_min: min_batch_size,
+                        b_max: max_batch_size,
+                    }
+                    .into()
+                }
+                _ => unreachable!("should already be checked in the ctx"),
+            }
+        } else {
+            StaticBatchingStrategy::new(self.morsel_size_requirement().unwrap_or_default()).into()
+        })
+    }
 }
 
 #[cfg(test)]
@@ -182,7 +213,7 @@ mod tests {
     use daft_core::prelude::{DataType, Field};
     use daft_dsl::{
         expr::bound_col,
-        functions::{FunctionArg, FunctionArgs},
+        functions::{AsyncScalarUDF, BuiltinScalarFnVariant, FunctionArg, FunctionArgs},
         lit,
     };
     use daft_functions_uri::download::UrlDownload;
@@ -206,7 +237,7 @@ mod tests {
             BoundExpr::new_unchecked(bound_col(1, Field::new("b", DataType::Utf8))),
             BoundExpr::new_unchecked(
                 BuiltinScalarFn {
-                    udf: Arc::new(UrlDownload),
+                    func: BuiltinScalarFnVariant::Async(Arc::new(UrlDownload)),
                     inputs: FunctionArgs::try_new(vec![FunctionArg::unnamed(bound_col(
                         0,
                         Field::new("a", DataType::Utf8),
@@ -220,7 +251,7 @@ mod tests {
         let batch_size = try_get_batch_size(projection.as_slice());
         assert_eq!(
             batch_size,
-            Some(CONNECTION_BATCH_FACTOR * DEFAULT_URL_MAX_CONNECTIONS)
+            Some(UrlDownload::CONNECTION_BATCH_FACTOR * UrlDownload::DEFAULT_URL_MAX_CONNECTIONS)
         );
     }
 
@@ -230,7 +261,7 @@ mod tests {
             BoundExpr::new_unchecked(bound_col(0, Field::new("a", DataType::Utf8))),
             BoundExpr::new_unchecked(
                 BuiltinScalarFn {
-                    udf: Arc::new(UrlDownload),
+                    func: BuiltinScalarFnVariant::Async(Arc::new(UrlDownload)),
                     inputs: FunctionArgs::try_new(vec![
                         FunctionArg::unnamed(bound_col(0, Field::new("a", DataType::Utf8))),
                         FunctionArg::named("max_connections", lit(10)),
@@ -242,39 +273,46 @@ mod tests {
         ];
 
         let batch_size = try_get_batch_size(projection.as_slice());
-        assert_eq!(batch_size, Some(CONNECTION_BATCH_FACTOR * 10));
+        assert_eq!(batch_size, Some(UrlDownload::CONNECTION_BATCH_FACTOR * 10));
     }
 
     #[test]
     fn test_get_batch_size_with_multiple_urls() {
+        let input_0 = FunctionArgs::try_new(vec![
+            FunctionArg::unnamed(bound_col(0, Field::new("a", DataType::Utf8))),
+            FunctionArg::named("max_connections", lit(4)),
+        ])
+        .unwrap();
+        let input_1 = FunctionArgs::try_new(vec![FunctionArg::unnamed(bound_col(
+            1,
+            Field::new("b", DataType::Utf8),
+        ))])
+        .unwrap();
+
         let projection = vec![
             BoundExpr::new_unchecked(bound_col(0, Field::new("a", DataType::Utf8))),
             BoundExpr::new_unchecked(bound_col(1, Field::new("b", DataType::Utf8))),
             BoundExpr::new_unchecked(
                 BuiltinScalarFn {
-                    udf: Arc::new(UrlDownload),
-                    inputs: FunctionArgs::try_new(vec![
-                        FunctionArg::unnamed(bound_col(0, Field::new("a", DataType::Utf8))),
-                        FunctionArg::named("max_connections", lit(4)),
-                    ])
-                    .unwrap(),
+                    func: BuiltinScalarFnVariant::Async(Arc::new(UrlDownload)),
+                    inputs: input_0.clone(),
                 }
                 .into(),
             ),
             BoundExpr::new_unchecked(
                 BuiltinScalarFn {
-                    udf: Arc::new(UrlDownload),
-                    inputs: FunctionArgs::try_new(vec![FunctionArg::unnamed(bound_col(
-                        1,
-                        Field::new("b", DataType::Utf8),
-                    ))])
-                    .unwrap(),
+                    func: BuiltinScalarFnVariant::Async(Arc::new(UrlDownload)),
+                    inputs: input_1.clone(),
                 }
                 .into(),
             ),
         ];
+        let expected_batch_size = vec![input_0, input_1]
+            .into_iter()
+            .map(|input| UrlDownload.preferred_batch_size(input).unwrap().unwrap())
+            .min();
 
         let batch_size = try_get_batch_size(projection.as_slice());
-        assert_eq!(batch_size, Some(CONNECTION_BATCH_FACTOR * 4));
+        assert_eq!(batch_size, expected_batch_size);
     }
 }

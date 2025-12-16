@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime
 import decimal
-from typing import NamedTuple
+from typing import NamedTuple, TypedDict
 
 import jax
 import jaxtyping
@@ -11,16 +11,19 @@ import numpy.typing as npt
 import pandas
 import PIL.Image
 import pytest
-import tensorflow
 import torch
 from pydantic import BaseModel, Field, computed_field
-from typing_extensions import TypedDict
 
 from daft import DataType as dt
 from daft import Series
 from daft.daft import ImageMode
-from daft.datatype import TimeUnit
-from daft.file import File
+from daft.datatype import MediaType, TimeUnit
+from daft.file import File, VideoFile
+
+try:  # pragma: no cover - optional dependency
+    import tensorflow  # type: ignore[import-not-found]
+except ImportError:  # pragma: no cover - optional dependency
+    tensorflow = None  # type: ignore[assignment]
 
 
 # Pydantic test models
@@ -90,7 +93,10 @@ class PydanticWithNamedTuple(BaseModel):
         (list[str], dt.list(dt.string())),
         (list[list], dt.list(dt.list(dt.python()))),
         (list[list[str]], dt.list(dt.list(dt.string()))),
-        (TypedDict("Foobar", {"foo": str, "bar": int}), dt.struct({"foo": dt.string(), "bar": dt.int64()})),
+        (
+            TypedDict("Foobar", {"foo": str, "bar": int}),
+            dt.struct({"foo": dt.string(), "bar": dt.int64()}),
+        ),
         (dict, dt.map(dt.python(), dt.python())),
         (dict[str, str], dt.map(dt.string(), dt.string())),
         (tuple, dt.list(dt.python())),
@@ -106,7 +112,7 @@ class PydanticWithNamedTuple(BaseModel):
         (torch.IntTensor, dt.tensor(dt.int32())),
         (torch.LongTensor, dt.tensor(dt.int64())),
         (torch.BoolTensor, dt.tensor(dt.bool())),
-        (tensorflow.Tensor, dt.tensor(dt.python())),
+        *([] if tensorflow is None else [(tensorflow.Tensor, dt.tensor(dt.python()))]),
         (jax.Array, dt.tensor(dt.python())),
         (npt.NDArray[int], dt.tensor(dt.int64())),
         (np.bool_, dt.bool()),
@@ -124,20 +130,35 @@ class PydanticWithNamedTuple(BaseModel):
         (pandas.Series, dt.list(dt.python())),
         (PIL.Image.Image, dt.image()),
         (Series, dt.list(dt.python())),
-        (File, dt.file()),
+        (File, dt.file(MediaType.unknown())),
+        (VideoFile, dt.file(MediaType.video())),
         (object, dt.python()),
         # Pydantic models
         (SimplePydanticModel, dt.struct({"name": dt.string(), "age": dt.int64()})),
         (
             NestedPydanticModel,
-            dt.struct({"user": dt.struct({"name": dt.string(), "age": dt.int64()}), "active": dt.bool()}),
+            dt.struct(
+                {
+                    "user": dt.struct({"name": dt.string(), "age": dt.int64()}),
+                    "active": dt.bool(),
+                }
+            ),
         ),
         # TODO: Uncomment this when we update to pydantic>=2.11 which supports `serialize_by_alias`
         # (PydanticWithAlias, dt.struct({"fullName": dt.string(), "age": dt.int64()})),
-        (PydanticWithAliasNoSerializeByAlias, dt.struct({"full_name": dt.string(), "user_age": dt.int64()})),
+        (
+            PydanticWithAliasNoSerializeByAlias,
+            dt.struct({"full_name": dt.string(), "user_age": dt.int64()}),
+        ),
         (
             PydanticWithComputedField,
-            dt.struct({"first_name": dt.string(), "last_name": dt.string(), "full_name": dt.string()}),
+            dt.struct(
+                {
+                    "first_name": dt.string(),
+                    "last_name": dt.string(),
+                    "full_name": dt.string(),
+                }
+            ),
         ),
         (
             PydanticWithMixedTypes,
@@ -202,7 +223,7 @@ def test_infer_from_type(user_provided_type, expected_datatype):
         jax.Array,
         np.ndarray,
         torch.Tensor,
-        tensorflow.Tensor,
+        *([] if tensorflow is None else [tensorflow.Tensor]),
     ],
 )
 def test_infer_from_jaxtyping(dtype_class, expected_dtype, shape_spec, expected_shape, array_type):
@@ -242,7 +263,7 @@ def test_infer_from_jaxtyping(dtype_class, expected_dtype, shape_spec, expected_
         (decimal.Decimal("1.2345e-4"), dt.decimal128(38, 8)),  # 0.00012345
         (np.array([1, 2, 3]), dt.tensor(dt.int64())),
         (torch.tensor([1, 2, 3]), dt.tensor(dt.int64())),
-        (tensorflow.constant([1, 2, 3]), dt.tensor(dt.int32())),
+        *([] if tensorflow is None else [(tensorflow.constant([1, 2, 3]), dt.tensor(dt.int32()))]),
         (jax.numpy.array([1, 2, 3]), dt.tensor(dt.int32())),
         (np.bool_(False), dt.bool()),
         (np.int8(1), dt.int8()),
@@ -272,7 +293,8 @@ def test_infer_from_jaxtyping(dtype_class, expected_dtype, shape_spec, expected_
         (PIL.Image.new("RGB", (10, 20)), dt.image(ImageMode.RGB)),
         (PIL.Image.new("RGBA", (10, 20)), dt.image(ImageMode.RGBA)),
         (Series.from_pylist([1, 2, 3]), dt.list(dt.int64())),
-        (File(b"1234"), dt.file()),
+        (File("hello.txt"), dt.file(MediaType.unknown())),
+        (VideoFile("hello.mp4"), dt.file(MediaType.video())),
         (object(), dt.python()),
         # Nested lists
         ([[1, 2], [3, 4]], dt.list(dt.list(dt.int64()))),
@@ -281,8 +303,14 @@ def test_infer_from_jaxtyping(dtype_class, expected_dtype, shape_spec, expected_
         # Mixed nested lists
         ([[1, 2], ["a", "b"]], dt.list(dt.list(dt.string()))),
         # Nested structs
-        ({"outer": {"inner": 1}}, dt.struct({"outer": dt.struct({"inner": dt.int64()})})),
-        ({"a": {"b": {"c": "nested"}}}, dt.struct({"a": dt.struct({"b": dt.struct({"c": dt.string()})})})),
+        (
+            {"outer": {"inner": 1}},
+            dt.struct({"outer": dt.struct({"inner": dt.int64()})}),
+        ),
+        (
+            {"a": {"b": {"c": "nested"}}},
+            dt.struct({"a": dt.struct({"b": dt.struct({"c": dt.string()})})}),
+        ),
         # Mixed nested types - list of structs
         (
             [{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}],
@@ -299,21 +327,42 @@ def test_infer_from_jaxtyping(dtype_class, expected_dtype, shape_spec, expected_
             dt.struct(
                 {
                     "users": dt.list(
-                        dt.struct({"profile": dt.struct({"name": dt.string()}), "scores": dt.list(dt.int64())})
+                        dt.struct(
+                            {
+                                "profile": dt.struct({"name": dt.string()}),
+                                "scores": dt.list(dt.int64()),
+                            }
+                        )
                     )
                 }
             ),
         ),
         # Nested tuples as structs
-        ((1, (2, 3)), dt.struct({"_0": dt.int64(), "_1": dt.struct({"_0": dt.int64(), "_1": dt.int64()})})),
+        (
+            (1, (2, 3)),
+            dt.struct(
+                {
+                    "_0": dt.int64(),
+                    "_1": dt.struct({"_0": dt.int64(), "_1": dt.int64()}),
+                }
+            ),
+        ),
         # Empty nested structures
         ([[], []], dt.list(dt.list(dt.null()))),
         ([{}, {}], dt.list(dt.struct({"": dt.null()}))),
         # Pydantic model instances
-        (SimplePydanticModel(name="Alice", age=30), dt.struct({"name": dt.string(), "age": dt.int64()})),
+        (
+            SimplePydanticModel(name="Alice", age=30),
+            dt.struct({"name": dt.string(), "age": dt.int64()}),
+        ),
         (
             NestedPydanticModel(user=SimplePydanticModel(name="Bob", age=25), active=True),
-            dt.struct({"user": dt.struct({"name": dt.string(), "age": dt.int64()}), "active": dt.bool()}),
+            dt.struct(
+                {
+                    "user": dt.struct({"name": dt.string(), "age": dt.int64()}),
+                    "active": dt.bool(),
+                }
+            ),
         ),
         # TODO: Uncomment this when we update to pydantic>=2.11 which supports `serialize_by_alias`
         # (PydanticWithAlias(name="Jane Doe", age=28), dt.struct({"fullName": dt.string(), "age": dt.int64()})),
@@ -323,7 +372,13 @@ def test_infer_from_jaxtyping(dtype_class, expected_dtype, shape_spec, expected_
         ),
         (
             PydanticWithComputedField(first_name="John", last_name="Smith"),
-            dt.struct({"first_name": dt.string(), "last_name": dt.string(), "full_name": dt.string()}),
+            dt.struct(
+                {
+                    "first_name": dt.string(),
+                    "last_name": dt.string(),
+                    "full_name": dt.string(),
+                }
+            ),
         ),
         (
             PydanticWithMixedTypes(numbers=[1, 2, 3], metadata={"key": "value"}),
@@ -471,8 +526,20 @@ def test_decimals_with_scientific_notation():
 
 def test_cupy():
     cupy = pytest.importorskip("cupy")
+    try:
+        if cupy.cuda.is_available():
+            assert dt.infer_from_type(cupy.ndarray) == dt.tensor(dt.python())
 
-    assert dt.infer_from_type(cupy.ndarray) == dt.tensor(dt.python())
-
-    arr = cupy.array([1, 2, 3])
-    assert dt.infer_from_object(arr) == dt.tensor(dt.int64())
+            arr = cupy.array([1, 2, 3])
+            assert dt.infer_from_object(arr) == dt.tensor(dt.int64())
+        else:
+            pytest.skip("CUDA is not available")
+    except Exception as e:
+        error_str = str(e)
+        if (
+            "cudaErrorInsufficientDriver" in error_str
+            and "CUDA driver version is insufficient for CUDA runtime version" in error_str
+        ):
+            pytest.skip(f"CUDA runtime error (insufficient driver): {error_str}")
+        # Re-raise if it's a different CUDARuntimeError
+        raise

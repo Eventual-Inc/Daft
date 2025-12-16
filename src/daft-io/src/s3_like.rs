@@ -2,7 +2,6 @@ use std::{
     any::Any,
     borrow::Cow,
     collections::HashMap,
-    io::Write,
     num::{NonZeroI32, NonZeroUsize},
     pin::Pin,
     string::FromUtf8Error,
@@ -48,20 +47,21 @@ use s3::{
 };
 use snafu::{IntoError, OptionExt, ResultExt, Snafu, ensure};
 use tokio::{
-    sync::{OwnedSemaphorePermit, SemaphorePermit, mpsc::Sender},
+    sync::{OwnedSemaphorePermit, SemaphorePermit},
     task::JoinSet,
 };
-use url::{ParseError, Position};
 
 use super::object_io::{GetResult, ObjectSource};
 use crate::{
     Error::InvalidArgument,
     FileFormat, InvalidArgumentSnafu, InvalidRangeRequestSnafu, SourceType,
+    multipart::MultipartWriter,
     object_io::{FileMetadata, FileType, LSResult},
     range::GetRange,
     retry::{ExponentialBackoff, RetryError},
     stats::IOStatsRef,
     stream_utils::io_stats_on_bytestream,
+    utils::{ObjectPath, parse_object_url},
 };
 
 const S3_DELIMITER: &str = "/";
@@ -176,11 +176,6 @@ enum Error {
         source: ByteStreamError,
     },
 
-    #[snafu(display("Unable to parse URL: \"{}\"", path))]
-    InvalidUrl {
-        path: String,
-        source: url::ParseError,
-    },
     #[snafu(display("Not a File: \"{}\"", path))]
     NotAFile { path: String },
 
@@ -230,8 +225,8 @@ const TOS_THROTTLING_ERRORS: &[&str] = &[
 impl From<Error> for super::Error {
     fn from(error: Error) -> Self {
         use Error::{
-            InvalidUrl, NotAFile, NotFound, UnableToHeadFile, UnableToListObjects,
-            UnableToLoadCredentials, UnableToOpenFile, UnableToReadBytes,
+            NotAFile, NotFound, UnableToHeadFile, UnableToListObjects, UnableToLoadCredentials,
+            UnableToOpenFile, UnableToReadBytes,
         };
 
         fn classify_unhandled_error<
@@ -360,7 +355,6 @@ impl From<Error> for super::Error {
                     err => classify_unhandled_error(path, err),
                 },
             },
-            InvalidUrl { path, source } => Self::InvalidUrl { path, source },
             UnableToReadBytes { path, source } => {
                 use std::error::Error;
                 let io_error = if let Some(source) = source.source() {
@@ -405,6 +399,11 @@ pub async fn s3_config_from_env() -> super::Result<S3Config> {
             .await;
     let creds = provide_credentials_with_retry(&credentials_provider).await?;
 
+    // Support configure retry error messages via system environment variable
+    let retry_error_msgs = std::env::var("DAFT_S3_RETRY_ERROR_MSGS")
+        .map(|s| s.split(',').map(|s| s.to_string()).collect::<Vec<_>>())
+        .unwrap_or_default();
+
     Ok(if let Some(creds) = creds {
         S3Config {
             key_id: Some(creds.access_key_id().to_string()),
@@ -412,37 +411,17 @@ pub async fn s3_config_from_env() -> super::Result<S3Config> {
             session_token: creds.session_token().map(|t| t.to_string().into()),
             region_name,
             anonymous: false,
+            custom_retry_msgs: retry_error_msgs,
             ..Default::default()
         }
     } else {
         S3Config {
             region_name,
             anonymous: true,
+            custom_retry_msgs: retry_error_msgs,
             ..Default::default()
         }
     })
-}
-
-/// Helper to parse S3 URLs, returning (scheme, bucket, key)
-pub fn parse_s3_url(uri: &str) -> super::Result<(String, String, String)> {
-    let parsed = url::Url::parse(uri).with_context(|_| InvalidUrlSnafu { path: uri })?;
-    let bucket = match parsed.host_str() {
-        Some(s) => Ok(s),
-        None => Err(Error::InvalidUrl {
-            path: uri.into(),
-            source: ParseError::EmptyHost,
-        }),
-    }?;
-
-    // Use raw `uri` for object key: URI special character escaping might mangle key
-    let bucket_scheme_prefix_len = parsed[..Position::AfterHost].len();
-    let key = uri[bucket_scheme_prefix_len..].trim_start_matches(S3_DELIMITER);
-
-    Ok((
-        parsed.scheme().to_string(),
-        bucket.to_string(),
-        key.to_string(),
-    ))
 }
 
 async fn provide_credentials_with_retry(
@@ -623,7 +602,32 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
         }
 
         maybe_set_loader_value!(profile_name, &config.profile_name);
-        maybe_set_loader_value!(endpoint_url, &config.endpoint_url);
+
+        // Ensure endpoint URL has trailing slash for proper path construction with S3-compatible services.
+        // E.g., Supabase provides https://[project_ref].storage.supabase.co/storage/v1/s3
+        // but we need to add a trailing slash to the endpoint url so that the path is properly constructed.
+        let endpoint_url = config.endpoint_url.as_ref().map(|url_str| {
+            // Parse the URL to properly handle query strings and fragments
+            match url::Url::parse(url_str) {
+                Ok(mut parsed_url) => {
+                    // Only add trailing slash if the path doesn't already have one
+                    if !parsed_url.path().ends_with('/') {
+                        parsed_url.set_path(&format!("{}/", parsed_url.path()));
+                    }
+                    parsed_url.to_string()
+                }
+                // If parsing fails, fall back to simple string append for backwards compatibility
+                Err(_) => {
+                    if url_str.ends_with('/') {
+                        url_str.clone()
+                    } else {
+                        format!("{}/", url_str)
+                    }
+                }
+            }
+        });
+        maybe_set_loader_value!(endpoint_url, &endpoint_url);
+
         maybe_set_loader_value!(identity_cache, identity_cache);
         maybe_set_loader_value!(region, region);
 
@@ -639,33 +643,46 @@ async fn build_s3_conf(config: &S3Config) -> super::Result<s3::Config> {
     let force_path_style = config.endpoint_url.is_some() && !config.force_virtual_addressing;
     builder = builder.force_path_style(force_path_style);
 
-    let retry_unexpected_eof = {
-        #[derive(Debug)]
-        struct RetryUnexpectedEof;
+    // Add custom retry classifier for customized retry messages
+    if !config.custom_retry_msgs.is_empty() {
+        let custom_retrier = {
+            let custom_retry_msgs = config.custom_retry_msgs.clone();
+            #[derive(Debug)]
+            struct RetryCustomRetrier {
+                retried_msgs: Vec<String>,
+            }
 
-        impl ClassifyRetry for RetryUnexpectedEof {
-            fn classify_retry(&self, ctx: &InterceptorContext) -> RetryAction {
-                if let Some(Err(err)) = ctx.output_or_error()
-                    && format!("{err:?}").contains("UnexpectedEof")
-                {
-                    RetryAction::server_error()
-                } else {
+            impl ClassifyRetry for RetryCustomRetrier {
+                fn classify_retry(&self, ctx: &InterceptorContext) -> RetryAction {
+                    if let Some(Err(err)) = ctx.output_or_error() {
+                        let error_str = format!("{err:?}");
+                        for msg in &self.retried_msgs {
+                            if error_str.contains(msg) {
+                                log::warn!(
+                                    "Triggering retry for error: {error_str} with msg: {msg}"
+                                );
+                                return RetryAction::server_error();
+                            }
+                        }
+                    }
                     RetryAction::NoActionIndicated
+                }
+
+                fn name(&self) -> &'static str {
+                    "RetryCustomRetrier"
+                }
+
+                fn priority(&self) -> RetryClassifierPriority {
+                    RetryClassifierPriority::transient_error_classifier()
                 }
             }
 
-            fn name(&self) -> &'static str {
-                "RetryUnexpectedEof"
+            RetryCustomRetrier {
+                retried_msgs: custom_retry_msgs,
             }
-
-            fn priority(&self) -> RetryClassifierPriority {
-                RetryClassifierPriority::transient_error_classifier()
-            }
-        }
-
-        RetryUnexpectedEof
-    };
-    builder = builder.retry_classifier(retry_unexpected_eof);
+        };
+        builder = builder.retry_classifier(custom_retrier);
+    }
 
     let builder_copy = builder.clone();
     let mut s3_conf = builder.build();
@@ -737,7 +754,7 @@ impl S3LikeSource {
         region: &Region,
     ) -> super::Result<GetResult> {
         log::debug!("S3 get at {uri}, range: {range:?}, in region: {region}");
-        let (_scheme, bucket, key) = parse_s3_url(uri)?;
+        let ObjectPath { bucket, key, .. } = parse_object_url(uri)?;
 
         if key.is_empty() {
             Err(Error::NotAFile { path: uri.into() }.into())
@@ -843,7 +860,11 @@ impl S3LikeSource {
         region: &Region,
     ) -> super::Result<usize> {
         log::debug!("S3 head at {uri} in region: {region}");
-        let (_scheme, bucket, key) = parse_s3_url(uri)?;
+        let ObjectPath {
+            scheme: _scheme,
+            bucket,
+            key,
+        } = parse_object_url(uri)?;
 
         if key.is_empty() {
             Err(Error::NotAFile { path: uri.into() }.into())
@@ -1034,7 +1055,11 @@ impl S3LikeSource {
             "S3 put at {uri}, num_bytes: {}, in region: {region}",
             data.len()
         );
-        let (_scheme, bucket, key) = parse_s3_url(uri)?;
+        let ObjectPath {
+            scheme: _scheme,
+            bucket,
+            key,
+        } = parse_object_url(uri)?;
 
         if key.is_empty() {
             Err(Error::NotAFile { path: uri.into() }.into())
@@ -1242,6 +1267,24 @@ impl ObjectSource for S3LikeSource {
         Ok(true)
     }
 
+    async fn create_multipart_writer(
+        self: Arc<Self>,
+        uri: &str,
+    ) -> super::Result<Option<Box<dyn MultipartWriter>>> {
+        let part_size =
+            NonZeroUsize::new(self.s3_config.multipart_size as usize).ok_or_else(|| {
+                InvalidArgument {
+                    msg: "S3 multipart part size must be non-zero".to_string(),
+                }
+            })?;
+        let max_concurrency = NonZeroUsize::new(self.s3_config.multipart_max_concurrency as usize)
+            .ok_or_else(|| InvalidArgument {
+                msg: "S3 multipart concurrent uploads per object must be non-zero".to_string(),
+            })?;
+        let writer = S3MultipartWriter::create(uri, part_size, max_concurrency, self).await?;
+        Ok(Some(Box::new(writer)))
+    }
+
     async fn get(
         &self,
         uri: &str,
@@ -1347,7 +1390,11 @@ impl ObjectSource for S3LikeSource {
         page_size: Option<i32>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<LSResult> {
-        let (scheme, bucket, key) = parse_s3_url(path)?;
+        let ObjectPath {
+            scheme,
+            bucket,
+            key,
+        } = parse_object_url(path)?;
 
         if posix {
             // Perform a directory-based list of entries in the next level
@@ -1538,7 +1585,11 @@ impl S3MultipartWriter {
         s3_client: Arc<S3LikeSource>,
     ) -> super::Result<Self> {
         let uri = uri.into();
-        let (_scheme, bucket, key) = parse_s3_url(&uri)?;
+        let ObjectPath {
+            scheme: _scheme,
+            bucket,
+            key,
+        } = parse_object_url(&uri)?;
 
         if key.is_empty() {
             return Err(Error::NotAFile { path: uri.clone() }.into());
@@ -1570,6 +1621,21 @@ impl S3MultipartWriter {
                 max_concurrent_uploads.get(),
             )),
         })
+    }
+}
+
+#[async_trait]
+impl MultipartWriter for S3MultipartWriter {
+    fn part_size(&self) -> usize {
+        self.s3_client.s3_config.multipart_size as usize
+    }
+
+    async fn put_part(&mut self, data: Bytes) -> super::Result<()> {
+        self.write_part(data).await
+    }
+
+    async fn complete(&mut self) -> super::Result<()> {
+        self.shutdown().await
     }
 }
 
@@ -1680,93 +1746,6 @@ impl S3MultipartWriter {
             .await?;
 
         log::debug!("S3 multipart upload completed: {}", self.uri);
-        Ok(())
-    }
-}
-
-pub struct S3PartBuffer {
-    buffer: Vec<u8>,
-    part_size: NonZeroUsize,
-    tx: Option<Sender<bytes::Bytes>>,
-}
-
-impl S3PartBuffer {
-    pub fn new(part_size: NonZeroUsize, tx: Sender<bytes::Bytes>) -> Self {
-        Self {
-            buffer: Vec::with_capacity(part_size.get()),
-            part_size,
-            tx: Some(tx),
-        }
-    }
-
-    pub fn shutdown(&mut self) -> std::io::Result<()> {
-        log::debug!("Shutting down S3 parts buffer.");
-
-        if !self.buffer.is_empty() {
-            log::debug!(
-                "S3 parts buffer has {} bytes remaining to send.",
-                self.buffer.len()
-            );
-
-            // If there is any remaining data in the buffer, send it as a final part
-            let old_buffer =
-                std::mem::replace(&mut self.buffer, Vec::with_capacity(self.part_size.get()));
-            let new_part = bytes::Bytes::from(old_buffer);
-
-            if let Some(tx) = &self.tx {
-                // Attempt to send the final part
-                tx.blocking_send(new_part)
-                    .map_err(|_| std::io::Error::other("Failed to send final part for multi-part upload. Has the receiver been dropped?"))?;
-            } else {
-                panic!(
-                    "It seems that the S3PartBuffer has been shutdown already, but we still have data to send. This is a bug in the code."
-                );
-            }
-        }
-        self.tx.take();
-        Ok(())
-    }
-}
-
-impl Write for S3PartBuffer {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let mut remaining = buf;
-        let mut total_written_bytes = 0;
-
-        while !remaining.is_empty() {
-            // Write the buffer until its full, or we run out of data
-            let available_space = self.part_size.get() - self.buffer.len();
-            let writable_bytes = remaining.len().min(available_space);
-
-            self.buffer.extend_from_slice(&remaining[..writable_bytes]);
-            total_written_bytes += writable_bytes;
-            remaining = &remaining[writable_bytes..];
-
-            if self.buffer.len() == self.part_size.get() {
-                log::debug!("Enough data to write a part to S3.");
-                // Buffer is full, send it to the channel
-                let old_buffer =
-                    std::mem::replace(&mut self.buffer, Vec::with_capacity(self.part_size.get()));
-                let new_part = bytes::Bytes::from(old_buffer);
-
-                if let Some(tx) = &self.tx {
-                    tx.blocking_send(new_part)
-                        .map_err(|_| std::io::Error::other("Failed to send part for multi-part upload. Has the receiver been dropped?"))?;
-                } else {
-                    panic!(
-                        "It seems that the S3PartBuffer has been shutdown already, but we still have data to send. This is a bug in the code."
-                    );
-                }
-            }
-        }
-
-        Ok(total_written_bytes)
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        // No-Op: Flushing a partial part will make the parts of unequal size. R2, for example,
-        // requires all parts (except the last) to be the same size. The last part is always flushed
-        // at shutdown().
         Ok(())
     }
 }

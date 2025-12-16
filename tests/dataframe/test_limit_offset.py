@@ -3,19 +3,31 @@ from __future__ import annotations
 import pytest
 
 import daft
-from daft import DataType, col
+from daft import col
+from daft.functions import format
 
 
-@pytest.fixture
-def input_df():
-    df = daft.range(start=0, end=1024, partitions=100)
-    df = df.with_columns(
-        {
-            "name": df["id"].apply(func=lambda x: f"user_{x}", return_dtype=DataType.string()),
-            "email": df["id"].apply(func=lambda x: f"user_{x}@getdaft.io", return_dtype=DataType.string()),
-        }
-    )
-    return df
+@pytest.fixture(params=["memory", "parquet", "lance"], scope="session")
+def input_df(request, tmp_path_factory):
+    with daft.execution_config_ctx(enable_dynamic_batching=True):
+        df = daft.range(start=0, end=1024, partitions=100)
+        df = df.with_columns(
+            {
+                "name": format("user_{}", df["id"]),
+                "email": format("user_{}@daft.ai", df["id"]),
+            }
+        )
+
+        path = str(tmp_path_factory.mktemp(request.param))
+        if request.param == "parquet":
+            df.write_parquet(path)
+            return daft.read_parquet(path)
+        elif request.param == "lance":
+            lance = pytest.importorskip("lance")
+            lance.write_dataset(df.to_arrow(), path)
+            return daft.read_lance(path)
+        else:
+            return df
 
 
 def test_negative_limit(input_df):

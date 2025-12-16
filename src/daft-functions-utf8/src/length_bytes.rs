@@ -1,6 +1,8 @@
+use std::sync::Arc;
+
 use common_error::DaftResult;
 use daft_core::{
-    prelude::{AsArrow, DataType, Field, Schema, UInt64Array, Utf8Array},
+    prelude::{DataType, Field, Schema, UInt64Array, Utf8Array},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
@@ -11,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::{unary_utf8_evaluate, unary_utf8_to_field};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct LengthBytes;
 
 #[typetag::serde]
@@ -43,14 +45,13 @@ pub fn utf8_length_bytes(input: ExprRef) -> ExprRef {
 }
 
 fn length_bytes_impl(arr: &Utf8Array) -> DaftResult<UInt64Array> {
-    let self_arrow = arr.as_arrow();
-    let arrow_result = self_arrow
-        .iter()
-        .map(|val| {
-            let v = val?;
-            Some(v.len() as u64)
-        })
-        .collect::<arrow2::array::UInt64Array>()
-        .with_validity(self_arrow.validity().cloned());
-    Ok(UInt64Array::from((arr.name(), Box::new(arrow_result))))
+    let iter = arr.into_iter().map(|val| {
+        let v = val?;
+        Some(v.len() as u64)
+    });
+
+    Ok(UInt64Array::from_iter(
+        Arc::new(Field::new(arr.name(), DataType::UInt64)),
+        iter,
+    ))
 }

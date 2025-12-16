@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult, ensure};
 use daft_core::{
-    prelude::{AsArrow, DataType, Field, FullNull, Schema, Utf8Array},
+    prelude::{DataType, Field, FullNull, Schema, Utf8Array},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::{create_broadcasted_str_iter, parse_inputs};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RegexpExtract;
 
 #[typetag::serde]
@@ -98,10 +98,7 @@ fn extract_impl(s: &Utf8Array, pattern: &Utf8Array, index: usize) -> DaftResult<
             regex_extract_first_match(self_iter, regex_iter, index, s.name())?
         }
         _ => {
-            let regex_iter = pattern
-                .as_arrow()
-                .iter()
-                .map(|pat| pat.map(regex::Regex::new));
+            let regex_iter = pattern.into_iter().map(|pat| pat.map(regex::Regex::new));
             regex_extract_first_match(self_iter, regex_iter, index, s.name())?
         }
     };
@@ -133,7 +130,7 @@ fn regex_extract_first_match<'a>(
             }
             _ => Ok(None),
         })
-        .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>();
+        .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>();
 
     Ok(Utf8Array::from((name, Box::new(arrow_result?))))
 }

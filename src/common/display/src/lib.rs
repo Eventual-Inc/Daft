@@ -8,7 +8,8 @@ pub trait DisplayAs {
     fn display_as(&self, level: DisplayLevel) -> String;
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub enum DisplayLevel {
     /// A compact display, showing only the most important details.
     Compact,

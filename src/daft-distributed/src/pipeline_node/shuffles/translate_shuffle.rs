@@ -3,7 +3,7 @@ use daft_logical_plan::partitioning::RepartitionSpec;
 use daft_schema::schema::SchemaRef;
 
 use crate::pipeline_node::{
-    DistributedPipelineNode, NodeID,
+    DistributedPipelineNode,
     shuffles::{
         gather::GatherNode, pre_shuffle_merge::PreShuffleMergeNode, repartition::RepartitionNode,
     },
@@ -13,7 +13,6 @@ use crate::pipeline_node::{
 impl LogicalPlanToPipelineNodeTranslator {
     pub fn gen_shuffle_node(
         &mut self,
-        logical_node_id: Option<NodeID>,
         repartition_spec: RepartitionSpec,
         schema: SchemaRef,
         child: DistributedPipelineNode,
@@ -37,7 +36,6 @@ impl LogicalPlanToPipelineNodeTranslator {
             // Create merge node first
             let merge_node = PreShuffleMergeNode::new(
                 self.get_next_pipeline_node_id(),
-                logical_node_id,
                 &self.plan_config,
                 self.plan_config.config.pre_shuffle_merge_threshold,
                 schema.clone(),
@@ -47,7 +45,6 @@ impl LogicalPlanToPipelineNodeTranslator {
 
             Ok(RepartitionNode::new(
                 self.get_next_pipeline_node_id(),
-                logical_node_id,
                 &self.plan_config,
                 repartition_spec,
                 num_partitions,
@@ -58,7 +55,6 @@ impl LogicalPlanToPipelineNodeTranslator {
         } else {
             Ok(RepartitionNode::new(
                 self.get_next_pipeline_node_id(),
-                logical_node_id,
                 &self.plan_config,
                 repartition_spec,
                 num_partitions,
@@ -95,7 +91,6 @@ impl LogicalPlanToPipelineNodeTranslator {
 
     pub fn gen_gather_node(
         &mut self,
-        logical_node_id: Option<NodeID>,
         input_node: DistributedPipelineNode,
     ) -> DistributedPipelineNode {
         if input_node.config().clustering_spec.num_partitions() == 1 {
@@ -104,7 +99,6 @@ impl LogicalPlanToPipelineNodeTranslator {
 
         GatherNode::new(
             self.get_next_pipeline_node_id(),
-            logical_node_id,
             &self.plan_config,
             input_node.config().schema.clone(),
             input_node,

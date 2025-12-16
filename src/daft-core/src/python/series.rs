@@ -4,6 +4,7 @@ use std::{
 };
 
 use common_arrow_ffi as ffi;
+use common_error::DaftError;
 use daft_hash::HashFunctionKind;
 use daft_schema::python::PyDataType;
 use pyo3::{
@@ -19,7 +20,10 @@ use crate::{
     datatypes::{DataType, Field},
     lit::Literal,
     prelude::PythonArray,
-    series::{self, IntoSeries, Series, from_lit::combine_lit_types},
+    series::{
+        self, IntoSeries, Series,
+        from_lit::{combine_lit_types, series_from_literals_iter},
+    },
     utils::{
         arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
         supertype::try_get_collection_supertype,
@@ -82,49 +86,50 @@ impl PySeries {
         dtype: Option<PyDataType>,
     ) -> PyResult<Self> {
         let dtype = dtype.map(|t| t.dtype);
-        let literals = list
-            .iter()
-            .map(|elem| Literal::from_pyobj(&elem, dtype.as_ref()))
-            .collect::<PyResult<Vec<_>>>()?;
-
-        let (literals, dtype) = if let Some(dtype) = dtype {
-            (literals, dtype)
+        let mut series = if let Some(dtype) = dtype {
+            let literals = (0..list.len()).map(|i| {
+                list.get_item(i)
+                    .and_then(|elem| Literal::from_pyobj(&elem, Some(&dtype)))
+                    .map_err(DaftError::from)
+            });
+            series_from_literals_iter(literals, Some(dtype.clone()))?
         } else {
+            let literals = list
+                .iter()
+                .map(|elem| Literal::from_pyobj(&elem, None))
+                .collect::<PyResult<Vec<_>>>()?;
+
             let supertype = try_get_collection_supertype(literals.iter().map(Literal::get_type))
                 .unwrap_or(DataType::Python);
 
-            let literals_with_supertype = literals
-                .into_iter()
-                .zip(list)
-                .map(|(daft_lit, py_lit)| {
-                    if combine_lit_types(&daft_lit.get_type(), &supertype).as_ref()
-                        == Some(&supertype)
-                    {
-                        Ok(daft_lit)
-                    } else {
-                        // if literal doesn't match supertype, redo conversion so that for the python data type
-                        // as well as nested types with python type, we avoid any lossy conversions and just keep
-                        // stuff as Python objects
-                        Literal::from_pyobj(&py_lit, Some(&supertype))
-                    }
-                })
-                .collect::<PyResult<Vec<_>>>()?;
+            let literals_with_supertype = literals.into_iter().enumerate().map(|(i, daft_lit)| {
+                if combine_lit_types(&daft_lit.get_type(), &supertype).as_ref() == Some(&supertype)
+                {
+                    Ok(daft_lit)
+                } else {
+                    let py_lit = list.get_item(i)?;
 
-            (literals_with_supertype, supertype)
+                    // if literal doesn't match supertype, redo conversion so that for the python data type
+                    // as well as nested types with python type, we avoid any lossy conversions and just keep
+                    // stuff as Python objects
+                    Literal::from_pyobj(&py_lit, Some(&supertype)).map_err(DaftError::from)
+                }
+            });
+            series_from_literals_iter(literals_with_supertype, Some(supertype.clone()))?
         };
 
-        let mut series = Series::from_literals(literals)?.cast(&dtype)?;
         if let Some(name) = name {
             series = series.rename(name);
         }
         Ok(series.into())
     }
+
     pub fn to_pylist<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyList>> {
         PyList::new(py, self.series.to_literals())
     }
 
     pub fn to_arrow<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
-        let arrow_array = self.series.to_arrow();
+        let arrow_array = self.series.to_arrow2();
         let arrow_array = cast_array_from_daft_if_needed(arrow_array);
         let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
         ffi::to_py_array(py, arrow_array, &pyarrow)
@@ -214,7 +219,8 @@ impl PySeries {
     }
 
     pub fn take(&self, idx: &Self) -> PyResult<Self> {
-        Ok(self.series.take(&idx.series)?.into())
+        let idx = idx.series.cast(&DataType::UInt64)?;
+        Ok(self.series.take(idx.u64()?)?.into())
     }
 
     pub fn slice(&self, start: i64, end: i64) -> PyResult<Self> {
@@ -251,7 +257,11 @@ impl PySeries {
     }
 
     pub fn argsort(&self, descending: bool, nulls_first: bool) -> PyResult<Self> {
-        Ok(self.series.argsort(descending, nulls_first)?.into())
+        Ok(self
+            .series
+            .argsort(descending, nulls_first)?
+            .into_series()
+            .into())
     }
 
     pub fn minhash(
@@ -306,6 +316,10 @@ impl PySeries {
 
     pub fn sum(&self) -> PyResult<Self> {
         Ok((self.series).sum(None)?.into())
+    }
+
+    pub fn product(&self) -> PyResult<Self> {
+        Ok((self.series).product(None)?.into())
     }
 
     pub fn mean(&self) -> PyResult<Self> {
@@ -422,13 +436,16 @@ impl PySeries {
     }
 
     pub fn _debug_bincode_serialize(&self, py: Python) -> PyResult<Py<PyAny>> {
-        let values = bincode::serialize(&self.series).unwrap();
+        let values =
+            bincode::serde::encode_to_vec(&self.series, bincode::config::legacy()).unwrap();
         Ok(PyBytes::new(py, &values).into())
     }
 
     #[staticmethod]
     pub fn _debug_bincode_deserialize(bytes: &[u8]) -> PyResult<Self> {
-        let values = bincode::deserialize::<Series>(bytes).unwrap();
+        let values: Series = bincode::serde::decode_from_slice(bytes, bincode::config::legacy())
+            .unwrap()
+            .0;
         Ok(Self { series: values })
     }
 

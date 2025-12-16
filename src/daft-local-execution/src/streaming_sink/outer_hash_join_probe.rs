@@ -11,59 +11,74 @@ use daft_core::{
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::{ProbeState, RecordBatch, get_columns_by_name};
+use daft_recordbatch::{GrowableRecordBatch, ProbeState, RecordBatch, get_columns_by_name};
 use futures::{StreamExt, stream};
 use indexmap::IndexSet;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::base::{
-    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
+    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
+    StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
 use crate::{ExecutionTaskSpawner, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef};
 
 pub(crate) struct IndexBitmapBuilder {
-    mutable_bitmap: MutableBitmap,
+    mutable_bitmaps: Vec<MutableBitmap>,
 }
 
 impl IndexBitmapBuilder {
-    pub fn new(table: &RecordBatch) -> Self {
+    pub fn new(table: &[RecordBatch]) -> Self {
         Self {
-            mutable_bitmap: MutableBitmap::from_len_set(table.len()),
+            mutable_bitmaps: table
+                .iter()
+                .map(|table| MutableBitmap::from_len_set(table.len()))
+                .collect(),
         }
     }
 
     #[inline]
-    pub fn mark_used(&mut self, row_idx: usize) {
-        self.mutable_bitmap.set(row_idx, false);
+    pub fn mark_used(&mut self, table_idx: usize, row_idx: usize) {
+        self.mutable_bitmaps[table_idx].set(row_idx, false);
     }
 
     pub fn build(self) -> IndexBitmap {
         IndexBitmap {
-            bitmap: self.mutable_bitmap.into(),
+            bitmaps: self
+                .mutable_bitmaps
+                .into_iter()
+                .map(|bitmap| bitmap.into())
+                .collect(),
         }
     }
 }
 
 pub(crate) struct IndexBitmap {
-    bitmap: Bitmap,
+    bitmaps: Vec<Bitmap>,
 }
 
 impl IndexBitmap {
     pub fn merge(&self, other: &Self) -> Self {
         Self {
-            bitmap: and(&self.bitmap, &other.bitmap),
+            bitmaps: self
+                .bitmaps
+                .iter()
+                .zip(other.bitmaps.iter())
+                .map(|(a, b)| and(a, b))
+                .collect(),
         }
     }
 
     pub fn negate(&self) -> Self {
         Self {
-            bitmap: !&self.bitmap,
+            bitmaps: self.bitmaps.iter().map(|bitmap| !bitmap).collect(),
         }
     }
 
-    pub fn convert_to_boolean_array(self) -> BooleanArray {
-        BooleanArray::from(("bitmap", self.bitmap))
+    pub fn convert_to_boolean_arrays(self) -> impl Iterator<Item = BooleanArray> {
+        self.bitmaps
+            .into_iter()
+            .map(|bitmap| BooleanArray::from(("bitmap", bitmap)))
     }
 }
 
@@ -78,7 +93,7 @@ impl OuterHashJoinState {
             Self::Building(bridge, needs_bitmap) => {
                 let probe_state = bridge.get_state().await;
                 let builder =
-                    needs_bitmap.then(|| IndexBitmapBuilder::new(probe_state.get_record_batch()));
+                    needs_bitmap.then(|| IndexBitmapBuilder::new(probe_state.get_record_batches()));
                 *self = Self::Probing(probe_state.clone(), builder);
                 probe_state
             }
@@ -90,7 +105,7 @@ impl OuterHashJoinState {
         match self {
             Self::Building(bridge, _) => {
                 let probe_state = bridge.get_state().await;
-                let builder = IndexBitmapBuilder::new(probe_state.get_record_batch());
+                let builder = IndexBitmapBuilder::new(probe_state.get_record_batches());
                 *self = Self::Probing(probe_state, Some(builder));
                 match self {
                     Self::Probing(_, builder) => builder,
@@ -202,13 +217,17 @@ impl OuterHashJoinProbeSink {
         right_non_join_columns: &[String],
         output_schema: &SchemaRef,
     ) -> DaftResult<Arc<MicroPartition>> {
-        let build_side_table = probe_state.get_record_batch();
+        let build_side_tables = probe_state.get_record_batches().iter().collect::<Vec<_>>();
 
-        let input_tables = input.get_tables()?;
-        let final_tables = input_tables
+        let final_tables = input
+            .record_batches()
             .iter()
             .map(|input_table| {
-                let mut build_side_idxs = Vec::new();
+                let mut build_side_growable = GrowableRecordBatch::new(
+                    &build_side_tables,
+                    false,
+                    build_side_tables.iter().map(|table| table.len()).sum(),
+                )?;
                 let mut probe_side_idxs = Vec::new();
 
                 let join_keys = input_table.eval_expression_list(probe_on)?;
@@ -216,21 +235,23 @@ impl OuterHashJoinProbeSink {
 
                 for (probe_row_idx, inner_iter) in idx_iter.enumerate() {
                     if let Some(inner_iter) = inner_iter {
-                        for build_row_idx in inner_iter {
-                            bitmap_builder.mark_used(build_row_idx as usize);
-                            build_side_idxs.push(build_row_idx);
+                        for (build_table_idx, build_row_idx) in inner_iter {
+                            bitmap_builder
+                                .mark_used(build_table_idx as usize, build_row_idx as usize);
+                            build_side_growable.extend(
+                                build_table_idx as usize,
+                                build_row_idx as usize,
+                                1,
+                            );
                             probe_side_idxs.push(probe_row_idx as u64);
                         }
                     }
                 }
 
-                let build_side_table = {
-                    let indices_as_series = UInt64Array::from(("", build_side_idxs)).into_series();
-                    build_side_table.take(&indices_as_series)?
-                };
+                let build_side_table = build_side_growable.build()?;
                 let probe_side_table = {
-                    let indices_as_series = UInt64Array::from(("", probe_side_idxs)).into_series();
-                    input_table.take(&indices_as_series)?
+                    let indices_arr = UInt64Array::from(("", probe_side_idxs));
+                    input_table.take(&indices_arr)?
                 };
 
                 let final_table = if join_type == JoinType::Left {
@@ -265,43 +286,44 @@ impl OuterHashJoinProbeSink {
         right_non_join_columns: &[String],
         output_schema: &SchemaRef,
     ) -> DaftResult<Arc<MicroPartition>> {
-        let build_side_table = probe_state.get_record_batch();
+        let build_side_tables = probe_state.get_record_batches().iter().collect::<Vec<_>>();
 
-        let input_tables = input.get_tables()?;
-        let final_tables = input_tables
+        let final_tables = input
+            .record_batches()
             .iter()
             .map(|input_table| {
                 // We can instantiate with capacity for left/right probes since we will always push even if there's no match.
-                let mut build_side_idxs = Vec::with_capacity(build_side_table.len());
+                let mut build_side_growable = GrowableRecordBatch::new(
+                    &build_side_tables,
+                    true,
+                    build_side_tables.iter().map(|table| table.len()).sum(),
+                )?;
                 let mut probe_side_idxs = Vec::with_capacity(input_table.len());
 
                 let join_keys = input_table.eval_expression_list(probe_on)?;
                 let idx_iter = probe_state.probe_indices(&join_keys)?;
                 for (probe_row_idx, inner_iter) in idx_iter.enumerate() {
                     if let Some(inner_iter) = inner_iter {
-                        for build_row_idx in inner_iter {
-                            build_side_idxs.push(Some(build_row_idx));
+                        for (build_table_idx, build_row_idx) in inner_iter {
+                            build_side_growable.extend(
+                                build_table_idx as usize,
+                                build_row_idx as usize,
+                                1,
+                            );
                             probe_side_idxs.push(probe_row_idx as u64);
                         }
                     } else {
                         // if there's no match, we should still emit the probe side and fill the build side with nulls
-                        build_side_idxs.push(None);
+                        build_side_growable.add_nulls(1);
                         probe_side_idxs.push(probe_row_idx as u64);
                     }
                 }
 
-                let build_side_table = {
-                    let indices_as_series = UInt64Array::from_regular_iter(
-                        Field::new("indices", DataType::UInt64),
-                        build_side_idxs.into_iter(),
-                    )?
-                    .into_series();
-                    build_side_table.take(&indices_as_series)?
-                };
+                let build_side_table = build_side_growable.build()?;
 
                 let probe_side_table = {
-                    let indices_as_series = UInt64Array::from(("", probe_side_idxs)).into_series();
-                    input_table.take(&indices_as_series)?
+                    let indices_arr = UInt64Array::from(("", probe_side_idxs));
+                    input_table.take(&indices_arr)?
                 };
 
                 let final_table = if join_type == JoinType::Left {
@@ -339,13 +361,17 @@ impl OuterHashJoinProbeSink {
         build_on_left: bool,
         output_schema: &SchemaRef,
     ) -> DaftResult<Arc<MicroPartition>> {
-        let build_side_table = probe_state.get_record_batch();
-        let input_tables = input.get_tables()?;
-        let final_tables = input_tables
+        let build_side_tables = probe_state.get_record_batches().iter().collect::<Vec<_>>();
+        let final_tables = input
+            .record_batches()
             .iter()
             .map(|input_table| {
                 // We can instantiate with capacity for outer probes since we will always push even if there's no match.
-                let mut build_side_idxs = Vec::with_capacity(build_side_table.len());
+                let mut build_side_growable = GrowableRecordBatch::new(
+                    &build_side_tables,
+                    true,
+                    build_side_tables.iter().map(|table| table.len()).sum(),
+                )?;
                 let mut probe_side_idxs = Vec::with_capacity(input_table.len());
 
                 let join_keys = input_table.eval_expression_list(probe_on)?;
@@ -353,30 +379,28 @@ impl OuterHashJoinProbeSink {
 
                 for (probe_row_idx, inner_iter) in idx_iter.enumerate() {
                     if let Some(inner_iter) = inner_iter {
-                        for build_row_idx in inner_iter {
-                            bitmap_builder.mark_used(build_row_idx as usize);
-                            build_side_idxs.push(Some(build_row_idx));
+                        for (build_table_idx, build_row_idx) in inner_iter {
+                            bitmap_builder
+                                .mark_used(build_table_idx as usize, build_row_idx as usize);
+                            build_side_growable.extend(
+                                build_table_idx as usize,
+                                build_row_idx as usize,
+                                1,
+                            );
                             probe_side_idxs.push(probe_row_idx as u64);
                         }
                     } else {
                         // if there's no match, we should still emit the probe side and fill the build side with nulls
-                        build_side_idxs.push(None);
+                        build_side_growable.add_nulls(1);
                         probe_side_idxs.push(probe_row_idx as u64);
                     }
                 }
 
-                let build_side_table = {
-                    let indices_as_series = UInt64Array::from_regular_iter(
-                        Field::new("indices", DataType::UInt64),
-                        build_side_idxs.into_iter(),
-                    )?
-                    .into_series();
-                    build_side_table.take(&indices_as_series)?
-                };
+                let build_side_table = build_side_growable.build()?;
 
                 let probe_side_table = {
-                    let indices_as_series = UInt64Array::from(("", probe_side_idxs)).into_series();
-                    input_table.take(&indices_as_series)?
+                    let indices_arr = UInt64Array::from(("", probe_side_idxs));
+                    input_table.take(&indices_arr)?
                 };
 
                 #[allow(deprecated)]
@@ -403,17 +427,14 @@ impl OuterHashJoinProbeSink {
     }
 
     async fn merge_bitmaps_and_construct_null_table(
-        mut states: Vec<OuterHashJoinState>,
+        states: Vec<OuterHashJoinState>,
     ) -> DaftResult<RecordBatch> {
-        let mut states_iter = states.iter_mut();
-        let first_state = states_iter
+        let mut states_iter = states.into_iter();
+        let mut first_state = states_iter
             .next()
             .expect("at least one state should be present");
-        let table = first_state
-            .get_or_build_probe_state()
-            .await
-            .get_record_batch()
-            .clone();
+        let first_probe_state = first_state.get_or_build_probe_state().await;
+        let first_tables = first_probe_state.get_record_batches();
         let first_bitmap = first_state
             .get_or_build_bitmap()
             .await
@@ -423,7 +444,7 @@ impl OuterHashJoinProbeSink {
 
         let merged_bitmap = {
             let bitmaps = stream::once(async move { first_bitmap })
-                .chain(stream::iter(states_iter).then(|s| async move {
+                .chain(stream::iter(states_iter).then(|mut s| async move {
                     s.get_or_build_bitmap()
                         .await
                         .take()
@@ -440,9 +461,12 @@ impl OuterHashJoinProbeSink {
         }
         .expect("at least one bitmap should be present");
 
-        let leftovers =
-            table.mask_filter(&merged_bitmap.convert_to_boolean_array().into_series())?;
-        Ok(leftovers)
+        let leftovers = merged_bitmap
+            .convert_to_boolean_arrays()
+            .zip(first_tables.iter())
+            .map(|(bitmap, table)| table.mask_filter(&bitmap.into_series()))
+            .collect::<DaftResult<Vec<_>>>()?;
+        RecordBatch::concat(&leftovers)
     }
 
     async fn finalize_outer(
@@ -537,6 +561,7 @@ impl OuterHashJoinProbeSink {
 
 impl StreamingSink for OuterHashJoinProbeSink {
     type State = OuterHashJoinState;
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "OuterHashJoinProbeSink::execute")]
     fn execute(
         &self,
@@ -652,8 +677,11 @@ impl StreamingSink for OuterHashJoinProbeSink {
         res
     }
 
-    fn make_state(&self) -> Self::State {
-        OuterHashJoinState::Building(self.probe_state_bridge.clone(), self.needs_bitmap)
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(OuterHashJoinState::Building(
+            self.probe_state_bridge.clone(),
+            self.needs_bitmap,
+        ))
     }
 
     #[instrument(skip_all, name = "OuterHashJoinProbeSink::finalize")]
@@ -661,50 +689,56 @@ impl StreamingSink for OuterHashJoinProbeSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkFinalizeResult {
+    ) -> StreamingSinkFinalizeResult<Self> {
         if self.needs_bitmap {
             let params = self.params.clone();
             spawner
                 .spawn(
                     async move {
-                        match params.join_type {
-                        JoinType::Left => Self::finalize_left(
-                            states,
-                            &params.common_join_cols,
-                            &params.left_non_join_columns,
-                            &params.right_non_join_schema,
-                        )
-                        .await,
-                        JoinType::Right => Self::finalize_right(
-                            states,
-                            &params.common_join_cols,
-                            &params.right_non_join_columns,
-                            &params.left_non_join_schema,
-                        )
-                        .await,
-                        JoinType::Outer => Self::finalize_outer(
+                        let res = match params.join_type {
+                            JoinType::Left => Self::finalize_left(
                                 states,
                                 &params.common_join_cols,
-                                &params.outer_common_col_schema,
                                 &params.left_non_join_columns,
                                 &params.right_non_join_schema,
-                                params.build_on_left,
                             )
                             .await,
-                        _ => unreachable!(
-                            "Only Left, Right, and Outer joins are supported in OuterHashJoinProbeSink"
-                        ),
-                    }
+                            JoinType::Right => Self::finalize_right(
+                                states,
+                                &params.common_join_cols,
+                                &params.right_non_join_columns,
+                                &params.left_non_join_schema,
+                            )
+                            .await,
+                            JoinType::Outer => Self::finalize_outer(
+                                    states,
+                                    &params.common_join_cols,
+                                    &params.outer_common_col_schema,
+                                    &params.left_non_join_columns,
+                                    &params.right_non_join_schema,
+                                    params.build_on_left,
+                                )
+                                .await,
+                            _ => unreachable!(
+                                "Only Left, Right, and Outer joins are supported in OuterHashJoinProbeSink"
+                            ),
+                        }?;
+                    Ok(StreamingSinkFinalizeOutput::Finished(res))
                     },
                     Span::current(),
                 )
                 .into()
         } else {
-            Ok(None).into()
+            Ok(StreamingSinkFinalizeOutput::Finished(None)).into()
         }
     }
 
     fn max_concurrency(&self) -> usize {
         common_runtime::get_compute_pool_num_threads()
+    }
+    fn batching_strategy(&self) -> Self::BatchingStrategy {
+        crate::dynamic_batching::StaticBatchingStrategy::new(
+            self.morsel_size_requirement().unwrap_or_default(),
+        )
     }
 }

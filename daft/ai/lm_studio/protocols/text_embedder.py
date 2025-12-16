@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from openai import OpenAI
@@ -8,8 +8,8 @@ from openai import OpenAI
 from daft import DataType
 from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedder
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
-from daft.ai.typing import EmbeddingDimensions, Options, UDFOptions
-from daft.ai.utils import get_http_udf_options
+from daft.ai.typing import EmbeddingDimensions, EmbedTextOptions, Options, UDFOptions
+from daft.utils import from_dict
 
 if TYPE_CHECKING:
     from daft.ai.openai.typing import OpenAIProviderOptions
@@ -26,7 +26,9 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
     provider_name: str
     provider_options: OpenAIProviderOptions
     model_name: str
-    model_options: Options
+    embed_options: EmbedTextOptions = field(
+        default_factory=lambda: EmbedTextOptions(batch_size=64, max_retries=3, on_error="raise")
+    )
 
     def get_provider(self) -> str:
         return "lm_studio"
@@ -35,10 +37,15 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
         return self.model_name
 
     def get_options(self) -> Options:
-        return self.model_options
+        return dict(self.embed_options)
 
     def get_udf_options(self) -> UDFOptions:
-        return get_http_udf_options()
+        options = from_dict(UDFOptions, dict(self.embed_options))
+        options.max_retries = 0  # OpenAI client handles retries internally
+        return options
+
+    def is_async(self) -> bool:
+        return True
 
     def get_dimensions(self) -> EmbeddingDimensions:
         try:
@@ -55,6 +62,8 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
 
     def instantiate(self) -> TextEmbedder:
         return OpenAITextEmbedder(
-            client=OpenAI(**self.provider_options),
+            provider_options=self.provider_options,
             model=self.model_name,
+            embed_options=self.embed_options,
+            provider_name=self.get_provider(),
         )

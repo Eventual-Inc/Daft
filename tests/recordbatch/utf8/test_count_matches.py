@@ -38,9 +38,7 @@ test_data = [
 def test_table_count_matches(whole_words, case_sensitive):
     pat = ["fox", "over", "lazy dog", "dog"]
     df = MicroPartition.from_pydict({"a": test_data})
-    res = df.eval_expression_list(
-        [col("a").str.count_matches(pat, whole_words=whole_words, case_sensitive=case_sensitive)]
-    )
+    res = df.eval_expression_list([col("a").count_matches(pat, whole_words=whole_words, case_sensitive=case_sensitive)])
     assert res.to_pydict()["a"] == [py_count_matches(s, pat, whole_words, case_sensitive) for s in test_data]
 
 
@@ -49,9 +47,7 @@ def test_table_count_matches(whole_words, case_sensitive):
 @pytest.mark.parametrize("pat", ["fox", "over", "lazy dog", "dog"])
 def test_table_count_matches_single_pattern(whole_words, case_sensitive, pat):
     df = MicroPartition.from_pydict({"a": test_data})
-    res = df.eval_expression_list(
-        [col("a").str.count_matches(pat, whole_words=whole_words, case_sensitive=case_sensitive)]
-    )
+    res = df.eval_expression_list([col("a").count_matches(pat, whole_words=whole_words, case_sensitive=case_sensitive)])
     assert res.to_pydict()["a"] == [py_count_matches(s, pat, whole_words, case_sensitive) for s in test_data]
 
 

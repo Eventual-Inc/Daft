@@ -1,6 +1,9 @@
 use common_image::Image;
 
-use crate::{array::ops::image::AsImageObj, datatypes::FileArray, lit::Literal, prelude::*};
+use crate::{
+    array::ops::image::AsImageObj, datatypes::FileArray, file::DaftMediaType, lit::Literal,
+    prelude::*,
+};
 
 fn map_or_null<T, U, F>(o: Option<T>, f: F) -> Literal
 where
@@ -64,7 +67,7 @@ impl TensorArray {
             && let (Some(data), Some(shape)) =
                 (self.data_array().get(idx), self.shape_array().get(idx))
         {
-            let shape = shape.u64().unwrap().as_arrow().values().to_vec();
+            let shape = shape.u64().unwrap().as_arrow2().values().to_vec();
             Literal::Tensor { data, shape }
         } else {
             Literal::Null
@@ -93,7 +96,7 @@ impl SparseTensorArray {
                 self.shape_array().get(idx),
             )
         {
-            let shape = shape.u64().unwrap().as_arrow().values().to_vec();
+            let shape = shape.u64().unwrap().as_arrow2().values().to_vec();
 
             Literal::SparseTensor {
                 values,
@@ -242,7 +245,16 @@ impl_array_get_lit!(DateArray, Date);
 impl_array_get_lit!(ListArray, List);
 impl_array_get_lit!(FixedSizeListArray, List);
 impl_array_get_lit!(EmbeddingArray, Embedding);
-impl_array_get_lit!(FileArray, File);
+
+impl<T> FileArray<T>
+where
+    T: DaftMediaType,
+{
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        map_or_null(self.get(idx), Literal::File)
+    }
+}
+
 #[cfg(feature = "python")]
 impl_array_get_lit!(PythonArray, Python);
 

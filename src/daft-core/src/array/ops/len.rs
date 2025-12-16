@@ -9,6 +9,7 @@ use crate::prelude::PythonArray;
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{DaftArrowBackedType, FileArray},
+    file::DaftMediaType,
 };
 
 impl<T> DataArray<T>
@@ -16,7 +17,7 @@ where
     T: DaftArrowBackedType + 'static,
 {
     pub fn size_bytes(&self) -> usize {
-        arrow2::compute::aggregate::estimated_bytes_size(self.data())
+        daft_arrow::compute::aggregate::estimated_bytes_size(self.data())
     }
 }
 
@@ -85,11 +86,11 @@ impl PythonArray {
 }
 
 /// From arrow2 private method (arrow2::compute::aggregate::validity_size)
-fn validity_size(validity: Option<&arrow2::bitmap::Bitmap>) -> usize {
-    validity.as_ref().map(|b| b.as_slice().0.len()).unwrap_or(0)
+fn validity_size(validity: Option<&daft_arrow::buffer::NullBuffer>) -> usize {
+    validity.map(|b| b.buffer().len()).unwrap_or(0)
 }
 
-fn offset_size(offsets: &arrow2::offset::OffsetsBuffer<i64>) -> usize {
+fn offset_size(offsets: &daft_arrow::offset::OffsetsBuffer<i64>) -> usize {
     offsets.len_proxy() * std::mem::size_of::<i64>()
 }
 
@@ -112,7 +113,10 @@ impl StructArray {
     }
 }
 
-impl FileArray {
+impl<T> FileArray<T>
+where
+    T: DaftMediaType,
+{
     pub fn size_bytes(&self) -> usize {
         self.physical.size_bytes()
     }

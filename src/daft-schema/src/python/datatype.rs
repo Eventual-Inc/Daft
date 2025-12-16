@@ -9,7 +9,10 @@ use pyo3::{
 use serde::{Deserialize, Serialize};
 
 use super::field::PyField;
-use crate::{dtype::DataType, field::Field, image_mode::ImageMode, time_unit::TimeUnit};
+use crate::{
+    dtype::DataType, field::Field, image_mode::ImageMode, media_type::MediaType,
+    time_unit::TimeUnit,
+};
 
 #[pyclass]
 #[derive(Clone)]
@@ -334,8 +337,8 @@ impl PyDataType {
     }
 
     #[staticmethod]
-    pub fn file() -> PyResult<Self> {
-        Ok(DataType::File.into())
+    pub fn file(ff: MediaType) -> PyResult<Self> {
+        Ok(DataType::File(ff).into())
     }
 
     pub fn to_arrow<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
@@ -360,9 +363,11 @@ impl PyDataType {
                 } else {
                     // Fall back to default Daft super extension representation if installed pyarrow doesn't have the
                     // canonical tensor extension type.
+                    #[allow(deprecated, reason = "arrow2 migration")]
                     ffi::dtype_to_py(py, &self.dtype.to_arrow()?, pyarrow)
                 }
             }
+            #[allow(deprecated, reason = "arrow2 migration")]
             _ => ffi::dtype_to_py(py, &self.dtype.to_arrow()?, pyarrow),
         }
     }

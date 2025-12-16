@@ -1,9 +1,11 @@
 #![feature(iterator_try_reduce)]
 #![feature(if_let_guard)]
+#![allow(deprecated)] // Remove once arrow2->arrow migration is complete
 
 pub mod array;
 pub mod count_mode;
 pub mod datatypes;
+pub mod file;
 pub mod join;
 pub mod kernels;
 pub mod lit;

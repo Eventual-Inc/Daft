@@ -1,5 +1,5 @@
-use arrow2::array::Array;
 use common_error::DaftResult;
+use daft_arrow::array::Array;
 
 use super::as_arrow::AsArrow;
 #[cfg(feature = "python")]
@@ -38,7 +38,7 @@ fn generic_if_else<T: GrowableArray + FullNull + Clone + IntoSeries>(
     }
 
     // Build the result using a Growable
-    let predicate = predicate.as_arrow();
+    let predicate = predicate.as_arrow2();
     let mut growable = T::make_growable(
         name,
         dtype,
@@ -94,7 +94,7 @@ fn generic_if_else<T: GrowableArray + FullNull + Clone + IntoSeries>(
         // Iterate through the predicate using SlicesIterator, which is a much faster way of iterating through a bitmap
         let mut start_falsy = 0;
         let mut total_len = 0;
-        for (start, len) in arrow2::bitmap::utils::SlicesIterator::new(predicate.values()) {
+        for (start, len) in daft_arrow::bitmap::utils::SlicesIterator::new(predicate.values()) {
             if start != start_falsy {
                 extend(false, start_falsy, start - start_falsy);
                 total_len += start - start_falsy;

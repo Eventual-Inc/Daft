@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM python:3.9-bullseye
+FROM python:3.10-bullseye
 
 RUN apt-get -qq update && \
     apt-get -qq install -y --no-install-recommends \
@@ -64,8 +64,6 @@ RUN pip3 install -q ipython
 
 RUN pip3 install "pyiceberg[s3fs]==${PYICEBERG_VERSION}"
 RUN pip3 install "pydantic==2.11.0"
-
-RUN pip3 install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cpu
 
 COPY entrypoint.sh .
 

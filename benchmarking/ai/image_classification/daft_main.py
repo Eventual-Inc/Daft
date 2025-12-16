@@ -16,7 +16,7 @@ OUTPUT_PATH = "s3://eventual-dev-benchmarking-results/ai-benchmark-results/image
 BATCH_SIZE = 100
 IMAGE_DIM = (3, 224, 224)
 
-daft.context.set_runner_ray()
+daft.set_runner_ray()
 
 # Wait for Ray cluster to be ready
 @ray.remote
@@ -53,12 +53,14 @@ class ResNetModel:
             predicted_labels = [self.weights.meta["categories"][i] for i in predicted_classes]
             return predicted_labels
 
+daft.set_planning_config(default_io_config=daft.io.IOConfig(s3=daft.io.S3Config.from_env()))
+
 start_time = time.time()
 
 df = daft.read_parquet(INPUT_PATH)
 df = df.with_column(
     "decoded_image",
-    df["image_url"].url.download().image.decode(mode=daft.ImageMode.RGB),
+    df["image_url"].download().decode_image(mode=daft.ImageMode.RGB),
 )
 df = df.with_column(
     "norm_image",

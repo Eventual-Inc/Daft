@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_local_plan::LocalPhysicalPlan;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
@@ -34,7 +34,6 @@ impl RepartitionNode {
 
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         repartition_spec: RepartitionSpec,
         num_partitions: usize,
@@ -42,12 +41,10 @@ impl RepartitionNode {
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -94,7 +91,7 @@ impl RepartitionNode {
                 self_clone.config.schema.clone(),
                 &(self_clone as Arc<dyn PipelineNodeImpl>),
                 None,
-            )?;
+            );
 
             let _ = result_tx.send(task).await;
         }
@@ -138,6 +135,10 @@ impl PipelineNodeImpl for RepartitionNode {
                 self_clone.num_partitions,
                 self_clone.config.schema.clone(),
                 StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(self_clone.node_id() as usize),
+                    additional: None,
+                },
             )
         });
 

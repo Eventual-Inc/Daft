@@ -77,8 +77,8 @@ from daft.convert import (
 from daft.daft import ImageFormat, ImageMode, ImageProperty, ResourceRequest
 from daft.dataframe import DataFrame
 from daft.schema import Schema
-from daft.datatype import DataType, TimeUnit
-from daft.expressions import Expression, col, element, list_, lit, interval, struct, coalesce
+from daft.datatype import DataType, TimeUnit, MediaType
+from daft.expressions import Expression, col, element, lit, interval
 from daft.series import Series
 from daft.session import (
     Session,
@@ -121,13 +121,14 @@ from daft.session import (
     set_session,
     write_table,
 )
-from daft.udf import udf, func, cls, method
+from daft.udf import udf, func, cls, method, metrics
 from daft.io import (
     DataCatalogTable,
     DataCatalogType,
     IOConfig,
     from_glob_path,
     _range as range,
+    read_lance,
     read_csv,
     read_deltalake,
     read_hudi,
@@ -135,7 +136,6 @@ from daft.io import (
     read_json,
     read_parquet,
     read_sql,
-    read_lance,
     read_video_frames,
     read_warc,
     read_huggingface,
@@ -145,15 +145,17 @@ from daft.runners import get_or_create_runner, get_or_infer_runner_type, set_run
 from daft.sql import sql, sql_expr
 from daft.viz import register_viz_hook
 from daft.window import Window
-from daft.file import File
+from daft.file import File, VideoFile, AudioFile
 
 import daft.context as context
 import daft.io as io
 import daft.runners as runners
 import daft.datasets as datasets
 import daft.functions as functions
+import daft.gravitino as gravitino
 
 __all__ = [
+    "AudioFile",
     "Catalog",
     "DataCatalogTable",
     "DataCatalogType",
@@ -166,12 +168,14 @@ __all__ = [
     "ImageFormat",
     "ImageMode",
     "ImageProperty",
+    "MediaType",
     "ResourceRequest",
     "Schema",
     "Series",
     "Session",
     "Table",
     "TimeUnit",
+    "VideoFile",
     "Window",
     "attach",
     "attach_catalog",
@@ -179,7 +183,6 @@ __all__ = [
     "attach_provider",
     "attach_table",
     "cls",
-    "coalesce",
     "col",
     "context",
     "create_namespace",
@@ -215,17 +218,18 @@ __all__ = [
     "get_or_infer_runner_type",
     "get_provider",
     "get_table",
+    "gravitino",
     "has_catalog",
     "has_namespace",
     "has_provider",
     "has_table",
     "interval",
     "io",
-    "list_",
     "list_catalogs",
     "list_tables",
     "lit",
     "method",
+    "metrics",
     "planning_config_ctx",
     "range",
     "read_csv",
@@ -256,7 +260,6 @@ __all__ = [
     "set_session",
     "sql",
     "sql_expr",
-    "struct",
     "udf",
     "write_table",
 ]

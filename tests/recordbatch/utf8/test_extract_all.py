@@ -11,10 +11,18 @@ REGEX = r"\d+"
 @pytest.mark.parametrize(
     ["expr", "data", "expected"],
     [
-        (col("col").str.extract_all(REGEX), ["1 2 3", "4 5 6", "a b c"], [["1", "2", "3"], ["4", "5", "6"], []]),
-        (col("col").str.extract_all(lit(REGEX)), ["1 2 3", "4 5 6", "a b c"], [["1", "2", "3"], ["4", "5", "6"], []]),
         (
-            col("col").str.extract_all(col("emptystrings") + lit(REGEX)),
+            col("col").regexp_extract_all(REGEX),
+            ["1 2 3", "4 5 6", "a b c"],
+            [["1", "2", "3"], ["4", "5", "6"], []],
+        ),
+        (
+            col("col").regexp_extract_all(lit(REGEX)),
+            ["1 2 3", "4 5 6", "a b c"],
+            [["1", "2", "3"], ["4", "5", "6"], []],
+        ),
+        (
+            col("col").regexp_extract_all(col("emptystrings") + lit(REGEX)),
             ["1 2 3", "4 5 6", "a b c"],
             [["1", "2", "3"], ["4", "5", "6"], []],
         ),

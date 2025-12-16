@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import re
 
+import numpy as np
 import pytest
 
 import daft
 from daft import DataType, col
+from daft.recordbatch import MicroPartition, RecordBatch
 
 
 def test_row_wise_udf():
@@ -115,8 +118,6 @@ def test_row_wise_udf_kwargs():
 
 
 def test_row_wise_async_udf():
-    import asyncio
-
     @daft.func
     async def my_async_stringify_and_sum(a: int, b: int) -> str:
         await asyncio.sleep(0.1)
@@ -124,13 +125,17 @@ def test_row_wise_async_udf():
 
     df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
     async_df = df.select(my_async_stringify_and_sum(col("x"), col("y")))
-    assert async_df.to_pydict() == {"x": ["5", "7", "9"]}
+    assert sorted(async_df.to_pydict()["x"]) == ["5", "7", "9"]
 
 
 def test_row_wise_udf_unnest():
     @daft.func(
         return_dtype=daft.DataType.struct(
-            {"id": daft.DataType.int64(), "name": daft.DataType.string(), "score": daft.DataType.float64()}
+            {
+                "id": daft.DataType.int64(),
+                "name": daft.DataType.string(),
+                "score": daft.DataType.float64(),
+            }
         ),
         unnest=True,
     )
@@ -140,7 +145,11 @@ def test_row_wise_udf_unnest():
     df = daft.from_pydict({"value": [1, 2, 3]})
     result = df.select(create_record(col("value"))).to_pydict()
 
-    expected = {"id": [1, 2, 3], "name": ["item_1", "item_2", "item_3"], "score": [1.5, 3.0, 4.5]}
+    expected = {
+        "id": [1, 2, 3],
+        "name": ["item_1", "item_2", "item_3"],
+        "score": [1.5, 3.0, 4.5],
+    }
     assert result == expected
 
 
@@ -153,3 +162,208 @@ def test_row_wise_udf_unnest_error_non_struct():
         @daft.func(return_dtype=daft.DataType.int64(), unnest=True)
         def invalid_unnest(a: int):
             return a
+
+
+def test_rowwise_on_err_ignore():
+    @daft.func(on_error="ignore")
+    def raise_err(x) -> int:
+        if x % 2:
+            raise ValueError("This is an error")
+        else:
+            return x
+
+    df = daft.from_pydict({"value": [1, 2, 3]})
+
+    expected = {"value": [None, 2, None]}
+
+    actual = df.select(raise_err(col("value"))).to_pydict()
+    assert actual == expected
+
+
+def test_async_rowwise_on_err_ignore():
+    @daft.func(on_error="ignore")
+    async def raise_err(x) -> int:
+        raise ValueError("This is an error")
+
+    df = daft.from_pydict({"value": [1]})
+
+    expected = {"value": [None]}
+
+    actual = df.select(raise_err(col("value"))).to_pydict()
+    assert actual == expected
+
+
+def test_rowwise_retry():
+    first_time = True
+
+    @daft.func(on_error="ignore", max_retries=1)
+    def raise_err_first_time_only(x) -> int:
+        nonlocal first_time
+        if first_time:
+            first_time = False
+            raise ValueError("This is an error")
+        else:
+            return x * 2
+
+    df = daft.from_pydict({"value": [1]})
+
+    expected = {"value": [2]}
+
+    actual = df.select(raise_err_first_time_only(col("value"))).to_pydict()
+    assert actual == expected
+
+
+def test_async_rowwise_retry():
+    first_time = True
+
+    @daft.func(on_error="ignore", max_retries=1)
+    async def raise_err_first_time_only(x) -> int:
+        nonlocal first_time
+        if first_time:
+            first_time = False
+            raise ValueError("This is an error")
+        else:
+            return x * 2
+
+    df = daft.from_pydict({"value": [1]})
+
+    expected = {"value": [2]}
+
+    actual = df.select(raise_err_first_time_only(col("value"))).to_pydict()
+    assert actual == expected
+
+
+def test_rowwise_retry_expected_to_fail():
+    first_time = True
+
+    @daft.func(on_error="ignore", max_retries=0)
+    def raise_err_first_time_only(x) -> int:
+        nonlocal first_time
+        if first_time:
+            first_time = False
+            raise ValueError("This is an error")
+        else:
+            return x * 2
+
+    df = daft.from_pydict({"value": [1]})
+
+    expected = {"value": [None]}
+
+    actual = df.select(raise_err_first_time_only(col("value"))).to_pydict()
+    assert actual == expected
+
+
+def test_rowwise_retry_expected_to_fail_with_raise():
+    @daft.func(on_error="raise", max_retries=0)
+    def raise_err(x) -> int:
+        raise ValueError("This is an error")
+
+    df = daft.from_pydict({"value": [1]})
+
+    try:
+        df.select(raise_err(col("value"))).to_pydict()
+        pytest.fail("Expected ValueError")
+    except ValueError:
+        pass
+
+
+def test_async_rowwise_retry_expected_to_fail_with_raise():
+    @daft.func(on_error="raise", max_retries=0)
+    async def raise_err(x) -> int:
+        raise ValueError("This is an error")
+
+    df = daft.from_pydict({"value": [1]})
+
+    try:
+        df.select(raise_err(col("value"))).to_pydict()
+        pytest.fail("Expected ValueError")
+    except ValueError:
+        pass
+
+
+def test_rowwise_retry_defaults_to_raise_and_zero_retries():
+    @daft.func
+    def raise_err(x) -> int:
+        raise ValueError("This is an error")
+
+    df = daft.from_pydict({"value": [1]})
+
+    try:
+        df.select(raise_err(col("value"))).to_pydict()
+        pytest.fail("Expected ValueError")
+    except ValueError:
+        pass
+
+
+def test_async_rowwise_retry_defaults_to_raise_and_zero_retries():
+    @daft.func
+    async def raise_err(x) -> int:
+        raise ValueError("This is an error")
+
+    df = daft.from_pydict({"value": [1]})
+
+    try:
+        df.select(raise_err(col("value"))).to_pydict()
+        pytest.fail("Expected ValueError")
+    except ValueError:
+        pass
+
+
+def test_row_wise_async_udf_use_process():
+    @daft.func(use_process=True)
+    async def my_async_stringify_and_sum(a: int, b: int) -> str:
+        await asyncio.sleep(0.01)
+        return f"{a + b}"
+
+    df = daft.from_pydict({"x": [1, 2, 3], "y": [4, 5, 6]})
+    async_df = df.select(my_async_stringify_and_sum(col("x"), col("y")))
+    assert sorted(async_df.to_pydict()["x"]) == ["5", "7", "9"]
+
+
+def test_dynamic_batching_same_result():
+    def create_df_from_batches(batches_data):
+        micropartitions = []
+        for mp_data in batches_data:
+            record_batches = [RecordBatch.from_pydict(rb_data) for rb_data in mp_data]
+            mp = MicroPartition._from_record_batches(record_batches)
+            micropartitions.append(mp)
+        return daft.DataFrame._from_micropartitions(*micropartitions)
+
+    df = (
+        create_df_from_batches(
+            [
+                [
+                    {"x": np.arange(1001).tolist(), "y": np.arange(1001) * 2},
+                    {"x": np.arange(523).tolist(), "y": np.arange(523) * 2},
+                    {"x": np.arange(15).tolist(), "y": np.arange(15) * 2},
+                ],
+                [
+                    {"x": np.arange(1).tolist(), "y": np.arange(1) * 2},
+                    {"x": np.arange(2).tolist(), "y": np.arange(2) * 2},
+                ],
+                [
+                    {"x": np.arange(9).tolist(), "y": np.arange(9) * 2},
+                ],
+                [
+                    {"x": np.arange(111).tolist(), "y": np.arange(111) * 2},
+                    {"x": np.arange(1).tolist(), "y": np.arange(1) * 2},
+                    {"x": np.arange(7597).tolist(), "y": np.arange(7597) * 2},
+                    {"x": np.arange(253).tolist(), "y": np.arange(253) * 2},
+                ],
+            ]
+        )
+        ._add_monotonically_increasing_id()
+        .collect()
+    )
+
+    @daft.func
+    def stringify_and_sum(a: int, b: int) -> str:
+        return f"{a + b}"
+
+    non_dynamic_batching_df = df.select("*", stringify_and_sum(col("x"), col("y")).alias("sum")).collect()
+
+    # dynamic batching is feature flagged
+    with daft.execution_config_ctx(maintain_order=False, enable_dynamic_batching=True):
+        dynamic_batching_df = df.select("*", stringify_and_sum(col("x"), col("y")).alias("sum"))
+        dynamic_batching_df = dynamic_batching_df.collect().sort("id")
+        assert non_dynamic_batching_df.to_pydict() == dynamic_batching_df.to_pydict()

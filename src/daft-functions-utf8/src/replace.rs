@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::{borrow::Borrow, sync::LazyLock};
 
 use common_error::{DaftError, DaftResult, ensure};
@@ -13,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::utils::{create_broadcasted_str_iter, parse_inputs};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RegexpReplace;
 
 #[typetag::serde]
@@ -41,7 +42,7 @@ impl ScalarUDF for RegexpReplace {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Replace;
 
 #[typetag::serde]
@@ -144,7 +145,7 @@ fn replace_impl(
         }
         (true, _) => {
             let regex_iter = pattern
-                .as_arrow()
+                .as_arrow2()
                 .iter()
                 .map(|pat| pat.map(regex::Regex::new));
             regex_replace(arr_iter, regex_iter, replacement_iter, arr.name())?
@@ -184,7 +185,7 @@ fn regex_replace<'a, R: Borrow<regex::Regex>>(
             }
             _ => Ok(None),
         })
-        .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>();
+        .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>();
 
     Ok(Utf8Array::from((name, Box::new(arrow_result?))))
 }
@@ -201,7 +202,7 @@ fn replace_on_literal<'a>(
             (Some(val), Some(pat), Some(replacement)) => Ok(Some(val.replace(pat, replacement))),
             _ => Ok(None),
         })
-        .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>();
+        .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>();
 
     Ok(Utf8Array::from((name, Box::new(arrow_result?))))
 }

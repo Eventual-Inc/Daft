@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFProperties};
-use daft_local_plan::{LocalPhysicalPlan, LocalPhysicalPlanRef};
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{partitioning::translate_clustering_spec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
@@ -30,7 +30,6 @@ impl UDFNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         node_id: NodeID,
-        logical_node_id: Option<NodeID>,
         plan_config: &PlanConfig,
         expr: BoundExpr,
         udf_properties: UDFProperties,
@@ -39,12 +38,10 @@ impl UDFNode {
         child: DistributedPipelineNode,
     ) -> Self {
         let context = PipelineNodeContext::new(
-            plan_config.plan_id,
+            plan_config.query_idx,
+            plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
-            vec![child.node_id()],
-            vec![child.name()],
-            logical_node_id,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -93,7 +90,12 @@ impl PipelineNodeImpl for UDFNode {
                 "Passthrough Columns = [{}]",
                 self.passthrough_columns.iter().join(", ")
             ),
+            format!(
+                "Properties = {{ {} }}",
+                self.udf_properties.multiline_display(false).join(", ")
+            ),
         ];
+
         if let Some(resource_request) = &self.udf_properties.resource_request {
             let multiline_display = resource_request.multiline_display();
             res.push(format!(
@@ -103,6 +105,7 @@ impl PipelineNodeImpl for UDFNode {
         } else {
             res.push("Resource request = None".to_string());
         }
+
         res
     }
 
@@ -116,6 +119,7 @@ impl PipelineNodeImpl for UDFNode {
         let udf_properties = self.udf_properties.clone();
         let passthrough_columns = self.passthrough_columns.clone();
         let schema = self.config.schema.clone();
+        let node_id = self.context.node_id;
         let plan_builder = move |input: LocalPhysicalPlanRef| -> LocalPhysicalPlanRef {
             LocalPhysicalPlan::udf_project(
                 input,
@@ -124,6 +128,10 @@ impl PipelineNodeImpl for UDFNode {
                 passthrough_columns.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(node_id as usize),
+                    additional: None,
+                },
             )
         };
 

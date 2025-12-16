@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import copy
+from typing import TypedDict
 
 import pytest
-from typing_extensions import TypedDict
 
 from daft.datatype import DataType
 

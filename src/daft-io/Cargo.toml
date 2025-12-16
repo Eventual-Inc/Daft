@@ -3,9 +3,9 @@ async-recursion = "1.0.4"
 async-stream = {workspace = true}
 async-trait = {workspace = true}
 aws-config = "1.8.1"
-aws-credential-types = {version = "1.2.6", features = ["hardcoded-credentials"]}
+aws-credential-types = {version = "1.2.7", features = ["hardcoded-credentials"]}
 aws-sdk-s3 = {version = "1.96.0", features = ["default-https-client", "rt-tokio", "sigv4a"], default-features = false}
-aws-smithy-http-client = "1.1.1"
+aws-smithy-http-client = "1.1.2"
 aws-smithy-runtime-api = "1.8.0"
 azure_core = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls", "hmac_rust"], default-features = false}
 azure_identity = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls"], default-features = false}
@@ -21,12 +21,12 @@ futures = {workspace = true}
 globset = "0.4"
 google-cloud-storage = {version = "0.24.0", default-features = false, features = ["rustls-tls", "auth"]}
 google-cloud-token = {version = "0.1.2"}
-home = "0.5.9"
+home = "0.5.12"
 itertools = {workspace = true}
 log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 rand = "0.8.5"
-regex = {version = "1.11.2"}
+regex = {version = "1.12.2"}
 reqwest-middleware = "0.4.2"
 reqwest-retry = "0.7.0"
 retry-policies = "0.4.0"
@@ -38,6 +38,7 @@ tokio-stream = {workspace = true}
 tracing = {workspace = true}
 url = {workspace = true}
 uuid = {workspace = true}
+ve-tos-rust-sdk = "2.9.6"
 
 [dependencies.reqwest]
 default-features = false

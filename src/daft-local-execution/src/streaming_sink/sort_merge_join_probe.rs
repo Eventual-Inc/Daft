@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use daft_core::{join::JoinType, prelude::SchemaRef};
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -12,7 +13,8 @@ use crate::{
     pipeline::NodeName,
     state_bridge::BroadcastStateBridgeRef,
     streaming_sink::base::{
-        StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkOutput,
+        StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
+        StreamingSinkFinalizeResult, StreamingSinkOutput,
     },
 };
 
@@ -70,7 +72,7 @@ impl SortMergeJoinProbe {
 
 impl StreamingSink for SortMergeJoinProbe {
     type State = SortMergeJoinProbeState;
-
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "SortMergeJoinProbe::execute")]
     fn execute(
         &self,
@@ -96,7 +98,7 @@ impl StreamingSink for SortMergeJoinProbe {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> StreamingSinkFinalizeResult {
+    ) -> StreamingSinkFinalizeResult<Self> {
         debug_assert_eq!(states.len(), 1);
         let mut state = states.into_iter().next().expect("Expect exactly one state");
         let params = self.params.clone();
@@ -121,7 +123,9 @@ impl StreamingSink for SortMergeJoinProbe {
                         params.join_type,
                         false,
                     )?;
-                    Ok(Some(Arc::new(joined)))
+                    Ok(StreamingSinkFinalizeOutput::Finished(Some(Arc::new(
+                        joined,
+                    ))))
                 },
                 Span::current(),
             )
@@ -144,7 +148,12 @@ impl StreamingSink for SortMergeJoinProbe {
         1
     }
 
-    fn make_state(&self) -> Self::State {
-        SortMergeJoinProbeState::Building(self.state_bridge.clone())
+    fn make_state(&self) -> DaftResult<Self::State> {
+        Ok(SortMergeJoinProbeState::Building(self.state_bridge.clone()))
+    }
+    fn batching_strategy(&self) -> Self::BatchingStrategy {
+        crate::dynamic_batching::StaticBatchingStrategy::new(
+            self.morsel_size_requirement().unwrap_or_default(),
+        )
     }
 }

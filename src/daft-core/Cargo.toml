@@ -1,27 +1,13 @@
 [dependencies]
-arrow2 = {workspace = true, features = [
-  "chrono-tz",
-  "compute_take",
-  "compute_cast",
-  "compute_aggregate",
-  "compute_if_then_else",
-  "compute_sort",
-  "compute_filter",
-  "compute_temporal",
-  "compute_comparison",
-  "compute_arithmetics",
-  "compute_concatenate",
-  "compute_substring",
-  "io_ipc"
-]}
+arrow = "54.2.1"
 bincode = {workspace = true}
+daft-arrow = {path = "../daft-arrow"}
 chrono = {workspace = true}
 chrono-tz = {workspace = true}
 comfy-table = {workspace = true}
 common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
-common-file = {path = "../common/file", default-features = false}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
 common-image = {workspace = true}
 common-io-config = {path = "../common/io-config", default-features = false}
@@ -64,7 +50,6 @@ python = [
   "common-arrow-ffi/python",
   "common-display/python",
   "common-error/python",
-  "common-file/python",
   "common-image/python",
   "common-io-config/python",
   "common-ndarray/python",

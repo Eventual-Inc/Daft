@@ -6,6 +6,7 @@ pub mod optimization;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod python_udf;
+pub use common_metrics::operator_metrics;
 
 #[cfg(feature = "python")]
 mod visitor;
@@ -47,7 +48,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::row_wise_udf, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::batch_udf, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::initialize_udfs, parent)?)?;
-    parent.add_function(wrap_pyfunction!(python::try_get_udf_name, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::eq, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::row_number, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::rank, parent)?)?;

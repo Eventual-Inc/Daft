@@ -33,7 +33,7 @@ class TestLanceCountResultFunction:
     def test_lancedb_count_no_filters_direct_call(self, test_dataset_path):
         """Test that no filters list is handled correctly."""
         ds = lance.dataset(test_dataset_path)
-        result_generator = _lancedb_count_result_function(ds, "count")
+        result_generator = _lancedb_count_result_function(ds.uri, None, "count")
         result_batch = next(result_generator)
         record_batch = RecordBatch._from_pyrecordbatch(result_batch)
         result_dict = record_batch.to_pydict()
@@ -43,7 +43,7 @@ class TestLanceCountResultFunction:
         """Test that filters list is handled correctly."""
         ds = lance.dataset(test_dataset_path)
         filter_expr = pc.greater(pc.field("age"), pc.scalar(30))
-        result_generator = _lancedb_count_result_function(ds, "count", filter=filter_expr)
+        result_generator = _lancedb_count_result_function(ds.uri, None, "count", filter=filter_expr)
         result_batch = next(result_generator)
         record_batch = RecordBatch._from_pyrecordbatch(result_batch)
         result_dict = record_batch.to_pydict()
@@ -61,6 +61,7 @@ class TestLanceCountResultFunction:
                 mock_pushdowns.aggregation_count_mode.return_value = CountMode.Valid
                 mock_pushdowns.aggregation_required_column_names.return_value = ["count"]
                 mock_pushdowns.columns = None
+                mock_pushdowns.limit = None
 
                 with patch.object(scan_op, "_create_regular_scan_tasks") as mock_regular_scan:
                     mock_regular_scan.return_value = iter([])

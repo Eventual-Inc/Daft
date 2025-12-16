@@ -16,6 +16,12 @@ use tokio::{
     task::JoinSet,
 };
 
+#[cfg(feature = "python")]
+pub mod python;
+
+#[cfg(feature = "python")]
+pub use python::execute_python_coroutine;
+
 static NUM_CPUS: LazyLock<usize> =
     LazyLock::new(|| std::thread::available_parallelism().unwrap().get());
 static THREADED_IO_RUNTIME_NUM_WORKER_THREADS: LazyLock<usize> = LazyLock::new(|| 8.min(*NUM_CPUS));
@@ -39,7 +45,7 @@ static COMPUTE_RUNTIME: OnceLock<RuntimeRef> = OnceLock::new();
 
 pub type RuntimeRef = Arc<Runtime>;
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub enum PoolType {
     Compute,
     IO,
@@ -84,7 +90,7 @@ impl<T> std::fmt::Debug for RuntimeTask<T> {
     }
 }
 
-#[derive(Debug)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Runtime {
     pub runtime: Arc<tokio::runtime::Runtime>,
     pool_type: PoolType,

@@ -4,38 +4,19 @@
 
 `Website <https://www.daft.ai>`_ • `Docs <https://docs.daft.ai>`_ • `Installation <https://docs.daft.ai/en/stable/install/>`_ • `Daft Quickstart <https://docs.daft.ai/en/stable/quickstart/>`_ • `Community and Support <https://github.com/Eventual-Inc/Daft/discussions>`_
 
-Daft: Unified Engine for Data Analytics, Engineering & ML/AI
-============================================================
+Daft: High-Performance Data Engine for AI and Multimodal Workloads
+==================================================================
 
 |TrendShift|
 
-`Daft <https://www.daft.ai>`_ is a distributed query engine for large-scale data processing using Python or SQL, implemented in Rust.
+`Daft <https://www.daft.ai>`_ is a high-performance data engine for AI and multimodal workloads. Process images, audio, video, and structured data at any scale.
 
-* **Familiar interactive API:** Lazy Python Dataframe for rapid and interactive iteration, or SQL for analytical queries
-* **Focus on the what:** Powerful Query Optimizer that rewrites queries to be as efficient as possible
-* **Data Catalog integrations:** Integration with data catalogs (AWS Glue, Unity Catalog) and table formats like Apache Iceberg
-* **Rich multimodal type-system:** Supports multimodal types such as Images, URLs, Tensors and more
-* **Seamless Interchange**: Built on the `Apache Arrow <https://arrow.apache.org/docs/index.html>`_ In-Memory Format
-* **Built for the cloud:** `Record-setting <https://www.daft.ai/blog/announcing-daft-02>`_ I/O performance for integrations with S3 cloud storage
-
-**Table of Contents**
-
-* `About Daft`_
-* `Getting Started`_
-* `Benchmarks`_
-* `Contributing`_
-* `Telemetry`_
-* `Related Projects`_
-* `License`_
-
-About Daft
-----------
-
-Daft was designed with the following principles in mind:
-
-1. **Any Data**: Beyond the usual strings/numbers/dates, Daft columns can also hold complex or nested multimodal data such as Images, Embeddings and Python objects efficiently with its Arrow based memory representation. Ingestion and basic transformations of multimodal data is extremely easy and performant in Daft.
-2. **Interactive Computing**: Daft is built for the interactive developer experience through notebooks or REPLs - intelligent caching/query optimizations accelerates your experimentation and data exploration.
-3. **Distributed Computing**: Some workloads can quickly outgrow your local laptop's computational resources - Daft integrates natively with `Ray <https://www.ray.io>`_ for running dataframes on large clusters of machines with thousands of CPUs/GPUs.
+* **Native multimodal processing:** Process images, audio, video, and embeddings alongside structured data in a single framework
+* **Built-in AI operations:** Run LLM prompts, generate embeddings, and classify data at scale using OpenAI, Transformers, or custom models
+* **Python-native, Rust-powered:** Skip the JVM complexity with Python at its core and Rust under the hood for blazing performance
+* **Seamless scaling:** Start local, scale to distributed clusters on `Ray <https://docs.daft.ai/en/stable/distributed/ray/>`_, `Kubernetes <https://docs.daft.ai/en/stable/distributed/kubernetes/>`_, or `Daft Cloud <https://www.daft.ai/cloud>`_
+* **Universal connectivity:** Access data anywhere (S3, GCS, Iceberg, Delta Lake, Hugging Face, Unity Catalog)
+* **Out-of-box reliability:** Intelligent memory management and sensible defaults eliminate configuration headaches
 
 Getting Started
 ---------------
@@ -43,52 +24,28 @@ Getting Started
 Installation
 ^^^^^^^^^^^^
 
-Install Daft with ``pip install daft``.
+Install Daft with ``pip install daft``. Requires Python 3.10 or higher.
 
 For more advanced installations (e.g. installing from source or with extra dependencies such as Ray and AWS utilities), please see our `Installation Guide <https://docs.daft.ai/en/stable/install/>`_
 
 Quickstart
 ^^^^^^^^^^
 
-  Check out our `quickstart <https://docs.daft.ai/en/stable/quickstart/>`_!
-
-In this example, we load images from an AWS S3 bucket's URLs and resize each image in the dataframe:
-
-.. code:: python
-
-    import daft
-
-    # Load a dataframe from filepaths in an S3 bucket
-    df = daft.from_glob_path("s3://daft-public-data/laion-sample-images/*")
-
-    # 1. Download column of image URLs as a column of bytes
-    # 2. Decode the column of bytes into a column of images
-    df = df.with_column("image", df["path"].url.download().image.decode())
-
-    # Resize each image into 32x32
-    df = df.with_column("resized", df["image"].image.resize(32, 32))
-
-    df.show(3)
+Get started in minutes with our `Quickstart <https://docs.daft.ai/en/stable/quickstart/>`_ - load a real-world e-commerce dataset, process product images, and run AI inference at scale.
 
 
-|Quickstart Image|
+More Resources
+^^^^^^^^^^^^^^
 
+* `Examples <https://docs.daft.ai/en/stable/examples/>`_ - see Daft in action with use cases across text, images, audio, and more
+* `User Guide <https://docs.daft.ai/en/stable/>`_ - take a deep-dive into each topic within Daft
+* `API Reference <https://docs.daft.ai/en/stable/api/>`_ - API reference for public classes/functions of Daft
 
 Benchmarks
 ----------
 |Benchmark Image|
 
 To see the full benchmarks, detailed setup, and logs, check out our `benchmarking page. <https://docs.daft.ai/en/stable/benchmarks>`_
-
-
-More Resources
-^^^^^^^^^^^^^^
-
-* `Daft Quickstart <https://docs.daft.ai/en/stable/quickstart/>`_ - learn more about Daft's full range of capabilities including dataloading from URLs, joins, user-defined functions (UDF), groupby, aggregations and more.
-* `Examples <https://docs.daft.ai/en/stable/examples/>`_ - see Daft in action with use cases across text, images, audio, and more
-* `User Guide <https://docs.daft.ai/en/stable/>`_ - take a deep-dive into each topic within Daft
-* `API Reference <https://docs.daft.ai/en/stable/api/>`_ - API reference for public classes/functions of Daft
-* `SQL Reference <https://docs.daft.ai/en/stable/sql/>`_ - Daft SQL reference
 
 Contributing
 ------------
@@ -168,7 +125,7 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
    :alt: Coverage
 
 .. |Slack| image:: https://img.shields.io/badge/slack-@distdata-purple.svg?logo=slack
-   :target: https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg
+   :target: https://join.slack.com/t/dist-data/shared_invite/zt-3l411uyaq-Ky30cBfnirJVlKDnsCRM_w
    :alt: slack community
 
 .. |TrendShift| image:: https://trendshift.io/api/badge/repositories/8239

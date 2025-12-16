@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 // super annoying, but using an enum with typetag::serde doesn't work with bincode because it uses Deserializer::deserialize_identifier
 macro_rules! log {
     ($name:ident, $variant:ident, $docstring:literal) => {
-        #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+        #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
         pub struct $variant;
 
         #[typetag::serde]
@@ -72,7 +72,7 @@ log!(
     "Calculates the natural logarithm of a number plus one (ln(x + 1))."
 );
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Log;
 #[derive(FunctionArgs)]
 struct LogArgs<T> {

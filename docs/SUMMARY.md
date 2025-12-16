@@ -2,21 +2,29 @@
     * [Overview](index.md)
     * [Quickstart](quickstart.md)
     * [Installation](install.md)
-    * Common Use Cases
-        * [Batch Inference](use-case/batch-inference.md)
-    * Working with Modalities
-        * [Modalities](modalities/index.md)
-        * [Custom Modalities](modalities/custom.md)
-        * [URLs and Files](modalities/urls.md)
+    * AI Functions
+        * [Overview](ai-functions/overview.md)
+        * [Prompt](ai-functions/prompt.md)
+        * [Embed](ai-functions/embed.md)
+        * [Classify](ai-functions/classify.md)
+        * [Providers](ai-functions/providers.md)
+    * Modalities
+        * [Overview](modalities/overview.md)
         * [Text](modalities/text.md)
         * [Images](modalities/images.md)
+        * [Audio](modalities/audio.md)
         * [Videos](modalities/videos.md)
         * [JSON and Nested Data](modalities/json.md)
-    * Running Custom Python Code
-        * [User-Defined Functions (UDFs)](custom-code/udfs.md)
-        * [Next-Generation UDFs](custom-code/func.md)
-    * Models and Providers
-        * [Models and Providers](models/index.md)
+        * [URLs and Files](modalities/urls.md)
+        * [Custom Modalities](modalities/custom.md)
+    * Scale Custom Python Code
+        * [New UDF Overview](custom-code/index.md)
+        * [Functions](custom-code/func.md)
+        * [Classes & Methods](custom-code/cls.md)
+        * [Legacy UDF Migration Guide](custom-code/migration.md)
+        * [Legacy UDFs](custom-code/udfs.md)
+    * Common Use Cases
+        * [Batch Inference](use-case/batch-inference.md)
     * Datasets
         * [Common Crawl](datasets/common-crawl.md)
     * Data Connectors
@@ -24,11 +32,14 @@
         * [Custom Connectors](connectors/custom.md)
         * [AWS Glue](connectors/glue.md)
         * [AWS S3 Tables](connectors/s3tables.md)
+        * [Apache Gravitino](connectors/gravitino.md)
         * [Apache Hudi](connectors/hudi.md)
         * [Apache Iceberg](connectors/iceberg.md)
         * [Azure Blob Store](connectors/azure.md)
         * [Delta Lake](connectors/delta_lake.md)
+        * [Lance](connectors/lance.md)
         * [Hugging Face Datasets](connectors/huggingface.md)
+        * [Postgres](connectors/postgres.md)
         * [S3](connectors/aws.md)
         * [SQL Databases](connectors/sql.md)
         * [Turbopuffer](connectors/turbopuffer.md)
@@ -43,10 +54,15 @@
         * [Managing Memory Usage](optimization/memory.md)
         * [Partitioning and Batching](optimization/partitioning.md)
         * [Observability](optimization/observability.md)
+        * [Logging](optimization/logging.md)
+    * Contributing
+        * [Overview](contributing/overview.md)
+        * [Development Guide](contributing/development.md)
+        * [Contributing AI Functions](contributing/contributing-ai-functions.md)
+    * [Sessions, Catalogs, and Tables](configuration/sessions-usage.md)
+    * [Roadmap](roadmap.md)
     * [Benchmarks](benchmarks/index.md)
     * [Community <sup>↗</sup>](http://www.daft.ai/slack)
-    * [Contributing](contributing-to-daft.md)
-    * [Roadmap](roadmap.md)
     * [Release Notes <sup>↗</sup>](https://github.com/Eventual-Inc/Daft/releases)
     * [Usage Telemetry](telemetry.md)
 * Examples
@@ -60,6 +76,7 @@
     * [Querying Image Data](examples/querying-images.md)
     * [MNIST Digit Classification](examples/mnist.md)
     * [Window Functions](examples/window-functions.md)
+    * [Working with Common Crawl Data](examples/common-crawl-daft-tutorial.md)
 * Python API
     * [Python API](api/index.md)
     * [AI](api/ai.md)
@@ -79,7 +96,6 @@
     * [Schema](api/schema.md)
     * [Aggregations](api/aggregations.md)
     * [Series](api/series.md)
-    * [Spark Connect](api/spark_connect.md)
     * [Configuration](api/config.md)
     * [Miscellaneous](api/misc.md)
 * SQL Reference
@@ -90,6 +106,7 @@
         * [USE](sql/statements/use.md)
     * [Data Types](sql/datatypes.md)
     * [Window Functions](sql/window_functions.md)
+* [Daft Cloud](https://www.daft.ai/cloud)
 
 <!--
 TODO

@@ -4,6 +4,10 @@
 
 Daft provides a simple, performant, and responsible way to access Common Crawl data.
 
+!!! warning "Warning"
+
+    These APIs are in beta and may be subject to change as the Common Crawl dataset continues to be developed.
+
 ## Prerequisites for access within the AWS Cloud
 
 Common Crawl data is hosted by [Amazon Web Services' Open Data Sets Sponsorships program](https://aws.amazon.com/opendata/) which makes it freely accessible.
@@ -249,6 +253,7 @@ from daft.functions import try_decode
 
 ## Next steps
 
+- If you want a runnable example of using this dataset and embedding text using Qwen3, take a look at our [Getting Started with Common Crawl in Daft](../examples/common-crawl-daft-tutorial.md) tutorial.
 - When using datasets like Common Crawl for pre-training, content deduplication is essential for model performance.
   Check out our [MinHash deduplication example](../examples/minhash-dedupe.md) to see how this can be done in Daft.
 - See the [Common Crawl Dataset API reference](../api/datasets.md#common-crawl) for complete parameter documentation

@@ -1,0 +1,37 @@
+[dependencies]
+arrow-array = "54.2.1"
+arrow-buffer = "54.2.1"
+arrow-schema = "54.2.1"
+arrow2 = {workspace = true, features = [
+  "arrow",
+  "io_ipc_compression",
+  "io_flight",
+  "io_ipc_read_async",
+  "io_parquet",
+  "io_parquet_compression",
+  "io_json",
+  "io_json_write",
+  "io_csv",
+  "io_csv_async",
+  "chrono-tz",
+  "compute_take",
+  "compute_cast",
+  "compute_aggregate",
+  "compute_if_then_else",
+  "compute_sort",
+  "compute_filter",
+  "compute_temporal",
+  "compute_comparison",
+  "compute_arithmetics",
+  "compute_concatenate",
+  "compute_substring",
+  "io_ipc"
+]}
+
+[lints]
+workspace = true
+
+[package]
+edition = {workspace = true}
+name = "daft-arrow"
+version = {workspace = true}

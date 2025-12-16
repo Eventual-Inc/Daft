@@ -16,7 +16,7 @@ where
             )));
         }
         let data: Vec<i64> = (start..end).step_by(step).collect();
-        let arrow_array = Box::new(arrow2::array::PrimitiveArray::<i64>::from_vec(data));
+        let arrow_array = Box::new(daft_arrow::array::PrimitiveArray::<i64>::from_vec(data));
         let data_array = Int64Array::from((name.as_ref(), arrow_array));
         let casted_array = data_array.cast(&T::get_dtype())?;
         let downcasted = casted_array.downcast::<Self>()?;

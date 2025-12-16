@@ -9,7 +9,7 @@ use super::PyIdentifier;
 use crate::{Catalog, Identifier, Table, TableRef, error::CatalogResult};
 
 /// Newtype to implement the Catalog trait for a Python catalog
-#[derive(Debug)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PyCatalogWrapper(pub(super) Py<PyAny>);
 
 impl Catalog for PyCatalogWrapper {
@@ -64,7 +64,7 @@ impl Catalog for PyCatalogWrapper {
             let namespaces_py =
                 catalog.call_method1(intern!(py, "_list_namespaces"), (pattern,))?;
             Ok(namespaces_py
-                .downcast::<PyList>()
+                .cast::<PyList>()
                 .expect("Catalog._list_namespaces must return a list")
                 .into_iter()
                 .map(|ident| {
@@ -116,7 +116,7 @@ impl Catalog for PyCatalogWrapper {
             let catalog = self.0.bind(py);
             let namespaces_py = catalog.call_method1(intern!(py, "_list_tables"), (pattern,))?;
             Ok(namespaces_py
-                .downcast::<PyList>()
+                .cast::<PyList>()
                 .expect("Catalog._list_tables must return a list")
                 .into_iter()
                 .map(|ident| {
@@ -140,7 +140,7 @@ impl Catalog for PyCatalogWrapper {
 }
 
 /// Newtype to implement the Table trait for a Python table
-#[derive(Debug)]
+#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PyTableWrapper(pub(super) Py<PyAny>);
 
 impl Table for PyTableWrapper {
@@ -161,7 +161,7 @@ impl Table for PyTableWrapper {
             let schema_py = table.call_method0(intern!(py, "schema"))?;
             let schema = schema_py
                 .getattr(intern!(py, "_schema"))?
-                .downcast::<PySchema>()
+                .cast::<PySchema>()
                 .expect("downcast to PySchema failed")
                 .borrow();
             Ok(schema.schema.clone())
@@ -180,7 +180,7 @@ impl Table for PyTableWrapper {
                 .getattr(intern!(py, "_builder"))?;
             // builder as PyLogicalPlanBuilder
             let builder = builder_py
-                .downcast::<PyLogicalPlanBuilder>()
+                .cast::<PyLogicalPlanBuilder>()
                 .expect("downcast to PyLogicalPlanBuilder failed")
                 .borrow();
             Ok(builder.builder.clone())

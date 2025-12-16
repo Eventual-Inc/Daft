@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 pytest.importorskip("openai")
@@ -32,6 +34,16 @@ def test_openai_text_embedder_default():
     assert descriptor.get_dimensions().size == 1536
 
 
+def test_openai_text_embedder_overridden_dimensions():
+    provider = OpenAIProvider()
+    descriptor = provider.get_text_embedder(dimensions=256)
+
+    assert isinstance(descriptor, OpenAITextEmbedderDescriptor)
+    assert descriptor.get_provider() == "openai"
+    assert descriptor.get_model() == "text-embedding-3-small"
+    assert descriptor.get_dimensions().size == 256
+
+
 def test_openai_text_embedder_other():
     provider = OpenAIProvider()
     descriptor = provider.get_text_embedder(model="text-embedding-3-large", api_key="test-key")
@@ -47,7 +59,8 @@ def test_openai_text_embedder_instantiation():
         provider_name="openai",
         provider_options={"api_key": "test_key"},
         model_name="text-embedding-ada-002",
-        model_options={},
+        dimensions=None,
+        embed_options={},
     )
 
     embedder = descriptor.instantiate()
@@ -60,7 +73,8 @@ def test_openai_text_embedder_dimensions():
         provider_name="openai",
         provider_options={"api_key": "test_key"},
         model_name="text-embedding-ada-002",
-        model_options={},
+        dimensions=None,
+        embed_options={},
     )
     assert descriptor_ada.get_dimensions().size == 1536
 
@@ -68,7 +82,8 @@ def test_openai_text_embedder_dimensions():
         provider_name="openai",
         provider_options={"api_key": "test_key"},
         model_name="text-embedding-3-small",
-        model_options={},
+        dimensions=None,
+        embed_options={},
     )
     assert descriptor_small.get_dimensions().size == 1536
 
@@ -76,6 +91,32 @@ def test_openai_text_embedder_dimensions():
         provider_name="openai",
         provider_options={"api_key": "test_key"},
         model_name="text-embedding-3-large",
-        model_options={},
+        dimensions=None,
+        embed_options={},
     )
     assert descriptor_large.get_dimensions().size == 3072
+
+
+def test_openai_text_embedder_descriptor_overridden_dimensions():
+    descriptor = OpenAITextEmbedderDescriptor(
+        provider_name="openai",
+        provider_options={"api_key": "test_key"},
+        model_name="text-embedding-3-large",
+        dimensions=256,
+        embed_options={},
+    )
+
+    assert descriptor.get_dimensions().size == 256
+
+
+def test_openai_provider_raises_import_error_without_numpy():
+    with patch("daft.dependencies.np.module_available", return_value=False):
+        with pytest.raises(ImportError, match=r"Please `pip install 'daft\[openai\]'` with this provider"):
+            OpenAIProvider(api_key="test-key")
+
+
+def test_openai_provider_raises_import_error_without_openai():
+    # We need to mock openai module if it is installed
+    with patch.dict("sys.modules", {"openai": None}):
+        with pytest.raises(ImportError, match=r"Please `pip install 'daft\[openai\]'` with this provider"):
+            OpenAIProvider(api_key="test-key")

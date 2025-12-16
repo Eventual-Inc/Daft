@@ -3,7 +3,7 @@ use std::iter::RepeatN;
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::DataArray,
-    prelude::{AsArrow, DaftIntegerType, DaftNumericType, DataType, FullNull, Utf8Array},
+    prelude::{DaftIntegerType, DaftNumericType, DataType, FullNull, Utf8Array},
     series::{IntoSeries, Series},
     with_match_integer_daft_types,
 };
@@ -12,7 +12,7 @@ use num_traits::NumCast;
 
 use crate::utils::create_broadcasted_str_iter;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub enum PadPlacement {
     Left,
     Right,
@@ -124,12 +124,12 @@ where
                     }
                     _ => Ok(None),
                 })
-                .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+                .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>()?;
 
             Utf8Array::from((arr.name(), Box::new(arrow_result)))
         }
         _ => {
-            let length_iter = length.as_arrow().iter();
+            let length_iter = length.into_iter();
             let arrow_result = self_iter
                 .zip(length_iter)
                 .zip(padchar_iter)
@@ -144,7 +144,7 @@ where
                     }
                     _ => Ok(None),
                 })
-                .collect::<DaftResult<arrow2::array::Utf8Array<i64>>>()?;
+                .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>()?;
 
             Utf8Array::from((arr.name(), Box::new(arrow_result)))
         }

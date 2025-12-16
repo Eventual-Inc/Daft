@@ -192,7 +192,7 @@ impl GroupedAggregateState {
         let groupby = input.eval_expression_list(params.group_by.as_slice())?;
 
         let groupkey_hashes = groupby
-            .get_tables()?
+            .record_batches()
             .iter()
             .map(|t| t.hash_rows())
             .collect::<DaftResult<Vec<_>>>()?;
@@ -253,7 +253,7 @@ impl GroupedAggregateSink {
         cfg: &DaftExecutionConfig,
     ) -> DaftResult<Self> {
         let (partial_agg_exprs, final_agg_exprs, final_projections) =
-            daft_physical_plan::populate_aggregation_stages_bound(
+            daft_local_plan::agg::populate_aggregation_stages_bound(
                 aggregations,
                 input_schema,
                 group_by,

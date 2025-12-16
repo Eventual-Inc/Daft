@@ -10,7 +10,7 @@ use daft_dsl::functions::prelude::*;
 /// # Returns
 ///
 /// A `DaftResult` containing the resulting UTF-8 array after applying the filter.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Jq;
 
 #[derive(FunctionArgs)]
@@ -98,7 +98,8 @@ mod jaq {
 
         // used for the output array
         let name = arr.name().to_string();
-        let self_arrow = arr.as_arrow();
+        #[allow(deprecated, reason = "arrow2 migration")]
+        let self_arrow = arr.as_arrow2();
 
         // execute the filter on each input, mapping to some string result
         let values = self_arrow
@@ -123,7 +124,7 @@ mod jaq {
         // be sure to apply the name and validity of the input
         values
             .rename(&name)
-            .with_validity(self_arrow.validity().cloned())
+            .with_validity(self_arrow.validity().cloned().map(Into::into))
     }
 
     /// We need serde_json to parse, but then convert to a jaq Val to be evaluated.
@@ -171,6 +172,7 @@ mod jaq {
 }
 
 #[cfg(test)]
+#[allow(deprecated, reason = "arrow2 migration")]
 mod tests {
     use daft_core::prelude::{AsArrow, Utf8Array};
 
@@ -191,9 +193,9 @@ mod tests {
         let filter = r".foo.bar";
         let result = jaq::execute_jaq_filter(&data, filter)?;
         assert_eq!(result.len(), 3);
-        assert_eq!(result.as_arrow().value(0), "1");
-        assert_eq!(result.as_arrow().value(1), "2");
-        assert_eq!(result.as_arrow().value(2), "3");
+        assert_eq!(result.as_arrow2().value(0), "1");
+        assert_eq!(result.as_arrow2().value(1), "2");
+        assert_eq!(result.as_arrow2().value(2), "3");
         Ok(())
     }
 }

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use common_error::DaftResult;
-use common_metrics::{NodeID, QueryID, ops::NodeInfo};
+use common_metrics::{NodeID, QueryID, QueryPlan};
 use daft_context::Subscriber;
 
 use crate::runtime_stats::RuntimeStatsSubscriber;
@@ -14,9 +14,12 @@ pub(crate) struct SubscriberWrapper {
 }
 
 impl SubscriberWrapper {
-    pub fn try_new(inner: Arc<dyn Subscriber>, node_infos: &[Arc<NodeInfo>]) -> DaftResult<Self> {
-        let query_id: QueryID = node_infos[0].context["query_id"].clone().into();
-        inner.on_exec_start(query_id.clone(), node_infos)?;
+    pub fn try_new(
+        inner: Arc<dyn Subscriber>,
+        query_id: QueryID,
+        physical_plan: QueryPlan,
+    ) -> DaftResult<Self> {
+        inner.on_exec_start(query_id.clone(), physical_plan)?;
         Ok(Self { inner, query_id })
     }
 }
@@ -39,7 +42,7 @@ impl RuntimeStatsSubscriber for SubscriberWrapper {
 
     async fn handle_event(
         &self,
-        events: &[(NodeID, common_metrics::StatSnapshotSend)],
+        events: &[(NodeID, common_metrics::StatSnapshot)],
     ) -> DaftResult<()> {
         let all_node_stats = events
             .iter()

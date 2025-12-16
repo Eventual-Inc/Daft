@@ -1,5 +1,5 @@
-use arrow2::{array::PrimitiveArray, offset::OffsetsBuffer};
 use common_error::{DaftError, DaftResult};
+use daft_arrow::{array::PrimitiveArray, offset::OffsetsBuffer};
 
 use crate::{
     array::{
@@ -7,7 +7,8 @@ use crate::{
         growable::make_growable,
         ops::{
             DaftApproxSketchAggable, DaftCountAggable, DaftHllMergeAggable, DaftMeanAggable,
-            DaftSetAggable, DaftSkewAggable as _, DaftStddevAggable, DaftSumAggable, GroupIndices,
+            DaftProductAggable, DaftSetAggable, DaftSkewAggable as _, DaftStddevAggable,
+            DaftSumAggable, GroupIndices,
         },
     },
     count_mode::CountMode,
@@ -89,6 +90,74 @@ impl Series {
             }
             other => Err(DaftError::TypeError(format!(
                 "Numeric sum is not implemented for type {}",
+                other
+            ))),
+        }
+    }
+
+    pub fn product(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
+        use crate::datatypes::try_product_supertype;
+        match self.data_type() {
+            // intX -> int64 (in line with numpy)
+            DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
+                let casted = self.cast(&DataType::Int64)?;
+                match groups {
+                    Some(groups) => {
+                        Ok(DaftProductAggable::grouped_product(&casted.i64()?, groups)?
+                            .into_series())
+                    }
+                    None => Ok(DaftProductAggable::product(&casted.i64()?)?.into_series()),
+                }
+            }
+            // uintX -> uint64 (in line with numpy)
+            DataType::UInt8 | DataType::UInt16 | DataType::UInt32 | DataType::UInt64 => {
+                let casted = self.cast(&DataType::UInt64)?;
+                match groups {
+                    Some(groups) => {
+                        Ok(DaftProductAggable::grouped_product(&casted.u64()?, groups)?
+                            .into_series())
+                    }
+                    None => Ok(DaftProductAggable::product(&casted.u64()?)?.into_series()),
+                }
+            }
+            // floatX -> floatX (in line with numpy)
+            DataType::Float32 => match groups {
+                Some(groups) => Ok(DaftProductAggable::grouped_product(
+                    &self.downcast::<Float32Array>()?,
+                    groups,
+                )?
+                .into_series()),
+                None => Ok(
+                    DaftProductAggable::product(&self.downcast::<Float32Array>()?)?.into_series(),
+                ),
+            },
+            DataType::Float64 => match groups {
+                Some(groups) => Ok(DaftProductAggable::grouped_product(
+                    &self.downcast::<Float64Array>()?,
+                    groups,
+                )?
+                .into_series()),
+                None => Ok(
+                    DaftProductAggable::product(&self.downcast::<Float64Array>()?)?.into_series(),
+                ),
+            },
+            DataType::Decimal128(_, _) => {
+                let casted = self.cast(&try_product_supertype(self.data_type())?)?;
+
+                match groups {
+                    Some(groups) => Ok(DaftProductAggable::grouped_product(
+                        &casted.downcast::<Decimal128Array>()?,
+                        groups,
+                    )?
+                    .into_series()),
+                    None => Ok(DaftProductAggable::product(
+                        &casted.downcast::<Decimal128Array>()?,
+                    )?
+                    .into_series()),
+                }
+            }
+            other => Err(DaftError::TypeError(format!(
+                "Numeric product is not implemented for type {}",
                 other
             ))),
         }
@@ -203,18 +272,15 @@ impl Series {
         let indices = match groups {
             Some(groups) => {
                 if self.data_type().is_null() {
-                    Box::new(PrimitiveArray::new_null(
-                        arrow2::datatypes::DataType::UInt64,
-                        groups.len(),
-                    ))
+                    PrimitiveArray::new_null(daft_arrow::datatypes::DataType::UInt64, groups.len())
                 } else if ignore_nulls && let Some(validity) = self.validity() {
-                    Box::new(PrimitiveArray::from_trusted_len_iter(groups.iter().map(
-                        |g| g.iter().find(|i| validity.get_bit(**i as usize)).copied(),
-                    )))
+                    PrimitiveArray::from_trusted_len_iter(
+                        groups
+                            .iter()
+                            .map(|g| g.iter().find(|i| validity.is_valid(**i as usize)).copied()),
+                    )
                 } else {
-                    Box::new(PrimitiveArray::from_trusted_len_iter(
-                        groups.iter().map(|g| g.first().copied()),
-                    ))
+                    PrimitiveArray::from_trusted_len_iter(groups.iter().map(|g| g.first().copied()))
                 }
             }
             None => {
@@ -226,14 +292,11 @@ impl Series {
                     Some(0)
                 };
 
-                Box::new(PrimitiveArray::from([idx]))
+                PrimitiveArray::from([idx])
             }
         };
 
-        self.take(&Self::from_arrow(
-            Field::new("", DataType::UInt64).into(),
-            indices,
-        )?)
+        self.take(&UInt64Array::from(("", Box::new(indices))))
     }
 
     pub fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
@@ -347,7 +410,7 @@ impl DaftSetAggable for Series {
     fn set(&self) -> Self::Output {
         let child_series = self.clone();
         let unique_indices = deduplicate_indices(&child_series)?;
-        let indices_array = UInt64Array::from(("", unique_indices)).into_series();
+        let indices_array = UInt64Array::from(("", unique_indices));
         let deduped_series = child_series.take(&indices_array)?;
 
         let offsets = OffsetsBuffer::try_from(vec![0, deduped_series.len() as i64])?;
@@ -375,7 +438,7 @@ impl DaftSetAggable for Series {
                 continue;
             }
 
-            let group_indices = UInt64Array::from(("", group.clone())).into_series();
+            let group_indices = UInt64Array::from(("", group.clone()));
             let group_series = series.take(&group_indices)?;
 
             let unique_indices = deduplicate_indices(&group_series)?;
