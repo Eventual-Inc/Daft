@@ -4,9 +4,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormatConfig, JsonSourceConfig};
 use daft_compression::CompressionCodec;
-#[cfg(windows)]
-use daft_io::strip_leading_slash_before_drive;
-use daft_io::{GetRange, SourceType, parse_url};
+use daft_io::{GetRange, SourceType, parse_url, strip_file_uri_to_path};
 use url::Url;
 use urlencoding::decode;
 
@@ -186,14 +184,24 @@ fn local_path_from_uri(path: &str) -> Option<PathBuf> {
         }
 
         // Fallback for when Url::to_file_path() fails
-        if let Some(stripped) = clean_path.strip_prefix("file://") {
-            #[cfg(windows)]
-            let stripped = strip_leading_slash_before_drive(stripped);
+        if let Some(stripped) = strip_file_uri_to_path(clean_path) {
             return Some(PathBuf::from(decode_path_component(stripped)));
         }
 
+        // Edge case: path without file:// prefix but still a file path
         #[cfg(windows)]
-        let clean_path = strip_leading_slash_before_drive(clean_path);
+        let clean_path = {
+            let bytes = clean_path.as_bytes();
+            if bytes.len() >= 3
+                && bytes[0] == b'/'
+                && bytes[1].is_ascii_alphabetic()
+                && bytes[2] == b':'
+            {
+                &clean_path[1..]
+            } else {
+                clean_path
+            }
+        };
         return Some(PathBuf::from(decode_path_component(clean_path)));
     }
 

@@ -30,8 +30,7 @@ use crate::{
 /// as long as there is no "mix" of "\" and "/".
 const PATH_SEGMENT_DELIMITER: &str = "/";
 
-#[cfg(windows)]
-use crate::strip_leading_slash_before_drive;
+use crate::strip_file_uri_to_path;
 
 pub struct LocalSource {}
 
@@ -153,10 +152,7 @@ impl ObjectSource for LocalSource {
         range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
-        const LOCAL_PROTOCOL: &str = "file://";
-        if let Some(file) = uri.strip_prefix(LOCAL_PROTOCOL) {
-            #[cfg(windows)]
-            let file = strip_leading_slash_before_drive(file);
+        if let Some(file) = strip_file_uri_to_path(uri) {
             let size = self.get_size(uri, io_stats).await?;
             let range = range
                 .map(|r| r.as_range(size))
@@ -177,10 +173,7 @@ impl ObjectSource for LocalSource {
         data: bytes::Bytes,
         _io_stats: Option<IOStatsRef>,
     ) -> super::Result<()> {
-        const LOCAL_PROTOCOL: &str = "file://";
-        if let Some(stripped_uri) = uri.strip_prefix(LOCAL_PROTOCOL) {
-            #[cfg(windows)]
-            let stripped_uri = strip_leading_slash_before_drive(stripped_uri);
+        if let Some(stripped_uri) = strip_file_uri_to_path(uri) {
             let mut file = std::fs::OpenOptions::new()
                 .create(true)
                 .truncate(true) // truncate file if it already exists...
@@ -196,13 +189,10 @@ impl ObjectSource for LocalSource {
     }
 
     async fn get_size(&self, uri: &str, _io_stats: Option<IOStatsRef>) -> super::Result<usize> {
-        const LOCAL_PROTOCOL: &str = "file://";
-        let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) else {
+        let Some(path) = strip_file_uri_to_path(uri) else {
             return Err(Error::InvalidFilePath { path: uri.into() }.into());
         };
-        #[cfg(windows)]
-        let uri = strip_leading_slash_before_drive(uri);
-        let meta = tokio::fs::metadata(uri)
+        let meta = tokio::fs::metadata(path)
             .await
             .context(UnableToFetchFileMetadataSnafu {
                 path: uri.to_string(),
@@ -279,54 +269,52 @@ impl ObjectSource for LocalSource {
         }
 
         const LOCAL_PROTOCOL: &str = "file://";
-        let uri = if uri.is_empty() {
+        let path = if uri.is_empty() {
             std::borrow::Cow::Owned(
                 std::env::current_dir()
                     .with_context(|_| UnableToFetchDirectoryEntriesSnafu { path: uri })?
                     .to_string_lossy()
                     .to_string(),
             )
-        } else if let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) {
-            #[cfg(windows)]
-            let uri = strip_leading_slash_before_drive(uri);
-            std::borrow::Cow::Borrowed(uri)
+        } else if let Some(path) = strip_file_uri_to_path(uri) {
+            std::borrow::Cow::Borrowed(path)
         } else {
             return Err(Error::InvalidFilePath { path: uri.into() }.into());
         };
 
-        let meta = tokio::fs::metadata(uri.as_ref()).await.with_context(|_| {
+        let meta = tokio::fs::metadata(path.as_ref()).await.with_context(|_| {
             UnableToFetchFileMetadataSnafu {
-                path: uri.to_string(),
+                path: path.to_string(),
             }
         })?;
         if meta.file_type().is_file() {
             // Provided uri points to a file, so only return that file.
             return Ok(futures::stream::iter([Ok(FileMetadata {
-                filepath: format!("{LOCAL_PROTOCOL}{uri}"),
+                filepath: format!("{LOCAL_PROTOCOL}{path}"),
                 size: Some(meta.len()),
                 filetype: object_io::FileType::File,
             })])
             .boxed());
         }
-        let dir_entries = tokio::fs::read_dir(uri.as_ref()).await.with_context(|_| {
+        let dir_entries = tokio::fs::read_dir(path.as_ref()).await.with_context(|_| {
             UnableToFetchDirectoryEntriesSnafu {
-                path: uri.to_string(),
+                path: path.to_string(),
             }
         })?;
         let dir_stream = tokio_stream::wrappers::ReadDirStream::new(dir_entries);
-        let uri = Arc::new(uri.to_string());
+        let path = Arc::new(path.to_string());
         let file_meta_stream = dir_stream.then(move |entry| {
-            let uri = uri.clone();
+            let path = path.clone();
             async move {
                 let entry = entry.with_context(|_| UnableToFetchDirectoryEntriesSnafu {
-                    path: uri.to_string(),
+                    path: path.to_string(),
                 })?;
 
                 // NOTE: `entry` returned by ReadDirStream can potentially mix posix-delimiters ("/") and windows-delimiter ("\")
                 // on Windows machines if we naively use `entry.path()`. Manually concatting the entries to the uri is safer.
-                let path = format!(
+                let entry_path = format!(
                     "{}{PATH_SEGMENT_DELIMITER}{}",
-                    uri.trim_end_matches(PATH_SEGMENT_DELIMITER),
+                    path.trim_end_matches(PATH_SEGMENT_DELIMITER),
                     entry.file_name().to_string_lossy()
                 );
 
@@ -339,7 +327,7 @@ impl ObjectSource for LocalSource {
                     filepath: format!(
                         "{}{}{}",
                         LOCAL_PROTOCOL,
-                        path,
+                        entry_path,
                         if meta.is_dir() {
                             PATH_SEGMENT_DELIMITER
                         } else {
