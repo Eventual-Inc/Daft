@@ -60,6 +60,7 @@ class RaySwordfishActor:
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
         set_compute_runtime_num_worker_threads(num_cpus)
         set_event_loop(asyncio.get_running_loop())
+        self.native_executor = NativeExecutor()
 
     async def run_plan(
         self,
@@ -77,10 +78,9 @@ class RaySwordfishActor:
             psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
 
             metas = []
-            native_executor = NativeExecutor()
             ctx = PyDaftContext()
             ctx._daft_execution_config = exec_cfg
-            result_handle = native_executor.run(plan, psets_mp, ctx, None, context)
+            result_handle = self.native_executor.run(plan, psets_mp, ctx, None, context)
             async for partition in result_handle:
                 if partition is None:
                     break

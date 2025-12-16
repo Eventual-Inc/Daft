@@ -670,7 +670,7 @@ mod tests {
     fn create_actor_pool_udf(inputs: Vec<ExprRef>) -> ExprRef {
         Expr::Function {
             func: FunctionExpr::Python(LegacyPythonUDF {
-                name: Arc::new("foo".to_string()),
+                name: "foo".into(),
                 func: MaybeInitializedUDF::Uninitialized {
                     inner: RuntimePyObject::new_none(),
                     init_args: RuntimePyObject::new_none(),
@@ -692,7 +692,7 @@ mod tests {
     fn create_filter_udf(inputs: Vec<ExprRef>) -> ExprRef {
         Expr::Function {
             func: FunctionExpr::Python(LegacyPythonUDF {
-                name: Arc::new("foo".to_string()),
+                name: "foo".into(),
                 func: MaybeInitializedUDF::Uninitialized {
                     inner: RuntimePyObject::new_none(),
                     init_args: RuntimePyObject::new_none(),

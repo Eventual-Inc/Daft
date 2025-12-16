@@ -11,6 +11,7 @@ mod sinks;
 mod sources;
 mod state_bridge;
 mod streaming_sink;
+mod udf_process_pool;
 use std::{
     future::Future,
     pin::Pin,
