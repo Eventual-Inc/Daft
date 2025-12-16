@@ -63,7 +63,7 @@ def encode_image(image: Expression, image_format: str | ImageFormat) -> Expressi
 def decode_image(
     bytes: Expression,
     on_error: Literal["raise", "null"] = "raise",
-    mode: str | ImageMode | None = None,
+    mode: str | ImageMode = ImageMode.RGB,
 ) -> Expression:
     """Decodes the binary data in this column into images.
 
@@ -73,7 +73,7 @@ def decode_image(
         bytes (Binary Expression): image to decode.
         on_error (str, default="raise"):
             Whether to raise when encountering an error, or log a warning and return a null
-        mode (str | ImageMode, default=None):
+        mode (str | ImageMode, default=ImageMode.RGB):
             What mode to convert the images into before storing it in the column. This may prevent
             errors relating to unsupported types.
 
