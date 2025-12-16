@@ -2,7 +2,7 @@ use std::{path::PathBuf, sync::Arc};
 
 use arrow_array::{
     Array, ArrayRef, BinaryArray, FixedSizeBinaryArray, LargeBinaryArray,
-    RecordBatch as ArrowRecordBatch,
+    RecordBatch as ArrowRecordBatch, RecordBatchWriter,
     builder::{Int64Builder, LargeStringBuilder},
 };
 use arrow_csv::WriterBuilder;
@@ -62,7 +62,8 @@ use crate::{
 };
 
 pub(crate) fn native_csv_writer_supported(file_schema: &SchemaRef) -> DaftResult<bool> {
-    let datatypes_convertable = file_schema.to_arrow()?.fields.iter().all(|field| {
+    #[allow(deprecated, reason = "arrow2 migration")]
+    let datatypes_convertable = file_schema.to_arrow2()?.fields.iter().all(|field| {
         field.data_type().can_convert_to_arrow_rs() && !is_nested_type(field.data_type())
     });
     Ok(datatypes_convertable)
@@ -217,6 +218,10 @@ fn make_csv_writer<B: StorageBackend + Send + Sync>(
             Ok(())
         },
     );
+    let close_fn = Arc::new(|writer: arrow_csv::Writer<B::Writer>| {
+        writer.close()?;
+        Ok(())
+    });
     BatchFileWriter::new(
         filename,
         partition_values,
@@ -224,6 +229,6 @@ fn make_csv_writer<B: StorageBackend + Send + Sync>(
         1.0,
         builder,
         write_fn,
-        None,
+        Some(close_fn),
     )
 }

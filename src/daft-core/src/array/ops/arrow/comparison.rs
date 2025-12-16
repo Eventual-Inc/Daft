@@ -134,8 +134,8 @@ pub fn build_multi_array_is_equal(
 
     for (idx, (l, r)) in left.iter().zip(right.iter()).enumerate() {
         fn_list.push(build_is_equal(
-            l.to_arrow().as_ref(),
-            r.to_arrow().as_ref(),
+            l.to_arrow2().as_ref(),
+            r.to_arrow2().as_ref(),
             nulls_equal[idx],
             nans_equal[idx],
         )?);

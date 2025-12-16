@@ -40,7 +40,13 @@ def mock_client():
 
 @pytest.fixture
 def mock_text_embedder(mock_client) -> TextEmbedder:
-    return OpenAITextEmbedder(mock_client, "text-embedding-3-small")
+    embedder = OpenAITextEmbedder(
+        provider_options={"api_key": "test-key"},
+        model="text-embedding-3-small",
+        embed_options={},
+    )
+    embedder._client = mock_client
+    return embedder
 
 
 def run(coro):
@@ -55,7 +61,7 @@ def test_valid_model_names():
             provider_options={"api_key": "test-key"},
             model_name=model_name,
             dimensions=None,
-            model_options={},
+            embed_options={},
         )
         assert descriptor.get_provider() == "openai"
         assert descriptor.get_model() == model_name
@@ -71,7 +77,7 @@ def test_invalid_model_name():
             provider_options={"api_key": "test-key"},
             model_name="invalid-model",
             dimensions=None,
-            model_options={},
+            embed_options={},
         )
 
 
@@ -82,7 +88,7 @@ def test_instantiate():
         provider_options={"api_key": "test-key"},
         model_name="text-embedding-3-small",
         dimensions=None,
-        model_options={},
+        embed_options={},
     )
 
     embedder = descriptor.instantiate()
@@ -293,10 +299,12 @@ def test_embed_text_failure_with_zero_on_failure_and_dimensions(mock_text_embedd
 def test_embed_text_failure_without_zero_on_failure(mock_client):
     """Test that failures are re-raised when zero_on_failure is False."""
     embedder = OpenAITextEmbedder(
-        client=mock_client,
+        provider_options={"api_key": "test-key"},
         model="text-embedding-3-small",
+        embed_options={},
         zero_on_failure=False,
     )
+    embedder._client = mock_client
     mock_client.embeddings.create.side_effect = Exception("API Error")
 
     with pytest.raises(Exception, match="API Error"):
@@ -343,10 +351,12 @@ def test_different_model_dimensions(mock_client):
     """Test that different models have correct dimensions."""
     # Test text-embedding-3-large which has 3072 dimensions
     embedder = OpenAITextEmbedder(
-        client=mock_client,
+        provider_options={"api_key": "test-key"},
         model="text-embedding-3-large",
+        embed_options={},
         zero_on_failure=True,
     )
+    embedder._client = mock_client
 
     mock_response = Mock(spec=CreateEmbeddingResponse)
     mock_embedding = Mock(spec=OpenAIEmbedding)
@@ -397,7 +407,7 @@ def test_descriptor_to_embedder_workflow():
         provider_options={"api_key": "test-key"},
         model_name="text-embedding-3-small",
         dimensions=None,
-        model_options={},
+        embed_options={},
     )
 
     with patch("daft.ai.openai.protocols.text_embedder.AsyncOpenAI") as mock_async_openai_class:
@@ -423,8 +433,9 @@ def test_descriptor_to_embedder_workflow():
 def test_protocol_compliance():
     """Test that OpenAITextEmbedder implements the TextEmbedder protocol."""
     text_embedder = OpenAITextEmbedder(
-        client=Mock(),
+        provider_options={"api_key": "test-key"},
         model="text-embedding-3-small",
+        embed_options={},
     )
 
     assert isinstance(text_embedder, TextEmbedder)

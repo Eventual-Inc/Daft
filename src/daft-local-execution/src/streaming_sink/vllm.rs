@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::{collections::BinaryHeap, sync::Arc, time::Duration};
 
 use common_error::{DaftError, DaftResult};
@@ -352,7 +353,7 @@ impl VLLMSink {
                     prompts.data_type()
                 ))
             })?
-            .as_arrow()
+            .as_arrow2()
             .values_iter()
             .map(|s| s.to_string())
             .collect::<Vec<_>>();

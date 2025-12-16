@@ -156,11 +156,12 @@ impl FixedSizeListArray {
         ))
     }
 
-    pub fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
+    #[deprecated(note = "arrow2 migration")]
+    pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
         let arrow_dtype = self.data_type().to_arrow().unwrap();
         Box::new(daft_arrow::array::FixedSizeListArray::new(
             arrow_dtype,
-            self.flat_child.to_arrow(),
+            self.flat_child.to_arrow2(),
             daft_arrow::buffer::wrap_null_buffer(self.validity.clone()),
         ))
     }

@@ -19,7 +19,7 @@ where
     T: DaftArrowBackedType,
 {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let result = daft_arrow::compute::filter::filter(self.data(), mask.as_arrow())?;
+        let result = daft_arrow::compute::filter::filter(self.data(), mask.as_arrow2())?;
         Self::try_from((self.field.clone(), result))
     }
 }
@@ -33,9 +33,9 @@ fn generic_filter<Arr>(
 where
     Arr: FullNull + Clone + GrowableArray + DaftArrayType,
 {
-    let keep_bitmap = match mask.as_arrow().validity() {
-        None => Cow::Borrowed(mask.as_arrow().values()),
-        Some(validity) => Cow::Owned(mask.as_arrow().values() & validity),
+    let keep_bitmap = match mask.as_arrow2().validity() {
+        None => Cow::Borrowed(mask.as_arrow2().values()),
+        Some(validity) => Cow::Owned(mask.as_arrow2().values() & validity),
     };
 
     let num_invalid = keep_bitmap.as_ref().unset_bits();

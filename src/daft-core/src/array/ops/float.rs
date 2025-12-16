@@ -15,7 +15,7 @@ where
     type Output = DaftResult<DataArray<BooleanType>>;
 
     fn is_nan(&self) -> Self::Output {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
         let result_arrow_array = daft_arrow::array::BooleanArray::from_trusted_len_values_iter(
             arrow_array.values_iter().map(|v| v.is_nan()),
         )
@@ -48,7 +48,7 @@ where
     type Output = DaftResult<DataArray<BooleanType>>;
 
     fn is_inf(&self) -> Self::Output {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
         let result_arrow_array = daft_arrow::array::BooleanArray::from_trusted_len_values_iter(
             arrow_array.values_iter().map(|v| v.is_infinite()),
         )
@@ -80,7 +80,7 @@ where
     type Output = DaftResult<DataArray<BooleanType>>;
 
     fn not_nan(&self) -> Self::Output {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
         let result_arrow_array = daft_arrow::array::BooleanArray::from_trusted_len_values_iter(
             arrow_array.values_iter().map(|v| !v.is_nan()),
         )

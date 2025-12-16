@@ -57,34 +57,19 @@ def get_gpu_udf_options() -> UDFOptions:
         return UDFOptions(concurrency=None, num_gpus=None)
 
 
-def get_http_udf_options() -> UDFOptions:
-    """Get UDF options for HTTP-based providers."""
-    runner = get_or_infer_runner_type()
+def merge_provider_and_api_options(
+    provider_options: dict[str, Any] | Any,
+    api_options: dict[str, Any] | Any,
+    provider_option_type: type,
+) -> dict[str, Any]:
+    result: dict[str, Any] = dict(provider_options)
+    provider_option_keys = set(provider_option_type.__annotations__.keys())
 
-    if runner == "native":
-        # For native runner, use 1 concurrency
-        return UDFOptions(concurrency=1, num_gpus=None)
-    elif runner == "ray":
-        # For ray runner, use number of nodes as concurrency
-        import ray
+    for key, value in api_options.items():
+        if key in provider_option_keys:
+            result[key] = value
 
-        num_nodes = len(
-            [
-                node
-                for node in ray.nodes()
-                if "Resources" in node and "CPU" in node["Resources"] and node["Resources"]["CPU"] > 0
-            ]
-        )
-
-        if num_nodes > 0:
-            return UDFOptions(concurrency=num_nodes, num_gpus=None)
-        else:
-            # If there are no nodes it means that there are no workers available yet.
-            # So we set concurrency to 1 as a fallback.
-            # TODO: We should enable autoscaling UDFs in the future.
-            return UDFOptions(concurrency=1, num_gpus=None)
-    else:
-        raise ValueError(f"Invalid runner type: {runner}, expected 'native' or 'ray'")
+    return result
 
 
 class RetryAfterError(RuntimeError):

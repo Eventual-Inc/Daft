@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import singledispatchmethod
 from typing import TYPE_CHECKING, Any
 
@@ -9,17 +9,33 @@ from openai.types.completion_usage import CompletionUsage
 from openai.types.responses import ResponseUsage
 
 from daft.ai.metrics import record_token_metrics
+from daft.ai.openai.typing import OpenAIProviderOptions
 from daft.ai.openai.utils import execute_openai_call
 from daft.ai.protocols import Prompter, PrompterDescriptor
-from daft.ai.typing import UDFOptions
+from daft.ai.provider import ProviderImportError
+from daft.ai.typing import Options, PromptOptions, UDFOptions
+from daft.ai.utils import merge_provider_and_api_options
 from daft.dependencies import np
 from daft.file import File
 
 if TYPE_CHECKING:
     from pydantic import BaseModel
 
-    from daft.ai.openai.typing import OpenAIProviderOptions
-    from daft.ai.typing import Options
+
+class OpenAIPromptOptions(PromptOptions, total=False):
+    """Options for OpenAI prompter.
+
+    Attributes:
+        use_chat_completions (bool): Whether to use the Chat Completions API (True),
+            or the Responses API (False).
+
+    Note:
+        Any additional arguments defined here will be forwarded directly to
+        the OpenAI client when making prompt calls, allowing users to customize
+        request parameters (e.g., `temperature`, `max_tokens`, etc.).
+    """
+
+    use_chat_completions: bool
 
 
 @dataclass
@@ -27,11 +43,11 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
     provider_name: str
     provider_options: OpenAIProviderOptions
     model_name: str
-    model_options: Options
+    prompt_options: OpenAIPromptOptions = field(
+        default_factory=lambda: OpenAIPromptOptions(use_chat_completions=False, max_retries=3, on_error="raise")
+    )
     system_message: str | None = None
     return_format: BaseModel | None = None
-    udf_options: UDFOptions | None = None
-    use_chat_completions: bool = False
 
     def get_provider(self) -> str:
         return self.provider_name
@@ -40,10 +56,12 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
         return self.model_name
 
     def get_options(self) -> Options:
-        return self.model_options
+        return dict(self.prompt_options)
 
     def get_udf_options(self) -> UDFOptions:
-        return self.udf_options or UDFOptions(concurrency=None, num_gpus=None)
+        options = super().get_udf_options()
+        options.max_retries = 0  # OpenAI client handles retries internally
+        return options
 
     def instantiate(self) -> Prompter:
         return OpenAIPrompter(
@@ -52,8 +70,7 @@ class OpenAIPrompterDescriptor(PrompterDescriptor):
             model=self.model_name,
             system_message=self.system_message,
             return_format=self.return_format,
-            generation_config=self.model_options,
-            use_chat_completions=self.use_chat_completions,
+            prompt_options=self.prompt_options,
         )
 
 
@@ -67,23 +84,29 @@ class OpenAIPrompter(Prompter):
         model: str,
         system_message: str | None = None,
         return_format: BaseModel | None = None,
-        generation_config: dict[str, Any] = {},
-        use_chat_completions: bool = False,
+        prompt_options: OpenAIPromptOptions = {},
     ) -> None:
         self.provider_name = provider_name
         self.model = model
         self.return_format = return_format
         self.system_message = system_message
-        self.use_chat_completions = use_chat_completions
-        # Separate client params from generation params
-        client_params_keys = ["base_url", "api_key", "timeout", "max_retries"]
-        client_params = {**provider_options}
-        for key, value in generation_config.items():
-            if key in client_params_keys:
-                client_params[key] = value
 
-        self.generation_config = {k: v for k, v in generation_config.items() if k not in client_params_keys}
-        self.llm = AsyncOpenAI(**client_params)
+        # Extract use_chat_completions from options
+        prompt_options_dict = dict(prompt_options)  # Make mutable copy
+        self.use_chat_completions = prompt_options_dict.pop("use_chat_completions", False)
+
+        # Merge provider and remaining user options
+        merged_provider_options = merge_provider_and_api_options(
+            provider_options=provider_options,
+            api_options=prompt_options_dict,
+            provider_option_type=OpenAIProviderOptions,
+        )
+        self.llm = AsyncOpenAI(**merged_provider_options)
+
+        # Remaining options become generation config
+        self.generation_config = {
+            k: v for k, v in prompt_options_dict.items() if k not in OpenAIProviderOptions.__annotations__.keys()
+        }
 
     @singledispatchmethod
     def _process_message(self, msg: Any) -> dict[str, Any]:
@@ -131,6 +154,9 @@ class OpenAIPrompter(Prompter):
             import io
 
             from daft.dependencies import pil_image
+
+            if not pil_image.module_available():
+                raise ProviderImportError("openai", function="prompt")
 
             pil_image = pil_image.fromarray(msg)
             bio = io.BytesIO()

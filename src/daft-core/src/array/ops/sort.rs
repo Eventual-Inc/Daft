@@ -21,6 +21,7 @@ use crate::{
     },
     file::DaftMediaType,
     kernels::search_sorted::{build_nulls_first_compare_with_nulls, cmp_float},
+    prelude::UInt64Array,
     series::Series,
 };
 
@@ -47,8 +48,8 @@ pub fn build_multi_array_bicompare(
         .zip(nulls_first.iter())
     {
         cmp_list.push(build_nulls_first_compare_with_nulls(
-            l.to_arrow().as_ref(),
-            r.to_arrow().as_ref(),
+            l.to_arrow2().as_ref(),
+            r.to_arrow2().as_ref(),
             *desc,
             *nf,
         )?);
@@ -71,33 +72,24 @@ where
     T: DaftIntegerType,
     <T as DaftNumericType>::Native: Ord,
 {
-    pub fn argsort<I>(&self, descending: bool, nulls_first: bool) -> DaftResult<DataArray<I>>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: daft_arrow::types::Index,
-    {
-        let arrow_array = self.as_arrow();
+    pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
+        let arrow_array = self.as_arrow2();
 
         let result = crate::array::ops::arrow::sort::primitive::indices::indices_sorted_unstable_by::<
-            I::Native,
             T::Native,
             _,
         >(arrow_array, ord::total_cmp, descending, nulls_first);
 
-        Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+        Ok(UInt64Array::from((self.name(), Box::new(result))))
     }
 
-    pub fn argsort_multikey<I>(
+    pub fn argsort_multikey(
         &self,
         others: &[Series],
         descending: &[bool],
         nulls_first: &[bool],
-    ) -> DaftResult<DataArray<I>>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: daft_arrow::types::Index,
-    {
-        let arrow_array = self.as_arrow();
+    ) -> DaftResult<UInt64Array> {
+        let arrow_array = self.as_arrow2();
         let first_desc = *descending.first().unwrap();
         let first_nulls_first = *nulls_first.first().unwrap();
 
@@ -108,7 +100,7 @@ where
         let result = if first_desc {
             multi_column_idx_sort(
                 arrow_array.validity(),
-                |a: &I::Native, b: &I::Native| {
+                |a: &u64, b: &u64| {
                     let a = a.to_usize();
                     let b = b.to_usize();
                     let l = unsafe { values.get_unchecked(a) };
@@ -125,7 +117,7 @@ where
         } else {
             multi_column_idx_sort(
                 arrow_array.validity(),
-                |a: &I::Native, b: &I::Native| {
+                |a: &u64, b: &u64| {
                     let a = a.to_usize();
                     let b = b.to_usize();
                     let l = unsafe { values.get_unchecked(a) };
@@ -141,7 +133,7 @@ where
             )
         };
 
-        Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+        Ok(UInt64Array::from((self.name(), Box::new(result))))
     }
 
     pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
@@ -150,7 +142,7 @@ where
             nulls_first,
         };
 
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
 
         let result = crate::array::ops::arrow::sort::primitive::sort::sort_by::<T::Native, _>(
             arrow_array,
@@ -164,33 +156,24 @@ where
 }
 
 impl Float32Array {
-    pub fn argsort<I>(&self, descending: bool, nulls_first: bool) -> DaftResult<DataArray<I>>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: daft_arrow::types::Index,
-    {
-        let arrow_array = self.as_arrow();
+    pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
+        let arrow_array = self.as_arrow2();
 
         let result = crate::array::ops::arrow::sort::primitive::indices::indices_sorted_unstable_by::<
-            I::Native,
             f32,
             _,
         >(arrow_array, cmp_float::<f32>, descending, nulls_first);
 
-        Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+        Ok(UInt64Array::from((self.name(), Box::new(result))))
     }
 
-    pub fn argsort_multikey<I>(
+    pub fn argsort_multikey(
         &self,
         others: &[Series],
         descending: &[bool],
         nulls_first: &[bool],
-    ) -> DaftResult<DataArray<I>>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: daft_arrow::types::Index,
-    {
-        let arrow_array = self.as_arrow();
+    ) -> DaftResult<UInt64Array> {
+        let arrow_array = self.as_arrow2();
         let first_desc = *descending.first().unwrap();
         let first_nulls_first = *nulls_first.first().unwrap();
 
@@ -201,7 +184,7 @@ impl Float32Array {
         let result = if first_desc {
             multi_column_idx_sort(
                 arrow_array.validity(),
-                |a: &I::Native, b: &I::Native| {
+                |a: &u64, b: &u64| {
                     let a = a.to_usize();
                     let b = b.to_usize();
                     let l = unsafe { values.get_unchecked(a) };
@@ -218,7 +201,7 @@ impl Float32Array {
         } else {
             multi_column_idx_sort(
                 arrow_array.validity(),
-                |a: &I::Native, b: &I::Native| {
+                |a: &u64, b: &u64| {
                     let a = a.to_usize();
                     let b = b.to_usize();
                     let l = unsafe { values.get_unchecked(a) };
@@ -234,7 +217,7 @@ impl Float32Array {
             )
         };
 
-        Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+        Ok(UInt64Array::from((self.name(), Box::new(result))))
     }
 
     pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
@@ -243,7 +226,7 @@ impl Float32Array {
             nulls_first,
         };
 
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
 
         let result = crate::array::ops::arrow::sort::primitive::sort::sort_by::<f32, _>(
             arrow_array,
@@ -257,33 +240,24 @@ impl Float32Array {
 }
 
 impl Float64Array {
-    pub fn argsort<I>(&self, descending: bool, nulls_first: bool) -> DaftResult<DataArray<I>>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: daft_arrow::types::Index,
-    {
-        let arrow_array = self.as_arrow();
+    pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
+        let arrow_array = self.as_arrow2();
 
         let result = crate::array::ops::arrow::sort::primitive::indices::indices_sorted_unstable_by::<
-            I::Native,
             f64,
             _,
         >(arrow_array, cmp_float::<f64>, descending, nulls_first);
 
-        Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+        Ok(UInt64Array::from((self.name(), Box::new(result))))
     }
 
-    pub fn argsort_multikey<I>(
+    pub fn argsort_multikey(
         &self,
         others: &[Series],
         descending: &[bool],
         nulls_first: &[bool],
-    ) -> DaftResult<DataArray<I>>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: daft_arrow::types::Index,
-    {
-        let arrow_array = self.as_arrow();
+    ) -> DaftResult<UInt64Array> {
+        let arrow_array = self.as_arrow2();
         let first_desc = *descending.first().unwrap();
         let first_nulls_first = *nulls_first.first().unwrap();
 
@@ -294,7 +268,7 @@ impl Float64Array {
         let result = if first_desc {
             multi_column_idx_sort(
                 arrow_array.validity(),
-                |a: &I::Native, b: &I::Native| {
+                |a: &u64, b: &u64| {
                     let a = a.to_usize();
                     let b = b.to_usize();
                     let l = unsafe { values.get_unchecked(a) };
@@ -311,7 +285,7 @@ impl Float64Array {
         } else {
             multi_column_idx_sort(
                 arrow_array.validity(),
-                |a: &I::Native, b: &I::Native| {
+                |a: &u64, b: &u64| {
                     let a = a.to_usize();
                     let b = b.to_usize();
                     let l = unsafe { values.get_unchecked(a) };
@@ -327,7 +301,7 @@ impl Float64Array {
             )
         };
 
-        Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+        Ok(UInt64Array::from((self.name(), Box::new(result))))
     }
 
     pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
@@ -336,7 +310,7 @@ impl Float64Array {
             nulls_first,
         };
 
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
 
         let result = crate::array::ops::arrow::sort::primitive::sort::sort_by::<f64, _>(
             arrow_array,
@@ -350,33 +324,24 @@ impl Float64Array {
 }
 
 impl Decimal128Array {
-    pub fn argsort<I>(&self, descending: bool, nulls_first: bool) -> DaftResult<DataArray<I>>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: daft_arrow::types::Index,
-    {
-        let arrow_array = self.as_arrow();
+    pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
+        let arrow_array = self.as_arrow2();
 
         let result = crate::array::ops::arrow::sort::primitive::indices::indices_sorted_unstable_by::<
-            I::Native,
             i128,
             _,
         >(arrow_array, ord::total_cmp, descending, nulls_first);
 
-        Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+        Ok(UInt64Array::from((self.name(), Box::new(result))))
     }
 
-    pub fn argsort_multikey<I>(
+    pub fn argsort_multikey(
         &self,
         others: &[Series],
         descending: &[bool],
         nulls_first: &[bool],
-    ) -> DaftResult<DataArray<I>>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: daft_arrow::types::Index,
-    {
-        let arrow_array = self.as_arrow();
+    ) -> DaftResult<UInt64Array> {
+        let arrow_array = self.as_arrow2();
         let first_desc = *descending.first().unwrap();
         let first_nulls_first = *nulls_first.first().unwrap();
 
@@ -387,7 +352,7 @@ impl Decimal128Array {
         let result = if first_desc {
             multi_column_idx_sort(
                 arrow_array.validity(),
-                |a: &I::Native, b: &I::Native| {
+                |a: &u64, b: &u64| {
                     let a = a.to_usize();
                     let b = b.to_usize();
                     let l = unsafe { values.get_unchecked(a) };
@@ -404,7 +369,7 @@ impl Decimal128Array {
         } else {
             multi_column_idx_sort(
                 arrow_array.validity(),
-                |a: &I::Native, b: &I::Native| {
+                |a: &u64, b: &u64| {
                     let a = a.to_usize();
                     let b = b.to_usize();
                     let l = unsafe { values.get_unchecked(a) };
@@ -420,7 +385,7 @@ impl Decimal128Array {
             )
         };
 
-        Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+        Ok(UInt64Array::from((self.name(), Box::new(result))))
     }
 
     pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
@@ -429,7 +394,7 @@ impl Decimal128Array {
             nulls_first,
         };
 
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
 
         let result = crate::array::ops::arrow::sort::primitive::sort::sort_by::<i128, _>(
             arrow_array,
@@ -443,31 +408,23 @@ impl Decimal128Array {
 }
 
 impl NullArray {
-    pub fn argsort<I>(&self, _descending: bool, _nulls_first: bool) -> DaftResult<DataArray<I>>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: daft_arrow::types::Index,
-    {
-        DataArray::<I>::arange(self.name(), 0_i64, self.len() as i64, 1)
+    pub fn argsort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<UInt64Array> {
+        UInt64Array::arange(self.name(), 0_i64, self.len() as i64, 1)
     }
 
-    pub fn argsort_multikey<I>(
+    pub fn argsort_multikey(
         &self,
         others: &[Series],
         descending: &[bool],
         nulls_first: &[bool],
-    ) -> DaftResult<DataArray<I>>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: daft_arrow::types::Index,
-    {
+    ) -> DaftResult<UInt64Array> {
         let first_nulls_first = *nulls_first.first().unwrap();
 
         let others_cmp = build_multi_array_compare(others, &descending[1..], &nulls_first[1..])?;
 
         let result = multi_column_idx_sort(
             self.data().validity(),
-            |a: &I::Native, b: &I::Native| {
+            |a: &u64, b: &u64| {
                 let a = a.to_usize();
                 let b = b.to_usize();
                 others_cmp(a, b)
@@ -477,7 +434,7 @@ impl NullArray {
             first_nulls_first,
         );
 
-        Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+        Ok(UInt64Array::from((self.name(), Box::new(result))))
     }
 
     pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
@@ -486,32 +443,24 @@ impl NullArray {
 }
 
 impl BooleanArray {
-    pub fn argsort<I>(&self, descending: bool, nulls_first: bool) -> DaftResult<DataArray<I>>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: daft_arrow::types::Index,
-    {
+    pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
         let options = daft_arrow::compute::sort::SortOptions {
             descending,
             nulls_first,
         };
 
         let result =
-            daft_arrow::compute::sort::sort_to_indices::<I::Native>(self.data(), &options, None)?;
+            daft_arrow::compute::sort::sort_to_indices::<u64>(self.data(), &options, None)?;
 
-        Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+        Ok(UInt64Array::from((self.name(), Box::new(result))))
     }
 
-    pub fn argsort_multikey<I>(
+    pub fn argsort_multikey(
         &self,
         others: &[Series],
         descending: &[bool],
         nulls_first: &[bool],
-    ) -> DaftResult<DataArray<I>>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: daft_arrow::types::Index,
-    {
+    ) -> DaftResult<UInt64Array> {
         let first_desc = *descending.first().unwrap();
         let first_nulls_first = *nulls_first.first().unwrap();
 
@@ -527,7 +476,7 @@ impl BooleanArray {
         let result = if first_desc {
             multi_column_idx_sort(
                 self.data().validity(),
-                |a: &I::Native, b: &I::Native| {
+                |a: &u64, b: &u64| {
                     let a = a.to_usize();
                     let b = b.to_usize();
                     let l = unsafe { values.get_bit_unchecked(a) };
@@ -544,7 +493,7 @@ impl BooleanArray {
         } else {
             multi_column_idx_sort(
                 self.data().validity(),
-                |a: &I::Native, b: &I::Native| {
+                |a: &u64, b: &u64| {
                     let a = a.to_usize();
                     let b = b.to_usize();
                     let l = unsafe { values.get_bit_unchecked(a) };
@@ -560,7 +509,7 @@ impl BooleanArray {
             )
         };
 
-        Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+        Ok(UInt64Array::from((self.name(), Box::new(result))))
     }
 
     pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
@@ -578,51 +527,36 @@ impl BooleanArray {
 macro_rules! impl_binary_like_sort {
     ($da:ident) => {
         impl $da {
-            pub fn argsort<I>(
-                &self,
-                descending: bool,
-                nulls_first: bool,
-            ) -> DaftResult<DataArray<I>>
-            where
-                I: DaftIntegerType,
-                <I as DaftNumericType>::Native: daft_arrow::types::Index,
-            {
+            pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
                 let options = daft_arrow::compute::sort::SortOptions {
                     descending,
                     nulls_first,
                 };
 
-                let result = daft_arrow::compute::sort::sort_to_indices::<I::Native>(
-                    self.data(),
-                    &options,
-                    None,
-                )?;
+                let result =
+                    daft_arrow::compute::sort::sort_to_indices::<u64>(self.data(), &options, None)?;
 
-                Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+                Ok(UInt64Array::from((self.name(), Box::new(result))))
             }
 
-            pub fn argsort_multikey<I>(
+            pub fn argsort_multikey(
                 &self,
                 others: &[Series],
                 descending: &[bool],
                 nulls_first: &[bool],
-            ) -> DaftResult<DataArray<I>>
-            where
-                I: DaftIntegerType,
-                <I as DaftNumericType>::Native: daft_arrow::types::Index,
-            {
+            ) -> DaftResult<UInt64Array> {
                 let first_desc = *descending.first().unwrap();
                 let first_nulls_first = *nulls_first.first().unwrap();
 
                 let others_cmp =
                     build_multi_array_compare(others, &descending[1..], &nulls_first[1..])?;
 
-                let values = self.as_arrow();
+                let values = self.as_arrow2();
 
                 let result = if first_desc {
                     multi_column_idx_sort(
                         self.data().validity(),
-                        |a: &I::Native, b: &I::Native| {
+                        |a: &u64, b: &u64| {
                             let a = a.to_usize();
                             let b = b.to_usize();
                             let l = unsafe { values.value_unchecked(a) };
@@ -639,7 +573,7 @@ macro_rules! impl_binary_like_sort {
                 } else {
                     multi_column_idx_sort(
                         self.data().validity(),
-                        |a: &I::Native, b: &I::Native| {
+                        |a: &u64, b: &u64| {
                             let a = a.to_usize();
                             let b = b.to_usize();
                             let l = unsafe { values.value_unchecked(a) };
@@ -655,7 +589,7 @@ macro_rules! impl_binary_like_sort {
                     )
                 };
 
-                Ok(DataArray::<I>::from((self.name(), Box::new(result))))
+                Ok(UInt64Array::from((self.name(), Box::new(result))))
             }
 
             pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
@@ -676,23 +610,15 @@ impl_binary_like_sort!(BinaryArray);
 impl_binary_like_sort!(Utf8Array);
 
 impl FixedSizeBinaryArray {
-    pub fn argsort<I>(&self, _descending: bool, _nulls_first: bool) -> DaftResult<DataArray<I>>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: daft_arrow::types::Index,
-    {
+    pub fn argsort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<UInt64Array> {
         todo!("impl argsort for FixedSizeBinaryArray")
     }
-    pub fn argsort_multikey<I>(
+    pub fn argsort_multikey(
         &self,
         _others: &[Series],
         _descending: &[bool],
         _nulls_first: &[bool],
-    ) -> DaftResult<DataArray<I>>
-    where
-        I: DaftIntegerType,
-        <I as DaftNumericType>::Native: daft_arrow::types::Index,
-    {
+    ) -> DaftResult<UInt64Array> {
         todo!("impl argsort_multikey for FixedSizeBinaryArray")
     }
     pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {

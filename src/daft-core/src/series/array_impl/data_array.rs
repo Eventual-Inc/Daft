@@ -12,7 +12,6 @@ use crate::{
     datatypes::{DaftArrowBackedType, DataType, FixedSizeBinaryArray, IntervalArray},
     lit::Literal,
     series::series_like::SeriesLike,
-    with_match_integer_daft_types,
 };
 
 impl<T: DaftArrowBackedType> IntoSeries for DataArray<T>
@@ -115,13 +114,8 @@ macro_rules! impl_series_like_for_data_array {
                 self.0.str_value(idx)
             }
 
-            fn take(&self, idx: &Series) -> DaftResult<Series> {
-                with_match_integer_daft_types!(idx.data_type(), |$S| {
-                    Ok(self
-                        .0
-                        .take(idx.downcast::<<$S as DaftDataType>::ArrayType>()?)?
-                        .into_series())
-                })
+            fn take(&self, idx: &UInt64Array) -> DaftResult<Series> {
+                Ok(self.0.take(idx)?.into_series())
             }
 
             fn min(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {

@@ -1,10 +1,13 @@
-use std::{fmt::Display, num::NonZeroUsize, sync::Arc};
+use std::{collections::HashMap, fmt::Display, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::MetricsCollector;
 use daft_core::{prelude::*, series::Series};
 use itertools::Itertools;
-use opentelemetry::logs::{AnyValue, LogRecord, Logger, LoggerProvider};
+use opentelemetry::{
+    Key,
+    logs::{AnyValue, LogRecord, Logger, LoggerProvider},
+};
 #[cfg(feature = "python")]
 use pyo3::{PyErr, Python, prelude::*};
 use serde::{Deserialize, Serialize};
@@ -202,6 +205,33 @@ impl RowWisePyFn {
         }
     }
 
+    /// Serializes a Python object to a string for logging purposes.
+    ///
+    /// Rules:
+    /// - Fixed-size types (ints, floats, bools) → string representation
+    /// - Strings → whole string value
+    /// - Complex/arbitrary-size types (lists, dicts, numpy arrays, etc.) → placeholder string
+    #[cfg(feature = "python")]
+    fn serialize_pyobject_for_logging(obj: &pyo3::Bound<PyAny>) -> String {
+        // Use Python's str() to stringify the object
+        let str_result = obj
+            .str()
+            .and_then(|value| value.to_str().map(|s| s.to_string()));
+
+        match str_result {
+            Ok(val) => {
+                // Limit string parameters to first 100 characters
+                if val.len() > 100 {
+                    let truncated: String = val.chars().take(100).collect();
+                    format!("{}...", truncated)
+                } else {
+                    val
+                }
+            }
+            Err(_) => "<unable_to_stringify>".to_string(),
+        }
+    }
+
     #[cfg(feature = "python")]
     pub(crate) fn capture_exception_details<R: LogRecord>(
         py: Python,
@@ -279,41 +309,13 @@ impl RowWisePyFn {
         let on_error = self.on_error;
         let max_retries = self.max_retries.unwrap_or(0);
 
-        fn handle_retry_result(
-            py: Python,
-            result: DaftResult<Literal>,
-            on_error: OnError,
-        ) -> DaftResult<Literal> {
-            match result {
-                Ok(literal) => Ok(literal),
-                Err(e) => match on_error {
-                    OnError::Raise => Err(e),
-                    OnError::Log => {
-                        let lg = common_tracing::GLOBAL_LOGGER_PROVIDER.lock().unwrap();
-                        if let Some(logger_provider) = lg.as_ref() {
-                            let logger = logger_provider.logger("python-udf-error");
-                            let mut log_record = logger.create_log_record();
-
-                            if let DaftError::PyO3Error(py_err) = &e {
-                                RowWisePyFn::capture_exception_details(py, py_err, &mut log_record);
-                            } else {
-                                log_record.set_body(format!("{e}").into());
-                            }
-
-                            logger.emit(log_record);
-                        }
-
-                        log::warn!("Python UDF error: {}", e);
-                        Ok(Literal::Null)
-                    }
-                    OnError::Ignore => Ok(Literal::Null),
-                },
-            }
-        }
         let s = Python::attach(|py| {
             let func = py
                 .import(pyo3::intern!(py, "daft.udf.execution"))?
                 .getattr(pyo3::intern!(py, "call_func"))?;
+
+            // Collect argument names (same for all rows)
+            let arg_names: Vec<String> = args.iter().map(|s| s.name().to_string()).collect();
 
             // pre-allocating py_args vector so we're not creating a new vector for each iteration
             let mut py_args = Vec::with_capacity(args.len());
@@ -345,9 +347,67 @@ impl RowWisePyFn {
                     crate::python_udf::collect_operator_metrics(operator_metrics, metrics);
                 }
 
-                let res = handle_retry_result(py, retry_result.map(|(lit, _)| lit), on_error);
+                // Handle on_error logic outside of retry
+                let final_res = match retry_result.map(|(lit, _)| lit) {
+                    Ok(result) => Ok(result),
+                    Err(e) => match on_error {
+                        OnError::Raise => Err(e),
+                        OnError::Log => {
+                            let lg = common_tracing::GLOBAL_LOGGER_PROVIDER.lock().unwrap();
+                            if let Some(logger_provider) = lg.as_ref() {
+                                let logger = logger_provider.logger("python-udf-error");
+                                let mut log_record = logger.create_log_record();
+
+                                if let DaftError::PyO3Error(py_err) = &e {
+                                    Self::capture_exception_details(py, py_err, &mut log_record);
+                                } else {
+                                    log_record.set_body(format!("{e}").into());
+                                }
+
+                                // Add UDF argument names and values to the log record as a Map
+                                // Limit to first 20 args to avoid bloating logs
+                                let mut udf_args_map: HashMap<Key, AnyValue> = HashMap::new();
+                                let total_args = arg_names.len().min(py_args.len());
+                                for (arg_name, py_arg) in
+                                    arg_names.iter().zip(py_args.iter()).take(20)
+                                {
+                                    let serialized_value =
+                                        Self::serialize_pyobject_for_logging(py_arg);
+                                    udf_args_map.insert(
+                                        Key::new(arg_name.clone()),
+                                        AnyValue::String(serialized_value.into()),
+                                    );
+                                }
+                                // Indicate if additional arguments were truncated
+                                if total_args > 20 {
+                                    udf_args_map.insert(
+                                        Key::new("<TRUNCATED_ARGS>".to_string()),
+                                        AnyValue::String(
+                                            format!(
+                                                "{} additional arguments truncated",
+                                                total_args - 20
+                                            )
+                                            .into(),
+                                        ),
+                                    );
+                                }
+                                log_record.add_attribute(
+                                    "udf_args",
+                                    AnyValue::Map(Box::new(udf_args_map)),
+                                );
+
+                                logger.emit(log_record);
+                            }
+
+                            log::warn!("Python UDF error: {}", e);
+                            Ok(Literal::Null)
+                        }
+                        OnError::Ignore => Ok(Literal::Null),
+                    },
+                };
+
                 py_args.clear();
-                res
+                final_res
             });
             series_from_literals_iter(iter, Some(self.return_dtype.clone()))
         })?

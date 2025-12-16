@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::iter;
 
 use common_error::{DaftError, DaftResult, ensure};
@@ -152,7 +153,7 @@ where
                     (Some(length_repeat), None)
                 }
                 _ => {
-                    let length_iter = length.as_arrow().iter().map(|l| match l {
+                    let length_iter = length.as_arrow2().iter().map(|l| match l {
                         Some(l) => {
                             let l: usize = NumCast::from(*l).ok_or_else(|| {
                                 DaftError::ComputeError(format!(
@@ -187,7 +188,7 @@ where
             (Some(start_repeat), None)
         }
         _ => {
-            let start_iter = start.as_arrow().iter().map(|s| match s {
+            let start_iter = start.as_arrow2().iter().map(|s| match s {
                 Some(s) => {
                     let s: usize = NumCast::from(*s).ok_or_else(|| {
                         DaftError::ComputeError(format!(

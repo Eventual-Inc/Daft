@@ -38,8 +38,8 @@ where
         seed: Option<&UInt64Array>,
         hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
-        let as_arrowed = self.as_arrow();
-        let seed = seed.map(|v| v.as_arrow());
+        let as_arrowed = self.as_arrow2();
+        let seed = seed.map(|v| v.as_arrow2());
         let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
         Ok(DataArray::from((self.name(), Box::new(result))))
     }
@@ -54,8 +54,8 @@ impl Utf8Array {
         seed: Option<&UInt64Array>,
         hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
-        let as_arrowed = self.as_arrow();
-        let seed = seed.map(|v| v.as_arrow());
+        let as_arrowed = self.as_arrow2();
+        let seed = seed.map(|v| v.as_arrow2());
         let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
         Ok(DataArray::from((self.name(), Box::new(result))))
     }
@@ -70,8 +70,8 @@ impl BinaryArray {
         seed: Option<&UInt64Array>,
         hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
-        let as_arrowed = self.as_arrow();
-        let seed = seed.map(|v| v.as_arrow());
+        let as_arrowed = self.as_arrow2();
+        let seed = seed.map(|v| v.as_arrow2());
         let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
         Ok(DataArray::from((self.name(), Box::new(result))))
     }
@@ -86,8 +86,8 @@ impl FixedSizeBinaryArray {
         seed: Option<&UInt64Array>,
         hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
-        let as_arrowed = self.as_arrow();
-        let seed = seed.map(|v| v.as_arrow());
+        let as_arrowed = self.as_arrow2();
+        let seed = seed.map(|v| v.as_arrow2());
         let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
         Ok(DataArray::from((self.name(), Box::new(result))))
     }
@@ -102,8 +102,8 @@ impl BooleanArray {
         seed: Option<&UInt64Array>,
         hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
-        let as_arrowed = self.as_arrow();
-        let seed = seed.map(|v| v.as_arrow());
+        let as_arrowed = self.as_arrow2();
+        let seed = seed.map(|v| v.as_arrow2());
         let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
         Ok(DataArray::from((self.name(), Box::new(result))))
     }
@@ -119,7 +119,7 @@ impl NullArray {
         hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
         let as_arrowed = self.data();
-        let seed = seed.map(|v| v.as_arrow());
+        let seed = seed.map(|v| v.as_arrow2());
         let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
         Ok(DataArray::from((self.name(), Box::new(result))))
     }
@@ -157,7 +157,7 @@ fn hash_list(
                     .hash_with(Some(&flat_seed), hash_function)
                     .ok()?;
                 let child_bytes: Vec<u8> = hashed_child
-                    .as_arrow()
+                    .as_arrow2()
                     .values_iter()
                     .flat_map(|v| v.to_le_bytes())
                     .collect();
@@ -198,7 +198,7 @@ fn hash_list(
     } else {
         let hashed_child = flat_child.hash_with(None, hash_function)?;
         let child_bytes: Vec<u8> = hashed_child
-            .as_arrow()
+            .as_arrow2()
             .values_iter()
             .flat_map(|v| v.to_le_bytes())
             .collect();
@@ -309,7 +309,7 @@ macro_rules! impl_int_murmur3_32 {
     ($ArrayT:ty) => {
         impl $ArrayT {
             pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
-                let as_arrowed = self.as_arrow();
+                let as_arrowed = self.as_arrow2();
                 let has_nulls = as_arrowed
                     .validity()
                     .map(|v| v.unset_bits() > 0)
@@ -344,7 +344,7 @@ impl_int_murmur3_32!(UInt64Array);
 
 impl Utf8Array {
     pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
-        let as_arrowed = self.as_arrow();
+        let as_arrowed = self.as_arrow2();
         let has_nulls = as_arrowed
             .validity()
             .map(|v| v.unset_bits() > 0)
@@ -365,7 +365,7 @@ impl Utf8Array {
 
 impl BinaryArray {
     pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
-        let as_arrowed = self.as_arrow();
+        let as_arrowed = self.as_arrow2();
         let has_nulls = as_arrowed
             .validity()
             .map(|v| v.unset_bits() > 0)
@@ -380,7 +380,7 @@ impl BinaryArray {
 
 impl FixedSizeBinaryArray {
     pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
-        let as_arrowed = self.as_arrow();
+        let as_arrowed = self.as_arrow2();
         let has_nulls = as_arrowed
             .validity()
             .map(|v| v.unset_bits() > 0)

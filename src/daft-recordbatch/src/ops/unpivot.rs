@@ -31,8 +31,7 @@ impl RecordBatch {
                 .cycle()
                 .take(unpivoted_len)
                 .collect::<Vec<_>>(),
-        ))
-        .into_series();
+        ));
 
         let ids_series = ids_table.take(&ids_idx)?.columns;
         let ids_schema = ids_table.schema;

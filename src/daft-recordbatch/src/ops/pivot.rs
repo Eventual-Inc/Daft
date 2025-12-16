@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use common_error::{DaftError, DaftResult};
 use daft_core::{array::ops::IntoGroups, prelude::*};
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -10,13 +11,13 @@ fn map_name_to_pivot_key_idx<'a>(
     names: &'a [String],
 ) -> DaftResult<std::collections::HashMap<&'a String, u64>> {
     let pivot_keys_series = {
-        let indices_as_series = UInt64Array::from(("", pivot_key_indices.to_owned())).into_series();
-        pivot_series.take(&indices_as_series)?
+        let indices_as_arr = UInt64Array::from(("", pivot_key_indices.to_owned()));
+        pivot_series.take(&indices_as_arr)?
     };
     let pivot_keys_str_values = pivot_keys_series.to_str_values()?;
     let pivot_key_str_to_idx_mapping = pivot_keys_str_values
         .utf8()?
-        .as_arrow()
+        .as_arrow2()
         .iter()
         .zip(pivot_key_indices.iter())
         .map(|(key_str, idx)| (key_str.unwrap(), *idx))
@@ -106,9 +107,8 @@ impl RecordBatch {
                     let indices = pivot_key_idx_to_values_indices.get(pivot_key_idx).unwrap();
                     let indices_as_arrow =
                         daft_arrow::array::UInt64Array::from_iter(indices.iter());
-                    let indices_as_series =
-                        UInt64Array::from(("", Box::new(indices_as_arrow))).into_series();
-                    let values = value_series.take(&indices_as_series)?;
+                    let indices_as_arr = UInt64Array::from(("", Box::new(indices_as_arrow)));
+                    let values = value_series.take(&indices_as_arr)?;
                     Ok(values.rename(name))
                 }
                 None => Ok(Series::full_null(
@@ -120,8 +120,8 @@ impl RecordBatch {
             .collect::<DaftResult<Vec<_>>>()?;
 
         let group_keys_table = {
-            let indices_as_series = UInt64Array::from(("", group_keys_indices)).into_series();
-            groupby_table.take(&indices_as_series)?
+            let indices_as_arr = UInt64Array::from(("", group_keys_indices));
+            groupby_table.take(&indices_as_arr)?
         };
 
         Self::from_nonempty_columns([&group_keys_table.columns[..], &pivoted_cols[..]].concat())
