@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import subprocess
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 import daft
 from daft.datatype import DataType, DataTypeLike
 from daft.expressions import Expression
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable
 
 
 def _convert_stdout(stdout: str | None, return_dtype: DataTypeLike) -> Any:
@@ -34,10 +31,6 @@ def _convert_stdout(stdout: str | None, return_dtype: DataTypeLike) -> Any:
         return None
 
     return stdout
-
-
-def _build_tokens(argv: Iterable[Any]) -> list[str]:
-    return [str(a) for a in argv]
 
 
 def run_process(
@@ -85,7 +78,7 @@ def run_process(
         else:
             if len(argv) == 0:
                 raise ValueError("shell=False requires at least one argv token")
-            tokens = _build_tokens(argv)
+            tokens = [str(a) for a in argv]
             proc = subprocess.run(tokens, shell=False, stdout=subprocess.PIPE, text=True, check=True)
         stdout = proc.stdout.rstrip("\n") if proc.stdout is not None else None
         return _convert_stdout(stdout, return_dtype)
