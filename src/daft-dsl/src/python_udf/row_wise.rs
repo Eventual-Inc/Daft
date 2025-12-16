@@ -460,6 +460,8 @@ impl RowWisePyFn {
                                         "provenance",
                                         AnyValue::String(lit.to_string().into()),
                                     );
+                                } else {
+                                    log_record.add_attribute("provenance", "not_found");
                                 }
 
                                 logger.emit(log_record);
