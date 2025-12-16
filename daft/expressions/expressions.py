@@ -2203,7 +2203,7 @@ class Expression:
     def decode_image(
         self,
         on_error: Literal["raise", "null"] = "raise",
-        mode: builtins.str | ImageMode = ImageMode.RGB,
+        mode: builtins.str | ImageMode | None = ImageMode.RGB,
     ) -> Expression:
         """Decodes the binary data in this column into images.
 
