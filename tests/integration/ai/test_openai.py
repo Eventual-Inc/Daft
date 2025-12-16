@@ -422,7 +422,10 @@ def test_prompt_with_image_structured_output(session, use_chat_completions, metr
     import numpy as np
 
     class ImageAnalysis(BaseModel):
-        dominant_color: str = Field(..., description="The dominant color in the image in hex format")
+        # Pattern constrains OpenAI to return a valid hex color with # prefix
+        dominant_color: str = Field(
+            ..., description="The dominant color in the image in hex format", pattern=r"^#[0-9a-fA-F]{6}$"
+        )
         description: str = Field(..., description="Brief description of the image")
 
     # Create a simple test image (a blue square)
