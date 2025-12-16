@@ -4,7 +4,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormatConfig, JsonSourceConfig};
 use daft_compression::CompressionCodec;
-use daft_io::{GetRange, SourceType, parse_url};
+use daft_io::{GetRange, SourceType, parse_url, strip_file_uri_to_path};
 use url::Url;
 use urlencoding::decode;
 
@@ -174,17 +174,19 @@ fn local_path_from_uri(path: &str) -> Option<PathBuf> {
     if let Ok((SourceType::File, resolved)) = parse_url(path) {
         let owned = resolved.into_owned();
 
-        if let Ok(url) = Url::parse(&owned)
+        // Strip query params and fragments before processing
+        let clean_path = strip_url_params(&owned);
+
+        if let Ok(url) = Url::parse(clean_path)
             && let Ok(path_buf) = url.to_file_path()
         {
             return Some(path_buf);
         }
 
-        if let Some(stripped) = owned.strip_prefix("file://") {
-            return Some(PathBuf::from(decode_path_component(stripped)));
-        }
-
-        return Some(PathBuf::from(decode_path_component(&owned)));
+        // Fallback for when Url::to_file_path() fails
+        // parse_url always returns file paths with "file://" prefix, so this should always succeed
+        let stripped = strip_file_uri_to_path(clean_path)?;
+        return Some(PathBuf::from(decode_path_component(stripped)));
     }
 
     if !path.contains("://") {

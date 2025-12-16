@@ -30,6 +30,8 @@ use crate::{
 /// as long as there is no "mix" of "\" and "/".
 const PATH_SEGMENT_DELIMITER: &str = "/";
 
+use crate::strip_file_uri_to_path;
+
 pub struct LocalSource {}
 
 #[derive(Debug, Snafu)]
@@ -150,8 +152,7 @@ impl ObjectSource for LocalSource {
         range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
-        const LOCAL_PROTOCOL: &str = "file://";
-        if let Some(file) = uri.strip_prefix(LOCAL_PROTOCOL) {
+        if let Some(file) = strip_file_uri_to_path(uri) {
             let size = self.get_size(uri, io_stats).await?;
             let range = range
                 .map(|r| r.as_range(size))
@@ -172,8 +173,7 @@ impl ObjectSource for LocalSource {
         data: bytes::Bytes,
         _io_stats: Option<IOStatsRef>,
     ) -> super::Result<()> {
-        const LOCAL_PROTOCOL: &str = "file://";
-        if let Some(stripped_uri) = uri.strip_prefix(LOCAL_PROTOCOL) {
+        if let Some(stripped_uri) = strip_file_uri_to_path(uri) {
             let mut file = std::fs::OpenOptions::new()
                 .create(true)
                 .truncate(true) // truncate file if it already exists...
@@ -189,8 +189,7 @@ impl ObjectSource for LocalSource {
     }
 
     async fn get_size(&self, uri: &str, _io_stats: Option<IOStatsRef>) -> super::Result<usize> {
-        const LOCAL_PROTOCOL: &str = "file://";
-        let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) else {
+        let Some(uri) = strip_file_uri_to_path(uri) else {
             return Err(Error::InvalidFilePath { path: uri.into() }.into());
         };
         let meta = tokio::fs::metadata(uri)
@@ -277,7 +276,7 @@ impl ObjectSource for LocalSource {
                     .to_string_lossy()
                     .to_string(),
             )
-        } else if let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) {
+        } else if let Some(uri) = strip_file_uri_to_path(uri) {
             std::borrow::Cow::Borrowed(uri)
         } else {
             return Err(Error::InvalidFilePath { path: uri.into() }.into());
