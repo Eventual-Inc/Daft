@@ -330,7 +330,7 @@ def test_image_decode_pil(mode, file_format):
     img_bytes = img_bytes.getvalue()
     arrow_arr = pa.array([img_bytes, img_bytes, img_bytes], type=pa.binary())
     s = Series.from_arrow(arrow_arr)
-    t = s.image.decode()
+    t = s.image.decode(mode=None)
     # TODO(Clark): Infer type-leve mode if all images are the same mode.
     assert t.datatype() == DataType.image()
     out = t.cast(DataType.python()).to_pylist()
@@ -419,7 +419,7 @@ def test_image_encode_decode_pil_roundtrip(fixed_shape, mode, file_format):
         imgs_bytes.append(img_bytes)
     arrow_arr = pa.array(imgs_bytes, type=pa.binary())
     s = Series.from_arrow(arrow_arr)
-    t = s.image.decode()
+    t = s.image.decode(mode=None)
     # TODO(Clark): Infer type-leve mode if all images are the same mode.
     assert t.datatype() == DataType.image()
 
@@ -525,7 +525,7 @@ def test_image_decode_opencv(mode, file_format):
     img_bytes = encoded_arr.tobytes()
     arrow_arr = pa.array([img_bytes, img_bytes, img_bytes], type=pa.binary())
     s = Series.from_arrow(arrow_arr)
-    t = s.image.decode()
+    t = s.image.decode(mode=None)
     # TODO(Clark): Support constructing an Image type with an unknown mode by known dtype.
     if np_dtype == np.uint8:
         # TODO(Clark): Infer type-leve mode if all images are the same mode.
@@ -624,7 +624,7 @@ def test_image_encode_decode_opencv_roundtrip(mode, file_format):
     arrow_arr = pa.array([img_bytes, img_bytes, img_bytes], type=pa.binary())
 
     s = Series.from_arrow(arrow_arr)
-    t = s.image.decode()
+    t = s.image.decode(mode=None)
     # TODO(Clark): Support constructing an Image type with an unknown mode by known dtype.
     if np_dtype == np.uint8:
         # TODO(Clark): Infer type-leve mode if all images are the same mode.
