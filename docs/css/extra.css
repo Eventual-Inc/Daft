@@ -238,8 +238,9 @@ code.doc-symbol-method::after {
 }
 
 .copy-page-btn.copied {
-    color: var(--daft-magenta);
-    border-color: var(--daft-magenta);
+    color: var(--md-default-fg-color--light);
+    border-color: var(--md-default-fg-color--light);
+    background-color: var(--md-default-fg-color--lightest);
 }
 
 .copy-page-btn svg {

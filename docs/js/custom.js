@@ -74,11 +74,12 @@ document.querySelectorAll(".highlight button").forEach((btn) => {
 
 // Copy page as markdown functionality (button is injected at build time)
 window.copyPageMarkdown = async function(btn) {
-  const sourceEl = document.getElementById("page-markdown-source");
-  if (!sourceEl) return;
+  const encodedMd = btn.getAttribute("data-md");
+  if (!encodedMd) return;
 
   try {
-    const markdown = JSON.parse(sourceEl.textContent);
+    // Decode base64 markdown
+    const markdown = atob(encodedMd);
     await navigator.clipboard.writeText(markdown);
 
     // Success feedback
