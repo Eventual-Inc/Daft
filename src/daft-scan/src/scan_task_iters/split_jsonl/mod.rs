@@ -187,16 +187,11 @@ fn local_path_from_uri(path: &str) -> Option<PathBuf> {
 
         // Fallback for when Url::to_file_path() fails
         if let Some(stripped) = clean_path.strip_prefix("file://") {
-            // On Windows, "file:///C:/path" becomes "/C:/path" after stripping "file://".
-            // We need to remove the leading "/" to get a valid Windows path "C:/path".
-            // Only strip if followed by a drive letter (e.g., "/C:" -> "C:").
             #[cfg(windows)]
             let stripped = strip_leading_slash_before_drive(stripped);
             return Some(PathBuf::from(decode_path_component(stripped)));
         }
 
-        // Fallback: parse_url may return a path like "/C:/Users/..." on Windows
-        // which needs the leading "/" stripped to be a valid Windows path.
         #[cfg(windows)]
         let clean_path = strip_leading_slash_before_drive(clean_path);
         return Some(PathBuf::from(decode_path_component(clean_path)));
