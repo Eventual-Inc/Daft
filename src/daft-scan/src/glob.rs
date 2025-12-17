@@ -78,9 +78,7 @@ impl From<Error> for DaftError {
     }
 }
 
-fn is_interrupt_like_error(err: &DaftError) -> bool {
-    matches!(err, DaftError::ByteStreamError(_))
-}
+type ParquetInferResult = (Schema, Option<(String, TableMetadata)>, String);
 
 // Optimization for when the glob scan operator is given a manifest of file paths. In this case, we can avoid the overhead of globbing
 // and just return the file metadata for each file path.
@@ -135,30 +133,7 @@ fn run_glob_parallel(
             let stream = io_client
                 .glob(glob_input, None, None, None, io_stats, Some(file_format))
                 .await?;
-
-            let mut results = Vec::new();
-            let mut first_interrupt_error: Option<DaftError> = None;
-
-            futures::pin_mut!(stream);
-            while let Some(item) = stream.next().await {
-                let res: DaftResult<FileMetadata> = item.map_err(|e| e.into());
-                match res {
-                    Ok(metadata) => results.push(Ok(metadata)),
-                    Err(e) if is_interrupt_like_error(&e) => {
-                        if first_interrupt_error.is_none() {
-                            first_interrupt_error = Some(e);
-                        }
-                    }
-                    Err(e) => return Err(e),
-                }
-            }
-
-            if results.is_empty()
-                && let Some(e) = first_interrupt_error
-            {
-                return Err(e);
-            }
-
+            let results = stream.map_err(|e| e.into()).collect::<Vec<_>>().await;
             DaftResult::Ok(futures::stream::iter(results))
         })
     }))
@@ -175,215 +150,8 @@ fn run_glob_parallel(
     Ok(iterator)
 }
 
+#[allow(clippy::too_many_arguments)]
 impl GlobScanOperator {
-    async fn infer_first_file_for_schema(
-        first_glob_path: &str,
-        io_client: Arc<IOClient>,
-        io_stats: IOStatsRef,
-        file_format: FileFormat,
-    ) -> DaftResult<FileMetadata> {
-        let mut paths = run_glob(
-            first_glob_path.to_string(),
-            Some(1),
-            io_client,
-            Some(io_stats),
-            file_format,
-        )
-        .await?;
-
-        match paths.next().await {
-            Some(file_metadata) => file_metadata,
-            None => Err(Error::GlobNoMatch {
-                glob_path: first_glob_path.to_string(),
-            }
-            .into()),
-        }
-    }
-
-    async fn infer_schema_from_first_file(
-        file_format_config: &FileFormatConfig,
-        first_glob_path: &str,
-        first_filepath: String,
-        io_client: Arc<IOClient>,
-        io_stats: IOStatsRef,
-        file_format: FileFormat,
-    ) -> DaftResult<(Schema, Option<(String, TableMetadata)>, String)> {
-        match file_format_config {
-            FileFormatConfig::Parquet(ParquetSourceConfig {
-                coerce_int96_timestamp_unit,
-                field_id_mapping,
-                ignore_corrupt_files,
-                ..
-            }) => {
-                let mut last_error: Option<DaftError> = None;
-
-                let mut candidate_paths = Vec::new();
-                candidate_paths.push(first_filepath.clone());
-
-                if *ignore_corrupt_files {
-                    let mut stream = run_glob(
-                        first_glob_path.to_string(),
-                        None,
-                        io_client.clone(),
-                        Some(io_stats.clone()),
-                        file_format,
-                    )
-                    .await?;
-
-                    while let Some(fm) = stream.next().await {
-                        let FileMetadata { filepath, .. } = fm?;
-                        if filepath != first_filepath {
-                            candidate_paths.push(filepath);
-                        }
-                    }
-                }
-
-                for path in candidate_paths {
-                    let io_stats = IOStatsContext::new(format!(
-                        "GlobScanOperator constructor read_parquet_schema: for uri {path}"
-                    ));
-                    match daft_parquet::read::read_parquet_schema_and_metadata(
-                        path.as_str(),
-                        io_client.clone(),
-                        Some(io_stats),
-                        ParquetSchemaInferenceOptions {
-                            coerce_int96_timestamp_unit: *coerce_int96_timestamp_unit,
-                            ..Default::default()
-                        },
-                        field_id_mapping.clone(),
-                    )
-                    .await
-                    {
-                        Ok((schema, metadata)) => {
-                            let first_metadata = Some((
-                                path.clone(),
-                                TableMetadata {
-                                    length: metadata.num_rows,
-                                },
-                            ));
-                            return Ok((schema, first_metadata, path));
-                        }
-                        Err(e) => {
-                            if !*ignore_corrupt_files {
-                                return Err(e);
-                            }
-                            log::warn!(
-                                "Skipping unreadable/corrupt parquet file {} during schema inference: {}",
-                                path,
-                                e
-                            );
-                            last_error = Some(e);
-                        }
-                    }
-                }
-
-                Err(last_error.unwrap_or_else(|| {
-                    DaftError::ValueError(
-                        "No readable parquet files found for schema inference".to_string(),
-                    )
-                }))
-            }
-            FileFormatConfig::Csv(CsvSourceConfig {
-                delimiter,
-                has_headers,
-                double_quote,
-                quote,
-                escape_char,
-                comment,
-                allow_variable_columns,
-                ..
-            }) => {
-                let (schema, _) = daft_csv::metadata::read_csv_schema(
-                    first_filepath.as_str(),
-                    Some(CsvParseOptions::new_with_defaults(
-                        *has_headers,
-                        *delimiter,
-                        *double_quote,
-                        *quote,
-                        *allow_variable_columns,
-                        *escape_char,
-                        *comment,
-                    )?),
-                    None,
-                    io_client,
-                    Some(io_stats),
-                )
-                .await?;
-                Ok((schema, None, first_filepath))
-            }
-            FileFormatConfig::Json(json_config) => {
-                let parse_options =
-                    daft_json::JsonParseOptions::new_internal(json_config.skip_empty_files);
-
-                let first_schema = daft_json::schema::read_json_schema(
-                    first_filepath.as_str(),
-                    Some(parse_options.clone()),
-                    None,
-                    io_client.clone(),
-                    Some(io_stats.clone()),
-                )
-                .await?;
-
-                if json_config.skip_empty_files && first_schema.fields().is_empty() {
-                    let mut stream = run_glob(
-                        first_glob_path.to_string(),
-                        None,
-                        io_client.clone(),
-                        Some(io_stats.clone()),
-                        file_format,
-                    )
-                    .await?;
-                    let mut chosen_schema = None;
-                    let mut chosen_path = None;
-                    while let Some(fm) = stream.next().await {
-                        let FileMetadata { filepath, .. } = fm?;
-                        let schema = daft_json::schema::read_json_schema(
-                            filepath.as_str(),
-                            Some(parse_options.clone()),
-                            None,
-                            io_client.clone(),
-                            Some(io_stats.clone()),
-                        )
-                        .await?;
-                        if !schema.fields().is_empty() {
-                            chosen_schema = Some(schema);
-                            chosen_path = Some(filepath);
-                            break;
-                        }
-                    }
-                    let chosen_path = match chosen_path {
-                        Some(p) => p,
-                        None => {
-                            return Err(Error::GlobNoMatch {
-                                glob_path: first_glob_path.to_string(),
-                            }
-                            .into());
-                        }
-                    };
-                    Ok((
-                        chosen_schema.expect("schema must be set when chosen_path is Some"),
-                        None,
-                        chosen_path,
-                    ))
-                } else {
-                    Ok((first_schema, None, first_filepath))
-                }
-            }
-            FileFormatConfig::Warc(_) => Err(DaftError::ValueError(
-                "Warc schemas do not need to be inferred".to_string(),
-            )),
-            #[cfg(feature = "python")]
-            FileFormatConfig::Database(_) => Err(DaftError::ValueError(
-                "Cannot glob a database source".to_string(),
-            )),
-            #[cfg(feature = "python")]
-            FileFormatConfig::PythonFunction { .. } => Err(DaftError::ValueError(
-                "Cannot glob a PythonFunction source".to_string(),
-            )),
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
     pub async fn try_new(
         glob_paths: Vec<String>,
         file_format_config: Arc<FileFormatConfig>,
@@ -409,27 +177,227 @@ impl GlobScanOperator {
         ));
 
         let (schema, first_metadata, first_filepath) = if infer_schema {
-            let FileMetadata {
-                filepath: first_filepath,
-                ..
-            } = Self::infer_first_file_for_schema(
-                first_glob_path,
+            // First, get a candidate file via limited glob
+            let mut paths = run_glob(
+                first_glob_path.clone(),
+                Some(1),
                 io_client.clone(),
-                io_stats.clone(),
+                Some(io_stats.clone()),
                 file_format,
             )
             .await?;
 
-            let (inferred_schema, first_metadata, first_filepath) =
-                Self::infer_schema_from_first_file(
-                    &file_format_config,
-                    first_glob_path,
-                    first_filepath,
-                    io_client.clone(),
-                    io_stats.clone(),
-                    file_format,
-                )
-                .await?;
+            let FileMetadata {
+                filepath: first_filepath,
+                ..
+            } = match paths.next().await {
+                Some(file_metadata) => file_metadata,
+                None => Err(Error::GlobNoMatch {
+                    glob_path: first_glob_path.clone(),
+                }
+                .into()),
+            }?;
+
+            // Infer schema from the candidate file. For Parquet, honor ignore_corrupt_files by
+            // trying additional files in the glob if needed.
+            let (inferred_schema, first_metadata, first_filepath) = match file_format_config
+                .as_ref()
+            {
+                &FileFormatConfig::Parquet(ParquetSourceConfig {
+                    coerce_int96_timestamp_unit,
+                    ref field_id_mapping,
+                    ignore_corrupt_files,
+                    ..
+                }) => {
+                    let mut last_error: Option<DaftError> = None;
+
+                    let mut candidate_paths = Vec::new();
+                    candidate_paths.push(first_filepath.clone());
+
+                    if ignore_corrupt_files {
+                        let mut stream = run_glob(
+                            first_glob_path.clone(),
+                            None,
+                            io_client.clone(),
+                            Some(io_stats.clone()),
+                            file_format,
+                        )
+                        .await?;
+
+                        while let Some(fm) = stream.next().await {
+                            let FileMetadata { filepath, .. } = fm?;
+                            if filepath != first_filepath {
+                                candidate_paths.push(filepath);
+                            }
+                        }
+                    }
+
+                    let mut chosen: Option<ParquetInferResult> = None;
+
+                    for path in candidate_paths {
+                        let io_stats = IOStatsContext::new(format!(
+                            "GlobScanOperator constructor read_parquet_schema: for uri {path}"
+                        ));
+                        match daft_parquet::read::read_parquet_schema_and_metadata(
+                            path.as_str(),
+                            io_client.clone(),
+                            Some(io_stats),
+                            ParquetSchemaInferenceOptions {
+                                coerce_int96_timestamp_unit,
+                                ..Default::default()
+                            },
+                            field_id_mapping.clone(),
+                        )
+                        .await
+                        {
+                            Ok((schema, metadata)) => {
+                                let meta = Some((
+                                    path.clone(),
+                                    TableMetadata {
+                                        length: metadata.num_rows,
+                                    },
+                                ));
+                                chosen = Some((schema, meta, path));
+                                break;
+                            }
+                            Err(e) => {
+                                if !ignore_corrupt_files {
+                                    return Err(e);
+                                }
+                                log::warn!(
+                                    "Skipping unreadable/corrupt parquet file {} during schema inference: {}",
+                                    path,
+                                    e
+                                );
+                                last_error = Some(e);
+                            }
+                        }
+                    }
+
+                    match chosen {
+                        Some(triple) => triple,
+                        None => {
+                            return Err(last_error.unwrap_or_else(|| {
+                                DaftError::ValueError(
+                                    "No readable parquet files found for schema inference"
+                                        .to_string(),
+                                )
+                            }));
+                        }
+                    }
+                }
+                FileFormatConfig::Csv(CsvSourceConfig {
+                    delimiter,
+                    has_headers,
+                    double_quote,
+                    quote,
+                    escape_char,
+                    comment,
+                    allow_variable_columns,
+                    ..
+                }) => {
+                    let (schema, _) = daft_csv::metadata::read_csv_schema(
+                        first_filepath.as_str(),
+                        Some(CsvParseOptions::new_with_defaults(
+                            *has_headers,
+                            *delimiter,
+                            *double_quote,
+                            *quote,
+                            *allow_variable_columns,
+                            *escape_char,
+                            *comment,
+                        )?),
+                        None,
+                        io_client.clone(),
+                        Some(io_stats.clone()),
+                    )
+                    .await?;
+                    (schema, None, first_filepath)
+                }
+                FileFormatConfig::Json(json_config) => {
+                    let parse_options =
+                        daft_json::JsonParseOptions::new_internal(json_config.skip_empty_files);
+
+                    // First attempt reading schema from first_filepath.
+                    let first_schema = daft_json::schema::read_json_schema(
+                        first_filepath.as_str(),
+                        Some(parse_options.clone()),
+                        None,
+                        io_client.clone(),
+                        Some(io_stats.clone()),
+                    )
+                    .await?;
+
+                    if json_config.skip_empty_files && first_schema.fields().is_empty() {
+                        // If first file is empty and skipping is enabled, re-run full glob to find first non-empty JSON file.
+                        let mut stream = run_glob(
+                            first_glob_path.clone(),
+                            None,
+                            io_client.clone(),
+                            Some(io_stats.clone()),
+                            file_format,
+                        )
+                        .await?;
+                        let mut chosen_schema = None;
+                        let mut chosen_path = None;
+                        while let Some(fm) = stream.next().await {
+                            let FileMetadata { filepath, .. } = fm?;
+                            let schema = daft_json::schema::read_json_schema(
+                                filepath.as_str(),
+                                Some(parse_options.clone()),
+                                None,
+                                io_client.clone(),
+                                Some(io_stats.clone()),
+                            )
+                            .await?;
+                            if !schema.fields().is_empty() {
+                                chosen_schema = Some(schema);
+                                chosen_path = Some(filepath);
+                                break;
+                            }
+                        }
+                        let chosen_path = match chosen_path {
+                            Some(p) => p,
+                            None => {
+                                // If all matched files are empty, treat as no match.
+                                return Err(Error::GlobNoMatch {
+                                    glob_path: first_glob_path.clone(),
+                                }
+                                .into());
+                            }
+                        };
+                        (
+                            chosen_schema.expect("schema must be set when chosen_path is Some"),
+                            None,
+                            chosen_path,
+                        )
+                    } else {
+                        // Use schema inferred from first file.
+                        (first_schema, None, first_filepath)
+                    }
+                }
+                FileFormatConfig::Warc(_) => {
+                    return Err(DaftError::ValueError(
+                        "Warc schemas do not need to be inferred".to_string(),
+                    ));
+                }
+                #[cfg(feature = "python")]
+                FileFormatConfig::Database(_) => {
+                    return Err(DaftError::ValueError(
+                        "Cannot glob a database source".to_string(),
+                    ));
+                }
+                #[cfg(feature = "python")]
+                FileFormatConfig::PythonFunction {
+                    source_type: _,
+                    module_name: _,
+                    function_name: _,
+                } => {
+                    return Err(DaftError::ValueError(
+                        "Cannot glob a PythonFunction source".to_string(),
+                    ));
+                }
+            };
 
             let schema = match user_provided_schema {
                 Some(ref hint) => Arc::new(inferred_schema.apply_hints(hint)?),
