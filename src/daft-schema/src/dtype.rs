@@ -873,21 +873,12 @@ impl DataType {
             Self::Binary => Some(VARIABLE_TYPE_SIZE),
             Self::FixedSizeBinary(size) => Some(size as f64),
             Self::FixedSizeList(dtype, len) => {
-                const MAX_FIXED_SIZE_LEN: usize = 1_000_000; // 1M elements max
-                if *len > MAX_FIXED_SIZE_LEN {
-                    log::warn!(
-                        "FixedSizeList length {} exceeds maximum {}, capping",
-                        len,
-                        MAX_FIXED_SIZE_LEN
-                    );
-                    return Some(f64::MAX / 2.0);
-                }
+                const REASONABLE_SIZE_BYTES: f64 = 100_000_000.0; // 100MB
 
                 dtype.estimate_size_bytes().map(|b| {
-                    let estimate = b * (*len as f64);
-                    if estimate.is_infinite() || estimate > f64::MAX / 2.0 {
-                        log::warn!("FixedSizeList size estimate overflow, capping");
-                        f64::MAX / 2.0
+                    let estimate = b * (len as f64);
+                    if estimate.is_infinite() || estimate > REASONABLE_SIZE_BYTES {
+                        REASONABLE_SIZE_BYTES
                     } else {
                         estimate
                     }
@@ -1209,19 +1200,24 @@ mod tests {
         assert!(estimate.is_some());
         let estimate = estimate.unwrap();
         assert!(estimate.is_finite());
-        assert!(estimate < f64::MAX / 2.0);
+        const REASONABLE_SIZE_BYTES: f64 = 100_000_000.0;
+        assert!(estimate < REASONABLE_SIZE_BYTES);
     }
 
     #[test]
     fn test_fixedsizelist_estimate_size_bytes_exceeds_max() {
-        // Test with length exceeding MAX_FIXED_SIZE_LEN
-        let dtype = DataType::FixedSizeList(Box::new(DataType::Int64), 2_000_000);
+        // Test with length that would cause estimate to exceed reasonable size (100MB)
+        // Int64 is 8 bytes + 0.125 bitmap = 8.125 per element
+        // To exceed 100MB (100,000,000 bytes): need > 12,307,692 elements
+        // Using 20,000,000 elements: 20,000,000 * 8.125 = 162,500,000 bytes > 100MB
+        let dtype = DataType::FixedSizeList(Box::new(DataType::Int64), 20_000_000);
         let estimate = dtype.estimate_size_bytes();
         assert!(estimate.is_some());
         let estimate = estimate.unwrap();
         assert!(estimate.is_finite());
-        // Should be capped at f64::MAX / 2.0
-        assert_eq!(estimate, f64::MAX / 2.0);
+        // Should be capped at 100MB (reasonable size)
+        const REASONABLE_SIZE_BYTES: f64 = 100_000_000.0;
+        assert_eq!(estimate, REASONABLE_SIZE_BYTES);
     }
 
     #[test]
@@ -1232,7 +1228,8 @@ mod tests {
         assert!(estimate.is_some());
         let estimate = estimate.unwrap();
         assert!(estimate.is_finite());
-        assert!(estimate < f64::MAX / 2.0);
+        const REASONABLE_SIZE_BYTES: f64 = 100_000_000.0;
+        assert!(estimate < REASONABLE_SIZE_BYTES);
     }
 
     #[test]
@@ -1243,7 +1240,8 @@ mod tests {
         assert!(estimate.is_some());
         let estimate = estimate.unwrap();
         assert!(estimate.is_finite());
-        // Should be capped
-        assert_eq!(estimate, f64::MAX / 2.0);
+        // Should be capped at 100MB (reasonable size)
+        const REASONABLE_SIZE_BYTES: f64 = 100_000_000.0;
+        assert_eq!(estimate, REASONABLE_SIZE_BYTES);
     }
 }
