@@ -693,7 +693,7 @@ async fn stream_scan_task(
         }
     };
 
-    // Drop per-file read errors if ignore_bad_files is set
+    // Drop per-file read errors if ignore_corrupt_files is set
     match scan_task.file_format_config.as_ref() {
         FileFormatConfig::Parquet(ParquetSourceConfig {
             ignore_corrupt_files: true,
