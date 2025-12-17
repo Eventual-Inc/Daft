@@ -200,3 +200,57 @@ code.doc-symbol-method::after {
     border-bottom: 1px solid var(--md-default-fg-color--lightest);
     margin-bottom: 0.1rem;
 }
+
+/* Copy page button styles */
+.copy-page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.copy-page-header h1 {
+    margin: 0;
+    flex: 1;
+}
+
+.copy-page-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.28rem 0.55rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--md-default-fg-color--light);
+    background-color: transparent;
+    border: 1px solid var(--md-default-fg-color--lightest);
+    border-radius: 0.25rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.copy-page-btn:hover {
+    color: var(--md-default-fg-color);
+    border-color: var(--md-default-fg-color--light);
+    background-color: var(--md-default-fg-color--lightest);
+}
+
+.copy-page-btn.copied {
+    color: var(--md-default-fg-color--light);
+    border-color: var(--md-default-fg-color--light);
+    background-color: var(--md-default-fg-color--lightest);
+}
+
+.copy-page-btn svg {
+    fill: currentColor;
+}
+
+/* Hide on small screens to avoid layout issues */
+@media (max-width: 480px) {
+    .copy-page-btn {
+        padding: 0.3rem 0.6rem;
+        font-size: 0.7rem;
+    }
+}
