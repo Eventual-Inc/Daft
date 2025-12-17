@@ -31,7 +31,7 @@ When proposing features, please include:
 
 ## Contributing Code
 
-For detailed development instructions, see our [Development Guide](https://docs.daft.ai/en/stable/contributing-to-daft/).
+For detailed development instructions, see our [Development Guide](https://docs.daft.ai/en/stable/contributing/development/).
 
 ## Contributor Community
 
