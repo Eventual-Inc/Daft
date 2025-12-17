@@ -1680,7 +1680,7 @@ dev = [
     { name = "pre-commit", specifier = "==4.4.0" },
     { name = "psycopg2-binary", specifier = "==2.9.11" },
     { name = "py-spy", specifier = "==0.4.1" },
-    { name = "pyarrow", specifier = "==22.0.0" },
+    { name = "pyarrow", specifier = ">=8.0.0,<23.0.0" },
     { name = "pyarrow-stubs", specifier = "==19.4" },
     { name = "pydantic", specifier = "==2.12.4" },
     { name = "pyiceberg", specifier = "==0.7.0" },
