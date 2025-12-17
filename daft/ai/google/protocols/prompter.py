@@ -5,13 +5,14 @@ from functools import singledispatchmethod
 from typing import TYPE_CHECKING, Any
 
 from google import genai
+from google.genai import errors as genai_errors
 from google.genai import types
 
 from daft.ai.google.typing import GoogleProviderOptions
 from daft.ai.metrics import record_token_metrics
 from daft.ai.protocols import Prompter, PrompterDescriptor
 from daft.ai.provider import ProviderImportError
-from daft.ai.utils import merge_provider_and_api_options
+from daft.ai.utils import merge_provider_and_api_options, raise_retry_after_from_response
 from daft.dependencies import np
 from daft.file import File
 
@@ -191,11 +192,18 @@ class GooglePrompter(Prompter):
         parts = [self._process_message(msg) for msg in messages]
 
         # Call API
-        response = await self.client.aio.models.generate_content(
-            model=self.model,
-            contents=[types.Content(role="user", parts=parts)],
-            config=self.generation_config,
-        )
+        try:
+            response = await self.client.aio.models.generate_content(
+                model=self.model,
+                contents=[types.Content(role="user", parts=parts)],
+                config=self.generation_config,
+            )
+        except genai_errors.APIError as exc:
+            if exc.code == 429 or exc.code == 503:
+                raise_retry_after_from_response(exc.response, exc)
+            raise
+        except Exception:
+            raise
 
         # Record metrics
         if response.usage_metadata:
