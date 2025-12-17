@@ -1,0 +1,10 @@
+[package]
+name = "common-pattern"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+regex = {workspace = true}
+
+[lints]
+workspace = true
