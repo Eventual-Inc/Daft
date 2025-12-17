@@ -62,31 +62,36 @@ def _lancedb_table_factory_function(
                 fragment_limit = limit - rows_yielded
 
             scanner = ds.scanner(fragments=[fragment], columns=cols or None, filter=filter, limit=fragment_limit)
-            try:
-                for rb in scanner.to_batches():
-                    # If we have a limit, we may need to truncate this batch
-                    if limit is not None:
-                        remaining_rows = limit - rows_yielded
-                        if remaining_rows <= 0:
-                            break
-                        if len(rb) > remaining_rows:
-                            # Truncate the batch to respect the limit
-                            rb = rb.slice(0, remaining_rows)
+            batch_iter = scanner.to_batches()
+            while True:
+                try:
+                    rb = next(batch_iter)
+                except StopIteration:
+                    break
+                except Exception as e:
+                    if ignore_corrupt_files:
+                        logger.warning("Skipping unreadable/corrupt lance fragment(s) %s: %s", fragment_ids, e)
+                        return
+                    raise
 
-                    if include_fragment_id:
-                        frag_id_array = pa.array([fragment.fragment_id] * len(rb), type=pa.int64())
-                        new_rb = pa.RecordBatch.from_arrays(
-                            rb.columns + [frag_id_array], names=rb.schema.names + ["fragment_id"]
-                        )
-                        yield RecordBatch.from_arrow_record_batches([new_rb], new_rb.schema)._recordbatch
-                    else:
-                        yield RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch
-                    rows_yielded += len(rb)
-            except Exception as e:
-                if ignore_corrupt_files:
-                    logger.warning("Skipping unreadable/corrupt lance fragment(s) %s: %s", fragment_ids, e)
-                    return
-                raise
+                # If we have a limit, we may need to truncate this batch
+                if limit is not None:
+                    remaining_rows = limit - rows_yielded
+                    if remaining_rows <= 0:
+                        break
+                    if len(rb) > remaining_rows:
+                        # Truncate the batch to respect the limit
+                        rb = rb.slice(0, remaining_rows)
+
+                if include_fragment_id:
+                    frag_id_array = pa.array([fragment.fragment_id] * len(rb), type=pa.int64())
+                    new_rb = pa.RecordBatch.from_arrays(
+                        rb.columns + [frag_id_array], names=rb.schema.names + ["fragment_id"]
+                    )
+                    yield RecordBatch.from_arrow_record_batches([new_rb], new_rb.schema)._recordbatch
+                else:
+                    yield RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch
+                rows_yielded += len(rb)
 
     # If fragment_ids is None, let Lance choose fragments via index; omit the fragments parameter.
     if fragment_ids is None:

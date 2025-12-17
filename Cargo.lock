@@ -2682,6 +2682,7 @@ dependencies = [
  "daft-io",
  "daft-recordbatch",
  "futures",
+ "log",
  "memchr",
  "parking_lot 0.12.5",
  "pyo3",

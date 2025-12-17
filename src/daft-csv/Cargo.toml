@@ -13,6 +13,7 @@ daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}
 daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
 futures = {workspace = true}
+log = {workspace = true}
 memchr = "2.7.6"
 parking_lot = {workspace = true}
 pyo3 = {workspace = true, optional = true}
