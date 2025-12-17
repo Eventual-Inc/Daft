@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use arrow::array::{Array, ArrayRef, AsArray};
 use common_error::{DaftError, DaftResult};
-use daft_arrow::compute::cast::cast;
+use daft_arrow::{array::Array as _, compute::cast::cast};
 
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
