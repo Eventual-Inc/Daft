@@ -9,6 +9,7 @@ pub mod ops;
 mod serdes;
 mod struct_array;
 
+use arrow::array::make_array;
 use daft_arrow::{
     array::to_data,
     buffer::{NullBuffer, wrap_null_buffer},
@@ -177,6 +178,9 @@ impl<T> DataArray<T> {
 
     pub fn to_data(&self) -> arrow::array::ArrayData {
         to_data(self.data())
+    }
+    pub fn to_arrow(&self) -> arrow::array::ArrayRef {
+        make_array(self.to_data())
     }
 
     pub fn name(&self) -> &str {

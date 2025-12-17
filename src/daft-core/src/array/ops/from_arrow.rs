@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use arrow::array::{Array, ArrayRef, AsArray};
+use arrow::{
+    array::{Array, ArrayRef, AsArray},
+    buffer::OffsetBuffer,
+};
 use common_error::{DaftError, DaftResult};
 use daft_arrow::{array::Array as _, compute::cast::cast};
 
@@ -172,7 +175,26 @@ impl FromArrow for ListArray {
     }
 
     fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
-        todo!()
+        let field: FieldRef = field.into();
+        let target_dtype = &field.dtype;
+
+        let DataType::List(daft_child_dtype) = target_dtype else {
+            return Err(DaftError::TypeError(format!(
+                "Expected List DataType, got {}",
+                target_dtype
+            )));
+        };
+        let list_arr = arrow_arr.as_list::<i64>();
+        let arrow_child_array = list_arr.values();
+        let child_field = Arc::new(Field::new("item", daft_child_dtype.as_ref().clone()));
+        let child_series = Series::from_arrow(child_field, arrow_child_array.clone())?;
+        let offsets: arrow::buffer::Buffer = list_arr.offsets().inner().clone().into_inner();
+
+        let offsets =
+            unsafe { daft_arrow::offset::OffsetsBuffer::<i64>::new_unchecked(offsets.into()) };
+        let validity = list_arr.nulls().cloned();
+
+        Ok(Self::new(field, child_series, offsets, validity))
     }
 }
 
@@ -362,5 +384,104 @@ where
 
     fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
         todo!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common_error::DaftResult;
+    use daft_schema::field::Field;
+    use rstest::rstest;
+
+    use crate::{
+        array::ListArray,
+        prelude::{
+            Float32Array, Float64Array, FromArrow, Int8Array, Int16Array, Int32Array, Int64Array,
+            UInt8Array, UInt16Array, UInt32Array, UInt64Array, *,
+        },
+        series,
+        series::Series,
+    };
+
+    macro_rules! test_arrow_roundtrip {
+        ($test_name:ident, $array_type:ty, $value:expr) => {
+            #[test]
+            fn $test_name() -> DaftResult<()> {
+                let arr = <$array_type>::from_values("test", $value.into_iter());
+                let arrow_arr = arr.to_arrow();
+                let new_arr = <$array_type>::from_arrow(
+                    Field::new("test", arr.data_type().clone()),
+                    arrow_arr,
+                )?;
+                assert_eq!(arr, new_arr);
+
+                Ok(())
+            }
+        };
+    }
+
+    test_arrow_roundtrip!(test_arrow_roundtrip_i8, Int8Array, vec![1, 2, 3]);
+    test_arrow_roundtrip!(test_arrow_roundtrip_u8, UInt8Array, vec![1, 2, 3]);
+    test_arrow_roundtrip!(test_arrow_roundtrip_i16, Int16Array, vec![1, 2, 3]);
+    test_arrow_roundtrip!(test_arrow_roundtrip_u16, UInt16Array, vec![1, 2, 3]);
+    test_arrow_roundtrip!(test_arrow_roundtrip_i32, Int32Array, vec![1, 2, 3]);
+    test_arrow_roundtrip!(test_arrow_roundtrip_u32, UInt32Array, vec![1, 2, 3]);
+    test_arrow_roundtrip!(test_arrow_roundtrip_i64, Int64Array, vec![1, 2, 3]);
+    test_arrow_roundtrip!(test_arrow_roundtrip_u64, UInt64Array, vec![1, 2, 3]);
+    test_arrow_roundtrip!(test_arrow_roundtrip_f32, Float32Array, vec![1.0, 2.0, 3.0]);
+    test_arrow_roundtrip!(test_arrow_roundtrip_f64, Float64Array, vec![1.0, 2.0, 3.0]);
+
+    #[rstest]
+    #[case(series![1u8, 2u8])]
+    #[case(series![1i8, 2i8, 3i8])]
+    #[case(series![1i16, 2i16, 3i16])]
+    #[case(series![1i32, 2i32, 3i32])]
+    #[case(series![1i64, 2i64, 3i64])]
+    #[case(series![1f32, 2f32, 3f32])]
+    #[case(series![1f64, 2f64, 3f64])]
+    #[case(series!["a", "b", "c"])]
+    #[case(series![true, false, false])]
+    #[case(Series::empty("test", &DataType::Null))]
+    #[case(Series::empty("test", &DataType::Utf8))]
+    fn test_arrow_roundtrip_list(#[case] data: Series) -> DaftResult<()> {
+        let arr = ListArray::from_series("test", vec![Some(data.clone()), None, Some(data)])?;
+
+        let arrow_arr = arr.to_arrow()?;
+        let new_arr =
+            ListArray::from_arrow(Field::new("test", arr.data_type().clone()), arrow_arr)?;
+
+        assert_eq!(arr, new_arr);
+
+        Ok(())
+    }
+    #[rstest]
+    #[case(series![1u8, 2u8, 3u8])]
+    #[case(series![1i8, 2i8, 3i8])]
+    #[case(series![1i16, 2i16, 3i16])]
+    #[case(series![1i32, 2i32, 3i32])]
+    #[case(series![1i64, 2i64, 3i64])]
+    #[case(series![1f32, 2f32, 3f32])]
+    #[case(series![1f64, 2f64, 3f64])]
+    #[case(series!["a", "b", "c"])]
+    #[case(series![true, false, false])]
+    #[case(Series::empty("test", &DataType::Null))]
+    #[case(Series::empty("test", &DataType::Utf8))]
+    fn test_arrow_roundtrip_fixed_size_list(#[case] data: Series) -> DaftResult<()> {
+        let arr = FixedSizeListArray::new(
+            Field::new(
+                "test",
+                DataType::FixedSizeList(Box::new(data.data_type().clone()), 1),
+            ),
+            data,
+            None,
+        );
+
+        let arrow_arr = arr.to_arrow()?;
+        let new_arr =
+            FixedSizeListArray::from_arrow(Field::new("test", arr.data_type().clone()), arrow_arr)?;
+
+        assert_eq!(arr, new_arr);
+
+        Ok(())
     }
 }

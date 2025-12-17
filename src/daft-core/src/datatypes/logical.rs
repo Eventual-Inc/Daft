@@ -244,15 +244,12 @@ impl DaftImageryType for FixedShapeImageType {}
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
-    use arrow::array::AsArray;
     use common_error::DaftResult;
-    use daft_arrow::offset::OffsetsBuffer;
     use daft_schema::{dtype::DataType, field::Field};
 
     use crate::{
-        array::{FixedSizeListArray, ListArray},
+        array::FixedSizeListArray,
         prelude::{EmbeddingArray, FromArrow, Int8Array},
         series::IntoSeries,
     };

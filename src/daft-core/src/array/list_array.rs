@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::array::ArrayRef;
+use arrow::{array::ArrayRef, buffer::ScalarBuffer};
 use common_error::{DaftError, DaftResult};
 
 use crate::{
@@ -9,7 +9,7 @@ use crate::{
     series::Series,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ListArray {
     pub field: Arc<Field>,
     pub flat_child: Series,
@@ -182,9 +182,9 @@ impl ListArray {
     pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
         let field = self.flat_child.field().to_arrow()?;
         let offsets = self.offsets().clone();
-        let offsets = arrow::buffer::OffsetBuffer::from_lengths(
-            offsets.as_slice().into_iter().map(|o| *o as usize),
-        );
+        let arrow_offsets: arrow::buffer::Buffer = offsets.buffer().clone().into();
+
+        let offsets = arrow::buffer::OffsetBuffer::new(ScalarBuffer::from(arrow_offsets));
         let values = self.flat_child.to_arrow()?;
         let nulls = self.validity.clone();
         Ok(Arc::new(arrow::array::LargeListArray::new(
@@ -288,10 +288,7 @@ mod tests {
     use daft_arrow::offset::OffsetsBuffer;
 
     use super::*;
-    use crate::{
-        prelude::{EmbeddingArray, Int8Array},
-        series::IntoSeries,
-    };
+    use crate::{prelude::Int8Array, series::IntoSeries};
 
     #[test]
     fn test_list_to_arrow() {
