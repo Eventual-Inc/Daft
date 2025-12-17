@@ -29,12 +29,11 @@ pub struct Set {
     pub value: String,
 }
 
-/// SHOW TABLES [ {FROM|IN} <catalog> ] [ LIKE <pattern> ]
+/// SHOW TABLES [ {FROM|IN} <catalog>[.<namespace>] ] [ LIKE <pattern> ]
 #[derive(Clone)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct ShowTables {
     pub catalog: Option<String>,
-    pub namespace: Option<Identifier>,
     pub pattern: Option<String>,
 }
 
@@ -175,10 +174,14 @@ impl SQLPlanner<'_> {
         }
         let (catalog, namespace) = self.show_tables_location(show_options)?;
         let pattern = Self::show_tables_pattern(show_options)?;
+        let qualified_pattern = match (namespace, pattern) {
+            (Some(namespace), Some(pattern)) => Some(format!("{}.{}", namespace, pattern)),
+            (Some(namespace), None) => Some(format!("{}.%", namespace)),
+            (None, pattern) => pattern,
+        };
         Ok(Statement::ShowTables(ShowTables {
             catalog,
-            namespace,
-            pattern,
+            pattern: qualified_pattern,
         }))
     }
 
@@ -392,11 +395,7 @@ mod test {
 
         if let Statement::ShowTables(show_tables) = plan {
             assert_eq!(show_tables.catalog, Some("mycatalog".to_string()));
-            assert_eq!(
-                show_tables.namespace,
-                Some(Identifier::try_new(vec!["myschema"])?)
-            );
-            assert_eq!(show_tables.pattern, None);
+            assert_eq!(show_tables.pattern, Some("myschema.%".to_string()));
             Ok(())
         } else {
             panic!("Expected ShowTables statement");
@@ -413,10 +412,7 @@ mod test {
 
         if let Statement::ShowTables(show_tables) = plan {
             assert_eq!(show_tables.catalog, None);
-            assert_eq!(
-                show_tables.namespace,
-                Some(Identifier::try_new(vec!["myschema"])?)
-            );
+            assert_eq!(show_tables.pattern, Some("myschema.%".to_string()));
             Ok(())
         } else {
             panic!("Expected ShowTables statement");
@@ -433,10 +429,7 @@ mod test {
 
         if let Statement::ShowTables(show_tables) = plan {
             assert_eq!(show_tables.catalog, Some("mycatalog".to_string()));
-            assert_eq!(
-                show_tables.namespace,
-                Some(Identifier::try_new(vec!["myschema"])?)
-            );
+            assert_eq!(show_tables.pattern, Some("myschema.%".to_string()));
             Ok(())
         } else {
             panic!("Expected ShowTables statement");
@@ -453,7 +446,7 @@ mod test {
 
         if let Statement::ShowTables(show_tables) = plan {
             assert_eq!(show_tables.catalog, Some("mycatalog".to_string()));
-            assert_eq!(show_tables.namespace, None);
+            assert_eq!(show_tables.pattern, None);
         } else {
             panic!("Expected ShowTables statement");
         }

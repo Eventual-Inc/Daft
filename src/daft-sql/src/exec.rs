@@ -60,14 +60,8 @@ fn execute_show_tables(
         })?,
     };
 
-    let qualified_pattern = match (show_tables.namespace, show_tables.pattern) {
-        (Some(namespace), Some(table_pattern)) => Some(format!("{}.{}", namespace, table_pattern)),
-        (Some(namespace), None) => Some(format!("{}.%", namespace)),
-        (None, pattern) => pattern.map(String::from),
-    };
-
     // this returns identifiers which we need to split into our columns
-    let tables = catalog.list_tables(qualified_pattern.as_deref())?;
+    let tables = catalog.list_tables(show_tables.pattern.as_deref())?;
 
     // these are typical `show` columns which are simplififed INFORMATION_SCHEMA.TABLES columns
     use daft_core::prelude::{DataType, Field, Schema};
