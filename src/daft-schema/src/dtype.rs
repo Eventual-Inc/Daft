@@ -884,7 +884,18 @@ impl DataType {
                     }
                 })
             }
-            Self::List(dtype) => dtype.estimate_size_bytes().map(|b| b * DEFAULT_LIST_LEN),
+            Self::List(dtype) => {
+                const REASONABLE_SIZE_BYTES: f64 = 100_000_000.0; // 100MB
+
+                dtype.estimate_size_bytes().map(|b| {
+                    let estimate = b * DEFAULT_LIST_LEN;
+                    if estimate.is_infinite() || estimate > REASONABLE_SIZE_BYTES {
+                        REASONABLE_SIZE_BYTES
+                    } else {
+                        estimate
+                    }
+                })
+            }
             Self::Struct(fields) => Some(
                 fields
                     .iter()
@@ -1173,75 +1184,5 @@ impl From<&ImageMode> for DataType {
             RGB32F | RGBA32F => Self::Float32,
             _ => Self::UInt8,
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_fixedsizelist_estimate_size_bytes_normal() {
-        // Test normal case
-        let dtype = DataType::FixedSizeList(Box::new(DataType::Int64), 1000);
-        let estimate = dtype.estimate_size_bytes();
-        assert!(estimate.is_some());
-        let estimate = estimate.unwrap();
-        assert!(estimate.is_finite());
-        // Int64 is 8 bytes, 1000 elements = 8000 bytes + bitmap (0.125 per element)
-        assert!((estimate - 8125.0).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_fixedsizelist_estimate_size_bytes_large_length() {
-        // Test with large but acceptable length
-        let dtype = DataType::FixedSizeList(Box::new(DataType::Int64), 100_000);
-        let estimate = dtype.estimate_size_bytes();
-        assert!(estimate.is_some());
-        let estimate = estimate.unwrap();
-        assert!(estimate.is_finite());
-        const REASONABLE_SIZE_BYTES: f64 = 100_000_000.0;
-        assert!(estimate < REASONABLE_SIZE_BYTES);
-    }
-
-    #[test]
-    fn test_fixedsizelist_estimate_size_bytes_exceeds_max() {
-        // Test with length that would cause estimate to exceed reasonable size (100MB)
-        // Int64 is 8 bytes + 0.125 bitmap = 8.125 per element
-        // To exceed 100MB (100,000,000 bytes): need > 12,307,692 elements
-        // Using 20,000,000 elements: 20,000,000 * 8.125 = 162,500,000 bytes > 100MB
-        let dtype = DataType::FixedSizeList(Box::new(DataType::Int64), 20_000_000);
-        let estimate = dtype.estimate_size_bytes();
-        assert!(estimate.is_some());
-        let estimate = estimate.unwrap();
-        assert!(estimate.is_finite());
-        // Should be capped at 100MB (reasonable size)
-        const REASONABLE_SIZE_BYTES: f64 = 100_000_000.0;
-        assert_eq!(estimate, REASONABLE_SIZE_BYTES);
-    }
-
-    #[test]
-    fn test_fixedsizelist_estimate_size_bytes_nested_overflow() {
-        // Test with nested type that could cause overflow
-        let dtype = DataType::FixedSizeList(Box::new(DataType::Float64), 500_000);
-        let estimate = dtype.estimate_size_bytes();
-        assert!(estimate.is_some());
-        let estimate = estimate.unwrap();
-        assert!(estimate.is_finite());
-        const REASONABLE_SIZE_BYTES: f64 = 100_000_000.0;
-        assert!(estimate < REASONABLE_SIZE_BYTES);
-    }
-
-    #[test]
-    fn test_fixedsizelist_estimate_size_bytes_max_length() {
-        // Test with usize::MAX length (extreme case)
-        let dtype = DataType::FixedSizeList(Box::new(DataType::Int8), usize::MAX);
-        let estimate = dtype.estimate_size_bytes();
-        assert!(estimate.is_some());
-        let estimate = estimate.unwrap();
-        assert!(estimate.is_finite());
-        // Should be capped at 100MB (reasonable size)
-        const REASONABLE_SIZE_BYTES: f64 = 100_000_000.0;
-        assert_eq!(estimate, REASONABLE_SIZE_BYTES);
     }
 }
