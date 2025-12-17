@@ -873,9 +873,29 @@ impl DataType {
             Self::Binary => Some(VARIABLE_TYPE_SIZE),
             Self::FixedSizeBinary(size) => Some(size as f64),
             Self::FixedSizeList(dtype, len) => {
-                dtype.estimate_size_bytes().map(|b| b * (len as f64))
+                const REASONABLE_SIZE_BYTES: f64 = 100_000_000.0; // 100MB
+
+                dtype.estimate_size_bytes().map(|b| {
+                    let estimate = b * (len as f64);
+                    if estimate.is_infinite() || estimate > REASONABLE_SIZE_BYTES {
+                        REASONABLE_SIZE_BYTES
+                    } else {
+                        estimate
+                    }
+                })
             }
-            Self::List(dtype) => dtype.estimate_size_bytes().map(|b| b * DEFAULT_LIST_LEN),
+            Self::List(dtype) => {
+                const REASONABLE_SIZE_BYTES: f64 = 100_000_000.0; // 100MB
+
+                dtype.estimate_size_bytes().map(|b| {
+                    let estimate = b * DEFAULT_LIST_LEN;
+                    if estimate.is_infinite() || estimate > REASONABLE_SIZE_BYTES {
+                        REASONABLE_SIZE_BYTES
+                    } else {
+                        estimate
+                    }
+                })
+            }
             Self::Struct(fields) => Some(
                 fields
                     .iter()

@@ -19,6 +19,13 @@ if TYPE_CHECKING:
         TextClassifierDescriptor,
         TextEmbedderDescriptor,
     )
+    from daft.ai.typing import (
+        ClassifyImageOptions,
+        ClassifyTextOptions,
+        EmbedImageOptions,
+        EmbedTextOptions,
+        PromptOptions,
+    )
 
 
 class ProviderImportError(ImportError):
@@ -36,7 +43,7 @@ def load_google(name: str | None = None, **options: Unpack[GoogleProviderOptions
         raise ProviderImportError("google") from e
 
 
-def load_lm_studio(name: str | None = None, **options: Any) -> Provider:
+def load_lm_studio(name: str | None = None, **options: Unpack[OpenAIProviderOptions]) -> Provider:
     try:
         from daft.ai.lm_studio.provider import LMStudioProvider
 
@@ -112,23 +119,35 @@ class Provider(ABC):
         ...
 
     def get_text_embedder(
-        self, model: str | None = None, dimensions: int | None = None, **options: Any
+        self, model: str | None = None, dimensions: int | None = None, **options: Unpack[EmbedTextOptions]
     ) -> TextEmbedderDescriptor:
         """Returns a TextEmbedderDescriptor for this provider."""
         raise not_implemented_err(self, method="embed_text")
 
-    def get_image_embedder(self, model: str | None = None, **options: Any) -> ImageEmbedderDescriptor:
+    def get_image_embedder(
+        self, model: str | None = None, **options: Unpack[EmbedImageOptions]
+    ) -> ImageEmbedderDescriptor:
         """Returns an ImageEmbedderDescriptor for this provider."""
         raise not_implemented_err(self, method="embed_image")
 
-    def get_image_classifier(self, model: str | None = None, **options: Any) -> ImageClassifierDescriptor:
+    def get_image_classifier(
+        self, model: str | None = None, **options: Unpack[ClassifyImageOptions]
+    ) -> ImageClassifierDescriptor:
         """Returns an ImageClassifierDescriptor for this provider."""
         raise not_implemented_err(self, method="classify_image")
 
-    def get_text_classifier(self, model: str | None = None, **options: Any) -> TextClassifierDescriptor:
+    def get_text_classifier(
+        self, model: str | None = None, **options: Unpack[ClassifyTextOptions]
+    ) -> TextClassifierDescriptor:
         """Returns a TextClassifierDescriptor for this provider."""
         raise not_implemented_err(self, method="classify_text")
 
-    def get_prompter(self, model: str | None = None, **options: Any) -> PrompterDescriptor:
+    def get_prompter(
+        self,
+        model: str | None = None,
+        return_format: Any | None = None,
+        system_message: str | None = None,
+        **options: Unpack[PromptOptions],
+    ) -> PrompterDescriptor:
         """Returns a PrompterDescriptor for this provider."""
         raise not_implemented_err(self, method="prompt")

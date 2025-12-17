@@ -107,7 +107,7 @@ pub async fn read_json_schema_bulk(
 
 pub(crate) async fn read_json_schema_single(
     uri: &str,
-    _: JsonParseOptions,
+    parse_options: JsonParseOptions,
     max_bytes: Option<usize>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
@@ -132,7 +132,10 @@ pub(crate) async fn read_json_schema_single(
         Some(compression) => Box::new(tokio::io::BufReader::new(compression.to_decoder(reader))),
         None => reader,
     };
-    let arrow_schema = infer_schema(reader, None, max_bytes).await?;
+
+    // Defer skip-empty handling to infer_schema to avoid duplicate fill_buf.
+    let arrow_schema =
+        infer_schema(reader, None, max_bytes, parse_options.skip_empty_files).await?;
     let schema = arrow_schema.into();
     Ok(schema)
 }
@@ -141,6 +144,7 @@ async fn infer_schema<R>(
     mut reader: R,
     max_rows: Option<usize>,
     max_bytes: Option<usize>,
+    skip_empty_files: bool,
 ) -> DaftResult<daft_arrow::datatypes::Schema>
 where
     R: tokio::io::AsyncBufRead + Unpin + Send,
@@ -151,10 +155,15 @@ where
     let buf = reader.fill_buf().await?;
 
     if buf.is_empty() {
-        return Err(super::Error::JsonDeserializationError {
-            string: "Empty JSON file".to_string(),
+        if skip_empty_files {
+            // return empty schema
+            return Ok(daft_arrow::datatypes::Schema::from(vec![]));
+        } else {
+            return Err(super::Error::JsonDeserializationError {
+                string: "Empty JSON file".to_string(),
+            }
+            .into());
         }
-        .into());
     }
     match buf[0] {
         b'[' => {

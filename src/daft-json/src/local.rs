@@ -36,6 +36,14 @@ pub fn read_json_local(
     let mmap = unsafe { memmap2::Mmap::map(&file) }.context(StdIOSnafu)?;
 
     let bytes = &mmap[..];
+    if parse_options.as_ref().is_some_and(|p| p.skip_empty_files) && bytes.is_empty() {
+        let schema = convert_options
+            .as_ref()
+            .and_then(|c| c.schema.as_ref())
+            .map_or_else(|| Schema::empty().into(), |s| s.clone());
+        return Ok(RecordBatch::empty(Some(schema)));
+    }
+
     if bytes.is_empty() {
         return Err(super::Error::JsonDeserializationError {
             string: "Invalid JSON format - file is empty".to_string(),

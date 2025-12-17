@@ -582,7 +582,7 @@ async fn stream_scan_task(
                 Some(schema_of_file),
                 scan_task.pushdowns.filters.clone(),
             );
-            let parse_options = JsonParseOptions::new_internal();
+            let parse_options = JsonParseOptions::new_internal(cfg.skip_empty_files);
             let json_chunk_size = cfg.chunk_size.or(Some(chunk_size));
             let read_options = JsonReadOptions::new_internal(cfg.buffer_size, json_chunk_size);
 
