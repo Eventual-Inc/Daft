@@ -167,6 +167,18 @@ class DeltaLakeScanOperator(ScanOperator):
     def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
         import pyarrow as pa
 
+        metadata = self._table.metadata()
+        deletion_vectors_enabled = metadata().configuration.get("delta.enableDeletionVectors", False)
+        # If deletion vectors are enabled and the deltalake library does not support propagation
+        # raise an error if ignore_deletion_vectors is not set.
+        if deletion_vectors_enabled and _missing_deletion_vectors_propagation():
+            if not self._ignore_deletion_vectors:
+                raise NotImplementedError(
+                    "Delta Lake deletion vectors are not yet supported; please let the Daft team know if you'd like to see this feature!\n"
+                    "Deletion records can be dropped from this table to allow it to be read with Daft: https://docs.delta.io/latest/delta-drop-feature.html\n"
+                    "Alternatively, you can set ignore_deletion_vectors=True to skip checking for deletion vectors."
+                )
+
         # TODO(Clark): Push limit and filter expressions into deltalake action fetch, to prune the files returned.
         # Issue: https://github.com/Eventual-Inc/Daft/issues/1953
         add_actions = pa.record_batch(self._table.get_add_actions())
@@ -313,3 +325,9 @@ class DeltaLakeScanOperator(ScanOperator):
 
     def can_absorb_select(self) -> bool:
         return True
+
+
+# Returns True if the Delta Lake library does not return the deletion vectors in the add_actions.
+# These were removed in deltalake>=1.2.0.
+def _missing_deletion_vectors_propagation() -> bool:
+    return parse(deltalake.__version__) >= parse("1.2.0")
