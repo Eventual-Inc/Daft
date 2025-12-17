@@ -175,6 +175,7 @@ class DeltaLakeScanOperator(ScanOperator):
             if not self._ignore_deletion_vectors:
                 raise NotImplementedError(
                     "Delta Lake deletion vectors are not yet supported; please let the Daft team know if you'd like to see this feature!\n"
+                    "Note that for Delta Lake versions 1.2.0 and newer, deletion vectors are not included in add actions.\n"
                     "Deletion records can be dropped from this table to allow it to be read with Daft: https://docs.delta.io/latest/delta-drop-feature.html\n"
                     "Alternatively, you can set ignore_deletion_vectors=True to skip checking for deletion vectors."
                 )
@@ -194,7 +195,6 @@ class DeltaLakeScanOperator(ScanOperator):
         if not self._ignore_deletion_vectors and "deletionVector" in add_actions.schema.names:
             raise NotImplementedError(
                 "Delta Lake deletion vectors are not yet supported; please let the Daft team know if you'd like to see this feature!\n"
-                "Note that for Delta Lake versions 1.2.0 and newer, deletion vectors are not included in add actions.\n"
                 "Deletion records can be dropped from this table to allow it to be read with Daft: https://docs.delta.io/latest/delta-drop-feature.html\n"
                 "Alternatively, you can set ignore_deletion_vectors=True to skip checking for deletion vectors."
             )
