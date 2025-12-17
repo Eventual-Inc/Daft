@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arrow::array::ArrayRef;
 use common_error::{DaftError, DaftResult};
 use daft_arrow::offset::OffsetsBuffer;
 
@@ -10,7 +11,7 @@ use crate::{
     series::Series,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FixedSizeListArray {
     pub field: Arc<Field>,
     /// contains all the elements of the nested lists flattened into a single contiguous array.
@@ -166,6 +167,18 @@ impl FixedSizeListArray {
         ))
     }
 
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        let field = Arc::new(self.flat_child.field().to_arrow()?);
+        let size = self.fixed_element_len() as i32;
+        let values = self.flat_child.to_arrow()?;
+        let nulls = self.validity.clone();
+
+        Ok(Arc::new(arrow::array::FixedSizeListArray::try_new(
+            field, size, values, nulls,
+        )?))
+    }
+
+
     pub fn fixed_element_len(&self) -> usize {
         let dtype = &self.field.as_ref().dtype;
         match dtype {
@@ -286,11 +299,14 @@ impl ExactSizeIterator for FixedSizeListArrayIter<'_> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use common_error::DaftResult;
 
     use super::FixedSizeListArray;
     use crate::{
         datatypes::{DataType, Field, Int32Array},
+        prelude::{EmbeddingArray, FullNull},
         series::IntoSeries,
     };
 
@@ -331,6 +347,59 @@ mod tests {
                 .collect::<Vec<_>>(),
             arr.validity.unwrap().into_iter().collect::<Vec<_>>()
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_fixed_size_list_to_arrow() -> DaftResult<()> {
+        let arr = get_i32_fixed_size_list_array(vec![true, true, false].as_slice());
+        let arrow_arr = arr.to_arrow()?;
+
+        assert_eq!(
+            arrow_arr.data_type(),
+            &arrow::datatypes::DataType::FixedSizeList(
+                Arc::new(arrow::datatypes::Field::new(
+                    "foo",
+                    arrow::datatypes::DataType::Int32,
+                    true
+                )),
+                3
+            )
+        );
+        assert_eq!(arrow_arr.len(), arr.len());
+        assert_eq!(arrow_arr.null_count(), arr.null_count());
+
+        assert_eq!(
+            arrow_arr
+                .as_any()
+                .downcast_ref::<arrow::array::FixedSizeListArray>()
+                .unwrap()
+                .values()
+                .as_ref()
+                .len(),
+            arr.flat_child.len()
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_embedding_to_arrow() -> DaftResult<()> {
+        let embedding_array = EmbeddingArray::empty(
+            "embeddings",
+            &DataType::Embedding(Box::new(DataType::Int8), 2),
+        );
+        let arrow_arr = embedding_array.to_arrow()?;
+
+        assert_eq!(
+            arrow_arr.data_type(),
+            &arrow::datatypes::DataType::FixedSizeList(
+                Arc::new(embedding_array.field.to_arrow()?),
+                2
+            )
+        );
+        assert_eq!(arrow_arr.len(), embedding_array.len());
+
         Ok(())
     }
 }

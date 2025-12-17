@@ -40,7 +40,7 @@ where
     fn build(&mut self) -> DaftResult<Series> {
         let arrow_array = self.arrow2_growable.as_box();
         let field = Arc::new(Field::new(self.name.clone(), self.dtype.clone()));
-        Ok(DataArray::<T>::from_arrow(field, arrow_array)?.into_series())
+        Ok(DataArray::<T>::from_arrow2(field, arrow_array)?.into_series())
     }
 }
 
@@ -216,6 +216,6 @@ impl Growable for ArrowExtensionGrowable<'_> {
     fn build(&mut self) -> DaftResult<Series> {
         let arr = self.child_growable.as_box();
         let field = Arc::new(Field::new(self.name.clone(), self.dtype.clone()));
-        Ok(ExtensionArray::from_arrow(field, arr)?.into_series())
+        Ok(ExtensionArray::from_arrow2(field, arr)?.into_series())
     }
 }

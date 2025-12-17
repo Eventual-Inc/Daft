@@ -206,7 +206,7 @@ mod tests {
         let data = Box::new(daft_arrow::array::Utf8Array::<i32>::from(data.as_slice()));
         let daft_fld = Arc::new(Field::new("test", DataType::Utf8));
 
-        let s = Series::from_arrow(daft_fld, data);
+        let s = Series::from_arrow2(daft_fld, data);
         assert!(s.is_ok())
     }
 }

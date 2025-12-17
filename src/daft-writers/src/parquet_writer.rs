@@ -371,7 +371,7 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
 
         // Return a recordbatch containing the filename that we wrote to.
         let field = Field::new(Self::PATH_FIELD_NAME, DataType::Utf8);
-        let filename_series = Series::from_arrow(
+        let filename_series = Series::from_arrow2(
             Arc::new(field.clone()),
             Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice([&self
                 .filename

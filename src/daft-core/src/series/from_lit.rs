@@ -185,7 +185,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
             arr.push(value);
         }
 
-        Series::from_arrow(Arc::new(field), arr.as_box())
+        Series::from_arrow2(Arc::new(field), arr.as_box())
     }
 
     let s = match downcasted.clone() {
@@ -197,7 +197,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 let value = unwrap_inner!(value, i, Boolean);
                 arr.push(value);
             }
-            Series::from_arrow(Arc::new(field), arr.as_box())?
+            Series::from_arrow2(Arc::new(field), arr.as_box())?
         }
         DataType::Utf8 => {
             let mut arr = MutableUtf8Array::<i64>::with_capacity(len);
@@ -207,7 +207,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
 
                 arr.push(value);
             }
-            Series::from_arrow(Arc::new(field), arr.as_box())?
+            Series::from_arrow2(Arc::new(field), arr.as_box())?
         }
         DataType::Binary => {
             let mut arr = MutableBinaryArray::<i64>::with_capacity(len);
@@ -216,7 +216,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 let value = unwrap_inner!(value, i, Binary);
                 arr.push(value);
             }
-            Series::from_arrow(Arc::new(field), arr.as_box())?
+            Series::from_arrow2(Arc::new(field), arr.as_box())?
         }
         DataType::Int8 => {
             from_mutable_primitive(values, len, field, |v, i| unwrap_inner!(v, i, Int8))?
@@ -268,7 +268,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 let value = unwrap_inner!(value, i, Literal::Timestamp(ts, ..) => ts);
                 arr.push(value);
             }
-            let physical = Int64Array::from_arrow(
+            let physical = Int64Array::from_arrow2(
                 Arc::new(Field::new("literal", DataType::Int64)),
                 arr.as_box(),
             )?;
@@ -281,7 +281,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 let value = unwrap_inner!(value, i, Literal::Date(d) => d);
                 arr.push(value);
             }
-            let physical = Int32Array::from_arrow(
+            let physical = Int32Array::from_arrow2(
                 Arc::new(Field::new("literal", DataType::Int32)),
                 arr.as_box(),
             )?;

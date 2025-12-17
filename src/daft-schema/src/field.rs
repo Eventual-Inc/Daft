@@ -90,11 +90,16 @@ impl Field {
         )
     }
     pub fn to_arrow(&self) -> DaftResult<arrow_schema::Field> {
-        Ok(self
-            .dtype
-            .to_arrow_field()?
-            .with_name(&self.name)
-            .with_metadata(self.metadata.as_ref().clone().into_iter().collect()))
+        let field = self.dtype.to_arrow_field()?.with_name(&self.name);
+        let meta = field.metadata().clone();
+        Ok(field.with_metadata(
+            self.metadata
+                .as_ref()
+                .clone()
+                .into_iter()
+                .chain(meta)
+                .collect(),
+        ))
     }
 
     pub fn to_physical(&self) -> Self {
@@ -153,5 +158,51 @@ impl From<&ArrowField> for Field {
             dtype: af.data_type().into(),
             metadata: af.metadata.clone().into(),
         }
+    }
+}
+
+impl TryFrom<&arrow_schema::Field> for Field {
+    type Error = DaftError;
+
+    fn try_from(value: &arrow_schema::Field) -> Result<Self, Self::Error> {
+        Ok(Self {
+            name: value.name().clone(),
+            dtype: value.try_into()?,
+            metadata: Arc::new(value.metadata().clone().into_iter().collect()),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common_error::DaftResult;
+
+    use crate::{dtype::DataType, field::Field};
+
+    #[test]
+    fn test_field_with_extension_type_to_arrow() -> DaftResult<()> {
+        let field = Field::new(
+            "embeddings",
+            DataType::Embedding(Box::new(DataType::Float64), 512),
+        );
+        let arrow_field = field.to_arrow()?;
+        assert_eq!(arrow_field.name(), "embeddings");
+        assert_eq!(arrow_field.metadata().len(), 2);
+        assert_eq!(
+            arrow_field
+                .metadata()
+                .get("ARROW:extension:name")
+                .map(|s| s.as_str()),
+            Some("daft.super_extension")
+        );
+        assert_eq!(
+            arrow_field
+                .metadata()
+                .get("ARROW:extension:metadata")
+                .map(|s| s.as_str()),
+            Some(field.dtype.to_json()?.as_str())
+        );
+
+        Ok(())
     }
 }

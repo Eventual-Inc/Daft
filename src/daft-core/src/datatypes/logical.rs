@@ -1,5 +1,6 @@
 use std::{marker::PhantomData, sync::Arc};
 
+use arrow::array::ArrayRef;
 use common_error::DaftResult;
 
 use super::{
@@ -15,7 +16,7 @@ use crate::{
 
 /// A LogicalArray is a wrapper on top of some underlying array, applying the semantic meaning of its
 /// field.datatype() to the underlying array.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LogicalArrayImpl<L: DaftLogicalType, PhysicalArray: DaftArrayType> {
     pub field: Arc<Field>,
     pub physical: PhysicalArray,
@@ -123,6 +124,24 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, DataArray<L::PhysicalType>> {
             .unwrap(),
         }
     }
+
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        let daft_type = self.data_type();
+        let arrow_field = daft_type.to_arrow_field()?;
+        let physical = arrow::array::make_array(self.physical.to_data());
+
+        use crate::datatypes::DataType::*;
+
+        match daft_type {
+            Decimal128(..) | Date | Timestamp(..) | Duration(..) | Time(..) => {
+                todo!()
+            }
+            _ => Ok(arrow::compute::cast(
+                physical.as_ref(),
+                arrow_field.data_type(),
+            )?),
+        }
+    }
 }
 
 /// Implementation for a LogicalArray that wraps a FixedSizeListArray
@@ -136,6 +155,16 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
         fixed_size_list_arrow_array.change_type(arrow_logical_type);
         fixed_size_list_arrow_array
     }
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        let field = Arc::new(self.field().to_arrow()?);
+        let size = self.physical.fixed_element_len() as i32;
+        let values = self.physical.to_arrow()?;
+        let nulls = self.physical.validity().cloned();
+
+        Ok(Arc::new(arrow::array::FixedSizeListArray::try_new(
+            field, size, values, nulls,
+        )?))
+    }
 }
 
 /// Implementation for a LogicalArray that wraps a StructArray
@@ -148,6 +177,10 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, StructArray> {
         let arrow_logical_type = self.data_type().to_arrow().unwrap();
         struct_arrow_array.change_type(arrow_logical_type);
         struct_arrow_array
+    }
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        let struct_arrow_array = self.physical.to_arrow()?;
+        Ok(struct_arrow_array)
     }
 }
 
@@ -182,6 +215,10 @@ impl MapArray {
             daft_arrow::buffer::wrap_null_buffer(self.physical.validity().cloned()),
         ))
     }
+
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        todo!()
+    }
 }
 
 pub type LogicalArray<L> =
@@ -204,3 +241,47 @@ pub trait DaftImageryType: DaftLogicalType {}
 
 impl DaftImageryType for ImageType {}
 impl DaftImageryType for FixedShapeImageType {}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use arrow::array::AsArray;
+    use common_error::DaftResult;
+    use daft_arrow::offset::OffsetsBuffer;
+    use daft_schema::{dtype::DataType, field::Field};
+
+    use crate::{
+        array::{FixedSizeListArray, ListArray},
+        prelude::{EmbeddingArray, FromArrow, Int8Array},
+        series::IntoSeries,
+    };
+
+    #[test]
+    fn test_logical_array_roundtrip_to_arrow() -> DaftResult<()> {
+        let fixed_size_list_array = FixedSizeListArray::new(
+            Field::new("", DataType::FixedSizeList(Box::new(DataType::Int8), 2)),
+            Int8Array::from_values_iter(
+                Field::new("", DataType::Int8),
+                vec![1, 2, 3, 4].into_iter(),
+            )
+            .into_series(),
+            None,
+        );
+        let embedding_array = EmbeddingArray::new(
+            Field::new("", DataType::Embedding(Box::new(DataType::Int8), 2)),
+            fixed_size_list_array,
+        );
+        let arrow_arr = embedding_array.to_arrow()?;
+
+        let new_embedding_array = EmbeddingArray::from_arrow(
+            Field::new("", DataType::Embedding(Box::new(DataType::Int8), 2)),
+            arrow_arr,
+        )?;
+        dbg!(&new_embedding_array);
+        assert_eq!(embedding_array.field(), new_embedding_array.field());
+        assert_eq!(embedding_array.physical, new_embedding_array.physical);
+
+        Ok(())
+    }
+}

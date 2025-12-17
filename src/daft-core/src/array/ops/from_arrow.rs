@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
+use arrow::array::{Array, ArrayRef, AsArray};
 use common_error::{DaftError, DaftResult};
-use daft_arrow::{array::Array, compute::cast::cast};
+use daft_arrow::compute::cast::cast;
 
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
@@ -19,23 +20,28 @@ pub trait FromArrow
 where
     Self: Sized,
 {
-    fn from_arrow(
+    fn from_arrow2(
         field: FieldRef,
         arrow_arr: Box<dyn daft_arrow::array::Array>,
     ) -> DaftResult<Self>;
+    fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self>;
 }
 
 impl<T: DaftPhysicalType> FromArrow for DataArray<T> {
-    fn from_arrow(
+    fn from_arrow2(
         field: FieldRef,
         arrow_arr: Box<dyn daft_arrow::array::Array>,
     ) -> DaftResult<Self> {
         Self::try_from((field, arrow_arr))
     }
+
+    fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
+        Self::new(field.into(), arrow_arr.into())
+    }
 }
 
 impl FromArrow for FixedSizeListArray {
-    fn from_arrow(
+    fn from_arrow2(
         field: FieldRef,
         arrow_arr: Box<dyn daft_arrow::array::Array>,
     ) -> DaftResult<Self> {
@@ -57,7 +63,7 @@ impl FromArrow for FixedSizeListArray {
                     .downcast_ref::<daft_arrow::array::FixedSizeListArray>()
                     .unwrap();
                 let arrow_child_array = arrow_arr.values();
-                let child_series = Series::from_arrow(
+                let child_series = Series::from_arrow2(
                     Arc::new(Field::new("item", daft_child_dtype.as_ref().clone())),
                     arrow_child_array.clone(),
                 )?;
@@ -73,10 +79,45 @@ impl FromArrow for FixedSizeListArray {
             ))),
         }
     }
+
+    fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
+        let field = field.into();
+
+        match (&field.dtype, arrow_arr.data_type()) {
+            (
+                DataType::FixedSizeList(daft_child_dtype, daft_size),
+                arrow::datatypes::DataType::FixedSizeList(_arrow_child_field, arrow_size),
+            ) => {
+                if *daft_size != (*arrow_size as usize) {
+                    return Err(DaftError::TypeError(format!(
+                        "Attempting to create Daft FixedSizeListArray with element length {} from Arrow FixedSizeList array with element length {}",
+                        daft_size, arrow_size
+                    )));
+                }
+
+                let arrow_arr = arrow_arr.as_fixed_size_list();
+
+                let arrow_child_array = arrow_arr.values();
+                let child_series = Series::from_arrow(
+                    Arc::new(Field::new("item", daft_child_dtype.as_ref().clone())),
+                    arrow_child_array.clone(),
+                )?;
+                Ok(Self::new(
+                    field.clone(),
+                    child_series,
+                    arrow_arr.nulls().cloned(),
+                ))
+            }
+            (d, a) => Err(DaftError::TypeError(format!(
+                "Attempting to create Daft FixedSizeListArray with type {} from arrow array with type {:?}",
+                d, a
+            ))),
+        }
+    }
 }
 
 impl FromArrow for ListArray {
-    fn from_arrow(
+    fn from_arrow2(
         target_field: FieldRef,
         arrow_arr: Box<dyn daft_arrow::array::Array>,
     ) -> DaftResult<Self> {
@@ -105,7 +146,7 @@ impl FromArrow for ListArray {
                     .unwrap();
 
                 let arrow_child_array = arrow_arr.values();
-                let child_series = Series::from_arrow(
+                let child_series = Series::from_arrow2(
                     Arc::new(Field::new("list", daft_child_dtype.as_ref().clone())),
                     arrow_child_array.clone(),
                 )?;
@@ -129,10 +170,14 @@ impl FromArrow for ListArray {
 
         Ok(result)
     }
+
+    fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
+        todo!()
+    }
 }
 
 impl FromArrow for StructArray {
-    fn from_arrow(
+    fn from_arrow2(
         field: FieldRef,
         arrow_arr: Box<dyn daft_arrow::array::Array>,
     ) -> DaftResult<Self> {
@@ -159,7 +204,7 @@ impl FromArrow for StructArray {
                     .iter()
                     .zip(arrow_child_arrays.iter())
                     .map(|(daft_field, arrow_arr)| {
-                        Series::from_arrow(Arc::new(daft_field.clone()), arrow_arr.to_boxed())
+                        Series::from_arrow2(Arc::new(daft_field.clone()), arrow_arr.to_boxed())
                     })
                     .collect::<DaftResult<Vec<Series>>>()?;
 
@@ -175,10 +220,14 @@ impl FromArrow for StructArray {
             ))),
         }
     }
+
+    fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
+        todo!()
+    }
 }
 
 impl FromArrow for MapArray {
-    fn from_arrow(
+    fn from_arrow2(
         field: FieldRef,
         arrow_arr: Box<dyn daft_arrow::array::Array>,
     ) -> DaftResult<Self> {
@@ -205,7 +254,7 @@ impl FromArrow for MapArray {
                 );
 
                 let child_series =
-                    Series::from_arrow(child_field.into(), arrow_child_array.clone())?;
+                    Series::from_arrow2(child_field.into(), arrow_child_array.clone())?;
 
                 let physical = ListArray::new(
                     physical_field,
@@ -222,11 +271,15 @@ impl FromArrow for MapArray {
             ))),
         }
     }
+
+    fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
+        todo!()
+    }
 }
 
 #[cfg(feature = "python")]
 impl FromArrow for PythonArray {
-    fn from_arrow(
+    fn from_arrow2(
         field: FieldRef,
         arrow_arr: Box<dyn daft_arrow::array::Array>,
     ) -> DaftResult<Self> {
@@ -244,12 +297,16 @@ impl FromArrow for PythonArray {
 
         Self::from_iter_pickled(&field.name, physical_arrow_array.iter())
     }
+
+    fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
+        todo!()
+    }
 }
 
 macro_rules! impl_logical_from_arrow {
     ($logical_type:ident) => {
         impl FromArrow for LogicalArray<$logical_type> {
-            fn from_arrow(
+            fn from_arrow2(
                 field: FieldRef,
                 arrow_arr: Box<dyn daft_arrow::array::Array>,
             ) -> DaftResult<Self> {
@@ -259,11 +316,15 @@ macro_rules! impl_logical_from_arrow {
                 let physical_arrow_array = arrow_arr.convert_logical_type(target_convert_arrow);
 
                 let physical =
-                    <<$logical_type as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::from_arrow(
+                    <<$logical_type as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::from_arrow2(
                         Arc::new(target_convert),
                         physical_arrow_array,
                     )?;
                 Ok(Self::new(field, physical))
+            }
+
+            fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
+                todo!()
             }
         }
     };
@@ -284,7 +345,7 @@ impl<T> FromArrow for LogicalArray<FileType<T>>
 where
     T: DaftMediaType,
 {
-    fn from_arrow(
+    fn from_arrow2(
         field: FieldRef,
         arrow_arr: Box<dyn daft_arrow::array::Array>,
     ) -> DaftResult<Self> {
@@ -292,10 +353,14 @@ where
         let target_convert_arrow = target_convert.dtype.to_arrow()?;
         let physical_arrow_array = arrow_arr.convert_logical_type(target_convert_arrow);
         let physical =
-            <<FileType<T> as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::from_arrow(
+            <<FileType<T> as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::from_arrow2(
                 Arc::new(target_convert),
                 physical_arrow_array,
             )?;
         Ok(Self::new(field, physical))
+    }
+
+    fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
+        todo!()
     }
 }

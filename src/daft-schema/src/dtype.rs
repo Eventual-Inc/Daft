@@ -4,6 +4,7 @@ use std::{
     sync::Arc,
 };
 
+use arrow_schema::IntervalUnit;
 use common_error::{DaftError, DaftResult};
 use daft_arrow::datatypes::DataType as ArrowType;
 use serde::{Deserialize, Serialize};
@@ -274,10 +275,15 @@ impl DataType {
             Self::Binary => arrow_schema::DataType::LargeBinary,
             Self::FixedSizeBinary(size) => arrow_schema::DataType::FixedSizeBinary(*size as _),
             Self::Utf8 => arrow_schema::DataType::LargeUtf8,
-            Self::List(f) => arrow_schema::DataType::LargeList(Arc::new(f.to_arrow_field()?)),
-            Self::FixedSizeList(f, size) => {
-                arrow_schema::DataType::FixedSizeList(Arc::new(f.to_arrow_field()?), *size as _)
+            Self::List(f) => {
+                let inner = f.to_arrow_field()?.with_name("item");
+                dbg!(&inner);
+                arrow_schema::DataType::LargeList(Arc::new(inner))
             }
+            Self::FixedSizeList(f, size) => arrow_schema::DataType::FixedSizeList(
+                Arc::new(f.to_arrow_field()?.with_name("item")),
+                *size as _,
+            ),
             Self::Struct(f) => arrow_schema::DataType::Struct(
                 f.iter()
                     .map(|f| f.to_arrow())
@@ -1175,6 +1181,98 @@ impl From<&ArrowType> for DataType {
     }
 }
 
+impl TryFrom<&arrow_schema::DataType> for DataType {
+    type Error = DaftError;
+
+    fn try_from(value: &arrow_schema::DataType) -> Result<Self, Self::Error> {
+        Ok(match value {
+            arrow_schema::DataType::Null => Self::Null,
+            arrow_schema::DataType::Boolean => Self::Boolean,
+            arrow_schema::DataType::Int8 => Self::Int8,
+            arrow_schema::DataType::Int16 => Self::Int16,
+            arrow_schema::DataType::Int32 => Self::Int32,
+            arrow_schema::DataType::Int64 => Self::Int64,
+            arrow_schema::DataType::UInt8 => Self::UInt8,
+            arrow_schema::DataType::UInt16 => Self::UInt16,
+            arrow_schema::DataType::UInt32 => Self::UInt32,
+            arrow_schema::DataType::UInt64 => Self::UInt64,
+
+            arrow_schema::DataType::Float32 => Self::Float32,
+            arrow_schema::DataType::Float64 => Self::Float64,
+            arrow_schema::DataType::Timestamp(time_unit, tz) => Self::Timestamp(
+                time_unit.into(),
+                tz.clone().map(|tz| tz.as_ref().to_string()),
+            ),
+            arrow_schema::DataType::Date32 => Self::Date,
+            arrow_schema::DataType::Time64(time_unit) => Self::Time(time_unit.into()),
+
+            arrow_schema::DataType::Duration(time_unit) => Self::Duration(time_unit.into()),
+            arrow_schema::DataType::Interval(IntervalUnit::MonthDayNano) => Self::Interval,
+            arrow_schema::DataType::FixedSizeBinary(size) => Self::FixedSizeBinary(*size as _),
+            arrow_schema::DataType::LargeBinary => Self::Binary,
+
+            arrow_schema::DataType::LargeUtf8 => Self::Utf8,
+
+            arrow_schema::DataType::FixedSizeList(field, size) => {
+                Self::FixedSizeList(Box::new(field.as_ref().try_into()?), *size as _)
+            }
+            arrow_schema::DataType::LargeList(field) => {
+                Self::List(Box::new(field.as_ref().try_into()?))
+            }
+
+            arrow_schema::DataType::Struct(fields) => Self::Struct(
+                fields
+                    .into_iter()
+                    .map(|v| v.as_ref().try_into())
+                    .collect::<DaftResult<_>>()?,
+            ),
+
+            arrow_schema::DataType::Decimal128(precision, scale) => {
+                Self::Decimal128(*precision as _, *scale as _)
+            }
+            arrow_schema::DataType::Map(field, _) => {
+                let arrow_schema::DataType::Struct(fields) = &field.data_type() else {
+                    return Err(DaftError::ValueError(
+                        "Map should have a struct as its key".to_string(),
+                    ));
+                };
+
+                let [key, value] = &**fields else {
+                    return Err(DaftError::ValueError(
+                        "Map should have two fields".to_string(),
+                    ));
+                };
+
+                let key = key.data_type();
+                let value = value.data_type();
+
+                let key = Self::try_from(key)?;
+                let value = Self::try_from(value)?;
+
+                let key = Box::new(key);
+                let value = Box::new(value);
+
+                Self::Map { key, value }
+            }
+            _ => {
+                return Err(DaftError::ValueError("unsupported type".to_string()));
+            }
+        })
+    }
+}
+impl TryFrom<&arrow_schema::Field> for DataType {
+    type Error = DaftError;
+
+    fn try_from(value: &arrow_schema::Field) -> Result<Self, Self::Error> {
+        if let Some(DAFT_SUPER_EXTENSION_NAME) = value.extension_type_name() {
+            let payload = value.extension_type_metadata().expect("metadata");
+            DataType::from_json(payload)
+        } else {
+            value.data_type().try_into()
+        }
+    }
+}
+
 impl From<&ImageMode> for DataType {
     fn from(mode: &ImageMode) -> Self {
         use ImageMode::*;
@@ -1184,5 +1282,75 @@ impl From<&ImageMode> for DataType {
             RGB32F | RGBA32F => Self::Float32,
             _ => Self::UInt8,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common_error::DaftResult;
+    use rstest::rstest;
+
+    use crate::{
+        dtype::DataType,
+        field::Field,
+        media_type::MediaType,
+        prelude::{ImageMode, TimeUnit},
+    };
+
+    #[test]
+    fn test_dtype_extension_type_to_arrow() -> DaftResult<()> {
+        let dtype = DataType::Embedding(Box::new(DataType::Float64), 512);
+        let arrow_field = dtype.to_arrow_field()?;
+
+        dbg!(&arrow_field);
+        assert_eq!(arrow_field.name(), "");
+        assert_eq!(
+            arrow_field
+                .metadata()
+                .get("ARROW:extension:name")
+                .map(|s| s.as_str()),
+            Some("daft.super_extension")
+        );
+        assert_eq!(
+            arrow_field
+                .metadata()
+                .get("ARROW:extension:metadata")
+                .map(|s| s.as_str()),
+            Some(dtype.to_json()?.as_str())
+        );
+
+        Ok(())
+    }
+    #[rstest]
+    #[case(DataType::Embedding(Box::new(DataType::Float64), 512))]
+    #[case(DataType::Embedding(Box::new(DataType::Float32), 512))]
+    #[case(DataType::Image(None))]
+    #[case(DataType::Image(Some(ImageMode::L)))]
+    #[case(DataType::Image(Some(ImageMode::RGB)))]
+    #[case(DataType::Image(Some(ImageMode::RGBA)))]
+    #[case(DataType::Image(Some(ImageMode::L16)))]
+    #[case(DataType::Image(Some(ImageMode::LA16)))]
+    #[case(DataType::Image(Some(ImageMode::RGB16)))]
+    #[case(DataType::Image(Some(ImageMode::RGBA16)))]
+    #[case(DataType::List(Box::new(DataType::Image(Some(ImageMode::RGBA16)))))]
+    #[case(DataType::File(MediaType::Video))]
+    #[case(DataType::Struct(vec![
+        Field::new("embedding", DataType::Embedding(Box::new(DataType::Float64), 512)),
+        Field::new("id", DataType::UInt32),
+        Field::new("date", DataType::Date),
+        Field::new("ts", DataType::Timestamp(TimeUnit::Milliseconds, None)),
+        Field::new("file", DataType::File(MediaType::Video)),
+        Field::new("name", DataType::Struct(vec![
+            Field::new("first_name", DataType::Utf8),
+            Field::new("last_name", DataType::Utf8),
+        ])),
+        Field::new("list_of_images", DataType::FixedSizeList(Box::new(DataType::Image(Some(ImageMode::RGBA16))), 1))
+    ]))]
+    fn test_extension_type_round_trip(#[case] dtype: DataType) -> DaftResult<()> {
+        let arrow_field = dtype.to_arrow_field()?;
+        let round_trip_dtype = DataType::try_from(&arrow_field)?;
+        assert_eq!(dtype, round_trip_dtype);
+
+        Ok(())
     }
 }

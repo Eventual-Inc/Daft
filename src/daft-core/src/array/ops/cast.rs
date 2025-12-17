@@ -148,7 +148,7 @@ where
                 };
 
                 let new_field = Arc::new(Field::new(self.name(), dtype.clone()));
-                Series::from_arrow(new_field, result_array)
+                Series::from_arrow2(new_field, result_array)
             }
         }
     }
@@ -1784,7 +1784,7 @@ mod tests {
             "test_decimal",
             DataType::Decimal128(precision, scale),
         ));
-        DataArray::<Decimal128Type>::from_arrow(field, Box::new(arrow_array))
+        DataArray::<Decimal128Type>::from_arrow2(field, Box::new(arrow_array))
             .expect("Failed to create test decimal array")
     }
 
@@ -1792,7 +1792,7 @@ mod tests {
         let arrow_array =
             PrimitiveArray::from_vec(values).to(daft_arrow::datatypes::DataType::Float64);
         let field = Arc::new(Field::new("test_float", DataType::Float64));
-        Float64Array::from_arrow(field, Box::new(arrow_array))
+        Float64Array::from_arrow2(field, Box::new(arrow_array))
             .expect("Failed to create test float array")
     }
 
@@ -1800,7 +1800,7 @@ mod tests {
         let arrow_array =
             PrimitiveArray::from_vec(values).to(daft_arrow::datatypes::DataType::Int64);
         let field = Arc::new(Field::new("test_int", DataType::Int64));
-        Int64Array::from_arrow(field, Box::new(arrow_array))
+        Int64Array::from_arrow2(field, Box::new(arrow_array))
             .expect("Failed to create test int array")
     }
 

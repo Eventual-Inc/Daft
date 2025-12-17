@@ -1,3 +1,4 @@
+use arrow::array::ArrayRef;
 use common_error::DaftResult;
 use daft_schema::dtype::DataType;
 
@@ -12,8 +13,11 @@ impl SeriesLike for ArrayWrapper<PythonArray> {
     fn into_series(&self) -> Series {
         self.0.clone().into_series()
     }
-    fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
+    fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
         self.0.to_arrow().unwrap()
+    }
+    fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        todo!()
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
