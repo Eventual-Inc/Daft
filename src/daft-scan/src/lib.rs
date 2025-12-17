@@ -896,7 +896,7 @@ impl ScanTask {
                 })
                 .or_else(|| {
                     // use approximate number of rows multiplied by an approximate bytes-per-row
-                    self.approx_num_rows(config).and_then(|approx_num_rows| {
+                    self.approx_num_rows(config).map(|approx_num_rows| {
                         let row_size = mat_schema.estimate_row_size_bytes();
 
                         let estimate_f64 = approx_num_rows * row_size;
@@ -904,9 +904,9 @@ impl ScanTask {
                             || estimate_f64.is_infinite()
                             || estimate_f64 > REASONABLE_SIZE_BYTES as f64
                         {
-                            Some(REASONABLE_SIZE_BYTES)
+                            REASONABLE_SIZE_BYTES
                         } else {
-                            Some(estimate_f64 as usize)
+                            estimate_f64 as usize
                         }
                     })
                 })
