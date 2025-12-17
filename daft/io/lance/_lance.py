@@ -354,7 +354,6 @@ def create_scalar_index(
     name: Optional[str] = None,
     replace: bool = True,
     storage_options: Optional[dict[str, Any]] = None,
-    daft_remote_args: Optional[dict[str, Any]] = None,
     concurrency: Optional[int] = None,
     version: Optional[Union[int, str]] = None,
     asof: Optional[str] = None,
@@ -380,7 +379,6 @@ def create_scalar_index(
         name: Name of the index (generated if None)
         replace: Whether to replace an existing index with the same name. Defaults to True.
         storage_options: Storage options for the dataset
-        daft_remote_args: Options for Daft remote execution (e.g., num_cpus, num_gpus, memory_bytes)
         concurrency: Number of Daft workers to use. If None, defaults to 4. Must be a positive
             integer; values larger than the fragment count are clipped down to the number of
             fragments.
@@ -418,7 +416,6 @@ def create_scalar_index(
         >>> daft.io.lance.create_scalar_index(
         ...     "s3://my-bucket/dataset/",
         ...     column="description",
-        ...     daft_remote_args={"num_cpus": 2},
         ... )
     """
     try:
@@ -463,7 +460,6 @@ def create_scalar_index(
         name=name,
         replace=replace,
         storage_options=storage_options,
-        daft_remote_args=daft_remote_args,
         concurrency=concurrency,
         partition_num=partition_num,
         **kwargs,

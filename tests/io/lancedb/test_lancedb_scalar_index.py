@@ -322,7 +322,7 @@ class TestDistributedIndexing:
         assert len(indices) > 0, "No indices found after building"
 
     def test_build_distributed_index_for_btree(self, temp_dir):
-        """Test that different partition_num values succeed."""
+        """Test that building distributed BTREE index succeeds with different partition_num values."""
         dataset_uri = str(Path(temp_dir) / "multi_fragment_text.lance")
         df = daft.from_pydict({"id": [1, 2, 3], "score": [0.5, 0.8, 0.9], "category": ["animals", "ml", "tech"]})
 
