@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import base64
 import dataclasses
+import json
+import urllib.parse
+import urllib.request
 import warnings
 from typing import TYPE_CHECKING, Callable, Literal
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 
 import unitycatalog
@@ -60,6 +65,50 @@ def _io_config_from_temp_creds(
         return None
 
 
+@dataclasses.dataclass(frozen=True)
+class OAuth2Credentials:
+    client_id: str
+    client_secret: str
+
+
+def _generate_workspace_token(workspace_url: str, oauth: OAuth2Credentials) -> str:
+    scope = "all-apis"
+    token_url = workspace_url.rstrip("/") + "/oidc/v1/token"
+    # Build HTTP Basic Auth header
+    credentials = f"{oauth.client_id}:{oauth.client_secret}".encode()
+    auth_header = base64.b64encode(credentials).decode("ascii")
+    body = urllib.parse.urlencode(
+        {
+            "grant_type": "client_credentials",
+            "scope": scope,
+        }
+    ).encode()
+
+    request = urllib.request.Request(
+        token_url,
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Basic {auth_header}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+    )
+
+    try:
+        timeout = 30
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            response_body = response.read().decode()
+            data = json.loads(response_body)
+            return data["access_token"]
+    except TimeoutError as e:
+        raise RuntimeError(f"UnityCatalog token request to {token_url} timed out after {timeout} seconds") from e
+    except HTTPError as e:
+        error_body = e.read().decode(errors="replace")
+        raise RuntimeError(f"UnityCatalog token request to {token_url} failed with HTTP {e.code}: {error_body}") from e
+    except URLError as e:
+        raise RuntimeError(f"UnityCatalog token request to {token_url} failed due to network error: {e.reason}") from e
+
+
 class UnityCatalog:
     """Client to access the Unity Catalog.
 
@@ -72,12 +121,25 @@ class UnityCatalog:
     >>> df = daft.read_deltalake(table)
     """
 
-    def __init__(self, endpoint: str, token: str | None = None):
+    def __init__(
+        self,
+        endpoint: str,
+        token: str | None = None,
+        oauth: OAuth2Credentials | None = None,
+    ):
+        base_url = endpoint.rstrip("/")
         self._endpoint = endpoint
         self._token = token
+        if oauth:
+            warnings.warn(
+                "The UnityCatalog is using 'OAuth2Credentials' and its access token will last for 60 minutes."
+            )
+            # Generate a temporary access token from the credentials
+            # The token will last 60 minutes
+            self._token = _generate_workspace_token(base_url, oauth)
         self._client = unitycatalog.Unitycatalog(
-            base_url=endpoint.rstrip("/") + "/api/2.1/unity-catalog/",
-            default_headers={"Authorization": f"Bearer {token}"},
+            base_url=base_url + "/api/2.1/unity-catalog/",
+            default_headers={"Authorization": f"Bearer {self._token}"},
         )
 
     def _paginate_to_completion(
@@ -200,7 +262,7 @@ class UnityCatalog:
         storage_location = table_info.storage_location
         # Grab credentials from Unity catalog and place it into the Table
         temp_table_credentials = self._client.temporary_table_credentials.create(operation=operation, table_id=table_id)
-
+        print(temp_table_credentials)
         io_config = _io_config_from_temp_creds(temp_table_credentials, storage_location)
 
         return UnityCatalogTable(
