@@ -3505,11 +3505,11 @@ class DataFrame:
         return self._apply_agg_fn(Expression.any_value, cols)
 
     @DataframePublicAPI
-    def count(self, *cols: ColumnInputType) -> "DataFrame":
+    def count(self, *cols: ColumnInputType | int) -> "DataFrame":
         """Performs a global count on the DataFrame.
 
         Args:
-            *cols (Union[str, Expression]): columns to count
+            *cols (Union[str, Expression, int]): columns to count
         Returns:
             DataFrame: Globally aggregated count. Should be a single row.
 
@@ -3575,7 +3575,7 @@ class DataFrame:
             raise ValueError("Cannot call count() with both * and column names")
 
         # Otherwise, perform a column-wise count on the specified columns
-        return self._apply_agg_fn(Expression.count, cols)
+        return self._apply_agg_fn(Expression.count, typing.cast("tuple[ColumnInputType, ...]", cols))
 
     @DataframePublicAPI
     def agg_list(self, *cols: ColumnInputType) -> "DataFrame":
