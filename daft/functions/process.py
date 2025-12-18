@@ -10,29 +10,6 @@ from daft.datatype import DataType, DataTypeLike
 from daft.expressions import Expression
 
 
-def _convert_stdout(stdout: str | None, return_dtype: DataTypeLike) -> Any:
-    """Convert stdout string to Python value matching return_dtype when possible."""
-    if stdout is None:
-        return None
-
-    inferred_dtype = DataType._infer(return_dtype)
-    if inferred_dtype == DataType.string():
-        return stdout
-    if inferred_dtype == DataType.int64() or inferred_dtype == DataType.int32():
-        return int(stdout)
-    if inferred_dtype == DataType.float64() or inferred_dtype == DataType.float32():
-        return float(stdout)
-    if inferred_dtype == DataType.bool():
-        normalized_stdout = stdout.strip().lower()
-        if normalized_stdout in ("true", "1", "t", "yes"):
-            return True
-        if normalized_stdout in ("false", "0", "f", "no"):
-            return False
-        return None
-
-    return stdout
-
-
 def run_process(
     args: Expression | list[Expression | Any],
     *,
@@ -69,6 +46,7 @@ def run_process(
         [{'out': 'hello world'}]
     """
 
+    @daft.func(return_dtype=return_dtype, on_error=on_error)
     def _impl(*argv: Any) -> Any:
         if shell:
             if len(argv) != 1:
@@ -80,19 +58,12 @@ def run_process(
                 raise ValueError("shell=False requires at least one argv token")
             tokens = [str(a) for a in argv]
             proc = subprocess.run(tokens, shell=False, stdout=subprocess.PIPE, text=True, check=True)
-        stdout = proc.stdout.rstrip("\n") if proc.stdout is not None else None
-        return _convert_stdout(stdout, return_dtype)
+        return proc.stdout.rstrip("\n") if proc.stdout is not None else None
 
-    decorated = daft.func(return_dtype=return_dtype, on_error=on_error)(_impl)
+    if isinstance(args, Expression):
+        args = [args]
+    elif not isinstance(args, list):
+        args = [args]
 
-    if shell:
-        expr = Expression._to_expression(args)
-        return decorated(expr)
-    else:
-        if isinstance(args, Expression):
-            args = [args]
-
-        if not isinstance(args, list):
-            raise TypeError("shell=False args must be a list [cmd, arg1, arg2, ...]")
-        expr_args = [Expression._to_expression(v) for v in args]
-        return decorated(*expr_args)
+    expr_args = [Expression._to_expression(v) for v in args]
+    return _impl(*expr_args)

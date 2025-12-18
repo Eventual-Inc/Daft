@@ -56,30 +56,3 @@ def test_run_process_return_dtype_daft_datatype_int32(text: str, expected: int) 
     )
     out = df.select(expr.alias("value")).to_pylist()
     assert out == [{"value": expected}]
-
-
-@pytest.mark.parametrize(
-    "text,expected",
-    [
-        ("true", True),
-        ("True", True),
-        ("1", True),
-        ("t", True),
-        ("yes", True),
-        ("false", False),
-        ("False", False),
-        ("0", False),
-        ("f", False),
-        ("no", False),
-        ("unknown", None),
-    ],
-)
-def test_run_process_return_dtype_bool(text: str, expected: bool | None) -> None:
-    df = daft.from_pydict({"x": [text]})
-    expr = run_process(
-        format("echo {}", df["x"]),
-        shell=True,
-        return_dtype=bool,
-    )
-    out = df.select(expr.alias("value")).to_pylist()
-    assert out == [{"value": expected}]
