@@ -262,7 +262,6 @@ class UnityCatalog:
         storage_location = table_info.storage_location
         # Grab credentials from Unity catalog and place it into the Table
         temp_table_credentials = self._client.temporary_table_credentials.create(operation=operation, table_id=table_id)
-        print(temp_table_credentials)
         io_config = _io_config_from_temp_creds(temp_table_credentials, storage_location)
 
         return UnityCatalogTable(
