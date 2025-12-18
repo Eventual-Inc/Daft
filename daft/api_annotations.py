@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import types
 from collections.abc import Callable
 from typing import (
     Any,
@@ -96,8 +97,8 @@ def type_check_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
         if origin_T is None:
             return isinstance(value, T)
 
-        # T is a `typing.Union`
-        if origin_T is Union:
+        # T is a `typing.Union` or `types.UnionType` (X | Y syntax in Python 3.10+)
+        if origin_T is Union or origin_T is types.UnionType:
             union_types = get_args(T)
             return any(isinstance_helper(value, union_type) for union_type in union_types)
 
