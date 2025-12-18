@@ -99,6 +99,8 @@ def _generate_workspace_token(workspace_url: str, oauth: OAuth2Credentials) -> s
         with urllib.request.urlopen(request, timeout=timeout) as response:
             response_body = response.read().decode()
             data = json.loads(response_body)
+            if "access_token" not in data:
+                raise RuntimeError("UnityCatalog token response missing expected field 'access_token'")
             return data["access_token"]
     except TimeoutError as e:
         raise RuntimeError(f"UnityCatalog token request to {token_url} timed out after {timeout} seconds") from e
@@ -127,9 +129,13 @@ class UnityCatalog:
         token: str | None = None,
         oauth: OAuth2Credentials | None = None,
     ):
+        if token is None and oauth is None:
+            raise ValueError("UnityCatalog requires either a token or OAuth2Credentials.")
+        if token is not None and oauth is not None:
+            raise ValueError("Provide only one of token or OAuth2Credentials.")
+
         base_url = endpoint.rstrip("/")
         self._endpoint = endpoint
-        self._token = token
         if oauth:
             warnings.warn(
                 "The UnityCatalog is using 'OAuth2Credentials' and its access token will last for 60 minutes."
@@ -137,6 +143,8 @@ class UnityCatalog:
             # Generate a temporary access token from the credentials
             # The token will last 60 minutes
             self._token = _generate_workspace_token(base_url, oauth)
+        else:
+            self._token = token
         self._client = unitycatalog.Unitycatalog(
             base_url=base_url + "/api/2.1/unity-catalog/",
             default_headers={"Authorization": f"Bearer {self._token}"},
