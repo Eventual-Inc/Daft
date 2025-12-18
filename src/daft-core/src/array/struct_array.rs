@@ -193,24 +193,18 @@ impl StructArray {
     pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
         let field = self.field().to_arrow()?;
 
-        dbg!(&field);
         let arrow::datatypes::DataType::Struct(fields) = field.data_type() else {
             return Err(DaftError::TypeError(format!(
                 "Expected StructArray, got {:?}",
                 field.data_type()
             )));
         };
-        dbg!(&fields);
         let children: Vec<ArrayRef> = self
             .children
             .iter()
             .map(|s| s.to_arrow())
             .collect::<DaftResult<_>>()?;
-        for (child, field) in children.iter().zip(fields) {
-            let dtype = child.data_type();
-            let field_dtype = field.data_type();
-            dbg!((dtype, field_dtype));
-        }
+
         let arrow_validity = self.validity.clone();
 
         Ok(Arc::new(arrow::array::StructArray::new(
@@ -270,7 +264,6 @@ mod tests {
     #[test]
     fn test_to_arrow_with_extension_type() {
         let image_array = ImageArray::empty("images", &DataType::Image(None)).into_series();
-        dbg!(&image_array.field().to_physical());
         let struct_array = StructArray::new(
             Field::new(
                 "struct",
@@ -281,9 +274,7 @@ mod tests {
         );
 
         let arrow_array = struct_array.to_arrow().unwrap();
-        dbg!(&arrow_array);
 
         assert_eq!(arrow_array.len(), 3);
-        // assert_eq!(arrow_array.null_count(), 0);
     }
 }

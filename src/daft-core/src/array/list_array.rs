@@ -180,7 +180,8 @@ impl ListArray {
     }
 
     pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
-        let field = self.flat_child.field().to_arrow()?;
+        let mut field = self.flat_child.field().to_arrow()?;
+        field = field.with_name("item");
         let offsets = self.offsets().clone();
         let arrow_offsets: arrow::buffer::Buffer = offsets.buffer().clone().into();
 

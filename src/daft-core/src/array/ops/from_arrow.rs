@@ -181,12 +181,15 @@ impl FromArrow for ListArray {
                 target_dtype
             )));
         };
+
         let list_arr = arrow_arr.as_list::<i64>();
         let arrow_child_array = list_arr.values();
-        let child_field = Arc::new(Field::new("item", daft_child_dtype.as_ref().clone()));
-        let child_series = Series::from_arrow(child_field, arrow_child_array.clone())?;
-        let offsets: arrow::buffer::Buffer = list_arr.offsets().inner().clone().into_inner();
+        let child_series = Series::from_arrow(
+            Arc::new(Field::new("list", daft_child_dtype.as_ref().clone())),
+            arrow_child_array.clone(),
+        )?;
 
+        let offsets: arrow::buffer::Buffer = list_arr.offsets().inner().clone().into_inner();
         let offsets =
             unsafe { daft_arrow::offset::OffsetsBuffer::<i64>::new_unchecked(offsets.into()) };
         let validity = list_arr.nulls().cloned();
@@ -241,7 +244,44 @@ impl FromArrow for StructArray {
     }
 
     fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
-        todo!()
+        let field: FieldRef = field.into();
+
+        match (&field.dtype, arrow_arr.data_type()) {
+            (DataType::Struct(fields), arrow::datatypes::DataType::Struct(arrow_fields)) => {
+                if fields.len() != arrow_fields.len() {
+                    return Err(DaftError::ValueError(format!(
+                        "Attempting to create Daft StructArray with {} fields from Arrow array with {} fields: {} vs {:?}",
+                        fields.len(),
+                        arrow_fields.len(),
+                        &field.dtype,
+                        arrow_arr.data_type()
+                    )));
+                }
+
+                let arrow_arr = arrow_arr
+                    .as_any()
+                    .downcast_ref::<arrow::array::StructArray>()
+                    .unwrap();
+
+                let child_series = fields
+                    .iter()
+                    .zip(arrow_arr.columns().iter())
+                    .map(|(daft_field, arrow_arr)| {
+                        Series::from_arrow(Arc::new(daft_field.clone()), arrow_arr.clone())
+                    })
+                    .collect::<DaftResult<Vec<Series>>>()?;
+
+                Ok(Self::new(
+                    field.clone(),
+                    child_series,
+                    arrow_arr.nulls().cloned().map(Into::into),
+                ))
+            }
+            (d, a) => Err(DaftError::TypeError(format!(
+                "Attempting to create Daft StructArray with type {} from arrow array with type {:?}",
+                d, a
+            ))),
+        }
     }
 }
 
@@ -292,7 +332,51 @@ impl FromArrow for MapArray {
     }
 
     fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
-        todo!()
+        let field: FieldRef = field.into();
+
+        let DataType::Map { key, value } = &field.dtype else {
+            return Err(DaftError::TypeError(format!(
+                "Expected Map DataType, got {}",
+                field.dtype
+            )));
+        };
+
+        let arrow::datatypes::DataType::Map(map_field, _) = arrow_arr.data_type() else {
+            return Err(DaftError::TypeError(format!(
+                "Attempting to create Daft MapArray from arrow array with type {:?}",
+                arrow_arr.data_type()
+            )));
+        };
+
+        let arrow_arr = arrow_arr
+            .as_any()
+            .downcast_ref::<arrow::array::MapArray>()
+            .unwrap();
+
+        let arrow_child_array: ArrayRef = Arc::new(arrow_arr.entries().clone());
+
+        let child_field = Field::new(
+            map_field.name(),
+            DataType::Struct(vec![
+                Field::new("key", *key.clone()),
+                Field::new("value", *value.clone()),
+            ]),
+        );
+        let physical_field = Field::new(
+            field.name.clone(),
+            DataType::List(Box::new(child_field.dtype.clone())),
+        );
+
+        let child_series = Series::from_arrow(child_field.into(), arrow_child_array.clone())?;
+
+        let offsets: arrow::buffer::Buffer = arrow_arr.offsets().inner().clone().into_inner();
+        let offsets =
+            unsafe { daft_arrow::offset::OffsetsBuffer::<i64>::new_unchecked(offsets.into()) };
+        let validity = arrow_arr.nulls().cloned();
+
+        let physical = ListArray::new(physical_field, child_series, offsets, validity);
+
+        Ok(Self::new(field, physical))
     }
 }
 
@@ -318,7 +402,25 @@ impl FromArrow for PythonArray {
     }
 
     fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
-        todo!()
+        let field: FieldRef = field.into();
+        assert_eq!(field.dtype, DataType::Python);
+
+        let target_convert = field.to_physical();
+        let target_convert_arrow = target_convert.dtype.to_arrow()?;
+
+        let physical_arrow_array = arrow::compute::cast(arrow_arr.as_ref(), &target_convert_arrow)?;
+
+        let physical_arrow_array = physical_arrow_array
+            .as_any()
+            .downcast_ref::<arrow::array::LargeBinaryArray>()
+            .expect("PythonArray::from_arrow: Failed to downcast to LargeBinaryArray");
+        let v = physical_arrow_array
+            .iter()
+            .map(|x| x.map(|x| x.to_vec()))
+            .collect::<Vec<_>>();
+        // trustedlen forces materialization here
+        // TODO: remove once we dont have arrow2 anymore
+        Self::from_iter_pickled(&field.name, v.into_iter())
     }
 }
 
@@ -343,7 +445,21 @@ macro_rules! impl_logical_from_arrow {
             }
 
             fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
-                todo!()
+                let field: FieldRef = field.into();
+                  let target_convert = field.to_physical();
+                  let target_convert_arrow = target_convert.dtype.to_arrow()?;
+
+                  let physical_arrow_array = arrow::compute::cast(
+                      arrow_arr.as_ref(),
+                      &target_convert_arrow,
+                  )?;
+
+                  let physical =
+                      <<$logical_type as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::from_arrow(
+                          Arc::new(target_convert),
+                          physical_arrow_array,
+                      )?;
+                  Ok(Self::new(field, physical))
             }
         }
     };
@@ -420,27 +536,7 @@ impl_logical_from_arrow!(DurationType);
 impl_logical_from_arrow!(ImageType);
 impl_logical_from_arrow!(TimestampType);
 impl_logical_from_arrow!(TensorType);
-impl FromArrow for LogicalArray<EmbeddingType> {
-    fn from_arrow2(
-        field: FieldRef,
-        arrow_arr: Box<dyn daft_arrow::array::Array>,
-    ) -> DaftResult<Self> {
-        let target_convert = field.to_physical();
-        let target_convert_arrow = target_convert.dtype.to_arrow2()?;
-        let physical_arrow_array = arrow_arr.convert_logical_type(target_convert_arrow);
-        let physical =  <<EmbeddingType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::from_arrow2(Arc::new(target_convert),physical_arrow_array,)?;
-        Ok(Self::new(field, physical))
-    }
-    fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
-        let field = field.into();
-        let physical_field = field.to_physical();
-        dbg!(&physical_field);
-        dbg!(&arrow_arr);
-        let physical =  <<EmbeddingType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::from_arrow(Arc::new(physical_field),arrow_arr)?;
-        dbg!(&physical);
-        Ok(Self::new(field, physical))
-    }
-}
+impl_logical_from_arrow!(EmbeddingType);
 impl_logical_from_arrow!(FixedShapeTensorType);
 impl_logical_from_arrow!(SparseTensorType);
 impl_logical_from_arrow!(FixedShapeSparseTensorType);
@@ -465,7 +561,18 @@ where
     }
 
     fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
-        todo!()
+        let field: FieldRef = field.into();
+        let target_convert = field.to_physical();
+        let target_convert_arrow = target_convert.dtype.to_arrow()?;
+
+        let physical_arrow_array = arrow::compute::cast(arrow_arr.as_ref(), &target_convert_arrow)?;
+
+        let physical =
+               <<FileType<T> as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::from_arrow(
+                   Arc::new(target_convert),
+                   physical_arrow_array,
+               )?;
+        Ok(Self::new(field, physical))
     }
 }
 
@@ -529,25 +636,45 @@ mod tests {
         let arr = ListArray::from_series("test", vec![Some(data.clone()), None, Some(data)])?;
 
         let arrow_arr = arr.to_arrow()?;
-        let new_arr =
-            ListArray::from_arrow(Field::new("test", arr.data_type().clone()), arrow_arr)?;
+        let new_arr = ListArray::from_arrow(arr.field().clone(), arrow_arr)?;
 
-        assert_eq!(arr, new_arr);
+        assert_eq!(arr.field(), new_arr.field());
+        assert_eq!(arr.offsets(), new_arr.offsets());
+        assert_eq!(arr.validity(), new_arr.validity());
+        assert_eq!(arr.flat_child, new_arr.flat_child);
 
         Ok(())
     }
+
+    #[rstest]
+    #[case(Series::empty("test", &DataType::List(Box::new(DataType::Utf8))))]
+    #[case(Series::empty("test", &DataType::List(Box::new(DataType::Null))))]
+    #[case(Series::empty("test", &DataType::List(Box::new(DataType::Image(None)))))]
+    fn test_arrow_roundtrip_nested_list(#[case] data: Series) -> DaftResult<()> {
+        let arr = ListArray::from_series("test", vec![Some(data.clone()), None, Some(data)])?;
+
+        let arrow_arr = arr.to_arrow()?;
+        let new_arr = ListArray::from_arrow(arr.field().clone(), arrow_arr)?;
+
+        assert_eq!(arr.field(), new_arr.field());
+        assert_eq!(arr.offsets(), new_arr.offsets());
+        assert_eq!(arr.validity(), new_arr.validity());
+
+        Ok(())
+    }
+
     #[rstest]
     #[case(series![1u8, 2u8, 3u8])]
-    // #[case(series![1i8, 2i8, 3i8])]
-    // #[case(series![1i16, 2i16, 3i16])]
-    // #[case(series![1i32, 2i32, 3i32])]
-    // #[case(series![1i64, 2i64, 3i64])]
-    // #[case(series![1f32, 2f32, 3f32])]
-    // #[case(series![1f64, 2f64, 3f64])]
-    // #[case(series!["a", "b", "c"])]
-    // #[case(series![true, false, false])]
-    // #[case(Series::empty("test", &DataType::Null))]
-    // #[case(Series::empty("test", &DataType::Utf8))]
+    #[case(series![1i8, 2i8, 3i8])]
+    #[case(series![1i16, 2i16, 3i16])]
+    #[case(series![1i32, 2i32, 3i32])]
+    #[case(series![1i64, 2i64, 3i64])]
+    #[case(series![1f32, 2f32, 3f32])]
+    #[case(series![1f64, 2f64, 3f64])]
+    #[case(series!["a", "b", "c"])]
+    #[case(series![true, false, false])]
+    #[case(Series::empty("test", &DataType::Null))]
+    #[case(Series::empty("test", &DataType::Utf8))]
     fn test_arrow_roundtrip_fixed_size_list(#[case] data: Series) -> DaftResult<()> {
         let arr = FixedSizeListArray::new(
             Field::new(
@@ -559,13 +686,10 @@ mod tests {
         );
 
         let arrow_arr = arr.to_arrow()?;
-        dbg!(arrow_arr.data_type());
         let field = Field::new("test", arr.data_type().clone());
-        dbg!(&field);
         let new_arr = FixedSizeListArray::from_arrow(field, arrow_arr)?;
 
         assert_eq!(arr, new_arr);
-        assert!(false);
 
         Ok(())
     }
@@ -591,18 +715,17 @@ mod tests {
 
     #[rstest]
     #[case(series![1u8, 2u8, 3u8])]
-    // #[case(series![1i8, 2i8, 3i8])]
-    // #[case(series![1i16, 2i16, 3i16])]
-    // #[case(series![1i32, 2i32, 3i32])]
-    // #[case(series![1i64, 2i64, 3i64])]
-    // #[case(series![1f32, 2f32, 3f32])]
-    // #[case(series![1f64, 2f64, 3f64])]
-    // #[case(series!["a", "b", "c"])]
-    // #[case(series![true, false, false])]
-    // #[case(Series::empty("test", &DataType::Null))]
-    // #[case(Series::empty("test", &DataType::Utf8))]
+    #[case(series![1i8, 2i8, 3i8])]
+    #[case(series![1i16, 2i16, 3i16])]
+    #[case(series![1i32, 2i32, 3i32])]
+    #[case(series![1i64, 2i64, 3i64])]
+    #[case(series![1f32, 2f32, 3f32])]
+    #[case(series![1f64, 2f64, 3f64])]
+    #[case(series!["a", "b", "c"])]
+    #[case(series![true, false, false])]
+    #[case(Series::empty("test", &DataType::Null))]
+    #[case(Series::empty("test", &DataType::Utf8))]
     fn test_arrow_roundtrip_logical_embedding(#[case] data: Series) -> DaftResult<()> {
-        let data = data.rename("");
         let arr = FixedSizeListArray::new(
             Field::new(
                 "",
@@ -618,10 +741,8 @@ mod tests {
             ),
             arr,
         );
-        dbg!(&embedding_array);
 
         let arrow_arr = embedding_array.to_arrow()?;
-        dbg!(&arrow_arr.data_type());
         let new_arr = EmbeddingArray::from_arrow(
             Field::new("", embedding_array.data_type().clone()),
             arrow_arr,
@@ -629,6 +750,320 @@ mod tests {
 
         assert_eq!(embedding_array.physical, new_arr.physical);
         assert_eq!(embedding_array.field(), new_arr.field());
+
+        Ok(())
+    }
+    #[rstest]
+    #[case(Series::empty("test", &DataType::Null))]
+    #[case(series![1u8, 2u8, 3u8])]
+    #[case(series![1i8, 2i8, 3i8])]
+    #[case(series![1i16, 2i16, 3i16])]
+    #[case(series![1i32, 2i32, 3i32])]
+    #[case(series![1i64, 2i64, 3i64])]
+    #[case(series![1f32, 2f32, 3f32])]
+    #[case(series![1f64, 2f64, 3f64])]
+    #[case(series!["a", "b", "c"])]
+    #[case(series![true, false, false])]
+    #[case(Series::empty("test", &DataType::Null))]
+    #[case(Series::empty("test", &DataType::Utf8))]
+    #[case(Series::empty("test", &DataType::List(Box::new(DataType::Null))))]
+    #[case(Series::empty("test", &DataType::List(Box::new(DataType::Utf8))))]
+    #[case(Series::empty("test", &DataType::List(Box::new(DataType::Int32))))]
+    #[case(Series::empty("test", &DataType::List(Box::new(DataType::Float32))))]
+    #[case(Series::empty("test", &DataType::List(Box::new(DataType::Float64))))]
+    #[case(Series::empty("test", &DataType::List(Box::new(DataType::Boolean))))]
+    #[case(Series::empty("test", &DataType::List(Box::new(DataType::Timestamp(TimeUnit::Nanoseconds, None)))))]
+    #[case(Series::empty("test", &DataType::List(Box::new(DataType::Date))))]
+    fn test_arrow_roundtrip_struct(#[case] data: Series) -> DaftResult<()> {
+        let arr = StructArray::new(
+            Field::new("item1", DataType::Struct(vec![data.field().clone()])),
+            vec![data],
+            None,
+        );
+
+        let arrow_arr = arr.to_arrow()?;
+        let new_arr = StructArray::from_arrow(arr.field().clone(), arrow_arr)?;
+        assert_eq!(arr.len(), new_arr.len());
+        assert_eq!(arr.validity(), new_arr.validity());
+        assert_eq!(arr.field(), new_arr.field());
+        for i in 0..arr.len() {
+            let expected = arr.get_lit(i);
+            let actual = new_arr.get_lit(i);
+            assert_eq!(expected, actual);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_arrow_roundtrip_logical_duration() -> DaftResult<()> {
+        let arr = LogicalArray::<DurationType>::new(
+            Field::new("test", DataType::Duration(TimeUnit::Milliseconds)),
+            Int64Array::from_values("", vec![1000, 2000, 3000].into_iter()),
+        );
+
+        let arrow_arr = arr.to_arrow()?;
+        let new_arr = LogicalArray::<DurationType>::from_arrow(
+            Field::new("test", arr.data_type().clone()),
+            arrow_arr,
+        )?;
+
+        assert_eq!(arr.field(), new_arr.field());
+        assert_eq!(arr.physical, new_arr.physical);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_arrow_roundtrip_logical_timestamp() -> DaftResult<()> {
+        let arr = LogicalArray::<TimestampType>::new(
+            Field::new(
+                "test",
+                DataType::Timestamp(TimeUnit::Microseconds, Some("UTC".to_string())),
+            ),
+            Int64Array::from_values("", vec![1000000, 2000000, 3000000].into_iter()),
+        );
+
+        let arrow_arr = arr.to_arrow()?;
+        let new_arr = LogicalArray::<TimestampType>::from_arrow(
+            Field::new("test", arr.data_type().clone()),
+            arrow_arr,
+        )?;
+
+        assert_eq!(arr.field(), new_arr.field());
+        assert_eq!(arr.physical, new_arr.physical);
+
+        Ok(())
+    }
+    #[test]
+    fn test_arrow_roundtrip_logical_image() -> DaftResult<()> {
+        let struct_array = StructArray::new(
+            Field::new(
+                "",
+                DataType::Struct(vec![
+                    Field::new("data", DataType::List(Box::new(DataType::UInt8))),
+                    Field::new("channel", DataType::UInt16),
+                    Field::new("height", DataType::UInt32),
+                    Field::new("width", DataType::UInt32),
+                    Field::new("mode", DataType::UInt8),
+                ]),
+            ),
+            vec![
+                Series::empty("data", &DataType::List(Box::new(DataType::UInt8))),
+                Series::empty("channel", &DataType::UInt16),
+                Series::empty("height", &DataType::UInt32),
+                Series::empty("width", &DataType::UInt32),
+                Series::empty("mode", &DataType::UInt8),
+            ],
+            None,
+        );
+
+        let arr = ImageArray::new(Field::new("test", DataType::Image(None)), struct_array);
+
+        let arrow_arr = arr.to_arrow()?;
+        let new_arr =
+            ImageArray::from_arrow(Field::new("test", arr.data_type().clone()), arrow_arr)?;
+
+        assert_eq!(arr.field(), new_arr.field());
+        for i in 0..arr.len() {
+            let expected = arr.get_lit(i);
+            let actual = new_arr.get_lit(i);
+            assert_eq!(expected, actual);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_arrow_roundtrip_logical_fixed_shape_image() -> DaftResult<()> {
+        let height = 2;
+        let width = 2;
+        let channels = 3; // RGB
+        let size = (height * width * channels) as usize;
+
+        let data = Series::from_literals(vec![Literal::UInt8(0u8); size])?;
+        let list_array = FixedSizeListArray::new(
+            Field::new("", DataType::FixedSizeList(Box::new(DataType::UInt8), size)),
+            data,
+            None,
+        );
+
+        let arr = FixedShapeImageArray::new(
+            Field::new(
+                "test",
+                DataType::FixedShapeImage(ImageMode::RGB, height, width),
+            ),
+            list_array,
+        );
+
+        let arrow_arr = arr.to_arrow()?;
+        let new_arr = FixedShapeImageArray::from_arrow(
+            Field::new("test", arr.data_type().clone()),
+            arrow_arr,
+        )?;
+        assert_eq!(arr.field(), new_arr.field());
+        for i in 0..arr.len() {
+            let expected = arr.get_lit(i);
+            let actual = new_arr.get_lit(i);
+            assert_eq!(expected, actual);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_arrow_roundtrip_logical_tensor() -> DaftResult<()> {
+        let struct_array = StructArray::new(
+            Field::new(
+                "",
+                DataType::Struct(vec![
+                    Field::new("data", DataType::List(Box::new(DataType::Float32))),
+                    Field::new("shape", DataType::List(Box::new(DataType::UInt64))),
+                ]),
+            ),
+            vec![
+                Series::empty("data", &DataType::List(Box::new(DataType::Float32))),
+                Series::empty("shape", &DataType::List(Box::new(DataType::UInt64))),
+            ],
+            None,
+        );
+
+        let arr = TensorArray::new(
+            Field::new("test", DataType::Tensor(Box::new(DataType::Float32))),
+            struct_array,
+        );
+
+        let arrow_arr = arr.to_arrow()?;
+        let new_arr =
+            TensorArray::from_arrow(Field::new("test", arr.data_type().clone()), arrow_arr)?;
+
+        assert_eq!(arr.field(), new_arr.field());
+        for i in 0..arr.len() {
+            let expected = arr.get_lit(i);
+            let actual = new_arr.get_lit(i);
+            assert_eq!(expected, actual);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_arrow_roundtrip_logical_fixed_shape_tensor() -> DaftResult<()> {
+        let shape = vec![3u64, 224u64, 224u64];
+        let size: usize = shape.clone().iter().map(|v| *v as usize).product();
+
+        let data = Series::from_literals(vec![Literal::Float32(0.0f32); size])?;
+
+        let list_array = FixedSizeListArray::new(
+            Field::new(
+                "",
+                DataType::FixedSizeList(Box::new(DataType::Float32), size),
+            ),
+            data,
+            None,
+        );
+
+        let arr = FixedShapeTensorArray::new(
+            Field::new(
+                "test",
+                DataType::FixedShapeTensor(Box::new(DataType::Float32), shape),
+            ),
+            list_array,
+        );
+
+        let arrow_arr = arr.to_arrow()?;
+        let new_arr = FixedShapeTensorArray::from_arrow(
+            Field::new("test", arr.data_type().clone()),
+            arrow_arr,
+        )?;
+
+        assert_eq!(arr.field(), new_arr.field());
+        for i in 0..arr.len() {
+            let expected = arr.get_lit(i);
+            let actual = new_arr.get_lit(i);
+            assert_eq!(expected, actual);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_arrow_roundtrip_logical_sparse_tensor() -> DaftResult<()> {
+        let struct_array = StructArray::new(
+            Field::new(
+                "",
+                DataType::Struct(vec![
+                    Field::new("values", DataType::List(Box::new(DataType::Float64))),
+                    Field::new("indices", DataType::List(Box::new(DataType::UInt64))),
+                    Field::new("shape", DataType::List(Box::new(DataType::UInt64))),
+                ]),
+            ),
+            vec![
+                Series::empty("values", &DataType::List(Box::new(DataType::Float64))),
+                Series::empty("indices", &DataType::List(Box::new(DataType::UInt64))),
+                Series::empty("shape", &DataType::List(Box::new(DataType::UInt64))),
+            ],
+            None,
+        );
+
+        let arr = SparseTensorArray::new(
+            Field::new(
+                "test",
+                DataType::SparseTensor(Box::new(DataType::Float64), true),
+            ),
+            struct_array,
+        );
+
+        let arrow_arr = arr.to_arrow()?;
+        let new_arr =
+            SparseTensorArray::from_arrow(Field::new("test", arr.data_type().clone()), arrow_arr)?;
+
+        assert_eq!(arr.field(), new_arr.field());
+        for i in 0..arr.len() {
+            let expected = arr.get_lit(i);
+            let actual = new_arr.get_lit(i);
+            assert_eq!(expected, actual);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_arrow_roundtrip_logical_fixed_shape_sparse_tensor() -> DaftResult<()> {
+        let struct_array = StructArray::new(
+            Field::new(
+                "",
+                DataType::Struct(vec![
+                    Field::new("values", DataType::List(Box::new(DataType::Float32))),
+                    Field::new("indices", DataType::List(Box::new(DataType::UInt16))),
+                ]),
+            ),
+            vec![
+                Series::empty("values", &DataType::List(Box::new(DataType::Float32))),
+                Series::empty("indices", &DataType::List(Box::new(DataType::UInt16))),
+            ],
+            None,
+        );
+
+        let arr = FixedShapeSparseTensorArray::new(
+            Field::new(
+                "test",
+                DataType::FixedShapeSparseTensor(Box::new(DataType::Float32), vec![100, 100], true),
+            ),
+            struct_array,
+        );
+
+        let arrow_arr = arr.to_arrow()?;
+        let new_arr = FixedShapeSparseTensorArray::from_arrow(
+            Field::new("test", arr.data_type().clone()),
+            arrow_arr,
+        )?;
+
+        assert_eq!(arr.field(), new_arr.field());
+        for i in 0..arr.len() {
+            let expected = arr.get_lit(i);
+            let actual = new_arr.get_lit(i);
+            assert_eq!(expected, actual);
+        }
 
         Ok(())
     }

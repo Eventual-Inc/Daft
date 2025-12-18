@@ -126,21 +126,13 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, DataArray<L::PhysicalType>> {
     }
 
     pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
-        let daft_type = self.data_type();
         let arrow_field = self.field().to_arrow()?;
         let physical = arrow::array::make_array(self.physical.to_data());
 
-        use crate::datatypes::DataType::*;
-
-        match daft_type {
-            Decimal128(..) | Date | Timestamp(..) | Duration(..) | Time(..) => {
-                todo!()
-            }
-            _ => Ok(arrow::compute::cast(
-                physical.as_ref(),
-                arrow_field.data_type(),
-            )?),
-        }
+        Ok(arrow::compute::cast(
+            physical.as_ref(),
+            arrow_field.data_type(),
+        )?)
     }
 }
 
@@ -157,17 +149,14 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
     }
 
     pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
-        let mut field = self.field().to_arrow()?;
-        let physical_type = self.physical.data_type().to_arrow()?;
-        field = field.with_data_type(physical_type);
-
+        let inner_dtype = self.physical.field().dtype.dtype()?;
+        let inner_field = Field::new("item", inner_dtype.clone()).to_arrow()?;
         let size = self.physical.fixed_element_len() as i32;
-        let values = self.physical.to_arrow()?;
-
+        let values = self.physical.flat_child.to_arrow()?;
         let nulls = self.physical.validity().cloned();
 
         Ok(Arc::new(arrow::array::FixedSizeListArray::try_new(
-            Arc::new(field),
+            Arc::new(inner_field),
             size,
             values,
             nulls,
@@ -225,7 +214,49 @@ impl MapArray {
     }
 
     pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
-        todo!()
+        let arrow_field = self.field().to_arrow()?;
+        let arrow_dtype = arrow_field.data_type();
+
+        let arrow::datatypes::DataType::Map(inner_struct_field, _) = arrow_dtype else {
+            unreachable!("Expected map type");
+        };
+        let arrow::datatypes::DataType::Struct(inner_struct_fields) =
+            inner_struct_field.as_ref().data_type()
+        else {
+            unreachable!("Expected struct type");
+        };
+
+        let inner_struct_array = self
+            .physical
+            .flat_child
+            .struct_()
+            .expect("Expected struct array");
+
+        let struct_arrays: Vec<ArrayRef> = inner_struct_array
+            .children
+            .iter()
+            .map(|s| s.to_arrow())
+            .collect::<DaftResult<_>>()?;
+
+        let struct_array = arrow::array::StructArray::try_new(
+            inner_struct_fields.clone(),
+            struct_arrays,
+            inner_struct_array.validity().cloned(),
+        )?;
+
+        let offsets_buffer =
+            arrow::buffer::Buffer::from(self.physical.offsets().clone().into_inner());
+        let scalar_buffer = arrow::buffer::ScalarBuffer::<i32>::from(offsets_buffer);
+
+        let offsets = arrow::buffer::OffsetBuffer::new(scalar_buffer);
+
+        Ok(Arc::new(arrow::array::MapArray::try_new(
+            Arc::new(arrow_field),
+            offsets,
+            struct_array,
+            self.physical.validity().cloned(),
+            false,
+        )?))
     }
 }
 
@@ -249,45 +280,3 @@ pub trait DaftImageryType: DaftLogicalType {}
 
 impl DaftImageryType for ImageType {}
 impl DaftImageryType for FixedShapeImageType {}
-
-// #[cfg(test)]
-// mod tests {
-
-//     use common_error::DaftResult;
-//     use daft_schema::{dtype::DataType, field::Field};
-
-//     use crate::{
-//         array::FixedSizeListArray,
-//         prelude::{EmbeddingArray, FromArrow, Int8Array},
-//         series::IntoSeries,
-//     };
-
-//     #[test]
-//     fn test_logical_array_roundtrip_to_arrow() -> DaftResult<()> {
-//         let fixed_size_list_array = FixedSizeListArray::new(
-//             Field::new("", DataType::FixedSizeList(Box::new(DataType::Int8), 2)),
-//             Int8Array::from_values_iter(
-//                 Field::new("", DataType::Int8),
-//                 vec![1, 2, 3, 4].into_iter(),
-//             )
-//             .into_series(),
-//             None,
-//         );
-//         let embedding_array = EmbeddingArray::new(
-//             Field::new("", DataType::Embedding(Box::new(DataType::Int8), 2)),
-//             fixed_size_list_array,
-//         );
-//         let arrow_arr = embedding_array.to_arrow()?;
-//         dbg!(&arrow_arr);
-
-//         let new_embedding_array = EmbeddingArray::from_arrow(
-//             Field::new("", DataType::Embedding(Box::new(DataType::Int8), 2)),
-//             arrow_arr,
-//         )?;
-//         dbg!(&new_embedding_array);
-//         assert_eq!(embedding_array.field(), new_embedding_array.field());
-//         assert_eq!(embedding_array.physical, new_embedding_array.physical);
-
-//         Ok(())
-//     }
-// }
