@@ -100,21 +100,21 @@ def read_lance(
 
     Examples:
         Read a local LanceDB table:
-        >>> df = daft.read_lance("s3://my-lancedb-bucket/data/")
+        >>> df = daft.read_lance("/path/to/lance/data/")
+        >>> df.show()
+
+        Read a LanceDB table and specify a version:
+        >>> df = daft.read_lance("/path/to/lance/data/", version=1)
+        >>> df.show()
+
+        Read a LanceDB table with fragment grouping:
+        >>> df = daft.read_lance("/path/to/lance/data/", fragment_group_size=5)
         >>> df.show()
 
         Read a LanceDB table from a public S3 bucket:
-        >>> from daft.io import S3Config
-        >>> s3_config = S3Config(region="us-west-2", anonymous=True)
-        >>> df = daft.read_lance("s3://daft-public-data/lance/words-test-dataset", io_config=s3_config)
-        >>> df.show()
-
-        Read a local LanceDB table and specify a version:
-        >>> df = daft.read_lance("s3://my-lancedb-bucket/data/", version=1)
-        >>> df.show()
-
-        Read a local LanceDB table with fragment grouping:
-        >>> df = daft.read_lance("s3://my-lancedb-bucket/data/", fragment_group_size=5)
+        >>> from daft.io import S3Config, IOConfig
+        >>> io_config = IOConfig(s3=S3Config(region="us-west-2", anonymous=True))
+        >>> df = daft.read_lance("s3://daft-public-data/lance/words-test-dataset", io_config=io_config)
         >>> df.show()
     """
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
@@ -297,7 +297,9 @@ def merge_columns_df(
         >>> import daft
         >>> # Read the existing table with row addresses
         >>> df = daft.read_lance(
-        ...     "s3://my-lancedb-bucket/data/", default_scan_options={"with_row_address": True}, include_fragment_id=True
+        ...     "s3://my-lancedb-bucket/data/",
+        ...     default_scan_options={"with_row_address": True},
+        ...     include_fragment_id=True,
         ... )
         >>> # Add new columns based on existing data
         >>> df = df.with_column("doubled_c", df["c"] * 2)
