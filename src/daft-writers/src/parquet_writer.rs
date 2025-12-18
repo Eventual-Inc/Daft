@@ -34,7 +34,7 @@ pub(crate) fn native_parquet_writer_supported(
     file_schema: &SchemaRef,
 ) -> DaftResult<bool> {
     let (source_type, _) = parse_url(root_dir)?;
-    if !source_type.support_native_writer() {
+    if !source_type.supports_native_writer() {
         return Ok(false);
     }
 
@@ -110,7 +110,7 @@ pub(crate) fn create_native_parquet_writer(
                 storage_backend,
             )))
         }
-        source if source.support_native_writer() => {
+        source if source.supports_native_writer() => {
             let ObjectPath { scheme, .. } = daft_io::utils::parse_object_url(root_dir.as_ref())?;
             let io_config = io_config.ok_or_else(|| {
                 DaftError::InternalError("IO config is required for S3 writes".to_string())

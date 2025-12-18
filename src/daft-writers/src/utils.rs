@@ -20,7 +20,7 @@ pub(crate) fn build_filename(
 
     match source_type {
         SourceType::File => build_local_file_path(root_dir, partition_path, filename),
-        source if source.support_native_writer() => {
+        source if source.supports_native_writer() => {
             build_object_path(root_dir, partition_path, filename)
         }
         _ => Err(DaftError::ValueError(format!(
