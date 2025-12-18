@@ -142,7 +142,7 @@ impl PipelineNodeImpl for ScanSourceNode {
                 .scan_tasks
                 .iter()
                 .map(|st| {
-                    st.estimate_in_memory_size_bytes(None)
+                    st.estimate_in_memory_size_bytes(Some(scan.config.execution_config.as_ref()))
                         .or_else(|| st.size_bytes_on_disk())
                         .unwrap_or(0)
                 })

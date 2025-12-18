@@ -37,6 +37,7 @@ pub struct ScanTaskSource {
     scan_tasks: Vec<Arc<ScanTask>>,
     num_parallel_tasks: usize,
     schema: SchemaRef,
+    execution_config: Arc<DaftExecutionConfig>,
 }
 
 impl ScanTaskSource {
@@ -100,6 +101,7 @@ impl ScanTaskSource {
             scan_tasks,
             num_parallel_tasks,
             schema,
+            execution_config: Arc::new(cfg.clone()),
         }
     }
 
@@ -228,7 +230,7 @@ impl TreeDisplay for ScanTaskSource {
                 .scan_tasks
                 .iter()
                 .map(|st| {
-                    st.estimate_in_memory_size_bytes(None)
+                    st.estimate_in_memory_size_bytes(Some(scan.execution_config.as_ref()))
                         .or_else(|| st.size_bytes_on_disk())
                         .unwrap_or(0)
                 })
