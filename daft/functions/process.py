@@ -23,12 +23,13 @@ def run_process(
 
     Args:
         args (Expression | list[Expression | Any]):
-            The command to execute. If ``shell=False`` (default), pass a list of arguments, for example ``["ls", "-a", col("path")]``.
-            If ``shell=True``, pass a single string expression, for example ``format("echo {}", col("x"))``.
+            The command to execute.
+            If ``shell=False`` (default), pass a list of arguments, for example ``["ls", "-a", col("path")]``.
+            If ``shell=True``, pass a single string expression or a list that will be joined, for example ``"echo hello"`` or ``["echo", "hello"]``.
         shell (bool, default=False):
             Whether to execute the command via the system shell (equivalent to ``subprocess.run(..., shell=True)``).
             Using the shell enables pipes and redirection but is more vulnerable to injection. Defaults to ``False``.
-        on_error (str, default="log"):
+        on_error (Literal["raise", "ignore", "log"], default="log"):
             Whether to log an error when encountering an error, or log a warning and return a null
         return_dtype: Desired Daft data type for the result column. Defaults to a UTF-8 string column.
 
@@ -40,10 +41,18 @@ def run_process(
         >>> from daft import col
         >>> from daft.functions import run_process
         >>> df = daft.from_pydict({"a": ["hello"], "b": ["world"]})
+        >>> # Without shell
         >>> expr = run_process(["echo", col("a"), col("b")])
         >>> df = df.select(expr.alias("out"))
         >>> df.to_pylist()
         [{'out': 'hello world'}]
+        >>>
+        >>> # With shell and return_dtype=int
+        >>> df = daft.from_pydict({"x": ["hello world"]})
+        >>> expr = run_process(("echo " + col("x") + " | wc -c"), shell=True, return_dtype=int)
+        >>> df = df.select(expr.alias("word_count"))
+        >>> df.to_pylist()
+        [{'word_count': 12}]
     """
 
     @daft.func(return_dtype=return_dtype, on_error=on_error)
