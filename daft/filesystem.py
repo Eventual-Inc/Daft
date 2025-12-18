@@ -353,7 +353,6 @@ def glob_path_with_stats(
 # Path joining
 ###
 
-
 def join_path(fs: pafs.FileSystem, base_path: str, *sub_paths: str) -> str:
     """Join a base path with sub-paths using the appropriate path separator for the given filesystem."""
     if isinstance(fs, pafs.LocalFileSystem):
