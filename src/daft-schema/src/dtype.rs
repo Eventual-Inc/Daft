@@ -1216,6 +1216,7 @@ impl TryFrom<&arrow_schema::DataType> for DataType {
         })
     }
 }
+
 impl TryFrom<&arrow_schema::Field> for DataType {
     type Error = DaftError;
 
@@ -1223,12 +1224,12 @@ impl TryFrom<&arrow_schema::Field> for DataType {
         if let Some(extension_name) = value.extension_type_name() {
             if extension_name == DAFT_SUPER_EXTENSION_NAME {
                 let payload = value.extension_type_metadata().expect("metadata");
-                DataType::from_json(payload)
+                Self::from_json(payload)
             } else {
                 // Generic extension type
                 let physical = value.data_type().try_into()?;
                 let metadata = value.extension_type_metadata().map(|s| s.to_string());
-                Ok(DataType::Extension(
+                Ok(Self::Extension(
                     extension_name.to_string(),
                     Box::new(physical),
                     metadata,
