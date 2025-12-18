@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
-use common_file_formats::FileFormat;
+use common_file_formats::{FileFormat, FileFormatConfig};
 use daft_core::prelude::*;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::OutputFileInfo;
@@ -49,7 +49,7 @@ impl PhysicalWriterFactory {
         file_schema: &SchemaRef,
         native_enabled: bool,
     ) -> DaftResult<WriterType> {
-        match output_file_info.file_format {
+        match output_file_info.file_format_config.file_format() {
             FileFormat::Parquet => {
                 Self::select_parquet_writer_type(output_file_info, file_schema, native_enabled)
             }
@@ -115,7 +115,7 @@ impl WriterFactory for PhysicalWriterFactory {
                 &self.output_file_info.root_dir,
                 file_idx,
                 &self.schema,
-                self.output_file_info.file_format,
+                &self.output_file_info.file_format_config,
                 partition_values,
                 self.output_file_info.io_config.clone(),
             ),
@@ -124,7 +124,7 @@ impl WriterFactory for PhysicalWriterFactory {
                 file_idx,
                 self.output_file_info.compression.as_ref(),
                 self.output_file_info.io_config.as_ref(),
-                self.output_file_info.file_format,
+                &self.output_file_info.file_format_config,
                 partition_values,
             ),
         }
@@ -136,11 +136,11 @@ pub fn create_pyarrow_file_writer(
     file_idx: usize,
     compression: Option<&String>,
     io_config: Option<&daft_io::IOConfig>,
-    format: FileFormat,
+    file_format_config: &FileFormatConfig,
     partition: Option<&RecordBatch>,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
 {
-    match format {
+    match file_format_config.file_format() {
         #[cfg(feature = "python")]
         FileFormat::Parquet => Ok(Box::new(crate::pyarrow::PyArrowWriter::new_parquet_writer(
             root_dir,
@@ -151,7 +151,11 @@ pub fn create_pyarrow_file_writer(
         )?)),
         #[cfg(feature = "python")]
         FileFormat::Csv => Ok(Box::new(crate::pyarrow::PyArrowWriter::new_csv_writer(
-            root_dir, file_idx, io_config, partition,
+            root_dir,
+            file_idx,
+            io_config,
+            file_format_config,
+            partition,
         )?)),
         _ => Err(DaftError::ComputeError(
             "Unsupported file format for physical write".to_string(),
@@ -163,21 +167,25 @@ fn create_native_writer(
     root_dir: &str,
     file_idx: usize,
     schema: &SchemaRef,
-    file_format: FileFormat,
+    file_format_config: &FileFormatConfig,
     partition_values: Option<&RecordBatch>,
     io_config: Option<daft_io::IOConfig>,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
 {
-    match file_format {
+    match file_format_config.file_format() {
         FileFormat::Parquet => {
             create_native_parquet_writer(root_dir, schema, file_idx, partition_values, io_config)
         }
         FileFormat::Json => {
             create_native_json_writer(root_dir, file_idx, partition_values, io_config)
         }
-        FileFormat::Csv => {
-            create_native_csv_writer(root_dir, file_idx, partition_values, io_config)
-        }
+        FileFormat::Csv => create_native_csv_writer(
+            root_dir,
+            file_idx,
+            file_format_config,
+            partition_values,
+            io_config,
+        ),
         _ => Err(DaftError::ComputeError(
             "Unsupported file format for native write".to_string(),
         )),

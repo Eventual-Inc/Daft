@@ -1321,7 +1321,10 @@ fn physical_plan_to_pipeline(
                 .with_context(|_| PipelineCreationSnafu {
                     plan_name: physical_plan.name(),
                 })?;
-            let write_format = match (file_info.file_format, file_info.partition_cols.is_some()) {
+            let write_format = match (
+                file_info.file_format_config.file_format(),
+                file_info.partition_cols.is_some(),
+            ) {
                 (FileFormat::Parquet, true) => WriteFormat::PartitionedParquet,
                 (FileFormat::Parquet, false) => WriteFormat::Parquet,
                 (FileFormat::Csv, true) => WriteFormat::PartitionedCsv,

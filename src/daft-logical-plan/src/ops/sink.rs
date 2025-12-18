@@ -93,7 +93,10 @@ impl Sink {
 
         match self.sink_info.as_ref() {
             SinkInfo::OutputFileInfo(output_file_info) => {
-                res.push(format!("Sink: {:?}", output_file_info.file_format));
+                res.push(format!(
+                    "Sink: {:?}",
+                    output_file_info.file_format_config.file_format()
+                ));
                 res.extend(output_file_info.multiline_display());
             }
             #[cfg(feature = "python")]

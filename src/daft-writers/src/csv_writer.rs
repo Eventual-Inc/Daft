@@ -49,6 +49,7 @@ macro_rules! try_encode_binary_utf8 {
 }
 
 use common_error::{DaftError, DaftResult};
+use common_file_formats::FileFormatConfig;
 use daft_core::prelude::*;
 use daft_io::{IOConfig, SourceType, parse_url, utils::ObjectPath};
 use daft_micropartition::MicroPartition;
@@ -86,6 +87,7 @@ pub(crate) fn is_nested_type(dt: &daft_arrow::datatypes::DataType) -> bool {
 pub(crate) fn create_native_csv_writer(
     root_dir: &str,
     file_idx: usize,
+    file_format_config: &FileFormatConfig,
     partition_values: Option<&RecordBatch>,
     io_config: Option<IOConfig>,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
@@ -98,12 +100,20 @@ pub(crate) fn create_native_csv_writer(
         file_idx,
         "csv",
     )?;
+
+    let delimiter = if let FileFormatConfig::Csv(config) = file_format_config {
+        config.delimiter.map(|c| c as u8).unwrap_or(b',')
+    } else {
+        b','
+    };
+
     match source_type {
         SourceType::File => {
             let storage_backend = FileStorageBackend {};
             Ok(Box::new(make_csv_writer(
                 filename,
                 partition_values.cloned(),
+                delimiter,
                 storage_backend,
             )))
         }
@@ -116,6 +126,7 @@ pub(crate) fn create_native_csv_writer(
             Ok(Box::new(make_csv_writer(
                 filename,
                 partition_values.cloned(),
+                delimiter,
                 storage_backend,
             )))
         }
@@ -129,10 +140,15 @@ pub(crate) fn create_native_csv_writer(
 fn make_csv_writer<B: StorageBackend + Send + Sync>(
     filename: PathBuf,
     partition_values: Option<RecordBatch>,
+    delimiter: u8,
     storage_backend: B,
 ) -> BatchFileWriter<B, arrow_csv::Writer<B::Writer>> {
-    let builder =
-        Arc::new(|backend: B::Writer| WriterBuilder::new().with_header(true).build(backend));
+    let builder = Arc::new(move |backend: B::Writer| {
+        WriterBuilder::new()
+            .with_header(true)
+            .with_delimiter(delimiter)
+            .build(backend)
+    });
     let write_fn = Arc::new(
         |writer: &mut arrow_csv::Writer<B::Writer>, batches: &[arrow_array::RecordBatch]| {
             fn transform_batch(batch: ArrowRecordBatch) -> Result<ArrowRecordBatch, ArrowError> {
