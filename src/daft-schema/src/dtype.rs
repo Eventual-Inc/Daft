@@ -1192,7 +1192,7 @@ impl TryFrom<&arrow_schema::DataType> for DataType {
             arrow_schema::DataType::Map(field, _) => {
                 let arrow_schema::DataType::Struct(fields) = &field.data_type() else {
                     return Err(DaftError::ValueError(
-                        "Map should have a struct as its key".to_string(),
+                        "Map field should contain a struct type".to_string(),
                     ));
                 };
 
