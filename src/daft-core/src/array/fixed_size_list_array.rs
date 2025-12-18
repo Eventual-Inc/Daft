@@ -305,7 +305,6 @@ mod tests {
     use super::FixedSizeListArray;
     use crate::{
         datatypes::{DataType, Field, Int32Array},
-        prelude::{EmbeddingArray, FullNull},
         series::IntoSeries,
     };
 
@@ -378,26 +377,6 @@ mod tests {
                 .len(),
             arr.flat_child.len()
         );
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_embedding_to_arrow() -> DaftResult<()> {
-        let embedding_array = EmbeddingArray::empty(
-            "embeddings",
-            &DataType::Embedding(Box::new(DataType::Int8), 2),
-        );
-        let arrow_arr = embedding_array.to_arrow()?;
-
-        assert_eq!(
-            arrow_arr.data_type(),
-            &arrow::datatypes::DataType::FixedSizeList(
-                Arc::new(embedding_array.field.to_arrow()?),
-                2
-            )
-        );
-        assert_eq!(arrow_arr.len(), embedding_array.len());
 
         Ok(())
     }

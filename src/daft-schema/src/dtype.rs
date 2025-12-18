@@ -1331,6 +1331,7 @@ mod test {
     #[case(DataType::File(MediaType::Audio))]
     #[case(DataType::Extension("custom".to_string(), Box::new(DataType::Binary), None))]
     #[case(DataType::Extension("custom".to_string(), Box::new(DataType::Int32), Some("meta".to_string())))]
+    // To convert extension types to arrow_rs, you must use `Field::to_arrow`
     fn test_extension_type_to_arrow_fails(#[case] dtype: DataType) {
         let result = dtype.to_arrow();
         assert!(result.is_err());
