@@ -11,7 +11,6 @@ from typing import Any
 
 from daft.daft import FileFormat, FileInfos, IOConfig, io_glob
 from daft.dependencies import fsspec, pafs
-from daft.expressions.expressions import ExpressionsProjection, col
 from daft.recordbatch import MicroPartition
 
 logger = logging.getLogger(__name__)
@@ -361,46 +360,3 @@ def join_path(fs: pafs.FileSystem, base_path: str, *sub_paths: str) -> str:
         return os.path.join(base_path, *sub_paths)
     else:
         return f"{base_path.rstrip('/')}/{'/'.join(sub_paths)}"
-
-
-def overwrite_files(
-    written_file_paths: list[str],
-    root_dir: str | pathlib.Path,
-    io_config: IOConfig | None,
-    overwrite_partitions: bool,
-) -> None:
-    [resolved_path], fs = _resolve_paths_and_filesystem(root_dir, io_config=io_config)
-
-    all_file_paths = []
-    if overwrite_partitions:
-        # Get all files in ONLY the directories that were written to.
-
-        written_dirs = set(str(pathlib.Path(path).parent) for path in written_file_paths)
-        for dir in written_dirs:
-            file_selector = pafs.FileSelector(dir, recursive=True)
-            try:
-                all_file_paths.extend(
-                    [info.path for info in fs.get_file_info(file_selector) if info.type == pafs.FileType.File]
-                )
-            except FileNotFoundError:
-                continue
-    else:
-        # Get all files in the root directory.
-
-        file_selector = pafs.FileSelector(resolved_path, recursive=True)
-        try:
-            all_file_paths.extend(
-                [info.path for info in fs.get_file_info(file_selector) if info.type == pafs.FileType.File]
-            )
-        except FileNotFoundError:
-            # The root directory does not exist, so there are no files to delete.
-            return
-
-    all_file_paths_df = MicroPartition.from_pydict({"path": all_file_paths})
-
-    # Find the files that were not written to in this run and delete them.
-    to_delete = all_file_paths_df.filter(ExpressionsProjection([~(col("path").is_in(written_file_paths))]))
-
-    # TODO: Look into parallelizing this
-    for entry in to_delete.get_column_by_name("path"):
-        fs.delete_file(entry)
