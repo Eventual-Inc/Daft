@@ -1229,11 +1229,8 @@ impl TryFrom<&arrow_schema::Field> for DataType {
                 // Generic extension type
                 let physical = value.data_type().try_into()?;
                 let metadata = value.extension_type_metadata().map(|s| s.to_string());
-<<<<<<< HEAD
-                Ok(DataType::Extension(
-=======
+
                 Ok(Self::Extension(
->>>>>>> 2ff262f28ec7dcf240a51997522ecdd4bc84eac5
                     extension_name.to_string(),
                     Box::new(physical),
                     metadata,
