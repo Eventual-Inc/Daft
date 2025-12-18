@@ -21,9 +21,9 @@ import daft
 ```
 
 !!! note
-    - It's important to set the logging level before importing Daft, as the underlying Rust components will not pick up level changes that occur after the import.
+    - When using `logging.getLogger()` to configure logging manually, it's important to set the logging level before importing Daft, as the underlying Rust components will not pick up level changes that occur after the import. The `setup_logger()` convenience function handles this automatically.
 
-Daft also provides a convenience function `setup_logger()` that can be used to quickly enable debug logging. Note that `setup_logger()` can be called after importing Daft, as it handles the logging configuration internally:
+Daft also provides a convenience function `setup_logger()` that can be used to quickly enable debug logging:
 
 ```python
 # Import daft first to access the utility function
