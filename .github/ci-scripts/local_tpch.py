@@ -8,7 +8,6 @@ from __future__ import annotations
 import time
 
 import daft
-import daft.context
 from benchmarking.tpch.answers_sql import get_answer
 from tools.ci_bench_utils import get_run_metadata, upload_to_google_sheets
 

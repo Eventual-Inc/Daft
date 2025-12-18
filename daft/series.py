@@ -685,17 +685,16 @@ class Series:
             raise ValueError(f"expected an integer or None for seed but got {type(seed)}")
         if not isinstance(hash_function, str):
             raise ValueError(f"expected str for hash_function but got {type(hash_function)}")
-        assert (
-            hash_function
-            in [
-                "murmurhash3",
-                "xxhash",
-                "xxhash3_64",
-                "xxhash64",
-                "xxhash32",
-                "sha1",
-            ]
-        ), f"hash_function must be one of 'murmurhash3', 'xxhash', 'xxhash3_64', 'xxhash64', 'xxhash32', 'sha1', got {hash_function}"
+        assert hash_function in [
+            "murmurhash3",
+            "xxhash",
+            "xxhash3_64",
+            "xxhash64",
+            "xxhash32",
+            "sha1",
+        ], (
+            f"hash_function must be one of 'murmurhash3', 'xxhash', 'xxhash3_64', 'xxhash64', 'xxhash32', 'sha1', got {hash_function}"
+        )
 
         return Series._from_pyseries(self._series.minhash(num_hashes, ngram_size, seed, hash_function))
 

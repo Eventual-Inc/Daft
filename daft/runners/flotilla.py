@@ -93,7 +93,7 @@ class RaySwordfishActor:
             yield SwordfishTaskMetadata(partition_metadatas=metas, stats=stats)
 
 
-@ray.remote  # type: ignore[misc]
+@ray.remote  # type: ignore[untyped-decorator]
 def get_boundaries_remote(
     sort_by: list[Expression],
     descending: list[bool],
