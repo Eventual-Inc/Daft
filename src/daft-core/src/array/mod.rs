@@ -59,7 +59,7 @@ impl<T> DataArray<T> {
             physical_field.dtype
         );
 
-        if let Ok(expected_arrow_physical_type) = physical_field.dtype.to_arrow() {
+        if let Ok(expected_arrow_physical_type) = physical_field.dtype.to_arrow2() {
             // since daft's Utf8 always maps to Arrow's LargeUtf8, we need to handle this special case
             // If the expected physical type is LargeUtf8, but the actual Arrow type is Utf8, we need to convert it
             if expected_arrow_physical_type == daft_arrow::datatypes::DataType::LargeUtf8
@@ -80,11 +80,10 @@ impl<T> DataArray<T> {
                 });
             }
             let arrow_data_type = arrow_array.data_type();
-
             assert!(
                 !(&expected_arrow_physical_type != arrow_data_type),
                 "Mismatch between expected and actual Arrow types for DataArray.\n\
-                Field name: {}\n\
+                Field name: '{}'\n\
                 Logical type: {}\n\
                 Physical type: {}\n\
                 Expected Arrow physical type: {:?}\n\

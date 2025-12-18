@@ -25,7 +25,7 @@ where
         // this is a workaround to prevent overflow issues when dealing with i128 and decimal
         // typical behavior would be the result array would always be Decimal(32, 32)
         let field = field.into();
-        let mut array = MutablePrimitiveArray::<T::Native>::from(field.dtype.to_arrow().unwrap());
+        let mut array = MutablePrimitiveArray::<T::Native>::from(field.dtype.to_arrow2().unwrap());
         array.extend_trusted_len(iter);
         let data_array: PrimitiveArray<_> = array.into();
         Self::new(field, data_array.boxed()).unwrap()
@@ -38,7 +38,7 @@ where
         // this is a workaround to prevent overflow issues when dealing with i128 and decimal
         // typical behavior would be the result array would always be Decimal(32, 32)
         let field = field.into();
-        let mut array = MutablePrimitiveArray::<T::Native>::from(field.dtype.to_arrow().unwrap());
+        let mut array = MutablePrimitiveArray::<T::Native>::from(field.dtype.to_arrow2().unwrap());
         array.extend_trusted_len_values(iter);
         let data_array: PrimitiveArray<_> = array.into();
         Self::new(field, data_array.boxed()).unwrap()
@@ -50,7 +50,7 @@ where
         I: Iterator<Item = Option<T::Native>>,
     {
         let field = field.into();
-        let data_type = field.dtype.to_arrow()?;
+        let data_type = field.dtype.to_arrow2()?;
         let mut array = MutablePrimitiveArray::<T::Native>::from(data_type);
         let (_, upper_bound) = iter.size_hint();
         if let Some(upper_bound) = upper_bound {

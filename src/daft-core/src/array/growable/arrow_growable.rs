@@ -50,7 +50,7 @@ pub type ArrowNullGrowable<'a> =
 impl ArrowNullGrowable<'_> {
     pub fn new(name: &str, dtype: &DataType) -> Self {
         let arrow2_growable =
-            daft_arrow::array::growable::GrowableNull::new(dtype.to_arrow().unwrap());
+            daft_arrow::array::growable::GrowableNull::new(dtype.to_arrow2().unwrap());
         Self {
             name: name.to_string(),
             dtype: dtype.clone(),

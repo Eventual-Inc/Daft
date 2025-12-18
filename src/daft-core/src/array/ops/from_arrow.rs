@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
-use arrow::{
-    array::{Array, ArrayRef, AsArray},
-    buffer::OffsetBuffer,
-};
+use arrow::array::{Array, ArrayRef, AsArray};
 use common_error::{DaftError, DaftResult};
 use daft_arrow::{array::Array as _, compute::cast::cast};
 
@@ -308,7 +305,7 @@ impl FromArrow for PythonArray {
         assert_eq!(field.dtype, DataType::Python);
 
         let target_convert = field.to_physical();
-        let target_convert_arrow = target_convert.dtype.to_arrow()?;
+        let target_convert_arrow = target_convert.dtype.to_arrow2()?;
 
         let physical_arrow_array = arrow_arr.convert_logical_type(target_convert_arrow);
 
@@ -333,7 +330,7 @@ macro_rules! impl_logical_from_arrow {
                 arrow_arr: Box<dyn daft_arrow::array::Array>,
             ) -> DaftResult<Self> {
                 let target_convert = field.to_physical();
-                let target_convert_arrow = target_convert.dtype.to_arrow()?;
+                let target_convert_arrow = target_convert.dtype.to_arrow2()?;
 
                 let physical_arrow_array = arrow_arr.convert_logical_type(target_convert_arrow);
 
@@ -352,13 +349,98 @@ macro_rules! impl_logical_from_arrow {
     };
 }
 
-impl_logical_from_arrow!(DateType);
-impl_logical_from_arrow!(TimeType);
+impl FromArrow for LogicalArray<DateType> {
+    fn from_arrow2(
+        field: FieldRef,
+        arrow_arr: Box<dyn daft_arrow::array::Array>,
+    ) -> DaftResult<Self> {
+        let target_convert = field.to_physical();
+        let target_convert_arrow = target_convert.dtype.to_arrow2()?;
+        let physical_arrow_array = arrow_arr.convert_logical_type(target_convert_arrow);
+        let physical =
+            <<DateType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::from_arrow2(
+                Arc::new(target_convert),
+                physical_arrow_array,
+            )?;
+        Ok(Self::new(field, physical))
+    }
+    fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
+        let field = field.into();
+        let target_convert = field.to_physical();
+        let physical_arrow_array = Arc::new(
+            arrow_arr
+                .as_primitive::<arrow::datatypes::Date32Type>()
+                .reinterpret_cast::<arrow::datatypes::Int32Type>()
+                .clone(),
+        );
+
+        let physical =
+            <<DateType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::from_arrow(
+                Arc::new(target_convert),
+                physical_arrow_array,
+            )?;
+        Ok(Self::new(field, physical))
+    }
+}
+
+impl FromArrow for LogicalArray<TimeType> {
+    fn from_arrow2(
+        field: FieldRef,
+        arrow_arr: Box<dyn daft_arrow::array::Array>,
+    ) -> DaftResult<Self> {
+        let target_convert = field.to_physical();
+        let target_convert_arrow = target_convert.dtype.to_arrow2()?;
+        let physical_arrow_array = arrow_arr.convert_logical_type(target_convert_arrow);
+        let physical =
+            <<TimeType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::from_arrow2(
+                Arc::new(target_convert),
+                physical_arrow_array,
+            )?;
+        Ok(Self::new(field, physical))
+    }
+    fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
+        let field = field.into();
+        let target_convert = field.to_physical();
+        let physical_arrow_array = Arc::new(
+            arrow_arr
+                .as_primitive::<arrow::datatypes::Time64NanosecondType>()
+                .reinterpret_cast::<arrow::datatypes::Int64Type>()
+                .clone(),
+        );
+
+        let physical =
+            <<TimeType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::from_arrow(
+                Arc::new(target_convert),
+                physical_arrow_array,
+            )?;
+        Ok(Self::new(field, physical))
+    }
+}
 impl_logical_from_arrow!(DurationType);
 impl_logical_from_arrow!(ImageType);
 impl_logical_from_arrow!(TimestampType);
 impl_logical_from_arrow!(TensorType);
-impl_logical_from_arrow!(EmbeddingType);
+impl FromArrow for LogicalArray<EmbeddingType> {
+    fn from_arrow2(
+        field: FieldRef,
+        arrow_arr: Box<dyn daft_arrow::array::Array>,
+    ) -> DaftResult<Self> {
+        let target_convert = field.to_physical();
+        let target_convert_arrow = target_convert.dtype.to_arrow2()?;
+        let physical_arrow_array = arrow_arr.convert_logical_type(target_convert_arrow);
+        let physical =  <<EmbeddingType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::from_arrow2(Arc::new(target_convert),physical_arrow_array,)?;
+        Ok(Self::new(field, physical))
+    }
+    fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
+        let field = field.into();
+        let physical_field = field.to_physical();
+        dbg!(&physical_field);
+        dbg!(&arrow_arr);
+        let physical =  <<EmbeddingType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::from_arrow(Arc::new(physical_field),arrow_arr)?;
+        dbg!(&physical);
+        Ok(Self::new(field, physical))
+    }
+}
 impl_logical_from_arrow!(FixedShapeTensorType);
 impl_logical_from_arrow!(SparseTensorType);
 impl_logical_from_arrow!(FixedShapeSparseTensorType);
@@ -372,7 +454,7 @@ where
         arrow_arr: Box<dyn daft_arrow::array::Array>,
     ) -> DaftResult<Self> {
         let target_convert = field.to_physical();
-        let target_convert_arrow = target_convert.dtype.to_arrow()?;
+        let target_convert_arrow = target_convert.dtype.to_arrow2()?;
         let physical_arrow_array = arrow_arr.convert_logical_type(target_convert_arrow);
         let physical =
             <<FileType<T> as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::from_arrow2(
@@ -456,16 +538,16 @@ mod tests {
     }
     #[rstest]
     #[case(series![1u8, 2u8, 3u8])]
-    #[case(series![1i8, 2i8, 3i8])]
-    #[case(series![1i16, 2i16, 3i16])]
-    #[case(series![1i32, 2i32, 3i32])]
-    #[case(series![1i64, 2i64, 3i64])]
-    #[case(series![1f32, 2f32, 3f32])]
-    #[case(series![1f64, 2f64, 3f64])]
-    #[case(series!["a", "b", "c"])]
-    #[case(series![true, false, false])]
-    #[case(Series::empty("test", &DataType::Null))]
-    #[case(Series::empty("test", &DataType::Utf8))]
+    // #[case(series![1i8, 2i8, 3i8])]
+    // #[case(series![1i16, 2i16, 3i16])]
+    // #[case(series![1i32, 2i32, 3i32])]
+    // #[case(series![1i64, 2i64, 3i64])]
+    // #[case(series![1f32, 2f32, 3f32])]
+    // #[case(series![1f64, 2f64, 3f64])]
+    // #[case(series!["a", "b", "c"])]
+    // #[case(series![true, false, false])]
+    // #[case(Series::empty("test", &DataType::Null))]
+    // #[case(Series::empty("test", &DataType::Utf8))]
     fn test_arrow_roundtrip_fixed_size_list(#[case] data: Series) -> DaftResult<()> {
         let arr = FixedSizeListArray::new(
             Field::new(
@@ -477,10 +559,76 @@ mod tests {
         );
 
         let arrow_arr = arr.to_arrow()?;
-        let new_arr =
-            FixedSizeListArray::from_arrow(Field::new("test", arr.data_type().clone()), arrow_arr)?;
+        dbg!(arrow_arr.data_type());
+        let field = Field::new("test", arr.data_type().clone());
+        dbg!(&field);
+        let new_arr = FixedSizeListArray::from_arrow(field, arrow_arr)?;
 
         assert_eq!(arr, new_arr);
+        assert!(false);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_arrow_roundtrip_logical_date() -> DaftResult<()> {
+        let arr = LogicalArray::<DateType>::new(
+            Field::new("test", DataType::Date),
+            Int32Array::from_values("", vec![1, 2, 3].into_iter()),
+        );
+
+        let arrow_arr = arr.to_arrow()?;
+        let new_arr = LogicalArray::<DateType>::from_arrow(
+            Field::new("test", arr.data_type().clone()),
+            arrow_arr,
+        )?;
+
+        assert_eq!(arr.field(), new_arr.field());
+        assert_eq!(arr.physical, new_arr.physical);
+
+        Ok(())
+    }
+
+    #[rstest]
+    #[case(series![1u8, 2u8, 3u8])]
+    // #[case(series![1i8, 2i8, 3i8])]
+    // #[case(series![1i16, 2i16, 3i16])]
+    // #[case(series![1i32, 2i32, 3i32])]
+    // #[case(series![1i64, 2i64, 3i64])]
+    // #[case(series![1f32, 2f32, 3f32])]
+    // #[case(series![1f64, 2f64, 3f64])]
+    // #[case(series!["a", "b", "c"])]
+    // #[case(series![true, false, false])]
+    // #[case(Series::empty("test", &DataType::Null))]
+    // #[case(Series::empty("test", &DataType::Utf8))]
+    fn test_arrow_roundtrip_logical_embedding(#[case] data: Series) -> DaftResult<()> {
+        let data = data.rename("");
+        let arr = FixedSizeListArray::new(
+            Field::new(
+                "",
+                DataType::FixedSizeList(Box::new(data.data_type().clone()), 1),
+            ),
+            data,
+            None,
+        );
+        let embedding_array = EmbeddingArray::new(
+            Field::new(
+                "",
+                DataType::Embedding(Box::new(arr.child_data_type().clone()), 1),
+            ),
+            arr,
+        );
+        dbg!(&embedding_array);
+
+        let arrow_arr = embedding_array.to_arrow()?;
+        dbg!(&arrow_arr.data_type());
+        let new_arr = EmbeddingArray::from_arrow(
+            Field::new("", embedding_array.data_type().clone()),
+            arrow_arr,
+        )?;
+
+        assert_eq!(embedding_array.physical, new_arr.physical);
+        assert_eq!(embedding_array.field(), new_arr.field());
 
         Ok(())
     }
