@@ -20,6 +20,9 @@ logging.getLogger("daft.distributed").setLevel(logging.DEBUG)
 import daft
 ```
 
+!!! note
+    - It's important to set the logging level before importing Daft, as the underlying Rust components will not pick up level changes that occur after the import.
+
 Daft also provides a convenience function `setup_logger()` that can be used to quickly enable debug logging:
 
 ```python
@@ -44,10 +47,6 @@ By default, `setup_logger()` sets the root logger to `DEBUG` level and applies a
 
 For most use cases, simply using `logging.getLogger(__name__)` is the common first approach. The example above with a specific logger like `"daft.distributed"` is for targeting specific internal Daft components when debugging particular subsystems.
 
-!!! note
-    - It's important to set the logging level before importing Daft, as the underlying Rust components will not pick up level changes that occur after the import.
-
-    - The `setup_logger()` doesn't have the above mentioned side effects. The ` refresh_logger()` will been called to synchronize the configuration with the Rust backend if use `setup_logger()`.
 ## Remote Execution
 
 When running Daft on a Ray cluster, logging is more complex due to the distributed nature of the system. Logs can be emitted from the driver process (where you call `ray.init()`) or from the worker processes (where the actual data processing happens).
