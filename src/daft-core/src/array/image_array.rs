@@ -1,5 +1,9 @@
-use std::vec;
+use std::{sync::Arc, vec};
 
+use arrow::{
+    array::{Array, ArrayRef, PrimitiveArray},
+    buffer::OffsetBuffer,
+};
 use common_error::DaftResult;
 
 use crate::{
@@ -125,31 +129,34 @@ impl ImageArray {
         Ok(ImageArray::new(Field::new(name, data_type), struct_array))
     }
 
-    pub fn from_vecs<T: daft_arrow::types::NativeType>(
+    pub fn from_vecs<T: arrow::datatypes::ArrowPrimitiveType>(
         name: &str,
         data_type: DataType,
-        data: Vec<T>,
+        data: Vec<T::Native>,
         offsets: Vec<i64>,
         sidecar_data: ImageArraySidecarData,
     ) -> DaftResult<Self> {
         if data.is_empty() {
             return Ok(ImageArray::full_null(name, &data_type, offsets.len() - 1));
         }
-        let offsets = daft_arrow::offset::OffsetsBuffer::try_from(offsets)?;
-        let arrow_dtype: daft_arrow::datatypes::DataType = T::PRIMITIVE.into();
+        let offsets = OffsetBuffer::from_lengths(offsets.into_iter().map(|v| v as _));
+
+        let arrow_dtype = T::DATA_TYPE;
         if let DataType::Image(Some(mode)) = &data_type {
             assert!(
-                !(mode.get_dtype().to_arrow()? != arrow_dtype),
+                !(mode.get_dtype().to_arrow_field()?.data_type() != &arrow_dtype),
                 "Inner value dtype of provided dtype {data_type:?} is inconsistent with inferred value dtype {arrow_dtype:?}"
             );
         }
+        let child: ArrayRef = Arc::new(PrimitiveArray::<T>::from_iter_values(data.into_iter()));
+        let flat_child = Series::from_arrow(
+            Arc::new(Field::new("data", child.data_type().try_into()?)),
+            child.into(),
+        )?;
+
         let data_array = ListArray::new(
-            Field::new("data", DataType::List(Box::new((&arrow_dtype).into()))),
-            Series::try_from((
-                "data",
-                Box::new(daft_arrow::array::PrimitiveArray::from_vec(data))
-                    as Box<dyn daft_arrow::array::Array>,
-            ))?,
+            Field::new("data", DataType::List(Box::new((&arrow_dtype).try_into()?))),
+            flat_child,
             offsets,
             sidecar_data.validity.clone(),
         );

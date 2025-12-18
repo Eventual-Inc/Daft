@@ -1,5 +1,6 @@
+use arrow::buffer::OffsetBuffer;
 use common_error::{DaftError, DaftResult};
-use daft_arrow::{array::PrimitiveArray, offset::OffsetsBuffer};
+use daft_arrow::array::PrimitiveArray;
 
 use crate::{
     array::{
@@ -413,7 +414,7 @@ impl DaftSetAggable for Series {
         let indices_array = UInt64Array::from(("", unique_indices));
         let deduped_series = child_series.take(&indices_array)?;
 
-        let offsets = OffsetsBuffer::try_from(vec![0, deduped_series.len() as i64])?;
+        let offsets = OffsetBuffer::from_lengths(vec![0, deduped_series.len()]);
         let list_field = self.field().to_list_field();
         Ok(ListArray::new(list_field, deduped_series, offsets, None))
     }
@@ -421,7 +422,7 @@ impl DaftSetAggable for Series {
     fn grouped_set(&self, groups: &GroupIndices) -> Self::Output {
         let series = self.clone();
 
-        let mut offsets = Vec::with_capacity(groups.len() + 1);
+        let mut offsets: Vec<usize> = Vec::with_capacity(groups.len() + 1);
         offsets.push(0);
 
         let mut growable = make_growable(
@@ -448,14 +449,14 @@ impl DaftSetAggable for Series {
                 growable.extend(0, orig_idx as usize, 1);
             }
 
-            offsets.push(offsets.last().unwrap() + unique_indices.len() as i64);
+            offsets.push(offsets.last().unwrap() + unique_indices.len());
         }
 
         let list_field = self.field().to_list_field();
         let result = ListArray::new(
             list_field,
             growable.build()?,
-            OffsetsBuffer::try_from(offsets)?,
+            OffsetBuffer::from_lengths(offsets),
             None,
         );
 

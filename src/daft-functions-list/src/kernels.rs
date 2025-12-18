@@ -2,8 +2,8 @@
 
 use std::{iter::repeat_n, sync::Arc};
 
+use arrow::buffer::{OffsetBuffer, ScalarBuffer};
 use common_error::DaftResult;
-use daft_arrow::offset::{Offsets, OffsetsBuffer};
 use daft_core::{
     array::{
         FixedSizeListArray, ListArray, StructArray,
@@ -46,7 +46,7 @@ pub fn list_fill(elem: &Series, num_array: &Int64Array) -> DaftResult<ListArray>
     let generated = general_list_fill_helper(elem, num_array)?;
     let generated_refs: Vec<&Series> = generated.iter().collect();
     let lengths = generated.iter().map(|arr| arr.len());
-    let offsets = Offsets::try_from_lengths(lengths)?;
+    let offsets = arrow::buffer::OffsetBuffer::from_lengths(lengths);
     let flat_child = if generated_refs.is_empty() {
         // when there's no output, we should create an empty series
         Series::empty(elem.name(), elem.data_type())
@@ -94,12 +94,18 @@ impl ListArrayExtension for ListArray {
         let mut include_mask = Vec::with_capacity(self.flat_child.len());
         let mut count_array = Vec::new();
 
-        let mut offsets = Vec::with_capacity(self.len());
+        let mut offsets: Vec<usize> = Vec::with_capacity(self.len());
 
-        offsets.push(0_i64);
+        offsets.push(0);
 
         let mut map: IndexMap<IndexRef, u64, IdentityBuildHasher> = IndexMap::default();
-        for range in self.offsets().ranges() {
+        let ranges = self.offsets().windows(2).map(|w| {
+            let from = w[0];
+            let to = w[1];
+            debug_assert!(from <= to, "offsets must be monotonically increasing");
+            from..to
+        });
+        for range in ranges {
             map.clear();
 
             for index in range {
@@ -138,7 +144,7 @@ impl ListArrayExtension for ListArray {
                 count_array.push(*v);
             }
 
-            offsets.push(count_array.len() as i64);
+            offsets.push(count_array.len());
         }
 
         let values = UInt64Array::from(("count", count_array)).into_series();
@@ -169,7 +175,7 @@ impl ListArrayExtension for ListArray {
 
         let list_type = DataType::List(Box::new(struct_type));
 
-        let offsets = OffsetsBuffer::try_from(offsets)?;
+        let offsets = OffsetBuffer::from_lengths(offsets);
 
         let list_array = Self::new(
             Arc::new(Field::new("entries", list_type)),
@@ -373,12 +379,12 @@ impl ListArrayExtension for ListArray {
 
         // Calculate new offsets based on the lengths of the sorted series.
         let lengths = child_series.iter().map(|s| s.len());
-        let new_offsets = Offsets::try_from_lengths(lengths)?;
+        let new_offsets = OffsetBuffer::from_lengths(lengths);
 
         Ok(Self::new(
             self.field.clone(),
             child,
-            new_offsets.into(),
+            new_offsets,
             self.validity().cloned(),
         ))
     }
@@ -808,7 +814,7 @@ fn get_chunks_helper(
         Ok(ListArray::new(
             inner_list_field.to_list_field(),
             inner_list.into_series(),
-            daft_arrow::offset::OffsetsBuffer::try_from(new_offsets)?,
+            OffsetBuffer::new(ScalarBuffer::from(new_offsets)),
             validity.cloned(), // Copy the parent's validity.
         )
         .into_series())
@@ -832,7 +838,7 @@ fn get_chunks_helper(
         Ok(ListArray::new(
             inner_list_field.to_list_field(),
             inner_list.into_series(),
-            daft_arrow::offset::OffsetsBuffer::try_from(new_offsets)?,
+            OffsetBuffer::new(ScalarBuffer::from(new_offsets)),
             validity.cloned(), // Copy the parent's validity.
         )
         .into_series())
@@ -841,7 +847,7 @@ fn get_chunks_helper(
 
 fn list_sort_helper(
     flat_child: &Series,
-    offsets: &OffsetsBuffer<i64>,
+    offsets: &OffsetBuffer<i64>,
     desc_iter: impl Iterator<Item = bool>,
     nulls_first_iter: impl Iterator<Item = bool>,
     validity: impl Iterator<Item = bool>,

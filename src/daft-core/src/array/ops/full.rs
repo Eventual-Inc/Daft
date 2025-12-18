@@ -1,6 +1,6 @@
 use std::{iter::repeat_n, sync::Arc};
 
-use daft_arrow::offset::OffsetsBuffer;
+use arrow::buffer::OffsetBuffer;
 #[cfg(feature = "python")]
 use pyo3::Python;
 
@@ -117,7 +117,7 @@ impl FullNull for ListArray {
                 Self::new(
                     Field::new(name, dtype.clone()),
                     empty_flat_child,
-                    OffsetsBuffer::try_from(repeat_n(0, length + 1).collect::<Vec<_>>()).unwrap(),
+                    OffsetBuffer::from_lengths(repeat_n(0, length + 1)),
                     Some(validity),
                 )
             }
@@ -133,7 +133,7 @@ impl FullNull for ListArray {
             DataType::List(child_dtype) => {
                 let field = Field::new(name, dtype.clone());
                 let empty_child = Series::empty("list", child_dtype.as_ref());
-                Self::new(field, empty_child, OffsetsBuffer::default(), None)
+                Self::new(field, empty_child, OffsetBuffer::new_empty(), None)
             }
             _ => panic!("Cannot create empty ListArray with dtype: {}", dtype),
         }

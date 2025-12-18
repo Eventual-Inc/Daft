@@ -1,7 +1,7 @@
 use std::cmp::{max, min};
 
+use arrow::array::OffsetBufferBuilder;
 use common_error::{DaftError, DaftResult};
-use daft_arrow::offset::Offsets;
 use daft_schema::{dtype::DataType, field::Field};
 
 use crate::{
@@ -63,7 +63,8 @@ impl Series {
         }
 
         // initialize a growable child
-        let mut offsets = Offsets::<i64>::with_capacity(capacity);
+        let mut offsets = OffsetBufferBuilder::new(capacity);
+
         let mut child = make_growable("list", dtype, arrays, true, capacity);
         let sublist_len = series.len() as i64;
 
@@ -76,11 +77,11 @@ impl Series {
                     child.extend_nulls(1);
                 }
             }
-            offsets.try_push(sublist_len)?;
+            offsets.push_length(sublist_len as _);
         }
 
         // create the outer array with offsets
-        Ok(ListArray::new(field, child.build()?, offsets.into(), None).into_series())
+        Ok(ListArray::new(field, child.build()?, offsets.finish(), None).into_series())
     }
 }
 

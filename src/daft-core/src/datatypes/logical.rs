@@ -175,9 +175,15 @@ impl MapArray {
                 .collect(),
             daft_arrow::buffer::wrap_null_buffer(inner_struct_array.validity().cloned()),
         ));
+
+        let offsets: daft_arrow::offset::OffsetsBuffer<i64> =
+            self.physical.offsets().clone().try_into().unwrap();
+
+        let offsets: daft_arrow::offset::OffsetsBuffer<i32> = (&offsets).try_into().unwrap();
+
         Box::new(daft_arrow::array::MapArray::new(
             arrow_dtype,
-            self.physical.offsets().try_into().unwrap(),
+            offsets,
             arrow_field,
             daft_arrow::buffer::wrap_null_buffer(self.physical.validity().cloned()),
         ))

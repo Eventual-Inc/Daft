@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
-use daft_arrow::{array::Array, compute::cast::cast};
+use daft_arrow::{array::Array, compute::cast::cast, offset::OffsetsBuffer};
 
 use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
@@ -112,7 +112,7 @@ impl FromArrow for ListArray {
                 Ok(Self::new(
                     target_field.clone(),
                     child_series,
-                    arrow_arr.offsets().clone(),
+                    arrow_arr.offsets().clone().into(),
                     arrow_arr.validity().cloned().map(Into::into),
                 ))
             }
@@ -207,10 +207,12 @@ impl FromArrow for MapArray {
                 let child_series =
                     Series::from_arrow(child_field.into(), arrow_child_array.clone())?;
 
+                let offsets: OffsetsBuffer<i64> = arrow_arr.offsets().into();
+
                 let physical = ListArray::new(
                     physical_field,
                     child_series,
-                    arrow_arr.offsets().into(),
+                    offsets.into(),
                     arrow_arr.validity().cloned().map(Into::into),
                 );
 

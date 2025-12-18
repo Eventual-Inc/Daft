@@ -1,6 +1,5 @@
-use crate::error::Error;
-
 use super::super::delta_bitpacked;
+use crate::error::Error;
 
 /// Decodes [Delta-length byte array](https://github.com/apache/parquet-format/blob/master/Encodings.md#delta-length-byte-array-delta_length_byte_array--6)
 /// lengths and values.

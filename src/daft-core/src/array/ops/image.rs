@@ -1,5 +1,6 @@
 use std::{borrow::Cow, sync::Arc};
 
+use arrow::datatypes::UInt8Type;
 use common_error::DaftResult;
 use common_image::CowImage;
 use num_traits::FromPrimitive;
@@ -151,7 +152,7 @@ where
     }
 
     let validity = validity.finish();
-    ImageArray::from_vecs(
+    ImageArray::from_vecs::<UInt8Type>(
         name,
         DataType::Image(image_mode),
         data,

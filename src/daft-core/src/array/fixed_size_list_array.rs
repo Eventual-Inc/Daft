@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use arrow::buffer::OffsetBuffer;
 use common_error::{DaftError, DaftResult};
-use daft_arrow::offset::OffsetsBuffer;
 
 use crate::{
     array::growable::{Growable, GrowableArray},
@@ -195,16 +195,11 @@ impl FixedSizeListArray {
         ))
     }
 
-    fn generate_offsets(&self) -> OffsetsBuffer<i64> {
+    fn generate_offsets(&self) -> OffsetBuffer<i64> {
         let size = self.fixed_element_len();
         let len = self.len();
 
-        // Create new offsets
-        let offsets: Vec<i64> = (0..=len)
-            .map(|i| i64::try_from(i * size).unwrap())
-            .collect();
-
-        OffsetsBuffer::try_from(offsets).expect("Failed to create OffsetsBuffer")
+        OffsetBuffer::from_lengths((0..=len).map(|i| i * size))
     }
 
     pub fn to_list(&self) -> ListArray {

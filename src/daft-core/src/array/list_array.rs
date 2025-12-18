@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arrow::buffer::OffsetBuffer;
 use common_error::{DaftError, DaftResult};
 
 use crate::{
@@ -14,7 +15,7 @@ pub struct ListArray {
     pub flat_child: Series,
 
     /// Where each row starts and ends. Null rows usually have the same start/end index, but this is not guaranteed.
-    offsets: daft_arrow::offset::OffsetsBuffer<i64>,
+    offsets: OffsetBuffer<i64>,
     validity: Option<daft_arrow::buffer::NullBuffer>,
 }
 
@@ -28,14 +29,14 @@ impl ListArray {
     pub fn new<F: Into<Arc<Field>>>(
         field: F,
         flat_child: Series,
-        offsets: daft_arrow::offset::OffsetsBuffer<i64>,
+        offsets: OffsetBuffer<i64>,
         validity: Option<daft_arrow::buffer::NullBuffer>,
     ) -> Self {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
             DataType::List(child_dtype) => {
                 if let Some(validity) = validity.as_ref()
-                    && validity.len() != offsets.len_proxy()
+                    && validity.len() != offsets.len() - 1
                 {
                     panic!(
                         "ListArray::new validity length does not match computed length from offsets"
@@ -47,10 +48,12 @@ impl ListArray {
                     child_dtype,
                     flat_child.data_type(),
                 );
+                let last = offsets.last().unwrap();
+
                 assert!(
-                    *offsets.last() <= flat_child.len() as i64,
+                    *last <= flat_child.len() as i64,
                     "ListArray::new received offsets with last value {}, but child series has length {}",
-                    offsets.last(),
+                    last,
                     flat_child.len()
                 );
             }
@@ -67,7 +70,7 @@ impl ListArray {
         }
     }
 
-    pub fn offsets(&self) -> &daft_arrow::offset::OffsetsBuffer<i64> {
+    pub fn offsets(&self) -> &OffsetBuffer<i64> {
         &self.offsets
     }
 
@@ -112,7 +115,7 @@ impl ListArray {
     }
 
     pub fn len(&self) -> usize {
-        self.offsets.len_proxy()
+        self.offsets.len() - 1
     }
 
     pub fn is_empty(&self) -> bool {
@@ -153,7 +156,7 @@ impl ListArray {
                 "Trying to slice array with negative length, start: {start} vs end: {end}"
             )));
         }
-        let mut new_offsets = self.offsets.clone();
+        let new_offsets = self.offsets.clone();
         new_offsets.slice(start, end - start + 1);
 
         let new_validity = self
@@ -170,9 +173,9 @@ impl ListArray {
     #[deprecated(note = "arrow2 migration")]
     pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
         let arrow_dtype = self.data_type().to_arrow().unwrap();
-        Box::new(daft_arrow::array::ListArray::new(
+        Box::new(daft_arrow::array::ListArray::<i64>::new(
             arrow_dtype,
-            self.offsets().clone(),
+            self.offsets().clone().try_into().unwrap(),
             self.flat_child.to_arrow2(),
             daft_arrow::buffer::wrap_null_buffer(self.validity.clone()),
         ))

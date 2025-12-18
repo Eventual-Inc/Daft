@@ -62,7 +62,7 @@ pub fn list_fill(elem: ExprRef, n: ExprRef) -> ExprRef {
 #[cfg(test)]
 #[allow(deprecated)]
 mod tests {
-    use daft_arrow::offset::OffsetsBuffer;
+    use arrow::buffer::OffsetBuffer;
     use daft_core::{
         array::ListArray,
         datatypes::{Int8Array, Utf8Array},
@@ -167,7 +167,7 @@ mod tests {
         )
         .into_series();
         let offsets = vec![0, 1, 1, 4];
-        let offsets = OffsetsBuffer::try_from(offsets).unwrap();
+        let offsets = OffsetBuffer::from_lengths(offsets);
         let expected = ListArray::new(
             Field::new("s2", DataType::List(Box::new(DataType::Utf8))),
             flat_child,
@@ -177,7 +177,7 @@ mod tests {
         assert_eq!(result.field(), expected.field.as_ref());
         assert_eq!(result.len(), expected.len());
         let result_list = result.list()?;
-        assert_eq!(result_list.offsets(), expected.offsets());
+        assert_eq!(result_list.offsets().inner(), expected.offsets().inner());
         assert_eq!(result_list.validity(), expected.validity());
         assert_eq!(
             result_list
