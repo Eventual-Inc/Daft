@@ -101,6 +101,15 @@ def convert_image(image: Expression, mode: str | ImageMode) -> Expression:
     return Expression._call_builtin_scalar_fn("to_mode", image, mode=mode)
 
 
+def image_to_tensor(image: Expression) -> Expression:
+    """Convert an image expression to a tensor, inferring dtype and shape.
+
+    This is safer than casting to a tensor dtype manually, since Daft can infer the correct
+    pixel dtype (e.g. UInt8) and determine whether a fixed-shape tensor is appropriate.
+    """
+    return Expression._call_builtin_scalar_fn("to_tensor", image)
+
+
 def image_attribute(
     image: Expression, name: Literal["width", "height", "channel", "mode"] | ImageProperty
 ) -> Expression:
