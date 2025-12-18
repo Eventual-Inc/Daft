@@ -20,7 +20,15 @@ from typing import TYPE_CHECKING, Any, Concatenate, Literal, ParamSpec, TypeVar,
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import DistributedPhysicalPlan, FileFormat, IOConfig, JoinStrategy, JoinType, PyFormatOption, WriteMode
+from daft.daft import (
+    DistributedPhysicalPlan,
+    FileFormat,
+    IOConfig,
+    JoinStrategy,
+    JoinType,
+    PyFormatSinkOption,
+    WriteMode,
+)
 from daft.dataframe.display import MermaidOptions
 from daft.dataframe.preview import Preview, PreviewAlign, PreviewColumn, PreviewFormat, PreviewFormatter
 from daft.datatype import DataType
@@ -881,7 +889,7 @@ class DataFrame:
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
 
-        file_format_option = PyFormatOption.csv(delimiter=delimiter, quote=quote, escape=escape, header=header)
+        file_format_option = PyFormatSinkOption.csv(delimiter=delimiter, quote=quote, escape=escape, header=header)
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,

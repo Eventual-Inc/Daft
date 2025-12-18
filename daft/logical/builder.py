@@ -11,7 +11,7 @@ from daft.daft import (
     JoinStrategy,
     JoinType,
     PyDaftExecutionConfig,
-    PyFormatOption,
+    PyFormatSinkOption,
     ScanOperatorHandle,
     WriteMode,
     logical_plan_table_scan,
@@ -334,7 +334,7 @@ class LogicalPlanBuilder:
         write_mode: WriteMode,
         file_format: FileFormat,
         io_config: IOConfig,
-        file_format_option: PyFormatOption | None = None,
+        file_format_option: PyFormatSinkOption | None = None,
         partition_cols: list[Expression] | None = None,
         compression: str | None = None,
     ) -> LogicalPlanBuilder:

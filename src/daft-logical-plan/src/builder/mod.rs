@@ -26,7 +26,7 @@ use indexmap::IndexSet;
 use resolve_expr::ExprResolver;
 #[cfg(feature = "python")]
 use {
-    crate::PyFormatOption,
+    crate::PyFormatSinkOption,
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
     common_daft_config::PyDaftPlanningConfig,
     common_io_config::python::IOConfig as PyIOConfig,
@@ -49,7 +49,7 @@ use crate::{
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
-    sink_info::{FormatOption, OutputFileInfo, SinkInfo},
+    sink_info::{FormatSinkOption, OutputFileInfo, SinkInfo},
     source_info::{GlobScanInfo, InMemoryInfo, SourceInfo},
 };
 
@@ -702,7 +702,7 @@ impl LogicalPlanBuilder {
         root_dir: &str,
         write_mode: WriteMode,
         file_format: FileFormat,
-        format_option: Option<FormatOption>,
+        format_option: Option<FormatSinkOption>,
         partition_cols: Option<Vec<ExprRef>>,
         compression: Option<String>,
         io_config: Option<IOConfig>,
@@ -1375,7 +1375,7 @@ impl PyLogicalPlanBuilder {
         root_dir: &str,
         write_mode: WriteMode,
         file_format: FileFormat,
-        format_option: Option<PyFormatOption>,
+        format_option: Option<PyFormatSinkOption>,
         partition_cols: Option<Vec<PyExpr>>,
         compression: Option<String>,
         io_config: Option<common_io_config::python::IOConfig>,
