@@ -26,7 +26,7 @@ def read_warc(
     """Creates a DataFrame from WARC or gzipped WARC file(s). This is an experimental feature and the API may change in the future.
 
     Args:
-        path (Union[str, List[str]]): Path to WARC file (allows for wildcards)
+        path (Union[str, List[str]]): Path to WARC file (allows for wildcards; supports remote URLs to object stores such as ``s3://`` or ``gs://``)
         io_config (Optional[IOConfig]): Config to be used with the native downloader
         file_path_column (Optional[str]): Include the source path(s) as a column with this name. Defaults to None.
         _multithreaded_io (Optional[bool]): Whether to use multithreading for IO threads. Setting this to False can be helpful in reducing
@@ -39,12 +39,16 @@ def read_warc(
             and one column "warc_headers" with the remaining headers of the WARC record stored as a JSON string.
 
     Examples:
+        Read a WARC file from a local path:
         >>> df = daft.read_warc("/path/to/file.warc")
         >>> df = daft.read_warc("/path/to/directory")
         >>> df = daft.read_warc("/path/to/files-*.warc")
-        >>> df = daft.read_warc("s3://path/to/files-*.warc")
-        >>> df = daft.read_warc("gs://path/to/files-*.warc")
 
+        Read a WARC file from a public S3 bucket:
+        >>> from daft.io import S3Config, IOConfig
+        >>> io_config = IOConfig(s3=S3Config(region="us-west-2", anonymous=True))
+        >>> df = daft.read_warc("s3://path/to/files-*.warc", io_config=io_config)
+        >>> df.show()
     """
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 

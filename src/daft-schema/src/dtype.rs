@@ -320,7 +320,7 @@ impl DataType {
         Ok(dtype)
     }
 
-    #[deprecated(note = "use `to_arrow_field` instead")]
+    #[deprecated(note = "use `to_arrow` instead")]
     #[allow(deprecated, reason = "arrow2 migration")]
     pub fn to_arrow2(&self) -> DaftResult<ArrowType> {
         match self {
@@ -1192,7 +1192,7 @@ impl TryFrom<&arrow_schema::DataType> for DataType {
             arrow_schema::DataType::Map(field, _) => {
                 let arrow_schema::DataType::Struct(fields) = &field.data_type() else {
                     return Err(DaftError::ValueError(
-                        "Map should have a struct as its key".to_string(),
+                        "Map field should contain a struct type".to_string(),
                     ));
                 };
 
@@ -1216,6 +1216,7 @@ impl TryFrom<&arrow_schema::DataType> for DataType {
         })
     }
 }
+
 impl TryFrom<&arrow_schema::Field> for DataType {
     type Error = DaftError;
 
@@ -1223,12 +1224,16 @@ impl TryFrom<&arrow_schema::Field> for DataType {
         if let Some(extension_name) = value.extension_type_name() {
             if extension_name == DAFT_SUPER_EXTENSION_NAME {
                 let payload = value.extension_type_metadata().expect("metadata");
-                DataType::from_json(payload)
+                Self::from_json(payload)
             } else {
                 // Generic extension type
                 let physical = value.data_type().try_into()?;
                 let metadata = value.extension_type_metadata().map(|s| s.to_string());
+<<<<<<< HEAD
                 Ok(DataType::Extension(
+=======
+                Ok(Self::Extension(
+>>>>>>> 2ff262f28ec7dcf240a51997522ecdd4bc84eac5
                     extension_name.to_string(),
                     Box::new(physical),
                     metadata,

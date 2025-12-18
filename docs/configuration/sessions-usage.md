@@ -287,7 +287,7 @@ For complete documentation, please see the [Session API docs](../api/sessions.md
 | [`has_table`][daft.Session.has_table]                                           | Returns true iff the session has access to a matching table.       |
 | [`list_catalogs`][daft.Session.list_catalogs]                                   | Lists all catalogs matching the pattern.                           |
 | [`list_namespaces`][daft.Session.list_namespaces]                               | Lists all namespaces matching the pattern.                         |
-| [`list_tables`][daft.Session.list_tables]                                       | Lists all tables matching the pattern.                             |
+| [`list_tables`][daft.Session.list_tables]                                       | Lists all tables matching the pattern. Pattern syntax is catalog-dependent: native/memory and Postgres catalogs use SQL LIKE syntax (`%`, `_`, `\`); other catalogs may use different pattern matching. |
 | [`read_table`][daft.Session.read_table]                                         | Reads a table from the session.                                    |
 | [`write_table`][daft.Session.write_table]                                       | Writes a dataframe to the table.                                   |
 | [`set_catalog`][daft.Session.set_catalog]                                       | Sets the current catalog.                                          |
