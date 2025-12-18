@@ -141,7 +141,11 @@ impl PipelineNodeImpl for ScanSourceNode {
             let total_bytes: usize = scan
                 .scan_tasks
                 .iter()
-                .map(|st| st.size_bytes_on_disk().unwrap_or(0))
+                .map(|st| {
+                    st.estimate_in_memory_size_bytes(None)
+                        .or_else(|| st.size_bytes_on_disk())
+                        .unwrap_or(0)
+                })
                 .sum();
 
             #[allow(unused_mut)]
