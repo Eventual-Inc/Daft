@@ -84,7 +84,7 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 * Project: col(0: __TruncateRootUDF_0-0-0__) as __TruncateRootUDF_0-0-0__
 |   Batch Size = Range(0, 10]
 |
-* Project: image_decode(col(0: {id_placeholder}), lit("raise")) as __TruncateRootUDF_0-0-0__, col(1: data)
+* Project: image_decode(col(0: {id_placeholder}), lit("raise"), lit(PyObject(RGB))) as __TruncateRootUDF_0-0-0__, col(1: data)
 |   Batch Size = Range(0, 10]
 |
 * Project: url_download(col(0: data), lit(true), lit("raise"), lit(32), lit(PyObject(IOConfig:

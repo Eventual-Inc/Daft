@@ -1123,7 +1123,7 @@ class SeriesImageNamespace(SeriesNamespace):
     def decode(
         self,
         on_error: Literal["raise", "null"] = "raise",
-        mode: str | ImageMode | None = None,
+        mode: str | ImageMode | None = ImageMode.RGB,
     ) -> Series:
         return self._eval_expressions("image_decode", on_error=on_error, mode=mode)
 
