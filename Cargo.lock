@@ -3362,6 +3362,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "pyo3",
+ "rstest",
  "serde",
  "serde_json",
 ]

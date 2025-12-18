@@ -81,7 +81,7 @@ impl PythonArray {
     }
 
     pub fn to_arrow(&self) -> DaftResult<Box<dyn daft_arrow::array::Array>> {
-        let arrow_logical_type = self.data_type().to_arrow().unwrap();
+        let arrow_logical_type = self.data_type().to_arrow2().unwrap();
         let physical_arrow_array = self.to_pickled_arrow()?;
         let logical_arrow_array = physical_arrow_array.convert_logical_type(arrow_logical_type);
         Ok(logical_arrow_array)

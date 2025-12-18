@@ -20,8 +20,8 @@ pub fn build_dyn_compare(
 ) -> DaftResult<DynArrayComparator> {
     if left == right {
         Ok(build_dyn_array_compare(
-            &left.to_physical().to_arrow()?,
-            &right.to_physical().to_arrow()?,
+            &left.to_physical().to_arrow2()?,
+            &right.to_physical().to_arrow2()?,
             nulls_equal,
             nans_equal,
         )?)

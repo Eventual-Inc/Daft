@@ -233,7 +233,7 @@ impl FromArrow for PythonArray {
         assert_eq!(field.dtype, DataType::Python);
 
         let target_convert = field.to_physical();
-        let target_convert_arrow = target_convert.dtype.to_arrow()?;
+        let target_convert_arrow = target_convert.dtype.to_arrow2()?;
 
         let physical_arrow_array = arrow_arr.convert_logical_type(target_convert_arrow);
 
@@ -254,7 +254,7 @@ macro_rules! impl_logical_from_arrow {
                 arrow_arr: Box<dyn daft_arrow::array::Array>,
             ) -> DaftResult<Self> {
                 let target_convert = field.to_physical();
-                let target_convert_arrow = target_convert.dtype.to_arrow()?;
+                let target_convert_arrow = target_convert.dtype.to_arrow2()?;
 
                 let physical_arrow_array = arrow_arr.convert_logical_type(target_convert_arrow);
 
@@ -289,7 +289,7 @@ where
         arrow_arr: Box<dyn daft_arrow::array::Array>,
     ) -> DaftResult<Self> {
         let target_convert = field.to_physical();
-        let target_convert_arrow = target_convert.dtype.to_arrow()?;
+        let target_convert_arrow = target_convert.dtype.to_arrow2()?;
         let physical_arrow_array = arrow_arr.convert_logical_type(target_convert_arrow);
         let physical =
             <<FileType<T> as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::from_arrow(
