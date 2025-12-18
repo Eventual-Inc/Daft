@@ -19,7 +19,7 @@ from daft.daft import (
     JsonReadOptions,
     StorageConfig,
 )
-from daft.dependencies import pa, pacsv, pads, pq
+from daft.dependencies import pa, pads
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
@@ -589,44 +589,3 @@ def _write_tabular_arrow_table(
         full_path,
         retry_error=retry_error,
     )
-
-
-def write_empty_tabular(
-    path: str | pathlib.Path,
-    file_format: FileFormat,
-    schema: Schema,
-    compression: str | None = None,
-    io_config: IOConfig | None = None,
-) -> str:
-    table = pa.Table.from_pylist([], schema=schema.to_pyarrow_schema())
-
-    [resolved_path], fs = _resolve_paths_and_filesystem(path, io_config=io_config)
-    is_local_fs = canonicalize_protocol(get_protocol_from_path(path if isinstance(path, str) else str(path))) == "file"
-    if is_local_fs:
-        fs.create_dir(resolved_path, recursive=True)
-
-    basename_template = _generate_basename_template(file_format.ext())
-    file_path = f"{resolved_path}/{basename_template.format(i=0)}"
-
-    def write_table() -> None:
-        if file_format == FileFormat.Parquet:
-            pq.write_table(
-                table,
-                file_path,
-                compression=compression,
-                use_compliant_nested_type=False,
-                filesystem=fs,
-            )
-        elif file_format == FileFormat.Csv:
-            output_file = fs.open_output_stream(file_path)
-            pacsv.write_csv(table, output_file)
-        else:
-            raise ValueError(f"Unsupported file format {file_format}")
-
-    def retry_error(e: Exception) -> bool:
-        ERROR_MSGS = ("curlCode: 28, Timeout was reached",)
-        return isinstance(e, OSError) and any(err_str in str(e) for err_str in ERROR_MSGS)
-
-    _retry_with_backoff(write_table, file_path, retry_error=retry_error)
-
-    return file_path
