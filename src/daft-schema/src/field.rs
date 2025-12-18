@@ -120,6 +120,22 @@ impl Field {
 
                 physical.to_arrow()?.with_metadata(metadata_map)
             }
+            #[cfg(feature = "python")]
+            dtype @ DataType::Python => {
+                let mut physical = self.clone();
+                physical.dtype = DataType::Binary;
+                let physical = Box::new(physical);
+
+                let mut metadata_map = HashMap::new();
+                metadata_map.insert(
+                    "ARROW:extension:name".to_string(),
+                    DAFT_SUPER_EXTENSION_NAME.into(),
+                );
+
+                metadata_map.insert("ARROW:extension:metadata".to_string(), dtype.to_json()?);
+
+                physical.to_arrow()?.with_metadata(metadata_map)
+            }
             _ => arrow_schema::Field::new(self.name.clone(), self.dtype.to_arrow()?, true),
         };
 
