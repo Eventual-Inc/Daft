@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use common_error::DaftResult;
+use common_file_formats::FileFormatConfig;
 use daft_micropartition::{MicroPartition, python::PyMicroPartition};
 use daft_recordbatch::{RecordBatch, python::PyRecordBatch};
 use pyo3::{Python, types::PyAnyMethods};
@@ -59,6 +60,7 @@ impl PyArrowWriter {
         root_dir: &str,
         file_idx: usize,
         io_config: Option<&daft_io::IOConfig>,
+        file_format_config: &FileFormatConfig,
         partition_values: Option<&RecordBatch>,
     ) -> DaftResult<Self> {
         Python::attach(|py| {
@@ -76,6 +78,13 @@ impl PyArrowWriter {
                 }
                 None => None,
             };
+
+            let delimiter = if let FileFormatConfig::Csv(config) = file_format_config {
+                config.delimiter.map(|c| c.to_string())
+            } else {
+                None
+            };
+
             let py_writer = file_writer_class.call1((
                 root_dir,
                 file_idx,
@@ -83,6 +92,7 @@ impl PyArrowWriter {
                 io_config.map(|cfg| daft_io::python::IOConfig {
                     config: cfg.clone(),
                 }),
+                delimiter,
             ))?;
             Ok(Self {
                 py_writer: py_writer.into(),

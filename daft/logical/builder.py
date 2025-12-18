@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 from daft.context import get_context
 from daft.daft import (
     CountMode,
-    FileFormat,
+    FileFormatConfig,
     IOConfig,
     JoinStrategy,
     JoinType,
@@ -331,14 +331,19 @@ class LogicalPlanBuilder:
         self,
         root_dir: str | pathlib.Path,
         write_mode: WriteMode,
-        file_format: FileFormat,
+        file_format_config: FileFormatConfig,
         io_config: IOConfig,
         partition_cols: list[Expression] | None = None,
         compression: str | None = None,
     ) -> LogicalPlanBuilder:
         part_cols_pyexprs = [expr._expr for expr in partition_cols] if partition_cols is not None else None
         builder = self._builder.table_write(
-            str(root_dir), write_mode, file_format, part_cols_pyexprs, compression, io_config
+            str(root_dir),
+            write_mode,
+            file_format_config,
+            part_cols_pyexprs,
+            compression,
+            io_config,
         )
         return LogicalPlanBuilder(builder)
 

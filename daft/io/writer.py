@@ -183,6 +183,7 @@ class CSVFileWriter(FileWriterBase):
         file_idx: int,
         partition_values: RecordBatch | None = None,
         io_config: IOConfig | None = None,
+        delimiter: str | None = None,
     ):
         super().__init__(
             root_dir=root_dir,
@@ -194,12 +195,15 @@ class CSVFileWriter(FileWriterBase):
         self.file_handle = None
         self.current_writer: pacsv.CSVWriter | None = None
         self.is_closed = False
+        self.delimiter = delimiter
 
     def _create_writer(self, schema: pa.Schema) -> pacsv.CSVWriter:
         self.file_handle = self.fs.open_output_stream(self.full_path)
+        write_options = pacsv.WriteOptions(delimiter=self.delimiter) if self.delimiter is not None else None
         return pacsv.CSVWriter(
             self.file_handle,
             schema,
+            write_options=write_options,
         )
 
     def write(self, table: MicroPartition) -> int:

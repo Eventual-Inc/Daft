@@ -104,7 +104,7 @@ pub fn make_physical_writer_factory(
         file_schema.clone(),
         cfg.native_parquet_writer,
     )?;
-    match file_info.file_format {
+    match file_info.file_format_config.file_format() {
         FileFormat::Parquet => {
             let file_size_calculator = TargetInMemorySizeBytesCalculator::new(
                 cfg.parquet_target_filesize,

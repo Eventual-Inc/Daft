@@ -20,7 +20,17 @@ from typing import TYPE_CHECKING, Any, Concatenate, Literal, ParamSpec, TypeVar,
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import DistributedPhysicalPlan, FileFormat, IOConfig, JoinStrategy, JoinType, WriteMode
+from daft.daft import (
+    CsvSourceConfig,
+    DistributedPhysicalPlan,
+    FileFormatConfig,
+    IOConfig,
+    JoinStrategy,
+    JoinType,
+    JsonSourceConfig,
+    ParquetSourceConfig,
+    WriteMode,
+)
 from daft.dataframe.display import MermaidOptions
 from daft.dataframe.preview import Preview, PreviewAlign, PreviewColumn, PreviewFormat, PreviewFormatter
 from daft.datatype import DataType
@@ -807,13 +817,19 @@ class DataFrame:
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
 
+        file_format_config = FileFormatConfig.from_parquet_config(
+            ParquetSourceConfig(
+                row_groups=None,
+                chunk_size=None,
+            )
+        )
         builder = self._builder.write_tabular(
             root_dir=root_dir,
-            partition_cols=cols,
             write_mode=WriteMode.from_str(write_mode),
-            file_format=FileFormat.Parquet,
-            compression=compression,
+            file_format_config=file_format_config,
             io_config=io_config,
+            partition_cols=cols,
+            compression=compression,
         )
         # Block and write, then retrieve data
         write_df = DataFrame(builder)
@@ -833,6 +849,7 @@ class DataFrame:
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
+        delimiter: str | None = None,
     ) -> "DataFrame":
         """Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written.
 
@@ -843,6 +860,7 @@ class DataFrame:
             write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
+            delimiter (Optional[str], optional): The delimiter to use for the CSV file. Defaults to ",".
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -873,12 +891,24 @@ class DataFrame:
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
 
+        file_format_config = FileFormatConfig.from_csv_config(
+            CsvSourceConfig(
+                delimiter=delimiter,
+                has_headers=True,
+                double_quote=True,
+                quote=None,
+                escape_char=None,
+                comment=None,
+                allow_variable_columns=False,
+            )
+        )
+
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
             write_mode=WriteMode.from_str(write_mode),
-            file_format=FileFormat.Csv,
             io_config=io_config,
+            file_format_config=file_format_config,
         )
 
         # Block and write, then retrieve data
@@ -937,11 +967,13 @@ class DataFrame:
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
 
+        file_format_config = FileFormatConfig.from_json_config(JsonSourceConfig())
+
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
             write_mode=WriteMode.from_str(write_mode),
-            file_format=FileFormat.Json,
+            file_format_config=file_format_config,
             io_config=io_config,
         )
         # Block and write, then retrieve data

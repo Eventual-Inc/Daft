@@ -6,12 +6,10 @@ use std::{
     sync::Arc,
 };
 
-#[cfg(feature = "python")]
-use common_daft_config::PyDaftExecutionConfig;
 use common_daft_config::{DaftExecutionConfig, DaftPlanningConfig};
 use common_display::mermaid::MermaidDisplayOptions;
 use common_error::{DaftError, DaftResult};
-use common_file_formats::{FileFormat, WriteMode};
+use common_file_formats::{FileFormatConfig, WriteMode};
 use common_io_config::IOConfig;
 use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
 use common_treenode::TreeNode;
@@ -27,7 +25,9 @@ use resolve_expr::ExprResolver;
 #[cfg(feature = "python")]
 use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
+    common_daft_config::PyDaftExecutionConfig,
     common_daft_config::PyDaftPlanningConfig,
+    common_file_formats::python::PyFileFormatConfig,
     common_io_config::python::IOConfig as PyIOConfig,
     daft_dsl::python::PyExpr,
     // daft_scan::python::pylib::ScanOperatorHandle,
@@ -698,7 +698,7 @@ impl LogicalPlanBuilder {
         &self,
         root_dir: &str,
         write_mode: WriteMode,
-        file_format: FileFormat,
+        file_format_config: FileFormatConfig,
         partition_cols: Option<Vec<ExprRef>>,
         compression: Option<String>,
         io_config: Option<IOConfig>,
@@ -712,7 +712,7 @@ impl LogicalPlanBuilder {
         let sink_info = SinkInfo::OutputFileInfo(OutputFileInfo::new(
             root_dir.into(),
             write_mode,
-            file_format,
+            file_format_config,
             partition_cols,
             compression,
             io_config,
@@ -1358,7 +1358,7 @@ impl PyLogicalPlanBuilder {
     #[pyo3(signature = (
         root_dir,
         write_mode,
-        file_format,
+        file_format_config,
         partition_cols=None,
         compression=None,
         io_config=None
@@ -1367,7 +1367,7 @@ impl PyLogicalPlanBuilder {
         &self,
         root_dir: &str,
         write_mode: WriteMode,
-        file_format: FileFormat,
+        file_format_config: PyFileFormatConfig,
         partition_cols: Option<Vec<PyExpr>>,
         compression: Option<String>,
         io_config: Option<common_io_config::python::IOConfig>,
@@ -1377,7 +1377,7 @@ impl PyLogicalPlanBuilder {
             .table_write(
                 root_dir,
                 write_mode,
-                file_format,
+                file_format_config.into(),
                 partition_cols.map(pyexprs_to_exprs),
                 compression,
                 io_config.map(|cfg| cfg.config),

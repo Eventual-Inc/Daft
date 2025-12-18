@@ -114,6 +114,12 @@ impl From<PyFileFormatConfig> for Arc<FileFormatConfig> {
     }
 }
 
+impl From<PyFileFormatConfig> for FileFormatConfig {
+    fn from(file_format_config: PyFileFormatConfig) -> Self {
+        (*file_format_config.0).clone()
+    }
+}
+
 impl From<Arc<FileFormatConfig>> for PyFileFormatConfig {
     fn from(file_format_config: Arc<FileFormatConfig>) -> Self {
         Self(file_format_config)

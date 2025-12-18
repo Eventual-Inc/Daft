@@ -1945,7 +1945,7 @@ class LogicalPlanBuilder:
         self,
         root_dir: str,
         write_mode: WriteMode,
-        file_format: FileFormat,
+        file_format_config: FileFormatConfig,
         partition_cols: list[PyExpr] | None = None,
         compression: str | None = None,
         io_config: IOConfig | None = None,

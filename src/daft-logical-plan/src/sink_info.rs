@@ -1,7 +1,7 @@
 use std::{hash::Hash, sync::Arc};
 
 use common_error::DaftResult;
-use common_file_formats::{FileFormat, WriteMode};
+use common_file_formats::{FileFormatConfig, WriteMode};
 use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use common_py_serde::{deserialize_py_object, serialize_py_object};
@@ -27,7 +27,7 @@ pub enum SinkInfo<E = ExprRef> {
 pub struct OutputFileInfo<E = ExprRef> {
     pub root_dir: String,
     pub write_mode: WriteMode,
-    pub file_format: FileFormat,
+    pub file_format_config: FileFormatConfig,
     pub partition_cols: Option<Vec<E>>,
     pub compression: Option<String>,
     pub io_config: Option<IOConfig>,
@@ -187,7 +187,7 @@ where
     pub fn new(
         root_dir: String,
         write_mode: WriteMode,
-        file_format: FileFormat,
+        file_format_config: FileFormatConfig,
         partition_cols: Option<Vec<E>>,
         compression: Option<String>,
         io_config: Option<IOConfig>,
@@ -195,7 +195,7 @@ where
         Self {
             root_dir,
             write_mode,
-            file_format,
+            file_format_config,
             partition_cols,
             compression,
             io_config,
@@ -213,6 +213,7 @@ where
         if let Some(ref compression) = self.compression {
             res.push(format!("Compression = {}", compression));
         }
+        res.extend(self.file_format_config.multiline_display());
         res.push(format!("Root dir = {}", self.root_dir));
         match &self.io_config {
             None => res.push("IOConfig = None".to_string()),
@@ -245,7 +246,7 @@ impl OutputFileInfo {
         Ok(OutputFileInfo {
             root_dir: self.root_dir,
             write_mode: self.write_mode,
-            file_format: self.file_format,
+            file_format_config: self.file_format_config,
             partition_cols: self
                 .partition_cols
                 .map(|cols| BoundExpr::bind_all(&cols, schema))
