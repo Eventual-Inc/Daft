@@ -31,7 +31,7 @@ def read_json(
     """Creates a DataFrame from line-delimited JSON file(s).
 
     Args:
-        path (str): Path to JSON files (allows for wildcards)
+        path (str): Path to JSON files (allows for wildcards; supports remote URLs to object stores such as ``s3://`` or ``gs://``)
         infer_schema (bool): Whether to infer the schema of the JSON, defaults to True.
         schema (dict[str, DataType]): A schema that is used as the definitive schema for the JSON if infer_schema is False, otherwise it is used as a schema hint that is applied after the schema is inferred.
         io_config (IOConfig): Config to be used with the native downloader
@@ -43,11 +43,16 @@ def read_json(
         DataFrame: parsed DataFrame
 
     Examples:
+        Read a JSON file from a local path:
         >>> df = daft.read_json("/path/to/file.json")
         >>> df = daft.read_json("/path/to/directory")
         >>> df = daft.read_json("/path/to/files-*.json")
-        >>> df = daft.read_json("s3://path/to/files-*.json")
 
+        Read a JSON file from a public S3 bucket:
+        >>> from daft.io import S3Config, IOConfig
+        >>> io_config = IOConfig(s3=S3Config(region="us-west-2", anonymous=True))
+        >>> df = daft.read_json("s3://path/to/files-*.json", io_config=io_config)
+        >>> df.show()
     """
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from from empty list of JSON filepaths")
