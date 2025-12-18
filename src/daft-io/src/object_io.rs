@@ -96,9 +96,8 @@ impl GetResult {
                             | super::Error::UnableToReadBytes { .. }
                             | super::Error::UnableToOpenFile { .. },
                         ) if let Some(rp) = &retry_params => {
-                            let jitter = rand::thread_rng()
-                                .gen_range(0..((1 << (attempt - 1)) * JITTER_MS))
-                                as u64;
+                            let jitter =
+                                rand::thread_rng().gen_range(0..((1 << (attempt - 1)) * JITTER_MS));
                             let jitter = jitter.min(MAX_BACKOFF_MS);
 
                             log::warn!(
@@ -115,7 +114,7 @@ impl GetResult {
                                     rp.io_stats.clone(),
                                 )
                                 .await?;
-                            if let Self::Stream(stream, size, permit, _) = get_result {
+                            if let Stream(stream, size, permit, _) = get_result {
                                 result = collect_bytes(stream, size, permit).await;
                             } else {
                                 unreachable!("Retrying a stream should always be a stream");
@@ -143,27 +142,21 @@ impl GetResult {
 
 const JITTER_MS: u64 = 2_500;
 const MAX_BACKOFF_MS: u64 = 20_000;
+const MAX_NUM_TRIES: u64 = 3;
 struct ResumableByteStream {
     inner: BoxStream<'static, super::Result<Bytes>>,
     delivered: usize,
     retry: StreamingRetryParams,
     attempt: u64,
-    max_retries: u64,
 }
 
 impl ResumableByteStream {
     fn new(inner: BoxStream<'static, super::Result<Bytes>>, retry: StreamingRetryParams) -> Self {
-        let max_retries = std::env::var("DAFT_IO_STREAM_MAX_RETRIES")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .filter(|&v| v > 0)
-            .unwrap_or(3);
         Self {
             inner,
             delivered: 0,
             retry,
             attempt: 0,
-            max_retries,
         }
     }
 
@@ -202,7 +195,7 @@ impl ResumableByteStream {
                             | super::Error::UnableToReadBytes { .. }
                             | super::Error::UnableToOpenFile { .. } => {
                                 self.attempt += 1;
-                                if self.attempt > self.max_retries {
+                                if self.attempt > MAX_NUM_TRIES {
                                     yield Err(e);
                                     break;
                                 }
@@ -213,7 +206,7 @@ impl ResumableByteStream {
 
                                 let range = self.make_range();
                                 log::warn!("Received Socket Error when streaming bytes! Attempt {} out of {} tries. Trying again in {}ms with range {:?}",
-                                self.attempt, self.max_retries, backoff_ms, range);
+                                self.attempt, MAX_NUM_TRIES, backoff_ms, range);
 
                                 match self.retry.source.get(&self.retry.input, range, self.retry.io_stats.clone()).await {
                                     Ok(GetResult::Stream(s2, _size2, _permit2, _)) => {
