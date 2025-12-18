@@ -113,40 +113,39 @@ def _read_first_file_text(root: str) -> str:
         return fh.read()
 
 
-def test_write_csv_with_delimiter(tmp_path):
-    df = daft.from_pydict({"id": [1, 2, 3], "foo": ["a", "b|c", "d"]})
-    df.write_csv(str(tmp_path), write_mode="overwrite", delimiter="|")
+@pytest.mark.parametrize(
+    ["delimiter", "header", "quote", "escape_char", "foo_values", "expected_text"],
+    [
+        ("|", True, None, None, ["a", "b|c", "d"], 'id|foo\n1|a\n2|"b|c"\n3|d\n'),
+        (";", True, None, None, ["a", "b;c", "d"], 'id;foo\n1;a\n2;"b;c"\n3;d\n'),
+        ("\t", True, None, None, ["a", "b\tc", "d"], 'id\tfoo\n1\ta\n2\t"b\tc"\n3\td\n'),
+        (",", False, None, None, ["a", "b|c", "d"], "1,a\n2,b|c\n3,d\n"),
+        (",", True, "'", None, ["a", "b,c", "d"], "id,foo\n1,a\n2,'b,c'\n3,d\n"),
+        (",", True, '"', None, ["a", "b,c", "d"], 'id,foo\n1,a\n2,"b,c"\n3,d\n'),
+        (",", True, "'", "\\", ["a", 'He said "hi,yo"', "d"], "id,foo\n1,a\n2,'He said \"hi,yo\"'\n3,d\n"),
+        (",", True, "'", "\\", ["a", 'Say "hello"', "d"], 'id,foo\n1,a\n2,Say "hello"\n3,d\n'),
+    ],
+)
+def test_write_csv_parametrized(tmp_path, delimiter, header, quote, escape_char, foo_values, expected_text):
+    df = daft.from_pydict({"id": [1, 2, 3], "foo": foo_values})
+
+    write_kwargs = {
+        "write_mode": "overwrite",
+        "delimiter": delimiter,
+        "quote": quote,
+        "escape": escape_char,
+        "header": header,
+    }
+    df.write_csv(str(tmp_path), **write_kwargs)
     text = _read_first_file_text(str(tmp_path))
-    assert text == 'id|foo\n1|a\n2|"b|c"\n3|d\n'
+    assert text == expected_text
 
-    read_back = daft.read_csv(str(tmp_path), delimiter="|")
-    assert df.to_arrow() == read_back.to_arrow()
-
-
-def test_write_csv_without_header(tmp_path):
-    df = daft.from_pydict({"id": [1, 2, 3], "foo": ["a", "b|c", "d"]})
-    df.write_csv(str(tmp_path), write_mode="overwrite", header=False)
-    text = _read_first_file_text(str(tmp_path))
-    assert text == "1,a\n2,b|c\n3,d\n"
-
-
-def test_write_csv_with_quote_char(tmp_path):
-    df = daft.from_pydict({"id": [1, 2, 3], "foo": ["a", "b,c", "d"]})
-    df.write_csv(str(tmp_path), write_mode="overwrite", quote="'")
-    text = _read_first_file_text(str(tmp_path))
-    assert text == "id,foo\n1,a\n2,'b,c'\n3,d\n"
-
-    read_back = daft.read_csv(str(tmp_path), quote="'")
-    assert df.to_arrow() == read_back.to_arrow()
-
-
-def test_write_csv_with_escape_char(tmp_path):
-    df = daft.from_pydict({"id": [1, 2, 3], "foo": ["a", 'Say "hello"', "d"]})
-    df.show()
-    df.write_csv(str(tmp_path), write_mode="overwrite", escape="\\", quote="'")
-    text = _read_first_file_text(str(tmp_path))
-    assert text == 'id,foo\n1,a\n2,Say "hello"\n3,d\n'
-
-    read_back = daft.read_csv(str(tmp_path), escape_char="\\", quote="'")
-    read_back.show()
-    assert df.to_arrow() == read_back.to_arrow()
+    if header:
+        read_kwargs = {
+            "delimiter": delimiter,
+            "quote": quote,
+            "escape_char": escape_char,
+            "has_headers": header,
+        }
+        read_back = daft.read_csv(str(tmp_path), **read_kwargs)
+        assert df.to_arrow() == read_back.to_arrow()

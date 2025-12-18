@@ -28,7 +28,7 @@ pub struct OutputFileInfo<E = ExprRef> {
     pub root_dir: String,
     pub write_mode: WriteMode,
     pub file_format: FileFormat,
-    pub format_option: Option<FormatOption>,
+    pub format_option: Option<FormatSinkOption>,
     pub partition_cols: Option<Vec<E>>,
     pub compression: Option<String>,
     pub io_config: Option<IOConfig>,
@@ -189,7 +189,7 @@ where
         root_dir: String,
         write_mode: WriteMode,
         file_format: FileFormat,
-        format_option: Option<FormatOption>,
+        format_option: Option<FormatSinkOption>,
         partition_cols: Option<Vec<E>>,
         compression: Option<String>,
         io_config: Option<IOConfig>,
@@ -342,13 +342,13 @@ pub struct JsonFormatOption {}
 pub struct ParquetFormatOption {}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum FormatOption {
+pub enum FormatSinkOption {
     Csv(CsvFormatOption),
     Json(JsonFormatOption),
     Parquet(ParquetFormatOption),
 }
 
-impl FormatOption {
+impl FormatSinkOption {
     pub fn to_csv(self) -> CsvFormatOption {
         match self {
             Self::Csv(csv) => csv,
@@ -360,13 +360,13 @@ impl FormatOption {
 #[cfg(feature = "python")]
 #[pyo3::pyclass()]
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct PyFormatOption {
-    pub inner: FormatOption,
+pub struct PyFormatSinkOption {
+    pub inner: FormatSinkOption,
 }
 
 #[cfg(feature = "python")]
 #[pyo3::pymethods]
-impl PyFormatOption {
+impl PyFormatSinkOption {
     #[classmethod]
     pub fn csv(
         _cls: &pyo3::prelude::Bound<pyo3::types::PyType>,
@@ -379,7 +379,7 @@ impl PyFormatOption {
             c.and_then(|ch| if ch.is_ascii() { Some(ch as u8) } else { None })
         };
         Self {
-            inner: FormatOption::Csv(CsvFormatOption {
+            inner: FormatSinkOption::Csv(CsvFormatOption {
                 delimiter: to_u8(delimiter),
                 quote: to_u8(quote),
                 escape: to_u8(escape),
@@ -391,14 +391,14 @@ impl PyFormatOption {
     #[classmethod]
     pub fn json(_cls: &pyo3::prelude::Bound<pyo3::types::PyType>) -> Self {
         Self {
-            inner: FormatOption::Json(JsonFormatOption {}),
+            inner: FormatSinkOption::Json(JsonFormatOption {}),
         }
     }
 
     #[classmethod]
     pub fn parquet(_cls: &pyo3::prelude::Bound<pyo3::types::PyType>) -> Self {
         Self {
-            inner: FormatOption::Parquet(ParquetFormatOption {}),
+            inner: FormatSinkOption::Parquet(ParquetFormatOption {}),
         }
     }
 }

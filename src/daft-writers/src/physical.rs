@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use daft_core::prelude::*;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_logical_plan::{OutputFileInfo, sink_info::FormatOption};
+use daft_logical_plan::{OutputFileInfo, sink_info::FormatSinkOption};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
@@ -140,7 +140,7 @@ pub fn create_pyarrow_file_writer(
     io_config: Option<&daft_io::IOConfig>,
     format: FileFormat,
     partition: Option<&RecordBatch>,
-    format_option: Option<FormatOption>,
+    format_option: Option<FormatSinkOption>,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
 {
     match format {
@@ -172,7 +172,7 @@ fn create_native_writer(
     file_format: FileFormat,
     partition_values: Option<&RecordBatch>,
     io_config: Option<daft_io::IOConfig>,
-    format_option: Option<FormatOption>,
+    format_option: Option<FormatSinkOption>,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
 {
     match file_format {
