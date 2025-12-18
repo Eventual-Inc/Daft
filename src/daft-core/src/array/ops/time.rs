@@ -432,7 +432,7 @@ impl TimestampArray {
     ) -> DaftResult<Self> {
         let arrow_interval = interval.as_arrow2();
 
-        let arrow_type = self.data_type().to_arrow()?;
+        let arrow_type = self.data_type().to_arrow2()?;
         let mut arrow_timestamp = self.physical.as_arrow2().clone();
 
         // `f` expect the inner type to be a timestamp

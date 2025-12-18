@@ -91,11 +91,11 @@ where
                     )));
                 }
                 let target_physical_type = dtype.to_physical();
-                let target_arrow_type = dtype.to_arrow()?;
-                let target_arrow_physical_type = target_physical_type.to_arrow()?;
+                let target_arrow_type = dtype.to_arrow2()?;
+                let target_arrow_physical_type = target_physical_type.to_arrow2()?;
                 let self_physical_type = self.data_type().to_physical();
-                let self_arrow_type = self.data_type().to_arrow()?;
-                let self_physical_arrow_type = self_physical_type.to_arrow()?;
+                let self_arrow_type = self.data_type().to_arrow2()?;
+                let self_physical_arrow_type = self_physical_type.to_arrow2()?;
 
                 let result_array = if target_arrow_physical_type == target_arrow_type {
                     if !can_cast_types(&self_arrow_type, &target_arrow_type) {
