@@ -5,7 +5,7 @@ use std::{
     pin::Pin,
     sync::{
         Arc,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     task::{Context, Poll},
     time::Duration,
@@ -996,6 +996,7 @@ pub struct TosMultipartWriter {
     key: Cow<'static, str>,
     upload_id: Cow<'static, str>,
     part_idx: AtomicUsize,
+    closed: AtomicBool,
     client: Arc<TosSource>,
     in_flight_permits: Arc<Semaphore>,
     in_flight_uploads: JoinSet<Result<TosPart>>,
@@ -1028,6 +1029,7 @@ impl TosMultipartWriter {
             key: key.into(),
             upload_id: upload_id.into(),
             part_idx: AtomicUsize::new(1),
+            closed: AtomicBool::new(false),
             client,
             in_flight_permits: Arc::new(Semaphore::new(max_concurrent_uploads)),
             in_flight_uploads: JoinSet::new(),
@@ -1069,6 +1071,17 @@ impl MultipartWriter for TosMultipartWriter {
     }
 
     async fn complete(&mut self) -> Result<()> {
+        if self
+            .closed
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return Err(super::Error::Generic {
+                store: SourceType::Tos,
+                source: "TosMultipartWriter is closed".into(),
+            });
+        }
+
         let mut completed_parts = vec![];
         while let Some(upload) = self.in_flight_uploads.join_next().await {
             match upload {
@@ -1080,22 +1093,64 @@ impl MultipartWriter for TosMultipartWriter {
 
         completed_parts.sort_by_key(|part| part.idx);
 
-        self.client
-            .complete_mpu(
-                self.bucket.as_ref(),
-                self.key.as_ref(),
-                self.upload_id.as_ref(),
-                completed_parts,
-            )
-            .await?;
-
+        if completed_parts.is_empty() {
+            // TODO: the tos rust sdk doesn't allow pass a empty parts list to complete_mpu currently, remove the follow code once allowed.
+            let uri = format!("tos://{}/{}", self.bucket, self.key);
+            self.client.put(uri.as_str(), Bytes::new(), None).await?;
+        } else {
+            self.client
+                .complete_mpu(
+                    self.bucket.as_ref(),
+                    self.key.as_ref(),
+                    self.upload_id.as_ref(),
+                    completed_parts,
+                )
+                .await?;
+        }
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::env;
+
+    use bytes::Bytes;
+    use common_io_config::ObfuscatedString;
+    use rand::{RngCore, thread_rng};
+
     use super::*;
+    use crate::integrations::test_full_get;
+
+    struct ClientGuard {
+        client: Arc<TosSource>,
+        uris: Vec<String>,
+    }
+
+    impl ClientGuard {
+        fn new(client: Arc<TosSource>, uris: Vec<String>) -> Self {
+            Self { client, uris }
+        }
+
+        async fn cleanup(self) {
+            for uri in self.uris.clone() {
+                let _ = self.client.delete(&uri, None).await;
+            }
+        }
+    }
+
+    impl Drop for ClientGuard {
+        fn drop(&mut self) {
+            let client = self.client.clone();
+            let uris = self.uris.clone();
+            // Try the best effort to clean up the object after the test.
+            let _ = Handle::current().spawn(async move {
+                for uri in uris {
+                    let _ = client.delete(&uri, None).await;
+                }
+            });
+        }
+    }
 
     fn setup_test_config() -> TosConfig {
         TosConfig {
@@ -1103,6 +1158,30 @@ mod tests {
             endpoint: Some("https://tos-cn-beijing.volces.com".to_string()),
             anonymous: true,
             ..Default::default()
+        }
+    }
+
+    fn setup_online_test_config() -> Option<(TosConfig, String)> {
+        let bucket = env::var("TOS_TEST_BUCKET").ok();
+        let access_key = env::var("TOS_ACCESS_KEY").ok();
+        let secret_key = env::var("TOS_SECRET_KEY").ok();
+
+        if bucket.is_none() || access_key.is_none() || secret_key.is_none() {
+            None
+        } else {
+            Some((
+                TosConfig {
+                    region: Some(env::var("TOS_REGION").unwrap_or("cn-beijing".to_string())),
+                    endpoint: Some(
+                        env::var("TOS_ENDPOINT")
+                            .unwrap_or("https://tos-cn-beijing.volces.com".to_string()),
+                    ),
+                    access_key,
+                    secret_key: secret_key.map(|s| ObfuscatedString::from(s)),
+                    ..Default::default()
+                },
+                bucket.unwrap(),
+            ))
         }
     }
 
@@ -1148,5 +1227,161 @@ mod tests {
         let url = "tos://";
         let result = TosSource::parse_tos_url(url, true);
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_full_get_from_tos() {
+        let (cfg, bucket) = match setup_online_test_config() {
+            Some(c) => c,
+            None => return,
+        };
+        let uri = format!(
+            "tos://{}/{}/hello.txt",
+            bucket,
+            generate_test_object_prefix()
+        );
+
+        let guard = build_client_guard(&cfg, vec![&uri]).await;
+
+        let data = random_vec(200);
+        guard.client.put(&uri, data.clone(), None).await.unwrap();
+
+        let res = test_full_get(guard.client.clone(), &uri, &data).await;
+
+        guard.cleanup().await;
+        res.unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_full_ls_from_tos() {
+        let (cfg, bucket) = match setup_online_test_config() {
+            Some(c) => c,
+            None => return,
+        };
+        let prefix = format!("tos://{}/{}", bucket, generate_test_object_prefix());
+        let uri1 = format!("{}/hello-1.txt", prefix);
+        let uri2 = format!("{}/hello-2.txt", prefix);
+        let guard = build_client_guard(&cfg, vec![&uri1, &uri2]).await;
+
+        // list empty prefix
+        let res = guard
+            .client
+            .ls(&prefix, true, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(res.files.len(), 0);
+        assert!(res.continuation_token.is_none());
+
+        // create two files
+        let data = random_vec(200);
+        guard.client.put(&uri1, data.clone(), None).await.unwrap();
+        guard.client.put(&uri2, data.clone(), None).await.unwrap();
+
+        // list total files
+        let res = guard
+            .client
+            .ls(&prefix, true, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(res.files.len(), 2);
+        assert_eq!(res.files[0].filepath, uri1);
+        assert_eq!(res.files[1].filepath, uri2);
+        assert!(res.continuation_token.is_none());
+
+        // list only one file
+        let res = guard
+            .client
+            .ls(&prefix, true, None, Some(1), None)
+            .await
+            .unwrap();
+        assert_eq!(res.files.len(), 1);
+        assert_eq!(res.files[0].filepath, uri1);
+        assert!(res.continuation_token.is_some());
+
+        // list the next file with continuation token
+        let next_token = res.continuation_token.unwrap();
+        let res = guard
+            .client
+            .ls(&prefix, true, Some(next_token.as_str()), Some(1), None)
+            .await
+            .unwrap();
+        assert_eq!(res.files.len(), 1);
+        assert_eq!(res.files[0].filepath, uri2);
+        assert!(res.continuation_token.is_none());
+
+        guard.cleanup().await;
+    }
+
+    #[tokio::test]
+    async fn test_mpu() {
+        let (cfg, bucket) = match setup_online_test_config() {
+            Some(c) => c,
+            None => return,
+        };
+
+        let prefix = format!("tos://{}/{}", bucket, generate_test_object_prefix());
+
+        let uri = format!("{}/hello.txt", prefix);
+        let guard = build_client_guard(&cfg, vec![&uri]).await;
+
+        // complete with empty part
+        let client = guard.client.clone();
+        let mut writer = client.create_multipart_writer(&uri).await.unwrap().unwrap();
+        writer.complete().await.unwrap();
+        let size = guard.client.get_size(&uri, None).await.unwrap();
+        assert_eq!(size, 0);
+
+        // complete with single part
+        let part1 = random_vec(1000);
+        let client = guard.client.clone();
+        let mut writer = client.create_multipart_writer(&uri).await.unwrap().unwrap();
+        writer.put_part(part1.clone()).await.unwrap();
+        writer.complete().await.unwrap();
+
+        let data = guard
+            .client
+            .get(&uri, None, None)
+            .await
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap();
+        assert_eq!(data, part1.clone());
+
+        // complete a completed writer
+        let err = writer.complete().await.unwrap_err();
+        assert!(err.to_string().contains("TosMultipartWriter is closed"));
+
+        // complete with invalid part size
+        let client = guard.client.clone();
+        let mut writer = client.create_multipart_writer(&uri).await.unwrap().unwrap();
+        writer.put_part(part1.clone()).await.unwrap();
+        writer.put_part(random_vec(2000)).await.unwrap();
+        let err = writer.complete().await.unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Your proposed upload is smaller than the minimum allowed size")
+        );
+
+        guard.cleanup().await
+    }
+
+    fn generate_test_object_prefix() -> String {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        format!("daft-tests/{}/{}", std::process::id(), ts)
+    }
+
+    fn random_vec(n: usize) -> Bytes {
+        let mut buf = vec![0u8; n];
+        thread_rng().fill_bytes(&mut buf);
+        Bytes::from(buf)
+    }
+
+    async fn build_client_guard(cfg: &TosConfig, uris: Vec<&str>) -> ClientGuard {
+        let client = TosSource::get_client(&cfg).await.unwrap();
+        ClientGuard::new(client, uris.iter().map(|s| s.to_string()).collect())
     }
 }
