@@ -675,7 +675,7 @@ impl ImageArray {
                     fixed_shape_tensor_array.downcast::<FixedShapeTensorArray>()?;
                 fixed_shape_tensor_array.cast(dtype)
             }
-            DataType::Tensor(_) => {
+            DataType::Tensor(inner_dtype) => {
                 let ndim = 3;
                 let mut shapes = Vec::with_capacity(ndim * self.len());
                 let shape_offsets = (0..=ndim * self.len())
@@ -683,7 +683,11 @@ impl ImageArray {
                     .map(|v| v as i64)
                     .collect::<Vec<i64>>();
                 let validity = self.physical.validity();
-                let data_array = self.data_array();
+                let data_series = self
+                    .data_array()
+                    .clone()
+                    .into_series()
+                    .cast(&DataType::List(inner_dtype.clone()))?;
                 let ca = self.channel_array();
                 let ha = self.height_array();
                 let wa = self.width_array();
@@ -709,7 +713,7 @@ impl ImageArray {
 
                 let struct_array = StructArray::new(
                     Field::new(self.name(), physical_type),
-                    vec![data_array.clone().into_series(), shapes_array.into_series()],
+                    vec![data_series, shapes_array.into_series()],
                     validity.cloned(),
                 );
                 Ok(
