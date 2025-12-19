@@ -624,6 +624,8 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
             let max_concurrent_requests = get_value!("max_concurrent_requests", UInt32)?;
             let max_connections_per_io_thread =
                 get_value!("max_connections_per_io_thread", UInt32)?;
+            let multipart_size = get_value!("multipart_size", UInt64)?;
+            let multipart_max_concurrency = get_value!("multipart_max_concurrency", UInt32)?;
 
             let default = TosConfig::default();
             Ok(IOConfig {
@@ -642,6 +644,9 @@ pub(crate) fn expr_to_iocfg(expr: &ExprRef) -> SQLPlannerResult<IOConfig> {
                         .unwrap_or(default.max_concurrent_requests),
                     max_connections_per_io_thread: max_connections_per_io_thread
                         .unwrap_or(default.max_connections_per_io_thread),
+                    multipart_size: multipart_size.unwrap_or(default.multipart_size),
+                    multipart_max_concurrency: multipart_max_concurrency
+                        .unwrap_or(default.multipart_max_concurrency),
                 },
                 ..Default::default()
             })

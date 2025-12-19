@@ -20,7 +20,9 @@ pub(crate) fn build_filename(
 
     match source_type {
         SourceType::File => build_local_file_path(root_dir, partition_path, filename),
-        SourceType::S3 => build_s3_path(root_dir, partition_path, filename),
+        source if source.supports_native_writer() => {
+            build_object_path(root_dir, partition_path, filename)
+        }
         _ => Err(DaftError::ValueError(format!(
             "Unsupported source type: {:?}",
             source_type
@@ -97,8 +99,12 @@ fn build_local_file_path(
     Ok(dir.join(filename))
 }
 
-/// Helper function to build the path to an S3 url.
-fn build_s3_path(root_dir: &str, partition_path: PathBuf, filename: String) -> DaftResult<PathBuf> {
+/// Helper function to build the path to an object url. The pattern of object url is `{bucket}/{key}`. TODO consider include the scheme in the return value
+fn build_object_path(
+    root_dir: &str,
+    partition_path: PathBuf,
+    filename: String,
+) -> DaftResult<PathBuf> {
     let ObjectPath {
         scheme: _scheme,
         bucket,
