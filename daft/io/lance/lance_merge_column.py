@@ -9,7 +9,6 @@ import daft.pickle
 from daft.datatype import DataType
 from daft.udf import cls as daft_cls
 from daft.udf import method
-from daft.udf import udf as legacy_udf
 
 if TYPE_CHECKING:
     import pathlib
@@ -106,7 +105,7 @@ def merge_columns_internal(
     )
 
 
-@legacy_udf(return_dtype=_FRAGMENT_HANDLER_RETURN_DTYPE)
+@daft_cls
 class GroupFragmentMergeUDF:
     def __init__(
         self,
@@ -134,6 +133,7 @@ class GroupFragmentMergeUDF:
         self.reader_schema = reader_schema
         self.batch_size = batch_size
 
+    @method.batch(return_dtype=_FRAGMENT_HANDLER_RETURN_DTYPE)
     def __call__(self, *cols: Any) -> list[dict[str, bytes]]:
         from daft.dependencies import pa as _pa
 
@@ -283,9 +283,11 @@ def merge_columns_from_df(
             )
         read_columns = [join_key] + new_cols
 
-    handler_udf = GroupFragmentMergeUDF.with_init_args(  # type: ignore[attr-defined]
+    # Ensure left_on is not None (it has a default value but could be explicitly None)
+    left_on_val: str = left_on if left_on is not None else "_rowaddr"
+    handler_udf = GroupFragmentMergeUDF(
         lance_ds,
-        left_on,
+        left_on_val,
         right_on,
         read_columns,
         reader_schema,
@@ -294,7 +296,7 @@ def merge_columns_from_df(
 
     # map_groups: pass data columns followed by fragment_id
     grouped = df.groupby("fragment_id").map_groups(
-        handler_udf(*(df[c] for c in read_columns), df["fragment_id"]).alias("commit_message")
+        handler_udf(*(df[c] for c in read_columns), df["fragment_id"]).alias("commit_message")  # type: ignore[attr-defined]
     )
 
     commit_messages = grouped.collect().to_pydict()["commit_message"]

@@ -162,7 +162,7 @@ Define your `ClassifyImages` UDF. Models are expensive to initialize and load, s
 === "🐍 Python"
 
     ```python
-    @daft.udf(return_dtype=daft.DataType.fixed_size_list(dtype=daft.DataType.string(), size=2))
+    @daft.cls
     class ClassifyImages:
         def __init__(self):
             # Perform expensive initializations - create and load the pre-trained model
@@ -170,6 +170,7 @@ Define your `ClassifyImages` UDF. Models are expensive to initialize and load, s
             self.utils = torch.hub.load("NVIDIA/DeepLearningExamples:torchhub", "nvidia_convnets_processing_utils")
             self.model.eval().to(torch.device("cpu"))
 
+        @daft.method.batch(return_dtype=daft.DataType.fixed_size_list(dtype=daft.DataType.string(), size=2))
         def __call__(self, images_urls):
             batch = torch.cat([self.utils.prepare_input_from_uri(uri) for uri in images_urls]).to(torch.device("cpu"))
 
@@ -185,7 +186,7 @@ Now you're ready to call this function on the `urls` column and store the output
 === "🐍 Python"
 
     ```python
-    classified_images_df = df_family.with_column("classify_breed", ClassifyImages(daft.col("urls")))
+    classified_images_df = df_family.with_column("classify_breed", ClassifyImages()(daft.col("urls")))
     classified_images_df.select("dog_name", "image", "classify_breed").show()
     ```
 

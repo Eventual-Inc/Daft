@@ -52,7 +52,7 @@ def test_basic_autoscaling_cluster_with_existing_workers():
 
     with autoscaling_cluster_context(head_resources, worker_node_types):
 
-        @daft.udf(return_dtype=daft.DataType.list(daft.DataType.string()))
+        @daft.func.batch(return_dtype=daft.DataType.list(daft.DataType.string()))
         def fake_udf_needs_2_cpus(x):
             time.sleep(1)
             return x
@@ -76,11 +76,15 @@ def test_basic_autoscaling_gpu_cluster():
 
     with autoscaling_cluster_context(head_resources, worker_node_types):
         # Test basic Daft operations on the autoscaling cluster
-        @daft.udf(return_dtype=daft.DataType.list(daft.DataType.string()), num_gpus=2)
-        def fake_gpu_udf(x):
-            visible_devices = cuda_visible_devices()
-            return [visible_devices] * len(x)
+        # NOTE: num_gpus is only supported for class UDFs in the new API
+        @daft.cls(gpus=2)
+        class FakeGpuUdf:
+            @daft.method.batch(return_dtype=daft.DataType.list(daft.DataType.string()))
+            def __call__(self, x):
+                visible_devices = cuda_visible_devices()
+                return [visible_devices] * len(x)
 
+        fake_gpu_udf = FakeGpuUdf()
         df = daft.from_pydict({"x": [1, 2, 3, 4, 5], "y": [6, 7, 8, 9, 10]})
         result = df.select(fake_gpu_udf(col("x"))).to_pydict()
         assert result["x"] == [["0", "1"]] * 5

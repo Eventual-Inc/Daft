@@ -13,7 +13,7 @@ pytestmark = pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason
 
 
 def make_noop_udf(batch_size: int, dtype: daft.DataType = daft.DataType.int64()):
-    @daft.udf(return_dtype=dtype, batch_size=batch_size, concurrency=1)
+    @daft.func.batch(return_dtype=dtype, batch_size=batch_size)
     def noop(x: dtype) -> dtype:
         return x
 
@@ -35,7 +35,7 @@ def test_batch_size_from_udf_propagated_to_scan(dynamic_batching):
     * UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
     |   Expr = py_udf(col(0: a)) as a
     |   Passthrough Columns = []
-    |   Properties = { batch_size = 10, concurrency = 1, async = false, scalar = false }
+    |   Properties = { batch_size = 10, async = false, scalar = false }
     |   Resource request = None
     |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
     |   Batch Size = 10

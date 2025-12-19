@@ -10,7 +10,7 @@ import daft
 def test_sql_udf():
     df = daft.from_pydict({"a": [1, 2, 3]})
 
-    @daft.udf(return_dtype=daft.DataType.int64())
+    @daft.func.batch(return_dtype=daft.DataType.int64())
     def multiply_by_n(data, n):
         return [i * n for i in data]
 
@@ -26,11 +26,11 @@ def test_sql_udf_ambigious_name():
     df = daft.from_pydict({"a": [1, 2, 3]})
     bindings = {"df": df}
 
-    @daft.udf(return_dtype=daft.DataType.int64())
+    @daft.func.batch(return_dtype=daft.DataType.int64())
     def multiply_by_n(data, n):
         return [i * n for i in data]
 
-    @daft.udf(return_dtype=daft.DataType.int64())
+    @daft.func.batch(return_dtype=daft.DataType.int64())
     def MULTIPLY_BY_N(data, n):
         return [i * n for i in data]
 
@@ -42,7 +42,7 @@ def test_sql_udf_multi_column():
     df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
     bindings = {"df": df}
 
-    @daft.udf(return_dtype=daft.DataType.int64())
+    @daft.func.batch(return_dtype=daft.DataType.int64())
     def multiply(a, b):
         return a * b
 
@@ -55,7 +55,7 @@ def test_sql_udf_multi_column_and_kwargs():
     df = daft.from_pydict({"first_name": ["Alice", "Bob", "Charlie"], "last_name": ["Smith", "Johnson", "Williams"]})
     bindings = {"df": df}
 
-    @daft.udf(return_dtype=str)
+    @daft.func.batch(return_dtype=str)
     def make_greeting(a, b, greeting="hello"):
         return [f"{greeting}, {a} {b}" for a, b in zip(a, b)]
 
@@ -86,7 +86,7 @@ def test_sql_udf_kwargs_dont_work_as_positional():
     [("1.23", float), ("1", int), ("'hello'", str), ("['hello']", daft.DataType.list(daft.DataType.string()))],
 )
 def test_sql_udf_various_datatypes(value, return_type):
-    @daft.udf(return_dtype=return_type)
+    @daft.func.batch(return_dtype=return_type)
     def udf(column, literal):
         return [literal for i in column]
 
@@ -110,7 +110,7 @@ def test_sql_udf_various_datatypes(value, return_type):
 
 
 def test_sql_udf_unregister():
-    @daft.udf(return_dtype=str)
+    @daft.func.batch(return_dtype=str)
     def my_udf(column, literal):
         return ["hello" for i in column]
 

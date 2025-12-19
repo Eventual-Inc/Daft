@@ -92,16 +92,16 @@ chunked_type = daft.DataType.list(
     })
 )
 
-@daft.udf(
-    return_dtype=chunked_type,
-    concurrency=NUM_GPU_NODES * (CHUNKING_PARALLELISM + 1),
-    batch_size=BATCH_SIZE // CHUNKING_PARALLELISM // 2
-)
+@daft.cls(max_concurrency=NUM_GPU_NODES * (CHUNKING_PARALLELISM + 1))
 class ChunkingUDF:
     def __init__(self):
         import spacy
         self.nlp = spacy.load(NLP_MODEL_NAME)
 
+    @daft.method.batch(
+        return_dtype=chunked_type,
+        batch_size=BATCH_SIZE // CHUNKING_PARALLELISM // 2
+    )
     def __call__(self, text_col):
         results = []
         for text in text_col:
@@ -147,12 +147,7 @@ We'll create a UDF to generate embeddings from the chunked text:
 # Define the return type for embeddings
 embedding_type = daft.DataType.embedding(daft.DataType.float32(), ENCODING_DIM)
 
-@daft.udf(
-    return_dtype=embedding_type,
-    concurrency=NUM_GPU_NODES,
-    num_gpus=1,
-    batch_size=BATCH_SIZE
-)
+@daft.cls(gpus=1, max_concurrency=NUM_GPU_NODES)
 class EncodingUDF:
     def __init__(self):
         from sentence_transformers import SentenceTransformer
@@ -161,6 +156,7 @@ class EncodingUDF:
         self.model = SentenceTransformer(EMBEDDING_MODEL_NAME, device=device)
         self.model.compile()
 
+    @daft.method.batch(return_dtype=embedding_type, batch_size=BATCH_SIZE)
     def __call__(self, text_col):
         embeddings = self.model.encode(
             text_col.to_pylist(),
@@ -202,12 +198,12 @@ Now we'll execute the complete data processing pipeline:
 ```python
 (
     daft.read_parquet("s3://desmond-demo/text-embedding-dataset.parquet")
-    .with_column("sentences", ChunkingUDF(col("text")))
+    .with_column("sentences", ChunkingUDF()(col("text")))
     .explode("sentences")
     .with_column("text", col("sentences")["text"])
     .with_column("chunk_id", col("sentences")["chunk_id"])
     .exclude("sentences")
-    .with_column("embedding", EncodingUDF(col("text")))
+    .with_column("embedding", EncodingUDF()(col("text")))
     .with_column(
         "id",
         col("url").right(50) + "-" + col("chunk_id").cast(daft.DataType.string())
@@ -277,16 +273,16 @@ chunked_type = daft.DataType.list(
     })
 )
 
-@daft.udf(
-    return_dtype=chunked_type,
-    concurrency=NUM_GPU_NODES * (CHUNKING_PARALLELISM + 1),
-    batch_size=BATCH_SIZE // CHUNKING_PARALLELISM // 2
-)
+@daft.cls(max_concurrency=NUM_GPU_NODES * (CHUNKING_PARALLELISM + 1))
 class ChunkingUDF:
     def __init__(self):
         import spacy
         self.nlp = spacy.load(NLP_MODEL_NAME)
 
+    @daft.method.batch(
+        return_dtype=chunked_type,
+        batch_size=BATCH_SIZE // CHUNKING_PARALLELISM // 2
+    )
     def __call__(self, text_col):
         results = []
         for text in text_col:
@@ -301,12 +297,7 @@ class ChunkingUDF:
 # Define the return type for embeddings
 embedding_type = daft.DataType.embedding(daft.DataType.float32(), ENCODING_DIM)
 
-@daft.udf(
-    return_dtype=embedding_type,
-    concurrency=NUM_GPU_NODES,
-    num_gpus=1,
-    batch_size=BATCH_SIZE
-)
+@daft.cls(gpus=1, max_concurrency=NUM_GPU_NODES)
 class EncodingUDF:
     def __init__(self):
         from sentence_transformers import SentenceTransformer
@@ -315,6 +306,7 @@ class EncodingUDF:
         self.model = SentenceTransformer(EMBEDDING_MODEL_NAME, device=device)
         self.model.compile()
 
+    @daft.method.batch(return_dtype=embedding_type, batch_size=BATCH_SIZE)
     def __call__(self, text_col):
         embeddings = self.model.encode(
             text_col.to_pylist(),
@@ -337,12 +329,12 @@ def main():
 
     (
         daft.read_parquet("s3://desmond-demo/text-embedding-dataset.parquet")
-        .with_column("sentences", ChunkingUDF(col("text")))
+        .with_column("sentences", ChunkingUDF()(col("text")))
         .explode("sentences")
         .with_column("text", col("sentences")["text"])
         .with_column("chunk_id", col("sentences")["chunk_id"])
         .exclude("sentences")
-        .with_column("embedding", EncodingUDF(col("text")))
+        .with_column("embedding", EncodingUDF()(col("text")))
         .with_column(
             "id",
             col("url").right(50) + "-" + col("chunk_id").cast(daft.DataType.string())
