@@ -14,10 +14,10 @@ impl SeriesLike for ArrayWrapper<PythonArray> {
         self.0.clone().into_series()
     }
     fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
-        self.0.to_arrow().unwrap()
+        self.0.to_arrow2().unwrap()
     }
     fn to_arrow(&self) -> DaftResult<ArrayRef> {
-        todo!()
+        self.0.to_arrow()
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

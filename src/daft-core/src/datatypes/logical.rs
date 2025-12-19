@@ -16,7 +16,7 @@ use crate::{
 
 /// A LogicalArray is a wrapper on top of some underlying array, applying the semantic meaning of its
 /// field.datatype() to the underlying array.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LogicalArrayImpl<L: DaftLogicalType, PhysicalArray: DaftArrayType> {
     pub field: Arc<Field>,
     pub physical: PhysicalArray,

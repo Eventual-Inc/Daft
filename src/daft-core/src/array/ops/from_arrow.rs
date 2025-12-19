@@ -486,8 +486,7 @@ impl FromArrow for LogicalArray<DateType> {
         let physical_arrow_array = Arc::new(
             arrow_arr
                 .as_primitive::<arrow::datatypes::Date32Type>()
-                .reinterpret_cast::<arrow::datatypes::Int32Type>()
-                .clone(),
+                .reinterpret_cast::<arrow::datatypes::Int32Type>(),
         );
 
         let physical =
@@ -520,8 +519,7 @@ impl FromArrow for LogicalArray<TimeType> {
         let physical_arrow_array = Arc::new(
             arrow_arr
                 .as_primitive::<arrow::datatypes::Time64NanosecondType>()
-                .reinterpret_cast::<arrow::datatypes::Int64Type>()
-                .clone(),
+                .reinterpret_cast::<arrow::datatypes::Int64Type>(),
         );
 
         let physical =

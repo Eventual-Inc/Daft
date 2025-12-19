@@ -215,7 +215,7 @@ where
         self.0.to_arrow2()
     }
     fn to_arrow(&self) -> DaftResult<ArrayRef> {
-        todo!()
+        self.0.to_arrow()
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
