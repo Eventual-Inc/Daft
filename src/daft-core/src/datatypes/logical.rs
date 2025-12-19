@@ -1,5 +1,6 @@
 use std::{marker::PhantomData, sync::Arc};
 
+use arrow::array::ArrayRef;
 use common_error::DaftResult;
 
 use super::{
@@ -15,7 +16,7 @@ use crate::{
 
 /// A LogicalArray is a wrapper on top of some underlying array, applying the semantic meaning of its
 /// field.datatype() to the underlying array.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LogicalArrayImpl<L: DaftLogicalType, PhysicalArray: DaftArrayType> {
     pub field: Arc<Field>,
     pub physical: PhysicalArray,
@@ -123,6 +124,16 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, DataArray<L::PhysicalType>> {
             .unwrap(),
         }
     }
+
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        let arrow_field = self.field().to_arrow()?;
+        let physical = arrow::array::make_array(self.physical.to_data());
+
+        Ok(arrow::compute::cast(
+            physical.as_ref(),
+            arrow_field.data_type(),
+        )?)
+    }
 }
 
 /// Implementation for a LogicalArray that wraps a FixedSizeListArray
@@ -136,6 +147,21 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
         fixed_size_list_arrow_array.change_type(arrow_logical_type);
         fixed_size_list_arrow_array
     }
+
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        let inner_dtype = self.physical.field().dtype.dtype()?;
+        let inner_field = Field::new("item", inner_dtype.clone()).to_arrow()?;
+        let size = self.physical.fixed_element_len() as i32;
+        let values = self.physical.flat_child.to_arrow()?;
+        let nulls = self.physical.validity().cloned();
+
+        Ok(Arc::new(arrow::array::FixedSizeListArray::try_new(
+            Arc::new(inner_field),
+            size,
+            values,
+            nulls,
+        )?))
+    }
 }
 
 /// Implementation for a LogicalArray that wraps a StructArray
@@ -148,6 +174,10 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, StructArray> {
         let arrow_logical_type = self.data_type().to_arrow2().unwrap();
         struct_arrow_array.change_type(arrow_logical_type);
         struct_arrow_array
+    }
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        let struct_arrow_array = self.physical.to_arrow()?;
+        Ok(struct_arrow_array)
     }
 }
 
@@ -181,6 +211,52 @@ impl MapArray {
             arrow_field,
             daft_arrow::buffer::wrap_null_buffer(self.physical.validity().cloned()),
         ))
+    }
+
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        let arrow_field = self.field().to_arrow()?;
+        let arrow_dtype = arrow_field.data_type();
+
+        let arrow::datatypes::DataType::Map(inner_struct_field, _) = arrow_dtype else {
+            unreachable!("Expected map type");
+        };
+        let arrow::datatypes::DataType::Struct(inner_struct_fields) =
+            inner_struct_field.as_ref().data_type()
+        else {
+            unreachable!("Expected struct type");
+        };
+
+        let inner_struct_array = self
+            .physical
+            .flat_child
+            .struct_()
+            .expect("Expected struct array");
+
+        let struct_arrays: Vec<ArrayRef> = inner_struct_array
+            .children
+            .iter()
+            .map(|s| s.to_arrow())
+            .collect::<DaftResult<_>>()?;
+
+        let struct_array = arrow::array::StructArray::try_new(
+            inner_struct_fields.clone(),
+            struct_arrays,
+            inner_struct_array.validity().cloned(),
+        )?;
+
+        let offsets_buffer =
+            arrow::buffer::Buffer::from(self.physical.offsets().clone().into_inner());
+        let scalar_buffer = arrow::buffer::ScalarBuffer::<i32>::from(offsets_buffer);
+
+        let offsets = arrow::buffer::OffsetBuffer::new(scalar_buffer);
+
+        Ok(Arc::new(arrow::array::MapArray::try_new(
+            Arc::new(arrow_field),
+            offsets,
+            struct_array,
+            self.physical.validity().cloned(),
+            false,
+        )?))
     }
 }
 

@@ -129,21 +129,21 @@ mod tests {
 
     #[test]
     fn test_record_batch_to_partition_string() -> DaftResult<()> {
-        let year_series = Series::from_arrow(
+        let year_series = Series::from_arrow2(
             Arc::new(Field::new("year", DataType::Utf8)),
             Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(&["2023"])),
         )?;
-        let month_series = Series::from_arrow(
+        let month_series = Series::from_arrow2(
             Arc::new(Field::new("month", DataType::Utf8)),
             Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(&["1"])),
         )?;
         // Include a column with a null value.
-        let day_series = Series::from_arrow(
+        let day_series = Series::from_arrow2(
             Arc::new(Field::new("day", DataType::Utf8)),
             Box::new(daft_arrow::array::Utf8Array::<i64>::from([None::<&str>])),
         )?;
         // Include a column with a name that needs to be URL-encoded.
-        let date_series = Series::from_arrow(
+        let date_series = Series::from_arrow2(
             Arc::new(Field::new("today's date", DataType::Utf8)),
             Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(&[
                 "2025/04/29",
@@ -178,13 +178,13 @@ mod tests {
 
     #[test]
     fn test_record_batch_to_partition_string_multi_row_error() -> DaftResult<()> {
-        let year_series = Series::from_arrow(
+        let year_series = Series::from_arrow2(
             Arc::new(Field::new("year", DataType::Utf8)),
             Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(&[
                 "2023", "2024",
             ])),
         )?;
-        let month_series = Series::from_arrow(
+        let month_series = Series::from_arrow2(
             Arc::new(Field::new("month", DataType::Utf8)),
             Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(&["1", "2"])),
         )?;

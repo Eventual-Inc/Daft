@@ -209,7 +209,7 @@ pub fn fixed_image_array_from_img_buffers(
         Box::new(daft_arrow::array::PrimitiveArray::from_vec(data)),
         daft_arrow::buffer::wrap_null_buffer(validity),
     ));
-    let physical_array = FixedSizeListArray::from_arrow(
+    let physical_array = FixedSizeListArray::from_arrow2(
         Arc::new(Field::new(name, (&arrow_dtype).into())),
         arrow_array,
     )?;

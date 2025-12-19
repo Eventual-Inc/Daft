@@ -51,7 +51,7 @@ impl BinaryArrayExtension for BinaryArray {
         let array = LargeBinaryArray::new(offsets.finish(), values.into(), validity);
         let array: ArrayRef = Arc::new(array);
 
-        Self::from_arrow(self.field.clone(), array.into())
+        Self::from_arrow2(self.field.clone(), array.into())
     }
 
     /// For binary-to-binary transformations, but inserts null on failures.
@@ -102,7 +102,7 @@ impl BinaryArrayExtension for BinaryArray {
         );
         let array: ArrayRef = Arc::new(array);
 
-        Self::from_arrow(self.field.clone(), array.into())
+        Self::from_arrow2(self.field.clone(), array.into())
     }
 
     /// For binary-to-text decoding.
@@ -129,7 +129,7 @@ impl BinaryArrayExtension for BinaryArray {
         let array = LargeStringArray::new(offsets.into(), values.into(), validity);
         let array: ArrayRef = Arc::new(array);
 
-        Utf8Array::from_arrow(
+        Utf8Array::from_arrow2(
             Arc::new(Field::new(self.name(), DataType::Utf8)),
             array.into(),
         )
@@ -184,7 +184,7 @@ impl BinaryArrayExtension for BinaryArray {
         );
         let array: ArrayRef = Arc::new(array);
 
-        Utf8Array::from_arrow(
+        Utf8Array::from_arrow2(
             Arc::new(Field::new(self.name(), DataType::Utf8)),
             array.into(),
         )
@@ -219,7 +219,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
         let array = LargeBinaryArray::new(offsets.finish(), values.into(), validity);
         let array: ArrayRef = Arc::new(array);
 
-        BinaryArray::from_arrow(self.field.clone(), array.into())
+        BinaryArray::from_arrow2(self.field.clone(), array.into())
     }
 
     /// For binary-to-binary transformations, but inserts null on failures.
@@ -272,7 +272,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
         );
         let array: ArrayRef = Arc::new(array);
 
-        BinaryArray::from_arrow(self.field.clone(), array.into())
+        BinaryArray::from_arrow2(self.field.clone(), array.into())
     }
 
     /// For binary-to-text decoding.
@@ -299,7 +299,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
         let array = LargeStringArray::new(offsets.into(), values.into(), validity);
         let array: ArrayRef = Arc::new(array);
 
-        Utf8Array::from_arrow(
+        Utf8Array::from_arrow2(
             Arc::new(Field::new(self.name(), DataType::Utf8)),
             array.into(),
         )
@@ -356,7 +356,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
         );
         let array: ArrayRef = Arc::new(array);
 
-        Utf8Array::from_arrow(
+        Utf8Array::from_arrow2(
             Arc::new(Field::new(self.name(), DataType::Utf8)),
             array.into(),
         )

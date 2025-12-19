@@ -1,5 +1,6 @@
 use std::any::Any;
 
+use arrow::array::ArrayRef;
 use common_error::DaftResult;
 
 use super::Series;
@@ -12,7 +13,8 @@ use crate::{
 pub trait SeriesLike: Send + Sync + Any + std::fmt::Debug {
     #[allow(clippy::wrong_self_convention)]
     fn into_series(&self) -> Series;
-    fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array>;
+    fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array>;
+    fn to_arrow(&self) -> DaftResult<ArrayRef>;
     fn as_any(&self) -> &dyn std::any::Any;
     fn with_validity(&self, validity: Option<daft_arrow::buffer::NullBuffer>)
     -> DaftResult<Series>;

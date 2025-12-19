@@ -8,6 +8,7 @@ mod utils;
 use std::{hash::Hash, ops::Sub, sync::Arc};
 
 pub use array_impl::{ArrayWrapper, IntoSeries};
+use arrow::array::ArrayRef;
 use common_display::table_display::{StrValue, make_comfy_table};
 use common_error::DaftResult;
 use daft_arrow::trusted_len::TrustedLen;
@@ -117,6 +118,10 @@ impl Series {
     /// To get the internal physical type without conversion, see `as_arrow2()`.
     #[deprecated(note = "arrow2 migration")]
     pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
+        self.inner.to_arrow2()
+    }
+
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
         self.inner.to_arrow()
     }
 
@@ -126,10 +131,15 @@ impl Series {
     ///
     /// This function will check the provided [`Field`] (and all its associated potentially nested fields/dtypes) against
     /// the provided [`daft_arrow::array::Array`] for compatibility, and returns an error if they do not match.
-    pub fn from_arrow(
+    pub fn from_arrow2(
         field: FieldRef,
         arrow_arr: Box<dyn daft_arrow::array::Array>,
     ) -> DaftResult<Self> {
+        with_match_daft_types!(field.dtype, |$T| {
+            Ok(<<$T as DaftDataType>::ArrayType as FromArrow>::from_arrow2(field, arrow_arr)?.into_series())
+        })
+    }
+    pub fn from_arrow(field: FieldRef, arrow_arr: ArrayRef) -> DaftResult<Self> {
         with_match_daft_types!(field.dtype, |$T| {
             Ok(<<$T as DaftDataType>::ArrayType as FromArrow>::from_arrow(field, arrow_arr)?.into_series())
         })
