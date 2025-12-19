@@ -317,8 +317,6 @@ def get_flotilla_runner_actor_name() -> str:
             job_id = None
 
         if job_id is None:
-            # Fallback: a per-process UUID guarantees uniqueness even when we are
-            # not running inside a Ray job or the job id cannot be determined.
             _FLOTILLA_RUNNER_NAME_SUFFIX = uuid.uuid4().hex
         else:
             _FLOTILLA_RUNNER_NAME_SUFFIX = job_id
@@ -342,10 +340,6 @@ class FlotillaRunner:
 
     def __init__(self) -> None:
         head_node_id = get_head_node_id()
-        # Use a per-Ray-job (or per-process) actor name so that multiple Daft clients
-        # connected to the same Ray cluster do not share a single RemoteFlotillaRunner
-        # instance. This prevents plan ID collisions across clients because plan
-        # indices are only guaranteed to be unique within a single Daft process.
         self.runner = RemoteFlotillaRunner.options(  # type: ignore
             name=get_flotilla_runner_actor_name(),
             namespace=FLOTILLA_RUNNER_NAMESPACE,
