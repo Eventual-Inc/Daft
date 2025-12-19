@@ -25,17 +25,20 @@ def read_deltalake(
     table: Union[str, DataCatalogTable, "UnityCatalogTable"],
     version: Optional[Union[int, str, "datetime"]] = None,
     io_config: Optional[IOConfig] = None,
+    ignore_deletion_vectors: bool = False,
     _multithreaded_io: Optional[bool] = None,
 ) -> DataFrame:
     """Create a DataFrame from a Delta Lake table.
 
     Args:
-        table: Either a URI for the Delta Lake table or a :class:`~daft.io.catalog.DataCatalogTable` instance
-            referencing a table in a data catalog, such as AWS Glue Data Catalog or Databricks Unity Catalog.
+        table: Either a URI for the Delta Lake table (supports remote URLs to object stores such as ``s3://`` or ``gs://``)
+            or a :class:`~daft.io.catalog.DataCatalogTable` instance referencing a table in a data catalog,
+            such as AWS Glue Data Catalog or Databricks Unity Catalog.
         version (optional): If int is passed, read the table with specified version number. Otherwise if string or datetime,
             read the timestamp version of the table. Strings must be RFC 3339 and ISO 8601 date and time format.
             Datetimes are assumed to be UTC timezone unless specified. By default, read the latest version of the table.
         io_config (optional): A custom :class:`~daft.daft.IOConfig` to use when accessing Delta Lake object storage data. Defaults to None.
+        ignore_deletion_vectors (optional): Whether to skip checking for deletion vectors when reading the table. Defaults to False.
         _multithreaded_io (optional): Whether to use multithreading for IO threads. Setting this to False can be helpful in reducing
             the amount of system resources (number of connections and thread contention) when running in the Ray runner.
             Defaults to None, which will let Daft decide based on the runner it is currently using.
@@ -47,11 +50,17 @@ def read_deltalake(
         This function requires the use of [deltalake](https://delta-io.github.io/delta-rs/), a Python library for interacting with Delta Lake.
 
     Examples:
+        Read a Delta Lake table from a local path:
         >>> df = daft.read_deltalake("some-table-uri")
         >>>
-        >>> # Filters on this dataframe can now be pushed into
-        >>> # the read operation from Delta Lake.
+        >>> # Filters on this dataframe can now be pushed into the read operation from Delta Lake.
         >>> df = df.where(df["foo"] > 5)
+        >>> df.show()
+
+        Read a Delta Lake table from a public S3 bucket:
+        >>> from daft.io import S3Config, IOConfig
+        >>> io_config = IOConfig(s3=S3Config(region="us-west-2", anonymous=True))
+        >>> df = daft.read_deltalake("s3://daft-public-data/test_fixtures/delta_table/", io_config=io_config)
         >>> df.show()
     """
     from daft.io.delta_lake.delta_lake_scan import DeltaLakeScanOperator
@@ -80,7 +89,9 @@ def read_deltalake(
         raise ValueError(
             f"table argument must be a table URI string, DataCatalogTable or UnityCatalogTable instance, but got: {type(table)}, {table}"
         )
-    delta_lake_operator = DeltaLakeScanOperator(table_uri, storage_config=storage_config, version=version)
+    delta_lake_operator = DeltaLakeScanOperator(
+        table_uri, storage_config=storage_config, version=version, ignore_deletion_vectors=ignore_deletion_vectors
+    )
 
     handle = ScanOperatorHandle.from_python_scan_operator(delta_lake_operator)
     builder = LogicalPlanBuilder.from_tabular_scan(scan_operator=handle)

@@ -26,7 +26,7 @@ impl DaftMergeSketchAggable for &StructArray {
                 })?;
         let arrow_array = daft_sketch::into_arrow2(vec![sketch]);
 
-        StructArray::from_arrow(
+        StructArray::from_arrow2(
             Field::new(
                 &self.field.name,
                 DataType::from(&*daft_sketch::ARROW2_DDSKETCH_DTYPE),
@@ -64,7 +64,7 @@ impl DaftMergeSketchAggable for &StructArray {
 
         let arrow_array = daft_sketch::into_arrow2(sketch_per_group);
 
-        StructArray::from_arrow(
+        StructArray::from_arrow2(
             Field::new(
                 &self.field.name,
                 DataType::from(&*daft_sketch::ARROW2_DDSKETCH_DTYPE),

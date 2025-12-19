@@ -37,7 +37,7 @@ def read_csv(
     """Creates a DataFrame from CSV file(s).
 
     Args:
-        path (str): Path to CSV (allows for wildcards)
+        path (str): Path to CSV (allows for wildcards; supports remote URLs to object stores such as ``s3://`` or ``gs://``)
         infer_schema (bool): Whether to infer the schema of the CSV, defaults to True.
         schema (dict[str, DataType]): A schema that is used as the definitive schema for the CSV if infer_schema is False, otherwise it is used as a schema hint that is applied after the schema is inferred.
         has_headers (bool): Whether the CSV has a header or not, defaults to True
@@ -54,11 +54,16 @@ def read_csv(
         DataFrame: parsed DataFrame
 
     Examples:
+        Read a CSV file from a local path:
         >>> df = daft.read_csv("/path/to/file.csv")
         >>> df = daft.read_csv("/path/to/directory")
         >>> df = daft.read_csv("/path/to/files-*.csv")
-        >>> df = daft.read_csv("s3://path/to/files-*.csv")
 
+        Read a CSV file from a public S3 bucket:
+        >>> from daft.io import S3Config, IOConfig
+        >>> io_config = IOConfig(s3=S3Config(region="us-west-2", anonymous=True))
+        >>> df = daft.read_csv("s3://path/to/files-*.csv", io_config=io_config)
+        >>> df.show()
     """
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from from empty list of CSV filepaths")

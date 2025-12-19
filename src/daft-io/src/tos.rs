@@ -1,8 +1,12 @@
 use std::{
     any::Any,
+    borrow::Cow,
     collections::HashMap,
     pin::Pin,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     task::{Context, Poll},
     time::Duration,
 };
@@ -16,20 +20,26 @@ use snafu::{IntoError, ResultExt, Snafu};
 use tokio::{
     runtime::Handle,
     sync::{OwnedSemaphorePermit, Semaphore},
+    task::JoinSet,
 };
 use tokio_stream::Stream;
 use url::{ParseError, Position, Url};
 use ve_tos_rust_sdk::{
     asynchronous::{
+        multipart::MultipartAPI,
         object::ObjectAPI,
         tos,
         tos::{AsyncRuntime, TosClientImpl},
     },
     credential::{CommonCredentials, CommonCredentialsProvider},
     error::{GenericError, TosError},
+    multipart::{
+        CompleteMultipartUploadInput, CreateMultipartUploadInput, UploadPartFromBufferInput,
+        UploadedPart,
+    },
     object::{
-        GetObjectInput, GetObjectOutput, HeadObjectInput, HeadObjectOutput, ListObjectsType2Input,
-        ListObjectsType2Output, PutObjectFromBufferInput,
+        DeleteObjectInput, GetObjectInput, GetObjectOutput, HeadObjectInput, HeadObjectOutput,
+        ListObjectsType2Input, ListObjectsType2Output, PutObjectFromBufferInput,
     },
 };
 
@@ -47,8 +57,10 @@ macro_rules! set_retry_header {
 use crate::{
     FileMetadata, GetRange, GetResult, IOStatsRef, InvalidRangeRequestSnafu, ObjectSource, Result,
     SourceType,
+    multipart::MultipartWriter,
     object_io::{FileType, LSResult},
     stream_utils::io_stats_on_bytestream,
+    utils::{ObjectPath, parse_object_url},
 };
 
 const DELIMITER: &str = "/";
@@ -80,8 +92,40 @@ pub enum Error {
     #[snafu(display("Unable to put {}: {}", path, source))]
     UnableToPutFile { path: String, source: TosError },
 
+    #[snafu(display("Unable to delete {}: {}", path, source))]
+    UnableToDeleteFile { path: String, source: TosError },
+
     #[snafu(display("Unable to list {}: {}", path, source))]
     UnableToListObjects { path: String, source: TosError },
+
+    #[snafu(display("Unable to create multipart upload for {}: {}", path, source))]
+    UnableToCreateMultipartUpload { path: String, source: TosError },
+
+    #[snafu(display(
+        "Unable to upload part {} for {} with upload_id {}, : {}",
+        part_number,
+        path,
+        upload_id,
+        source
+    ))]
+    UnableToUploadPart {
+        path: String,
+        upload_id: String,
+        part_number: usize,
+        source: TosError,
+    },
+
+    #[snafu(display(
+        "Unable to complete multipart upload {} with upload_id {}, {}",
+        path,
+        upload_id,
+        source
+    ))]
+    UnableToCompleteMultipartUpload {
+        path: String,
+        upload_id: String,
+        source: TosError,
+    },
 
     #[snafu(display("Unable to grab semaphore. {}", source))]
     UnableToGrabSemaphore { source: tokio::sync::AcquireError },
@@ -542,12 +586,148 @@ impl TosSource {
             })?;
         Ok(result)
     }
+
+    pub async fn create_mpu(&self, bucket: &str, key: &str) -> super::Result<String> {
+        let _permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        let upload_id = self
+            .retry_operation(
+                |attempt| {
+                    let client = &self.client;
+                    let max_retries = self.config.max_retries;
+                    async move {
+                        let mut request = CreateMultipartUploadInput::new(bucket, key);
+                        set_retry_header!(request, attempt, max_retries);
+                        let resp = client.create_multipart_upload(&request).await?;
+                        Ok(resp.upload_id().to_string())
+                    }
+                },
+                "create_multipart_upload",
+                &format!("tos://{bucket}/{key}"),
+                self.config.max_retries,
+                |err| Error::UnableToCreateMultipartUpload {
+                    path: format!("tos://{bucket}/{key}"),
+                    source: err,
+                },
+            )
+            .await?;
+        Ok(upload_id)
+    }
+
+    pub async fn upload_part(
+        &self,
+        bucket: &str,
+        key: &str,
+        upload_id: &str,
+        part_number: u32,
+        data: Bytes,
+    ) -> Result<TosPart> {
+        let _permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        let part = self
+            .retry_operation(
+                |attempt| {
+                    let data = data.clone();
+                    let client = &self.client;
+                    let max_retries = self.config.max_retries;
+                    async move {
+                        let mut request = UploadPartFromBufferInput::new_with_part_number_content(
+                            bucket,
+                            key,
+                            upload_id,
+                            part_number as isize,
+                            data,
+                        );
+                        set_retry_header!(request, attempt, max_retries);
+                        let resp = client.upload_part_from_buffer(&request).await?;
+                        Ok(TosPart {
+                            idx: resp.part_number() as usize,
+                            etag: resp.etag().to_string(),
+                        })
+                    }
+                },
+                "upload_part",
+                &format!("tos://{bucket}/{key}"),
+                self.config.max_retries,
+                |err| Error::UnableToUploadPart {
+                    path: format!("tos://{bucket}/{key}"),
+                    upload_id: upload_id.to_string(),
+                    part_number: part_number as usize,
+                    source: err,
+                },
+            )
+            .await?;
+        Ok(part)
+    }
+
+    pub async fn complete_mpu(
+        &self,
+        bucket: &str,
+        key: &str,
+        upload_id: &str,
+        parts: Vec<TosPart>,
+    ) -> Result<()> {
+        let _permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
+        self.retry_operation(
+            |attempt| {
+                let parts = parts.clone();
+                let client = &self.client;
+                let max_retries = self.config.max_retries;
+                async move {
+                    let parts: Vec<UploadedPart> = parts
+                        .iter()
+                        .map(|p| UploadedPart::new(p.idx as isize, &p.etag))
+                        .collect();
+                    let mut request =
+                        CompleteMultipartUploadInput::new_with_parts(bucket, key, upload_id, parts);
+                    set_retry_header!(request, attempt, max_retries);
+                    let _resp = client.complete_multipart_upload(&request).await?;
+                    Ok(())
+                }
+            },
+            "complete_multipart_upload",
+            &format!("tos://{bucket}/{key}"),
+            self.config.max_retries,
+            |err| Error::UnableToCompleteMultipartUpload {
+                path: format!("tos://{bucket}/{key}"),
+                upload_id: upload_id.to_string(),
+                source: err,
+            },
+        )
+        .await?;
+        Ok(())
+    }
 }
 
 #[async_trait]
 impl ObjectSource for TosSource {
     async fn supports_range(&self, _: &str) -> Result<bool> {
         Ok(true)
+    }
+
+    async fn create_multipart_writer(
+        self: Arc<Self>,
+        uri: &str,
+    ) -> Result<Option<Box<dyn MultipartWriter>>> {
+        Ok(Some(Box::new(
+            TosMultipartWriter::create(uri, self.clone()).await?,
+        )))
     }
 
     async fn get(
@@ -705,6 +885,143 @@ impl ObjectSource for TosSource {
 
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
         self
+    }
+
+    async fn delete(&self, uri: &str, io_stats: Option<IOStatsRef>) -> Result<()> {
+        let (bucket, key) = Self::parse_tos_url(uri, false)?;
+
+        // TODO: consider idempotence problem
+        self.retry_operation(
+            |attempt| {
+                let bucket = bucket.clone();
+                let key = key.clone();
+                let client = &self.client;
+                let max_retries = self.config.max_retries;
+
+                async move {
+                    let mut request = DeleteObjectInput::new(bucket, key);
+                    set_retry_header!(request, attempt, max_retries);
+                    client.delete_object(&request).await
+                }
+            },
+            "delete_object",
+            uri,
+            self.config.max_retries,
+            |err| Error::UnableToDeleteFile {
+                path: uri.to_string(),
+                source: err.into(),
+            },
+        )
+        .await?;
+
+        if let Some(is) = io_stats.as_ref() {
+            is.mark_delete_requests(1);
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct TosMultipartWriter {
+    bucket: Cow<'static, str>,
+    key: Cow<'static, str>,
+    upload_id: Cow<'static, str>,
+    part_idx: AtomicUsize,
+    client: Arc<TosSource>,
+    in_flight_permits: Arc<Semaphore>,
+    in_flight_uploads: JoinSet<Result<TosPart>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TosPart {
+    idx: usize,
+    etag: String,
+}
+
+impl TosMultipartWriter {
+    pub async fn create(uri: impl Into<String>, client: Arc<TosSource>) -> Result<Self> {
+        let uri = uri.into();
+        let ObjectPath {
+            scheme: _scheme,
+            bucket,
+            key,
+        } = parse_object_url(&uri)?;
+
+        if key.is_empty() {
+            return Err(super::Error::NotAFile { path: uri.clone() }.into());
+        }
+
+        let max_concurrent_uploads = client.config.multipart_max_concurrency as usize;
+        let upload_id = client.create_mpu(&bucket, &key).await?;
+
+        Ok(Self {
+            bucket: bucket.into(),
+            key: key.into(),
+            upload_id: upload_id.into(),
+            part_idx: AtomicUsize::new(1),
+            client,
+            in_flight_permits: Arc::new(Semaphore::new(max_concurrent_uploads)),
+            in_flight_uploads: JoinSet::new(),
+        })
+    }
+}
+
+#[async_trait]
+impl MultipartWriter for TosMultipartWriter {
+    fn part_size(&self) -> usize {
+        self.client.config.multipart_size as usize
+    }
+
+    async fn put_part(&mut self, data: Bytes) -> Result<()> {
+        let part_number = self.part_idx.fetch_add(1, Ordering::Relaxed);
+        let upload_id = self.upload_id.clone();
+        let bucket = self.bucket.clone();
+        let key = self.key.clone();
+        let client = self.client.clone();
+
+        let upload_permit = self.in_flight_permits.clone().acquire_owned().await;
+        self.in_flight_uploads.spawn(async move {
+            let part = client
+                .upload_part(
+                    bucket.as_ref(),
+                    key.as_ref(),
+                    upload_id.as_ref(),
+                    part_number as u32,
+                    data,
+                )
+                .await?;
+
+            drop(upload_permit);
+
+            Ok(part)
+        });
+
+        Ok(())
+    }
+
+    async fn complete(&mut self) -> Result<()> {
+        let mut completed_parts = vec![];
+        while let Some(upload) = self.in_flight_uploads.join_next().await {
+            match upload {
+                Ok(Ok(part)) => completed_parts.push(part),
+                Ok(Err(err)) => return Err(err),
+                Err(err) => return Err(super::Error::JoinError { source: err }),
+            }
+        }
+
+        completed_parts.sort_by_key(|part| part.idx);
+
+        self.client
+            .complete_mpu(
+                self.bucket.as_ref(),
+                self.key.as_ref(),
+                self.upload_id.as_ref(),
+                completed_parts,
+            )
+            .await?;
+
+        Ok(())
     }
 }
 

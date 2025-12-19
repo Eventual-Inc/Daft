@@ -1,6 +1,6 @@
 #![feature(iterator_try_reduce)]
 #![feature(if_let_guard)]
-#![allow(deprecated)] // Remove once arrow2->arrow migration is complete
+#![allow(deprecated, reason = "arrow2 migration")]
 
 pub mod array;
 pub mod count_mode;

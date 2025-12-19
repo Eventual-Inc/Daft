@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2->arrow migration")]
 use std::ops::Not;
 
 use common_error::{DaftError, DaftResult};
@@ -1917,7 +1918,7 @@ where
         .map(|(lhs, rhs)| op(lhs, rhs));
     let values = daft_arrow::bitmap::Bitmap::from_trusted_len_iter(values);
 
-    BooleanArray::from_arrow(
+    BooleanArray::from_arrow2(
         Field::new(lhs.name(), DataType::Boolean).into(),
         Box::new(daft_arrow::array::BooleanArray::new(
             daft_arrow::datatypes::DataType::Boolean,
@@ -1941,7 +1942,7 @@ where
     let values = lhs_arrow.values_iter().map(|lhs| op(lhs, rhs));
     let values = daft_arrow::bitmap::Bitmap::from_trusted_len_iter(values);
 
-    BooleanArray::from_arrow(
+    BooleanArray::from_arrow2(
         Field::new(lhs.name(), DataType::Boolean).into(),
         Box::new(daft_arrow::array::BooleanArray::new(
             daft_arrow::datatypes::DataType::Boolean,
