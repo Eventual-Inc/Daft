@@ -75,4 +75,4 @@ def run_process(
         args = [args]
 
     expr_args = [Expression._to_expression(v) for v in args]
-    return _impl(*expr_args)
+    return _impl(*expr_args).cast(return_dtype)
