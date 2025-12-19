@@ -36,14 +36,18 @@ def setup_debug_logger() -> None:
 def setup_logger(
     level: str = "debug",
     exclude_prefix: typing.Iterable[str] | None = None,
-    daft_only: bool = True,
+    daft_only: bool = False,
+    logformat: str = "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    datefmt: str = "%Y-%m-%d %H:%M:%S.%s".format(),
 ) -> None:
     """Setup Daft logger with a specific log level, optional prefix filtering, and Rust sync.
 
     Args:
         level (str, optional): The log level to use. Valid options are `DEBUG`, `INFO`, `WARNING`, `ERROR`. Defaults to `DEBUG`.
         exclude_prefix (typing.Iterable[str] | None, optional): A list of prefixes to exclude from logging. Defaults to None.
-        daft_only (bool, optional): Whether to only log messages from the Daft module. Defaults to True.
+        daft_only (bool, optional): Whether to only log messages from the Daft module. Defaults to False.
+        logformat (str, optional): The log format to use. Defaults to "%(asctime)s - %(name)s - %(levelname)s - %(message)s".
+        datefmt (str, optional): The date format to use. Defaults to '%Y-%m-%d %H:%M:%S.%s'.format().
 
     Raises:
         ValueError: If the log level is not valid.
@@ -55,7 +59,7 @@ def setup_logger(
     if level == "WARN":
         level = "WARNING"
 
-    logging.basicConfig(level=level)
+    logging.basicConfig(level=level, format=logformat, datefmt=datefmt)
 
     root_logger: logging.Logger = logging.getLogger()
 

@@ -58,7 +58,7 @@ impl<T> DataArray<T> {
             physical_field.dtype
         );
 
-        if let Ok(expected_arrow_physical_type) = physical_field.dtype.to_arrow() {
+        if let Ok(expected_arrow_physical_type) = physical_field.dtype.to_arrow2() {
             // since daft's Utf8 always maps to Arrow's LargeUtf8, we need to handle this special case
             // If the expected physical type is LargeUtf8, but the actual Arrow type is Utf8, we need to convert it
             if expected_arrow_physical_type == daft_arrow::datatypes::DataType::LargeUtf8

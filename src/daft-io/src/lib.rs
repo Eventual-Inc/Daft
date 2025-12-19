@@ -147,6 +147,9 @@ pub enum Error {
     #[snafu(display("Source not yet implemented: {}", store))]
     NotImplementedSource { store: String },
 
+    #[snafu(display("Method not implemented: {}", method))]
+    NotImplementedMethod { method: String },
+
     #[snafu(display("Unhandled Error for path: {}\nDetails:\n{}", path, msg))]
     Unhandled { path: String, msg: String },
 
@@ -458,6 +461,32 @@ impl std::fmt::Display for SourceType {
             Self::Gravitino => write!(f, "Gravitino"),
         }
     }
+}
+
+/// On Windows, strips the leading "/" from paths like "/C:/Users/..." to produce "C:/Users/...".
+///
+/// This is needed because stripping "file://" from "file:///C:/path" leaves "/C:/path".
+/// Returns the path unchanged if it doesn't match the pattern "/X:" where X is a drive letter.
+#[cfg(windows)]
+fn strip_leading_slash_before_drive(path: &str) -> &str {
+    let bytes = path.as_bytes();
+    // Check for pattern: starts with '/', followed by ASCII letter, followed by ':'
+    if bytes.len() >= 3 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() && bytes[2] == b':' {
+        &path[1..]
+    } else {
+        path
+    }
+}
+
+/// Strips the "file://" prefix from a URI and returns the local file path.
+///
+/// On Windows, also handles the leading slash before drive letters (e.g., "/C:/..." -> "C:/...").
+/// Returns None if the URI doesn't start with "file://".
+pub fn strip_file_uri_to_path(uri: &str) -> Option<&str> {
+    let path = uri.strip_prefix("file://")?;
+    #[cfg(windows)]
+    let path = strip_leading_slash_before_drive(path);
+    Some(path)
 }
 
 pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {

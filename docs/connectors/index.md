@@ -210,7 +210,9 @@ catalog = Catalog.from_pydict(
     }
 )
 
-# list available tables (for iceberg, the pattern is a prefix)
+# list available tables
+# Note: Pattern syntax is catalog-dependent. Native/memory and Postgres catalogs use SQL LIKE syntax (%, _).
+# Other catalogs like Iceberg use prefix matching.
 catalog.list_tables(pattern=None)
 """
 ['R', 'S', 'T']

@@ -9,11 +9,25 @@ import pytest
 # Skip if google-genai is not installed
 pytest.importorskip("google.genai")
 
+import requests
+from google.genai import errors as genai_errors
 from pydantic import BaseModel
 
 from daft.ai.google.protocols.prompter import GooglePrompter, GooglePrompterDescriptor
 from daft.ai.google.provider import GoogleProvider
 from daft.ai.protocols import Prompter
+from daft.ai.utils import RetryAfterError
+
+
+def _api_error(status: int, retry_after: str) -> genai_errors.APIError:
+    response = requests.Response()
+    response.status_code = status
+    response._content = b"{}"
+    response.headers["Retry-After"] = retry_after
+    response.reason = "error"
+    if status >= 500:
+        return genai_errors.ServerError(status, response)
+    return genai_errors.ClientError(status, response)
 
 
 def run_async(coro):
@@ -215,6 +229,25 @@ def test_google_prompter_plain_text_response():
             assert contents[0].role == "user"
             assert len(contents[0].parts) == 1
             assert contents[0].parts[0].text == "Hello, world!"
+
+    run_async(_test())
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_google_prompter_raises_retry_after(status: int):
+    """Ensure retry-after hints propagate as RetryAfterError for HTTP errors."""
+
+    async def _test():
+        with patch("daft.ai.google.protocols.prompter.genai.Client") as MockClient:
+            mock_client_instance = MockClient.return_value
+            mock_client_instance.aio.models.generate_content = AsyncMock(side_effect=_api_error(status, "5"))
+
+            prompter = create_prompter()
+
+            with pytest.raises(RetryAfterError) as excinfo:
+                await prompter.prompt(("Hello",))
+
+            assert excinfo.value.retry_after == 5
 
     run_async(_test())
 

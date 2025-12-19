@@ -81,6 +81,17 @@ impl From<&Arrow2TimeUnit> for TimeUnit {
     }
 }
 
+impl From<&arrow_schema::TimeUnit> for TimeUnit {
+    fn from(tu: &arrow_schema::TimeUnit) -> Self {
+        match tu {
+            arrow_schema::TimeUnit::Nanosecond => Self::Nanoseconds,
+            arrow_schema::TimeUnit::Microsecond => Self::Microseconds,
+            arrow_schema::TimeUnit::Millisecond => Self::Milliseconds,
+            arrow_schema::TimeUnit::Second => Self::Seconds,
+        }
+    }
+}
+
 #[must_use]
 pub fn infer_timeunit_from_format_string(format: &str) -> TimeUnit {
     if format.contains("%9f") || format.contains("%.9f") {

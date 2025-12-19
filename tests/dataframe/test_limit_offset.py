@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import lance
 import pytest
 
 import daft
@@ -24,6 +23,7 @@ def input_df(request, tmp_path_factory):
             df.write_parquet(path)
             return daft.read_parquet(path)
         elif request.param == "lance":
+            lance = pytest.importorskip("lance")
             lance.write_dataset(df.to_arrow(), path)
             return daft.read_lance(path)
         else:

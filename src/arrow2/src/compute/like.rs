@@ -1,8 +1,8 @@
 //! Contains "like" operators such as [`like_utf8`] and [`like_utf8_scalar`].
 
 use ahash::AHashMap;
-use regex::bytes::Regex as BytesRegex;
-use regex::Regex;
+use common_pattern::like_pattern_to_regex;
+use regex::{bytes::Regex as BytesRegex, Regex};
 
 use crate::{
     array::{BinaryArray, BooleanArray, Utf8Array},
@@ -18,41 +18,22 @@ fn is_like_pattern(c: char) -> bool {
     c == '%' || c == '_'
 }
 
-/// Transforms a like `pattern` to a regex compatible pattern. To achieve that, it does:
-///
-/// 1. Replace like wildcards for regex expressions as the pattern will be evaluated using regex match: `%` => `.*` and `_` => `.`
-/// 2. Escape regex meta characters to match them and not be evaluated as regex special chars. For example: `.` => `\\.`
-/// 3. Replace escaped like wildcards removing the escape characters to be able to match it as a regex. For example: `\\%` => `%`
-fn replace_pattern(pattern: &str) -> String {
-    let mut result = String::new();
-    let text = String::from(pattern);
-    let mut chars_iter = text.chars().peekable();
-    while let Some(c) = chars_iter.next() {
-        if c == '\\' {
-            let next = chars_iter.peek();
-            match next {
-                Some(next) if is_like_pattern(*next) => {
-                    result.push(*next);
-                    // Skipping the next char as it is already appended
-                    chars_iter.next();
-                }
-                _ => {
-                    result.push('\\');
-                    result.push('\\');
-                }
-            }
-        } else if regex_syntax::is_meta_character(c) {
-            result.push('\\');
-            result.push(c);
-        } else if c == '%' {
-            result.push_str(".*");
-        } else if c == '_' {
-            result.push('.');
-        } else {
-            result.push(c);
-        }
-    }
-    result
+fn compile_like_regex(pattern: &str) -> Result<Regex> {
+    let re_pattern = like_pattern_to_regex(pattern).ok_or_else(|| {
+        Error::InvalidArgumentError("Unable to build regex from LIKE pattern".to_string())
+    })?;
+    Regex::new(&re_pattern).map_err(|e| {
+        Error::InvalidArgumentError(format!("Unable to build regex from LIKE pattern: {e}"))
+    })
+}
+
+fn compile_like_bytes_regex(pattern: &str) -> Result<BytesRegex> {
+    let re_pattern = like_pattern_to_regex(pattern).ok_or_else(|| {
+        Error::InvalidArgumentError("Unable to build regex from LIKE pattern".to_string())
+    })?;
+    BytesRegex::new(&re_pattern).map_err(|e| {
+        Error::InvalidArgumentError(format!("Unable to build regex from LIKE pattern: {e}"))
+    })
 }
 
 #[inline]
@@ -75,19 +56,14 @@ fn a_like_utf8<O: Offset, F: Fn(bool) -> bool>(
         Bitmap::try_from_trusted_len_iter(lhs.iter().zip(rhs.iter()).map(|(lhs, rhs)| {
             match (lhs, rhs) {
                 (Some(lhs), Some(pattern)) => {
-                    let pattern = if let Some(pattern) = map.get(pattern) {
-                        pattern
+                    let regex = if let Some(regex) = map.get(pattern) {
+                        regex
                     } else {
-                        let re_pattern = replace_pattern(pattern);
-                        let re = Regex::new(&format!("^{re_pattern}$")).map_err(|e| {
-                            Error::InvalidArgumentError(format!(
-                                "Unable to build regex from LIKE pattern: {e}"
-                            ))
-                        })?;
+                        let re = compile_like_regex(pattern)?;
                         map.insert(pattern, re);
                         map.get(pattern).unwrap()
                     };
-                    Result::Ok(op(pattern.is_match(lhs)))
+                    Result::Ok(op(regex.is_match(lhs)))
                 }
                 _ => Ok(false),
             }
@@ -164,10 +140,7 @@ fn a_like_utf8_scalar<O: Offset, F: Fn(bool) -> bool>(
                 .map(|x| op(finder.find(x.as_bytes()).is_some())),
         )
     } else {
-        let re_pattern = replace_pattern(rhs);
-        let re = Regex::new(&format!("^{re_pattern}$")).map_err(|e| {
-            Error::InvalidArgumentError(format!("Unable to build regex from LIKE pattern: {e}"))
-        })?;
+        let re = compile_like_regex(rhs)?;
         Bitmap::from_trusted_len_iter(lhs.values_iter().map(|x| op(re.is_match(x))))
     };
     Ok(BooleanArray::new(
@@ -232,20 +205,15 @@ fn a_like_binary<O: Offset, F: Fn(bool) -> bool>(
         Bitmap::try_from_trusted_len_iter(lhs.iter().zip(rhs.iter()).map(|(lhs, rhs)| {
             match (lhs, rhs) {
                 (Some(lhs), Some(pattern)) => {
-                    let pattern = if let Some(pattern) = map.get(pattern) {
-                        pattern
+                    let regex = if let Some(regex) = map.get(pattern) {
+                        regex
                     } else {
-                        let re_pattern = simdutf8::basic::from_utf8(pattern).unwrap();
-                        let re_pattern = replace_pattern(re_pattern);
-                        let re = BytesRegex::new(&format!("^{re_pattern}$")).map_err(|e| {
-                            Error::InvalidArgumentError(format!(
-                                "Unable to build regex from LIKE pattern: {e}"
-                            ))
-                        })?;
+                        let pattern_str = simdutf8::basic::from_utf8(pattern).unwrap();
+                        let re = compile_like_bytes_regex(pattern_str)?;
                         map.insert(pattern, re);
                         map.get(pattern).unwrap()
                     };
-                    Result::Ok(op(pattern.is_match(lhs)))
+                    Result::Ok(op(regex.is_match(lhs)))
                 }
                 _ => Ok(false),
             }
@@ -315,10 +283,7 @@ fn a_like_binary_scalar<O: Offset, F: Fn(bool) -> bool>(
         let ends_with = &rhs[1..];
         Bitmap::from_trusted_len_iter(lhs.values_iter().map(|x| op(x.ends_with(ends_with))))
     } else {
-        let re_pattern = replace_pattern(pattern);
-        let re = BytesRegex::new(&format!("^{re_pattern}$")).map_err(|e| {
-            Error::InvalidArgumentError(format!("Unable to build regex from LIKE pattern: {e}"))
-        })?;
+        let re = compile_like_bytes_regex(pattern)?;
         Bitmap::from_trusted_len_iter(lhs.values_iter().map(|x| op(re.is_match(x))))
     };
     Ok(BooleanArray::new(

@@ -6,6 +6,8 @@ daft-runners = {path = "../daft-runners", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
 daft-micropartition = {path = "../daft-micropartition", default-features = false}
 indexmap = {workspace = true}
+common-pattern = {path = "../common/pattern"}
+regex = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 sqlparser = {workspace = true}
 snafu.workspace = true

@@ -275,8 +275,36 @@ class Series:
     def __repr__(self) -> str:
         return repr(self._series)
 
-    def __getitem__(self, index: int) -> Any:
-        return self._series[index]
+    def __getitem__(self, index: int | builtins.slice) -> Any | Series:
+        if isinstance(index, slice):
+            if index.step is not None:
+                raise IndexError("slice step not supported: use `Series[start:stop]`")
+            n = len(self)
+            start = index.start if index.start is not None else 0
+            end = index.stop if index.stop is not None else n
+
+            # Normalize negative indices
+            start = start + n if start < 0 else start
+            end = end + n if end < 0 else end
+
+            # Clamp to bounds
+            start = max(0, min(start, n))
+            end = max(0, min(end, n))
+
+            # Empty slice if start >= end
+            if start >= end:
+                return self.slice(start, start)
+
+            return self.slice(start, end)
+        elif isinstance(index, int):
+            n = len(self)
+            if index < 0:
+                index += n
+            if index < 0 or index >= n:
+                raise IndexError("Series index out of range")
+            return self._series[index]
+        else:
+            raise TypeError(f"expected int or slice for index, got {type(index)}")
 
     def __bool__(self) -> bool:
         raise ValueError(
@@ -1095,7 +1123,7 @@ class SeriesImageNamespace(SeriesNamespace):
     def decode(
         self,
         on_error: Literal["raise", "null"] = "raise",
-        mode: str | ImageMode | None = None,
+        mode: str | ImageMode | None = ImageMode.RGB,
     ) -> Series:
         return self._eval_expressions("image_decode", on_error=on_error, mode=mode)
 

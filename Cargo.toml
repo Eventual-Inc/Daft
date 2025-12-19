@@ -178,6 +178,7 @@ members = [
   "src/common/error",
   "src/common/io-config",
   "src/common/macros",
+  "src/common/pattern",
   "src/common/partitioning",
   "src/common/scan-info",
   "src/common/system-info",
@@ -226,6 +227,7 @@ members = [
 ]
 
 [workspace.dependencies]
+ahash = "0.8.12"
 arrow = "54.2.1"
 approx = "0.5.1"
 arc-swap = "1.7.1"
@@ -247,6 +249,7 @@ common-error = {path = "src/common/error", default-features = false}
 common-file-formats = {path = "src/common/file-formats"}
 common-image = {path = "src/common/image", default-features = false}
 common-metrics = {path = "src/common/metrics"}
+common-pattern = {path = "src/common/pattern"}
 common-ndarray = {path = "src/common/ndarray"}
 common-runtime = {path = "src/common/runtime", default-features = false}
 daft-ai = {path = "src/daft-ai"}
@@ -314,7 +317,8 @@ simdutf8 = "0.1.5"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 smallvec = {version = "1.15.1", features = ["serde", "impl_bincode"]}
 snafu = {version = "0.7.4", features = ["futures"]}
-sqlparser = "0.51.0"
+spark-connect = {path = "src/generated/spark-connect", default-features = false}
+sqlparser = "0.59.0"
 sysinfo = "0.35.2"
 tango-bench = "0.6.0"
 test-log = "0.2.19"
