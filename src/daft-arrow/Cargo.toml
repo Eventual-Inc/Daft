@@ -3,8 +3,6 @@ arrow-array = {workspace = true}
 arrow-buffer = "54.2.1"
 arrow-schema = "54.2.1"
 arrow-ipc = "54.2.1"
-arrow-flight = "54.2.1"
-arrow-format = {version = "0.8", features = ["ipc"]}
 arrow2 = {workspace = true, features = [
   "arrow",
   "io_parquet",
