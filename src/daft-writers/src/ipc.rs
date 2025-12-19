@@ -37,17 +37,10 @@ impl IPCWriter {
         if self.writer.is_none() {
             let file = File::create(self.file_path.as_str())?;
 
-            // Convert daft schema to arrow-rs schema
-            #[allow(deprecated, reason = "arrow2 migration")]
-            let arrow2_schema = schema.to_arrow2()?;
-            let arrow_schema: Arc<daft_arrow::arrow_schema::Schema> =
-                Arc::new(arrow2_schema.into());
-
-            // Create write options with compression
+            let arrow_schema = schema.to_arrow()?;
             let write_options = daft_arrow::ipc::writer::IpcWriteOptions::default()
                 .try_with_compression(self.compression)?;
 
-            // Create arrow-ipc StreamWriter
             let writer = daft_arrow::ipc::writer::StreamWriter::try_new_with_options(
                 file,
                 &arrow_schema,
@@ -90,7 +83,6 @@ impl AsyncFileWriter for IPCWriter {
         if let Some(mut writer) = self.writer.take() {
             writer.finish()?;
         }
-        // return the path
         let path_col = Series::from_arrow2(
             Arc::new(Field::new(RETURN_PATHS_COLUMN_NAME, DataType::Utf8)),
             Box::new(daft_arrow::array::Utf8Array::<i64>::from_iter_values(

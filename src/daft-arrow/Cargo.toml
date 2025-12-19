@@ -1,13 +1,12 @@
 [dependencies]
-arrow-array = "54.2.1"
+arrow-array = {workspace = true}
 arrow-buffer = "54.2.1"
 arrow-schema = "54.2.1"
 arrow-ipc = "54.2.1"
 arrow-flight = "54.2.1"
-arrow-format = { version = "0.8", features = ["ipc"] }
+arrow-format = {version = "0.8", features = ["ipc"]}
 arrow2 = {workspace = true, features = [
   "arrow",
-
   "io_parquet",
   "io_parquet_compression",
   "io_json",
@@ -25,7 +24,7 @@ arrow2 = {workspace = true, features = [
   "compute_comparison",
   "compute_arithmetics",
   "compute_concatenate",
-  "compute_substring",
+  "compute_substring"
 ]}
 
 [lints]
