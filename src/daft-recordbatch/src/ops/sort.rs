@@ -12,7 +12,7 @@ impl RecordBatch {
         nulls_first: &[bool],
     ) -> DaftResult<Self> {
         let argsort = self.argsort(sort_keys, descending, nulls_first)?;
-        self.take(&argsort)
+        self.take(argsort.u64()?)
     }
 
     pub fn argsort(

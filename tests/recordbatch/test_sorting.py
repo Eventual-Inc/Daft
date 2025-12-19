@@ -6,7 +6,7 @@ import numpy as np
 import pyarrow as pa
 import pytest
 
-from daft import col, lit
+from daft import DataType, col, lit
 from daft.logical.schema import Schema
 from daft.recordbatch import MicroPartition
 from daft.series import Series
@@ -53,7 +53,7 @@ def test_micropartitions_sort(mp) -> None:
 def test_table_single_col_sorting(sort_dtype, value_dtype, first_col) -> None:
     pa_table = pa.Table.from_pydict({"a": [None, 4, 2, 1, 5], "b": [0, 1, 2, 3, None]})
 
-    argsort_order = Series.from_pylist([3, 2, 1, 4, 0])
+    argsort_order = Series.from_pylist([3, 2, 1, 4, 0], dtype=DataType.uint64())
 
     daft_recordbatch = MicroPartition.from_arrow(pa_table)
 
@@ -141,7 +141,7 @@ def test_table_multiple_col_sorting(sort_dtype, value_dtype, data) -> None:
     a, b, a_desc, b_desc, expected = data
     pa_table = pa.Table.from_pydict({"a": a, "b": b})
 
-    argsort_order = Series.from_pylist(expected)
+    argsort_order = Series.from_pylist(expected, dtype=DataType.uint64())
 
     daft_recordbatch = MicroPartition.from_arrow(pa_table)
 
@@ -219,7 +219,7 @@ def test_table_multiple_col_sorting_binary(data) -> None:
 
     pa_table = pa.Table.from_pydict({"a": a, "b": b})
 
-    argsort_order = Series.from_pylist(expected)
+    argsort_order = Series.from_pylist(expected, dtype=DataType.uint64())
 
     daft_recordbatch = MicroPartition.from_arrow(pa_table)
     assert len(daft_recordbatch) == 5
@@ -291,7 +291,7 @@ def test_table_multiple_col_sorting_binary(data) -> None:
 def test_table_boolean_multiple_col_sorting(second_dtype, data) -> None:
     a, b, a_desc, b_desc, expected = data
     pa_table = pa.Table.from_pydict({"a": a, "b": b})
-    argsort_order = Series.from_pylist(expected)
+    argsort_order = Series.from_pylist(expected, dtype=DataType.uint64())
 
     daft_recordbatch = MicroPartition.from_arrow(pa_table)
 

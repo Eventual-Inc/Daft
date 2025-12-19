@@ -90,10 +90,6 @@ where
         nulls_first: &[bool],
     ) -> DaftResult<UInt64Array> {
         let arrow_array = self.as_arrow2();
-        let first_desc = *descending.first().unwrap();
-        let first_nulls_first = *nulls_first.first().unwrap();
-
-        let others_cmp = build_multi_array_compare(others, &descending[1..], &nulls_first[1..])?;
 
         let values = arrow_array.values().as_slice();
 
@@ -174,10 +170,6 @@ impl Float32Array {
         nulls_first: &[bool],
     ) -> DaftResult<UInt64Array> {
         let arrow_array = self.as_arrow2();
-        let first_desc = *descending.first().unwrap();
-        let first_nulls_first = *nulls_first.first().unwrap();
-
-        let others_cmp = build_multi_array_compare(others, &descending[1..], &nulls_first[1..])?;
 
         let values = arrow_array.values().as_slice();
 
@@ -258,10 +250,6 @@ impl Float64Array {
         nulls_first: &[bool],
     ) -> DaftResult<UInt64Array> {
         let arrow_array = self.as_arrow2();
-        let first_desc = *descending.first().unwrap();
-        let first_nulls_first = *nulls_first.first().unwrap();
-
-        let others_cmp = build_multi_array_compare(others, &descending[1..], &nulls_first[1..])?;
 
         let values = arrow_array.values().as_slice();
 

@@ -4,7 +4,7 @@ use arrow_array::builder::BooleanBufferBuilder;
 use common_error::DaftResult;
 use daft_arrow::{buffer::NullBufferBuilder, types::IndexRange};
 use daft_core::{
-    array::ops::{DaftIsNull, arrow::comparison::build_multi_array_is_equal},
+    array::ops::{DaftIsNull, arrow::comparison::build_multi_array_is_equal, as_arrow::AsArrow},
     prelude::*,
 };
 use daft_dsl::{
