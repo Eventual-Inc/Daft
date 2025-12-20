@@ -1552,17 +1552,10 @@ impl RecordBatch {
 
     pub fn to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
         let mut buffer = Vec::with_capacity(self.size_bytes());
-
-        // Convert daft schema to arrow-rs schema
-        #[allow(deprecated, reason = "arrow2 migration")]
-        let arrow2_schema = self.schema.to_arrow2()?;
-        let arrow_schema: Arc<daft_arrow::arrow_schema::Schema> = Arc::new(arrow2_schema.into());
-
-        // Create arrow-ipc StreamWriter
+        let arrow_schema = self.schema.to_arrow()?;
         let mut writer =
             daft_arrow::ipc::writer::StreamWriter::try_new(&mut buffer, &arrow_schema)?;
 
-        // Convert daft RecordBatch to arrow-rs RecordBatch
         let arrow_batch: daft_arrow::arrow_array::RecordBatch = self.clone().try_into()?;
         writer.write(&arrow_batch)?;
 
@@ -1573,15 +1566,11 @@ impl RecordBatch {
 
     pub fn from_ipc_stream(buffer: &[u8]) -> DaftResult<Self> {
         let mut cursor = Cursor::new(buffer);
-
-        // Create arrow-ipc StreamReader
         let reader = daft_arrow::ipc::reader::StreamReader::try_new(&mut cursor, None)?;
 
-        // Read the schema from the first message
         let arrow_schema = reader.schema();
         let schema: Arc<Schema> = Arc::new(arrow_schema.as_ref().try_into()?);
 
-        // Read all record batches
         let mut tables = Vec::new();
         for arrow_batch_result in reader {
             let arrow_batch = arrow_batch_result?;
