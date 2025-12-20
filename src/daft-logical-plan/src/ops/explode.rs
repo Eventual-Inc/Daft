@@ -1,7 +1,11 @@
 use std::sync::Arc;
 
+use daft_core::datatypes::DataType;
 use daft_dsl::{ExprRef, exprs_to_schema};
-use daft_schema::schema::{Schema, SchemaRef};
+use daft_schema::{
+    field::Field,
+    schema::{Schema, SchemaRef},
+};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
@@ -20,6 +24,8 @@ pub struct Explode {
     pub input: Arc<LogicalPlan>,
     // Expressions to explode. e.g. col("a")
     pub to_explode: Vec<ExprRef>,
+    // Optional name for an index column that tracks position within each list
+    pub index_column: Option<String>,
     pub exploded_schema: SchemaRef,
     pub stats_state: StatsState,
 }
@@ -28,6 +34,7 @@ impl Explode {
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
         to_explode: Vec<ExprRef>,
+        index_column: Option<String>,
     ) -> logical_plan::Result<Self> {
         let exploded_schema = {
             let explode_exprs = to_explode
@@ -39,10 +46,15 @@ impl Explode {
             let explode_schema = exprs_to_schema(&explode_exprs, input.schema())?;
 
             let input_schema = input.schema();
-            let fields = input_schema
+            let mut fields: Vec<Field> = input_schema
                 .into_iter()
                 .map(|field| explode_schema.get_field(&field.name).unwrap_or(field))
-                .cloned();
+                .cloned()
+                .collect();
+
+            if let Some(ref idx_col) = index_column {
+                fields.push(Field::new(idx_col.clone(), DataType::UInt64));
+            }
 
             Schema::new(fields).into()
         };
@@ -52,6 +64,7 @@ impl Explode {
             node_id: None,
             input,
             to_explode,
+            index_column,
             exploded_schema,
             stats_state: StatsState::NotMaterialized,
         })
@@ -91,6 +104,9 @@ impl Explode {
             "Explode: {}",
             self.to_explode.iter().map(|e| e.to_string()).join(", ")
         ));
+        if let Some(ref idx_col) = self.index_column {
+            res.push(format!("Index column = {}", idx_col));
+        }
         res.push(format!("Schema = {}", self.exploded_schema.short_string()));
         if let StatsState::Materialized(stats) = &self.stats_state {
             res.push(format!("Stats = {}", stats));

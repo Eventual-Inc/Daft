@@ -717,11 +717,12 @@ fn physical_plan_to_pipeline(
         LocalPhysicalPlan::Explode(Explode {
             input,
             to_explode,
+            index_column,
             schema,
             stats_state,
             context,
         }) => {
-            let explode_op = ExplodeOperator::new(to_explode.clone());
+            let explode_op = ExplodeOperator::new(to_explode.clone(), index_column.clone());
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(explode_op),
