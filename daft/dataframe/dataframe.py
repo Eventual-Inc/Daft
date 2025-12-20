@@ -37,7 +37,7 @@ from daft.runners.partitioning import (
     PartitionSet,
     PartitionT,
 )
-from daft.utils import ColumnInputType, ManyColumnsInputType, column_inputs_to_expressions, in_notebook
+from daft.utils import ColumnInputType, ManyColumnsInputType, column_input_to_expression, column_inputs_to_expressions, in_notebook
 
 if TYPE_CHECKING:
     import dask
@@ -3027,7 +3027,7 @@ class DataFrame:
         return self.where(~reduce(lambda x, y: x | y, (x.is_null() for x in columns)))
 
     @DataframePublicAPI
-    def explode(self, *columns: ColumnInputType) -> "DataFrame":
+    def explode(self, *columns: ColumnInputType, index_column: Optional[ColumnInputType] = None) -> "DataFrame":
         """Explodes a List column, where every element in each row's List becomes its own row, and all other columns in the DataFrame are duplicated across rows.
 
         If multiple columns are specified, each row must contain the same number of items in each specified column.
@@ -3036,6 +3036,7 @@ class DataFrame:
 
         Args:
             *columns (ColumnInputType): columns to explode
+            index_column (ColumnInputType | None): optional name for an index column that tracks the position of each element within its original list
 
         Returns:
             DataFrame: DataFrame with exploded column
@@ -3119,9 +3120,32 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 5 of 5 rows)
 
+            Example with index_column to track element positions:
+
+            >>> df3 = daft.from_pydict({"a": [[1, 2], [3, 4, 3]]})
+            >>> df3.explode("a", index_column="idx").collect()
+            ╭───────┬────────╮
+            │ a     ┆ idx    │
+            │ ---   ┆ ---    │
+            │ Int64 ┆ UInt64 │
+            ╞═══════╪════════╡
+            │ 1     ┆ 0      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2     ┆ 1      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ 0      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 4     ┆ 1      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ 2      │
+            ╰───────┴────────╯
+            <BLANKLINE>
+            (Showing first 5 of 5 rows)
+
         """
         parsed_exprs = self.__column_input_to_expression(columns)
-        builder = self._builder.explode(parsed_exprs)
+        index_col_name = column_input_to_expression(index_column).name() if index_column is not None else None
+        builder = self._builder.explode(parsed_exprs, index_col_name)
         return DataFrame(builder)
 
     @DataframePublicAPI
