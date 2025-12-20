@@ -33,9 +33,9 @@ services:
     image: quay.io/minio/minio
     container_name: daft-gravitino-minio
     volumes:
-    - minio-data:/data
+    - gravitino-minio-data:/data
     ports:
-    - "${MINIO_PORT:-9000}:9000"
+    - "${MINIO_PORT:-9001}:9000"
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
@@ -46,4 +46,4 @@ services:
 
 volumes:
   mysql-data:
-  minio-data:
+  gravitino-minio-data:

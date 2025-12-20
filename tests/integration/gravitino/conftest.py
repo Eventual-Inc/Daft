@@ -98,7 +98,7 @@ def gravitino_minio_io_config():
 
     return daft.io.IOConfig(
         s3=daft.io.S3Config(
-            endpoint_url="http://127.0.0.1:9000",
+            endpoint_url="http://127.0.0.1:9001",
             key_id="minioadmin",
             access_key="minioadmin",
             region_name="us-east-1",
