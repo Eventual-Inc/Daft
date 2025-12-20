@@ -117,7 +117,7 @@ def update_catalog(client, metalake: str, catalog_name: str, updates: list[dict]
 
     Args:
         updates: List of update operations. Each operation is a dict with "@type" and other fields.
-                 Example: [{"@type": "setProperty", "property": "s3-endpoint", "value": "http://127.0.0.1:9000"}]
+                 Example: [{"@type": "setProperty", "property": "s3-endpoint", "value": "http://127.0.0.1:9001"}]
     """
     print(f"[DEBUG] Updating catalog: {catalog_name}")
     print(f"[DEBUG] Update operations: {updates}")

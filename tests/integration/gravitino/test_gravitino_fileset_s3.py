@@ -130,7 +130,7 @@ def prepared_s3_fileset(
         local_gravitino_client,
         gravitino_metalake,
         catalog_name,
-        updates=[{"@type": "setProperty", "property": "s3-endpoint", "value": "http://127.0.0.1:9000"}],
+        updates=[{"@type": "setProperty", "property": "s3-endpoint", "value": "http://127.0.0.1:9001"}],
     )
 
     gvfs_root = f"gvfs://fileset/{catalog_name}/{schema_name}/{fileset_name}"
@@ -260,7 +260,7 @@ def test_s3_fileset_partitioned_data(
         local_gravitino_client,
         gravitino_metalake,
         catalog_name,
-        updates=[{"@type": "setProperty", "property": "s3-endpoint", "value": "http://127.0.0.1:9000"}],
+        updates=[{"@type": "setProperty", "property": "s3-endpoint", "value": "http://127.0.0.1:9001"}],
     )
 
     try:
@@ -331,7 +331,7 @@ def test_s3_fileset_empty_glob(
         local_gravitino_client,
         gravitino_metalake,
         catalog_name,
-        updates=[{"@type": "setProperty", "property": "s3-endpoint", "value": "http://127.0.0.1:9000"}],
+        updates=[{"@type": "setProperty", "property": "s3-endpoint", "value": "http://127.0.0.1:9001"}],
     )
 
     try:

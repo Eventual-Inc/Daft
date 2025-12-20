@@ -835,6 +835,9 @@ jobs:
         pushd ./tests/integration/gravitino/docker-compose/
         docker compose -f ./docker-compose.yml down --volumes || true
         popd
+        pushd ./tests/integration/iceberg/docker-compose/
+        docker compose -f ./docker-compose.yml down --volumes || true
+        popd
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
