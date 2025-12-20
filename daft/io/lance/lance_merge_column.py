@@ -3,10 +3,9 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING, Any, Callable
 
-import daft.pickle
-
 # mypy: disable-error-code="import-untyped"
 import daft
+import daft.pickle
 from daft.datatype import DataType
 from daft.udf import cls as daft_cls
 from daft.udf import method
