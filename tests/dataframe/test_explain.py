@@ -53,3 +53,12 @@ def test_explain_with_empty_scantask(input_df):
 
 """
     assert clean_explain_output(string_io.getvalue().split("== Physical Plan ==")[-1]) == clean_explain_output(expected)
+
+
+def test_explain_with_explode_index_column():
+    df = daft.from_pydict({"nested": [[1, 2], [3, 4]]})
+    string_io = io.StringIO()
+    df.explode("nested", index_column="idx").explain(True, file=string_io)
+    output = string_io.getvalue()
+    assert "Explode" in output
+    assert "Index column = idx" in output
