@@ -118,3 +118,12 @@ def test_explain_with_ray_options(input_df):
     assert "{'runtime_env': {'conda': {'name': 'simple', 'channels': ['conda-forge']}}}" in text, (
         f"Unexpected Explain result: {text}"
     )
+
+
+def test_explain_with_explode_index_column():
+    df = daft.from_pydict({"nested": [[1, 2], [3, 4]]})
+    string_io = io.StringIO()
+    df.explode("nested", index_column="idx").explain(True, file=string_io)
+    output = string_io.getvalue()
+    assert "Explode" in output
+    assert "Index column = idx" in output

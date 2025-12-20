@@ -4,7 +4,8 @@ import pyarrow as pa
 import pytest
 
 from daft.expressions import col
-from daft.recordbatch import MicroPartition
+from daft.expressions.expressions import ExpressionsProjection
+from daft.recordbatch import MicroPartition, RecordBatch
 from daft.series import Series
 
 TEST_DATA = [
@@ -106,3 +107,13 @@ def test_explode_bad_col_type():
     table = MicroPartition.from_pydict({"a": [1, 2, 3]})
     with pytest.raises(ValueError, match="to be a List Type, but is"):
         table = table.explode([col("a")._explode()])
+
+
+def test_explode_with_index_column():
+    rb = RecordBatch.from_pydict({"nested": [[1, 2], [3, 4], None, []], "sidecar": ["a", "b", "c", "d"]})
+    exploded = rb.explode(ExpressionsProjection([col("nested").explode()]), index_column="idx")
+    assert exploded.to_pydict() == {
+        "nested": [1, 2, 3, 4, None, None],
+        "sidecar": ["a", "a", "b", "b", "c", "d"],
+        "idx": [0, 1, 0, 1, None, None],
+    }
