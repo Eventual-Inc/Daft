@@ -20,6 +20,27 @@ def make_noop_udf(batch_size: int, dtype: daft.DataType = daft.DataType.int64())
     return noop
 
 
+def normalize_udf_names(output: str) -> str:
+    """Normalize UDF names by replacing UUIDs with a placeholder."""
+    # Replace UUID patterns in UDF names (format: function-name-uuid)
+    # UUIDs can span multiple lines, so we need to match across newlines
+    base_pattern = r"tests\.dataframe\.test_morsels\.make_noop_udf\.<locals>\.noop"
+    # Match UUID pattern that can span lines: -uuid-part (newline with | and spaces) uuid-part
+    uuid_pattern = r"-[a-f0-9\-]+(?:\s*\|\s*\n\s*[a-f0-9\-]+)*"
+    # Replace in UDF name and Expr fields
+    pattern1 = f"({base_pattern}){uuid_pattern}"
+    output = re.sub(pattern1, r"\1-UUID", output, flags=re.MULTILINE)
+    # Clean up any remaining UUID fragments on continuation lines
+    # Pattern: line starting with | followed by spaces, then UUID pattern, then newline
+    pattern2 = r"(\|\s+)[a-f0-9\-]+\s*\n"
+    output = re.sub(pattern2, r"", output)
+    # Also handle UUID fragments that appear after noop-UUID on continuation lines in Expr
+    # Pattern: noop-UUID, newline, | with spaces, UUID fragment, then (col...)
+    pattern3 = r"(noop-UUID\s*\n\s*\|)\s+[a-f0-9\-]+"
+    output = re.sub(pattern3, r"\1", output)
+    return output
+
+
 # TODO: Add snapshot tests in Rust for the explain output of the following tests.
 
 
@@ -30,13 +51,14 @@ def test_batch_size_from_udf_propagated_to_scan(dynamic_batching):
         df = df.select(make_noop_udf(10)(daft.col("a")))
         string_io = io.StringIO()
         df.explain(True, file=string_io)
+        captured = normalize_udf_names(string_io.getvalue().split("== Physical Plan ==")[-1])
         expected = """
 
-    * UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
-    |   Expr = py_udf(col(0: a)) as a
+    * UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop-UUID
+    |   Expr = tests.dataframe.test_morsels.make_noop_udf.<locals>.noop-UUID(col(0: a)) as a
     |   Passthrough Columns = []
-    |   Properties = { batch_size = 10, async = false, scalar = false }
-    |   Resource request = None
+    |   Properties = { batch_size = 10, concurrency = 12, on_error = raise, async = false, scalar = false }
+    |   Resource request = { num_gpus = 0 }
     |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
     |   Batch Size = 10
     |
@@ -47,9 +69,7 @@ def test_batch_size_from_udf_propagated_to_scan(dynamic_batching):
     |   Batch Size = 10
 
     """
-        assert clean_explain_output(string_io.getvalue().split("== Physical Plan ==")[-1]) == clean_explain_output(
-            expected
-        )
+        assert clean_explain_output(captured) == clean_explain_output(expected)
 
 
 def test_batch_size_from_udf_propagated_through_ops_to_scan():
@@ -68,17 +88,17 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
     df = df.select(make_noop_udf(10, daft.DataType.image())(daft.col("data")))
     string_io = io.StringIO()
     df.explain(True, file=string_io)
-    captured = string_io.getvalue().split("== Physical Plan ==")[-1]
+    captured = normalize_udf_names(string_io.getvalue().split("== Physical Plan ==")[-1])
     # Match the id inside col(0: id-...)
     m = re.search(r"col\(0: (id-[a-f0-9\-]+)\)", captured)
     id_placeholder = m.group(1) if m else ""
     expected = f"""
 
-* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
-|   Expr = py_udf(col(0: __TruncateRootUDF_0-0-0__)) as data
+* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop-UUID
+|   Expr = tests.dataframe.test_morsels.make_noop_udf.<locals>.noop-UUID(col(0: __TruncateRootUDF_0-0-0__)) as data
 |   Passthrough Columns = []
-|   Properties = {{ batch_size = 10, concurrency = 1, async = false, scalar = false }}
-|   Resource request = None
+|   Properties = {{ batch_size = 10, concurrency = 12, on_error = raise, async = false, scalar = false }}
+|   Resource request = {{ num_gpus = 0 }}
 |   Batch Size = 10
 |
 * Project: col(0: __TruncateRootUDF_0-0-0__) as __TruncateRootUDF_0-0-0__
@@ -173,29 +193,30 @@ def test_batch_size_from_multiple_udfs_do_not_override_each_other():
     df = df.select(make_noop_udf(30)(daft.col("a")))
     string_io = io.StringIO()
     df.explain(True, file=string_io)
+    captured = normalize_udf_names(string_io.getvalue().split("== Physical Plan ==")[-1])
     expected = """
 
-* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
-|   Expr = py_udf(col(0: __TruncateRootUDF_0-0-0__)) as a
+* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop-UUID
+|   Expr = tests.dataframe.test_morsels.make_noop_udf.<locals>.noop-UUID(col(0: __TruncateRootUDF_0-0-0__)) as a
 |   Passthrough Columns = []
-|   Properties = { batch_size = 30, concurrency = 1, async = false, scalar = false }
-|   Resource request = None
+|   Properties = { batch_size = 30, concurrency = 12, on_error = raise, async = false, scalar = false }
+|   Resource request = { num_gpus = 0 }
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
 |   Batch Size = 30
 |
-* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
-|   Expr = py_udf(col(0: __TruncateRootUDF_1-0-0__)) as __TruncateRootUDF_0-0-0__
+* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop-UUID
+|   Expr = tests.dataframe.test_morsels.make_noop_udf.<locals>.noop-UUID(col(0: __TruncateRootUDF_1-0-0__)) as __TruncateRootUDF_0-0-0__
 |   Passthrough Columns = []
-|   Properties = { batch_size = 20, concurrency = 1, async = false, scalar = false }
-|   Resource request = None
+|   Properties = { batch_size = 20, concurrency = 12, on_error = raise, async = false, scalar = false }
+|   Resource request = { num_gpus = 0 }
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
 |   Batch Size = 20
 |
-* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
-|   Expr = py_udf(col(0: a)) as __TruncateRootUDF_1-0-0__
+* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop-UUID
+|   Expr = tests.dataframe.test_morsels.make_noop_udf.<locals>.noop-UUID(col(0: a)) as __TruncateRootUDF_1-0-0__
 |   Passthrough Columns = []
-|   Properties = { batch_size = 10, concurrency = 1, async = false, scalar = false }
-|   Resource request = None
+|   Properties = { batch_size = 10, concurrency = 12, on_error = raise, async = false, scalar = false }
+|   Resource request = { num_gpus = 0 }
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
 |   Batch Size = 10
 |
@@ -206,7 +227,7 @@ def test_batch_size_from_multiple_udfs_do_not_override_each_other():
 |   Batch Size = 10
 
 """
-    assert clean_explain_output(string_io.getvalue().split("== Physical Plan ==")[-1]) == clean_explain_output(expected)
+    assert clean_explain_output(captured) == clean_explain_output(expected)
 
 
 def test_batch_size_from_udf_not_propagated_through_agg():
@@ -215,13 +236,14 @@ def test_batch_size_from_udf_not_propagated_through_agg():
     df = df.select(make_noop_udf(10)(daft.col("a")))
     string_io = io.StringIO()
     df.explain(True, file=string_io)
+    captured = normalize_udf_names(string_io.getvalue().split("== Physical Plan ==")[-1])
     expected = """
 
-* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
-|   Expr = py_udf(col(0: a)) as a
+* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop-UUID
+|   Expr = tests.dataframe.test_morsels.make_noop_udf.<locals>.noop-UUID(col(0: a)) as a
 |   Passthrough Columns = []
-|   Properties = { batch_size = 10, concurrency = 1, async = false, scalar = false }
-|   Resource request = None
+|   Properties = { batch_size = 10, concurrency = 12, on_error = raise, async = false, scalar = false }
+|   Resource request = { num_gpus = 0 }
 |   Stats = { Approx num rows = 4, Approx size bytes = 32 B, Accumulated selectivity = 0.80 }
 |   Batch Size = 10
 |
@@ -238,7 +260,7 @@ def test_batch_size_from_udf_not_propagated_through_agg():
 
 """
 
-    assert clean_explain_output(string_io.getvalue().split("== Physical Plan ==")[-1]) == clean_explain_output(expected)
+    assert clean_explain_output(captured) == clean_explain_output(expected)
 
 
 def test_batch_size_from_udf_not_propagated_through_join():
@@ -248,13 +270,14 @@ def test_batch_size_from_udf_not_propagated_through_join():
     df = df.select(make_noop_udf(10)(daft.col("a")))
     string_io = io.StringIO()
     df.explain(True, file=string_io)
+    captured = normalize_udf_names(string_io.getvalue().split("== Physical Plan ==")[-1])
     expected = """
 
-* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
-|   Expr = py_udf(col(0: a)) as a
+* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop-UUID
+|   Expr = tests.dataframe.test_morsels.make_noop_udf.<locals>.noop-UUID(col(0: a)) as a
 |   Passthrough Columns = []
-|   Properties = { batch_size = 10, concurrency = 1, async = false, scalar = false }
-|   Resource request = None
+|   Properties = { batch_size = 10, concurrency = 12, on_error = raise, async = false, scalar = false }
+|   Resource request = { num_gpus = 0 }
 |   Stats = { Approx num rows = 5, Approx size bytes = 37 B, Accumulated selectivity = 0.90 }
 |   Batch Size = 10
 |
@@ -296,7 +319,7 @@ def test_batch_size_from_udf_not_propagated_through_join():
 |   Batch Size = Range(0, 131072]
 
 """
-    assert clean_explain_output(string_io.getvalue().split("== Physical Plan ==")[-1]) == clean_explain_output(expected)
+    assert clean_explain_output(captured) == clean_explain_output(expected)
 
 
 def test_batch_size_from_into_batches():
@@ -349,14 +372,14 @@ def test_batch_size_from_into_batches_before_udf():
     df = df.select(make_noop_udf(10)(daft.col("a")))
     string_io = io.StringIO()
     df.explain(True, file=string_io)
-    print(string_io.getvalue())
+    captured = normalize_udf_names(string_io.getvalue().split("== Physical Plan ==")[-1])
     expected = """
 
-* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
-|   Expr = py_udf(col(0: a)) as a
+* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop-UUID
+|   Expr = tests.dataframe.test_morsels.make_noop_udf.<locals>.noop-UUID(col(0: a)) as a
 |   Passthrough Columns = []
-|   Properties = { batch_size = 10, concurrency = 1, async = false, scalar = false }
-|   Resource request = None
+|   Properties = { batch_size = 10, concurrency = 12, on_error = raise, async = false, scalar = false }
+|   Resource request = { num_gpus = 0 }
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
 |   Batch Size = 10
 |
@@ -371,4 +394,4 @@ def test_batch_size_from_into_batches_before_udf():
 |   Batch Size = Range(8, 10]
 
 """
-    assert clean_explain_output(string_io.getvalue().split("== Physical Plan ==")[-1]) == clean_explain_output(expected)
+    assert clean_explain_output(captured) == clean_explain_output(expected)

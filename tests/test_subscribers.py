@@ -115,7 +115,7 @@ def test_capture_states(monkeypatch):
     df = daft.from_pydict({"x": ["1", "2", "3"]})
     df = df.with_column("y", failing_udf(df["x"]))
 
-    with pytest.raises(daft.errors.UDFException):
+    with pytest.raises(ValueError):
         df.collect()
 
     query_id = subscriber.query_ids[-1]
