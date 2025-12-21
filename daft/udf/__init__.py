@@ -315,7 +315,7 @@ func = _FuncDecorator()
 @overload
 def cls(
     *,
-    gpus: int = 0,
+    gpus: float = 0,
     use_process: bool | None = None,
     max_concurrency: int | None = None,
     max_retries: int | None = None,
@@ -325,7 +325,7 @@ def cls(
 def cls(
     class_: type,
     *,
-    gpus: int = 0,
+    gpus: float = 0,
     use_process: bool | None = None,
     max_concurrency: int | None = None,
     max_retries: int | None = None,
@@ -334,7 +334,7 @@ def cls(
 def cls(
     class_: type | None = None,
     *,
-    gpus: int = 0,
+    gpus: float = 0,
     use_process: bool | None = None,
     max_concurrency: int | None = None,
     max_retries: int | None = None,
@@ -344,6 +344,8 @@ def cls(
 
     Args:
         gpus: The number of GPUs each instance of the class requires. Defaults to 0.
+              Fractional values between 0 and 1.0, such as 0.5, are supported. This can be useful when running multiple small models on the same GPU.
+              However, fractional values greater than 1.0 are not supported; values like 1.5 or 2.5 must be specified as integers.
         use_process: Whether to run each instance of the class in a separate process. If unset, Daft will automatically choose based on runtime performance.
         max_concurrency: The maximum number of concurrent instances of the class.
 
@@ -411,6 +413,11 @@ def cls(
         ...     }
         ... )
     """
+    # Validate GPU resource request early: allow fractional values up to 1.0; values > 1.0 must be integers.
+    if gpus < 0:
+        raise ValueError(f"num_gpus must be non-negative, got {gpus}")
+    if gpus > 1 and not float(gpus).is_integer():
+        raise ValueError(f"ResourceRequest num_gpus greater than 1 must be an integer, got {gpus}")
 
     def partial_cls(c: type) -> type:
         return wrap_cls(c, gpus, use_process, max_concurrency, max_retries, on_error)

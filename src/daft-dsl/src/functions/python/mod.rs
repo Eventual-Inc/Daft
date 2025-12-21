@@ -322,7 +322,7 @@ impl UDFProperties {
                         name: row_wise_fn.function_name.to_string(),
                         resource_request: Some(ResourceRequest::try_new_internal(
                             None,
-                            Some(row_wise_fn.gpus as f64),
+                            Some(row_wise_fn.gpus.0),
                             None,
                         )?),
                         batch_size: None, // Row-wise functions don't have batch_size
@@ -351,7 +351,7 @@ impl UDFProperties {
                         name: function_name.to_string(),
                         resource_request: Some(ResourceRequest::try_new_internal(
                             None,
-                            Some(*gpus as f64),
+                            Some(gpus.0),
                             None,
                         )?),
                         batch_size: *batch_size,
