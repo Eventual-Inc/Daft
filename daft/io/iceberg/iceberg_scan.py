@@ -305,6 +305,13 @@ class IcebergScanOperator(ScanOperator):
                 if task.delete_files and len(task.delete_files) > 0:
                     logger.debug("Found delete files in table, count pushdown will be disabled")
                     return True
+
+            current_snapshot = self._table.current_snapshot()
+            if current_snapshot and hasattr(current_snapshot, "summary"):
+                if "deleted-data-files" in current_snapshot.summary:
+                    delete_files = current_snapshot.summary["deleted-data-files"]
+                    if delete_files is not None and delete_files > 0:
+                        return True
             return False
 
         except Exception as e:
@@ -321,7 +328,7 @@ class IcebergScanOperator(ScanOperator):
         return True
 
     def supports_count_pushdown(self) -> bool:
-        return True and not self._has_delete_files()
+        return not self._has_delete_files()
 
     def supported_count_modes(self) -> list[CountMode]:
         return [CountMode.All]
