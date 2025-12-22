@@ -1,8 +1,8 @@
 import builtins
 import datetime
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Concatenate, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Concatenate, Literal, TypeVar
 
 from daft.dataframe.display import MermaidOptions
 from daft.io import DataSink
@@ -1911,7 +1911,7 @@ class LogicalPlanBuilder:
         self,
         root_dir: str,
         write_mode: WriteMode,
-        file_format: FileFormat,
+        file_format_config: FileFormatConfig,
         partition_cols: list[PyExpr] | None = None,
         compression: str | None = None,
         io_config: IOConfig | None = None,

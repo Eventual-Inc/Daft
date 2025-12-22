@@ -93,7 +93,7 @@ impl BlockingSink for CommitWriteSink {
                     if written_file_path_record_batches.is_empty()
                         && file_info.partition_cols.is_none()
                     {
-                        match file_info.file_format {
+                        match file_info.file_format_config.file_format() {
                             FileFormat::Parquet | FileFormat::Csv => {
                                 let writer_factory =
                                     daft_writers::physical::PhysicalWriterFactory::new(
@@ -113,10 +113,10 @@ impl BlockingSink for CommitWriteSink {
                                     written_file_path_record_batches.push(rb);
                                 }
                             }
-                            _ => {
+                            file_format => {
                                 log::warn!(
                                     "No data written for {:?} file format, and not empty file created.",
-                                    file_info.file_format
+                                    file_format
                                 );
                             }
                         }
