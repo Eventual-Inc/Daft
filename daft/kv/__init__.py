@@ -1,8 +1,8 @@
 """KV Store implementations and utilities.
 
 This module provides key-value store functionality with support for multiple backends
-including Lance, LMDB, and in-memory implementations. It follows the same pattern
-as daft.ai.Provider and daft.catalog.Catalog for session-based configuration management.
+including Lance. It follows the same pattern as daft.ai.Provider and daft.catalog.Catalog
+for session-based configuration management.
 """
 
 from __future__ import annotations
@@ -26,19 +26,11 @@ class LanceConfig:
     io_config: IOConfig | None = None
 
 
-@dataclass
-class MemoryConfig:
-    """Configuration for in-memory KV store."""
-
-    name: str
-
-
 class KVConfig:
     """Unified configuration for KV Store operations."""
 
     def __init__(self) -> None:
         self._lance_config: LanceConfig | None = None
-        self._memory_config: MemoryConfig | None = None
 
     @classmethod
     def from_lance(
@@ -62,20 +54,6 @@ class KVConfig:
         )
         return config
 
-    @classmethod
-    def from_memory(cls, name: str) -> KVConfig:
-        """Create a KVConfig with memory backend configuration.
-
-        Args:
-            name: Name of the memory store
-
-        Returns:
-            KVConfig: Configured KV config with memory backend
-        """
-        config = cls()
-        config._memory_config = MemoryConfig(name=name)
-        return config
-
     def to_json(self) -> str:
         """Convert to JSON string."""
         # Convert to dict, handling nested dataclasses
@@ -85,10 +63,6 @@ class KVConfig:
                 "uri": self._lance_config.uri,
             }
             # TODO: Handle IOConfig serialization
-        if self._memory_config is not None:
-            config_dict["memory"] = {
-                "name": self._memory_config.name,
-            }
         return json.dumps(config_dict, separators=(",", ":"))
 
 
@@ -143,30 +117,16 @@ def load_lance(name: str | None = None, **options: Any) -> KVStore:
     try:
         from daft.kv.lance import LanceKVStore
 
+        if name is None:
+            raise ValueError("Lance KV store requires a 'name' parameter")
         return LanceKVStore(name, **options)
     except ImportError as e:
         raise KVStoreImportError(["lance"]) from e
 
 
-def load_memory(name: str | None = None, **options: Any) -> KVStore:
-    """Load an in-memory dictionary-based KV store.
-
-    Args:
-        name: Optional name for the KV store instance
-        **options: Memory store configuration options
-
-    Returns:
-        KVStore: An in-memory KV store instance
-    """
-    from daft.kv.memory import MemoryKVStore
-
-    return MemoryKVStore(name, **options)
-
-
 # Registry of available KV store loaders
 KV_STORES: dict[str, Callable[..., KVStore]] = {
     "lance": load_lance,
-    "memory": load_memory,
 }
 
 
@@ -177,7 +137,7 @@ def load_kv(store_type: str, name: str | None = None, **options: Any) -> KVStore
     following the same pattern as daft.ai.provider.load_provider.
 
     Args:
-        store_type: Type of KV store to load ('lance', 'memory')
+        store_type: Type of KV store to load (e.g. 'lance')
         name: Optional name for the KV store instance
         **options: Store-specific configuration options
 
@@ -192,8 +152,6 @@ def load_kv(store_type: str, name: str | None = None, **options: Any) -> KVStore
         >>> from daft.kv import load_kv
         >>> # Load Lance KV store
         >>> lance_kv = load_kv("lance", name="my_lance", uri="s3://bucket/dataset")
-        >>> # Load in-memory KV store
-        >>> memory_kv = load_kv("memory", name="cache")
     """
     if store_type not in KV_STORES:
         raise ValueError(
@@ -208,8 +166,6 @@ __all__ = [
     "KVStore",
     "KVStoreImportError",
     "LanceConfig",
-    "MemoryConfig",
     "load_kv",
     "load_lance",
-    "load_memory",
 ]

@@ -2,21 +2,18 @@ use daft_io::IOConfig;
 use serde::{Deserialize, Serialize};
 
 pub mod kv_functions;
-pub mod memory;
+pub mod lance;
 mod registry;
 pub use registry::KVModule;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct LanceConfig {
     uri: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     io_config: Option<IOConfig>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     columns: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     batch_size: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     on_error: Option<String>,
+    key_column: Option<String>,
 }
 
 impl LanceConfig {
@@ -27,6 +24,7 @@ impl LanceConfig {
             columns: None,
             batch_size: None,
             on_error: None,
+            key_column: None,
         }
     }
 
@@ -49,40 +47,25 @@ impl LanceConfig {
         self.on_error = Some(on_error);
         self
     }
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct MemoryConfig {
-    name: String,
-}
-
-impl MemoryConfig {
-    pub fn new(name: String) -> Self {
-        Self { name }
+    pub fn with_key_column(mut self, key_column: String) -> Self {
+        self.key_column = Some(key_column);
+        self
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct KVConfig {
     lance: Option<LanceConfig>,
-    memory: Option<MemoryConfig>,
 }
 
 impl KVConfig {
     pub fn new() -> Self {
-        Self {
-            lance: None,
-            memory: None,
-        }
+        Self { lance: None }
     }
 
     pub fn with_lance(mut self, config: LanceConfig) -> Self {
         self.lance = Some(config);
-        self
-    }
-
-    pub fn with_memory(mut self, config: MemoryConfig) -> Self {
-        self.memory = Some(config);
         self
     }
 }

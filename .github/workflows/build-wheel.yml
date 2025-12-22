@@ -99,6 +99,9 @@ jobs:
         bun install
         bun run build
 
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
+
     - name: Build wheels - Mac and Windows x86
       if: ${{ ((inputs.os == 'macos') || (inputs.os == 'windows')) && (inputs.arch == 'x86_64')  }}
       uses: PyO3/maturin-action@v1

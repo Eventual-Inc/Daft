@@ -60,8 +60,8 @@ fn arrow_chunk_to_table(
 ) -> DaftResult<RecordBatch> {
     let all_series = arrow_chunk
         .into_iter()
-        .zip(schema_ref.fields())
-        .filter_map(|(mut arr, field)| {
+        .zip(schema_ref.field_names())
+        .filter_map(|(mut arr, f_name)| {
             if (*index_so_far + arr.len()) < row_range_start {
                 // No need to process arrays that are less than the start offset
                 return None;
@@ -71,8 +71,7 @@ fn arrow_chunk_to_table(
                 let offset = row_range_start.saturating_sub(*index_so_far);
                 arr = arr.sliced(offset, arr.len() - offset);
             }
-            let series_result =
-                Series::try_from_field_and_arrow_array(Arc::new(field.clone()), arr);
+            let series_result = Series::try_from((f_name, arr));
             Some(series_result)
         })
         .collect::<DaftResult<Vec<_>>>()?;
@@ -490,15 +489,9 @@ pub async fn local_parquet_read_async(
                     if v.is_empty() {
                         Ok(Series::empty(f_name, &f.data_type().into()))
                     } else {
-                        let daft_field = Field::from(&f);
                         let casted_arrays = v
                             .into_iter()
-                            .map(move |a| {
-                                Series::try_from_field_and_arrow_array(
-                                    Arc::new(daft_field.clone()),
-                                    a,
-                                )
-                            })
+                            .map(move |a| Series::try_from((f_name, a)))
                             .collect::<Result<Vec<_>, _>>()?;
                         Series::concat(casted_arrays.iter().collect::<Vec<_>>().as_slice())
                     }
