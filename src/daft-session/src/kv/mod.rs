@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::sync::Arc;
 
 use common_error::{DaftError as CommonDaftError, DaftResult};
 #[cfg(feature = "python")]
@@ -16,6 +13,8 @@ use pyo3::{Py, PyAny};
 
 use crate::error::CatalogError as DaftError;
 
+pub mod lance;
+
 /// A reference to a KV Store implementation
 pub type KVStoreRef = Arc<dyn KVStore>;
 
@@ -24,7 +23,7 @@ pub trait KVStore: Send + Sync + std::fmt::Debug {
     /// Returns the name of the KV store
     fn name(&self) -> &str;
 
-    /// Returns the backend type (e.g., "lance", "redis", "memory")
+    /// Returns the backend type (e.g., "lance", "redis")
     fn backend_type(&self) -> &str;
 
     /// Returns self as Any for downcasting
@@ -164,97 +163,5 @@ impl KVStore for PyKVStoreWrapper {
         let py_key = pyo3::types::PyString::new(py, key);
         let result = py_kv_store.call_method1("get", (py_key,))?;
         Ok(result.into())
-    }
-}
-
-#[cfg(feature = "python")]
-#[derive(Debug)]
-pub struct MemoryKVStore {
-    name: String,
-    store: Mutex<HashMap<String, Py<PyAny>>>,
-}
-
-#[cfg(feature = "python")]
-impl MemoryKVStore {
-    pub fn new(name: String) -> Self {
-        Self {
-            name,
-            store: Mutex::new(HashMap::new()),
-        }
-    }
-}
-
-#[cfg(feature = "python")]
-impl KVStore for MemoryKVStore {
-    fn name(&self) -> &str {
-        &self.name
-    }
-    fn backend_type(&self) -> &'static str {
-        "memory"
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn put(&self, key: &Series, value: &Series) -> DaftResult<Series> {
-        use daft_core::{datatypes::DataType, python::PySeries as DPS};
-        use pyo3::Python;
-        Python::attach(|py| {
-            let k_py = DPS::from(key.clone());
-            let v_py = DPS::from(value.clone());
-            let k_list = k_py.to_pylist(py).map_err(|e| DaftError::DaftError {
-                error: CommonDaftError::ValueError(format!("Failed to convert key: {}", e)),
-            })?;
-            let v_list = v_py.to_pylist(py).map_err(|e| DaftError::DaftError {
-                error: CommonDaftError::ValueError(format!("Failed to convert value: {}", e)),
-            })?;
-            let n = k_list.len();
-            let mut guard = self.store.lock().unwrap();
-            for i in 0..n {
-                let k_item = k_list.get_item(i).unwrap();
-                let key_str: String = {
-                    match k_item.extract() {
-                        Ok(s) => s,
-                        Err(_) => {
-                            // Fallback to str() representation
-                            let s_obj = k_item.call_method0("__str__").unwrap();
-                            s_obj.extract().unwrap_or_default()
-                        }
-                    }
-                };
-                let v_item = v_list.get_item(i).unwrap();
-                guard.insert(key_str, v_item.into());
-            }
-            let s = Series::full_null("result", &DataType::Null, n);
-            Ok(s)
-        })
-    }
-
-    fn get(&self, py: Python<'_>, key: &str) -> PyResult<Py<PyAny>> {
-        let guard = self.store.lock().unwrap();
-        match guard.get(key) {
-            Some(obj) => Ok(obj.clone_ref(py)),
-            None => Ok(py.None().into()),
-        }
-    }
-
-    fn schema_fields(&self) -> Vec<String> {
-        let n = self.name.to_lowercase();
-        if n.contains("embedding") {
-            vec!["embedding".to_string()]
-        } else if n.contains("meta") {
-            vec!["metadata".to_string()]
-        } else {
-            vec!["value".to_string()]
-        }
-    }
-}
-
-#[cfg(feature = "python")]
-impl MemoryKVStore {
-    pub fn put_one(&self, _py: Python<'_>, key: &str, value: Bound<PyAny>) -> PyResult<()> {
-        let mut guard = self.store.lock().unwrap();
-        guard.insert(key.to_string(), value.into());
-        Ok(())
     }
 }

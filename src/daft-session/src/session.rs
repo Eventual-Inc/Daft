@@ -402,18 +402,26 @@ impl Session {
     /// Attaches a KV store to this session, err if already exists.
     pub fn attach_kv(&self, kv_store: KVStoreRef, alias: String) -> CatalogResult<()> {
         if self.state().kv_stores.contains(&alias) {
+            // If already exists, overwrite it or warn?
+            // For now, let's allow overwrite if it's the same object, or error.
+            // But obj_already_exists_err seems strict.
+            // Actually, for interactive use, we might want to allow re-attaching.
+            // But let's stick to error for now, as per original code.
             obj_already_exists_err!("KV Store", &alias.into())
         }
-        if self.state().kv_stores.is_empty() {
+
+        let mut state = self.state_mut();
+
+        if state.kv_stores.is_empty() {
             // if there are no current kv stores, then use this kv store as the default.
-            self.state_mut().options.curr_kv = Some(alias.clone());
+            state.options.curr_kv = Some(alias.clone());
         }
         // Bind by alias
-        self.state_mut().kv_stores.bind(alias, kv_store.clone());
-        // Also bind by store's canonical name for name-based lookup
-        self.state_mut()
-            .kv_stores
-            .bind(kv_store.name().to_string(), kv_store);
+        state.kv_stores.bind(alias.clone(), kv_store.clone());
+        // Also bind by store's canonical name for name-based lookup if different from alias
+        if kv_store.name() != alias {
+            state.kv_stores.bind(kv_store.name().to_string(), kv_store);
+        }
         Ok(())
     }
 

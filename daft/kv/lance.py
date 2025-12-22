@@ -4,83 +4,81 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from daft.datatype import DataType
+from daft.daft import _LanceKVStore  # type: ignore[attr-defined]
+from daft.kv import KVStore
 
 if TYPE_CHECKING:
-    from types import ModuleType
-
     from daft.io import IOConfig
-
-    class _NativeModule(ModuleType):
-        def kv_put(self, kind: str, name: str, key: str, value: Any) -> None: ...
-        def kv_get(self, kind: str, name: str, key: str) -> Any: ...
-
-    native: _NativeModule
-else:
-    pass
-
-if TYPE_CHECKING:
-    from daft.kv import KVConfig
-
-from daft.kv import KVConfig, KVStore
 
 
 class LanceKVStore(KVStore):
-    """Lance-based KV Store implementation."""
+    """A KV Store implementation backed by a Lance dataset."""
 
     def __init__(
         self,
-        name: str | None = None,
-        uri: str | None = None,
+        name: str,
+        uri: str,
+        key_column: str,
         io_config: IOConfig | None = None,
-        **kwargs: Any,
+        batch_size: int = 100,
     ) -> None:
-        if uri is None:
-            raise ValueError("uri is required for Lance KV store")
+        """Initialize a Lance KV Store.
 
-        self._name = name or "lance_kv_store"
-        self._uri = uri
-        self._io_config = io_config
-        self._kwargs = kwargs
-
-        self._kv_config = KVConfig.from_lance(
-            uri=uri,
-            io_config=io_config,
-        )
+        Args:
+            name: Name of the KV store.
+            uri: URI to the Lance dataset.
+            key_column: Name of the column to use as the key.
+            io_config: Optional IOConfig for accessing the dataset.
+            batch_size: Default batch size for scans (default: 100).
+        """
+        # Type ignore because _LanceKVStore is a dynamic PyO3 class not visible to static analysis
+        self._inner = _LanceKVStore(name, uri, key_column, batch_size, io_config)
 
     @property
     def name(self) -> str:
-        return self._name
+        """Returns the KV store's name."""
+        return self._inner.name
 
     @property
     def backend_type(self) -> str:
+        """Returns the backend type."""
         return "lance"
 
-    def get_config(self) -> KVConfig:
-        return self._kv_config
-
-    def schema_fields(self) -> list[str]:
-        return ["value"]
-
-    def schema(self) -> dict[str, DataType]:
-        return {"value": DataType.python()}
-
-    @property
-    def uri(self) -> str:
-        return self._uri
-
-    @property
-    def io_config(self) -> IOConfig | None:
-        return self._io_config
-
-    def __repr__(self) -> str:
-        return f"LanceKVStore(name='{self._name}', uri='{self._uri}', io_config={self._io_config})"
-
-    def __str__(self) -> str:
-        return f"Lance KV Store '{self._name}' at {self._uri}"
-
-    def put(self, key: str, value: Any) -> None:
-        raise NotImplementedError("Use kv_put via KVConfig/ScalarFunction path for Lance")
+    def get_config(self) -> Any:
+        """Returns the KV store's configuration."""
+        return self._inner.to_config()
 
     def get(self, key: str) -> Any:
-        raise NotImplementedError("Use kv_get via KVConfig/ScalarFunction path for Lance")
+        """Get a value by key.
+
+        Args:
+            key: The key to look up.
+
+        Returns:
+            The value associated with the key, or None if not found.
+        """
+        return self._inner.get(key)
+
+    def batch_get(self, keys: list[str]) -> list[Any]:
+        """Get multiple values by keys.
+
+        This delegates to the Rust implementation which handles batching.
+        Currently, the Rust `get` is single-key, so this iterates.
+        Future optimization: expose batch_get in Rust.
+
+        Args:
+            keys: List of keys to look up.
+
+        Returns:
+            List of values corresponding to the keys.
+        """
+        # Note: In distributed execution (via expressions), batch_get is handled
+        # by the Rust executor which calls get() in parallel or uses specific optimizations.
+        # This python-side implementation is mainly for local testing/usage.
+        return [self.get(k) for k in keys]
+
+    def __repr__(self) -> str:
+        return f"LanceKVStore(name='{self.name}')"
+
+
+__all__ = ["LanceKVStore"]

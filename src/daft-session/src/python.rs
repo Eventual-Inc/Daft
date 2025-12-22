@@ -1,4 +1,4 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, RwLock};
 
 use daft_ai::{provider::ProviderRef, python::PyProviderWrapper};
 use daft_catalog::{
@@ -9,13 +9,10 @@ use daft_dsl::functions::python::WrappedUDFClass;
 use pyo3::prelude::*;
 
 #[cfg(feature = "python")]
-use crate::kv::PyKVStoreWrapper;
-use crate::{
-    Session,
-    kv::{KVStore, KVStoreRef, MemoryKVStore},
-};
+use crate::kv::{PyKVStoreWrapper, lance::PyLanceKVStore};
+use crate::{Session, kv::KVStore};
 
-static CURRENT_SESSION: OnceLock<Session> = OnceLock::new();
+static CURRENT_SESSION: RwLock<Option<Session>> = RwLock::new(None);
 
 #[pyclass]
 pub struct PySession(Session);
@@ -32,6 +29,8 @@ impl PySession {
     pub fn empty() -> Self {
         Self(Session::empty())
     }
+
+    // ... existing attach methods ...
 
     pub fn attach_catalog(&self, catalog: Bound<PyAny>, alias: String) -> PyResult<()> {
         Ok(self.0.attach_catalog(pyobj_to_catalog(catalog)?, alias)?)
@@ -170,16 +169,19 @@ impl PySession {
         Ok(())
     }
 
+    /// Attaches a KV store to this session, err if already exists.
     pub fn attach_kv(&self, kv_store: Bound<PyAny>, alias: String) -> PyResult<()> {
-        let kv_ref = pyobj_to_kv_store(kv_store)?;
-        // Attach to this session first
+        // Fallback to generic Python wrapper
+        let wrapper = PyKVStoreWrapper::new(kv_store.unbind())?;
+        let kv_ref = Arc::new(wrapper);
         self.0.attach_kv(kv_ref.clone(), alias.clone())?;
 
         // Best-effort: also mirror the attachment into the global CURRENT_SESSION if it
         // refers to a different underlying session. This ensures that Rust-side KV
         // helpers that rely on CURRENT_SESSION (e.g. kv_get_direct_series /
         // kv_put_direct_series) can see KV stores attached via Python Session helpers.
-        if let Some(global) = CURRENT_SESSION.get()
+        if let Ok(guard) = CURRENT_SESSION.read()
+            && let Some(global) = guard.as_ref()
             && !self.0.shares_state(global)
         {
             let _ = global.attach_kv(kv_ref, alias);
@@ -233,24 +235,39 @@ impl PySession {
     pub fn list_kv(&self, pattern: Option<String>) -> PyResult<Vec<String>> {
         Ok(self.0.list_kv(pattern.as_deref())?)
     }
-
-    /// Attach a Rust memory KV store
-    pub fn attach_memory_kv(&self, name: String, alias: String) -> PyResult<()> {
-        let store = MemoryKVStore::new(name);
-        Ok(self.0.attach_kv(Arc::new(store), alias)?)
-    }
 }
 
 #[pyfunction]
-pub fn set_current_session(sess: Bound<PyAny>) -> PyResult<()> {
-    // Expect PySession
-    let py_sess: PyRef<PySession> = sess.extract()?;
-    let s = py_sess.session().clone_ref();
-    let _ = CURRENT_SESSION.set(s);
+pub fn set_current_session(session: &PySession) -> PyResult<()> {
+    let mut guard = CURRENT_SESSION.write().map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+            "Failed to acquire session lock: {}",
+            e
+        ))
+    })?;
+    *guard = Some(session.0.clone_ref());
     Ok(())
 }
 
-/// Direct KV get by store name and keys Series (Rust-side)
+#[pyfunction]
+pub fn current_session(py: Python<'_>) -> PyResult<Py<PySession>> {
+    let guard = CURRENT_SESSION.read().map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+            "Failed to acquire session lock: {}",
+            e
+        ))
+    })?;
+
+    if let Some(session) = guard.as_ref() {
+        let py_session = PySession(session.clone_ref());
+        Ok(Py::new(py, py_session)?)
+    } else {
+        Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+            "No current session set",
+        ))
+    }
+}
+
 #[pyfunction(signature = (store_name, keys, on_error, columns=None))]
 pub fn kv_get_direct_series(
     py: Python<'_>,
@@ -260,17 +277,21 @@ pub fn kv_get_direct_series(
     columns: Option<Vec<String>>,
 ) -> PyResult<daft_core::python::PySeries> {
     // Resolve current session
-    let sess = CURRENT_SESSION.get().ok_or_else(|| {
-        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("No current session set")
-    })?;
-    let kv = sess.get_kv(store_name)?;
-
-    // Determine fields: requested or store.schema_fields()
-    let fields: Vec<String> = if let Some(cols) = columns {
-        cols
-    } else {
-        kv.schema_fields()
+    let sess = {
+        let guard = CURRENT_SESSION.read().map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Failed to acquire session lock: {}",
+                e
+            ))
+        })?;
+        guard
+            .as_ref()
+            .ok_or_else(|| {
+                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("No current session set")
+            })?
+            .clone_ref()
     };
+    let kv = sess.get_kv(store_name)?;
 
     // Prepare output literals
     use daft_core::prelude::*;
@@ -280,11 +301,9 @@ pub fn kv_get_direct_series(
 
     for i in 0..k_arr.len() {
         let key_str = k_arr.str_value(i).unwrap_or_else(|_| String::new());
-        let obj = if let Some(ms) = kv.as_any().downcast_ref::<crate::kv::MemoryKVStore>() {
-            ms.get(py, &key_str)?
-        } else if let Some(pywrap) = kv.as_any().downcast_ref::<crate::kv::PyKVStoreWrapper>() {
+        let obj = if let Some(pywrap) = kv.as_any().downcast_ref::<crate::kv::PyKVStoreWrapper>() {
             let py_kv = pywrap.inner().bind(py);
-            let obj = py_kv.call_method1("get_one", (key_str.clone(),))?;
+            let obj = py_kv.call_method1("get", (key_str.clone(),))?;
             obj.unbind()
         } else {
             return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
@@ -292,37 +311,54 @@ pub fn kv_get_direct_series(
             ));
         };
 
-        let pydict = pyo3::types::PyDict::new(py);
-        let obj_bound = obj.bind(py);
-        if obj_bound.is_none() {
-            if on_error == "null" {
-                for f in &fields {
-                    pydict.set_item(f, pyo3::types::PyNone::get(py))?;
-                }
-            } else {
-                return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
-                    "Missing key: {key_str}"
-                )));
-            }
-        } else if obj_bound.is_instance_of::<pyo3::types::PyDict>() {
-            let dict = obj_bound.cast::<pyo3::types::PyDict>()?;
-            for f in &fields {
-                if let Some(value) = dict.get_item(f)? {
-                    pydict.set_item(f, value)?;
+        let final_obj: Py<PyAny> = if let Some(cols) = &columns {
+            let pydict = pyo3::types::PyDict::new(py);
+            let obj_bound = obj.bind(py);
+
+            if obj_bound.is_none() {
+                if on_error == "null" {
+                    for f in cols {
+                        pydict.set_item(f, py.None())?;
+                    }
                 } else {
-                    pydict.set_item(f, pyo3::types::PyNone::get(py))?;
+                    return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                        "Missing key: {key_str}"
+                    )));
                 }
+            } else if obj_bound.is_instance_of::<pyo3::types::PyDict>() {
+                let dict = obj_bound.cast::<pyo3::types::PyDict>()?;
+                for f in cols {
+                    let val = dict
+                        .get_item(f)?
+                        .unwrap_or_else(|| py.None().into_bound(py));
+                    pydict.set_item(f, val)?;
+                }
+            } else if cols.len() == 1 {
+                pydict.set_item(&cols[0], obj.clone_ref(py))?;
+            } else {
+                return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                    "Expected dict result for multi-column KV get",
+                ));
             }
-        } else if fields.len() == 1 {
-            pydict.set_item(fields[0].as_str(), obj.clone_ref(py))?;
+            pydict.into()
         } else {
-            return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                "Expected dict result for multi-column KV get",
-            ));
-        }
-        let dict_obj: pyo3::Py<PyAny> = pydict.into_pyobject(py)?.into();
+            let obj_bound = obj.bind(py);
+            if obj_bound.is_instance_of::<pyo3::types::PyDict>() || obj_bound.is_none() {
+                obj.clone_ref(py)
+            } else {
+                let pydict = pyo3::types::PyDict::new(py);
+                let default_fields = kv.schema_fields();
+                let key = default_fields
+                    .first()
+                    .map(|s| s.as_str())
+                    .unwrap_or("value");
+                pydict.set_item(key, obj.clone_ref(py))?;
+                pydict.into()
+            }
+        };
+
         out.push(Literal::Python(common_py_serde::PyObjectWrapper(
-            std::sync::Arc::new(dict_obj),
+            std::sync::Arc::new(final_obj),
         )));
     }
 
@@ -339,9 +375,20 @@ pub fn kv_put_direct_series(
     key: daft_core::python::PySeries,
     value: daft_core::python::PySeries,
 ) -> PyResult<daft_core::python::PySeries> {
-    let sess = CURRENT_SESSION.get().ok_or_else(|| {
-        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("No current session set")
-    })?;
+    let sess = {
+        let guard = CURRENT_SESSION.read().map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Failed to acquire session lock: {}",
+                e
+            ))
+        })?;
+        guard
+            .as_ref()
+            .ok_or_else(|| {
+                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("No current session set")
+            })?
+            .clone_ref()
+    };
     let kv = sess.get_kv(store_name)?;
 
     use daft_core::prelude::*;
@@ -353,9 +400,7 @@ pub fn kv_put_direct_series(
     let len = k_arr.len();
 
     // Perform vectorized put where available
-    if let Some(ms) = kv.as_any().downcast_ref::<crate::kv::MemoryKVStore>() {
-        let _ = ms.put(&key.series, &value.series);
-    } else if let Some(pywrap) = kv.as_any().downcast_ref::<crate::kv::PyKVStoreWrapper>() {
+    if let Some(pywrap) = kv.as_any().downcast_ref::<crate::kv::PyKVStoreWrapper>() {
         let _ = pywrap.put(&key.series, &value.series);
     } else {
         return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
@@ -390,16 +435,21 @@ pub fn kv_batch_get_direct_series(
     on_error: &str,
     columns: Option<Vec<String>>,
 ) -> PyResult<daft_core::python::PySeries> {
-    let sess = CURRENT_SESSION.get().ok_or_else(|| {
-        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("No current session set")
-    })?;
-    let kv = sess.get_kv(store_name)?;
-
-    let fields: Vec<String> = if let Some(cols) = columns {
-        cols
-    } else {
-        kv.schema_fields()
+    let sess = {
+        let guard = CURRENT_SESSION.read().map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Failed to acquire session lock: {}",
+                e
+            ))
+        })?;
+        guard
+            .as_ref()
+            .ok_or_else(|| {
+                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("No current session set")
+            })?
+            .clone_ref()
     };
+    let kv = sess.get_kv(store_name)?;
 
     use daft_core::prelude::*;
     let k_py = keys.series.cast(&DataType::Python)?;
@@ -417,30 +467,23 @@ pub fn kv_batch_get_direct_series(
         }
 
         // Call batch_get on the store
-        let batch_results = if let Some(ms) = kv.as_any().downcast_ref::<crate::kv::MemoryKVStore>()
-        {
-            // MemoryKVStore optimization: use mget-like logic if available, otherwise loop
-            let mut results = Vec::with_capacity(batch_keys.len());
-            for k in &batch_keys {
-                results.push(ms.get(py, k)?);
-            }
-            results
-        } else if let Some(pywrap) = kv.as_any().downcast_ref::<crate::kv::PyKVStoreWrapper>() {
-            let py_kv = pywrap.inner().bind(py);
-            // Convert Rust Vec<String> to Python List[str]
-            let py_keys_list = pyo3::types::PyList::new(py, &batch_keys)?;
-            let results_obj = py_kv.call_method1("batch_get", (py_keys_list,))?;
-            let results_list = results_obj.cast::<pyo3::types::PyList>()?;
-            let mut results = Vec::with_capacity(results_list.len());
-            for item in results_list {
-                results.push(item.unbind());
-            }
-            results
-        } else {
-            return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                "Unsupported KV store for kv_batch_get_direct_series",
-            ));
-        };
+        let batch_results =
+            if let Some(pywrap) = kv.as_any().downcast_ref::<crate::kv::PyKVStoreWrapper>() {
+                let py_kv = pywrap.inner().bind(py);
+                // Convert Rust Vec<String> to Python List[str]
+                let py_keys_list = pyo3::types::PyList::new(py, &batch_keys)?;
+                let results_obj = py_kv.call_method1("batch_get", (py_keys_list,))?;
+                let results_list = results_obj.cast::<pyo3::types::PyList>()?;
+                let mut results = Vec::with_capacity(results_list.len());
+                for item in results_list {
+                    results.push(item.unbind());
+                }
+                results
+            } else {
+                return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                    "Unsupported KV store for kv_batch_get_direct_series",
+                ));
+            };
 
         if batch_results.len() != batch_keys.len() {
             return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
@@ -453,39 +496,55 @@ pub fn kv_batch_get_direct_series(
         // Process results for this batch
         for (i, obj) in batch_results.into_iter().enumerate() {
             let key_str = &batch_keys[i];
-            let pydict = pyo3::types::PyDict::new(py);
-            let obj_bound = obj.bind(py);
 
-            if obj_bound.is_none() {
-                if on_error == "null" {
-                    for f in &fields {
-                        pydict.set_item(f, pyo3::types::PyNone::get(py))?;
-                    }
-                } else {
-                    return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
-                        "Missing key: {key_str}"
-                    )));
-                }
-            } else if obj_bound.is_instance_of::<pyo3::types::PyDict>() {
-                let dict = obj_bound.cast::<pyo3::types::PyDict>()?;
-                for f in &fields {
-                    if let Some(value) = dict.get_item(f)? {
-                        pydict.set_item(f, value)?;
+            let final_obj: Py<PyAny> = if let Some(cols) = &columns {
+                let pydict = pyo3::types::PyDict::new(py);
+                let obj_bound = obj.bind(py);
+
+                if obj_bound.is_none() {
+                    if on_error == "null" {
+                        for f in cols {
+                            pydict.set_item(f, py.None())?;
+                        }
                     } else {
-                        pydict.set_item(f, pyo3::types::PyNone::get(py))?;
+                        return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                            "Missing key: {key_str}"
+                        )));
                     }
+                } else if obj_bound.is_instance_of::<pyo3::types::PyDict>() {
+                    let dict = obj_bound.cast::<pyo3::types::PyDict>()?;
+                    for f in cols {
+                        let val = dict
+                            .get_item(f)?
+                            .unwrap_or_else(|| py.None().into_bound(py));
+                        pydict.set_item(f, val)?;
+                    }
+                } else if cols.len() == 1 {
+                    pydict.set_item(&cols[0], obj.clone_ref(py))?;
+                } else {
+                    return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                        "Expected dict result for multi-column KV batch_get",
+                    ));
                 }
-            } else if fields.len() == 1 {
-                pydict.set_item(fields[0].as_str(), obj.clone_ref(py))?;
+                pydict.into()
             } else {
-                return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                    "Expected dict result for multi-column KV batch_get",
-                ));
-            }
+                let obj_bound = obj.bind(py);
+                if obj_bound.is_instance_of::<pyo3::types::PyDict>() || obj_bound.is_none() {
+                    obj.clone_ref(py)
+                } else {
+                    let pydict = pyo3::types::PyDict::new(py);
+                    let default_fields = kv.schema_fields();
+                    let key = default_fields
+                        .first()
+                        .map(|s| s.as_str())
+                        .unwrap_or("value");
+                    pydict.set_item(key, obj.clone_ref(py))?;
+                    pydict.into()
+                }
+            };
 
-            let dict_obj: pyo3::Py<PyAny> = pydict.into_pyobject(py)?.into();
             out.push(Literal::Python(common_py_serde::PyObjectWrapper(
-                std::sync::Arc::new(dict_obj),
+                std::sync::Arc::new(final_obj),
             )));
         }
     }
@@ -501,9 +560,20 @@ pub fn kv_exists_direct_series(
     store_name: &str,
     keys: daft_core::python::PySeries,
 ) -> PyResult<daft_core::python::PySeries> {
-    let sess = CURRENT_SESSION.get().ok_or_else(|| {
-        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("No current session set")
-    })?;
+    let sess = {
+        let guard = CURRENT_SESSION.read().map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "Failed to acquire session lock: {}",
+                e
+            ))
+        })?;
+        guard
+            .as_ref()
+            .ok_or_else(|| {
+                PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("No current session set")
+            })?
+            .clone_ref()
+    };
     let kv = sess.get_kv(store_name)?;
 
     use daft_core::prelude::*;
@@ -513,11 +583,9 @@ pub fn kv_exists_direct_series(
 
     for i in 0..k_arr.len() {
         let key_str = k_arr.str_value(i).unwrap_or_else(|_| String::new());
-        let obj = if let Some(ms) = kv.as_any().downcast_ref::<crate::kv::MemoryKVStore>() {
-            ms.get(py, &key_str)?
-        } else if let Some(pywrap) = kv.as_any().downcast_ref::<crate::kv::PyKVStoreWrapper>() {
+        let obj = if let Some(pywrap) = kv.as_any().downcast_ref::<crate::kv::PyKVStoreWrapper>() {
             let py_kv = pywrap.inner().bind(py);
-            py_kv.call_method1("get_one", (key_str.clone(),))?.unbind()
+            py_kv.call_method1("get", (key_str.clone(),))?.unbind()
         } else {
             return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
                 "Unsupported KV store for kv_exists_direct_series",
@@ -537,26 +605,11 @@ fn pyobj_to_provider(obj: Bound<PyAny>) -> PyResult<ProviderRef> {
     Ok(Arc::new(PyProviderWrapper::from(obj.unbind())))
 }
 
-fn pyobj_to_kv_store(obj: Bound<PyAny>) -> PyResult<KVStoreRef> {
-    // Detect backend type from Python object
-    #[cfg(feature = "python")]
-    {
-        let backend_type: String = obj.getattr("backend_type")?.extract()?;
-        if backend_type.as_str() == "memory" {
-            // Use Rust MemoryKVStore for session registration
-            let name: String = obj.getattr("name")?.extract()?;
-            let store = MemoryKVStore::new(name);
-            return Ok(Arc::new(store));
-        }
-    }
-    // Fallback: wrap the Python KV Store object
-    let wrapper = PyKVStoreWrapper::new(obj.unbind())?;
-    Ok(Arc::new(wrapper))
-}
-
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PySession>()?;
+    parent.add_class::<PyLanceKVStore>()?;
     parent.add_function(wrap_pyfunction!(set_current_session, parent)?)?;
+    parent.add_function(wrap_pyfunction!(current_session, parent)?)?;
     parent.add_function(wrap_pyfunction!(kv_get_direct_series, parent)?)?;
     parent.add_function(wrap_pyfunction!(kv_put_direct_series, parent)?)?;
     parent.add_function(wrap_pyfunction!(kv_batch_get_direct_series, parent)?)?;
