@@ -147,7 +147,7 @@ impl std::fmt::Debug for DaftExecutionConfig {
 impl Default for DaftExecutionConfig {
     fn default() -> Self {
         Self {
-            enable_scan_task_split_and_merge: false,
+            enable_scan_task_split_and_merge: true,
             scan_tasks_min_size_bytes: 96 * 1024 * 1024, // 96MB
             scan_tasks_max_size_bytes: 384 * 1024 * 1024, // 384MB
             max_sources_per_scan_task: 10,
