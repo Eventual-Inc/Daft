@@ -773,18 +773,30 @@ impl From<&PyExpr> for crate::ExprRef {
 }
 
 // KV Store ScalarUDF convenience functions with store name support
-#[pyfunction(signature = (keys, name, columns=None))]
-pub fn kv_get_with_name(keys: PyExpr, name: PyExpr, columns: Option<PyExpr>) -> PyResult<PyExpr> {
+#[pyfunction(signature = (keys, name, on_error, columns=None))]
+pub fn kv_get_with_name(
+    keys: PyExpr,
+    name: PyExpr,
+    on_error: PyExpr,
+    columns: Option<PyExpr>,
+) -> PyResult<PyExpr> {
     Ok(crate::functions::kv::kv_functions::kv_get_with_name(
         keys.into(),
         name.into(),
+        on_error.into(),
         columns.map(|c| c.into()),
     )
     .into())
 }
 
-#[pyfunction]
-pub fn kv_batch_get_with_name(keys: PyExpr, name: PyExpr, batch_size: PyExpr) -> PyResult<PyExpr> {
+#[pyfunction(signature = (keys, name, batch_size, on_error, columns=None))]
+pub fn kv_batch_get_with_name(
+    keys: PyExpr,
+    name: PyExpr,
+    batch_size: PyExpr,
+    on_error: PyExpr,
+    columns: Option<PyExpr>,
+) -> PyResult<PyExpr> {
     // First get the KV store from session using the name
     // Then extract the config from the KV store
     // Finally call the actual kv_batch_get_with_name function
@@ -792,6 +804,8 @@ pub fn kv_batch_get_with_name(keys: PyExpr, name: PyExpr, batch_size: PyExpr) ->
         keys.into(),
         name.into(),
         batch_size.into(),
+        on_error.into(),
+        columns.map(|c| c.into()),
     )
     .into())
 }
