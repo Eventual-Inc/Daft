@@ -154,12 +154,13 @@ pub async fn stream_csv(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     max_chunks_in_flight: Option<usize>,
+    ignore_corrupt_files: bool,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
     let (source_type, _) = parse_url(&uri)?;
     let is_compressed = CompressionCodec::from_uri(&uri).is_some();
-    if matches!(source_type, SourceType::File) && !is_compressed {
-        let stream = stream_csv_local(
-            uri,
+    let stream_result = if matches!(source_type, SourceType::File) && !is_compressed {
+        stream_csv_local(
+            uri.clone(),
             convert_options,
             parse_options.unwrap_or_default(),
             read_options,
@@ -167,11 +168,11 @@ pub async fn stream_csv(
             io_stats,
             max_chunks_in_flight,
         )
-        .await?;
-        Ok(Box::pin(stream))
+        .await
+        .map(|s| Box::pin(s) as BoxStream<'static, DaftResult<RecordBatch>>)
     } else {
-        let stream = stream_csv_single(
-            uri,
+        stream_csv_single(
+            uri.clone(),
             convert_options,
             parse_options,
             read_options,
@@ -179,8 +180,35 @@ pub async fn stream_csv(
             io_stats,
             max_chunks_in_flight,
         )
-        .await?;
-        Ok(Box::pin(stream))
+        .await
+        .map(|s| Box::pin(s) as BoxStream<'static, DaftResult<RecordBatch>>)
+    };
+
+    match stream_result {
+        Ok(stream) => {
+            if ignore_corrupt_files {
+                let stream = stream.filter_map(move |result| {
+                    futures::future::ready(match result {
+                        Ok(val) => Some(Ok(val)),
+                        Err(err) => {
+                            log::warn!("Skipping unreadable/corrupt csv file part: {err}");
+                            None
+                        }
+                    })
+                });
+                Ok(Box::pin(stream))
+            } else {
+                Ok(Box::pin(stream))
+            }
+        }
+        Err(err) => {
+            if ignore_corrupt_files {
+                log::warn!("Skipping unreadable/corrupt csv file {uri}: {err}");
+                Ok(Box::pin(futures::stream::empty()))
+            } else {
+                Err(err)
+            }
+        }
     }
 }
 
