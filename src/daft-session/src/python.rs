@@ -390,7 +390,6 @@ pub fn kv_batch_get_direct_series(
     on_error: &str,
     columns: Option<Vec<String>>,
 ) -> PyResult<daft_core::python::PySeries> {
-    let _ = batch_size;
     let sess = CURRENT_SESSION.get().ok_or_else(|| {
         PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("No current session set")
     })?;
@@ -405,54 +404,90 @@ pub fn kv_batch_get_direct_series(
     use daft_core::prelude::*;
     let k_py = keys.series.cast(&DataType::Python)?;
     let k_arr = k_py.downcast::<PythonArray>()?;
-    let mut out: Vec<Literal> = Vec::with_capacity(k_arr.len());
+    let total_len = k_arr.len();
+    let mut out: Vec<Literal> = Vec::with_capacity(total_len);
 
-    for i in 0..k_arr.len() {
-        let key_str = k_arr.str_value(i).unwrap_or_else(|_| String::new());
-        let obj = if let Some(ms) = kv.as_any().downcast_ref::<crate::kv::MemoryKVStore>() {
-            ms.get(py, &key_str)?
+    // Process keys in chunks of batch_size
+    for chunk_start in (0..total_len).step_by(batch_size) {
+        let chunk_end = std::cmp::min(chunk_start + batch_size, total_len);
+        let mut batch_keys: Vec<String> = Vec::with_capacity(chunk_end - chunk_start);
+
+        for i in chunk_start..chunk_end {
+            batch_keys.push(k_arr.str_value(i).unwrap_or_else(|_| String::new()));
+        }
+
+        // Call batch_get on the store
+        let batch_results = if let Some(ms) = kv.as_any().downcast_ref::<crate::kv::MemoryKVStore>()
+        {
+            // MemoryKVStore optimization: use mget-like logic if available, otherwise loop
+            let mut results = Vec::with_capacity(batch_keys.len());
+            for k in &batch_keys {
+                results.push(ms.get(py, k)?);
+            }
+            results
         } else if let Some(pywrap) = kv.as_any().downcast_ref::<crate::kv::PyKVStoreWrapper>() {
             let py_kv = pywrap.inner().bind(py);
-            let obj = py_kv.call_method1("get_one", (key_str.clone(),))?;
-            obj.unbind()
+            // Convert Rust Vec<String> to Python List[str]
+            let py_keys_list = pyo3::types::PyList::new(py, &batch_keys)?;
+            let results_obj = py_kv.call_method1("batch_get", (py_keys_list,))?;
+            let results_list = results_obj.cast::<pyo3::types::PyList>()?;
+            let mut results = Vec::with_capacity(results_list.len());
+            for item in results_list {
+                results.push(item.unbind());
+            }
+            results
         } else {
             return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
                 "Unsupported KV store for kv_batch_get_direct_series",
             ));
         };
 
-        let pydict = pyo3::types::PyDict::new(py);
-        let obj_bound = obj.bind(py);
-        if obj_bound.is_none() {
-            if on_error == "null" {
-                for f in &fields {
-                    pydict.set_item(f, pyo3::types::PyNone::get(py))?;
-                }
-            } else {
-                return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
-                    "Missing key: {key_str}"
-                )));
-            }
-        } else if obj_bound.is_instance_of::<pyo3::types::PyDict>() {
-            let dict = obj_bound.cast::<pyo3::types::PyDict>()?;
-            for f in &fields {
-                if let Some(value) = dict.get_item(f)? {
-                    pydict.set_item(f, value)?;
-                } else {
-                    pydict.set_item(f, pyo3::types::PyNone::get(py))?;
-                }
-            }
-        } else if fields.len() == 1 {
-            pydict.set_item(fields[0].as_str(), obj.clone_ref(py))?;
-        } else {
-            return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                "Expected dict result for multi-column KV batch_get",
-            ));
+        if batch_results.len() != batch_keys.len() {
+            return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                "KV store batch_get returned {} items, expected {}",
+                batch_results.len(),
+                batch_keys.len()
+            )));
         }
-        let dict_obj: pyo3::Py<PyAny> = pydict.into_pyobject(py)?.into();
-        out.push(Literal::Python(common_py_serde::PyObjectWrapper(
-            std::sync::Arc::new(dict_obj),
-        )));
+
+        // Process results for this batch
+        for (i, obj) in batch_results.into_iter().enumerate() {
+            let key_str = &batch_keys[i];
+            let pydict = pyo3::types::PyDict::new(py);
+            let obj_bound = obj.bind(py);
+
+            if obj_bound.is_none() {
+                if on_error == "null" {
+                    for f in &fields {
+                        pydict.set_item(f, pyo3::types::PyNone::get(py))?;
+                    }
+                } else {
+                    return Err(PyErr::new::<pyo3::exceptions::PyKeyError, _>(format!(
+                        "Missing key: {key_str}"
+                    )));
+                }
+            } else if obj_bound.is_instance_of::<pyo3::types::PyDict>() {
+                let dict = obj_bound.cast::<pyo3::types::PyDict>()?;
+                for f in &fields {
+                    if let Some(value) = dict.get_item(f)? {
+                        pydict.set_item(f, value)?;
+                    } else {
+                        pydict.set_item(f, pyo3::types::PyNone::get(py))?;
+                    }
+                }
+            } else if fields.len() == 1 {
+                pydict.set_item(fields[0].as_str(), obj.clone_ref(py))?;
+            } else {
+                return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
+                    "Expected dict result for multi-column KV batch_get",
+                ));
+            }
+
+            let dict_obj: pyo3::Py<PyAny> = pydict.into_pyobject(py)?.into();
+            out.push(Literal::Python(common_py_serde::PyObjectWrapper(
+                std::sync::Arc::new(dict_obj),
+            )));
+        }
     }
 
     let mut s = Series::from_literals(out)?;
