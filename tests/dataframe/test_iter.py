@@ -164,7 +164,7 @@ def test_iter_exception(make_df):
     # Test that df.__iter__ actually returns results before completing execution.
     # We test this by raising an exception in a UDF if too many partitions are executed.
 
-    @daft.udf(return_dtype=daft.DataType.int64())
+    @daft.func.batch(return_dtype=daft.DataType.int64())
     def echo_or_trigger(s):
         trigger = max(s.to_pylist())
         if trigger >= 199:
@@ -196,7 +196,7 @@ def test_iter_partitions_exception(make_df, dynamic_batching):
     # Test that df.iter_partitions actually returns results before completing execution.
     # We test this by raising an exception in a UDF if too many partitions are executed.
 
-    @daft.udf(return_dtype=daft.DataType.int64())
+    @daft.func.batch(return_dtype=daft.DataType.int64())
     def echo_or_trigger(s):
         trigger = max(s.to_pylist())
         if trigger >= 199:

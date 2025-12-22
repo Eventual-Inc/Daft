@@ -53,13 +53,14 @@ MODEL_NAME = "all-MiniLM-L6-v2"
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
-@daft.udf(return_dtype=daft.DataType.python())
+@daft.cls
 class EncodingUDF:
     def __init__(self):
         from sentence_transformers import SentenceTransformer
 
         self.model = SentenceTransformer(MODEL_NAME, device=device)
 
+    @daft.method.batch(return_dtype=daft.DataType.python())
     def __call__(self, text_col):
         return [self.model.encode(text, convert_to_tensor=True) for text in text_col.to_pylist()]
 ```
@@ -67,7 +68,7 @@ class EncodingUDF:
 Then, we can just call the UDF to run the model.
 
 ```python
-df = df.with_column("embedding", EncodingUDF(df["text"]))
+df = df.with_column("embedding", EncodingUDF()(df["text"]))
 ```
 
 Pause and notice how easy it was to write this.
@@ -107,7 +108,7 @@ top_questions = (df.sort(df["question_score"], desc=True).limit(NUM_TOP_QUESTION
 Now we will **take each regular question and find a related top question**. For this we will need to do a similarity search. Let's do that within a Daft UDF.
 
 ```python
-@daft.udf(
+@daft.func.batch(
     return_dtype=daft.DataType.struct(
         {
             "related_top_question": daft.DataType.string(),
