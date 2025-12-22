@@ -96,14 +96,53 @@ impl ScalarUDF for KVGetWithStoreName {
             // Parse columns if provided
             let requested: Option<Vec<String>> = if let Some(cols_ser) = columns_series_opt.as_ref()
             {
-                let arr = cols_ser.binary()?;
-                let bytes = arr.get(0).ok_or_else(|| {
-                    DaftError::ValueError("columns must contain exactly one element".to_string())
-                })?;
-                let cols: Vec<String> = serde_json::from_slice(bytes).map_err(|e| {
-                    DaftError::ValueError(format!("Failed to deserialize columns: {}", e))
-                })?;
-                Some(cols)
+                match cols_ser.data_type() {
+                    DataType::List(_) => {
+                        let lit = cols_ser.get_lit(0);
+                        match lit {
+                            Literal::List(inner) => {
+                                let inner_utf8 = inner.utf8()?;
+                                let mut cols = Vec::with_capacity(inner_utf8.len());
+                                for i in 0..inner_utf8.len() {
+                                    cols.push(
+                                        inner_utf8
+                                            .get(i)
+                                            .ok_or_else(|| {
+                                                DaftError::ValueError(
+                                                    "Null column name".to_string(),
+                                                )
+                                            })?
+                                            .to_string(),
+                                    );
+                                }
+                                Some(cols)
+                            }
+                            _ => {
+                                return Err(DaftError::ValueError(
+                                    "Expected List literal for columns".to_string(),
+                                ));
+                            }
+                        }
+                    }
+                    DataType::Binary => {
+                        let arr = cols_ser.binary()?;
+                        let bytes = arr.get(0).ok_or_else(|| {
+                            DaftError::ValueError(
+                                "columns must contain exactly one element".to_string(),
+                            )
+                        })?;
+                        let cols: Vec<String> = serde_json::from_slice(bytes).map_err(|e| {
+                            DaftError::ValueError(format!("Failed to deserialize columns: {}", e))
+                        })?;
+                        Some(cols)
+                    }
+                    _ => {
+                        return Err(DaftError::TypeError(format!(
+                            "Invalid type for columns: {}",
+                            cols_ser.data_type()
+                        )));
+                    }
+                }
             } else {
                 None
             };
@@ -234,14 +273,53 @@ impl ScalarUDF for KVBatchGetWithStoreName {
 
             let requested: Option<Vec<String>> = if let Some(cols_ser) = columns_series_opt.as_ref()
             {
-                let arr = cols_ser.binary()?;
-                let bytes = arr.get(0).ok_or_else(|| {
-                    DaftError::ValueError("columns must contain exactly one element".to_string())
-                })?;
-                let cols: Vec<String> = serde_json::from_slice(bytes).map_err(|e| {
-                    DaftError::ValueError(format!("Failed to deserialize columns: {}", e))
-                })?;
-                Some(cols)
+                match cols_ser.data_type() {
+                    DataType::List(_) => {
+                        let lit = cols_ser.get_lit(0);
+                        match lit {
+                            Literal::List(inner) => {
+                                let inner_utf8 = inner.utf8()?;
+                                let mut cols = Vec::with_capacity(inner_utf8.len());
+                                for i in 0..inner_utf8.len() {
+                                    cols.push(
+                                        inner_utf8
+                                            .get(i)
+                                            .ok_or_else(|| {
+                                                DaftError::ValueError(
+                                                    "Null column name".to_string(),
+                                                )
+                                            })?
+                                            .to_string(),
+                                    );
+                                }
+                                Some(cols)
+                            }
+                            _ => {
+                                return Err(DaftError::ValueError(
+                                    "Expected List literal for columns".to_string(),
+                                ));
+                            }
+                        }
+                    }
+                    DataType::Binary => {
+                        let arr = cols_ser.binary()?;
+                        let bytes = arr.get(0).ok_or_else(|| {
+                            DaftError::ValueError(
+                                "columns must contain exactly one element".to_string(),
+                            )
+                        })?;
+                        let cols: Vec<String> = serde_json::from_slice(bytes).map_err(|e| {
+                            DaftError::ValueError(format!("Failed to deserialize columns: {}", e))
+                        })?;
+                        Some(cols)
+                    }
+                    _ => {
+                        return Err(DaftError::TypeError(format!(
+                            "Invalid type for columns: {}",
+                            cols_ser.data_type()
+                        )));
+                    }
+                }
             } else {
                 None
             };
@@ -473,18 +551,33 @@ impl ScalarUDF for KVPutWithStoreName {
     }
 }
 
-pub fn kv_get_with_name(keys: ExprRef, name: ExprRef, columns: Option<ExprRef>) -> ExprRef {
+pub fn kv_get_with_name(
+    keys: ExprRef,
+    name: ExprRef,
+    on_error: ExprRef,
+    columns: Option<ExprRef>,
+) -> ExprRef {
     use crate::functions::scalar::ScalarFn;
-    let mut args = vec![keys, name];
+    let mut args = vec![keys, name, on_error];
     if let Some(c) = columns {
         args.push(c);
     }
     ScalarFn::builtin(KVGetWithStoreName, args).into()
 }
 
-pub fn kv_batch_get_with_name(keys: ExprRef, name: ExprRef, batch_size: ExprRef) -> ExprRef {
+pub fn kv_batch_get_with_name(
+    keys: ExprRef,
+    name: ExprRef,
+    batch_size: ExprRef,
+    on_error: ExprRef,
+    columns: Option<ExprRef>,
+) -> ExprRef {
     use crate::functions::scalar::ScalarFn;
-    ScalarFn::builtin(KVBatchGetWithStoreName, vec![keys, name, batch_size]).into()
+    let mut args = vec![keys, name, batch_size, on_error];
+    if let Some(c) = columns {
+        args.push(c);
+    }
+    ScalarFn::builtin(KVBatchGetWithStoreName, args).into()
 }
 
 pub fn kv_exists_with_name(keys: ExprRef, name: ExprRef) -> ExprRef {
