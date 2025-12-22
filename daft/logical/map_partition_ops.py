@@ -27,15 +27,10 @@ class ExplodeOp(MapPartitionOp):
     def __init__(self, input_schema: Schema, explode_columns: ExpressionsProjection) -> None:
         super().__init__()
         self.input_schema = input_schema
-        output_fields = []
-        explode_columns = ExpressionsProjection([c._explode() for c in explode_columns])
-        explode_schema = explode_columns.resolve_schema(input_schema)
-        for f in input_schema:
-            if f.name in explode_schema.column_names():
-                output_fields.append(explode_schema[f.name])
-            else:
-                output_fields.append(f)
 
+        explode_columns = ExpressionsProjection([c.explode() for c in explode_columns])
+        explode_schema = explode_columns.resolve_schema(input_schema)
+        output_fields = [explode_schema[f.name] if f.name in explode_schema.column_names() else f for f in input_schema]
         self.output_schema = Schema._from_field_name_and_types([(f.name, f.dtype) for f in output_fields])
         self.explode_columns = explode_columns
 

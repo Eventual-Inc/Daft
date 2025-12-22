@@ -163,6 +163,7 @@ impl LogicalPlan {
                 node_id,
                 input,
                 to_explode,
+                index_column,
                 exploded_schema,
                 stats_state,
             }) => to_explode
@@ -175,6 +176,7 @@ impl LogicalPlan {
                         node_id: *node_id,
                         input: input.clone(),
                         to_explode: new_to_explode,
+                        index_column: index_column.clone(),
                         exploded_schema: exploded_schema.clone(),
                         stats_state: stats_state.clone(),
                     })
