@@ -249,6 +249,7 @@ pub fn udf(
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 pub fn row_wise_udf(
+    func_id: &str,
     name: &str,
     cls: Py<PyAny>,
     method: Py<PyAny>,
@@ -284,6 +285,7 @@ pub fn row_wise_udf(
 
     Ok(PyExpr {
         expr: crate::python_udf::row_wise_udf(
+            func_id,
             name,
             cls.into(),
             method.into(),
@@ -304,6 +306,7 @@ pub fn row_wise_udf(
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 pub fn batch_udf(
+    func_id: &str,
     name: &str,
     cls: Py<PyAny>,
     method: Py<PyAny>,
@@ -332,6 +335,7 @@ pub fn batch_udf(
 
     Ok(PyExpr {
         expr: crate::python_udf::batch_udf(
+            func_id,
             name,
             cls.into(),
             method.into(),
