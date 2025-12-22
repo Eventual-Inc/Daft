@@ -56,15 +56,23 @@ def test_recordbatch_sort_merge_join_semi_anti_is_sorted_false_true() -> None:
     right = _rb_from_dict({"x": [2, 3]})
 
     # Semi: keep only keys that exist on the right side
-    semi_false = left.sort_merge_join(right, left_on=[col("x")], right_on=[col("x")], how=JoinType.Semi, is_sorted=False)
-    semi_true = left.sort([col("x")]).sort_merge_join(right.sort([col("x")]), left_on=[col("x")], right_on=[col("x")], how=JoinType.Semi, is_sorted=True)
+    semi_false = left.sort_merge_join(
+        right, left_on=[col("x")], right_on=[col("x")], how=JoinType.Semi, is_sorted=False
+    )
+    semi_true = left.sort([col("x")]).sort_merge_join(
+        right.sort([col("x")]), left_on=[col("x")], right_on=[col("x")], how=JoinType.Semi, is_sorted=True
+    )
 
     assert semi_false.sort([col("x")]).to_pydict()["x"] == [2, 3]
     assert semi_true.sort([col("x")]).to_pydict()["x"] == [2, 3]
 
     # Anti: keep only keys that do not exist on the right side
-    anti_false = left.sort_merge_join(right, left_on=[col("x")], right_on=[col("x")], how=JoinType.Anti, is_sorted=False)
-    anti_true = left.sort([col("x")]).sort_merge_join(right.sort([col("x")]), left_on=[col("x")], right_on=[col("x")], how=JoinType.Anti, is_sorted=True)
+    anti_false = left.sort_merge_join(
+        right, left_on=[col("x")], right_on=[col("x")], how=JoinType.Anti, is_sorted=False
+    )
+    anti_true = left.sort([col("x")]).sort_merge_join(
+        right.sort([col("x")]), left_on=[col("x")], right_on=[col("x")], how=JoinType.Anti, is_sorted=True
+    )
 
     assert anti_false.sort([col("x")]).to_pydict()["x"] == [1, 4]
     assert anti_true.sort([col("x")]).to_pydict()["x"] == [1, 4]

@@ -503,7 +503,7 @@ mod tests {
     fn rb_from_opt_i32(name: &str, vals: &[Option<i32>]) -> RecordBatch {
         let field = Arc::new(Field::new(name, DataType::Int32));
         let arr = Box::new(ArrowInt32Array::from(vals)) as Box<dyn daft_arrow::array::Array>;
-        let col = Series::from_arrow(field, arr).unwrap();
+        let col = Series::from_arrow(field, arr.into()).unwrap();
         RecordBatch::from_nonempty_columns(vec![col]).unwrap()
     }
 
@@ -560,7 +560,7 @@ mod tests {
         let field_r = Arc::new(Field::new("key", DataType::Int64));
         let arr_l = Box::new(ArrowInt32Array::from(&[Some(1), Some(2)]))
             as Box<dyn daft_arrow::array::Array>;
-        let col_l = Series::from_arrow(field_l, arr_l).unwrap();
+        let col_l = Series::from_arrow(field_l, arr_l.into()).unwrap();
         let left = RecordBatch::from_nonempty_columns(vec![col_l]).unwrap();
 
         // Build an Int64 arrow array via arrow2
@@ -568,7 +568,7 @@ mod tests {
             Some(1i64),
             Some(3i64),
         ])) as Box<dyn daft_arrow::array::Array>;
-        let col_r = Series::from_arrow(field_r, arr_r).unwrap();
+        let col_r = Series::from_arrow(field_r, arr_r.into()).unwrap();
         let right = RecordBatch::from_nonempty_columns(vec![col_r]).unwrap();
 
         let err = merge_semi_join(&left, &right).err().unwrap();
