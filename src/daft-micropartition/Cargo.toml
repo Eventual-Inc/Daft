@@ -1,4 +1,5 @@
 [dependencies]
+arrow-array = {workspace = true}
 bincode = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 daft-arrow = {path = "../daft-arrow"}

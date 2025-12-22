@@ -2,7 +2,6 @@ use std::io::Read;
 
 use arrow_flight::FlightData;
 use common_error::{DaftError, DaftResult};
-use daft_arrow::io::ipc::read::OutOfSpecKind;
 
 /// Reading state maintenance
 struct ReadState<R> {
@@ -84,7 +83,7 @@ pub fn skip_stream_metadata<R: Read>(reader: &mut R) -> DaftResult<()> {
 
     let meta_len = meta_len
         .try_into()
-        .map_err(|_| daft_arrow::error::Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| daft_arrow::ArrowError::IpcError("NegativeFooterLength".to_string()))?;
 
     let mut meta_buffer = vec![0u8; meta_len];
     reader.read_exact(&mut meta_buffer)?;
@@ -111,7 +110,7 @@ fn process_next<R: Read>(mut state: ReadState<R>) -> DaftResult<StreamState<R>> 
 
     let meta_length: usize = meta_length
         .try_into()
-        .map_err(|_| daft_arrow::error::Error::from(OutOfSpecKind::NegativeFooterLength))?;
+        .map_err(|_| daft_arrow::ArrowError::IpcError("NegativeFooterLength".to_string()))?;
 
     if meta_length == 0 {
         return Ok(StreamState::Done);

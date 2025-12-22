@@ -2559,6 +2559,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
+ "arrow-ipc",
  "arrow-schema",
  "arrow2",
 ]
@@ -3192,6 +3193,7 @@ dependencies = [
 name = "daft-micropartition"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
  "bincode",
  "common-error",
  "common-partitioning",

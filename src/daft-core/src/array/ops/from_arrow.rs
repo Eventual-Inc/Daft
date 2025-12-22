@@ -405,10 +405,8 @@ impl FromArrow for PythonArray {
         let field: FieldRef = field.into();
         assert_eq!(field.dtype, DataType::Python);
 
-        let target_convert = field.to_physical();
-        let target_convert_arrow = target_convert.dtype.to_arrow()?;
-
-        let physical_arrow_array = arrow::compute::cast(arrow_arr.as_ref(), &target_convert_arrow)?;
+        let physical_arrow_array =
+            arrow::compute::cast(arrow_arr.as_ref(), &DataType::Binary.to_arrow()?)?;
 
         let physical_arrow_array = physical_arrow_array
             .as_any()

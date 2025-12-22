@@ -412,7 +412,7 @@ impl DataType {
                 logical_extension.to_arrow2()
             }
             Self::Unknown => Err(DaftError::TypeError(format!(
-                "Can not convert {self:?} into arrow type"
+                "Can not convert {self:?} into arrow2 type"
             ))),
         }
     }
