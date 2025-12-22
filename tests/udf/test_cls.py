@@ -312,3 +312,31 @@ def test_cls_max_concurrency_zero():
         df = daft.from_pydict({"a": [1, 2, 3]})
         result = df.select(MaxConcurrencyZero()(df["a"])).to_pydict()
         assert result == {"a": [1, 2, 3]}
+
+
+@pytest.mark.parametrize("gpus", [0.0, 0, 0.5, 1.0, 1, 2])
+def test_cls_accepts_fractional_gpus(gpus):
+    @daft.cls(gpus=gpus)
+    class Repeat:
+        def __init__(self, n: int):
+            self.n = n
+
+        def __call__(self, x) -> str:
+            return x * self.n
+
+    Repeat(2)
+
+
+def test_cls_gpus_one_point_five_is_rejected():
+    with pytest.raises(BaseException) as excinfo:
+
+        @daft.cls(gpus=1.5)
+        class BadRepeat:
+            def __init__(self, n: int):
+                self.n = n
+
+            def __call__(self, x) -> str:
+                return x * self.n
+
+        BadRepeat(2)
+    assert "num_gpus greater than 1 must be an integer" in str(excinfo.value)

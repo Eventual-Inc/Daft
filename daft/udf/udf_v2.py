@@ -58,7 +58,7 @@ class Func(Generic[P, T, C]):
     is_batch: bool
     batch_size: int | None
     unnest: bool
-    gpus: int
+    gpus: float
     use_process: bool | None
     max_concurrency: int | None
     max_retries: int | None
@@ -115,7 +115,7 @@ class Func(Generic[P, T, C]):
         cls,
         cls_: ClsBase[C],
         method: Callable[Concatenate[C, P], T],
-        gpus: int,
+        gpus: float,
         use_process: bool | None,
         max_concurrency: int | None,
         max_retries: int | None,
@@ -337,7 +337,7 @@ class ClsBase(ABC, Generic[C]):
 
 def wrap_cls(
     cls: type,
-    gpus: int,
+    gpus: float,
     use_process: bool | None,
     max_concurrency: int | None,
     max_retries: int | None,

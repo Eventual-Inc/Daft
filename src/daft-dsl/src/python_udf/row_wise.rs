@@ -1,6 +1,7 @@
 use std::{collections::HashMap, fmt::Display, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
+use common_hashable_float_wrapper::FloatWrapper as HashableF64;
 use common_metrics::MetricsCollector;
 use daft_core::{prelude::*, series::Series};
 use itertools::Itertools;
@@ -27,7 +28,7 @@ pub fn row_wise_udf(
     method: RuntimePyObject,
     is_async: bool,
     return_dtype: DataType,
-    gpus: usize,
+    gpus: HashableF64<f64>,
     use_process: Option<bool>,
     max_concurrency: Option<NonZeroUsize>,
     max_retries: Option<usize>,
@@ -60,7 +61,7 @@ pub struct RowWisePyFn {
     pub return_dtype: DataType,
     pub original_args: RuntimePyObject,
     pub args: Vec<ExprRef>,
-    pub gpus: usize,
+    pub gpus: HashableF64<f64>,
     pub use_process: Option<bool>,
     pub max_concurrency: Option<NonZeroUsize>,
     pub max_retries: Option<usize>,
@@ -91,7 +92,7 @@ impl RowWisePyFn {
             return_dtype: self.return_dtype.clone(),
             original_args: self.original_args.clone(),
             args: children,
-            gpus: self.gpus,
+            gpus: self.gpus.clone(),
             use_process: self.use_process,
             max_concurrency: self.max_concurrency,
             max_retries: self.max_retries,
