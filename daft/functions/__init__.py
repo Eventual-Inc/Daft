@@ -30,6 +30,7 @@ from .columnar import (
     columns_min,
     columns_max,
 )
+from .process import run_process
 from .datetime import (
     date,
     day,
@@ -384,6 +385,7 @@ __all__ = [
     "row_number",
     "rpad",
     "rstrip",
+    "run_process",
     "sec",
     "second",
     "serialize",
