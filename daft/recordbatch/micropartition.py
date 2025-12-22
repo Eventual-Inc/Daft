@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from daft.daft import (
     CsvConvertOptions,
@@ -24,7 +24,7 @@ from daft.recordbatch.recordbatch import RecordBatch
 from daft.series import Series
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
 
     import pandas as pd
 

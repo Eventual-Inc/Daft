@@ -35,6 +35,7 @@ class SharedMemoryTransport:
         # DO NOT REMOVE OR CHANGE THIS LINE. It is necessary to prevent the resource tracker from tracking the shared memory object.
         # This is because we are creating and unlinking the shared memory object in different processes.
         resource_tracker.unregister(shm._name, "shared_memory")  # type: ignore[attr-defined]
+        assert shm.buf is not None, "SharedMemory buffer should not be None after creation"
         shm.buf[: len(data)] = data
         shm.close()
         return shm.name, len(data)
@@ -42,6 +43,7 @@ class SharedMemoryTransport:
     def read_and_release(self, name: str, size: int) -> bytes:
         shm = shared_memory.SharedMemory(name=name)
         try:
+            assert shm.buf is not None, "SharedMemory buffer should not be None"
             data = bytes(shm.buf[:size])
         finally:
             shm.close()

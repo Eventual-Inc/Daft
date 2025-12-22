@@ -1,7 +1,6 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import Optional, Union
 
 from daft.api_annotations import PublicAPI
 from daft.context import get_context
@@ -11,7 +10,7 @@ from daft.logical.builder import LogicalPlanBuilder
 
 
 @PublicAPI
-def from_glob_path(path: Union[str, list[str]], io_config: Optional[IOConfig] = None) -> DataFrame:
+def from_glob_path(path: str | list[str], io_config: IOConfig | None = None) -> DataFrame:
     """Creates a DataFrame of file paths and other metadata from a glob path.
 
     This method supports wildcards:

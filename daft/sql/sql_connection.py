@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from daft.dependencies import pa
 from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from sqlalchemy.engine import Connection
 
 

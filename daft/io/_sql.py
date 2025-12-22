@@ -1,7 +1,8 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Optional, Union
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from daft import context, from_pydict
 from daft.api_annotations import PublicAPI
@@ -19,14 +20,14 @@ if TYPE_CHECKING:
 @PublicAPI
 def read_sql(
     sql: str,
-    conn: Union[Callable[[], "Connection"], str],
-    partition_col: Optional[str] = None,
-    num_partitions: Optional[int] = None,
+    conn: Callable[[], "Connection"] | str,
+    partition_col: str | None = None,
+    num_partitions: int | None = None,
     partition_bound_strategy: str = "min-max",
     disable_pushdowns_to_sql: bool = False,
     infer_schema: bool = True,
     infer_schema_length: int = 10,
-    schema: Optional[dict[str, DataType]] = None,
+    schema: dict[str, DataType] | None = None,
 ) -> DataFrame:
     """Create a DataFrame from the results of a SQL query.
 
@@ -83,7 +84,9 @@ def read_sql(
 
         Read data from a SQL query and partition the data into 3 partitions:
 
-        >>> df = daft.read_sql("SELECT * FROM my_table", "sqlite:///my_database.db", partition_col="id", num_partitions=3)
+        >>> df = daft.read_sql(
+        ...     "SELECT * FROM my_table", "sqlite:///my_database.db", partition_col="id", num_partitions=3
+        ... )
     """
     if num_partitions is not None and partition_col is None:
         raise ValueError("Failed to execute sql: partition_col must be specified when num_partitions is specified")

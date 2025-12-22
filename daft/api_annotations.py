@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import functools
 import inspect
-from collections.abc import Callable as CallableABC
+import types
+from collections.abc import Callable
 from typing import (
     Any,
-    Callable,
     ForwardRef,
     Literal,
     ParamSpec,
@@ -81,24 +81,24 @@ def type_check_function(func: Callable[..., Any], *args: Any, **kwargs: Any) -> 
         origin_T = get_origin(T)
 
         # Handle Callable types
-        if (origin_T is CallableABC or T is CallableABC) and isinstance(CallableABC, type):
-            return isinstance(value, CallableABC)
+        if (origin_T is Callable or T is Callable) and isinstance(Callable, type):
+            return isinstance(value, Callable)
 
         # Handle generic types that are subclasses of Callable
         if (
             origin_T is not None
             and hasattr(origin_T, "__mro__")
-            and CallableABC in getattr(origin_T, "__mro__", [])
-            and isinstance(CallableABC, type)
+            and Callable in getattr(origin_T, "__mro__", [])
+            and isinstance(Callable, type)
         ):
-            return isinstance(value, CallableABC)
+            return isinstance(value, Callable)
 
         # T is a builtin primitive type, like `int`
         if origin_T is None:
             return isinstance(value, T)
 
-        # T is a `typing.Union`
-        if origin_T is Union:
+        # T is a `typing.Union` or `types.UnionType` (X | Y syntax in Python 3.10+)
+        if origin_T is Union or origin_T is types.UnionType:
             union_types = get_args(T)
             return any(isinstance_helper(value, union_type) for union_type in union_types)
 

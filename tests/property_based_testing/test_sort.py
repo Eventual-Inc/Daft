@@ -129,9 +129,9 @@ class DataframeSortStateMachine(RuleBasedStateMachine):
                     assert a is not None and not _is_nan(a)
                     assert b is not None and not _is_nan(b)
 
-                    assert (
-                        a >= b
-                    ), f"current_val={current_val} vs next_val={next_val} is an invalid sort order for desc={desc}"
+                    assert a >= b, (
+                        f"current_val={current_val} vs next_val={next_val} is an invalid sort order for desc={desc}"
+                    )
                     if a != b:
                         break
 

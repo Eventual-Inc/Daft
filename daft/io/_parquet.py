@@ -1,7 +1,6 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import Optional, Union
 
 from daft import context, runners
 from daft.api_annotations import PublicAPI
@@ -18,16 +17,16 @@ from daft.io.common import get_tabular_files_scan
 
 @PublicAPI
 def read_parquet(
-    path: Union[str, list[str]],
-    row_groups: Optional[list[list[int]]] = None,
+    path: str | list[str],
+    row_groups: list[list[int]] | None = None,
     infer_schema: bool = True,
-    schema: Optional[dict[str, DataType]] = None,
-    io_config: Optional[IOConfig] = None,
-    file_path_column: Optional[str] = None,
+    schema: dict[str, DataType] | None = None,
+    io_config: IOConfig | None = None,
+    file_path_column: str | None = None,
     hive_partitioning: bool = False,
-    coerce_int96_timestamp_unit: Optional[Union[str, TimeUnit]] = None,
-    _multithreaded_io: Optional[bool] = None,
-    _chunk_size: Optional[int] = None,  # A hidden parameter for testing purposes.
+    coerce_int96_timestamp_unit: str | TimeUnit | None = None,
+    _multithreaded_io: bool | None = None,
+    _chunk_size: int | None = None,  # A hidden parameter for testing purposes.
 ) -> DataFrame:
     """Creates a DataFrame from Parquet file(s).
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from daft.context import get_context
 from daft.daft import (
@@ -21,6 +21,7 @@ from daft.logical.schema import Schema
 
 if TYPE_CHECKING:
     import pathlib
+    from collections.abc import Callable
 
     from pyiceberg.table import Table as IcebergTable
 

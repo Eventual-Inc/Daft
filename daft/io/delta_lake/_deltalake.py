@@ -1,7 +1,7 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 import os
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Union
 
 from daft import context, runners
 from daft.api_annotations import PublicAPI
@@ -23,10 +23,10 @@ if TYPE_CHECKING:
 @PublicAPI
 def read_deltalake(
     table: Union[str, DataCatalogTable, "UnityCatalogTable"],
-    version: Optional[Union[int, str, "datetime"]] = None,
-    io_config: Optional[IOConfig] = None,
+    version: Union[int, str, "datetime"] | None = None,
+    io_config: IOConfig | None = None,
     ignore_deletion_vectors: bool = False,
-    _multithreaded_io: Optional[bool] = None,
+    _multithreaded_io: bool | None = None,
 ) -> DataFrame:
     """Create a DataFrame from a Delta Lake table.
 

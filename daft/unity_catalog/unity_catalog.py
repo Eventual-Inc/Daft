@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import warnings
-from typing import TYPE_CHECKING, Callable, Literal
+from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlparse
 
 import unitycatalog
@@ -10,6 +10,8 @@ import unitycatalog
 from daft.io import AzureConfig, IOConfig, S3Config, UnityConfig
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from unitycatalog.types import (
         GenerateTemporaryTableCredentialResponse,
         GenerateTemporaryVolumeCredentialResponse,

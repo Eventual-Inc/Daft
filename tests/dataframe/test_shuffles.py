@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import random
 import tempfile
+from collections.abc import Callable
 from contextlib import contextmanager
 from functools import partial
-from typing import Callable
 
 import numpy as np
 import pyarrow as pa

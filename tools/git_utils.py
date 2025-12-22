@@ -1,7 +1,6 @@
 import subprocess
 import time
 import typing
-from typing import Optional
 
 import gha_run_cluster_job
 from github import Auth, Github
@@ -62,7 +61,7 @@ def get_latest_run(workflow: Workflow) -> WorkflowRun:
     raise RuntimeError("Unable to list all workflow invocations")
 
 
-def get_name_and_commit_hash(local_branch_name: Optional[str]) -> tuple[str, str]:
+def get_name_and_commit_hash(local_branch_name: str | None) -> tuple[str, str]:
     local_branch_name = local_branch_name or "HEAD"
     remote_branch_name = local_branch_name
 
@@ -94,7 +93,7 @@ def get_name_and_commit_hash(local_branch_name: Optional[str]) -> tuple[str, str
     return remote_branch_name, commit_hash
 
 
-def parse_questions(questions: Optional[str], total_number_of_questions: int) -> list[int]:
+def parse_questions(questions: str | None, total_number_of_questions: int) -> list[int]:
     if questions is None:
         return list(range(1, total_number_of_questions + 1))
     else:

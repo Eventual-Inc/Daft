@@ -447,9 +447,9 @@ def test_table_agg_global(case) -> None:
     assert len(res_set) == 1
     _assert_all_hashable(res_set[0], "test_table_agg_global")
     assert len(res_set[0]) == len(set(x for x in res_set[0] if x is not None)), "Result should contain no duplicates"
-    assert set(x for x in res_set[0] if x is not None) == set(
-        x for x in exp_set[0] if x is not None
-    ), "Sets should contain same non-null elements"
+    assert set(x for x in res_set[0] if x is not None) == set(x for x in exp_set[0] if x is not None), (
+        "Sets should contain same non-null elements"
+    )
     assert None not in res_set[0], "Result should not contain nulls"
 
 

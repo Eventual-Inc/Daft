@@ -107,18 +107,18 @@ def test_list_sort_groupby_larger_than_morsel_size():
 
     result_dict = result.to_pydict()
 
-    assert (
-        len(result_dict["record_ids_key"]) == num_groups
-    ), f"Expected {num_groups} groups, got {len(result_dict['record_ids_key'])}"
+    assert len(result_dict["record_ids_key"]) == num_groups, (
+        f"Expected {num_groups} groups, got {len(result_dict['record_ids_key'])}"
+    )
 
     # Each group should have exactly expected_records_per_group records: Group i gets records r-i*expected_records to r-(i+1)*expected_records-1
     for group_id, record_list in zip(result_dict["group_id"], result_dict["record_ids_key"]):
-        assert (
-            len(record_list) == expected_records_per_group
-        ), f"Group {group_id} should have {expected_records_per_group} records, got {len(record_list)}"
+        assert len(record_list) == expected_records_per_group, (
+            f"Group {group_id} should have {expected_records_per_group} records, got {len(record_list)}"
+        )
 
         start_record = int(group_id) * expected_records_per_group
         expected_sorted = sorted([f"r-{start_record + i}" for i in range(expected_records_per_group)])
-        assert (
-            record_list == expected_sorted
-        ), f"Group {group_id} should be sorted: {record_list[:]}... vs {expected_sorted[:]}..."
+        assert record_list == expected_sorted, (
+            f"Group {group_id} should be sorted: {record_list[:]}... vs {expected_sorted[:]}..."
+        )

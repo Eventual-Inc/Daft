@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime
 import itertools
-from typing import Callable
+from collections.abc import Callable
 
 import pyarrow as pa
 import pytest
@@ -198,9 +198,9 @@ def assert_typing_resolve_vs_runtime_behavior(
         # Check that schema resolution and Series runtime return the same datatype
         resolved_schema = projection.resolve_schema(table.schema())
         result = run_kernel()
-        assert (
-            resolved_schema["result"].dtype == result.datatype()
-        ), "Should have matching result types at runtime and schema-resolve-time"
+        assert resolved_schema["result"].dtype == result.datatype(), (
+            "Should have matching result types at runtime and schema-resolve-time"
+        )
     else:
         # Check that we fail to resolve types during schema resolution
         with pytest.raises(ValueError):

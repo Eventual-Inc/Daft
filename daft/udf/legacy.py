@@ -4,7 +4,8 @@ import dataclasses
 import functools
 import inspect
 import warnings
-from typing import TYPE_CHECKING, Any, Callable, Optional, TypeAlias, Union, cast
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, TypeAlias, Union, cast
 
 import daft
 from daft.daft import PyDataType, PySeries, ResourceRequest
@@ -20,10 +21,10 @@ if TYPE_CHECKING:
     from collections.abc import Generator
 
 
-InitArgsType: TypeAlias = Optional[tuple[tuple[Any, ...], dict[str, Any]]]
+InitArgsType: TypeAlias = tuple[tuple[Any, ...], dict[str, Any]] | None
 UdfReturnType: TypeAlias = Union[Series, list[Any], "np.ndarray[Any, Any]", "pa.Array", "pa.ChunkedArray"]
 UserDefinedPyFunc: TypeAlias = Callable[..., UdfReturnType]
-UserDefinedPyFuncLike: TypeAlias = Union[UserDefinedPyFunc, type]
+UserDefinedPyFuncLike: TypeAlias = UserDefinedPyFunc | type
 
 
 @dataclasses.dataclass(frozen=True)
@@ -114,9 +115,9 @@ def run_udf(
     function_parameter_name_to_arg_order = {name: i for i, name in enumerate(expression_args)}
 
     input_series_length = len(input_series_list[0])
-    assert all(
-        len(input_series) == input_series_length for input_series in input_series_list
-    ), "All input series must be of the same length"
+    assert all(len(input_series) == input_series_length for input_series in input_series_list), (
+        "All input series must be of the same length"
+    )
 
     # For each call to the UDF, get the arguments to pass to the UDF in the order that they should be passed
     def get_args_for_slice(start: int, end: int) -> tuple[list[Series | Any], dict[str, Any]]:

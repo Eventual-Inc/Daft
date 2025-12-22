@@ -18,7 +18,9 @@ def row_number() -> Expression:
         >>> import daft
         >>> from daft.window import Window
         >>> from daft.functions import row_number
-        >>> df = daft.from_pydict({"category": ["A", "A", "A", "A", "B", "B", "B", "B"], "value": [1, 7, 2, 9, 1, 3, 3, 7]})
+        >>> df = daft.from_pydict(
+        ...     {"category": ["A", "A", "A", "A", "B", "B", "B", "B"], "value": [1, 7, 2, 9, 1, 3, 3, 7]}
+        ... )
         >>>
         >>> # Ascending order
         >>> window = Window().partition_by("category").order_by("value")
@@ -62,7 +64,9 @@ def rank() -> Expression:
         >>> import daft
         >>> from daft.window import Window
         >>> from daft.functions import rank
-        >>> df = daft.from_pydict({"category": ["A", "A", "A", "A", "B", "B", "B", "B"], "value": [1, 3, 3, 7, 7, 7, 4, 4]})
+        >>> df = daft.from_pydict(
+        ...     {"category": ["A", "A", "A", "A", "B", "B", "B", "B"], "value": [1, 3, 3, 7, 7, 7, 4, 4]}
+        ... )
         >>>
         >>> window = Window().partition_by("category").order_by("value", desc=True)
         >>> df = df.with_column("rank", rank().over(window))
@@ -107,7 +111,9 @@ def dense_rank() -> Expression:
         >>> import daft
         >>> from daft.window import Window
         >>> from daft.functions import dense_rank
-        >>> df = daft.from_pydict({"category": ["A", "A", "A", "A", "B", "B", "B", "B"], "value": [1, 3, 3, 7, 7, 7, 4, 4]})
+        >>> df = daft.from_pydict(
+        ...     {"category": ["A", "A", "A", "A", "B", "B", "B", "B"], "value": [1, 3, 3, 7, 7, 7, 4, 4]}
+        ... )
         >>>
         >>> window = Window().partition_by("category").order_by("value", desc=True)
         >>> df = df.with_column("dense_rank", dense_rank().over(window))

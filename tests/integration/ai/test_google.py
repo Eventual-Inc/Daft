@@ -12,8 +12,8 @@ from __future__ import annotations
 import os
 import time
 from collections import defaultdict
-from collections.abc import Mapping
-from typing import Any, Callable
+from collections.abc import Callable, Mapping
+from typing import Any
 
 import pytest
 from pydantic import BaseModel, Field

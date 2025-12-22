@@ -3,7 +3,6 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
 
 from daft.daft import IOConfig
 from daft.io.aws_config import boto3_client_from_s3_config
@@ -32,7 +31,7 @@ class DataCatalogTable:
     catalog: DataCatalogType
     database_name: str
     table_name: str
-    catalog_id: Optional[str] = None
+    catalog_id: str | None = None
 
     def table_uri(self, io_config: IOConfig) -> str:
         """Get the URI of the table in the data catalog.

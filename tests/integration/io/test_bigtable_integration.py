@@ -96,9 +96,9 @@ class TestBigtableIntegration:
                     continue
                 assert col_name in bigtable_dict[row_key], f"Column {col_name} not found in Bigtable row {row_key}"
 
-                assert (
-                    daft_value == bigtable_dict[row_key][col_name]
-                ), f"Value mismatch for row {row_key}, column {col_name}: Daft='{daft_value}', Bigtable='{bigtable_dict[row_key][col_name]}'"
+                assert daft_value == bigtable_dict[row_key][col_name], (
+                    f"Value mismatch for row {row_key}, column {col_name}: Daft='{daft_value}', Bigtable='{bigtable_dict[row_key][col_name]}'"
+                )
 
         for row_key in bigtable_dict:
             assert row_key in daft_dict, f"Extra row {row_key} found in Bigtable that wasn't in Daft DataFrame"

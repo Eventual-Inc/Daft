@@ -4,7 +4,7 @@ import logging
 import time
 import uuid
 from collections.abc import Generator, Iterable, Iterator
-from typing import TYPE_CHECKING, Any, Union, cast
+from typing import TYPE_CHECKING, Any, cast
 
 # The ray runner is not a top-level module, so we don't need to lazily import pyarrow to minimize
 # import times. If this changes, we first need to make the daft.lazy_import.LazyImport class
@@ -116,7 +116,7 @@ else:
         _RAY_DATA_EXTENSIONS_AVAILABLE = False
 
 
-@ray.remote  # type: ignore[misc]
+@ray.remote  # type: ignore[untyped-decorator]
 def _glob_path_into_file_infos(
     paths: list[str],
     file_format_config: FileFormatConfig | None,
@@ -137,7 +137,7 @@ def _glob_path_into_file_infos(
     return file_infos
 
 
-@ray.remote  # type: ignore[misc]
+@ray.remote  # type: ignore[untyped-decorator]
 def _make_ray_block_from_micropartition(partition: MicroPartition) -> RayDatasetBlock | list[dict[str, Any]]:
     try:
         daft_schema = partition.schema()
@@ -251,12 +251,12 @@ def _micropartition_from_arrow_with_ray_data_extensions(arrow_table: pa.Table) -
     return MicroPartition.from_arrow(arrow_table)
 
 
-@ray.remote  # type: ignore[misc]
+@ray.remote  # type: ignore[untyped-decorator]
 def _make_daft_partition_from_ray_dataset_blocks(ray_dataset_block: pa.Table, daft_schema: Schema) -> MicroPartition:
     return _micropartition_from_arrow_with_ray_data_extensions(ray_dataset_block)
 
 
-@ray.remote(num_returns=2)  # type: ignore[misc]
+@ray.remote(num_returns=2)  # type: ignore[untyped-decorator]
 def _make_daft_partition_from_dask_dataframe_partitions(
     dask_df_partition: pd.DataFrame,
 ) -> tuple[MicroPartition, daft.Schema]:
@@ -332,7 +332,7 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
 
         dask.config.set(scheduler=ray_dask_get)
 
-        @dask.delayed  # type: ignore[misc]
+        @dask.delayed  # type: ignore[untyped-decorator]
         def _make_dask_dataframe_partition_from_micropartition(partition: MicroPartition) -> pd.DataFrame:
             return partition.to_pandas()
 
@@ -376,7 +376,7 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
 
 def _from_arrow_type_with_ray_data_extensions(arrow_type: pa.DataType) -> DataType:
     if _RAY_DATA_EXTENSIONS_AVAILABLE and isinstance(arrow_type, tuple(_TENSOR_EXTENSION_TYPES)):
-        tensor_types = cast("Union[ArrowTensorType, ArrowVariableShapedTensorType]", arrow_type)
+        tensor_types = cast("ArrowTensorType | ArrowVariableShapedTensorType", arrow_type)
         scalar_dtype = _from_arrow_type_with_ray_data_extensions(tensor_types.scalar_type)
         # Both ArrowTensorType and ArrowTensorTypeV2 have a shape attribute
         # ArrowVariableShapedTensorType does not
@@ -479,7 +479,7 @@ class RayRunnerIO(runner_io.RunnerIO):
 # Give the same function different names to aid in profiling data distribution.
 
 
-@ray.remote  # type: ignore[misc]
+@ray.remote  # type: ignore[untyped-decorator]
 def get_metas(*partitions: MicroPartition) -> list[PartitionMetadata]:
     return [PartitionMetadata.from_table(partition) for partition in partitions]
 

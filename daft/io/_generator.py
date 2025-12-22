@@ -1,8 +1,8 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from collections.abc import Iterator
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable, Iterator
+from typing import TYPE_CHECKING
 
 from daft.daft import PyPartitionField, PyPushdowns, PyRecordBatch, ScanOperatorHandle, ScanTask
 from daft.dataframe import DataFrame

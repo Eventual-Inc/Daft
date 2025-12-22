@@ -101,9 +101,9 @@ def test_multiple_window_partitions(make_df):
             value = result_dict["value"][idx]
             expected_rank = value_to_rank[value]
             actual_rank = result_dict["letter_row_number"][idx]
-            assert (
-                actual_rank == expected_rank
-            ), f"Incorrect row number for letter {letter}, value {value}: got {actual_rank}, expected {expected_rank}"
+            assert actual_rank == expected_rank, (
+                f"Incorrect row number for letter {letter}, value {value}: got {actual_rank}, expected {expected_rank}"
+            )
 
     for num in ["1", "2", "3"]:
         num_indices = [i for i, n in enumerate(result_dict["num"]) if n == num]
@@ -115,9 +115,9 @@ def test_multiple_window_partitions(make_df):
             value = result_dict["value"][idx]
             expected_rank = value_to_rank[value]
             actual_rank = result_dict["num_row_number"][idx]
-            assert (
-                actual_rank == expected_rank
-            ), f"Incorrect row number for num {num}, value {value}: got {actual_rank}, expected {expected_rank}"
+            assert actual_rank == expected_rank, (
+                f"Incorrect row number for num {num}, value {value}: got {actual_rank}, expected {expected_rank}"
+            )
 
     for letter in ["A", "B", "C"]:
         for num in ["1", "2", "3"]:
@@ -134,9 +134,9 @@ def test_multiple_window_partitions(make_df):
                 value = result_dict["value"][idx]
                 expected_rank = value_to_rank[value]
                 actual_rank = result_dict["combined_row_number"][idx]
-                assert (
-                    actual_rank == expected_rank
-                ), f"Incorrect row number for {letter}{num}, value {value}: got {actual_rank}, expected {expected_rank}"
+                assert actual_rank == expected_rank, (
+                    f"Incorrect row number for {letter}{num}, value {value}: got {actual_rank}, expected {expected_rank}"
+                )
 
 
 def test_multi_window_agg_functions(make_df):
@@ -190,9 +190,9 @@ def test_multi_window_agg_functions(make_df):
                 value = result_dict["value"][idx]
                 expected_rank = value_to_rank[value]
                 actual_rank = result_dict["multi_row_number"][idx]
-                assert (
-                    actual_rank == expected_rank
-                ), f"Incorrect multi-partition row number for {category}/{group}, value {value}: got {actual_rank}, expected {expected_rank}"
+                assert actual_rank == expected_rank, (
+                    f"Incorrect multi-partition row number for {category}/{group}, value {value}: got {actual_rank}, expected {expected_rank}"
+                )
 
     for category in ["A", "B"]:
         indices = [i for i, cat in enumerate(result_dict["category"]) if cat == category]
@@ -205,9 +205,9 @@ def test_multi_window_agg_functions(make_df):
             value = result_dict["value"][idx]
             expected_rank = value_to_rank[value]
             actual_rank = result_dict["single_row_number"][idx]
-            assert (
-                actual_rank == expected_rank
-            ), f"Incorrect single-partition row number for {category}, value {value}: got {actual_rank}, expected {expected_rank}"
+            assert actual_rank == expected_rank, (
+                f"Incorrect single-partition row number for {category}, value {value}: got {actual_rank}, expected {expected_rank}"
+            )
 
 
 def test_rank_function_single_row_per_group(make_df):
@@ -368,9 +368,9 @@ def test_multiple_rank_functions(make_df):
 
             if rank_type == "row_number":
                 all_ranks = sorted([r for ranks in value_to_ranks.values() for r in ranks])
-                assert len(all_ranks) == len(
-                    set(all_ranks)
-                ), f"Row numbers should be unique within partition {partition_key}"
+                assert len(all_ranks) == len(set(all_ranks)), (
+                    f"Row numbers should be unique within partition {partition_key}"
+                )
 
                 assert all_ranks == list(range(1, len(all_ranks) + 1)), f"Row numbers should be sequential: {all_ranks}"
 
@@ -384,24 +384,24 @@ def test_multiple_rank_functions(make_df):
                 prev_rank = 0
                 for value in sorted(unique_value_ranks.keys()):
                     rank = unique_value_ranks[value]
-                    assert (
-                        rank > prev_rank
-                    ), f"Rank should increase for larger values: {value} has rank {rank}, previous rank was {prev_rank}"
+                    assert rank > prev_rank, (
+                        f"Rank should increase for larger values: {value} has rank {rank}, previous rank was {prev_rank}"
+                    )
 
                     if prev_value is not None:
                         expected_min_rank = prev_rank + len(value_to_ranks[prev_value])
-                        assert (
-                            rank >= expected_min_rank
-                        ), f"Rank for value {value} should be at least {expected_min_rank}, got {rank}"
+                        assert rank >= expected_min_rank, (
+                            f"Rank for value {value} should be at least {expected_min_rank}, got {rank}"
+                        )
 
                     prev_value = value
                     prev_rank = rank
 
             elif rank_type == "dense_rank":
                 for value, ranks in value_to_ranks.items():
-                    assert (
-                        len(set(ranks)) == 1
-                    ), f"All instances of value {value} should have the same dense rank: {ranks}"
+                    assert len(set(ranks)) == 1, (
+                        f"All instances of value {value} should have the same dense rank: {ranks}"
+                    )
 
                 unique_value_ranks = {value: ranks[0] for value, ranks in value_to_ranks.items()}
 
@@ -411,9 +411,9 @@ def test_multiple_rank_functions(make_df):
                 assert unique_ranks[0] == 1, f"First dense rank should be 1, got {unique_ranks[0]}"
 
                 for i in range(1, len(unique_ranks)):
-                    assert (
-                        unique_ranks[i] == unique_ranks[i - 1] + 1
-                    ), f"Dense rank should increase by 1 for each distinct value: {unique_values[i]} has rank {unique_ranks[i]}, previous was {unique_ranks[i - 1]}"
+                    assert unique_ranks[i] == unique_ranks[i - 1] + 1, (
+                        f"Dense rank should increase by 1 for each distinct value: {unique_values[i]} has rank {unique_ranks[i]}, previous was {unique_ranks[i - 1]}"
+                    )
 
     for partition, col_prefix in [
         (["category"], "by_category"),

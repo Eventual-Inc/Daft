@@ -4,7 +4,6 @@ import pytest
 import tiktoken
 
 import daft
-import daft.errors
 from daft import DataType, col
 from daft.exceptions import DaftCoreException
 

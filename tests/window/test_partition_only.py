@@ -203,9 +203,9 @@ def test_similar_partition_keys(make_df):
     expected_dict = result.to_pydict()
 
     for i in range(len(expected_dict["key1"])):
-        assert (
-            expected_dict["sum"][i] == expected_dict["value"][i]
-        ), f"Hash collision detected for keys {expected_dict['key1'][i]}/{expected_dict['key2'][i]}"
+        assert expected_dict["sum"][i] == expected_dict["value"][i], (
+            f"Hash collision detected for keys {expected_dict['key1'][i]}/{expected_dict['key2'][i]}"
+        )
 
 
 def test_null_partition_values(make_df):
@@ -232,17 +232,17 @@ def test_null_partition_values(make_df):
             null_values = [result_dict["value"][i] for i in null_indices]
             expected_sum = sum(null_values)
             actual_sums = [result_dict["sum"][i] for i in null_indices]
-            assert all(
-                sum == expected_sum for sum in actual_sums
-            ), f"Incorrect sum for null category: {actual_sums} != {expected_sum}"
+            assert all(sum == expected_sum for sum in actual_sums), (
+                f"Incorrect sum for null category: {actual_sums} != {expected_sum}"
+            )
         else:
             cat_indices = [i for i, cat in enumerate(result_dict["category"]) if cat == category]
             cat_values = [result_dict["value"][i] for i in cat_indices]
             expected_sum = sum(cat_values)
             actual_sums = [result_dict["sum"][i] for i in cat_indices]
-            assert all(
-                sum == expected_sum for sum in actual_sums
-            ), f"Incorrect sum for category {category}: {actual_sums} != {expected_sum}"
+            assert all(sum == expected_sum for sum in actual_sums), (
+                f"Incorrect sum for category {category}: {actual_sums} != {expected_sum}"
+            )
 
 
 def test_multiple_window_functions(make_df):
@@ -310,9 +310,9 @@ def test_many_partitions(make_df):
     result_dict = result.to_pydict()
 
     for i in range(len(result_dict["category"])):
-        assert (
-            result_dict["sum"][i] == result_dict["value"][i]
-        ), f"Expected sum equal to value for single-row partition {result_dict['category'][i]}"
+        assert result_dict["sum"][i] == result_dict["value"][i], (
+            f"Expected sum equal to value for single-row partition {result_dict['category'][i]}"
+        )
 
 
 def test_window_mean_minus_value(make_df):
@@ -494,18 +494,18 @@ def test_multiple_window_partitions(make_df):
         letter_values = [result_dict["value"][i] for i in letter_indices]
         expected_letter_sum = sum(letter_values)
         actual_letter_sums = [result_dict["letter_sum"][i] for i in letter_indices]
-        assert all(
-            sum == expected_letter_sum for sum in actual_letter_sums
-        ), f"Incorrect sum for letter {letter}: {actual_letter_sums} != {expected_letter_sum}"
+        assert all(sum == expected_letter_sum for sum in actual_letter_sums), (
+            f"Incorrect sum for letter {letter}: {actual_letter_sums} != {expected_letter_sum}"
+        )
 
     for num in ["1", "2", "3"]:
         num_indices = [i for i, n in enumerate(result_dict["num"]) if n == num]
         num_values = [result_dict["value"][i] for i in num_indices]
         expected_num_sum = sum(num_values)
         actual_num_sums = [result_dict["num_sum"][i] for i in num_indices]
-        assert all(
-            sum == expected_num_sum for sum in actual_num_sums
-        ), f"Incorrect sum for number {num}: {actual_num_sums} != {expected_num_sum}"
+        assert all(sum == expected_num_sum for sum in actual_num_sums), (
+            f"Incorrect sum for number {num}: {actual_num_sums} != {expected_num_sum}"
+        )
 
     for letter in ["A", "B", "C"]:
         for num in ["1", "2", "3"]:
@@ -517,9 +517,9 @@ def test_multiple_window_partitions(make_df):
             combined_values = [result_dict["value"][i] for i in combined_indices]
             expected_combined_sum = sum(combined_values)
             actual_combined_sums = [result_dict["combined_sum"][i] for i in combined_indices]
-            assert all(
-                sum == expected_combined_sum for sum in actual_combined_sums
-            ), f"Incorrect sum for combination {letter}{num}: {actual_combined_sums} != {expected_combined_sum}"
+            assert all(sum == expected_combined_sum for sum in actual_combined_sums), (
+                f"Incorrect sum for combination {letter}{num}: {actual_combined_sums} != {expected_combined_sum}"
+            )
 
 
 def test_multi_window_agg_functions(make_df):
@@ -573,12 +573,12 @@ def test_multi_window_agg_functions(make_df):
             expected_avg = sum(values) / len(values)
 
             for idx in indices:
-                assert (
-                    result_dict["sum_multi"][idx] == expected_sum
-                ), f"Incorrect sum for {category}/{group}: {result_dict['sum_multi'][idx]} != {expected_sum}"
-                assert (
-                    abs(result_dict["avg_multi"][idx] - expected_avg) < 1e-10
-                ), f"Incorrect avg for {category}/{group}: {result_dict['avg_multi'][idx]} != {expected_avg}"
+                assert result_dict["sum_multi"][idx] == expected_sum, (
+                    f"Incorrect sum for {category}/{group}: {result_dict['sum_multi'][idx]} != {expected_sum}"
+                )
+                assert abs(result_dict["avg_multi"][idx] - expected_avg) < 1e-10, (
+                    f"Incorrect avg for {category}/{group}: {result_dict['avg_multi'][idx]} != {expected_avg}"
+                )
 
     for category in ["A", "B"]:
         indices = [i for i, cat in enumerate(result_dict["category"]) if cat == category]
@@ -589,12 +589,12 @@ def test_multi_window_agg_functions(make_df):
         expected_max = max(values)
 
         for idx in indices:
-            assert (
-                result_dict["min_single"][idx] == expected_min
-            ), f"Incorrect min for {category}: {result_dict['min_single'][idx]} != {expected_min}"
-            assert (
-                result_dict["max_single"][idx] == expected_max
-            ), f"Incorrect max for {category}: {result_dict['max_single'][idx]} != {expected_max}"
+            assert result_dict["min_single"][idx] == expected_min, (
+                f"Incorrect min for {category}: {result_dict['min_single'][idx]} != {expected_min}"
+            )
+            assert result_dict["max_single"][idx] == expected_max, (
+                f"Incorrect max for {category}: {result_dict['max_single'][idx]} != {expected_max}"
+            )
 
 
 def test_without_source_columns_and_with_duplicate_window_functions(make_df):
@@ -683,9 +683,9 @@ def test_window_on_hash_partitioned_df_does_not_shuffle():
 
     # Assert that "Repartition" only shows up 3 times in the explain output: logical + optimized + physical
     # The window operation should NOT add an additional repartition since the input is already hash partitioned
-    assert (
-        captured.count("Repartition") == 3
-    ), f"Expected 'Repartition' to appear 3 times, got {captured.count('Repartition')}\n{captured}"
+    assert captured.count("Repartition") == 3, (
+        f"Expected 'Repartition' to appear 3 times, got {captured.count('Repartition')}\n{captured}"
+    )
 
 
 @pytest.mark.skipif(
@@ -716,9 +716,9 @@ def test_window_on_hash_partitioned_df_multiple_columns_does_not_shuffle():
     captured = plan_io.getvalue()
 
     # Assert that "Repartition" only shows up 3 times in the explain output
-    assert (
-        captured.count("Repartition") == 3
-    ), f"Expected 'Repartition' to appear 3 times, got {captured.count('Repartition')}\n{captured}"
+    assert captured.count("Repartition") == 3, (
+        f"Expected 'Repartition' to appear 3 times, got {captured.count('Repartition')}\n{captured}"
+    )
 
 
 @pytest.mark.skipif(
@@ -750,6 +750,6 @@ def test_window_on_hash_partitioned_df_with_different_partition_does_shuffle():
     captured = plan_io.getvalue()
 
     # Assert that "Repartition" shows up MORE than 3 times because we need an additional shuffle
-    assert (
-        captured.count("Repartition") > 3
-    ), f"Expected 'Repartition' to appear more than 3 times (window requires additional shuffle), got {captured.count('Repartition')}\n{captured}"
+    assert captured.count("Repartition") > 3, (
+        f"Expected 'Repartition' to appear more than 3 times (window requires additional shuffle), got {captured.count('Repartition')}\n{captured}"
+    )

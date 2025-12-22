@@ -87,7 +87,7 @@ def clean_pydantic_model(model_cls: type[BaseModel], _cleaned_cache: dict[type, 
                     new_args.append(arg)
             # Handle UnionType (X | Y syntax) specially - it's not subscriptable
             if origin is types.UnionType or origin is Union:
-                annotation = Union[tuple(new_args)]
+                annotation = Union[tuple(new_args)]  # noqa: UP007
             elif len(new_args) > 1:
                 annotation = origin[tuple(new_args)]
             else:

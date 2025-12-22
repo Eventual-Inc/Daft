@@ -27,9 +27,9 @@ def test_merge_scan_task_exceed_max(csv_files):
         scan_tasks_max_size_bytes=0,
     ):
         df = daft.read_csv(str(csv_files))
-        assert (
-            df.num_partitions() == 3
-        ), "Should have 3 partitions since all merges are more than the maximum (>0 bytes)"
+        assert df.num_partitions() == 3, (
+            "Should have 3 partitions since all merges are more than the maximum (>0 bytes)"
+        )
 
 
 def test_merge_scan_task_below_max(csv_files):
@@ -39,9 +39,9 @@ def test_merge_scan_task_below_max(csv_files):
         scan_tasks_max_size_bytes=12,
     ):
         df = daft.read_csv(str(csv_files))
-        assert (
-            df.num_partitions() == 2
-        ), "Should have 2 partitions [(CSV1, CSV2), (CSV3)] since the second merge is too large (>22 bytes)"
+        assert df.num_partitions() == 2, (
+            "Should have 2 partitions [(CSV1, CSV2), (CSV3)] since the second merge is too large (>22 bytes)"
+        )
 
 
 def test_merge_scan_task_above_min(csv_files):
@@ -51,9 +51,9 @@ def test_merge_scan_task_above_min(csv_files):
         scan_tasks_max_size_bytes=20,
     ):
         df = daft.read_csv(str(csv_files))
-        assert (
-            df.num_partitions() == 2
-        ), "Should have 2 partitions [(CSV1, CSV2), (CSV3)] since the first merge is above the minimum (>19 bytes)"
+        assert df.num_partitions() == 2, (
+            "Should have 2 partitions [(CSV1, CSV2), (CSV3)] since the first merge is above the minimum (>19 bytes)"
+        )
 
 
 def test_merge_scan_task_below_min(csv_files):
@@ -63,9 +63,9 @@ def test_merge_scan_task_below_min(csv_files):
         scan_tasks_max_size_bytes=20,
     ):
         df = daft.read_csv(str(csv_files))
-        assert (
-            df.num_partitions() == 1
-        ), "Should have 1 partition [(CSV1, CSV2, CSV3)] since both merges are below the minimum and maximum"
+        assert df.num_partitions() == 1, (
+            "Should have 1 partition [(CSV1, CSV2, CSV3)] since both merges are below the minimum and maximum"
+        )
 
 
 def test_merge_scan_task_limit_override(csv_files):
@@ -79,9 +79,9 @@ def test_merge_scan_task_limit_override(csv_files):
         csv_inflation_factor=0.1,
     ):
         df = daft.read_csv(str(csv_files)).limit(1)
-        assert (
-            df.num_partitions() == 1
-        ), "Should have 1 partitions [(CSV1, CSV2, CSV3)] since we have a limit 1 but are underestimating the size of data of the CSVs"
+        assert df.num_partitions() == 1, (
+            "Should have 1 partitions [(CSV1, CSV2, CSV3)] since we have a limit 1 but are underestimating the size of data of the CSVs"
+        )
 
     # With a very large CSV inflation factor, the merger will think that these CSVs provide more rows of data and will be more conservative
     with daft.execution_config_ctx(
@@ -102,9 +102,9 @@ def test_merge_scan_task_up_to_max_sources(csv_files):
         max_sources_per_scan_task=2,
     ):
         df = daft.read_csv(str(csv_files))
-        assert (
-            df.num_partitions() == 2
-        ), "Should have 2 partitions [(CSV1, CSV2), (CSV3)] since the third CSV is too large to merge with the first two, and max_sources_per_scan_task is set to 2"
+        assert df.num_partitions() == 2, (
+            "Should have 2 partitions [(CSV1, CSV2), (CSV3)] since the third CSV is too large to merge with the first two, and max_sources_per_scan_task is set to 2"
+        )
 
 
 @pytest.mark.parametrize(

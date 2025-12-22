@@ -63,9 +63,9 @@ def test_split_parquet_read_some_splits(tmpdir):
             scan_tasks_max_size_bytes=100,
         ):
             df = daft.read_parquet(large_file_paths + small_file_paths)
-            assert (
-                df.num_partitions() == 220
-            ), "Should have 220 partitions since we will split all large files (20 * 10 rowgroups) but keep small files unsplit"
+            assert df.num_partitions() == 220, (
+                "Should have 220 partitions since we will split all large files (20 * 10 rowgroups) but keep small files unsplit"
+            )
             assert df.to_pydict() == {"data": [str(f"large{i}") for i in range(100)] * 20 + ["small"] * 20}
 
         # Test interleaved [large_path, small_path, large_path, small_path, ...]
@@ -76,9 +76,9 @@ def test_split_parquet_read_some_splits(tmpdir):
         ):
             interleaved_paths = [path for pair in zip(large_file_paths, small_file_paths) for path in pair]
             df = daft.read_parquet(interleaved_paths)
-            assert (
-                df.num_partitions() == 220
-            ), "Should have 220 partitions since we will split all large files (20 * 10 rowgroups) but keep small files unsplit"
+            assert df.num_partitions() == 220, (
+                "Should have 220 partitions since we will split all large files (20 * 10 rowgroups) but keep small files unsplit"
+            )
             assert df.to_pydict() == {"data": ([str(f"large{i}") for i in range(100)] + ["small"]) * 20}
 
         # Test [small_paths, ..., large_paths]
@@ -88,7 +88,7 @@ def test_split_parquet_read_some_splits(tmpdir):
             scan_tasks_max_size_bytes=100,
         ):
             df = daft.read_parquet(small_file_paths + large_file_paths)
-            assert (
-                df.num_partitions() == 220
-            ), "Should have 220 partitions since we will split all large files (20 * 10 rowgroups) but keep small files unsplit"
+            assert df.num_partitions() == 220, (
+                "Should have 220 partitions since we will split all large files (20 * 10 rowgroups) but keep small files unsplit"
+            )
             assert df.to_pydict() == {"data": ["small"] * 20 + [str(f"large{i}") for i in range(100)] * 20}

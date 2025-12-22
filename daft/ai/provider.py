@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 if sys.version_info < (3, 11):
     from typing_extensions import Unpack
@@ -10,6 +10,8 @@ else:
     from typing import Unpack
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from daft.ai.google.typing import GoogleProviderOptions
     from daft.ai.openai.typing import OpenAIProviderOptions
     from daft.ai.protocols import (

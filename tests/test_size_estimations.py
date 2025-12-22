@@ -24,9 +24,9 @@ def get_actual_size(pq_path: str, columns: list[str] | None = None) -> int:
 
 
 def assert_close(size_on_disk, estimated: int, actual: int, pct: float = 0.3):
-    assert (
-        abs(actual - estimated) / estimated < pct
-    ), f"Expected {size_on_disk / 1_000_000:.2f}MB file estimated vs actual to be within {pct * 100}%: {estimated / 1_000_000:.2f}MB vs {actual / 1000_000:.2f}MB ({((estimated - actual) / estimated) * 100:.2f}%)"
+    assert abs(actual - estimated) / estimated < pct, (
+        f"Expected {size_on_disk / 1_000_000:.2f}MB file estimated vs actual to be within {pct * 100}%: {estimated / 1_000_000:.2f}MB vs {actual / 1000_000:.2f}MB ({((estimated - actual) / estimated) * 100:.2f}%)"
+    )
 
 
 @pytest.mark.parametrize("compression", ["snappy", None], ids=["snappy", "no_compression"])

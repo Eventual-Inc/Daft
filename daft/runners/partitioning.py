@@ -4,7 +4,7 @@ import threading
 import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, Union
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 from uuid import uuid4
 
 from daft.daft import PyMicroPartitionSet
@@ -166,7 +166,7 @@ class Boundaries:
         return self_upper < other_upper
 
 
-PartitionT = TypeVar("PartitionT", bound="Union[ObjectRef, MicroPartition]")
+PartitionT = TypeVar("PartitionT", bound="ObjectRef | MicroPartition")
 
 
 class MaterializedResult(Generic[PartitionT]):

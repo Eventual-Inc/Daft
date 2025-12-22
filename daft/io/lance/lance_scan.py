@@ -3,7 +3,7 @@
 
 import logging
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     import lance
@@ -26,11 +26,11 @@ logger = logging.getLogger(__name__)
 # TODO support fts and fast_search
 def _lancedb_table_factory_function(
     ds_uri: str,
-    open_kwargs: Optional[dict[Any, Any]] = None,
-    fragment_ids: Optional[list[int]] = None,
-    required_columns: Optional[list[str]] = None,
+    open_kwargs: dict[Any, Any] | None = None,
+    fragment_ids: list[int] | None = None,
+    required_columns: list[str] | None = None,
     filter: Optional["pa.compute.Expression"] = None,
-    limit: Optional[int] = None,
+    limit: int | None = None,
     include_fragment_id: bool | None = False,
 ) -> Iterator[PyRecordBatch]:
     try:
@@ -94,7 +94,7 @@ def _lancedb_table_factory_function(
 
 def _lancedb_count_result_function(
     ds_uri: str,
-    open_kwargs: Optional[dict[Any, Any]],
+    open_kwargs: dict[Any, Any] | None,
     required_column: str,
     filter: Optional["pa.compute.Expression"] = None,
 ) -> Iterator[PyRecordBatch]:
@@ -122,12 +122,12 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
     def __init__(
         self,
         ds: "lance.LanceDataset",
-        fragment_group_size: Optional[int] = None,
+        fragment_group_size: int | None = None,
         include_fragment_id: bool | None = False,
     ):
         self._ds = ds
-        self._pushed_filters: Union[list[PyExpr], None] = None
-        self._remaining_filters: Union[list[PyExpr], None] = None
+        self._pushed_filters: list[PyExpr] | None = None
+        self._remaining_filters: list[PyExpr] | None = None
         self._fragment_group_size = fragment_group_size
         self._include_fragment_id = include_fragment_id
         self._enable_strict_filter_pushdown = get_context().daft_planning_config.enable_strict_filter_pushdown
@@ -167,7 +167,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         """Returns the count modes supported by this scan operator."""
         return [CountMode.All]
 
-    def as_pushdown_filter(self) -> Union[SupportsPushdownFilters, None]:
+    def as_pushdown_filter(self) -> SupportsPushdownFilters | None:
         return self
 
     def multiline_display(self) -> list[str]:
@@ -197,7 +197,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         return pushed, remaining
 
     def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
-        required_columns: Optional[list[str]]
+        required_columns: list[str] | None
         if self._include_fragment_id:
             required_columns = ["fragment_id"]
         if pushdowns.columns is None:
@@ -251,7 +251,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         )
 
     def _create_scan_tasks_with_limit_and_no_filters(
-        self, pushdowns: PyPushdowns, required_columns: Optional[list[str]]
+        self, pushdowns: PyPushdowns, required_columns: list[str] | None
     ) -> Iterator[ScanTask]:
         """Create scan tasks optimized for limit pushdown with no filters."""
         assert self._pushed_filters is None, "Expected no filters when creating scan tasks with limit and no filters"
@@ -304,7 +304,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 )
 
     def _create_regular_scan_tasks(
-        self, pushdowns: PyPushdowns, required_columns: Optional[list[str]]
+        self, pushdowns: PyPushdowns, required_columns: list[str] | None
     ) -> Iterator[ScanTask]:
         """Create regular scan tasks without count pushdown."""
         open_kwargs = getattr(self._ds, "_lance_open_kwargs", None)
@@ -312,10 +312,10 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         pushed_expr = self._combine_filters_to_arrow()
 
         def _python_factory_func_scan_task(
-            fragment_ids: Optional[list[int]] = None,
+            fragment_ids: list[int] | None = None,
             *,
-            num_rows: Optional[int] = None,
-            size_bytes: Optional[int] = None,
+            num_rows: int | None = None,
+            size_bytes: int | None = None,
         ) -> ScanTask:
             return ScanTask.python_factory_func_scan_task(
                 module=_lancedb_table_factory_function.__module__,
@@ -386,7 +386,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
     def _combine_filters_to_arrow(self) -> Optional["pa.compute.Expression"]:
         return combine_filters_to_arrow(self._pushed_filters)
 
-    def _compute_limit_pushdown_with_filter(self, pushdowns: PyPushdowns) -> Union[int, None]:
+    def _compute_limit_pushdown_with_filter(self, pushdowns: PyPushdowns) -> int | None:
         """Decide whether to push down `limit` when filters are present."""
         if not self._enable_strict_filter_pushdown and pushdowns.filters is not None:
             return None

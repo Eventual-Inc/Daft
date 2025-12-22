@@ -1,7 +1,7 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Union
 
 from daft import context, runners
 from daft.api_annotations import PublicAPI
@@ -13,13 +13,13 @@ if TYPE_CHECKING:
     from pyiceberg.table import Table as PyIcebergTable
 
 
-def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> Optional[IOConfig]:
+def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> IOConfig | None:
     """Property keys defined here: https://github.com/apache/iceberg-python/blob/main/pyiceberg/io/__init__.py."""
     from daft.io import AzureConfig, GCSConfig, IOConfig, S3Config
 
     any_props_set = False
 
-    def get_first_property_value(*property_names: str) -> Optional[Any]:
+    def get_first_property_value(*property_names: str) -> Any | None:
         for property_name in property_names:
             if property_value := props.get(property_name):
                 nonlocal any_props_set
@@ -55,8 +55,8 @@ def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> O
 @PublicAPI
 def read_iceberg(
     table: Union[str, "PyIcebergTable"],
-    snapshot_id: Optional[int] = None,
-    io_config: Optional[IOConfig] = None,
+    snapshot_id: int | None = None,
+    io_config: IOConfig | None = None,
 ) -> DataFrame:
     """Create a DataFrame from an Iceberg table.
 

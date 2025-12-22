@@ -1,7 +1,6 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
@@ -18,15 +17,15 @@ from daft.io.common import get_tabular_files_scan
 
 @PublicAPI
 def read_json(
-    path: Union[str, list[str]],
+    path: str | list[str],
     infer_schema: bool = True,
-    schema: Optional[dict[str, DataType]] = None,
-    io_config: Optional[IOConfig] = None,
-    file_path_column: Optional[str] = None,
+    schema: dict[str, DataType] | None = None,
+    io_config: IOConfig | None = None,
+    file_path_column: str | None = None,
     hive_partitioning: bool = False,
     skip_empty_files: bool = False,
-    _buffer_size: Optional[int] = None,
-    _chunk_size: Optional[int] = None,
+    _buffer_size: int | None = None,
+    _chunk_size: int | None = None,
 ) -> DataFrame:
     """Creates a DataFrame from line-delimited JSON file(s).
 

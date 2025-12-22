@@ -7,7 +7,6 @@ import pyarrow as pa
 import pytest
 
 import daft
-import daft.catalog
 
 pyiceberg = pytest.importorskip("pyiceberg")
 
