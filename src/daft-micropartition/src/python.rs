@@ -351,6 +351,7 @@ impl PyMicroPartition {
         right: &Self,
         left_on: Vec<PyExpr>,
         right_on: Vec<PyExpr>,
+        how: JoinType,
         is_sorted: bool,
     ) -> PyResult<Self> {
         let left_exprs = BoundExpr::bind_all(&left_on, &self.inner.schema)?;
@@ -362,7 +363,7 @@ impl PyMicroPartition {
                     &right.inner,
                     left_exprs.as_slice(),
                     right_exprs.as_slice(),
-                    JoinType::Inner, // TODO: Expose other join types
+                    how,
                     is_sorted,
                 )?
                 .into())
@@ -1283,4 +1284,185 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyMicroPartition>()?;
     parent.add_class::<PyMicroPartitionSet>()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use daft_core::{
+        datatypes::{DataType, Field, Int32Array},
+        prelude::Schema,
+        series::IntoSeries,
+    };
+    use daft_recordbatch::RecordBatch;
+    use pyo3::prelude::*;
+
+    use super::{PyMicroPartition, PyMicroPartitionSet};
+    use crate::micropartition::MicroPartition;
+
+    fn make_rb() -> RecordBatch {
+        let key = Int32Array::from_values("key", vec![1, 2, 3].into_iter()).into_series();
+        let v = Int32Array::from_values("v", vec![10, 20, 30].into_iter()).into_series();
+        RecordBatch::from_nonempty_columns(vec![key, v]).unwrap()
+    }
+
+    fn make_mp() -> MicroPartition {
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("key", DataType::Int32),
+            Field::new("v", DataType::Int32),
+        ]));
+        let rb = make_rb();
+        MicroPartition::new_loaded(schema, Arc::new(vec![rb]), None)
+    }
+
+    #[test]
+    fn to_record_batch_empty_and_nonempty() {
+        Python::with_gil(|py| {
+            let py_mp = PyMicroPartition {
+                inner: Arc::new(make_mp()),
+            };
+            let out_rb = py_mp.to_record_batch(py).unwrap();
+            assert_eq!(out_rb.record_batch.len(), 3);
+
+            let empty_py_mp = PyMicroPartition {
+                inner: Arc::new(MicroPartition::empty(None)),
+            };
+            let out_empty = empty_py_mp.to_record_batch(py).unwrap();
+            assert_eq!(out_empty.record_batch.len(), 0);
+        });
+    }
+
+    #[test]
+    fn head_negative_errors() {
+        Python::with_gil(|py| {
+            let py_mp = PyMicroPartition {
+                inner: Arc::new(make_mp()),
+            };
+            let res = py_mp.head(py, -1);
+            assert!(res.is_err());
+            let err = res.unwrap_err();
+            assert!(err.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+        });
+    }
+
+    #[test]
+    fn sample_by_fraction_bounds() {
+        Python::with_gil(|py| {
+            let py_mp = PyMicroPartition {
+                inner: Arc::new(make_mp()),
+            };
+            let neg = py_mp.sample_by_fraction(py, -0.1, false, None);
+            assert!(neg.is_err());
+            let gt1 = py_mp.sample_by_fraction(py, 1.1, false, None);
+            assert!(gt1.is_err());
+            let ok = py_mp.sample_by_fraction(py, 0.5, false, Some(42));
+            assert!(ok.is_ok());
+        });
+    }
+
+    #[test]
+    fn sample_by_size_negative_and_zero() {
+        Python::with_gil(|py| {
+            let py_mp = PyMicroPartition {
+                inner: Arc::new(make_mp()),
+            };
+            let neg = py_mp.sample_by_size(py, -1, false, None);
+            assert!(neg.is_err());
+            let zero = py_mp.sample_by_size(py, 0, false, None).unwrap();
+            assert_eq!(zero.__len__().unwrap(), 0);
+        });
+    }
+
+    #[test]
+    fn quantiles_negative_error() {
+        Python::with_gil(|py| {
+            let py_mp = PyMicroPartition {
+                inner: Arc::new(make_mp()),
+            };
+            let res = py_mp.quantiles(py, -5);
+            assert!(res.is_err());
+            let err = res.unwrap_err();
+            assert!(err.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+        });
+    }
+
+    #[test]
+    fn py_micro_partition_set_basic_ops() {
+        Python::with_gil(|py| {
+            let mps = PyMicroPartitionSet::new();
+            assert_eq!(mps.__len__().unwrap(), 0);
+            assert_eq!(mps.num_partitions().unwrap(), 0);
+
+            let py_mp = PyMicroPartition {
+                inner: Arc::new(make_mp()),
+            };
+            mps.set_partition(0, py_mp).unwrap();
+            assert!(mps.has_partition(0).unwrap());
+            assert_eq!(mps.__len__().unwrap(), 1);
+
+            let got = mps.get_partition(0).unwrap();
+            assert_eq!(got.__len__().unwrap(), 3);
+            assert!(mps.size_bytes().unwrap() > 0);
+            let items = mps.items().unwrap();
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].0, 0);
+
+            mps.delete_partition(0).unwrap();
+            assert!(!mps.has_partition(0).unwrap());
+            assert_eq!(mps.__len__().unwrap(), 0);
+        });
+    }
+
+    #[test]
+    fn sort_merge_join_anti_with_empty_right_returns_all_left() {
+        Python::with_gil(|py| {
+            let left = PyMicroPartition {
+                inner: Arc::new(make_mp()),
+            };
+            let right_schema = Arc::new(Schema::new(vec![Field::new("key", DataType::Int32)]));
+            let right = PyMicroPartition {
+                inner: Arc::new(MicroPartition::empty(Some(right_schema))),
+            };
+            let left_on = vec![daft_dsl::python::resolved_col("key")];
+            let right_on = vec![daft_dsl::python::resolved_col("key")];
+            let out = left
+                .sort_merge_join(
+                    py,
+                    &right,
+                    left_on,
+                    right_on,
+                    daft_core::join::JoinType::Anti,
+                    true,
+                )
+                .unwrap();
+            assert_eq!(out.__len__().unwrap(), 3);
+        });
+    }
+
+    #[test]
+    fn sort_merge_join_semi_with_empty_right_returns_empty() {
+        Python::with_gil(|py| {
+            let left = PyMicroPartition {
+                inner: Arc::new(make_mp()),
+            };
+            let right_schema = Arc::new(Schema::new(vec![Field::new("key", DataType::Int32)]));
+            let right = PyMicroPartition {
+                inner: Arc::new(MicroPartition::empty(Some(right_schema))),
+            };
+            let left_on = vec![daft_dsl::python::resolved_col("key")];
+            let right_on = vec![daft_dsl::python::resolved_col("key")];
+            let out = left
+                .sort_merge_join(
+                    py,
+                    &right,
+                    left_on,
+                    right_on,
+                    daft_core::join::JoinType::Semi,
+                    true,
+                )
+                .unwrap();
+            assert_eq!(out.__len__().unwrap(), 0);
+        });
+    }
 }
