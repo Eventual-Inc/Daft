@@ -4,8 +4,6 @@ import pathlib
 from itertools import chain
 from typing import TYPE_CHECKING, Any, Literal
 
-import lance
-
 from daft.context import get_context
 from daft.datatype import DataType
 from daft.dependencies import pa
@@ -13,6 +11,9 @@ from daft.io import DataSink
 from daft.io.sink import WriteResult
 from daft.recordbatch import MicroPartition
 from daft.schema import Schema
+
+# Alias for Lance fragment metadata type to avoid depending on Lance type hints at type-check time
+LanceFragmentMetadata = Any
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -52,7 +53,7 @@ def table_schema_subset_castable(data_schema: pa.Schema, table_schema: pa.Schema
     return True
 
 
-class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
+class LanceDataSink(DataSink[list[LanceFragmentMetadata]]):
     """WriteSink for writing data to a Lance dataset."""
 
     def _import_lance(self) -> ModuleType:
@@ -155,54 +156,87 @@ class LanceDataSink(DataSink[list[lance.FragmentMetadata]]):
     def schema(self) -> Schema:
         return self._schema
 
-    def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[list[lance.FragmentMetadata]]]:
+    def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[list[LanceFragmentMetadata]]]:
         """Writes fragments from the given micropartitions."""
         lance = self._import_lance()
 
-        for micropartition in micropartitions:
-            # Build an Arrow table that conforms to either:
-            # - the existing dataset schema (if table already exists), or
-            # - the user-provided schema (if specified and different from incoming data), or
-            # - the incoming data schema (no-op) while attaching metadata/order from _pyarrow_schema.
-            input_table = micropartition.to_arrow()
+        max_rows_per_file = self._kwargs.get("max_rows_per_file")
+        accumulate = isinstance(max_rows_per_file, int) and max_rows_per_file > 0
+        threshold: int = max_rows_per_file if isinstance(max_rows_per_file, int) else 0
 
+        def _prepare_arrow_table(input_table: pa.Table) -> pa.Table:
             if self._mode == "merge":
                 target_schema = self._filtered_schema
             else:
                 target_schema = self._table_schema
-
-            # Handle case where target_schema is None (e.g., creating a new dataset)
             if target_schema is None:
-                # Use the user-provided schema or the input schema
                 target_schema = self._pyarrow_schema
-
             if self._table_schema is not None:
-                # Dataset exists: always cast to the table schema to ensure compatibility on append
-                arrow_table = input_table.cast(self._table_schema)
-            elif not pa.Schema.equals(target_schema, input_table.schema):
-                # New dataset or overwrite with a user-provided schema: cast to enforce order/types/nullability
-                arrow_table = input_table.cast(target_schema)
-            else:
-                # Schemas are identical: rebuild table with the desired schema instance to preserve metadata
-                arrow_table = pa.Table.from_batches(input_table.to_batches(), target_schema)
+                return input_table.cast(self._table_schema)
+            if not pa.Schema.equals(target_schema, input_table.schema):
+                return input_table.cast(target_schema)
+            return pa.Table.from_batches(input_table.to_batches(), target_schema)
 
-            bytes_written = arrow_table.nbytes
-            rows_written = arrow_table.num_rows
-
+        def _write_arrow_table(table: pa.Table) -> WriteResult[list[LanceFragmentMetadata]]:
             fragments = lance.fragment.write_fragments(
-                arrow_table,
+                table,
                 dataset_uri=self._table_uri,
                 mode=self._mode,
                 storage_options=self._storage_options,
                 **self._kwargs,
             )
-            yield WriteResult(
-                result=fragments,
-                bytes_written=bytes_written,
-                rows_written=rows_written,
-            )
+            return WriteResult(result=fragments, bytes_written=table.nbytes, rows_written=table.num_rows)
 
-    def finalize(self, write_results: list[WriteResult[list[lance.FragmentMetadata]]]) -> MicroPartition:
+        class _TableAccumulator:
+            def __init__(self, threshold: int):
+                self._threshold = threshold
+                self._batches: list[pa.RecordBatch] = []
+                self._rows = 0
+                self._schema: pa.Schema | None = None
+
+            def add(self, table: pa.Table) -> bool:
+                if self._schema is None:
+                    self._schema = table.schema
+                for b in table.to_batches():
+                    self._batches.append(b)
+                self._rows += table.num_rows
+                return self._rows >= self._threshold
+
+            def has_rows(self) -> bool:
+                return self._rows > 0
+
+            def build_and_reset(self) -> pa.Table:
+                table = pa.Table.from_batches(self._batches, schema=self._schema)
+                self._batches = []
+                self._rows = 0
+                return table
+
+        accumulator = _TableAccumulator(threshold) if accumulate else None
+
+        for micropartition in micropartitions:
+            input_table = micropartition.to_arrow()
+            arrow_table = _prepare_arrow_table(input_table)
+
+            if not accumulate:
+                yield _write_arrow_table(arrow_table)
+                continue
+
+            # If a single micropartition exceeds threshold, flush accumulated first then write directly
+            if arrow_table.num_rows >= threshold:
+                if accumulator and accumulator.has_rows():
+                    yield _write_arrow_table(accumulator.build_and_reset())
+                yield _write_arrow_table(arrow_table)
+                continue
+
+            # Otherwise, accumulate and flush when threshold reached
+            if accumulator and accumulator.add(arrow_table):
+                yield _write_arrow_table(accumulator.build_and_reset())
+
+        # Flush any remaining accumulated rows
+        if accumulate and accumulator and accumulator.has_rows():
+            yield _write_arrow_table(accumulator.build_and_reset())
+
+    def finalize(self, write_results: list[WriteResult[list[LanceFragmentMetadata]]]) -> MicroPartition:
         """Commits the fragments to the Lance dataset. Returns a DataFrame with the stats of the dataset."""
         lance = self._import_lance()
 
