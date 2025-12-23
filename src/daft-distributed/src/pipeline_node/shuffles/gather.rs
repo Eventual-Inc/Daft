@@ -98,7 +98,7 @@ impl PipelineNodeImpl for GatherNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        vec!["Gather".to_string()]
+        vec![format!("Gather@{}", self.node_id())]
     }
 
     fn produce_tasks(

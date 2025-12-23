@@ -174,6 +174,6 @@ impl PipelineNodeImpl for VLLMNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        vec![format!("VLLM: {}", self.expr)]
+        vec![format!("vLLM@{}: {}", self.node_id(), self.expr)]
     }
 }

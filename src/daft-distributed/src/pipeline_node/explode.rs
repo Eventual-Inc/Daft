@@ -68,7 +68,8 @@ impl PipelineNodeImpl for ExplodeNode {
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         use itertools::Itertools;
         vec![format!(
-            "Explode: {}",
+            "Explode@{}: {}",
+            self.node_id(),
             self.to_explode.iter().map(|e| e.to_string()).join(", ")
         )]
     }

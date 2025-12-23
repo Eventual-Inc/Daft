@@ -101,13 +101,14 @@ impl PipelineNodeImpl for AggregateNode {
         let agg_str = self.aggs.iter().map(|e| e.to_string()).join(", ");
         if self.group_by.is_empty() {
             vec![
-                format!("Ungrouped Aggregate: {}", agg_str),
+                format!("UngroupedAggregate@{}: {}", self.node_id(), agg_str),
                 format!("Output Schema = {}", self.config.schema.short_string()),
             ]
         } else {
             vec![
                 format!(
-                    "Group-By Aggregate: {}",
+                    "GroupedAggregate@{}: {}",
+                    self.node_id(),
                     self.group_by.iter().map(|e| e.to_string()).join(", ")
                 ),
                 format!("Aggregations = {}", agg_str),

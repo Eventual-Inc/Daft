@@ -84,7 +84,7 @@ impl PipelineNodeImpl for UDFNode {
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         let mut res = vec![
-            format!("UDF: {}", self.udf_properties.name),
+            format!("UDF@{}: {}", self.node_id(), self.udf_properties.name),
             format!("Expr = {}", self.expr),
             format!(
                 "Passthrough Columns = [{}]",

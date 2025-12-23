@@ -66,7 +66,7 @@ impl PipelineNodeImpl for FilterNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        vec![format!("Filter: {}", self.predicate)]
+        vec![format!("Filter@{}: {}", self.node_id(), self.predicate)]
     }
 
     fn produce_tasks(

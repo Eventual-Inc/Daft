@@ -51,7 +51,6 @@ def test_join_simple(benchmark, num_samples, num_partitions, join_type) -> None:
     )
 
     # Run the benchmark.
-    # Run the benchmark.
     def bench_join() -> DataFrame:
         return left_table.join(right_table, on=["mycol"], how=join_type).collect()
 

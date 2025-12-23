@@ -135,7 +135,7 @@ impl PipelineNodeImpl for InMemorySourceNode {
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         let mut res = vec![];
-        res.push("InMemorySource:".to_string());
+        res.push(format!("InMemorySource@{}:", self.node_id()));
         res.push(format!(
             "Schema = {}",
             self.info.source_schema.short_string()

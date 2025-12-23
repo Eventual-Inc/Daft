@@ -81,7 +81,8 @@ impl PipelineNodeImpl for UnpivotNode {
         use itertools::Itertools;
         let mut res = vec![];
         res.push(format!(
-            "Unpivot: {}",
+            "Unpivot@{}: {}",
+            self.node_id(),
             self.values.iter().map(|e| e.to_string()).join(", ")
         ));
         res.push(format!(

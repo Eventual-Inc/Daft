@@ -160,7 +160,11 @@ impl PipelineNodeImpl for IntoBatchesNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        vec![format!("IntoBatches: {}", self.batch_size)]
+        vec![format!(
+            "IntoBatches@{}: {}",
+            self.node_id(),
+            self.batch_size
+        )]
     }
 
     fn produce_tasks(

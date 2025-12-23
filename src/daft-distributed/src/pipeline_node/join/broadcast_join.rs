@@ -172,14 +172,26 @@ impl PipelineNodeImpl for BroadcastJoinNode {
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         use itertools::Itertools;
-        let mut res = vec!["Broadcast Join".to_string()];
+        let mut res = vec![format!("BroadcastJoin@{}:", self.node_id())];
+        let left_expr = self.left_on.iter().map(|e| e.to_string()).join(", ");
+        let right_expr = self.right_on.iter().map(|e| e.to_string()).join(", ");
         res.push(format!(
-            "Left on: {}",
-            self.left_on.iter().map(|e| e.to_string()).join(", ")
+            "Broadcaster: Node ID = {}, Join on = {}",
+            self.broadcaster.node_id(),
+            if self.is_swapped {
+                &right_expr
+            } else {
+                &left_expr
+            }
         ));
         res.push(format!(
-            "Right on: {}",
-            self.right_on.iter().map(|e| e.to_string()).join(", ")
+            "Receiver: Node ID = {}, Join on = {}",
+            self.receiver.node_id(),
+            if self.is_swapped {
+                &left_expr
+            } else {
+                &right_expr
+            }
         ));
         res.push(format!("Join type: {}", self.join_type));
         res.push(format!("Is swapped: {}", self.is_swapped));

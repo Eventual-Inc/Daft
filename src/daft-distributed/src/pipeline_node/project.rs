@@ -78,7 +78,8 @@ impl PipelineNodeImpl for ProjectNode {
         use itertools::Itertools;
         let mut res = vec![];
         res.push(format!(
-            "Project: {}",
+            "Project@{}: {}",
+            self.node_id(),
             self.projection.iter().map(|e| e.to_string()).join(", ")
         ));
         if let Some(resource_request) = get_resource_request(&self.projection) {

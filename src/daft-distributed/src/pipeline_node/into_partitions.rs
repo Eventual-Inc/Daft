@@ -276,7 +276,7 @@ impl PipelineNodeImpl for IntoPartitionsNode {
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         vec![
-            "IntoPartitions".to_string(),
+            format!("IntoPartitions@{}:", self.node_id()),
             format!("Num partitions = {}", self.num_partitions),
         ]
     }

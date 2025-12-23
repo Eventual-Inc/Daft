@@ -76,7 +76,7 @@ impl PipelineNodeImpl for PreShuffleMergeNode {
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         vec![
-            format!("Pre-Shuffle Merge"),
+            format!("PreShuffleMerge@{}", self.node_id()),
             format!("Threshold: {}", self.pre_shuffle_merge_threshold),
         ]
     }

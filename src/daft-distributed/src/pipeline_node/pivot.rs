@@ -83,7 +83,7 @@ impl PipelineNodeImpl for PivotNode {
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         use itertools::Itertools;
         vec![
-            "Pivot:".to_string(),
+            format!("Pivot@{}:", self.node_id()),
             format!(
                 "Group By = {}",
                 self.group_by.iter().map(|e| e.to_string()).join(", ")

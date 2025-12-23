@@ -84,7 +84,7 @@ impl PipelineNodeImpl for TopNNode {
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         use itertools::Itertools;
 
-        let mut res = vec!["TopN".to_string()];
+        let mut res = vec![format!("TopN@{}:", self.node_id())];
         res.push(format!(
             "Sort by: {}",
             self.sort_by.iter().map(|e| e.to_string()).join(", ")

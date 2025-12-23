@@ -246,7 +246,7 @@ impl PipelineNodeImpl for ActorUDF {
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         use itertools::Itertools;
         let mut res = vec![
-            format!("ActorUDF: {}", self.udf_properties.name),
+            format!("ActorUDF@{}: {}", self.node_id(), self.udf_properties.name),
             format!(
                 "Projection = [{}]",
                 self.projection.iter().map(|e| e.to_string()).join(", ")

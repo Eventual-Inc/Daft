@@ -75,7 +75,11 @@ impl PipelineNodeImpl for MonotonicallyIncreasingIdNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        vec![format!("MonotonicallyIncreasingId: {}", self.column_name)]
+        vec![format!(
+            "MonotonicallyIncreasingId@{}: {}",
+            self.node_id(),
+            self.column_name
+        )]
     }
 
     fn produce_tasks(

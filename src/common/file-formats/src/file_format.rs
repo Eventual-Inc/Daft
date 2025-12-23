@@ -1,3 +1,4 @@
+use std::fmt::{Display, Formatter};
 /// Defines FileFormat enum, which represents the format of a file, e.g. Parquet, CSV, JSON.
 ///
 /// NOTE: This is currently abused to also represent data being read from a Database or from a Python
@@ -57,6 +58,19 @@ impl FromStr for FileFormat {
             Err(DaftError::TypeError(format!(
                 "FileFormat {file_format} not supported!"
             )))
+        }
+    }
+}
+
+impl Display for FileFormat {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Parquet => write!(f, "parquet"),
+            Self::Csv => write!(f, "csv"),
+            Self::Json => write!(f, "json"),
+            Self::Warc => write!(f, "warc"),
+            Self::Database => write!(f, "database"),
+            Self::Python => write!(f, "python"),
         }
     }
 }
