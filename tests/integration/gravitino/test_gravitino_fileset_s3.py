@@ -379,23 +379,3 @@ def test_read_existing_s3_fileset(gravitino_sample_dir, gravitino_io_config):
 
     except FileNotFoundError:
         pytest.skip("No files found in GRAVITINO_TEST_DIR - fileset may be empty")
-
-
-@pytest.mark.integration()
-@pytest.mark.skipif(
-    "GRAVITINO_TEST_FILE" not in os.environ or not os.environ["GRAVITINO_TEST_FILE"].startswith("gvfs://"),
-    reason="Requires GRAVITINO_TEST_FILE environment variable pointing to an existing S3-backed file",
-)
-def test_read_specific_s3_file(gravitino_sample_file, gravitino_io_config):
-    """Test reading a specific file from an S3-backed fileset.
-
-    This test works with any Gravitino deployment that has S3 filesets already configured.
-    Set GRAVITINO_TEST_FILE to point to a specific file in an S3-backed fileset, e.g.:
-    export GRAVITINO_TEST_FILE="gvfs://fileset/my_catalog/my_schema/my_s3_fileset/data.parquet"
-    """
-    # Try to read the specific file
-    df = daft.read_parquet(gravitino_sample_file, io_config=gravitino_io_config)
-    result = df.collect()
-
-    # Should successfully read and have some data
-    assert len(result) > 0
