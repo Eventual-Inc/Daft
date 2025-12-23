@@ -1450,6 +1450,8 @@ impl TosConfig {
         read_timeout_ms=None,
         max_concurrent_requests=None,
         max_connections=None,
+        multipart_size=None,
+        multipart_max_concurrency=None,
     ))]
     pub fn new(
         region: Option<String>,
@@ -1464,6 +1466,8 @@ impl TosConfig {
         read_timeout_ms: Option<u64>,
         max_concurrent_requests: Option<u32>,
         max_connections: Option<u32>,
+        multipart_size: Option<u64>,
+        multipart_max_concurrency: Option<u32>,
     ) -> PyResult<Self> {
         let def = crate::TosConfig::default();
         Ok(Self {
@@ -1484,6 +1488,9 @@ impl TosConfig {
                     .unwrap_or(def.max_concurrent_requests),
                 max_connections_per_io_thread: max_connections
                     .unwrap_or(def.max_connections_per_io_thread),
+                multipart_size: multipart_size.unwrap_or(def.multipart_size),
+                multipart_max_concurrency: multipart_max_concurrency
+                    .unwrap_or(def.multipart_max_concurrency),
             },
         })
     }
@@ -1502,6 +1509,8 @@ impl TosConfig {
         read_timeout_ms=None,
         max_concurrent_requests=None,
         max_connections=None,
+        multipart_size=None,
+        multipart_max_concurrency=None,
     ))]
     pub fn replace(
         &self,
@@ -1517,6 +1526,8 @@ impl TosConfig {
         read_timeout_ms: Option<u64>,
         max_concurrent_requests: Option<u32>,
         max_connections: Option<u32>,
+        multipart_size: Option<u64>,
+        multipart_max_concurrency: Option<u32>,
     ) -> PyResult<Self> {
         Ok(Self {
             config: crate::TosConfig {
@@ -1538,6 +1549,9 @@ impl TosConfig {
                     .unwrap_or(self.config.max_concurrent_requests),
                 max_connections_per_io_thread: max_connections
                     .unwrap_or(self.config.max_connections_per_io_thread),
+                multipart_size: multipart_size.unwrap_or(self.config.multipart_size),
+                multipart_max_concurrency: multipart_max_concurrency
+                    .unwrap_or(self.config.multipart_max_concurrency),
             },
         })
     }
@@ -1606,6 +1620,16 @@ impl TosConfig {
     #[getter]
     pub fn max_connections(&self) -> PyResult<u32> {
         Ok(self.config.max_connections_per_io_thread)
+    }
+
+    #[getter]
+    pub fn multipart_size(&self) -> PyResult<u64> {
+        Ok(self.config.multipart_size)
+    }
+
+    #[getter]
+    pub fn multipart_max_concurrency(&self) -> PyResult<u32> {
+        Ok(self.config.multipart_max_concurrency)
     }
 }
 

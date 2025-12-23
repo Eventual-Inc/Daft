@@ -3,6 +3,7 @@ mod infer_datatype;
 mod matching;
 
 use arrow::{
+    array::ArrowNumericType,
     buffer::{Buffer, ScalarBuffer},
     datatypes::ArrowNativeType,
 };
@@ -312,6 +313,7 @@ pub trait NumericNative:
     + Serialize
 {
     type DAFTTYPE: DaftNumericType;
+    type ARROWTYPE: ArrowNumericType;
 }
 
 /// Trait to express types that are native and can be vectorized
@@ -321,37 +323,48 @@ pub trait DaftNumericType: Send + Sync + DaftArrowBackedType + 'static {
 
 impl NumericNative for i8 {
     type DAFTTYPE = Int8Type;
+    type ARROWTYPE = arrow::datatypes::Int8Type;
 }
 impl NumericNative for i16 {
     type DAFTTYPE = Int16Type;
+    type ARROWTYPE = arrow::datatypes::Int16Type;
 }
 impl NumericNative for i32 {
     type DAFTTYPE = Int32Type;
+    type ARROWTYPE = arrow::datatypes::Int32Type;
 }
 impl NumericNative for i64 {
     type DAFTTYPE = Int64Type;
+    type ARROWTYPE = arrow::datatypes::Int64Type;
 }
 impl NumericNative for i128 {
     type DAFTTYPE = Int128Type;
+    type ARROWTYPE = arrow::datatypes::Decimal128Type;
 }
 impl NumericNative for u8 {
     type DAFTTYPE = UInt8Type;
+    type ARROWTYPE = arrow::datatypes::UInt8Type;
 }
 impl NumericNative for u16 {
     type DAFTTYPE = UInt16Type;
+    type ARROWTYPE = arrow::datatypes::UInt16Type;
 }
 impl NumericNative for u32 {
     type DAFTTYPE = UInt32Type;
+    type ARROWTYPE = arrow::datatypes::UInt32Type;
 }
 impl NumericNative for u64 {
     type DAFTTYPE = UInt64Type;
+    type ARROWTYPE = arrow::datatypes::UInt64Type;
 }
 
 impl NumericNative for f32 {
     type DAFTTYPE = Float32Type;
+    type ARROWTYPE = arrow::datatypes::Float32Type;
 }
 impl NumericNative for f64 {
     type DAFTTYPE = Float64Type;
+    type ARROWTYPE = arrow::datatypes::Float64Type;
 }
 
 impl DaftNumericType for UInt8Type {

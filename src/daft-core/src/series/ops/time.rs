@@ -367,7 +367,7 @@ impl Series {
                 let arrow_arr = self.to_arrow2();
                 let out = daft_arrow::compute::temporal::strftime(arrow_arr.as_ref(), format)?;
                 let arc_field = Arc::new(Field::new(self.name().to_string(), DataType::Utf8));
-                Self::from_arrow(arc_field, out.to_boxed())
+                Self::from_arrow2(arc_field, out.to_boxed())
             }
 
             _ => Err(DaftError::ComputeError(format!(
