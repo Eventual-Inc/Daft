@@ -1,6 +1,5 @@
 [dependencies]
 common-error = {path = "../common/error"}
-common-daft-config = {path = "../common/daft-config", default-features = false}
 common-io-config = {path = "../common/io-config", optional = true}
 daft-ai = {path = "../daft-ai"}
 daft-catalog = {path = "../daft-catalog"}
@@ -24,7 +23,6 @@ python = [
   "daft-logical-plan/python",
   "common-py-serde/python",
   "daft-dsl/python",
-  "common-daft-config/python",
   "common-io-config",
   "common-io-config/python"
 ]

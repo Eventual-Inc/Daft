@@ -124,6 +124,14 @@ jobs:
     - name: install llvm tools
       run: rustup component add llvm-tools-preview
 
+    - name: Install protobuf-compiler (Ubuntu)
+      if: runner.os == 'Linux'
+      run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+
+    - name: Install protobuf (MacOS)
+      if: runner.os == 'macOS'
+      run: brew install protobuf
+
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:

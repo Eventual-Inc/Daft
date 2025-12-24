@@ -99,6 +99,14 @@ jobs:
         bun install
         bun run build
 
+    - name: Install protobuf-compiler (MacOS)
+      if: inputs.os == 'macos'
+      run: brew install protobuf
+
+    - name: Install protobuf-compiler (Windows)
+      if: inputs.os == 'windows'
+      run: choco install protoc
+
     - name: Build wheels - Mac and Windows x86
       if: ${{ ((inputs.os == 'macos') || (inputs.os == 'windows')) && (inputs.arch == 'x86_64')  }}
       uses: PyO3/maturin-action@v1
@@ -116,6 +124,7 @@ jobs:
         manylinux: 2_24
         # only produce sdist for linux x86 to avoid multiple copies
         args: --profile ${{ inputs.use_lto && 'release-lto' || 'release' }} --out dist --sdist
+        before-script-linux: apt-get update && apt-get install -y protobuf-compiler
       env:
         GITHUB_ACTIONS: true
 
@@ -127,7 +136,7 @@ jobs:
         manylinux: 2_24
         # only produce sdist for linux x86 to avoid multiple copies
         args: --profile ${{ inputs.use_lto && 'release-lto' || 'release' }} --out dist --sdist
-        before-script-linux: export JEMALLOC_SYS_WITH_LG_PAGE=16
+        before-script-linux: apt-get update && apt-get install -y protobuf-compiler && export JEMALLOC_SYS_WITH_LG_PAGE=16
       env:
         GITHUB_ACTIONS: true
 

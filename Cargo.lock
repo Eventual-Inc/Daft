@@ -3659,7 +3659,6 @@ dependencies = [
 name = "daft-session"
 version = "0.3.0-dev0"
 dependencies = [
- "common-daft-config",
  "common-error",
  "common-io-config",
  "common-py-serde",
