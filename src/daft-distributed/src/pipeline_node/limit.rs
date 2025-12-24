@@ -233,6 +233,31 @@ impl LimitNode {
                 break;
             }
         }
+
+        // If all rows need to be skipped, send an empty limit task to allow downstream tasks to
+        // continue running, such as aggregate tasks
+        if downstream_tasks.is_empty() {
+            downstream_tasks.push(make_new_task_from_materialized_outputs(
+                TaskContext::from((&self.context, task_id_counter.next())),
+                vec![],
+                self.config.schema.clone(),
+                &(self.clone() as Arc<dyn PipelineNodeImpl>),
+                move |input| {
+                    LocalPhysicalPlan::limit(
+                        input,
+                        0,
+                        None,
+                        StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(node_id as usize),
+                            additional: None,
+                        },
+                    )
+                },
+                None,
+            ));
+        }
+
         downstream_tasks
     }
 

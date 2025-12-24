@@ -3,7 +3,9 @@ use std::{sync::Arc, vec};
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{CsvSourceConfig, FileFormat, FileFormatConfig, ParquetSourceConfig};
 use common_runtime::RuntimeRef;
-use common_scan_info::{PartitionField, Pushdowns, ScanOperator, ScanTaskLike, ScanTaskLikeRef};
+use common_scan_info::{
+    PartitionField, Pushdowns, ScanOperator, ScanTaskLike, ScanTaskLikeRef, StorageConfig,
+};
 use daft_core::{prelude::Utf8Array, series::IntoSeries};
 use daft_csv::CsvParseOptions;
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -22,7 +24,6 @@ use snafu::Snafu;
 use crate::{
     ChunkSpec, DataSource, ScanTask,
     hive::{hive_partitions_to_fields, hive_partitions_to_series, parse_hive_partitioning},
-    storage_config::StorageConfig,
 };
 #[derive(Debug)]
 pub struct GlobScanOperator {
@@ -322,6 +323,11 @@ impl GlobScanOperator {
                         "Warc schemas do not need to be inferred".to_string(),
                     ));
                 }
+                FileFormatConfig::Lance(_) => {
+                    return Err(DaftError::ValueError(
+                        "Cannot glob a lance source".to_string(),
+                    ));
+                }
                 #[cfg(feature = "python")]
                 FileFormatConfig::Database(_) => {
                     return Err(DaftError::ValueError(
@@ -329,11 +335,7 @@ impl GlobScanOperator {
                     ));
                 }
                 #[cfg(feature = "python")]
-                FileFormatConfig::PythonFunction {
-                    source_type: _,
-                    module_name: _,
-                    function_name: _,
-                } => {
+                FileFormatConfig::PythonFunction { .. } => {
                     return Err(DaftError::ValueError(
                         "Cannot glob a PythonFunction source".to_string(),
                     ));

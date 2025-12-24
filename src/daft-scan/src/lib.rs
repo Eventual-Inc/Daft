@@ -1,7 +1,7 @@
 use std::{
     any::Any,
     borrow::Cow,
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fmt::Debug,
     hash::{Hash, Hasher},
     sync::{Arc, OnceLock},
@@ -10,7 +10,7 @@ use std::{
 use common_display::DisplayAs;
 use common_error::DaftError;
 use common_file_formats::FileFormatConfig;
-use common_scan_info::{Pushdowns, ScanTaskLike, ScanTaskLikeRef};
+use common_scan_info::{Pushdowns, ScanTaskLike, ScanTaskLikeRef, StorageConfig};
 use daft_schema::schema::{Schema, SchemaRef};
 use daft_stats::{PartitionSpec, TableMetadata, TableStatistics};
 use either::Either;
@@ -26,15 +26,17 @@ use common_daft_config::DaftExecutionConfig;
 pub mod builder;
 pub mod scan_task_iters;
 
+mod native;
 #[cfg(feature = "python")]
 pub mod python;
-pub mod storage_config;
+
+use daft_lance::read::LanceScanTask;
 #[cfg(feature = "python")]
 use pyo3::PyErr;
 #[cfg(feature = "python")]
 pub use python::register_modules;
 use snafu::Snafu;
-use storage_config::StorageConfig;
+
 #[derive(Debug, Snafu)]
 pub enum Error {
     #[cfg(feature = "python")]
@@ -151,6 +153,16 @@ pub enum DataSource {
         metadata: Option<TableMetadata>,
         statistics: Option<TableStatistics>,
     },
+    Dataset {
+        uri: String,
+        fragment_ids: Vec<usize>,
+        columns: Option<Vec<String>>,
+        filter: Option<String>,
+        storage_options: Option<BTreeMap<String, String>>,
+        size_bytes: Option<u64>,
+        metadata: Option<TableMetadata>,
+        statistics: Option<TableStatistics>,
+    },
     #[cfg(feature = "python")]
     PythonFactoryFunction {
         module: String,
@@ -198,6 +210,37 @@ impl Hash for DataSource {
                 metadata.hash(state);
                 statistics.hash(state);
             }
+            Self::Dataset {
+                uri,
+                fragment_ids,
+                columns,
+                filter,
+                storage_options,
+                size_bytes,
+                metadata,
+                statistics,
+            } => {
+                uri.hash(state);
+                fragment_ids.hash(state);
+                if let Some(columns) = columns {
+                    columns.hash(state);
+                }
+                if let Some(filter) = filter {
+                    filter.hash(state);
+                }
+                if let Some(storage_options) = storage_options {
+                    storage_options.hash(state);
+                }
+                if let Some(size_bytes) = size_bytes {
+                    size_bytes.hash(state);
+                }
+                if let Some(metadata) = metadata {
+                    metadata.hash(state);
+                }
+                if let Some(statistics) = statistics {
+                    statistics.hash(state);
+                }
+            }
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction {
                 module,
@@ -225,6 +268,7 @@ impl DataSource {
     pub fn get_path(&self) -> &str {
         match self {
             Self::File { path, .. } | Self::Database { path, .. } => path,
+            Self::Dataset { uri, .. } => uri,
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { module, .. } => module,
         }
@@ -244,7 +288,7 @@ impl DataSource {
     pub fn get_chunk_spec(&self) -> Option<&ChunkSpec> {
         match self {
             Self::File { chunk_spec, .. } => chunk_spec.as_ref(),
-            Self::Database { .. } => None,
+            Self::Database { .. } | Self::Dataset { .. } => None,
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { .. } => None,
         }
@@ -253,7 +297,9 @@ impl DataSource {
     #[must_use]
     pub fn get_size_bytes(&self) -> Option<u64> {
         match self {
-            Self::File { size_bytes, .. } | Self::Database { size_bytes, .. } => *size_bytes,
+            Self::File { size_bytes, .. }
+            | Self::Database { size_bytes, .. }
+            | Self::Dataset { size_bytes, .. } => *size_bytes,
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { size_bytes, .. } => *size_bytes,
         }
@@ -262,7 +308,9 @@ impl DataSource {
     #[must_use]
     pub fn get_metadata(&self) -> Option<&TableMetadata> {
         match self {
-            Self::File { metadata, .. } | Self::Database { metadata, .. } => metadata.as_ref(),
+            Self::File { metadata, .. }
+            | Self::Database { metadata, .. }
+            | Self::Dataset { metadata, .. } => metadata.as_ref(),
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { metadata, .. } => metadata.as_ref(),
         }
@@ -271,9 +319,9 @@ impl DataSource {
     #[must_use]
     pub fn get_statistics(&self) -> Option<&TableStatistics> {
         match self {
-            Self::File { statistics, .. } | Self::Database { statistics, .. } => {
-                statistics.as_ref()
-            }
+            Self::File { statistics, .. }
+            | Self::Database { statistics, .. }
+            | Self::Dataset { statistics, .. } => statistics.as_ref(),
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { statistics, .. } => statistics.as_ref(),
         }
@@ -283,7 +331,7 @@ impl DataSource {
     pub fn get_partition_spec(&self) -> Option<&PartitionSpec> {
         match self {
             Self::File { partition_spec, .. } => partition_spec.as_ref(),
-            Self::Database { .. } => None,
+            Self::Database { .. } | Self::Dataset { .. } => None,
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { partition_spec, .. } => partition_spec.as_ref(),
         }
@@ -363,6 +411,45 @@ impl DataSource {
                     res.push(format!("Statistics = {statistics}"));
                 }
             }
+            Self::Dataset {
+                uri,
+                fragment_ids,
+                columns,
+                filter,
+                size_bytes,
+                metadata,
+                statistics,
+                ..
+            } => {
+                res.push(format!("Uri = {uri}"));
+                res.push(format!(
+                    "Fragment IDs = [{}]",
+                    Self::format_fragment_ids(fragment_ids)
+                ));
+
+                if let Some(columns) = columns {
+                    res.push(format!("Columns = [{}]", columns.join(", ")));
+                }
+
+                if let Some(filter) = filter {
+                    res.push(format!("Filter = [{filter}]"));
+                }
+
+                if let Some(size_bytes) = size_bytes {
+                    res.push(format!("Size bytes = {size_bytes}"));
+                }
+
+                if let Some(metadata) = metadata {
+                    res.push(format!(
+                        "Metadata = {}",
+                        metadata.multiline_display().join(", ")
+                    ));
+                }
+
+                if let Some(statistics) = statistics {
+                    res.push(format!("Statistics = {statistics}"));
+                }
+            }
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction {
                 module,
@@ -396,6 +483,26 @@ impl DataSource {
         }
         res
     }
+
+    fn format_fragment_ids(fragment_ids: &[usize]) -> String {
+        if fragment_ids.len() <= 5 {
+            fragment_ids
+                .iter()
+                .map(|id| id.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        } else {
+            let mut parts = vec![];
+            parts.extend(fragment_ids[0..2].iter().map(|id| id.to_string()));
+            parts.push("...".to_string());
+            parts.extend(
+                fragment_ids[fragment_ids.len() - 2..]
+                    .iter()
+                    .map(|id| id.to_string()),
+            );
+            parts.join(", ")
+        }
+    }
 }
 
 impl DisplayAs for DataSource {
@@ -407,6 +514,15 @@ impl DisplayAs for DataSource {
                         format!("File {{{path}}}")
                     }
                     Self::Database { path, .. } => format!("Database {{{path}}}"),
+                    Self::Dataset {
+                        uri, fragment_ids, ..
+                    } => {
+                        format!(
+                            "Fragment {{uri: {}, ids: [{}]}}",
+                            uri,
+                            Self::format_fragment_ids(fragment_ids)
+                        )
+                    }
                     #[cfg(feature = "python")]
                     Self::PythonFactoryFunction {
                         module, func_name, ..
@@ -770,14 +886,11 @@ impl ScanTask {
                                 1.0
                             }
                         }
+                        FileFormatConfig::Lance(_) => 1.0,
                         #[cfg(feature = "python")]
                         FileFormatConfig::Database(_) => 1.0,
                         #[cfg(feature = "python")]
-                        FileFormatConfig::PythonFunction {
-                            source_type: _,
-                            module_name: _,
-                            function_name: _,
-                        } => 1.0,
+                        FileFormatConfig::PythonFunction { .. } => 1.0,
                     };
                     let in_mem_size: f64 = (file_size as f64) * inflation_factor;
                     let read_row_size = if self.is_warc() {
@@ -1004,6 +1117,42 @@ Pushdowns = {pushdowns}
     }
 }
 
+impl TryFrom<&LanceScanTask> for ScanTask {
+    type Error = DaftError;
+
+    fn try_from(scan_task: &LanceScanTask) -> Result<Self, Self::Error> {
+        let file_paths = scan_task.get_file_paths();
+        if file_paths.len() != 1 {
+            return Err(DaftError::ValueError(format!(
+                "LanceScanTask must have exactly one file path, but got {}",
+                file_paths.len()
+            )));
+        }
+
+        let size_bytes_on_disk = scan_task.size_bytes_on_disk().map(|sb| sb as u64);
+        Ok(Self {
+            sources: vec![DataSource::Dataset {
+                uri: file_paths[0].clone(),
+                fragment_ids: scan_task.fragment_ids(),
+                columns: scan_task.columns(),
+                filter: scan_task.filter(),
+                storage_options: scan_task.storage_options().map(|m| m.into()),
+                size_bytes: size_bytes_on_disk,
+                metadata: scan_task.metadata(),
+                statistics: scan_task.statistics(),
+            }],
+            schema: scan_task.schema(),
+            file_format_config: scan_task.file_format_config(),
+            storage_config: scan_task.storage_config(),
+            pushdowns: scan_task.pushdowns().clone(),
+            size_bytes_on_disk,
+            metadata: scan_task.metadata(),
+            statistics: scan_task.statistics(),
+            generated_fields: None,
+        })
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::sync::Arc;
@@ -1011,12 +1160,12 @@ mod test {
     use common_display::{DisplayAs, DisplayLevel};
     use common_error::DaftResult;
     use common_file_formats::{FileFormatConfig, ParquetSourceConfig, WarcSourceConfig};
-    use common_scan_info::{Pushdowns, ScanOperator};
+    use common_scan_info::{Pushdowns, ScanOperator, StorageConfig};
     use daft_schema::{dtype::DataType, field::Field, schema::Schema, time_unit::TimeUnit};
     use daft_stats::TableMetadata;
     use itertools::Itertools;
 
-    use crate::{DataSource, ScanTask, glob::GlobScanOperator, storage_config::StorageConfig};
+    use crate::{DataSource, ScanTask, glob::GlobScanOperator};
 
     fn make_scan_task(num_sources: usize) -> ScanTask {
         let sources = (0..num_sources)

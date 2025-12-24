@@ -13,14 +13,19 @@ use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_metrics::ops::NodeType;
 use common_runtime::{combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use common_scan_info::{Pushdowns, ScanTaskLike};
-use daft_core::prelude::{AsArrow, Int64Array, SchemaRef, Utf8Array};
+use daft_core::{
+    datatypes::UInt64Array,
+    prelude::{AsArrow, Int64Array, Schema, SchemaRef, Utf8Array},
+    series::IntoSeries,
+};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
-use daft_dsl::{AggExpr, Expr};
+use daft_dsl::{AggExpr, Expr, expr::bound_expr::BoundExpr};
 use daft_io::{GetRange, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::{ParquetSchemaInferenceOptions, read_parquet_bulk_async};
-use daft_scan::{ChunkSpec, ScanTask};
+use daft_recordbatch::RecordBatch;
+use daft_scan::{ChunkSpec, DataSource, ScanTask};
 use daft_warc::WarcConvertOptions;
 use futures::{FutureExt, Stream, StreamExt};
 use snafu::ResultExt;
@@ -617,6 +622,75 @@ async fn stream_scan_task(
                 predicate: scan_task.pushdowns.filters.clone(),
             };
             daft_warc::stream_warc(url, io_client, Some(io_stats), convert_options, None).await?
+        }
+        FileFormatConfig::Lance(cfg) => {
+            if let DataSource::Dataset {
+                fragment_ids,
+                columns,
+                filter,
+                storage_options,
+                ..
+            } = source
+            {
+                let storage_options = storage_options.clone().map(|bm| bm.into_iter().collect());
+                let ds = Arc::new(
+                    daft_lance::dataset::try_open_dataset(
+                        url,
+                        cfg.version,
+                        cfg.tag.clone(),
+                        cfg.block_size,
+                        cfg.index_cache_size,
+                        cfg.metadata_cache_size,
+                        storage_options,
+                        false, // Try to reuse already opened dataset
+                    )
+                    .await?,
+                );
+
+                let filters = scan_task.pushdowns.filters.clone();
+                let aggregation = scan_task.pushdowns.aggregation.clone();
+                let rb_processor = move |mut rb: RecordBatch| -> DaftResult<RecordBatch> {
+                    if let Some(filter) = filters.clone() {
+                        rb = rb.filter(&[BoundExpr::try_new(filter, &rb.schema)?])?;
+                    }
+
+                    // TODO(zhenchao): Optimized based on the count_rows() API of the Lance dataset
+                    if let Some(agg) = aggregation.clone()
+                        && let Expr::Agg(AggExpr::Count(_, _)) = agg.as_ref()
+                    {
+                        let num_rows = rb.num_rows();
+                        let count_field = daft_core::datatypes::Field::new(
+                            agg.name(),
+                            daft_core::datatypes::DataType::UInt64,
+                        );
+                        let count_array = UInt64Array::from_iter(
+                            count_field.clone(),
+                            std::iter::once(Some(num_rows as u64)),
+                        );
+                        Ok(RecordBatch::new_unchecked(
+                            Schema::new(vec![count_field]),
+                            vec![count_array.into_series()],
+                            1,
+                        ))
+                    } else {
+                        Ok(rb)
+                    }
+                };
+
+                daft_lance::read::stream_lance_fragments(
+                    &ds,
+                    fragment_ids,
+                    columns.clone(),
+                    filter.clone(),
+                    Some(io_stats.clone()),
+                    rb_processor.clone(),
+                )
+                .await?
+            } else {
+                Err(DaftError::InternalError(
+                    "Lance file format only support 'Dataset' data source".to_string(),
+                ))?
+            }
         }
         #[cfg(feature = "python")]
         FileFormatConfig::Database(common_file_formats::DatabaseSourceConfig { sql, conn }) => {
