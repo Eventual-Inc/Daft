@@ -85,9 +85,15 @@ impl PipelineNodeImpl for SampleNode {
         let mut res = vec![];
         match &self.sampling_method {
             SamplingMethod::Fraction(fraction) => {
-                res.push(format!("Sample: {} (fraction)", fraction));
+                res.push(format!(
+                    "Sample@{}: {} (fraction)",
+                    self.node_id(),
+                    fraction
+                ));
             }
-            SamplingMethod::Size(size) => res.push(format!("Sample: {} rows", size)),
+            SamplingMethod::Size(size) => {
+                res.push(format!("Sample@{}: {} rows", self.node_id(), size));
+            }
         }
         res.push(format!("With replacement = {}", self.with_replacement));
         res.push(format!("Seed = {:?}", self.seed));

@@ -75,7 +75,7 @@ impl PipelineNodeImpl for ConcatNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        vec!["Concat".to_string()]
+        vec![format!("Concat@{}", self.node_id())]
     }
 
     fn produce_tasks(

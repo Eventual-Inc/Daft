@@ -406,7 +406,7 @@ impl PipelineNodeImpl for SortNode {
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         use itertools::Itertools;
-        let mut res = vec!["Sort".to_string()];
+        let mut res = vec![format!("Sort@{}:", self.node_id())];
         res.push(format!(
             "Sort by: {}",
             self.sort_by.iter().map(|e| e.to_string()).join(", ")

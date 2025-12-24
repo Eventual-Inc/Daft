@@ -114,7 +114,11 @@ impl PipelineNodeImpl for RepartitionNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        let mut res = vec![format!("Repartition: {}", self.repartition_spec.var_name())];
+        let mut res = vec![format!(
+            "Repartition@{}: {}",
+            self.node_id(),
+            self.repartition_spec.var_name()
+        )];
         res.extend(self.repartition_spec.multiline_display());
         res
     }

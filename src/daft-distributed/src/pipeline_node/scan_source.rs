@@ -150,7 +150,7 @@ impl PipelineNodeImpl for ScanSourceNode {
 
             #[allow(unused_mut)]
             let mut s = vec![
-                "ScanTaskSource:".to_string(),
+                format!("ScanTaskSource@{}:", scan.node_id()),
                 format!("Num Scan Tasks = {num_scan_tasks}"),
                 format!("Estimated Scan Bytes = {total_bytes}"),
             ];

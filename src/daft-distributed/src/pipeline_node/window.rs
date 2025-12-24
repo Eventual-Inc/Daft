@@ -373,7 +373,7 @@ impl PipelineNodeImpl for WindowNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        let mut res = vec!["Window:".to_string()];
+        let mut res = vec![format!("Window@{}:", self.node_id())];
         match self {
             Self::PartitionOnly(node) => {
                 res.extend(node.multiline_display());

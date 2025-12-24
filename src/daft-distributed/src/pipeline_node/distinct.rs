@@ -76,7 +76,8 @@ impl PipelineNodeImpl for DistinctNode {
         use itertools::Itertools;
         let mut res = vec![];
         res.push(format!(
-            "Distinct: By {}",
+            "Distinct@{}: By {}",
+            self.node_id(),
             self.columns.iter().map(|e| e.to_string()).join(", ")
         ));
         res

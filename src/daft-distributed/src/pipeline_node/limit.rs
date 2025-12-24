@@ -345,8 +345,13 @@ impl PipelineNodeImpl for LimitNode {
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         match &self.offset {
-            Some(o) => vec![format!("Limit: Num Rows = {}, Offset = {}", self.limit, o)],
-            None => vec![format!("Limit: {}", self.limit)],
+            Some(o) => vec![format!(
+                "Limit@{}: Num Rows = {}, Offset = {}",
+                self.node_id(),
+                self.limit,
+                o
+            )],
+            None => vec![format!("Limit@{}: {}", self.node_id(), self.limit)],
         }
     }
 

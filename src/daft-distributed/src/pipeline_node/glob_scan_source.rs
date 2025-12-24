@@ -125,7 +125,7 @@ impl PipelineNodeImpl for GlobScanSourceNode {
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         let mut res = vec![
-            "GlobScanSource".to_string(),
+            format!("GlobScanSource@{}:", self.node_id()),
             format!("Glob paths = {:?}", self.glob_paths),
         ];
         res.extend(self.pushdowns.multiline_display());
