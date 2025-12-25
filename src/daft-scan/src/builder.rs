@@ -271,6 +271,7 @@ pub struct JsonScanBuilder {
     pub hive_partitioning: bool,
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
+    pub skip_empty_files: bool,
 }
 
 impl JsonScanBuilder {
@@ -289,6 +290,7 @@ impl JsonScanBuilder {
             hive_partitioning: false,
             buffer_size: None,
             chunk_size: None,
+            skip_empty_files: false,
         }
     }
 
@@ -327,11 +329,17 @@ impl JsonScanBuilder {
         self
     }
 
+    pub fn skip_empty_files(mut self, skip_empty_files: bool) -> Self {
+        self.skip_empty_files = skip_empty_files;
+        self
+    }
+
     /// Creates a logical table scan backed by a JSON scan operator.
     pub async fn finish(self) -> DaftResult<LogicalPlanBuilder> {
         let cfg = JsonSourceConfig {
             buffer_size: self.buffer_size,
             chunk_size: self.chunk_size,
+            skip_empty_files: self.skip_empty_files,
         };
         let operator = Arc::new(
             GlobScanOperator::try_new(

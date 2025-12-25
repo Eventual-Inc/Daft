@@ -84,7 +84,7 @@ impl AsImageObj for FixedShapeImageArray {
                     .flat_child
                     .downcast::<UInt8Array>()
                     .unwrap()
-                    .as_arrow();
+                    .as_arrow2();
                 let num_channels = mode.num_channels();
                 let size = height * width * u32::from(num_channels);
                 let start = idx * size as usize;
@@ -209,7 +209,7 @@ pub fn fixed_image_array_from_img_buffers(
         Box::new(daft_arrow::array::PrimitiveArray::from_vec(data)),
         daft_arrow::buffer::wrap_null_buffer(validity),
     ));
-    let physical_array = FixedSizeListArray::from_arrow(
+    let physical_array = FixedSizeListArray::from_arrow2(
         Arc::new(Field::new(name, (&arrow_dtype).into())),
         arrow_array,
     )?;

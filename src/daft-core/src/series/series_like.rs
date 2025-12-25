@@ -1,5 +1,6 @@
 use std::any::Any;
 
+use arrow::array::ArrayRef;
 use common_error::DaftResult;
 
 use super::Series;
@@ -7,11 +8,13 @@ use crate::{
     array::ops::GroupIndices,
     datatypes::{BooleanArray, DataType, Field},
     lit::Literal,
+    prelude::UInt64Array,
 };
 pub trait SeriesLike: Send + Sync + Any + std::fmt::Debug {
     #[allow(clippy::wrong_self_convention)]
     fn into_series(&self) -> Series;
-    fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array>;
+    fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array>;
+    fn to_arrow(&self) -> DaftResult<ArrayRef>;
     fn as_any(&self) -> &dyn std::any::Any;
     fn with_validity(&self, validity: Option<daft_arrow::buffer::NullBuffer>)
     -> DaftResult<Series>;
@@ -35,7 +38,7 @@ pub trait SeriesLike: Send + Sync + Any + std::fmt::Debug {
     fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Series>;
     fn head(&self, num: usize) -> DaftResult<Series>;
     fn slice(&self, start: usize, end: usize) -> DaftResult<Series>;
-    fn take(&self, idx: &Series) -> DaftResult<Series>;
+    fn take(&self, idx: &UInt64Array) -> DaftResult<Series>;
     fn str_value(&self, idx: usize) -> DaftResult<String>;
     fn get_lit(&self, idx: usize) -> Literal;
 }

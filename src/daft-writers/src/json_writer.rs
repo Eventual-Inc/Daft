@@ -20,7 +20,8 @@ type JsonFinishFn<B> =
 /// Helper function that checks if we support native writes given the file format, root directory, and schema.
 pub(crate) fn native_json_writer_supported(file_schema: &SchemaRef) -> DaftResult<bool> {
     // TODO(desmond): Currently we do not support extension and timestamp types.
-    let datatypes_convertable = file_schema.to_arrow()?.fields.iter().all(|field| {
+    #[allow(deprecated, reason = "arrow2 migration")]
+    let datatypes_convertable = file_schema.to_arrow2()?.fields.iter().all(|field| {
         field.data_type().can_convert_to_arrow_rs() && field.data_type().can_convert_to_json()
     });
     Ok(datatypes_convertable)
@@ -51,7 +52,7 @@ pub(crate) fn create_native_json_writer(
                 storage_backend,
             )))
         }
-        SourceType::S3 => {
+        source if source.supports_native_writer() => {
             let ObjectPath { scheme, .. } = daft_io::utils::parse_object_url(root_dir.as_ref())?;
             let io_config = io_config.ok_or_else(|| {
                 DaftError::InternalError("IO config is required for S3 writes".to_string())

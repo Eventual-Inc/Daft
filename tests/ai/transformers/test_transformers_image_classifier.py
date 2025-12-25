@@ -97,7 +97,7 @@ def test_instantiate():
     descriptor = TransformersImageClassifierDescriptor(
         provider_name="transformers",
         model_name="openai/clip-vit-base-patch32",
-        model_options={},
+        classify_options={},
     )
 
     classifier = descriptor.instantiate()

@@ -11,7 +11,7 @@ impl DaftHllMergeAggable for FixedSizeBinaryArray {
 
     fn hll_merge(&self) -> Self::Output {
         let mut final_hll = HyperLogLog::default();
-        for byte_slice in self.as_arrow().iter().flatten() {
+        for byte_slice in self.as_arrow2().iter().flatten() {
             let hll = HyperLogLog::new_with_byte_slice(byte_slice);
             final_hll.merge(&hll);
         }
@@ -22,7 +22,7 @@ impl DaftHllMergeAggable for FixedSizeBinaryArray {
     }
 
     fn grouped_hll_merge(&self, groups: &GroupIndices) -> Self::Output {
-        let data = self.as_arrow();
+        let data = self.as_arrow2();
         let mut counts = Vec::with_capacity(groups.len());
         for group in groups {
             let mut final_hll = HyperLogLog::default();

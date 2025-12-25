@@ -2,7 +2,7 @@ use common_error::{DaftError, DaftResult, ensure};
 use daft_arrow::array::Array;
 use daft_core::{
     array::ListArray,
-    prelude::{AsArrow, DataType, Field, FullNull, Schema, Utf8Array},
+    prelude::{DataType, Field, FullNull, Schema, Utf8Array},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
@@ -108,10 +108,7 @@ fn extract_all_impl(arr: &Utf8Array, pattern: &Utf8Array, index: usize) -> DaftR
             regex_extract_all_matches(self_iter, regex_iter, index, expected_size, arr.name())?
         }
         _ => {
-            let regex_iter = pattern
-                .as_arrow()
-                .iter()
-                .map(|pat| pat.map(regex::Regex::new));
+            let regex_iter = pattern.into_iter().map(|pat| pat.map(regex::Regex::new));
             regex_extract_all_matches(self_iter, regex_iter, index, expected_size, arr.name())?
         }
     };

@@ -2,6 +2,11 @@ mod agg_ops;
 mod infer_datatype;
 mod matching;
 
+use arrow::{
+    array::ArrowNumericType,
+    buffer::{Buffer, ScalarBuffer},
+    datatypes::ArrowNativeType,
+};
 pub use infer_datatype::InferDataType;
 pub mod prelude;
 use std::ops::{Add, Div, Mul, Rem, Sub};
@@ -288,7 +293,8 @@ impl DaftDataType for PythonType {
 }
 
 pub trait NumericNative:
-    PartialOrd
+    ArrowNativeType
+    + PartialOrd
     + NativeType
     + Num
     + NumCast
@@ -307,6 +313,7 @@ pub trait NumericNative:
     + Serialize
 {
     type DAFTTYPE: DaftNumericType;
+    type ARROWTYPE: ArrowNumericType;
 }
 
 /// Trait to express types that are native and can be vectorized
@@ -316,37 +323,48 @@ pub trait DaftNumericType: Send + Sync + DaftArrowBackedType + 'static {
 
 impl NumericNative for i8 {
     type DAFTTYPE = Int8Type;
+    type ARROWTYPE = arrow::datatypes::Int8Type;
 }
 impl NumericNative for i16 {
     type DAFTTYPE = Int16Type;
+    type ARROWTYPE = arrow::datatypes::Int16Type;
 }
 impl NumericNative for i32 {
     type DAFTTYPE = Int32Type;
+    type ARROWTYPE = arrow::datatypes::Int32Type;
 }
 impl NumericNative for i64 {
     type DAFTTYPE = Int64Type;
+    type ARROWTYPE = arrow::datatypes::Int64Type;
 }
 impl NumericNative for i128 {
     type DAFTTYPE = Int128Type;
+    type ARROWTYPE = arrow::datatypes::Decimal128Type;
 }
 impl NumericNative for u8 {
     type DAFTTYPE = UInt8Type;
+    type ARROWTYPE = arrow::datatypes::UInt8Type;
 }
 impl NumericNative for u16 {
     type DAFTTYPE = UInt16Type;
+    type ARROWTYPE = arrow::datatypes::UInt16Type;
 }
 impl NumericNative for u32 {
     type DAFTTYPE = UInt32Type;
+    type ARROWTYPE = arrow::datatypes::UInt32Type;
 }
 impl NumericNative for u64 {
     type DAFTTYPE = UInt64Type;
+    type ARROWTYPE = arrow::datatypes::UInt64Type;
 }
 
 impl NumericNative for f32 {
     type DAFTTYPE = Float32Type;
+    type ARROWTYPE = arrow::datatypes::Float32Type;
 }
 impl NumericNative for f64 {
     type DAFTTYPE = Float64Type;
+    type ARROWTYPE = arrow::datatypes::Float64Type;
 }
 
 impl DaftNumericType for UInt8Type {
@@ -447,7 +465,28 @@ pub type Decimal128Array = DataArray<Decimal128Type>;
 
 impl<T: DaftNumericType> DataArray<T> {
     pub fn as_slice(&self) -> &[T::Native] {
-        self.as_arrow().values().as_slice()
+        self.as_arrow2().values().as_slice()
+    }
+
+    pub fn values(&self) -> ScalarBuffer<T::Native> {
+        // this is fully zero copy to convert the values into an arrow-rs ScalarBuffer
+        let arrow_buffer = Buffer::from(self.as_arrow2().values().clone());
+        ScalarBuffer::from(arrow_buffer)
+    }
+
+    /// Maps the values only without changing the null bitmaps
+    pub fn map_values<F>(&self, f: F) -> Self
+    where
+        F: Fn(&T::Native) -> T::Native,
+    {
+        let arrow_buffer = Buffer::from(self.as_arrow2().values().clone());
+
+        Self::from_values_iter(
+            self.field.clone(),
+            ScalarBuffer::from(arrow_buffer).into_iter().map(f),
+        )
+        .with_validity(self.validity().cloned())
+        .expect("Failed to set nulls")
     }
 }
 

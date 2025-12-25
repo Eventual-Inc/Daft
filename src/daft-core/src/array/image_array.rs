@@ -36,19 +36,19 @@ impl ImageArray {
     }
 
     pub fn channel_array(&self) -> &daft_arrow::array::UInt16Array {
-        self.channels().as_arrow()
+        self.channels().as_arrow2()
     }
 
     pub fn height_array(&self) -> &daft_arrow::array::UInt32Array {
-        self.heights().as_arrow()
+        self.heights().as_arrow2()
     }
 
     pub fn width_array(&self) -> &daft_arrow::array::UInt32Array {
-        self.widths().as_arrow()
+        self.widths().as_arrow2()
     }
 
     pub fn mode_array(&self) -> &daft_arrow::array::UInt8Array {
-        self.modes().as_arrow()
+        self.modes().as_arrow2()
     }
 
     pub fn channels(&self) -> &DataArray<UInt16Type> {
@@ -139,7 +139,7 @@ impl ImageArray {
         let arrow_dtype: daft_arrow::datatypes::DataType = T::PRIMITIVE.into();
         if let DataType::Image(Some(mode)) = &data_type {
             assert!(
-                !(mode.get_dtype().to_arrow()? != arrow_dtype),
+                !(mode.get_dtype().to_arrow2()? != arrow_dtype),
                 "Inner value dtype of provided dtype {data_type:?} is inconsistent with inferred value dtype {arrow_dtype:?}"
             );
         }

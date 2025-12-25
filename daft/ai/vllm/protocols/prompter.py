@@ -1,12 +1,26 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, TypedDict
 
 from daft.ai.protocols import Prompter, PrompterDescriptor
 
 if TYPE_CHECKING:
-    from daft.ai.typing import Options, UDFOptions
+    from daft.ai.typing import Options
+
+
+class VLLMPromptOptions(TypedDict, total=False):
+    concurrency: int
+    gpus_per_actor: int
+    do_prefix_routing: bool
+    max_buffer_size: int
+    min_bucket_size: int
+    prefix_match_threshold: float
+    load_balance_threshold: int
+    batch_size: int | None
+    engine_args: dict[str, Any]
+    generate_args: dict[str, Any]
+    num_gpus: int
 
 
 @dataclass
@@ -19,18 +33,10 @@ class VLLMPrefixCachingPrompterDescriptor(PrompterDescriptor):
     """
 
     provider_name: str
+    options: VLLMPromptOptions
+    return_format: Any | None = None
+    system_message: str | None = None
     model_name: str = "facebook/opt-125m"
-    concurrency: int = 1
-    gpus_per_actor: int = 1
-    do_prefix_routing: bool = True
-    max_buffer_size: int = 5000
-    min_bucket_size: int = 16
-    prefix_match_threshold: float = 0.33
-    load_balance_threshold: int = 256
-    batch_size: int | None = None
-    engine_args: dict[str, Any] = field(default_factory=dict)
-    generate_args: dict[str, Any] = field(default_factory=dict)
-    num_gpus: int = 1
 
     def get_provider(self) -> str:
         return self.provider_name
@@ -39,24 +45,20 @@ class VLLMPrefixCachingPrompterDescriptor(PrompterDescriptor):
         return self.model_name
 
     def get_options(self) -> Options:
-        return {
-            "concurrency": self.concurrency,
-            "gpus_per_actor": self.gpus_per_actor,
-            "do_prefix_routing": self.do_prefix_routing,
-            "max_buffer_size": self.max_buffer_size,
-            "min_bucket_size": self.min_bucket_size,
-            "prefix_match_threshold": self.prefix_match_threshold,
-            "load_balance_threshold": self.load_balance_threshold,
-            "batch_size": self.batch_size,
-            "engine_args": self.engine_args,
-            "generate_args": self.generate_args,
-            "num_gpus": self.num_gpus,
+        defaults: VLLMPromptOptions = {
+            "concurrency": 1,
+            "gpus_per_actor": 1,
+            "do_prefix_routing": True,
+            "max_buffer_size": 5000,
+            "min_bucket_size": 16,
+            "prefix_match_threshold": 0.33,
+            "load_balance_threshold": 256,
+            "batch_size": None,
+            "engine_args": {},
+            "generate_args": {},
+            "num_gpus": 1,
         }
-
-    def get_udf_options(self) -> UDFOptions:
-        from daft.ai.typing import UDFOptions
-
-        return UDFOptions(concurrency=self.concurrency, num_gpus=self.num_gpus)
+        return {**defaults, **self.options}
 
     def instantiate(self) -> Prompter:
         """This method should not be called for vLLM provider.

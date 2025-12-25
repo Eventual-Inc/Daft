@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arrow::array::ArrayRef;
 use common_error::{DaftError, DaftResult};
 use daft_arrow::offset::OffsetsBuffer;
 
@@ -10,7 +11,7 @@ use crate::{
     series::Series,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FixedSizeListArray {
     pub field: Arc<Field>,
     /// contains all the elements of the nested lists flattened into a single contiguous array.
@@ -156,13 +157,25 @@ impl FixedSizeListArray {
         ))
     }
 
-    pub fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
-        let arrow_dtype = self.data_type().to_arrow().unwrap();
+    #[deprecated(note = "arrow2 migration")]
+    pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
+        let arrow_dtype = self.data_type().to_arrow2().unwrap();
         Box::new(daft_arrow::array::FixedSizeListArray::new(
             arrow_dtype,
-            self.flat_child.to_arrow(),
+            self.flat_child.to_arrow2(),
             daft_arrow::buffer::wrap_null_buffer(self.validity.clone()),
         ))
+    }
+
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        let field = Arc::new(self.flat_child.field().to_arrow()?);
+        let size = self.fixed_element_len() as i32;
+        let values = self.flat_child.to_arrow()?;
+        let nulls = self.validity.clone();
+
+        Ok(Arc::new(arrow::array::FixedSizeListArray::try_new(
+            field, size, values, nulls,
+        )?))
     }
 
     pub fn fixed_element_len(&self) -> usize {
@@ -285,6 +298,8 @@ impl ExactSizeIterator for FixedSizeListArrayIter<'_> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use common_error::DaftResult;
 
     use super::FixedSizeListArray;
@@ -330,6 +345,39 @@ mod tests {
                 .collect::<Vec<_>>(),
             arr.validity.unwrap().into_iter().collect::<Vec<_>>()
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_fixed_size_list_to_arrow() -> DaftResult<()> {
+        let arr = get_i32_fixed_size_list_array(vec![true, true, false].as_slice());
+        let arrow_arr = arr.to_arrow()?;
+
+        assert_eq!(
+            arrow_arr.data_type(),
+            &arrow::datatypes::DataType::FixedSizeList(
+                Arc::new(arrow::datatypes::Field::new(
+                    "foo",
+                    arrow::datatypes::DataType::Int32,
+                    true
+                )),
+                3
+            )
+        );
+        assert_eq!(arrow_arr.len(), arr.len());
+        assert_eq!(arrow_arr.null_count(), arr.null_count());
+
+        assert_eq!(
+            arrow_arr
+                .as_any()
+                .downcast_ref::<arrow::array::FixedSizeListArray>()
+                .unwrap()
+                .values()
+                .as_ref()
+                .len(),
+            arr.flat_child.len()
+        );
+
         Ok(())
     }
 }

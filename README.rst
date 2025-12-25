@@ -50,7 +50,7 @@ To see the full benchmarks, detailed setup, and logs, check out our `benchmarkin
 Contributing
 ------------
 
-We <3 developers! To start contributing to Daft, please read `CONTRIBUTING.md <https://github.com/Eventual-Inc/Daft/blob/main/CONTRIBUTING.md>`_. This document describes the development lifecycle and toolchain for working on Daft. It also details how to add new functionality to the core engine and expose it through a Python API.
+We ❤️ developers! To start contributing to Daft, please read `CONTRIBUTING.md <https://github.com/Eventual-Inc/Daft/blob/main/CONTRIBUTING.md>`_. This document describes the development lifecycle and toolchain for working on Daft. It also details how to add new functionality to the core engine and expose it through a Python API.
 
 Here's a list of `good first issues <https://github.com/Eventual-Inc/Daft/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22>`_ to get yourself warmed up with Daft. Comment in the issue to pick it up, and feel free to ask any questions!
 
@@ -125,7 +125,7 @@ Daft has an Apache 2.0 license - please see the LICENSE file.
    :alt: Coverage
 
 .. |Slack| image:: https://img.shields.io/badge/slack-@distdata-purple.svg?logo=slack
-   :target: https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg
+   :target: https://join.slack.com/t/dist-data/shared_invite/zt-3l411uyaq-Ky30cBfnirJVlKDnsCRM_w
    :alt: slack community
 
 .. |TrendShift| image:: https://trendshift.io/api/badge/repositories/8239

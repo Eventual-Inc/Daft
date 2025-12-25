@@ -30,7 +30,7 @@ where
             idx,
             self.len()
         );
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow2();
         let is_valid = arrow_array
             .validity()
             .is_none_or(|validity| validity.get_bit(idx));
@@ -55,7 +55,7 @@ macro_rules! impl_array_arrow_get {
                     self.len()
                 );
 
-                let arrow_array = self.as_arrow();
+                let arrow_array = self.as_arrow2();
                 let is_valid = arrow_array
                     .validity()
                     .is_none_or(|validity| validity.get_bit(idx));

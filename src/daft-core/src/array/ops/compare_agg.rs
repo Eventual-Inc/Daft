@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2->arrow migration")]
 use common_error::DaftResult;
 use daft_arrow::array::Array;
 
@@ -18,7 +19,7 @@ where
     T: DaftPrimitiveType,
     F: Fn(T::Native, T::Native) -> T::Native,
 {
-    let arrow_array = array.as_arrow();
+    let arrow_array = array.as_arrow2();
     let cmp_per_group = if arrow_array.null_count() > 0 {
         let cmp_values_iter = groups.iter().map(|g| {
             let reduced_val = g
@@ -68,14 +69,14 @@ where
     type Output = DaftResult<Self>;
 
     fn min(&self) -> Self::Output {
-        let primitive_arr = self.as_arrow();
+        let primitive_arr = self.as_arrow2();
 
         let result = daft_arrow::compute::aggregate::min_primitive(primitive_arr);
         Ok(Self::from_iter(self.field.clone(), std::iter::once(result)))
     }
 
     fn max(&self) -> Self::Output {
-        let primitive_arr = self.as_arrow();
+        let primitive_arr = self.as_arrow2();
 
         let result = daft_arrow::compute::aggregate::max_primitive(primitive_arr);
         Ok(Self::from_iter(self.field.clone(), std::iter::once(result)))
@@ -111,7 +112,7 @@ fn grouped_cmp_utf8<'a, F>(
 where
     F: Fn(&'a str, &'a str) -> &'a str,
 {
-    let arrow_array = data_array.as_arrow();
+    let arrow_array = data_array.as_arrow2();
     let cmp_per_group = if arrow_array.null_count() > 0 {
         let cmp_values_iter = groups.iter().map(|g| {
             let reduced_val = g
@@ -158,7 +159,7 @@ where
 impl DaftCompareAggable for DataArray<Utf8Type> {
     type Output = DaftResult<Self>;
     fn min(&self) -> Self::Output {
-        let arrow_array: &daft_arrow::array::Utf8Array<i64> = self.as_arrow();
+        let arrow_array: &daft_arrow::array::Utf8Array<i64> = self.as_arrow2();
 
         let result = daft_arrow::compute::aggregate::min_string(arrow_array);
         let res_arrow_array = daft_arrow::array::Utf8Array::<i64>::from([result]);
@@ -166,7 +167,7 @@ impl DaftCompareAggable for DataArray<Utf8Type> {
         Self::new(self.field.clone(), Box::new(res_arrow_array))
     }
     fn max(&self) -> Self::Output {
-        let arrow_array: &daft_arrow::array::Utf8Array<i64> = self.as_arrow();
+        let arrow_array: &daft_arrow::array::Utf8Array<i64> = self.as_arrow2();
 
         let result = daft_arrow::compute::aggregate::max_string(arrow_array);
         let res_arrow_array = daft_arrow::array::Utf8Array::<i64>::from([result]);
@@ -191,7 +192,7 @@ fn grouped_cmp_binary<'a, F>(
 where
     F: Fn(&'a [u8], &'a [u8]) -> &'a [u8],
 {
-    let arrow_array = data_array.as_arrow();
+    let arrow_array = data_array.as_arrow2();
     let cmp_per_group = if arrow_array.null_count() > 0 {
         let cmp_values_iter = groups.iter().map(|g| {
             let reduced_val = g
@@ -236,7 +237,7 @@ where
 impl DaftCompareAggable for DataArray<BinaryType> {
     type Output = DaftResult<Self>;
     fn min(&self) -> Self::Output {
-        let arrow_array: &daft_arrow::array::BinaryArray<i64> = self.as_arrow();
+        let arrow_array: &daft_arrow::array::BinaryArray<i64> = self.as_arrow2();
 
         let result = daft_arrow::compute::aggregate::min_binary(arrow_array);
         let res_arrow_array = daft_arrow::array::BinaryArray::<i64>::from([result]);
@@ -244,7 +245,7 @@ impl DaftCompareAggable for DataArray<BinaryType> {
         Self::new(self.field.clone(), Box::new(res_arrow_array))
     }
     fn max(&self) -> Self::Output {
-        let arrow_array: &daft_arrow::array::BinaryArray<i64> = self.as_arrow();
+        let arrow_array: &daft_arrow::array::BinaryArray<i64> = self.as_arrow2();
 
         let result = daft_arrow::compute::aggregate::max_binary(arrow_array);
         let res_arrow_array = daft_arrow::array::BinaryArray::<i64>::from([result]);
@@ -268,7 +269,7 @@ fn cmp_fixed_size_binary<'a, F>(
 where
     F: Fn(&'a [u8], &'a [u8]) -> &'a [u8],
 {
-    let arrow_array = data_array.as_arrow();
+    let arrow_array = data_array.as_arrow2();
     if arrow_array.null_count() == arrow_array.len() {
         Ok(FixedSizeBinaryArray::full_null(
             data_array.name(),
@@ -307,7 +308,7 @@ fn grouped_cmp_fixed_size_binary<'a, F>(
 where
     F: Fn(&'a [u8], &'a [u8]) -> &'a [u8],
 {
-    let arrow_array = data_array.as_arrow();
+    let arrow_array = data_array.as_arrow2();
     let cmp_per_group = if arrow_array.null_count() > 0 {
         let cmp_values_iter = groups.iter().map(|g| {
             let reduced_val = g
@@ -373,7 +374,7 @@ fn grouped_cmp_bool(
     val_to_find: bool,
     groups: &GroupIndices,
 ) -> DaftResult<BooleanArray> {
-    let arrow_array = data_array.as_arrow();
+    let arrow_array = data_array.as_arrow2();
     let cmp_per_group = if arrow_array.null_count() > 0 {
         let cmp_values_iter = groups.iter().map(|g| {
             let reduced_val = g
@@ -422,7 +423,7 @@ fn grouped_cmp_bool(
 impl DaftCompareAggable for DataArray<BooleanType> {
     type Output = DaftResult<Self>;
     fn min(&self) -> Self::Output {
-        let arrow_array: &daft_arrow::array::BooleanArray = self.as_arrow();
+        let arrow_array: &daft_arrow::array::BooleanArray = self.as_arrow2();
 
         let result = daft_arrow::compute::aggregate::min_boolean(arrow_array);
         let res_arrow_array = daft_arrow::array::BooleanArray::from([result]);
@@ -430,7 +431,7 @@ impl DaftCompareAggable for DataArray<BooleanType> {
         Self::new(self.field.clone(), Box::new(res_arrow_array))
     }
     fn max(&self) -> Self::Output {
-        let arrow_array: &daft_arrow::array::BooleanArray = self.as_arrow();
+        let arrow_array: &daft_arrow::array::BooleanArray = self.as_arrow2();
 
         let result = daft_arrow::compute::aggregate::max_boolean(arrow_array);
         let res_arrow_array = daft_arrow::array::BooleanArray::from([result]);

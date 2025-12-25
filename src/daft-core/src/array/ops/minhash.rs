@@ -57,7 +57,7 @@ impl DaftMinHash for Utf8Array {
         let perm_b = repeat_with(|| rng.u64(0..(i32::MAX as u64))).take(num_hashes);
         let perm_b_simd = load_simd(perm_b, num_hashes);
 
-        let internal_arrow_representation = self.as_arrow();
+        let internal_arrow_representation = self.as_arrow2();
         let mut output: MutablePrimitiveArray<u32> =
             MutablePrimitiveArray::with_capacity(num_hashes * self.len());
 
@@ -84,7 +84,7 @@ impl DaftMinHash for Utf8Array {
         }
 
         let immutable_output: PrimitiveArray<u32> = output.into();
-        let output_series = Series::from_arrow(
+        let output_series = Series::from_arrow2(
             Field::new(self.name(), DataType::UInt32).into(),
             Box::new(immutable_output),
         )?;

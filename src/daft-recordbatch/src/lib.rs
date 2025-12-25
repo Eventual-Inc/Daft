@@ -147,10 +147,12 @@ impl RecordBatch {
         Ok(Self::new_unchecked(schema, columns?, num_rows))
     }
 
+    #[deprecated(note = "arrow2 migration")]
+    #[allow(deprecated, reason = "arrow2 migration")]
     pub fn get_inner_arrow_arrays(
         &self,
     ) -> impl Iterator<Item = Box<dyn daft_arrow::array::Array>> + '_ {
-        self.columns.iter().map(|s| s.to_arrow())
+        self.columns.iter().map(|s| s.to_arrow2())
     }
 
     /// Create a new [`RecordBatch`] and validate against `num_rows`
@@ -287,7 +289,7 @@ impl RecordBatch {
                 )));
             }
             let field = Arc::new(field.clone());
-            let column = Series::from_arrow(field, array)?;
+            let column = Series::from_arrow2(field, array)?;
             columns.push(column);
         }
 
@@ -400,7 +402,7 @@ impl RecordBatch {
         };
         let indices: daft_core::array::DataArray<daft_core::datatypes::UInt64Type> =
             UInt64Array::from(("idx", values));
-        self.take(&indices.into_series())
+        self.take(&indices)
     }
 
     pub fn add_monotonically_increasing_id(
@@ -424,7 +426,7 @@ impl RecordBatch {
 
         if num == 0 {
             let indices = UInt64Array::empty("idx", &DataType::UInt64);
-            return self.take(&indices.into_series());
+            return self.take(&indices);
         }
 
         let self_len = self.len();
@@ -439,7 +441,7 @@ impl RecordBatch {
             })
             .collect();
         let indices = UInt64Array::from(("idx", sample_points));
-        self.take(&indices.into_series())
+        self.take(&indices)
     }
 
     pub fn size_bytes(&self) -> usize {
@@ -505,7 +507,7 @@ impl RecordBatch {
         Self::new_with_size(self.schema.clone(), new_series?, num_rows)
     }
 
-    pub fn take(&self, idx: &Series) -> DaftResult<Self> {
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
         let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.take(idx)).collect();
         Self::new_with_size(self.schema.clone(), new_series?, idx.len())
     }
@@ -1544,17 +1546,21 @@ impl RecordBatch {
         )
     }
 
+    #[deprecated(note = "arrow2 migration")]
+    #[allow(deprecated, reason = "arrow2 migration")]
     pub fn to_chunk(&self) -> Chunk<Box<dyn Array>> {
-        Chunk::new(self.columns.iter().map(|s| s.to_arrow()).collect())
+        Chunk::new(self.columns.iter().map(|s| s.to_arrow2()).collect())
     }
 
     pub fn to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
         let buffer = Vec::with_capacity(self.size_bytes());
-        let schema = self.schema.to_arrow()?;
+        #[allow(deprecated, reason = "arrow2 migration")]
+        let schema = self.schema.to_arrow2()?;
         let options = daft_arrow::io::ipc::write::WriteOptions { compression: None };
         let mut writer = daft_arrow::io::ipc::write::StreamWriter::new(buffer, options);
         writer.start(&schema, None)?;
 
+        #[allow(deprecated, reason = "arrow2 migration")]
         let chunk = self.to_chunk();
         writer.write(&chunk, None)?;
 
@@ -1590,12 +1596,13 @@ impl RecordBatch {
 impl TryFrom<RecordBatch> for arrow_array::RecordBatch {
     type Error = DaftError;
 
+    #[allow(deprecated, reason = "arrow2 migration")]
     fn try_from(record_batch: RecordBatch) -> DaftResult<Self> {
-        let schema = Arc::new(record_batch.schema.to_arrow()?.into());
+        let schema = Arc::new(record_batch.schema.to_arrow2()?.into());
         let columns = record_batch
             .columns
             .iter()
-            .map(|s| s.to_arrow().into())
+            .map(|s| s.to_arrow2().into())
             .collect::<Vec<_>>();
         Self::try_new(schema, columns).map_err(DaftError::ArrowRsError)
     }

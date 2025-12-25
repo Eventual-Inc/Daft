@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pathlib
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -7,7 +8,7 @@ if TYPE_CHECKING:
     from daft.daft import AzureConfig, GCSConfig, IOConfig, S3Config
 
 
-def io_config_to_storage_options(io_config: IOConfig, table_uri: str) -> dict[str, str] | None:
+def io_config_to_storage_options(io_config: IOConfig, table_uri: str | pathlib.Path) -> dict[str, str] | None:
     """Converts the Daft IOConfig to a storage options dict that the object_store crate understands.
 
     The object_store crate is used by many Rust-backed Python libraries such as
@@ -15,6 +16,8 @@ def io_config_to_storage_options(io_config: IOConfig, table_uri: str) -> dict[st
 
     This function takes as input the table_uri, which it uses to determine the backend to be used.
     """
+    if isinstance(table_uri, pathlib.Path):
+        table_uri = str(table_uri)
     parsed = urlparse(table_uri)
     scheme = parsed.scheme
     if scheme == "s3" or scheme == "s3a":

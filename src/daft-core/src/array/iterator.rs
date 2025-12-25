@@ -29,7 +29,7 @@ macro_rules! impl_into_iter {
 
             #[inline]
             fn into_iter(self) -> Self::IntoIter {
-                self.as_arrow().into_iter()
+                self.as_arrow2().into_iter()
             }
         }
     };
@@ -63,7 +63,7 @@ where
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
-        self.as_arrow().into_iter()
+        self.as_arrow2().into_iter()
     }
 }
 

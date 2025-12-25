@@ -62,10 +62,7 @@ fn endswith_impl(s: &Series, pattern: &Series) -> DaftResult<Series> {
 #[cfg(test)]
 mod tests {
     use common_error::DaftResult;
-    use daft_core::{
-        prelude::{AsArrow, Utf8Array},
-        series::IntoSeries,
-    };
+    use daft_core::{prelude::Utf8Array, series::IntoSeries};
 
     #[test]
     fn check_endswith_utf_arrays_broadcast() -> DaftResult<()> {
@@ -89,9 +86,9 @@ mod tests {
         let result = result.bool()?;
 
         assert_eq!(result.len(), 3);
-        assert!(result.as_arrow().value(0));
-        assert!(result.as_arrow().value(1));
-        assert!(!result.as_arrow().value(2));
+        assert!(result.get(0).unwrap());
+        assert!(result.get(1).unwrap());
+        assert!(!result.get(2).unwrap());
         Ok(())
     }
 
@@ -120,9 +117,9 @@ mod tests {
         let result = result.bool()?;
 
         assert_eq!(result.len(), 3);
-        assert!(result.as_arrow().value(0));
-        assert!(!result.as_arrow().value(1));
-        assert!(result.as_arrow().value(2));
+        assert!(result.get(0).unwrap());
+        assert!(!result.get(1).unwrap());
+        assert!(result.get(2).unwrap());
         Ok(())
     }
 }

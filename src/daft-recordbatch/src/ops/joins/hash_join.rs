@@ -4,7 +4,7 @@ use arrow_array::builder::BooleanBufferBuilder;
 use common_error::DaftResult;
 use daft_arrow::{buffer::NullBufferBuilder, types::IndexRange};
 use daft_core::{
-    array::ops::{arrow::comparison::build_multi_array_is_equal, as_arrow::AsArrow},
+    array::ops::{DaftIsNull, arrow::comparison::build_multi_array_is_equal},
     prelude::*,
 };
 use daft_dsl::{
@@ -33,8 +33,8 @@ pub(super) fn hash_inner_join(
         || rkeys.columns.iter().any(|s| s.data_type().is_null())
     {
         (
-            UInt64Array::empty("left_indices", &DataType::UInt64).into_series(),
-            UInt64Array::empty("right_indices", &DataType::UInt64).into_series(),
+            UInt64Array::empty("left_indices", &DataType::UInt64),
+            UInt64Array::empty("right_indices", &DataType::UInt64),
         )
     } else {
         // probe on the smaller table
@@ -60,7 +60,7 @@ pub(super) fn hash_inner_join(
         let mut left_idx = vec![];
         let mut right_idx = vec![];
 
-        for (r_idx, h) in r_hashes.as_arrow().values_iter().enumerate() {
+        for (r_idx, h) in r_hashes.values().iter().enumerate() {
             if let Some((_, indices)) = probe_table.raw_entry().from_hash(*h, |other| {
                 *h == other.hash && {
                     let l_idx = other.idx;
@@ -74,13 +74,13 @@ pub(super) fn hash_inner_join(
             }
         }
 
-        let lseries = UInt64Array::from(("left_indices", left_idx)).into_series();
-        let rseries = UInt64Array::from(("right_indices", right_idx)).into_series();
+        let larr = UInt64Array::from(("left_indices", left_idx));
+        let rarr = UInt64Array::from(("right_indices", right_idx));
 
         if probe_left {
-            (lseries, rseries)
+            (larr, rarr)
         } else {
-            (rseries, lseries)
+            (rarr, larr)
         }
     };
 
@@ -126,12 +126,11 @@ pub(super) fn hash_left_right_join(
         || rkeys.columns.iter().any(|s| s.data_type().is_null())
     {
         (
-            UInt64Array::full_null("left_indices", &DataType::UInt64, rkeys.len()).into_series(),
+            UInt64Array::full_null("left_indices", &DataType::UInt64, rkeys.len()),
             UInt64Array::from((
                 "right_indices",
                 (0..(rkeys.len() as u64)).collect::<Vec<_>>(),
-            ))
-            .into_series(),
+            )),
         )
     } else {
         let probe_table = lkeys.to_probe_hash_table()?;
@@ -153,7 +152,7 @@ pub(super) fn hash_left_right_join(
 
         let mut l_valid = NullBufferBuilder::new(min_rows);
 
-        for (r_idx, h) in r_hashes.as_arrow().values_iter().enumerate() {
+        for (r_idx, h) in r_hashes.values().iter().enumerate() {
             if let Some((_, indices)) = probe_table.raw_entry().from_hash(*h, |other| {
                 *h == other.hash && {
                     let l_idx = other.idx;
@@ -173,10 +172,8 @@ pub(super) fn hash_left_right_join(
         }
 
         (
-            UInt64Array::from(("left_indices", left_idx))
-                .with_validity(l_valid.finish())?
-                .into_series(),
-            UInt64Array::from(("right_indices", right_idx)).into_series(),
+            UInt64Array::from(("left_indices", left_idx)).with_validity(l_valid.finish())?,
+            UInt64Array::from(("right_indices", right_idx)),
         )
     };
 
@@ -230,7 +227,7 @@ pub(super) fn hash_semi_anti_join(
             // if we have a null column match, then all of the rows match for an anti join!
             return Ok(left.clone());
         } else {
-            UInt64Array::empty("left_indices", &DataType::UInt64).into_series()
+            UInt64Array::empty("left_indices", &DataType::UInt64)
         }
     } else {
         let probe_table = rkeys.to_probe_hash_map_without_idx()?;
@@ -250,7 +247,7 @@ pub(super) fn hash_semi_anti_join(
 
         let mut left_idx = Vec::with_capacity(rows);
         let is_semi = !is_anti;
-        for (l_idx, h) in l_hashes.as_arrow().values_iter().enumerate() {
+        for (l_idx, h) in l_hashes.values().iter().enumerate() {
             let is_match = probe_table
                 .raw_entry()
                 .from_hash(*h, |other| {
@@ -265,7 +262,7 @@ pub(super) fn hash_semi_anti_join(
             }
         }
 
-        UInt64Array::from(("left_indices", left_idx)).into_series()
+        UInt64Array::from(("left_indices", left_idx))
     };
 
     left.take(&lidx)
@@ -299,8 +296,8 @@ pub(super) fn hash_outer_join(
             Box::new(daft_arrow::array::PrimitiveArray::<u64>::from_trusted_len_iter(r_iter));
 
         (
-            UInt64Array::from(("left_indices", l_arrow)).into_series(),
-            UInt64Array::from(("right_indices", r_arrow)).into_series(),
+            UInt64Array::from(("left_indices", l_arrow)),
+            UInt64Array::from(("right_indices", r_arrow)),
         )
     } else {
         // probe on the smaller table
@@ -334,7 +331,7 @@ pub(super) fn hash_outer_join(
 
         let mut left_idx_used = BooleanBufferBuilder::new(lkeys.len());
 
-        for (r_idx, h) in r_hashes.as_arrow().values_iter().enumerate() {
+        for (r_idx, h) in r_hashes.values().iter().enumerate() {
             if let Some((_, indices)) = probe_table.raw_entry().from_hash(*h, |other| {
                 *h == other.hash && {
                     let l_idx = other.idx;
@@ -369,17 +366,14 @@ pub(super) fn hash_outer_join(
             }
         }
 
-        let lseries = UInt64Array::from(("left_indices", left_idx))
-            .with_validity(l_valid.finish())?
-            .into_series();
-        let rseries = UInt64Array::from(("right_indices", right_idx))
-            .with_validity(r_valid.finish())?
-            .into_series();
+        let larr = UInt64Array::from(("left_indices", left_idx)).with_validity(l_valid.finish())?;
+        let rarr =
+            UInt64Array::from(("right_indices", right_idx)).with_validity(r_valid.finish())?;
 
         if probe_left {
-            (lseries, rseries)
+            (larr, rarr)
         } else {
-            (rseries, lseries)
+            (rarr, larr)
         }
     };
 
@@ -389,7 +383,7 @@ pub(super) fn hash_outer_join(
         vec![]
     } else {
         // use right side value if left is null
-        let take_from_left = lidx.is_null()?.not()?;
+        let take_from_left = lidx.is_null()?.not()?.into_series();
 
         common_cols
             .into_iter()

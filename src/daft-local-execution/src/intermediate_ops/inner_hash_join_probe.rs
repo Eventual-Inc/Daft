@@ -2,10 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
-use daft_core::{
-    prelude::{SchemaRef, UInt64Array},
-    series::IntoSeries,
-};
+use daft_core::prelude::{SchemaRef, UInt64Array};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::{GrowableRecordBatch, ProbeState, get_columns_by_name};
@@ -127,8 +124,8 @@ impl InnerHashJoinProbeOperator {
 
                 let build_side_table = build_side_growable.build()?;
                 let probe_side_table = {
-                    let indices_as_series = UInt64Array::from(("", probe_side_idxs)).into_series();
-                    input_table.take(&indices_as_series)?
+                    let indices_arr = UInt64Array::from(("", probe_side_idxs));
+                    input_table.take(&indices_arr)?
                 };
 
                 let (left_table, right_table) = if build_on_left {

@@ -75,7 +75,7 @@ mod tests {
         let sparse_tensor_dtype = DataType::SparseTensor(Box::new(DataType::Int64), false);
         let sparse_tensor_array = tensor_array.cast(&sparse_tensor_dtype)?;
         let roundtrip_tensor = sparse_tensor_array.cast(&dtype)?;
-        assert!(tensor_array.to_arrow().eq(&roundtrip_tensor.to_arrow()));
+        assert!(tensor_array.to_arrow2().eq(&roundtrip_tensor.to_arrow2()));
         Ok(())
     }
 
@@ -92,7 +92,7 @@ mod tests {
             DataType::FixedShapeSparseTensor(Box::new(DataType::Int64), vec![3], false);
         let sparse_tensor_array = tensor_array.cast(&sparse_tensor_dtype)?;
         let roundtrip_tensor = sparse_tensor_array.cast(&dtype)?;
-        assert!(tensor_array.to_arrow().eq(&roundtrip_tensor.to_arrow()));
+        assert!(tensor_array.to_arrow2().eq(&roundtrip_tensor.to_arrow2()));
         Ok(())
     }
 }

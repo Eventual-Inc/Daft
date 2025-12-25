@@ -812,6 +812,7 @@ impl LocalPhysicalPlan {
 
     pub fn commit_write(
         input: LocalPhysicalPlanRef,
+        data_schema: SchemaRef,
         file_schema: SchemaRef,
         file_info: OutputFileInfo<BoundExpr>,
         stats_state: StatsState,
@@ -819,6 +820,7 @@ impl LocalPhysicalPlan {
     ) -> LocalPhysicalPlanRef {
         Self::CommitWrite(CommitWrite {
             input,
+            data_schema,
             file_schema,
             file_info,
             stats_state,
@@ -1407,6 +1409,7 @@ impl LocalPhysicalPlan {
                 ),
                 Self::CommitWrite(CommitWrite {
                     input,
+                    data_schema,
                     stats_state,
                     file_schema,
                     file_info,
@@ -1414,6 +1417,7 @@ impl LocalPhysicalPlan {
                     ..
                 }) => Self::commit_write(
                     new_child.clone(),
+                    data_schema.clone(),
                     file_schema.clone(),
                     file_info.clone(),
                     stats_state.clone(),
@@ -1945,6 +1949,7 @@ pub struct PhysicalWrite {
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct CommitWrite {
     pub input: LocalPhysicalPlanRef,
+    pub data_schema: SchemaRef,
     pub file_schema: SchemaRef,
     pub file_info: OutputFileInfo<BoundExpr>,
     pub stats_state: StatsState,

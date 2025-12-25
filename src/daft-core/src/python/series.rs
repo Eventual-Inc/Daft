@@ -129,7 +129,7 @@ impl PySeries {
     }
 
     pub fn to_arrow<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
-        let arrow_array = self.series.to_arrow();
+        let arrow_array = self.series.to_arrow2();
         let arrow_array = cast_array_from_daft_if_needed(arrow_array);
         let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
         ffi::to_py_array(py, arrow_array, &pyarrow)
@@ -219,7 +219,8 @@ impl PySeries {
     }
 
     pub fn take(&self, idx: &Self) -> PyResult<Self> {
-        Ok(self.series.take(&idx.series)?.into())
+        let idx = idx.series.cast(&DataType::UInt64)?;
+        Ok(self.series.take(idx.u64()?)?.into())
     }
 
     pub fn slice(&self, start: i64, end: i64) -> PyResult<Self> {
@@ -256,7 +257,11 @@ impl PySeries {
     }
 
     pub fn argsort(&self, descending: bool, nulls_first: bool) -> PyResult<Self> {
-        Ok(self.series.argsort(descending, nulls_first)?.into())
+        Ok(self
+            .series
+            .argsort(descending, nulls_first)?
+            .into_series()
+            .into())
     }
 
     pub fn minhash(

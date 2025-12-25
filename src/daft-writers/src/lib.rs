@@ -6,7 +6,7 @@ mod ipc;
 mod json_writer;
 mod parquet_writer;
 mod partition;
-mod physical;
+pub mod physical;
 mod storage_backend;
 #[cfg(test)]
 mod test;
