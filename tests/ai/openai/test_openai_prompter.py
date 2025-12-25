@@ -55,11 +55,24 @@ def create_prompter(
 ) -> OpenAIPrompter:
     """Helper to instantiate OpenAIPrompter with sensible defaults."""
     opts = dict(provider_options) if provider_options is not None else dict(DEFAULT_PROVIDER_OPTIONS)
+    # Unpack generation_config if it's passed as a dict
+    prompt_options = dict(kwargs)
+
+    # Extract return_format and system_message to pass as explicit parameters
+    return_format = prompt_options.pop("return_format", None)
+    system_message = prompt_options.pop("system_message", None)
+
+    if "generation_config" in prompt_options and isinstance(prompt_options["generation_config"], dict):
+        generation_config = prompt_options.pop("generation_config")
+        prompt_options.update(generation_config)
+
     return OpenAIPrompter(
         provider_name=provider_name,
         provider_options=opts,
         model=model,
-        **kwargs,
+        return_format=return_format,
+        system_message=system_message,
+        prompt_options=prompt_options,
     )
 
 
@@ -111,7 +124,7 @@ def test_openai_prompter_descriptor_instantiation():
         provider_name="openai",
         provider_options={"api_key": "test-key"},
         model_name="gpt-4o-mini",
-        model_options={},
+        prompt_options={},
     )
 
     assert descriptor.get_provider() == "openai"
@@ -126,8 +139,8 @@ def test_openai_prompter_descriptor_with_return_format():
         provider_name="openai",
         provider_options={"api_key": "test-key"},
         model_name="gpt-4o-mini",
-        model_options={},
         return_format=SimpleResponse,
+        prompt_options={},
     )
 
     assert descriptor.return_format == SimpleResponse
@@ -139,7 +152,7 @@ def test_openai_prompter_descriptor_get_udf_options():
         provider_name="openai",
         provider_options={"api_key": "test-key"},
         model_name="gpt-4o-mini",
-        model_options={},
+        prompt_options={},
     )
 
     udf_options = descriptor.get_udf_options()
@@ -154,7 +167,7 @@ def test_openai_prompter_instantiate():
         provider_name="openai",
         provider_options={"api_key": "test-key"},
         model_name="gpt-4o-mini",
-        model_options={},
+        prompt_options={},
     )
 
     prompter = descriptor.instantiate()
@@ -171,7 +184,7 @@ def test_openai_prompter_descriptor_custom_provider_name():
         provider_name="azure-openai",
         provider_options={"api_key": "test-key"},
         model_name="gpt-4o-mini",
-        model_options={},
+        prompt_options={},
     )
 
     prompter = descriptor.instantiate()
@@ -501,6 +514,23 @@ def test_openai_prompter_with_image_numpy():
         assert messages[0]["content"][1]["type"] == "input_image"
         assert "image_url" in messages[0]["content"][1]
         assert messages[0]["content"][1]["image_url"].startswith("data:image/png;base64,")
+
+
+def test_openai_prompter_raises_without_pillow_on_image():
+    """Test that prompting with image fails without Pillow."""
+    from daft.dependencies import np
+
+    async def _test():
+        # Mock Pillow as not available
+        with patch("daft.dependencies.pil_image.module_available", return_value=False):
+            prompter = create_prompter()
+            image = np.zeros((100, 100, 3), dtype=np.uint8)
+
+            with pytest.raises(
+                ImportError,
+                match=r"Please `pip install 'daft\[openai\]'` to use the prompt function with this provider.",
+            ):
+                await prompter.prompt(("Image", image))
 
     run_async(_test())
 
@@ -1116,7 +1146,7 @@ def test_openai_provider_get_prompter_with_use_chat_completions():
     descriptor = provider.get_prompter(model="gpt-4o-mini", use_chat_completions=True)
 
     assert isinstance(descriptor, OpenAIPrompterDescriptor)
-    assert descriptor.use_chat_completions is True
+    assert descriptor.prompt_options.get("use_chat_completions") is True
 
     # Test instantiation
     prompter = descriptor.instantiate()

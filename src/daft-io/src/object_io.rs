@@ -180,7 +180,7 @@ pub struct LSResult {
 
 use async_stream::stream;
 
-use crate::range::GetRange;
+use crate::{multipart::MultipartWriter, range::GetRange};
 
 #[async_trait]
 pub trait ObjectSource: Sync + Send {
@@ -189,6 +189,15 @@ pub trait ObjectSource: Sync + Send {
     /// Many object sources backed by http servers may not support range requests.
     /// So we need to check if the source supports range requests.
     async fn supports_range(&self, uri: &str) -> super::Result<bool>;
+
+    /// Create a multipart writer to upload via multipart upload.
+    /// Return None if the source does not support multipart upload.
+    async fn create_multipart_writer(
+        self: Arc<Self>,
+        _uri: &str,
+    ) -> super::Result<Option<Box<dyn MultipartWriter>>> {
+        Ok(None)
+    }
 
     /// Return the bytes with given range.
     /// Will return [`Error::InvalidRangeRequest`] if range start is greater than range end
@@ -227,6 +236,14 @@ pub trait ObjectSource: Sync + Send {
         page_size: Option<i32>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<LSResult>;
+
+    /// Delete the object with the given uri.
+    /// Return OK if the object is deleted successfully or the object does not exist.
+    async fn delete(&self, _uri: &str, _io_stats: Option<IOStatsRef>) -> super::Result<()> {
+        Err(super::Error::NotImplementedMethod {
+            method: "Deletes is not yet supported! Please file an issue.".to_string(),
+        })
+    }
 
     async fn iter_dir(
         &self,

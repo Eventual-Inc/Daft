@@ -29,7 +29,7 @@ def test_explicit_set_runner_native():
     explicit_set_runner_script_native = """
 import daft
 print(daft.runners._get_runner())
-daft.context.set_runner_native()
+daft.set_runner_native()
 print(daft.runners._get_runner().name)
     """
 
@@ -60,7 +60,7 @@ def test_explicit_set_runner_ray():
     explicit_set_runner_script_ray = """
 import daft
 print(daft.runners._get_runner())
-daft.context.set_runner_ray()
+daft.set_runner_ray()
 print(daft.runners._get_runner().name)
     """
 
@@ -89,8 +89,8 @@ def test_cannot_switch_local_to_ray():
     """Test that a runner cannot be switched from local to Ray."""
     script = """
 import daft
-daft.context.set_runner_native()
-daft.context.set_runner_ray()
+daft.set_runner_native()
+daft.set_runner_ray()
 """
     with with_null_env():
         result = subprocess.run([sys.executable, "-c", script], capture_output=True)
@@ -100,15 +100,15 @@ daft.context.set_runner_ray()
 @pytest.mark.parametrize(
     "set_new_runner_command",
     [
-        pytest.param("daft.context.set_runner_native()", id="ray_to_native"),
-        pytest.param("daft.context.set_runner_ray()", id="ray_to_ray"),
+        pytest.param("daft.set_runner_native()", id="ray_to_native"),
+        pytest.param("daft.set_runner_ray()", id="ray_to_ray"),
     ],
 )
 def test_cannot_switch_from_ray(set_new_runner_command):
     """Test that a runner cannot be switched from Ray."""
     script = f"""
 import daft
-daft.context.set_runner_ray()
+daft.set_runner_ray()
 {set_new_runner_command}
 """
     with with_null_env():
@@ -178,7 +178,7 @@ def test_cannot_set_runner_ray_after_py():
 import daft
 df = daft.from_pydict({"foo": [1, 2, 3]})
 print(daft.runners._get_runner().name)
-daft.context.set_runner_ray()
+daft.set_runner_ray()
     """
 
     with with_null_env():
@@ -221,7 +221,7 @@ def test_get_or_infer_runner_type_with_set_runner_native():
     get_or_infer_runner_type_py_script = """
 import daft
 
-daft.context.set_runner_native()
+daft.set_runner_native()
 
 print(daft.runners.get_or_infer_runner_type())
 
@@ -246,7 +246,7 @@ def test_get_or_infer_runner_type_with_set_runner_ray():
     get_or_infer_runner_type_py_script = """
 import daft
 
-daft.context.set_runner_ray()
+daft.set_runner_ray()
 
 print(daft.runners.get_or_infer_runner_type())
 
@@ -273,7 +273,7 @@ def test_get_or_infer_runner_type_with_inconsistent_settings(daft_runner_envvar)
 import daft
 
 print(daft.runners.get_or_infer_runner_type())
-daft.context.set_runner_ray()
+daft.set_runner_ray()
 print(daft.runners.get_or_infer_runner_type())
     """
 

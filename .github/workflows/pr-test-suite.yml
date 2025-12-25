@@ -29,7 +29,7 @@ jobs:
     outputs:
       skip: ${{ steps.filter.outputs.skip }}
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
 
     - name: Detect non-trivial changes
       id: filter
@@ -74,13 +74,13 @@ jobs:
     needs: skipcheck
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
         python-version: ['3.10', '3.13']
         daft-runner: [ray, native]
-        pyarrow-version: [8.0.0, 19.0.1]
+        pyarrow-version: [8.0.0, 22.0.0]
         os: [ubuntu-latest, macos-latest]
         on-main:
         - ${{ github.ref == 'refs/heads/main' }}
@@ -110,7 +110,7 @@ jobs:
         docker-images: false
         swap-storage: true
 
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -222,7 +222,7 @@ jobs:
       matrix:
         python-version: ['3.10']
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       with:
         submodules: true
         fetch-depth: 0
@@ -273,7 +273,7 @@ jobs:
     env:
       package-name: daft
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       with:
         submodules: true
         fetch-depth: 0
@@ -371,7 +371,7 @@ jobs:
         large-packages: false
         docker-images: false
         swap-storage: true
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       with:
         submodules: true
         fetch-depth: 0
@@ -469,7 +469,7 @@ jobs:
         large-packages: false
         docker-images: false
         swap-storage: true
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       with:
         submodules: true
         fetch-depth: 0
@@ -570,7 +570,7 @@ jobs:
         large-packages: false
         docker-images: false
         swap-storage: true
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       with:
         submodules: true
         fetch-depth: 0
@@ -668,7 +668,7 @@ jobs:
         large-packages: false
         docker-images: false
         swap-storage: true
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       with:
         submodules: true
         fetch-depth: 0
@@ -676,7 +676,7 @@ jobs:
       with:
         distribution: 'temurin'
         java-version: '17'
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       with:
         repository: unitycatalog/unitycatalog
         ref: 20dd3820be332ac04deec4e063099fb863eb3392
@@ -819,7 +819,18 @@ jobs:
         python-version: ['3.10']
         daft-runner: [ray, native]
     steps:
-    - uses: actions/checkout@v5
+    - name: Free Disk Space (Ubuntu)
+      if: ${{ (runner.os == 'Linux') }}
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: false
+        android: true
+        dotnet: false
+        haskell: true
+        large-packages: false
+        docker-images: false
+        swap-storage: true
+    - uses: actions/checkout@v6
       with:
         submodules: true
         fetch-depth: 0
@@ -891,7 +902,7 @@ jobs:
         python-version: ['3.10']
         daft-runner: [ray, native]
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       with:
         submodules: true
         fetch-depth: 0
@@ -958,7 +969,7 @@ jobs:
     env:
       package-name: daft
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
       with:
         submodules: true
         fetch-depth: 0
@@ -1050,7 +1061,7 @@ jobs:
       package-name: daft
       RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1124,14 +1135,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu, Windows]
-        on-main:
-        - ${{ github.ref == 'refs/heads/main' }}
-        exclude:
-          # Don't run Windows rust tests in PRs
-        - os: Windows
-          on-main: false
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1147,7 +1152,7 @@ jobs:
       with:
         tool-cache: false
     - name: Generate code coverage
-      run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --exclude spark-connect --lcov --output-path ./report-output/lcov.info
+      run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --lcov --output-path ./report-output/lcov.info
     - name: Upload coverage report
       uses: actions/upload-artifact@v5
       with:
@@ -1188,7 +1193,7 @@ jobs:
   check-unused-cargo-deps:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1215,7 +1220,7 @@ jobs:
         large-packages: false
         docker-images: false
         swap-storage: true
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1256,7 +1261,7 @@ jobs:
     - unit-test
     - rust-tests-platform
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: actions/download-artifact@v6
       with:
         pattern: coverage-reports*
@@ -1297,7 +1302,7 @@ jobs:
         os: [ubuntu, Windows]
         python-version: ['3.10']
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
@@ -1390,7 +1395,7 @@ jobs:
     env:
       python-version: '3.10'
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v6
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:

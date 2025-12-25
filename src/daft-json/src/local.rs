@@ -36,6 +36,14 @@ pub fn read_json_local(
     let mmap = unsafe { memmap2::Mmap::map(&file) }.context(StdIOSnafu)?;
 
     let bytes = &mmap[..];
+    if parse_options.as_ref().is_some_and(|p| p.skip_empty_files) && bytes.is_empty() {
+        let schema = convert_options
+            .as_ref()
+            .and_then(|c| c.schema.as_ref())
+            .map_or_else(|| Schema::empty().into(), |s| s.clone());
+        return Ok(RecordBatch::empty(Some(schema)));
+    }
+
     if bytes.is_empty() {
         return Err(super::Error::JsonDeserializationError {
             string: "Invalid JSON format - file is empty".to_string(),
@@ -61,6 +69,7 @@ pub fn read_json_local(
     }
 }
 
+#[allow(deprecated, reason = "arrow2 migration")]
 pub fn read_json_array_impl(
     bytes: &[u8],
     schema: Schema,
@@ -71,7 +80,7 @@ pub fn read_json_array_impl(
 
     let daft_fields = schema.into_iter().cloned().map(Arc::new);
 
-    let arrow_schema = schema.to_arrow()?;
+    let arrow_schema = schema.to_arrow2()?;
 
     let iter =
         serde_json::Deserializer::from_slice(bytes).into_iter::<&serde_json::value::RawValue>();
@@ -267,13 +276,14 @@ impl<'a> JsonReader<'a> {
         Ok(tbl)
     }
 
+    #[allow(deprecated, reason = "arrow2 migration")]
     fn parse_json_chunk(&self, bytes: &[u8], chunk_size: usize) -> DaftResult<RecordBatch> {
         let mut scratch = vec![];
         let scratch = &mut scratch;
 
         let daft_fields = self.schema.into_iter().cloned().map(Arc::new);
 
-        let arrow_schema = self.schema.to_arrow()?;
+        let arrow_schema = self.schema.to_arrow2()?;
 
         // The `RawValue` is a pointer to the original JSON string and does not perform any deserialization.
         // This is a trick to use the line-based deserializer from serde_json to iterate over the lines
@@ -380,13 +390,14 @@ fn infer_schema(
     bytes: &[u8],
     max_rows: Option<usize>,
     max_bytes: Option<usize>,
-) -> DaftResult<arrow2::datatypes::Schema> {
+) -> DaftResult<daft_arrow::datatypes::Schema> {
     let max_bytes = max_bytes.unwrap_or(1024 * 1024); // todo: make this configurable
     let max_records = max_rows.unwrap_or(1024); // todo: make this configurable
 
     let mut total_bytes = 0;
 
-    let mut column_types: IndexMap<String, HashSet<arrow2::datatypes::DataType>> = IndexMap::new();
+    let mut column_types: IndexMap<String, HashSet<daft_arrow::datatypes::DataType>> =
+        IndexMap::new();
     let mut scratch = Vec::new();
     let scratch = &mut scratch;
 
@@ -534,7 +545,7 @@ fn next_line_position(input: &[u8]) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use arrow2::datatypes::{
+    use daft_arrow::datatypes::{
         DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema,
     };
 

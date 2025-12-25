@@ -2,13 +2,13 @@ use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use common_error::DaftResult;
-use common_metrics::{QueryID, QueryPlan, StatSnapshot, ops::NodeInfo, python::PyNodeInfo};
+use common_metrics::{QueryID, QueryPlan, StatSnapshot};
 use daft_micropartition::{MicroPartitionRef, python::PyMicroPartition};
 use pyo3::{IntoPyObject, Py, PyAny, Python, intern};
 
 use crate::{
-    python::PyQueryMetadata,
-    subscribers::{NodeID, QueryMetadata, Subscriber},
+    python::{PyQueryMetadata, PyQueryResult},
+    subscribers::{NodeID, QueryMetadata, QueryResult, Subscriber},
 };
 
 /// Wrapper around a Python object that implements the Subscriber trait
@@ -28,10 +28,14 @@ impl Subscriber for PySubscriberWrapper {
         })
     }
 
-    fn on_query_end(&self, query_id: QueryID) -> DaftResult<()> {
+    #[allow(unused_variables)]
+    fn on_query_end(&self, query_id: QueryID, end_result: QueryResult) -> DaftResult<()> {
         Python::attach(|py| {
-            self.0
-                .call_method1(py, intern!(py, "on_query_end"), (query_id.to_string(),))?;
+            self.0.call_method1(
+                py,
+                intern!(py, "on_query_end"),
+                (query_id.to_string(), PyQueryResult::from(end_result)),
+            )?;
             Ok(())
         })
     }
@@ -69,16 +73,12 @@ impl Subscriber for PySubscriberWrapper {
         })
     }
 
-    fn on_exec_start(&self, query_id: QueryID, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()> {
+    fn on_exec_start(&self, query_id: QueryID, physical_plan: QueryPlan) -> DaftResult<()> {
         Python::attach(|py| {
-            let py_node_infos = node_infos
-                .iter()
-                .map(|node_info| PyNodeInfo::from(node_info.clone()))
-                .collect::<Vec<_>>();
             self.0.call_method1(
                 py,
                 intern!(py, "on_exec_start"),
-                (query_id.to_string(), py_node_infos),
+                (query_id.to_string(), physical_plan.to_string()),
             )?;
             Ok(())
         })

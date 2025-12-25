@@ -1,12 +1,13 @@
 use std::sync::Arc;
 
-use arrow2::{
-    array::Array,
-    bitmap::{Bitmap, utils::ZipValidity},
-    buffer::Buffer,
-};
+use arrow::array::ArrayRef;
 use common_error::{DaftError, DaftResult};
 use common_py_serde::pickle_dumps;
+use daft_arrow::{
+    array::Array,
+    bitmap::utils::ZipValidity,
+    buffer::{Buffer, NullBuffer},
+};
 use daft_schema::{dtype::DataType, field::Field};
 use pyo3::{Py, PyAny, PyResult, Python};
 
@@ -19,7 +20,7 @@ use crate::{
 pub struct PythonArray {
     field: Arc<Field>,
     values: Buffer<Arc<Py<PyAny>>>,
-    validity: Option<Bitmap>,
+    validity: Option<NullBuffer>,
 }
 
 impl IntoSeries for PythonArray {
@@ -37,7 +38,7 @@ impl PythonArray {
     pub fn new(
         field: Arc<Field>,
         values: Buffer<Arc<Py<PyAny>>>,
-        validity: Option<Bitmap>,
+        validity: Option<NullBuffer>,
     ) -> Self {
         assert_eq!(
             field.dtype,
@@ -58,7 +59,7 @@ impl PythonArray {
         debug_assert!(
             values.iter().enumerate().all(|(i, v)| {
                 !(Python::attach(|py| v.is_none(py))
-                    && validity.as_ref().is_none_or(|val| val.get_bit(i)))
+                    && validity.as_ref().is_none_or(|val| val.is_valid(i)))
             }),
             "None values must have validity set to false"
         );
@@ -70,32 +71,48 @@ impl PythonArray {
         }
     }
 
-    pub fn to_pickled_arrow(&self) -> DaftResult<arrow2::array::BinaryArray<i64>> {
+    #[deprecated(note = "arrow2 migration")]
+    pub fn to_pickled_arrow2(&self) -> DaftResult<daft_arrow::array::BinaryArray<i64>> {
         let pickled = Python::attach(|py| {
             self.iter()
                 .map(|v| v.map(|obj| pickle_dumps(py, obj)).transpose())
                 .collect::<PyResult<Vec<_>>>()
         })?;
 
-        Ok(arrow2::array::BinaryArray::from(pickled))
+        Ok(daft_arrow::array::BinaryArray::from(pickled))
     }
 
-    pub fn to_arrow(&self) -> DaftResult<Box<dyn arrow2::array::Array>> {
-        let arrow_logical_type = self.data_type().to_arrow().unwrap();
-        let physical_arrow_array = self.to_pickled_arrow()?;
+    pub fn to_pickled_arrow(&self) -> DaftResult<arrow::array::LargeBinaryArray> {
+        Python::attach(|py| {
+            self.iter()
+                .map(|v| v.map(|obj| pickle_dumps(py, obj)).transpose())
+                .collect::<PyResult<arrow::array::LargeBinaryArray>>()
+        })
+        .map_err(DaftError::from)
+    }
+
+    #[deprecated(note = "arrow2 migration")]
+    pub fn to_arrow2(&self) -> DaftResult<Box<dyn daft_arrow::array::Array>> {
+        let arrow_logical_type = self.data_type().to_arrow2().unwrap();
+        let physical_arrow_array = self.to_pickled_arrow2()?;
         let logical_arrow_array = physical_arrow_array.convert_logical_type(arrow_logical_type);
         Ok(logical_arrow_array)
+    }
+
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        // unlike arrow2, the extension type is stored in the field, so we can just directly return the physical array
+        self.to_pickled_arrow().map(|arr| Arc::new(arr) as _)
     }
 
     pub fn len(&self) -> usize {
         self.values.len()
     }
 
-    pub fn with_validity(&self, validity: Option<Bitmap>) -> DaftResult<Self> {
+    pub fn with_validity(&self, validity: Option<NullBuffer>) -> DaftResult<Self> {
         self.clone().set_validity(validity)
     }
 
-    fn set_validity(mut self, validity: Option<Bitmap>) -> DaftResult<Self> {
+    fn set_validity(mut self, validity: Option<NullBuffer>) -> DaftResult<Self> {
         if let Some(v) = &validity
             && v.len() != self.len()
         {
@@ -109,7 +126,7 @@ impl PythonArray {
         Ok(self)
     }
 
-    pub fn validity(&self) -> Option<&Bitmap> {
+    pub fn validity(&self) -> Option<&NullBuffer> {
         self.validity.as_ref()
     }
 
@@ -122,7 +139,7 @@ impl PythonArray {
 
         let length = end - start;
         let new_values = self.values.clone().sliced(start, length);
-        let new_validity = self.validity.clone().map(|v| v.sliced(start, length));
+        let new_validity = self.validity.clone().map(|v| v.slice(start, length));
         Ok(Self::new(self.field.clone(), new_values, new_validity))
     }
 
@@ -143,11 +160,11 @@ impl PythonArray {
     }
 
     pub fn null_count(&self) -> usize {
-        self.validity().map_or(0, |v| v.unset_bits())
+        self.validity().map_or(0, |v| v.null_count())
     }
 
     pub fn is_valid(&self, idx: usize) -> bool {
-        self.validity().is_none_or(|v| v.get_bit(idx))
+        self.validity().is_none_or(|v| v.is_valid(idx))
     }
 
     pub fn rename(&self, name: &str) -> Self {
@@ -167,7 +184,7 @@ impl PythonArray {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = Option<&Arc<Py<PyAny>>>> {
-        ZipValidity::new_with_validity(self.values.iter(), self.validity())
+        ZipValidity::new(self.values.iter(), self.validity().map(|v| v.iter()))
     }
 }
 

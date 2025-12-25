@@ -1,3 +1,4 @@
+use ahash::AHashMap;
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     prelude::{BooleanArray, DataType, Field, FullNull, Schema, Utf8Array},
@@ -9,8 +10,11 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::utils::{
-    binary_utf8_evaluate, binary_utf8_to_field, create_broadcasted_str_iter, parse_inputs,
+use crate::{
+    like::compile_like_regex,
+    utils::{
+        binary_utf8_evaluate, binary_utf8_to_field, create_broadcasted_str_iter, parse_inputs,
+    },
 };
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -71,30 +75,32 @@ fn ilike_impl(arr: &Utf8Array, pattern: &Utf8Array) -> DaftResult<BooleanArray> 
 
     let self_iter = create_broadcasted_str_iter(arr, expected_size);
 
-    let arrow_result = match pattern.len() {
-        1 => {
-            let pat = pattern.get(0).unwrap();
-            let pat = pat.replace('%', ".*").replace('_', ".");
-            let re = regex::Regex::new(&format!("(?i)^{}$", pat));
-            let re = re?;
-            self_iter
-                .map(|val| Some(re.is_match(val?)))
-                .collect::<arrow2::array::BooleanArray>()
-        }
-        _ => {
-            let pattern_iter = create_broadcasted_str_iter(pattern, expected_size);
-            self_iter
-                .zip(pattern_iter)
-                .map(|(val, pat)| match (val, pat) {
-                    (Some(val), Some(pat)) => {
-                        let pat = pat.replace('%', ".*").replace('_', ".");
-                        let re = regex::Regex::new(&format!("(?i)^{}$", pat));
-                        Ok(Some(re?.is_match(val)))
-                    }
-                    _ => Ok(None),
-                })
-                .collect::<DaftResult<arrow2::array::BooleanArray>>()?
-        }
+    let arrow_result = if pattern.len() == 1 {
+        let pat = pattern.get(0).unwrap();
+        let re = compile_like_regex(pat, true)?;
+        self_iter
+            .map(|val| Some(re.is_match(val?)))
+            .collect::<daft_arrow::array::BooleanArray>()
+    } else {
+        let mut cache = AHashMap::new();
+        let pattern_iter = create_broadcasted_str_iter(pattern, expected_size);
+        self_iter
+            .zip(pattern_iter)
+            .map(|(val, pat)| match (val, pat) {
+                (Some(val), Some(pat)) => {
+                    let re = match cache.get(pat) {
+                        Some(re) => re,
+                        None => {
+                            let compiled = compile_like_regex(pat, true)?;
+                            cache.insert(pat.to_string(), compiled);
+                            cache.get(pat).expect("regex inserted above")
+                        }
+                    };
+                    Ok(Some(re.is_match(val)))
+                }
+                _ => Ok(None),
+            })
+            .collect::<DaftResult<daft_arrow::array::BooleanArray>>()?
     };
 
     let result = BooleanArray::from((arr.name(), Box::new(arrow_result)));

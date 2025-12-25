@@ -9,7 +9,7 @@ use daft_core::{
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::ProbeState;
+use daft_recordbatch::{ProbeState, RecordBatch};
 use futures::{StreamExt, stream};
 use itertools::Itertools;
 use tracing::{Span, info_span, instrument};
@@ -38,7 +38,7 @@ impl AntiSemiProbeState {
         if let Self::Building(bridge) = self {
             let probe_state = bridge.get_state().await;
             let builder = if needs_bitmap {
-                Some(IndexBitmapBuilder::new(probe_state.get_record_batch()))
+                Some(IndexBitmapBuilder::new(probe_state.get_record_batches()))
             } else {
                 None
             };
@@ -90,7 +90,7 @@ impl AntiSemiProbeSink {
         input: &Arc<MicroPartition>,
         is_semi: bool,
     ) -> DaftResult<Arc<MicroPartition>> {
-        let input_tables = input.get_tables()?;
+        let input_tables = input.record_batches();
         let mut input_idxs = vec![vec![]; input_tables.len()];
         for (probe_side_table_idx, table) in input_tables.iter().enumerate() {
             let join_keys = table.eval_expression_list(probe_on)?;
@@ -111,8 +111,8 @@ impl AntiSemiProbeSink {
             .into_iter()
             .zip(input_tables.iter())
             .map(|(idxs, table)| {
-                let idxs_as_series = UInt64Array::from(("idxs", idxs)).into_series();
-                table.take(&idxs_as_series)
+                let idxs_arr = UInt64Array::from(("idxs", idxs));
+                table.take(&idxs_arr)
             })
             .collect::<DaftResult<Vec<_>>>()?;
         Ok(Arc::new(MicroPartition::new_loaded(
@@ -131,15 +131,14 @@ impl AntiSemiProbeSink {
         bitmap_builder: &mut IndexBitmapBuilder,
         input: &Arc<MicroPartition>,
     ) -> DaftResult<()> {
-        let input_tables = input.get_tables()?;
         let _loop = info_span!("AntiSemiOperator::eval_and_probe").entered();
-        for table in input_tables.iter() {
+        for table in input.record_batches() {
             let join_keys = table.eval_expression_list(probe_on)?;
             let idx_iter = probe_state.probe_indices(&join_keys)?;
 
             for inner_iter in idx_iter.flatten() {
-                for build_row_idx in inner_iter {
-                    bitmap_builder.mark_used(build_row_idx as usize);
+                for (build_table_idx, build_row_idx) in inner_iter {
+                    bitmap_builder.mark_used(build_table_idx as usize, build_row_idx as usize);
                 }
             }
         }
@@ -157,7 +156,7 @@ impl AntiSemiProbeSink {
             .expect("at least one state should be present");
         let (first_probe_state, first_bitmap_builder) =
             first_state.get_or_await_probe_state(true).await;
-        let table = first_probe_state.get_record_batch();
+        let tables = first_probe_state.get_record_batches();
         let first_bitmap = first_bitmap_builder
             .take()
             .expect("bitmap should be set")
@@ -189,8 +188,12 @@ impl AntiSemiProbeSink {
             merged_bitmap = merged_bitmap.negate();
         }
 
-        let build_side_table =
-            table.mask_filter(&merged_bitmap.convert_to_boolean_array().into_series())?;
+        let leftovers = merged_bitmap
+            .convert_to_boolean_arrays()
+            .zip(tables.iter())
+            .map(|(bitmap, table)| table.mask_filter(&bitmap.into_series()))
+            .collect::<DaftResult<Vec<_>>>()?;
+        let build_side_table = RecordBatch::concat(&leftovers)?;
 
         Ok(Some(Arc::new(MicroPartition::new_loaded(
             build_side_table.schema.clone(),
@@ -202,6 +205,7 @@ impl AntiSemiProbeSink {
 
 impl StreamingSink for AntiSemiProbeSink {
     type State = AntiSemiProbeState;
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "AntiSemiProbeSink::execute")]
     fn execute(
         &self,
@@ -303,5 +307,10 @@ impl StreamingSink for AntiSemiProbeSink {
 
     fn max_concurrency(&self) -> usize {
         common_runtime::get_compute_pool_num_threads()
+    }
+    fn batching_strategy(&self) -> Self::BatchingStrategy {
+        crate::dynamic_batching::StaticBatchingStrategy::new(
+            self.morsel_size_requirement().unwrap_or_default(),
+        )
     }
 }

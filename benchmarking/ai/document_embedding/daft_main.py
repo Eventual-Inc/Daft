@@ -20,7 +20,7 @@ CHUNK_SIZE = 2048
 CHUNK_OVERLAP = 200
 EMBEDDING_BATCH_SIZE = 10
 
-daft.context.set_runner_ray()
+daft.set_runner_ray()
 
 # Wait for Ray cluster to be ready
 @ray.remote
@@ -81,8 +81,8 @@ daft.set_planning_config(default_io_config=daft.io.IOConfig(s3=daft.io.S3Config.
 
 start_time = time.time()
 df = daft.read_parquet(INPUT_PATH)
-df = df.where(daft.col("file_name").str.endswith(".pdf"))
-df = df.with_column("pdf_bytes", df["uploaded_pdf_path"].url.download())
+df = df.where(daft.col("file_name").endswith(".pdf"))
+df = df.with_column("pdf_bytes", df["uploaded_pdf_path"].download())
 df = df.with_column(
     "pages",
     df["pdf_bytes"].apply(

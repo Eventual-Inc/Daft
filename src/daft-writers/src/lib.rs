@@ -1,10 +1,12 @@
 mod batch;
+mod batch_file_writer;
+mod csv_writer;
 mod file;
 mod ipc;
 mod json_writer;
 mod parquet_writer;
 mod partition;
-mod physical;
+pub mod physical;
 mod storage_backend;
 #[cfg(test)]
 mod test;
@@ -185,8 +187,8 @@ pub fn make_ipc_writer(
     compression: Option<&str>,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>> {
     let compression = match compression {
-        Some("lz4") => Some(arrow2::io::ipc::write::Compression::LZ4),
-        Some("zstd") => Some(arrow2::io::ipc::write::Compression::ZSTD),
+        Some("lz4") => Some(daft_arrow::io::ipc::write::Compression::LZ4),
+        Some("zstd") => Some(daft_arrow::io::ipc::write::Compression::ZSTD),
         Some(c) => {
             return Err(DaftError::ValueError(format!(
                 "Unsupported compression for ipc writer: {}, only lz4 and zstd are supported",

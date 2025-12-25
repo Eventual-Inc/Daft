@@ -28,6 +28,11 @@ impl RowBasedBuffer {
             upper_bound,
         }
     }
+    pub fn update_bounds(&mut self, lower_bound: usize, upper_bound: usize) {
+        assert!(lower_bound <= upper_bound);
+        self.lower_bound = lower_bound;
+        self.upper_bound = upper_bound;
+    }
 
     // Push a morsel to the buffer
     pub fn push(&mut self, part: &Arc<MicroPartition>) {
@@ -43,9 +48,7 @@ impl RowBasedBuffer {
             (true, true) => BufferState::WithinRange,
             (true, false) => BufferState::AboveUpperBound,
             (false, true) => BufferState::BelowLowerBound,
-            (false, false) => {
-                unreachable!("Impossible to be below lower bound and above upper bound")
-            }
+            (false, false) => unreachable!(),
         }
     }
 
@@ -54,6 +57,7 @@ impl RowBasedBuffer {
     // - If the buffer has exactly enough morsels, return the morsels
     // - If the buffer has more than enough morsels, return a vec of morsels, each correctly sized to the threshold.
     //   The remaining morsels will be pushed back to the buffer
+    #[allow(dead_code)]
     pub fn pop_enough(&mut self) -> DaftResult<Option<Vec<Arc<MicroPartition>>>> {
         match self.buffer_state() {
             BufferState::BelowLowerBound => Ok(None),
@@ -93,13 +97,50 @@ impl RowBasedBuffer {
 
     // Pop all morsels in the buffer regardless of the threshold
     pub fn pop_all(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
-        assert!(self.curr_len < self.upper_bound);
         if self.buffer.is_empty() {
             Ok(None)
         } else {
             let concated = MicroPartition::concat(std::mem::take(&mut self.buffer))?;
             self.curr_len = 0;
             Ok(Some(concated.into()))
+        }
+    }
+    pub fn next_batch_if_ready(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
+        if self.buffer.is_empty() {
+            Ok(None)
+        } else {
+            match self.buffer_state() {
+                BufferState::BelowLowerBound => Ok(None),
+                BufferState::WithinRange => {
+                    // Return all data as one batch
+                    if self.buffer.len() == 1 {
+                        let part = self.buffer.pop_front().unwrap();
+                        self.curr_len = 0;
+                        Ok(Some(part))
+                    } else {
+                        let chunk = MicroPartition::concat(std::mem::take(&mut self.buffer))?;
+                        self.curr_len = 0;
+                        Ok(Some(chunk.into()))
+                    }
+                }
+                BufferState::AboveUpperBound => {
+                    // Return one batch of target size, keep rest
+                    let concated = MicroPartition::concat(std::mem::take(&mut self.buffer))?;
+
+                    let batch = concated.slice(0, self.upper_bound)?;
+
+                    // Put remainder back if any
+                    if self.upper_bound < concated.len() {
+                        let remainder = concated.slice(self.upper_bound, concated.len())?;
+                        self.curr_len = remainder.len();
+                        self.buffer.push_back(remainder.into());
+                    } else {
+                        self.curr_len = 0;
+                    }
+
+                    Ok(Some(batch.into()))
+                }
+            }
         }
     }
 }

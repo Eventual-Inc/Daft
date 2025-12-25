@@ -1,12 +1,14 @@
+#![allow(deprecated, reason = "arrow2 migration")]
+
 use std::{iter::repeat_n, sync::Arc};
 
-use arrow2::offset::{Offsets, OffsetsBuffer};
 use common_error::DaftResult;
+use daft_arrow::offset::{Offsets, OffsetsBuffer};
 use daft_core::{
     array::{
         FixedSizeListArray, ListArray, StructArray,
         growable::{Growable, make_growable},
-        ops::arrow2::comparison::build_is_equal,
+        ops::arrow::comparison::build_is_equal,
     },
     datatypes::{try_mean_aggregation_supertype, try_sum_supertype},
     kernels::search_sorted::build_is_valid,
@@ -75,7 +77,7 @@ impl ListArrayExtension for ListArray {
 
         let hashes = self.flat_child.hash(None)?;
 
-        let flat_child = self.flat_child.to_arrow();
+        let flat_child = self.flat_child.to_arrow2();
         let flat_child = &*flat_child;
 
         let is_equal = build_is_equal(
@@ -146,12 +148,12 @@ impl ListArrayExtension for ListArray {
 
         let keys = Series::try_from_field_and_arrow_array(
             Field::new("key", key_type.clone()),
-            keys.to_arrow(),
+            keys.to_arrow2(),
         )?;
 
         let values = Series::try_from_field_and_arrow_array(
             Field::new("value", count_type.clone()),
-            values.to_arrow(),
+            values.to_arrow2(),
         )?;
 
         let struct_type = DataType::Struct(vec![
@@ -197,7 +199,7 @@ impl ListArrayExtension for ListArray {
                 .windows(2)
                 .map(|w| {
                     (w[0]..w[1])
-                        .map(|i| validity.get_bit(i as usize) as u64)
+                        .map(|i| validity.is_valid(i as usize) as u64)
                         .sum()
                 })
                 .collect(),
@@ -207,14 +209,16 @@ impl ListArrayExtension for ListArray {
                 .windows(2)
                 .map(|w| {
                     (w[0]..w[1])
-                        .map(|i| !validity.get_bit(i as usize) as u64)
+                        .map(|i| !validity.is_valid(i as usize) as u64)
                         .sum()
                 })
                 .collect(),
         };
 
         let array = Box::new(
-            arrow2::array::PrimitiveArray::from_vec(counts).with_validity(self.validity().cloned()),
+            daft_arrow::array::PrimitiveArray::from_vec(counts).with_validity(
+                daft_arrow::buffer::wrap_null_buffer(self.validity().cloned()),
+            ),
         );
         Ok(UInt64Array::from((self.name(), array)))
     }
@@ -262,7 +266,8 @@ impl ListArrayExtension for ListArray {
             Box::new(repeat_n(delimiter.get(0), self.len()))
         } else {
             assert_eq!(delimiter.len(), self.len());
-            Box::new(delimiter.as_arrow().iter())
+
+            Box::new(delimiter.as_arrow2().iter())
         };
         let self_iter = (0..self.len()).map(|i| self.get(i));
 
@@ -277,7 +282,7 @@ impl ListArrayExtension for ListArray {
 
         Ok(Utf8Array::from((
             self.name(),
-            Box::new(arrow2::array::Utf8Array::from_iter(result)),
+            Box::new(daft_arrow::array::Utf8Array::from_iter(result)),
         )))
     }
 
@@ -338,8 +343,8 @@ impl ListArrayExtension for ListArray {
                 )?
             }
         } else {
-            let desc_iter = desc.as_arrow().values_iter();
-            let nulls_first_iter = nulls_first.as_arrow().values_iter();
+            let desc_iter = desc.as_arrow2().values_iter();
+            let nulls_first_iter = nulls_first.as_arrow2().values_iter();
             if let Some(validity) = self.validity() {
                 list_sort_helper(
                     &self.flat_child,
@@ -387,7 +392,7 @@ impl ListArrayExtension for ListArray {
         let mut result_validity = Vec::with_capacity(self.len());
 
         for i in 0..self.len() {
-            let is_valid = validity.is_none_or(|v| v.get(i).unwrap());
+            let is_valid = validity.is_none_or(|v| v.is_valid(i));
             if !is_valid {
                 result.push(false);
                 result_validity.push(false);
@@ -402,7 +407,7 @@ impl ListArrayExtension for ListArray {
             if slice.is_empty()
                 || slice
                     .validity()
-                    .is_some_and(|v| v.unset_bits() == slice.len())
+                    .is_some_and(|v| v.null_count() == slice.len())
             {
                 result.push(false);
                 result_validity.push(false);
@@ -413,9 +418,9 @@ impl ListArrayExtension for ListArray {
             let mut all_true = true;
             let bool_slice = slice.bool()?;
             let bool_validity = bool_slice.validity();
-            let bool_data = bool_slice.as_arrow().values();
+            let bool_data = bool_slice.as_arrow2().values();
             for j in 0..bool_slice.len() {
-                if bool_validity.is_none_or(|v| v.get(j).unwrap()) && !bool_data.get_bit(j) {
+                if bool_validity.is_none_or(|v| v.is_valid(j)) && !bool_data.get_bit(j) {
                     all_true = false;
                     break;
                 }
@@ -424,12 +429,13 @@ impl ListArrayExtension for ListArray {
             result_validity.push(true);
         }
 
-        let validity_bitmap = arrow2::bitmap::Bitmap::from_iter(result_validity.iter().copied());
-        let values = arrow2::bitmap::Bitmap::from_iter(result.iter().copied());
-        let arrow_array = arrow2::array::BooleanArray::new(
-            arrow2::datatypes::DataType::Boolean,
+        let validity_bitmap =
+            daft_arrow::buffer::NullBuffer::from_iter(result_validity.iter().copied());
+        let values = daft_arrow::bitmap::Bitmap::from_iter(result.iter().copied());
+        let arrow_array = daft_arrow::array::BooleanArray::new(
+            daft_arrow::datatypes::DataType::Boolean,
             values,
-            Some(validity_bitmap),
+            daft_arrow::buffer::wrap_null_buffer(Some(validity_bitmap)),
         );
         Ok(BooleanArray::from((self.name(), Box::new(arrow_array))))
     }
@@ -443,7 +449,7 @@ impl ListArrayExtension for ListArray {
         let mut result_validity = Vec::with_capacity(self.len());
 
         for i in 0..self.len() {
-            let is_valid = validity.is_none_or(|v| v.get(i).unwrap());
+            let is_valid = validity.is_none_or(|v| v.is_valid(i));
             if !is_valid {
                 result.push(false);
                 result_validity.push(false);
@@ -458,7 +464,7 @@ impl ListArrayExtension for ListArray {
             if slice.is_empty()
                 || slice
                     .validity()
-                    .is_some_and(|v| v.unset_bits() == slice.len())
+                    .is_some_and(|v| v.null_count() == slice.len())
             {
                 result.push(false);
                 result_validity.push(false);
@@ -469,9 +475,9 @@ impl ListArrayExtension for ListArray {
             let mut any_true = false;
             let bool_slice = slice.bool()?;
             let bool_validity = bool_slice.validity();
-            let bool_data = bool_slice.as_arrow().values();
+            let bool_data = bool_slice.as_arrow2().values();
             for j in 0..bool_slice.len() {
-                if bool_validity.is_none_or(|v| v.get(j).unwrap()) && bool_data.get_bit(j) {
+                if bool_validity.is_none_or(|v| v.is_valid(j)) && bool_data.get_bit(j) {
                     any_true = true;
                     break;
                 }
@@ -480,12 +486,13 @@ impl ListArrayExtension for ListArray {
             result_validity.push(true);
         }
 
-        let validity_bitmap = arrow2::bitmap::Bitmap::from_iter(result_validity.iter().copied());
-        let values = arrow2::bitmap::Bitmap::from_iter(result.iter().copied());
-        let arrow_array = arrow2::array::BooleanArray::new(
-            arrow2::datatypes::DataType::Boolean,
+        let validity_bitmap =
+            daft_arrow::buffer::NullBuffer::from_iter(result_validity.iter().copied());
+        let values = daft_arrow::bitmap::Bitmap::from_iter(result.iter().copied());
+        let arrow_array = daft_arrow::array::BooleanArray::new(
+            daft_arrow::datatypes::DataType::Boolean,
             values,
-            Some(validity_bitmap),
+            daft_arrow::buffer::wrap_null_buffer(Some(validity_bitmap)),
         );
         Ok(BooleanArray::from((self.name(), Box::new(arrow_array))))
     }
@@ -513,7 +520,7 @@ impl ListArrayExtension for FixedSizeListArray {
             (CountMode::Valid, Some(validity)) => (0..self.len())
                 .map(|i| {
                     (0..size)
-                        .map(|j| validity.get_bit(i * size + j) as u64)
+                        .map(|j| validity.is_valid(i * size + j) as u64)
                         .sum()
                 })
                 .collect(),
@@ -521,14 +528,16 @@ impl ListArrayExtension for FixedSizeListArray {
             (CountMode::Null, Some(validity)) => (0..self.len())
                 .map(|i| {
                     (0..size)
-                        .map(|j| !validity.get_bit(i * size + j) as u64)
+                        .map(|j| !validity.is_valid(i * size + j) as u64)
                         .sum()
                 })
                 .collect(),
         };
 
         let array = Box::new(
-            arrow2::array::PrimitiveArray::from_vec(counts).with_validity(self.validity().cloned()),
+            daft_arrow::array::PrimitiveArray::from_vec(counts).with_validity(
+                daft_arrow::buffer::wrap_null_buffer(self.validity().cloned()),
+            ),
         );
         Ok(UInt64Array::from((self.name(), array)))
     }
@@ -538,7 +547,7 @@ impl ListArrayExtension for FixedSizeListArray {
         let total_capacity = if list_size == 0 {
             self.len()
         } else {
-            let null_count = self.validity().map(|v| v.unset_bits()).unwrap_or(0);
+            let null_count = self.validity().map(|v| v.null_count()).unwrap_or(0);
             list_size * (self.len() - null_count)
         };
 
@@ -567,7 +576,7 @@ impl ListArrayExtension for FixedSizeListArray {
             Box::new(repeat_n(delimiter.get(0), self.len()))
         } else {
             assert_eq!(delimiter.len(), self.len());
-            Box::new(delimiter.as_arrow().iter())
+            Box::new(delimiter.as_arrow2().iter())
         };
         let self_iter = (0..self.len()).map(|i| self.get(i));
 
@@ -582,7 +591,7 @@ impl ListArrayExtension for FixedSizeListArray {
 
         Ok(Utf8Array::from((
             self.name(),
-            Box::new(arrow2::array::Utf8Array::from_iter(result)),
+            Box::new(daft_arrow::array::Utf8Array::from_iter(result)),
         )))
     }
 
@@ -678,8 +687,8 @@ impl ListArrayExtension for FixedSizeListArray {
                 )?
             }
         } else {
-            let desc_iter = desc.as_arrow().values_iter();
-            let nulls_first_iter = nulls_first.as_arrow().values_iter();
+            let desc_iter = desc.as_arrow2().values_iter();
+            let nulls_first_iter = nulls_first.as_arrow2().values_iter();
             if let Some(validity) = self.validity() {
                 list_sort_helper_fixed_size(
                     &self.flat_child,
@@ -714,14 +723,14 @@ impl ListArrayExtension for FixedSizeListArray {
 }
 
 fn join_arrow_list_of_utf8s(
-    list_element: Option<&dyn arrow2::array::Array>,
+    list_element: Option<&dyn daft_arrow::array::Array>,
     delimiter_str: &str,
 ) -> Option<String> {
     list_element
         .map(|list_element| {
             list_element
                 .as_any()
-                .downcast_ref::<arrow2::array::Utf8Array<i64>>()
+                .downcast_ref::<daft_arrow::array::Utf8Array<i64>>()
                 .unwrap()
                 .iter()
                 .fold(String::new(), |acc, str_item| {
@@ -747,7 +756,7 @@ fn create_iter<'a>(arr: &'a Int64Array, len: usize) -> Box<dyn Iterator<Item = i
         1 => Box::new(repeat_n(arr.get(0).unwrap(), len)),
         arr_len => {
             assert_eq!(arr_len, len);
-            Box::new(arr.as_arrow().iter().map(|x| *x.unwrap()))
+            Box::new(arr.as_arrow2().iter().map(|x| *x.unwrap()))
         }
     }
 }
@@ -780,7 +789,7 @@ fn create_iter<'a>(arr: &'a Int64Array, len: usize) -> Box<dyn Iterator<Item = i
 fn get_chunks_helper(
     flat_child: &Series,
     field: Arc<Field>,
-    validity: Option<&arrow2::bitmap::Bitmap>,
+    validity: Option<&daft_arrow::buffer::NullBuffer>,
     size: usize,
     total_elements_to_skip: usize,
     to_skip: Option<impl Iterator<Item = usize>>,
@@ -799,7 +808,7 @@ fn get_chunks_helper(
         Ok(ListArray::new(
             inner_list_field.to_list_field(),
             inner_list.into_series(),
-            arrow2::offset::OffsetsBuffer::try_from(new_offsets)?,
+            daft_arrow::offset::OffsetsBuffer::try_from(new_offsets)?,
             validity.cloned(), // Copy the parent's validity.
         )
         .into_series())
@@ -823,7 +832,7 @@ fn get_chunks_helper(
         Ok(ListArray::new(
             inner_list_field.to_list_field(),
             inner_list.into_series(),
-            arrow2::offset::OffsetsBuffer::try_from(new_offsets)?,
+            daft_arrow::offset::OffsetsBuffer::try_from(new_offsets)?,
             validity.cloned(), // Copy the parent's validity.
         )
         .into_series())

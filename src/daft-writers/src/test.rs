@@ -51,7 +51,7 @@ impl AsyncFileWriter for DummyWriter {
 
     async fn write(&mut self, input: Self::Input) -> DaftResult<WriteResult> {
         self.write_count += 1;
-        let size_bytes = input.size_bytes().unwrap();
+        let size_bytes = input.size_bytes();
         self.byte_count += size_bytes;
         Ok(WriteResult {
             bytes_written: size_bytes,
@@ -162,7 +162,7 @@ impl AsyncFileWriter for FailingWriter {
         }
 
         self.write_count += 1;
-        let size_bytes = input.size_bytes().unwrap();
+        let size_bytes = input.size_bytes();
         self.byte_count += size_bytes;
         Ok(WriteResult {
             bytes_written: size_bytes,

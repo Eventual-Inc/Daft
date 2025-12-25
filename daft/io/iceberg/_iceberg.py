@@ -61,7 +61,9 @@ def read_iceberg(
     """Create a DataFrame from an Iceberg table.
 
     Args:
-        table (str or pyiceberg.table.Table): [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table) created using the PyIceberg library
+        table (str or pyiceberg.table.Table): A path to an Iceberg metadata file (supports remote URLs to object stores
+            such as ``s3://`` or ``gs://``) or a [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table)
+            created using the PyIceberg library.
         snapshot_id (int, optional): Snapshot ID of the table to query
         io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
 
@@ -73,16 +75,21 @@ def read_iceberg(
         official project for Python.
 
     Examples:
+        Read an Iceberg table from a PyIceberg table:
         >>> import pyiceberg
         >>>
         >>> table = pyiceberg.Table(...)
         >>> df = daft.read_iceberg(table)
         >>>
-        >>> # Filters on this dataframe can now be pushed into
-        >>> # the read operation from Iceberg
+        >>> # Filters on this dataframe can now be pushed into the read operation from Iceberg
         >>> df = df.where(df["foo"] > 5)
         >>> df.show()
 
+        Read an Iceberg table from S3 using IOConfig:
+        >>> from daft.io import S3Config, IOConfig
+        >>> io_config = IOConfig(s3=S3Config(region="us-west-2", anonymous=True))
+        >>> df = daft.read_iceberg("s3://bucket/path/to/iceberg/metadata.json", io_config=io_config)
+        >>> df.show()
     """
     from pyiceberg.table import StaticTable
 

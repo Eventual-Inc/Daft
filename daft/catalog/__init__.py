@@ -240,6 +240,29 @@ class Catalog(ABC):
             raise ImportError("Unity support not installed: pip install -U 'daft[unity]'")
 
     @staticmethod
+    def from_gravitino(catalog: object) -> Catalog:
+        """Create a Daft Catalog from a Gravitino client.
+
+        Args:
+            catalog (object): a Gravitino client instance
+
+        Returns:
+            Catalog: a new Catalog instance backed by the Gravitino catalog.
+
+        Examples:
+            >>> from daft.gravitino import GravitinoClient
+            >>> gravitino_client = GravitinoClient(...)
+            >>> catalog = Catalog.from_gravitino(gravitino_client)
+
+        """
+        try:
+            from daft.catalog.__gravitino import GravitinoCatalog
+
+            return GravitinoCatalog._from_obj(catalog)
+        except ImportError:
+            raise ImportError("Gravitino support not installed: pip install -U 'daft[gravitino]'")
+
+    @staticmethod
     def from_s3tables(
         table_bucket_arn: str,
         client: object | None = None,
@@ -344,7 +367,7 @@ class Catalog(ABC):
     @staticmethod
     def _from_obj(obj: object) -> Catalog:
         """Returns a Daft Catalog from a supported object type or raises a ValueError."""
-        for factory in (Catalog.from_iceberg, Catalog.from_unity):
+        for factory in (Catalog.from_iceberg, Catalog.from_unity, Catalog.from_gravitino):
             try:
                 return factory(obj)
             except ValueError:
@@ -509,13 +532,20 @@ class Catalog(ABC):
         return self._list_namespaces(pattern)
 
     def list_tables(self, pattern: str | None = None) -> list[Identifier]:
-        """List tables in the catalog which match the given pattern.
+        r"""List tables in the catalog which match the given pattern.
 
         Args:
-            pattern (str): pattern to match such as a namespace prefix
+            - pattern (str, optional): Pattern to match table names. Pattern syntax is catalog-dependent:
+                - Native/Memory and Postgres catalogs: Use SQL LIKE syntax (`%`, `_`, `\`). Supports qualified patterns like `"ns1.table%"`.
+                - Other catalogs: Pattern behavior varies (e.g., prefix matching for Iceberg/S3 Tables, AWS Glue expressions for Glue).
 
         Returns:
-            list[str]: list of table identifiers matching the pattern.
+            list[Identifier]: list of table identifiers matching the pattern.
+
+        Examples:
+            >>> catalog.list_tables()  # List all tables
+            >>> catalog.list_tables("table%")  # Tables starting with "table" (native catalog)
+            >>> catalog.list_tables("ns1.%")  # All tables in namespace "ns1" (native catalog)
         """
         return self._list_tables(pattern)
 
@@ -765,8 +795,22 @@ class Table(ABC):
             raise ImportError("Unity support not installed: pip install -U 'daft[unity]'")
 
     @staticmethod
+    def from_gravitino(table: object) -> Table:
+        """Returns a Daft Table instance from a Gravitino table.
+
+        Args:
+            table (object): gravitino table instance.
+        """
+        try:
+            from daft.catalog.__gravitino import GravitinoTable
+
+            return GravitinoTable._from_obj(table)
+        except ImportError:
+            raise ImportError("Gravitino support not installed: pip install -U 'daft[gravitino]'")
+
+    @staticmethod
     def _from_obj(obj: object) -> Table:
-        for factory in (Table.from_iceberg, Table.from_unity):
+        for factory in (Table.from_iceberg, Table.from_unity, Table.from_gravitino):
             try:
                 return factory(obj)
             except ValueError:

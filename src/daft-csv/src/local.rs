@@ -1,14 +1,14 @@
 use core::str;
 use std::{io::Read, num::NonZeroUsize, sync::Arc};
 
-use arrow2::{
+use common_error::DaftResult;
+use daft_arrow::{
     datatypes::Field,
     io::csv::{
         read::{Reader, ReaderBuilder},
         read_async::local_read_rows,
     },
 };
-use common_error::DaftResult;
 use daft_core::{
     prelude::{Schema, Series},
     utils::arrow::cast_array_for_daft_if_needed,
@@ -290,7 +290,7 @@ async fn get_schema_and_estimators(
     parse_options: &CsvParseOptions,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-) -> DaftResult<(arrow2::datatypes::Schema, f64, f64)> {
+) -> DaftResult<(daft_arrow::datatypes::Schema, f64, f64)> {
     let (inferred_schema, read_stats) = read_csv_schema_single(
         uri,
         parse_options.clone(),
@@ -301,10 +301,11 @@ async fn get_schema_and_estimators(
     )
     .await?;
 
+    #[allow(deprecated, reason = "arrow2 migration")]
     let mut schema = if let Some(schema) = convert_options.schema.clone() {
-        schema.to_arrow()?
+        schema.to_arrow2()?
     } else {
-        inferred_schema.to_arrow()?
+        inferred_schema.to_arrow2()?
     };
     // Rename fields, if necessary.
     if let Some(column_names) = convert_options.column_names.clone() {
@@ -875,7 +876,7 @@ where
 fn parse_csv_chunk<R>(
     mut reader: Reader<R>,
     projection_indices: Arc<Vec<usize>>,
-    fields: Vec<arrow2::datatypes::Field>,
+    fields: Vec<daft_arrow::datatypes::Field>,
     read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
     read_schema: Arc<Schema>,
     csv_buffer: &mut CsvBuffer,

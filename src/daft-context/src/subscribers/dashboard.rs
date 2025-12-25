@@ -2,15 +2,14 @@ use std::{collections::HashMap, sync::Arc, time::SystemTime};
 
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
-use common_metrics::{NodeID, QueryID, QueryPlan, Stat, StatSnapshot, ops::NodeInfo};
+use common_metrics::{NodeID, QueryID, QueryPlan, Stat, StatSnapshot};
 use common_runtime::{RuntimeRef, get_io_runtime};
-use daft_io::IOStatsContext;
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use daft_recordbatch::RecordBatch;
 use dashmap::DashMap;
 use reqwest::{Client, RequestBuilder};
 
-use crate::subscribers::{QueryMetadata, Subscriber};
+use crate::subscribers::{QueryMetadata, QueryResult, Subscriber};
 
 /// Get the number of seconds from the current timesince the UNIX epoch
 fn secs_from_epoch() -> u64 {
@@ -144,8 +143,7 @@ impl Subscriber for DashboardSubscriber {
         Ok(())
     }
 
-    fn on_query_end(&self, query_id: QueryID) -> DaftResult<()> {
-        let io_stats = IOStatsContext::new("DashboardSubscriber::on_query_end");
+    fn on_query_end(&self, query_id: QueryID, end_result: QueryResult) -> DaftResult<()> {
         let Some((_, results)) = self.preview_rows.remove(&query_id) else {
             return Err(DaftError::ValueError(format!(
                 "Query `{}` not started or already ended in DashboardSubscriber",
@@ -156,7 +154,7 @@ impl Subscriber for DashboardSubscriber {
 
         let end_sec = secs_from_epoch();
         let result = results
-            .concat_or_get(io_stats)?
+            .concat_or_get()?
             .unwrap_or_else(|| RecordBatch::empty(Some(results.schema())));
         let results_ipc = result.to_ipc_stream()?;
         let results_ipc = if results_ipc.len() > 1024 * 1024 * 2 {
@@ -172,6 +170,8 @@ impl Subscriber for DashboardSubscriber {
                     .post(format!("{}/engine/query/{}/end", self.url, query_id))
                     .json(&daft_dashboard::engine::FinalizeArgs {
                         end_sec,
+                        end_state: end_result.end_state,
+                        error_message: end_result.error_message.clone(),
                         results: results_ipc,
                     }),
             )
@@ -210,7 +210,7 @@ impl Subscriber for DashboardSubscriber {
         })
     }
 
-    fn on_exec_start(&self, query_id: QueryID, node_infos: &[Arc<NodeInfo>]) -> DaftResult<()> {
+    fn on_exec_start(&self, query_id: QueryID, physical_plan: QueryPlan) -> DaftResult<()> {
         let exec_start_sec = secs_from_epoch();
         self.runtime.block_on_current_thread(async {
             Self::handle_request(
@@ -218,10 +218,7 @@ impl Subscriber for DashboardSubscriber {
                     .post(format!("{}/engine/query/{}/exec/start", self.url, query_id))
                     .json(&daft_dashboard::engine::ExecStartArgs {
                         exec_start_sec,
-                        node_infos: node_infos
-                            .iter()
-                            .map(|info| info.as_ref().clone())
-                            .collect(),
+                        physical_plan,
                     }),
             )
             .await?;

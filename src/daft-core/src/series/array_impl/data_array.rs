@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arrow::array::ArrayRef;
 use common_error::DaftResult;
 
 use super::{ArrayWrapper, IntoSeries, Series};
@@ -12,7 +13,6 @@ use crate::{
     datatypes::{DaftArrowBackedType, DataType, FixedSizeBinaryArray, IntervalArray},
     lit::Literal,
     series::series_like::SeriesLike,
-    with_match_integer_daft_types,
 };
 
 impl<T: DaftArrowBackedType> IntoSeries for DataArray<T>
@@ -32,8 +32,12 @@ macro_rules! impl_series_like_for_data_array {
             fn into_series(&self) -> Series {
                 self.0.clone().into_series()
             }
-            fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
+            fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
                 self.0.data().to_boxed()
+            }
+
+            fn to_arrow(&self) -> DaftResult<ArrayRef> {
+                Ok(arrow::array::make_array(self.0.to_data()))
             }
 
             fn as_any(&self) -> &dyn std::any::Any {
@@ -42,12 +46,12 @@ macro_rules! impl_series_like_for_data_array {
 
             fn with_validity(
                 &self,
-                validity: Option<arrow2::bitmap::Bitmap>,
+                validity: Option<daft_arrow::buffer::NullBuffer>,
             ) -> DaftResult<Series> {
                 Ok(self.0.with_validity(validity)?.into_series())
             }
 
-            fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
+            fn validity(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
                 self.0.validity()
             }
 
@@ -115,13 +119,8 @@ macro_rules! impl_series_like_for_data_array {
                 self.0.str_value(idx)
             }
 
-            fn take(&self, idx: &Series) -> DaftResult<Series> {
-                with_match_integer_daft_types!(idx.data_type(), |$S| {
-                    Ok(self
-                        .0
-                        .take(idx.downcast::<<$S as DaftDataType>::ArrayType>()?)?
-                        .into_series())
-                })
+            fn take(&self, idx: &UInt64Array) -> DaftResult<Series> {
+                Ok(self.0.take(idx)?.into_series())
             }
 
             fn min(&self, groups: Option<&GroupIndices>) -> DaftResult<Series> {

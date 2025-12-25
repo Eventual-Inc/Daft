@@ -63,7 +63,7 @@ def encode_image(image: Expression, image_format: str | ImageFormat) -> Expressi
 def decode_image(
     bytes: Expression,
     on_error: Literal["raise", "null"] = "raise",
-    mode: str | ImageMode | None = None,
+    mode: str | ImageMode | None = ImageMode.RGB,
 ) -> Expression:
     """Decodes the binary data in this column into images.
 
@@ -73,9 +73,8 @@ def decode_image(
         bytes (Binary Expression): image to decode.
         on_error (str, default="raise"):
             Whether to raise when encountering an error, or log a warning and return a null
-        mode (str | ImageMode, default=None):
-            What mode to convert the images into before storing it in the column. This may prevent
-            errors relating to unsupported types.
+        mode (str | ImageMode | None, default=ImageMode.RGB):
+            What mode to convert the images into before storing it in the column. By default, images are decoded as RGB. If this is set to None, the mode will be inferred from the underlying data.
 
     Returns:
         Expression (Image Expression): An expression representing the decoded image.
@@ -99,6 +98,15 @@ def convert_image(image: Expression, mode: str | ImageMode) -> Expression:
     if not isinstance(mode, ImageMode):
         raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
     return Expression._call_builtin_scalar_fn("to_mode", image, mode=mode)
+
+
+def image_to_tensor(image: Expression) -> Expression:
+    """Convert an image expression to a tensor, inferring dtype and shape.
+
+    This is safer than casting to a tensor dtype manually, since Daft can infer the correct
+    pixel dtype (e.g. UInt8) and determine whether a fixed-shape tensor is appropriate.
+    """
+    return Expression._call_builtin_scalar_fn("to_tensor", image)
 
 
 def image_attribute(

@@ -8,7 +8,13 @@ mod list_array;
 pub mod ops;
 mod serdes;
 mod struct_array;
-use arrow2::{bitmap::Bitmap, compute::cast::utf8_to_large_utf8};
+
+use arrow::array::make_array;
+use daft_arrow::{
+    array::to_data,
+    buffer::{NullBuffer, wrap_null_buffer},
+    compute::cast::utf8_to_large_utf8,
+};
 pub use fixed_size_list_array::FixedSizeListArray;
 pub use list_array::ListArray;
 pub use struct_array::StructArray;
@@ -25,7 +31,8 @@ use crate::datatypes::{DaftArrayType, DaftPhysicalType, DataType, Field};
 #[derive(Debug)]
 pub struct DataArray<T> {
     pub field: Arc<Field>,
-    pub data: Box<dyn arrow2::array::Array>,
+    pub data: Box<dyn daft_arrow::array::Array>,
+    validity: Option<daft_arrow::buffer::NullBuffer>,
     marker_: PhantomData<T>,
 }
 
@@ -44,7 +51,7 @@ impl<T: DaftPhysicalType> DaftArrayType for DataArray<T> {
 impl<T> DataArray<T> {
     pub fn new(
         physical_field: Arc<DaftField>,
-        arrow_array: Box<dyn arrow2::array::Array>,
+        arrow_array: Box<dyn daft_arrow::array::Array>,
     ) -> DaftResult<Self> {
         assert!(
             physical_field.dtype.is_physical(),
@@ -52,31 +59,31 @@ impl<T> DataArray<T> {
             physical_field.dtype
         );
 
-        if let Ok(expected_arrow_physical_type) = physical_field.dtype.to_arrow() {
+        if let Ok(expected_arrow_physical_type) = physical_field.dtype.to_arrow2() {
             // since daft's Utf8 always maps to Arrow's LargeUtf8, we need to handle this special case
             // If the expected physical type is LargeUtf8, but the actual Arrow type is Utf8, we need to convert it
-            if expected_arrow_physical_type == arrow2::datatypes::DataType::LargeUtf8
-                && arrow_array.data_type() == &arrow2::datatypes::DataType::Utf8
+            if expected_arrow_physical_type == daft_arrow::datatypes::DataType::LargeUtf8
+                && arrow_array.data_type() == &daft_arrow::datatypes::DataType::Utf8
             {
                 let utf8_arr = arrow_array
                     .as_any()
-                    .downcast_ref::<arrow2::array::Utf8Array<i32>>()
+                    .downcast_ref::<daft_arrow::array::Utf8Array<i32>>()
                     .unwrap();
 
                 let arr = Box::new(utf8_to_large_utf8(utf8_arr));
-
+                let validity = arr.validity().cloned().map(Into::into);
                 return Ok(Self {
                     field: physical_field,
                     data: arr,
+                    validity,
                     marker_: PhantomData,
                 });
             }
             let arrow_data_type = arrow_array.data_type();
-
             assert!(
                 !(&expected_arrow_physical_type != arrow_data_type),
                 "Mismatch between expected and actual Arrow types for DataArray.\n\
-                Field name: {}\n\
+                Field name: '{}'\n\
                 Logical type: {}\n\
                 Physical type: {}\n\
                 Expected Arrow physical type: {:?}\n\
@@ -93,9 +100,11 @@ impl<T> DataArray<T> {
             );
         }
 
+        let validity = arrow_array.validity().cloned().map(Into::into);
         Ok(Self {
             field: physical_field,
             data: arrow_array,
+            validity,
             marker_: PhantomData,
         })
     }
@@ -124,11 +133,13 @@ impl<T> DataArray<T> {
                 self.data.len()
             )));
         }
-        let with_bitmap = self.data.with_validity(Some(Bitmap::from(validity)));
+        let with_bitmap = self
+            .data
+            .with_validity(wrap_null_buffer(Some(NullBuffer::from(validity))));
         Self::new(self.field.clone(), with_bitmap)
     }
 
-    pub fn with_validity(&self, validity: Option<Bitmap>) -> DaftResult<Self> {
+    pub fn with_validity(&self, validity: Option<NullBuffer>) -> DaftResult<Self> {
         if let Some(v) = &validity
             && v.len() != self.data.len()
         {
@@ -138,12 +149,12 @@ impl<T> DataArray<T> {
                 self.data.len()
             )));
         }
-        let with_bitmap = self.data.with_validity(validity);
+        let with_bitmap = self.data.with_validity(wrap_null_buffer(validity));
         Self::new(self.field.clone(), with_bitmap)
     }
 
-    pub fn validity(&self) -> Option<&Bitmap> {
-        self.data.validity()
+    pub fn validity(&self) -> Option<&NullBuffer> {
+        self.validity.as_ref()
     }
 
     pub fn slice(&self, start: usize, end: usize) -> DaftResult<Self> {
@@ -160,8 +171,15 @@ impl<T> DataArray<T> {
         self.slice(0, num)
     }
 
-    pub fn data(&self) -> &dyn arrow2::array::Array {
+    pub fn data(&self) -> &dyn daft_arrow::array::Array {
         self.data.as_ref()
+    }
+
+    pub fn to_data(&self) -> arrow::array::ArrayData {
+        to_data(self.data())
+    }
+    pub fn to_arrow(&self) -> arrow::array::ArrayRef {
+        make_array(self.to_data())
     }
 
     pub fn name(&self) -> &str {
@@ -177,15 +195,6 @@ impl<T> DataArray<T> {
     }
 }
 
-impl<T> DataArray<T>
-where
-    T: DaftPhysicalType + 'static,
-{
-    pub fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
@@ -197,10 +206,10 @@ mod tests {
     #[test]
     fn from_small_utf8_arrow() {
         let data = vec![Some("hello"), Some("world")];
-        let data = Box::new(arrow2::array::Utf8Array::<i32>::from(data.as_slice()));
+        let data = Box::new(daft_arrow::array::Utf8Array::<i32>::from(data.as_slice()));
         let daft_fld = Arc::new(Field::new("test", DataType::Utf8));
 
-        let s = Series::from_arrow(daft_fld, data);
+        let s = Series::from_arrow2(daft_fld, data);
         assert!(s.is_ok())
     }
 }

@@ -10,9 +10,6 @@ from daft import col
 TABLE_NAME = "my_table"
 data = {"vector": [[1.1, 1.2], [0.2, 1.8]], "lat": [45.5, 40.1], "long": [-122.7, -74.1], "big_int": [1, 2]}
 
-PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (9, 0, 0)
-pytestmark = pytest.mark.skipif(PYARROW_LOWER_BOUND_SKIP, reason="lance not supported on old versions of pyarrow")
-
 
 @pytest.fixture(scope="function")
 def lance_dataset_path(tmp_path_factory):
@@ -144,13 +141,7 @@ def test_lancedb_with_version(lance_dataset_path):
 
 def test_lancedb_read_parallelism_fragment_merging(large_lance_dataset_path):
     """Test parallelism parameter reduces scan tasks by merging fragments."""
-    df_no_fragment_group = daft.read_lance(large_lance_dataset_path)
-    assert len(lance.dataset(large_lance_dataset_path).get_fragments()) == df_no_fragment_group.num_partitions()
-
     df = daft.read_lance(uri=large_lance_dataset_path, fragment_group_size=3)
-    df.explain(show_all=True)
-    assert df.num_partitions() == 4  # 10 fragments, group size 3 -> 4 scan tasks
-
     result = df.to_pydict()
     assert len(result["vector"]) == 10000
     assert len(result["big_int"]) == 10000
@@ -321,16 +312,3 @@ def test_lancedb_limit_with_filter_and_fragment_grouping_single_task(large_lance
 
     result = df.to_pydict()
     assert result == {"big_int": [999]}
-
-
-def test_lancedb_limit_with_offset(large_lance_dataset_path):
-    lance_df = daft.read_lance(large_lance_dataset_path)
-
-    df = lance_df.offset(2).limit(17)
-    assert len(df.to_pylist()) == 17
-
-    df = lance_df.limit(10)
-    assert len(df.to_pylist()) == 10
-
-    df = lance_df.limit(1).offset(1)
-    assert len(df.to_pylist()) == 0

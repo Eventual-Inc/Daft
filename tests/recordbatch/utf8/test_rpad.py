@@ -9,10 +9,18 @@ from daft.recordbatch import MicroPartition
 @pytest.mark.parametrize(
     ["expr", "data", "expected"],
     [
-        (col("col").str.rpad(5, "."), ["foo", "abcdef", "quux"], ["foo..", "abcde", "quux."]),
-        (col("col").str.rpad(lit(5), lit("-")), ["foo", "abcdef", "quux"], ["foo--", "abcde", "quux-"]),
         (
-            col("col").str.rpad(col("zeroes") + lit(5), col("emptystrings") + lit("-")),
+            col("col").rpad(5, "."),
+            ["foo", "abcdef", "quux"],
+            ["foo..", "abcde", "quux."],
+        ),
+        (
+            col("col").rpad(lit(5), lit("-")),
+            ["foo", "abcdef", "quux"],
+            ["foo--", "abcde", "quux-"],
+        ),
+        (
+            col("col").rpad(col("zeroes") + lit(5), col("emptystrings") + lit("-")),
             ["foo", "abcdef", "quux"],
             ["foo--", "abcde", "quux-"],
         ),

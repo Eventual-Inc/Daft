@@ -5,6 +5,7 @@ mod google_cloud;
 mod http;
 mod huggingface;
 mod local;
+pub mod multipart;
 mod object_io;
 mod object_store_glob;
 mod retry;
@@ -30,6 +31,7 @@ mod integrations;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod range;
+pub mod utils;
 
 use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
 
@@ -40,13 +42,14 @@ use object_io::StreamingRetryParams;
 pub use object_io::{FileMetadata, FileType, GetResult, ObjectSource};
 #[cfg(feature = "python")]
 pub use python::register_modules;
-pub use s3_like::{S3LikeSource, S3MultipartWriter, S3PartBuffer, s3_config_from_env};
+pub use s3_like::{S3LikeSource, S3MultipartWriter, s3_config_from_env};
 use snafu::{Snafu, prelude::*};
 pub use stats::{IOStatsContext, IOStatsRef};
 use url::ParseError;
 
 use self::{http::HttpSource, local::LocalSource};
 pub use crate::range::GetRange;
+use crate::{Error::InvalidRangeRequest, range::InvalidGetRange};
 
 #[derive(Debug, Snafu)]
 pub enum Error {
@@ -138,6 +141,9 @@ pub enum Error {
     #[snafu(display("Source not yet implemented: {}", store))]
     NotImplementedSource { store: String },
 
+    #[snafu(display("Method not implemented: {}", method))]
+    NotImplementedMethod { method: String },
+
     #[snafu(display("Unhandled Error for path: {}\nDetails:\n{}", path, msg))]
     Unhandled { path: String, msg: String },
 
@@ -208,6 +214,11 @@ impl IOClient {
             config,
         })
     }
+
+    pub fn support_suffix_range(&self) -> bool {
+        !self.config.disable_suffix_range
+    }
+
     pub async fn get_source_and_path(
         &self,
         input: &str,
@@ -312,6 +323,14 @@ impl IOClient {
     ) -> Result<GetResult> {
         let (_, path) = parse_url(&input)?;
         let source = self.get_source(&input).await?;
+
+        if let Some(GetRange::Suffix(_)) = range
+            && !self.support_suffix_range()
+        {
+            return Err(InvalidRangeRequest {
+                source: InvalidGetRange::UnsupportedSuffixRange,
+            });
+        }
 
         let get_result = source
             .get(path.as_ref(), range.clone(), io_stats.clone())
@@ -423,6 +442,40 @@ impl std::fmt::Display for SourceType {
             Self::Tos => write!(f, "tos"),
         }
     }
+}
+
+impl SourceType {
+    /// Whether source support write parquet/json/csv files via native IO,
+    /// if the source is object store, it should support multipart part upload currently.
+    pub fn supports_native_writer(&self) -> bool {
+        matches!(self, Self::File | Self::S3 | Self::Tos)
+    }
+}
+
+/// On Windows, strips the leading "/" from paths like "/C:/Users/..." to produce "C:/Users/...".
+///
+/// This is needed because stripping "file://" from "file:///C:/path" leaves "/C:/path".
+/// Returns the path unchanged if it doesn't match the pattern "/X:" where X is a drive letter.
+#[cfg(windows)]
+fn strip_leading_slash_before_drive(path: &str) -> &str {
+    let bytes = path.as_bytes();
+    // Check for pattern: starts with '/', followed by ASCII letter, followed by ':'
+    if bytes.len() >= 3 && bytes[0] == b'/' && bytes[1].is_ascii_alphabetic() && bytes[2] == b':' {
+        &path[1..]
+    } else {
+        path
+    }
+}
+
+/// Strips the "file://" prefix from a URI and returns the local file path.
+///
+/// On Windows, also handles the leading slash before drive letters (e.g., "/C:/..." -> "C:/...").
+/// Returns None if the URI doesn't start with "file://".
+pub fn strip_file_uri_to_path(uri: &str) -> Option<&str> {
+    let path = uri.strip_prefix("file://")?;
+    #[cfg(windows)]
+    let path = strip_leading_slash_before_drive(path);
+    Some(path)
 }
 
 pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {

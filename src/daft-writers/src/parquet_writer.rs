@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
 use common_runtime::{get_compute_pool_num_threads, get_compute_runtime, get_io_runtime};
 use daft_core::prelude::*;
-use daft_io::{IOConfig, SourceType, parse_url};
+use daft_io::{IOConfig, SourceType, parse_url, utils::ObjectPath};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use parquet::{
@@ -22,7 +22,7 @@ use parquet::{
 
 use crate::{
     AsyncFileWriter, WriteResult,
-    storage_backend::{FileStorageBackend, S3StorageBackend, StorageBackend},
+    storage_backend::{FileStorageBackend, ObjectStorageBackend, StorageBackend},
     utils::build_filename,
 };
 
@@ -34,13 +34,13 @@ pub(crate) fn native_parquet_writer_supported(
     file_schema: &SchemaRef,
 ) -> DaftResult<bool> {
     let (source_type, _) = parse_url(root_dir)?;
-    match source_type {
-        SourceType::File => {}
-        SourceType::S3 => {}
-        _ => return Ok(false),
+    if !source_type.supports_native_writer() {
+        return Ok(false);
     }
+
     // TODO(desmond): Currently we do not support extension and timestamp types.
-    let arrow_schema = match file_schema.to_arrow() {
+    #[allow(deprecated, reason = "arrow2 migration")]
+    let arrow_schema = match file_schema.to_arrow2() {
         Ok(schema)
             if schema
                 .fields
@@ -90,7 +90,8 @@ pub(crate) fn create_native_parquet_writer(
             .build(),
     );
 
-    let arrow_schema = Arc::new(schema.to_arrow()?.into());
+    #[allow(deprecated, reason = "arrow2 migration")]
+    let arrow_schema = Arc::new(schema.to_arrow2()?.into());
 
     let parquet_schema = ArrowSchemaConverter::new()
         .with_coerce_types(writer_properties.coerce_types())
@@ -109,12 +110,12 @@ pub(crate) fn create_native_parquet_writer(
                 storage_backend,
             )))
         }
-        SourceType::S3 => {
-            let (scheme, _, _) = daft_io::s3_like::parse_s3_url(root_dir.as_ref())?;
+        source if source.supports_native_writer() => {
+            let ObjectPath { scheme, .. } = daft_io::utils::parse_object_url(root_dir.as_ref())?;
             let io_config = io_config.ok_or_else(|| {
                 DaftError::InternalError("IO config is required for S3 writes".to_string())
             })?;
-            let storage_backend = S3StorageBackend::new(scheme, io_config);
+            let storage_backend = ObjectStorageBackend::new(scheme, io_config);
             Ok(Box::new(ParquetWriter::new(
                 filename,
                 writer_properties,
@@ -187,6 +188,7 @@ impl<B: StorageBackend> ParquetWriter<B> {
             .collect();
         // Iterate through each record batch and extract its leaf columns.
         for record_batch in record_batches {
+            #[allow(deprecated, reason = "arrow2 migration")]
             let arrays = record_batch.get_inner_arrow_arrays();
             let mut leaf_column_slots = leaf_columns.iter_mut();
 
@@ -263,7 +265,7 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
             self.create_writer().await?;
         }
         let num_rows = data.len();
-        let record_batches = data.get_tables()?;
+        let record_batches = data.record_batches();
 
         let row_group_writer_thread_handle = {
             // Wait for the workers to complete encoding, and append the resulting column chunks to the row group and the file.
@@ -292,7 +294,7 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
                     Ok(file_writer)
                 });
 
-            let mut pending_column_writers = self.build_column_writer_futures(&record_batches)?;
+            let mut pending_column_writers = self.build_column_writer_futures(record_batches)?;
 
             // Spawn up to NUM_CPU workers to handle the column writes.
             let initial_spawn_count =
@@ -368,9 +370,9 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
 
         // Return a recordbatch containing the filename that we wrote to.
         let field = Field::new(Self::PATH_FIELD_NAME, DataType::Utf8);
-        let filename_series = Series::from_arrow(
+        let filename_series = Series::from_arrow2(
             Arc::new(field.clone()),
-            Box::new(arrow2::array::Utf8Array::<i64>::from_slice([&self
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice([&self
                 .filename
                 .to_string_lossy()])),
         )?;

@@ -30,17 +30,29 @@ To set up your development environment:
 9. `make precommit`: run all pre-commit hooks, must install pre-commit first(pip install pre-commit)
 10. `make build-release`: perform a full release build of Daft
 11. `make build-whl`: recompile your code after modifying any Rust code in `src/` for development, only generate `whl` file without installation
-12. `make daft-proto`: build Daft proto sources in `src/daft-proto`
 
 ### Note about Developing `daft-dashboard`
 
-If you wish to enable, or work on the daft-dashboard functionality, it does have an additional dependency of [bun.sh](https://bun.sh/).
+If you wish to enable, or work on the daft-dashboard functionality, it does have an additional dependency of [bun.sh](https://bun.sh/). You simply need to install bun, and everything else should work out of the box!
 
-You simply need to install bun, and everything else should work out of the box!
+Next (_make sure Daft is installed_), you can launch the dashboard using the `daft dashboard` command, for example:
+
+```bash
+# You can learn more about this command by `daft dashboard -h`
+daft dashboard -v -a 127.0.0.1 -p 3238
+```
+
+Before executing a specific Daft job, enable reporting query execution data to the dashboard by setting the `DAFT_DASHBOARD_URL` environment variable, for example:
+
+```bash
+export DAFT_DASHBOARD_URL="http://127.0.0.1:3238"
+```
+
+Next, you can access and view the dashboard through a web browser, for example, via address `http://127.0.0.1:3238`.
 
 ## Developing with Ray
 
-Running a development version of Daft on a local Ray cluster is as simple as including `daft.context.set_runner_ray()` in your Python script and then building and executing it as usual.
+Running a development version of Daft on a local Ray cluster is as simple as including `daft.set_runner_ray()` in your Python script and then building and executing it as usual.
 
 To use a remote Ray cluster, run the following steps on the same operating system version as your Ray nodes, in order to ensure that your binaries are executable on Ray.
 
@@ -390,8 +402,7 @@ def test_extract(test_expression):
     test_expression(
         data=test_data,
         expected=expected,
-        name="extract",
-        namespace="str",
+        name="regexp_extract",
         sql_name="regexp_extract", # if this is not provided, it will be the same as `name`
         args=[regex],
         kwargs={}

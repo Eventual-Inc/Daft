@@ -32,7 +32,7 @@ def read_parquet(
     """Creates a DataFrame from Parquet file(s).
 
     Args:
-        path (str): Path to Parquet file (allows for wildcards)
+        path (str): Path to Parquet file (allows for wildcards; supports remote URLs to object stores such as ``s3://`` or ``gs://``)
         row_groups (List[int] or List[List[int]]): List of row groups to read corresponding to each file.
         infer_schema (bool): Whether to infer the schema of the Parquet, defaults to True.
         schema (dict[str, DataType]): A schema that is used as the definitive schema for the Parquet file if infer_schema is False, otherwise it is used as a schema hint that is applied after the schema is inferred.
@@ -48,12 +48,16 @@ def read_parquet(
         DataFrame: parsed DataFrame
 
     Examples:
+        Read a Parquet file from a local path:
         >>> df = daft.read_parquet("/path/to/file.parquet")
         >>> df = daft.read_parquet("/path/to/directory")
         >>> df = daft.read_parquet("/path/to/files-*.parquet")
-        >>> df = daft.read_parquet("s3://path/to/files-*.parquet")
-        >>> df = daft.read_parquet("gs://path/to/files-*.parquet")
 
+        Read a Parquet file from a public S3 bucket:
+        >>> from daft.io import S3Config, IOConfig
+        >>> io_config = IOConfig(s3=S3Config(region="us-west-2", anonymous=True))
+        >>> df = daft.read_parquet("s3://path/to/files-*.parquet", io_config=io_config)
+        >>> df.show()
     """
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 

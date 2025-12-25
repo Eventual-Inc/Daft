@@ -8,6 +8,7 @@ common-py-serde = {path = "../common/py-serde", default-features = false}
 common-resource-request = {path = "../common/resource-request", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
 common-metrics = {path = "../common/metrics", default-features = false}
+common-tracing = {path = "../common/tracing", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
 derive_more = {workspace = true}
@@ -15,12 +16,15 @@ indexmap = {workspace = true}
 itertools = {workspace = true}
 log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
+rand = "0.8.5"
 serde = {workspace = true}
 tokio = {workspace = true, optional = true}
 typetag = {workspace = true}
+opentelemetry = {workspace = true}
 
 [dev-dependencies]
 rstest = {workspace = true}
+opentelemetry_sdk = {workspace = true, features = ["testing"]}
 
 [features]
 python = [

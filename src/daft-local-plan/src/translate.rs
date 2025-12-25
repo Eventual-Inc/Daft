@@ -1,16 +1,17 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
-use common_file_formats::WriteMode;
 use common_scan_info::ScanState;
 use daft_core::join::JoinStrategy;
 use daft_dsl::{
-    expr::bound_expr::{BoundAggExpr, BoundExpr, BoundVLLMExpr, BoundWindowExpr},
+    expr::{
+        agg::extract_agg_expr,
+        bound_expr::{BoundAggExpr, BoundExpr, BoundVLLMExpr, BoundWindowExpr},
+    },
     join::normalize_join_keys,
     resolved_col, window_to_agg_exprs,
 };
 use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo, stats::StatsState};
-use daft_physical_plan::extract_agg_expr;
 
 use super::plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
 
@@ -429,26 +430,21 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                     let bound_info = info.clone().bind(&data_schema)?;
                     let physical_write = LocalPhysicalPlan::physical_write(
                         input,
-                        data_schema,
+                        data_schema.clone(),
                         sink.schema.clone(),
                         bound_info.clone(),
                         sink.stats_state.clone(),
                         LocalNodeContext::default(),
                     );
-                    if matches!(
-                        info.write_mode,
-                        WriteMode::Overwrite | WriteMode::OverwritePartitions
-                    ) {
-                        Ok(LocalPhysicalPlan::commit_write(
-                            physical_write,
-                            sink.schema.clone(),
-                            bound_info,
-                            sink.stats_state.clone(),
-                            LocalNodeContext::default(),
-                        ))
-                    } else {
-                        Ok(physical_write)
-                    }
+
+                    Ok(LocalPhysicalPlan::commit_write(
+                        physical_write,
+                        data_schema,
+                        sink.schema.clone(),
+                        bound_info,
+                        sink.stats_state.clone(),
+                        LocalNodeContext::default(),
+                    ))
                 }
                 #[cfg(feature = "python")]
                 SinkInfo::CatalogInfo(info) => match &info.catalog {

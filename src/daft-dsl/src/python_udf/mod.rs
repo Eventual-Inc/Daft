@@ -1,9 +1,13 @@
 mod batch;
+#[cfg(feature = "python")]
+mod retry;
 mod row_wise;
 
 pub use batch::{BatchPyFn, batch_udf};
 use common_error::DaftResult;
 use daft_core::prelude::*;
+#[cfg(feature = "python")]
+pub use retry::{retry_after_ms_from_error, retry_with_backoff};
 pub use row_wise::{RowWisePyFn, row_wise_udf};
 use serde::{Deserialize, Serialize};
 
@@ -94,6 +98,23 @@ impl PyScalarFn {
         match self {
             Self::RowWise(RowWisePyFn { is_async, .. }) => *is_async,
             Self::Batch(BatchPyFn { is_async, .. }) => *is_async,
+        }
+    }
+}
+
+#[cfg(feature = "python")]
+pub fn collect_operator_metrics(
+    operator_metrics: &common_metrics::python::PyOperatorMetrics,
+    metrics: &mut dyn crate::operator_metrics::MetricsCollector,
+) {
+    for (name, counters) in operator_metrics.inner.snapshot() {
+        for counter in counters {
+            metrics.inc_counter(
+                &name,
+                counter.value,
+                counter.description.as_deref(),
+                Some(counter.attributes),
+            );
         }
     }
 }

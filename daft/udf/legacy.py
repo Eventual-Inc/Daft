@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import functools
 import inspect
+import warnings
 from typing import TYPE_CHECKING, Any, Callable, Optional, TypeAlias, Union, cast
 
 import daft
@@ -258,6 +259,7 @@ class UDF:
     resource_request: ResourceRequest | None = None
     batch_size: int | None = None
     use_process: bool | None = None
+    ray_options: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         # Analogous to the @functools.wraps(self.inner) pattern
@@ -293,6 +295,7 @@ class UDF:
             batch_size=self.batch_size,
             concurrency=self.concurrency,
             use_process=self.use_process,
+            ray_options=self.ray_options,
         )
 
     def override_options(
@@ -301,6 +304,7 @@ class UDF:
         num_cpus: float | None = _UnsetMarker,
         num_gpus: float | None = _UnsetMarker,
         memory_bytes: int | None = _UnsetMarker,
+        ray_options: dict[str, Any] | None = None,
         batch_size: int | None = _UnsetMarker,
     ) -> UDF:
         """Replace the resource requests for running each instance of your UDF.
@@ -312,6 +316,7 @@ class UDF:
                 the appropriate GPU to each UDF using `CUDA_VISIBLE_DEVICES`.
             memory_bytes: Amount of memory to allocate each running instance of your UDF in bytes. If your UDF is experiencing out-of-memory errors,
                 this parameter can help hint Daft that each UDF requires a certain amount of heap memory for execution.
+            ray_options: Ray options to pass to the UDF. see more  https://docs.ray.io/en/latest/ray-core/api/doc/ray.actor.ActorClass.options.html#ray.actor.ActorClass.options
             batch_size: Enables batching of the input into batches of at most this size. Results between batches are concatenated.
 
         Examples:
@@ -336,9 +341,12 @@ class UDF:
         if memory_bytes is not _UnsetMarker:
             new_resource_request = new_resource_request.with_memory_bytes(memory_bytes)
 
+        new_ray_options = ray_options if ray_options is not None else self.ray_options
         new_batch_size = self.batch_size if batch_size is _UnsetMarker else batch_size
 
-        return dataclasses.replace(self, resource_request=new_resource_request, batch_size=new_batch_size)
+        return dataclasses.replace(
+            self, resource_request=new_resource_request, batch_size=new_batch_size, ray_options=new_ray_options
+        )
 
     def _validate_init_args(self) -> None:
         if isinstance(self.inner, type):
@@ -465,11 +473,12 @@ def udf(
     num_cpus: float | None = None,
     num_gpus: float | None = None,
     memory_bytes: int | None = None,
+    ray_options: dict[str, Any] | None = None,
     batch_size: int | None = None,
     concurrency: int | None = None,
     use_process: bool | None = None,
 ) -> Callable[[UserDefinedPyFuncLike], UDF]:
-    """`@udf` Decorator to convert a Python function/class into a `UDF`.
+    """(DEPRECATED) `@udf` Decorator to convert a Python function/class into a `UDF`.
 
     UDFs allow users to run arbitrary Python code on the outputs of Expressions.
 
@@ -482,6 +491,7 @@ def udf(
             the appropriate GPU to each UDF using `CUDA_VISIBLE_DEVICES`.
         memory_bytes: Amount of memory to allocate each running instance of your UDF in bytes. If your UDF is experiencing out-of-memory errors,
             this parameter can help hint Daft that each UDF requires a certain amount of heap memory for execution.
+        ray_options: Extra Ray options, e.g. {"label_selector": {...}}. see more https://docs.ray.io/en/latest/ray-core/api/doc/ray.actor.ActorClass.options.html#ray.actor.ActorClass.options
         batch_size: Enables batching of the input into batches of at most this size. Results between batches are concatenated.
         concurrency: Spin up `N` number of persistent replicas of the UDF to process all partitions. Defaults to `None` which will spin up one
             UDF per partition. This is especially useful for expensive initializations that need to be amortized across partitions such as
@@ -607,6 +617,12 @@ def udf(
         ...         return self.model(data.to_pylist())
 
     """
+    warnings.warn(
+        "The `@daft.udf` decorator is deprecated since Daft version >= 0.7.0 and will be removed in >= 0.8.0. Please use `@daft.func` and `@daft.cls` instead.\nSee the migration guide for more details: https://docs.daft.ai/en/stable/custom-code/migration/",
+        category=DeprecationWarning,
+        stacklevel=2,
+    )
+
     inferred_return_dtype = DataType._infer(return_dtype)
 
     def _udf(f: UserDefinedPyFuncLike) -> UDF:
@@ -636,6 +652,7 @@ def udf(
             batch_size=batch_size,
             concurrency=concurrency,
             use_process=use_process,
+            ray_options=ray_options,
         )
 
         daft.attach_function(udf)

@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::{
     collections::{HashMap, HashSet},
     future::Future,
@@ -15,7 +16,7 @@ use common_scan_info::{Pushdowns, ScanTaskLike};
 use daft_core::prelude::{AsArrow, Int64Array, SchemaRef, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{AggExpr, Expr};
-use daft_io::IOStatsRef;
+use daft_io::{GetRange, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::{ParquetSchemaInferenceOptions, read_parquet_bulk_async};
@@ -36,6 +37,7 @@ pub struct ScanTaskSource {
     scan_tasks: Vec<Arc<ScanTask>>,
     num_parallel_tasks: usize,
     schema: SchemaRef,
+    execution_config: Arc<DaftExecutionConfig>,
 }
 
 impl ScanTaskSource {
@@ -45,6 +47,12 @@ impl ScanTaskSource {
         schema: SchemaRef,
         cfg: &DaftExecutionConfig,
     ) -> Self {
+        // Split all scan tasks for parallelism
+        let scan_tasks = scan_tasks
+            .into_iter()
+            .flat_map(|scan_task| scan_task.split())
+            .collect::<Vec<_>>();
+
         // Determine the number of parallel tasks to run based on available CPU cores and row limits
         let num_cpus = get_compute_pool_num_threads();
         let mut num_parallel_tasks = match pushdowns.limit {
@@ -93,6 +101,7 @@ impl ScanTaskSource {
             scan_tasks,
             num_parallel_tasks,
             schema,
+            execution_config: Arc::new(cfg.clone()),
         }
     }
 
@@ -220,7 +229,11 @@ impl TreeDisplay for ScanTaskSource {
             let total_bytes: usize = scan
                 .scan_tasks
                 .iter()
-                .map(|st| st.size_bytes_on_disk().unwrap_or(0))
+                .map(|st| {
+                    st.estimate_in_memory_size_bytes(Some(scan.execution_config.as_ref()))
+                        .or_else(|| st.size_bytes_on_disk())
+                        .unwrap_or(0)
+                })
                 .sum();
 
             let num_parallel_tasks = scan.num_parallel_tasks;
@@ -376,9 +389,9 @@ async fn get_delete_map(
                 let positions = get_column_by_name("pos")?.downcast::<Int64Array>()?;
 
                 for (file, pos) in file_paths
-                    .as_arrow()
+                    .as_arrow2()
                     .values_iter()
-                    .zip(positions.as_arrow().values_iter())
+                    .zip(positions.as_arrow2().values_iter())
                 {
                     if delete_map.contains_key(file) {
                         delete_map.get_mut(file).unwrap().push(*pos);
@@ -575,10 +588,14 @@ async fn stream_scan_task(
                 Some(schema_of_file),
                 scan_task.pushdowns.filters.clone(),
             );
-            let parse_options = JsonParseOptions::new_internal();
+            let parse_options = JsonParseOptions::new_internal(cfg.skip_empty_files);
             let json_chunk_size = cfg.chunk_size.or(Some(chunk_size));
             let read_options = JsonReadOptions::new_internal(cfg.buffer_size, json_chunk_size);
 
+            let range = source.get_chunk_spec().and_then(|spec| match spec {
+                daft_scan::ChunkSpec::Bytes { start, end } => Some(GetRange::Bounded(*start..*end)),
+                _ => None,
+            });
             daft_json::read::stream_json(
                 url.to_string(),
                 Some(convert_options),
@@ -587,6 +604,7 @@ async fn stream_scan_task(
                 io_client,
                 Some(io_stats),
                 None,
+                range,
                 // maintain_order, TODO: Implement maintain_order for JSON
             )
             .await?

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 import daft.daft as native
 from daft.arrow_utils import ensure_array, ensure_chunked_array
@@ -12,6 +12,7 @@ from daft.utils import pyarrow_supports_fixed_shape_tensor
 
 if TYPE_CHECKING:
     import builtins
+    from collections.abc import Callable
 
     from daft.daft import PyDataType
 
@@ -275,8 +276,36 @@ class Series:
     def __repr__(self) -> str:
         return repr(self._series)
 
-    def __getitem__(self, index: int) -> Any:
-        return self._series[index]
+    def __getitem__(self, index: int | builtins.slice) -> Any | Series:
+        if isinstance(index, slice):
+            if index.step is not None:
+                raise IndexError("slice step not supported: use `Series[start:stop]`")
+            n = len(self)
+            start = index.start if index.start is not None else 0
+            end = index.stop if index.stop is not None else n
+
+            # Normalize negative indices
+            start = start + n if start < 0 else start
+            end = end + n if end < 0 else end
+
+            # Clamp to bounds
+            start = max(0, min(start, n))
+            end = max(0, min(end, n))
+
+            # Empty slice if start >= end
+            if start >= end:
+                return self.slice(start, start)
+
+            return self.slice(start, end)
+        elif isinstance(index, int):
+            n = len(self)
+            if index < 0:
+                index += n
+            if index < 0 or index >= n:
+                raise IndexError("Series index out of range")
+            return self._series[index]
+        else:
+            raise TypeError(f"expected int or slice for index, got {type(index)}")
 
     def __bool__(self) -> bool:
         raise ValueError(
@@ -311,17 +340,9 @@ class Series:
         """The sign of a numeric series."""
         return self._eval_expressions("sign")
 
-    def signum(self) -> Series:
-        """The signum of a numeric series."""
-        return self._eval_expressions("sign")
-
     def negate(self) -> Series:
         """The negative of a numeric series."""
-        return self._eval_expressions("negative")
-
-    def negative(self) -> Series:
-        """The negative of a numeric series."""
-        return self._eval_expressions("negative")
+        return self._eval_expressions("negate")
 
     def round(self, decimals: int = 0) -> Series:
         return self._eval_expressions("round", decimals=decimals)
@@ -1103,7 +1124,7 @@ class SeriesImageNamespace(SeriesNamespace):
     def decode(
         self,
         on_error: Literal["raise", "null"] = "raise",
-        mode: str | ImageMode | None = None,
+        mode: str | ImageMode | None = ImageMode.RGB,
     ) -> Series:
         return self._eval_expressions("image_decode", on_error=on_error, mode=mode)
 
@@ -1119,3 +1140,6 @@ class SeriesImageNamespace(SeriesNamespace):
         if not isinstance(mode, ImageMode):
             raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
         return self._eval_expressions("to_mode", mode=mode)
+
+    def to_tensor(self) -> Series:
+        return self._eval_expressions("to_tensor")

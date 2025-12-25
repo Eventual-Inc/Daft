@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-mod split_parquet;
+mod split_jsonl;
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::{DaftError, DaftResult};
@@ -114,6 +114,12 @@ impl MergeByFileSize<'_> {
             .accumulator
             .as_ref()
             .expect("accumulator should be populated");
+
+        // Respect max_source_count: do not merge if we would exceed the cap
+        if accumulator.sources.len() >= self.max_source_count {
+            return false;
+        }
+
         let child_matches_accumulator = other.partition_spec() == accumulator.partition_spec()
             && other.file_format_config == accumulator.file_format_config
             && other.schema == accumulator.schema
@@ -121,11 +127,10 @@ impl MergeByFileSize<'_> {
             && other.pushdowns == accumulator.pushdowns;
 
         // Merge only if the resultant accumulator is smaller than the targeted upper bound
-        let sum_smaller_than_max_size_bytes = if let Some(child_bytes) =
-            other.estimate_in_memory_size_bytes(Some(self.cfg))
-            && let Some(accumulator_bytes) =
-                accumulator.estimate_in_memory_size_bytes(Some(self.cfg))
-        {
+        let sum_smaller_than_max_size_bytes = if let (Some(child_bytes), Some(accumulator_bytes)) = (
+            other.estimate_in_memory_size_bytes(Some(self.cfg)),
+            accumulator.estimate_in_memory_size_bytes(Some(self.cfg)),
+        ) {
             child_bytes + accumulator_bytes <= self.target_upper_bound_size_bytes
         } else {
             false
@@ -336,34 +341,20 @@ fn split_and_merge_pass(
                 .downcast::<ScanTask>()
                 .map_err(|e| DaftError::TypeError(format!("Expected Arc<ScanTask>, found {:?}", e)))
         }));
-        if cfg.scantask_splitting_level == 1 {
-            let split_tasks = split_by_row_groups(
-                iter,
-                cfg.parquet_split_row_groups_max_files,
-                cfg.scan_tasks_min_size_bytes,
-                cfg.scan_tasks_max_size_bytes,
-            );
-            let merged_tasks = merge_by_sizes(split_tasks, pushdowns, cfg);
-            let scan_tasks: Vec<Arc<dyn ScanTaskLike>> = merged_tasks
-                .map(|st| st.map(|task| task as Arc<dyn ScanTaskLike>))
-                .collect::<DaftResult<Vec<_>>>()?;
-            Ok(Arc::new(scan_tasks))
-        } else if cfg.scantask_splitting_level == 2 {
-            let split_tasks = {
-                let splitter = split_parquet::SplitParquetScanTasksIterator::new(iter, cfg);
-                Box::new(splitter.into_iter()) as BoxScanTaskIter
-            };
-            let merged_tasks = merge_by_sizes(split_tasks, pushdowns, cfg);
-            let scan_tasks: Vec<Arc<dyn ScanTaskLike>> = merged_tasks
-                .map(|st| st.map(|task| task as Arc<dyn ScanTaskLike>))
-                .collect::<DaftResult<Vec<_>>>()?;
-            Ok(Arc::new(scan_tasks))
-        } else {
-            panic!(
-                "DAFT_SCANTASK_SPLITTING_LEVEL must be either 1 or 2, received: {}",
-                cfg.scantask_splitting_level
-            );
-        }
+        // Split JSONL by byte ranges aligned to line boundaries for JSONFileFormat, other formats will be leaked through.
+        // If there are other file formats in the future, a pipeline can be constructed to pass split_tasks.
+        let split_jsonl_tasks = split_jsonl::split_by_jsonl_ranges(iter, cfg);
+        let split_tasks = split_by_row_groups(
+            split_jsonl_tasks,
+            cfg.parquet_split_row_groups_max_files,
+            cfg.scan_tasks_min_size_bytes,
+            cfg.scan_tasks_max_size_bytes,
+        );
+        let merged_tasks = merge_by_sizes(split_tasks, pushdowns, cfg);
+        let scan_tasks: Vec<Arc<dyn ScanTaskLike>> = merged_tasks
+            .map(|st| st.map(|task| task as Arc<dyn ScanTaskLike>))
+            .collect::<DaftResult<Vec<_>>>()?;
+        Ok(Arc::new(scan_tasks))
     } else {
         Ok(scan_tasks)
     }

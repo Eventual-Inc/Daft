@@ -39,7 +39,7 @@ use crate::{
         translate_physical_plan_to_pipeline, viz_pipeline_ascii, viz_pipeline_mermaid,
     },
     resource_manager::get_or_init_memory_manager,
-    runtime_stats::RuntimeStatsManager,
+    runtime_stats::{QueryEndState, RuntimeStatsManager},
 };
 
 /// Global tokio runtime shared by all NativeExecutor instances
@@ -206,16 +206,27 @@ impl NativeExecutor {
         additional_context: Option<HashMap<String, String>>,
     ) -> DaftResult<ExecutionEngineResult> {
         let cancel = self.cancel.clone();
-        let ctx = RuntimeContext::new_with_context(additional_context.unwrap_or_default());
+        let additional_context = additional_context.unwrap_or_default();
+        let ctx = RuntimeContext::new_with_context(additional_context.clone());
         let pipeline =
             translate_physical_plan_to_pipeline(local_physical_plan, psets, &exec_cfg, &ctx)?;
 
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
         let enable_explain_analyze = self.enable_explain_analyze;
 
+        let query_id: common_metrics::QueryID = additional_context
+            .get("query_id")
+            .ok_or_else(|| {
+                common_error::DaftError::ValueError(
+                    "query_id not found in additional_context".to_string(),
+                )
+            })?
+            .clone()
+            .into();
+
         // Spawn execution on the global runtime - returns immediately
         let handle = get_global_runtime();
-        let stats_manager = RuntimeStatsManager::try_new(handle, &pipeline, subscribers)?;
+        let stats_manager = RuntimeStatsManager::try_new(handle, &pipeline, subscribers, query_id)?;
         let task = async move {
             let stats_manager_handle = stats_manager.handle();
             let execution_task = async {
@@ -233,21 +244,28 @@ impl NativeExecutor {
                 runtime_handle.shutdown().await
             };
 
-            let result = tokio::select! {
+            let (result, finish_status) = tokio::select! {
                 biased;
                 () = cancel.cancelled() => {
                     log::info!("Execution engine cancelled");
-                    Ok(())
+                    (Ok(()), QueryEndState::Cancelled)
                 }
                 _ = tokio::signal::ctrl_c() => {
                     log::info!("Received Ctrl-C, shutting down execution engine");
-                    Ok(())
+                    (Ok(()), QueryEndState::Cancelled)
                 }
-                result = execution_task => result,
+                result = execution_task => {
+                    let status = if result.is_err() {
+                        QueryEndState::Failed
+                    } else {
+                        QueryEndState::Finished
+                    };
+                    (result, status)
+                },
             };
 
             // Finish the stats manager
-            let final_stats = stats_manager.finish().await;
+            let final_stats = stats_manager.finish(finish_status).await;
 
             // TODO: Move into a runtime stats subscriber
             if enable_explain_analyze {

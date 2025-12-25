@@ -1,7 +1,8 @@
 use std::sync::Arc;
 
-use arrow2::offset::OffsetsBuffer;
+use arrow::array::ArrayRef;
 use common_error::{DaftError, DaftResult};
+use daft_arrow::offset::OffsetsBuffer;
 
 use crate::{
     array::growable::{Growable, GrowableArray},
@@ -10,12 +11,12 @@ use crate::{
     series::Series,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FixedSizeListArray {
     pub field: Arc<Field>,
     /// contains all the elements of the nested lists flattened into a single contiguous array.
     pub flat_child: Series,
-    validity: Option<arrow2::bitmap::Bitmap>,
+    validity: Option<daft_arrow::buffer::NullBuffer>,
 }
 
 impl DaftArrayType for FixedSizeListArray {
@@ -28,7 +29,7 @@ impl FixedSizeListArray {
     pub fn new<F: Into<Arc<Field>>>(
         field: F,
         flat_child: Series,
-        validity: Option<arrow2::bitmap::Bitmap>,
+        validity: Option<daft_arrow::buffer::NullBuffer>,
     ) -> Self {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
@@ -62,14 +63,14 @@ impl FixedSizeListArray {
         }
     }
 
-    pub fn validity(&self) -> Option<&arrow2::bitmap::Bitmap> {
+    pub fn validity(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
         self.validity.as_ref()
     }
 
     pub fn null_count(&self) -> usize {
         match self.validity() {
             None => 0,
-            Some(validity) => validity.unset_bits(),
+            Some(validity) => validity.null_count(),
         }
     }
 
@@ -87,7 +88,7 @@ impl FixedSizeListArray {
             arrays.to_vec(),
             arrays
                 .iter()
-                .map(|a| a.validity.as_ref().map_or(0usize, |v| v.unset_bits()))
+                .map(|a| a.validity.as_ref().map_or(0usize, |v| v.null_count()))
                 .sum::<usize>()
                 > 0,
             arrays.iter().map(|a| a.len()).sum(),
@@ -152,17 +153,29 @@ impl FixedSizeListArray {
             self.flat_child.slice(start * size, end * size)?,
             self.validity
                 .as_ref()
-                .map(|v| v.clone().sliced(start, end - start)),
+                .map(|v| v.clone().slice(start, end - start)),
         ))
     }
 
-    pub fn to_arrow(&self) -> Box<dyn arrow2::array::Array> {
-        let arrow_dtype = self.data_type().to_arrow().unwrap();
-        Box::new(arrow2::array::FixedSizeListArray::new(
+    #[deprecated(note = "arrow2 migration")]
+    pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
+        let arrow_dtype = self.data_type().to_arrow2().unwrap();
+        Box::new(daft_arrow::array::FixedSizeListArray::new(
             arrow_dtype,
-            self.flat_child.to_arrow(),
-            self.validity.clone(),
+            self.flat_child.to_arrow2(),
+            daft_arrow::buffer::wrap_null_buffer(self.validity.clone()),
         ))
+    }
+
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        let field = Arc::new(self.flat_child.field().to_arrow()?);
+        let size = self.fixed_element_len() as i32;
+        let values = self.flat_child.to_arrow()?;
+        let nulls = self.validity.clone();
+
+        Ok(Arc::new(arrow::array::FixedSizeListArray::try_new(
+            field, size, values, nulls,
+        )?))
     }
 
     pub fn fixed_element_len(&self) -> usize {
@@ -173,7 +186,10 @@ impl FixedSizeListArray {
         }
     }
 
-    pub fn with_validity(&self, validity: Option<arrow2::bitmap::Bitmap>) -> DaftResult<Self> {
+    pub fn with_validity(
+        &self,
+        validity: Option<daft_arrow::buffer::NullBuffer>,
+    ) -> DaftResult<Self> {
         if let Some(v) = &validity
             && v.len() != self.len()
         {
@@ -248,7 +264,7 @@ impl Iterator for FixedSizeListArrayIter<'_> {
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx < self.array.len() {
             if let Some(validity) = self.array.validity()
-                && !validity.get_bit(self.idx)
+                && validity.is_null(self.idx)
             {
                 self.idx += 1;
                 Some(None)
@@ -282,6 +298,8 @@ impl ExactSizeIterator for FixedSizeListArrayIter<'_> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use common_error::DaftResult;
 
     use super::FixedSizeListArray;
@@ -300,7 +318,7 @@ mod tests {
         FixedSizeListArray::new(
             field,
             flat_child.into_series(),
-            Some(arrow2::bitmap::Bitmap::from(validity)),
+            Some(daft_arrow::buffer::NullBuffer::from(validity)),
         )
     }
 
@@ -327,6 +345,39 @@ mod tests {
                 .collect::<Vec<_>>(),
             arr.validity.unwrap().into_iter().collect::<Vec<_>>()
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_fixed_size_list_to_arrow() -> DaftResult<()> {
+        let arr = get_i32_fixed_size_list_array(vec![true, true, false].as_slice());
+        let arrow_arr = arr.to_arrow()?;
+
+        assert_eq!(
+            arrow_arr.data_type(),
+            &arrow::datatypes::DataType::FixedSizeList(
+                Arc::new(arrow::datatypes::Field::new(
+                    "foo",
+                    arrow::datatypes::DataType::Int32,
+                    true
+                )),
+                3
+            )
+        );
+        assert_eq!(arrow_arr.len(), arr.len());
+        assert_eq!(arrow_arr.null_count(), arr.null_count());
+
+        assert_eq!(
+            arrow_arr
+                .as_any()
+                .downcast_ref::<arrow::array::FixedSizeListArray>()
+                .unwrap()
+                .values()
+                .as_ref()
+                .len(),
+            arr.flat_child.len()
+        );
+
         Ok(())
     }
 }

@@ -1,4 +1,6 @@
+use ahash::AHashMap;
 use common_error::{DaftError, DaftResult};
+use common_pattern::like_pattern_to_regex;
 use daft_core::{
     prelude::{BooleanArray, DataType, Field, FullNull, Schema, Utf8Array},
     series::{IntoSeries, Series},
@@ -71,32 +73,52 @@ fn like_impl(arr: &Utf8Array, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
     }
 
     let self_iter = create_broadcasted_str_iter(arr, expected_size);
-    let arrow_result = match pattern.len() {
-        1 => {
-            let pat = pattern.get(0).unwrap();
-            let pat = pat.replace('%', ".*").replace('_', ".");
-            let re = regex::Regex::new(&format!("^{}$", pat));
-            let re = re?;
-            self_iter
-                .map(|val| Some(re.is_match(val?)))
-                .collect::<arrow2::array::BooleanArray>()
-        }
-        _ => {
-            let pattern_iter = create_broadcasted_str_iter(pattern, expected_size);
-            self_iter
-                .zip(pattern_iter)
-                .map(|(val, pat)| match (val, pat) {
-                    (Some(val), Some(pat)) => {
-                        let pat = pat.replace('%', ".*").replace('_', ".");
-                        let re = regex::Regex::new(&format!("^{}$", pat));
-                        Ok(Some(re?.is_match(val)))
-                    }
-                    _ => Ok(None),
-                })
-                .collect::<DaftResult<arrow2::array::BooleanArray>>()?
-        }
+    let arrow_result = if pattern.len() == 1 {
+        let pat = pattern.get(0).unwrap();
+        let re = compile_like_regex(pat, false)?;
+        self_iter
+            .map(|val| Some(re.is_match(val?)))
+            .collect::<daft_arrow::array::BooleanArray>()
+    } else {
+        let mut cache = AHashMap::new();
+        let pattern_iter = create_broadcasted_str_iter(pattern, expected_size);
+        self_iter
+            .zip(pattern_iter)
+            .map(|(val, pat)| match (val, pat) {
+                (Some(val), Some(pat)) => {
+                    let re = match cache.get(pat) {
+                        Some(re) => re,
+                        None => {
+                            let compiled = compile_like_regex(pat, false)?;
+                            cache.insert(pat.to_string(), compiled);
+                            cache.get(pat).expect("regex inserted above")
+                        }
+                    };
+                    Ok(Some(re.is_match(val)))
+                }
+                _ => Ok(None),
+            })
+            .collect::<DaftResult<daft_arrow::array::BooleanArray>>()?
     };
     let result = BooleanArray::from((arr.name(), Box::new(arrow_result)));
     assert_eq!(result.len(), expected_size);
     Ok(result)
+}
+
+pub(crate) fn compile_like_regex(
+    pattern: &str,
+    case_insensitive: bool,
+) -> DaftResult<regex::Regex> {
+    let regex_pattern = like_pattern_to_regex(pattern)
+        .ok_or_else(|| DaftError::ValueError(format!("Invalid LIKE pattern '{pattern}'")))?;
+    let regex_pattern = if case_insensitive {
+        format!("(?i){regex_pattern}")
+    } else {
+        regex_pattern
+    };
+    regex::Regex::new(&regex_pattern).map_err(|e| {
+        DaftError::ValueError(format!(
+            "Invalid regex generated from LIKE pattern '{pattern}': {e}"
+        ))
+    })
 }

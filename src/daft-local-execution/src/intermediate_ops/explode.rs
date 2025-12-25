@@ -96,7 +96,7 @@ impl ExplodeOperator {
 
 impl IntermediateOperator for ExplodeOperator {
     type State = ();
-
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "ExplodeOperator::execute")]
     fn execute(
         &self,
@@ -140,5 +140,10 @@ impl IntermediateOperator for ExplodeOperator {
 
     fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
         Arc::new(ExplodeStats::new(id))
+    }
+    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
+        Ok(crate::dynamic_batching::StaticBatchingStrategy::new(
+            self.morsel_size_requirement().unwrap_or_default(),
+        ))
     }
 }
