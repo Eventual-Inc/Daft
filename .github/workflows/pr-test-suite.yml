@@ -248,6 +248,10 @@ jobs:
       with:
         prefix-key: ${{ runner.os }}-integration-build
         cache-all-crates: 'true'
+
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
+
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest
@@ -1074,6 +1078,10 @@ jobs:
         key: ${{ runner.os }}-benchmark-build
         cache-all-crates: 'true'
         cache-provider: buildjet
+
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
+
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1149,6 +1157,10 @@ jobs:
       with:
         key: ${{ runner.os }}-rust-build
         cache-all-crates: 'true'
+
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
+
     - name: Free Disk Space (Ubuntu) # only run on ubuntu
       if: ${{ matrix.os == 'ubuntu' }}
       uses: jlumbroso/free-disk-space@main
@@ -1202,6 +1214,9 @@ jobs:
         cache: false
         channel: stable
 
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
+
     - name: Install Machete
       run: cargo +stable install cargo-machete@0.7.0 --locked
     - name: Run Machete
@@ -1231,6 +1246,10 @@ jobs:
       with:
         prefix-key: ${{ runner.os }}-build
         cache-all-crates: 'true'
+
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
+
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1313,6 +1332,9 @@ jobs:
       with:
         prefix-key: ${{ runner.os }}-build
         cache-all-crates: 'true'
+
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
 
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
@@ -1416,6 +1438,9 @@ jobs:
       with:
         prefix-key: ${{ runner.os }}-build
         cache-all-crates: 'true'
+
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
 
     - uses: actions/cache@v4
       id: pre-commit-cache
