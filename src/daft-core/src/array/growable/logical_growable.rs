@@ -86,6 +86,7 @@ impl_logical_growable!(
 impl_logical_growable!(LogicalImageGrowable, ImageType);
 impl_logical_growable!(LogicalTensorGrowable, TensorType);
 impl_logical_growable!(LogicalMapGrowable, MapType);
+impl_logical_growable!(LogicalBFloat16Growable, BFloat16Type);
 pub type LogicalFileGrowable<'a, T> = LogicalGrowable<FileType<T>, <<<FileType<T> as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType as GrowableArray>::GrowableType<'a>>;
 
 impl<'a, T> LogicalFileGrowable<'a, T>

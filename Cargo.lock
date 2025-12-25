@@ -1989,6 +1989,7 @@ name = "common-ndarray"
 version = "0.3.0-dev0"
 dependencies = [
  "common-py-serde",
+ "half",
  "ndarray",
  "numpy",
  "pyo3",
@@ -5938,6 +5939,7 @@ version = "0.27.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7aac2e6a6e4468ffa092ad43c39b81c79196c2bb773b8db4085f695efe3bba17"
 dependencies = [
+ "half",
  "libc",
  "ndarray",
  "num-complex",

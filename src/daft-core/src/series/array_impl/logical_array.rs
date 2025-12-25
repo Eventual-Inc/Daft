@@ -203,6 +203,7 @@ impl_series_like_for_logical_array!(FixedShapeTensorArray);
 impl_series_like_for_logical_array!(SparseTensorArray);
 impl_series_like_for_logical_array!(FixedShapeSparseTensorArray);
 impl_series_like_for_logical_array!(MapArray);
+impl_series_like_for_logical_array!(BFloat16Array);
 
 impl<T> SeriesLike for ArrayWrapper<FileArray<T>>
 where

@@ -87,6 +87,8 @@ To check the inferred DataType for a Python type, use [`DataType.infer_from_type
 | `daft.File`                                                                               | File                                |
 | Everything else                                                                           | Python                              |
 
+> **BF16 note**: `torch.bfloat16` is a dtype instance rather than a type, and `DataType.infer_from_type` only accepts `type` / `GenericAlias`, so it will not recognize `torch.bfloat16`. BF16 data (e.g. `torch.Tensor(dtype=torch.bfloat16)` or `numpy.ndarray(dtype=ml_dtypes.bfloat16)`) is handled by value in the object-to-Daft conversion path (Rust side `Literal::from_pyobj`), rather than by type in `infer_from_type`.
+
 #### jaxtyping
 
 The [`jaxtyping`](https://docs.kidger.site/jaxtyping/) library provides data type and shape type annotations for array/tensor types from various libraries, including NumPy, PyTorch, TensorFlow, and JAX. Daft is able to natively infer the inner dtype and shape from `jaxtyping` types.
@@ -112,6 +114,7 @@ The following table show the mapping from `jaxtyping` types to Daft DataType. Th
 | `Int64`<br>`Int`<br>`Integer`  | Int64             |
 | `UInt64`<br>`UInt`             | UInt64            |
 | `Float32`                      | Float32           |
+| `BFloat16`                     | BFloat16          |
 | `Float64`<br>`Float`<br>`Real` | Float64           |
 | Everything else                | Python            |
 

@@ -16,7 +16,7 @@ use crate::{
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
-            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray, BFloat16Array,
         },
     },
     file::DaftMediaType,
@@ -736,6 +736,13 @@ impl FixedShapeSparseTensorArray {
 impl FixedShapeTensorArray {
     pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
         todo!("impl sort for FixedShapeTensorArray")
+    }
+}
+
+impl BFloat16Array {
+    pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
+        let new_array = self.physical.sort(descending, nulls_first)?;
+        Ok(Self::new(self.field.clone(), new_array))
     }
 }
 

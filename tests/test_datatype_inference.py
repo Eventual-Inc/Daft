@@ -234,6 +234,19 @@ def test_infer_from_jaxtyping(dtype_class, expected_dtype, shape_spec, expected_
     assert actual_datatype == expected_datatype
 
 
+def test_infer_from_jaxtyping_bfloat16():
+    if not hasattr(jaxtyping, "BFloat16"):
+        pytest.skip("jaxtyping.BFloat16 is not available")
+
+    # dtype-only, no shape
+    dtype_only = dt._infer_from_jaxtyping(jaxtyping.BFloat16[torch.Tensor, "..."])
+    assert dtype_only == dt.tensor(dt.bfloat16())
+
+    # fixed shape
+    fixed_shape = dt._infer_from_jaxtyping(jaxtyping.BFloat16[torch.Tensor, "3 4"])
+    assert fixed_shape == dt.tensor(dt.bfloat16(), shape=(3, 4))
+
+
 @pytest.mark.parametrize(
     "user_provided_object, expected_datatype",
     [

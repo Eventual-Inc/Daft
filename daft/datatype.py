@@ -368,6 +368,20 @@ class DataType:
             )
             return cls.timestamp(TimeUnit.us(), timezone=None)
         else:
+            try:  # pragma: no cover - optional dependency
+                import ml_dtypes  # type: ignore[import-not-found]
+            except Exception:  # pragma: no cover - optional dependency
+                ml_bfloat16 = None
+            else:  # pragma: no cover - optional dependency
+                ml_bfloat16 = getattr(ml_dtypes, "bfloat16", None)
+
+            if ml_bfloat16 is not None and t is ml_bfloat16:
+                # Map known BF16 scalar dtypes to Daft's logical BFloat16. If ``ml_dtypes`` is not
+                # available at runtime, this branch is simply skipped and we fall back to Python
+                # below.
+                return cls.bfloat16()
+
+            # For any other unknown numpy scalar dtype, fall back to Python.
             return cls.python()
 
     @classmethod
@@ -405,6 +419,8 @@ class DataType:
             inner_dtype = cls.uint64()
         elif is_dtype(jaxtyping.Float32):
             inner_dtype = cls.float32()
+        elif hasattr(jaxtyping, "BFloat16") and is_dtype(jaxtyping.BFloat16):
+            inner_dtype = cls.bfloat16()
         elif is_dtype(jaxtyping.Float64) or is_dtype(jaxtyping.Float) or is_dtype(jaxtyping.Real):
             inner_dtype = cls.float64()
         else:
@@ -499,6 +515,11 @@ class DataType:
     def float32(cls) -> DataType:
         """Create a 32-bit float DataType."""
         return cls._from_pydatatype(PyDataType.float32())
+
+    @classmethod
+    def bfloat16(cls) -> DataType:
+        """Create a bfloat16 DataType."""
+        return cls._from_pydatatype(PyDataType.bfloat16())
 
     @classmethod
     def float64(cls) -> DataType:

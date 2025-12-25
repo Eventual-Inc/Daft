@@ -6,7 +6,7 @@ use common_error::DaftResult;
 use super::{
     DaftArrayType, DaftDataType, DataArray, DataType, DurationType, EmbeddingType,
     FixedShapeImageType, FixedShapeSparseTensorType, FixedShapeTensorType, FixedSizeListArray,
-    ImageType, MapType, SparseTensorType, TensorType, TimeType, TimestampType,
+    ImageType, MapType, SparseTensorType, TensorType, TimeType, TimestampType, BFloat16Type,
 };
 use crate::{
     array::{ListArray, StructArray},
@@ -275,6 +275,7 @@ pub type SparseTensorArray = LogicalArray<SparseTensorType>;
 pub type FixedShapeSparseTensorArray = LogicalArray<FixedShapeSparseTensorType>;
 pub type FixedShapeImageArray = LogicalArray<FixedShapeImageType>;
 pub type MapArray = LogicalArray<MapType>;
+pub type BFloat16Array = LogicalArray<BFloat16Type>;
 
 pub trait DaftImageryType: DaftLogicalType {}
 
