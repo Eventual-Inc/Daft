@@ -58,6 +58,7 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     // Add KV Store ScalarUDF functions
     parent.add_function(wrap_pyfunction!(python::kv_get_with_config, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::kv_batch_get_with_config, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::kv_exists_with_config, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::kv_get_with_name, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::kv_batch_get_with_name, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::kv_exists_with_name, parent)?)?;

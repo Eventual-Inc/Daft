@@ -50,8 +50,18 @@ impl LanceKVStore {
         // We spawn a dedicated thread to block on the async task to avoid "Cannot start a runtime from within a runtime"
         // panic if the current thread is already managed by Tokio.
         let result = std::thread::spawn(move || {
-            let runtime = get_io_runtime(true);
-            runtime.runtime.block_on(async move {
+            // Use a local runtime instead of global get_io_runtime to avoid potential conflicts in Ray workers
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|e| {
+                    pyo3::exceptions::PyRuntimeError::new_err(format!(
+                        "Failed to create runtime: {}",
+                        e
+                    ))
+                })?;
+
+            runtime.block_on(async move {
                 let mut builder = lance::dataset::builder::DatasetBuilder::from_uri(&uri);
                 if let Some(opts) = storage_options {
                     builder = builder.with_storage_options(opts);

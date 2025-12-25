@@ -707,6 +707,84 @@ impl ScalarUDF for KVExistsWithStoreName {
     }
 }
 
+#[derive(FunctionArgsDerive)]
+struct KVExistsWithConfigArgs<T> {
+    keys: T,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct KVExistsWithConfig {
+    pub config: KVConfig,
+}
+
+#[typetag::serde]
+impl ScalarUDF for KVExistsWithConfig {
+    fn name(&self) -> &'static str {
+        "kv_exists_with_config"
+    }
+
+    fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+        #[cfg_attr(not(feature = "python"), allow(unused_variables))]
+        let KVExistsWithConfigArgs { keys } = args.try_into()?;
+
+        #[cfg(feature = "python")]
+        {
+            use common_py_serde::PyObjectWrapper;
+            use daft_core::prelude::*;
+
+            match &self.config.lance {
+                Some(cfg) => {
+                    let store = LanceKVStore::new(
+                        "worker_lance".to_string(),
+                        cfg.uri.clone(),
+                        cfg.key_column.clone().unwrap_or_else(|| "id".to_string()),
+                        cfg.batch_size.unwrap_or(100),
+                        cfg.io_config.clone(),
+                    );
+
+                    let k_py = keys.cast(&DataType::Python)?;
+                    let k_arr = k_py.downcast::<PythonArray>()?;
+                    let mut out: Vec<Literal> = Vec::with_capacity(k_arr.len());
+
+                    Python::attach(|py| -> DaftResult<()> {
+                        for i in 0..k_arr.len() {
+                            let key_str = k_arr.str_value(i).unwrap_or_default();
+                            let obj = store.get(py, &key_str)?;
+                            let exists = !obj.is_none(py);
+                            out.push(Literal::Boolean(exists));
+                        }
+                        Ok(())
+                    })?;
+
+                    let mut s = Series::from_literals(out)?;
+                    s = s.rename(keys.name());
+                    Ok(s)
+                }
+                None => Err(DaftError::ValueError(
+                    "KVExistsWithConfig requires a Lance config".to_string(),
+                )),
+            }
+        }
+        #[cfg(not(feature = "python"))]
+        {
+            panic!("KVExistsWithConfig requires python feature");
+        }
+    }
+
+    fn get_return_field(
+        &self,
+        args: FunctionArgs<ExprRef>,
+        schema: &Schema,
+    ) -> DaftResult<daft_core::datatypes::Field> {
+        let KVExistsWithConfigArgs { keys } = args.try_into()?;
+        let keys = keys.to_field(schema)?;
+        Ok(daft_core::datatypes::Field::new(
+            keys.name,
+            daft_core::datatypes::DataType::Boolean,
+        ))
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct KVPutWithStoreName;
 
@@ -835,6 +913,12 @@ pub fn kv_batch_get_with_name(
         args.push(c);
     }
     ScalarFn::builtin(KVBatchGetWithStoreName, args).into()
+}
+
+pub fn kv_exists_with_config(config: KVConfig, keys: ExprRef) -> ExprRef {
+    use crate::functions::scalar::ScalarFn;
+    let udf = KVExistsWithConfig { config };
+    ScalarFn::builtin(udf, vec![keys]).into()
 }
 
 pub fn kv_exists_with_name(name: ExprRef, keys: ExprRef) -> ExprRef {

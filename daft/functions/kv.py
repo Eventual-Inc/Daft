@@ -204,42 +204,19 @@ def kv_get_with_name(
     else:
         on_error_expr = on_error
 
-    # Try to resolve KV config early
+    # Try to resolve KV config early (driver-side) so Ray workers don't need session state.
     config_json = None
     if isinstance(name, str):
-        from daft.context import get_context  # noqa: F401
-
-        # We can't access session directly here easily without circular imports or context access
-        # But we can try via context if available
         try:
-            # Assuming get_session() exists or we can access it.
-            # Actually Daft context doesn't expose session publicly like this usually.
-            # But let's check if we can access the global session via daft.session.current_session()
             from daft.session import current_session
 
-            # This returns a PySession wrapper
             sess = current_session()
             if sess:
-                # get_kv returns a PyKVStore wrapper or specific store
-                # We need to handle potential errors if store doesn't exist
-                try:
-                    store = sess.get_kv(name)
-                    # Check if it's a Lance store
-                    if hasattr(store, "backend_type") and store.backend_type == "lance":
-                        # Get config
-                        if hasattr(store, "get_config"):
-                            # This returns a LanceConfig object or similar, we need JSON string
-                            # The Rust PyLanceKVStore.to_config() returns a JSON string now
-                            # But the Python wrapper might return something else.
-                            # Let's check daft/kv/lance.py
-                            # LanceKVStore.get_config calls self._inner.to_config() which returns string.
-                            # Wait, in python wrapper it returns self._inner.to_config().
-                            # And I changed Rust to_config to return String.
-                            config_json = store.get_config()
-                except Exception:
-                    # If store not found or any error, fallback to name-based lookup
-                    pass
+                store = sess.get_kv(name)
+                if getattr(store, "backend_type", None) == "lance" and hasattr(store, "get_config"):
+                    config_json = store.get_config()
         except Exception:
+            # If store not found or config unavailable, fallback to name-based lookup.
             pass
 
     # Optional columns selection
@@ -300,8 +277,12 @@ def kv_batch_get_with_name(
                     store = sess.get_kv(name)
                     if hasattr(store, "backend_type") and store.backend_type == "lance":
                         if hasattr(store, "get_config"):
+                            # Get the config from the store
+                            # Note: store.get_config() returns a JSON string.
+                            # And I changed Rust to_config to return String.
                             config_json = store.get_config()
                 except Exception:
+                    # If store not found or any error, fallback to name-based lookup
                     pass
         except Exception:
             pass
@@ -359,6 +340,34 @@ def kv_exists_with_name(
 
     # Create expression for the store name
     name_expr = lit(name)
+
+    # Try to resolve KV config early
+    config_json = None
+    if isinstance(name, str):
+        try:
+            from daft.session import current_session
+
+            sess = current_session()
+            if sess:
+                try:
+                    store = sess.get_kv(name)
+                    if hasattr(store, "backend_type") and store.backend_type == "lance":
+                        if hasattr(store, "get_config"):
+                            config_json = store.get_config()
+                            print(f"DEBUG: Resolved config for {name}: {config_json[:50]}...")
+                        else:
+                            print(f"DEBUG: Store {name} has no get_config")
+                    else:
+                        print(f"DEBUG: Store {name} is not lance or invalid backend_type")
+                except Exception as e:
+                    print(f"DEBUG: Failed to get store {name}: {e}")
+            else:
+                print("DEBUG: No current session")
+        except Exception as e:
+            print(f"DEBUG: Exception in config resolution: {e}")
+
+    if config_json is not None:
+        return Expression._from_pyexpr(native.kv_exists_with_config(str(config_json), keys._expr))
 
     # All backends: use ScalarUDF path with name parameter
     return Expression._from_pyexpr(native.kv_exists_with_name(name_expr._expr, keys._expr))

@@ -861,6 +861,17 @@ pub fn kv_exists_with_name(name: PyExpr, keys: PyExpr) -> PyResult<PyExpr> {
 }
 
 #[pyfunction]
+pub fn kv_exists_with_config(config: String, keys: PyExpr) -> PyResult<PyExpr> {
+    let config: crate::functions::kv::KVConfig = serde_json::from_str(&config).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+            "Failed to deserialize config: {}",
+            e
+        ))
+    })?;
+    Ok(crate::functions::kv::kv_functions::kv_exists_with_config(config, keys.into()).into())
+}
+
+#[pyfunction]
 pub fn kv_put_with_name(name: PyExpr, key: PyExpr, value: PyExpr) -> PyResult<PyExpr> {
     // First get the KV store from session using the name
     // Then extract the config from the KV store

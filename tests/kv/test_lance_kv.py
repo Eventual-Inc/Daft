@@ -7,6 +7,7 @@ import pytest
 
 import daft
 from daft import col
+from daft.expressions import Expression
 from daft.dependencies import pa
 from daft.functions.kv import (
     kv_batch_get_with_name,
@@ -45,6 +46,27 @@ def setup_lance_dataset(path):
     lance.write_dataset(data, path)
 
 
+@pytest.fixture(scope="module", autouse=True)
+def manage_ray_state():
+    """Ensure a clean Ray environment for the tests."""
+    try:
+        import ray
+    except ImportError:
+        yield
+        return
+
+    if ray.is_initialized():
+        ray.shutdown()
+        
+    if os.environ.get("DAFT_RUNNER", "").lower() == "ray":
+        ray.init(num_cpus=2)
+        
+    yield
+    
+    if ray.is_initialized():
+        ray.shutdown()
+
+
 @pytest.mark.skipif(PYARROW_LOWER_BOUND_SKIP, reason="Lance tests require pyarrow >= 9.0.0")
 class TestLanceKV:
     @pytest.fixture
@@ -54,21 +76,13 @@ class TestLanceKV:
         setup_lance_dataset(path)
         return path
 
-    def test_lance_kv_native(self, lance_dataset):
-        """Test Lance KV in native runner mode using optimize_kv_plan manually."""
-        try:
-            # Set runner to Native
-            try:
-                daft.set_runner_native()
-            except Exception:
-                pass
-
-            # Create session and attach
-            sess = daft.Session()
+    def test_lance_kv_basic(self, lance_dataset):
+        """Test Lance KV basic functionality."""
+        # Create session and attach
+        with Session() as sess:
             store = LanceKVStore(name="my_store", uri=lance_dataset, key_column="id")
             sess.attach_kv(store)
-            daft.set_session(sess)
-
+            
             # Create DF
             df = daft.from_pydict({"k": [1, 3, 5]})
 
@@ -86,55 +100,6 @@ class TestLanceKV:
             assert vals[0]["val"] == "a"
             assert vals[1]["val"] == "c"
             assert vals[2]["val"] == "e"
-
-        finally:
-            daft.set_session(daft.Session())
-
-    def test_lance_kv_ray(self, lance_dataset):
-        """Test Lance KV in Ray runner mode."""
-        ray = pytest.importorskip("ray")
-
-        try:
-            # Initialize Ray
-            if not ray.is_initialized():
-                ray.init(num_cpus=2)
-
-            # Set runner to Ray
-            try:
-                daft.set_runner_ray(address="auto")
-            except Exception:
-                pass
-
-            # Create session and attach
-            sess = daft.Session()
-            store = LanceKVStore(name="my_store_ray", uri=lance_dataset, key_column="id")
-            sess.attach_kv(store)
-            daft.set_session(sess)
-
-            # Create DF
-            df = daft.from_pydict({"k": [1, 3, 5]})
-
-            # Add KV lookup
-            df = df.with_column("v", col("k").kv.get("my_store_ray", columns=["val"]))
-
-            # Collect results - optimizer should automatically handle KV rewrites
-            res = df.collect()
-
-            # Verification
-            res_dict = res.to_pydict()
-            vals = res_dict["v"]
-
-            assert len(vals) == 3
-            assert vals[0]["val"] == "a"
-            assert vals[1]["val"] == "c"
-            assert vals[2]["val"] == "e"
-
-        finally:
-            try:
-                daft.set_runner_native()
-            except Exception:
-                pass
-            daft.set_session(daft.Session())
 
     # @pytest.mark.skip(reason="Lance 0.19.2 scanner filter validation fails for _rowid")
     def test_lance_kv_get_with_name_rowid_path(self, tmp_path):

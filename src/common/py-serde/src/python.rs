@@ -128,13 +128,24 @@ macro_rules! impl_bincode_py_state_serialization {
             }
 
             #[staticmethod]
-            pub fn _from_serialized(serialized: &[u8]) -> Self {
-                $crate::bincode::serde::decode_from_slice(
+            pub fn _from_serialized(serialized: &[u8]) -> pyo3::PyResult<Self> {
+                use pyo3::{
+                    PyErr,
+                    exceptions::PyRuntimeError,
+                };
+
+                let decoded = $crate::bincode::serde::decode_from_slice(
                     serialized,
                     $crate::bincode::config::legacy(),
                 )
-                .unwrap()
-                .0
+                .map_err(|error| {
+                    PyErr::new::<PyRuntimeError, _>(format!(
+                        "Failed to deserialize: {}",
+                        error.to_string()
+                    ))
+                })?;
+
+                Ok(decoded.0)
             }
         }
     };

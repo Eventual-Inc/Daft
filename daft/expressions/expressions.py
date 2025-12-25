@@ -2563,10 +2563,6 @@ class ExpressionKVNamespace:
         """
         from daft.functions.kv import kv_get_with_name
 
-        # Convert inputs to expressions if they aren't already
-        if isinstance(store_name, str):
-            store_name = lit(store_name)
-
         if isinstance(on_error, str):
             on_error = lit(on_error)
 
