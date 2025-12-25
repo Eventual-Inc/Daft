@@ -7,7 +7,6 @@ import pytest
 
 import daft
 from daft import col
-from daft.expressions import Expression
 from daft.dependencies import pa
 from daft.functions.kv import (
     kv_batch_get_with_name,
@@ -57,12 +56,12 @@ def manage_ray_state():
 
     if ray.is_initialized():
         ray.shutdown()
-        
+
     if os.environ.get("DAFT_RUNNER", "").lower() == "ray":
         ray.init(num_cpus=2)
-        
+
     yield
-    
+
     if ray.is_initialized():
         ray.shutdown()
 
@@ -82,7 +81,7 @@ class TestLanceKV:
         with Session() as sess:
             store = LanceKVStore(name="my_store", uri=lance_dataset, key_column="id")
             sess.attach_kv(store)
-            
+
             # Create DF
             df = daft.from_pydict({"k": [1, 3, 5]})
 

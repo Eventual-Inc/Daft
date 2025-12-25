@@ -729,7 +729,6 @@ impl ScalarUDF for KVExistsWithConfig {
 
         #[cfg(feature = "python")]
         {
-            use common_py_serde::PyObjectWrapper;
             use daft_core::prelude::*;
 
             match &self.config.lance {

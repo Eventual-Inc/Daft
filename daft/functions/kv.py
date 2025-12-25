@@ -341,30 +341,18 @@ def kv_exists_with_name(
     # Create expression for the store name
     name_expr = lit(name)
 
-    # Try to resolve KV config early
+    # Try to resolve KV config early (driver-side) so Ray workers don't need session state.
     config_json = None
-    if isinstance(name, str):
-        try:
-            from daft.session import current_session
+    try:
+        from daft.session import current_session
 
-            sess = current_session()
-            if sess:
-                try:
-                    store = sess.get_kv(name)
-                    if hasattr(store, "backend_type") and store.backend_type == "lance":
-                        if hasattr(store, "get_config"):
-                            config_json = store.get_config()
-                            print(f"DEBUG: Resolved config for {name}: {config_json[:50]}...")
-                        else:
-                            print(f"DEBUG: Store {name} has no get_config")
-                    else:
-                        print(f"DEBUG: Store {name} is not lance or invalid backend_type")
-                except Exception as e:
-                    print(f"DEBUG: Failed to get store {name}: {e}")
-            else:
-                print("DEBUG: No current session")
-        except Exception as e:
-            print(f"DEBUG: Exception in config resolution: {e}")
+        sess = current_session()
+        if sess:
+            store = sess.get_kv(name)
+            if getattr(store, "backend_type", None) == "lance" and hasattr(store, "get_config"):
+                config_json = store.get_config()
+    except Exception:
+        pass
 
     if config_json is not None:
         return Expression._from_pyexpr(native.kv_exists_with_config(str(config_json), keys._expr))

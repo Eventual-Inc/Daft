@@ -1,6 +1,12 @@
 // Use local arrow dependency to match Lance's version
 
 #[cfg(feature = "python")]
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, OnceLock},
+};
+
+#[cfg(feature = "python")]
 use arrow::record_batch::RecordBatch;
 #[cfg(feature = "python")]
 use common_runtime::get_io_runtime;
@@ -41,7 +47,7 @@ impl LanceKVStore {
         let uri = self.uri.clone();
         let key_col = self.key_column.clone();
         let key_val = key.to_string();
-        let storage_options = self
+        let storage_options: Option<HashMap<String, String>> = self
             .io_config
             .as_ref()
             .map(|c| io_config_to_storage_options(c, &uri));
@@ -50,29 +56,9 @@ impl LanceKVStore {
         // We spawn a dedicated thread to block on the async task to avoid "Cannot start a runtime from within a runtime"
         // panic if the current thread is already managed by Tokio.
         let result = std::thread::spawn(move || {
-            // Use a local runtime instead of global get_io_runtime to avoid potential conflicts in Ray workers
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(|e| {
-                    pyo3::exceptions::PyRuntimeError::new_err(format!(
-                        "Failed to create runtime: {}",
-                        e
-                    ))
-                })?;
-
-            runtime.block_on(async move {
-                let mut builder = lance::dataset::builder::DatasetBuilder::from_uri(&uri);
-                if let Some(opts) = storage_options {
-                    builder = builder.with_storage_options(opts);
-                }
-
-                let dataset = builder.load().await.map_err(|e| {
-                    pyo3::exceptions::PyRuntimeError::new_err(format!(
-                        "Failed to open dataset: {}",
-                        e
-                    ))
-                })?;
+            let runtime = get_io_runtime(true);
+            runtime.runtime.block_on(async move {
+                let dataset = get_dataset_cached(&uri, storage_options.as_ref()).await?;
 
                 let schema = dataset.schema();
                 let field = if key_col == "_rowid" {
@@ -180,6 +166,57 @@ impl LanceKVStore {
 
         Ok(dict.into())
     }
+}
+
+#[cfg(feature = "python")]
+fn dataset_cache() -> &'static Mutex<HashMap<String, Arc<lance::dataset::Dataset>>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Arc<lance::dataset::Dataset>>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+#[cfg(feature = "python")]
+fn dataset_cache_key(uri: &str, storage_options: Option<&HashMap<String, String>>) -> String {
+    if let Some(opts) = storage_options {
+        let mut pairs: Vec<_> = opts.iter().collect();
+        pairs.sort_by(|a, b| a.0.cmp(b.0));
+        let mut key = String::with_capacity(uri.len() + 64);
+        key.push_str(uri);
+        for (k, v) in pairs {
+            key.push('\n');
+            key.push_str(k);
+            key.push('=');
+            key.push_str(v);
+        }
+        key
+    } else {
+        uri.to_string()
+    }
+}
+
+#[cfg(feature = "python")]
+async fn get_dataset_cached(
+    uri: &str,
+    storage_options: Option<&HashMap<String, String>>,
+) -> Result<Arc<lance::dataset::Dataset>, PyErr> {
+    let cache_key = dataset_cache_key(uri, storage_options);
+
+    if let Some(dataset) = dataset_cache().lock().unwrap().get(&cache_key).cloned() {
+        return Ok(dataset);
+    }
+
+    let mut builder = lance::dataset::builder::DatasetBuilder::from_uri(uri);
+    if let Some(opts) = storage_options {
+        builder = builder.with_storage_options(opts.clone());
+    }
+
+    let dataset = builder.load().await.map_err(|e| {
+        pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to open dataset: {}", e))
+    })?;
+    let dataset = Arc::new(dataset);
+
+    let mut guard = dataset_cache().lock().unwrap();
+    let entry = guard.entry(cache_key).or_insert_with(|| dataset.clone());
+    Ok(entry.clone())
 }
 
 #[cfg(feature = "python")]

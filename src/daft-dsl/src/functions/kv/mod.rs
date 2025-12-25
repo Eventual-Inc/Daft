@@ -9,15 +9,10 @@ pub use registry::KVModule;
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct LanceConfig {
     uri: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
     io_config: Option<IOConfig>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     columns: Option<Vec<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     batch_size: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     on_error: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     key_column: Option<String>,
 }
 
