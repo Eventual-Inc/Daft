@@ -279,3 +279,41 @@ impl ScalarUDF for Size {
         Ok(Field::new(name, DataType::UInt64))
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct GuessMimeType;
+
+#[typetag::serde]
+impl ScalarUDF for GuessMimeType {
+    fn name(&self) -> &'static str {
+        "guess_mime_type"
+    }
+
+    fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+        let UnaryArg { input } = args.try_into()?;
+
+        let binary = input.binary()?;
+        let mut out = Vec::with_capacity(binary.len());
+
+        for bytes in binary.into_iter() {
+            let mime = bytes.and_then(|b| {
+                let mut cursor = std::io::Cursor::new(b);
+                crate::guess_mimetype_from_content(&mut cursor)
+                    .ok()
+                    .flatten()
+            });
+            out.push(mime);
+        }
+
+        Ok(daft_core::prelude::Utf8Array::from_iter(
+            Field::new(input.name(), DataType::Utf8),
+            out.into_iter(),
+        )
+        .into_series())
+    }
+
+    fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+        let UnaryArg { input } = args.try_into()?;
+        Ok(Field::new(input.to_field(schema)?.name, DataType::Utf8))
+    }
+}
