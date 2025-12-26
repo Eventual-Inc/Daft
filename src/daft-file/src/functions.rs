@@ -306,7 +306,7 @@ impl ScalarUDF for GuessMimeType {
         }
 
         Ok(daft_core::prelude::Utf8Array::from_iter(
-            Field::new(input.name(), DataType::Utf8),
+            input.name(),
             out.into_iter(),
         )
         .into_series())
