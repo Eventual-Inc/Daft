@@ -630,6 +630,8 @@ fn physical_plan_to_pipeline(
                 batch_size,
                 memory_request,
                 schema,
+                passthrough_columns,
+                required_cols,
                 stats_state,
                 context,
             },
@@ -638,6 +640,9 @@ fn physical_plan_to_pipeline(
                 actor_objects.clone(),
                 *batch_size,
                 *memory_request,
+                passthrough_columns.clone(),
+                Some(required_cols.clone()), // TODO by zhenchao, None if all columns is required
+                schema.clone(),
             )
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
