@@ -386,12 +386,15 @@ impl LocalPhysicalPlan {
     }
 
     #[cfg(feature = "python")]
+    #[allow(clippy::too_many_arguments)]
     pub fn distributed_actor_pool_project(
         input: LocalPhysicalPlanRef,
         actor_objects: Vec<PyObjectWrapper>,
         batch_size: Option<usize>,
         memory_request: u64,
         schema: SchemaRef,
+        passthrough_columns: Vec<BoundExpr>,
+        required_cols: Vec<usize>,
         stats_state: StatsState,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
@@ -401,6 +404,8 @@ impl LocalPhysicalPlan {
             batch_size,
             memory_request,
             schema,
+            passthrough_columns,
+            required_cols,
             stats_state,
             context,
         })
@@ -1477,6 +1482,8 @@ impl LocalPhysicalPlan {
                     batch_size,
                     memory_request,
                     context,
+                    passthrough_columns,
+                    required_cols,
                     ..
                 }) => Self::distributed_actor_pool_project(
                     new_child.clone(),
@@ -1484,6 +1491,8 @@ impl LocalPhysicalPlan {
                     *batch_size,
                     *memory_request,
                     schema.clone(),
+                    passthrough_columns.clone(),
+                    required_cols.clone(),
                     StatsState::NotMaterialized,
                     context.clone(),
                 ),
@@ -1726,6 +1735,8 @@ pub struct DistributedActorPoolProject {
     pub batch_size: Option<usize>,
     pub memory_request: u64,
     pub schema: SchemaRef,
+    pub passthrough_columns: Vec<BoundExpr>,
+    pub required_cols: Vec<usize>,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
 }
