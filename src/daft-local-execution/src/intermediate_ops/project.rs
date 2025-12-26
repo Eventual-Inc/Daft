@@ -133,7 +133,6 @@ impl IntermediateOperator for ProjectOperator {
                             .eval_expression_list_async(Arc::unwrap_or_clone(projection))
                             .await?
                     };
-
                     Ok((
                         state,
                         IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),

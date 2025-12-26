@@ -55,17 +55,6 @@ impl LanceConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct MemoryConfig {
-    name: String,
-}
-
-impl MemoryConfig {
-    pub fn new(name: String) -> Self {
-        Self { name }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct KVConfig {
     lance: Option<LanceConfig>,
 }

@@ -119,7 +119,6 @@ jobs:
         manylinux: 2_24
         # only produce sdist for linux x86 to avoid multiple copies
         args: --profile ${{ inputs.use_lto && 'release-lto' || 'release' }} --out dist --sdist
-        before-script-linux: apt-get update && apt-get install -y protobuf-compiler
       env:
         GITHUB_ACTIONS: true
 
@@ -131,7 +130,7 @@ jobs:
         manylinux: 2_24
         # only produce sdist for linux x86 to avoid multiple copies
         args: --profile ${{ inputs.use_lto && 'release-lto' || 'release' }} --out dist --sdist
-        before-script-linux: apt-get update && apt-get install -y protobuf-compiler && export JEMALLOC_SYS_WITH_LG_PAGE=16
+        before-script-linux: export JEMALLOC_SYS_WITH_LG_PAGE=16
       env:
         GITHUB_ACTIONS: true
 
