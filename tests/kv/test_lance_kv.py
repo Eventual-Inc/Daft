@@ -45,27 +45,6 @@ def setup_lance_dataset(path):
     lance.write_dataset(data, path)
 
 
-@pytest.fixture(scope="module", autouse=True)
-def manage_ray_state():
-    """Ensure a clean Ray environment for the tests."""
-    try:
-        import ray
-    except ImportError:
-        yield
-        return
-
-    if ray.is_initialized():
-        ray.shutdown()
-
-    if os.environ.get("DAFT_RUNNER", "").lower() == "ray":
-        ray.init(num_cpus=2)
-
-    yield
-
-    if ray.is_initialized():
-        ray.shutdown()
-
-
 @pytest.mark.skipif(PYARROW_LOWER_BOUND_SKIP, reason="Lance tests require pyarrow >= 9.0.0")
 class TestLanceKV:
     @pytest.fixture
