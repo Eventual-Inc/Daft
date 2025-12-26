@@ -738,12 +738,6 @@ jobs:
         pushd ./tests/integration/iceberg/docker-compose/
         docker compose -f ./docker-compose.yml up -d
         popd
-    # Gravitino test setup
-    - name: Spin up Gravitino service
-      run: |
-        pushd ./tests/integration/gravitino/docker-compose/
-        docker compose -f ./docker-compose.yml up -d
-        popd
 
     # Unity tests
     - name: Run Unity integration tests (native)
@@ -804,6 +798,22 @@ jobs:
         python tools/aggregate_test_durations.py delta_lake_pytest_output.txt
       env:
         DAFT_RUNNER: ray
+
+    # Cleanup Iceberg docker services
+    - name: Cleanup Iceberg Docker services
+      if: always()
+      run: |
+        pushd ./tests/integration/iceberg/docker-compose/
+        docker compose -f ./docker-compose.yml down --volumes || true
+        popd
+
+    # Gravitino test setup
+    - name: Spin up Gravitino service
+      run: |
+        pushd ./tests/integration/gravitino/docker-compose/
+        docker compose -f ./docker-compose.yml up -d
+        popd
+
     # Gravitino tests
     - name: Run Gravitino integration tests (native)
       if: always()
@@ -828,14 +838,11 @@ jobs:
         GRAVITINO_ENDPOINT: http://127.0.0.1:8090
         GRAVITINO_METALAKE: metalake_demo
 
-    # Cleanup docker services
-    - name: Cleanup Docker services
+    # Cleanup Gravitino docker services
+    - name: Cleanup Gravitino Docker services
       if: always()
       run: |
         pushd ./tests/integration/gravitino/docker-compose/
-        docker compose -f ./docker-compose.yml down --volumes || true
-        popd
-        pushd ./tests/integration/iceberg/docker-compose/
         docker compose -f ./docker-compose.yml down --volumes || true
         popd
 
