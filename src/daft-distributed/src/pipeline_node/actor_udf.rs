@@ -122,6 +122,7 @@ pub(crate) struct ActorUDF {
     context: PipelineNodeContext,
     child: DistributedPipelineNode,
     projection: Vec<BoundExpr>,
+    required_cols: Vec<usize>,
     udf_properties: UDFProperties,
     actor_ready_timeout: usize,
 }
@@ -154,6 +155,7 @@ impl ActorUDF {
             context,
             child,
             projection,
+            required_cols: vec![], // TODO by zhenchao, cal it from projection
             udf_properties,
             actor_ready_timeout: plan_config.config.actor_udf_ready_timeout,
         })
@@ -209,6 +211,7 @@ impl ActorUDF {
         let batch_size = self.udf_properties.batch_size;
         let schema = self.config.schema.clone();
         let node_id = self.node_id();
+        let required_cols = self.required_cols.clone();
         append_plan_to_existing_task(
             submittable_task,
             &(self.clone() as Arc<dyn PipelineNodeImpl>),
@@ -219,6 +222,7 @@ impl ActorUDF {
                     batch_size,
                     memory_request,
                     schema.clone(),
+                    required_cols.clone(),
                     StatsState::NotMaterialized,
                     LocalNodeContext {
                         origin_node_id: Some(node_id as usize),

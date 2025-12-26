@@ -8,6 +8,7 @@ use std::{
 
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
+use daft_core::prelude::Schema;
 use daft_micropartition::MicroPartition;
 #[cfg(feature = "python")]
 use daft_micropartition::python::PyMicroPartition;
@@ -105,6 +106,7 @@ pub(crate) struct DistributedActorPoolProjectOperator {
     actor_handles: Vec<ActorHandle>,
     batch_size: Option<usize>,
     memory_request: u64,
+    required_cols: Option<Vec<usize>>,
     counter: AtomicUsize,
 }
 
@@ -113,6 +115,7 @@ impl DistributedActorPoolProjectOperator {
         actor_handles: Vec<impl Into<ActorHandle>>,
         batch_size: Option<usize>,
         memory_request: u64,
+        required_cols: Option<Vec<usize>>,
     ) -> DaftResult<Self> {
         let actor_handles: Vec<ActorHandle> = actor_handles.into_iter().map(|e| e.into()).collect();
         let (local_actor_handles, remote_actor_handles) =
@@ -133,6 +136,7 @@ impl DistributedActorPoolProjectOperator {
             actor_handles,
             batch_size,
             memory_request,
+            required_cols,
             counter: AtomicUsize::new(init_counter),
         })
     }
@@ -151,13 +155,36 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         let memory_request = self.memory_request;
         #[cfg(feature = "python")]
         {
+            let required_input = if let Some(required_cols) = self.required_cols.as_ref() {
+                if required_cols.is_empty() {
+                    input
+                } else {
+                    let pruned_batches = input
+                        .record_batches()
+                        .iter()
+                        .map(|batch| batch.get_columns(required_cols.as_slice()))
+                        .collect::<Vec<_>>();
+
+                    Arc::new(MicroPartition::new_loaded(
+                        Arc::new(Schema::new(
+                            required_cols.iter().map(|idx| input.schema()[*idx].clone()),
+                        )),
+                        Arc::new(pruned_batches),
+                        None, // FIXME by zhenchao None?
+                    ))
+                }
+            } else {
+                input
+            };
+
             let fut = task_spawner.spawn_with_memory_request(
                 memory_request,
                 async move {
-                    let res =
-                        state.actor_handle.eval_input(input).await.map(|result| {
-                            IntermediateOperatorResult::NeedMoreInput(Some(result))
-                        })?;
+                    let res = state
+                        .actor_handle
+                        .eval_input(required_input)
+                        .await
+                        .map(|result| IntermediateOperatorResult::NeedMoreInput(Some(result)))?;
                     Ok((state, res))
                 },
                 Span::current(),
