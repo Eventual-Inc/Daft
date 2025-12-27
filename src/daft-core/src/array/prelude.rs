@@ -3,7 +3,7 @@ pub use super::{DataArray, FixedSizeListArray, ListArray, StructArray};
 pub use crate::datatypes::logical::{
     DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray, FixedShapeSparseTensorArray,
     FixedShapeTensorArray, ImageArray, LogicalArray, MapArray, SparseTensorArray, TensorArray,
-    TimeArray, TimestampArray,
+    TimeArray, TimestampArray, BFloat16Array,
 };
 #[cfg(feature = "python")]
 pub use crate::datatypes::python::PythonArray;

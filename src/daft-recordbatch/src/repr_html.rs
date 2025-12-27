@@ -109,7 +109,7 @@ pub fn html_value(s: &Series, idx: usize, truncate: bool) -> String {
             let arr = s.map().unwrap();
             arr.html_value(idx, truncate)
         }
-        DataType::Extension(_, _, _) => {
+        DataType::Extension(_, _, _) | DataType::BFloat16 => {
             let arr = s.downcast::<ExtensionArray>().unwrap();
             arr.html_value(idx, truncate)
         }

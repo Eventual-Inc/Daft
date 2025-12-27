@@ -1,8 +1,9 @@
 [dependencies]
 common-py-serde = {path = "../py-serde", default-features = false}
 ndarray = {workspace = true}
-numpy = {workspace = true, optional = true}
+numpy = {workspace = true, optional = true, features = ["half"]}
 pyo3 = {workspace = true, optional = true}
+half = "2"
 
 [features]
 python = ["dep:pyo3", "dep:numpy", "common-py-serde/python"]

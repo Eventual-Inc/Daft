@@ -150,7 +150,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                         *size,
                     )
                     .into_series()),
-                    DataType::Extension(..) => {
+                    DataType::Extension(..) | DataType::BFloat16 => {
                         let physical = map.next_value::<Series>()?;
                         let physical = physical.to_arrow2();
                         let ext_array =

@@ -366,14 +366,32 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 }
             }
         }
-        DataType::Tensor(_) => {
+        DataType::Tensor(ref inner_dtype) => {
             let (data, shapes) = values
                 .map(|(i, v)| {
                     unwrap_inner!(v, i, Literal::Tensor { data, shape } => (data, shape)).unzip()
                 })
                 .collect::<(Vec<_>, Vec<_>)>();
 
-            let data_array = ListArray::try_from(("data", data.as_slice()))?.into_series();
+            let data_array = if data.iter().all(|s| s.is_none()) {
+                let flat_child = Series::empty("data", inner_dtype);
+                let lengths = std::iter::repeat(0).take(len);
+                let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)?.into();
+                let validity = daft_arrow::buffer::NullBuffer::new_null(len);
+                ListArray::new(
+                    Field::new("data", DataType::List(inner_dtype.clone())),
+                    flat_child,
+                    offsets,
+                    Some(validity),
+                )
+                .into_series()
+            } else {
+                ListArray::try_from(("data", data.as_slice()))?.into_series()
+            };
+
+            let data_array =
+                data_array.cast(&DataType::List(Box::new(inner_dtype.to_physical())))?;
+
             let shape_array = ListArray::from_vec("shape", shapes).into_series();
 
             let validity = data_array.validity().cloned();
@@ -382,9 +400,8 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
 
             TensorArray::new(field, physical).into_series()
         }
-        DataType::SparseTensor(..) => {
+        DataType::SparseTensor(ref dtype, ..) => {
             let (values, indices, shapes) = values
-
                 .map(|(i, v)| {
                     match unwrap_inner!(v, i, Literal::SparseTensor { values, indices, shape, .. } => (values, indices, shape)) {
                         Some((v, i, s)) => (Some(v), Some(i), Some(s)),
@@ -394,6 +411,9 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 .collect::<(Vec<_>, Vec<_>, Vec<_>)>();
 
             let values_array = ListArray::try_from(("values", values.as_slice()))?.into_series();
+            let values_array =
+                values_array.cast(&DataType::List(Box::new(dtype.to_physical())))?;
+
             let indices_array = ListArray::try_from(("indices", indices.as_slice()))?.into_series();
             let shape_array = ListArray::from_vec("shape", shapes).into_series();
 
@@ -489,6 +509,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
         | DataType::FixedShapeImage(..)
         | DataType::FixedShapeTensor(..)
         | DataType::FixedShapeSparseTensor(..)
+        | DataType::BFloat16
         | DataType::Unknown => unreachable!("Literal should never have data type: {dtype}"),
     };
 

@@ -202,9 +202,35 @@ impl<'py> IntoPyObject<'py> for Literal {
             }
             Self::Tensor { data, shape } => {
                 let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-                ffi::to_py_array(py, data.to_arrow2(), &pyarrow)?
-                    .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
-                    .call_method1(pyo3::intern!(py, "reshape"), (shape,))
+                let np_array = ffi::to_py_array(py, data.to_arrow2(), &pyarrow)?
+                    .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
+
+                let np_array = if matches!(data.data_type(), DataType::BFloat16) {
+                    let ml_dtypes = py.import(pyo3::intern!(py, "ml_dtypes"))?;
+                    np_array.call_method1(
+                        pyo3::intern!(py, "astype"),
+                        (ml_dtypes.getattr(pyo3::intern!(py, "bfloat16"))?,),
+                    )?
+                } else {
+                    np_array
+                };
+
+                let np_array = np_array.call_method1(pyo3::intern!(py, "reshape"), (shape,))?;
+
+                if matches!(data.data_type(), DataType::BFloat16) {
+                    if let Ok(torch) = py.import(pyo3::intern!(py, "torch")) {
+                        let view = np_array.call_method1(pyo3::intern!(py, "view"), ("int16",))?;
+                        let tensor =
+                            torch.call_method1(pyo3::intern!(py, "from_numpy"), (view,))?;
+                        let tensor = tensor.call_method1(
+                            pyo3::intern!(py, "view"),
+                            (torch.getattr(pyo3::intern!(py, "bfloat16"))?,),
+                        )?;
+                        return Ok(tensor.into_any());
+                    }
+                }
+
+                Ok(np_array.into_any())
             }
             Self::SparseTensor {
                 values,
@@ -647,29 +673,129 @@ fn pydecimal_to_decimal_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
     Ok(Literal::Decimal(val, precision, scale))
 }
 
+fn is_bfloat16_type_error(err: &PyErr) -> bool {
+    let msg = err.to_string();
+    // Only match errors that are explicitly about bfloat16 data type not being understood
+    // or about half::bf16 element type specifically
+    let is_bfloat16_msg = msg.contains("data type 'bfloat16' not understood")
+        || msg.contains("half::bf16 element type")
+        || msg.contains("Got unsupported ScalarType BFloat16");
+
+    // Make sure we're not matching uint64 or other unrelated types
+    let is_not_other_type =
+        !msg.contains("uint64") && !msg.contains("data type 'u64' not understood");
+
+    is_bfloat16_msg && is_not_other_type
+}
+
 fn numpy_array_like_to_tensor_lit(ob: &Bound<PyAny>) -> PyResult<Literal> {
     let py = ob.py();
-    let np_asarray = py
-        .import(intern!(py, "numpy"))?
-        .getattr(intern!(py, "asarray"))?;
-    let ob = np_asarray.call1((ob,))?;
+    let np_module = py.import(intern!(py, "numpy"))?;
+    let np_asarray = np_module.getattr(intern!(py, "asarray"))?;
 
-    let arr = if let Ok(arr) = ob.extract::<NumpyArray>() {
-        arr
-    } else {
-        // if we do not support the element type, fall back to Python.
-        // Series::from_ndarray_flattened will then call Literal::from_pyobj to try to convert each element.
-        let object_array = ob
-            .call_method1(intern!(py, "astype"), (intern!(py, "O"),))?
-            .extract()?;
-        NumpyArray::Py(object_array)
+    // First, try the straightforward np.asarray + NumpyArray path.
+    let arr_any = match np_asarray.call1((ob,)) {
+        Ok(a) => a,
+        Err(err) => {
+            if is_bfloat16_type_error(&err) {
+                // Runtime environment is missing a NumPy BF16 dtype (e.g. ml_dtypes.bfloat16).
+                // Fall back to an explicit BF16->F32 upcast on the Python side.
+                return numpy_array_like_to_tensor_lit_bfloat16_fallback(&np_module, ob, None);
+            } else {
+                return Err(err);
+            }
+        }
     };
 
-    let arr = arr.to_ndarray();
-    let shape = arr.shape().iter().map(|dim| *dim as _).collect();
+    let arr = match arr_any.extract::<NumpyArray>() {
+        Ok(arr) => arr,
+        Err(err) => {
+            if is_bfloat16_type_error(&err) {
+                // rust-numpy tried to use half::bf16 but the Python environment does not provide
+                // a compatible NumPy BF16 dtype. Fall back to BF16->F32 upcast.
+                return numpy_array_like_to_tensor_lit_bfloat16_fallback(&np_module, ob, Some(&arr_any));
+            } else {
+                // For unsupported element types, fall back to a Python object array, preserving
+                // the original behaviour.
+                let object_array = arr_any
+                    .call_method1(intern!(py, "astype"), (intern!(py, "O"),))?
+                    .extract()?;
+                NumpyArray::Py(object_array)
+            }
+        }
+    };
 
-    let data = Series::from_ndarray_flattened(arr);
+    let nd = arr.to_ndarray();
+    let shape = nd.shape().iter().map(|dim| *dim as _).collect();
 
+    let data = Series::from_ndarray_flattened(nd);
+
+    Ok(Literal::Tensor { data, shape })
+}
+
+fn numpy_array_like_to_tensor_lit_bfloat16_fallback(
+    np_module: &Bound<PyAny>,
+    original: &Bound<PyAny>,
+    maybe_array: Option<&Bound<PyAny>>,
+) -> PyResult<Literal> {
+    let py = original.py();
+
+    // 1) torch.Tensor(dtype=torch.bfloat16): detach().cpu().to(torch.float32).numpy()
+    if let Ok(torch_mod) = py.import(intern!(py, "torch")) {
+        if let Ok(torch_tensor_type) = torch_mod.getattr(intern!(py, "Tensor")) {
+            if original.is_instance(&torch_tensor_type).unwrap_or(false) {
+                if let (Ok(dtype_obj), Ok(bfloat16_dtype)) = (
+                    original.getattr(intern!(py, "dtype")),
+                    torch_mod.getattr(intern!(py, "bfloat16")),
+                ) {
+                    let is_bf16 = dtype_obj
+                        .call_method1(intern!(py, "__eq__"), (&bfloat16_dtype,))
+                        .and_then(|res| res.extract::<bool>())
+                        .unwrap_or(false);
+                    if is_bf16 {
+                        if let Ok(torch_f32) = torch_mod.getattr(intern!(py, "float32")) {
+                            let arr_f32 = original
+                                .call_method0(intern!(py, "detach"))?
+                                .call_method0(intern!(py, "cpu"))?
+                                .call_method1(intern!(py, "to"), (&torch_f32,))?
+                                .call_method0(intern!(py, "numpy"))?;
+
+                            let arr = arr_f32.extract::<NumpyArray>()?;
+                            let nd = arr.to_ndarray();
+                            let shape = nd.shape().iter().map(|dim| *dim as _).collect();
+                            let data = Series::from_ndarray_flattened(nd);
+                            let data = data.cast(&DataType::BFloat16)?;
+                            return Ok(Literal::Tensor { data, shape });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2) numpy.ndarray with BF16-like dtype: upcast to float32 then go through NumpyArray.
+    let array_obj = maybe_array.unwrap_or(original);
+    if let Ok(ndarray_type) = np_module.getattr(intern!(py, "ndarray")) {
+        if array_obj.is_instance(&ndarray_type).unwrap_or(false) {
+            let arr_f32 = array_obj
+                .call_method1(intern!(py, "astype"), (intern!(py, "float32"),))?;
+            let arr = arr_f32.extract::<NumpyArray>()?;
+            let nd = arr.to_ndarray();
+            let shape = nd.shape().iter().map(|dim| *dim as _).collect();
+            let data = Series::from_ndarray_flattened(nd);
+            let data = data.cast(&DataType::BFloat16)?;
+            return Ok(Literal::Tensor { data, shape });
+        }
+    }
+
+    // 3) Fallback: keep previous object-array behaviour so callers still see a Tensor literal.
+    let object_array = array_obj
+        .call_method1(intern!(py, "astype"), (intern!(py, "O"),))?
+        .extract()?;
+    let arr = NumpyArray::Py(object_array);
+    let nd = arr.to_ndarray();
+    let shape = nd.shape().iter().map(|dim| *dim as _).collect();
+    let data = Series::from_ndarray_flattened(nd);
     Ok(Literal::Tensor { data, shape })
 }
 

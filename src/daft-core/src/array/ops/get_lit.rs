@@ -68,6 +68,15 @@ impl TensorArray {
                 (self.data_array().get(idx), self.shape_array().get(idx))
         {
             let shape = shape.u64().unwrap().as_arrow2().values().to_vec();
+
+            let data = if let DataType::Tensor(inner) = self.data_type()
+                && inner.is_logical()
+            {
+                data.cast(inner).unwrap_or(data)
+            } else {
+                data
+            };
+
             Literal::Tensor { data, shape }
         } else {
             Literal::Null
@@ -245,6 +254,12 @@ impl_array_get_lit!(DateArray, Date);
 impl_array_get_lit!(ListArray, List);
 impl_array_get_lit!(FixedSizeListArray, List);
 impl_array_get_lit!(EmbeddingArray, Embedding);
+
+impl BFloat16Array {
+    pub fn get_lit(&self, idx: usize) -> Literal {
+        map_or_null(self.physical.get(idx), Literal::Float32)
+    }
+}
 
 impl<T> FileArray<T>
 where

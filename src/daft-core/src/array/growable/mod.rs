@@ -209,6 +209,7 @@ impl_growable_array!(
 impl_growable_array!(ImageArray, logical_growable::LogicalImageGrowable<'a>);
 impl_growable_array!(TensorArray, logical_growable::LogicalTensorGrowable<'a>);
 impl_growable_array!(MapArray, map_growable::MapGrowable<'a>);
+impl_growable_array!(BFloat16Array, logical_growable::LogicalBFloat16Growable<'a>);
 impl<T> GrowableArray for FileArray<T>
 where
     T: DaftMediaType,

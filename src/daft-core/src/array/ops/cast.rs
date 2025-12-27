@@ -33,7 +33,7 @@ use crate::{
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
-            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray, BFloat16Array,
         },
     },
     file::{DaftMediaType, MediaTypeAudio, MediaTypeUnknown, MediaTypeVideo},
@@ -1758,11 +1758,31 @@ impl StructArray {
             {
                 self.cast(&dtype.to_physical())?.cast(dtype)
             }
-            _ => unimplemented!(
-                "Daft casting from {} to {} not implemented",
-                self.data_type(),
+            _ => {
+                unimplemented!(
+                    "Daft casting from {} to {} not implemented",
+                    self.data_type(),
+                    dtype
+                )
+            },
+        }
+    }
+}
+
+impl BFloat16Array {
+    pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
+        match dtype {
+            DataType::Null => {
+                Ok(NullArray::full_null(self.name(), dtype, self.len()).into_series())
+            }
+            dtype if dtype == self.data_type() => Ok(self.clone().into_series()),
+            dtype if dtype.is_numeric() => self.physical.cast(dtype),
+            #[cfg(feature = "python")]
+            DataType::Python => self.clone().into_series().cast_to_python(),
+            _ => Err(DaftError::TypeError(format!(
+                "Cannot cast BFloat16 to {}",
                 dtype
-            ),
+            ))),
         }
     }
 }
@@ -1957,5 +1977,48 @@ mod tests {
                 .is_err(),
             "Not expected to be able to cast FixedSizeList into Embedding with different element type."
         );
+    }
+
+    #[test]
+    fn test_bfloat16_cast() {
+        use crate::prelude::{BFloat16Array, Float32Array};
+
+        let values = vec![1.0f32, 2.0, 3.0];
+        let arrow_array = Box::new(daft_arrow::array::PrimitiveArray::from_vec(values));
+        let field = Arc::new(Field::new("test_bf16", DataType::Float32));
+        let physical = Float32Array::from_arrow2(field, arrow_array).unwrap();
+
+        let bf16_field = Arc::new(Field::new("test_bf16", DataType::BFloat16));
+        let bf16_array = BFloat16Array::new(bf16_field, physical);
+
+        // Test identity cast
+        let result = bf16_array.cast(&DataType::BFloat16).unwrap();
+        assert_eq!(result.data_type(), &DataType::BFloat16);
+
+        // Test cast to Float32
+        let result = bf16_array.cast(&DataType::Float32).unwrap();
+        assert_eq!(result.data_type(), &DataType::Float32);
+        let f32_arr = result.f32().unwrap();
+        assert_eq!(f32_arr.get(0).unwrap(), 1.0);
+
+        // Test cast to Float64
+        let result = bf16_array.cast(&DataType::Float64).unwrap();
+        assert_eq!(result.data_type(), &DataType::Float64);
+        let f64_arr = result.f64().unwrap();
+        assert_eq!(f64_arr.get(0).unwrap(), 1.0);
+
+        // Test cast to Int64
+        let result = bf16_array.cast(&DataType::Int64).unwrap();
+        assert_eq!(result.data_type(), &DataType::Int64);
+        let i64_arr = result.i64().unwrap();
+        assert_eq!(i64_arr.get(0).unwrap(), 1);
+
+        // Test cast to Null
+        let result = bf16_array.cast(&DataType::Null).unwrap();
+        assert_eq!(result.data_type(), &DataType::Null);
+        assert_eq!(result.len(), 3);
+
+        // Test invalid cast
+        assert!(bf16_array.cast(&DataType::Utf8).is_err());
     }
 }

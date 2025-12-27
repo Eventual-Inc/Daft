@@ -36,6 +36,17 @@ impl Series {
             NdArray::U32(arr) => UInt32Array::from((name, arr.flatten().to_vec())).into_series(),
             NdArray::I64(arr) => Int64Array::from((name, arr.flatten().to_vec())).into_series(),
             NdArray::U64(arr) => UInt64Array::from((name, arr.flatten().to_vec())).into_series(),
+            NdArray::BFloat16(arr) => {
+                // BFloat16 is a logical type whose physical storage is Float32.
+                // Upsample here to keep the underlying Series representation consistent with
+                // `DataType::BFloat16.to_physical() == DataType::Float32`.
+                let vec_f32: Vec<f32> = arr
+                    .flatten()
+                    .iter()
+                    .map(|x| (*x).to_f32())
+                    .collect();
+                Float32Array::from((name, vec_f32)).into_series()
+            }
             NdArray::F32(arr) => Float32Array::from((name, arr.flatten().to_vec())).into_series(),
             NdArray::F64(arr) => Float64Array::from((name, arr.flatten().to_vec())).into_series(),
             #[cfg(feature = "python")]

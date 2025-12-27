@@ -44,6 +44,9 @@ pub enum DataType {
     /// An [`u64`]
     UInt64,
 
+    /// A bfloat16 logical floating-point type stored physically as [`f32`].
+    BFloat16,
+
     /// A [`f32`]
     Float32,
 
@@ -155,6 +158,7 @@ impl Display for DataType {
             Self::UInt16 => write!(f, "UInt16"),
             Self::UInt32 => write!(f, "UInt32"),
             Self::UInt64 => write!(f, "UInt64"),
+            Self::BFloat16 => write!(f, "BFloat16"),
             Self::Float32 => write!(f, "Float32"),
             Self::Float64 => write!(f, "Float64"),
             Self::Decimal128(precision, scale) => {
@@ -236,6 +240,7 @@ impl DataTypePayload {
     }
 }
 pub(super) const DAFT_SUPER_EXTENSION_NAME: &str = "daft.super_extension";
+pub(super) const DAFT_BFLOAT16_EXTENSION_NAME: &str = "daft.bfloat16";
 
 impl DataType {
     pub fn new_null() -> Self {
@@ -335,6 +340,11 @@ impl DataType {
             Self::UInt32 => Ok(ArrowType::UInt32),
             Self::UInt64 => Ok(ArrowType::UInt64),
             // DataType::Float16 => Ok(ArrowType::Float16),
+            Self::BFloat16 => Ok(ArrowType::Extension(
+                DAFT_BFLOAT16_EXTENSION_NAME.into(),
+                Box::new(ArrowType::Float32),
+                None,
+            )),
             Self::Float32 => Ok(ArrowType::Float32),
             Self::Float64 => Ok(ArrowType::Float64),
             Self::Decimal128(precision, scale) => Ok(ArrowType::Decimal(*precision, *scale)),
@@ -422,6 +432,7 @@ impl DataType {
         match self {
             Date => Int32,
             Duration(_) | Timestamp(..) | Time(_) => Int64,
+            BFloat16 => Float32,
 
             List(child_dtype) => List(Box::new(child_dtype.to_physical())),
             FixedSizeList(child_dtype, size) => {
@@ -448,20 +459,20 @@ impl DataType {
                 usize::try_from(mode.num_channels() as u32 * height * width).unwrap(),
             ),
             Tensor(dtype) => Struct(vec![
-                Field::new("data", List(Box::new(*dtype.clone()))),
+                Field::new("data", List(Box::new(dtype.to_physical()))),
                 Field::new("shape", List(Box::new(Self::UInt64))),
             ]),
             FixedShapeTensor(dtype, shape) => FixedSizeList(
-                Box::new(*dtype.clone()),
+                Box::new(dtype.to_physical()),
                 usize::try_from(shape.iter().product::<u64>()).unwrap(),
             ),
             SparseTensor(dtype, _) => Struct(vec![
-                Field::new("values", List(Box::new(*dtype.clone()))),
+                Field::new("values", List(Box::new(dtype.to_physical()))),
                 Field::new("indices", List(Box::new(Self::UInt64))),
                 Field::new("shape", List(Box::new(Self::UInt64))),
             ]),
             FixedShapeSparseTensor(dtype, shape, _) => Struct(vec![
-                Field::new("values", List(Box::new(*dtype.clone()))),
+                Field::new("values", List(Box::new(dtype.to_physical()))),
                 {
                     let largest_index = std::cmp::max(shape.iter().product::<u64>(), 1) - 1;
                     let minimal_indices_dtype = {
@@ -510,6 +521,7 @@ impl DataType {
             | Self::UInt32
             | Self::UInt64
             // DataType::Float16
+            | Self::BFloat16
             | Self::Float32
             | Self::Float64 => true,
             Self::Extension(_, inner, _) => inner.is_numeric(),
@@ -580,7 +592,7 @@ impl DataType {
         matches!(
             self,
             // DataType::Float16 |
-            Self::Float32 | Self::Float64
+            Self::BFloat16 | Self::Float32 | Self::Float64
         )
     }
 
@@ -797,6 +809,7 @@ impl DataType {
             Self::Int16 => Self::Float32,
             Self::UInt8 => Self::Float32,
             Self::UInt16 => Self::Float32,
+            Self::BFloat16 => Self::Float32,
             Self::Float32 => Self::Float32,
 
             // All numeric types that coerce to `f64`
@@ -882,6 +895,7 @@ impl DataType {
                 | Self::Time(..)
                 | Self::Timestamp(..)
                 | Self::Duration(..)
+                | Self::BFloat16
                 | Self::Embedding(..)
                 | Self::Image(..)
                 | Self::FixedShapeImage(..)
@@ -1122,6 +1136,10 @@ impl From<&ArrowType> for DataType {
                 Self::Struct(fields)
             }
             ArrowType::Extension(name, dtype, metadata) => {
+                if name == DAFT_BFLOAT16_EXTENSION_NAME {
+                    return Self::BFloat16;
+                }
+
                 if name == DAFT_SUPER_EXTENSION_NAME
                     && let Some(metadata) = metadata
                     && let Ok(daft_extension) = Self::from_json(metadata.as_str())
@@ -1222,7 +1240,9 @@ impl TryFrom<&arrow_schema::Field> for DataType {
 
     fn try_from(value: &arrow_schema::Field) -> Result<Self, Self::Error> {
         if let Some(extension_name) = value.extension_type_name() {
-            if extension_name == DAFT_SUPER_EXTENSION_NAME {
+            if extension_name == DAFT_BFLOAT16_EXTENSION_NAME {
+                Ok(Self::BFloat16)
+            } else if extension_name == DAFT_SUPER_EXTENSION_NAME {
                 let payload = value.extension_type_metadata().expect("metadata");
                 Self::from_json(payload)
             } else {
@@ -1264,6 +1284,9 @@ mod test {
         media_type::MediaType,
         prelude::{ImageMode, TimeUnit},
     };
+
+    use daft_arrow::datatypes::DataType as ArrowDataType;
+    use std::collections::HashMap;
 
     #[rstest]
     #[case(DataType::Null)]
@@ -1319,6 +1342,7 @@ mod test {
     }
 
     #[rstest]
+    #[case(DataType::BFloat16)]
     #[case(DataType::Embedding(Box::new(DataType::Float64), 512))]
     #[case(DataType::Embedding(Box::new(DataType::Float32), 256))]
     #[case(DataType::Image(None))]
@@ -1336,5 +1360,45 @@ mod test {
     fn test_extension_type_to_arrow_fails(#[case] dtype: DataType) {
         let result = dtype.to_arrow();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn bfloat16_physical_mapping() {
+        let physical = DataType::BFloat16.to_physical();
+        assert_eq!(physical, DataType::Float32);
+    }
+
+    #[test]
+    fn bfloat16_arrow_roundtrip() -> DaftResult<()> {
+        // arrow2 extension mapping
+        let arrow_dtype = ArrowDataType::Extension(
+            "daft.bfloat16".to_string(),
+            Box::new(ArrowDataType::Float32),
+            None,
+        );
+        let dtype_from_arrow2 = DataType::from(&arrow_dtype);
+        assert_eq!(dtype_from_arrow2, DataType::BFloat16);
+
+        // arrow_schema::Field extension mapping
+        let physical = arrow_schema::DataType::Float32;
+        let mut metadata = HashMap::new();
+        metadata.insert(
+            "ARROW:extension:name".to_string(),
+            "daft.bfloat16".to_string(),
+        );
+        let field = arrow_schema::Field::new("bf16", physical, true).with_metadata(metadata);
+        let dtype_from_field = DataType::try_from(&field)?;
+        assert_eq!(dtype_from_field, DataType::BFloat16);
+
+        Ok(())
+    }
+
+    #[test]
+    fn bfloat16_helpers() -> DaftResult<()> {
+        let dtype = DataType::BFloat16;
+        assert!(dtype.is_numeric());
+        assert!(dtype.is_floating());
+        assert_eq!(dtype.to_floating_representation()?, DataType::Float32);
+        Ok(())
     }
 }

@@ -19,6 +19,7 @@ macro_rules! with_match_daft_types {
             DataType::Duration(_) => __with_ty__! { DurationType },
             DataType::Embedding(..) => __with_ty__! { EmbeddingType },
             DataType::Extension(_, _, _) => __with_ty__! { ExtensionType },
+            DataType::BFloat16 => __with_ty__! { BFloat16Type },
             DataType::FixedShapeImage(..) => __with_ty__! { FixedShapeImageType },
             DataType::FixedShapeSparseTensor(..) => __with_ty__! { FixedShapeSparseTensorType },
             DataType::FixedShapeTensor(..) => __with_ty__! { FixedShapeTensorType },

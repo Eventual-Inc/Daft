@@ -250,6 +250,7 @@ impl_daft_logical_data_array_datatype!(TimestampType, Unknown, Int64Type);
 impl_daft_logical_data_array_datatype!(DateType, Date, Int32Type);
 impl_daft_logical_data_array_datatype!(TimeType, Unknown, Int64Type);
 impl_daft_logical_data_array_datatype!(DurationType, Unknown, Int64Type);
+impl_daft_logical_data_array_datatype!(BFloat16Type, BFloat16, Float32Type);
 impl_daft_logical_data_array_datatype!(ImageType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(TensorType, Unknown, StructType);
 impl_daft_logical_data_array_datatype!(SparseTensorType, Unknown, StructType);

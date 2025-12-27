@@ -12,7 +12,7 @@ use crate::{
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
-            SparseTensorArray, TensorArray, TimeArray, TimestampArray,
+            SparseTensorArray, TensorArray, TimeArray, TimestampArray, BFloat16Array,
         },
     },
     file::DaftMediaType,
@@ -201,6 +201,16 @@ impl TimestampArray {
             },
         );
         Ok(res)
+    }
+}
+
+impl BFloat16Array {
+    pub fn str_value(&self, idx: usize) -> DaftResult<String> {
+        let val = self.physical.get(idx);
+        match val {
+            None => Ok("None".to_string()),
+            Some(v) => Ok(format!("{}", v)),
+        }
     }
 }
 

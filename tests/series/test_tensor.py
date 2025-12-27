@@ -141,3 +141,124 @@ def test_tensor_repr():
 ╰───────────────────────╯
 """
     )
+
+
+def test_tensor_bfloat16_from_torch():
+    torch = pytest.importorskip("torch")
+
+    if not hasattr(torch, "bfloat16"):
+        pytest.skip("torch.bfloat16 not available")
+
+    tensor = torch.randn(4, dtype=torch.bfloat16)
+
+    # Explicitly request a Tensor[BFloat16] column so that the logical dtype is BF16,
+    # while the physical storage stays Float32 (as per DataType::BFloat16.to_physical()).
+    s = Series.from_pylist(
+        [tensor],
+        dtype=DataType.tensor(DataType.bfloat16()),
+        pyobj="allow",
+    )
+
+    assert s.datatype() == DataType.tensor(DataType.bfloat16())
+
+    out = s.to_pylist()
+    assert len(out) == 1
+    arr_out = out[0]
+
+    if isinstance(arr_out, torch.Tensor):
+        assert arr_out.dtype == torch.bfloat16
+        arr_out = arr_out.float().numpy()
+
+    assert isinstance(arr_out, np.ndarray)
+    assert arr_out.shape == (4,)
+    # Values should be representable as float32 without crashing, even without NumPy BF16.
+    np.asarray(arr_out, dtype=np.float32)
+
+
+def test_tensor_bfloat16_from_torch_without_numpy_bfloat16():
+    """When torch.bfloat16 exists but NumPy lacks a BF16 dtype (no ml_dtypes.bfloat16),
+    we should still be able to ingest the tensor as Tensor[BFloat16] and materialize
+    a NumPy array that can be viewed as float32.
+    """
+
+    torch = pytest.importorskip("torch")
+
+    if not hasattr(torch, "bfloat16"):
+        pytest.skip("torch.bfloat16 not available")
+
+    # If NumPy already has a BF16 dtype via ml_dtypes, this environment is not testing the
+    # runtime fallback path, so we skip.
+    try:  # pragma: no cover - optional dependency
+        import ml_dtypes  # type: ignore[import-not-found]
+    except Exception:  # pragma: no cover - optional dependency
+        ml_dtypes = None
+
+    if getattr(ml_dtypes, "bfloat16", None) is not None:  # pragma: no cover - optional dependency
+        pytest.skip("NumPy BF16 dtype is available; fallback is not exercised")
+
+    tensor = torch.randn(4, dtype=torch.bfloat16)
+
+    s = Series.from_pylist(
+        [tensor],
+        dtype=DataType.tensor(DataType.bfloat16()),
+        pyobj="allow",
+    )
+
+    assert s.datatype() == DataType.tensor(DataType.bfloat16())
+
+    out = s.to_pylist()
+    assert len(out) == 1
+    arr_out = out[0]
+
+    if isinstance(arr_out, torch.Tensor):
+        assert arr_out.dtype == torch.bfloat16
+        arr_out = arr_out.float().numpy()
+
+    assert isinstance(arr_out, np.ndarray)
+    assert arr_out.shape == (4,)
+    # Values should be representable as float32 without crashing, even without NumPy BF16.
+    np.asarray(arr_out, dtype=np.float32)
+
+
+def test_tensor_bfloat16_from_numpy_ml_dtypes():
+    try:  # pragma: no cover - optional dependency
+        import ml_dtypes  # type: ignore[import-not-found]
+    except Exception:  # pragma: no cover - optional dependency
+        pytest.skip("ml_dtypes is not available")
+
+    ml_bfloat16 = getattr(ml_dtypes, "bfloat16", None)
+    if ml_bfloat16 is None:
+        pytest.skip("ml_dtypes.bfloat16 is not available")
+
+    data = np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=ml_bfloat16)
+
+    s = Series.from_pylist(
+        [data],
+        dtype=DataType.tensor(DataType.bfloat16()),
+        pyobj="allow",
+    )
+
+    assert s.datatype() == DataType.tensor(DataType.bfloat16())
+
+    out = s.to_pylist()
+    assert len(out) == 1
+    arr_out = out[0]
+
+    # If we get a torch tensor, convert it to numpy for verification
+    try:
+        import torch
+        if isinstance(arr_out, torch.Tensor):
+            assert arr_out.dtype == torch.bfloat16
+            arr_out = arr_out.float().numpy()
+    except ImportError:
+        pass
+
+    assert isinstance(arr_out, np.ndarray)
+    assert arr_out.shape == (2, 2)
+    # Numerical values should survive a BF16->F32 upcast round-trip.
+    np.testing.assert_allclose(
+        np.asarray(arr_out, dtype=np.float32),
+        np.asarray(data, dtype=np.float32),
+        rtol=1e-2,
+        atol=1e-2,
+    )

@@ -182,6 +182,8 @@ def run_udf(
     elif isinstance(results[0], list):
         result_list = [x for res in results for x in res]
         return Series.from_pylist(result_list, name=name, dtype=return_dtype)._series
+    elif isinstance(results[0], dict):
+        return Series.from_pylist(results, name=name, dtype=return_dtype)._series
     elif np.module_available() and isinstance(results[0], np.ndarray):  # type: ignore[attr-defined]
         np_results = cast("list[np.ndarray[Any, Any]]", results)
         result_np = np.concatenate(np_results)

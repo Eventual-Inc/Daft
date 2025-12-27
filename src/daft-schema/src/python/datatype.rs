@@ -145,6 +145,11 @@ impl PyDataType {
     }
 
     #[staticmethod]
+    pub fn bfloat16() -> PyResult<Self> {
+        Ok(DataType::BFloat16.into())
+    }
+
+    #[staticmethod]
     pub fn float32() -> PyResult<Self> {
         Ok(DataType::Float32.into())
     }
