@@ -1,5 +1,6 @@
 pub mod agg;
 pub mod function_args;
+pub mod kv;
 #[cfg(test)]
 mod macro_tests;
 pub mod map;
