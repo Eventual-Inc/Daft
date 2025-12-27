@@ -1448,6 +1448,7 @@ def udf(
     ray_options: dict[str, Any] | None = None,
 ) -> PyExpr: ...
 def row_wise_udf(
+    func_id: str,
     name: str,
     cls: ClsBase[Any],
     method: Callable[Concatenate[Any, ...], Any],
@@ -1462,6 +1463,7 @@ def row_wise_udf(
     expr_args: list[PyExpr],
 ) -> PyExpr: ...
 def batch_udf(
+    func_id: str,
     name: str,
     cls: ClsBase[Any],
     method: Callable[Concatenate[Any, ...], Any],
