@@ -4,7 +4,7 @@ use common_error::DaftResult;
 use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
 #[cfg(feature = "python")]
-use common_py_serde::{deserialize_py_object, serialize_py_object};
+use common_py_serde::{PyObjectWrapper, deserialize_py_object, serialize_py_object};
 use daft_core::prelude::Schema;
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use educe::Educe;
@@ -22,8 +22,9 @@ pub enum SinkInfo<E = ExprRef> {
     DataSinkInfo(DataSinkInfo),
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Educe, Clone, Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
+#[educe(PartialEq, Eq, Hash)]
 pub struct OutputFileInfo<E = ExprRef> {
     pub root_dir: String,
     pub write_mode: WriteMode,
@@ -31,6 +32,14 @@ pub struct OutputFileInfo<E = ExprRef> {
     pub partition_cols: Option<Vec<E>>,
     pub compression: Option<String>,
     pub io_config: Option<IOConfig>,
+    #[cfg(feature = "python")]
+    #[educe(PartialEq(ignore))]
+    #[educe(Hash(ignore))]
+    pub filename_provider: Option<common_py_serde::PyObjectWrapper>,
+    /// UUID for a logical write operation. All files written as part of a single
+    /// user-facing write (for example a single `DataFrame.write_parquet` call)
+    /// share the same `write_uuid`.
+    pub write_uuid: Option<String>,
 }
 
 #[cfg(feature = "python")]
@@ -184,6 +193,7 @@ impl<E> OutputFileInfo<E>
 where
     E: ToString,
 {
+    #[cfg(not(feature = "python"))]
     pub fn new(
         root_dir: String,
         write_mode: WriteMode,
@@ -191,6 +201,7 @@ where
         partition_cols: Option<Vec<E>>,
         compression: Option<String>,
         io_config: Option<IOConfig>,
+        write_uuid: Option<String>,
     ) -> Self {
         Self {
             root_dir,
@@ -199,6 +210,31 @@ where
             partition_cols,
             compression,
             io_config,
+            write_uuid,
+        }
+    }
+
+    #[cfg(feature = "python")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        root_dir: String,
+        write_mode: WriteMode,
+        file_format: FileFormat,
+        partition_cols: Option<Vec<E>>,
+        compression: Option<String>,
+        io_config: Option<IOConfig>,
+        filename_provider: Option<PyObjectWrapper>,
+        write_uuid: Option<String>,
+    ) -> Self {
+        Self {
+            root_dir,
+            write_mode,
+            file_format,
+            partition_cols,
+            compression,
+            io_config,
+            filename_provider,
+            write_uuid,
         }
     }
 
@@ -217,6 +253,9 @@ where
         match &self.io_config {
             None => res.push("IOConfig = None".to_string()),
             Some(io_config) => res.push(format!("IOConfig = {}", io_config)),
+        }
+        if let Some(ref write_uuid) = self.write_uuid {
+            res.push(format!("Write UUID = {}", write_uuid));
         }
         res
     }
@@ -252,6 +291,9 @@ impl OutputFileInfo {
                 .transpose()?,
             compression: self.compression,
             io_config: self.io_config,
+            #[cfg(feature = "python")]
+            filename_provider: self.filename_provider,
+            write_uuid: self.write_uuid,
         })
     }
 }

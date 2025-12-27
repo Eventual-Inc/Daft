@@ -10,6 +10,7 @@ from daft.runners import get_or_create_runner
 
 if TYPE_CHECKING:
     from daft.daft import IOConfig
+    from daft.io import FilenameProvider
 
 
 def _should_use_multithreading_tokio_runtime() -> bool:
@@ -94,16 +95,21 @@ def download(
     )
 
 
+import uuid
+
+
 def upload(
     expr: Expression,
     location: str | Expression,
     max_connections: int = 32,
     on_error: Literal["raise", "null"] = "raise",
     io_config: IOConfig | None = None,
+    filename_provider: FilenameProvider | None = None,
+    filename_provider_row: Expression | None = None,
 ) -> Expression:
     """Uploads a column of binary data to the provided location(s) (also supports S3, local etc).
 
-    Files will be written into the location (folder(s)) with a generated UUID filename, and the result
+    Files will be written into the location (folder(s)) using a configurable filename pattern and the result
     will be returned as a column of string paths that is compatible with the ``download()`` Expression.
 
     Args:
@@ -113,6 +119,9 @@ def upload(
         on_error: Behavior when a URL upload error is encountered - "raise" to raise the error immediately or "null" to log
             the error but fallback to a Null value. Defaults to "raise".
         io_config: IOConfig to use when uploading data
+        filename_provider: Optional FilenameProvider used to generate filenames when uploading into a folder.
+        filename_provider_row: Optional Struct Expression whose per-row values will be materialized into the
+            ``row`` dict passed to ``FilenameProvider.get_filename_for_row``.
 
     Returns:
         Expression: a String expression containing the written filepath
@@ -126,6 +135,16 @@ def upload(
 
         >>> upload(df["data"], df["paths"])  # doctest: +SKIP
 
+        Upload into a folder with a FilenameProvider that reads per-row fields
+
+        >>> from daft.functions import to_struct
+        >>> upload(
+        ...     df["data"],
+        ...     "s3://my-bucket/my-folder",
+        ...     filename_provider=my_provider,
+        ...     filename_provider_row=to_struct(source_path=df["source_path"]),
+        ... )  # doctest: +SKIP
+
     """
     multi_thread = _should_use_multithreading_tokio_runtime()
     # If the user specifies a single location via a string, we should upload to a single folder. Otherwise,
@@ -134,15 +153,26 @@ def upload(
     is_single_folder = isinstance(location, str)
     io_config = _override_io_config_max_connections(max_connections, io_config)
 
+    # Derive a write UUID and default filename provider when uploading into a folder.
+    write_uuid = uuid.uuid4().hex
+    if filename_provider is None and is_single_folder:
+        # Lazily import to avoid import cycles during module initialization.
+        from daft.io.filename_provider import _DefaultFilenameProvider
+
+        filename_provider = _DefaultFilenameProvider()
+
     return Expression._call_builtin_scalar_fn(
         "url_upload",
         expr,
         location,
+        filename_provider_row=filename_provider_row,
         max_connections=max_connections,
         on_error=on_error,
         multi_thread=multi_thread,
         is_single_folder=is_single_folder,
         io_config=io_config,
+        filename_provider=filename_provider,
+        write_uuid=write_uuid,
     )
 
 

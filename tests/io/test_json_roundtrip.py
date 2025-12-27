@@ -4,13 +4,18 @@ import datetime
 import decimal
 import gzip
 import json
+import os
+import re
+import uuid
 
 import pyarrow as pa
 import pytest
 
 import daft
 from daft import DataType, TimeUnit
+from daft.io import FilenameProvider
 from tests.conftest import get_tests_daft_runner_name
+from tests.integration.io.conftest import minio_create_bucket
 
 PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
 
@@ -266,3 +271,80 @@ def test_roundtrip_ndjson_with_mismatched_schema_between_files(tmp_path, compres
         "city": ["New York", "San Francisco", None, None],  # second file is missing city
         "state": ["New York", "California", "California", "New York"],
     }
+
+
+class RecordingBlockFilenameProvider(FilenameProvider):
+    """Simple FilenameProvider used to test JSON block-oriented writes to S3."""
+
+    def __init__(self) -> None:  # pragma: no cover - exercised via higher-level IO tests
+        self.calls: list[tuple[str, int, int, int, str]] = []
+
+    def get_filename_for_block(
+        self,
+        write_uuid: str,
+        task_index: int,
+        block_index: int,
+        file_idx: int,
+        ext: str,
+    ) -> str:
+        # Record the call so that tests can assert on the arguments.
+        self.calls.append((write_uuid, task_index, block_index, file_idx, ext))
+        # Deterministic pattern that makes it easy to assert on basename.
+        return f"block-{task_index}-{block_index}-{file_idx}.{ext}"
+
+    def get_filename_for_row(
+        self,
+        row: dict[str, object],
+        write_uuid: str,
+        task_index: int,
+        block_index: int,
+        row_index: int,
+        ext: str,
+    ) -> str:  # pragma: no cover - not used in these tests
+        raise AssertionError("get_filename_for_row should not be called for block writes")
+
+
+def _extract_basenames(paths: list[str]) -> list[str]:
+    basenames: list[str] = []
+    for path in paths:
+        if path.startswith("file://"):
+            path = path[len("file://") :]
+        basenames.append(os.path.basename(path))
+    return basenames
+
+
+@pytest.mark.integration()
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native",
+    reason="JSON writes are only implemented in the native runner",
+)
+def test_filename_provider_json_s3(minio_io_config) -> None:
+    bucket_name = "filename-provider-json"
+    data = {"a": [1, 2, 3], "b": ["x", "y", "z"]}
+
+    provider = RecordingBlockFilenameProvider()
+
+    with minio_create_bucket(minio_io_config=minio_io_config, bucket_name=bucket_name):
+        result_df = (
+            daft.from_pydict(data)
+            .repartition(2)
+            .write_json(
+                f"s3://{bucket_name}/json-writes-{uuid.uuid4()!s}",
+                partition_cols=["b"],
+                io_config=minio_io_config,
+                filename_provider=provider,
+            )
+        )
+
+        paths = result_df.to_pydict()["path"]
+        assert paths
+
+        # S3 paths are of the form "bucket/key". Verify the key's basename is
+        # generated via our provider and that the extension is correct.
+        basenames = [os.path.basename(p.split("/", 1)[1]) for p in paths]
+        assert all(re.match(r"block-0-\d+-\d+\.json", name) for name in basenames)
+
+    # Provider should have been called once per file with ext="json".
+    assert len(provider.calls) == len(paths)
+    exts = {call[4] for call in provider.calls}
+    assert exts == {"json"}

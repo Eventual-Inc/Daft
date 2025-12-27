@@ -25,6 +25,7 @@ from daft.io.mcap._mcap import read_mcap
 from daft.io._range import _range
 from daft.io.catalog import DataCatalogTable, DataCatalogType
 from daft.io.file_path import from_glob_path
+from daft.io.filename_provider import FilenameProvider
 from daft.io.sink import DataSink
 from daft.io.source import DataSource, DataSourceTask
 from daft.io.av import read_video_frames
@@ -36,6 +37,7 @@ __all__ = [
     "DataSink",
     "DataSource",
     "DataSourceTask",
+    "FilenameProvider",
     "GCSConfig",
     "HTTPConfig",
     "HuggingFaceConfig",

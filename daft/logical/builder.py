@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
     from pyiceberg.table import Table as IcebergTable
 
-    from daft.io import DataSink
+    from daft.io import DataSink, FilenameProvider
     from daft.runners.partitioning import PartitionCacheEntry
 
 
@@ -335,10 +335,19 @@ class LogicalPlanBuilder:
         io_config: IOConfig,
         partition_cols: list[Expression] | None = None,
         compression: str | None = None,
+        filename_provider: FilenameProvider | None = None,
+        write_uuid: str | None = None,
     ) -> LogicalPlanBuilder:
         part_cols_pyexprs = [expr._expr for expr in partition_cols] if partition_cols is not None else None
         builder = self._builder.table_write(
-            str(root_dir), write_mode, file_format, part_cols_pyexprs, compression, io_config
+            str(root_dir),
+            write_mode,
+            file_format,
+            part_cols_pyexprs,
+            compression,
+            io_config,
+            filename_provider,
+            write_uuid,
         )
         return LogicalPlanBuilder(builder)
 
