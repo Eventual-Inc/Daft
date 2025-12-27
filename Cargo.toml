@@ -87,6 +87,7 @@ python = [
   "daft-functions-list/python",
   "daft-functions-utf8/python",
   "daft-functions/python",
+  "daft-functions-uri/python",
   "daft-image/python",
   "daft-io/python",
   "daft-json/python",
