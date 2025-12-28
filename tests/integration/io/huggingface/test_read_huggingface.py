@@ -23,19 +23,24 @@ def test_read_huggingface_datasets_doesnt_fail():
 
 @pytest.mark.integration()
 @pytest.mark.parametrize(
-    "path, split, sort_key",
+    "path, sort_key",
     [
-        ("Eventual-Inc/sample-parquet", "train", "foo"),
-        ("fka/awesome-chatgpt-prompts", "train", "act"),
-        ("nebius/SWE-rebench", "test", "instance_id"),
-        ("SWE-Gym/SWE-Gym", "train", "instance_id"),
-        # ("HuggingFaceFW/fineweb", "train", "id")
+        ("Eventual-Inc/sample-parquet", "foo"),
+        ("fka/awesome-chatgpt-prompts", "act"),
+        ("nebius/SWE-rebench", "instance_id"),
+        ("SWE-Gym/SWE-Gym", "instance_id"),
+        # ("HuggingFaceFW/fineweb", "id")
     ],
 )
-def test_read_huggingface(path, split, sort_key):
-    ds = load_dataset(path, split=split)
-    ds = ds.with_format("arrow")
-    expected = ds.to_pandas()
+def test_read_huggingface(path, sort_key):
+    ds_dict = load_dataset(path)
+    import pandas as pd
+
+    dfs = []
+    for ds in ds_dict.values():
+        ds = ds.with_format("arrow")
+        dfs.append(ds.to_pandas())
+    expected = pd.concat(dfs)
 
     df = daft.read_huggingface(path)
     actual = df.to_pandas()
