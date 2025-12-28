@@ -338,10 +338,10 @@ After processing your data, you'll often want to save it for later use. Let's st
 
 ```python
 # Write the analyzed data to local Parquet files
-df_large.write_parquet("product_analysis", write_mode="overwrite")
+df_large.write_parquet("product_analysis", mode="overwrite")
 ```
 
-This writes your data to the `product_analysis/` directory. Daft automatically handles file naming using UUIDs to prevent conflicts. The `write_mode="overwrite"` parameter ensures that any existing data in the directory is replaced.
+This writes your data to the `product_analysis/` directory. Daft automatically handles file naming using UUIDs to prevent conflicts. The `mode="overwrite"` parameter ensures that any existing data in the directory is replaced.
 
 !!! note "Write anywhere"
 

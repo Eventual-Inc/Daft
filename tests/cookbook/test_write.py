@@ -50,7 +50,7 @@ def test_empty_parquet_write_without_partitioning(tmp_path, write_mode, with_mor
 
     # Create a unique path to make sure that the writer is comfortable with nonexistent directories
     path = os.path.join(tmp_path, str(uuid.uuid4()))
-    pd_df = df.write_parquet(path, write_mode=write_mode)
+    pd_df = df.write_parquet(path, mode=write_mode)
     read_back_pd_df = daft.read_parquet(path).to_pandas()
     assert_df_equals(df.to_pandas(), read_back_pd_df)
 
@@ -67,7 +67,7 @@ def test_empty_parquet_write_with_partitioning(tmp_path, write_mode, with_morsel
 
     # Create a unique path to make sure that the writer is comfortable with nonexistent directories
     path = os.path.join(tmp_path, str(uuid.uuid4()))
-    output_files = df.write_parquet(path, partition_cols=["Borough"], write_mode=write_mode)
+    output_files = df.write_parquet(path, partition_cols=["Borough"], mode=write_mode)
     assert len(output_files) == 0
 
     with pytest.raises(FileNotFoundError):

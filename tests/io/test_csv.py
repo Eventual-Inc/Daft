@@ -98,6 +98,6 @@ def test_write_csv_unsupported_types_raise(tmp_path, data, pa_type):
 def test_write_and_read_empty_csv(tmp_path_factory):
     empty_csv_files = str(tmp_path_factory.mktemp("empty_csv"))
     df = daft.from_pydict({"a": []})
-    df.write_csv(empty_csv_files, write_mode="overwrite")
+    df.write_csv(empty_csv_files, mode="overwrite")
 
     assert daft.read_csv(empty_csv_files).to_pydict() == {"a": []}
