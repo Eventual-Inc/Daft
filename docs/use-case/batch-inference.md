@@ -34,7 +34,7 @@ from daft.functions import prompt
             max_output_tokens=256,   # OpenAI Provider uses Responses API by default
         ),
     )
-    .write_parquet("output.parquet/", write_mode="overwrite")  # Write to Parquet as the pipeline runs
+    .write_parquet("output.parquet/", mode="overwrite")  # Write to Parquet as the pipeline runs
 )
 ```
 

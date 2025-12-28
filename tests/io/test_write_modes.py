@@ -50,14 +50,14 @@ def write(
     if format == "parquet":
         return df.write_parquet(
             path,
-            write_mode=write_mode,
+            mode=write_mode,
             partition_cols=partition_cols,
             io_config=io_config,
         )
     elif format == "csv":
         return df.write_csv(
             path,
-            write_mode=write_mode,
+            mode=write_mode,
             partition_cols=partition_cols,
             io_config=io_config,
         )

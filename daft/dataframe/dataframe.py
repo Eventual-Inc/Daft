@@ -764,7 +764,7 @@ class DataFrame:
         self,
         root_dir: Union[str, pathlib.Path],
         compression: str = "snappy",
-        write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
+        mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
         partition_cols: Optional[list[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
@@ -775,7 +775,7 @@ class DataFrame:
         Args:
             root_dir (str): root file path to write parquet files to.
             compression (str, optional): compression algorithm. Defaults to "snappy".
-            write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
+            mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
@@ -788,17 +788,17 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
-            >>> df.write_parquet("output_dir", write_mode="overwrite")  # doctest: +SKIP
+            >>> df.write_parquet("output_dir", mode="overwrite")  # doctest: +SKIP
 
         Tip:
             See also [`df.write_csv()`][daft.DataFrame.write_csv] and [`df.write_json()`][daft.DataFrame.write_json]
             Other formats for writing DataFrames
         """
-        if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
+        if mode not in ["append", "overwrite", "overwrite-partitions"]:
             raise ValueError(
-                f"Only support `append`, `overwrite`, or `overwrite-partitions` mode. {write_mode} is unsupported"
+                f"Only support `append`, `overwrite`, or `overwrite-partitions` mode. {mode} is unsupported"
             )
-        if write_mode == "overwrite-partitions" and partition_cols is None:
+        if mode == "overwrite-partitions" and partition_cols is None:
             raise ValueError("Partition columns must be specified to use `overwrite-partitions` mode.")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
@@ -810,7 +810,7 @@ class DataFrame:
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
-            write_mode=WriteMode.from_str(write_mode),
+            write_mode=WriteMode.from_str(mode),
             file_format=FileFormat.Parquet,
             compression=compression,
             io_config=io_config,
@@ -830,7 +830,7 @@ class DataFrame:
     def write_csv(
         self,
         root_dir: Union[str, pathlib.Path],
-        write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
+        mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
         partition_cols: Optional[list[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
@@ -840,7 +840,7 @@ class DataFrame:
 
         Args:
             root_dir (str): root file path to write parquet files to.
-            write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
+            mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
@@ -853,18 +853,18 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
-            >>> df.write_csv("output_dir", write_mode="overwrite")  # doctest: +SKIP
+            >>> df.write_csv("output_dir", mode="overwrite")  # doctest: +SKIP
 
         Tip:
             See also [`df.write_parquet()`][daft.DataFrame.write_parquet] and [`df.write_json()`][daft.DataFrame.write_json]
             other formats for writing DataFrames
 
         """
-        if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
+        if mode not in ["append", "overwrite", "overwrite-partitions"]:
             raise ValueError(
-                f"Only support `append`, `overwrite`, or `overwrite-partitions` mode. {write_mode} is unsupported"
+                f"Only support `append`, `overwrite`, or `overwrite-partitions` mode. {mode} is unsupported"
             )
-        if write_mode == "overwrite-partitions" and partition_cols is None:
+        if mode == "overwrite-partitions" and partition_cols is None:
             raise ValueError("Partition columns must be specified to use `overwrite-partitions` mode.")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
@@ -876,7 +876,7 @@ class DataFrame:
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
-            write_mode=WriteMode.from_str(write_mode),
+            write_mode=WriteMode.from_str(mode),
             file_format=FileFormat.Csv,
             io_config=io_config,
         )
@@ -896,7 +896,7 @@ class DataFrame:
     def write_json(
         self,
         root_dir: Union[str, pathlib.Path],
-        write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
+        mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
         partition_cols: Optional[list[ColumnInputType]] = None,
         io_config: Optional[IOConfig] = None,
     ) -> "DataFrame":
@@ -906,7 +906,7 @@ class DataFrame:
 
         Args:
             root_dir (str): root file path to write JSON files to.
-            write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
+            mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
 
@@ -919,16 +919,16 @@ class DataFrame:
         Examples:
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
-            >>> df.write_json("output_dir", write_mode="overwrite")  # doctest: +SKIP
+            >>> df.write_json("output_dir", mode="overwrite")  # doctest: +SKIP
 
         Warning:
             Currently only supported with the Native runner!
         """
-        if write_mode not in ["append", "overwrite", "overwrite-partitions"]:
+        if mode not in ["append", "overwrite", "overwrite-partitions"]:
             raise ValueError(
-                f"Only support `append`, `overwrite`, or `overwrite-partitions` mode. {write_mode} is unsupported"
+                f"Only support `append`, `overwrite`, or `overwrite-partitions` mode. {mode} is unsupported"
             )
-        if write_mode == "overwrite-partitions" and partition_cols is None:
+        if mode == "overwrite-partitions" and partition_cols is None:
             raise ValueError("Partition columns must be specified to use `overwrite-partitions` mode.")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
@@ -940,7 +940,7 @@ class DataFrame:
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
-            write_mode=WriteMode.from_str(write_mode),
+            write_mode=WriteMode.from_str(mode),
             file_format=FileFormat.Json,
             io_config=io_config,
         )

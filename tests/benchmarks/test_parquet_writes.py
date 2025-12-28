@@ -282,7 +282,7 @@ def test_parquet_write_performance(tmp_path, benchmark_with_memray, test_data_di
             output_file = tmp_path / f"{config_name}_{writer}.parquet"
         else:
             output_file = f"s3://eventual-dev-benchmarking-fixtures/write-outputs/{config_name}_{writer}.parquet"
-        df.write_parquet(str(output_file), write_mode="overwrite")
+        df.write_parquet(str(output_file), mode="overwrite")
 
         return output_file
 
