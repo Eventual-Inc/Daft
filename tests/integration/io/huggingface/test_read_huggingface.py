@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pandas as pd
 import pytest
 from datasets import load_dataset
 
@@ -34,7 +35,6 @@ def test_read_huggingface_datasets_doesnt_fail():
 )
 def test_read_huggingface(path, sort_key):
     ds_dict = load_dataset(path)
-    import pandas as pd
 
     dfs = []
     for ds in ds_dict.values():
