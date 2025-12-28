@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any
 
 from mcap.reader import DecoderFactory
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class JsonDecoderFactory(DecoderFactory):  # type: ignore

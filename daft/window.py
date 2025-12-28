@@ -226,7 +226,9 @@ class Window:
             >>> import datetime
             >>> # Assume df has columns 'sensor_id', 'timestamp', 'reading'
             >>> # Frame includes rows within 10 units *before* the current row's reading
-            >>> val_window = Window().partition_by("sensor_id").order_by("reading").range_between(-10, Window.current_row)
+            >>> val_window = (
+            ...     Window().partition_by("sensor_id").order_by("reading").range_between(-10, Window.current_row)
+            ... )
             >>> # Frame includes rows from 1 day before to 1 day after the current row's timestamp
             >>> time_window = (
             ...     Window()

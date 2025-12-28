@@ -95,9 +95,9 @@ def test_agg_global(make_df, repartition_nparts, with_morsel_size):
     assert len(res_set) == 1
     _assert_all_hashable(res_set[0], "test_agg_global")
     assert len(res_set[0]) == len(set(x for x in res_set[0] if x is not None)), "Result should contain no duplicates"
-    assert set(x for x in res_set[0] if x is not None) == set(
-        x for x in exp_set[0] if x is not None
-    ), "Sets should contain same non-null elements"
+    assert set(x for x in res_set[0] if x is not None) == set(x for x in exp_set[0] if x is not None), (
+        "Sets should contain same non-null elements"
+    )
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -523,9 +523,9 @@ def test_agg_groupby_with_alias(make_df, repartition_nparts, with_morsel_size):
     for res, exp in zip(sorted_res, sorted_exp):
         _assert_all_hashable(res, "test_agg_groupby_with_alias")
         assert len(res) == len(set(x for x in res if x is not None)), "Result should contain no duplicates"
-        assert set(x for x in res if x is not None) == set(
-            x for x in exp if x is not None
-        ), "Sets should contain same non-null elements"
+        assert set(x for x in res if x is not None) == set(x for x in exp if x is not None), (
+            "Sets should contain same non-null elements"
+        )
         assert None not in res, "Result should not contain nulls"
 
 
@@ -1037,6 +1037,6 @@ def test_join_on_hash_partitioned_df_does_not_shuffle():
     captured = plan_io.getvalue()
 
     # Assert that "Repartition" only shows up 3 times in the explain output, logical + optimized + physical
-    assert (
-        captured.count("Repartition") == 3
-    ), f"Expected 'Repartition' to appear 3 times, got {captured.count('Repartition')}\n{captured}"
+    assert captured.count("Repartition") == 3, (
+        f"Expected 'Repartition' to appear 3 times, got {captured.count('Repartition')}\n{captured}"
+    )
