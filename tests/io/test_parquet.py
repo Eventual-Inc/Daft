@@ -135,8 +135,8 @@ def test_parquet_read_int96_timestamps_schema_inference(coerce_to, store_schema)
         assert schema == expected, f"Expected:\n{expected}\n\nReceived:\n{schema}"
 
 
-def test_row_groups():
-    path = ["tests/assets/parquet-data/mvp.parquet"]
+def test_row_groups(mvp_parquet_path):
+    path = [mvp_parquet_path]
 
     df = daft.read_parquet(path).collect()
     assert df.count_rows() == 100
@@ -435,8 +435,8 @@ def test_parquet_nested_optional_or_required_fields(tmpdir, optional_outer_struc
 
 
 # Test fix for issue #4515.
-def test_parquet_read_databricks_generated_file():
-    path = "tests/assets/parquet-data/databricks-generated.parquet"
+def test_parquet_read_databricks_generated_file(assets_path):
+    path = os.path.join(assets_path, "parquet-data", "databricks-generated.parquet")
     table = daft.read_parquet(path)
     expected = MicroPartition.from_arrow(papq.read_table(path))
     assert table.to_arrow() == expected.to_arrow(), f"Expected:\n{expected}\n\nReceived:\n{table}"
