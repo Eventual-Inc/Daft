@@ -245,7 +245,7 @@ impl CsvSourceConfig {
     /// * `delimiter` - The character delmiting individual cells in the CSV data.
     /// * `has_headers` - Whether the CSV has a header row; if so, it will be skipped during data parsing.
     /// * `buffer_size` - Size of the buffer (in bytes) used by the streaming reader.
-    /// * `chunk_size` - Size of the chunks (in bytes) deserialized in parallel by the streaming reader.
+    /// * `chunk_size` - Size of the chunks (in rows) deserialized in parallel by the streaming reader.
     #[allow(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (
