@@ -805,7 +805,7 @@ class DataFrame:
 
         cols: Optional[list[Expression]] = None
         if partition_cols is not None:
-            cols = self.__column_input_to_expression(tuple(partition_cols))
+            cols = column_inputs_to_expressions(tuple(partition_cols))
 
         builder = self._builder.write_tabular(
             root_dir=root_dir,
@@ -871,7 +871,7 @@ class DataFrame:
 
         cols: Optional[list[Expression]] = None
         if partition_cols is not None:
-            cols = self.__column_input_to_expression(tuple(partition_cols))
+            cols = column_inputs_to_expressions(tuple(partition_cols))
 
         builder = self._builder.write_tabular(
             root_dir=root_dir,
@@ -935,7 +935,7 @@ class DataFrame:
 
         cols: Optional[list[Expression]] = None
         if partition_cols is not None:
-            cols = self.__column_input_to_expression(tuple(partition_cols))
+            cols = column_inputs_to_expressions(tuple(partition_cols))
 
         builder = self._builder.write_tabular(
             root_dir=root_dir,
@@ -1771,10 +1771,6 @@ class DataFrame:
     # DataFrame operations
     ###
 
-    def __column_input_to_expression(self, columns: Iterable[ColumnInputType]) -> list[Expression]:
-        # TODO(Kevin): remove this method and use _column_inputs_to_expressions
-        return [col(c) if isinstance(c, str) else c for c in columns]
-
     def _wildcard_inputs_to_expressions(self, columns: tuple[ManyColumnsInputType, ...]) -> list[Expression]:
         """Handles wildcard argument column inputs."""
         column_input: Iterable[ColumnInputType] = columns[0] if len(columns) == 1 else columns  # type: ignore
@@ -2063,7 +2059,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 2 of 2 rows)
         """
-        builder = self._builder.distinct(self.__column_input_to_expression(on))
+        builder = self._builder.distinct(column_inputs_to_expressions(on))
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -2560,7 +2556,7 @@ class DataFrame:
         if nulls_first is None:
             nulls_first = desc
 
-        sort_by = self.__column_input_to_expression(by)
+        sort_by = column_inputs_to_expressions(by)
 
         builder = self._builder.sort(sort_by=sort_by, descending=desc, nulls_first=nulls_first)
         return DataFrame(builder)
@@ -2720,7 +2716,7 @@ class DataFrame:
             )
             builder = self._builder.random_shuffle(num)
         else:
-            builder = self._builder.hash_repartition(num, self.__column_input_to_expression(partition_by))
+            builder = self._builder.hash_repartition(num, column_inputs_to_expressions(partition_by))
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -2855,8 +2851,8 @@ class DataFrame:
         elif join_strategy == JoinStrategy.Broadcast and join_type == JoinType.Outer:
             raise ValueError("Broadcast join does not support outer joins")
 
-        left_exprs = self.__column_input_to_expression(tuple(left_on) if isinstance(left_on, list) else (left_on,))
-        right_exprs = self.__column_input_to_expression(tuple(right_on) if isinstance(right_on, list) else (right_on,))
+        left_exprs = column_inputs_to_expressions(tuple(left_on) if isinstance(left_on, list) else (left_on,))
+        right_exprs = column_inputs_to_expressions(tuple(right_on) if isinstance(right_on, list) else (right_on,))
         builder = self._builder.join(
             other._builder,
             left_on=left_exprs,
@@ -2963,9 +2959,9 @@ class DataFrame:
 
         """
         if len(cols) == 0:
-            columns = self.__column_input_to_expression(self.column_names)
+            columns = column_inputs_to_expressions(self.column_names)
         else:
-            columns = self.__column_input_to_expression(cols)
+            columns = column_inputs_to_expressions(cols)
         float_columns = [
             column
             for column in columns
@@ -3021,9 +3017,9 @@ class DataFrame:
 
         """
         if len(cols) == 0:
-            columns = self.__column_input_to_expression(self.column_names)
+            columns = column_inputs_to_expressions(self.column_names)
         else:
-            columns = self.__column_input_to_expression(cols)
+            columns = column_inputs_to_expressions(cols)
         return self.where(~reduce(lambda x, y: x | y, (x.is_null() for x in columns)))
 
     @DataframePublicAPI
@@ -3120,7 +3116,7 @@ class DataFrame:
             (Showing first 5 of 5 rows)
 
         """
-        parsed_exprs = self.__column_input_to_expression(columns)
+        parsed_exprs = column_inputs_to_expressions(columns)
         builder = self._builder.explode(parsed_exprs)
         return DataFrame(builder)
 
