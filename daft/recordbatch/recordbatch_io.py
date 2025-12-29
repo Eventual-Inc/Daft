@@ -4,7 +4,7 @@ import math
 import pathlib
 import random
 import time
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any, TypeAlias
 from uuid import uuid4
 
 from daft.context import get_context
@@ -38,7 +38,7 @@ from daft.sql.sql_connection import SQLConnection
 from .micropartition import MicroPartition
 from .partitioning import PartitionedTable, partition_strings_to_path
 
-FileInput = Union[pathlib.Path, str]
+FileInput: TypeAlias = pathlib.Path | str
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -128,9 +128,9 @@ def read_parquet(
     """
     # TODO: move this logic into Rust
     config = storage_config if storage_config is not None else StorageConfig(True, IOConfig())
-    assert isinstance(
-        file, (str, pathlib.Path)
-    ), "Native downloader only works on string or Path inputs to read_parquet"
+    assert isinstance(file, (str, pathlib.Path)), (
+        "Native downloader only works on string or Path inputs to read_parquet"
+    )
     tbl = MicroPartition.read_parquet(
         str(file),
         columns=read_options.column_names,

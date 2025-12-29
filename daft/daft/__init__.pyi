@@ -1,8 +1,8 @@
 import builtins
 import datetime
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Concatenate, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Concatenate, Literal, TypeVar
 
 from daft.dataframe.display import MermaidOptions
 from daft.io import DataSink

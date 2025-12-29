@@ -1,7 +1,6 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import Optional, Union
 
 from daft import context, runners
 from daft.api_annotations import PublicAPI
@@ -18,10 +17,10 @@ from daft.io.common import get_tabular_files_scan
 
 @PublicAPI
 def read_warc(
-    path: Union[str, list[str]],
-    io_config: Optional[IOConfig] = None,
-    file_path_column: Optional[str] = None,
-    _multithreaded_io: Optional[bool] = None,
+    path: str | list[str],
+    io_config: IOConfig | None = None,
+    file_path_column: str | None = None,
+    _multithreaded_io: bool | None = None,
 ) -> DataFrame:
     """Creates a DataFrame from WARC or gzipped WARC file(s). This is an experimental feature and the API may change in the future.
 
