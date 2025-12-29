@@ -55,9 +55,21 @@ class _ImageEmbedderExpression:
     def __init__(self, image_embedder: ImageEmbedderDescriptor):
         self.image_embedder = image_embedder.instantiate()
 
-    def __call__(self, image_series: Series) -> list[Embedding]:
+    def _call_sync(self, image_series: Series) -> list[Embedding]:
         image = image_series.to_pylist()
-        return self.image_embedder.embed_image(image) if image else []
+        if not image:
+            return []
+        result = self.image_embedder.embed_image(image)
+        assert isinstance(result, list)
+        return result
+
+    async def _call_async(self, image_series: Series) -> list[Embedding]:
+        image = image_series.to_pylist()
+        if not image:
+            return []
+        result_awaitable = self.image_embedder.embed_image(image)
+        assert isinstance(result_awaitable, Awaitable)
+        return await result_awaitable
 
 
 class _TextClassificationExpression:
