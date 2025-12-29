@@ -237,3 +237,21 @@ def with_morsel_size(request):
     morsel_size = request.param
     with daft.context.execution_config_ctx(default_morsel_size=morsel_size):
         yield morsel_size
+
+
+@pytest.fixture(scope="session")
+def assets_path() -> str:
+    """Return the path to the assets directory."""
+    return "tests/assets"
+
+
+@pytest.fixture(scope="session")
+def mvp_csv_path(assets_path) -> str:
+    """Return the path to mvp.csv."""
+    return os.path.join(assets_path, "mvp.csv")
+
+
+@pytest.fixture(scope="session")
+def mvp_parquet_path(assets_path) -> str:
+    """Return the path to mvp.parquet."""
+    return os.path.join(assets_path, "parquet-data", "mvp.parquet")
