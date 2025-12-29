@@ -2,7 +2,8 @@
 # isort: dont-add-import: from __future__ import annotations
 import pathlib
 import warnings
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
@@ -29,17 +30,17 @@ LanceDataset = Any
 
 @PublicAPI
 def read_lance(
-    uri: Union[str, pathlib.Path],
-    io_config: Optional[IOConfig] = None,
-    version: Optional[Union[str, int]] = None,
-    asof: Optional[str] = None,
-    block_size: Optional[int] = None,
-    commit_lock: Optional[object] = None,
-    index_cache_size: Optional[int] = None,
-    default_scan_options: Optional[dict[str, str]] = None,
-    metadata_cache_size_bytes: Optional[int] = None,
-    fragment_group_size: Optional[int] = None,
-    include_fragment_id: Optional[bool] = None,
+    uri: str | pathlib.Path,
+    io_config: IOConfig | None = None,
+    version: str | int | None = None,
+    asof: str | None = None,
+    block_size: int | None = None,
+    commit_lock: object | None = None,
+    index_cache_size: int | None = None,
+    default_scan_options: dict[str, str] | None = None,
+    metadata_cache_size_bytes: int | None = None,
+    fragment_group_size: int | None = None,
+    include_fragment_id: bool | None = None,
 ) -> DataFrame:
     """Create a DataFrame from a LanceDB table.
 
@@ -143,22 +144,22 @@ def read_lance(
 
 @PublicAPI
 def merge_columns(
-    uri: Union[str, pathlib.Path],
-    io_config: Optional[IOConfig] = None,
+    uri: str | pathlib.Path,
+    io_config: IOConfig | None = None,
     *,
     transform: Union[dict[str, str], "BatchUDF", Callable[["pa.lib.RecordBatch"], "pa.lib.RecordBatch"]] = None,
-    read_columns: Optional[list[str]] = None,
+    read_columns: list[str] | None = None,
     reader_schema: Optional["pa.Schema"] = None,
-    storage_options: Optional[dict[str, Any]] = None,
-    daft_remote_args: Optional[dict[str, Any]] = None,
-    concurrency: Optional[int] = None,
-    version: Optional[Union[int, str]] = None,
-    asof: Optional[str] = None,
-    block_size: Optional[int] = None,
-    commit_lock: Optional[Any] = None,
-    index_cache_size: Optional[int] = None,
-    default_scan_options: Optional[dict[str, Any]] = None,
-    metadata_cache_size_bytes: Optional[int] = None,
+    storage_options: dict[str, Any] | None = None,
+    daft_remote_args: dict[str, Any] | None = None,
+    concurrency: int | None = None,
+    version: int | str | None = None,
+    asof: str | None = None,
+    block_size: int | None = None,
+    commit_lock: Any | None = None,
+    index_cache_size: int | None = None,
+    default_scan_options: dict[str, Any] | None = None,
+    metadata_cache_size_bytes: int | None = None,
 ) -> LanceDataset:
     """Merge new columns into a LanceDB table using a transformation function.
 
@@ -241,24 +242,24 @@ def merge_columns(
 @PublicAPI
 def merge_columns_df(
     df: DataFrame,
-    uri: Union[str, pathlib.Path],
-    io_config: Optional[IOConfig] = None,
+    uri: str | pathlib.Path,
+    io_config: IOConfig | None = None,
     *,
-    read_columns: Optional[list[str]] = None,
+    read_columns: list[str] | None = None,
     reader_schema: Optional["pa.Schema"] = None,
-    storage_options: Optional[dict[str, Any]] = None,
-    daft_remote_args: Optional[dict[str, Any]] = None,
-    concurrency: Optional[int] = None,
-    version: Optional[Union[int, str]] = None,
-    asof: Optional[str] = None,
-    block_size: Optional[int] = None,
-    commit_lock: Optional[Any] = None,
-    index_cache_size: Optional[int] = None,
-    default_scan_options: Optional[dict[str, Any]] = None,
-    metadata_cache_size_bytes: Optional[int] = None,
-    batch_size: Optional[int] = None,
-    left_on: Optional[str] = "_rowaddr",
-    right_on: Optional[str] = "_rowaddr",
+    storage_options: dict[str, Any] | None = None,
+    daft_remote_args: dict[str, Any] | None = None,
+    concurrency: int | None = None,
+    version: int | str | None = None,
+    asof: str | None = None,
+    block_size: int | None = None,
+    commit_lock: Any | None = None,
+    index_cache_size: int | None = None,
+    default_scan_options: dict[str, Any] | None = None,
+    metadata_cache_size_bytes: int | None = None,
+    batch_size: int | None = None,
+    left_on: str | None = "_rowaddr",
+    right_on: str | None = "_rowaddr",
 ) -> None:
     """Row-level merge columns entrypoint using a DataFrame.
 
@@ -348,23 +349,23 @@ def merge_columns_df(
 
 @PublicAPI
 def create_scalar_index(
-    uri: Union[str, pathlib.Path],
-    io_config: Optional[IOConfig] = None,
+    uri: str | pathlib.Path,
+    io_config: IOConfig | None = None,
     *,
     column: str,
     index_type: str = "INVERTED",
-    name: Optional[str] = None,
+    name: str | None = None,
     replace: bool = True,
-    storage_options: Optional[dict[str, Any]] = None,
-    daft_remote_args: Optional[dict[str, Any]] = None,
-    concurrency: Optional[int] = None,
-    version: Optional[Union[int, str]] = None,
-    asof: Optional[str] = None,
-    block_size: Optional[int] = None,
-    commit_lock: Optional[Any] = None,
-    index_cache_size: Optional[int] = None,
-    default_scan_options: Optional[dict[str, Any]] = None,
-    metadata_cache_size_bytes: Optional[int] = None,
+    storage_options: dict[str, Any] | None = None,
+    daft_remote_args: dict[str, Any] | None = None,
+    concurrency: int | None = None,
+    version: int | str | None = None,
+    asof: str | None = None,
+    block_size: int | None = None,
+    commit_lock: Any | None = None,
+    index_cache_size: int | None = None,
+    default_scan_options: dict[str, Any] | None = None,
+    metadata_cache_size_bytes: int | None = None,
     **kwargs: Any,
 ) -> None:
     """Build a distributed full-text search index using Daft's distributed computing.
@@ -469,20 +470,20 @@ def create_scalar_index(
 
 @PublicAPI
 def compact_files(
-    uri: Union[str, pathlib.Path],
-    io_config: Optional[IOConfig] = None,
+    uri: str | pathlib.Path,
+    io_config: IOConfig | None = None,
     *,
-    storage_options: Optional[dict[str, Any]] = None,
-    version: Optional[Union[int, str]] = None,
-    asof: Optional[str] = None,
-    block_size: Optional[int] = None,
-    commit_lock: Optional[Any] = None,
-    index_cache_size: Optional[int] = None,
-    default_scan_options: Optional[dict[str, Any]] = None,
-    metadata_cache_size_bytes: Optional[int] = None,
-    compaction_options: Optional[dict[str, Any]] = None,
-    partition_num: Optional[int] = None,
-    concurrency: Optional[int] = None,
+    storage_options: dict[str, Any] | None = None,
+    version: int | str | None = None,
+    asof: str | None = None,
+    block_size: int | None = None,
+    commit_lock: Any | None = None,
+    index_cache_size: int | None = None,
+    default_scan_options: dict[str, Any] | None = None,
+    metadata_cache_size_bytes: int | None = None,
+    compaction_options: dict[str, Any] | None = None,
+    partition_num: int | None = None,
+    concurrency: int | None = None,
 ) -> Any:
     """Compact Lance dataset files using Daft UDF-style distributed execution.
 

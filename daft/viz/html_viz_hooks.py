@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import base64
 import io
-from typing import Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from daft.dependencies import np, pil_image
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 HookClass = TypeVar("HookClass")
 
