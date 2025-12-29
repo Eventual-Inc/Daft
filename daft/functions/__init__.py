@@ -216,6 +216,13 @@ from .window import (
     lag,
     lead,
 )
+from daft.functions.kv import (
+    kv_get,
+    kv_batch_get,
+    kv_exists,
+    kv_put,
+)
+
 
 __all__ = [
     "abs",
@@ -309,6 +316,10 @@ __all__ = [
     "is_nan",
     "is_null",
     "jq",
+    "kv_batch_get",
+    "kv_exists",
+    "kv_get",
+    "kv_put",
     "lag",
     "lead",
     "left",

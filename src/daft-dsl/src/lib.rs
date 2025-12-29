@@ -1,3 +1,5 @@
+#![feature(str_as_str)]
+
 mod arithmetic;
 pub mod expr;
 pub mod functions;
@@ -52,6 +54,15 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::row_number, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::rank, parent)?)?;
     parent.add_function(wrap_pyfunction!(python::dense_rank, parent)?)?;
+
+    // Add KV Store ScalarUDF functions
+    parent.add_function(wrap_pyfunction!(python::kv_get_with_config, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::kv_batch_get_with_config, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::kv_exists_with_config, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::kv_get_with_name, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::kv_batch_get_with_name, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::kv_exists_with_name, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::kv_put_with_name, parent)?)?;
 
     Ok(())
 }
