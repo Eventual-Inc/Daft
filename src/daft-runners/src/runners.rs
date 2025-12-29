@@ -140,6 +140,14 @@ impl Runner {
         let runner = self.get_runner_ref();
         runner.clone_ref(py)
     }
+
+    pub fn is_native(&self) -> bool {
+        matches!(self, Self::Native(_))
+    }
+
+    pub fn is_ray(&self) -> bool {
+        matches!(self, Self::Ray(_))
+    }
 }
 
 #[derive(Debug)]
