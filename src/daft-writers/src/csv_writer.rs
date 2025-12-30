@@ -136,6 +136,7 @@ pub(crate) fn create_native_csv_writer(
                 filename,
                 partition_values.cloned(),
                 storage_backend,
+                csv_option,
             )))
         }
         _ => Err(DaftError::ValueError(format!(
