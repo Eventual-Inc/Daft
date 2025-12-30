@@ -69,6 +69,7 @@ impl GlobScanSourceNode {
         result_tx: Sender<SubmittableTask<SwordfishTask>>,
         task_id_counter: TaskIDCounter,
     ) -> DaftResult<()> {
+        // TODO by zhenchao Split into multiple tasks based on parallelism configuration
         let task =
             self.make_glob_scan_task(TaskContext::from((&self.context, task_id_counter.next())))?;
         let _ = result_tx.send(SubmittableTask::new(task)).await;
