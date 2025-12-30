@@ -45,6 +45,9 @@ def from_glob_path(path: str | list[str], io_config: IOConfig | None = None) -> 
     if isinstance(path, str):
         path = [path]
 
+    if len(path) == 0:
+        raise ValueError("Must specify at least one glob path")
+
     context = get_context()
     io_config = context.daft_planning_config.default_io_config if io_config is None else io_config
 

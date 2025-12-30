@@ -97,10 +97,20 @@ impl PipelineNodeImpl for GlobScanSourceNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        let mut res = vec![
-            "GlobScanSource".to_string(),
-            format!("Glob paths = {:?}", self.glob_paths),
-        ];
+        let mut res = vec!["GlobScanSource".to_string()];
+        if self.glob_paths.len() <= 1 {
+            res.push(format!(
+                "Glob path: {}",
+                self.glob_paths.first().expect("Empty glob paths")
+            ));
+        } else {
+            res.push("Glob paths: [".to_string());
+            for path in self.glob_paths.iter() {
+                res.push(format!("  {}", path));
+            }
+            res.push("]".to_string());
+        }
+
         res.extend(self.pushdowns.multiline_display());
         res
     }

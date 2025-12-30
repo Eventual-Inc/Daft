@@ -138,7 +138,18 @@ impl Source {
                 ..
             }) => {
                 res.push("GlobScan:".to_string());
-                res.push(format!("Glob paths = {:?}", glob_paths));
+                if glob_paths.len() <= 1 {
+                    res.push(format!(
+                        "Glob path: {}",
+                        glob_paths.first().expect("Empty glob paths")
+                    ));
+                } else {
+                    res.push("Glob paths: [".to_string());
+                    for path in glob_paths.iter() {
+                        res.push(format!("  {}", path));
+                    }
+                    res.push("]".to_string());
+                }
                 res.extend(pushdowns.multiline_display());
             }
             SourceInfo::PlaceHolder(PlaceHolderInfo {
