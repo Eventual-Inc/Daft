@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import io
-
 import pytest
 
 import daft
 from daft.dependencies import pa
+from daft.functions import format
 from tests.conftest import get_tests_daft_runner_name
-from tests.utils import clean_explain_output
+from tests.utils import clean_explain_output, explain_to_text
 
 
 @pytest.fixture
@@ -19,13 +18,10 @@ def input_df(tmp_path):
 
 @pytest.mark.skipif(
     condition=get_tests_daft_runner_name() == "native",
-    reason="The physical plan displayed in Native and Ray mode is inconsistent.",
+    reason="The physical plan displayed in Native and Ray mode is inconsistent",
 )
 def test_explain_with_empty_scantask(input_df):
-    string_io = io.StringIO()
-    input_df.explain(True, file=string_io)
     expected = """
-
     * ScanTaskSource:
     |   Num Scan Tasks = 1
     |   Estimated Scan Bytes = 130
@@ -33,23 +29,150 @@ def test_explain_with_empty_scantask(input_df):
     |   Scan Tasks: [
     |   {daft.io.lance.lance_scan:_lancedb_table_factory_function}
     |   ]
-
     """
-    assert clean_explain_output(string_io.getvalue().split("== Physical Plan ==")[-1]) == clean_explain_output(expected)
+    assert clean_explain_output(explain_to_text(input_df, only_physical_plan=True)) == clean_explain_output(expected)
 
-    string_io = io.StringIO()
-    input_df.limit(0).explain(True, file=string_io)
     expected = """
+    * Limit: 0
+    |
+    * ScanTaskSource:
+    |   Num Scan Tasks = 0
+    |   Estimated Scan Bytes = 0
+    |   Pushdowns: {limit: 0}
+    |   Schema: {id#Int64}
+    |   Scan Tasks: [
+    |   ]
+    """
+    assert clean_explain_output(explain_to_text(input_df.limit(0), only_physical_plan=True)) == clean_explain_output(
+        expected
+    )
 
-* Limit: 0
-|
-* ScanTaskSource:
-|   Num Scan Tasks = 0
-|   Estimated Scan Bytes = 0
-|   Pushdowns: {limit: 0}
-|   Schema: {id#Int64}
-|   Scan Tasks: [
-|   ]
 
-"""
-    assert clean_explain_output(string_io.getvalue().split("== Physical Plan ==")[-1]) == clean_explain_output(expected)
+@pytest.fixture(scope="session")
+def small_df(tmp_path_factory):
+    df = daft.range(start=0, end=1000, partitions=10)
+    df = df.with_columns(
+        {
+            "s_name": format("user_{}", df["id"]),
+            "s_email": format("user_{}@daft.ai", df["id"]),
+        }
+    )
+
+    tmp_path = str(tmp_path_factory.mktemp("small"))
+    df.write_parquet(tmp_path)
+    return daft.read_parquet(tmp_path)
+
+
+@pytest.fixture(scope="session")
+def large_df(tmp_path_factory):
+    df = daft.range(start=0, end=9999, partitions=100)
+    df = df.with_columns(
+        {
+            "l_name": format("user_{}", df["id"]),
+            "l_email": format("user_{}@daft.ai", df["id"]),
+        }
+    )
+
+    tmp_path = str(tmp_path_factory.mktemp("large"))
+    df.write_parquet(tmp_path)
+    return daft.read_parquet(tmp_path)
+
+
+@pytest.mark.skipif(
+    condition=get_tests_daft_runner_name() == "native",
+    reason="Native Runner doesn't currently support displaying the ID of the nodes participating in the Join",
+)
+def test_explain_with_broadcast_join(small_df, large_df):
+    df = small_df.join(other=large_df, left_on="s_name", right_on="l_name", strategy="broadcast")
+    expected = """
+    * BroadcastJoin
+    |   Type: Inner
+    |   Left: Join key = col(1: s_name), Role = Broadcaster
+    |   Right: Join key = col(1: l_name), Role = Receiver
+    |   Null equals nulls: [false]
+        """
+    assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
+
+    df = large_df.join(other=small_df, left_on="l_name", right_on="s_name", strategy="broadcast")
+    expected = """
+    * BroadcastJoin
+    |   Type: Inner
+    |   Left: Join key = col(1: l_name), Role = Receiver
+    |   Right: Join key = col(1: s_name), Role = Broadcaster
+    |   Null equals nulls: [false]
+        """
+    assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
+
+
+@pytest.mark.skipif(
+    condition=get_tests_daft_runner_name() == "native",
+    reason="Native Runner doesn't currently support displaying the ID of the nodes participating in the Join",
+)
+def test_explain_with_cross_join(small_df, large_df):
+    df = small_df.join(other=large_df, how="cross")
+    expected = """
+    * CrossJoin
+    |   Left: Node name = ScanSource
+    |   Right: Node name = Project
+        """
+    assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
+
+    df = large_df.join(other=small_df, how="cross")
+    expected = """
+    * CrossJoin
+    |   Left: Node name = ScanSource
+    |   Right: Node name = Project
+        """
+    assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
+
+
+@pytest.mark.skipif(
+    condition=get_tests_daft_runner_name() == "native",
+    reason="Native Runner doesn't currently support displaying the ID of the nodes participating in the Join",
+)
+def test_explain_with_hash_join(small_df, large_df):
+    df = small_df.join(other=large_df, left_on="s_name", right_on="l_name", strategy="hash", how="left")
+    expected = """
+    * HashJoin
+    |   Type: Left
+    |   Left: Join key = col(1: s_name)
+    |   Right: Join key = col(1: l_name)
+    |   Null equals nulls: [false]
+        """
+    assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
+
+    df = large_df.join(other=small_df, left_on="l_name", right_on="s_name", strategy="hash", how="right")
+    expected = """
+    * HashJoin
+    |   Type: Right
+    |   Left: Join key = col(1: l_name)
+    |   Right: Join key = col(1: s_name)
+    |   Null equals nulls: [false]
+        """
+    assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
+
+
+@pytest.mark.skipif(
+    condition=get_tests_daft_runner_name() == "native",
+    reason="Native Runner doesn't currently support displaying the ID of the nodes participating in the Join",
+)
+def test_explain_with_sort_merged_join(small_df, large_df):
+    df = small_df.join(other=large_df, left_on="s_name", right_on="l_name", strategy="sort_merge")
+    expected = """
+    * SortMergeJoin
+    |   Type: Inner
+    |   Left: Join key = col(1: s_name)
+    |   Right: Join key = col(1: l_name)
+    |   Num partitions: 100
+        """
+    assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
+
+    df = large_df.join(other=small_df, left_on="l_name", right_on="s_name", strategy="sort_merge")
+    expected = """
+    * SortMergeJoin
+    |   Type: Inner
+    |   Left: Join key = col(1: l_name)
+    |   Right: Join key = col(1: s_name)
+    |   Num partitions: 100
+        """
+    assert clean_explain_output(expected) in clean_explain_output(explain_to_text(df, only_physical_plan=True))
