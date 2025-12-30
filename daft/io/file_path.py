@@ -33,9 +33,6 @@ def from_glob_path(path: str | list[str], io_config: IOConfig | None = None) -> 
     Returns:
         DataFrame: DataFrame containing the path to each file as a row, along with other metadata parsed from the provided filesystem.
 
-    Raises:
-        FileNotFoundError: If none of files found with the glob paths.
-
     Examples:
         >>> df = daft.from_glob_path("/path/to/files/*.jpeg")
         >>> df = daft.from_glob_path("/path/to/files/**/*.jpeg")
@@ -44,6 +41,9 @@ def from_glob_path(path: str | list[str], io_config: IOConfig | None = None) -> 
     """
     if isinstance(path, str):
         path = [path]
+
+    if len(path) == 0:
+        raise ValueError("Must specify at least one glob path")
 
     context = get_context()
     io_config = context.daft_planning_config.default_io_config if io_config is None else io_config

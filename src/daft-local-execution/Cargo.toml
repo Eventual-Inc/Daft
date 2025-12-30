@@ -51,6 +51,7 @@ tokio-util = {workspace = true}
 tracing = {workspace = true}
 serde_json = {workspace = true}
 opentelemetry = {workspace = true}
+dashmap = {workspace = true}
 
 [features]
 python = [
