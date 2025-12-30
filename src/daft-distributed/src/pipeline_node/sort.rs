@@ -116,10 +116,18 @@ pub(crate) fn create_sample_tasks(
 ) -> DaftResult<Vec<SubmittedTask>> {
     let sample_size = pipeline_node.config().execution_config.sample_size_for_sort;
     let context = pipeline_node.context();
+    // Prefer BoundColumn field names (if provided) to align sampled column names across sides for concatenation
     let sample_schema = Arc::new(Schema::new(sample_by.iter().map(|e| {
-        e.inner()
-            .to_field(&input_schema)
-            .expect("Sample by column not found in input schema")
+        match e.as_ref() {
+            daft_dsl::Expr::Column(daft_dsl::Column::Bound(daft_dsl::expr::BoundColumn {
+                index,
+                field,
+            })) => input_schema[*index].clone().rename(field.name.clone()),
+            _ => e
+                .inner()
+                .to_field(&input_schema)
+                .expect("Sample by column not found in input schema"),
+        }
     })));
 
     materialized_outputs
