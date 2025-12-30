@@ -167,6 +167,19 @@ class EmbeddingDimensions:
         return DataType.embedding(dtype=self.dtype, size=self.size)
 
 
+@dataclass(frozen=True)
+class EmbeddingModelProfile:
+    """Model profiles contain various model-specific metadata.
+
+    Note:
+        This is a bit simpler than OO-inheritance to model the subtle
+        differences between the embedding models.
+    """
+
+    dimensions: EmbeddingDimensions
+    supports_overriding_dimensions: bool
+
+
 @dataclass
 class UDFOptions:
     """Options for configuring UDF execution."""

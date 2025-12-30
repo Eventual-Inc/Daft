@@ -454,13 +454,14 @@ def test_embed_text_records_usage_metrics(mock_text_embedder, mock_client):
     assert len(result) == 1
     attrs = {
         "model": "text-embedding-3-small",
-        "protocol": "embed",
+        "protocol": "embed_text",
         "provider": "openai",
     }
+    mock_counter.assert_any_call("input texts", 1, attributes=attrs)
     mock_counter.assert_any_call("input tokens", 10, attributes=attrs)
     mock_counter.assert_any_call("total tokens", 12, attributes=attrs)
     mock_counter.assert_any_call("requests", attributes=attrs)
-    assert mock_counter.call_count == 3
+    assert mock_counter.call_count == 4
 
 
 def test_embed_text_batch_rate_limit_fallback(mock_text_embedder, mock_client):
