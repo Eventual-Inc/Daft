@@ -84,7 +84,7 @@ def merge_columns_internal(
     # Instantiate the Daft class with Lance-specific state and apply the
     # batch method over the fragment_id column.
     handler = FragmentHandler(lance_ds, transform, read_columns, reader_schema)
-    df = df.with_column("commit_message", handler(df["fragment_id"]))  # type: ignore[arg-type]
+    df = df.with_column("commit_message", handler(df["fragment_id"]))  # type: ignore[arg-type]  # type: ignore[arg-type]
 
     commit_messages = df.collect().to_pydict()["commit_message"]
     new_schema = None

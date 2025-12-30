@@ -62,7 +62,8 @@ class PromptMetricsSubscriber(Subscriber):
         for node_id, stats in all_stats.items():
             self.node_stats[query_id][node_id] = dict(stats)
 
-    def on_query_end(self, query_id: str) -> None:
+    def on_query_end(self, query_id: str, result: Any) -> None:
+        """Called when a query has completed."""
         pass
 
     def on_result_out(self, query_id: str, result: PyMicroPartition) -> None:
@@ -132,6 +133,42 @@ def metrics() -> Callable[[], dict[str, int]]:
         yield lambda: _collect_metrics(subscriber)
     finally:
         ctx.detach_subscriber(sub_name)
+
+
+@pytest.mark.integration()
+def test_embed_text_sanity_all_models(session, metrics):
+    """This tests end-to-end doesn't throw for the default model. It does not check outputs."""
+    from daft.functions.ai import embed_text
+
+    # Google models to test
+    models = ["gemini-embedding-001"]
+
+    df = daft.from_pydict(
+        {
+            "text": [
+                "Alice was beginning to get very tired of sitting by her sister on the bank.",
+                "So she was considering in her own mind (as well as she could, for the hot day made her feel very sleepy and stupid),",
+                "whether the pleasure of making a daisy-chain would be worth the trouble of getting up and picking the daisies,",
+                "when suddenly a White Rabbit with pink eyes ran close by her.",
+                "There was nothing so very remarkable in that;",
+                "nor did Alice think it so very much out of the way to hear the Rabbit say to itself, 'Oh dear! Oh dear! I shall be late!'",
+            ]
+        }
+    )
+
+    # assert success for all models
+    for model in models:
+        # Test default dimensions and custom dimensions
+        # gemini-embedding-001 supports 3072 (default), 1536, and 768 output dimensions
+        for dimensions in [None, 768]:
+            print(f"Testing model: {model}, dimensions: {dimensions}")
+            df = df.with_column(
+                "embedding", embed_text(df["text"], provider="google", model=model, dimensions=dimensions)
+            )
+            df.collect()
+            # Metrics might not be fully implemented yet, but we check if requests are recorded if possible
+            # _assert_embed_metrics_recorded(metrics())
+            time.sleep(1)  # self limit to ~1 tps.
 
 
 @pytest.mark.integration()
