@@ -1,8 +1,14 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use common_py_serde::PyObjectWrapper;
-use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFProperties, python::PyExpr};
+use common_treenode::{Transformed, TreeNode};
+use daft_dsl::{
+    Column, Expr, ExprRef,
+    expr::{BoundColumn, bound_expr::BoundExpr},
+    functions::python::UDFProperties,
+    python::PyExpr,
+};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
@@ -24,7 +30,6 @@ use crate::{
 };
 
 #[derive(Debug)]
-
 enum UDFActors {
     Uninitialized(Vec<BoundExpr>, UDFProperties),
     Initialized { actors: Vec<PyObjectWrapper> },
@@ -121,7 +126,9 @@ pub(crate) struct ActorUDF {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     child: DistributedPipelineNode,
-    projection: Vec<BoundExpr>,
+    udf_expr: BoundExpr,
+    passthrough_columns: Vec<BoundExpr>,
+    required_cols: Vec<usize>,
     udf_properties: UDFProperties,
     actor_ready_timeout: usize,
 }
@@ -133,7 +140,8 @@ impl ActorUDF {
     pub fn new(
         node_id: NodeID,
         plan_config: &PlanConfig,
-        projection: Vec<BoundExpr>,
+        udf_expr: BoundExpr,
+        passthrough_columns: Vec<BoundExpr>,
         udf_properties: UDFProperties,
         schema: SchemaRef,
         child: DistributedPipelineNode,
@@ -149,11 +157,56 @@ impl ActorUDF {
             plan_config.config.clone(),
             child.config().clustering_spec.clone(),
         );
+
+        // FIXME by zhenchao
+        fn calculate_required_cols(expr: BoundExpr) -> (BoundExpr, Vec<usize>) {
+            let mut count = 0usize;
+            let mut cols_to_idx: HashMap<usize, usize> = HashMap::new();
+            let new_expr = expr
+                .into_inner()
+                .transform_down(|expr: ExprRef| {
+                    if let Expr::Column(Column::Bound(BoundColumn { index, field })) = expr.as_ref()
+                    {
+                        let entry = cols_to_idx.entry(*index).or_insert_with(|| {
+                            let new_idx = count;
+                            count += 1;
+                            new_idx
+                        });
+
+                        let new_index = *entry;
+                        Ok(Transformed::yes(Arc::new(Expr::Column(Column::Bound(
+                            BoundColumn {
+                                index: new_index,
+                                field: field.clone(),
+                            },
+                        )))))
+                    } else {
+                        Ok(Transformed::no(expr))
+                    }
+                })
+                .expect("Error occurred when visiting for required columns");
+
+            let required_cols = if cols_to_idx.is_empty() {
+                vec![0]
+            } else {
+                let mut required_cols = vec![0; count];
+                for (original_idx, final_idx) in cols_to_idx {
+                    required_cols[final_idx] = original_idx;
+                }
+                required_cols
+            };
+
+            (BoundExpr::new_unchecked(new_expr.data), required_cols)
+        }
+
+        let (udf_expr, required_cols) = calculate_required_cols(udf_expr);
         Ok(Self {
             config,
             context,
             child,
-            projection,
+            udf_expr,
+            passthrough_columns,
+            required_cols,
             udf_properties,
             actor_ready_timeout: plan_config.config.actor_udf_ready_timeout,
         })
@@ -169,7 +222,7 @@ impl ActorUDF {
         result_tx: Sender<SubmittableTask<SwordfishTask>>,
     ) -> DaftResult<()> {
         let mut udf_actors =
-            UDFActors::Uninitialized(self.projection.clone(), self.udf_properties.clone());
+            UDFActors::Uninitialized(vec![self.udf_expr.clone()], self.udf_properties.clone());
 
         let mut running_tasks = JoinSet::new();
         while let Some(task) = input_task_stream.next().await {
@@ -209,6 +262,8 @@ impl ActorUDF {
         let batch_size = self.udf_properties.batch_size;
         let schema = self.config.schema.clone();
         let node_id = self.node_id();
+        let passthrough_columns = self.passthrough_columns.clone();
+        let required_cols = self.required_cols.clone();
         append_plan_to_existing_task(
             submittable_task,
             &(self.clone() as Arc<dyn PipelineNodeImpl>),
@@ -219,6 +274,8 @@ impl ActorUDF {
                     batch_size,
                     memory_request,
                     schema.clone(),
+                    passthrough_columns.clone(),
+                    required_cols.clone(),
                     StatsState::NotMaterialized,
                     LocalNodeContext {
                         origin_node_id: Some(node_id as usize),
@@ -248,8 +305,12 @@ impl PipelineNodeImpl for ActorUDF {
         let mut res = vec![
             format!("ActorUDF: {}", self.udf_properties.name),
             format!(
-                "Projection = [{}]",
-                self.projection.iter().map(|e| e.to_string()).join(", ")
+                "Projection: Expr = [{}], Passthrough Columns = [{}]",
+                self.udf_expr,
+                self.passthrough_columns
+                    .iter()
+                    .map(|e| e.to_string())
+                    .join(", "),
             ),
             format!(
                 "Properties = {{ {} }}",
