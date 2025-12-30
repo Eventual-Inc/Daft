@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import datetime
 import os
+import re
 import tempfile
 import uuid
 
@@ -14,6 +15,7 @@ import pytest
 import daft
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import col
+from daft.io import FilenameProvider
 from daft.logical.schema import Schema
 from daft.recordbatch import MicroPartition
 
@@ -468,3 +470,105 @@ def test_write_and_read_empty_parquet(tmp_path_factory):
     df.write_parquet(empty_parquet_files, write_mode="overwrite")
 
     assert daft.read_parquet(empty_parquet_files).to_pydict() == {"a": []}
+
+
+class RecordingBlockFilenameProvider(FilenameProvider):
+    """Simple FilenameProvider that records calls for block-oriented writes.
+
+    The implementation uses a deterministic pattern based only on the indices so
+    that tests can assert on the resulting filenames without depending on
+    Daft's internal UUIDs.
+    """
+
+    def __init__(self) -> None:  # pragma: no cover - exercised via higher-level IO tests
+        self.calls: list[tuple[str, int, int, int, str]] = []
+
+    def get_filename_for_block(
+        self,
+        write_uuid: str,
+        task_index: int,
+        block_index: int,
+        file_idx: int,
+        ext: str,
+    ) -> str:
+        # Record the call so that tests can assert on the arguments.
+        self.calls.append((write_uuid, task_index, block_index, file_idx, ext))
+        # Deterministic pattern that makes it easy to assert on basename.
+        return f"block-{task_index}-{block_index}-{file_idx}.{ext}"
+
+    def get_filename_for_row(
+        self,
+        row: dict[str, object],
+        write_uuid: str,
+        task_index: int,
+        block_index: int,
+        row_index: int,
+        ext: str,
+    ) -> str:  # pragma: no cover - not used in these tests
+        raise AssertionError("get_filename_for_row should not be called for block writes")
+
+
+def _extract_basenames(paths: list[str]) -> list[str]:
+    basenames: list[str] = []
+    for path in paths:
+        if path.startswith("file://"):
+            path = path[len("file://") :]
+        basenames.append(os.path.basename(path))
+    return basenames
+
+
+def test_filename_provider_parquet_local(tmp_path) -> None:
+    data = {"a": [1, 2, 3]}
+    df = daft.from_pydict(data).repartition(2)
+
+    provider = RecordingBlockFilenameProvider()
+    result_df = df.write_parquet(str(tmp_path), filename_provider=provider)
+    paths = result_df.to_pydict()["path"]
+    basenames = _extract_basenames(paths)
+
+    # All basenames should follow the provider's pattern and use the parquet
+    # extension. We do not rely on the exact indices, only that the pattern is
+    # respected.
+    assert basenames
+    assert all(re.match(r"block-0-\d+-\d+\.parquet", name) for name in basenames)
+
+    # Provider should be invoked once per file and should see a consistent
+    # write_uuid and extension.
+    assert len(provider.calls) == len(basenames)
+    write_uuids = {call[0] for call in provider.calls}
+    assert len(write_uuids) == 1
+    exts = {call[4] for call in provider.calls}
+    assert exts == {"parquet"}
+
+
+@pytest.mark.integration()
+def test_filename_provider_parquet_s3(minio_io_config) -> None:
+    bucket_name = "filename-provider-parquet"
+    data = {"a": [1, 2, 3], "b": ["x", "y", "z"]}
+
+    provider = RecordingBlockFilenameProvider()
+
+    with minio_create_bucket(minio_io_config=minio_io_config, bucket_name=bucket_name):
+        result_df = (
+            daft.from_pydict(data)
+            .repartition(2)
+            .write_parquet(
+                f"s3://{bucket_name}/parquet-writes-{uuid.uuid4()!s}",
+                partition_cols=["b"],
+                io_config=minio_io_config,
+                filename_provider=provider,
+            )
+        )
+
+        paths = result_df.to_pydict()["path"]
+        assert paths
+
+        # S3 paths are of the form "bucket/key". Verify the key's basename is
+        # generated via our provider and that the extension is correct.
+        basenames = [os.path.basename(p.split("/", 1)[1]) for p in paths]
+        assert all(re.match(r"block-0-\d+-\d+\.parquet", name) for name in basenames)
+
+    # Provider should have been called once per file with ext="parquet".
+    assert len(provider.calls) == len(paths)
+    exts = {call[4] for call in provider.calls}
+    assert exts == {"parquet"}
