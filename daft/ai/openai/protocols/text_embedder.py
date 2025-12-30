@@ -92,9 +92,10 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
         return dict(self.embed_options)
 
     def get_dimensions(self) -> EmbeddingDimensions:
+        model_profile = _models[self.model_name]
         if self.dimensions is not None:
-            return EmbeddingDimensions(size=self.dimensions, dtype=DataType.float32())
-        return _models[self.model_name].dimensions
+            return EmbeddingDimensions(size=self.dimensions, dtype=model_profile.dimensions.dtype)
+        return model_profile.dimensions
 
     def get_udf_options(self) -> UDFOptions:
         options = super().get_udf_options()
@@ -229,8 +230,11 @@ class OpenAITextEmbedder(TextEmbedder):
             return np.array(response.data[0].embedding)
         except Exception as ex:
             if self._zero_on_failure:
-                size = self._dimensions or _models[self._model].dimensions.size
-                return np.zeros(size, dtype=np.float32)
+                model_profile = _models[self._model]
+                dtype = model_profile.dimensions.dtype
+                size = self._dimensions or model_profile.dimensions.size
+                np_dtype = np.float64 if dtype == DataType.float64() else np.float32
+                return np.zeros(size, dtype=np_dtype)
             else:
                 raise ex
 
