@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, overload, Callable, TypeVar, TYPE_CHECKING
+from typing import Any, overload, TypeVar, TYPE_CHECKING
 import sys
 
 from typing import ParamSpec
@@ -13,6 +13,7 @@ P = ParamSpec("P")
 T = TypeVar("T")
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from typing import Literal
     from daft.datatype import DataTypeLike
 
@@ -196,7 +197,9 @@ class _FuncDecorator:
 
             >>> import daft
             >>> from daft import DataType
-            >>> @daft.func(return_dtype=DataType.struct({"int": DataType.int64(), "str": DataType.string()}), unnest=True)
+            >>> @daft.func(
+            ...     return_dtype=DataType.struct({"int": DataType.int64(), "str": DataType.string()}), unnest=True
+            ... )
             ... def my_multi_return(val: int):
             ...     return {"int": val * 2, "str": str(val) * 2}
             >>> df = daft.from_pydict({"x": [1, 2, 3]})

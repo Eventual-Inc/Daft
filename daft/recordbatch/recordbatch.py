@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 from daft.arrow_utils import ensure_table
 from daft.daft import (
@@ -29,7 +29,7 @@ from daft.logical.schema import Schema
 from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Callable, Mapping
 
     from daft.io import IOConfig
 
@@ -592,7 +592,7 @@ def read_parquet_into_pyarrow(
         file_timeout_ms=file_timeout_ms,
     )
     schema = pa.schema(fields, metadata=metadata)
-    columns = [pa.chunked_array(c, type=f.type) for f, c in zip(schema, columns)]  # type: ignore
+    columns = [pa.chunked_array(c, type=f.type) for f, c in zip(schema, columns)]
 
     if columns:
         return pa.table(columns, schema=schema)
