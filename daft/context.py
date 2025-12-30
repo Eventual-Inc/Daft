@@ -188,6 +188,7 @@ def set_execution_config(
     enable_dynamic_batching: bool | None = None,
     dynamic_batching_strategy: str | None = None,
     flight_shuffle_dirs: list[str] | None = None,
+    enable_multi_glob_path_tasks: bool | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -233,6 +234,7 @@ def set_execution_config(
         enable_dynamic_batching: Whether to enable dynamic batching. Defaults to False.
         dynamic_batching_strategy: The strategy to use for dynamic batching. Defaults to 'auto'.
         flight_shuffle_dirs: Directories to use for flight shuffle. Defaults to ["/tmp"]. Must not be empty.
+        enable_multi_glob_path_tasks: Whether to create multiple glob path tasks in Ray Runner to achieve parallel glob. Defaults to False.
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -271,6 +273,7 @@ def set_execution_config(
             enable_dynamic_batching=enable_dynamic_batching,
             dynamic_batching_strategy=dynamic_batching_strategy,
             flight_shuffle_dirs=flight_shuffle_dirs,
+            enable_multi_glob_path_tasks=enable_multi_glob_path_tasks,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config
