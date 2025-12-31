@@ -36,6 +36,7 @@ jobs:
             --exclude https://static.scarf.sh/* \
             --exclude http://www.allaboutcookies.org/ \
             --exclude https://www.kaggle.com/* \
+            --exclude https://x.com/daftengine \
             | tee "$LOG"
 
           # Only fail on 404s; print other broken links too (deduplicated).
