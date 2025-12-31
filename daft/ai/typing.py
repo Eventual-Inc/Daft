@@ -91,6 +91,10 @@ class PromptOptions(TypedDict, total=False):
     Attributes:
         max_retries (int): Maximum number of retry attempts for failed requests.
         on_error (Literal["raise", "log", "ignore"]): Behavior when an error occurs.
+        output_mode (Literal["text", "logprobs"]): Output format.
+            - "text": Returns just the generated text (default)
+            - "logprobs": Returns dict with text, token_ids, tokens, and logprobs
+              (for RL training where ground truth logprobs are needed)
 
     Note:
         Any additional arguments defined here will be forwarded directly to
@@ -99,6 +103,7 @@ class PromptOptions(TypedDict, total=False):
 
     max_retries: int
     on_error: Literal["raise", "log", "ignore"]
+    output_mode: Literal["text", "logprobs"]
 
 
 T = TypeVar("T")

@@ -608,8 +608,32 @@ def prompt(
     # For non-vLLM providers, use the standard UDF-based execution path
     from daft.udf import method
 
-    # Determine return dtype
-    if return_format is not None:
+    # Check output_mode from options
+    output_mode = options.get("output_mode", "text")
+
+    # Determine return dtype based on output_mode and return_format
+    if output_mode == "logprobs":
+        # Return a struct with trajectory info for RL training
+        return_dtype = DataType.struct(
+            {
+                "text": DataType.string(),
+                "token_ids": DataType.list(DataType.int64()),
+                "tokens": DataType.list(DataType.string()),
+                "logprobs": DataType.list(DataType.float64()),
+                "top_logprobs": DataType.list(
+                    DataType.list(
+                        DataType.struct(
+                            {
+                                "token": DataType.string(),
+                                "token_id": DataType.int64(),
+                                "logprob": DataType.float64(),
+                            }
+                        )
+                    )
+                ),
+            }
+        )
+    elif return_format is not None:
         try:
             return_dtype = DataType.infer_from_type(return_format)
         except Exception:
