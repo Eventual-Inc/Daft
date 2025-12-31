@@ -39,6 +39,7 @@ pub(crate) fn to_json_value(node: &LogicalPlan) -> serde_json::Value {
         }),
         LogicalPlan::Explode(explode) => json!({
             "to_explode": explode.to_explode.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
+            "index_column": explode.index_column,
         }),
         LogicalPlan::Unpivot(unpivot) => json!({
             "ids": unpivot.ids.iter().map(|e| e.to_string()).collect::<Vec<_>>(),
