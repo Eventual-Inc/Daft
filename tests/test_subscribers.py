@@ -84,15 +84,15 @@ def test_capture_states(monkeypatch):
     def inject_keyboard_interrupt():
         threading.Timer(2.0, lambda: signal.raise_signal(signal.SIGINT)).start()
 
-    @daft.udf(return_dtype=daft.DataType.string())
+    @daft.func.batch(return_dtype=daft.DataType.string())
     def failing_udf(_s: daft.Series):
         raise ValueError("This UDF will fail forever")
 
-    @daft.udf(return_dtype=daft.DataType.int64())
+    @daft.func.batch(return_dtype=daft.DataType.int64())
     def success_udf(s: daft.Series):
         return s
 
-    @daft.udf(return_dtype=daft.DataType.int64())
+    @daft.func.batch(return_dtype=daft.DataType.int64())
     def long_running_udf(s: daft.Series):
         time.sleep(10)
         return s
@@ -115,7 +115,7 @@ def test_capture_states(monkeypatch):
     df = daft.from_pydict({"x": ["1", "2", "3"]})
     df = df.with_column("y", failing_udf(df["x"]))
 
-    with pytest.raises(daft.errors.UDFException):
+    with pytest.raises(ValueError):
         df.collect()
 
     query_id = subscriber.query_ids[-1]

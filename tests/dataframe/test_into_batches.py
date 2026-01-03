@@ -12,7 +12,7 @@ def test_large_partition_into_batches(make_df):
     df = df.into_batches(8)
 
     # Create a UDF that asserts each batch size is exactly 8
-    @daft.udf(return_dtype=daft.DataType.int64())
+    @daft.func.batch(return_dtype=daft.DataType.int64())
     def check_batch_size(data):
         batch_size = len(data.to_pylist())
         assert batch_size == 8, f"Expected batch size 8, got {batch_size}"
@@ -52,7 +52,7 @@ def test_into_batches_with_remainder():
     df = df.into_batches(8)
 
     # Create a UDF that checks batch sizes
-    @daft.udf(return_dtype=daft.DataType.int64())
+    @daft.func.batch(return_dtype=daft.DataType.int64())
     def check_batch_size(data):
         batch_size = len(data.to_pylist())
         assert batch_size == 8 or batch_size == 6, f"Expected batch size 8 or 6, got {batch_size}"
@@ -71,7 +71,7 @@ def test_into_batches_single_row():
     df = daft.from_pydict({"id": [42]})
     df = df.into_batches(8)
 
-    @daft.udf(return_dtype=daft.DataType.int64())
+    @daft.func.batch(return_dtype=daft.DataType.int64())
     def check_batch_size(data):
         batch_size = len(data.to_pylist())
         assert batch_size == 1, f"Expected batch size 1, got {batch_size}"

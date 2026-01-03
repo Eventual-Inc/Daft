@@ -74,7 +74,7 @@ import torch
 from diffusers import StableDiffusionPipeline
 
 
-@daft.udf(return_dtype=daft.DataType.python())
+@daft.cls(gpus=1 if USE_GPU else 0)
 class GenerateImageFromText:
     def __init__(self):
         model_id = "runwayml/stable-diffusion-v1-5"
@@ -87,15 +87,13 @@ class GenerateImageFromText:
     def generate_image(self, prompt):
         return self.pipe(prompt, num_inference_steps=20, height=512, width=512).images[0]
 
+    @daft.method.batch(return_dtype=daft.DataType.python())
     def __call__(self, text_col):
         return [self.generate_image(t) for t in text_col]
 
 
-if USE_GPU:
-    GenerateImageFromText = GenerateImageFromText.override_options(num_gpus=1)
-
 images_df.with_column(
     "generated_image",
-    GenerateImageFromText(images_df["TEXT"]),
+    GenerateImageFromText()(images_df["TEXT"]),
 ).show(1)
 ```

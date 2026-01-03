@@ -3,13 +3,13 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING, Any
 
-import daft.pickle
-
 # mypy: disable-error-code="import-untyped"
+import daft
+import daft.pickle
 from daft.datatype import DataType
 from daft.udf import cls as daft_cls
 from daft.udf import method
-from daft.udf import udf as legacy_udf
+from daft.udf.legacy import UDF
 
 if TYPE_CHECKING:
     import pathlib
@@ -107,7 +107,6 @@ def merge_columns_internal(
     )
 
 
-@legacy_udf(return_dtype=_FRAGMENT_HANDLER_RETURN_DTYPE)
 class GroupFragmentMergeUDF:
     def __init__(
         self,
@@ -284,7 +283,23 @@ def merge_columns_from_df(
             )
         read_columns = [join_key] + new_cols
 
-    handler_udf = GroupFragmentMergeUDF.with_init_args(  # type: ignore[attr-defined]
+    # Create UDF by directly constructing UDF class, avoiding deprecated udf() function
+    module_name = getattr(GroupFragmentMergeUDF, "__module__", "")
+    qual_name = getattr(GroupFragmentMergeUDF, "__qualname__")
+    name = f"{module_name}.{qual_name}" if module_name else qual_name
+
+    handler_udf = UDF(
+        inner=GroupFragmentMergeUDF,
+        name=name,
+        return_dtype=DataType._infer(_FRAGMENT_HANDLER_RETURN_DTYPE),
+        resource_request=None,
+        batch_size=None,
+        concurrency=None,
+        use_process=None,
+        ray_options=None,
+    )
+    daft.attach_function(handler_udf)
+    handler_udf = handler_udf.with_init_args(
         lance_ds,
         left_on,
         right_on,
