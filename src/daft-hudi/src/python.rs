@@ -3,8 +3,7 @@
 use std::sync::Arc;
 
 use common_scan_info::ScanOperatorRef;
-use daft_scan::python::pylib::ScanOperatorHandle;
-use daft_scan::storage_config::StorageConfig;
+use daft_scan::{python::pylib::ScanOperatorHandle, storage_config::StorageConfig};
 use pyo3::prelude::*;
 
 use crate::HudiScanOperator;
@@ -31,7 +30,8 @@ pub fn hudi_scan(
     storage_config: StorageConfig,
 ) -> PyResult<ScanOperatorHandle> {
     py.detach(|| {
-        let runtime = common_runtime::get_io_runtime(true);
+        let multithreaded_io = storage_config.multithreaded_io;
+        let runtime = common_runtime::get_io_runtime(multithreaded_io);
         let storage_config = Arc::new(storage_config);
 
         let operator = runtime.block_on_current_thread(async {
