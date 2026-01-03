@@ -1,0 +1,42 @@
+[package]
+name = "daft-hudi"
+version = {workspace = true}
+edition = {workspace = true}
+
+[dependencies]
+# Hudi - using git dependency with arrow-54 feature for compatibility
+hudi-core = {git = "https://github.com/xushiyan/hudi-rs.git", branch = "arrow-54-hudi-core", default-features = false, features = ["arrow-54"]}
+# Daft dependencies
+common-error = {path = "../common/error", default-features = false}
+common-file-formats = {path = "../common/file-formats", default-features = false}
+common-runtime = {path = "../common/runtime", default-features = false}
+common-scan-info = {path = "../common/scan-info", default-features = false}
+daft-core = {path = "../daft-core", default-features = false}
+daft-dsl = {path = "../daft-dsl", default-features = false}
+daft-recordbatch = {path = "../daft-recordbatch", default-features = false}
+daft-scan = {path = "../daft-scan", default-features = false}
+daft-schema = {path = "../daft-schema", default-features = false}
+daft-stats = {path = "../daft-stats", default-features = false}
+# Arrow
+arrow = {workspace = true}
+# Misc
+snafu = {workspace = true}
+url = {workspace = true}
+# Python bindings
+pyo3 = {workspace = true, optional = true}
+
+[features]
+python = [
+  "dep:pyo3",
+  "common-error/python",
+  "common-file-formats/python",
+  "common-scan-info/python",
+  "daft-core/python",
+  "daft-recordbatch/python",
+  "daft-scan/python",
+  "daft-schema/python",
+  "daft-stats/python"
+]
+
+[lints]
+workspace = true

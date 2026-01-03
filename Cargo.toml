@@ -35,6 +35,7 @@ daft-functions-tokenize = {path = "src/daft-functions-tokenize", default-feature
 daft-functions-uri = {path = "src/daft-functions-uri", default-features = false}
 daft-functions-utf8 = {path = "src/daft-functions-utf8", default-features = false}
 daft-hash = {path = "src/daft-hash", default-features = false}
+daft-hudi = {path = "src/daft-hudi", default-features = false}
 daft-image = {path = "src/daft-image", default-features = false}
 daft-io = {path = "src/daft-io", default-features = false}
 daft-json = {path = "src/daft-json", default-features = false}
@@ -87,6 +88,7 @@ python = [
   "daft-functions-list/python",
   "daft-functions-utf8/python",
   "daft-functions/python",
+  "daft-hudi/python",
   "daft-image/python",
   "daft-io/python",
   "daft-json/python",
@@ -203,6 +205,7 @@ members = [
   "src/daft-functions-utf8",
   "src/daft-functions-temporal",
   "src/daft-hash",
+  "src/daft-hudi",
   "src/daft-image",
   "src/daft-io",
   "src/daft-json",
@@ -268,6 +271,7 @@ daft-functions-tokenize = {path = "src/daft-functions-tokenize"}
 daft-functions-uri = {path = "src/daft-functions-uri"}
 daft-functions-utf8 = {path = "src/daft-functions-utf8"}
 daft-hash = {path = "src/daft-hash"}
+daft-hudi = {path = "src/daft-hudi"}
 daft-io = {path = "src/daft-io"}
 daft-local-execution = {path = "src/daft-local-execution"}
 daft-logical-plan = {path = "src/daft-logical-plan"}
