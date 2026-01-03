@@ -3063,7 +3063,6 @@ dependencies = [
  "hudi-core",
  "pyo3",
  "snafu 0.7.5",
- "tokio",
  "url",
 ]
 
