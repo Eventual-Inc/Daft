@@ -1,7 +1,7 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Union
 
 from daft import context, runners
 from daft.api_annotations import PublicAPI
@@ -13,13 +13,13 @@ if TYPE_CHECKING:
     from pyiceberg.table import Table as PyIcebergTable
 
 
-def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> Optional[IOConfig]:
+def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> IOConfig | None:
     """Property keys defined here: https://github.com/apache/iceberg-python/blob/main/pyiceberg/io/__init__.py."""
     from daft.io import AzureConfig, GCSConfig, IOConfig, S3Config
 
     any_props_set = False
 
-    def get_first_property_value(*property_names: str) -> Optional[Any]:
+    def get_first_property_value(*property_names: str) -> Any | None:
         for property_name in property_names:
             if property_value := props.get(property_name):
                 nonlocal any_props_set
@@ -55,13 +55,15 @@ def _convert_iceberg_file_io_properties_to_io_config(props: dict[str, Any]) -> O
 @PublicAPI
 def read_iceberg(
     table: Union[str, "PyIcebergTable"],
-    snapshot_id: Optional[int] = None,
-    io_config: Optional[IOConfig] = None,
+    snapshot_id: int | None = None,
+    io_config: IOConfig | None = None,
 ) -> DataFrame:
     """Create a DataFrame from an Iceberg table.
 
     Args:
-        table (str or pyiceberg.table.Table): [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table) created using the PyIceberg library
+        table (str or pyiceberg.table.Table): A path to an Iceberg metadata file (supports remote URLs to object stores
+            such as ``s3://`` or ``gs://``) or a [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table)
+            created using the PyIceberg library.
         snapshot_id (int, optional): Snapshot ID of the table to query
         io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
 
@@ -73,16 +75,21 @@ def read_iceberg(
         official project for Python.
 
     Examples:
+        Read an Iceberg table from a PyIceberg table:
         >>> import pyiceberg
         >>>
         >>> table = pyiceberg.Table(...)
         >>> df = daft.read_iceberg(table)
         >>>
-        >>> # Filters on this dataframe can now be pushed into
-        >>> # the read operation from Iceberg
+        >>> # Filters on this dataframe can now be pushed into the read operation from Iceberg
         >>> df = df.where(df["foo"] > 5)
         >>> df.show()
 
+        Read an Iceberg table from S3 using IOConfig:
+        >>> from daft.io import S3Config, IOConfig
+        >>> io_config = IOConfig(s3=S3Config(region="us-west-2", anonymous=True))
+        >>> df = daft.read_iceberg("s3://bucket/path/to/iceberg/metadata.json", io_config=io_config)
+        >>> df.show()
     """
     from pyiceberg.table import StaticTable
 

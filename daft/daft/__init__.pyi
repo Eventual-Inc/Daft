@@ -1,8 +1,8 @@
 import builtins
 import datetime
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Concatenate, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Concatenate, Literal, TypeVar
 
 from daft.dataframe.display import MermaidOptions
 from daft.io import DataSink
@@ -297,11 +297,13 @@ class JsonSourceConfig:
 
     buffer_size: int | None
     chunk_size: int | None
+    skip_empty_files: bool
 
     def __init__(
         self,
         buffer_size: int | None = None,
         chunk_size: int | None = None,
+        skip_empty_files: bool = False,
     ): ...
 
 class WarcSourceConfig:

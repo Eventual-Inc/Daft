@@ -289,7 +289,7 @@ impl RecordBatch {
                 )));
             }
             let field = Arc::new(field.clone());
-            let column = Series::from_arrow(field, array)?;
+            let column = Series::from_arrow2(field, array)?;
             columns.push(column);
         }
 

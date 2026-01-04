@@ -30,6 +30,8 @@ use crate::{
 /// as long as there is no "mix" of "\" and "/".
 const PATH_SEGMENT_DELIMITER: &str = "/";
 
+use crate::strip_file_uri_to_path;
+
 pub struct LocalSource {}
 
 #[derive(Debug, Snafu)]
@@ -42,6 +44,12 @@ enum Error {
 
     #[snafu(display("Unable to write to file {}: {}", path, source))]
     UnableToWriteToFile {
+        path: String,
+        source: std::io::Error,
+    },
+
+    #[snafu(display("Unable to delete file {}: {}", path, source))]
+    UnableToDeleteFile {
         path: String,
         source: std::io::Error,
     },
@@ -150,8 +158,7 @@ impl ObjectSource for LocalSource {
         range: Option<GetRange>,
         io_stats: Option<IOStatsRef>,
     ) -> super::Result<GetResult> {
-        const LOCAL_PROTOCOL: &str = "file://";
-        if let Some(file) = uri.strip_prefix(LOCAL_PROTOCOL) {
+        if let Some(file) = strip_file_uri_to_path(uri) {
             let size = self.get_size(uri, io_stats).await?;
             let range = range
                 .map(|r| r.as_range(size))
@@ -172,8 +179,7 @@ impl ObjectSource for LocalSource {
         data: bytes::Bytes,
         _io_stats: Option<IOStatsRef>,
     ) -> super::Result<()> {
-        const LOCAL_PROTOCOL: &str = "file://";
-        if let Some(stripped_uri) = uri.strip_prefix(LOCAL_PROTOCOL) {
+        if let Some(stripped_uri) = strip_file_uri_to_path(uri) {
             let mut file = std::fs::OpenOptions::new()
                 .create(true)
                 .truncate(true) // truncate file if it already exists...
@@ -189,8 +195,7 @@ impl ObjectSource for LocalSource {
     }
 
     async fn get_size(&self, uri: &str, _io_stats: Option<IOStatsRef>) -> super::Result<usize> {
-        const LOCAL_PROTOCOL: &str = "file://";
-        let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) else {
+        let Some(uri) = strip_file_uri_to_path(uri) else {
             return Err(Error::InvalidFilePath { path: uri.into() }.into());
         };
         let meta = tokio::fs::metadata(uri)
@@ -258,6 +263,34 @@ impl ObjectSource for LocalSource {
         })
     }
 
+    async fn delete(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<()> {
+        const LOCAL_PROTOCOL: &str = "file://";
+        if let Some(path) = uri.strip_prefix(LOCAL_PROTOCOL) {
+            match tokio::fs::remove_file(path).await {
+                Err(err) => {
+                    use std::io::ErrorKind;
+                    match err.kind() {
+                        ErrorKind::NotFound => Ok(()),
+                        ErrorKind::IsADirectory => Err(super::Error::NotAFile { path: uri.into() }),
+                        _ => Err(Error::UnableToDeleteFile {
+                            path: uri.into(),
+                            source: err,
+                        }
+                        .into()),
+                    }
+                }
+                _ => {
+                    if let Some(is) = io_stats.as_ref() {
+                        is.mark_delete_requests(1);
+                    }
+                    Ok(())
+                }
+            }
+        } else {
+            Err(Error::InvalidFilePath { path: uri.into() }.into())
+        }
+    }
+
     async fn iter_dir(
         &self,
         uri: &str,
@@ -277,7 +310,7 @@ impl ObjectSource for LocalSource {
                     .to_string_lossy()
                     .to_string(),
             )
-        } else if let Some(uri) = uri.strip_prefix(LOCAL_PROTOCOL) {
+        } else if let Some(uri) = strip_file_uri_to_path(uri) {
             std::borrow::Cow::Borrowed(uri)
         } else {
             return Err(Error::InvalidFilePath { path: uri.into() }.into());

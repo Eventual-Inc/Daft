@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2->arrow migration")]
 use common_error::DaftResult;
 use daft_arrow::array::Array;
 use sketches_ddsketch::{Config, DDSketch};
@@ -32,7 +33,7 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
                 });
             daft_sketch::into_arrow2(vec![sketch])
         } else {
-            let sketch = primitive_arr.values_iter().fold(
+            let sketch = primitive_arr.values().iter().fold(
                 DDSketch::new(Config::defaults()),
                 |mut acc, value| {
                     acc.add(*value);
@@ -43,7 +44,7 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
             daft_sketch::into_arrow2(vec![Some(sketch)])
         };
 
-        StructArray::from_arrow(
+        StructArray::from_arrow2(
             Field::new(
                 &self.field.name,
                 DataType::from(&*daft_sketch::ARROW2_DDSKETCH_DTYPE),
@@ -98,7 +99,7 @@ impl DaftApproxSketchAggable for &DataArray<Float64Type> {
             daft_sketch::into_arrow2(sketches)
         };
 
-        StructArray::from_arrow(
+        StructArray::from_arrow2(
             Field::new(
                 &self.field.name,
                 DataType::from(&*daft_sketch::ARROW2_DDSKETCH_DTYPE),

@@ -39,3 +39,12 @@ class UDFException(Exception):
             )
         else:
             return self.message
+
+
+class RetryAfterError(Exception):
+    """Retryable error carrying the requested wait time (in seconds)."""
+
+    def __init__(self, retry_after: float, original: Exception | None = None) -> None:
+        super().__init__(str(original) if original else "RetryAfterError")
+        self.retry_after = retry_after
+        self.__cause__ = original

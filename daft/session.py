@@ -533,13 +533,20 @@ class Session:
         return catalog.list_namespaces(pattern)
 
     def list_tables(self, pattern: str | None = None) -> list[Identifier]:
-        """Returns a list of available tables.
+        r"""Returns a list of available tables.
 
         Args:
-            pattern (str): table name pattern
+            - pattern (str, optional): Pattern to match table names. Pattern syntax is catalog-dependent:
+                - Native/Memory and Postgres catalogs: Use SQL LIKE syntax (`%`, `_`, `\`). Supports qualified patterns like `"ns1.table%"`.
+                - Other catalogs: Pattern behavior varies (e.g., prefix matching for Iceberg/S3 Tables, AWS Glue expressions for Glue).
 
         Returns:
             list[Identifier]: list of available tables
+
+        Examples:
+            >>> sess.list_tables()  # List all tables
+            >>> sess.list_tables("table%")  # Tables starting with "table" (native catalog)
+            >>> sess.list_tables("ns1.%")  # All tables in namespace "ns1" (native catalog)
         """
         return [Identifier._from_pyidentifier(i) for i in self._session.list_tables(pattern)]
 

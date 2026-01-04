@@ -9,11 +9,25 @@ import pytest
 # Skip if google-genai is not installed
 pytest.importorskip("google.genai")
 
+import requests
+from google.genai import errors as genai_errors
 from pydantic import BaseModel
 
 from daft.ai.google.protocols.prompter import GooglePrompter, GooglePrompterDescriptor
 from daft.ai.google.provider import GoogleProvider
 from daft.ai.protocols import Prompter
+from daft.ai.utils import RetryAfterError
+
+
+def _api_error(status: int, retry_after: str) -> genai_errors.APIError:
+    response = requests.Response()
+    response.status_code = status
+    response._content = b"{}"
+    response.headers["Retry-After"] = retry_after
+    response.reason = "error"
+    if status >= 500:
+        return genai_errors.ServerError(status, response)
+    return genai_errors.ClientError(status, response)
 
 
 def run_async(coro):
@@ -49,11 +63,24 @@ def create_prompter(
 ) -> GooglePrompter:
     """Helper to instantiate GooglePrompter with sensible defaults."""
     opts = dict(provider_options) if provider_options is not None else dict(DEFAULT_PROVIDER_OPTIONS)
+    # Unpack generation_config if it's passed as a dict
+    prompt_options = dict(kwargs)
+
+    # Extract return_format and system_message to pass as explicit parameters
+    return_format = prompt_options.pop("return_format", None)
+    system_message = prompt_options.pop("system_message", None)
+
+    if "generation_config" in prompt_options and isinstance(prompt_options["generation_config"], dict):
+        generation_config = prompt_options.pop("generation_config")
+        prompt_options.update(generation_config)
+
     return GooglePrompter(
         provider_name=provider_name,
         provider_options=opts,
         model=model,
-        **kwargs,
+        return_format=return_format,
+        system_message=system_message,
+        prompt_options=prompt_options,
     )
 
 
@@ -108,7 +135,7 @@ def test_google_prompter_descriptor_instantiation():
         provider_name="google",
         provider_options={"api_key": "test-key"},
         model_name="gemini-2.5-flash",
-        model_options={},
+        prompt_options={},
     )
 
     assert descriptor.get_provider() == "google"
@@ -123,8 +150,8 @@ def test_google_prompter_descriptor_with_return_format():
         provider_name="google",
         provider_options={"api_key": "test-key"},
         model_name="gemini-2.5-flash",
-        model_options={},
         return_format=SimpleResponse,
+        prompt_options={},
     )
 
     assert descriptor.return_format == SimpleResponse
@@ -136,7 +163,7 @@ def test_google_prompter_descriptor_get_udf_options():
         provider_name="google",
         provider_options={"api_key": "test-key"},
         model_name="gemini-2.5-flash",
-        model_options={},
+        prompt_options={},
     )
 
     udf_options = descriptor.get_udf_options()
@@ -150,7 +177,7 @@ def test_google_prompter_instantiate():
         provider_name="google",
         provider_options={"api_key": "test-key"},
         model_name="gemini-2.5-flash",
-        model_options={},
+        prompt_options={},
     )
 
     with patch("daft.ai.google.protocols.prompter.genai.Client"):
@@ -168,7 +195,7 @@ def test_google_prompter_descriptor_custom_provider_name():
         provider_name="vertex-ai",
         provider_options={"api_key": "test-key"},
         model_name="gemini-2.5-flash",
-        model_options={},
+        prompt_options={},
     )
 
     with patch("daft.ai.google.protocols.prompter.genai.Client"):
@@ -202,6 +229,25 @@ def test_google_prompter_plain_text_response():
             assert contents[0].role == "user"
             assert len(contents[0].parts) == 1
             assert contents[0].parts[0].text == "Hello, world!"
+
+    run_async(_test())
+
+
+@pytest.mark.parametrize("status", [429, 503])
+def test_google_prompter_raises_retry_after(status: int):
+    """Ensure retry-after hints propagate as RetryAfterError for HTTP errors."""
+
+    async def _test():
+        with patch("daft.ai.google.protocols.prompter.genai.Client") as MockClient:
+            mock_client_instance = MockClient.return_value
+            mock_client_instance.aio.models.generate_content = AsyncMock(side_effect=_api_error(status, "5"))
+
+            prompter = create_prompter()
+
+            with pytest.raises(RetryAfterError) as excinfo:
+                await prompter.prompt(("Hello",))
+
+            assert excinfo.value.retry_after == 5
 
     run_async(_test())
 

@@ -4,19 +4,7 @@ import pytest
 
 from daft import DataType, col
 from daft.recordbatch import MicroPartition
-
-MODE_TO_NUM_CHANNELS = {
-    "L": 1,
-    "LA": 2,
-    "RGB": 3,
-    "RGBA": 4,
-    "L16": 1,
-    "LA16": 2,
-    "RGB16": 3,
-    "RGBA16": 4,
-    "RGB32F": 3,
-    "RGBA32F": 4,
-}
+from tests.recordbatch.image.conftest import MODE_TO_NUM_CHANNELS
 
 
 @pytest.mark.parametrize("out_mode", ["L", "LA", "RGB", "RGBA"])

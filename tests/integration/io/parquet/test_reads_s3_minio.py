@@ -66,6 +66,25 @@ def test_minio_parquet_ignore_marker_files(minio_io_config):
         assert read.to_pydict() == {"x": [1, 2, 3, 4] * 3}
 
 
+def test_minio_parquet_overwrite(minio_io_config):
+    bucket_name = "data-engineering-prod"
+    with minio_create_bucket(minio_io_config, bucket_name=bucket_name) as fs:
+        target_paths = [
+            "s3://data-engineering-prod/data/part-00000-51723f93-0ba2-42f1-a58f-154f0ed40f28.c000.snappy.parquet",
+        ]
+        data = {"x": [1, 2, 3, 4]}
+        pa_table = pa.Table.from_pydict(data)
+        for path in target_paths:
+            pq.write_table(pa_table, path, filesystem=fs)
+
+        overwrite_data = {"x": [5, 6, 7, 8]}
+        overwrite_df = daft.from_pydict(overwrite_data)
+        overwrite_df.write_parquet("s3://data-engineering-prod/data", io_config=minio_io_config, overwrite=True)
+
+        read = daft.read_parquet("s3://data-engineering-prod/data/**", io_config=minio_io_config)
+        assert read.to_pydict() == overwrite_data
+
+
 @pytest.mark.integration()
 def test_minio_parquet_ignore_marker_prefixes(minio_io_config):
     from datetime import datetime

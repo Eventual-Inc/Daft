@@ -79,7 +79,7 @@ impl AsyncFileWriter for IPCWriter {
             writer.finish()?;
         }
         // return the path
-        let path_col = Series::from_arrow(
+        let path_col = Series::from_arrow2(
             Arc::new(Field::new(RETURN_PATHS_COLUMN_NAME, DataType::Utf8)),
             Box::new(daft_arrow::array::Utf8Array::<i64>::from_iter_values(
                 std::iter::once(self.file_path.clone()),

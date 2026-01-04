@@ -1135,12 +1135,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu, Windows]
-        on-main:
-        - ${{ github.ref == 'refs/heads/main' }}
-        exclude:
-          # Don't run Windows rust tests in PRs
-        - os: Windows
-          on-main: false
     steps:
     - uses: actions/checkout@v6
     - uses: moonrepo/setup-rust@v1

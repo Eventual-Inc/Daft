@@ -37,6 +37,7 @@ pub struct ScanTaskSource {
     scan_tasks: Vec<Arc<ScanTask>>,
     num_parallel_tasks: usize,
     schema: SchemaRef,
+    execution_config: Arc<DaftExecutionConfig>,
 }
 
 impl ScanTaskSource {
@@ -100,6 +101,7 @@ impl ScanTaskSource {
             scan_tasks,
             num_parallel_tasks,
             schema,
+            execution_config: Arc::new(cfg.clone()),
         }
     }
 
@@ -227,7 +229,11 @@ impl TreeDisplay for ScanTaskSource {
             let total_bytes: usize = scan
                 .scan_tasks
                 .iter()
-                .map(|st| st.size_bytes_on_disk().unwrap_or(0))
+                .map(|st| {
+                    st.estimate_in_memory_size_bytes(Some(scan.execution_config.as_ref()))
+                        .or_else(|| st.size_bytes_on_disk())
+                        .unwrap_or(0)
+                })
                 .sum();
 
             let num_parallel_tasks = scan.num_parallel_tasks;
@@ -582,7 +588,7 @@ async fn stream_scan_task(
                 Some(schema_of_file),
                 scan_task.pushdowns.filters.clone(),
             );
-            let parse_options = JsonParseOptions::new_internal();
+            let parse_options = JsonParseOptions::new_internal(cfg.skip_empty_files);
             let json_chunk_size = cfg.chunk_size.or(Some(chunk_size));
             let read_options = JsonReadOptions::new_internal(cfg.buffer_size, json_chunk_size);
 

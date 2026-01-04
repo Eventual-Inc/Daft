@@ -18,7 +18,7 @@ use snafu::{
 };
 use tokio::{
     fs::File,
-    io::{AsyncBufRead, AsyncBufReadExt, BufReader},
+    io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader},
     task::JoinHandle,
 };
 use tokio_util::io::StreamReader;
@@ -505,14 +505,17 @@ async fn read_json_single_into_stream(
         None => reader,
     };
 
-    use tokio::io::AsyncReadExt;
+    // Only skip truly empty files when configured; do not accept leading whitespace.
     let buf = reader.fill_buf().await?;
-
     if buf.is_empty() {
-        return Err(super::Error::JsonDeserializationError {
-            string: "Empty JSON file".to_string(),
+        if parse_options.skip_empty_files {
+            return Ok((Box::pin(futures::stream::iter(vec![])), schema.clone()));
+        } else {
+            return Err(super::Error::JsonDeserializationError {
+                string: "Empty JSON file".to_string(),
+            }
+            .into());
         }
-        .into());
     }
     match buf[0] {
         b'[' => {

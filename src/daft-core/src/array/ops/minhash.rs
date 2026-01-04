@@ -84,7 +84,7 @@ impl DaftMinHash for Utf8Array {
         }
 
         let immutable_output: PrimitiveArray<u32> = output.into();
-        let output_series = Series::from_arrow(
+        let output_series = Series::from_arrow2(
             Field::new(self.name(), DataType::UInt32).into(),
             Box::new(immutable_output),
         )?;

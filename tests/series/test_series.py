@@ -317,3 +317,56 @@ def test_series_iter_memory_efficiency() -> None:
     assert sum_using_iter == sum_using_pylist
     # Assert that the iterator uses less memory.
     assert iter_peak_memory < pylist_peak_memory, "Iterator should use less memory than to_pylist()"
+
+
+def test_series_getitem() -> None:
+    s = Series.from_pylist([1, 2, 3, 4, 5, 6])
+    # Basic indexing
+    assert s[0] == 1
+    assert s[3] == 4
+    assert s[5] == 6
+
+    # Negative indexing
+    assert s[-1] == 6
+    assert s[-3] == 4
+    assert s[-5] == 2
+
+    # index out of range
+    with pytest.raises(IndexError, match="Series index out of range"):
+        _ = s[6]
+    with pytest.raises(IndexError, match="Series index out of range"):
+        _ = s[-7]
+
+    # Basic slicing
+    res = s[1:4]
+    assert isinstance(res, Series)
+    assert res.to_pylist() == [2, 3, 4]
+    assert s[:3].to_pylist() == [1, 2, 3]
+    assert s[3:].to_pylist() == [4, 5, 6]
+    assert s[:].to_pylist() == [1, 2, 3, 4, 5, 6]
+
+    # Negative indices
+    assert s[-2:].to_pylist() == [5, 6]
+    assert s[:-1].to_pylist() == [1, 2, 3, 4, 5]
+    assert s[-4:-1].to_pylist() == [3, 4, 5]
+    assert s[-6:2].to_pylist() == [1, 2]
+    assert s[2:-1].to_pylist() == [3, 4, 5]
+
+    # Out-of-bounds and empty slices
+    assert s[-100:100].to_pylist() == [1, 2, 3, 4, 5, 6]
+    assert s[100:200].to_pylist() == []
+    assert s[-10:-10].to_pylist() == []
+    assert s[-7:10].to_pylist() == [1, 2, 3, 4, 5, 6]
+    assert s[2:2].to_pylist() == []
+
+    # slice step error
+    with pytest.raises(IndexError, match="slice step not supported"):
+        _ = s[::2]
+    with pytest.raises(IndexError, match="slice step not supported"):
+        _ = s[1:5:1]
+
+    # type error
+    with pytest.raises(Exception):
+        _ = s[0.1:1.8]
+    with pytest.raises(TypeError, match="expected int or slice for index"):
+        _ = s[1.1]

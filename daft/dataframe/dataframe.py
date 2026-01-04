@@ -11,11 +11,11 @@ import os
 import pathlib
 import typing
 import warnings
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial, reduce
-from typing import TYPE_CHECKING, Any, Callable, Concatenate, Literal, Optional, ParamSpec, TypeVar, Union, overload
+from typing import TYPE_CHECKING, Any, Concatenate, Literal, ParamSpec, TypeVar, Union, overload
 
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
@@ -118,7 +118,7 @@ class DataFrame:
             raise ValueError(f"Expected DataFrame to be constructed with a LogicalPlanBuilder, received: {builder}")
 
         self.__builder = builder
-        self._result_cache: Optional[PartitionCacheEntry] = None
+        self._result_cache: PartitionCacheEntry | None = None
         self._preview = Preview(partition=None, total_rows=None)
         self._num_preview_rows = get_context().daft_execution_config.num_preview_rows
 
@@ -132,9 +132,9 @@ class DataFrame:
             num_rows = self._result_cache.num_rows()
 
             # Partition set should always be set on cache entry.
-            assert (
-                num_partitions is not None and size_bytes is not None and num_rows is not None
-            ), "Partition set should always be set on cache entry"
+            assert num_partitions is not None and size_bytes is not None and num_rows is not None, (
+                "Partition set should always be set on cache entry"
+            )
 
             return self.__builder.from_in_memory_scan(
                 self._result_cache,
@@ -149,7 +149,7 @@ class DataFrame:
         return self.__builder
 
     @property
-    def _result(self) -> Optional[PartitionSet[PartitionT]]:
+    def _result(self) -> PartitionSet[PartitionT] | None:
         if self._result_cache is None:
             return None
         else:
@@ -198,7 +198,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def explain(
-        self, show_all: bool = False, format: str = "ascii", simple: bool = False, file: Optional[io.IOBase] = None
+        self, show_all: bool = False, format: str = "ascii", simple: bool = False, file: io.IOBase | None = None
     ) -> Any:
         r"""Prints the (logical and physical) plans that will be executed to produce this DataFrame.
 
@@ -405,7 +405,7 @@ class DataFrame:
     @DataframePublicAPI
     def iter_rows(
         self,
-        results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus",
+        results_buffer_size: int | None | Literal["num_cpus"] = "num_cpus",
         column_format: Literal["python", "arrow"] = "python",
     ) -> Iterator[dict[str, Any]]:
         """Return an iterator of rows for this dataframe.
@@ -493,7 +493,7 @@ class DataFrame:
     @DataframePublicAPI
     def to_arrow_iter(
         self,
-        results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus",
+        results_buffer_size: int | None | Literal["num_cpus"] = "num_cpus",
     ) -> Iterator["pyarrow.RecordBatch"]:
         """Return an iterator of pyarrow recordbatches for this dataframe.
 
@@ -548,7 +548,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def iter_partitions(
-        self, results_buffer_size: Union[Optional[int], Literal["num_cpus"]] = "num_cpus"
+        self, results_buffer_size: int | None | Literal["num_cpus"] = "num_cpus"
     ) -> Iterator[Union[MicroPartition, "ray.ObjectRef"]]:
         """Begin executing this dataframe and return an iterator over the partitions.
 
@@ -762,11 +762,11 @@ class DataFrame:
     @DataframePublicAPI
     def write_parquet(
         self,
-        root_dir: Union[str, pathlib.Path],
+        root_dir: str | pathlib.Path,
         compression: str = "snappy",
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
-        partition_cols: Optional[list[ColumnInputType]] = None,
-        io_config: Optional[IOConfig] = None,
+        partition_cols: list[ColumnInputType] | None = None,
+        io_config: IOConfig | None = None,
     ) -> "DataFrame":
         """Writes the DataFrame as parquet files, returning a new DataFrame with paths to the files that were written.
 
@@ -803,7 +803,7 @@ class DataFrame:
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
-        cols: Optional[list[Expression]] = None
+        cols: list[Expression] | None = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
 
@@ -829,10 +829,10 @@ class DataFrame:
     @DataframePublicAPI
     def write_csv(
         self,
-        root_dir: Union[str, pathlib.Path],
+        root_dir: str | pathlib.Path,
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
-        partition_cols: Optional[list[ColumnInputType]] = None,
-        io_config: Optional[IOConfig] = None,
+        partition_cols: list[ColumnInputType] | None = None,
+        io_config: IOConfig | None = None,
     ) -> "DataFrame":
         """Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written.
 
@@ -869,7 +869,7 @@ class DataFrame:
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
-        cols: Optional[list[Expression]] = None
+        cols: list[Expression] | None = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
 
@@ -895,10 +895,10 @@ class DataFrame:
     @DataframePublicAPI
     def write_json(
         self,
-        root_dir: Union[str, pathlib.Path],
+        root_dir: str | pathlib.Path,
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
-        partition_cols: Optional[list[ColumnInputType]] = None,
-        io_config: Optional[IOConfig] = None,
+        partition_cols: list[ColumnInputType] | None = None,
+        io_config: IOConfig | None = None,
     ) -> "DataFrame":
         """Writes the DataFrame as JSON files, returning a new DataFrame with paths to the files that were written.
 
@@ -933,7 +933,7 @@ class DataFrame:
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
-        cols: Optional[list[Expression]] = None
+        cols: list[Expression] | None = None
         if partition_cols is not None:
             cols = self.__column_input_to_expression(tuple(partition_cols))
 
@@ -957,7 +957,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def write_iceberg(
-        self, table: "pyiceberg.table.Table", mode: str = "append", io_config: Optional[IOConfig] = None
+        self, table: "pyiceberg.table.Table", mode: str = "append", io_config: IOConfig | None = None
     ) -> "DataFrame":
         """Writes the DataFrame to an [Iceberg](https://iceberg.apache.org/docs/nightly/) table, returning a new DataFrame with the operations that occurred.
 
@@ -1120,16 +1120,16 @@ class DataFrame:
     def write_deltalake(
         self,
         table: Union[str, pathlib.Path, "DataCatalogTable", "deltalake.DeltaTable", "UnityCatalogTable"],
-        partition_cols: Optional[list[str]] = None,
+        partition_cols: list[str] | None = None,
         mode: Literal["append", "overwrite", "error", "ignore"] = "append",
-        schema_mode: Optional[Literal["merge", "overwrite"]] = None,
-        name: Optional[str] = None,
-        description: Optional[str] = None,
-        configuration: Optional[Mapping[str, Optional[str]]] = None,
-        custom_metadata: Optional[dict[str, str]] = None,
-        dynamo_table_name: Optional[str] = None,
+        schema_mode: Literal["merge", "overwrite"] | None = None,
+        name: str | None = None,
+        description: str | None = None,
+        configuration: Mapping[str, str | None] | None = None,
+        custom_metadata: dict[str, str] | None = None,
+        dynamo_table_name: str | None = None,
         allow_unsafe_rename: bool = False,
-        io_config: Optional[IOConfig] = None,
+        io_config: IOConfig | None = None,
     ) -> "DataFrame":
         """Writes the DataFrame to a [Delta Lake](https://docs.delta.io/latest/index.html) table, returning a new DataFrame with the operations that occurred.
 
@@ -1177,7 +1177,7 @@ class DataFrame:
         )
         from daft.io.object_store_options import io_config_to_storage_options
 
-        def _create_metadata_param(metadata: Optional[dict[str, str]]) -> Any:
+        def _create_metadata_param(metadata: dict[str, str] | None) -> Any:
             """From deltalake>=0.20.0 onwards, custom_metadata has to be passed as CommitProperties.
 
             Args:
@@ -1403,17 +1403,23 @@ class DataFrame:
     @DataframePublicAPI
     def write_lance(
         self,
-        uri: Union[str, pathlib.Path],
-        mode: Literal["create", "append", "overwrite"] = "create",
-        io_config: Optional[IOConfig] = None,
-        schema: Optional[Union[Schema, "pyarrow.Schema"]] = None,
+        uri: str | pathlib.Path,
+        mode: Literal["create", "append", "overwrite", "merge"] = "create",
+        io_config: IOConfig | None = None,
+        schema: Union[Schema, "pyarrow.Schema"] | None = None,
+        left_on: str | None = None,
+        right_on: str | None = None,
         **kwargs: Any,
     ) -> "DataFrame":
         """Writes the DataFrame to a Lance table.
 
         Args:
           uri: The URI of the Lance table to write to
-          mode: The write mode. One of "create", "append", or "overwrite"
+          mode: The write mode. One of "create", "append", "overwrite", or "merge".
+          - "create" will create the dataset if it does not exist, otherwise raise an error.
+          - "append" will append to the existing dataset if it exists, otherwise raise an error.
+          - "overwrite" will overwrite the existing dataset if it exists, otherwise raise an error.
+          - "merge" will add new columns to the existing dataset.
           io_config (IOConfig, optional): configurations to use when interacting with remote storage.
           schema (Schema | pyarrow.Schema, optional): Desired schema to enforce during write.
             - If omitted, Daft will use the DataFrame's current schema.
@@ -1422,6 +1428,10 @@ class DataFrame:
               on the pyarrow schema is preserved during create/overwrite.
             - If the target Lance dataset already exists, the data will be cast to the existing table schema
               to ensure compatibility unless ``mode="overwrite"``.
+          left_on/right_on (Optional[str]): Only supported in ``mode="merge"``. Specify the join key for aligning rows when merging new columns.
+              - If omitted, defaults to ``"_rowaddr"``.
+              - If ``right_on`` is omitted, it defaults to the value of ``left_on``.
+              - The DataFrame passed to ``write_lance(mode="merge")`` must contain ``fragment_id`` and the join key column specified by ``right_on`` (or ``_rowaddr`` by default).
           **kwargs: Additional keyword arguments to pass to the Lance writer.
 
         Returns:
@@ -1473,25 +1483,124 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
+        from daft import context as _context
         from daft.io.lance.lance_data_sink import LanceDataSink
+        from daft.io.object_store_options import io_config_to_storage_options
 
         if schema is None:
             schema = self.schema()
-        sink = LanceDataSink(uri, schema, mode, io_config, **kwargs)
-        return self.write_sink(sink)
+
+        # Non-merge modes do not support schema evolution or custom join keys
+        if mode != "merge":
+            sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
+            sink = LanceDataSink(uri, schema, mode, io_config, **sanitized_kwargs)
+            return self.write_sink(sink)
+
+        # Merge mode semantics
+        try:
+            import lance
+        except ImportError as e:
+            raise ImportError(
+                "Unable to import the `lance` package, please ensure that Daft is installed with the lance extra dependency: `pip install daft[lance]`"
+            ) from e
+
+        io_config = _context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+        storage_options = io_config_to_storage_options(io_config, str(uri) if isinstance(uri, pathlib.Path) else uri)
+
+        # Attempt to load dataset; if not exists, behave like create
+        lance_ds = None
+        try:
+            lance_ds = lance.dataset(uri, storage_options=storage_options)
+        except (ValueError, FileNotFoundError, OSError) as _e:
+            lance_ds = None
+
+        if lance_ds is None:
+            sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
+            sink = LanceDataSink(uri, schema, "create", io_config, **sanitized_kwargs)
+            return self.write_sink(sink)
+
+        # Dataset exists: detect schema evolution by checking new columns in incoming DF
+        existing_fields: set[str] = set()
+        try:
+            existing_fields = {getattr(f, "name", str(f)) for f in lance_ds.schema}
+        except Exception:
+            names = []
+            try:
+                names = list(getattr(lance_ds.schema, "names", []))
+            except Exception:
+                try:
+                    names = [getattr(f, "name", str(f)) for f in getattr(lance_ds.schema, "fields", [])]
+                except Exception:
+                    names = []
+            existing_fields = set(names)
+
+        meta_exclusions = {"fragment_id", "_rowaddr", "_rowid"}
+        new_cols = [c for c in self.column_names if c not in existing_fields and c not in meta_exclusions]
+
+        if len(new_cols) == 0:
+            # Pure append: no schema evolution. Ensure merge-specific params are not forwarded.
+            sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
+
+            sink = LanceDataSink(uri, schema, "append", io_config, **sanitized_kwargs)
+            return self.write_sink(sink)
+
+        # Schema evolution: route to per-fragment merge keyed by provided business key or default '_rowaddr'
+        join_left = left_on or "_rowaddr"
+        join_right = right_on or join_left
+        if "fragment_id" not in self.column_names:
+            raise ValueError(
+                "DataFrame must contain 'fragment_id' column for per-fragment merge in mode='merge'. Read from Lance to include 'fragment_id'."
+            )
+        if join_right not in self.column_names:
+            hint = (
+                " Read from Lance with default_scan_options={'with_rowaddr': True} to include '_rowaddr'."
+                if join_right == "_rowaddr"
+                else ""
+            )
+            raise ValueError(
+                f"DataFrame must contain join key column '{join_right}' for per-fragment merge in mode='merge'." + hint
+            )
+
+        from daft.io.lance.lance_merge_column import merge_columns_from_df
+
+        merge_columns_from_df(
+            df=self,
+            lance_ds=lance_ds,
+            uri=uri,
+            left_on=join_left,
+            right_on=join_right,
+            storage_options=storage_options,
+        )
+
+        # Build and return stats DataFrame similar to sink.finalize
+        dataset = lance.dataset(uri, storage_options=storage_options)
+        stats = dataset.stats.dataset_stats()
+        from daft.dependencies import pa as _pa
+        from daft.recordbatch import MicroPartition
+
+        return DataFrame._from_micropartitions(
+            MicroPartition.from_pydict(
+                {
+                    "num_fragments": _pa.array([stats["num_fragments"]], type=_pa.int64()),
+                    "num_deleted_rows": _pa.array([stats["num_deleted_rows"]], type=_pa.int64()),
+                    "num_small_files": _pa.array([stats["num_small_files"]], type=_pa.int64()),
+                    "version": _pa.array([dataset.version], type=_pa.int64()),
+                }
+            )
+        )
 
     @DataframePublicAPI
     def write_turbopuffer(
         self,
-        namespace: Union[str, Expression],
-        api_key: Optional[str] = None,
-        region: Optional[str] = None,
-        distance_metric: Optional[Literal["cosine_distance", "euclidean_squared"]] = None,
-        schema: Optional[dict[str, Any]] = None,
-        id_column: Optional[str] = None,
-        vector_column: Optional[str] = None,
-        client_kwargs: Optional[dict[str, Any]] = None,
-        write_kwargs: Optional[dict[str, Any]] = None,
+        namespace: str | Expression,
+        api_key: str | None = None,
+        region: str | None = None,
+        distance_metric: Literal["cosine_distance", "euclidean_squared"] | None = None,
+        schema: dict[str, Any] | None = None,
+        id_column: str | None = None,
+        vector_column: str | None = None,
+        client_kwargs: dict[str, Any] | None = None,
+        write_kwargs: dict[str, Any] | None = None,
     ) -> "DataFrame":
         """Writes the DataFrame to a Turbopuffer namespace.
 
@@ -1535,12 +1644,12 @@ class DataFrame:
         table: str,
         *,
         host: str,
-        port: Optional[int] = None,
-        user: Optional[str] = None,
-        password: Optional[str] = None,
-        database: Optional[str] = None,
-        client_kwargs: Optional[dict[str, Any]] = None,
-        write_kwargs: Optional[dict[str, Any]] = None,
+        port: int | None = None,
+        user: str | None = None,
+        password: str | None = None,
+        database: str | None = None,
+        client_kwargs: dict[str, Any] | None = None,
+        write_kwargs: dict[str, Any] | None = None,
     ) -> "DataFrame":
         """Writes the DataFrame to a ClickHouse table.
 
@@ -1588,8 +1697,8 @@ class DataFrame:
         revision: str = "main",
         overwrite: bool = False,
         commit_message: str = "Upload dataset using Daft",
-        commit_description: Optional[str] = None,
-        io_config: Optional[IOConfig] = None,
+        commit_description: str | None = None,
+        io_config: IOConfig | None = None,
     ) -> "DataFrame":
         """Write a DataFrame into a Hugging Face dataset.
 
@@ -1619,8 +1728,8 @@ class DataFrame:
         table_id: str,
         row_key_column: str,
         column_family_mappings: dict[str, str],
-        client_kwargs: Optional[dict[str, Any]] = None,
-        write_kwargs: Optional[dict[str, Any]] = None,
+        client_kwargs: dict[str, Any] | None = None,
+        write_kwargs: dict[str, Any] | None = None,
         serialize_incompatible_types: bool = True,
     ) -> "DataFrame":
         """Write a DataFrame into a Google Cloud Bigtable table.
@@ -1664,7 +1773,14 @@ class DataFrame:
 
     def __column_input_to_expression(self, columns: Iterable[ColumnInputType]) -> list[Expression]:
         # TODO(Kevin): remove this method and use _column_inputs_to_expressions
-        return [col(c) if isinstance(c, str) else c for c in columns]
+        result = []
+        for c in columns:
+            if isinstance(c, str):
+                result.append(col(c))
+            else:
+                assert isinstance(c, Expression), f"Expected Expression or str, got {type(c)}"
+                result.append(c)
+        return result
 
     def _wildcard_inputs_to_expressions(self, columns: tuple[ManyColumnsInputType, ...]) -> list[Expression]:
         """Handles wildcard argument column inputs."""
@@ -1682,7 +1798,7 @@ class DataFrame:
         @overload
         def __getitem__(self, item: Iterable) -> "DataFrame": ...  # type: ignore
 
-    def __getitem__(self, item: Union[int, str, slice, Iterable[Union[str, int]]]) -> Union[Expression, "DataFrame"]:
+    def __getitem__(self, item: int | str | slice | Iterable[str | int]) -> Union[Expression, "DataFrame"]:
         """Gets a column from the DataFrame as an Expression (``df["mycol"]``).
 
         Args:
@@ -1743,7 +1859,7 @@ class DataFrame:
             (No data to display: Dataframe not materialized, use .collect() to materialize)
 
         """
-        result: Optional[Expression]
+        result: Expression | None
 
         if isinstance(item, int):
             schema = self._builder.schema()
@@ -1778,11 +1894,11 @@ class DataFrame:
             schema = self._builder.schema()
             columns_exprs: ExpressionsProjection = ExpressionsProjection.from_schema(schema)
             selected_columns = columns_exprs[item]
-            return self.select(*selected_columns)
+            return self.select(*[typing.cast("ColumnInputType", c) for c in selected_columns])
         else:
             raise ValueError(f"unknown indexing type: {type(item)}")
 
-    def _add_monotonically_increasing_id(self, column_name: Optional[str] = None) -> "DataFrame":
+    def _add_monotonically_increasing_id(self, column_name: str | None = None) -> "DataFrame":
         """Generates a column of monotonically increasing unique ids for the DataFrame.
 
         The implementation of this method puts the partition number in the upper 28 bits, and the row number in each partition
@@ -2024,10 +2140,10 @@ class DataFrame:
     @DataframePublicAPI
     def sample(
         self,
-        fraction: Optional[float] = None,
-        size: Optional[int] = None,
+        fraction: float | None = None,
+        size: int | None = None,
         with_replacement: bool = False,
-        seed: Optional[int] = None,
+        seed: int | None = None,
     ) -> "DataFrame":
         """Samples rows from the DataFrame.
 
@@ -2135,7 +2251,7 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
-    def filter(self, predicate: Union[Expression, str]) -> "DataFrame":
+    def filter(self, predicate: Expression | str) -> "DataFrame":
         """Filters rows via a predicate expression, similar to SQL ``WHERE``.
 
         Alias for [daft.DataFrame.where][daft.DataFrame.where].
@@ -2169,7 +2285,7 @@ class DataFrame:
         return self.where(predicate)
 
     @DataframePublicAPI
-    def where(self, predicate: Union[Expression, str]) -> "DataFrame":
+    def where(self, predicate: Expression | str) -> "DataFrame":
         """Filters rows via a predicate expression, similar to SQL ``WHERE``.
 
         Args:
@@ -2362,9 +2478,9 @@ class DataFrame:
     @DataframePublicAPI
     def sort(
         self,
-        by: Union[ColumnInputType, list[ColumnInputType]],
-        desc: Union[bool, list[bool]] = False,
-        nulls_first: Optional[Union[bool, list[bool]]] = None,
+        by: ColumnInputType | list[ColumnInputType],
+        desc: bool | list[bool] = False,
+        nulls_first: bool | list[bool] | None = None,
     ) -> "DataFrame":
         """Sorts DataFrame globally.
 
@@ -2575,7 +2691,7 @@ class DataFrame:
         return count_df.to_pydict()["count"][0]
 
     @DataframePublicAPI
-    def repartition(self, num: Optional[int], *partition_by: ColumnInputType) -> "DataFrame":
+    def repartition(self, num: int | None, *partition_by: ColumnInputType) -> "DataFrame":
         """Repartitions DataFrame to ``num`` partitions.
 
         If columns are passed in, then DataFrame will be repartitioned by those, otherwise
@@ -2668,13 +2784,13 @@ class DataFrame:
     def join(
         self,
         other: "DataFrame",
-        on: Optional[Union[list[ColumnInputType], ColumnInputType]] = None,
-        left_on: Optional[Union[list[ColumnInputType], ColumnInputType]] = None,
-        right_on: Optional[Union[list[ColumnInputType], ColumnInputType]] = None,
+        on: list[ColumnInputType] | ColumnInputType | None = None,
+        left_on: list[ColumnInputType] | ColumnInputType | None = None,
+        right_on: list[ColumnInputType] | ColumnInputType | None = None,
         how: Literal["inner", "left", "right", "outer", "anti", "semi", "cross"] = "inner",
-        strategy: Optional[Literal["hash", "sort_merge", "broadcast"]] = None,
-        prefix: Optional[str] = None,
-        suffix: Optional[str] = None,
+        strategy: Literal["hash", "sort_merge", "broadcast"] | None = None,
+        prefix: str | None = None,
+        suffix: str | None = None,
     ) -> "DataFrame":
         """Column-wise join of the current DataFrame with an ``other`` DataFrame, similar to a SQL ``JOIN``.
 
@@ -3174,15 +3290,15 @@ class DataFrame:
             DataFrame: Transformed DataFrame.
         """
         result = func(self, *args, **kwargs)
-        assert isinstance(
-            result, DataFrame
-        ), f"Func returned an instance of type [{type(result)}], should have been DataFrame."
+        assert isinstance(result, DataFrame), (
+            f"Func returned an instance of type [{type(result)}], should have been DataFrame."
+        )
         return result
 
     def _agg(
         self,
         to_agg: Iterable[Expression],
-        group_by: Optional[ExpressionsProjection] = None,
+        group_by: ExpressionsProjection | None = None,
     ) -> "DataFrame":
         builder = self._builder.agg(list(to_agg), list(group_by) if group_by is not None else None)
         return DataFrame(builder)
@@ -3215,7 +3331,7 @@ class DataFrame:
         self,
         fn: Callable[[Expression], Expression],
         cols: tuple[ManyColumnsInputType, ...],
-        group_by: Optional[ExpressionsProjection] = None,
+        group_by: ExpressionsProjection | None = None,
     ) -> "DataFrame":
         if len(cols) == 0:
             warnings.warn("No columns specified; performing aggregation on all columns.")
@@ -3225,7 +3341,7 @@ class DataFrame:
         exprs = self._wildcard_inputs_to_expressions(cols)
         return self._agg([fn(c) for c in exprs], group_by)
 
-    def _map_groups(self, udf: Expression, group_by: Optional[ExpressionsProjection] = None) -> "DataFrame":
+    def _map_groups(self, udf: Expression, group_by: ExpressionsProjection | None = None) -> "DataFrame":
         builder = self._builder.map_groups(udf, list(group_by) if group_by is not None else None)
         return DataFrame(builder)
 
@@ -3389,11 +3505,11 @@ class DataFrame:
         return self._apply_agg_fn(Expression.any_value, cols)
 
     @DataframePublicAPI
-    def count(self, *cols: ColumnInputType) -> "DataFrame":
+    def count(self, *cols: ColumnInputType | int) -> "DataFrame":
         """Performs a global count on the DataFrame.
 
         Args:
-            *cols (Union[str, Expression]): columns to count
+            *cols (Union[str, Expression, int]): columns to count
         Returns:
             DataFrame: Globally aggregated count. Should be a single row.
 
@@ -3459,7 +3575,7 @@ class DataFrame:
             raise ValueError("Cannot call count() with both * and column names")
 
         # Otherwise, perform a column-wise count on the specified columns
-        return self._apply_agg_fn(Expression.count, cols)
+        return self._apply_agg_fn(Expression.count, typing.cast("tuple[ColumnInputType, ...]", cols))
 
     @DataframePublicAPI
     def agg_list(self, *cols: ColumnInputType) -> "DataFrame":
@@ -3544,7 +3660,7 @@ class DataFrame:
         return self._apply_agg_fn(Expression.string_agg, cols)
 
     @DataframePublicAPI
-    def agg(self, *to_agg: Union[Expression, Iterable[Expression]]) -> "DataFrame":
+    def agg(self, *to_agg: Expression | Iterable[Expression]) -> "DataFrame":
         """Perform aggregations on this DataFrame.
 
         Allows for mixed aggregations for multiple columns and will return a single row that aggregated the entire DataFrame.
@@ -3641,7 +3757,7 @@ class DataFrame:
         pivot_col: ColumnInputType,
         value_col: ColumnInputType,
         agg_fn: str,
-        names: Optional[list[str]] = None,
+        names: list[str] | None = None,
     ) -> "DataFrame":
         """Pivots a column of the DataFrame and performs an aggregation on the values.
 
@@ -3692,7 +3808,11 @@ class DataFrame:
         agg_expr = self._map_agg_string_to_expr(value_col_expr, agg_fn)
 
         if names is None:
-            names = self.select(pivot_col_expr).distinct().to_pydict()[pivot_col_expr.name()]
+            names = (
+                self.select(typing.cast("ColumnInputType", pivot_col_expr))
+                .distinct()
+                .to_pydict()[pivot_col_expr.name()]
+            )
             names = [str(x) for x in names]
         builder = self._builder.pivot(group_by_expr, pivot_col_expr, value_col_expr, agg_expr, names)
         return DataFrame(builder)
@@ -3976,7 +4096,7 @@ class DataFrame:
             result.wait()
 
     @DataframePublicAPI
-    def collect(self, num_preview_rows: Optional[int] = 8) -> "DataFrame":
+    def collect(self, num_preview_rows: int | None = 8) -> "DataFrame":
         """Executes the entire DataFrame and materializes the results.
 
         Args:
@@ -4068,11 +4188,11 @@ class DataFrame:
     def show(
         self,
         n: int = 8,
-        format: Optional[PreviewFormat] = None,
+        format: PreviewFormat | None = None,
         verbose: bool = False,
         max_width: int = 30,
         align: PreviewAlign = "left",
-        columns: Optional[list[PreviewColumn]] = None,
+        columns: list[PreviewColumn] | None = None,
     ) -> None:
         """Executes enough of the DataFrame in order to display the first ``n`` rows.
 
@@ -4303,9 +4423,9 @@ class DataFrame:
     @DataframePublicAPI
     def to_torch_map_dataset(
         self,
-        shard_strategy: Optional[Literal["file"]] = None,
-        world_size: Optional[int] = None,
-        rank: Optional[int] = None,
+        shard_strategy: Literal["file"] | None = None,
+        world_size: int | None = None,
+        rank: int | None = None,
     ) -> "torch.utils.data.Dataset":
         """Convert the current DataFrame into a map-style [Torch Dataset](https://pytorch.org/docs/stable/data.html#map-style-datasets) for use with PyTorch.
 
@@ -4357,9 +4477,9 @@ class DataFrame:
     @DataframePublicAPI
     def to_torch_iter_dataset(
         self,
-        shard_strategy: Optional[Literal["file"]] = None,
-        world_size: Optional[int] = None,
-        rank: Optional[int] = None,
+        shard_strategy: Literal["file"] | None = None,
+        world_size: int | None = None,
+        rank: int | None = None,
     ) -> "torch.utils.data.IterableDataset":
         """Convert the current DataFrame into a `Torch IterableDataset <https://pytorch.org/docs/stable/data.html#torch.utils.data.IterableDataset>`__ for use with PyTorch.
 
@@ -4611,7 +4731,7 @@ class GroupedDataFrame:
         @overload
         def __getitem__(self, item: Iterable) -> "DataFrame": ...  # type: ignore
 
-    def __getitem__(self, item: Union[int, str, slice, Iterable[Union[str, int]]]) -> Union[Expression, DataFrame]:
+    def __getitem__(self, item: int | str | slice | Iterable[str | int]) -> Expression | DataFrame:
         """Gets a column from the DataFrame as an Expression."""
         return self.df.__getitem__(item)
 
@@ -4745,7 +4865,7 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.string_agg, cols, self.group_by)
 
-    def agg(self, *to_agg: Union[Expression, Iterable[Expression]]) -> DataFrame:
+    def agg(self, *to_agg: Expression | Iterable[Expression]) -> DataFrame:
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.
 
         Args:

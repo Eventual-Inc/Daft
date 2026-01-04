@@ -133,7 +133,7 @@ impl serde::Serialize for ExtensionArray {
         let values = if let DataType::Extension(_, inner, _) = self.data_type() {
             Series::try_from((
                 "physical",
-                self.data.convert_logical_type(inner.to_arrow().unwrap()),
+                self.data.convert_logical_type(inner.to_arrow2().unwrap()),
             ))
             .unwrap()
         } else {
@@ -154,7 +154,7 @@ impl serde::Serialize for PythonArray {
         s.serialize_entry("field", self.field())?;
         s.serialize_entry(
             "values",
-            &IterSer::new(self.to_pickled_arrow().unwrap().iter()),
+            &IterSer::new(self.to_pickled_arrow2().unwrap().iter()),
         )?;
         s.end()
     }

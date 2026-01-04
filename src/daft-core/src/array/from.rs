@@ -337,4 +337,20 @@ impl ListArray {
             Some(validity),
         )
     }
+
+    pub fn from_series(name: &str, data: Vec<Option<Series>>) -> DaftResult<Self> {
+        let lengths = data.iter().map(|s| s.as_ref().map_or(0, |s| s.len()));
+        let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)?.into();
+
+        let validity = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
+
+        let flat_child = Series::concat(&data.iter().flatten().collect::<Vec<_>>())?;
+
+        Ok(Self::new(
+            flat_child.field().to_list_field().rename(name),
+            flat_child,
+            offsets,
+            Some(validity),
+        ))
+    }
 }

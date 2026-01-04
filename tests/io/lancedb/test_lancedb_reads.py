@@ -10,9 +10,6 @@ from daft import col
 TABLE_NAME = "my_table"
 data = {"vector": [[1.1, 1.2], [0.2, 1.8]], "lat": [45.5, 40.1], "long": [-122.7, -74.1], "big_int": [1, 2]}
 
-PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (9, 0, 0)
-pytestmark = pytest.mark.skipif(PYARROW_LOWER_BOUND_SKIP, reason="lance not supported on old versions of pyarrow")
-
 
 @pytest.fixture(scope="function")
 def lance_dataset_path(tmp_path_factory):
@@ -137,9 +134,9 @@ def test_lancedb_with_version(lance_dataset_path):
             filter_count = physical_plan_output.count("Filter:")
             scan_source_count = physical_plan_output.count("ScanTaskSource:")
 
-            assert (
-                filter_count == 0 or filter_count == scan_source_count
-            ), f"Physical plan contains {filter_count} Filter nodes and {scan_source_count} ScanTaskSource nodes, which is not expected"
+            assert filter_count == 0 or filter_count == scan_source_count, (
+                f"Physical plan contains {filter_count} Filter nodes and {scan_source_count} ScanTaskSource nodes, which is not expected"
+            )
 
 
 def test_lancedb_read_parallelism_fragment_merging(large_lance_dataset_path):
