@@ -47,7 +47,7 @@ def test_update_evolution_rowid(lance_dataset_path):
         .select("_rowid", "fragment_id", "value")
     )
 
-    daft.io.lance.update_columns_df(
+    daft.io.lance.update_columns(
         df_update,
         lance_dataset_path,
         read_columns=["_rowid", "value"],
@@ -91,7 +91,7 @@ def test_update_evolution_business_key(lance_dataset_path):
         .select("id", "fragment_id", "score")
     )
 
-    daft.io.lance.update_columns_df(
+    daft.io.lance.update_columns(
         df_update,
         lance_dataset_path,
         read_columns=["id", "score"],
@@ -106,3 +106,43 @@ def test_update_evolution_business_key(lance_dataset_path):
     assert out["id"] == [1, 2, 3, 4]
     # All scores should be multiplied by 10
     assert out["score"] == [100.0, 200.0, 300.0, 400.0]
+
+
+def test_update_single_column(lance_dataset_path):
+    data1 = {"id": [1], "val": [10], "other": ["a"]}
+    data2 = {"id": [2, 3], "val": [20, 30], "other": ["b", "c"]}
+    daft.from_pydict(data1).write_lance(lance_dataset_path, mode="create")
+    daft.from_pydict(data2).write_lance(lance_dataset_path, mode="append")
+
+    df = daft.read_lance(lance_dataset_path, default_scan_options={"with_row_id": True}, include_fragment_id=True)
+    # Ensure we have multiple fragments
+    assert len(set(df.collect().to_pydict()["fragment_id"])) > 1
+
+    df_update = df.with_column("val", daft.col("val") + 1).select("_rowid", "fragment_id", "val")
+    daft.io.lance.update_columns(df_update, lance_dataset_path)
+
+    result = daft.read_lance(lance_dataset_path).sort("id").to_pydict()
+    assert result["val"] == [11, 21, 31]
+    assert result["other"] == ["a", "b", "c"]
+
+
+def test_update_multiple_columns(lance_dataset_path):
+    data1 = {"id": [1], "val1": [10], "val2": [1.0]}
+    data2 = {"id": [2, 3], "val1": [20, 30], "val2": [2.0, 3.0]}
+    daft.from_pydict(data1).write_lance(lance_dataset_path, mode="create")
+    daft.from_pydict(data2).write_lance(lance_dataset_path, mode="append")
+
+    df = daft.read_lance(lance_dataset_path, default_scan_options={"with_row_id": True}, include_fragment_id=True)
+    # Ensure we have multiple fragments
+    assert len(set(df.collect().to_pydict()["fragment_id"])) > 1
+
+    df_update = (
+        df.with_column("val1", daft.col("val1") + 1)
+        .with_column("val2", daft.col("val2") * 2)
+        .select("_rowid", "fragment_id", "val1", "val2")
+    )
+    daft.io.lance.update_columns(df_update, lance_dataset_path)
+
+    result = daft.read_lance(lance_dataset_path).sort("id").to_pydict()
+    assert result["val1"] == [11, 21, 31]
+    assert result["val2"] == [2.0, 4.0, 6.0]
