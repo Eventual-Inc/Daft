@@ -348,6 +348,72 @@ def merge_columns_df(
 
 
 @PublicAPI
+def update_columns_df(
+    df: DataFrame,
+    uri: str | pathlib.Path,
+    io_config: IOConfig | None = None,
+    *,
+    read_columns: list[str] | None = None,
+    storage_options: dict[str, Any] | None = None,
+    daft_remote_args: dict[str, Any] | None = None,
+    concurrency: int | None = None,
+    version: int | str | None = None,
+    asof: str | None = None,
+    block_size: int | None = None,
+    commit_lock: Any | None = None,
+    index_cache_size: int | None = None,
+    default_scan_options: dict[str, Any] | None = None,
+    metadata_cache_size_bytes: int | None = None,
+    batch_size: int | None = None,
+    left_on: str | None = "_rowid",
+    right_on: str | None = None,
+) -> None:
+    """Row-level column update entrypoint using a DataFrame.
+
+    This function updates existing columns in a LanceDB table in-place by joining
+    per-fragment data from a DataFrame and applying LanceFragment.update_columns.
+    """
+
+    io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
+    storage_options = storage_options or io_config_to_storage_options(io_config, uri)
+
+    # Build Lance dataset handle for committing
+    lance_ds = construct_lance_dataset(
+        uri,
+        storage_options=storage_options,
+        version=version,
+        asof=asof,
+        block_size=block_size,
+        commit_lock=commit_lock,
+        index_cache_size=index_cache_size,
+        default_scan_options=default_scan_options,
+        metadata_cache_size_bytes=metadata_cache_size_bytes,
+    )
+
+    effective_left_on = left_on or "_rowid"
+    effective_right_on = right_on or effective_left_on
+    effective_batch_size = (
+        batch_size if batch_size is not None else daft_remote_args.get("batch_size", None) if daft_remote_args else None
+    )
+
+    # Import here to avoid circular imports
+    from daft.io.lance.lance_update_column import update_columns_from_df
+
+    update_columns_from_df(
+        df=df,
+        lance_ds=lance_ds,
+        uri=uri,
+        read_columns=read_columns,
+        storage_options=storage_options,
+        daft_remote_args=daft_remote_args,
+        concurrency=concurrency,
+        left_on=effective_left_on,
+        right_on=effective_right_on,
+        batch_size=effective_batch_size,
+    )
+
+
+@PublicAPI
 def create_scalar_index(
     uri: str | pathlib.Path,
     io_config: IOConfig | None = None,
