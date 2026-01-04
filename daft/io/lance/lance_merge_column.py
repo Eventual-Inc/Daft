@@ -9,7 +9,6 @@ import daft.pickle
 from daft.datatype import DataType
 from daft.udf import cls as daft_cls
 from daft.udf import method
-from daft.udf import udf as legacy_udf
 
 if TYPE_CHECKING:
     import pathlib
@@ -107,7 +106,7 @@ def merge_columns_internal(
     )
 
 
-@legacy_udf(return_dtype=_FRAGMENT_HANDLER_RETURN_DTYPE)
+@daft_cls
 class GroupFragmentMergeUDF:
     def __init__(
         self,
@@ -135,6 +134,7 @@ class GroupFragmentMergeUDF:
         self.reader_schema = reader_schema
         self.batch_size = batch_size
 
+    @method.batch(return_dtype=_FRAGMENT_HANDLER_RETURN_DTYPE)
     def __call__(self, *cols: Any) -> list[dict[str, bytes]]:
         from daft.dependencies import pa as _pa
 
@@ -284,7 +284,7 @@ def merge_columns_from_df(
             )
         read_columns = [join_key] + new_cols
 
-    handler_udf = GroupFragmentMergeUDF.with_init_args(  # type: ignore[attr-defined]
+    handler_udf = GroupFragmentMergeUDF(
         lance_ds,
         left_on,
         right_on,
