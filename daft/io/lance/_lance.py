@@ -348,7 +348,7 @@ def merge_columns_df(
 
 
 @PublicAPI
-def update_columns_df(
+def update_columns(
     df: DataFrame,
     uri: str | pathlib.Path,
     io_config: IOConfig | None = None,
@@ -373,7 +373,6 @@ def update_columns_df(
     This function updates existing columns in a LanceDB table in-place by joining
     per-fragment data from a DataFrame and applying LanceFragment.update_columns.
     """
-
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
     storage_options = storage_options or io_config_to_storage_options(io_config, uri)
 
