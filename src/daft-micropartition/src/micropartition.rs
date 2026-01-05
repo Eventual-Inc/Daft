@@ -207,8 +207,6 @@ impl MicroPartition {
     }
 
     pub fn read_from_ipc_stream(buffer: &[u8]) -> DaftResult<Self> {
-        use std::sync::Arc;
-
         let mut cursor = std::io::Cursor::new(buffer);
         let reader = daft_arrow::ipc::reader::StreamReader::try_new(&mut cursor, None)?;
 
@@ -797,7 +795,7 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::{
-        datatypes::{DataType, Field, Int32Array},
+        datatypes::{DataType, Field, Float64Array, Int32Array, Utf8Array},
         prelude::Schema,
         series::IntoSeries,
     };
@@ -827,6 +825,36 @@ mod tests {
         assert_eq!(tbl, table1);
         let tbl = stream.next().await.unwrap().unwrap();
         assert_eq!(tbl, table2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_ipc_roundtrip() -> DaftResult<()> {
+        let string_values = vec!["a", "bb", "ccc"];
+        let batch1 = RecordBatch::from_nonempty_columns(vec![
+            Int32Array::from(("a", vec![1, 2, 3])).into_series(),
+            Float64Array::from(("b", vec![1., 2., 3.])).into_series(),
+            Utf8Array::from_values("c", string_values.iter()).into_series(),
+        ])?;
+
+        let batch2 = RecordBatch::from_nonempty_columns(vec![
+            Int32Array::from(("a", vec![4, 5, 6])).into_series(),
+            Float64Array::from(("b", vec![4., 5., 6.])).into_series(),
+            Utf8Array::from_values("c", string_values.iter()).into_series(),
+        ])?;
+
+        assert_eq!(batch1.schema, batch2.schema);
+
+        let table = MicroPartition::new_loaded(
+            batch1.schema.clone(),
+            Arc::new(vec![batch1.clone(), batch2.clone()]),
+            None,
+        );
+
+        let ipc_stream = table.write_to_ipc_stream()?;
+        let roundtrip_table = MicroPartition::read_from_ipc_stream(&ipc_stream)?;
+        assert_eq!(batch1, roundtrip_table.record_batches()[0]);
+        assert_eq!(batch2, roundtrip_table.record_batches()[1]);
         Ok(())
     }
 }
