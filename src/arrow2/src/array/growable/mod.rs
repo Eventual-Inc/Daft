@@ -34,6 +34,7 @@ mod utils;
 /// Describes a struct that can be extended from slices of other pre-existing [`Array`]s.
 /// This is used in operations where a new array is built out of other arrays, such
 /// as filter and concatenation.
+#[deprecated(note = "arrow2 migration")]
 pub trait Growable<'a> {
     /// Extends this [`Growable`] with elements from the bounded [`Array`] at index `index` from
     /// a slice starting at `start` and length `len`.
@@ -73,6 +74,7 @@ macro_rules! dyn_growable {
 /// This function panics iff
 /// * the arrays do not have the same [`DataType`].
 /// * `arrays.is_empty()`.
+#[deprecated(note = "arrow2 migration")]
 pub fn make_growable<'a>(
     arrays: &[&'a dyn Array],
     use_validity: bool,

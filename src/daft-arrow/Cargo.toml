@@ -1,8 +1,8 @@
 [dependencies]
 arrow-array = {workspace = true}
-arrow-buffer = "54.2.1"
-arrow-schema = "54.2.1"
-arrow-ipc = "54.2.1"
+arrow-buffer = {workspace = true}
+arrow-schema = {workspace = true}
+arrow-ipc = {workspace = true}
 arrow2 = {workspace = true, features = [
   "arrow",
   "io_parquet",

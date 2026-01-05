@@ -636,7 +636,9 @@ def week_of_year(expr: Expression) -> Expression:
         ...         "datetime": [
         ...             datetime.datetime(2024, 1, 1, 0, 0, 0),
         ...             datetime.datetime(2024, 2, 1, 0, 0, 0),
-        ...             datetime.datetime(2024, 12, 31, 0, 0, 0),  # part of week 1 of 2025 according to ISO 8601 standard
+        ...             datetime.datetime(
+        ...                 2024, 12, 31, 0, 0, 0
+        ...             ),  # part of week 1 of 2025 according to ISO 8601 standard
         ...             datetime.datetime(2023, 12, 31, 0, 0, 0),
         ...         ],
         ...     }

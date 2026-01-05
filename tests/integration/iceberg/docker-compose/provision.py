@@ -452,27 +452,27 @@ spark.sql(
 """
 )
 
-spark.sql(
-    """
-    INSERT INTO default.test_overlapping_deletes
-    VALUES
-        (1, 'Alice', 100.0, 'A'),
-        (2, 'Bob', 200.0, 'B'),
-        (3, 'Charlie', 300.0, 'A'),
-        (4, 'David', 400.0, 'B'),
-        (5, 'Eve', 500.0, 'A'),
-        (6, 'Frank', 600.0, 'B'),
-        (7, 'Grace', 700.0, 'A'),
-        (8, 'Henry', 800.0, 'B'),
-        (9, 'Ivy', 900.0, 'A'),
-        (10, 'Jack', 1000.0, 'B'),
-        (11, 'Kate', 1100.0, 'A'),
-        (12, 'Leo', 1200.0, 'B'),
-        (13, 'Mary', 1300.0, 'A'),
-        (14, 'Nick', 1400.0, 'B'),
-        (15, 'Olivia', 1500.0, 'A');
-"""
-)
+data = [
+    (1, "Alice", 100.0, "A"),
+    (2, "Bob", 200.0, "B"),
+    (3, "Charlie", 300.0, "A"),
+    (4, "David", 400.0, "B"),
+    (5, "Eve", 500.0, "A"),
+    (6, "Frank", 600.0, "B"),
+    (7, "Grace", 700.0, "A"),
+    (8, "Henry", 800.0, "B"),
+    (9, "Ivy", 900.0, "A"),
+    (10, "Jack", 1000.0, "B"),
+    (11, "Kate", 1100.0, "A"),
+    (12, "Leo", 1200.0, "B"),
+    (13, "Mary", 1300.0, "A"),
+    (14, "Nick", 1400.0, "B"),
+    (15, "Olivia", 1500.0, "A"),
+]
+columns = ["id", "name", "value", "category"]
+df = spark.createDataFrame(data, columns)
+df = df.coalesce(1)
+df.writeTo("default.test_overlapping_deletes").append()
 
 spark.sql(
     """

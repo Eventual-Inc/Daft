@@ -12,6 +12,7 @@ use crate::{
 
 /// The concrete [`Array`] of [`DataType::Null`].
 #[derive(Clone)]
+#[deprecated(note = "arrow2 migration")]
 pub struct NullArray {
     data_type: DataType,
     length: usize,

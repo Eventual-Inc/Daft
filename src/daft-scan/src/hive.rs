@@ -1,3 +1,5 @@
+#![allow(deprecated, reason = "arrow2 migration")]
+
 use common_error::DaftResult;
 use daft_arrow::datatypes::DataType;
 use daft_core::series::Series;

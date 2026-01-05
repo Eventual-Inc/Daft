@@ -1,5 +1,5 @@
 [dependencies]
-arrow = "54.2.1"
+arrow = {workspace = true}
 bincode = {workspace = true}
 daft-arrow = {path = "../daft-arrow"}
 chrono = {workspace = true}

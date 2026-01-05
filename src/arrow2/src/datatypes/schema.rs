@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 /// Apache Parquet, and Apache Avro. All these formats have a concept of a schema
 /// with fields and metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[deprecated(note = "arrow2 migration")]
 pub struct Schema {
     /// The fields composing this schema.
     pub fields: Vec<Field>,
