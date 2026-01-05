@@ -157,7 +157,7 @@ impl FixedSizeListArray {
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
         let arrow_arr = self.to_arrow2();
         let result = daft_arrow::compute::take::take(arrow_arr.as_ref(), idx.as_arrow2())?;
-        Self::from_arrow(self.field().clone().into(), result)
+        Self::from_arrow2(self.field().clone().into(), result)
     }
 }
 
@@ -165,7 +165,7 @@ impl ListArray {
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
         let arrow_arr = self.to_arrow2();
         let result = daft_arrow::compute::take::take(arrow_arr.as_ref(), idx.as_arrow2())?;
-        Self::from_arrow(self.field().clone().into(), result)
+        Self::from_arrow2(self.field().clone().into(), result)
     }
 }
 
