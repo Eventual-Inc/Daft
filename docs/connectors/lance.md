@@ -101,6 +101,34 @@ filtered = df_local.where(df_local["score"] >= 0.8)
 filtered.show()
 ```
 
+### Filtering with Custom SQL Expressions
+
+Daft supports passing raw SQL filter strings directly to the Lance scanner via `default_scan_options`. This allows you to leverage Lance's native SQL capabilities, including GeoSpatial functions, which might not be directly expressible in Daft's DataFrame API yet.
+
+You can also use this mechanism to perform SQL-based projections (calculations) during the scan.
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+
+    # Example: Using GeoSpatial functions for filtering and projection
+    # Assume we have a dataset with 'point' and 'linestring' columns (GeoArrow types)
+
+    df = daft.read_lance(
+        "/path/to/geo/dataset",
+        default_scan_options={
+            # Calculate distance during scan and project it as a new column
+            "columns": {"distance": "st_distance(point, linestring)"},
+            # Filter rows where linestring intersects with a specific geometry
+            "filter": "st_intersects(linestring, st_geomfromtext('LINESTRING ( 2 0, 0 2 )'))",
+            "with_row_id": True
+        }
+    )
+
+    df.show()
+    ```
+
 ## Writing to Lance
 
 Use [`df.write_lance()`][daft.dataframe.DataFrame.write_lance] to write a DataFrame to a Lance dataset. Supported modes include `create`, `append`, and `overwrite`. Additional write parameters (e.g., maximum file size) are passed through to the underlying writer.
@@ -222,3 +250,26 @@ This example compacts a dataset with multiple fragments into a single, larger fr
     # The final row count is 800, and the final fragment count is 2
     print(f"Final row count: {dataset.count_rows()}, and final fragment count: {len(dataset.get_fragments())}")
     ```
+
+### Filtering with Custom SQL Expressions
+
+Daft supports pushing down standard filters to Lance. However, if you need to use Lance-specific SQL functions (e.g., Geo functions like `st_distance`) that are not yet natively supported by Daft's expression engine, you can pass a raw SQL filter string directly to the Lance scanner via `default_scan_options`.
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+
+    # Read a Lance dataset and apply a custom SQL filter
+    # This filter is passed directly to the underlying Lance scanner
+    df = daft.read_lance(
+        "/path/to/dataset.lance",
+        default_scan_options={
+            "filter": "st_distance(point, st_point(0, 0)) < 10"
+        }
+    )
+
+    df.show()
+    ```
+
+### Compaction
