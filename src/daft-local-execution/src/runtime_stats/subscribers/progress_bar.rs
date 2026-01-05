@@ -134,6 +134,8 @@ impl IndicatifProgressBarManager {
             NodeCategory::Intermediate => ProgressBarColor::Magenta,
             NodeCategory::BlockingSink => ProgressBarColor::Cyan,
             NodeCategory::StreamingSink => ProgressBarColor::Yellow,
+            NodeCategory::Join => ProgressBarColor::Magenta,
+            NodeCategory::Concat => ProgressBarColor::Magenta,
         };
 
         #[allow(clippy::literal_string_with_formatting_args)]

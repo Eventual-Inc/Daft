@@ -1,7 +1,9 @@
 [dependencies]
 arc-swap = {workspace = true}
+async-channel = "2.5.0"
 async-trait = {workspace = true}
 atomic_float = "*"
+bitmap = "*"
 capitalize = "*"
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
@@ -37,7 +39,6 @@ futures = {workspace = true}
 indexmap = {workspace = true}
 indicatif = {workspace = true}
 itertools = {workspace = true}
-kanal = "0.1"
 log = {workspace = true}
 parking_lot = {workspace = true}
 pin-project = "1"

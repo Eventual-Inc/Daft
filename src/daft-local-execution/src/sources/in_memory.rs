@@ -9,7 +9,11 @@ use daft_micropartition::{MicroPartitionRef, partitioning::PartitionSetRef};
 use tracing::instrument;
 
 use super::source::Source;
-use crate::{pipeline::NodeName, sources::source::SourceStream};
+use crate::{
+    plan_input::{InputId, PipelineMessage},
+    pipeline::NodeName,
+    sources::source::SourceStream,
+};
 
 pub struct InMemorySource {
     data: Option<PartitionSetRef<MicroPartitionRef>>,
@@ -39,16 +43,33 @@ impl Source for InMemorySource {
     #[instrument(name = "InMemorySource::get_data", level = "info", skip_all)]
     async fn get_data(
         &self,
-        _maintain_order: bool,
         _io_stats: IOStatsRef,
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
-        Ok(self
-            .data
-            .as_ref()
-            .unwrap_or_else(|| panic!("No data in InMemorySource"))
-            .clone()
-            .to_partition_stream())
+        use daft_micropartition::MicroPartition;
+        use futures::StreamExt;
+        const PLACEHOLDER_INPUT_ID: InputId = 0;
+        let schema = self.schema.clone();
+
+        // If no data, emit empty micropartition
+        let Some(data) = &self.data else {
+            let empty = Arc::new(MicroPartition::empty(Some(schema)));
+            let empty_morsel = PipelineMessage::Morsel {
+                input_id: PLACEHOLDER_INPUT_ID,
+                partition: empty,
+            };
+            let stream = futures::stream::once(async move { Ok(empty_morsel) });
+            return Ok(Box::pin(stream));
+        };
+
+        let stream = data.clone().to_partition_stream();
+        let wrapped_stream = stream.map(move |result| {
+            result.map(|partition| PipelineMessage::Morsel {
+                input_id: PLACEHOLDER_INPUT_ID,
+                partition: partition.into(),
+            })
+        });
+        Ok(Box::pin(wrapped_stream))
     }
 
     fn name(&self) -> NodeName {

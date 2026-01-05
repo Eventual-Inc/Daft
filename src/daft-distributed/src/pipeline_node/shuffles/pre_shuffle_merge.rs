@@ -1,19 +1,20 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
+use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
-        PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream,
-        make_in_memory_task_from_materialized_outputs,
+        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
-        scheduler::{SchedulerHandle, SubmittableTask},
-        task::{SchedulingStrategy, SwordfishTask, TaskContext},
+        scheduler::SchedulerHandle,
+        task::{SchedulingStrategy, SwordfishTask, SwordfishTaskBuilder},
         worker::WorkerId,
     },
     utils::channel::{Sender, create_channel},
@@ -84,7 +85,7 @@ impl PipelineNodeImpl for PreShuffleMergeNode {
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
 
         let (result_tx, result_rx) = create_channel(1);
@@ -98,20 +99,21 @@ impl PipelineNodeImpl for PreShuffleMergeNode {
         };
 
         plan_context.spawn(merge_execution);
-        SubmittableTaskStream::from(result_rx)
+        TaskBuilderStream::from(result_rx)
     }
 }
 
 impl PreShuffleMergeNode {
     async fn execute_merge(
         self: Arc<Self>,
-        input_stream: SubmittableTaskStream,
+        input_stream: TaskBuilderStream,
         task_id_counter: TaskIDCounter,
-        result_tx: Sender<SubmittableTask<SwordfishTask>>,
+        result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
         // First, materialize all input data.
-        let mut materialized_stream = input_stream.materialize(scheduler_handle.clone());
+        let mut materialized_stream =
+            input_stream.materialize(scheduler_handle, self.context.query_idx, task_id_counter);
 
         // Bucket materialized outputs by worker ID
         let mut worker_buckets: HashMap<WorkerId, Vec<MaterializedOutput>> = HashMap::new();
@@ -131,20 +133,33 @@ impl PreShuffleMergeNode {
             {
                 // Drain the bucket and create a task to merge the outputs
                 if let Some(materialized_outputs) = worker_buckets.remove(&worker_id) {
-                    let self_clone = self.clone();
-                    let task = make_in_memory_task_from_materialized_outputs(
-                        TaskContext::from((self.context(), task_id_counter.next())),
-                        materialized_outputs,
-                        self_clone.config.schema.clone(),
-                        &(self_clone as Arc<dyn PipelineNodeImpl>),
-                        Some(SchedulingStrategy::WorkerAffinity {
+                    let in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+                        self.node_id().to_string(),
+                        self.config.schema.clone(),
+                        materialized_outputs
+                            .iter()
+                            .map(|output| output.size_bytes())
+                            .sum::<usize>(),
+                        StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(self.node_id() as usize),
+                            additional: None,
+                        },
+                    );
+                    let partition_refs = materialized_outputs
+                        .into_iter()
+                        .flat_map(|output| output.into_inner().0)
+                        .collect::<Vec<_>>();
+                    let psets = HashMap::from([(self.node_id().to_string(), partition_refs)]);
+                    let builder = SwordfishTaskBuilder::new(in_memory_source_plan, self.as_ref())
+                        .with_psets(psets)
+                        .with_strategy(Some(SchedulingStrategy::WorkerAffinity {
                             worker_id,
                             soft: false,
-                        }),
-                    );
+                        }));
 
-                    // Send the task directly to result_tx
-                    if result_tx.send(task).await.is_err() {
+                    // Send the builder directly to result_tx
+                    if result_tx.send(builder).await.is_err() {
                         break;
                     }
                 }
@@ -154,19 +169,32 @@ impl PreShuffleMergeNode {
         // Handle any remaining buckets that haven't reached the threshold
         for (worker_id, materialized_outputs) in worker_buckets {
             if !materialized_outputs.is_empty() {
-                let self_clone = self.clone();
-                let task = make_in_memory_task_from_materialized_outputs(
-                    TaskContext::from((self.context(), task_id_counter.next())),
-                    materialized_outputs,
-                    self_clone.config.schema.clone(),
-                    &(self_clone as Arc<dyn PipelineNodeImpl>),
-                    Some(SchedulingStrategy::WorkerAffinity {
+                let in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+                    self.node_id().to_string(),
+                    self.config.schema.clone(),
+                    materialized_outputs
+                        .iter()
+                        .map(|output| output.size_bytes())
+                        .sum::<usize>(),
+                    StatsState::NotMaterialized,
+                    LocalNodeContext {
+                        origin_node_id: Some(self.node_id() as usize),
+                        additional: None,
+                    },
+                );
+                let partition_refs = materialized_outputs
+                    .into_iter()
+                    .flat_map(|output| output.into_inner().0)
+                    .collect::<Vec<_>>();
+                let psets = HashMap::from([(self.node_id().to_string(), partition_refs)]);
+                let builder = SwordfishTaskBuilder::new(in_memory_source_plan, self.as_ref())
+                    .with_psets(psets)
+                    .with_strategy(Some(SchedulingStrategy::WorkerAffinity {
                         worker_id,
                         soft: false,
-                    }),
-                );
+                    }));
 
-                if result_tx.send(task).await.is_err() {
+                if result_tx.send(builder).await.is_err() {
                     break;
                 }
             }

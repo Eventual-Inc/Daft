@@ -67,6 +67,8 @@ class NativeRunner(Runner[MicroPartition]):
         if num_threads is not None:
             set_compute_runtime_num_worker_threads(num_threads)
 
+        self.native_executor = NativeExecutor()
+
     def initialize_partition_set_cache(self) -> PartitionSetCache:
         return LOCAL_PARTITION_SET_CACHE
 
@@ -86,7 +88,6 @@ class NativeRunner(Runner[MicroPartition]):
     def run_iter(
         self,
         builder: LogicalPlanBuilder,
-        results_buffer_size: int | None = None,
     ) -> Iterator[LocalMaterializedResult]:
         track_runner_on_scarf(runner=self.name)
 
@@ -101,13 +102,12 @@ class NativeRunner(Runner[MicroPartition]):
         builder = builder.optimize(ctx.daft_execution_config)
         ctx._notify_optimization_end(query_id, builder.repr_json())
 
-        plan = LocalPhysicalPlan.from_logical_plan_builder(builder._builder)
-        executor = NativeExecutor()
-        results_gen = executor.run(
+        plan, inputs = LocalPhysicalPlan.from_logical_plan_builder(builder._builder)
+        results_gen = self.native_executor.run(
             plan,
+            inputs,
             {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
             ctx,
-            results_buffer_size,
             {"query_id": query_id},
         )
 
@@ -134,7 +134,7 @@ class NativeRunner(Runner[MicroPartition]):
             ctx._notify_query_end(query_id, query_result)
 
     def run_iter_tables(
-        self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
+        self, builder: LogicalPlanBuilder
     ) -> Iterator[MicroPartition]:
-        for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
+        for result in self.run_iter(builder):
             yield result.partition()

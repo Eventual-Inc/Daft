@@ -25,8 +25,7 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-    BlockingSinkStatus,
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult
 };
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
@@ -106,7 +105,7 @@ impl BlockingSink for DedupSink {
             .spawn(
                 async move {
                     state.push(input, &columns)?;
-                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                    Ok(state)
                 },
                 Span::current(),
             )
@@ -118,7 +117,7 @@ impl BlockingSink for DedupSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let columns = self.columns.clone();
         let num_partitions = self.num_partitions();
         spawner
@@ -159,9 +158,7 @@ impl BlockingSink for DedupSink {
 
                     // Concatenate the results and return
                     let concated = MicroPartition::concat(&results)?;
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
-                        concated,
-                    )]))
+                    Ok(vec![Arc::new(concated)])
                 },
                 Span::current(),
             )

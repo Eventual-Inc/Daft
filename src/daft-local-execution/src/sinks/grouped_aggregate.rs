@@ -16,10 +16,7 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-    BlockingSinkStatus,
-};
+use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 #[derive(Clone, Debug)]
@@ -310,7 +307,7 @@ impl BlockingSink for GroupedAggregateSink {
             .spawn(
                 async move {
                     state.push(input, &params, &strategy_lock)?;
-                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                    Ok(state)
                 },
                 Span::current(),
             )
@@ -322,7 +319,7 @@ impl BlockingSink for GroupedAggregateSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let params = self.grouped_aggregate_params.clone();
         let num_partitions = self.num_partitions();
         spawner
@@ -392,9 +389,7 @@ impl BlockingSink for GroupedAggregateSink {
                         .into_iter()
                         .collect::<DaftResult<Vec<_>>>()?;
                     let concated = MicroPartition::concat(&results)?;
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
-                        concated,
-                    )]))
+                    Ok(vec![Arc::new(concated)])
                 },
                 Span::current(),
             )

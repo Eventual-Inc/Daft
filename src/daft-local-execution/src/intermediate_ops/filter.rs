@@ -12,9 +12,7 @@ use daft_micropartition::MicroPartition;
 use opentelemetry::{KeyValue, global};
 use tracing::{Span, instrument};
 
-use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
-};
+use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
 use crate::{
     ExecutionTaskSpawner,
     pipeline::NodeName,
@@ -113,10 +111,7 @@ impl IntermediateOperator for FilterOperator {
             .spawn(
                 async move {
                     let out = input.filter(&[predicate])?;
-                    Ok((
-                        state,
-                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
-                    ))
+                    Ok((state, Arc::new(out)))
                 },
                 Span::current(),
             )
@@ -139,8 +134,8 @@ impl IntermediateOperator for FilterOperator {
         Arc::new(FilterStats::new(id))
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
-        Ok(())
+    fn make_state(&self) -> Self::State {
+        ()
     }
     fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
         Ok(crate::dynamic_batching::StaticBatchingStrategy::new(

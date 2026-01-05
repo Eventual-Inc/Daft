@@ -67,10 +67,12 @@ impl Display for NodeType {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum NodeCategory {
+    Concat,
     Intermediate,
     Source,
     StreamingSink,
     BlockingSink,
+    Join,
 }
 
 impl Display for NodeCategory {

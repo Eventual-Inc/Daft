@@ -8,10 +8,10 @@ use futures::StreamExt;
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        PipelineNodeImpl, SubmittableTaskStream,
+        PipelineNodeImpl, TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext},
-    scheduling::{scheduler::SubmittableTask, task::SwordfishTask},
+    scheduling::task::SwordfishTaskBuilder,
     utils::channel::{Sender, create_channel},
 };
 
@@ -20,7 +20,6 @@ pub(crate) struct VLLMNode {
     context: PipelineNodeContext,
     expr: BoundVLLMExpr,
     output_column_name: Arc<str>,
-    schema: SchemaRef,
     child: DistributedPipelineNode,
 }
 
@@ -51,7 +50,6 @@ impl VLLMNode {
             context,
             expr,
             output_column_name,
-            schema,
             child,
         }
     }
@@ -63,8 +61,8 @@ impl VLLMNode {
     #[cfg(feature = "python")]
     async fn execution_loop(
         self: Arc<Self>,
-        mut input_task_stream: SubmittableTaskStream,
-        result_tx: Sender<SubmittableTask<SwordfishTask>>,
+        mut input_task_stream: TaskBuilderStream,
+        result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
         use daft_dsl::functions::python::RuntimePyObject;
         use pyo3::{PyErr, Python, intern, types::PyAnyMethods};
@@ -90,40 +88,31 @@ impl VLLMNode {
         })?));
 
         let mut running_tasks = JoinSet::new();
-        while let Some(task) = input_task_stream.next().await {
-            use crate::pipeline_node::append_plan_to_existing_task;
+        while let Some(builder) = input_task_stream.next().await {
+            let modified_builder = builder.map_plan(self.as_ref(), |input| {
+                use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
+                use daft_logical_plan::stats::StatsState;
 
-            let expr = self.expr.clone();
-            let output_column_name = self.output_column_name.clone();
-            let schema = self.schema.clone();
-            let llm_actors = llm_actors.clone();
-            let node_id = self.node_id();
+                LocalPhysicalPlan::vllm_project(
+                    input,
+                    self.expr.clone(),
+                    Some(llm_actors.clone()),
+                    self.output_column_name.clone(),
+                    self.config.schema.clone(),
+                    StatsState::NotMaterialized,
+                    LocalNodeContext {
+                        origin_node_id: Some(self.node_id() as usize),
+                        additional: None,
+                    },
+                )
+            });
 
-            let modified_task = append_plan_to_existing_task(
-                task,
-                &(self.clone() as Arc<dyn PipelineNodeImpl>),
-                &move |input| {
-                    use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-                    use daft_logical_plan::stats::StatsState;
-
-                    LocalPhysicalPlan::vllm_project(
-                        input,
-                        expr.clone(),
-                        Some(llm_actors.clone()),
-                        output_column_name.clone(),
-                        schema.clone(),
-                        StatsState::NotMaterialized,
-                        LocalNodeContext {
-                            origin_node_id: Some(node_id as usize),
-                            additional: None,
-                        },
-                    )
-                },
-            );
-
-            let (submittable_task, notify_token) = modified_task.add_notify_token();
+            // Add notify token directly to the builder
+            let (builder_with_token, notify_token) = modified_builder.add_notify_token();
             running_tasks.spawn(notify_token);
-            if result_tx.send(submittable_task).await.is_err() {
+
+            // Send the builder downstream (build will be called when submitting)
+            if result_tx.send(builder_with_token).await.is_err() {
                 break;
             }
         }
@@ -140,8 +129,8 @@ impl VLLMNode {
     #[cfg(not(feature = "python"))]
     async fn execution_loop(
         self: Arc<Self>,
-        mut input_task_stream: SubmittableTaskStream,
-        result_tx: Sender<SubmittableTask<SwordfishTask>>,
+        mut input_task_stream: TaskBuilderStream,
+        result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
         unimplemented!("VLLM is not supported in non-Python mode");
     }
@@ -163,14 +152,14 @@ impl PipelineNodeImpl for VLLMNode {
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> super::SubmittableTaskStream {
+    ) -> super::TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
 
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.execution_loop(input_node, result_tx);
         plan_context.spawn(execution_loop);
 
-        SubmittableTaskStream::from(result_rx)
+        TaskBuilderStream::from(result_rx)
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {

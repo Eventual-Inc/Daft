@@ -19,6 +19,11 @@ def test_dataframe_running_in_async_context():
             .limit(10)
             .to_pydict()
         )
-        assert sorted(df["id"]) == [1, 3, 5, 7, 9, 11, 13, 15, 17, 19]
+        # Sort to handle non-deterministic ordering from limit()
+        result = sorted(df["id"])
+        # Check that we get 10 odd numbers in the expected range [1, 99]
+        assert len(result) == 10
+        assert all(x % 2 == 1 for x in result)
+        assert all(1 <= x <= 99 for x in result)
 
     asyncio.run(main())

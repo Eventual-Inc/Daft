@@ -1,19 +1,20 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
-use daft_logical_plan::partitioning::UnknownClusteringConfig;
+use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
+use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
 
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        PipelineNodeImpl, SubmittableTaskStream, make_in_memory_task_from_materialized_outputs,
+        PipelineNodeImpl, TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
-        scheduler::{SchedulerHandle, SubmittableTask},
-        task::{SwordfishTask, TaskContext},
+        scheduler::SchedulerHandle,
+        task::{SwordfishTask, SwordfishTaskBuilder},
     },
     utils::channel::{Sender, create_channel},
 };
@@ -59,27 +60,43 @@ impl GatherNode {
     // Async execution to get all partitions out
     async fn execution_loop(
         self: Arc<Self>,
-        input_node: SubmittableTaskStream,
+        input_node: TaskBuilderStream,
         task_id_counter: TaskIDCounter,
-        result_tx: Sender<SubmittableTask<SwordfishTask>>,
+        result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
         // Trigger materialization of all inputs
         let materialized = input_node
-            .materialize(scheduler_handle.clone())
+            .materialize(
+                scheduler_handle.clone(),
+                self.context.query_idx,
+                task_id_counter.clone(),
+            )
             .try_collect::<Vec<_>>()
             .await?;
 
-        let self_clone = self.clone();
-        let task = make_in_memory_task_from_materialized_outputs(
-            TaskContext::from((&self_clone.context, task_id_counter.next())),
-            materialized,
-            self_clone.config.schema.clone(),
-            &(self_clone as Arc<dyn PipelineNodeImpl>),
-            None,
+        let in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+            self.node_id().to_string(),
+            self.config.schema.clone(),
+            materialized
+                .iter()
+                .map(|output| output.size_bytes())
+                .sum::<usize>(),
+            StatsState::NotMaterialized,
+            LocalNodeContext {
+                origin_node_id: Some(self.node_id() as usize),
+                additional: None,
+            },
         );
+        let partition_refs = materialized
+            .into_iter()
+            .flat_map(|output| output.into_inner().0)
+            .collect::<Vec<_>>();
+        let plan = in_memory_source_plan;
+        let psets = HashMap::from([(self.node_id().to_string(), partition_refs)]);
+        let builder = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
 
-        let _ = result_tx.send(task).await;
+        let _ = result_tx.send(builder).await;
         Ok(())
     }
 }
@@ -104,7 +121,7 @@ impl PipelineNodeImpl for GatherNode {
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
 
         // Materialize and gather all partitions to a single node
@@ -117,6 +134,6 @@ impl PipelineNodeImpl for GatherNode {
         );
         plan_context.spawn(execution_loop);
 
-        SubmittableTaskStream::from(result_rx)
+        TaskBuilderStream::from(result_rx)
     }
 }

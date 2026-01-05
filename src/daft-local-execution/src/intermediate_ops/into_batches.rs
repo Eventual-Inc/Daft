@@ -5,9 +5,7 @@ use common_metrics::ops::NodeType;
 use daft_micropartition::MicroPartition;
 use tracing::Span;
 
-use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
-};
+use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{MorselSizeRequirement, NodeName},
@@ -46,7 +44,7 @@ impl IntermediateOperator for IntoBatchesOperator {
                         )),
                         None => Arc::new(MicroPartition::empty(Some(input.schema()))),
                     };
-                    Ok((state, IntermediateOperatorResult::NeedMoreInput(Some(out))))
+                    Ok((state, out))
                 },
                 Span::current(),
             )
@@ -61,8 +59,8 @@ impl IntermediateOperator for IntoBatchesOperator {
     fn multiline_display(&self) -> Vec<String> {
         vec![format!("IntoBatches: {}", self.batch_size)]
     }
-    fn make_state(&self) -> DaftResult<Self::State> {
-        Ok(())
+    fn make_state(&self) -> Self::State {
+        ()
     }
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
         match self.strict {

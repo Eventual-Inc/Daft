@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
@@ -6,7 +6,7 @@ use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
-use super::{PipelineNodeImpl, SubmittableTaskStream, make_new_task_from_materialized_outputs};
+use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
@@ -14,8 +14,8 @@ use crate::{
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
-        scheduler::{SchedulerHandle, SubmittableTask},
-        task::{SwordfishTask, TaskContext},
+        scheduler::SchedulerHandle,
+        task::{SwordfishTask, SwordfishTaskBuilder},
     },
     utils::channel::{Sender, create_channel},
 };
@@ -70,12 +70,13 @@ impl IntoBatchesNode {
 
     async fn execute_into_batches(
         self: Arc<Self>,
-        input_node: SubmittableTaskStream,
+        input_node: TaskBuilderStream,
         task_id_counter: TaskIDCounter,
-        result_tx: Sender<SubmittableTask<SwordfishTask>>,
+        result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
-        let mut materialized_stream = input_node.materialize(scheduler_handle.clone());
+        let mut materialized_stream =
+            input_node.materialize(scheduler_handle, self.context.query_idx, task_id_counter);
 
         let mut current_group: Vec<MaterializedOutput> = Vec::new();
         let mut current_group_size = 0;
@@ -92,27 +93,37 @@ impl IntoBatchesNode {
                 if current_group_size >= (self.batch_size as f64 * BATCH_SIZE_THRESHOLD) as usize {
                     let group_size = std::mem::take(&mut current_group_size);
 
-                    let self_clone = self.clone();
-                    let task = make_new_task_from_materialized_outputs(
-                        TaskContext::from((&self_clone.context, task_id_counter.next())),
-                        std::mem::take(&mut current_group),
-                        self_clone.config.schema.clone(),
-                        &(self_clone.clone() as Arc<dyn PipelineNodeImpl>),
-                        move |input| {
-                            LocalPhysicalPlan::into_batches(
-                                input,
-                                group_size,
-                                true, // Strict batch sizes for the downstream tasks, as they have been coalesced.
-                                StatsState::NotMaterialized,
-                                LocalNodeContext {
-                                    origin_node_id: Some(self_clone.node_id() as usize),
-                                    additional: None,
-                                },
-                            )
+                    let materialized_outputs = std::mem::take(&mut current_group);
+                    let in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+                        self.node_id().to_string(),
+                        self.config.schema.clone(),
+                        materialized_outputs
+                            .iter()
+                            .map(|output| output.size_bytes())
+                            .sum::<usize>(),
+                        StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(self.node_id() as usize),
+                            additional: None,
                         },
-                        None,
                     );
-                    if result_tx.send(task).await.is_err() {
+                    let partition_refs = materialized_outputs
+                        .into_iter()
+                        .flat_map(|output| output.into_inner().0)
+                        .collect::<Vec<_>>();
+                    let plan = LocalPhysicalPlan::into_batches(
+                        in_memory_source_plan,
+                        group_size,
+                        true, // Strict batch sizes for the downstream tasks, as they have been coalesced.
+                        StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(self.node_id() as usize),
+                            additional: None,
+                        },
+                    );
+                    let psets = HashMap::from([(self.node_id().to_string(), partition_refs)]);
+                    let builder = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+                    if result_tx.send(builder).await.is_err() {
                         break;
                     }
                 }
@@ -120,27 +131,36 @@ impl IntoBatchesNode {
         }
 
         if !current_group.is_empty() {
-            let self_clone = self.clone();
-            let task = make_new_task_from_materialized_outputs(
-                TaskContext::from((&self_clone.context, task_id_counter.next())),
-                current_group,
-                self_clone.config.schema.clone(),
-                &(self_clone.clone() as Arc<dyn PipelineNodeImpl>),
-                move |input| {
-                    LocalPhysicalPlan::into_batches(
-                        input,
-                        current_group_size,
-                        true, // Strict batch sizes for the downstream tasks, as they have been coalesced.
-                        StatsState::NotMaterialized,
-                        LocalNodeContext {
-                            origin_node_id: Some(self_clone.node_id() as usize),
-                            additional: None,
-                        },
-                    )
+            let in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+                self.node_id().to_string(),
+                self.config.schema.clone(),
+                current_group
+                    .iter()
+                    .map(|output| output.size_bytes())
+                    .sum::<usize>(),
+                StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(self.node_id() as usize),
+                    additional: None,
                 },
-                None,
             );
-            let _ = result_tx.send(task).await;
+            let partition_refs = current_group
+                .into_iter()
+                .flat_map(|output| output.into_inner().0)
+                .collect::<Vec<_>>();
+            let plan = LocalPhysicalPlan::into_batches(
+                in_memory_source_plan,
+                current_group_size,
+                true, // Strict batch sizes for the downstream tasks, as they have been coalesced.
+                StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(self.node_id() as usize),
+                    additional: None,
+                },
+            );
+            let psets = HashMap::from([(self.node_id().to_string(), partition_refs)]);
+            let builder = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+            let _ = result_tx.send(builder).await;
         }
         Ok(())
     }
@@ -166,14 +186,14 @@ impl PipelineNodeImpl for IntoBatchesNode {
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
-        let self_clone = self.clone();
-        let node_id = self_clone.node_id();
+        let node_id = self.node_id();
+        let batch_size = self.batch_size;
         let local_into_batches_node = input_node.pipeline_instruction(self.clone(), move |input| {
             LocalPhysicalPlan::into_batches(
                 input,
-                self_clone.batch_size,
+                batch_size,
                 false, // No need strict batch sizes for the child tasks, as we coalesce them later on.
                 StatsState::NotMaterialized,
                 LocalNodeContext {
@@ -192,6 +212,6 @@ impl PipelineNodeImpl for IntoBatchesNode {
         );
         plan_context.spawn(execution_future);
 
-        SubmittableTaskStream::from(result_rx)
+        TaskBuilderStream::from(result_rx)
     }
 }

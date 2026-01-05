@@ -1487,6 +1487,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1b8e56985ec62d17e9c1001dc89c88ecd7dc08e47eba5ec7c29c7b5eeecde967"
 
 [[package]]
+name = "bitmap"
+version = "3.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e97e87564167fab42092c423e491e0fbb77b04ae02b5a78559a1396c052e01e9"
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2739,6 +2745,7 @@ dependencies = [
  "common-display",
  "common-error",
  "common-file-formats",
+ "common-hashable-float-wrapper",
  "common-io-config",
  "common-metrics",
  "common-partitioning",
@@ -2752,6 +2759,7 @@ dependencies = [
  "daft-logical-plan",
  "daft-micropartition",
  "daft-recordbatch",
+ "daft-scan",
  "daft-schema",
  "futures",
  "itertools 0.14.0",
@@ -3069,9 +3077,11 @@ name = "daft-local-execution"
 version = "0.3.0-dev0"
 dependencies = [
  "arc-swap",
+ "async-channel 2.5.0",
  "async-trait",
  "atomic_float",
  "bincode",
+ "bitmap",
  "capitalize",
  "common-daft-config",
  "common-display",
@@ -3107,7 +3117,6 @@ dependencies = [
  "indexmap 2.11.4",
  "indicatif 0.18.0",
  "itertools 0.14.0",
- "kanal",
  "log",
  "opentelemetry",
  "parking_lot 0.12.5",
@@ -3128,6 +3137,7 @@ name = "daft-local-plan"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "common-hashable-float-wrapper",
  "common-io-config",
  "common-py-serde",
  "common-resource-request",
@@ -3138,6 +3148,7 @@ dependencies = [
  "daft-functions",
  "daft-functions-list",
  "daft-logical-plan",
+ "daft-scan",
  "indexmap 2.11.4",
  "log",
  "pyo3",
@@ -5292,16 +5303,6 @@ dependencies = [
  "serde",
  "serde_json",
  "simple_asn1",
-]
-
-[[package]]
-name = "kanal"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e3953adf0cd667798b396c2fa13552d6d9b3269d7dd1154c4c416442d1ff574"
-dependencies = [
- "futures-core",
- "lock_api",
 ]
 
 [[package]]

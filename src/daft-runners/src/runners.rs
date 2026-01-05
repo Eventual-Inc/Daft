@@ -108,7 +108,6 @@ impl Runner {
         &self,
         py: Python<'py>,
         lp: LogicalPlanBuilder,
-        results_buffer_size: Option<usize>,
     ) -> DaftResult<impl Iterator<Item = DaftResult<MicroPartitionRef>> + 'py> {
         let pyobj = self.get_runner_ref();
         let py_lp = PyLogicalPlanBuilder::new(lp);
@@ -118,7 +117,7 @@ impl Runner {
         let result = pyobj.call_method(
             py,
             intern!(py, "run_iter_tables"),
-            (builder, results_buffer_size),
+            (builder,),
             None,
         )?;
 

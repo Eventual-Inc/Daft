@@ -30,6 +30,7 @@ use crate::{
     TaskSet,
     channel::{Sender, create_channel},
     pipeline::NodeName,
+    plan_input::{InputId, PipelineMessage},
     sources::source::{Source, SourceStream},
 };
 
@@ -115,7 +116,6 @@ impl ScanTaskSource {
         senders: Vec<Sender<Arc<MicroPartition>>>,
         io_stats: IOStatsRef,
         delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
-        maintain_order: bool,
         chunk_size: usize,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
@@ -133,7 +133,6 @@ impl ScanTaskSource {
                         scan_task,
                         io_stats.clone(),
                         delete_map.clone(),
-                        maintain_order,
                         chunk_size,
                         sender,
                     ));
@@ -148,7 +147,6 @@ impl ScanTaskSource {
                         scan_task,
                         io_stats.clone(),
                         delete_map.clone(),
-                        maintain_order,
                         chunk_size,
                         sender,
                     ));
@@ -165,24 +163,19 @@ impl Source for ScanTaskSource {
     #[instrument(name = "ScanTaskSource::get_data", level = "info", skip_all)]
     async fn get_data(
         &self,
-        maintain_order: bool,
         io_stats: IOStatsRef,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
+        // Invariant: self.scan_tasks is never empty
         // Get the delete map for the scan tasks, if any
         let delete_map = get_delete_map(&self.scan_tasks).await?.map(Arc::new);
 
+        const PLACEHOLDER_INPUT_ID: InputId = 0;
+
         // Create channels for the scan tasks
-        let (senders, receivers) = match maintain_order {
-            // If we need to maintain order, we need to create a channel for each scan task
-            true => (0..self.scan_tasks.len())
-                .map(|_| create_channel::<Arc<MicroPartition>>(0))
-                .unzip(),
-            // If we don't need to maintain order, we can use a single channel for all scan tasks
-            false => {
-                let (tx, rx) = create_channel(0);
-                (vec![tx; self.scan_tasks.len()], vec![rx])
-            }
+        let (senders, receivers) = {
+            let (tx, rx) = create_channel(1);
+            (vec![tx; self.scan_tasks.len()], vec![rx])
         };
 
         // Spawn the scan task processor
@@ -190,12 +183,17 @@ impl Source for ScanTaskSource {
             senders,
             io_stats,
             delete_map,
-            maintain_order,
             chunk_size,
         );
 
-        // Flatten the receivers into a stream
-        let result_stream = flatten_receivers_into_stream(receivers, task.map(|x| x?));
+        // Flatten the receivers into a stream and wrap in Morsel
+        let base_stream = flatten_receivers_into_stream(receivers, task.map(|x| x?));
+        let result_stream = base_stream.map(move |result: DaftResult<Arc<MicroPartition>>| {
+            result.map(|partition| PipelineMessage::Morsel {
+                input_id: PLACEHOLDER_INPUT_ID,
+                partition,
+            })
+        });
 
         Ok(Box::pin(result_stream))
     }
@@ -320,7 +318,7 @@ Num Parallel Scan Tasks = {num_parallel_tasks}
 }
 
 // Read all iceberg delete files and return a map of file paths to delete positions
-async fn get_delete_map(
+pub(crate) async fn get_delete_map(
     scan_tasks: &[Arc<ScanTask>],
 ) -> DaftResult<Option<HashMap<String, Vec<i64>>>> {
     let delete_files = scan_tasks
@@ -421,25 +419,33 @@ async fn forward_scan_task_stream(
     scan_task: Arc<ScanTask>,
     io_stats: IOStatsRef,
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
-    maintain_order: bool,
     chunk_size: usize,
     sender: Sender<Arc<MicroPartition>>,
 ) -> DaftResult<()> {
+    let schema = scan_task.materialized_schema();
     let mut stream =
-        stream_scan_task(scan_task, io_stats, delete_map, maintain_order, chunk_size).await?;
+        stream_scan_task(scan_task, io_stats, delete_map, chunk_size).await?;
+    let mut has_data = false;
     while let Some(result) = stream.next().await {
+        has_data = true;
         if sender.send(result?).await.is_err() {
             break;
         }
     }
+
+    // If no data was emitted, send empty micropartition
+    if !has_data {
+        let empty = Arc::new(MicroPartition::empty(Some(schema)));
+        let _ = sender.send(empty).await;
+    }
+
     Ok(())
 }
 
-async fn stream_scan_task(
+pub(crate) async fn stream_scan_task(
     scan_task: Arc<ScanTask>,
     io_stats: IOStatsRef,
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
-    maintain_order: bool,
     chunk_size: usize,
 ) -> DaftResult<impl Stream<Item = DaftResult<Arc<MicroPartition>>> + Send> {
     let pushdown_columns = scan_task
@@ -530,7 +536,6 @@ async fn stream_scan_task(
                     &inference_options,
                     field_id_mapping.clone(),
                     metadata,
-                    maintain_order,
                     delete_rows,
                     parquet_chunk_size,
                 )
@@ -574,7 +579,6 @@ async fn stream_scan_task(
                 io_client,
                 Some(io_stats.clone()),
                 None,
-                // maintain_order, TODO: Implement maintain_order for CSV
             )
             .await?
         }

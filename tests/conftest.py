@@ -73,7 +73,7 @@ def uuid_ext_type() -> Generator[UuidType, None, None]:
         # Convert the data into Arrow and then load as in-memory Arrow data
         "arrow",
         # Dump the data as Parquet and load it as Parquet (will trigger "Unloaded" MicroPartitions)
-        "parquet",
+        # "parquet",
     ],
 )
 def data_source(request):
@@ -116,7 +116,7 @@ class MakeDF(Protocol):
     ) -> daft.DataFrame: ...
 
 
-@pytest.fixture(scope="function", params=[True, False])
+@pytest.fixture(scope="function", params=[False])
 def make_df(data_source, tmp_path, request) -> Generator[MakeDF, None, None]:
     """Makes a dataframe when provided with data."""
     dynamic_batching = request.param

@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Instant};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
@@ -14,30 +14,19 @@ use tracing::{info_span, instrument};
 
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
-    channel::{
-        OrderingAwareReceiver, Receiver, Sender, create_channel,
-        create_ordering_aware_receiver_channel,
-    },
-    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    channel::{Receiver, Sender, create_channel},
+    dispatcher::{DispatchSpawner, UnorderedDispatcher},
     dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
+    plan_input::{InputId, PipelineMessage},
     resource_manager::MemoryManager,
     runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
     },
 };
-#[cfg_attr(debug_assertions, derive(Debug))]
-pub enum IntermediateOperatorResult {
-    NeedMoreInput(Option<Arc<MicroPartition>>),
-    HasMoreOutput(Arc<MicroPartition>),
-}
 
-pub(crate) type IntermediateOpExecuteResult<Op> = OperatorOutput<
-    DaftResult<(
-        <Op as IntermediateOperator>::State,
-        IntermediateOperatorResult,
-    )>,
->;
+pub(crate) type IntermediateOpExecuteResult<Op> =
+    OperatorOutput<DaftResult<(<Op as IntermediateOperator>::State, Arc<MicroPartition>)>>;
 pub(crate) trait IntermediateOperator: Send + Sync {
     type State: Send + Sync + Unpin;
     type BatchingStrategy: BatchingStrategy + 'static;
@@ -50,15 +39,15 @@ pub(crate) trait IntermediateOperator: Send + Sync {
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
-    fn make_state(&self) -> DaftResult<Self::State>;
+    fn make_state(&self) -> Self::State;
     fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
         Arc::new(DefaultRuntimeStats::new(id))
     }
     /// The maximum number of concurrent workers that can be spawned for this operator.
     /// Each worker will has its own IntermediateOperatorState.
     /// This method should be overridden if the operator needs to limit the number of concurrent workers, i.e. UDFs with resource requests.
-    fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(get_compute_pool_num_threads())
+    fn max_concurrency(&self) -> usize {
+        get_compute_pool_num_threads()
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
@@ -66,25 +55,11 @@ pub(crate) trait IntermediateOperator: Send + Sync {
     }
 
     fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy>;
-
-    fn dispatch_spawner(
-        &self,
-        batch_manager: Arc<BatchManager<Self::BatchingStrategy>>,
-        maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner> {
-        if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(batch_manager))
-        } else {
-            Arc::new(UnorderedDispatcher::new(
-                batch_manager.initial_requirements(),
-            ))
-        }
-    }
 }
 
 pub struct IntermediateNode<Op: IntermediateOperator> {
     intermediate_op: Arc<Op>,
-    children: Vec<Box<dyn PipelineNode>>,
+    child: Box<dyn PipelineNode>,
     runtime_stats: Arc<dyn RuntimeStats>,
     plan_stats: StatsState,
     morsel_size_requirement: MorselSizeRequirement,
@@ -94,7 +69,7 @@ pub struct IntermediateNode<Op: IntermediateOperator> {
 impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
     pub(crate) fn new(
         intermediate_op: Arc<Op>,
-        children: Vec<Box<dyn PipelineNode>>,
+        child: Box<dyn PipelineNode>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
         output_schema: SchemaRef,
@@ -114,7 +89,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
             .unwrap_or_default();
         Self {
             intermediate_op,
-            children,
+            child,
             runtime_stats,
             plan_stats,
             morsel_size_requirement,
@@ -129,8 +104,8 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
     #[instrument(level = "info", skip_all, name = "IntermediateOperator::run_worker")]
     pub async fn run_worker(
         op: Arc<Op>,
-        receiver: Receiver<Arc<MicroPartition>>,
-        sender: Sender<Arc<MicroPartition>>,
+        mut receiver: Receiver<PipelineMessage>,
+        sender: Sender<PipelineMessage>,
         runtime_stats: Arc<dyn RuntimeStats>,
         memory_manager: Arc<MemoryManager>,
         batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
@@ -139,39 +114,35 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         let compute_runtime = get_compute_runtime();
         let task_spawner =
             ExecutionTaskSpawner::new(compute_runtime, memory_manager, runtime_stats.clone(), span);
-        let mut state = op.make_state()?;
-        while let Some(morsel) = receiver.recv().await {
-            loop {
-                let now = Instant::now();
-                let result = op.execute(morsel.clone(), state, &task_spawner).await??;
-                let elapsed = now.elapsed();
+        let mut state = op.make_state();
+        while let Some(msg) = receiver.recv().await {
+            match msg {
+                PipelineMessage::Morsel {
+                    input_id,
+                    partition,
+                } => {
+                    let now = Instant::now();
+                    let (new_state, mp) = op.execute(partition, state, &task_spawner).await??;
+                    let elapsed = now.elapsed();
 
-                state = result.0;
-                match result.1 {
-                    IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
-                        batch_manager.record_execution_stats(
-                            runtime_stats.clone(),
-                            mp.len(),
-                            elapsed,
-                        );
+                    state = new_state;
+                    batch_manager.record_execution_stats(runtime_stats.clone(), mp.len(), elapsed);
 
-                        if sender.send(mp).await.is_err() {
-                            return Ok(());
-                        }
+                    if sender
+                        .send(PipelineMessage::Morsel {
+                            input_id,
+                            partition: mp,
+                        })
+                        .await
+                        .is_err()
+                    {
                         break;
                     }
-                    IntermediateOperatorResult::NeedMoreInput(None) => {
+                }
+                PipelineMessage::Flush(input_id) => {
+                    // Propagate flush signal immediately
+                    if sender.send(PipelineMessage::Flush(input_id)).await.is_err() {
                         break;
-                    }
-                    IntermediateOperatorResult::HasMoreOutput(mp) => {
-                        batch_manager.record_execution_stats(
-                            runtime_stats.clone(),
-                            mp.len(),
-                            elapsed,
-                        );
-                        if sender.send(mp).await.is_err() {
-                            return Ok(());
-                        }
                     }
                 }
             }
@@ -181,20 +152,18 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
 
     pub fn spawn_workers(
         &self,
-        input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
+        input_receivers: Vec<Receiver<PipelineMessage>>,
         runtime_handle: &mut ExecutionRuntimeContext,
-        maintain_order: bool,
         memory_manager: Arc<MemoryManager>,
         batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
-    ) -> OrderingAwareReceiver<Arc<MicroPartition>> {
-        let (output_sender, output_receiver) =
-            create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
-        for (input_receiver, output_sender) in input_receivers.into_iter().zip(output_sender) {
+    ) -> Receiver<PipelineMessage> {
+        let (output_sender, output_receiver) = create_channel(input_receivers.len());
+        for input_receiver in input_receivers {
             runtime_handle.spawn(
                 Self::run_worker(
                     self.intermediate_op.clone(),
                     input_receiver,
-                    output_sender,
+                    output_sender.clone(),
                     self.runtime_stats.clone(),
                     memory_manager.clone(),
                     batch_manager.clone(),
@@ -256,20 +225,17 @@ impl<Op: IntermediateOperator + 'static> TreeDisplay for IntermediateNode<Op> {
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        self.children.iter().map(|v| v.as_tree_display()).collect()
+        vec![self.child.as_tree_display()]
     }
 }
 
 impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
     fn children(&self) -> Vec<&dyn PipelineNode> {
-        self.children
-            .iter()
-            .map(std::convert::AsRef::as_ref)
-            .collect()
+        vec![self.child.as_ref()]
     }
 
     fn boxed_children(&self) -> Vec<&Box<dyn PipelineNode>> {
-        self.children.iter().collect()
+        vec![&self.child]
     }
 
     fn name(&self) -> Arc<str> {
@@ -287,49 +253,42 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
             downstream_requirement,
         );
         self.morsel_size_requirement = combined_morsel_size_requirement;
-        for child in &mut self.children {
-            child.propagate_morsel_size_requirement(
-                combined_morsel_size_requirement,
-                default_requirement,
-            );
-        }
+        self.child.propagate_morsel_size_requirement(
+            combined_morsel_size_requirement,
+            default_requirement,
+        );
     }
 
     fn start(
         &self,
-        maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
-        let mut child_result_receivers = Vec::with_capacity(self.children.len());
+    ) -> crate::Result<Receiver<PipelineMessage>> {
+        let child_result_receiver: Receiver<PipelineMessage> = self.child.start(runtime_handle)?;
+        let child_result_receiver = InitializingCountingReceiver::new(
+            child_result_receiver,
+            self.node_id(),
+            self.runtime_stats.clone(),
+            runtime_handle.stats_manager(),
+        );
+        let num_workers = self.intermediate_op.max_concurrency();
 
-        for child in &self.children {
-            let child_result_receiver = child.start(maintain_order, runtime_handle)?;
-            child_result_receivers.push(InitializingCountingReceiver::new(
-                child_result_receiver,
-                self.node_id(),
-                self.runtime_stats.clone(),
-                runtime_handle.stats_manager(),
-            ));
-        }
-        let op = self.intermediate_op.clone();
-        let num_workers = op.max_concurrency().context(PipelineExecutionSnafu {
-            node_name: self.name().to_string(),
-        })?;
-
-        let (destination_sender, destination_receiver) = create_channel(0);
+        let (destination_sender, destination_receiver) = create_channel(1);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
-        let strategy = op.batching_strategy().context(PipelineExecutionSnafu {
-            node_name: self.name().to_string(),
-        })?;
+
+        let strategy =
+            self.intermediate_op
+                .batching_strategy()
+                .context(PipelineExecutionSnafu {
+                    node_name: self.name().to_string(),
+                })?;
         let batch_manager = Arc::new(BatchManager::new(strategy));
-        let dispatch_spawner = self
-            .intermediate_op
-            .dispatch_spawner(batch_manager.clone(), maintain_order);
+        let dispatch_spawner = UnorderedDispatcher::new(batch_manager.initial_requirements());
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
-            child_result_receivers,
+            child_result_receiver,
             num_workers,
             &mut runtime_handle.handle(),
         );
+
         runtime_handle.spawn(
             async move { spawned_dispatch_result.spawned_dispatch_task.await? },
             &self.name(),
@@ -338,7 +297,6 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         let mut output_receiver = self.spawn_workers(
             spawned_dispatch_result.worker_receivers,
             runtime_handle,
-            maintain_order,
             runtime_handle.memory_manager(),
             batch_manager,
         );
@@ -346,15 +304,73 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         let node_id = self.node_id();
         runtime_handle.spawn(
             async move {
-                while let Some(morsel) = output_receiver.recv().await {
-                    if counting_sender.send(morsel).await.is_err() {
-                        return Ok(());
+                // Track flush signals per input_id - need to receive flush from all workers
+                let mut flush_counts: HashMap<InputId, usize> = HashMap::new();
+
+                while let Some(msg) = output_receiver.recv().await {
+                    match msg {
+                        PipelineMessage::Morsel {
+                            input_id,
+                            partition,
+                        } => {
+                            if counting_sender
+                                .send(PipelineMessage::Morsel {
+                                    input_id,
+                                    partition,
+                                })
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
+                        PipelineMessage::Flush(input_id) => {
+                            // Track that we received a flush for this input_id
+                            let count = flush_counts.entry(input_id).or_insert(0);
+                            *count += 1;
+
+                            // Invariant: count should never exceed num_workers_for_flush
+                            // Each worker should send exactly one flush per input_id
+                            assert!(
+                                *count <= num_workers,
+                                "Flush count ({}) exceeded num_workers ({}) for input_id: {:?}",
+                                *count,
+                                num_workers,
+                                input_id
+                            );
+
+                            // Only propagate flush downstream when all workers have flushed
+                            // Use == to ensure we only send once
+                            // Don't remove the entry - keep it to maintain the invariant and prevent reset
+                            if *count == num_workers {
+                                flush_counts.remove(&input_id);
+                                if counting_sender
+                                    .send(PipelineMessage::Flush(input_id))
+                                    .await
+                                    .is_err()
+                                {
+                                    break;
+                                }
+                            }
+                        }
                     }
                 }
+
+                // Flush any remaining flush counts
+                for (input_id, _) in flush_counts {
+                    if counting_sender
+                        .send(PipelineMessage::Flush(input_id))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+
                 stats_manager.finalize_node(node_id);
                 Ok(())
             },
-            &op.name(),
+            &self.intermediate_op.name(),
         );
         Ok(destination_receiver)
     }

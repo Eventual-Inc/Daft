@@ -4,7 +4,7 @@ use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef,
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
-use super::{PipelineNodeImpl, SubmittableTaskStream};
+use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
@@ -47,7 +47,7 @@ impl SampleNode {
             child.config().clustering_spec.clone(),
         );
         let sampling_method = if let Some(fraction) = fraction {
-            SamplingMethod::Fraction(fraction)
+            SamplingMethod::Fraction(common_hashable_float_wrapper::FloatWrapper(fraction))
         } else if let Some(size) = size {
             SamplingMethod::Size(size)
         } else {
@@ -85,7 +85,7 @@ impl PipelineNodeImpl for SampleNode {
         let mut res = vec![];
         match &self.sampling_method {
             SamplingMethod::Fraction(fraction) => {
-                res.push(format!("Sample: {} (fraction)", fraction));
+                res.push(format!("Sample: {} (fraction)", fraction.0));
             }
             SamplingMethod::Size(size) => res.push(format!("Sample: {} rows", size)),
         }
@@ -97,18 +97,18 @@ impl PipelineNodeImpl for SampleNode {
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
 
         // Create the plan builder closure
-        let sampling_method = self.sampling_method;
+        let sampling_method = self.sampling_method.clone();
         let with_replacement = self.with_replacement;
         let seed = self.seed;
         let node_id = self.node_id();
         let plan_builder = move |input: LocalPhysicalPlanRef| -> LocalPhysicalPlanRef {
             LocalPhysicalPlan::sample(
                 input,
-                sampling_method,
+                sampling_method.clone(),
                 with_replacement,
                 seed,
                 StatsState::NotMaterialized,

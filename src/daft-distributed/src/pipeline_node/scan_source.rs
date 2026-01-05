@@ -1,25 +1,23 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_display::{DisplayAs, DisplayLevel};
 use common_error::DaftResult;
 #[cfg(feature = "python")]
 use common_file_formats::FileFormatConfig;
+use common_partitioning::Partition;
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, stats::StatsState};
+use daft_micropartition::MicroPartition;
 use daft_schema::schema::SchemaRef;
 
 use super::{
-    NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream,
-    make_empty_scan_task,
+    NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
 };
 use crate::{
     pipeline_node::{DistributedPipelineNode, NodeID},
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
-    scheduling::{
-        scheduler::SubmittableTask,
-        task::{SchedulingStrategy, SwordfishTask, TaskContext},
-    },
+    plan::{PlanConfig, PlanExecutionContext},
+    scheduling::task::SwordfishTaskBuilder,
     utils::channel::{Sender, create_channel},
 };
 
@@ -67,58 +65,56 @@ impl ScanSourceNode {
 
     async fn execution_loop(
         self: Arc<Self>,
-        result_tx: Sender<SubmittableTask<SwordfishTask>>,
-        task_id_counter: TaskIDCounter,
+        result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
         if self.scan_tasks.is_empty() {
-            let empty_scan_task = make_empty_scan_task(
-                TaskContext::from((&self.context, task_id_counter.next())),
+            let transformed_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+                self.node_id().to_string(),
                 self.config.schema.clone(),
-                &(self.clone() as Arc<dyn PipelineNodeImpl>),
+                0,
+                StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(self.node_id() as usize),
+                    additional: None,
+                },
             );
-            let _ = result_tx.send(SubmittableTask::new(empty_scan_task)).await;
+            let empty_scan_task = SwordfishTaskBuilder::new(transformed_plan, self.as_ref())
+                .with_psets(HashMap::from([(self.node_id().to_string(), vec![])]));
+            let _ = result_tx.send(empty_scan_task).await;
             return Ok(());
         }
 
+        // Create one task per scan task
         for scan_task in self.scan_tasks.iter() {
-            let task = self.make_source_tasks(
-                vec![scan_task.clone()].into(),
-                TaskContext::from((&self.context, task_id_counter.next())),
-            )?;
-            if result_tx.send(SubmittableTask::new(task)).await.is_err() {
-                break;
+            let builder = self.make_source_task(scan_task.clone())?;
+            if result_tx.send(builder).await.is_err() {
+                return Ok(());
             }
         }
 
         Ok(())
     }
 
-    fn make_source_tasks(
-        &self,
-        scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
-        task_context: TaskContext,
-    ) -> DaftResult<SwordfishTask> {
-        let node_id = self.node_id();
-        let physical_scan = LocalPhysicalPlan::physical_scan(
-            scan_tasks.clone(),
+    fn make_source_task(
+        self: &Arc<Self>,
+        scan_task: ScanTaskLikeRef,
+    ) -> DaftResult<SwordfishTaskBuilder> {
+        let streaming_physical_scan = LocalPhysicalPlan::streaming_physical_scan(
+            self.node_id().to_string(),
             self.pushdowns.clone(),
             self.config.schema.clone(),
             StatsState::NotMaterialized,
             LocalNodeContext {
-                origin_node_id: Some(node_id as usize),
+                origin_node_id: Some(self.node_id() as usize),
                 additional: None,
             },
         );
 
-        let task = SwordfishTask::new(
-            task_context,
-            physical_scan,
-            self.config.execution_config.clone(),
-            Default::default(),
-            SchedulingStrategy::Spread,
-            self.context.to_hashmap(),
-        );
-        Ok(task)
+        // Create scan_tasks_map with a single scan task
+        let scan_tasks_map = HashMap::from([(self.node_id().to_string(), vec![scan_task])]);
+        let builder = SwordfishTaskBuilder::new(streaming_physical_scan, self.as_ref())
+            .with_scan_tasks(scan_tasks_map);
+        Ok(builder)
     }
 }
 
@@ -208,11 +204,11 @@ impl PipelineNodeImpl for ScanSourceNode {
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.execution_loop(result_tx, plan_context.task_id_counter());
+        let execution_loop = self.execution_loop(result_tx);
         plan_context.spawn(execution_loop);
 
-        SubmittableTaskStream::from(result_rx)
+        TaskBuilderStream::from(result_rx)
     }
 }

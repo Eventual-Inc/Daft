@@ -40,7 +40,7 @@ def test_batch_size_from_udf_propagated_to_scan(dynamic_batching):
     |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
     |   Batch Size = 10
     |
-    * InMemorySource:
+    * StreamingInMemorySource:
     |   Schema = a#Int64
     |   Size bytes = 40
     |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
@@ -156,7 +156,7 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |   ))) as {id_placeholder}, col(0: data)
 |   Batch Size = Range(0, 10]
 |
-* InMemorySource:
+* StreamingInMemorySource:
 |   Schema = data#Utf8
 |   Size bytes = 156
 |   Stats = {{ Approx num rows = 5, Approx size bytes = 156 B, Accumulated selectivity = 1.00 }}
@@ -199,7 +199,7 @@ def test_batch_size_from_multiple_udfs_do_not_override_each_other():
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
 |   Batch Size = 10
 |
-* InMemorySource:
+* StreamingInMemorySource:
 |   Schema = a#Int64
 |   Size bytes = 40
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
@@ -228,9 +228,8 @@ def test_batch_size_from_udf_not_propagated_through_agg():
 * GroupedAggregate:
 |   Group by: col(0: a)
 |   Stats = { Approx num rows = 4, Approx size bytes = 32 B, Accumulated selectivity = 0.80 }
-|   Batch Size = Range(0, 131072]
 |
-* InMemorySource:
+* StreamingInMemorySource:
 |   Schema = a#Int64
 |   Size bytes = 40
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
@@ -262,9 +261,11 @@ def test_batch_size_from_udf_not_propagated_through_join():
 |   Stats = { Approx num rows = 5, Approx size bytes = 37 B, Accumulated selectivity = 0.90 }
 |   Batch Size = Range(0, 10]
 |
-* InnerHashJoinProbe:
-|   Probe on: [col(0: b)]
+* Hash Join (Inner):
 |   Build on left: true
+|   Track Indices: true
+|   Key Schema: a#Int64
+|   Null equals Nulls = [false]
 |   Stats = { Approx num rows = 5, Approx size bytes = 37 B, Accumulated selectivity = 0.90 }
 |   Batch Size = Range(0, 10]
 |\
@@ -272,24 +273,17 @@ def test_batch_size_from_udf_not_propagated_through_join():
 | |   Stats = { Approx num rows = 5, Approx size bytes = 38 B, Accumulated selectivity = 0.95 }
 | |   Batch Size = Range(0, 10]
 | |
-| * InMemorySource:
+| * StreamingInMemorySource:
 | |   Schema = b#Int64
 | |   Size bytes = 40
 | |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
 | |   Batch Size = Range(0, 10]
 |
-* HashJoinBuild:
-|   Track Indices: true
-|   Key Schema: a#Int64
-|   Null equals Nulls = [false]
-|   Stats = { Approx num rows = 5, Approx size bytes = 38 B, Accumulated selectivity = 0.95 }
-|   Batch Size = Range(0, 131072]
-|
 * Filter: not(is_null(col(0: a)))
 |   Stats = { Approx num rows = 5, Approx size bytes = 38 B, Accumulated selectivity = 0.95 }
 |   Batch Size = Range(0, 131072]
 |
-* InMemorySource:
+* StreamingInMemorySource:
 |   Schema = a#Int64
 |   Size bytes = 40
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
@@ -310,7 +304,7 @@ def test_batch_size_from_into_batches():
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
 |   Batch Size = Range(8, 10]
 |
-* InMemorySource:
+* StreamingInMemorySource:
 |   Schema = a#Int64
 |   Size bytes = 40
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
@@ -333,7 +327,7 @@ def test_batch_size_consecutive_into_batches():
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
 |   Batch Size = Range(24, 30]
 |
-* InMemorySource:
+* StreamingInMemorySource:
 |   Schema = a#Int64
 |   Size bytes = 40
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
@@ -364,7 +358,7 @@ def test_batch_size_from_into_batches_before_udf():
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
 |   Batch Size = Range(8, 10]
 |
-* InMemorySource:
+* StreamingInMemorySource:
 |   Schema = a#Int64
 |   Size bytes = 40
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }

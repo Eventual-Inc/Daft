@@ -33,9 +33,9 @@ class NativeExecutor:
     def run(
         self,
         local_physical_plan: LocalPhysicalPlan,
+        inputs: list,
         psets: dict[str, list[MaterializedResult[PartitionT]]],
         ctx: DaftContext,
-        results_buffer_size: int | None,
         context: dict[str, str] | None,
     ) -> Iterator[LocalMaterializedResult]:
         from daft.runners.partitioning import LocalMaterializedResult
@@ -47,13 +47,49 @@ class NativeExecutor:
             local_physical_plan,
             psets_mp,
             ctx._ctx,
-            results_buffer_size,
             context,
         )
 
         async def stream_results() -> AsyncGenerator[PyMicroPartition | None, None]:
+            # Process inputs and organize them by type
+            # All inputs have input_id 0 as specified in the requirements
+            scan_tasks_map = {}
+            in_memory_map = {}
+            glob_paths_map = {}
+            
+            for input_spec in inputs:
+                source_id = input_spec.source_id
+                
+                if input_spec.input_type == "scan_task":
+                    # Extract scan tasks from the input spec
+                    scan_tasks = input_spec.get_scan_tasks()
+                    if scan_tasks is not None:
+                        scan_tasks_map[source_id] = scan_tasks
+                
+                elif input_spec.input_type == "in_memory":
+                    # For in-memory sources, get data from psets using the cache key
+                    cache_key = input_spec.get_cache_key()
+                    if cache_key is not None and cache_key in psets:
+                        # Get the micropartitions for this cache key
+                        parts = psets[cache_key]
+                        in_memory_map[source_id] = [part.micropartition()._micropartition for part in parts]
+                
+                elif input_spec.input_type == "glob_paths":
+                    # Extract glob paths from the input spec
+                    paths = input_spec.get_glob_paths()
+                    if paths is not None:
+                        glob_paths_map[source_id] = paths
+            
+            # Enqueue inputs with input_id 0
+            result_receiver = await result_handle.enqueue_inputs(
+                0,
+                scan_tasks_map if scan_tasks_map else None,
+                in_memory_map if in_memory_map else None,
+                glob_paths_map if glob_paths_map else None,
+            )
+            assert result_receiver is not None, "Result receiver should not be None for NativeExecutor"
             try:
-                async for batch in result_handle:
+                async for batch in result_receiver:
                     yield batch
             finally:
                 _ = await result_handle.finish()

@@ -5,13 +5,16 @@ use common_error::DaftError;
 use common_metrics::StatSnapshot;
 use common_partitioning::PartitionRef;
 use common_resource_request::ResourceRequest;
+use common_scan_info::ScanTaskLikeRef;
 use daft_local_plan::LocalPhysicalPlanRef;
 use tokio_util::sync::CancellationToken;
 
 use super::worker::WorkerId;
 use crate::{
-    pipeline_node::{MaterializedOutput, NodeID, PipelineNodeContext},
-    plan::QueryIdx,
+    pipeline_node::{MaterializedOutput, NodeID, PipelineNodeContext, PipelineNodeImpl},
+    plan::{QueryIdx, TaskIDCounter},
+    scheduling::scheduler::SubmittableTask,
+    utils::channel::{create_oneshot_channel, OneshotReceiver, OneshotSender},
 };
 
 #[derive(Debug, Clone)]
@@ -66,10 +69,6 @@ impl TaskContext {
             task_id,
             node_ids,
         }
-    }
-
-    pub fn add_node_id(&mut self, node_id: NodeID) {
-        self.node_ids.push(node_id);
     }
 }
 
@@ -208,41 +207,43 @@ impl Ord for SwordfishTaskPriority {
 impl TaskPriority for SwordfishTaskPriority {}
 
 #[derive(Debug, Clone)]
+pub(crate) struct TaskInputs {
+    pub psets: HashMap<String, Vec<PartitionRef>>,
+    pub scan_tasks: HashMap<String, Vec<ScanTaskLikeRef>>,
+    pub glob_paths: HashMap<String, Vec<String>>,
+}
+
+impl TaskInputs {
+    pub fn new(
+        psets: HashMap<String, Vec<PartitionRef>>,
+        scan_tasks: HashMap<String, Vec<ScanTaskLikeRef>>,
+    ) -> Self {
+        Self {
+            psets,
+            scan_tasks,
+            glob_paths: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct SwordfishTask {
     task_context: TaskContext,
     plan: LocalPhysicalPlanRef,
     resource_request: TaskResourceRequest,
     config: Arc<DaftExecutionConfig>,
-    psets: HashMap<String, Vec<PartitionRef>>,
+    inputs: TaskInputs,
     strategy: SchedulingStrategy,
     context: HashMap<String, String>,
 }
 
 impl SwordfishTask {
-    pub fn new(
-        task_context: TaskContext,
-        plan: LocalPhysicalPlanRef,
-        config: Arc<DaftExecutionConfig>,
-        psets: HashMap<String, Vec<PartitionRef>>,
-        strategy: SchedulingStrategy,
-        mut context: HashMap<String, String>,
-    ) -> Self {
-        let resource_request = TaskResourceRequest::new(plan.resource_request());
-        context.insert("task_id".to_string(), task_context.task_id.to_string());
-
-        Self {
-            task_context,
-            plan,
-            resource_request,
-            config,
-            psets,
-            strategy,
-            context,
-        }
+    pub fn scan_tasks(&self) -> &HashMap<String, Vec<ScanTaskLikeRef>> {
+        &self.inputs.scan_tasks
     }
 
-    pub fn strategy(&self) -> &SchedulingStrategy {
-        &self.strategy
+    pub fn glob_paths(&self) -> &HashMap<String, Vec<String>> {
+        &self.inputs.glob_paths
     }
 
     pub fn plan(&self) -> LocalPhysicalPlanRef {
@@ -254,7 +255,7 @@ impl SwordfishTask {
     }
 
     pub fn psets(&self) -> &HashMap<String, Vec<PartitionRef>> {
-        &self.psets
+        &self.inputs.psets
     }
 
     pub fn context(&self) -> &HashMap<String, String> {
@@ -289,6 +290,196 @@ impl Task for SwordfishTask {
             node_id: self.task_context.last_node_id,
             task_id: self.task_context.task_id,
         }
+    }
+}
+
+/// Builder for creating and modifying SwordfishTask instances.
+/// Automatically handles TaskContext creation, config extraction, and context metadata.
+pub(crate) struct SwordfishTaskBuilder {
+    plan: LocalPhysicalPlanRef,
+    config: Arc<DaftExecutionConfig>,
+    psets: HashMap<String, Vec<PartitionRef>>,
+    scan_tasks: HashMap<String, Vec<ScanTaskLikeRef>>,
+    glob_paths: HashMap<String, Vec<String>>,
+    strategy: Option<SchedulingStrategy>,
+    context: HashMap<String, String>,
+    // For automatic context creation
+    node_context: Option<PipelineNodeContext>,
+    // Pending node_ids to add when task_context is created during build
+    pending_node_ids: Vec<NodeID>,
+    // For notify tokens and cancellation
+    notify_tokens: Vec<OneshotSender<()>>,
+    cancel_token: Option<CancellationToken>,
+}
+
+impl SwordfishTaskBuilder {
+    /// Create a new builder from a plan and node.
+    /// Automatically extracts context and config from the node, and adds node_id to pending_node_ids.
+    pub fn new(
+        plan: LocalPhysicalPlanRef,
+        node: &dyn PipelineNodeImpl,
+    ) -> Self {
+        Self {
+            plan,
+            config: node.config().execution_config.clone(),
+            psets: HashMap::new(),
+            scan_tasks: HashMap::new(),
+            glob_paths: HashMap::new(),
+            strategy: None,
+            context: node.context().to_hashmap(),
+            node_context: None,
+            pending_node_ids: vec![node.node_id()],
+            notify_tokens: vec![],
+            cancel_token: None,
+        }
+    }
+
+    /// Transform the current plan using a function.
+    /// The function receives the current plan and returns a new plan.
+    /// Automatically adds the node_id from the provided node to pending_node_ids.
+    pub fn map_plan<F>(
+        mut self,
+        node: &dyn PipelineNodeImpl,
+        f: F,
+    ) -> Self
+    where
+        F: FnOnce(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef,
+    {
+        self.plan = f(self.plan);
+        self.pending_node_ids.push(node.node_id());
+        self
+    }
+
+    /// Create a new builder by combining two existing builders.
+    /// The function receives both plans and returns a new plan.
+    /// This allows combining plans from two builders without exposing internals.
+    /// The new builder will have:
+    /// - The combined plan from the function
+    /// - Merged psets from both builders (right takes precedence on conflicts)
+    /// - Merged scan_tasks from both builders (right takes precedence on conflicts)
+    /// - Config and other fields from the left builder
+    /// - Merged pending_node_ids from both builders, with the node's node_id appended
+    pub fn combine_with<F>(
+        left: &Self,
+        right: &Self,
+        node: &dyn PipelineNodeImpl,
+        f: F,
+    ) -> Self
+    where
+        F: FnOnce(LocalPhysicalPlanRef, LocalPhysicalPlanRef) -> LocalPhysicalPlanRef,
+    {
+        let combined_plan = f(left.plan.clone(), right.plan.clone());
+
+        let mut psets = left.psets.clone();
+        psets.extend(right.psets.clone());
+
+        let mut scan_tasks = left.scan_tasks.clone();
+        scan_tasks.extend(right.scan_tasks.clone());
+
+        let mut glob_paths = left.glob_paths.clone();
+        glob_paths.extend(right.glob_paths.clone());
+
+        // Merge pending_node_ids from both sides, then add the current node's node_id
+        let mut pending_node_ids = left.pending_node_ids.clone();
+        pending_node_ids.extend(right.pending_node_ids.clone());
+        pending_node_ids.push(node.node_id());
+
+        Self {
+            plan: combined_plan,
+            config: left.config.clone(),
+            psets,
+            scan_tasks,
+            glob_paths,
+            strategy: left.strategy.clone(),
+            context: left.context.clone(),
+            node_context: left.node_context.clone(),
+            pending_node_ids,
+            notify_tokens: vec![],
+            cancel_token: None,
+        }
+    }
+
+    /// Conditionally set the scheduling strategy. If None, no-op.
+    pub fn with_strategy(mut self, strategy: Option<SchedulingStrategy>) -> Self {
+        self.strategy = strategy;
+        self
+    }
+
+    /// Set psets (replaces any existing psets).
+    pub fn with_psets(mut self, psets: HashMap<String, Vec<PartitionRef>>) -> Self {
+        self.psets = psets;
+        self
+    }
+
+    /// Set scan_tasks (replaces any existing scan_tasks).
+    pub fn with_scan_tasks(mut self, scan_tasks: HashMap<String, Vec<ScanTaskLikeRef>>) -> Self {
+        self.scan_tasks = scan_tasks;
+        self
+    }
+
+    /// Set glob_paths (replaces any existing glob_paths).
+    pub fn with_glob_paths(mut self, glob_paths: HashMap<String, Vec<String>>) -> Self {
+        self.glob_paths = glob_paths;
+        self
+    }
+
+    /// Merge additional psets into existing ones.
+    pub fn merge_psets(mut self, psets: HashMap<String, Vec<PartitionRef>>) -> Self {
+        self.psets.extend(psets);
+        self
+    }
+
+    /// Add a notify token to the builder. Returns the builder and the receiver for the token.
+    pub fn add_notify_token(mut self) -> (Self, OneshotReceiver<()>) {
+        let (notify_token, notify_rx) = create_oneshot_channel();
+        self.notify_tokens.push(notify_token);
+        (self, notify_rx)
+    }
+
+    /// Build the SubmittableTask directly, which can be submitted to the scheduler.
+    /// The task_id is assigned from the provided task_id_counter at build time.
+    pub fn build(
+        self,
+        query_idx: QueryIdx,
+        task_id_counter: &TaskIDCounter,
+    ) -> SubmittableTask<SwordfishTask> {
+        let strategy = self.strategy.unwrap_or(SchedulingStrategy::Spread);
+
+        let task_context = TaskContext {
+            query_idx,
+            last_node_id: *self
+                .pending_node_ids
+                .last()
+                .expect("Pending node_ids must be non-empty"),
+            task_id: task_id_counter.next(),
+            node_ids: self.pending_node_ids,
+        };
+
+        // Build context HashMap with task_id
+        let mut context = self.context;
+        context.insert("task_id".to_string(), task_context.task_id.to_string());
+
+        // Extract resource_request from plan
+        let resource_request = TaskResourceRequest::new(self.plan.resource_request());
+
+        let task = SwordfishTask {
+            task_context,
+            plan: self.plan,
+            resource_request,
+            config: self.config.clone(),
+            inputs: TaskInputs {
+                psets: self.psets,
+                scan_tasks: self.scan_tasks,
+                glob_paths: self.glob_paths,
+            },
+            strategy,
+            context,
+        };
+
+        let cancel_token = self
+            .cancel_token
+            .unwrap_or_else(|| CancellationToken::new());
+        SubmittableTask::from_parts(task, cancel_token, self.notify_tokens)
     }
 }
 

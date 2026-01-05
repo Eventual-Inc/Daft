@@ -1,4 +1,4 @@
-use std::{future, sync::Arc};
+use std::{collections::HashMap, future, sync::Arc};
 
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -11,7 +11,7 @@ use daft_recordbatch::RecordBatch;
 use daft_schema::schema::{Schema, SchemaRef};
 use futures::{TryStreamExt, future::try_join_all};
 
-use super::{PipelineNodeImpl, SubmittableTaskStream, make_new_task_from_materialized_outputs};
+use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
@@ -19,8 +19,8 @@ use crate::{
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
-        scheduler::{SchedulerHandle, SubmittableTask, SubmittedTask},
-        task::{SwordfishTask, TaskContext},
+        scheduler::{SchedulerHandle, SubmittedTask},
+        task::{SwordfishTask, SwordfishTaskBuilder},
     },
     utils::{
         channel::{Sender, create_channel},
@@ -110,7 +110,7 @@ pub(crate) fn create_sample_tasks(
     materialized_outputs: Vec<MaterializedOutput>,
     input_schema: SchemaRef,
     sample_by: Vec<BoundExpr>,
-    pipeline_node: &Arc<dyn PipelineNodeImpl>,
+    pipeline_node: &dyn PipelineNodeImpl,
     task_id_counter: &TaskIDCounter,
     scheduler_handle: &SchedulerHandle<SwordfishTask>,
 ) -> DaftResult<Vec<SubmittedTask>> {
@@ -129,37 +129,49 @@ pub(crate) fn create_sample_tasks(
             let input_schema = input_schema.clone();
             let sample_schema = sample_schema.clone();
             let node_id = pipeline_node.node_id();
-            let task = make_new_task_from_materialized_outputs(
-                TaskContext::from((context, task_id_counter.next())),
-                vec![mo],
-                input_schema,
-                pipeline_node,
-                move |input| {
-                    let sample = LocalPhysicalPlan::sample(
-                        input,
-                        SamplingMethod::Size(sample_size),
-                        true,
-                        None,
-                        StatsState::NotMaterialized,
-                        LocalNodeContext {
-                            origin_node_id: Some(node_id as usize),
-                            additional: None,
-                        },
-                    );
-                    LocalPhysicalPlan::project(
-                        sample,
-                        sample_by,
-                        sample_schema,
-                        StatsState::NotMaterialized,
-                        LocalNodeContext {
-                            origin_node_id: Some(node_id as usize),
-                            additional: None,
-                        },
-                    )
+            let materialized_outputs = vec![mo];
+            let in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+                node_id.to_string(),
+                input_schema.clone(),
+                materialized_outputs
+                    .iter()
+                    .map(|output| output.size_bytes())
+                    .sum::<usize>(),
+                StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(node_id as usize),
+                    additional: None,
                 },
-                None,
             );
-            let submitted_task = task.submit(scheduler_handle)?;
+            let partition_refs = materialized_outputs
+                .into_iter()
+                .flat_map(|output| output.into_inner().0)
+                .collect::<Vec<_>>();
+            let sample = LocalPhysicalPlan::sample(
+                in_memory_source_plan,
+                SamplingMethod::Size(sample_size),
+                true,
+                None,
+                StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(node_id as usize),
+                    additional: None,
+                },
+            );
+            let plan = LocalPhysicalPlan::project(
+                sample,
+                sample_by,
+                sample_schema,
+                StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(node_id as usize),
+                    additional: None,
+                },
+            );
+            let psets = HashMap::from([(node_id.to_string(), partition_refs)]);
+            let builder = SwordfishTaskBuilder::new(plan, pipeline_node).with_psets(psets);
+            let submittable_task = builder.build(context.query_idx, &task_id_counter);
+            let submitted_task = submittable_task.submit(scheduler_handle)?;
             Ok(submitted_task)
         })
         .collect::<DaftResult<Vec<_>>>()
@@ -175,7 +187,7 @@ pub(crate) fn create_range_repartition_tasks(
     descending: Vec<bool>,
     boundaries: RecordBatch,
     num_partitions: usize,
-    pipeline_node: &Arc<dyn PipelineNodeImpl>,
+    pipeline_node: &dyn PipelineNodeImpl,
     task_id_counter: &TaskIDCounter,
     scheduler_handle: &SchedulerHandle<SwordfishTask>,
 ) -> DaftResult<Vec<SubmittedTask>> {
@@ -184,36 +196,36 @@ pub(crate) fn create_range_repartition_tasks(
     materialized_outputs
         .into_iter()
         .map(|mo| {
-            let partition_by = partition_by.clone();
-            let input_schema = input_schema.clone();
-            let descending = descending.clone();
-            let boundaries = boundaries.clone();
-            let task = make_new_task_from_materialized_outputs(
-                TaskContext::from((context, task_id_counter.next())),
-                vec![mo],
+            let in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+                node_id.to_string(),
                 input_schema.clone(),
-                pipeline_node,
-                move |input| {
-                    LocalPhysicalPlan::repartition(
-                        input,
-                        RepartitionSpec::Range(RangeRepartitionConfig::new(
-                            Some(num_partitions),
-                            boundaries,
-                            partition_by,
-                            descending,
-                        )),
-                        num_partitions,
-                        input_schema,
-                        StatsState::NotMaterialized,
-                        LocalNodeContext {
-                            origin_node_id: Some(node_id as usize),
-                            additional: None,
-                        },
-                    )
+                mo.size_bytes(),
+                StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(node_id as usize),
+                    additional: None,
                 },
-                None,
             );
-            let submitted_task = task.submit(scheduler_handle)?;
+            let plan = LocalPhysicalPlan::repartition(
+                in_memory_source_plan,
+                RepartitionSpec::Range(RangeRepartitionConfig::new(
+                    Some(num_partitions),
+                    boundaries.clone(),
+                    partition_by.clone(),
+                    descending.clone(),
+                )),
+                num_partitions,
+                input_schema.clone(),
+                StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(node_id as usize),
+                    additional: None,
+                },
+            );
+            let psets = HashMap::from([(node_id.to_string(), mo.into_inner().0)]);
+            let builder = SwordfishTaskBuilder::new(plan, pipeline_node).with_psets(psets);
+            let submittable_task = builder.build(context.query_idx, &task_id_counter);
+            let submitted_task = submittable_task.submit(scheduler_handle)?;
             Ok(submitted_task)
         })
         .collect::<DaftResult<Vec<_>>>()
@@ -270,13 +282,17 @@ impl SortNode {
 
     async fn execution_loop(
         self: Arc<Self>,
-        input_node: SubmittableTaskStream,
+        input_node: TaskBuilderStream,
         task_id_counter: TaskIDCounter,
-        result_tx: Sender<SubmittableTask<SwordfishTask>>,
+        result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
         let materialized_outputs = input_node
-            .materialize(scheduler_handle.clone())
+            .materialize(
+                scheduler_handle.clone(),
+                self.context.query_idx,
+                task_id_counter.clone(),
+            )
             .try_filter(|mo| future::ready(mo.num_rows() > 0))
             .try_collect::<Vec<_>>()
             .await?;
@@ -285,30 +301,37 @@ impl SortNode {
             return Ok(());
         }
 
-        let node_id = self.node_id();
-
         if materialized_outputs.len() == 1 {
-            let self_clone = self.clone();
-            let task = make_new_task_from_materialized_outputs(
-                TaskContext::from((&self_clone.context, task_id_counter.next())),
-                materialized_outputs,
+            let in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+                self.node_id().to_string(),
                 self.config.schema.clone(),
-                &(self_clone.clone() as Arc<dyn PipelineNodeImpl>),
-                move |input| {
-                    LocalPhysicalPlan::sort(
-                        input,
-                        self_clone.sort_by.clone(),
-                        self_clone.descending.clone(),
-                        self_clone.nulls_first.clone(),
-                        StatsState::NotMaterialized,
-                        LocalNodeContext {
-                            origin_node_id: Some(node_id as usize),
-                            additional: None,
-                        },
-                    )
+                materialized_outputs
+                    .iter()
+                    .map(|output| output.size_bytes())
+                    .sum::<usize>(),
+                StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(self.node_id() as usize),
+                    additional: None,
                 },
-                None,
             );
+            let partition_refs = materialized_outputs
+                .into_iter()
+                .flat_map(|output| output.into_inner().0)
+                .collect::<Vec<_>>();
+            let plan = LocalPhysicalPlan::sort(
+                in_memory_source_plan,
+                self.sort_by.clone(),
+                self.descending.clone(),
+                self.nulls_first.clone(),
+                StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(self.node_id() as usize),
+                    additional: None,
+                },
+            );
+            let psets = HashMap::from([(self.node_id().to_string(), partition_refs)]);
+            let task = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
             let _ = result_tx.send(task).await;
             return Ok(());
         }
@@ -320,7 +343,7 @@ impl SortNode {
             materialized_outputs.clone(),
             self.config.schema.clone(),
             self.sort_by.clone(),
-            &(self.clone() as Arc<dyn PipelineNodeImpl>),
+            self.as_ref(),
             &task_id_counter,
             &scheduler_handle,
         )?;
@@ -348,7 +371,7 @@ impl SortNode {
             self.descending.clone(),
             boundaries,
             num_partitions,
-            &(self.clone() as Arc<dyn PipelineNodeImpl>),
+            self.as_ref(),
             &task_id_counter,
             &scheduler_handle,
         )?;
@@ -363,28 +386,36 @@ impl SortNode {
             transpose_materialized_outputs_from_vec(partitioned_outputs, num_partitions);
 
         for partition_group in transposed_outputs {
-            let self_clone = self.clone();
-
-            let task = make_new_task_from_materialized_outputs(
-                TaskContext::from((&self_clone.context, task_id_counter.next())),
-                partition_group,
+            let in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+                self.node_id().to_string(),
                 self.config.schema.clone(),
-                &(self_clone.clone() as Arc<dyn PipelineNodeImpl>),
-                move |input| {
-                    LocalPhysicalPlan::sort(
-                        input,
-                        self_clone.sort_by.clone(),
-                        self_clone.descending.clone(),
-                        self_clone.nulls_first.clone(),
-                        StatsState::NotMaterialized,
-                        LocalNodeContext {
-                            origin_node_id: Some(self_clone.node_id() as usize),
-                            additional: None,
-                        },
-                    )
+                partition_group
+                    .iter()
+                    .map(|output| output.size_bytes())
+                    .sum::<usize>(),
+                StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(self.node_id() as usize),
+                    additional: None,
                 },
-                None,
             );
+            let partition_refs = partition_group
+                .into_iter()
+                .flat_map(|output| output.into_inner().0)
+                .collect::<Vec<_>>();
+            let plan = LocalPhysicalPlan::sort(
+                in_memory_source_plan,
+                self.sort_by.clone(),
+                self.descending.clone(),
+                self.nulls_first.clone(),
+                StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(self.node_id() as usize),
+                    additional: None,
+                },
+            );
+            let psets = HashMap::from([(self.node_id().to_string(), partition_refs)]);
+            let task = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
             let _ = result_tx.send(task).await;
         }
         Ok(())
@@ -425,7 +456,7 @@ impl PipelineNodeImpl for SortNode {
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
         let (result_tx, result_rx) = create_channel(1);
         plan_context.spawn(self.execution_loop(
@@ -434,6 +465,6 @@ impl PipelineNodeImpl for SortNode {
             result_tx,
             plan_context.scheduler_handle(),
         ));
-        SubmittableTaskStream::from(result_rx)
+        TaskBuilderStream::from(result_rx)
     }
 }

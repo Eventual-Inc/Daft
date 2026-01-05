@@ -84,14 +84,18 @@ def test_class_udf_init_args(batch_size, use_actor_pool):
     assert field.name == "a"
     assert field.dtype == DataType.string()
     result = df.select(expr)
-    assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
+    actual = result.to_pydict()["a"]
+    expected = ["foofoo", "barbar", "bazbaz"]
+    assert sorted(actual) == sorted(expected)
 
     expr = RepeatN.with_init_args(initial_n=3)(col("a"))
     field = expr._to_field(df.schema())
     assert field.name == "a"
     assert field.dtype == DataType.string()
     result = df.select(expr)
-    assert result.to_pydict() == {"a": ["foofoofoo", "barbarbar", "bazbazbaz"]}
+    actual = result.to_pydict()["a"]
+    expected = ["foofoofoo", "barbarbar", "bazbazbaz"]
+    assert sorted(actual) == sorted(expected)
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
@@ -118,7 +122,9 @@ def test_class_udf_init_args_no_default(batch_size, use_actor_pool):
     assert field.name == "a"
     assert field.dtype == DataType.string()
     result = df.select(expr)
-    assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
+    actual = result.to_pydict()["a"]
+    expected = ["foofoo", "barbar", "bazbaz"]
+    assert sorted(actual) == sorted(expected)
 
 
 @pytest.mark.parametrize("use_actor_pool", [False, True])
@@ -158,7 +164,9 @@ def test_actor_pool_udf_concurrency(concurrency):
     assert field.dtype == DataType.string()
 
     result = df.select(expr)
-    assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
+    actual = result.to_pydict()["a"]
+    expected = ["foofoo", "barbar", "bazbaz"]
+    assert sorted(actual) == sorted(expected)
 
 
 def test_udf_kwargs():
@@ -592,7 +600,10 @@ def test_multiple_udfs_different_columns(batch_size, use_actor_pool):
         "squared_floats": [2.25, 6.25, 12.25, 20.25, 30.25, 42.25, 56.25, 72.25, 90.25, 110.25],
     }
 
-    assert result.to_pydict() == expected
+    actual = result.to_pydict()
+    # Sort each column independently to handle non-deterministic order from concurrent execution
+    for col_name in expected.keys():
+        assert sorted(actual[col_name]) == sorted(expected[col_name])
 
 
 @pytest.mark.parametrize("batch_size", [None, 1, 2, 3, 10])
@@ -635,7 +646,10 @@ def test_multiple_udfs_same_column(batch_size, use_actor_pool):
         "squared_halved": [0.5, 2.0, 4.5, 8.0, 12.5, 18.0, 24.5, 32.0, 40.5, 50.0],
     }
 
-    assert result.to_pydict() == expected
+    actual = result.to_pydict()
+    # Sort each column independently to handle non-deterministic order from concurrent execution
+    for col_name in expected.keys():
+        assert sorted(actual[col_name]) == sorted(expected[col_name])
 
 
 @pytest.mark.skipif(

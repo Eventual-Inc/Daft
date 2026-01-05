@@ -1,9 +1,11 @@
 use std::{
     collections::HashMap,
+    hash::{Hash, Hasher},
     sync::{Arc, LockResult},
 };
 
 use common_error::{DaftError, DaftResult, ensure};
+use common_hashable_float_wrapper::FloatWrapper;
 use common_io_config::IOConfig;
 #[cfg(feature = "python")]
 use common_py_serde::{PyObjectWrapper, deserialize_py_object, serialize_py_object};
@@ -26,18 +28,38 @@ use daft_logical_plan::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, Eq, PartialEq)]
 pub struct LocalNodeContext {
     pub origin_node_id: Option<usize>,
     pub additional: Option<HashMap<String, String>>,
 }
 
+impl std::hash::Hash for LocalNodeContext {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.origin_node_id.hash(state);
+        // Hash HashMap by sorting entries to ensure stable hashing
+        if let Some(ref additional) = self.additional {
+            let mut entries: Vec<_> = additional.iter().collect();
+            entries.sort_by_key(|(k, _)| *k);
+            for (k, v) in entries {
+                k.hash(state);
+                v.hash(state);
+            }
+        } else {
+            None::<()>.hash(state);
+        }
+    }
+}
+
 pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
-#[derive(strum::IntoStaticStr, Serialize, Deserialize)]
+#[derive(strum::IntoStaticStr, Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub enum LocalPhysicalPlan {
     InMemoryScan(InMemoryScan),
     PhysicalScan(PhysicalScan),
+    StreamingPhysicalScan(StreamingPhysicalScan),
+    StreamingInMemoryScan(StreamingInMemoryScan),
+    StreamingGlobScan(StreamingGlobScan),
     GlobScan(GlobScan),
     EmptyScan(EmptyScan),
     PlaceholderScan(PlaceholderScan),
@@ -109,10 +131,484 @@ impl LocalPhysicalPlan {
         self.into()
     }
 
+    /// Compute a structural fingerprint that identifies functionally equivalent plans.
+    /// This ignores PyObject identities and uses origin_node_id + plan node types.
+    pub fn fingerprint(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.fingerprint_impl(&mut hasher);
+        hasher.finish()
+    }
+
+    fn fingerprint_impl<H: std::hash::Hasher>(&self, hasher: &mut H) {
+        // Hash the node type name
+        self.name().hash(hasher);
+        // Hash the origin_node_id from context
+        self.context().origin_node_id.hash(hasher);
+        
+        // Hash node-specific fields (excluding stats_state and RuntimePyObject/PyObjectWrapper)
+        match self {
+            Self::InMemoryScan(InMemoryScan { info, .. }) => {
+                info.hash(hasher);
+            }
+            Self::PhysicalScan(PhysicalScan { scan_tasks, pushdowns, schema, .. }) => {
+                // Hash schema field names and types, but not the actual scan_tasks (which may contain runtime data)
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+                pushdowns.hash(hasher);
+            }
+            Self::StreamingPhysicalScan(StreamingPhysicalScan { source_id, pushdowns, schema, .. }) => {
+                source_id.hash(hasher);
+                pushdowns.hash(hasher);
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::StreamingInMemoryScan(StreamingInMemoryScan { source_id, schema, size_bytes, .. }) => {
+                source_id.hash(hasher);
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+                size_bytes.hash(hasher);
+            }
+            Self::StreamingGlobScan(StreamingGlobScan { source_id, pushdowns, schema, io_config, .. }) => {
+                source_id.hash(hasher);
+                pushdowns.hash(hasher);
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+                io_config.hash(hasher);
+            }
+            Self::GlobScan(GlobScan { glob_paths, pushdowns, schema, io_config, .. }) => {
+                glob_paths.hash(hasher);
+                pushdowns.hash(hasher);
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+                io_config.hash(hasher);
+            }
+            Self::PlaceholderScan(PlaceholderScan { schema, .. }) => {
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::EmptyScan(EmptyScan { schema, .. }) => {
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::Project(Project { projection, schema, input, .. }) => {
+                let input_schema = input.schema();
+                for expr in projection {
+                    if let Ok(name) = expr.inner().get_name(input_schema) {
+                        name.hash(hasher);
+                    }
+                }
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::UDFProject(UDFProject { expr, udf_properties, passthrough_columns, schema, input, .. }) => {
+                let input_schema = input.schema();
+                if let Ok(name) = expr.inner().get_name(input_schema) {
+                    name.hash(hasher);
+                }
+                // Hash UDF properties (excluding any RuntimePyObject)
+                udf_properties.name.hash(hasher);
+                if let Some(ref resource_request) = udf_properties.resource_request {
+                    resource_request.hash(hasher);
+                }
+                for expr in passthrough_columns {
+                    if let Ok(name) = expr.inner().get_name(input_schema) {
+                        name.hash(hasher);
+                    }
+                }
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::Filter(Filter { predicate, input, .. }) => {
+                let input_schema = input.schema();
+                if let Ok(name) = predicate.inner().get_name(input_schema) {
+                    name.hash(hasher);
+                }
+            }
+            Self::IntoBatches(IntoBatches { batch_size, strict, .. }) => {
+                batch_size.hash(hasher);
+                strict.hash(hasher);
+            }
+            Self::Limit(Limit { limit, offset, .. }) => {
+                limit.hash(hasher);
+                offset.hash(hasher);
+            }
+            Self::Explode(Explode { to_explode, schema, input, .. }) => {
+                let input_schema = input.schema();
+                for expr in to_explode {
+                    if let Ok(name) = expr.inner().get_name(input_schema) {
+                        name.hash(hasher);
+                    }
+                }
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::Unpivot(Unpivot { ids, values, variable_name, value_name, schema, input, .. }) => {
+                let input_schema = input.schema();
+                for expr in ids {
+                    if let Ok(name) = expr.inner().get_name(input_schema) {
+                        name.hash(hasher);
+                    }
+                }
+                for expr in values {
+                    if let Ok(name) = expr.inner().get_name(input_schema) {
+                        name.hash(hasher);
+                    }
+                }
+                variable_name.hash(hasher);
+                value_name.hash(hasher);
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::Sort(Sort { sort_by, descending, nulls_first, input, .. }) => {
+                let input_schema = input.schema();
+                for expr in sort_by {
+                    if let Ok(name) = expr.inner().get_name(input_schema) {
+                        name.hash(hasher);
+                    }
+                }
+                descending.hash(hasher);
+                nulls_first.hash(hasher);
+            }
+            Self::TopN(TopN { sort_by, descending, nulls_first, limit, offset, input, .. }) => {
+                let input_schema = input.schema();
+                for expr in sort_by {
+                    if let Ok(name) = expr.inner().get_name(input_schema) {
+                        name.hash(hasher);
+                    }
+                }
+                descending.hash(hasher);
+                nulls_first.hash(hasher);
+                limit.hash(hasher);
+                offset.hash(hasher);
+            }
+            Self::Sample(Sample { sampling_method, with_replacement, seed, input, .. }) => {
+                sampling_method.hash(hasher);
+                with_replacement.hash(hasher);
+                seed.hash(hasher);
+            }
+            Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { column_name, starting_offset, .. }) => {
+                column_name.hash(hasher);
+                starting_offset.hash(hasher);
+            }
+            Self::UnGroupedAggregate(UnGroupedAggregate { aggregations, schema, input, .. }) => {
+                let input_schema = input.schema();
+                for agg in aggregations {
+                    // AggExpr::name() returns &str directly
+                    agg.inner().name().hash(hasher);
+                }
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::HashAggregate(HashAggregate { aggregations, group_by, schema, input, .. }) => {
+                let input_schema = input.schema();
+                for expr in group_by {
+                    if let Ok(name) = expr.inner().get_name(input_schema) {
+                        name.hash(hasher);
+                    }
+                }
+                for agg in aggregations {
+                    // AggExpr::name() returns &str directly
+                    agg.inner().name().hash(hasher);
+                }
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::Dedup(Dedup { columns, input, .. }) => {
+                let input_schema = input.schema();
+                for expr in columns {
+                    if let Ok(name) = expr.inner().get_name(input_schema) {
+                        name.hash(hasher);
+                    }
+                }
+            }
+            Self::Pivot(Pivot { group_by, pivot_column, value_column, aggregation, names, pre_agg, schema, input, .. }) => {
+                let input_schema = input.schema();
+                for expr in group_by {
+                    if let Ok(name) = expr.inner().get_name(input_schema) {
+                        name.hash(hasher);
+                    }
+                }
+                if let Ok(name) = pivot_column.inner().get_name(input_schema) {
+                    name.hash(hasher);
+                }
+                if let Ok(name) = value_column.inner().get_name(input_schema) {
+                    name.hash(hasher);
+                }
+                // AggExpr::name() returns &str directly
+                aggregation.inner().name().hash(hasher);
+                names.hash(hasher);
+                pre_agg.hash(hasher);
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::Concat(Concat { .. }) => {
+                // No additional fields beyond children
+            }
+            Self::HashJoin(HashJoin { left_on, right_on, build_on_left, null_equals_null, join_type, schema, left, right, .. }) => {
+                let left_schema = left.schema();
+                let right_schema = right.schema();
+                for expr in left_on {
+                    if let Ok(name) = expr.inner().get_name(left_schema) {
+                        name.hash(hasher);
+                    }
+                }
+                for expr in right_on {
+                    if let Ok(name) = expr.inner().get_name(right_schema) {
+                        name.hash(hasher);
+                    }
+                }
+                build_on_left.hash(hasher);
+                null_equals_null.hash(hasher);
+                join_type.hash(hasher);
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::CrossJoin(CrossJoin { schema, .. }) => {
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::SortMergeJoin(SortMergeJoin { left_on, right_on, join_type, schema, left, right, .. }) => {
+                let left_schema = left.schema();
+                let right_schema = right.schema();
+                for expr in left_on {
+                    if let Ok(name) = expr.inner().get_name(left_schema) {
+                        name.hash(hasher);
+                    }
+                }
+                for expr in right_on {
+                    if let Ok(name) = expr.inner().get_name(right_schema) {
+                        name.hash(hasher);
+                    }
+                }
+                join_type.hash(hasher);
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::PhysicalWrite(PhysicalWrite { data_schema, file_schema, file_info, .. }) => {
+                data_schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+                file_schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+                file_info.hash(hasher);
+            }
+            Self::CommitWrite(CommitWrite { data_schema, file_schema, file_info, .. }) => {
+                data_schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+                file_schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+                file_info.hash(hasher);
+            }
+            #[cfg(feature = "python")]
+            Self::CatalogWrite(CatalogWrite { catalog_type, data_schema, file_schema, .. }) => {
+                catalog_type.hash(hasher);
+                data_schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+                file_schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            #[cfg(feature = "python")]
+            Self::LanceWrite(LanceWrite { lance_info, data_schema, file_schema, .. }) => {
+                lance_info.hash(hasher);
+                data_schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+                file_schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            #[cfg(feature = "python")]
+            Self::DataSink(DataSink { data_sink_info, file_schema, .. }) => {
+                data_sink_info.hash(hasher);
+                file_schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::WindowPartitionOnly(WindowPartitionOnly { partition_by, aggregations, aliases, schema, input, .. }) => {
+                let input_schema = input.schema();
+                for expr in partition_by {
+                    if let Ok(name) = expr.inner().get_name(input_schema) {
+                        name.hash(hasher);
+                    }
+                }
+                for agg in aggregations {
+                    // AggExpr::name() returns &str directly
+                    agg.inner().name().hash(hasher);
+                }
+                aliases.hash(hasher);
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { partition_by, order_by, descending, nulls_first, functions, aliases, schema, input, .. }) => {
+                let input_schema = input.schema();
+                for expr in partition_by {
+                    if let Ok(name) = expr.inner().get_name(input_schema) {
+                        name.hash(hasher);
+                    }
+                }
+                for expr in order_by {
+                    if let Ok(name) = expr.inner().get_name(input_schema) {
+                        name.hash(hasher);
+                    }
+                }
+                descending.hash(hasher);
+                nulls_first.hash(hasher);
+                for func in functions {
+                    // Hash window function by its name
+                    func.inner().hash(hasher);
+                }
+                aliases.hash(hasher);
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame { partition_by, order_by, descending, nulls_first, frame, min_periods, aggregations, aliases, schema, input, .. }) => {
+                let input_schema = input.schema();
+                for expr in partition_by {
+                    if let Ok(name) = expr.inner().get_name(input_schema) {
+                        name.hash(hasher);
+                    }
+                }
+                for expr in order_by {
+                    if let Ok(name) = expr.inner().get_name(input_schema) {
+                        name.hash(hasher);
+                    }
+                }
+                descending.hash(hasher);
+                nulls_first.hash(hasher);
+                frame.hash(hasher);
+                min_periods.hash(hasher);
+                for agg in aggregations {
+                    // AggExpr::name() returns &str directly
+                    agg.inner().name().hash(hasher);
+                }
+                aliases.hash(hasher);
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::WindowOrderByOnly(WindowOrderByOnly { order_by, descending, nulls_first, functions, aliases, schema, input, .. }) => {
+                let input_schema = input.schema();
+                for expr in order_by {
+                    if let Ok(name) = expr.inner().get_name(input_schema) {
+                        name.hash(hasher);
+                    }
+                }
+                descending.hash(hasher);
+                nulls_first.hash(hasher);
+                for func in functions {
+                    func.inner().hash(hasher);
+                }
+                aliases.hash(hasher);
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::Repartition(Repartition { repartition_spec, num_partitions, schema, .. }) => {
+                repartition_spec.hash(hasher);
+                num_partitions.hash(hasher);
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::IntoPartitions(IntoPartitions { num_partitions, schema, .. }) => {
+                num_partitions.hash(hasher);
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            #[cfg(feature = "python")]
+            Self::DistributedActorPoolProject(DistributedActorPoolProject { batch_size, memory_request, schema, .. }) => {
+                // Exclude actor_objects (PyObjectWrapper) and stats_state
+                batch_size.hash(hasher);
+                memory_request.hash(hasher);
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::VLLMProject(VLLMProject { expr, output_column_name, schema, input, .. }) => {
+                // Exclude llm_actors (RuntimePyObject) and stats_state
+                let input_schema = input.schema();
+                // Hash the VLLM expression structure
+                expr.inner().hash(hasher);
+                output_column_name.hash(hasher);
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+        }
+        
+        // Recursively hash children
+        for child in self.children() {
+            child.fingerprint_impl(hasher);
+        }
+    }
+
     pub fn get_stats_state(&self) -> &StatsState {
         match self {
             Self::InMemoryScan(InMemoryScan { stats_state, .. })
             | Self::PhysicalScan(PhysicalScan { stats_state, .. })
+            |             Self::StreamingPhysicalScan(StreamingPhysicalScan { stats_state, .. })
+            | Self::StreamingInMemoryScan(StreamingInMemoryScan { stats_state, .. })
+            | Self::StreamingGlobScan(StreamingGlobScan { stats_state, .. })
             | Self::GlobScan(GlobScan { stats_state, .. })
             | Self::PlaceholderScan(PlaceholderScan { stats_state, .. })
             | Self::EmptyScan(EmptyScan { stats_state, .. })
@@ -162,6 +658,9 @@ impl LocalPhysicalPlan {
         match self {
             Self::InMemoryScan(InMemoryScan { context, .. })
             | Self::PhysicalScan(PhysicalScan { context, .. })
+            | Self::StreamingPhysicalScan(StreamingPhysicalScan { context, .. })
+            | Self::StreamingInMemoryScan(StreamingInMemoryScan { context, .. })
+            | Self::StreamingGlobScan(StreamingGlobScan { context, .. })
             | Self::GlobScan(GlobScan { context, .. })
             | Self::PlaceholderScan(PlaceholderScan { context, .. })
             | Self::EmptyScan(EmptyScan { context, .. })
@@ -229,6 +728,59 @@ impl LocalPhysicalPlan {
             pushdowns,
             schema,
             stats_state,
+            context,
+        })
+        .arced()
+    }
+
+    pub fn streaming_physical_scan(
+        source_id: String,
+        pushdowns: Pushdowns,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::StreamingPhysicalScan(StreamingPhysicalScan {
+            source_id,
+            pushdowns,
+            schema,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
+    pub fn streaming_in_memory_scan(
+        source_id: String,
+        schema: SchemaRef,
+        size_bytes: usize,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::StreamingInMemoryScan(StreamingInMemoryScan {
+            source_id,
+            schema,
+            size_bytes,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
+    pub fn streaming_glob_scan(
+        source_id: String,
+        pushdowns: Pushdowns,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        io_config: Option<IOConfig>,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::StreamingGlobScan(StreamingGlobScan {
+            source_id,
+            pushdowns,
+            schema,
+            stats_state,
+            io_config,
             context,
         })
         .arced()
@@ -947,6 +1499,9 @@ impl LocalPhysicalPlan {
     pub fn schema(&self) -> &SchemaRef {
         match self {
             Self::PhysicalScan(PhysicalScan { schema, .. })
+            | Self::StreamingPhysicalScan(StreamingPhysicalScan { schema, .. })
+            | Self::StreamingInMemoryScan(StreamingInMemoryScan { schema, .. })
+            | Self::StreamingGlobScan(StreamingGlobScan { schema, .. })
             | Self::GlobScan(GlobScan { schema, .. })
             | Self::PlaceholderScan(PlaceholderScan { schema, .. })
             | Self::EmptyScan(EmptyScan { schema, .. })
@@ -1026,6 +1581,9 @@ impl LocalPhysicalPlan {
     fn children(&self) -> Vec<LocalPhysicalPlanRef> {
         match self {
             Self::PhysicalScan(_)
+            | Self::StreamingPhysicalScan(_)
+            | Self::StreamingInMemoryScan(_)
+            | Self::StreamingGlobScan(_)
             | Self::GlobScan(_)
             | Self::PlaceholderScan(_)
             | Self::EmptyScan(_)
@@ -1080,10 +1638,13 @@ impl LocalPhysicalPlan {
         match children {
             [new_child] => match self {
                 Self::PhysicalScan(_)
+                | Self::StreamingPhysicalScan(_)
+                | Self::StreamingInMemoryScan(_)
+                | Self::StreamingGlobScan(_)
                 | Self::PlaceholderScan(_)
                 | Self::EmptyScan(_)
                 | Self::InMemoryScan(_) => panic!(
-                    "LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, EmptyScan, and InMemoryScan do not have children"
+                    "LocalPhysicalPlan::with_new_children: PhysicalScan, StreamingPhysicalScan, StreamingInMemoryScan, StreamingGlobScan, PlaceholderScan, EmptyScan, and InMemoryScan do not have children"
                 ),
                 Self::Filter(Filter {
                     predicate, context, ..
@@ -1229,7 +1790,7 @@ impl LocalPhysicalPlan {
                     ..
                 }) => Self::sample(
                     new_child.clone(),
-                    *sampling_method,
+                    sampling_method.clone(),
                     *with_replacement,
                     *seed,
                     StatsState::NotMaterialized,
@@ -1545,6 +2106,16 @@ impl LocalPhysicalPlan {
                 Self::GlobScan(_) => {
                     panic!("LocalPhysicalPlan::with_new_children: GlobScan does not have children")
                 }
+                Self::StreamingInMemoryScan(_) => {
+                    panic!(
+                        "LocalPhysicalPlan::with_new_children: StreamingInMemoryScan does not have children"
+                    )
+                }
+                Self::StreamingGlobScan(_) => {
+                    panic!(
+                        "LocalPhysicalPlan::with_new_children: StreamingGlobScan does not have children"
+                    )
+                }
             },
             [new_left, new_right] => match self {
                 Self::HashJoin(HashJoin {
@@ -1650,7 +2221,7 @@ impl DynTreeNode for LocalPhysicalPlan {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct InMemoryScan {
     pub info: InMemoryInfo,
@@ -1658,7 +2229,7 @@ pub struct InMemoryScan {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PhysicalScan {
     pub scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
@@ -1668,7 +2239,38 @@ pub struct PhysicalScan {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct StreamingPhysicalScan {
+    pub source_id: String,
+    pub pushdowns: Pushdowns,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct StreamingInMemoryScan {
+    pub source_id: String,
+    pub schema: SchemaRef,
+    pub size_bytes: usize,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct StreamingGlobScan {
+    pub source_id: String,
+    pub pushdowns: Pushdowns,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub io_config: Option<IOConfig>,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct GlobScan {
     pub glob_paths: Arc<Vec<String>>,
@@ -1679,7 +2281,7 @@ pub struct GlobScan {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PlaceholderScan {
     pub schema: SchemaRef,
@@ -1687,7 +2289,7 @@ pub struct PlaceholderScan {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct EmptyScan {
     pub schema: SchemaRef,
@@ -1695,7 +2297,7 @@ pub struct EmptyScan {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Project {
     pub input: LocalPhysicalPlanRef,
@@ -1705,7 +2307,7 @@ pub struct Project {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct UDFProject {
     pub input: LocalPhysicalPlanRef,
@@ -1718,7 +2320,7 @@ pub struct UDFProject {
 }
 
 #[cfg(feature = "python")]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct DistributedActorPoolProject {
     pub input: LocalPhysicalPlanRef,
@@ -1730,7 +2332,7 @@ pub struct DistributedActorPoolProject {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Filter {
     pub input: LocalPhysicalPlanRef,
@@ -1740,7 +2342,7 @@ pub struct Filter {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct IntoBatches {
     pub input: LocalPhysicalPlanRef,
@@ -1751,7 +2353,7 @@ pub struct IntoBatches {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Limit {
     pub input: LocalPhysicalPlanRef,
@@ -1762,7 +2364,7 @@ pub struct Limit {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Explode {
     pub input: LocalPhysicalPlanRef,
@@ -1772,7 +2374,7 @@ pub struct Explode {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Sort {
     pub input: LocalPhysicalPlanRef,
@@ -1784,7 +2386,7 @@ pub struct Sort {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct TopN {
     pub input: LocalPhysicalPlanRef,
@@ -1798,13 +2400,13 @@ pub struct TopN {
     pub context: LocalNodeContext,
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub enum SamplingMethod {
-    Fraction(f64),
+    Fraction(FloatWrapper<f64>),
     Size(usize),
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Sample {
     pub input: LocalPhysicalPlanRef,
@@ -1816,7 +2418,7 @@ pub struct Sample {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct MonotonicallyIncreasingId {
     pub input: LocalPhysicalPlanRef,
@@ -1827,7 +2429,7 @@ pub struct MonotonicallyIncreasingId {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct UnGroupedAggregate {
     pub input: LocalPhysicalPlanRef,
@@ -1837,7 +2439,7 @@ pub struct UnGroupedAggregate {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct HashAggregate {
     pub input: LocalPhysicalPlanRef,
@@ -1848,7 +2450,7 @@ pub struct HashAggregate {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Dedup {
     pub input: LocalPhysicalPlanRef,
@@ -1858,7 +2460,7 @@ pub struct Dedup {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Unpivot {
     pub input: LocalPhysicalPlanRef,
@@ -1871,7 +2473,7 @@ pub struct Unpivot {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Pivot {
     pub input: LocalPhysicalPlanRef,
@@ -1886,7 +2488,7 @@ pub struct Pivot {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct HashJoin {
     pub left: LocalPhysicalPlanRef,
@@ -1901,7 +2503,7 @@ pub struct HashJoin {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct CrossJoin {
     pub left: LocalPhysicalPlanRef,
@@ -1911,7 +2513,7 @@ pub struct CrossJoin {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct SortMergeJoin {
     pub left: LocalPhysicalPlanRef,
@@ -1924,7 +2526,7 @@ pub struct SortMergeJoin {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Concat {
     pub input: LocalPhysicalPlanRef,
@@ -1934,7 +2536,7 @@ pub struct Concat {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PhysicalWrite {
     pub input: LocalPhysicalPlanRef,
@@ -1945,7 +2547,7 @@ pub struct PhysicalWrite {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct CommitWrite {
     pub input: LocalPhysicalPlanRef,
@@ -1957,7 +2559,7 @@ pub struct CommitWrite {
 }
 
 #[cfg(feature = "python")]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct CatalogWrite {
     pub input: LocalPhysicalPlanRef,
@@ -1969,7 +2571,7 @@ pub struct CatalogWrite {
 }
 
 #[cfg(feature = "python")]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct LanceWrite {
     pub input: LocalPhysicalPlanRef,
@@ -1981,7 +2583,7 @@ pub struct LanceWrite {
 }
 
 #[cfg(feature = "python")]
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct DataSink {
     pub input: LocalPhysicalPlanRef,
@@ -1991,7 +2593,7 @@ pub struct DataSink {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct WindowPartitionOnly {
     pub input: LocalPhysicalPlanRef,
@@ -2003,7 +2605,7 @@ pub struct WindowPartitionOnly {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct WindowPartitionAndOrderBy {
     pub input: LocalPhysicalPlanRef,
@@ -2018,7 +2620,7 @@ pub struct WindowPartitionAndOrderBy {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct WindowPartitionAndDynamicFrame {
     pub input: LocalPhysicalPlanRef,
@@ -2035,7 +2637,7 @@ pub struct WindowPartitionAndDynamicFrame {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct WindowOrderByOnly {
     pub input: LocalPhysicalPlanRef,
@@ -2049,7 +2651,7 @@ pub struct WindowOrderByOnly {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct Repartition {
     pub input: LocalPhysicalPlanRef,
@@ -2060,7 +2662,7 @@ pub struct Repartition {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct IntoPartitions {
     pub input: LocalPhysicalPlanRef,
@@ -2070,7 +2672,7 @@ pub struct IntoPartitions {
     pub context: LocalNodeContext,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct VLLMProject {
     pub input: LocalPhysicalPlanRef,

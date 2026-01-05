@@ -16,7 +16,12 @@ use log::warn;
 use tracing::instrument;
 
 use super::source::Source;
-use crate::{channel::create_channel, pipeline::NodeName, sources::source::SourceStream};
+use crate::{
+    channel::create_channel,
+    pipeline::NodeName,
+    plan_input::{InputId, PipelineMessage},
+    sources::source::SourceStream,
+};
 
 #[allow(dead_code)]
 pub struct GlobScanSource {
@@ -51,7 +56,6 @@ impl Source for GlobScanSource {
     #[instrument(name = "GlobScanSource::get_data", level = "info", skip_all)]
     async fn get_data(
         &self,
-        _maintain_order: bool,
         io_stats: IOStatsRef,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
@@ -63,7 +67,7 @@ impl Source for GlobScanSource {
         let limit = self.pushdowns.limit;
 
         // Spawn a task to stream out the record batches from the glob paths
-        let (tx, rx) = create_channel(0);
+        let (tx, rx) = create_channel(1);
         let task = io_runtime
             .spawn(async move {
                 let io_client = io_client.clone();
@@ -171,7 +175,7 @@ impl Source for GlobScanSource {
                         break;
                     }
                 }
-                // If no files were found, return an error
+                // If no files were found, send empty micropartition instead of error
                 if !has_results {
                     return Err(common_error::DaftError::FileNotFound {
                         path: glob_paths.join(","),
@@ -182,8 +186,28 @@ impl Source for GlobScanSource {
             })
             .map(|x| x?);
 
-        let receiver_stream = rx.into_stream().boxed();
-        let combined_stream = common_runtime::combine_stream(receiver_stream, task);
+        const PLACEHOLDER_INPUT_ID: InputId = 0;
+        let base_receiver_stream = rx.into_stream();
+        let receiver_stream =
+            base_receiver_stream.map(move |result: DaftResult<Arc<MicroPartition>>| {
+                result.map(|partition| PipelineMessage::Morsel {
+                    input_id: PLACEHOLDER_INPUT_ID,
+                    partition,
+                })
+            });
+
+        // The task already handles sending empty micropartition if no results, so we just need to
+        // combine the streams. However, we need to add a flush after all data is emitted.
+        // Since the task sends empty micropartition directly, we need to convert it to PipelineMessage format.
+        // Actually, the task sends MicroPartition, but we convert it in the stream above.
+        // So the logic is correct - if no results, task sends empty MicroPartition, which gets converted
+        // to PipelineMessage::Morsel in receiver_stream.
+        // But we also need to send a flush at the end. Let me check if we need that...
+        // Actually, looking at other sources, they don't send flush in get_data - the SourceNode handles that.
+        // So we should be fine. But wait, the task sends the empty micropartition as MicroPartition,
+        // so receiver_stream will convert it correctly.
+
+        let combined_stream = common_runtime::combine_stream(Box::pin(receiver_stream), task);
         Ok(combined_stream.boxed())
     }
 

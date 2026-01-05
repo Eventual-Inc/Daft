@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
@@ -12,34 +12,20 @@ use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
 
 use crate::{
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
-    channel::{Receiver, create_channel},
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
+    channel::{Receiver, Sender, create_channel},
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
+    plan_input::{InputId, PipelineMessage},
     resource_manager::MemoryManager,
     runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
     },
 };
 
-pub enum BlockingSinkStatus<Op: BlockingSink> {
-    NeedMoreInput(Op::State),
-    #[allow(dead_code)]
-    Finished(Op::State),
-}
-
-pub enum BlockingSinkFinalizeOutput<Op: BlockingSink> {
-    #[allow(dead_code)]
-    HasMoreOutput {
-        states: Vec<Op::State>,
-        output: Vec<Arc<MicroPartition>>,
-    },
-    Finished(Vec<Arc<MicroPartition>>),
-}
-
-pub(crate) type BlockingSinkSinkResult<Op> = OperatorOutput<DaftResult<BlockingSinkStatus<Op>>>;
-pub(crate) type BlockingSinkFinalizeResult<Op> =
-    OperatorOutput<DaftResult<BlockingSinkFinalizeOutput<Op>>>;
+pub(crate) type BlockingSinkSinkResult<Op> =
+    OperatorOutput<DaftResult<<Op as BlockingSink>::State>>;
+pub(crate) type BlockingSinkFinalizeResult = OperatorOutput<DaftResult<Vec<Arc<MicroPartition>>>>;
 pub(crate) trait BlockingSink: Send + Sync {
     type State: Send + Sync + Unpin;
 
@@ -55,7 +41,7 @@ pub(crate) trait BlockingSink: Send + Sync {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self>
+    ) -> BlockingSinkFinalizeResult
     where
         Self: Sized;
     fn name(&self) -> NodeName;
@@ -65,19 +51,11 @@ pub(crate) trait BlockingSink: Send + Sync {
     fn make_runtime_stats(&self, name: usize) -> Arc<dyn RuntimeStats> {
         Arc::new(DefaultRuntimeStats::new(name))
     }
-    fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
-        None
-    }
     fn dispatch_spawner(
         &self,
-        morsel_size_requirement: Option<MorselSizeRequirement>,
+        _morsel_size_requirement: Option<MorselSizeRequirement>,
     ) -> Arc<dyn DispatchSpawner> {
-        match morsel_size_requirement {
-            Some(morsel_size_requirement) => {
-                Arc::new(UnorderedDispatcher::new(morsel_size_requirement))
-            }
-            None => Arc::new(UnorderedDispatcher::unbounded()),
-        }
+        Arc::new(UnorderedDispatcher::unbounded())
     }
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()
@@ -89,7 +67,6 @@ pub struct BlockingSinkNode<Op: BlockingSink> {
     child: Box<dyn PipelineNode>,
     runtime_stats: Arc<dyn RuntimeStats>,
     plan_stats: StatsState,
-    morsel_size_requirement: MorselSizeRequirement,
     node_info: Arc<NodeInfo>,
 }
 
@@ -112,13 +89,11 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         );
         let runtime_stats = op.make_runtime_stats(node_info.id);
 
-        let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
             op,
             child,
             runtime_stats,
             plan_stats,
-            morsel_size_requirement,
             node_info: Arc::new(node_info),
         }
     }
@@ -126,48 +101,125 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         Box::new(self)
     }
 
+    async fn finalize_and_send_output(
+        op: Arc<Op>,
+        states: Vec<Op::State>,
+        input_id: InputId,
+        memory_manager: Arc<MemoryManager>,
+        runtime_stats: Arc<dyn RuntimeStats>,
+        counting_sender: &CountingSender,
+    ) -> DaftResult<bool> {
+        let compute_runtime = get_compute_runtime();
+        let spawner = ExecutionTaskSpawner::new(
+            compute_runtime,
+            memory_manager,
+            runtime_stats,
+            info_span!("BlockingSink::Finalize"),
+        );
+
+        let finalized_result = op.finalize(states, &spawner).await??;
+        println!("[Blocking Sink {}] Finalized result num rows: {:#?} for input_id: {}", op.name(), finalized_result.len(), input_id);
+        for output_partition in finalized_result {
+            let input_mp = PipelineMessage::Morsel {
+                input_id,
+                partition: output_partition,
+            };
+            if counting_sender.send(input_mp).await.is_err() {
+                println!("[Blocking Sink {}] Error sending morsel for input_id: {:?}", op.name(), input_id);
+                return Ok(false);
+            }
+        }
+        println!("[Blocking Sink {}] Sending flush message for input_id: {:?}", op.name(), input_id);
+        if counting_sender
+            .send(PipelineMessage::Flush(input_id))
+            .await
+            .is_err()
+        {
+            println!("[Blocking Sink {}] Error sending flush message for input_id: {:?}", op.name(), input_id);
+            return Ok(false);
+        }
+        Ok(true)
+    }
+
     #[instrument(level = "info", skip_all, name = "BlockingSink::run_worker")]
     async fn run_worker(
         op: Arc<Op>,
-        input_receiver: Receiver<Arc<MicroPartition>>,
+        mut input_receiver: Receiver<PipelineMessage>,
+        flush_state_sender: Sender<(InputId, Option<Op::State>)>,
         runtime_stats: Arc<dyn RuntimeStats>,
         memory_manager: Arc<MemoryManager>,
-    ) -> DaftResult<Op::State> {
+    ) -> DaftResult<()> {
         let span = info_span!("BlockingSink::Sink");
         let compute_runtime = get_compute_runtime();
         let spawner =
             ExecutionTaskSpawner::new(compute_runtime, memory_manager, runtime_stats, span);
-        let mut state = op.make_state()?;
-        while let Some(morsel) = input_receiver.recv().await {
-            let result = op.sink(morsel, state, &spawner).await??;
-            match result {
-                BlockingSinkStatus::NeedMoreInput(new_state) => {
-                    state = new_state;
+        let mut states: HashMap<InputId, Op::State> = HashMap::new();
+        while let Some(msg) = input_receiver.recv().await {
+            match msg {
+                PipelineMessage::Morsel {
+                    input_id,
+                    partition,
+                } => {
+                    // Get or create state for this input ID
+                    let state = match states.remove(&input_id) {
+                        Some(state) => {
+                            state
+                        }
+                        None => {
+                            op.make_state()?
+                        }
+                    };
+                    let result = op.sink(partition, state, &spawner).await??;
+                    states.insert(input_id, result);
                 }
-                BlockingSinkStatus::Finished(new_state) => {
-                    return Ok(new_state);
+                PipelineMessage::Flush(input_id) => {
+                    // Send state back to coordinator when flush is called
+                    // Even if worker didn't have state for this input_id, we still need to
+                    // propagate the flush so the coordinator knows this worker has flushed
+                    let state = states.remove(&input_id);
+                    if flush_state_sender.send((input_id, state)).await.is_err() {
+                        return Ok(());
+                    }
                 }
             }
         }
+        // Input receiver is exhausted, send all remaining states to flush_state_sender
+        for (input_id, state) in states {
+            if flush_state_sender
+                .send((input_id, Some(state)))
+                .await
+                .is_err()
+            {
+                return Ok(());
+            }
+        }
 
-        Ok(state)
+        Ok(())
     }
 
     fn spawn_workers(
         op: Arc<Op>,
-        input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
-        task_set: &mut TaskSet<DaftResult<Op::State>>,
+        input_receivers: Vec<Receiver<PipelineMessage>>,
+        runtime_handle: &mut ExecutionRuntimeContext,
         runtime_stats: Arc<dyn RuntimeStats>,
         memory_manager: Arc<MemoryManager>,
-    ) {
+        flush_state_sender: Sender<(InputId, Option<Op::State>)>,
+    ) -> usize {
+        let num_workers = input_receivers.len();
         for input_receiver in input_receivers {
-            task_set.spawn(Self::run_worker(
-                op.clone(),
-                input_receiver,
-                runtime_stats.clone(),
-                memory_manager.clone(),
-            ));
+            runtime_handle.spawn(
+                Self::run_worker(
+                    op.clone(),
+                    input_receiver,
+                    flush_state_sender.clone(),
+                    runtime_stats.clone(),
+                    memory_manager.clone(),
+                ),
+                &op.name(),
+            );
         }
+
+        num_workers
     }
 }
 
@@ -191,7 +243,6 @@ impl<Op: BlockingSink + 'static> TreeDisplay for BlockingSinkNode<Op> {
                 if let StatsState::Materialized(stats) = &self.plan_stats {
                     writeln!(display, "Stats = {}", stats).unwrap();
                 }
-                writeln!(display, "Batch Size = {}", self.morsel_size_requirement).unwrap();
                 if matches!(level, DisplayLevel::Verbose) {
                     let rt_result = self.runtime_stats.snapshot();
                     for (name, value) in rt_result {
@@ -242,22 +293,16 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         _downstream_requirement: MorselSizeRequirement,
         default_morsel_size: MorselSizeRequirement,
     ) {
-        let operator_morsel_size_requirement = self.op.morsel_size_requirement();
-        let new_morsel_size_requirement = match operator_morsel_size_requirement {
-            Some(requirement) => requirement,
-            None => default_morsel_size,
-        };
-        self.morsel_size_requirement = new_morsel_size_requirement;
         self.child
-            .propagate_morsel_size_requirement(new_morsel_size_requirement, default_morsel_size);
+            .propagate_morsel_size_requirement(default_morsel_size, default_morsel_size);
     }
 
     fn start(
         &self,
-        _maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
-        let child_results_receiver = self.child.start(true, runtime_handle)?;
+    ) -> crate::Result<Receiver<PipelineMessage>> {
+        let child_results_receiver = self.child.start(runtime_handle)?;
+
         let counting_receiver = InitializingCountingReceiver::new(
             child_results_receiver,
             self.node_id(),
@@ -265,70 +310,104 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
             runtime_handle.stats_manager(),
         );
 
-        let (destination_sender, destination_receiver) = create_channel(0);
+        let (destination_sender, destination_receiver) = create_channel(1);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
 
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
 
-        let dispatch_spawner = op.dispatch_spawner(Some(self.morsel_size_requirement));
+        let dispatch_spawner = op.dispatch_spawner(None);
 
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
-            vec![counting_receiver],
+            counting_receiver,
             num_workers,
             &mut runtime_handle.handle(),
         );
+
         runtime_handle.spawn(
-            async move { spawned_dispatch_result.spawned_dispatch_task.await? },
+            async move {
+                spawned_dispatch_result.spawned_dispatch_task.await?
+            },
             &self.name(),
+        );
+
+        // Create a single shared channel for all workers
+        let (flush_state_sender, mut flush_state_receiver) =
+            create_channel::<(InputId, Option<Op::State>)>(1);
+
+        // Spawn workers on runtime_handle
+        let num_workers_spawned = Self::spawn_workers(
+            op.clone(),
+            spawned_dispatch_result.worker_receivers,
+            runtime_handle,
+            self.runtime_stats.clone(),
+            runtime_handle.memory_manager(),
+            flush_state_sender.clone(),
         );
 
         let memory_manager = runtime_handle.memory_manager();
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
+
+        let sink_name = self.name().clone();
         runtime_handle.spawn(
             async move {
-                let mut task_set = TaskSet::new();
-                Self::spawn_workers(
-                    op.clone(),
-                    spawned_dispatch_result.worker_receivers,
-                    &mut task_set,
-                    runtime_stats.clone(),
-                    memory_manager.clone(),
-                );
+                // Track states and flush counts per input_id
+                let mut all_states: HashMap<InputId, Vec<Op::State>> = HashMap::new();
+                let mut flush_counts: HashMap<InputId, usize> = HashMap::new();
 
-                let mut finished_states = Vec::with_capacity(num_workers);
-                while let Some(result) = task_set.join_next().await {
-                    let state = result??;
-                    finished_states.push(state);
-                }
+                while let Some((input_id, state_opt)) = flush_state_receiver.recv().await {
+                    // Received a flush state from a worker
+                    // Only add state if it exists (Some), but always count the flush
+                    if let Some(state) = state_opt {
+                        all_states
+                            .entry(input_id)
+                            .or_insert_with(Vec::new)
+                            .push(state);
+                    }
+                    let count = flush_counts.entry(input_id).or_insert(0);
+                    *count += 1;
+                    // Once all active workers have flushed for this input_id, finalize it
+                    if *count == num_workers_spawned {
+                        let states = all_states.remove(&input_id).unwrap_or_default();
+                        flush_counts.remove(&input_id);
 
-                let compute_runtime = get_compute_runtime();
-                let spawner = ExecutionTaskSpawner::new(
-                    compute_runtime,
-                    memory_manager,
-                    runtime_stats.clone(),
-                    info_span!("BlockingSink::Finalize"),
-                );
-                loop {
-                    let finalized_result = op.finalize(finished_states, &spawner).await??;
-                    match finalized_result {
-                        BlockingSinkFinalizeOutput::HasMoreOutput { states, output } => {
-                            for output in output {
-                                let _ = counting_sender.send(output).await;
-                            }
-                            finished_states = states;
-                        }
-                        BlockingSinkFinalizeOutput::Finished(output) => {
-                            for output in output {
-                                let _ = counting_sender.send(output).await;
-                            }
+                        if !Self::finalize_and_send_output(
+                            op.clone(),
+                            states,
+                            input_id,
+                            memory_manager.clone(),
+                            runtime_stats.clone(),
+                            &counting_sender,
+                        )
+                        .await?
+                        {
                             break;
                         }
                     }
                 }
 
+                // Finish up finalizing remaining states here.
+                // At this point, there may still be input_ids that have not been fully flushed/finalized
+                // because their workers exited early. For any such input_id, finalize the accumulated states.
+
+                for (input_id, states) in all_states.drain() {
+                    if !Self::finalize_and_send_output(
+                        op.clone(),
+                        states,
+                        input_id,
+                        memory_manager.clone(),
+                        runtime_stats.clone(),
+                        &counting_sender,
+                    )
+                    .await?
+                    {
+                        break;
+                    }
+                }
+
+                println!("[Blocking Sink {}] Finalizing node", sink_name);
                 stats_manager.finalize_node(node_id);
                 Ok(())
             },

@@ -300,20 +300,19 @@ impl<T: Task> SubmittableTask<T> {
         }
     }
 
-    pub fn task(&self) -> &T {
-        &self.task
+    pub(crate) fn from_parts(
+        task: T,
+        cancel_token: CancellationToken,
+        notify_tokens: Vec<OneshotSender<()>>,
+    ) -> Self {
+        Self {
+            task,
+            cancel_token,
+            notify_tokens,
+        }
     }
 
-    pub fn add_notify_token(mut self) -> (Self, OneshotReceiver<()>) {
-        let (notify_token, notify_rx) = create_oneshot_channel();
-        self.notify_tokens.push(notify_token);
-        (self, notify_rx)
-    }
 
-    pub fn with_new_task(mut self, new_task: T) -> Self {
-        self.task = new_task;
-        self
-    }
 
     pub fn submit(self, scheduler_handle: &SchedulerHandle<T>) -> DaftResult<SubmittedTask> {
         scheduler_handle.submit_task(self)

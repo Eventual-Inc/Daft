@@ -45,26 +45,22 @@ class Runner(Generic[PartitionT]):
 
     @abstractmethod
     def run_iter(
-        self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
+        self, builder: LogicalPlanBuilder
     ) -> Iterator[MaterializedResult[PartitionT]]:
         """Similar to run(), but yield the individual partitions as they are completed.
 
         Args:
             builder: the builder for the LogicalPlan that is to be executed
-            results_buffer_size: if the plan is executed asynchronously, this is the maximum size of the number of results
-                that can be buffered before execution should pause and wait.
         """
         ...
 
     @abstractmethod
     def run_iter_tables(
-        self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
+        self, builder: LogicalPlanBuilder
     ) -> Iterator[MicroPartition]:
         """Similar to run_iter(), but always dereference and yield MicroPartition objects.
 
         Args:
             builder: the builder for the LogicalPlan that is to be executed
-            results_buffer_size: if the plan is executed asynchronously, this is the maximum size of the number of results
-                that can be buffered before execution should pause and wait.
         """
         ...

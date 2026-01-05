@@ -342,7 +342,7 @@ impl Table for MemoryTable {
         let pset = MicroPartitionSet::empty();
         let runner = daft_runners::get_or_create_runner()?;
         pyo3::Python::attach(|py| {
-            for (i, res) in runner.run_iter_tables(py, plan, None)?.enumerate() {
+            for (i, res) in runner.run_iter_tables(py, plan)?.enumerate() {
                 let mp = res?;
                 pset.set_partition(i, &mp)?;
             }

@@ -540,7 +540,7 @@ class RayRunner(Runner[ray.ObjectRef]):
         return PartitionSetCache()
 
     def run_iter(
-        self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
+        self, builder: LogicalPlanBuilder
     ) -> Iterator[RayMaterializedResult]:
         track_runner_on_scarf(runner=self.name)
 
@@ -563,9 +563,9 @@ class RayRunner(Runner[ray.ObjectRef]):
         )
 
     def run_iter_tables(
-        self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
+        self, builder: LogicalPlanBuilder
     ) -> Iterator[MicroPartition]:
-        for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
+        for result in self.run_iter(builder):
             yield ray.get(result.partition())
 
     def _collect_into_cache(self, results_iter: Iterator[RayMaterializedResult]) -> PartitionCacheEntry:

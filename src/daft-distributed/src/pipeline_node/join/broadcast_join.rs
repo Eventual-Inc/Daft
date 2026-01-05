@@ -10,12 +10,12 @@ use futures::{StreamExt, TryStreamExt};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        PipelineNodeImpl, SubmittableTaskStream, make_in_memory_scan_from_materialized_outputs,
+        PipelineNodeImpl, TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
-        scheduler::{SchedulerHandle, SubmittableTask},
-        task::{SchedulingStrategy, SwordfishTask, TaskContext},
+        scheduler::SchedulerHandle,
+        task::{SwordfishTask, SwordfishTaskBuilder},
     },
     utils::channel::{Sender, create_channel},
 };
@@ -88,20 +88,32 @@ impl BroadcastJoinNode {
 
     async fn execution_loop(
         self: Arc<Self>,
-        broadcaster_input: SubmittableTaskStream,
-        mut receiver_input: SubmittableTaskStream,
+        broadcaster_input: TaskBuilderStream,
+        mut receiver_input: TaskBuilderStream,
         task_id_counter: TaskIDCounter,
-        result_tx: Sender<SubmittableTask<SwordfishTask>>,
+        result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
         let materialized_broadcast_data = broadcaster_input
-            .materialize(scheduler_handle.clone())
+            .materialize(
+                scheduler_handle.clone(),
+                self.context.query_idx,
+                task_id_counter.clone(),
+            )
             .try_collect::<Vec<_>>()
             .await?;
-        let materialized_broadcast_data_plan = make_in_memory_scan_from_materialized_outputs(
-            &materialized_broadcast_data,
+        let materialized_broadcast_data_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+            self.node_id().to_string(),
             self.broadcaster_schema.clone(),
-            self.node_id(),
+            materialized_broadcast_data
+                .iter()
+                .map(|output| output.size_bytes())
+                .sum::<usize>(),
+            StatsState::NotMaterialized,
+            LocalNodeContext {
+                origin_node_id: Some(self.node_id() as usize),
+                additional: None,
+            },
         );
         let broadcast_psets = HashMap::from([(
             self.node_id().to_string(),
@@ -110,46 +122,37 @@ impl BroadcastJoinNode {
                 .flat_map(|output| output.into_inner().0)
                 .collect::<Vec<_>>(),
         )]);
-        while let Some(task) = receiver_input.next().await {
-            let input_plan = task.task().plan();
-            let (left_plan, right_plan) = if self.is_swapped {
-                (input_plan, materialized_broadcast_data_plan.clone())
-            } else {
-                (materialized_broadcast_data_plan.clone(), input_plan)
-            };
+        while let Some(builder) = receiver_input.next().await {
+            // Transform the plan using map_plan to avoid exposing builder internals
+            let new_builder = builder
+                .map_plan(self.as_ref(), |input_plan| {
+                    let (left_plan, right_plan) = if self.is_swapped {
+                        (input_plan, materialized_broadcast_data_plan.clone())
+                    } else {
+                        (materialized_broadcast_data_plan.clone(), input_plan)
+                    };
 
-            // We want to build on the broadcast side, so if swapped, build on the right side
-            let build_on_left = !self.is_swapped;
-            let join_plan = LocalPhysicalPlan::hash_join(
-                left_plan,
-                right_plan,
-                self.left_on.clone(),
-                self.right_on.clone(),
-                Some(build_on_left),
-                self.null_equals_nulls.clone(),
-                self.join_type,
-                self.config.schema.clone(),
-                StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self.node_id() as usize),
-                    additional: None,
-                },
-            );
+                    // We want to build on the broadcast side, so if swapped, build on the right side
+                    let build_on_left = !self.is_swapped;
+                    LocalPhysicalPlan::hash_join(
+                        left_plan,
+                        right_plan,
+                        self.left_on.clone(),
+                        self.right_on.clone(),
+                        Some(build_on_left),
+                        self.null_equals_nulls.clone(),
+                        self.join_type,
+                        self.config.schema.clone(),
+                        StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(self.node_id() as usize),
+                            additional: None,
+                        },
+                    )
+                })
+                .merge_psets(broadcast_psets.clone());
 
-            let mut psets = task.task().psets().clone();
-            psets.extend(broadcast_psets.clone());
-
-            let config = task.task().config().clone();
-
-            let task = task.with_new_task(SwordfishTask::new(
-                TaskContext::from((self.context(), task_id_counter.next())),
-                join_plan,
-                config,
-                psets,
-                SchedulingStrategy::Spread,
-                self.context().to_hashmap(),
-            ));
-            if result_tx.send(task).await.is_err() {
+            if result_tx.send(new_builder).await.is_err() {
                 break;
             }
         }
@@ -195,7 +198,7 @@ impl PipelineNodeImpl for BroadcastJoinNode {
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let broadcaster_input = self.broadcaster.clone().produce_tasks(plan_context);
         let receiver_input = self.receiver.clone().produce_tasks(plan_context);
 
@@ -209,6 +212,6 @@ impl PipelineNodeImpl for BroadcastJoinNode {
         );
         plan_context.spawn(execution_loop);
 
-        SubmittableTaskStream::from(result_rx)
+        TaskBuilderStream::from(result_rx)
     }
 }
