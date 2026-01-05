@@ -10,7 +10,10 @@ use tracing::{Span, instrument};
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{MorselSizeRequirement, NodeName},
+};
 
 struct UnpivotParams {
     ids: Vec<BoundExpr>,
@@ -96,9 +99,12 @@ impl IntermediateOperator for UnpivotOperator {
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(())
     }
-    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
+    fn batching_strategy(
+        &self,
+        morsel_size_requirement: MorselSizeRequirement,
+    ) -> DaftResult<Self::BatchingStrategy> {
         Ok(crate::dynamic_batching::StaticBatchingStrategy::new(
-            self.morsel_size_requirement().unwrap_or_default(),
+            morsel_size_requirement,
         ))
     }
 }

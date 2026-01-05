@@ -65,7 +65,12 @@ pub(crate) trait IntermediateOperator: Send + Sync {
         None
     }
 
-    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy>;
+    fn batching_strategy(
+        &self,
+        // The propagated morsel size requirement from the downstream operator.
+        // This is used instead of `self.morsel_size_requirement()`. because it's been propagated to resolve/combine the downstream requirements
+        propagated_morsel_size_requirment: MorselSizeRequirement,
+    ) -> DaftResult<Self::BatchingStrategy>;
 
     fn dispatch_spawner(
         &self,
@@ -318,9 +323,11 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
 
         let (destination_sender, destination_receiver) = create_channel(0);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
-        let strategy = op.batching_strategy().context(PipelineExecutionSnafu {
-            node_name: self.name().to_string(),
-        })?;
+        let strategy =
+            op.batching_strategy(self.morsel_size_requirement)
+                .context(PipelineExecutionSnafu {
+                    node_name: self.name().to_string(),
+                })?;
         let batch_manager = Arc::new(BatchManager::new(strategy));
         let dispatch_spawner = self
             .intermediate_op

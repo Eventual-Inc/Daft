@@ -1,11 +1,13 @@
 mod dyn_strategy;
 mod latency_constrained_strategy;
+mod selectivity_aware_strategy;
 mod static_strategy;
 use std::{sync::Arc, time::Duration};
 
 pub use dyn_strategy::*;
 pub use latency_constrained_strategy::*;
 use parking_lot::Mutex;
+pub use selectivity_aware_strategy::*;
 pub use static_strategy::*;
 
 use crate::{pipeline::MorselSizeRequirement, runtime_stats::RuntimeStats};

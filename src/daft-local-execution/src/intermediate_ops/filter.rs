@@ -17,16 +17,17 @@ use super::intermediate_op::{
 };
 use crate::{
     ExecutionTaskSpawner,
-    pipeline::NodeName,
+    dynamic_batching::{SelectivityAwareBatchingStrategy, StaticBatchingStrategy},
+    pipeline::{MorselSizeRequirement, NodeName},
     runtime_stats::{Counter, Gauge, RuntimeStats},
 };
 
 pub struct FilterStats {
-    cpu_us: Counter,
-    rows_in: Counter,
-    rows_out: Counter,
-    selectivity: Gauge,
-    node_kv: Vec<KeyValue>,
+    pub(crate) cpu_us: Counter,
+    pub(crate) rows_in: Counter,
+    pub(crate) rows_out: Counter,
+    pub(crate) selectivity: Gauge,
+    pub(crate) node_kv: Vec<KeyValue>,
 }
 
 impl FilterStats {
@@ -100,7 +101,7 @@ impl FilterOperator {
 
 impl IntermediateOperator for FilterOperator {
     type State = ();
-    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
+    type BatchingStrategy = crate::dynamic_batching::DynBatchingStrategy;
     #[instrument(skip_all, name = "FilterOperator::execute")]
     fn execute(
         &self,
@@ -142,10 +143,17 @@ impl IntermediateOperator for FilterOperator {
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(())
     }
-    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
-        Ok(crate::dynamic_batching::StaticBatchingStrategy::new(
-            self.morsel_size_requirement().unwrap_or_default(),
-        ))
+    fn batching_strategy(
+        &self,
+        morsel_size_requirement: MorselSizeRequirement,
+    ) -> DaftResult<Self::BatchingStrategy> {
+        let cfg = daft_context::get_context().execution_config();
+
+        Ok(if cfg.enable_dynamic_batching {
+            SelectivityAwareBatchingStrategy::new(morsel_size_requirement).into()
+        } else {
+            StaticBatchingStrategy::new(morsel_size_requirement).into()
+        })
     }
 }
 

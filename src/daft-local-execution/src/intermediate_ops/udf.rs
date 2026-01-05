@@ -611,21 +611,22 @@ impl IntermediateOperator for UdfOperator {
             .map(MorselSizeRequirement::Strict)
     }
 
-    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
+    fn batching_strategy(
+        &self,
+        morsel_size_requirement: MorselSizeRequirement,
+    ) -> DaftResult<Self::BatchingStrategy> {
         let cfg = daft_context::get_context().execution_config();
 
         Ok(if cfg.enable_dynamic_batching {
             match cfg.dynamic_batching_strategy.as_str() {
                 "latency_constrained" | "auto" => {
                     // TODO: allow udf to accept a min/max batch size instead of just a strict batch size.
-                    let reqs = self.morsel_size_requirement().unwrap_or_default();
-                    let MorselSizeRequirement::Flexible(min_batch_size, max_batch_size) = reqs
+                    let MorselSizeRequirement::Flexible(min_batch_size, max_batch_size) =
+                        morsel_size_requirement
                     else {
-                        return Err(DaftError::ValueError(
-                            "cannot use strict batch size requirement with dynamic batching"
-                                .to_string(),
-                        ));
+                        return Ok(StaticBatchingStrategy::new(morsel_size_requirement).into());
                     };
+
                     LatencyConstrainedBatchingStrategy {
                         target_batch_latency: Duration::from_millis(5000),
                         latency_tolerance: Duration::from_millis(1000), // udf's have high variance so we have a high tolerance
@@ -639,7 +640,7 @@ impl IntermediateOperator for UdfOperator {
                 _ => unreachable!("should already be checked in the ctx"),
             }
         } else {
-            StaticBatchingStrategy::new(self.morsel_size_requirement().unwrap_or_default()).into()
+            StaticBatchingStrategy::new(morsel_size_requirement).into()
         })
     }
 }
