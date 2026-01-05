@@ -147,6 +147,105 @@ def test_lancedb_read_parallelism_fragment_merging(large_lance_dataset_path):
     assert len(result["big_int"]) == 10000
 
 
+def test_lancedb_read_filter_passthrough(tmp_path):
+    """Test passing raw SQL filter string to Lance via default_scan_options."""
+    import lance
+    from shapely.geometry import Point
+
+    # Create dataset with points
+    # Point 0: (0, 0)
+    # Point 1: (10, 10)
+    # Point 2: (20, 20)
+    points_list = [Point(i * 10, i * 10).wkb for i in range(3)]
+
+    schema = pa.schema([pa.field("point", pa.binary()), pa.field("id", pa.int32())])
+
+    table = pa.Table.from_pydict({"point": points_list, "id": list(range(3))}, schema=schema)
+
+    dataset_path = str(tmp_path / "test_geo_filter_passthrough.lance")
+    lance.write_dataset(table, dataset_path)
+
+    # Test: Pass a raw SQL filter string to Lance via default_scan_options
+    # We use a simple filter first to verify the mechanism works
+    filter_str = "id >= 1"
+
+    df = daft.read_lance(dataset_path, default_scan_options={"filter": filter_str})
+
+    res = df.to_pydict()
+
+    assert len(res["id"]) == 2
+    assert 0 not in res["id"]
+    assert 1 in res["id"]
+    assert 2 in res["id"]
+
+
+def test_lancedb_geo_projection_and_filter(tmp_path):
+    """Test LanceDB read with Geo projection and filter via default_scan_options."""
+    import lance
+    from packaging import version
+
+    if version.parse(lance.__version__) < version.parse("1.0.0"):
+        pytest.skip("LanceDB version must be >= 1.0.0 for Geo support")
+
+    try:
+        import numpy as np
+        from geoarrow.pyarrow import linestring, point
+    except ImportError:
+        pytest.skip("geoarrow-pyarrow not installed")
+
+    num_rows = 10000
+    # Points
+    x_coords = np.random.rand(num_rows) * 100
+    y_coords = np.random.rand(num_rows) * 100
+    points_2d = point().from_geobuffers(None, x_coords, y_coords)
+
+    # LineStrings
+    # Create simple linestrings. Each linestring has 2 points.
+    # We need 2 * num_rows coordinates for linestrings
+    ls_x = np.random.randn(num_rows * 2) * 100
+    ls_y = np.random.randn(num_rows * 2) * 100
+    # Offsets: 0, 2, 4, ...
+    line_offsets = np.arange(num_rows + 1, dtype=np.int32) * 2
+
+    linestrings_2d = linestring().from_geobuffers(None, line_offsets, ls_x, ls_y)
+
+    schema = pa.schema(
+        [
+            pa.field("point", points_2d.type),
+            pa.field("linestring", linestrings_2d.type),
+        ]
+    )
+
+    table = pa.Table.from_arrays([points_2d, linestrings_2d], schema=schema)
+    dataset_path = str(tmp_path / "test_geo_udf_distance.lance")
+    lance.write_dataset(table, dataset_path)
+
+    # Read with Daft
+    # We expect 'distance' column in the result
+    df = daft.read_lance(
+        dataset_path,
+        default_scan_options={
+            "columns": {"distance": "st_distance(point, linestring)"},
+            "filter": "st_intersects(linestring, st_geomfromtext('LINESTRING ( 2 0, 0 2 )'))",
+            "with_row_id": True,
+        },
+    )
+
+    # Verify schema has 'distance'
+    print(f"Daft Schema: {df.schema()}")
+
+    # Execute
+    res = df.to_pydict()
+
+    # We don't know exactly how many rows will match random data, but we can check structure
+    assert "distance" in res
+    assert "point" not in res  # Should be projected out
+    assert "linestring" not in res  # Should be projected out
+
+    # Check if we got any rows (might be 0 if random data doesn't intersect)
+    print(f"Result rows: {len(res['distance'])}")
+
+
 class TestLanceDBCountPushdown:
     tmp_data = {
         "a": ["a", "b", "c", "d", "e", None],
