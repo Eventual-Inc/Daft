@@ -372,7 +372,9 @@ impl StreamingSink for SampleSink {
         }
     }
 
-    fn batching_strategy(&self) -> Self::BatchingStrategy {
-        StaticBatchingStrategy::new(self.morsel_size_requirement().unwrap_or_default())
+    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
+        Ok(StaticBatchingStrategy::new(
+            self.morsel_size_requirement().unwrap_or_default(),
+        ))
     }
 }
