@@ -1,19 +1,23 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from collections.abc import Callable
-from typing import TYPE_CHECKING
+from collections.abc import Callable, Iterator
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Literal
 
-from daft import context, from_pydict
+from daft import Schema, context, from_pydict
 from daft.api_annotations import PublicAPI
 from daft.daft import ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
+from daft.io.sink import DataSink, WriteResult
 from daft.logical.builder import LogicalPlanBuilder
+from daft.recordbatch.micropartition import MicroPartition
 from daft.sql.sql_connection import SQLConnection
 from daft.sql.sql_scan import PartitionBoundStrategy, SQLScanOperator
 
 if TYPE_CHECKING:
+    import pandas as pd
     from sqlalchemy.engine import Connection
 
 
@@ -131,3 +135,159 @@ def sql(sql: str) -> DataFrame:
         DataFrame: Dataframe containing the results of the query
     """
     return from_pydict({})
+
+
+@dataclass
+class SQLDataSink(DataSink[dict[str, Any] | None]):
+    """DataSink for writing DataFrames to SQL databases.
+
+    This sink is used internally by :meth:`daft.DataFrame.write_sql` via
+    :meth:`daft.DataFrame.write_sink` and is not part of the public API.
+    """
+
+    table_name: str
+    conn: str | Callable[[], "Connection"]
+    write_mode: Literal["append", "overwrite", "fail"]
+    chunk_size: int | None
+    dtype: Any | None
+    empty_pdf: "pd.DataFrame"
+
+    def __post_init__(self) -> None:
+        # Schema of the final result returned by ``finalize``.
+        self._result_schema = Schema._from_field_name_and_types(
+            [
+                ("total_written_rows", DataType.int64()),
+                ("total_written_bytes", DataType.int64()),
+            ]
+        )
+
+    def name(self) -> str:
+        return "SQL Data Sink"
+
+    def schema(self) -> Schema:
+        return self._result_schema
+
+    def start(self) -> None:
+        """Driver-side initialization implementing first-block semantics.
+
+        This method is responsible for applying the write_mode semantics once
+        on the driver before distributed workers start appending data.
+        """
+        from sqlalchemy import create_engine, inspect
+
+        engine = None
+        connection: Connection | None = None
+
+        try:
+            if isinstance(self.conn, str):
+                engine = create_engine(self.conn)
+                connection = engine.connect()
+            elif callable(self.conn):
+                connection = self.conn()
+            else:
+                raise ValueError(f"Invalid conn type: {type(self.conn)}")
+
+            inspector = inspect(connection)
+            table_exists = inspector.has_table(self.table_name)
+
+            if self.write_mode == "fail":
+                if table_exists:
+                    raise ValueError(f"Table {self.table_name!r} already exists, cannot write with write_mode='fail'.")
+                # Create an empty table to establish schema.
+                self.empty_pdf.to_sql(
+                    self.table_name,
+                    con=connection,
+                    if_exists="fail",
+                    index=False,
+                    dtype=self.dtype,
+                )
+            elif self.write_mode == "overwrite":
+                # Replace any existing table with an empty table that defines the schema.
+                self.empty_pdf.to_sql(
+                    self.table_name,
+                    con=connection,
+                    if_exists="replace",
+                    index=False,
+                    dtype=self.dtype,
+                )
+            else:  # append
+                if not table_exists:
+                    # Create the table once if it does not exist so workers can append safely.
+                    self.empty_pdf.to_sql(
+                        self.table_name,
+                        con=connection,
+                        if_exists="fail",
+                        index=False,
+                        dtype=self.dtype,
+                    )
+        finally:
+            if connection is not None:
+                connection.close()
+            if engine is not None:
+                engine.dispose()
+
+    def write(self, micropartitions: Iterator[MicroPartition]) -> Iterator[WriteResult[dict[str, Any] | None]]:
+        """Write micropartitions to the SQL database.
+
+        A new SQLAlchemy engine/connection is created per writer process to
+        avoid serializing sockets across workers.
+        """
+        from sqlalchemy import create_engine
+
+        engine = None
+        connection: Connection | None = None
+
+        try:
+            if isinstance(self.conn, str):
+                engine = create_engine(self.conn)
+                connection = engine.connect()
+            elif callable(self.conn):
+                connection = self.conn()
+            else:
+                raise ValueError(f"Invalid conn type: {type(self.conn)}")
+
+            for micropartition in micropartitions:
+                pdf = micropartition.to_pandas()
+                if len(pdf) == 0:
+                    continue
+
+                bytes_written: int = int(pdf.memory_usage().sum())
+                rows_written: int = int(pdf.shape[0])
+
+                pdf.to_sql(
+                    self.table_name,
+                    con=connection,
+                    if_exists="append",
+                    index=False,
+                    chunksize=self.chunk_size,
+                    dtype=self.dtype,
+                )
+
+                yield WriteResult(
+                    result=None,
+                    bytes_written=bytes_written,
+                    rows_written=rows_written,
+                )
+        finally:
+            if connection is not None:
+                connection.close()
+            if engine is not None:
+                engine.dispose()
+
+    def finalize(self, write_results: list[WriteResult[dict[str, Any] | None]]) -> MicroPartition:
+        """Aggregate write statistics into a single MicroPartition."""
+        from daft.dependencies import pa
+
+        total_written_rows = 0
+        total_written_bytes = 0
+
+        for write_result in write_results:
+            total_written_rows += write_result.rows_written
+            total_written_bytes += write_result.bytes_written
+
+        return MicroPartition.from_pydict(
+            {
+                "total_written_rows": pa.array([total_written_rows], pa.int64()),
+                "total_written_bytes": pa.array([total_written_bytes], pa.int64()),
+            }
+        )

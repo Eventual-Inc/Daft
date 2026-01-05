@@ -53,6 +53,7 @@ if TYPE_CHECKING:
     import pyiceberg
     import ray
     import torch
+    from sqlalchemy.engine import Connection
 
     from daft.io import DataSink
     from daft.io.catalog import DataCatalogTable
@@ -764,6 +765,88 @@ class DataFrame:
     ###
     # Write methods
     ###
+
+    @DataframePublicAPI
+    def write_sql(
+        self,
+        table_name: str,
+        conn: str | Callable[[], "Connection"],
+        write_mode: Literal["append", "overwrite", "fail"] = "append",
+        chunk_size: int | None = None,
+        dtype: dict[str, Any] | None = None,
+    ) -> "DataFrame":
+        """Write the DataFrame to a SQL database and return write metrics.
+
+        The write is executed via :meth:`daft.DataFrame.write_sink` using an internal
+        :class:`daft.io._sql.SQLDataSink`.
+
+        Args:
+            table_name (str): Name of the table to write to.
+            conn (str | Callable[[], "Connection"]): Connection string or factory.
+            write_mode (str): Mode to write to the table. "append", "overwrite", or "fail". Defaults to "append".
+            chunk_size (int): Number of rows to write at a time. Defaults to None.
+            dtype (Optional[Dict[str, Any]]): Optional mapping from column names to
+                SQLAlchemy types to use when creating the table or casting columns.
+                Passed through to the underlying SQL engine when creating or writing
+                the table.
+
+        Returns:
+            DataFrame: A single-row DataFrame containing aggregate write metrics with
+                columns ``total_written_rows`` and ``total_written_bytes``.
+
+        Examples:
+            Write to a SQL table using a database URL and explicit SQLAlchemy dtypes:
+
+            >>> from sqlalchemy import DateTime, Integer, String
+            >>> import datetime
+            >>> import daft
+            >>> df = daft.from_pydict(
+            ...     {
+            ...         "id": [1, 2],
+            ...         "name": ["Alice", "Bob"],
+            ...         "created_at": [
+            ...             datetime.datetime(2024, 1, 1, 0, 0, 0),
+            ...             datetime.datetime(2024, 1, 2, 0, 0, 0),
+            ...         ],
+            ...     }
+            ... )
+            >>> dtype = {
+            ...     "id": Integer(),
+            ...     "name": String(length=255),
+            ...     "created_at": DateTime(timezone=True),
+            ... }
+            >>> metrics_df = df.write_sql("users", "sqlite:///my_database.db", dtype=dtype)
+
+            Write to a SQL table using a SQLAlchemy connection factory and dtypes:
+
+            >>> import sqlalchemy
+            >>> def create_conn():
+            ...     return sqlalchemy.create_engine("sqlite:///my_database.db").connect()
+            >>> metrics_df = df.write_sql("users", create_conn, dtype=dtype)
+
+            Write to a SQL table using a database URL with dtype=None to rely on inferred types:
+
+            >>> df = daft.from_pydict({"id": [1], "name": ["Alice"]})
+            >>> metrics_df = df.write_sql("users", "sqlite:///my_database.db", dtype=None)
+        """
+        from daft.io._sql import SQLDataSink
+
+        if write_mode not in ["append", "overwrite", "fail"]:
+            raise ValueError(f"Invalid write_mode: {write_mode}. Must be one of 'append', 'overwrite', 'fail'.")
+
+        # Build an empty pandas DataFrame that defines the schema for table creation on the driver side.
+        empty_pdf = self.limit(0).to_pandas()
+
+        sink = SQLDataSink(
+            table_name=table_name,
+            conn=conn,
+            write_mode=write_mode,
+            chunk_size=chunk_size,
+            dtype=dtype,
+            empty_pdf=empty_pdf,
+        )
+
+        return self.write_sink(sink)
 
     @DataframePublicAPI
     def write_parquet(
