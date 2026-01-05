@@ -9,7 +9,7 @@ import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any
 from urllib.error import HTTPError, URLError
 
 
@@ -62,8 +62,8 @@ class OAuth2TokenProvider(TokenProvider):
     def __init__(self, workspace_url: str, credentials: OAuth2Credentials):
         self._workspace_url = workspace_url
         self._credentials = credentials
-        self._token: Optional[str] = None
-        self._expiration: Optional[int] = None
+        self._token: str | None = None
+        self._expiration: int = 0
 
     def get_token(self) -> str:
         if self._token_expired():
@@ -80,7 +80,7 @@ class OAuth2TokenProvider(TokenProvider):
         self._expiration = jwt_expiration(self._token)
 
     def _token_expired(self) -> bool:
-        if self._token is None or self._expiration is None:
+        if self._token is None or self._expiration == 0:
             return True
         return not is_expired(self._expiration)
 
@@ -134,7 +134,7 @@ def _generate_workspace_token(workspace_url: str, oauth: OAuth2Credentials) -> s
             if attempt == max_retries - 1:
                 raise RuntimeError(
                     f"UnityCatalog token request to {token_url} timed out after {max_retries} attempts"
-                ) from e 
+                ) from e
         except HTTPError as e:
             # Only retry on 5xx server errors
             if 500 <= e.code < 600:
@@ -158,11 +158,9 @@ def _generate_workspace_token(workspace_url: str, oauth: OAuth2Credentials) -> s
 
         # Exponential backoff with jitter
         if attempt < max_retries - 1:
-            backoff_ms = min(initial_backoff_ms * (2 ** attempt), max_backoff_ms)
+            backoff_ms = min(initial_backoff_ms * (2**attempt), max_backoff_ms)
             jitter = random.randint(0, backoff_ms // 4)  # ±25% jitter
             time.sleep((backoff_ms + jitter) / 1000)
 
     # Should never reach here, but included for safety
-    raise RuntimeError(
-        f"UnityCatalog token request to {token_url} failed after {max_retries} attempts"
-    )
+    raise RuntimeError(f"UnityCatalog token request to {token_url} failed after {max_retries} attempts")

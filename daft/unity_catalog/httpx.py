@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-import time
-from typing import Generator
+from typing import TYPE_CHECKING
 
 import httpx
 
-from .auth import TokenProvider
+if TYPE_CHECKING:
+    from collections.abc import Generator
+
+    from .auth import TokenProvider
 
 
 class AuthProvider(httpx.Auth):  # type: ignore[misc]
@@ -17,5 +19,4 @@ class AuthProvider(httpx.Auth):  # type: ignore[misc]
     def auth_flow(self, request: httpx.Request) -> Generator[httpx.Request, None, None]:
         token = self._token_provider.get_token()
         request.headers["Authorization"] = f"Bearer {token}"
-        print("auth_flow request:", request)
         yield request

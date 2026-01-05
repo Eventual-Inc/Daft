@@ -70,6 +70,11 @@ class UnityCatalog:
 
     Unity Catalog is an open-sourced data catalog that can be self-hosted, or hosted by Databricks.
 
+    Args:
+        endpoint: The Unity Catalog endpoint URL.
+        token: Authentication token for Unity Catalog. Mutually exclusive with `oauth`.
+        oauth: OAuth2 credentials for Unity Catalog. Mutually exclusive with `token`.
+
     Example of reading a dataframe from a table in Unity Catalog hosted by Databricks:
 
     >>> cat = UnityCatalog("https://<databricks_workspace_id>.cloud.databricks.com", token="my-token")
@@ -88,6 +93,8 @@ class UnityCatalog:
 
         base_url = endpoint.rstrip("/")
         self._endpoint = endpoint
+
+        print(type(unitycatalog.DefaultHttpxClient()))
 
         # should we use oauth?
         if oauth and not token:
