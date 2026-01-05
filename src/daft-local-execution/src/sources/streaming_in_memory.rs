@@ -67,7 +67,6 @@ impl StreamingInMemorySource {
                         partition: partition.into(),
                     };
                     if output_sender.send(message).await.is_err() {
-                        println!("[StreamingInMemorySource] Error sending message");
                         break;
                     }
                 }
@@ -80,7 +79,6 @@ impl StreamingInMemorySource {
                         partition: empty,
                     };
                     if output_sender.send(message).await.is_err() {
-                        println!("[StreamingInMemorySource] Error sending message");
                         break;
                     }
                 }
@@ -91,11 +89,9 @@ impl StreamingInMemorySource {
                     .await
                     .is_err()
                 {
-                    println!("[StreamingInMemorySource] Error sending flush message");
                     break;
                 }
             }
-            println!("[StreamingInMemorySource] Finished sending messages");
             Ok(())
         })
     }

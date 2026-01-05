@@ -161,7 +161,6 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         runtime_stats: Arc<dyn RuntimeStats>,
         counting_sender: &CountingSender,
     ) -> DaftResult<bool> {
-        println!("[finalize_and_send_output] Called for input_id: {input_id:?}, states.len()={}", states.len());
         let compute_runtime = get_compute_runtime();
         let spawner = ExecutionTaskSpawner::new(
             compute_runtime,
@@ -172,11 +171,9 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
 
         let mut current_states = states;
         loop {
-            println!("[finalize_and_send_output] About to call op.finalize for input_id: {input_id:?}, current_states.len()={}", current_states.len());
             let finalized_result = op.finalize(current_states, &spawner).await??;
             match finalized_result {
                 StreamingSinkFinalizeOutput::HasMoreOutput { states, output } => {
-                    println!("[finalize_and_send_output] Got HasMoreOutput for input_id: {input_id:?}, output.is_some()={}", output.is_some());
                     if let Some(mp) = output
                         && counting_sender
                             .send(PipelineMessage::Morsel {
@@ -186,13 +183,11 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                             .await
                             .is_err()
                     {
-                        println!("[finalize_and_send_output] Counting sender failed to send morsel -- returning false");
                         return Ok(false);
                     }
                     current_states = states;
                 }
                 StreamingSinkFinalizeOutput::Finished(output) => {
-                    println!("[finalize_and_send_output] Got Finished for input_id: {input_id:?}, output.is_some()={}", output.is_some());
                     if let Some(mp) = output
                         && counting_sender
                             .send(PipelineMessage::Morsel {
@@ -202,7 +197,6 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                             .await
                             .is_err()
                     {
-                        println!("[finalize_and_send_output] Counting sender failed to send finished morsel -- returning false");
                         return Ok(false);
                     }
 
@@ -212,10 +206,8 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                         .await
                         .is_err()
                     {
-                        println!("[finalize_and_send_output] Counting sender failed to send flush -- returning false");
                         return Ok(false);
                     }
-                    println!("[finalize_and_send_output] Done for input_id: {input_id:?}");
                     break;
                 }
             }
@@ -232,10 +224,6 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         memory_manager: Arc<MemoryManager>,
         batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
     ) -> DaftResult<()> {
-        println!(
-            "[run_worker] Worker started for op '{}'",
-            op.name()
-        );
         let span = info_span!("StreamingSink::Execute");
         let compute_runtime = get_compute_runtime();
         let spawner =
@@ -247,45 +235,23 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                     input_id,
                     partition,
                 } => {
-                    println!(
-                        "[run_worker] Received morsel - input_id: {:?}, partition_len: {}",
-                        input_id,
-                        partition.len()
-                    );
                     // Get or create state for this input ID
 
                     loop {
                         let state = match states.remove(&input_id) {
                             Some(state) => state,
                             None => {
-                                println!(
-                                    "[run_worker] No state for input_id {:?}, calling op.make_state()",
-                                    input_id
-                                );
                                 op.make_state()?
                             },
                         };
-                        println!(
-                            "[run_worker] Calling op.execute for input_id {:?}",
-                            input_id
-                        );
                         let now = Instant::now();
                         let (new_state, output) =
                             op.execute(partition.clone(), state, &spawner).await??;
                         let elapsed = now.elapsed();
-                        println!(
-                            "[run_worker] op.execute returned for input_id {:?} in {:?}",
-                            input_id, elapsed
-                        );
                         states.insert(input_id, new_state);
 
                         match output {
                             StreamingSinkOutput::NeedMoreInput(mp) => {
-                                println!(
-                                    "[run_worker] Got NeedMoreInput for input_id {:?}, mp.is_some()={}",
-                                    input_id,
-                                    mp.is_some()
-                                );
                                 batch_manager.record_execution_stats(
                                     runtime_stats.clone(),
                                     mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
@@ -300,17 +266,11 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                                         .await
                                         .is_err()
                                 {
-                                    println!("[run_worker] output_sender failed NeedMoreInput");
                                     break 'outer;
                                 }
                                 break;
                             }
                             StreamingSinkOutput::HasMoreOutput(mp) => {
-                                println!(
-                                    "[run_worker] Got HasMoreOutput for input_id {:?}, mp.is_some()={}",
-                                    input_id,
-                                    mp.is_some()
-                                );
                                 batch_manager.record_execution_stats(
                                     runtime_stats.clone(),
                                     mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
@@ -325,17 +285,11 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                                         .await
                                         .is_err()
                                 {
-                                    println!("[run_worker] output_sender failed HasMoreOutput");
                                     break 'outer;
                                 }
                                 // Continue loop with updated state
                             }
                             StreamingSinkOutput::Finished(mp) => {
-                                println!(
-                                    "[run_worker] Got Finished for input_id {:?}, mp.is_some()={}",
-                                    input_id,
-                                    mp.is_some()
-                                );
                                 batch_manager.record_execution_stats(
                                     runtime_stats.clone(),
                                     mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
@@ -350,7 +304,6 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                                         .await
                                         .is_err()
                                 {
-                                    println!("[run_worker] output_sender failed Finished");
                                     break 'outer;
                                 }
                                 // Exit outer loop, flush everything, and return
@@ -360,10 +313,6 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                     }
                 }
                 PipelineMessage::Flush(input_id) => {
-                    println!(
-                        "[run_worker] Received Flush for input_id {:?}",
-                        input_id
-                    );
                     // Send state back to coordinator when flush is called
                     // Always send, even if state doesn't exist for this input_id
                     let state = states.remove(&input_id);
@@ -372,10 +321,6 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                         .await
                         .is_err()
                     {
-                        println!(
-                            "[run_worker] output_sender failed sending FlushState for input_id {:?}",
-                            input_id
-                        );
                         break;
                     }
                 }
@@ -383,21 +328,15 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         }
         // Input receiver is exhausted or Finished was returned, send all remaining states
         for (input_id, state) in states {
-            println!(
-                "[run_worker] input receiver exhausted or finished, sending remaining state FlushState for input_id {:?}",
-                input_id
-            );
             if output_sender
                 .send(StreamingSinkWorkerMessage::FlushState(input_id, Some(state)))
                 .await
                 .is_err()
             {
-                println!("[run_worker] output_sender failed sending remaining FlushState for input_id {:?}", input_id);
                 break;
             }
         }
 
-        println!("[run_worker] Worker finishing!");
         Ok(())
     }
 
@@ -412,10 +351,6 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         let (output_sender, output_receiver) = create_channel(input_receivers.len());
 
         for input_receiver in input_receivers {
-            println!(
-                "[spawn_workers] Spawning worker for op '{}'",
-                op.name()
-            );
             runtime_handle.spawn(
                 Self::run_worker(
                     op.clone(),
@@ -519,11 +454,6 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         &self,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<PipelineMessage>> {
-        println!(
-            "[start] Starting StreamingSinkNode '{}' (node_id={})",
-            self.name(),
-            self.node_id()
-        );
         let child_result_receiver = self.child.start(runtime_handle)?;
         let child_result_receiver = InitializingCountingReceiver::new(
             child_result_receiver,
@@ -538,11 +468,6 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
-        println!(
-            "[start] Operator '{}' will launch {} workers.",
-            op.name(),
-            num_workers
-        );
         let strategy = op.batching_strategy();
         let batch_manager = Arc::new(BatchManager::new(strategy));
         let dispatch_spawner = op.dispatch_spawner(batch_manager.clone());
@@ -558,11 +483,6 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
 
         // Spawn workers on runtime_handle
         let num_workers_spawned = spawned_dispatch_result.worker_receivers.len();
-        println!(
-            "[start] Actually spawning {} workers for operator '{}'.",
-            num_workers_spawned,
-            op.name()
-        );
         let mut output_receiver = Self::spawn_workers(
             op.clone(),
             spawned_dispatch_result.worker_receivers,
@@ -587,11 +507,6 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                             input_id,
                             partition,
                         } => {
-                            println!(
-                                "[start-async] Received Morsel from worker for input_id {:?}, partition_len: {}",
-                                input_id,
-                                partition.len()
-                            );
                             if counting_sender
                                 .send(PipelineMessage::Morsel {
                                     input_id,
@@ -600,16 +515,10 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                                 .await
                                 .is_err()
                             {
-                                println!("[start-async] counting_sender failed to send morsel for input_id {:?}", input_id);
                                 break;
                             }
                         }
                         StreamingSinkWorkerMessage::FlushState(input_id, state_opt) => {
-                            println!(
-                                "[start-async] Received FlushState from worker for input_id {:?} (state.is_some() = {})",
-                                input_id,
-                                state_opt.is_some()
-                            );
                             // Received a flush state from a worker
                             // Only add to all_states if state exists
                             if let Some(state) = state_opt {
@@ -620,10 +529,6 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                             }
                             let count = flush_counts.entry(input_id).or_insert(0);
                             *count += 1;
-                            println!(
-                                "[start-async] flush count for input_id {:?} now at {} / {}",
-                                input_id, *count, num_workers_spawned
-                            );
 
                             // Invariant: count should never exceed num_workers
                             // Each worker should send exactly one flush state per input_id
@@ -640,10 +545,6 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                                 let states = all_states.remove(&input_id).unwrap_or_default();
                                 flush_counts.remove(&input_id);
 
-                                println!(
-                                    "[start-async] All workers flushed for input_id {:?}, finalizing ({} states)",
-                                    input_id, states.len()
-                                );
                                 if !Self::finalize_and_send_output(
                                     op.clone(),
                                     states,
@@ -654,7 +555,6 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                                 )
                                 .await?
                                 {
-                                    println!("[start-async] finalize_and_send_output returned false, breaking");
                                     break;
                                 }
                             }
@@ -666,10 +566,6 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                 // At this point, there may still be input_ids that have not been fully flushed/finalized
                 // because their workers exited early. For any such input_id, finalize the accumulated states.
                 for (input_id, states) in all_states.drain() {
-                    println!(
-                        "[start-async] Finalizing remaining input_id {:?} ({} states)",
-                        input_id, states.len()
-                    );
                     if !Self::finalize_and_send_output(
                         op.clone(),
                         states,
@@ -680,20 +576,14 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                     )
                     .await?
                     {
-                        println!("[start-async] finalize_and_send_output returned false for input_id {:?}", input_id);
                         break;
                     }
                 }
 
-                println!("[start-async] Finalizing stats for node_id {}", node_id);
                 stats_manager.finalize_node(node_id);
                 Ok(())
             },
             &self.name(),
-        );
-        println!(
-            "[start] StreamingSinkNode '{}' returning destination_receiver",
-            self.name()
         );
         Ok(destination_receiver)
     }

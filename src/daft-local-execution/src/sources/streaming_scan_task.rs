@@ -1,20 +1,27 @@
 #![allow(deprecated, reason = "arrow2 migration")]
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
 };
 
 use async_trait::async_trait;
 use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayAs, DisplayLevel, tree::TreeDisplay};
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
+use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_metrics::ops::NodeType;
 use common_runtime::{combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use common_scan_info::Pushdowns;
-use daft_core::prelude::SchemaRef;
-use daft_io::IOStatsRef;
-use daft_scan::{ScanTask, ScanTaskRef};
-use futures::{FutureExt, StreamExt};
+use daft_core::prelude::{AsArrow, Int64Array, SchemaRef, Utf8Array};
+use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
+use daft_dsl::{AggExpr, Expr};
+use daft_io::{GetRange, IOStatsRef};
+use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
+use daft_micropartition::MicroPartition;
+use daft_parquet::read::{read_parquet_bulk_async, ParquetSchemaInferenceOptions};
+use daft_scan::{ChunkSpec, ScanTask, ScanTaskRef};
+use daft_warc::WarcConvertOptions;
+use futures::{FutureExt, Stream, StreamExt};
 use tracing::instrument;
 
 use crate::{
@@ -22,10 +29,7 @@ use crate::{
     channel::{Receiver, Sender, create_channel},
     pipeline::NodeName,
     plan_input::{InputId, PipelineMessage},
-    sources::{
-        scan_task::{get_delete_map, stream_scan_task},
-        source::{Source, SourceStream},
-    },
+    sources::source::{Source, SourceStream},
 };
 
 pub struct StreamingScanTaskSource {
@@ -73,7 +77,8 @@ impl StreamingScanTaskSource {
             let mut pending_tasks = Vec::new();
             // Track how many scan tasks are pending per input_id
             // When count reaches 0, we send flush for that input_id
-            let input_id_pending_counts: Arc<Mutex<HashMap<InputId, usize>>> = Arc::new(Mutex::new(HashMap::new()));
+            let input_id_pending_counts: Arc<Mutex<HashMap<InputId, usize>>> =
+                Arc::new(Mutex::new(HashMap::new()));
 
             loop {
                 // Try to fill up to num_cpus parallel tasks
@@ -330,4 +335,337 @@ async fn forward_scan_task_stream(
     }
 
     Ok(())
+}
+
+pub(crate) async fn stream_scan_task(
+    scan_task: Arc<ScanTask>,
+    io_stats: IOStatsRef,
+    delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
+    chunk_size: usize,
+) -> DaftResult<impl Stream<Item = DaftResult<Arc<MicroPartition>>> + Send> {
+    let pushdown_columns = scan_task
+        .pushdowns
+        .columns
+        .as_ref()
+        .map(|v| v.iter().cloned().collect::<Vec<_>>());
+
+    let file_column_names = match (
+        pushdown_columns,
+        scan_task.partition_spec().map(|ps| ps.to_fill_map()),
+    ) {
+        (None, _) => None,
+        (Some(columns), None) => Some(columns),
+
+        // If the ScanTask has a partition_spec, we elide reads of partition columns from the file
+        (Some(columns), Some(partition_fillmap)) => Some(
+            columns
+                .into_iter()
+                .filter_map(|s| {
+                    if partition_fillmap.contains_key(s.as_str()) {
+                        None
+                    } else {
+                        Some(s)
+                    }
+                })
+                .collect::<Vec<_>>(),
+        ),
+    };
+
+    if scan_task.sources.len() != 1 {
+        return Err(common_error::DaftError::TypeError(
+            "Streaming reads only supported for single source ScanTasks".to_string(),
+        ));
+    }
+    let source = scan_task.sources.first().unwrap();
+    let url = source.get_path();
+    let io_config = Arc::new(
+        scan_task
+            .storage_config
+            .io_config
+            .clone()
+            .unwrap_or_default(),
+    );
+    let io_client = daft_io::get_io_client(scan_task.storage_config.multithreaded_io, io_config)?;
+    let table_stream = match scan_task.file_format_config.as_ref() {
+        FileFormatConfig::Parquet(ParquetSourceConfig {
+            coerce_int96_timestamp_unit,
+            field_id_mapping,
+            chunk_size: chunk_size_from_config,
+            ..
+        }) => {
+            if let Some(aggregation) = &scan_task.pushdowns.aggregation
+                && let Expr::Agg(AggExpr::Count(_, _)) = aggregation.as_ref()
+            {
+                daft_parquet::read::stream_parquet_count_pushdown(
+                    url,
+                    io_client,
+                    Some(io_stats),
+                    field_id_mapping.clone(),
+                    aggregation,
+                )
+                .await?
+            } else {
+                let parquet_chunk_size = chunk_size_from_config.or(Some(chunk_size));
+                let inference_options =
+                    ParquetSchemaInferenceOptions::new(Some(*coerce_int96_timestamp_unit));
+
+                let delete_rows = delete_map.as_ref().and_then(|m| m.get(url).cloned());
+                let row_groups =
+                    if let Some(ChunkSpec::Parquet(row_groups)) = source.get_chunk_spec() {
+                        Some(row_groups.clone())
+                    } else {
+                        None
+                    };
+                let metadata = scan_task
+                    .sources
+                    .first()
+                    .and_then(|s| s.get_parquet_metadata().cloned());
+                daft_parquet::read::stream_parquet(
+                    url,
+                    file_column_names,
+                    scan_task.pushdowns.limit,
+                    row_groups,
+                    scan_task.pushdowns.filters.clone(),
+                    io_client,
+                    Some(io_stats),
+                    &inference_options,
+                    field_id_mapping.clone(),
+                    metadata,
+                    delete_rows,
+                    parquet_chunk_size,
+                )
+                .await?
+            }
+        }
+        FileFormatConfig::Csv(cfg) => {
+            let schema_of_file = scan_task.schema.clone();
+            let col_names = if !cfg.has_headers {
+                Some(schema_of_file.field_names().collect::<Vec<_>>())
+            } else {
+                None
+            };
+            let convert_options = CsvConvertOptions::new_internal(
+                scan_task.pushdowns.limit,
+                file_column_names
+                    .as_ref()
+                    .map(|cols| cols.iter().map(|col| (*col).clone()).collect()),
+                col_names
+                    .as_ref()
+                    .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
+                Some(schema_of_file),
+                scan_task.pushdowns.filters.clone(),
+            );
+            let parse_options = CsvParseOptions::new_with_defaults(
+                cfg.has_headers,
+                cfg.delimiter,
+                cfg.double_quote,
+                cfg.quote,
+                cfg.allow_variable_columns,
+                cfg.escape_char,
+                cfg.comment,
+            )?;
+            let csv_chunk_size = cfg.chunk_size.or(Some(chunk_size));
+            let read_options = CsvReadOptions::new_internal(cfg.buffer_size, csv_chunk_size);
+            daft_csv::stream_csv(
+                url.to_string(),
+                Some(convert_options),
+                Some(parse_options),
+                Some(read_options),
+                io_client,
+                Some(io_stats.clone()),
+                None,
+            )
+            .await?
+        }
+        FileFormatConfig::Json(cfg) => {
+            let schema_of_file = scan_task.schema.clone();
+            let convert_options = JsonConvertOptions::new_internal(
+                scan_task.pushdowns.limit,
+                file_column_names
+                    .as_ref()
+                    .map(|cols| cols.iter().map(|col| (*col).clone()).collect()),
+                Some(schema_of_file),
+                scan_task.pushdowns.filters.clone(),
+            );
+            let parse_options = JsonParseOptions::new_internal(cfg.skip_empty_files);
+            let json_chunk_size = cfg.chunk_size.or(Some(chunk_size));
+            let read_options = JsonReadOptions::new_internal(cfg.buffer_size, json_chunk_size);
+
+            let range = source.get_chunk_spec().and_then(|spec| match spec {
+                daft_scan::ChunkSpec::Bytes { start, end } => Some(GetRange::Bounded(*start..*end)),
+                _ => None,
+            });
+            daft_json::read::stream_json(
+                url.to_string(),
+                Some(convert_options),
+                Some(parse_options),
+                Some(read_options),
+                io_client,
+                Some(io_stats),
+                None,
+                range,
+                // maintain_order, TODO: Implement maintain_order for JSON
+            )
+            .await?
+        }
+        FileFormatConfig::Warc(_) => {
+            let convert_options = WarcConvertOptions {
+                limit: scan_task.pushdowns.limit,
+                include_columns: None,
+                schema: scan_task.schema.clone(),
+                predicate: scan_task.pushdowns.filters.clone(),
+            };
+            daft_warc::stream_warc(url, io_client, Some(io_stats), convert_options, None).await?
+        }
+        #[cfg(feature = "python")]
+        FileFormatConfig::Database(common_file_formats::DatabaseSourceConfig { sql, conn }) => {
+            use pyo3::Python;
+
+            use crate::PyIOSnafu;
+            let predicate = scan_task
+                .pushdowns
+                .filters
+                .as_ref()
+                .map(|p| (*p.as_ref()).clone().into());
+            let table = Python::attach(|py| {
+                use snafu::ResultExt;
+
+                daft_micropartition::python::read_sql_into_py_table(
+                    py,
+                    sql,
+                    conn,
+                    predicate.clone(),
+                    scan_task.schema.clone().into(),
+                    scan_task
+                        .pushdowns
+                        .columns
+                        .as_ref()
+                        .map(|cols| cols.as_ref().clone()),
+                    scan_task.pushdowns.limit,
+                )
+                .map(|t| t.into())
+                .context(PyIOSnafu)
+            })?;
+            Box::pin(futures::stream::once(async { Ok(table) }))
+        }
+        #[cfg(feature = "python")]
+        FileFormatConfig::PythonFunction { .. } => {
+            let iter = daft_micropartition::python::read_pyfunc_into_table_iter(scan_task.clone())?;
+            let stream = futures::stream::iter(iter.map(|r| r.map_err(|e| e.into())));
+            Box::pin(stream)
+        }
+    };
+
+    Ok(table_stream.map(move |table| {
+        let table = table?;
+        #[allow(deprecated)]
+        let casted_table = table.cast_to_schema_with_fill(
+            scan_task.materialized_schema().as_ref(),
+            scan_task
+                .partition_spec()
+                .as_ref()
+                .map(|pspec| pspec.to_fill_map())
+                .as_ref(),
+        )?;
+
+        let stats = scan_task
+            .statistics
+            .as_ref()
+            .map(|stats| {
+                #[allow(deprecated)]
+                stats.cast_to_schema(&scan_task.materialized_schema())
+            })
+            .transpose()?;
+
+        let mp = Arc::new(MicroPartition::new_loaded(
+            scan_task.materialized_schema(),
+            Arc::new(vec![casted_table]),
+            stats,
+        ));
+        Ok(mp)
+    }))
+}
+
+// Read all iceberg delete files and return a map of file paths to delete positions
+pub(crate) async fn get_delete_map(
+    scan_tasks: &[Arc<ScanTask>],
+) -> DaftResult<Option<HashMap<String, Vec<i64>>>> {
+    let delete_files = scan_tasks
+        .iter()
+        .flat_map(|st| {
+            st.sources
+                .iter()
+                .filter_map(|source| source.get_iceberg_delete_files())
+                .flatten()
+                .cloned()
+        })
+        .collect::<HashSet<_>>();
+    if delete_files.is_empty() {
+        return Ok(None);
+    }
+
+    let (runtime, io_client) = scan_tasks
+        .first()
+        .unwrap() // Safe to unwrap because we checked that the list is not empty
+        .storage_config
+        .get_io_client_and_runtime()?;
+    let scan_tasks = scan_tasks.to_vec();
+    runtime
+        .spawn(async move {
+            let mut delete_map = scan_tasks
+                .iter()
+                .flat_map(|st| st.sources.iter().map(|s| s.get_path().to_string()))
+                .map(|path| (path, vec![]))
+                .collect::<std::collections::HashMap<_, _>>();
+            let columns_to_read = Some(vec!["file_path".to_string(), "pos".to_string()]);
+            let result = read_parquet_bulk_async(
+                delete_files.into_iter().collect(),
+                columns_to_read,
+                None,
+                None,
+                None,
+                None,
+                io_client,
+                None,
+                get_compute_pool_num_threads(),
+                ParquetSchemaInferenceOptions::new(None),
+                None,
+                None,
+                None,
+                None,
+            )
+            .await?;
+
+            for table_result in result {
+                let table = table_result?;
+                // values in the file_path column are guaranteed by the iceberg spec to match the full URI of the corresponding data file
+                // https://iceberg.apache.org/spec/#position-delete-files
+
+                let get_column_by_name = |name| {
+                    if let [(idx, _)] = table.schema.get_fields_with_name(name)[..] {
+                        Ok(table.get_column(idx))
+                    } else {
+                        Err(DaftError::SchemaMismatch(format!(
+                            "Iceberg delete files must have columns \"file_path\" and \"pos\", found: {}",
+                            table.schema
+                        )))
+                    }
+                };
+
+                let file_paths = get_column_by_name("file_path")?.downcast::<Utf8Array>()?;
+                let positions = get_column_by_name("pos")?.downcast::<Int64Array>()?;
+
+                for (file, pos) in file_paths
+                    .as_arrow2()
+                    .values_iter()
+                    .zip(positions.as_arrow2().values_iter())
+                {
+                    if delete_map.contains_key(file) {
+                        delete_map.get_mut(file).unwrap().push(*pos);
+                    }
+                }
+            }
+            Ok(Some(delete_map))
+        })
+        .await?
 }

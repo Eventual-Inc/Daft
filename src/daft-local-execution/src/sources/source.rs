@@ -223,19 +223,9 @@ impl PipelineNode for SourceNode {
                 stats_manager.activate_node(node_id);
                 while let Some(part) = source_stream.next().await {
                     let message: PipelineMessage = part?;
-                    match &message {
-                        PipelineMessage::Morsel { input_id, .. } => {
-                            println!("[Source {}] Sending morsel for input_id: {:?}", source_name, input_id);
-                        }
-                        PipelineMessage::Flush(input_id) => {
-                            println!("[Source {}] Sending flush message for input_id: {:?}", source_name, input_id);
-                        }
-                    }
                     if counting_sender.send(message).await.is_err() {
-                        println!("[Source {}] Error sending message", source_name);
                     }
                 }
-                println!("[Source {}] Finished sending messages", source_name);
                 stats_manager.finalize_node(node_id);
                 Ok(())
             },

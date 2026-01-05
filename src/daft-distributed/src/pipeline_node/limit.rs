@@ -272,24 +272,12 @@ impl LimitNode {
             // Send the next builders to the result channel
             for builder in next_builders {
                 send_empty = false;
-                println!(
-                    "LimitNode {}: Sending builder to result channel",
-                    self.node_id()
-                );
                 if result_tx.send(builder).await.is_err() {
-                    println!(
-                        "LimitNode {}: Error sending builder, returning",
-                        self.node_id()
-                    );
                     return Ok(());
                 }
             }
 
             if limit_state.is_take_done() {
-                println!(
-                    "LimitNode {}: Take done, breaking execution loop",
-                    self.node_id()
-                );
                 break;
             }
         }
@@ -310,7 +298,6 @@ impl LimitNode {
             let empty_scan_builder = empty_scan_builder.with_psets(psets);
             let _ = result_tx.send(empty_scan_builder).await;
         }
-        println!("LimitNode {}: Execution loop finished", self.node_id());
         Ok(())
     }
 }

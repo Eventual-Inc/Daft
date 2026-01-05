@@ -1,5 +1,4 @@
-use std::sync::Arc;
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 use common_hashable_float_wrapper::FloatWrapper;
@@ -20,12 +19,17 @@ use crate::{InputSpec, InputType};
 
 /// Translate a logical plan into a physical plan and extract input specifications.
 /// Returns the physical plan and a map of source_id -> InputSpec.
-pub fn translate(plan: &LogicalPlanRef) -> DaftResult<(LocalPhysicalPlanRef, HashMap<String, InputSpec>)> {
+pub fn translate(
+    plan: &LogicalPlanRef,
+) -> DaftResult<(LocalPhysicalPlanRef, HashMap<String, InputSpec>)> {
     let mut source_counter = 0;
     translate_helper(plan, &mut source_counter)
 }
 
-fn translate_helper(plan: &LogicalPlanRef, source_counter: &mut usize) -> DaftResult<(LocalPhysicalPlanRef, HashMap<String, InputSpec>)> {
+fn translate_helper(
+    plan: &LogicalPlanRef,
+    source_counter: &mut usize,
+) -> DaftResult<(LocalPhysicalPlanRef, HashMap<String, InputSpec>)> {
     match plan.as_ref() {
         LogicalPlan::Source(source) => {
             let mut inputs = HashMap::new();
@@ -34,7 +38,7 @@ fn translate_helper(plan: &LogicalPlanRef, source_counter: &mut usize) -> DaftRe
                     // Create a streaming in-memory scan
                     let source_id = format!("source_{}", *source_counter);
                     *source_counter += 1;
-                    
+
                     // Create InputSpec for in-memory data
                     let input_spec = InputSpec {
                         source_id: source_id.clone(),
@@ -44,7 +48,7 @@ fn translate_helper(plan: &LogicalPlanRef, source_counter: &mut usize) -> DaftRe
                         io_config: None,
                     };
                     inputs.insert(source_id.clone(), input_spec);
-                    
+
                     LocalPhysicalPlan::streaming_in_memory_scan(
                         source_id,
                         source.output_schema.clone(),
@@ -61,40 +65,33 @@ fn translate_helper(plan: &LogicalPlanRef, source_counter: &mut usize) -> DaftRe
                         }
                         ScanState::Tasks(scan_tasks) => scan_tasks.clone(),
                     };
-                    if scan_tasks.is_empty() {
-                        LocalPhysicalPlan::empty_scan(
-                            source.output_schema.clone(),
-                            LocalNodeContext::default(),
-                        )
-                    } else {
-                        // Create a streaming physical scan
-                        let source_id = format!("source_{}", *source_counter);
-                        *source_counter += 1;
-                        
-                        // Create InputSpec for scan tasks
-                        let input_spec = InputSpec {
-                            source_id: source_id.clone(),
-                            input_type: InputType::ScanTask(scan_tasks),
-                            schema: source.output_schema.clone(),
-                            pushdowns: Some(info.pushdowns.clone()),
-                            io_config: None,
-                        };
-                        inputs.insert(source_id.clone(), input_spec);
-                        
-                        LocalPhysicalPlan::streaming_physical_scan(
-                            source_id,
-                            info.pushdowns.clone(),
-                            source.output_schema.clone(),
-                            source.stats_state.clone(),
-                            LocalNodeContext::default(),
-                        )
-                    }
+                    // Create a streaming physical scan
+                    let source_id = format!("source_{}", *source_counter);
+                    *source_counter += 1;
+
+                    // Create InputSpec for scan tasks
+                    let input_spec = InputSpec {
+                        source_id: source_id.clone(),
+                        input_type: InputType::ScanTask(scan_tasks),
+                        schema: source.output_schema.clone(),
+                        pushdowns: Some(info.pushdowns.clone()),
+                        io_config: None,
+                    };
+                    inputs.insert(source_id.clone(), input_spec);
+
+                    LocalPhysicalPlan::streaming_physical_scan(
+                        source_id,
+                        info.pushdowns.clone(),
+                        source.output_schema.clone(),
+                        source.stats_state.clone(),
+                        LocalNodeContext::default(),
+                    )
                 }
                 SourceInfo::GlobScan(info) => {
                     // Create a streaming glob scan
                     let source_id = format!("source_{}", *source_counter);
                     *source_counter += 1;
-                    
+
                     // Create InputSpec for glob paths
                     let input_spec = InputSpec {
                         source_id: source_id.clone(),
@@ -104,7 +101,7 @@ fn translate_helper(plan: &LogicalPlanRef, source_counter: &mut usize) -> DaftRe
                         io_config: info.io_config.clone().map(|c| *c),
                     };
                     inputs.insert(source_id.clone(), input_spec);
-                    
+
                     LocalPhysicalPlan::streaming_glob_scan(
                         source_id,
                         info.pushdowns.clone(),
@@ -131,45 +128,57 @@ fn translate_helper(plan: &LogicalPlanRef, source_counter: &mut usize) -> DaftRe
         LogicalPlan::Filter(filter) => {
             let (input, inputs) = translate_helper(&filter.input, source_counter)?;
             let predicate = BoundExpr::try_new(filter.predicate.clone(), input.schema())?;
-            Ok((LocalPhysicalPlan::filter(
-                input,
-                predicate,
-                filter.stats_state.clone(),
-                LocalNodeContext::default(),
-            ), inputs))
+            Ok((
+                LocalPhysicalPlan::filter(
+                    input,
+                    predicate,
+                    filter.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                inputs,
+            ))
         }
         LogicalPlan::IntoBatches(into_batches) => {
             let (input, inputs) = translate_helper(&into_batches.input, source_counter)?;
-            Ok((LocalPhysicalPlan::into_batches(
-                input,
-                into_batches.batch_size,
-                false,
-                into_batches.stats_state.clone(),
-                LocalNodeContext::default(),
-            ), inputs))
+            Ok((
+                LocalPhysicalPlan::into_batches(
+                    input,
+                    into_batches.batch_size,
+                    false,
+                    into_batches.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                inputs,
+            ))
         }
         LogicalPlan::Limit(limit) => {
             let (input, inputs) = translate_helper(&limit.input, source_counter)?;
-            Ok((LocalPhysicalPlan::limit(
-                input,
-                limit.limit,
-                limit.offset,
-                limit.stats_state.clone(),
-                LocalNodeContext::default(),
-            ), inputs))
+            Ok((
+                LocalPhysicalPlan::limit(
+                    input,
+                    limit.limit,
+                    limit.offset,
+                    limit.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                inputs,
+            ))
         }
         LogicalPlan::Project(project) => {
             let (input, inputs) = translate_helper(&project.input, source_counter)?;
 
             let projection = BoundExpr::bind_all(&project.projection, input.schema())?;
 
-            Ok((LocalPhysicalPlan::project(
-                input,
-                projection,
-                project.projected_schema.clone(),
-                project.stats_state.clone(),
-                LocalNodeContext::default(),
-            ), inputs))
+            Ok((
+                LocalPhysicalPlan::project(
+                    input,
+                    projection,
+                    project.projected_schema.clone(),
+                    project.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                inputs,
+            ))
         }
         LogicalPlan::UDFProject(udf_project) => {
             let (input, inputs) = translate_helper(&udf_project.input, source_counter)?;
@@ -178,15 +187,18 @@ fn translate_helper(plan: &LogicalPlanRef, source_counter: &mut usize) -> DaftRe
                 BoundExpr::bind_all(&udf_project.passthrough_columns, input.schema())?;
             let expr = BoundExpr::try_new(udf_project.expr.clone(), input.schema())?;
 
-            Ok((LocalPhysicalPlan::udf_project(
-                input,
-                expr,
-                udf_project.udf_properties.clone(),
-                passthrough_columns,
-                udf_project.projected_schema.clone(),
-                udf_project.stats_state.clone(),
-                LocalNodeContext::default(),
-            ), inputs))
+            Ok((
+                LocalPhysicalPlan::udf_project(
+                    input,
+                    expr,
+                    udf_project.udf_properties.clone(),
+                    passthrough_columns,
+                    udf_project.projected_schema.clone(),
+                    udf_project.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                inputs,
+            ))
         }
         LogicalPlan::Sample(sample) => {
             let (input, inputs) = translate_helper(&sample.input, source_counter)?;
@@ -199,14 +211,17 @@ fn translate_helper(plan: &LogicalPlanRef, source_counter: &mut usize) -> DaftRe
                     "Either fraction or size must be specified for sample".to_string(),
                 ));
             };
-            Ok((LocalPhysicalPlan::sample(
-                input,
-                sampling_method,
-                sample.with_replacement,
-                sample.seed,
-                sample.stats_state.clone(),
-                LocalNodeContext::default(),
-            ), inputs))
+            Ok((
+                LocalPhysicalPlan::sample(
+                    input,
+                    sampling_method,
+                    sample.with_replacement,
+                    sample.seed,
+                    sample.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                inputs,
+            ))
         }
         LogicalPlan::Aggregate(aggregate) => {
             let (input, inputs) = translate_helper(&aggregate.input, source_counter)?;
@@ -223,22 +238,28 @@ fn translate_helper(plan: &LogicalPlanRef, source_counter: &mut usize) -> DaftRe
             let groupby = BoundExpr::bind_all(&aggregate.groupby, input.schema())?;
 
             if aggregate.groupby.is_empty() {
-                Ok((LocalPhysicalPlan::ungrouped_aggregate(
-                    input,
-                    aggregations,
-                    aggregate.output_schema.clone(),
-                    aggregate.stats_state.clone(),
-                    LocalNodeContext::default(),
-                ), inputs))
+                Ok((
+                    LocalPhysicalPlan::ungrouped_aggregate(
+                        input,
+                        aggregations,
+                        aggregate.output_schema.clone(),
+                        aggregate.stats_state.clone(),
+                        LocalNodeContext::default(),
+                    ),
+                    inputs,
+                ))
             } else {
-                Ok((LocalPhysicalPlan::hash_aggregate(
-                    input,
-                    aggregations,
-                    groupby,
-                    aggregate.output_schema.clone(),
-                    aggregate.stats_state.clone(),
-                    LocalNodeContext::default(),
-                ), inputs))
+                Ok((
+                    LocalPhysicalPlan::hash_aggregate(
+                        input,
+                        aggregations,
+                        groupby,
+                        aggregate.output_schema.clone(),
+                        aggregate.stats_state.clone(),
+                        LocalNodeContext::default(),
+                    ),
+                    inputs,
+                ))
             }
         }
         LogicalPlan::Window(window) => {
@@ -312,12 +333,12 @@ fn translate_helper(plan: &LogicalPlanRef, source_counter: &mut usize) -> DaftRe
                 (false, true, true) => {
                     return Err(DaftError::not_implemented(
                         "Window with order by and frame not yet implemented",
-                    ))
+                    ));
                 }
                 _ => {
                     return Err(DaftError::ValueError(
                         "Window requires either partition by or order by".to_string(),
-                    ))
+                    ));
                 }
             };
             Ok((plan, inputs))
@@ -328,16 +349,19 @@ fn translate_helper(plan: &LogicalPlanRef, source_counter: &mut usize) -> DaftRe
             let ids = BoundExpr::bind_all(&unpivot.ids, input.schema())?;
             let values = BoundExpr::bind_all(&unpivot.values, input.schema())?;
 
-            Ok((LocalPhysicalPlan::unpivot(
-                input,
-                ids,
-                values,
-                unpivot.variable_name.clone(),
-                unpivot.value_name.clone(),
-                unpivot.output_schema.clone(),
-                unpivot.stats_state.clone(),
-                LocalNodeContext::default(),
-            ), inputs))
+            Ok((
+                LocalPhysicalPlan::unpivot(
+                    input,
+                    ids,
+                    values,
+                    unpivot.variable_name.clone(),
+                    unpivot.value_name.clone(),
+                    unpivot.output_schema.clone(),
+                    unpivot.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                inputs,
+            ))
         }
         LogicalPlan::Pivot(pivot) => {
             let (input, inputs) = translate_helper(&pivot.input, source_counter)?;
@@ -347,48 +371,57 @@ fn translate_helper(plan: &LogicalPlanRef, source_counter: &mut usize) -> DaftRe
             let value_column = BoundExpr::try_new(pivot.value_column.clone(), input.schema())?;
             let aggregation = BoundAggExpr::try_new(pivot.aggregation.clone(), input.schema())?;
 
-            Ok((LocalPhysicalPlan::pivot(
-                input,
-                group_by,
-                pivot_column,
-                value_column,
-                aggregation,
-                pivot.names.clone(),
-                true,
-                pivot.output_schema.clone(),
-                pivot.stats_state.clone(),
-                LocalNodeContext::default(),
-            ), inputs))
+            Ok((
+                LocalPhysicalPlan::pivot(
+                    input,
+                    group_by,
+                    pivot_column,
+                    value_column,
+                    aggregation,
+                    pivot.names.clone(),
+                    true,
+                    pivot.output_schema.clone(),
+                    pivot.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                inputs,
+            ))
         }
         LogicalPlan::Sort(sort) => {
             let (input, inputs) = translate_helper(&sort.input, source_counter)?;
 
             let sort_by = BoundExpr::bind_all(&sort.sort_by, input.schema())?;
 
-            Ok((LocalPhysicalPlan::sort(
-                input,
-                sort_by,
-                sort.descending.clone(),
-                sort.nulls_first.clone(),
-                sort.stats_state.clone(),
-                LocalNodeContext::default(),
-            ), inputs))
+            Ok((
+                LocalPhysicalPlan::sort(
+                    input,
+                    sort_by,
+                    sort.descending.clone(),
+                    sort.nulls_first.clone(),
+                    sort.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                inputs,
+            ))
         }
         LogicalPlan::TopN(top_n) => {
             let (input, inputs) = translate_helper(&top_n.input, source_counter)?;
 
             let sort_by = BoundExpr::bind_all(&top_n.sort_by, input.schema())?;
 
-            Ok((LocalPhysicalPlan::top_n(
-                input,
-                sort_by,
-                top_n.descending.clone(),
-                top_n.nulls_first.clone(),
-                top_n.limit,
-                top_n.offset,
-                top_n.stats_state.clone(),
-                LocalNodeContext::default(),
-            ), inputs))
+            Ok((
+                LocalPhysicalPlan::top_n(
+                    input,
+                    sort_by,
+                    top_n.descending.clone(),
+                    top_n.nulls_first.clone(),
+                    top_n.limit,
+                    top_n.offset,
+                    top_n.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                inputs,
+            ))
         }
         LogicalPlan::Join(join) => {
             if let Some(strategy) = join.join_strategy {
@@ -422,29 +455,35 @@ fn translate_helper(plan: &LogicalPlanRef, source_counter: &mut usize) -> DaftRe
                 normalize_join_keys(left_on, right_on, join.left.schema(), join.right.schema())?;
 
             if left_on.is_empty() && right_on.is_empty() && join.join_type == JoinType::Inner {
-                Ok((LocalPhysicalPlan::cross_join(
-                    left,
-                    right,
-                    join.output_schema.clone(),
-                    join.stats_state.clone(),
-                    LocalNodeContext::default(),
-                ), left_inputs))
+                Ok((
+                    LocalPhysicalPlan::cross_join(
+                        left,
+                        right,
+                        join.output_schema.clone(),
+                        join.stats_state.clone(),
+                        LocalNodeContext::default(),
+                    ),
+                    left_inputs,
+                ))
             } else {
                 let left_on = BoundExpr::bind_all(&left_on, left.schema())?;
                 let right_on = BoundExpr::bind_all(&right_on, right.schema())?;
 
-                Ok((LocalPhysicalPlan::hash_join(
-                    left,
-                    right,
-                    left_on,
-                    right_on,
-                    None,
-                    Some(null_equals_nulls),
-                    join.join_type,
-                    join.output_schema.clone(),
-                    join.stats_state.clone(),
-                    LocalNodeContext::default(),
-                ), left_inputs))
+                Ok((
+                    LocalPhysicalPlan::hash_join(
+                        left,
+                        right,
+                        left_on,
+                        right_on,
+                        None,
+                        Some(null_equals_nulls),
+                        join.join_type,
+                        join.output_schema.clone(),
+                        join.stats_state.clone(),
+                        LocalNodeContext::default(),
+                    ),
+                    left_inputs,
+                ))
             }
         }
         LogicalPlan::Distinct(distinct) => {
@@ -457,27 +496,33 @@ fn translate_helper(plan: &LogicalPlanRef, source_counter: &mut usize) -> DaftRe
                 .unwrap_or_else(|| schema.field_names().map(resolved_col).collect::<Vec<_>>());
             let columns = BoundExpr::bind_all(&columns, &schema)?;
 
-            Ok((LocalPhysicalPlan::dedup(
-                input,
-                columns,
-                schema,
-                distinct.stats_state.clone(),
-                LocalNodeContext::default(),
-            ), inputs))
+            Ok((
+                LocalPhysicalPlan::dedup(
+                    input,
+                    columns,
+                    schema,
+                    distinct.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                inputs,
+            ))
         }
         LogicalPlan::Concat(concat) => {
             let (input, mut inputs) = translate_helper(&concat.input, source_counter)?;
             let (other, other_inputs) = translate_helper(&concat.other, source_counter)?;
-            
+
             // Merge inputs from both sides
             inputs.extend(other_inputs);
-            
-            Ok((LocalPhysicalPlan::concat(
-                input,
-                other,
-                concat.stats_state.clone(),
-                LocalNodeContext::default(),
-            ), inputs))
+
+            Ok((
+                LocalPhysicalPlan::concat(
+                    input,
+                    other,
+                    concat.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                inputs,
+            ))
         }
         LogicalPlan::Repartition(repartition) => {
             log::warn!(
@@ -486,15 +531,19 @@ fn translate_helper(plan: &LogicalPlanRef, source_counter: &mut usize) -> DaftRe
             translate_helper(&repartition.input, source_counter)
         }
         LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => {
-            let (input, inputs) = translate_helper(&monotonically_increasing_id.input, source_counter)?;
-            Ok((LocalPhysicalPlan::monotonically_increasing_id(
-                input,
-                monotonically_increasing_id.column_name.clone(),
-                monotonically_increasing_id.starting_offset,
-                monotonically_increasing_id.schema.clone(),
-                monotonically_increasing_id.stats_state.clone(),
-                LocalNodeContext::default(),
-            ), inputs))
+            let (input, inputs) =
+                translate_helper(&monotonically_increasing_id.input, source_counter)?;
+            Ok((
+                LocalPhysicalPlan::monotonically_increasing_id(
+                    input,
+                    monotonically_increasing_id.column_name.clone(),
+                    monotonically_increasing_id.starting_offset,
+                    monotonically_increasing_id.schema.clone(),
+                    monotonically_increasing_id.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                inputs,
+            ))
         }
         LogicalPlan::Sink(sink) => {
             use daft_logical_plan::SinkInfo;
@@ -534,16 +583,14 @@ fn translate_helper(plan: &LogicalPlanRef, source_counter: &mut usize) -> DaftRe
                             LocalNodeContext::default(),
                         )
                     }
-                    daft_logical_plan::CatalogType::Lance(info) => {
-                        LocalPhysicalPlan::lance_write(
-                            input,
-                            info.clone(),
-                            data_schema,
-                            sink.schema.clone(),
-                            sink.stats_state.clone(),
-                            LocalNodeContext::default(),
-                        )
-                    }
+                    daft_logical_plan::CatalogType::Lance(info) => LocalPhysicalPlan::lance_write(
+                        input,
+                        info.clone(),
+                        data_schema,
+                        sink.schema.clone(),
+                        sink.stats_state.clone(),
+                        LocalNodeContext::default(),
+                    ),
                 },
                 #[cfg(feature = "python")]
                 SinkInfo::DataSinkInfo(data_sink_info) => LocalPhysicalPlan::data_sink(
@@ -561,26 +608,32 @@ fn translate_helper(plan: &LogicalPlanRef, source_counter: &mut usize) -> DaftRe
 
             let to_explode = BoundExpr::bind_all(&explode.to_explode, input.schema())?;
 
-            Ok((LocalPhysicalPlan::explode(
-                input,
-                to_explode,
-                explode.exploded_schema.clone(),
-                explode.stats_state.clone(),
-                LocalNodeContext::default(),
-            ), inputs))
+            Ok((
+                LocalPhysicalPlan::explode(
+                    input,
+                    to_explode,
+                    explode.exploded_schema.clone(),
+                    explode.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                inputs,
+            ))
         }
         LogicalPlan::VLLMProject(vllm_project) => {
             let (input, inputs) = translate_helper(&vllm_project.input, source_counter)?;
             let expr = BoundVLLMExpr::try_new(vllm_project.expr.clone(), input.schema())?;
-            Ok((LocalPhysicalPlan::vllm_project(
-                input,
-                expr,
-                None,
-                vllm_project.output_column_name.clone(),
-                vllm_project.output_schema.clone(),
-                vllm_project.stats_state.clone(),
-                LocalNodeContext::default(),
-            ), inputs))
+            Ok((
+                LocalPhysicalPlan::vllm_project(
+                    input,
+                    expr,
+                    None,
+                    vllm_project.output_column_name.clone(),
+                    vllm_project.output_schema.clone(),
+                    vllm_project.stats_state.clone(),
+                    LocalNodeContext::default(),
+                ),
+                inputs,
+            ))
         }
         LogicalPlan::Intersect(_)
         | LogicalPlan::Union(_)

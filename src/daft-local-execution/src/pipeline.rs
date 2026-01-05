@@ -65,7 +65,6 @@ use crate::{
         write::{WriteFormat, WriteSink},
     },
     sources::{
-        empty_scan::EmptyScanSource, in_memory::InMemorySource, scan_task::ScanTaskSource,
         source::SourceNode, streaming_in_memory::StreamingInMemorySource,
         streaming_scan_task::StreamingScanTaskSource,
     },
@@ -358,44 +357,6 @@ fn physical_plan_to_pipeline(
         LocalPhysicalPlan::PlaceholderScan(_) => {
             panic!("PlaceholderScan should not be converted to a pipeline node")
         }
-        LocalPhysicalPlan::EmptyScan(EmptyScan {
-            schema,
-            stats_state,
-            context,
-        }) => {
-            let source = EmptyScanSource::new(schema.clone());
-            SourceNode::new(
-                source.arced(),
-                stats_state.clone(),
-                ctx,
-                schema.clone(),
-                context,
-            )
-            .boxed()
-        }
-        LocalPhysicalPlan::PhysicalScan(PhysicalScan {
-            scan_tasks,
-            pushdowns,
-            schema,
-            stats_state,
-            context,
-        }) => {
-            let scan_tasks = scan_tasks
-                .iter()
-                .map(|task| task.clone().as_any_arc().downcast().unwrap())
-                .collect::<Vec<ScanTaskRef>>();
-
-            let scan_task_source =
-                ScanTaskSource::new(scan_tasks, pushdowns.clone(), schema.clone(), cfg);
-            SourceNode::new(
-                scan_task_source.arced(),
-                stats_state.clone(),
-                ctx,
-                schema.clone(),
-                context,
-            )
-            .boxed()
-        }
         LocalPhysicalPlan::StreamingPhysicalScan(StreamingPhysicalScan {
             source_id,
             pushdowns,
@@ -589,29 +550,6 @@ fn physical_plan_to_pipeline(
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
-                context,
-            )
-            .boxed()
-        }
-        LocalPhysicalPlan::InMemoryScan(InMemoryScan {
-            info,
-            stats_state,
-            context,
-        }) => {
-            let cache_key: Arc<str> = info.cache_key.clone().into();
-
-            let materialized_pset = psets.get_partition_set(&cache_key);
-            let in_memory_source = InMemorySource::new(
-                materialized_pset,
-                info.source_schema.clone(),
-                info.size_bytes,
-            )
-            .arced();
-            SourceNode::new(
-                in_memory_source,
-                stats_state.clone(),
-                ctx,
-                info.source_schema.clone(),
                 context,
             )
             .boxed()
@@ -1512,30 +1450,6 @@ fn physical_plan_to_pipeline(
             BlockingSinkNode::new(
                 Arc::new(into_partitions_op),
                 child_node,
-                stats_state.clone(),
-                ctx,
-                schema.clone(),
-                context,
-            )
-            .boxed()
-        }
-        LocalPhysicalPlan::GlobScan(GlobScan {
-            glob_paths,
-            pushdowns,
-            schema,
-            stats_state,
-            io_config,
-            context,
-        }) => {
-            use crate::sources::glob_scan::GlobScanSource;
-            let source = GlobScanSource::new(
-                glob_paths.clone(),
-                pushdowns.clone(),
-                schema.clone(),
-                io_config.clone(),
-            );
-            SourceNode::new(
-                source.arced(),
                 stats_state.clone(),
                 ctx,
                 schema.clone(),

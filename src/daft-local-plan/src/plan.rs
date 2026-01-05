@@ -55,13 +55,9 @@ pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
 #[derive(strum::IntoStaticStr, Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub enum LocalPhysicalPlan {
-    InMemoryScan(InMemoryScan),
-    PhysicalScan(PhysicalScan),
     StreamingPhysicalScan(StreamingPhysicalScan),
     StreamingInMemoryScan(StreamingInMemoryScan),
     StreamingGlobScan(StreamingGlobScan),
-    GlobScan(GlobScan),
-    EmptyScan(EmptyScan),
     PlaceholderScan(PlaceholderScan),
     Project(Project),
     UDFProject(UDFProject),
@@ -145,21 +141,15 @@ impl LocalPhysicalPlan {
         self.name().hash(hasher);
         // Hash the origin_node_id from context
         self.context().origin_node_id.hash(hasher);
-        
+
         // Hash node-specific fields (excluding stats_state and RuntimePyObject/PyObjectWrapper)
         match self {
-            Self::InMemoryScan(InMemoryScan { info, .. }) => {
-                info.hash(hasher);
-            }
-            Self::PhysicalScan(PhysicalScan { scan_tasks, pushdowns, schema, .. }) => {
-                // Hash schema field names and types, but not the actual scan_tasks (which may contain runtime data)
-                schema.fields().iter().for_each(|f| {
-                    f.name.hash(hasher);
-                    f.dtype.hash(hasher);
-                });
-                pushdowns.hash(hasher);
-            }
-            Self::StreamingPhysicalScan(StreamingPhysicalScan { source_id, pushdowns, schema, .. }) => {
+            Self::StreamingPhysicalScan(StreamingPhysicalScan {
+                source_id,
+                pushdowns,
+                schema,
+                ..
+            }) => {
                 source_id.hash(hasher);
                 pushdowns.hash(hasher);
                 schema.fields().iter().for_each(|f| {
@@ -167,7 +157,12 @@ impl LocalPhysicalPlan {
                     f.dtype.hash(hasher);
                 });
             }
-            Self::StreamingInMemoryScan(StreamingInMemoryScan { source_id, schema, size_bytes, .. }) => {
+            Self::StreamingInMemoryScan(StreamingInMemoryScan {
+                source_id,
+                schema,
+                size_bytes,
+                ..
+            }) => {
                 source_id.hash(hasher);
                 schema.fields().iter().for_each(|f| {
                     f.name.hash(hasher);
@@ -175,17 +170,14 @@ impl LocalPhysicalPlan {
                 });
                 size_bytes.hash(hasher);
             }
-            Self::StreamingGlobScan(StreamingGlobScan { source_id, pushdowns, schema, io_config, .. }) => {
+            Self::StreamingGlobScan(StreamingGlobScan {
+                source_id,
+                pushdowns,
+                schema,
+                io_config,
+                ..
+            }) => {
                 source_id.hash(hasher);
-                pushdowns.hash(hasher);
-                schema.fields().iter().for_each(|f| {
-                    f.name.hash(hasher);
-                    f.dtype.hash(hasher);
-                });
-                io_config.hash(hasher);
-            }
-            Self::GlobScan(GlobScan { glob_paths, pushdowns, schema, io_config, .. }) => {
-                glob_paths.hash(hasher);
                 pushdowns.hash(hasher);
                 schema.fields().iter().for_each(|f| {
                     f.name.hash(hasher);
@@ -199,13 +191,12 @@ impl LocalPhysicalPlan {
                     f.dtype.hash(hasher);
                 });
             }
-            Self::EmptyScan(EmptyScan { schema, .. }) => {
-                schema.fields().iter().for_each(|f| {
-                    f.name.hash(hasher);
-                    f.dtype.hash(hasher);
-                });
-            }
-            Self::Project(Project { projection, schema, input, .. }) => {
+            Self::Project(Project {
+                projection,
+                schema,
+                input,
+                ..
+            }) => {
                 let input_schema = input.schema();
                 for expr in projection {
                     if let Ok(name) = expr.inner().get_name(input_schema) {
@@ -217,7 +208,14 @@ impl LocalPhysicalPlan {
                     f.dtype.hash(hasher);
                 });
             }
-            Self::UDFProject(UDFProject { expr, udf_properties, passthrough_columns, schema, input, .. }) => {
+            Self::UDFProject(UDFProject {
+                expr,
+                udf_properties,
+                passthrough_columns,
+                schema,
+                input,
+                ..
+            }) => {
                 let input_schema = input.schema();
                 if let Ok(name) = expr.inner().get_name(input_schema) {
                     name.hash(hasher);
@@ -237,13 +235,17 @@ impl LocalPhysicalPlan {
                     f.dtype.hash(hasher);
                 });
             }
-            Self::Filter(Filter { predicate, input, .. }) => {
+            Self::Filter(Filter {
+                predicate, input, ..
+            }) => {
                 let input_schema = input.schema();
                 if let Ok(name) = predicate.inner().get_name(input_schema) {
                     name.hash(hasher);
                 }
             }
-            Self::IntoBatches(IntoBatches { batch_size, strict, .. }) => {
+            Self::IntoBatches(IntoBatches {
+                batch_size, strict, ..
+            }) => {
                 batch_size.hash(hasher);
                 strict.hash(hasher);
             }
@@ -251,7 +253,12 @@ impl LocalPhysicalPlan {
                 limit.hash(hasher);
                 offset.hash(hasher);
             }
-            Self::Explode(Explode { to_explode, schema, input, .. }) => {
+            Self::Explode(Explode {
+                to_explode,
+                schema,
+                input,
+                ..
+            }) => {
                 let input_schema = input.schema();
                 for expr in to_explode {
                     if let Ok(name) = expr.inner().get_name(input_schema) {
@@ -263,7 +270,15 @@ impl LocalPhysicalPlan {
                     f.dtype.hash(hasher);
                 });
             }
-            Self::Unpivot(Unpivot { ids, values, variable_name, value_name, schema, input, .. }) => {
+            Self::Unpivot(Unpivot {
+                ids,
+                values,
+                variable_name,
+                value_name,
+                schema,
+                input,
+                ..
+            }) => {
                 let input_schema = input.schema();
                 for expr in ids {
                     if let Ok(name) = expr.inner().get_name(input_schema) {
@@ -282,7 +297,13 @@ impl LocalPhysicalPlan {
                     f.dtype.hash(hasher);
                 });
             }
-            Self::Sort(Sort { sort_by, descending, nulls_first, input, .. }) => {
+            Self::Sort(Sort {
+                sort_by,
+                descending,
+                nulls_first,
+                input,
+                ..
+            }) => {
                 let input_schema = input.schema();
                 for expr in sort_by {
                     if let Ok(name) = expr.inner().get_name(input_schema) {
@@ -292,7 +313,15 @@ impl LocalPhysicalPlan {
                 descending.hash(hasher);
                 nulls_first.hash(hasher);
             }
-            Self::TopN(TopN { sort_by, descending, nulls_first, limit, offset, input, .. }) => {
+            Self::TopN(TopN {
+                sort_by,
+                descending,
+                nulls_first,
+                limit,
+                offset,
+                input,
+                ..
+            }) => {
                 let input_schema = input.schema();
                 for expr in sort_by {
                     if let Ok(name) = expr.inner().get_name(input_schema) {
@@ -304,16 +333,31 @@ impl LocalPhysicalPlan {
                 limit.hash(hasher);
                 offset.hash(hasher);
             }
-            Self::Sample(Sample { sampling_method, with_replacement, seed, input, .. }) => {
+            Self::Sample(Sample {
+                sampling_method,
+                with_replacement,
+                seed,
+                input,
+                ..
+            }) => {
                 sampling_method.hash(hasher);
                 with_replacement.hash(hasher);
                 seed.hash(hasher);
             }
-            Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { column_name, starting_offset, .. }) => {
+            Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
+                column_name,
+                starting_offset,
+                ..
+            }) => {
                 column_name.hash(hasher);
                 starting_offset.hash(hasher);
             }
-            Self::UnGroupedAggregate(UnGroupedAggregate { aggregations, schema, input, .. }) => {
+            Self::UnGroupedAggregate(UnGroupedAggregate {
+                aggregations,
+                schema,
+                input,
+                ..
+            }) => {
                 let input_schema = input.schema();
                 for agg in aggregations {
                     // AggExpr::name() returns &str directly
@@ -324,7 +368,13 @@ impl LocalPhysicalPlan {
                     f.dtype.hash(hasher);
                 });
             }
-            Self::HashAggregate(HashAggregate { aggregations, group_by, schema, input, .. }) => {
+            Self::HashAggregate(HashAggregate {
+                aggregations,
+                group_by,
+                schema,
+                input,
+                ..
+            }) => {
                 let input_schema = input.schema();
                 for expr in group_by {
                     if let Ok(name) = expr.inner().get_name(input_schema) {
@@ -348,7 +398,17 @@ impl LocalPhysicalPlan {
                     }
                 }
             }
-            Self::Pivot(Pivot { group_by, pivot_column, value_column, aggregation, names, pre_agg, schema, input, .. }) => {
+            Self::Pivot(Pivot {
+                group_by,
+                pivot_column,
+                value_column,
+                aggregation,
+                names,
+                pre_agg,
+                schema,
+                input,
+                ..
+            }) => {
                 let input_schema = input.schema();
                 for expr in group_by {
                     if let Ok(name) = expr.inner().get_name(input_schema) {
@@ -373,7 +433,17 @@ impl LocalPhysicalPlan {
             Self::Concat(Concat { .. }) => {
                 // No additional fields beyond children
             }
-            Self::HashJoin(HashJoin { left_on, right_on, build_on_left, null_equals_null, join_type, schema, left, right, .. }) => {
+            Self::HashJoin(HashJoin {
+                left_on,
+                right_on,
+                build_on_left,
+                null_equals_null,
+                join_type,
+                schema,
+                left,
+                right,
+                ..
+            }) => {
                 let left_schema = left.schema();
                 let right_schema = right.schema();
                 for expr in left_on {
@@ -400,7 +470,15 @@ impl LocalPhysicalPlan {
                     f.dtype.hash(hasher);
                 });
             }
-            Self::SortMergeJoin(SortMergeJoin { left_on, right_on, join_type, schema, left, right, .. }) => {
+            Self::SortMergeJoin(SortMergeJoin {
+                left_on,
+                right_on,
+                join_type,
+                schema,
+                left,
+                right,
+                ..
+            }) => {
                 let left_schema = left.schema();
                 let right_schema = right.schema();
                 for expr in left_on {
@@ -419,7 +497,12 @@ impl LocalPhysicalPlan {
                     f.dtype.hash(hasher);
                 });
             }
-            Self::PhysicalWrite(PhysicalWrite { data_schema, file_schema, file_info, .. }) => {
+            Self::PhysicalWrite(PhysicalWrite {
+                data_schema,
+                file_schema,
+                file_info,
+                ..
+            }) => {
                 data_schema.fields().iter().for_each(|f| {
                     f.name.hash(hasher);
                     f.dtype.hash(hasher);
@@ -430,7 +513,12 @@ impl LocalPhysicalPlan {
                 });
                 file_info.hash(hasher);
             }
-            Self::CommitWrite(CommitWrite { data_schema, file_schema, file_info, .. }) => {
+            Self::CommitWrite(CommitWrite {
+                data_schema,
+                file_schema,
+                file_info,
+                ..
+            }) => {
                 data_schema.fields().iter().for_each(|f| {
                     f.name.hash(hasher);
                     f.dtype.hash(hasher);
@@ -442,7 +530,12 @@ impl LocalPhysicalPlan {
                 file_info.hash(hasher);
             }
             #[cfg(feature = "python")]
-            Self::CatalogWrite(CatalogWrite { catalog_type, data_schema, file_schema, .. }) => {
+            Self::CatalogWrite(CatalogWrite {
+                catalog_type,
+                data_schema,
+                file_schema,
+                ..
+            }) => {
                 catalog_type.hash(hasher);
                 data_schema.fields().iter().for_each(|f| {
                     f.name.hash(hasher);
@@ -454,7 +547,12 @@ impl LocalPhysicalPlan {
                 });
             }
             #[cfg(feature = "python")]
-            Self::LanceWrite(LanceWrite { lance_info, data_schema, file_schema, .. }) => {
+            Self::LanceWrite(LanceWrite {
+                lance_info,
+                data_schema,
+                file_schema,
+                ..
+            }) => {
                 lance_info.hash(hasher);
                 data_schema.fields().iter().for_each(|f| {
                     f.name.hash(hasher);
@@ -466,14 +564,25 @@ impl LocalPhysicalPlan {
                 });
             }
             #[cfg(feature = "python")]
-            Self::DataSink(DataSink { data_sink_info, file_schema, .. }) => {
+            Self::DataSink(DataSink {
+                data_sink_info,
+                file_schema,
+                ..
+            }) => {
                 data_sink_info.hash(hasher);
                 file_schema.fields().iter().for_each(|f| {
                     f.name.hash(hasher);
                     f.dtype.hash(hasher);
                 });
             }
-            Self::WindowPartitionOnly(WindowPartitionOnly { partition_by, aggregations, aliases, schema, input, .. }) => {
+            Self::WindowPartitionOnly(WindowPartitionOnly {
+                partition_by,
+                aggregations,
+                aliases,
+                schema,
+                input,
+                ..
+            }) => {
                 let input_schema = input.schema();
                 for expr in partition_by {
                     if let Ok(name) = expr.inner().get_name(input_schema) {
@@ -490,7 +599,17 @@ impl LocalPhysicalPlan {
                     f.dtype.hash(hasher);
                 });
             }
-            Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { partition_by, order_by, descending, nulls_first, functions, aliases, schema, input, .. }) => {
+            Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy {
+                partition_by,
+                order_by,
+                descending,
+                nulls_first,
+                functions,
+                aliases,
+                schema,
+                input,
+                ..
+            }) => {
                 let input_schema = input.schema();
                 for expr in partition_by {
                     if let Ok(name) = expr.inner().get_name(input_schema) {
@@ -514,7 +633,19 @@ impl LocalPhysicalPlan {
                     f.dtype.hash(hasher);
                 });
             }
-            Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame { partition_by, order_by, descending, nulls_first, frame, min_periods, aggregations, aliases, schema, input, .. }) => {
+            Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
+                partition_by,
+                order_by,
+                descending,
+                nulls_first,
+                frame,
+                min_periods,
+                aggregations,
+                aliases,
+                schema,
+                input,
+                ..
+            }) => {
                 let input_schema = input.schema();
                 for expr in partition_by {
                     if let Ok(name) = expr.inner().get_name(input_schema) {
@@ -540,7 +671,16 @@ impl LocalPhysicalPlan {
                     f.dtype.hash(hasher);
                 });
             }
-            Self::WindowOrderByOnly(WindowOrderByOnly { order_by, descending, nulls_first, functions, aliases, schema, input, .. }) => {
+            Self::WindowOrderByOnly(WindowOrderByOnly {
+                order_by,
+                descending,
+                nulls_first,
+                functions,
+                aliases,
+                schema,
+                input,
+                ..
+            }) => {
                 let input_schema = input.schema();
                 for expr in order_by {
                     if let Ok(name) = expr.inner().get_name(input_schema) {
@@ -558,7 +698,12 @@ impl LocalPhysicalPlan {
                     f.dtype.hash(hasher);
                 });
             }
-            Self::Repartition(Repartition { repartition_spec, num_partitions, schema, .. }) => {
+            Self::Repartition(Repartition {
+                repartition_spec,
+                num_partitions,
+                schema,
+                ..
+            }) => {
                 repartition_spec.hash(hasher);
                 num_partitions.hash(hasher);
                 schema.fields().iter().for_each(|f| {
@@ -566,7 +711,11 @@ impl LocalPhysicalPlan {
                     f.dtype.hash(hasher);
                 });
             }
-            Self::IntoPartitions(IntoPartitions { num_partitions, schema, .. }) => {
+            Self::IntoPartitions(IntoPartitions {
+                num_partitions,
+                schema,
+                ..
+            }) => {
                 num_partitions.hash(hasher);
                 schema.fields().iter().for_each(|f| {
                     f.name.hash(hasher);
@@ -574,7 +723,12 @@ impl LocalPhysicalPlan {
                 });
             }
             #[cfg(feature = "python")]
-            Self::DistributedActorPoolProject(DistributedActorPoolProject { batch_size, memory_request, schema, .. }) => {
+            Self::DistributedActorPoolProject(DistributedActorPoolProject {
+                batch_size,
+                memory_request,
+                schema,
+                ..
+            }) => {
                 // Exclude actor_objects (PyObjectWrapper) and stats_state
                 batch_size.hash(hasher);
                 memory_request.hash(hasher);
@@ -583,7 +737,13 @@ impl LocalPhysicalPlan {
                     f.dtype.hash(hasher);
                 });
             }
-            Self::VLLMProject(VLLMProject { expr, output_column_name, schema, input, .. }) => {
+            Self::VLLMProject(VLLMProject {
+                expr,
+                output_column_name,
+                schema,
+                input,
+                ..
+            }) => {
                 // Exclude llm_actors (RuntimePyObject) and stats_state
                 let input_schema = input.schema();
                 // Hash the VLLM expression structure
@@ -595,7 +755,7 @@ impl LocalPhysicalPlan {
                 });
             }
         }
-        
+
         // Recursively hash children
         for child in self.children() {
             child.fingerprint_impl(hasher);
@@ -604,14 +764,10 @@ impl LocalPhysicalPlan {
 
     pub fn get_stats_state(&self) -> &StatsState {
         match self {
-            Self::InMemoryScan(InMemoryScan { stats_state, .. })
-            | Self::PhysicalScan(PhysicalScan { stats_state, .. })
-            |             Self::StreamingPhysicalScan(StreamingPhysicalScan { stats_state, .. })
+            Self::StreamingPhysicalScan(StreamingPhysicalScan { stats_state, .. })
             | Self::StreamingInMemoryScan(StreamingInMemoryScan { stats_state, .. })
             | Self::StreamingGlobScan(StreamingGlobScan { stats_state, .. })
-            | Self::GlobScan(GlobScan { stats_state, .. })
             | Self::PlaceholderScan(PlaceholderScan { stats_state, .. })
-            | Self::EmptyScan(EmptyScan { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
             | Self::UDFProject(UDFProject { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
@@ -656,14 +812,10 @@ impl LocalPhysicalPlan {
     #[allow(dead_code)]
     pub fn context(&self) -> &LocalNodeContext {
         match self {
-            Self::InMemoryScan(InMemoryScan { context, .. })
-            | Self::PhysicalScan(PhysicalScan { context, .. })
-            | Self::StreamingPhysicalScan(StreamingPhysicalScan { context, .. })
+            Self::StreamingPhysicalScan(StreamingPhysicalScan { context, .. })
             | Self::StreamingInMemoryScan(StreamingInMemoryScan { context, .. })
             | Self::StreamingGlobScan(StreamingGlobScan { context, .. })
-            | Self::GlobScan(GlobScan { context, .. })
             | Self::PlaceholderScan(PlaceholderScan { context, .. })
-            | Self::EmptyScan(EmptyScan { context, .. })
             | Self::Project(Project { context, .. })
             | Self::UDFProject(UDFProject { context, .. })
             | Self::Filter(Filter { context, .. })
@@ -701,36 +853,6 @@ impl LocalPhysicalPlan {
             | Self::DistributedActorPoolProject(DistributedActorPoolProject { context, .. })
             | Self::DataSink(DataSink { context, .. }) => context,
         }
-    }
-
-    pub fn in_memory_scan(
-        in_memory_info: InMemoryInfo,
-        stats_state: StatsState,
-        context: LocalNodeContext,
-    ) -> LocalPhysicalPlanRef {
-        Self::InMemoryScan(InMemoryScan {
-            info: in_memory_info,
-            stats_state,
-            context,
-        })
-        .arced()
-    }
-
-    pub fn physical_scan(
-        scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
-        pushdowns: Pushdowns,
-        schema: SchemaRef,
-        stats_state: StatsState,
-        context: LocalNodeContext,
-    ) -> LocalPhysicalPlanRef {
-        Self::PhysicalScan(PhysicalScan {
-            scan_tasks,
-            pushdowns,
-            schema,
-            stats_state,
-            context,
-        })
-        .arced()
     }
 
     pub fn streaming_physical_scan(
@@ -786,25 +908,6 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn glob_scan(
-        glob_paths: Arc<Vec<String>>,
-        pushdowns: Pushdowns,
-        schema: SchemaRef,
-        stats_state: StatsState,
-        io_config: Option<IOConfig>,
-        context: LocalNodeContext,
-    ) -> LocalPhysicalPlanRef {
-        Self::GlobScan(GlobScan {
-            glob_paths,
-            pushdowns,
-            schema,
-            stats_state,
-            io_config,
-            context,
-        })
-        .arced()
-    }
-
     pub fn placeholder_scan(
         schema: SchemaRef,
         stats_state: StatsState,
@@ -813,15 +916,6 @@ impl LocalPhysicalPlan {
         Self::PlaceholderScan(PlaceholderScan {
             schema,
             stats_state,
-            context,
-        })
-        .arced()
-    }
-
-    pub fn empty_scan(schema: SchemaRef, context: LocalNodeContext) -> LocalPhysicalPlanRef {
-        Self::EmptyScan(EmptyScan {
-            schema,
-            stats_state: StatsState::Materialized(PlanStats::empty().into()),
             context,
         })
         .arced()
@@ -1498,13 +1592,10 @@ impl LocalPhysicalPlan {
 
     pub fn schema(&self) -> &SchemaRef {
         match self {
-            Self::PhysicalScan(PhysicalScan { schema, .. })
-            | Self::StreamingPhysicalScan(StreamingPhysicalScan { schema, .. })
+            Self::StreamingPhysicalScan(StreamingPhysicalScan { schema, .. })
             | Self::StreamingInMemoryScan(StreamingInMemoryScan { schema, .. })
             | Self::StreamingGlobScan(StreamingGlobScan { schema, .. })
-            | Self::GlobScan(GlobScan { schema, .. })
             | Self::PlaceholderScan(PlaceholderScan { schema, .. })
-            | Self::EmptyScan(EmptyScan { schema, .. })
             | Self::Filter(Filter { schema, .. })
             | Self::IntoBatches(IntoBatches { schema, .. })
             | Self::Limit(Limit { schema, .. })
@@ -1532,7 +1623,6 @@ impl LocalPhysicalPlan {
             | Self::WindowOrderByOnly(WindowOrderByOnly { schema, .. }) => schema,
             Self::PhysicalWrite(PhysicalWrite { file_schema, .. }) => file_schema,
             Self::CommitWrite(CommitWrite { file_schema, .. }) => file_schema,
-            Self::InMemoryScan(InMemoryScan { info, .. }) => &info.source_schema,
             #[cfg(feature = "python")]
             Self::CatalogWrite(CatalogWrite { file_schema, .. }) => file_schema,
             #[cfg(feature = "python")]
@@ -1580,14 +1670,10 @@ impl LocalPhysicalPlan {
 
     fn children(&self) -> Vec<LocalPhysicalPlanRef> {
         match self {
-            Self::PhysicalScan(_)
-            | Self::StreamingPhysicalScan(_)
+            Self::StreamingPhysicalScan(_)
             | Self::StreamingInMemoryScan(_)
             | Self::StreamingGlobScan(_)
-            | Self::GlobScan(_)
-            | Self::PlaceholderScan(_)
-            | Self::EmptyScan(_)
-            | Self::InMemoryScan(_) => vec![],
+            | Self::PlaceholderScan(_) => vec![],
             Self::Filter(Filter { input, .. })
             | Self::Limit(Limit { input, .. })
             | Self::IntoBatches(IntoBatches { input, .. })
@@ -1637,14 +1723,9 @@ impl LocalPhysicalPlan {
     pub fn with_new_children(&self, children: &[Arc<Self>]) -> Arc<Self> {
         match children {
             [new_child] => match self {
-                Self::PhysicalScan(_)
-                | Self::StreamingPhysicalScan(_)
-                | Self::StreamingInMemoryScan(_)
-                | Self::StreamingGlobScan(_)
-                | Self::PlaceholderScan(_)
-                | Self::EmptyScan(_)
-                | Self::InMemoryScan(_) => panic!(
-                    "LocalPhysicalPlan::with_new_children: PhysicalScan, StreamingPhysicalScan, StreamingInMemoryScan, StreamingGlobScan, PlaceholderScan, EmptyScan, and InMemoryScan do not have children"
+                Self::StreamingPhysicalScan(_) | Self::StreamingInMemoryScan(_) | Self::StreamingGlobScan(_)
+                | Self::PlaceholderScan(_) => panic!(
+                    "LocalPhysicalPlan::with_new_children: StreamingPhysicalScan, StreamingInMemoryScan, StreamingGlobScan, and PlaceholderScan do not have children"
                 ),
                 Self::Filter(Filter {
                     predicate, context, ..
@@ -2102,9 +2183,6 @@ impl LocalPhysicalPlan {
                 }
                 Self::Concat(_) => {
                     panic!("LocalPhysicalPlan::with_new_children: Concat should have 2 children")
-                }
-                Self::GlobScan(_) => {
-                    panic!("LocalPhysicalPlan::with_new_children: GlobScan does not have children")
                 }
                 Self::StreamingInMemoryScan(_) => {
                     panic!(

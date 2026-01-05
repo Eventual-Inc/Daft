@@ -47,15 +47,10 @@ impl LimitSink {
         let (remaining_take, remaining_skip) = &mut *limit_tracker;
         let mut input_num_rows = input.len();
 
-        println!("process_input: initial remaining_take={}, remaining_skip={}, input_num_rows={}", remaining_take, remaining_skip, input_num_rows);
-
         if *remaining_skip > 0 {
             let skip_num_rows = (*remaining_skip).min(input.len());
-            println!("Skipping rows: skip_num_rows={}, before update remaining_skip={}", skip_num_rows, remaining_skip);
             *remaining_skip -= skip_num_rows;
-            println!("After update remaining_skip={}", remaining_skip);
             if skip_num_rows >= input.len() {
-                println!("Skipped entire input, requesting more input.");
                 return Ok(StreamingSinkOutput::NeedMoreInput(Some(
                     MicroPartition::empty(Some(input.schema())).into(),
                 )));
@@ -63,23 +58,18 @@ impl LimitSink {
 
             input = input.slice(skip_num_rows, input.len())?.into();
             input_num_rows = input.len();
-            println!("After slicing: new input_num_rows={}", input_num_rows);
         }
 
         match input_num_rows.cmp(remaining_take) {
             Less => {
-                println!("input_num_rows < remaining_take ({} < {}), taking all input and requesting more", input_num_rows, remaining_take);
                 *remaining_take -= input_num_rows;
-                println!("After update remaining_take={}", remaining_take);
                 Ok(StreamingSinkOutput::NeedMoreInput(Some(input)))
             }
             Equal => {
-                println!("input_num_rows == remaining_take ({} == {}), finished with this input", input_num_rows, remaining_take);
                 *remaining_take = 0;
                 Ok(StreamingSinkOutput::Finished(Some(input)))
             }
             Greater => {
-                println!("input_num_rows > remaining_take ({} > {}), taking head and finished", input_num_rows, remaining_take);
                 let to_head = *remaining_take;
                 *remaining_take = 0;
                 Ok(StreamingSinkOutput::Finished(Some(

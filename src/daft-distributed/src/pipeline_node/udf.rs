@@ -121,7 +121,6 @@ impl PipelineNodeImpl for UDFNode {
         let schema = self.config.schema.clone();
         let node_id = self.context.node_id;
         let plan_builder = move |input: LocalPhysicalPlanRef| -> LocalPhysicalPlanRef {
-            println!("UDFNode {}: Building UDF project", node_id);
             LocalPhysicalPlan::udf_project(
                 input,
                 expr.clone(),

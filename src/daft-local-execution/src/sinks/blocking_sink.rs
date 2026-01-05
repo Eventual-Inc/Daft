@@ -118,24 +118,20 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         );
 
         let finalized_result = op.finalize(states, &spawner).await??;
-        println!("[Blocking Sink {}] Finalized result num rows: {:#?} for input_id: {}", op.name(), finalized_result.len(), input_id);
         for output_partition in finalized_result {
             let input_mp = PipelineMessage::Morsel {
                 input_id,
                 partition: output_partition,
             };
             if counting_sender.send(input_mp).await.is_err() {
-                println!("[Blocking Sink {}] Error sending morsel for input_id: {:?}", op.name(), input_id);
                 return Ok(false);
             }
         }
-        println!("[Blocking Sink {}] Sending flush message for input_id: {:?}", op.name(), input_id);
         if counting_sender
             .send(PipelineMessage::Flush(input_id))
             .await
             .is_err()
         {
-            println!("[Blocking Sink {}] Error sending flush message for input_id: {:?}", op.name(), input_id);
             return Ok(false);
         }
         Ok(true)
@@ -407,7 +403,6 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
                     }
                 }
 
-                println!("[Blocking Sink {}] Finalizing node", sink_name);
                 stats_manager.finalize_node(node_id);
                 Ok(())
             },

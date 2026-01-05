@@ -92,14 +92,11 @@ class RaySwordfishActor:
             fingerprint = plan.fingerprint()
 
             # Check if plan already exists
-            print(f"Active plans: {self.active_plans}")
             if fingerprint in self.active_plans:
-                print(f"Plan {plan.name()} already exists, task id: {task_id}")
                 # Reuse existing result_handle
                 result_handle = self.active_plans[fingerprint]["result_handle"]
                 self.active_plans[fingerprint]["active_input_ids_set"].add(task_id)
             else:
-                print(f"Plan {plan.name()} does not exist, task id: {task_id}")
                 # Create new result_handle
                 ctx = PyDaftContext()
                 ctx._daft_execution_config = exec_cfg
@@ -127,7 +124,6 @@ class RaySwordfishActor:
             )
             
             if result_receiver is None:
-                print(f"Result receiver is None for plan {plan.name()}, task_id: {task_id}")
                 if fingerprint in self.active_plans:
                     self.active_plans[fingerprint]["active_input_ids_set"].remove(task_id)
                     if len(self.active_plans[fingerprint]["active_input_ids_set"]) == 0:
@@ -141,10 +137,7 @@ class RaySwordfishActor:
                     break
                 mp = MicroPartition._from_pymicropartition(partition)
                 metas.append(PartitionMetadata.from_table(mp))
-                print(f"Yielding partition {len(mp)} rows from plan {plan.name()}, task_id: {task_id}")
                 yield mp
-
-            print(f"Metas from plan {plan.name()}, task_id: {task_id}: {metas}")
 
             # Cleanup: remove task_id from active set
             # Check if plan is still in active_plans (it might have been cancelled)
@@ -154,23 +147,19 @@ class RaySwordfishActor:
                 
                 # If no more active inputs, finish and clean up
                 if len(self.active_plans[fingerprint]["active_input_ids_set"]) == 0:
-                    print(f"Finishing plan {plan.name()}, task_id: {task_id}")
                     del self.active_plans[fingerprint]
                     stats = await result_handle.finish()
-                    print(f"Finished plan {plan.name()}, task_id: {task_id}, stats: {stats}")
                     yield SwordfishTaskMetadata(partition_metadatas=metas, stats=stats)
                 else:
                     # Other inputs are still active, just yield metadata for this input
                     # Note: We don't call finish() yet - it will be called when the last input completes
                     # For now, yield empty stats bytes since we haven't finished yet
-                    print(f"Not finished plan {plan.name()}, task_id: {task_id}, stats: None")
                     yield SwordfishTaskMetadata(partition_metadatas=metas, stats=None)
 
     async def cancel(self, plan: LocalPhysicalPlan) -> None:
         """Cancel a plan by finishing it and removing it from active_plans."""
         fingerprint = plan.fingerprint()
         if fingerprint in self.active_plans:
-            print(f"Cancelling plan {plan.name()}")
             result_handle = self.active_plans.pop(fingerprint)["result_handle"]
             await result_handle.finish()
 
@@ -224,7 +213,6 @@ class RaySwordfishTaskHandle:
             task_metadata: SwordfishTaskMetadata = await metadata_ref
             assert len(results) == len(task_metadata.partition_metadatas)
 
-            print(f"Got results for plan {self.plan.name()}, num_results: {len(results)}, stats: {task_metadata.partition_metadatas}")
             return RayTaskResult.success(
                 [
                     RayPartitionRef(result, metadata.num_rows, metadata.size_bytes or 0)
@@ -361,10 +349,8 @@ class RemoteFlotillaRunner:
         if next_partition_ref is None:
             self.curr_plans.pop(plan_id)
             self.curr_result_gens.pop(plan_id)
-            print(f"Plan {plan_id} not found in FlotillaPlanRunner, returning None")
             return None
 
-        print(f"Got next partition for plan {plan_id}, num_rows: {next_partition_ref.num_rows}, size_bytes: {next_partition_ref.size_bytes}")
         metadata_accessor = PartitionMetadataAccessor.from_metadata_list(
             [PartitionMetadata(next_partition_ref.num_rows, next_partition_ref.size_bytes)]
         )
