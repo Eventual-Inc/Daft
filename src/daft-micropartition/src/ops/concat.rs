@@ -15,7 +15,6 @@ impl MicroPartition {
     {
         let mps: Vec<_> = mps.into_iter().collect();
         if mps.is_empty() {
-            panic!("Need at least 1 MicroPartition to perform concat");
             return Err(DaftError::ValueError(
                 "Need at least 1 MicroPartition to perform concat".to_string(),
             ));
