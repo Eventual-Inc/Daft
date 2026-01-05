@@ -32,6 +32,7 @@ def _lancedb_table_factory_function(
     filter: Optional["pa.compute.Expression"] = None,
     limit: int | None = None,
     include_fragment_id: bool | None = False,
+    nearest: dict[str, Any] | None = None,
 ) -> Iterator[PyRecordBatch]:
     try:
         import lance
@@ -83,7 +84,7 @@ def _lancedb_table_factory_function(
 
     # If fragment_ids is None, let Lance choose fragments via index; omit the fragments parameter.
     if fragment_ids is None:
-        scanner = ds.scanner(columns=required_columns, filter=filter, limit=limit)
+        scanner = ds.scanner(columns=required_columns, filter=filter, limit=limit, nearest=nearest)
         return (RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch for rb in scanner.to_batches())
     else:
         fragments = [ds.get_fragment(id) for id in (fragment_ids or [])]
@@ -212,6 +213,8 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 )
             )
 
+        nearest_option = self._nearest_default_option()
+
         # Check if there is a count aggregation pushdown
         if (
             pushdowns.aggregation is not None
@@ -224,14 +227,19 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     "Count mode %s is not supported for pushdown, falling back to original logic",
                     pushdowns.aggregation_count_mode(),
                 )
-                yield from self._create_regular_scan_tasks(pushdowns, required_columns)
+                yield from self._create_regular_scan_tasks(pushdowns, required_columns, nearest_option)
             else:
                 yield from self._create_count_rows_scan_task(pushdowns)
-        # Check if there is a limit pushdown and no filters
-        elif pushdowns.limit is not None and self._pushed_filters is None and pushdowns.filters is None:
+        # Check if there is a limit pushdown and no filters and no nearest search
+        elif (
+            pushdowns.limit is not None
+            and self._pushed_filters is None
+            and pushdowns.filters is None
+            and nearest_option is None
+        ):
             yield from self._create_scan_tasks_with_limit_and_no_filters(pushdowns, required_columns)
         else:
-            yield from self._create_regular_scan_tasks(pushdowns, required_columns)
+            yield from self._create_regular_scan_tasks(pushdowns, required_columns, nearest_option)
 
     def _create_count_rows_scan_task(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
         """Create scan task for counting rows."""
@@ -304,7 +312,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 )
 
     def _create_regular_scan_tasks(
-        self, pushdowns: PyPushdowns, required_columns: list[str] | None
+        self, pushdowns: PyPushdowns, required_columns: list[str] | None, nearest_option: dict[str, Any] | None = None
     ) -> Iterator[ScanTask]:
         """Create regular scan tasks without count pushdown."""
         open_kwargs = getattr(self._ds, "_lance_open_kwargs", None)
@@ -328,6 +336,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     pushed_expr,
                     self._compute_limit_pushdown_with_filter(pushdowns),
                     self._include_fragment_id,
+                    nearest_option,
                 ),
                 schema=self.schema()._schema,
                 num_rows=num_rows,
@@ -337,7 +346,8 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 source_type=self.name(),
             )
 
-        if self._should_use_index_for_point_lookup():
+        # Use index-driven scan for point lookups with BTREE indices or nearest search.
+        if self._should_use_index_for_point_lookup() or nearest_option is not None:
             yield _python_factory_func_scan_task(fragment_ids=None, num_rows=None, size_bytes=None)
             return
 
@@ -443,6 +453,33 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         if point_column_set and point_column_set.issubset(btree_indexed_columns):
             return True
         return False
+
+    def _nearest_default_option(self) -> dict[str, Any] | None:
+        """Return the default nearest option configured on the Lance dataset, if any.
+
+        Prefer Daft-specific `_daft_default_scan_options` to preserve options stripped before `lance.dataset` (e.g., `nearest`).
+        """
+        default_opts = getattr(self._ds, "_daft_default_scan_options", None)
+        if not isinstance(default_opts, dict):
+            default_opts = getattr(self._ds, "_default_scan_options", None)
+        if not isinstance(default_opts, dict):
+            open_kwargs = getattr(self._ds, "_lance_open_kwargs", None)
+            if isinstance(open_kwargs, dict):
+                default_opts = open_kwargs.get("default_scan_options")
+        if not isinstance(default_opts, dict):
+            return None
+
+        nearest = default_opts.get("nearest")
+        if nearest is None:
+            return None
+        if not isinstance(nearest, dict):
+            logger.warning(
+                "Ignoring default_scan_options['nearest'] for dataset %s: expected dict, got %s",
+                getattr(self._ds, "uri", "<unknown>"),
+                type(nearest).__name__,
+            )
+            return None
+        return nearest
 
     @staticmethod
     def _estimate_size_bytes(fragment: "lance.LanceFragment") -> int:
