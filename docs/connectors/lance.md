@@ -355,25 +355,98 @@ pipeline in Daft.
 
 ### Data Evolution
 
-If you need to add derived columns in-place to an existing Lance dataset (e.g., apply a UDF across batches and persist the result), use `daft.io.lance.merge_columns`:
+If you need to add derived columns in-place to an existing Lance dataset (e.g., apply a UDF across batches and persist the result), use `df.write_lance(mode="merge")`.
+
+!!! warning "Deprecation Notice"
+    `daft.io.lance.merge_columns` is deprecated and will be replaced by `df.write_lance(mode="merge")` in a future release.
+
+    **Why the change?**
+    The new implementation offers significantly better performance and flexibility:
+
+    1. **Higher Concurrency**: By leveraging Daft's distributed execution engine, transformations can be parallelized across the cluster, rather than being limited by the single-node execution of the old UDF-based approach.
+    2. **More Flexible Transformations**: You can now use the full power of Daft's DataFrame API (including complex UDFs, joins, and aggregations) to prepare the new columns before merging, instead of being restricted to a specific transform function signature.
+    3. **Optimized Fragment Merging**: The merge operation is optimized to efficiently update only the necessary fragments.
 
 === "🐍 Python"
 
-```python
-from daft.io.lance import merge_columns
+    ```python
+    import daft
+    import pyarrow as pa
 
-# Example: double the values in column c and write to a new column new_column
-import pyarrow.compute as pc
+    # 1. Create an initial dataset
+    df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
+    df.write_lance("/tmp/lance/my_table.lance")
 
-def double_score(batch):
-    return batch.append_column("new_column", pc.multiply(batch["c"], 2))
+    # 2. Prepare new data to merge
+    # Note: The new data must contain the join key (e.g., "id") and the new columns
+    new_data = daft.from_pydict({
+        "id": [1, 2, 3],
+        "new_col": ["10", "20", "30"]
+    })
 
-merge_columns(
-    "/tmp/lance/my_table.lance",
-    transform=double_score,
-    read_columns=["c"],
-)
-```
+    # 3. Read existing dataset with necessary metadata
+    # We need fragment_id and _rowaddr to perform the merge efficiently
+    existing = daft.read_lance(
+        "/tmp/lance/my_table.lance",
+        include_fragment_id=True,
+        default_scan_options={'with_row_address': True}
+    )
+
+    # 4. Join new data with existing data to get row addresses
+    merged = existing.join(new_data, on="id").select(
+        "id", "fragment_id", "_rowaddr", "new_col"
+    )
+
+    # 5. Filter the DataFrame to only update specific rows/fragments (Optional)
+    # For example, only update rows where id > 1
+    merged = merged.where(merged["id"] > 1)
+
+    # 6. Merge the new columns into the existing dataset
+    # mode="merge" performs a schema evolution merge
+    # By default, it uses '_rowaddr' as the join key, which is the most efficient way
+    merged.write_lance(
+        "/tmp/lance/my_table.lance",
+        mode="merge",
+    )
+
+    # 7. Verify the result
+    result = daft.read_lance("/tmp/lance/my_table.lance")
+    result.show()
+    # Output should contain: id, val, new_col
+    ```
+
+    **Merging with Custom Keys**
+
+    If you prefer to merge using a business key instead of the physical row address, you can specify `left_on` and `right_on`. Note that `fragment_id` is still required.
+
+    ```python
+    import daft
+
+    # 1. Setup initial data
+    df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
+    df.write_lance("/tmp/lance/my_table_custom.lance")
+
+    # 2. Prepare new data
+    new_data = daft.from_pydict({"id": [1, 2, 3], "new_col": [10, 20, 30]})
+
+    # 3. Read existing data with fragment_id
+    # We don't need _rowaddr here since we are joining on "id"
+    existing = daft.read_lance(
+        "/tmp/lance/my_table_custom.lance",
+        include_fragment_id=True
+    )
+
+    # 4. Join on business key "id"
+    merged = existing.join(new_data, on="id").select("id", "fragment_id", "new_col")
+
+    # 5. Write back using custom merge keys
+    merged.write_lance(
+        "/tmp/lance/my_table_custom.lance",
+        mode="merge",
+        left_on="id",
+        right_on="id"
+    )
+    ```
 
 ### Compaction
 
@@ -404,12 +477,12 @@ daft.io.lance.compact_files(
 
 - **`uri`**: Path to the Lance dataset.
 - **`compaction_options`**: A dictionary of options to control compaction behavior (e.g., `target_rows_per_fragment`, `materialize_deletions`), see [Lance documentation](https://lance-format.github.io/lance-python-doc/all-modules.html#lance.dataset.DatasetOptimizer.compact_files) for more details.
+- **`partition_num`**: On the Ray Runner, this controls the number of parallel compaction tasks. Defaults to 1. On the native runner, this option is ignored.
 - **Returns**: A `CompactionMetrics` object with statistics if compaction was performed, or `None` if no action was needed. The `CompactionMetrics` object contains the following fields:
     - `fragments_removed`: Number of fragments removed during compaction.
     - `fragments_added`: Number of fragments added during compaction.
     - `files_removed`: Number of files removed during compaction.
     - `files_added`: Number of files added during compaction.
-- **`partition_num`**: On the Ray Runner, this controls the number of parallel compaction tasks. Defaults to 1. On the native runner, this option is ignored.
 
 
 This example compacts a dataset with multiple fragments into a single, larger fragment, and uses `partition_num` to control the number of parallel compaction tasks.
