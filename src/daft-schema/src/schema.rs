@@ -452,6 +452,27 @@ impl From<&daft_arrow::datatypes::Schema> for Schema {
     }
 }
 
+impl TryFrom<arrow_schema::Schema> for Schema {
+    type Error = DaftError;
+
+    fn try_from(arrow_schema: arrow_schema::Schema) -> DaftResult<Self> {
+        (&arrow_schema).try_into()
+    }
+}
+
+impl TryFrom<&arrow_schema::Schema> for Schema {
+    type Error = DaftError;
+
+    fn try_from(arrow_schema: &arrow_schema::Schema) -> DaftResult<Self> {
+        let daft_fields = arrow_schema
+            .fields
+            .iter()
+            .map(|f| f.as_ref().try_into())
+            .collect::<DaftResult<Vec<Field>>>()?;
+        Ok(Self::new(daft_fields))
+    }
+}
+
 impl<'a> IntoIterator for &'a Schema {
     type Item = &'a Field;
     type IntoIter = std::slice::Iter<'a, Field>;
