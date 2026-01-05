@@ -5,6 +5,7 @@ use std::{
 
 use arrow_schema::IntervalUnit;
 use common_error::{DaftError, DaftResult};
+#[allow(deprecated, reason = "arrow2 migration")]
 use daft_arrow::datatypes::DataType as ArrowType;
 use serde::{Deserialize, Serialize};
 
@@ -1056,6 +1057,7 @@ impl DataType {
     }
 }
 
+#[allow(deprecated, reason = "arrow2 migration")]
 #[expect(
     clippy::fallible_impl_from,
     reason = "https://github.com/Eventual-Inc/Daft/issues/3015"

@@ -437,13 +437,14 @@ impl DisplayAs for Schema {
         }
     }
 }
-
+#[allow(deprecated, reason = "arrow2 migration")]
 impl From<daft_arrow::datatypes::Schema> for Schema {
     fn from(arrow_schema: daft_arrow::datatypes::Schema) -> Self {
         (&arrow_schema).into()
     }
 }
 
+#[allow(deprecated, reason = "arrow2 migration")]
 impl From<&daft_arrow::datatypes::Schema> for Schema {
     fn from(arrow_schema: &daft_arrow::datatypes::Schema) -> Self {
         let daft_fields: Vec<Field> = arrow_schema.fields.iter().map(|f| f.into()).collect();

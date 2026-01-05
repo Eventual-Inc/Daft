@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fmt::Display,
