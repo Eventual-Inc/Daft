@@ -532,13 +532,20 @@ class Catalog(ABC):
         return self._list_namespaces(pattern)
 
     def list_tables(self, pattern: str | None = None) -> list[Identifier]:
-        """List tables in the catalog which match the given pattern.
+        r"""List tables in the catalog which match the given pattern.
 
         Args:
-            pattern (str): pattern to match such as a namespace prefix
+            - pattern (str, optional): Pattern to match table names. Pattern syntax is catalog-dependent:
+                - Native/Memory and Postgres catalogs: Use SQL LIKE syntax (`%`, `_`, `\`). Supports qualified patterns like `"ns1.table%"`.
+                - Other catalogs: Pattern behavior varies (e.g., prefix matching for Iceberg/S3 Tables, AWS Glue expressions for Glue).
 
         Returns:
-            list[str]: list of table identifiers matching the pattern.
+            list[Identifier]: list of table identifiers matching the pattern.
+
+        Examples:
+            >>> catalog.list_tables()  # List all tables
+            >>> catalog.list_tables("table%")  # Tables starting with "table" (native catalog)
+            >>> catalog.list_tables("ns1.%")  # All tables in namespace "ns1" (native catalog)
         """
         return self._list_tables(pattern)
 

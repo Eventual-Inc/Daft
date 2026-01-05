@@ -11,7 +11,7 @@ Feature coverage table:
 
 
 !!! note
-    Open an issue on our [GitHub](https://github.com/daft-data/daft/issues/new/choose) if you would like to see support for a feature.
+    Open an issue on our [GitHub](https://github.com/Eventual-Inc/Daft/issues/new/choose) if you would like to see support for a feature.
 
 
 ## Functions

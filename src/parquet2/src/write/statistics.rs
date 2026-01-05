@@ -1,9 +1,11 @@
 use std::sync::Arc;
 
-use crate::error::{Error, Result};
-use crate::schema::types::PhysicalType;
-use crate::statistics::*;
-use crate::types::NativeType;
+use crate::{
+    error::{Error, Result},
+    schema::types::PhysicalType,
+    statistics::*,
+    types::NativeType,
+};
 
 #[inline]
 fn reduce_single<T, F: Fn(T, T) -> T>(lhs: Option<T>, rhs: Option<T>, op: F) -> Option<T> {
@@ -173,9 +175,8 @@ fn reduce_primitive<
 
 #[cfg(test)]
 mod tests {
-    use crate::schema::types::PrimitiveType;
-
     use super::*;
+    use crate::schema::types::PrimitiveType;
 
     #[test]
     fn binary() -> Result<()> {

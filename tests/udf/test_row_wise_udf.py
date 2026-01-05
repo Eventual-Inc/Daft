@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import re
+import time
 
 import numpy as np
 import pytest
 
 import daft
 from daft import DataType, col
+from daft.ai.utils import RetryAfterError
 from daft.recordbatch import MicroPartition, RecordBatch
+from tests.conftest import get_tests_daft_runner_name
 
 
 def test_row_wise_udf():
@@ -194,13 +197,16 @@ def test_async_rowwise_on_err_ignore():
 
 
 def test_rowwise_retry():
-    first_time = True
+    class RetryState:
+        def __init__(self):
+            self.first_time = True
+
+    state = RetryState()
 
     @daft.func(on_error="ignore", max_retries=1)
     def raise_err_first_time_only(x) -> int:
-        nonlocal first_time
-        if first_time:
-            first_time = False
+        if state.first_time:
+            state.first_time = False
             raise ValueError("This is an error")
         else:
             return x * 2
@@ -214,13 +220,16 @@ def test_rowwise_retry():
 
 
 def test_async_rowwise_retry():
-    first_time = True
+    class RetryState:
+        def __init__(self):
+            self.first_time = True
+
+    state = RetryState()
 
     @daft.func(on_error="ignore", max_retries=1)
     async def raise_err_first_time_only(x) -> int:
-        nonlocal first_time
-        if first_time:
-            first_time = False
+        if state.first_time:
+            state.first_time = False
             raise ValueError("This is an error")
         else:
             return x * 2
@@ -233,14 +242,107 @@ def test_async_rowwise_retry():
     assert actual == expected
 
 
+@pytest.mark.parametrize("max_retries", [1, 2, 3])
+@pytest.mark.parametrize("is_async", [False, True])
+def test_rowwise_retry_after_delay_respected(max_retries, is_async):
+    class RetryState:
+        def __init__(self):
+            self.call_count = 0
+
+    state = RetryState()
+    retry_delay = 0.1
+
+    def _retry_func_impl(x) -> int:
+        state.call_count += 1
+        if state.call_count <= max_retries:
+            raise RetryAfterError(retry_delay)
+        return x * 3
+
+    if is_async:
+
+        @daft.func(max_retries=max_retries)
+        async def retry_func(x) -> int:
+            return _retry_func_impl(x)
+
+    else:
+
+        @daft.func(max_retries=max_retries)
+        def retry_func(x) -> int:
+            return _retry_func_impl(x)
+
+    df = daft.from_pydict({"value": [2]})
+
+    start = time.perf_counter()
+    result = df.select(retry_func(col("value"))).to_pydict()
+    elapsed = time.perf_counter() - start
+
+    assert result == {"value": [6]}
+    # call_count tracking doesn't work with Ray due to process serialization
+    # but retry behavior is verified through timing and result correctness
+    if get_tests_daft_runner_name() != "ray":
+        assert state.call_count == max_retries + 1
+    # Should honor the retry-after delay (accounting for ±25% jitter, so minimum is 75% of base delay)
+    assert elapsed >= retry_delay * 0.7 * max_retries
+
+
+@pytest.mark.parametrize("is_async", [False, True])
+def test_rowwise_retry_after_max_retries_exceeded(is_async):
+    """Test that when max retries is exceeded, the original exception from RetryAfterError is raised."""
+
+    class RetryState:
+        def __init__(self):
+            self.call_count = 0
+
+    state = RetryState()
+    retry_delay = 0.1
+    original_error_message = "Rate limit exceeded"
+
+    def _always_retry_impl(x) -> int:
+        state.call_count += 1
+        # Always raise RetryAfterError with an original exception until max retries is exceeded
+        original_exc = ValueError(original_error_message)
+        raise RetryAfterError(retry_delay, original=original_exc)
+
+    if is_async:
+
+        @daft.func(max_retries=1)
+        async def always_retry(x) -> int:
+            return _always_retry_impl(x)
+
+    else:
+
+        @daft.func(max_retries=1)
+        def always_retry(x) -> int:
+            return _always_retry_impl(x)
+
+    df = daft.from_pydict({"value": [2]})
+
+    start = time.perf_counter()
+    with pytest.raises(ValueError, match=original_error_message) as exc_info:
+        df.select(always_retry(col("value"))).to_pydict()
+    elapsed = time.perf_counter() - start
+
+    assert original_error_message in str(exc_info.value)
+    # call_count tracking doesn't work with Ray due to process serialization
+    # but retry behavior is verified through exception and timing
+    if get_tests_daft_runner_name() != "ray":
+        # Should have attempted initial call + max_retries retries
+        assert state.call_count == 2
+    # Should have respected at least one retry delay (accounting for ±25% jitter, so minimum is 75% of base delay)
+    assert elapsed >= retry_delay * 0.7
+
+
 def test_rowwise_retry_expected_to_fail():
-    first_time = True
+    class RetryState:
+        def __init__(self):
+            self.first_time = True
+
+    state = RetryState()
 
     @daft.func(on_error="ignore", max_retries=0)
     def raise_err_first_time_only(x) -> int:
-        nonlocal first_time
-        if first_time:
-            first_time = False
+        if state.first_time:
+            state.first_time = False
             raise ValueError("This is an error")
         else:
             return x * 2

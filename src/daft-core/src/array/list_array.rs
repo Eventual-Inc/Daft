@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arrow::{array::ArrayRef, buffer::ScalarBuffer};
 use common_error::{DaftError, DaftResult};
 
 use crate::{
@@ -8,7 +9,7 @@ use crate::{
     series::Series,
 };
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ListArray {
     pub field: Arc<Field>,
     pub flat_child: Series,
@@ -163,13 +164,30 @@ impl ListArray {
     }
     #[deprecated(note = "arrow2 migration")]
     pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
-        let arrow_dtype = self.data_type().to_arrow().unwrap();
+        let arrow_dtype = self.data_type().to_arrow2().unwrap();
         Box::new(daft_arrow::array::ListArray::new(
             arrow_dtype,
             self.offsets().clone(),
             self.flat_child.to_arrow2(),
             daft_arrow::buffer::wrap_null_buffer(self.validity.clone()),
         ))
+    }
+
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        let mut field = self.flat_child.field().to_arrow()?;
+        field = field.with_name("item");
+        let offsets = self.offsets().clone();
+        let arrow_offsets: arrow::buffer::Buffer = offsets.buffer().clone().into();
+
+        let offsets = arrow::buffer::OffsetBuffer::new(ScalarBuffer::from(arrow_offsets));
+        let values = self.flat_child.to_arrow()?;
+        let nulls = self.validity.clone();
+        Ok(Arc::new(arrow::array::LargeListArray::new(
+            Arc::new(field),
+            offsets,
+            values,
+            nulls,
+        )))
     }
 
     pub fn with_validity(

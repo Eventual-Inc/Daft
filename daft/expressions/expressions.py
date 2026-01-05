@@ -2,11 +2,10 @@ from __future__ import annotations
 
 import builtins
 import math
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Literal,
     overload,
 )
@@ -2203,7 +2202,7 @@ class Expression:
     def decode_image(
         self,
         on_error: Literal["raise", "null"] = "raise",
-        mode: builtins.str | ImageMode | None = None,
+        mode: builtins.str | ImageMode | None = ImageMode.RGB,
     ) -> Expression:
         """Decodes the binary data in this column into images.
 
@@ -2311,6 +2310,16 @@ class Expression:
         from daft.functions import convert_image
 
         return convert_image(self, mode)
+
+    def image_to_tensor(self) -> Expression:
+        """Convert an image expression to a tensor, inferring dtype and shape.
+
+        Tip: See Also
+            [`daft.functions.image_to_tensor`](https://docs.daft.ai/en/stable/api/functions/image_to_tensor/)
+        """
+        from daft.functions import image_to_tensor
+
+        return image_to_tensor(self)
 
     def list_append(self, other: Expression) -> Expression:
         """Appends a value to each list in the column.

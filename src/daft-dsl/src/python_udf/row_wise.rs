@@ -1,6 +1,7 @@
 use std::{collections::HashMap, fmt::Display, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
+use common_metrics::MetricsCollector;
 use daft_core::{prelude::*, series::Series};
 use itertools::Itertools;
 use opentelemetry::{
@@ -11,10 +12,11 @@ use opentelemetry::{
 use pyo3::{PyErr, Python, prelude::*};
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "python")]
+use crate::python_udf::retry_with_backoff;
 use crate::{
     Expr, ExprRef,
     functions::{python::RuntimePyObject, scalar::ScalarFn},
-    operator_metrics::MetricsCollector,
     python_udf::PyScalarFn,
 };
 
@@ -159,37 +161,20 @@ impl RowWisePyFn {
         }
 
         let max_retries = self.max_retries.unwrap_or(0);
-
         let name = args[0].name();
 
-        // TODO(cory): consider exposing delay and max_delay to users.
-        let mut delay_ms: u64 = 100; // Start with 100 ms
-        const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
+        let result = crate::python_udf::retry::retry_with_backoff_async(
+            || async { self.call_async_batch_once(args, num_rows, name).await },
+            max_retries,
+        )
+        .await;
 
-        let mut result_series = self
-            .call_async_batch_once(args, num_rows, name, metrics)
-            .await;
-
-        for _attempt in 0..max_retries {
-            if result_series.is_ok() {
-                break;
-            }
-
-            tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
-            delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
-
-            result_series = self
-                .call_async_batch_once(args, num_rows, name, metrics)
-                .await;
+        if let Ok((_, operator_metrics)) = &result {
+            crate::python_udf::collect_operator_metrics(operator_metrics, metrics);
         }
-        let name = args[0].name();
 
-        let result_series = result_series
-            .map_err(DaftError::from)
-            .and_then(|s| Ok(s.cast(&self.return_dtype)?.rename(name)));
-
-        match (result_series, self.on_error) {
-            (Ok(result_series), _) => Ok(result_series),
+        match (result, self.on_error) {
+            (Ok((result_series, _)), _) => Ok(result_series.cast(&self.return_dtype)?.rename(name)),
             (Err(err), OnError::Raise) => Err(err),
             (Err(err), OnError::Log) => {
                 log::warn!("Python UDF error: {}", err);
@@ -323,36 +308,6 @@ impl RowWisePyFn {
         let name = args[0].name();
         let on_error = self.on_error;
         let max_retries = self.max_retries.unwrap_or(0);
-        let delay_ms: u64 = 100; // Start with 100 ms
-        const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
-
-        fn retry<F: FnMut() -> DaftResult<Literal>>(
-            py: Python,
-            mut func: F,
-            max_retries: usize,
-            mut delay_ms: u64,
-        ) -> DaftResult<Literal> {
-            let mut retries = 0;
-            loop {
-                match func() {
-                    Ok(result) => return Ok(result),
-                    Err(e) => {
-                        if retries >= max_retries {
-                            return Err(e);
-                        }
-
-                        // Update our failure map for next iteration
-                        use std::{thread, time::Duration};
-                        py.detach(|| {
-                            thread::sleep(Duration::from_millis(delay_ms));
-                        });
-                        // Exponential backoff: multiply by 2, cap at MAX_DELAY_MS
-                        delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
-                    }
-                }
-                retries += 1;
-            }
-        }
 
         let s = Python::attach(|py| {
             let func = py
@@ -382,22 +337,18 @@ impl RowWisePyFn {
                                 res.extract()?;
                             let literal =
                                 Literal::from_pyobj(&value_obj, Some(&self.return_dtype))?;
-                            for (key, counter) in operator_metrics.inner {
-                                metrics.inc_counter(
-                                    &key,
-                                    counter.value,
-                                    counter.description.as_deref(),
-                                    Some(counter.attributes),
-                                );
-                            }
-                            Ok(literal)
+                            Ok((literal, operator_metrics))
                         })
                         .map_err(DaftError::from)
                 };
-                let res = retry(py, f, max_retries, delay_ms);
+                let retry_result = retry_with_backoff(Some(py), f, max_retries);
+
+                if let Ok((_, operator_metrics)) = &retry_result {
+                    crate::python_udf::collect_operator_metrics(operator_metrics, metrics);
+                }
 
                 // Handle on_error logic outside of retry
-                let final_res = match res {
+                let final_res = match retry_result.map(|(lit, _)| lit) {
                     Ok(result) => Ok(result),
                     Err(e) => match on_error {
                         OnError::Raise => Err(e),
@@ -471,8 +422,7 @@ impl RowWisePyFn {
         args: &[Series],
         num_rows: usize,
         name: &str,
-        metrics: &mut dyn MetricsCollector,
-    ) -> DaftResult<Series> {
+    ) -> DaftResult<(Series, common_metrics::python::PyOperatorMetrics)> {
         use common_metrics::python::PyOperatorMetrics;
         use daft_core::python::PySeries;
         use pyo3::prelude::*;
@@ -516,16 +466,8 @@ impl RowWisePyFn {
             Ok(coroutine)
         })
         .await?;
-        for (key, counter) in operator_metrics.inner {
-            metrics.inc_counter(
-                &key,
-                counter.value,
-                counter.description.as_deref(),
-                Some(counter.attributes),
-            );
-        }
 
-        Ok(py_series.series.rename(name))
+        Ok((py_series.series.rename(name), operator_metrics))
     }
 }
 

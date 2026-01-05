@@ -48,6 +48,12 @@ enum Error {
         source: std::io::Error,
     },
 
+    #[snafu(display("Unable to delete file {}: {}", path, source))]
+    UnableToDeleteFile {
+        path: String,
+        source: std::io::Error,
+    },
+
     #[snafu(display("Unable to open file for writing {}: {}", path, source))]
     UnableToOpenFileForWriting {
         path: String,
@@ -255,6 +261,34 @@ impl ObjectSource for LocalSource {
             files,
             continuation_token: None,
         })
+    }
+
+    async fn delete(&self, uri: &str, io_stats: Option<IOStatsRef>) -> super::Result<()> {
+        const LOCAL_PROTOCOL: &str = "file://";
+        if let Some(path) = uri.strip_prefix(LOCAL_PROTOCOL) {
+            match tokio::fs::remove_file(path).await {
+                Err(err) => {
+                    use std::io::ErrorKind;
+                    match err.kind() {
+                        ErrorKind::NotFound => Ok(()),
+                        ErrorKind::IsADirectory => Err(super::Error::NotAFile { path: uri.into() }),
+                        _ => Err(Error::UnableToDeleteFile {
+                            path: uri.into(),
+                            source: err,
+                        }
+                        .into()),
+                    }
+                }
+                _ => {
+                    if let Some(is) = io_stats.as_ref() {
+                        is.mark_delete_requests(1);
+                    }
+                    Ok(())
+                }
+            }
+        } else {
+            Err(Error::InvalidFilePath { path: uri.into() }.into())
+        }
     }
 
     async fn iter_dir(

@@ -18,6 +18,9 @@ serde_json = {workspace = true}
 chrono = {workspace = true}
 chrono-tz = {workspace = true}
 
+[dev-dependencies]
+rstest = {workspace = true}
+
 [features]
 python = [
   "dep:pyo3",

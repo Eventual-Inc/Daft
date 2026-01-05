@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arrow::array::ArrayRef;
 use common_error::{DaftError, DaftResult};
 
 use crate::{
@@ -175,12 +176,36 @@ impl StructArray {
     }
     #[deprecated(note = "arrow2 migration")]
     pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
-        let arrow_dtype = self.data_type().to_arrow().unwrap();
+        let arrow_dtype = self.data_type().to_arrow2().unwrap();
         Box::new(daft_arrow::array::StructArray::new(
             arrow_dtype,
             self.children.iter().map(|s| s.to_arrow2()).collect(),
             daft_arrow::buffer::wrap_null_buffer(self.validity.clone()),
         ))
+    }
+
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        let field = self.field().to_arrow()?;
+
+        let arrow::datatypes::DataType::Struct(fields) = field.data_type() else {
+            return Err(DaftError::TypeError(format!(
+                "Expected StructArray, got {:?}",
+                field.data_type()
+            )));
+        };
+        let children: Vec<ArrayRef> = self
+            .children
+            .iter()
+            .map(|s| s.to_arrow())
+            .collect::<DaftResult<_>>()?;
+
+        let arrow_validity = self.validity.clone();
+
+        Ok(Arc::new(arrow::array::StructArray::new(
+            fields.clone(),
+            children,
+            arrow_validity,
+        )) as _)
     }
 
     pub fn with_validity(

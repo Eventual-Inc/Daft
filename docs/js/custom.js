@@ -71,3 +71,32 @@ document.querySelectorAll(".highlight button").forEach((btn) => {
     });
   });
 });
+
+// Copy page as markdown functionality (button is injected at build time)
+window.copyPageMarkdown = async function(btn) {
+  const encodedMd = btn.getAttribute("data-md");
+  if (!encodedMd) return;
+
+  try {
+    // Decode base64 markdown (with proper UTF-8 handling)
+    const binary = atob(encodedMd);
+    const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+    const markdown = new TextDecoder('utf-8').decode(bytes);
+    await navigator.clipboard.writeText(markdown);
+
+    // Success feedback
+    btn.querySelector(".copy-page-btn-text").textContent = "Copied";
+    btn.classList.add("copied");
+
+    setTimeout(() => {
+      btn.querySelector(".copy-page-btn-text").textContent = "Copy page";
+      btn.classList.remove("copied");
+    }, 2000);
+  } catch (error) {
+    console.error("Failed to copy markdown:", error);
+    btn.querySelector(".copy-page-btn-text").textContent = "Error";
+    setTimeout(() => {
+      btn.querySelector(".copy-page-btn-text").textContent = "Copy page";
+    }, 2000);
+  }
+}

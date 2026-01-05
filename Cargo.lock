@@ -435,6 +435,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "comfy-table 6.2.0",
+ "common-pattern",
  "criterion",
  "crossbeam-channel",
  "csv",
@@ -465,7 +466,6 @@ dependencies = [
  "proptest",
  "rand 0.8.5",
  "regex",
- "regex-syntax 0.8.8",
  "rustc_version",
  "sample-arrow2",
  "sample-std",
@@ -2006,6 +2006,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "common-pattern"
+version = "0.3.0-dev0"
+dependencies = [
+ "regex",
+]
+
+[[package]]
 name = "common-py-serde"
 version = "0.3.0-dev0"
 dependencies = [
@@ -2561,6 +2568,7 @@ name = "daft-catalog"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "common-pattern",
  "daft-context",
  "daft-core",
  "daft-logical-plan",
@@ -2568,6 +2576,7 @@ dependencies = [
  "daft-runners",
  "indexmap 2.11.4",
  "pyo3",
+ "regex",
  "snafu",
  "sqlparser",
 ]
@@ -2781,6 +2790,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry_sdk",
  "pyo3",
+ "rand 0.8.5",
  "rstest",
  "serde",
  "tokio",
@@ -2927,11 +2937,13 @@ dependencies = [
 name = "daft-functions-utf8"
 version = "0.3.0-dev0"
 dependencies = [
+ "ahash",
  "aho-corasick",
  "arrow",
  "chrono",
  "chrono-tz",
  "common-error",
+ "common-pattern",
  "daft-arrow",
  "daft-core",
  "daft-dsl",
@@ -3350,6 +3362,7 @@ dependencies = [
  "num-derive",
  "num-traits",
  "pyo3",
+ "rstest",
  "serde",
  "serde_json",
 ]
@@ -6658,6 +6671,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "psm"
+version = "0.1.26"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e944464ec8536cd1beb0bbfd96987eb5e3b72f2ecdafdc5c769a37f1fa2ae1f"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "pxfm"
 version = "0.1.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7013,6 +7035,26 @@ checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
+]
+
+[[package]]
+name = "recursive"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0786a43debb760f491b1bc0269fe5e84155353c67482b9e60d0cfb596054b43e"
+dependencies = [
+ "recursive-proc-macro-impl",
+ "stacker",
+]
+
+[[package]]
+name = "recursive-proc-macro-impl"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76009fbe0614077fc1a2ce255e3a1881a2e3a3527097d5dc6d8212c585e7e38b"
+dependencies = [
+ "quote",
+ "syn 2.0.111",
 ]
 
 [[package]]
@@ -7929,11 +7971,12 @@ dependencies = [
 
 [[package]]
 name = "sqlparser"
-version = "0.51.0"
+version = "0.59.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5fe11944a61da0da3f592e19a45ebe5ab92dc14a779907ff1f08fbb797bfefc7"
+checksum = "4591acadbcf52f0af60eafbb2c003232b2b4cd8de5f0e9437cb8b1b59046cc0f"
 dependencies = [
  "log",
+ "recursive",
 ]
 
 [[package]]
@@ -7941,6 +7984,19 @@ name = "stable_deref_trait"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
+
+[[package]]
+name = "stacker"
+version = "0.1.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cddb07e32ddb770749da91081d8d0ac3a16f1a569a18b20348cd371f5dead06b"
+dependencies = [
+ "cc",
+ "cfg-if",
+ "libc",
+ "psm",
+ "windows-sys 0.59.0",
+]
 
 [[package]]
 name = "static_assertions"

@@ -34,8 +34,11 @@ setup_logger()
 The `setup_logger()` function accepts three optional parameters:
 
 - `level` (str, optional): The log level to use. Valid options are `DEBUG`, `INFO`, `WARNING`, `ERROR`. Defaults to `DEBUG`.
-- `daft_only` (bool, optional): When True, only logs from Daft modules will be shown. Defaults to True.
+- `daft_only` (bool, optional): When True, only logs from Daft modules will be shown. Defaults to False.
 - `exclude_prefix` (list[str], optional): A list of module prefixes to exclude from logging. Defaults to [].
+- `logformat` (str, optional): The log format to use. Defaults to
+  `"%(asctime)s - %(name)s - %(levelname)s - %(message)s"`.
+- `datefmt` (str, optional): The date format to use in the log format. Defaults to `"%Y-%m-%d %H:%M:%S.%s"`.
 
 By default, `setup_logger()` sets the root logger to `DEBUG` level and applies a filter to only show logs from Daft modules. This makes it easier to focus on Daft-specific logs while debugging.
 
@@ -44,7 +47,7 @@ For most use cases, simply using `logging.getLogger(__name__)` is the common fir
 !!! note
     - It's important to set the logging level before importing Daft, as the underlying Rust components will not pick up level changes that occur after the import.
 
-    - After each logger setup,` refresh_logger()` is called to synchronize the configuration with the Rust backend.
+    - The `setup_logger()` doesn't have the above mentioned side effects. The ` refresh_logger()` will been called to synchronize the configuration with the Rust backend if use `setup_logger()`.
 ## Remote Execution
 
 When running Daft on a Ray cluster, logging is more complex due to the distributed nature of the system. Logs can be emitted from the driver process (where you call `ray.init()`) or from the worker processes (where the actual data processing happens).
@@ -60,15 +63,15 @@ Here are a few ways to configure logging when using Daft with Ray:
 
 1.  **Suppressing Worker Logs on the Driver**: By default, Ray forwards logs from all worker processes to the driver, which can be overwhelming. If you only want to see driver logs, you can disable this behavior by setting `log_to_driver=False` in `ray.init()`:
 
-    ```python
-    import ray
+   ```python
+   import ray
 
-    ray.init(log_to_driver=False)
-    ```
+   ray.init(log_to_driver=False)
+   ```
 
 2.  **Per-Worker Logging Configuration**: If you need to set different logging levels for different modules on each worker, you can use a `worker_process_setup_hook`. This is a function that runs at the start of each worker process, allowing you to configure logging before any Daft code is executed.
 
-    Here is an example of how to define a setup hook to configure logging on each worker:
+    Here is an example of how to define a setup hook to configure logging on each worker, and also you can use `setup_logger()` to configure logging.
 
     ```python
     def configure_logging():
@@ -103,28 +106,16 @@ Here is a complete example of how to initialize Ray with a combination of these 
 import logging
 import ray
 from ray.job_config import LoggingConfig
-
-# Configure logging BEFORE importing daft
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-)
-# Example of setting a specific Daft module to DEBUG
-logging.getLogger("daft.distributed").setLevel(logging.DEBUG)
-
-# Import daft AFTER setting up logging
 import daft
 
 # A setup hook to configure logging on each worker
 def configure_logging():
-    import logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s"
-    )
-    # Example of setting a specific Daft module to DEBUG
-    logging.getLogger("daft.distributed").setLevel(logging.DEBUG)
+    from daft.logging import setup_logger
+    # Example of setting Daft module to INFO level except for daft_distributed module
+    setup_logger(level="INFO", exclude_prefix=["daft_distributed"])
 
+
+configure_logging()
 
 # Initialize Ray with advanced logging and environment settings
 ray.init(

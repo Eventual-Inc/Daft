@@ -141,6 +141,9 @@ pub enum Error {
     #[snafu(display("Source not yet implemented: {}", store))]
     NotImplementedSource { store: String },
 
+    #[snafu(display("Method not implemented: {}", method))]
+    NotImplementedMethod { method: String },
+
     #[snafu(display("Unhandled Error for path: {}\nDetails:\n{}", path, msg))]
     Unhandled { path: String, msg: String },
 
@@ -438,6 +441,14 @@ impl std::fmt::Display for SourceType {
             Self::Unity => write!(f, "UnityCatalog"),
             Self::Tos => write!(f, "tos"),
         }
+    }
+}
+
+impl SourceType {
+    /// Whether source support write parquet/json/csv files via native IO,
+    /// if the source is object store, it should support multipart part upload currently.
+    pub fn supports_native_writer(&self) -> bool {
+        matches!(self, Self::File | Self::S3 | Self::Tos)
     }
 }
 

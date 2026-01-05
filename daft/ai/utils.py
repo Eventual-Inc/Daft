@@ -1,11 +1,18 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import email.utils
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any, NoReturn
 
 from daft.ai.typing import UDFOptions
 from daft.daft import get_or_infer_runner_type
+from daft.errors import RetryAfterError
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    import httpx
+    import requests
     import torch
 
 
@@ -68,3 +75,47 @@ def merge_provider_and_api_options(
             result[key] = value
 
     return result
+
+
+def _parse_retry_after_header(value: Any) -> float | None:
+    """Parse Retry-After header value (seconds or HTTP-date)."""
+    try:
+        seconds = float(value)
+        if seconds >= 0:
+            return seconds
+    except (TypeError, ValueError):
+        pass
+
+    if isinstance(value, str):
+        try:
+            dt = email.utils.parsedate_to_datetime(value)
+            if dt is not None:
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                delta = (dt - datetime.now(timezone.utc)).total_seconds()
+                return max(delta, 0.0)
+        except (TypeError, ValueError, OverflowError):
+            return None
+    return None
+
+
+def raise_retry_after_from_response(
+    response: requests.Response | httpx.Response | Any | None, original: Exception
+) -> NoReturn:
+    """Raise RetryAfterError from a response object's Retry-After header."""
+    if response is None:
+        raise original
+
+    headers: Mapping[str, Any] | None = getattr(response, "headers", None)
+    if headers is None:
+        raise original
+
+    retry_after_header = headers.get("Retry-After") or headers.get("retry-after")
+    if retry_after_header is None:
+        raise original
+
+    retry_after = _parse_retry_after_header(retry_after_header)
+    if retry_after is not None:
+        raise RetryAfterError(retry_after=retry_after, original=original) from original
+    else:
+        raise original

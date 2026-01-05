@@ -2,7 +2,8 @@
 # isort: dont-add-import: from __future__ import annotations
 import pathlib
 import warnings
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
@@ -29,17 +30,17 @@ LanceDataset = Any
 
 @PublicAPI
 def read_lance(
-    uri: Union[str, pathlib.Path],
-    io_config: Optional[IOConfig] = None,
-    version: Optional[Union[str, int]] = None,
-    asof: Optional[str] = None,
-    block_size: Optional[int] = None,
-    commit_lock: Optional[object] = None,
-    index_cache_size: Optional[int] = None,
-    default_scan_options: Optional[dict[str, str]] = None,
-    metadata_cache_size_bytes: Optional[int] = None,
-    fragment_group_size: Optional[int] = None,
-    include_fragment_id: Optional[bool] = None,
+    uri: str | pathlib.Path,
+    io_config: IOConfig | None = None,
+    version: str | int | None = None,
+    asof: str | None = None,
+    block_size: int | None = None,
+    commit_lock: object | None = None,
+    index_cache_size: int | None = None,
+    default_scan_options: dict[str, str] | None = None,
+    metadata_cache_size_bytes: int | None = None,
+    fragment_group_size: int | None = None,
+    include_fragment_id: bool | None = None,
 ) -> DataFrame:
     """Create a DataFrame from a LanceDB table.
 
@@ -100,21 +101,21 @@ def read_lance(
 
     Examples:
         Read a local LanceDB table:
-        >>> df = daft.read_lance("s3://my-lancedb-bucket/data/")
+        >>> df = daft.read_lance("/path/to/lance/data/")
+        >>> df.show()
+
+        Read a LanceDB table and specify a version:
+        >>> df = daft.read_lance("/path/to/lance/data/", version=1)
+        >>> df.show()
+
+        Read a LanceDB table with fragment grouping:
+        >>> df = daft.read_lance("/path/to/lance/data/", fragment_group_size=5)
         >>> df.show()
 
         Read a LanceDB table from a public S3 bucket:
-        >>> from daft.io import S3Config
-        >>> s3_config = S3Config(region="us-west-2", anonymous=True)
-        >>> df = daft.read_lance("s3://daft-public-data/lance/words-test-dataset", io_config=s3_config)
-        >>> df.show()
-
-        Read a local LanceDB table and specify a version:
-        >>> df = daft.read_lance("s3://my-lancedb-bucket/data/", version=1)
-        >>> df.show()
-
-        Read a local LanceDB table with fragment grouping:
-        >>> df = daft.read_lance("s3://my-lancedb-bucket/data/", fragment_group_size=5)
+        >>> from daft.io import S3Config, IOConfig
+        >>> io_config = IOConfig(s3=S3Config(region="us-west-2", anonymous=True))
+        >>> df = daft.read_lance("s3://daft-public-data/lance/words-test-dataset", io_config=io_config)
         >>> df.show()
     """
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
@@ -143,22 +144,22 @@ def read_lance(
 
 @PublicAPI
 def merge_columns(
-    uri: Union[str, pathlib.Path],
-    io_config: Optional[IOConfig] = None,
+    uri: str | pathlib.Path,
+    io_config: IOConfig | None = None,
     *,
     transform: Union[dict[str, str], "BatchUDF", Callable[["pa.lib.RecordBatch"], "pa.lib.RecordBatch"]] = None,
-    read_columns: Optional[list[str]] = None,
+    read_columns: list[str] | None = None,
     reader_schema: Optional["pa.Schema"] = None,
-    storage_options: Optional[dict[str, Any]] = None,
-    daft_remote_args: Optional[dict[str, Any]] = None,
-    concurrency: Optional[int] = None,
-    version: Optional[Union[int, str]] = None,
-    asof: Optional[str] = None,
-    block_size: Optional[int] = None,
-    commit_lock: Optional[Any] = None,
-    index_cache_size: Optional[int] = None,
-    default_scan_options: Optional[dict[str, Any]] = None,
-    metadata_cache_size_bytes: Optional[int] = None,
+    storage_options: dict[str, Any] | None = None,
+    daft_remote_args: dict[str, Any] | None = None,
+    concurrency: int | None = None,
+    version: int | str | None = None,
+    asof: str | None = None,
+    block_size: int | None = None,
+    commit_lock: Any | None = None,
+    index_cache_size: int | None = None,
+    default_scan_options: dict[str, Any] | None = None,
+    metadata_cache_size_bytes: int | None = None,
 ) -> LanceDataset:
     """Merge new columns into a LanceDB table using a transformation function.
 
@@ -241,24 +242,24 @@ def merge_columns(
 @PublicAPI
 def merge_columns_df(
     df: DataFrame,
-    uri: Union[str, pathlib.Path],
-    io_config: Optional[IOConfig] = None,
+    uri: str | pathlib.Path,
+    io_config: IOConfig | None = None,
     *,
-    read_columns: Optional[list[str]] = None,
+    read_columns: list[str] | None = None,
     reader_schema: Optional["pa.Schema"] = None,
-    storage_options: Optional[dict[str, Any]] = None,
-    daft_remote_args: Optional[dict[str, Any]] = None,
-    concurrency: Optional[int] = None,
-    version: Optional[Union[int, str]] = None,
-    asof: Optional[str] = None,
-    block_size: Optional[int] = None,
-    commit_lock: Optional[Any] = None,
-    index_cache_size: Optional[int] = None,
-    default_scan_options: Optional[dict[str, Any]] = None,
-    metadata_cache_size_bytes: Optional[int] = None,
-    batch_size: Optional[int] = None,
-    left_on: Optional[str] = "_rowaddr",
-    right_on: Optional[str] = "_rowaddr",
+    storage_options: dict[str, Any] | None = None,
+    daft_remote_args: dict[str, Any] | None = None,
+    concurrency: int | None = None,
+    version: int | str | None = None,
+    asof: str | None = None,
+    block_size: int | None = None,
+    commit_lock: Any | None = None,
+    index_cache_size: int | None = None,
+    default_scan_options: dict[str, Any] | None = None,
+    metadata_cache_size_bytes: int | None = None,
+    batch_size: int | None = None,
+    left_on: str | None = "_rowaddr",
+    right_on: str | None = "_rowaddr",
 ) -> None:
     """Row-level merge columns entrypoint using a DataFrame.
 
@@ -297,7 +298,9 @@ def merge_columns_df(
         >>> import daft
         >>> # Read the existing table with row addresses
         >>> df = daft.read_lance(
-        ...     "s3://my-lancedb-bucket/data/", default_scan_options={"with_row_address": True}, include_fragment_id=True
+        ...     "s3://my-lancedb-bucket/data/",
+        ...     default_scan_options={"with_row_address": True},
+        ...     include_fragment_id=True,
         ... )
         >>> # Add new columns based on existing data
         >>> df = df.with_column("doubled_c", df["c"] * 2)
@@ -346,23 +349,23 @@ def merge_columns_df(
 
 @PublicAPI
 def create_scalar_index(
-    uri: Union[str, pathlib.Path],
-    io_config: Optional[IOConfig] = None,
+    uri: str | pathlib.Path,
+    io_config: IOConfig | None = None,
     *,
     column: str,
     index_type: str = "INVERTED",
-    name: Optional[str] = None,
+    name: str | None = None,
     replace: bool = True,
-    storage_options: Optional[dict[str, Any]] = None,
-    daft_remote_args: Optional[dict[str, Any]] = None,
-    concurrency: Optional[int] = None,
-    version: Optional[Union[int, str]] = None,
-    asof: Optional[str] = None,
-    block_size: Optional[int] = None,
-    commit_lock: Optional[Any] = None,
-    index_cache_size: Optional[int] = None,
-    default_scan_options: Optional[dict[str, Any]] = None,
-    metadata_cache_size_bytes: Optional[int] = None,
+    storage_options: dict[str, Any] | None = None,
+    daft_remote_args: dict[str, Any] | None = None,
+    concurrency: int | None = None,
+    version: int | str | None = None,
+    asof: str | None = None,
+    block_size: int | None = None,
+    commit_lock: Any | None = None,
+    index_cache_size: int | None = None,
+    default_scan_options: dict[str, Any] | None = None,
+    metadata_cache_size_bytes: int | None = None,
     **kwargs: Any,
 ) -> None:
     """Build a distributed full-text search index using Daft's distributed computing.
@@ -467,20 +470,20 @@ def create_scalar_index(
 
 @PublicAPI
 def compact_files(
-    uri: Union[str, pathlib.Path],
-    io_config: Optional[IOConfig] = None,
+    uri: str | pathlib.Path,
+    io_config: IOConfig | None = None,
     *,
-    storage_options: Optional[dict[str, Any]] = None,
-    version: Optional[Union[int, str]] = None,
-    asof: Optional[str] = None,
-    block_size: Optional[int] = None,
-    commit_lock: Optional[Any] = None,
-    index_cache_size: Optional[int] = None,
-    default_scan_options: Optional[dict[str, Any]] = None,
-    metadata_cache_size_bytes: Optional[int] = None,
-    compaction_options: Optional[dict[str, Any]] = None,
-    partition_num: Optional[int] = None,
-    concurrency: Optional[int] = None,
+    storage_options: dict[str, Any] | None = None,
+    version: int | str | None = None,
+    asof: str | None = None,
+    block_size: int | None = None,
+    commit_lock: Any | None = None,
+    index_cache_size: int | None = None,
+    default_scan_options: dict[str, Any] | None = None,
+    metadata_cache_size_bytes: int | None = None,
+    compaction_options: dict[str, Any] | None = None,
+    partition_num: int | None = None,
+    concurrency: int | None = None,
 ) -> Any:
     """Compact Lance dataset files using Daft UDF-style distributed execution.
 
