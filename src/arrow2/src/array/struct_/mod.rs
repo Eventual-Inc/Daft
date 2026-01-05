@@ -32,6 +32,7 @@ pub use mutable::*;
 /// let array = StructArray::new(DataType::Struct(fields), vec![boolean, int], None);
 /// ```
 #[derive(Clone)]
+#[deprecated(note = "arrow2 migration")]
 pub struct StructArray {
     data_type: DataType,
     values: Vec<Box<dyn Array>>,
