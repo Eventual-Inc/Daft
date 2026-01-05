@@ -1,9 +1,8 @@
 use std::{collections::HashSet, sync::Arc};
 
 use async_compat::CompatExt;
-use common_error::DaftResult;
-use csv_async::ByteRecord;
-use daft_arrow::io::csv::read_async::{AsyncReader, AsyncReaderBuilder};
+use common_error::{DaftError, DaftResult};
+use csv_async::{AsyncReader, AsyncReaderBuilder, ByteRecord};
 use daft_compression::CompressionCodec;
 use daft_core::prelude::Schema;
 use daft_decoding::inference::infer;
@@ -173,7 +172,7 @@ where
 {
     let (schema, read_stats) =
         read_csv_arrow_schema_from_uncompressed_reader(reader, parse_options, max_bytes).await?;
-    Ok((schema.into(), read_stats))
+    Ok((schema.try_into()?, read_stats))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -181,7 +180,7 @@ async fn read_csv_arrow_schema_from_uncompressed_reader<R>(
     reader: R,
     parse_options: CsvParseOptions,
     max_bytes: Option<usize>,
-) -> DaftResult<(daft_arrow::datatypes::Schema, CsvReadStats)>
+) -> DaftResult<(arrow_schema::Schema, CsvReadStats)>
 where
     R: AsyncRead + Unpin + Send,
 {
@@ -197,7 +196,7 @@ where
         .create_reader(reader.compat());
     let (fields, read_stats) =
         infer_schema(&mut reader, None, max_bytes, parse_options.has_header).await?;
-    Ok((fields.into(), read_stats))
+    Ok((arrow_schema::Schema::new(fields), read_stats))
 }
 
 async fn infer_schema<R>(
@@ -205,7 +204,7 @@ async fn infer_schema<R>(
     max_rows: Option<usize>,
     max_bytes: Option<usize>,
     has_header: bool,
-) -> daft_arrow::error::Result<(Vec<daft_arrow::datatypes::Field>, CsvReadStats)>
+) -> DaftResult<(Vec<arrow_schema::Field>, CsvReadStats)>
 where
     R: futures::AsyncRead + Unpin + Send,
 {
@@ -216,7 +215,8 @@ where
         (
             reader
                 .headers()
-                .await?
+                .await
+                .map_err(|e| DaftError::IoError(e.into()))?
                 .iter()
                 .map(std::string::ToString::to_string)
                 .collect(),
@@ -224,7 +224,11 @@ where
         )
     } else {
         // Save the csv reader position before reading headers
-        if !reader.read_byte_record(&mut record).await? {
+        if !reader
+            .read_byte_record(&mut record)
+            .await
+            .map_err(|e| DaftError::IoError(e.into()))?
+        {
             return Ok((vec![], Default::default()));
         }
         let first_record_count = record.len();
@@ -236,7 +240,7 @@ where
         )
     };
     // keep track of inferred field types
-    let mut column_types: Vec<HashSet<daft_arrow::datatypes::DataType>> =
+    let mut column_types: Vec<HashSet<arrow_schema::DataType>> =
         vec![HashSet::new(); headers.len()];
     let mut records_count = 0;
     let mut total_bytes = 0;
@@ -259,7 +263,11 @@ where
     let max_records = max_rows.unwrap_or(usize::MAX);
     let max_bytes = max_bytes.unwrap_or(usize::MAX);
     while records_count < max_records && total_bytes < max_bytes {
-        if !reader.read_byte_record(&mut record).await? {
+        if !reader
+            .read_byte_record(&mut record)
+            .await
+            .map_err(|e| DaftError::IoError(e.into()))?
+        {
             break;
         }
         records_count += 1;

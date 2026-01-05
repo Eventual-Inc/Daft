@@ -3,7 +3,7 @@ use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_compression::CompressionCodec;
-use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
+use daft_core::{prelude::*, utils::arrow::cast_arrow_array_for_daft_if_needed};
 use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_io::{GetRange, GetResult, IOClient, IOStatsRef, SourceType, parse_url};
 use daft_recordbatch::RecordBatch;
@@ -242,7 +242,7 @@ async fn read_json_single_into_table(
         // Limit the number of chunks we have in flight at any given time.
         .try_buffered(max_chunks_in_flight);
 
-    let daft_schema: SchemaRef = Arc::new(schema.into());
+    let daft_schema: SchemaRef = Arc::new(schema.try_into()?);
 
     let include_column_indices = include_columns
         .map(|include_columns| {
@@ -420,7 +420,6 @@ pub async fn stream_json(
     Ok(Box::pin(tables))
 }
 
-#[allow(deprecated, reason = "arrow2 migration")]
 async fn read_json_single_into_stream(
     uri: String,
     convert_options: JsonConvertOptions,
@@ -429,12 +428,9 @@ async fn read_json_single_into_stream(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
     range: Option<GetRange>,
-) -> DaftResult<(
-    BoxStream<'static, TableChunkResult>,
-    daft_arrow::datatypes::Schema,
-)> {
+) -> DaftResult<(BoxStream<'static, TableChunkResult>, arrow_schema::Schema)> {
     let schema = match convert_options.schema {
-        Some(schema) => schema.to_arrow2()?,
+        Some(schema) => schema.to_arrow()?,
         None => read_json_schema_single(
             &uri,
             parse_options.clone(),
@@ -445,7 +441,7 @@ async fn read_json_single_into_stream(
             range.clone(),
         )
         .await?
-        .to_arrow2()?,
+        .to_arrow()?,
     };
 
     let (reader, buffer_size, chunk_size): (Box<dyn AsyncBufRead + Unpin + Send>, usize, usize) =
@@ -525,7 +521,7 @@ async fn read_json_single_into_stream(
                     let (send, recv) = tokio::sync::oneshot::channel();
                     let mut buf = Vec::new();
                     reader.read_to_end(&mut buf).await?;
-                    let chunk = read_json_array_impl(&buf, schema_clone.into(), None);
+                    let chunk = read_json_array_impl(&buf, schema_clone.try_into()?, None);
                     let _ = send.send(chunk);
 
                     recv.await.context(super::OneShotRecvSnafu {})?
@@ -541,11 +537,15 @@ async fn read_json_single_into_stream(
                     let mut field_map = schema
                         .fields
                         .into_iter()
-                        .map(|f| (f.name.clone(), f))
+                        .map(|f| (f.name().clone(), f))
                         .collect::<HashMap<_, _>>();
-                    let projected_fields = projection.into_iter().map(|col| field_map.remove(col.as_str()).ok_or(DaftError::ValueError(format!("Column {} in the projection doesn't exist in the JSON file; existing columns = {:?}", col, field_map.keys())))).collect::<DaftResult<Vec<_>>>()?;
-                    daft_arrow::datatypes::Schema::from(projected_fields)
-                        .with_metadata(schema.metadata)
+                    let projected_fields = projection.into_iter().map(|col| {
+                        field_map
+                            .remove(col.as_str())
+                            .ok_or(DaftError::ValueError(format!("Column {} in the projection doesn't exist in the JSON file; existing columns = {:?}", col, field_map.keys())))
+                            .cloned()
+                    }).collect::<DaftResult<Vec<_>>>()?;
+                    arrow_schema::Schema::new(projected_fields).with_metadata(schema.metadata)
                 }
                 None => schema,
             };
@@ -553,7 +553,7 @@ async fn read_json_single_into_stream(
             Ok((
                 Box::pin(parse_into_column_array_chunk_stream(
                     read_stream,
-                    projected_schema.clone().into(),
+                    Arc::new(projected_schema.clone()),
                 )?),
                 projected_schema,
             ))
@@ -583,9 +583,9 @@ where
 
 fn parse_into_column_array_chunk_stream(
     stream: impl LineChunkStream + Send,
-    schema: Arc<daft_arrow::datatypes::Schema>,
+    schema: Arc<arrow_schema::Schema>,
 ) -> DaftResult<impl TableChunkStream + Send> {
-    let daft_schema: SchemaRef = Arc::new(schema.as_ref().into());
+    let daft_schema: SchemaRef = Arc::new(schema.as_ref().try_into()?);
     let daft_fields = Arc::new(
         daft_schema
             .into_iter()
@@ -622,7 +622,7 @@ fn parse_into_column_array_chunk_stream(
                         .map(|(array, field)| {
                             Series::try_from_field_and_arrow_array(
                                 field.clone(),
-                                cast_array_for_daft_if_needed(array),
+                                cast_arrow_array_for_daft_if_needed(array),
                             )
                         })
                         .collect::<DaftResult<Vec<_>>>()?;
@@ -642,10 +642,7 @@ mod tests {
     use std::{collections::HashSet, io::BufRead, sync::Arc};
 
     use common_error::DaftResult;
-    use daft_core::{
-        prelude::*,
-        utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
-    };
+    use daft_core::{prelude::*, utils::arrow::cast_arrow_array_for_daft_if_needed};
     use daft_io::{IOClient, IOConfig};
     use daft_recordbatch::RecordBatch;
     use indexmap::IndexMap;
@@ -672,51 +669,49 @@ mod tests {
             .map(|record| crate::deserializer::to_value(unsafe { record.as_bytes_mut() }).unwrap())
             .collect::<Vec<_>>();
         // Get consolidated schema from parsed JSON.
-        let mut column_types: IndexMap<String, HashSet<daft_arrow::datatypes::DataType>> =
-            IndexMap::new();
+        let mut column_types: IndexMap<String, HashSet<arrow_schema::DataType>> = IndexMap::new();
         for record in &parsed {
             let schema = infer_records_schema(record).unwrap();
-            for field in schema.fields {
-                match column_types.entry(field.name) {
+            for field in schema.fields.iter() {
+                match column_types.entry(field.name().clone()) {
                     indexmap::map::Entry::Occupied(mut v) => {
-                        v.get_mut().insert(field.data_type);
+                        v.get_mut().insert(field.data_type().clone());
                     }
                     indexmap::map::Entry::Vacant(v) => {
                         let mut a = HashSet::new();
-                        a.insert(field.data_type);
+                        a.insert(field.data_type().clone());
                         v.insert(a);
                     }
                 }
             }
         }
         let fields = column_types_map_to_fields(column_types);
-        let schema: daft_arrow::datatypes::Schema = fields.into();
+        let schema = arrow_schema::Schema::new(fields);
         // Apply projection to schema.
         let mut field_map = schema
             .fields
             .iter()
-            .map(|f| (f.name.clone(), f.clone()))
+            .map(|f| (f.name().clone(), f.clone()))
             .collect::<IndexMap<_, _>>();
-        let schema = match &projection {
+        let schema = arrow_schema::Schema::new(match &projection {
             Some(projection) => projection
                 .iter()
                 .map(|c| field_map.swap_remove(c.as_str()).unwrap())
-                .collect::<Vec<_>>()
-                .into(),
-            None => field_map.into_values().collect::<Vec<_>>().into(),
-        };
-        // Deserialize JSON records into Arrow2 column arrays.
+                .collect::<Vec<_>>(),
+            None => field_map.into_values().collect::<Vec<_>>(),
+        });
+        // Deserialize JSON records into Arrow column arrays.
         let columns = deserialize_records(&parsed, &schema).unwrap();
         // Roundtrip columns with Daft for casting.
         let columns = columns
             .into_iter()
-            .map(|c| cast_array_from_daft_if_needed(cast_array_for_daft_if_needed(c)))
+            .map(|c| cast_arrow_array_for_daft_if_needed(c))
             .collect::<Vec<_>>();
         // Roundtrip schema with Daft for casting.
-        let schema = Schema::try_from(&schema).unwrap().to_arrow2().unwrap();
-        assert_eq!(out.schema.to_arrow2().unwrap(), schema);
+        let schema = Schema::try_from(&schema).unwrap().to_arrow().unwrap();
+        assert_eq!(out.schema.to_arrow().unwrap(), schema);
         let out_columns = (0..out.num_columns())
-            .map(|i| out.get_column(i).to_arrow2())
+            .map(|i| out.get_column(i).to_arrow().unwrap())
             .collect::<Vec<_>>();
         assert_eq!(out_columns, columns);
     }

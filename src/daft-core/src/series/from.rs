@@ -12,7 +12,8 @@ use crate::{
 };
 
 impl Series {
-    pub fn try_from_field_and_arrow_array(
+    #[deprecated(note = "arrow2 migration")]
+    pub fn try_from_field_and_arrow2_array(
         field: impl Into<Arc<DaftField>>,
         array: Box<dyn daft_arrow::array::Array>,
     ) -> DaftResult<Self> {
@@ -21,6 +22,18 @@ impl Series {
 
         with_match_daft_types!(dtype, |$T| {
             Ok(<$T as DaftDataType>::ArrayType::from_arrow2(field, array)?.into_series())
+        })
+    }
+
+    pub fn try_from_field_and_arrow_array(
+        field: impl Into<Arc<DaftField>>,
+        array: arrow_array::ArrayRef,
+    ) -> DaftResult<Self> {
+        let field = field.into();
+        let dtype = &field.dtype;
+
+        with_match_daft_types!(dtype, |$T| {
+            Ok(<$T as DaftDataType>::ArrayType::from_arrow(field, array)?.into_series())
         })
     }
 
@@ -63,7 +76,7 @@ impl TryFrom<(&str, Box<dyn daft_arrow::array::Array>)> for Series {
         let dtype = DaftDataType::from(source_arrow_type);
 
         let field = Arc::new(Field::new(name, dtype));
-        Self::try_from_field_and_arrow_array(field, array)
+        Self::try_from_field_and_arrow2_array(field, array)
     }
 }
 

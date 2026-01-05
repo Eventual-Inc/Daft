@@ -1,29 +1,28 @@
+use std::sync::Arc;
+
+use arrow_schema::DataType;
 use common_error::DaftResult;
-use daft_arrow::datatypes::DataType;
 use daft_core::series::Series;
 use daft_decoding::{deserialize::deserialize_single_value_to_arrow, inference::infer};
-use daft_schema::{dtype::DaftDataType, field::Field, schema::Schema};
+use daft_schema::{dtype::DaftDataType, field::Field as DaftField, schema::Schema};
 use indexmap::IndexMap;
 
 const DEFAULT_HIVE_PARTITION_NAME: &str = "__HIVE_DEFAULT_PARTITION__";
 
 fn parse_hive_value_to_dtype(
     value: &str,
-    target_dtype: &DaftDataType,
+    target_field: &DaftField,
     field_name: &str,
 ) -> DaftResult<Series> {
     if value.is_empty() {
-        return Ok(Series::full_null(field_name, target_dtype, 1));
+        return Ok(Series::full_null(field_name, &target_field.dtype, 1));
     }
-    #[allow(deprecated, reason = "arrow2 migration")]
-    let arrow_dtype = target_dtype.to_arrow2().map_err(|e| {
+    let arrow_field = target_field.to_arrow().map_err(|e| {
         common_error::DaftError::ValueError(format!("Failed to convert dtype to arrow: {}", e))
     })?;
-    let arrow_array = deserialize_single_value_to_arrow(value.as_bytes(), arrow_dtype)?;
-    Series::try_from_field_and_arrow_array(
-        Field::new(field_name, target_dtype.clone()),
-        arrow_array,
-    )
+    let arrow_array =
+        deserialize_single_value_to_arrow(value.as_bytes(), arrow_field.data_type().clone())?;
+    Series::try_from_field_and_arrow_array(Arc::new(target_field.clone()), arrow_array)
 }
 
 /// Parses hive-style /key=value/ components from a uri.
@@ -86,8 +85,8 @@ pub fn hive_partitions_to_series(
         .iter()
         .filter_map(|(key, value)| {
             if table_schema.has_field(key) {
-                let target_dtype = &table_schema.get_field(key).unwrap().dtype;
-                Some(parse_hive_value_to_dtype(value, target_dtype, key))
+                let target_field = table_schema.get_field(key).unwrap();
+                Some(parse_hive_value_to_dtype(value, target_field, key))
             } else {
                 None
             }
@@ -97,7 +96,9 @@ pub fn hive_partitions_to_series(
 
 /// Turns hive partition key-value pairs into a vector of fields with the partitions' keys as field names, and
 /// inferring field types from the partitions' values.
-pub fn hive_partitions_to_fields(partitions: &IndexMap<String, String>) -> Vec<Field> {
+pub fn hive_partitions_to_fields(
+    partitions: &IndexMap<String, String>,
+) -> DaftResult<Vec<DaftField>> {
     partitions
         .iter()
         .map(|(key, value)| {
@@ -109,9 +110,9 @@ pub fn hive_partitions_to_fields(partitions: &IndexMap<String, String>) -> Vec<F
             } else {
                 inferred_type
             };
-            Field::new(key, DaftDataType::from(&inferred_type))
+            Ok(DaftField::new(key, DaftDataType::try_from(&inferred_type)?))
         })
-        .collect()
+        .collect::<DaftResult<Vec<_>>>()
 }
 
 #[cfg(test)]

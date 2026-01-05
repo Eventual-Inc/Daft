@@ -1,17 +1,15 @@
 use core::str;
 use std::{io::Read, num::NonZeroUsize, sync::Arc};
 
+use arrow_schema::Fields;
 use common_error::DaftResult;
-use daft_arrow::{
-    datatypes::Field,
-    io::csv::{
-        read::{Reader, ReaderBuilder},
-        read_async::local_read_rows,
-    },
+use daft_arrow::io::csv::{
+    read::{Reader, ReaderBuilder},
+    read_async::local_read_rows,
 };
 use daft_core::{
     prelude::{Schema, Series},
-    utils::arrow::cast_array_for_daft_if_needed,
+    utils::arrow::cast_arrow_array_for_daft_if_needed,
 };
 use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::{Expr, expr::bound_expr::BoundExpr, optimization::get_required_columns};
@@ -176,7 +174,7 @@ pub async fn read_csv_local(
             io_stats,
         )
         .await?;
-        return Ok(RecordBatch::empty(Some(Arc::new(schema.into()))));
+        return Ok(RecordBatch::empty(Some(Arc::new(schema.try_into()?))));
     }
     let concated_table = tables_concat(collected_tables)?;
 
@@ -240,8 +238,8 @@ pub async fn stream_csv_local(
         fields_to_projection_indices(&schema.fields, &convert_options.clone().include_columns);
     let fields_subset = projection_indices
         .iter()
-        .map(|i| schema.fields.get(*i).unwrap().into())
-        .collect::<Vec<daft_core::datatypes::Field>>();
+        .map(|i| schema.fields.get(*i).unwrap().as_ref().try_into())
+        .collect::<DaftResult<Vec<daft_core::datatypes::Field>>>()?;
     let read_schema = Arc::new(Schema::new(fields_subset));
     let read_daft_fields = Arc::new(
         read_schema
@@ -290,7 +288,7 @@ async fn get_schema_and_estimators(
     parse_options: &CsvParseOptions,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-) -> DaftResult<(daft_arrow::datatypes::Schema, f64, f64)> {
+) -> DaftResult<(arrow_schema::Schema, f64, f64)> {
     let (inferred_schema, read_stats) = read_csv_schema_single(
         uri,
         parse_options.clone(),
@@ -301,23 +299,21 @@ async fn get_schema_and_estimators(
     )
     .await?;
 
-    #[allow(deprecated, reason = "arrow2 migration")]
     let mut schema = if let Some(schema) = convert_options.schema.clone() {
-        schema.to_arrow2()?
+        schema.to_arrow()?
     } else {
-        inferred_schema.to_arrow2()?
+        inferred_schema.to_arrow()?
     };
     // Rename fields, if necessary.
     if let Some(column_names) = convert_options.column_names.clone() {
-        schema = schema
+        let new_fields: Fields = schema
             .fields
             .into_iter()
             .zip(column_names.iter())
-            .map(|(field, name)| {
-                Field::new(name, field.data_type, field.is_nullable).with_metadata(field.metadata)
-            })
+            .map(|(field, name)| field.as_ref().clone().with_name(name))
             .collect::<Vec<_>>()
             .into();
+        schema = arrow_schema::Schema::new(new_fields);
     }
     Ok((
         schema,
@@ -540,7 +536,7 @@ fn stream_csv_as_tables(
     projection_indices: Arc<Vec<usize>>,
     read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
     read_schema: Arc<Schema>,
-    fields: Vec<Field>,
+    fields: Fields,
     include_columns: Option<Vec<String>>,
     predicate: Option<Arc<Expr>>,
     limit: Option<usize>,
@@ -836,7 +832,7 @@ fn collect_tables<R>(
     parse_options: &CsvParseOptions,
     byte_reader: R,
     projection_indices: Arc<Vec<usize>>,
-    fields: Vec<Field>,
+    fields: Fields,
     read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
     read_schema: Arc<Schema>,
     csv_buffer: &mut CsvBuffer,
@@ -876,7 +872,7 @@ where
 fn parse_csv_chunk<R>(
     mut reader: Reader<R>,
     projection_indices: Arc<Vec<usize>>,
-    fields: Vec<daft_arrow::datatypes::Field>,
+    fields: Fields,
     read_daft_fields: Arc<Vec<Arc<daft_core::datatypes::Field>>>,
     read_schema: Arc<Schema>,
     csv_buffer: &mut CsvBuffer,
@@ -905,7 +901,7 @@ where
                 );
                 Series::try_from_field_and_arrow_array(
                     read_daft_fields[i].clone(),
-                    cast_array_for_daft_if_needed(deserialized_col?),
+                    cast_arrow_array_for_daft_if_needed(deserialized_col?),
                 )
             })
             .collect::<DaftResult<Vec<Series>>>()?;

@@ -146,12 +146,12 @@ impl ListArrayExtension for ListArray {
 
         let keys = self.flat_child.filter(&include_mask)?;
 
-        let keys = Series::try_from_field_and_arrow_array(
+        let keys = Series::try_from_field_and_arrow2_array(
             Field::new("key", key_type.clone()),
             keys.to_arrow2(),
         )?;
 
-        let values = Series::try_from_field_and_arrow_array(
+        let values = Series::try_from_field_and_arrow2_array(
             Field::new("value", count_type.clone()),
             values.to_arrow2(),
         )?;

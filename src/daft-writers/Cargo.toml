@@ -2,7 +2,7 @@
 arrow-array = {workspace = true}
 arrow-csv = {version = "54.2.1"}
 arrow-json = {version = "54.2.1"}
-arrow-schema = {version = "54.2.1"}
+arrow-schema = {workspace = true}
 async-trait = {workspace = true}
 common-daft-config = {path = "../common/daft-config", default-features = false}
 daft-arrow = {path = "../daft-arrow"}

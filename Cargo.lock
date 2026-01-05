@@ -2629,6 +2629,9 @@ name = "daft-core"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow",
+ "arrow-array",
+ "arrow-cast",
+ "arrow-schema",
  "bincode",
  "chrono",
  "chrono-tz",
@@ -2668,6 +2671,8 @@ dependencies = [
 name = "daft-csv"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-csv",
+ "arrow-schema",
  "async-compat",
  "async-stream",
  "common-error",
@@ -2722,6 +2727,8 @@ dependencies = [
 name = "daft-decoding"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
+ "arrow-schema",
  "atoi_simd",
  "chrono",
  "csv-async",
@@ -3036,6 +3043,8 @@ dependencies = [
 name = "daft-json"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
+ "arrow-schema",
  "chrono",
  "common-error",
  "common-py-serde",
@@ -3308,6 +3317,7 @@ dependencies = [
 name = "daft-scan"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-schema",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -3317,7 +3327,6 @@ dependencies = [
  "common-runtime",
  "common-scan-info",
  "ctor",
- "daft-arrow",
  "daft-compression",
  "daft-core",
  "daft-csv",

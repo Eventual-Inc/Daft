@@ -1,8 +1,10 @@
+#![allow(deprecated, reason = "arrow2 migration")]
+
 use common_error::DaftResult;
 use daft_core::{
     prelude::SchemaRef,
     series::Series,
-    utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
+    utils::arrow::{cast_array_for_daft_if_needed, cast_arrow2_array_from_daft_if_needed},
 };
 use pyo3::{exceptions::PyValueError, prelude::*, types::PyList};
 
@@ -75,7 +77,8 @@ pub fn record_batch_to_arrow(
         let s = table.get_column(i);
         #[allow(deprecated, reason = "arrow2 migration")]
         let arrow_array = s.to_arrow2();
-        let arrow_array = cast_array_from_daft_if_needed(arrow_array.to_boxed());
+        #[allow(deprecated, reason = "arrow2 migration")]
+        let arrow_array = cast_arrow2_array_from_daft_if_needed(arrow_array.to_boxed());
         let py_array = common_arrow_ffi::to_py_array(py, arrow_array, &pyarrow)?;
         arrays.push(py_array);
         names.push(s.name().to_string());

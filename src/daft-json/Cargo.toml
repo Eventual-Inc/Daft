@@ -1,5 +1,7 @@
 [dependencies]
 chrono = {workspace = true}
+arrow-array = {workspace = true}
+arrow-schema = {workspace = true}
 daft-arrow = {path = "../daft-arrow"}
 common-error = {path = "../common/error", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}

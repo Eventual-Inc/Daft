@@ -1,17 +1,22 @@
+use std::sync::Arc;
+
+use arrow_array::{
+    Array, ArrowPrimitiveType, BooleanArray, NullArray, OffsetSizeTrait, PrimitiveArray,
+    builder::{GenericBinaryBuilder, GenericStringBuilder},
+    types::{
+        Date32Type, Date64Type, Decimal128Type, Float32Type, Float64Type, Int8Type, Int16Type,
+        Int32Type, Int64Type, Time32MillisecondType, Time64NanosecondType, TimestampNanosecondType,
+        UInt8Type, UInt16Type, UInt32Type, UInt64Type,
+    },
+};
+use arrow_schema::{DataType, TimeUnit};
 use chrono::{Datelike, Timelike};
 use csv_async;
 use daft_arrow::{
-    array::{
-        Array, BinaryArray, BooleanArray, MutableBinaryArray, MutableUtf8Array, NullArray,
-        PrimitiveArray, Utf8Array,
-    },
-    datatypes::{DataType, TimeUnit},
     error::{Error, Result},
     io::csv,
-    offset::Offset,
     temporal_conversions,
     trusted_len::TrustedLen,
-    types::NativeType,
 };
 
 pub(crate) const ISO8601: &str = "%+";
@@ -64,11 +69,11 @@ fn deserialize_primitive<'a, T, I, F>(
     bytes_iter: I,
     datatype: DataType,
     mut op: F,
-) -> Box<dyn Array>
+) -> Arc<dyn Array>
 where
-    T: NativeType,
+    T: ArrowPrimitiveType,
     I: TrustedLen<Item = Option<&'a [u8]>>,
-    F: FnMut(&[u8]) -> Option<T>,
+    F: FnMut(&[u8]) -> Option<T::Native>,
 {
     let iter = bytes_iter.map(|bytes_opt| match bytes_opt {
         Some(bytes) => {
@@ -79,18 +84,18 @@ where
         }
         None => None,
     });
-    Box::new(PrimitiveArray::<T>::from_trusted_len_iter(iter).to(datatype))
+    Arc::new(unsafe { PrimitiveArray::<T>::from_trusted_len_iter(iter).with_data_type(datatype) })
 }
 
 #[inline]
-fn significant_bytes(bytes: &[u8]) -> usize {
-    bytes.iter().map(|byte| usize::from(*byte != b'0')).sum()
+fn significant_bytes(bytes: &[u8]) -> u8 {
+    bytes.iter().map(|byte| u8::from(*byte != b'0')).sum()
 }
 
 /// Deserializes bytes to a single i128 representing a decimal
 /// The decimal precision and scale are not checked.
 #[inline]
-fn deserialize_decimal(bytes: &[u8], precision: usize, scale: usize) -> Option<i128> {
+fn deserialize_decimal(bytes: &[u8], precision: u8, scale: i8) -> Option<i128> {
     let mut a = bytes.split(|x| *x == b'.');
     let lhs = a.next();
     let rhs = a.next();
@@ -102,7 +107,7 @@ fn deserialize_decimal(bytes: &[u8], precision: usize, scale: usize) -> Option<i
                 .and_then(|(lhs, lhs_b, rhs, rhs_b)| {
                     let lhs_s = significant_bytes(lhs_b);
                     let rhs_s = significant_bytes(rhs_b);
-                    if lhs_s + rhs_s > precision || rhs_s > scale {
+                    if lhs_s + rhs_s > precision || rhs_s > (scale as u8) {
                         None
                     } else {
                         Some((lhs, rhs, rhs_s))
@@ -111,13 +116,13 @@ fn deserialize_decimal(bytes: &[u8], precision: usize, scale: usize) -> Option<i
                 .map(|(lhs, rhs, rhs_s)| lhs * 10i128.pow(rhs_s as u32) + rhs)
         }),
         (None, Some(rhs)) => {
-            if rhs.len() != precision || rhs.len() != scale {
+            if rhs.len() != (precision as usize) || rhs.len() != (scale as usize) {
                 return None;
             }
             atoi_simd::parse_skipped::<i128>(rhs).ok()
         }
         (Some(lhs), None) => {
-            if lhs.len() != precision || scale != 0 {
+            if lhs.len() != (precision as usize) || scale != 0 {
                 return None;
             }
             atoi_simd::parse_skipped::<i128>(lhs).ok()
@@ -127,7 +132,7 @@ fn deserialize_decimal(bytes: &[u8], precision: usize, scale: usize) -> Option<i
 }
 
 #[inline]
-fn deserialize_boolean<'a, I, F>(bytes_iter: I, op: F) -> Box<dyn Array>
+fn deserialize_boolean<'a, I, F>(bytes_iter: I, op: F) -> Arc<dyn Array>
 where
     I: TrustedLen<Item = Option<&'a [u8]>>,
     F: Fn(&[u8]) -> Option<bool>,
@@ -141,15 +146,15 @@ where
         }
         None => None,
     });
-    Box::new(BooleanArray::from_trusted_len_iter(iter))
+    Arc::new(BooleanArray::from_iter(iter))
 }
 
 #[inline]
-fn deserialize_utf8<'a, O: Offset, I>(
+fn deserialize_utf8<'a, O: OffsetSizeTrait, I>(
     bytes_iter: I,
     expected_capacity: usize,
     expected_size: usize,
-) -> Box<dyn Array>
+) -> Arc<dyn Array>
 where
     I: TrustedLen<Item = Option<&'a [u8]>>,
 {
@@ -158,25 +163,23 @@ where
         None => None,
     });
 
-    let mut mu = MutableUtf8Array::<O>::with_capacities(expected_capacity, expected_size);
-    mu.extend_trusted_len(iter);
-    let array: Utf8Array<O> = mu.into();
-    Box::new(array)
+    let mut mu = GenericStringBuilder::<O>::with_capacity(expected_capacity, expected_size);
+    mu.extend(iter);
+    Arc::new(mu.finish())
 }
 
 #[inline]
-fn deserialize_binary<'a, O: Offset, I>(
+fn deserialize_binary<'a, O: OffsetSizeTrait, I>(
     bytes_iter: I,
     expected_capacity: usize,
     expected_size: usize,
-) -> Box<dyn Array>
+) -> Arc<dyn Array>
 where
     I: TrustedLen<Item = Option<&'a [u8]>>,
 {
-    let mut mu = MutableBinaryArray::<O>::with_capacities(expected_capacity, expected_size);
-    mu.extend_trusted_len(bytes_iter);
-    let array: BinaryArray<O> = mu.into();
-    Box::new(array)
+    let mut mu = GenericBinaryBuilder::<O>::with_capacity(expected_capacity, expected_size);
+    mu.extend(bytes_iter);
+    Arc::new(mu.finish())
 }
 
 // Return the factor by how small is a time unit compared to seconds
@@ -246,12 +249,12 @@ pub fn deserialize_bytes_to_array<'a, I>(
     datatype: DataType,
     expected_capacity: usize,
     expected_size: usize,
-) -> Result<Box<dyn Array>>
+) -> Result<Arc<dyn Array>>
 where
     I: TrustedLen<Item = Option<&'a [u8]>>,
 {
     use DataType::{
-        Binary, Boolean, Date32, Date64, Decimal, Float32, Float64, Int8, Int16, Int32, Int64,
+        Binary, Boolean, Date32, Date64, Decimal128, Float32, Float64, Int8, Int16, Int32, Int64,
         LargeBinary, LargeUtf8, Null, Time32, Time64, Timestamp, UInt8, UInt16, UInt32, UInt64,
         Utf8,
     };
@@ -265,74 +268,79 @@ where
                 None
             }
         }),
-        Int8 => deserialize_primitive(bytes_iter, datatype, |bytes| {
+        Int8 => deserialize_primitive::<Int8Type, _, _>(bytes_iter, datatype, |bytes| {
             atoi_simd::parse_skipped::<i8>(bytes).ok()
         }),
-        Int16 => deserialize_primitive(bytes_iter, datatype, |bytes| {
+        Int16 => deserialize_primitive::<Int16Type, _, _>(bytes_iter, datatype, |bytes| {
             atoi_simd::parse_skipped::<i16>(bytes).ok()
         }),
-        Int32 => deserialize_primitive(bytes_iter, datatype, |bytes| {
+        Int32 => deserialize_primitive::<Int32Type, _, _>(bytes_iter, datatype, |bytes| {
             atoi_simd::parse_skipped::<i32>(bytes).ok()
         }),
-        Int64 => deserialize_primitive(bytes_iter, datatype, |bytes| {
+        Int64 => deserialize_primitive::<Int64Type, _, _>(bytes_iter, datatype, |bytes| {
             atoi_simd::parse_skipped::<i64>(bytes).ok()
         }),
-        UInt8 => deserialize_primitive(bytes_iter, datatype, |bytes| {
+        UInt8 => deserialize_primitive::<UInt8Type, _, _>(bytes_iter, datatype, |bytes| {
             atoi_simd::parse_skipped::<u8>(bytes).ok()
         }),
-        UInt16 => deserialize_primitive(bytes_iter, datatype, |bytes| {
+        UInt16 => deserialize_primitive::<UInt16Type, _, _>(bytes_iter, datatype, |bytes| {
             atoi_simd::parse_skipped::<u16>(bytes).ok()
         }),
-        UInt32 => deserialize_primitive(bytes_iter, datatype, |bytes| {
+        UInt32 => deserialize_primitive::<UInt32Type, _, _>(bytes_iter, datatype, |bytes| {
             atoi_simd::parse_skipped::<u32>(bytes).ok()
         }),
-        UInt64 => deserialize_primitive(bytes_iter, datatype, |bytes| {
+        UInt64 => deserialize_primitive::<UInt64Type, _, _>(bytes_iter, datatype, |bytes| {
             atoi_simd::parse_skipped::<u64>(bytes).ok()
         }),
-        Float32 => deserialize_primitive(bytes_iter, datatype, |bytes| {
+        Float32 => deserialize_primitive::<Float32Type, _, _>(bytes_iter, datatype, |bytes| {
             fast_float2::parse::<f32, _>(bytes).ok()
         }),
-        Float64 => deserialize_primitive(bytes_iter, datatype, |bytes| {
+        Float64 => deserialize_primitive::<Float64Type, _, _>(bytes_iter, datatype, |bytes| {
             fast_float2::parse::<f64, _>(bytes).ok()
         }),
-        Date32 => deserialize_primitive(bytes_iter, datatype, |bytes| {
+        Date32 => deserialize_primitive::<Date32Type, _, _>(bytes_iter, datatype, |bytes| {
             let mut last_fmt_idx = 0;
             to_utf8(bytes)
                 .and_then(|x| deserialize_naive_date(x, &mut last_fmt_idx))
                 .map(|x| x.num_days_from_ce() - (temporal_conversions::UNIX_EPOCH_DAY as i32))
         }),
-        Date64 => deserialize_primitive(bytes_iter, datatype, |bytes| {
+        Date64 => deserialize_primitive::<Date64Type, _, _>(bytes_iter, datatype, |bytes| {
             let mut last_fmt_idx = 0;
             to_utf8(bytes)
                 .and_then(|x| deserialize_naive_datetime(x, &mut last_fmt_idx))
                 .map(|x| x.and_utc().timestamp_millis())
         }),
-        Time32(time_unit) => deserialize_primitive(bytes_iter, datatype, |bytes| {
-            let factor = get_factor_from_timeunit(time_unit);
-            to_utf8(bytes)
-                .and_then(|x| x.parse::<chrono::NaiveTime>().ok())
-                .map(|x| {
-                    (x.hour() * 3_600 * factor
-                        + x.minute() * 60 * factor
-                        + x.second() * factor
-                        + x.nanosecond() / (1_000_000_000 / factor)) as i32
-                })
-        }),
-        Time64(time_unit) => deserialize_primitive(bytes_iter, datatype, |bytes| {
-            let factor: u64 = get_factor_from_timeunit(time_unit).into();
-            to_utf8(bytes)
-                .and_then(|x| x.parse::<chrono::NaiveTime>().ok())
-                .map(|x| {
-                    (u64::from(x.hour()) * 3_600 * factor
-                        + u64::from(x.minute()) * 60 * factor
-                        + u64::from(x.second()) * factor
-                        + u64::from(x.nanosecond()) / (1_000_000_000 / factor))
-                        as i64
-                })
-        }),
+        Time32(time_unit) => {
+            deserialize_primitive::<Time32MillisecondType, _, _>(bytes_iter, datatype, |bytes| {
+                let factor = get_factor_from_timeunit(time_unit);
+                to_utf8(bytes)
+                    .and_then(|x| x.parse::<chrono::NaiveTime>().ok())
+                    .map(|x| {
+                        (x.hour() * 3_600 * factor
+                            + x.minute() * 60 * factor
+                            + x.second() * factor
+                            + x.nanosecond() / (1_000_000_000 / factor))
+                            as i32
+                    })
+            })
+        }
+        Time64(time_unit) => {
+            deserialize_primitive::<Time64NanosecondType, _, _>(bytes_iter, datatype, |bytes| {
+                let factor: u64 = get_factor_from_timeunit(time_unit).into();
+                to_utf8(bytes)
+                    .and_then(|x| x.parse::<chrono::NaiveTime>().ok())
+                    .map(|x| {
+                        (u64::from(x.hour()) * 3_600 * factor
+                            + u64::from(x.minute()) * 60 * factor
+                            + u64::from(x.second()) * factor
+                            + u64::from(x.nanosecond()) / (1_000_000_000 / factor))
+                            as i64
+                    })
+            })
+        }
         Timestamp(time_unit, None) => {
             let mut last_fmt_idx = 0;
-            deserialize_primitive(bytes_iter, datatype, |bytes| {
+            deserialize_primitive::<TimestampNanosecondType, _, _>(bytes_iter, datatype, |bytes| {
                 to_utf8(bytes)
                     .and_then(|s| deserialize_naive_datetime(s, &mut last_fmt_idx))
                     .and_then(|dt| match time_unit {
@@ -346,7 +354,7 @@ where
         Timestamp(time_unit, Some(ref tz)) => {
             let tz = daft_schema::time_unit::parse_offset(tz)?;
             let mut last_fmt_idx = 0;
-            deserialize_primitive(bytes_iter, datatype, |bytes| {
+            deserialize_primitive::<TimestampNanosecondType, _, _>(bytes_iter, datatype, |bytes| {
                 to_utf8(bytes)
                     .and_then(|x| deserialize_datetime(x, &tz, &mut last_fmt_idx))
                     .and_then(|dt| match time_unit {
@@ -357,14 +365,16 @@ where
                     })
             })
         }
-        Decimal(precision, scale) => deserialize_primitive(bytes_iter, datatype, |x| {
-            deserialize_decimal(x, precision, scale)
-        }),
+        Decimal128(precision, scale) => {
+            deserialize_primitive::<Decimal128Type, _, _>(bytes_iter, datatype, |x| {
+                deserialize_decimal(x, precision, scale)
+            })
+        }
         Utf8 => deserialize_utf8::<i32, _>(bytes_iter, expected_capacity, expected_size),
         LargeUtf8 => deserialize_utf8::<i64, _>(bytes_iter, expected_capacity, expected_size),
         Binary => deserialize_binary::<i32, _>(bytes_iter, expected_capacity, expected_size),
         LargeBinary => deserialize_binary::<i64, _>(bytes_iter, expected_capacity, expected_size),
-        Null => Box::new(NullArray::new(DataType::Null, expected_capacity)),
+        Null => Arc::new(NullArray::new(expected_capacity)),
         other => {
             return Err(Error::NotYetImplemented(format!(
                 "Deserializing type \"{other:?}\" is not implemented"
@@ -380,7 +390,7 @@ pub fn deserialize_column<B: ByteRecordGeneric>(
     column: usize,
     datatype: DataType,
     _line_number: usize,
-) -> Result<Box<dyn Array>> {
+) -> Result<Arc<dyn Array>> {
     let bytes_iter = rows.iter().map(|row| row.get(column));
     let expected_capacity = rows.len();
     let expected_size = rows
@@ -394,7 +404,7 @@ pub fn deserialize_column<B: ByteRecordGeneric>(
 pub fn deserialize_single_value_to_arrow(
     bytes: &[u8],
     datatype: DataType,
-) -> Result<Box<dyn Array>> {
+) -> Result<Arc<dyn Array>> {
     let bytes_iter = std::iter::once(if bytes.is_empty() { None } else { Some(bytes) });
     deserialize_bytes_to_array(bytes_iter, datatype, 1, bytes.len())
 }

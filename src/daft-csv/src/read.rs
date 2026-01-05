@@ -1,19 +1,17 @@
 use core::str;
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
+use arrow_schema::{Field, Fields};
 use async_compat::{Compat, CompatExt};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use csv_async::AsyncReader;
-use daft_arrow::{
-    datatypes::Field,
-    io::csv::{
-        read_async,
-        read_async::{AsyncReaderBuilder, read_rows},
-    },
+use daft_arrow::io::csv::{
+    read_async,
+    read_async::{AsyncReaderBuilder, read_rows},
 };
 use daft_compression::CompressionCodec;
-use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
+use daft_core::{prelude::*, utils::arrow::cast_arrow_array_for_daft_if_needed};
 use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_io::{GetResult, IOClient, IOStatsRef, SourceType, parse_url};
@@ -301,18 +299,18 @@ async fn read_csv_single_into_table(
     let schema_fields = if let Some(include_columns) = &include_columns {
         let field_map = fields
             .iter()
-            .map(|field| (field.name.as_str(), field))
-            .collect::<HashMap<&str, &Field>>();
+            .map(|field| (field.name().as_str(), field))
+            .collect::<HashMap<&str, &Arc<Field>>>();
         include_columns
             .iter()
             .map(|col| field_map[col.as_str()].clone())
-            .collect::<Vec<_>>()
+            .collect::<Fields>()
     } else {
         fields
     };
 
-    let schema: daft_arrow::datatypes::Schema = schema_fields.into();
-    let schema: SchemaRef = Arc::new(schema.into());
+    let schema = arrow_schema::Schema::new(schema_fields);
+    let schema: SchemaRef = Arc::new(schema.try_into()?);
 
     let include_column_indices = include_columns
         .map(|include_columns| {
@@ -482,11 +480,10 @@ async fn read_csv_single_into_stream(
     read_options: Option<CsvReadOptions>,
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
-) -> DaftResult<(impl TableStream + Send, Vec<Field>)> {
-    #[allow(deprecated, reason = "arrow2 migration")]
+) -> DaftResult<(impl TableStream + Send, arrow_schema::Fields)> {
     let (mut schema, estimated_mean_row_size, estimated_std_row_size) =
         if let Some(schema) = convert_options.schema {
-            (schema.to_arrow2()?, None, None)
+            (schema.to_arrow()?, None, None)
         } else {
             let (schema, read_stats) = read_csv_schema_single(
                 &uri,
@@ -498,22 +495,20 @@ async fn read_csv_single_into_stream(
             )
             .await?;
             (
-                schema.to_arrow2()?,
+                schema.to_arrow()?,
                 Some(read_stats.mean_record_size_bytes),
                 Some(read_stats.stddev_record_size_bytes),
             )
         };
     // Rename fields, if necessary.
     if let Some(column_names) = convert_options.column_names {
-        schema = schema
+        let renamed_fields = schema
             .fields
             .into_iter()
             .zip(column_names.iter())
-            .map(|(field, name)| {
-                Field::new(name, field.data_type, field.is_nullable).with_metadata(field.metadata)
-            })
-            .collect::<Vec<_>>()
-            .into();
+            .map(|(field, name)| field.as_ref().clone().with_name(name))
+            .collect::<Vec<_>>();
+        schema = arrow_schema::Schema::new(renamed_fields);
     }
     let (reader, buffer_size, chunk_size): (Box<dyn AsyncBufRead + Unpin + Send>, usize, usize) =
         match io_client
@@ -643,7 +638,7 @@ where
 
 fn parse_into_column_array_chunk_stream(
     stream: impl ByteRecordChunkStream + Send,
-    fields: Arc<Vec<daft_arrow::datatypes::Field>>,
+    fields: Arc<arrow_schema::Fields>,
     projection_indices: Arc<Vec<usize>>,
 ) -> DaftResult<impl TableStream + Send> {
     // Parsing stream: we spawn background tokio + rayon tasks so we can pipeline chunk parsing with chunk reading, and
@@ -651,8 +646,8 @@ fn parse_into_column_array_chunk_stream(
 
     let fields_subset = projection_indices
         .iter()
-        .map(|i| fields.get(*i).unwrap().into())
-        .collect::<Vec<daft_core::datatypes::Field>>();
+        .map(|i| fields.get(*i).unwrap().as_ref().try_into())
+        .collect::<DaftResult<Vec<daft_core::datatypes::Field>>>()?;
     let read_schema = Arc::new(daft_core::prelude::Schema::new(fields_subset));
     let read_daft_fields = Arc::new(
         read_schema
@@ -682,7 +677,7 @@ fn parse_into_column_array_chunk_stream(
                             );
                             Series::try_from_field_and_arrow_array(
                                 read_daft_fields[i].clone(),
-                                cast_array_for_daft_if_needed(deserialized_col?),
+                                cast_arrow_array_for_daft_if_needed(deserialized_col?),
                             )
                         })
                         .collect::<DaftResult<Vec<Series>>>()?;
@@ -698,13 +693,13 @@ fn parse_into_column_array_chunk_stream(
 }
 
 pub fn fields_to_projection_indices(
-    fields: &[daft_arrow::datatypes::Field],
+    fields: &Fields,
     include_columns: &Option<Vec<String>>,
 ) -> Arc<Vec<usize>> {
     let field_name_to_idx = fields
         .iter()
         .enumerate()
-        .map(|(idx, f)| (f.name.as_ref(), idx))
+        .map(|(idx, f)| (f.name().as_str(), idx))
         .collect::<HashMap<&str, usize>>();
     include_columns
         .as_ref()
@@ -731,7 +726,7 @@ mod tests {
     };
     use daft_core::{
         prelude::*,
-        utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
+        utils::arrow::{cast_array_for_daft_if_needed, cast_arrow2_array_from_daft_if_needed},
     };
     use daft_io::{IOClient, IOConfig};
     use daft_recordbatch::RecordBatch;
@@ -789,7 +784,7 @@ mod tests {
             .into_arrays()
             .into_iter()
             // Roundtrip with Daft for casting.
-            .map(|c| cast_array_from_daft_if_needed(cast_array_for_daft_if_needed(c)))
+            .map(|c| cast_arrow2_array_from_daft_if_needed(cast_array_for_daft_if_needed(c)))
             .collect::<Vec<_>>();
         let schema: daft_arrow::datatypes::Schema = fields.into();
         // Roundtrip with Daft for casting.

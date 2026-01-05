@@ -1,9 +1,7 @@
-use std::{borrow::Borrow, collections::HashSet};
+use std::{borrow::Borrow, collections::HashSet, sync::Arc};
 
-use daft_arrow::{
-    datatypes::{DataType, Field, Metadata, Schema, TimeUnit},
-    error::{Error, Result},
-};
+use arrow_schema::{DataType, Field, Fields, Schema, TimeUnit};
+use daft_arrow::error::{Error, Result};
 use indexmap::IndexMap;
 use simd_json::StaticNode;
 
@@ -18,8 +16,8 @@ pub fn infer_records_schema(record: &BorrowedValue) -> Result<Schema> {
             let dtype = infer_array(array.as_slice())?;
 
             if let DataType::List(f) = dtype {
-                if let DataType::Struct(fields) = f.data_type {
-                    Ok(fields.into())
+                if let DataType::Struct(fields) = f.data_type() {
+                    Ok(fields.clone())
                 } else {
                     Err(Error::ExternalFormat(
                         "Deserialized JSON value is not a Struct record".to_string(),
@@ -36,23 +34,16 @@ pub fn infer_records_schema(record: &BorrowedValue) -> Result<Schema> {
             .map(|(name, value)| {
                 let data_type = infer(value)?;
 
-                Ok(Field {
-                    name: name.to_string(),
-                    data_type,
-                    is_nullable: true,
-                    metadata: Metadata::default(),
-                })
+                Ok(Field::new(name.to_string(), data_type, true))
             })
-            .collect::<Result<Vec<_>>>(),
+            .collect::<Result<Vec<_>>>()
+            .map(Fields::from),
         _ => Err(Error::ExternalFormat(
             "Deserialized JSON value is not an Object record".to_string(),
         )),
     }?;
 
-    Ok(Schema {
-        fields,
-        metadata: Metadata::default(),
-    })
+    Ok(Schema::new(fields))
 }
 
 /// Infers [`DataType`] from [`Value`].
@@ -85,9 +76,13 @@ fn infer_object(inner: &Object) -> Result<DataType> {
     if fields.is_empty() {
         // Converts empty Structs to structs with a single field named "" and with a NullType
         // This is because Arrow2 MutableStructArray cannot handle empty Structs
-        Ok(DataType::Struct(vec![Field::new("", DataType::Null, true)]))
+        Ok(DataType::Struct(Fields::from(vec![Field::new(
+            "",
+            DataType::Null,
+            true,
+        )])))
     } else {
-        Ok(DataType::Struct(fields))
+        Ok(DataType::Struct(Fields::from(fields)))
     }
 }
 
@@ -108,21 +103,19 @@ fn infer_array(values: &[BorrowedValue]) -> Result<DataType> {
     Ok(if dt == DataType::Null {
         dt
     } else {
-        DataType::List(Box::new(Field::new(ITEM_NAME, dt, true)))
+        DataType::List(Arc::new(Field::new(ITEM_NAME, dt, true)))
     })
 }
 
 /// Convert each column's set of inferred dtypes to a field with a consolidated dtype, following the coercion rules
 /// defined in coerce_data_type.
-pub fn column_types_map_to_fields(
-    column_types: IndexMap<String, HashSet<daft_arrow::datatypes::DataType>>,
-) -> Vec<daft_arrow::datatypes::Field> {
+pub fn column_types_map_to_fields(column_types: IndexMap<String, HashSet<DataType>>) -> Vec<Field> {
     column_types
         .into_iter()
         .map(|(name, dtype_set)| {
             // Get consolidated dtype for column.
             let dtype = coerce_data_type(dtype_set);
-            daft_arrow::datatypes::Field::new(name, dtype, true)
+            Field::new(name, dtype, true)
         })
         .collect::<Vec<_>>()
 }
@@ -154,7 +147,7 @@ pub fn coerce_data_type(mut datatypes: HashSet<DataType>) -> DataType {
         // All structs => union of all field dtypes (these may have equal names).
         let fields = datatypes.into_iter().fold(vec![], |mut acc, dt| {
             if let DataType::Struct(new_fields) = dt {
-                acc.extend(new_fields);
+                acc.extend(new_fields.iter().cloned());
             }
             acc
         });
@@ -162,13 +155,13 @@ pub fn coerce_data_type(mut datatypes: HashSet<DataType>) -> DataType {
         let fields = fields.into_iter().fold(
             IndexMap::<String, HashSet<DataType>>::new(),
             |mut acc, field| {
-                match acc.entry(field.name) {
+                match acc.entry(field.name().clone()) {
                     indexmap::map::Entry::Occupied(mut v) => {
-                        v.get_mut().insert(field.data_type);
+                        v.get_mut().insert(field.data_type().clone());
                     }
                     indexmap::map::Entry::Vacant(v) => {
                         let mut a = HashSet::new();
-                        a.insert(field.data_type);
+                        a.insert(field.data_type().clone());
                         v.insert(a);
                     }
                 }
@@ -179,7 +172,7 @@ pub fn coerce_data_type(mut datatypes: HashSet<DataType>) -> DataType {
         let fields = fields
             .into_iter()
             .map(|(name, dts)| Field::new(name, coerce_data_type(dts), true))
-            .filter(|f| !f.name.is_empty() && f.data_type != DataType::Null)
+            .filter(|f| !f.name().is_empty() && matches!(f.data_type(), DataType::Null))
             .collect();
         return DataType::Struct(fields);
     }
@@ -192,11 +185,11 @@ pub fn coerce_data_type(mut datatypes: HashSet<DataType>) -> DataType {
                 (DataType::List(lhs), DataType::List(rhs)) => {
                     let inner =
                         coerce_data_type([lhs.data_type().clone(), rhs.data_type().clone()].into());
-                    DataType::List(Box::new(Field::new(ITEM_NAME, inner, true)))
+                    DataType::List(Arc::new(Field::new(ITEM_NAME, inner, true)))
                 }
                 (scalar, DataType::List(list)) | (DataType::List(list), scalar) => {
                     let inner = coerce_data_type([scalar, list.data_type().clone()].into());
-                    DataType::List(Box::new(Field::new(ITEM_NAME, inner, true)))
+                    DataType::List(Arc::new(Field::new(ITEM_NAME, inner, true)))
                 }
                 (DataType::Float64, DataType::Int64) | (DataType::Int64, DataType::Float64) => {
                     DataType::Float64
@@ -232,7 +225,7 @@ pub fn coerce_data_type(mut datatypes: HashSet<DataType>) -> DataType {
                         (None, None) => None,
                         (None, _) | (_, None) => return DataType::Utf8,
                         (Some(l), Some(r)) if l == r => left_tz,
-                        (Some(_), Some(_)) => Some("Z".to_string()),
+                        (Some(_), Some(_)) => Some("Z".into()),
                     };
                     DataType::Timestamp(unified_tu, unified_tz)
                 }

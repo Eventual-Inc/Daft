@@ -230,6 +230,7 @@ members = [
 ahash = "0.8.12"
 arrow = "54.2.1"
 arrow-array = "54.2.1"
+arrow-schema = "54.2.1"
 approx = "0.5.1"
 arc-swap = "1.7.1"
 async-compat = "0.2.5"

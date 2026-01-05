@@ -1,4 +1,7 @@
 [dependencies]
+arrow-schema = {workspace = true}
+arrow-array = {workspace = true}
+arrow-cast = "54.2.1"
 arrow = "54.2.1"
 bincode = {workspace = true}
 daft-arrow = {path = "../daft-arrow"}
