@@ -3,7 +3,6 @@ use std::{
     sync::Arc,
 };
 
-use arrow_schema::IntervalUnit;
 use common_error::{DaftError, DaftResult};
 use daft_arrow::datatypes::DataType as ArrowType;
 use serde::{Deserialize, Serialize};
@@ -1163,19 +1162,22 @@ impl TryFrom<&arrow_schema::DataType> for DataType {
                 tz.clone().map(|tz| tz.as_ref().to_string()),
             ),
             arrow_schema::DataType::Date32 => Self::Date,
-            arrow_schema::DataType::Time64(time_unit) => Self::Time(time_unit.into()),
+            arrow_schema::DataType::Date64 => Self::Timestamp(TimeUnit::Milliseconds, None),
+            arrow_schema::DataType::Time32(time_unit) | arrow_schema::DataType::Time64(time_unit) => {
+                Self::Time(time_unit.into())
+            }
 
             arrow_schema::DataType::Duration(time_unit) => Self::Duration(time_unit.into()),
-            arrow_schema::DataType::Interval(IntervalUnit::MonthDayNano) => Self::Interval,
+            arrow_schema::DataType::Interval(_) => Self::Interval,
             arrow_schema::DataType::FixedSizeBinary(size) => Self::FixedSizeBinary(*size as _),
-            arrow_schema::DataType::LargeBinary => Self::Binary,
+            arrow_schema::DataType::Binary | arrow_schema::DataType::LargeBinary => Self::Binary,
 
-            arrow_schema::DataType::LargeUtf8 => Self::Utf8,
+            arrow_schema::DataType::Utf8 | arrow_schema::DataType::LargeUtf8 => Self::Utf8,
 
             arrow_schema::DataType::FixedSizeList(field, size) => {
                 Self::FixedSizeList(Box::new(field.as_ref().try_into()?), *size as _)
             }
-            arrow_schema::DataType::LargeList(field) => {
+            arrow_schema::DataType::List(field) | arrow_schema::DataType::LargeList(field) => {
                 Self::List(Box::new(field.as_ref().try_into()?))
             }
 
@@ -1210,8 +1212,16 @@ impl TryFrom<&arrow_schema::DataType> for DataType {
 
                 Self::Map { key, value }
             }
+            // View types are converted to regular string/binary
+            arrow_schema::DataType::Utf8View => Self::Utf8,
+            arrow_schema::DataType::BinaryView => Self::Binary,
+            // Dictionary types use the value type
+            arrow_schema::DataType::Dictionary(_, value_type) => value_type.as_ref().try_into()?,
             _ => {
-                return Err(DaftError::ValueError("unsupported type".to_string()));
+                return Err(DaftError::ValueError(format!(
+                    "Unsupported Arrow type: {:?}",
+                    value
+                )));
             }
         })
     }
