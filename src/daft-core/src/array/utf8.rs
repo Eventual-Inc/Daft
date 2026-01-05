@@ -9,14 +9,14 @@ impl Utf8Array {
     /// NOTE: this will error if there are any null values
     /// If you need to preserve the null values, use .iter() instead
     pub fn into_values(self) -> DaftResult<Vec<String>> {
-        let arrow_arr = self.as_arrow().unwrap();
+        let arrow_arr = self.as_arrow()?;
 
-        let (offsets, data, null_buffer) = arrow_arr.into_parts();
-        if null_buffer.is_some() {
+        let (offsets, data, None) = arrow_arr.into_parts() else {
             return Err(DaftError::ComputeError(
                 "Utf8Array::into_values with nulls".to_string(),
             ));
-        }
+        };
+
         let data_bytes = data.as_slice();
 
         Ok((0..offsets.len() - 1)
