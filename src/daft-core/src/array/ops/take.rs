@@ -148,7 +148,7 @@ impl PythonArray {
         Ok(Self::new(
             Arc::new(self.field().clone()),
             Buffer::from(values),
-            validity.map(|mut v| v.finish()).flatten(),
+            validity.and_then(|mut v| v.finish()),
         ))
     }
 }

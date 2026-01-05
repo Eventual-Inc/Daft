@@ -97,13 +97,13 @@ impl ListArray {
         let first_array = arrays.first().unwrap();
         let field = first_array.field.clone();
 
-        let arrow_arrs_owned = arrays.iter().map(|arr| arr.to_arrow()).collect::<Vec<_>>();
+        let arrow_arrs_owned = arrays.iter().map(|arr| arr.to_arrow2()).collect::<Vec<_>>();
         let arrow_arrs = arrow_arrs_owned
             .iter()
             .map(|arr| arr.as_ref())
             .collect::<Vec<_>>();
         let concatenated = daft_arrow::compute::concatenate::concatenate(arrow_arrs.as_slice())?;
-        Self::from_arrow(field, concatenated)
+        Self::from_arrow2(field, concatenated)
     }
 
     pub fn len(&self) -> usize {

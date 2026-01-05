@@ -322,13 +322,13 @@ impl SeriesListExtension for Series {
         let input = input.list()?;
 
         let other = other.cast(input.child_data_type())?;
-        
+
         // Collect indices for take operation: original list elements + appended element
         let mut take_indices = Vec::new();
         let offsets = input.offsets();
         let mut new_lengths = Vec::with_capacity(input.len());
         let flat_child_len = input.flat_child.len();
-        
+
         for i in 0..self.len() {
             if input.is_valid(i) {
                 let start = *offsets.get(i).unwrap();
@@ -349,10 +349,10 @@ impl SeriesListExtension for Series {
         }
 
         // Concatenate flat_child and other, then take the selected indices
-        let concatenated = Series::concat(&[&input.flat_child, &other])?;
+        let concatenated = Self::concat(&[&input.flat_child, &other])?;
         let take_indices_array = UInt64Array::from(("indices", take_indices));
         let child_arr = concatenated.take(&take_indices_array)?;
-        
+
         let new_offsets = daft_arrow::offset::Offsets::try_from_lengths(new_lengths.into_iter())?;
         let list_array = ListArray::new(
             input.field.clone(),

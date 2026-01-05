@@ -1,11 +1,8 @@
 use std::ops::Rem;
 
 use common_error::{DaftError, DaftResult};
-use daft_arrow::array::{Array, DictionaryKey};
-use daft_core::{
-    array::ops::{IntoGroups, as_arrow::AsArrow},
-    datatypes::UInt64Array,
-};
+use daft_arrow::array::DictionaryKey;
+use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use rand::SeedableRng;
 
