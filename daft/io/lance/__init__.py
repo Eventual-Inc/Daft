@@ -9,7 +9,7 @@ __all__ = [
     "create_scalar_index",
     "merge_columns",
     "merge_columns_df",
-    "update_columns",
     "register_lance_table_rest",
+    "update_columns",
     "write_lance_rest",
 ]

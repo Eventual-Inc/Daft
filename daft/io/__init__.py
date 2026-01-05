@@ -68,7 +68,7 @@ __all__ = [
     "read_sql",
     "read_video_frames",
     "read_warc",
-    "update_columns",
     "register_lance_table_rest",
+    "update_columns",
     "write_lance_rest",
 ]
