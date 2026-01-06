@@ -75,12 +75,10 @@ fn ilike_impl(arr: &Utf8Array, pattern: &Utf8Array) -> DaftResult<BooleanArray> 
 
     let self_iter = create_broadcasted_str_iter(arr, expected_size);
 
-    let arrow_result = if pattern.len() == 1 {
+    let result_vec: Vec<Option<bool>> = if pattern.len() == 1 {
         let pat = pattern.get(0).unwrap();
         let re = compile_like_regex(pat, true)?;
-        self_iter
-            .map(|val| Some(re.is_match(val?)))
-            .collect::<daft_arrow::array::BooleanArray>()
+        self_iter.map(|val| Some(re.is_match(val?))).collect()
     } else {
         let mut cache = AHashMap::new();
         let pattern_iter = create_broadcasted_str_iter(pattern, expected_size);
@@ -100,10 +98,73 @@ fn ilike_impl(arr: &Utf8Array, pattern: &Utf8Array) -> DaftResult<BooleanArray> 
                 }
                 _ => Ok(None),
             })
-            .collect::<DaftResult<daft_arrow::array::BooleanArray>>()?
+            .collect::<DaftResult<Vec<Option<bool>>>>()?
     };
 
-    let result = BooleanArray::from((arr.name(), Box::new(arrow_result)));
+    let result = BooleanArray::from((arr.name(), result_vec.as_slice()));
     assert_eq!(result.len(), expected_size);
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ilike_broadcast_pattern() -> DaftResult<()> {
+        // Test case-insensitive matching with broadcast pattern
+        let arr = Utf8Array::from_values("data", ["Hello", "HELLO", "hello", "World"].iter());
+        let pattern = Utf8Array::from_values("pattern", ["hello"].iter());
+        let result = ilike_impl(&arr, &pattern)?;
+
+        assert_eq!(result.len(), 4);
+        assert_eq!(result.get(0), Some(true)); // "Hello" ilike "hello"
+        assert_eq!(result.get(1), Some(true)); // "HELLO" ilike "hello"
+        assert_eq!(result.get(2), Some(true)); // "hello" ilike "hello"
+        assert_eq!(result.get(3), Some(false)); // "World" ilike "hello"
+        Ok(())
+    }
+
+    #[test]
+    fn test_ilike_with_wildcards() -> DaftResult<()> {
+        // Test with SQL LIKE wildcards (% and _)
+        let arr = Utf8Array::from_values("data", ["Hello World", "HELLO", "hello there"].iter());
+        let pattern = Utf8Array::from_values("pattern", ["hello%"].iter());
+        let result = ilike_impl(&arr, &pattern)?;
+
+        assert_eq!(result.len(), 3);
+        assert_eq!(result.get(0), Some(true)); // "Hello World" ilike "hello%"
+        assert_eq!(result.get(1), Some(true)); // "HELLO" ilike "hello%"
+        assert_eq!(result.get(2), Some(true)); // "hello there" ilike "hello%"
+        Ok(())
+    }
+
+    #[test]
+    fn test_ilike_element_wise() -> DaftResult<()> {
+        // Test element-wise matching with multiple patterns
+        let arr = Utf8Array::from_values("data", ["Apple", "Banana", "Cherry"].iter());
+        let pattern = Utf8Array::from_values("pattern", ["apple", "BERRY", "cherry"].iter());
+        let result = ilike_impl(&arr, &pattern)?;
+
+        assert_eq!(result.len(), 3);
+        assert_eq!(result.get(0), Some(true)); // "Apple" ilike "apple"
+        assert_eq!(result.get(1), Some(false)); // "Banana" ilike "BERRY"
+        assert_eq!(result.get(2), Some(true)); // "Cherry" ilike "cherry"
+        Ok(())
+    }
+
+    #[test]
+    fn test_ilike_with_nulls() -> DaftResult<()> {
+        // Test null handling - use collect() and rename() for arrays with nulls
+        let arr: Utf8Array = [Some("Hello"), None, Some("World")].into_iter().collect();
+        let arr = arr.rename("data");
+        let pattern = Utf8Array::from_values("pattern", ["hello"].iter());
+        let result = ilike_impl(&arr, &pattern)?;
+
+        assert_eq!(result.len(), 3);
+        assert_eq!(result.get(0), Some(true)); // "Hello" ilike "hello"
+        assert!(result.get(1).is_none()); // null ilike "hello" = null
+        assert_eq!(result.get(2), Some(false)); // "World" ilike "hello"
+        Ok(())
+    }
 }
