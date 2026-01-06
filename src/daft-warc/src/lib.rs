@@ -3,6 +3,7 @@ use std::{num::NonZeroUsize, sync::Arc};
 use chrono::{DateTime, Utc};
 use common_error::{DaftError, DaftResult};
 use common_runtime::{get_compute_runtime, get_io_runtime};
+#[allow(deprecated, reason = "arrow2 migration")]
 use daft_arrow::array::{
     MutableArray, MutableBinaryArray, MutablePrimitiveArray, MutableUtf8Array,
 };
@@ -121,7 +122,9 @@ struct WarcRecordBatchBuilder {
     record_id_array: MutableUtf8Array<i64>,
     warc_target_uri_array: MutableUtf8Array<i64>,
     warc_type_array: MutableUtf8Array<i64>,
+    #[allow(deprecated, reason = "arrow2 migration")]
     warc_date_array: MutablePrimitiveArray<i64>,
+    #[allow(deprecated, reason = "arrow2 migration")]
     warc_content_length_array: MutablePrimitiveArray<i64>,
     warc_identified_payload_type_array: MutableUtf8Array<i64>,
     content_array: MutableBinaryArray<i64>,
@@ -154,7 +157,9 @@ impl WarcRecordBatchBuilder {
                 chunk_size,
                 Self::DEFAULT_STRING_LENGTH * chunk_size,
             ),
+            #[allow(deprecated, reason = "arrow2 migration")]
             warc_date_array: MutablePrimitiveArray::with_capacity(chunk_size),
+            #[allow(deprecated, reason = "arrow2 migration")]
             warc_content_length_array: MutablePrimitiveArray::with_capacity(chunk_size),
             warc_identified_payload_type_array: MutableUtf8Array::with_capacities(
                 chunk_size,
@@ -209,6 +214,7 @@ impl WarcRecordBatchBuilder {
         self.record_id_array.len()
     }
 
+    #[allow(deprecated, reason = "arrow2 migration")]
     fn process_arrays(&mut self) -> DaftResult<Option<RecordBatch>> {
         let num_records = self.content_array.len();
         if num_records == 0 {
