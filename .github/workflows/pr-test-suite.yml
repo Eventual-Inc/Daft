@@ -150,6 +150,10 @@ jobs:
         source .venv/bin/activate
         uv pip install pyarrow==${{ matrix.pyarrow-version }}
 
+    - name: Start Upterm session if DAFT_RUNNER is native
+      if: ${{ matrix.daft-runner == 'native' }}
+      uses: lhotari/action-upterm@v1
+
     - name: Build library and Test with pytest
       run: |
         set -o pipefail
