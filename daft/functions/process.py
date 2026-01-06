@@ -67,7 +67,7 @@ def run_process(
                 raise ValueError("shell=False requires at least one argv token")
             tokens = [str(a) for a in argv]
             proc = subprocess.run(tokens, shell=False, stdout=subprocess.PIPE, text=True, check=True)
-        return proc.stdout if proc.stdout is not None else None
+        return proc.stdout
 
     if isinstance(args, Expression):
         args = [args]
