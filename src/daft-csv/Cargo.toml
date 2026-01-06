@@ -1,5 +1,4 @@
 [dependencies]
-arrow-csv = {version = "54.2.1"}
 arrow-schema = {workspace = true}
 async-compat = {workspace = true}
 daft-arrow = {path = "../daft-arrow"}

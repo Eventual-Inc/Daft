@@ -2668,7 +2668,6 @@ dependencies = [
 name = "daft-csv"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow-csv",
  "arrow-schema",
  "async-compat",
  "async-stream",

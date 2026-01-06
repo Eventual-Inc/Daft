@@ -1704,7 +1704,7 @@ mod tests {
         let err = read_csv(file.as_ref(), None, None, None, io_client, None, true, None);
         assert!(err.is_err());
         let err = err.unwrap_err();
-        assert!(matches!(err, DaftError::ArrowError(_)), "{}", err);
+        assert!(matches!(err, DaftError::IoError(_)), "{}", err);
         assert!(
             err.to_string()
                 .contains("found record with 4 fields, but the previous record has 5 fields"),
@@ -1788,7 +1788,7 @@ mod tests {
         );
         assert!(err.is_err());
         let err = err.unwrap_err();
-        assert!(matches!(err, DaftError::ArrowError(_)), "{}", err);
+        assert!(matches!(err, DaftError::IoError(_)), "{}", err);
         assert!(
             err.to_string()
                 .contains("found record with 5 fields, but the previous record has 4 fields"),
