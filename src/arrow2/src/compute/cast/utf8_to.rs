@@ -23,7 +23,7 @@ where
 {
     let iter = from
         .iter()
-        .map(|x| x.and_then::<T, _>(|x| lexical_core::parse(x.as_bytes()).ok()));
+        .map(|x| x.and_then::<T, _>(|x| lexical_core::parse(x.trim().as_bytes()).ok()));
 
     PrimitiveArray::<T>::from_trusted_len_iter(iter)
         .to(to.clone())
@@ -42,7 +42,7 @@ where
     T: NativeType + lexical_core::FromLexical,
 {
     let iter = from.iter().map(|x| {
-        x.and_then::<T, _>(|x| lexical_core::parse_partial(x.as_bytes()).ok().map(|x| x.0))
+        x.and_then::<T, _>(|x| lexical_core::parse_partial(x.trim().as_bytes()).ok().map(|x| x.0))
     });
 
     PrimitiveArray::<T>::from_trusted_len_iter(iter)

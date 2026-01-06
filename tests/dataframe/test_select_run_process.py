@@ -10,7 +10,7 @@ def test_run_process_tokens_echo():
     df = daft.from_pydict({"a": ["hello", "good"], "b": ["world", "day"]})
     expr = run_process(["echo", df["a"], df["b"]])
     out = df.select(expr.alias("out")).to_pylist()
-    assert out == [{"out": "hello world"}, {"out": "good day"}]
+    assert out == [{"out": "hello world\n"}, {"out": "good day\n"}]
 
 
 @pytest.mark.parametrize("text,expected", [("abc", 4), ("", 1)])
