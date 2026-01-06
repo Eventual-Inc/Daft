@@ -345,7 +345,7 @@ def cls(
     Args:
         gpus: The number of GPUs each instance of the class requires. Defaults to 0.
               Fractional values between 0 and 1.0, such as 0.5, are supported. This can be useful when running multiple small models on the same GPU.
-              However, fractional values greater than 1.0 are not supported; values like 1.5 or 2.5 must be specified as integers.
+              However, fractional values greater than 1.0, such as 1.5 or 2.5, are not supported.
         use_process: Whether to run each instance of the class in a separate process. If unset, Daft will automatically choose based on runtime performance.
         max_concurrency: The maximum number of concurrent instances of the class.
 
