@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from daft.dataframe import DataFrame
     from daft.io.partitioning import PartitionField
     from daft.unity_catalog import UnityCatalogTable
+    from daft.utils import ColumnInputType
 else:
     GlueClient = Any
     GlueColumnInfo = Any
@@ -295,7 +296,7 @@ class GlueCsvTable(GlueTable):
     _delimiter: str = ","
     _io_config: IOConfig | None = None
     _hive_partitioning: bool = False
-    _hive_partitioning_cols: list[str] = []
+    _hive_partitioning_cols: list[ColumnInputType] = []
 
     def __init__(self) -> None:
         raise ValueError("GlueCsvTable.__init__() not supported!")
@@ -350,14 +351,14 @@ class GlueCsvTable(GlueTable):
         df.write_csv(
             root_dir=self._path,
             mode="append",
-            partition_cols=(self._hive_partitioning_cols if self._hive_partitioning else None),  # type: ignore
+            partition_cols=self._hive_partitioning_cols if self._hive_partitioning else None,
         )
 
     def overwrite(self, df: DataFrame, **options: Any) -> None:
         df.write_csv(
             root_dir=self._path,
             mode="overwrite",
-            partition_cols=(self._hive_partitioning_cols if self._hive_partitioning else None),  # type: ignore
+            partition_cols=self._hive_partitioning_cols if self._hive_partitioning else None,
         )
 
 
@@ -368,7 +369,7 @@ class GlueParquetTable(GlueTable):
     _schema: Schema
     _io_config: IOConfig | None = None
     _hive_partitioning: bool = False
-    _hive_partitioning_cols: list[str] = []
+    _hive_partitioning_cols: list[ColumnInputType] = []
 
     def __init__(self) -> None:
         raise ValueError("GlueParquetTable.__init__() not supported!")
@@ -415,7 +416,7 @@ class GlueParquetTable(GlueTable):
             root_dir=self._path,
             compression="snappy",
             mode="append",
-            partition_cols=(self._hive_partitioning_cols if self._hive_partitioning else None),  # type: ignore
+            partition_cols=self._hive_partitioning_cols if self._hive_partitioning else None,
             io_config=self._io_config,
         )
 
@@ -424,7 +425,7 @@ class GlueParquetTable(GlueTable):
             root_dir=self._path,
             compression="snappy",
             mode="overwrite",
-            partition_cols=(self._hive_partitioning_cols if self._hive_partitioning else None),  # type: ignore
+            partition_cols=self._hive_partitioning_cols if self._hive_partitioning else None,
             io_config=self._io_config,
         )
 

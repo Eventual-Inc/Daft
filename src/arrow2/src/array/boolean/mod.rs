@@ -49,6 +49,7 @@ pub use mutable::*;
 ///
 /// ```
 #[derive(Clone)]
+#[deprecated(note = "arrow2 migration")]
 pub struct BooleanArray {
     data_type: DataType,
     values: Bitmap,

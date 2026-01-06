@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 import daft.daft as native
 from daft.arrow_utils import ensure_array, ensure_chunked_array
@@ -12,6 +12,7 @@ from daft.utils import pyarrow_supports_fixed_shape_tensor
 
 if TYPE_CHECKING:
     import builtins
+    from collections.abc import Callable
 
     from daft.daft import PyDataType
 
@@ -684,17 +685,16 @@ class Series:
             raise ValueError(f"expected an integer or None for seed but got {type(seed)}")
         if not isinstance(hash_function, str):
             raise ValueError(f"expected str for hash_function but got {type(hash_function)}")
-        assert (
-            hash_function
-            in [
-                "murmurhash3",
-                "xxhash",
-                "xxhash3_64",
-                "xxhash64",
-                "xxhash32",
-                "sha1",
-            ]
-        ), f"hash_function must be one of 'murmurhash3', 'xxhash', 'xxhash3_64', 'xxhash64', 'xxhash32', 'sha1', got {hash_function}"
+        assert hash_function in [
+            "murmurhash3",
+            "xxhash",
+            "xxhash3_64",
+            "xxhash64",
+            "xxhash32",
+            "sha1",
+        ], (
+            f"hash_function must be one of 'murmurhash3', 'xxhash', 'xxhash3_64', 'xxhash64', 'xxhash32', 'sha1', got {hash_function}"
+        )
 
         return Series._from_pyseries(self._series.minhash(num_hashes, ngram_size, seed, hash_function))
 
@@ -1139,3 +1139,6 @@ class SeriesImageNamespace(SeriesNamespace):
         if not isinstance(mode, ImageMode):
             raise ValueError(f"mode must be a string or ImageMode variant, but got: {mode}")
         return self._eval_expressions("to_mode", mode=mode)
+
+    def to_tensor(self) -> Series:
+        return self._eval_expressions("to_tensor")

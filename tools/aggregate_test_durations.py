@@ -15,7 +15,6 @@ import sys
 import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional
 
 
 class TestDurationAggregator:
@@ -98,7 +97,7 @@ class TestDurationAggregator:
         return phase_times
 
     def print_results(
-        self, title: str, data: dict[str, list[float]], sort_key: str = "total", limit: Optional[int] = None
+        self, title: str, data: dict[str, list[float]], sort_key: str = "total", limit: int | None = None
     ):
         """Print aggregated results in a formatted table with phase breakdown."""
         print(f"\n{'=' * 80}")

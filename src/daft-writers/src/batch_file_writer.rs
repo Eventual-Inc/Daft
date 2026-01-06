@@ -113,7 +113,7 @@ impl<B: StorageBackend + Send + Sync, W: Send + Sync + 'static> AsyncFileWriter
         self.storage_backend.finalize().await?;
 
         let field = Field::new(RETURN_PATHS_COLUMN_NAME, DataType::Utf8);
-        let filename_series = Series::from_arrow(
+        let filename_series = Series::from_arrow2(
             Arc::new(field.clone()),
             Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice([&self
                 .filename

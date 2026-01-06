@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use arrow::array::ArrayRef;
+
 use super::{ArrayWrapper, IntoSeries, Series};
 use crate::{
     array::{ops::GroupIndices, prelude::*},
@@ -27,8 +29,11 @@ macro_rules! impl_series_like_for_logical_array {
             fn into_series(&self) -> Series {
                 self.0.clone().into_series()
             }
-            fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
+            fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
                 self.0.to_arrow2()
+            }
+            fn to_arrow(&self) -> DaftResult<ArrayRef> {
+                self.0.to_arrow()
             }
 
             fn as_any(&self) -> &dyn std::any::Any {
@@ -206,8 +211,11 @@ where
     fn into_series(&self) -> Series {
         self.0.clone().into_series()
     }
-    fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
+    fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
         self.0.to_arrow2()
+    }
+    fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        self.0.to_arrow()
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self

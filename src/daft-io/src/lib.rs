@@ -444,6 +444,14 @@ impl std::fmt::Display for SourceType {
     }
 }
 
+impl SourceType {
+    /// Whether source support write parquet/json/csv files via native IO,
+    /// if the source is object store, it should support multipart part upload currently.
+    pub fn supports_native_writer(&self) -> bool {
+        matches!(self, Self::File | Self::S3 | Self::Tos)
+    }
+}
+
 /// On Windows, strips the leading "/" from paths like "/C:/Users/..." to produce "C:/Users/...".
 ///
 /// This is needed because stripping "file://" from "file:///C:/path" leaves "/C:/path".

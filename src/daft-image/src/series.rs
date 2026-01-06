@@ -1,9 +1,11 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use common_error::{DaftError, DaftResult};
 use common_image::CowImage;
 use daft_core::{array::ops::image::image_array_from_img_buffers, prelude::*};
 use daft_schema::image_property::ImageProperty;
 
 use crate::ops::ImageOps;
+
 fn image_decode_impl(
     ba: &BinaryArray,
     raise_error_on_failure: bool,
@@ -225,6 +227,35 @@ pub fn attribute(s: &Series, attr: ImageProperty) -> DaftResult<Series> {
             "datatype: {} does not support Image attributes. Occurred while processing Series: {}",
             dt,
             s.name()
+        ))),
+    }
+}
+
+/// Converts images in a Series to a tensor series.
+///
+/// # Arguments
+/// * `s` - Input Series containing image data
+///
+/// # Returns
+/// A DaftResult containing a new Series with converted tensors
+pub fn to_tensor(s: &Series) -> DaftResult<Series> {
+    let output_dtype = infer_to_tensor_dtype(s.data_type())?;
+    s.cast(&output_dtype)
+}
+
+pub(crate) fn infer_to_tensor_dtype(dtype: &DataType) -> DaftResult<DataType> {
+    match dtype {
+        DataType::FixedShapeImage(mode, h, w) => {
+            let c = mode.num_channels() as u64;
+            Ok(DataType::FixedShapeTensor(
+                Box::new(mode.get_dtype()),
+                vec![*h as u64, *w as u64, c],
+            ))
+        }
+        DataType::Image(Some(mode)) => Ok(DataType::Tensor(Box::new(mode.get_dtype()))),
+        DataType::Image(None) => Ok(DataType::Tensor(Box::new(DataType::UInt8))),
+        _ => Err(DaftError::ValueError(format!(
+            "datatype: {dtype} does not support Image to_tensor"
         ))),
     }
 }
