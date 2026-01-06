@@ -8,7 +8,6 @@ import unicodedata
 import pyarrow as pa
 import pytest
 
-import daft
 import daft.exceptions
 from daft import DataType, Series
 

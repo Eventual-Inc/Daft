@@ -1,21 +1,21 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import fields, is_dataclass
-from typing import TYPE_CHECKING, Any, Callable, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Any, TypeAlias, TypeVar
 
 from daft.daft import PyTimeUnit
 from daft.dependencies import pa
+from daft.expressions import Expression
 
 if TYPE_CHECKING:
     import numpy as np
 
-    from daft.expressions import Expression
 
 # Column input type definitions
-ColumnInputType = Union["Expression", str]
-ManyColumnsInputType = Union[ColumnInputType, Iterable[ColumnInputType]]
+ColumnInputType: TypeAlias = Expression | str
+ManyColumnsInputType: TypeAlias = ColumnInputType | Iterable[ColumnInputType]
 
 
 def get_arrow_version() -> tuple[int, ...]:
@@ -194,4 +194,4 @@ def from_dict(cls: type[T], data: dict[str, Any]) -> T:
     if not is_dataclass(cls):
         raise TypeError(f"{cls} is not a dataclass")
     field_names = {f.name for f in fields(cls)}
-    return cast("T", cls(**{k: v for k, v in data.items() if k in field_names}))
+    return cls(**{k: v for k, v in data.items() if k in field_names})

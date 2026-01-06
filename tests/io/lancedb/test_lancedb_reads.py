@@ -134,9 +134,9 @@ def test_lancedb_with_version(lance_dataset_path):
             filter_count = physical_plan_output.count("Filter:")
             scan_source_count = physical_plan_output.count("ScanTaskSource:")
 
-            assert (
-                filter_count == 0 or filter_count == scan_source_count
-            ), f"Physical plan contains {filter_count} Filter nodes and {scan_source_count} ScanTaskSource nodes, which is not expected"
+            assert filter_count == 0 or filter_count == scan_source_count, (
+                f"Physical plan contains {filter_count} Filter nodes and {scan_source_count} ScanTaskSource nodes, which is not expected"
+            )
 
 
 def test_lancedb_read_parallelism_fragment_merging(large_lance_dataset_path):
