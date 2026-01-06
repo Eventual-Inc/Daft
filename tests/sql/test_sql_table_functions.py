@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 
 import pytest
@@ -31,8 +32,6 @@ def test_sql_read_json(assets_path):
 
 
 def test_sql_read_json_array(assets_path):
-    import json
-
     path = os.path.join(assets_path, "json-data", "sample1.json")
 
     actual = daft.sql(f"SELECT * FROM read_json('{path}')")
