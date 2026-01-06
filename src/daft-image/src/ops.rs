@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::array::{ArrayRef, BooleanBufferBuilder, LargeBinaryArray, OffsetBufferBuilder};
+use arrow::array::{BooleanBufferBuilder, LargeBinaryArray, OffsetBufferBuilder};
 use base64::Engine;
 use common_error::{DaftError, DaftResult};
 use common_image::{BBox, CowImage};
@@ -267,10 +267,9 @@ fn encode_images<Arr: AsImageObj>(
             values.into(),
             Some(validity.finish().into()),
         );
-        let array: ArrayRef = Arc::new(arrow_array);
-        BinaryArray::from_arrow2(
-            Field::new(images.name(), DataType::Binary).into(),
-            array.into(),
+        BinaryArray::from_arrow(
+            Field::new(images.name(), DataType::Binary),
+            Arc::new(arrow_array),
         )
     }
 }
