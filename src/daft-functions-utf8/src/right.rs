@@ -9,8 +9,7 @@ use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::DataArray,
     prelude::{
-        DaftIntegerType, DaftNumericType, DataType, Field, FromArrow, FullNull, Schema,
-        Utf8Array,
+        DaftIntegerType, DaftNumericType, DataType, Field, FromArrow, FullNull, Schema, Utf8Array,
     },
     series::{IntoSeries, Series},
     with_match_integer_daft_types,
@@ -122,22 +121,20 @@ where
                 .map(|val| Some(right_most_chars(val?, n)))
                 .collect()
         }
-        _ => {
-            arr_iter
-                .zip(nchars_arrow.iter())
-                .map(|(val, n)| match (val, n) {
-                    (Some(val), Some(nchar)) => {
-                        let nchar: usize = NumCast::from(nchar).ok_or_else(|| {
-                            DaftError::ComputeError(format!(
-                                "Error in right: failed to cast rhs as usize {nchar}"
-                            ))
-                        })?;
-                        Ok(Some(right_most_chars(val, nchar)))
-                    }
-                    _ => Ok(None),
-                })
-                .collect::<DaftResult<LargeStringArray>>()?
-        }
+        _ => arr_iter
+            .zip(nchars_arrow.iter())
+            .map(|(val, n)| match (val, n) {
+                (Some(val), Some(nchar)) => {
+                    let nchar: usize = NumCast::from(nchar).ok_or_else(|| {
+                        DaftError::ComputeError(format!(
+                            "Error in right: failed to cast rhs as usize {nchar}"
+                        ))
+                    })?;
+                    Ok(Some(right_most_chars(val, nchar)))
+                }
+                _ => Ok(None),
+            })
+            .collect::<DaftResult<LargeStringArray>>()?,
     };
     assert_eq!(result.len(), expected_size);
     Utf8Array::from_arrow(Field::new(arr.name(), DataType::Utf8), Arc::new(result))
