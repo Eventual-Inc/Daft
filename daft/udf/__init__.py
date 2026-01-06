@@ -221,11 +221,21 @@ class _FuncDecorator:
 
         def partial_func(fn: Callable[P, T]) -> Func[P, T, None]:
             return Func._from_func(
-                fn, return_dtype, unnest, use_process, False, None, max_retries=max_retries, on_error=on_error
+                fn,
+                return_dtype,
+                unnest,
+                use_process,
+                False,
+                None,
+                None,
+                None,
+                max_retries=max_retries,
+                on_error=on_error,
             )
 
         return partial_func if fn is None else partial_func(fn)
 
+    @overload
     def batch(
         self,
         *,
@@ -235,6 +245,30 @@ class _FuncDecorator:
         batch_size: int | None = None,
         max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
+    ) -> Callable[[Callable[P, T]], Func[P, T, None]]: ...
+    @overload
+    def batch(
+        self,
+        *,
+        return_dtype: DataTypeLike,
+        unnest: bool = False,
+        use_process: bool | None = None,
+        min_batch_size: int | None = None,
+        max_batch_size: int | None = None,
+        max_retries: int | None = None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
+    ) -> Callable[[Callable[P, T]], Func[P, T, None]]: ...
+    def batch(
+        self,
+        *,
+        return_dtype: DataTypeLike,
+        unnest: bool = False,
+        use_process: bool | None = None,
+        batch_size: int | None = None,
+        min_batch_size: int | None = None,
+        max_batch_size: int | None = None,
+        max_retries: int | None = None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Callable[[Callable[P, T]], Func[P, T, None]]:
         """Decorator to convert a Python function into a Daft user-defined batch function.
 
@@ -242,7 +276,9 @@ class _FuncDecorator:
             return_dtype: The data type that this function should return.
             unnest: Whether to unnest/flatten out return type fields into columns. Return dtype must be `DataType.struct(..)` when this is set to true.
             use_process: Whether to run each instance of the function in a separate process. If unset, Daft will automatically choose based on runtime performance.
-            batch_size: The max number of rows in each input batch.
+            batch_size: The exact number of rows in each input batch. (conflicts with min_batch_size and max_batch_size)
+            min_batch_size: The min number of rows in each input batch. (conflicts with batch_size)
+            max_batch_size: The max number of rows in each input batch. (conflicts with batch_size)
 
         Batch functions receive `daft.Series` arguments, and return a `daft.Series`, `list`, `numpy.ndarray`, or `pyarrow.Array`.
         You can also call them with scalar arguments, which will be passed in without modification.
@@ -307,7 +343,18 @@ class _FuncDecorator:
         """
 
         def partial_func(fn: Callable[P, T]) -> Func[P, T, None]:
-            return Func._from_func(fn, return_dtype, unnest, use_process, True, batch_size, max_retries, on_error)
+            return Func._from_func(
+                fn,
+                return_dtype,
+                unnest,
+                use_process,
+                True,
+                batch_size,
+                min_batch_size,
+                max_batch_size,
+                max_retries,
+                on_error,
+            )
 
         return partial_func
 
@@ -455,7 +502,7 @@ class _MethodDecorator:
         """
 
         def partial_method(m: Callable[P, T]) -> Callable[P, T]:
-            return mark_cls_method(m, return_dtype, unnest, False, None, max_retries, on_error)
+            return mark_cls_method(m, return_dtype, unnest, False, None, None, None, max_retries, on_error)
 
         return partial_method if method is None else partial_method(method)
 
@@ -480,6 +527,31 @@ class _MethodDecorator:
         max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Callable[P, T]: ...
+    @overload
+    def batch(
+        self,
+        *,
+        return_dtype: DataTypeLike | None = None,
+        unnest: bool = False,
+        batch_size: int | None = None,
+        min_batch_size: int | None = None,
+        max_batch_size: int | None = None,
+        max_retries: int | None = None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
+    ) -> Callable[[Callable[P, T]], Callable[P, T]]: ...
+    @overload
+    def batch(
+        self,
+        method: Callable[P, T],
+        *,
+        return_dtype: DataTypeLike | None = None,
+        unnest: bool = False,
+        batch_size: int | None = None,
+        min_batch_size: int | None = None,
+        max_batch_size: int | None = None,
+        max_retries: int | None = None,
+        on_error: Literal["raise", "log", "ignore"] | None = None,
+    ) -> Callable[P, T]: ...
     def batch(
         self,
         method: Callable[P, T] | None = None,
@@ -487,6 +559,8 @@ class _MethodDecorator:
         return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
         batch_size: int | None = None,
+        min_batch_size: int | None = None,
+        max_batch_size: int | None = None,
         max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Callable[P, T] | Callable[[Callable[P, T]], Callable[P, T]]:
@@ -505,7 +579,9 @@ class _MethodDecorator:
         """
 
         def partial_method(m: Callable[P, T]) -> Callable[P, T]:
-            return mark_cls_method(m, return_dtype, unnest, True, batch_size, max_retries, on_error)
+            return mark_cls_method(
+                m, return_dtype, unnest, True, batch_size, min_batch_size, max_batch_size, max_retries, on_error
+            )
 
         return partial_method if method is None else partial_method(method)
 

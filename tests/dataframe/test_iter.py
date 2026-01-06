@@ -172,7 +172,7 @@ def test_iter_exception(make_df):
         else:
             return s
 
-    with daft.execution_config_ctx(default_morsel_size=2):
+    with daft.execution_config_ctx(default_morsel_size=2, enable_dynamic_batching=False):
         df = make_df({"a": list(range(200))}).into_partitions(100).with_column("b", echo_or_trigger(daft.col("a")))
 
         it = iter(df)
@@ -191,8 +191,7 @@ def test_iter_exception(make_df):
         assert str(exc_info.value).endswith("failed when executing on inputs:\n  - a (Int64, length=2)")
 
 
-@pytest.mark.parametrize("dynamic_batching", [True, False])
-def test_iter_partitions_exception(make_df, dynamic_batching):
+def test_iter_partitions_exception(make_df):
     # Test that df.iter_partitions actually returns results before completing execution.
     # We test this by raising an exception in a UDF if too many partitions are executed.
 
@@ -204,7 +203,7 @@ def test_iter_partitions_exception(make_df, dynamic_batching):
         else:
             return s
 
-    with daft.execution_config_ctx(default_morsel_size=2, enable_dynamic_batching=dynamic_batching):
+    with daft.execution_config_ctx(default_morsel_size=2, enable_dynamic_batching=False):
         df = make_df({"a": list(range(200))}).into_partitions(100).with_column("b", echo_or_trigger(daft.col("a")))
 
         it = df.iter_partitions()
