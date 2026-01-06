@@ -101,11 +101,10 @@ fn to_datetime_impl(
     timezone: Option<&str>,
 ) -> DaftResult<TimestampArray> {
     let len = arr.len();
-    let arr_arrow = arr.as_arrow()?;
     let timeunit = infer_timeunit_from_format_string(format);
     let mut timezone = timezone.map(|tz| tz.to_string());
-    let arrow_result = arr_arrow
-            .iter()
+    let arrow_result = arr
+            .into_iter()
             .map(|val| match val {
                 Some(val) => {
                     let timestamp = match timezone.as_deref() {
