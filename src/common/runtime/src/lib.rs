@@ -68,6 +68,15 @@ impl<T> RuntimeTask<T> {
         joinset.spawn_on(future, handle);
         Self { joinset }
     }
+
+    pub fn try_join_next(&mut self) -> Option<DaftResult<T>>
+    where
+        T: 'static,
+    {
+        self.joinset
+            .try_join_next()
+            .map(|r| r.map_err(|e| DaftError::External(e.into())))
+    }
 }
 
 impl<T: Send + 'static> Future for RuntimeTask<T> {

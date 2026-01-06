@@ -68,10 +68,12 @@ impl StreamingScanTaskSource {
         output_sender: Sender<PipelineMessage>,
         io_stats: IOStatsRef,
         chunk_size: usize,
+        schema: SchemaRef,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
         let num_cpus = get_compute_pool_num_threads();
         let source_id = self.source_id.clone();
+        let schema = schema.clone();
         io_runtime.spawn(async move {
             let mut task_set = TaskSet::new();
             let mut pending_tasks = Vec::new();
@@ -117,6 +119,20 @@ impl StreamingScanTaskSource {
                         {
                             let mut counts = input_id_pending_counts.lock().unwrap();
                             *counts.entry(input_id).or_insert(0) += num_tasks;
+                        }
+
+                        if num_tasks == 0 {
+                            let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
+                            let message = PipelineMessage::Morsel {
+                                input_id,
+                                partition: empty,
+                            };
+                            if output_sender.send(message).await.is_err() {
+                                break;
+                            }
+                            if output_sender.send(PipelineMessage::Flush(input_id)).await.is_err() {
+                                break;
+                            }
                         }
 
                         // All tasks from this batch share the same delete_map, output sender, and input_id
@@ -188,6 +204,7 @@ impl Source for StreamingScanTaskSource {
             output_sender,
             io_stats.clone(),
             chunk_size,
+            self.schema.clone(),
         );
 
         // Convert receiver to stream

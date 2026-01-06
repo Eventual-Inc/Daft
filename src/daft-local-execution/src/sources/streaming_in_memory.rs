@@ -57,10 +57,8 @@ impl StreamingInMemorySource {
             while let Some((input_id, partition_set)) = receiver.recv().await {
                 let mut stream = partition_set.to_partition_stream();
                 let mut has_data = false;
-                let mut partition_count = 0;
                 while let Some(result) = stream.next().await {
                     has_data = true;
-                    partition_count += 1;
                     let partition = result?;
                     let message = PipelineMessage::Morsel {
                         input_id,

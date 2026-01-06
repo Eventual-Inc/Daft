@@ -2029,7 +2029,6 @@ class NativeExecutor:
     def run(
         self,
         plan: LocalPhysicalPlan,
-        psets: dict[str, list[PyMicroPartition]],
         daft_ctx: PyDaftContext,
         context: dict[str, str] | None = None,
     ) -> PyExecutionEngineResult: ...

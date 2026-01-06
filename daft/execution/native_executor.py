@@ -40,16 +40,6 @@ class NativeExecutor:
     ) -> Iterator[LocalMaterializedResult]:
         from daft.runners.partitioning import LocalMaterializedResult
 
-        psets_mp = {
-            part_id: [part.micropartition()._micropartition for part in parts] for part_id, parts in psets.items()
-        }
-        result_handle = self._executor.run(
-            local_physical_plan,
-            psets_mp,
-            ctx._ctx,
-            context,
-        )
-
         async def stream_results() -> AsyncGenerator[PyMicroPartition | None, None]:
             # Process inputs and organize them by type
             # All inputs have input_id 0 as specified in the requirements
@@ -80,9 +70,12 @@ class NativeExecutor:
                     if paths is not None:
                         glob_paths_map[source_id] = paths
             
-            # Enqueue inputs with input_id 0
-            result_receiver = await result_handle.enqueue_inputs(
+            # Run plan (creating if needed) and enqueue inputs with input_id 0
+            result_receiver = await self._executor.run_and_enqueue_inputs(
+                local_physical_plan,
+                ctx._ctx,
                 0,
+                context,
                 scan_tasks_map if scan_tasks_map else None,
                 in_memory_map if in_memory_map else None,
                 glob_paths_map if glob_paths_map else None,
@@ -92,7 +85,9 @@ class NativeExecutor:
                 async for batch in result_receiver:
                     yield batch
             finally:
-                _ = await result_handle.finish()
+                # Get fingerprint to finish the plan
+                fingerprint = local_physical_plan.fingerprint()
+                _ = await self._executor.finish(fingerprint)
 
         event_loop = get_or_init_event_loop()
         async_exec = stream_results()
