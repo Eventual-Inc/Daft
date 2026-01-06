@@ -8,7 +8,6 @@ import uuid
 import boto3
 
 import daft
-import daft.context
 from tests.conftest import get_tests_daft_runner_name
 
 
