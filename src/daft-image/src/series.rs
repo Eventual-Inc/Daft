@@ -1,4 +1,4 @@
-#![allow(deprecated, reason = "arrow2 migration")]
+use arrow::array::Array;
 use common_error::{DaftError, DaftResult};
 use common_image::CowImage;
 use daft_core::{array::ops::image::image_array_from_img_buffers, prelude::*};
@@ -11,11 +11,7 @@ fn image_decode_impl(
     raise_error_on_failure: bool,
     mode: Option<ImageMode>,
 ) -> DaftResult<ImageArray> {
-    let arrow_array = ba
-        .data()
-        .as_any()
-        .downcast_ref::<daft_arrow::array::BinaryArray<i64>>()
-        .unwrap();
+    let arrow_array = ba.as_arrow()?;
     let mut img_bufs = Vec::<Option<CowImage>>::with_capacity(arrow_array.len());
     let mut cached_dtype: Option<DataType> = None;
     // Load images from binary buffers.
