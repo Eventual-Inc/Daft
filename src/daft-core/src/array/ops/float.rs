@@ -15,8 +15,10 @@ where
     type Output = DaftResult<DataArray<BooleanType>>;
 
     fn is_nan(&self) -> Self::Output {
-        let result: Vec<Option<bool>> = self.into_iter().map(|v| v.map(|x| x.is_nan())).collect();
-        Ok(BooleanArray::from((self.name(), result.as_slice())))
+        Ok(BooleanArray::from_iter(
+            self.name(),
+            self.into_iter().map(|v| v.map(|x| x.is_nan())),
+        ))
     }
 }
 
@@ -41,11 +43,10 @@ where
     type Output = DaftResult<DataArray<BooleanType>>;
 
     fn is_inf(&self) -> Self::Output {
-        let result: Vec<Option<bool>> = self
-            .into_iter()
-            .map(|v| v.map(|x| x.is_infinite()))
-            .collect();
-        Ok(BooleanArray::from((self.name(), result.as_slice())))
+        Ok(BooleanArray::from_iter(
+            self.name(),
+            self.into_iter().map(|v| v.map(|x| x.is_infinite())),
+        ))
     }
 }
 
@@ -69,8 +70,10 @@ where
     type Output = DaftResult<DataArray<BooleanType>>;
 
     fn not_nan(&self) -> Self::Output {
-        let result: Vec<Option<bool>> = self.into_iter().map(|v| v.map(|x| !x.is_nan())).collect();
-        Ok(BooleanArray::from((self.name(), result.as_slice())))
+        Ok(BooleanArray::from_iter(
+            self.name(),
+            self.into_iter().map(|v| v.map(|x| !x.is_nan())),
+        ))
     }
 }
 
