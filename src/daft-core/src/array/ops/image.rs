@@ -22,37 +22,31 @@ impl AsImageObj for ImageArray {
         ImageArray::name(self)
     }
 
-    fn as_image_obj<'a>(&'a self, idx: usize) -> Option<CowImage<'a>> {
+    fn as_image_obj(&'_ self, idx: usize) -> Option<CowImage<'_>> {
         assert!(idx < self.len());
         if !self.physical.is_valid(idx) {
             return None;
         }
 
         let da = self.data_array();
-        let ca = self.channel_array();
-        let ha = self.height_array();
-        let wa = self.width_array();
-        let ma = self.mode_array();
+        let ca = self.channels();
+        let ha = self.heights();
+        let wa = self.widths();
+        let ma = self.modes();
 
         let offsets = da.offsets();
 
         let start = *offsets.get(idx).unwrap() as usize;
         let end = *offsets.get(idx + 1).unwrap() as usize;
 
-        let values = da
-            .flat_child
-            .u8()
-            .unwrap()
-            .data()
-            .as_any()
-            .downcast_ref::<daft_arrow::array::UInt8Array>()
-            .unwrap();
-        let slice_data = Cow::Borrowed(&values.values().as_slice()[start..end] as &'a [u8]);
+        let values = da.flat_child.u8().unwrap().values();
 
-        let c = ca.value(idx);
-        let h = ha.value(idx);
-        let w = wa.value(idx);
-        let m: ImageMode = ImageMode::from_u8(ma.value(idx)).unwrap();
+        let slice_data = Cow::Owned(values.slice(start, end).to_vec());
+
+        let c = ca.get(idx)?;
+        let h = ha.get(idx)?;
+        let w = wa.get(idx)?;
+        let m: ImageMode = ImageMode::from_u8(ma.get(idx)?).unwrap();
         assert_eq!(m.num_channels(), c);
         let result = CowImage::from_raw(&m, w, h, slice_data);
 
