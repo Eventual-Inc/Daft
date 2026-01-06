@@ -725,12 +725,12 @@ jobs:
         pushd ./tests/integration/iceberg/docker-compose/
         docker compose -f ./docker-compose.yml up -d
         popd
-    # # Gravitino test setup
-    # - name: Spin up Gravitino service
-    #   run: |
-    #     pushd ./tests/integration/gravitino/docker-compose/
-    #     docker compose -f ./docker-compose.yml up -d
-    #     popd
+    # Gravitino test setup
+    - name: Spin up Gravitino service
+      run: |
+        pushd ./tests/integration/gravitino/docker-compose/
+        docker compose -f ./docker-compose.yml up -d
+        popd
 
     # Unity tests
     - name: Run Unity integration tests (native)
