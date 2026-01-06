@@ -67,7 +67,6 @@ class OAuth2TokenProvider(TokenProvider):
 
     def get_token(self) -> str:
         if self._token_expired():
-            print("\n\n==== Token expired, refreshing ====\n\n")
             self._refresh()
         if self._token is None:
             raise RuntimeError("Token refresh failed to set token")
