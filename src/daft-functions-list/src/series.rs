@@ -101,7 +101,6 @@ impl SeriesListExtension for Series {
                 let data_array = struct_array.struct_()?.children[0].list().unwrap();
                 let offsets = data_array.offsets();
                 let array = Box::new(
-                    #[allow(deprecated, reason = "arrow2 migration")]
                     daft_arrow::array::PrimitiveArray::from_vec(
                         offsets.lengths().map(|l| l as u64).collect(),
                     )
