@@ -388,13 +388,11 @@ async fn get_delete_map(
                 let file_paths = get_column_by_name("file_path")?.downcast::<Utf8Array>()?;
                 let positions = get_column_by_name("pos")?.downcast::<Int64Array>()?;
 
-                for (file, pos) in file_paths
-                    .as_arrow2()
-                    .values_iter()
-                    .zip(positions.as_arrow2().values_iter())
+                for (file, pos) in file_paths.as_arrow()?.iter()
+                    .zip(positions.as_arrow()?.iter()).map(|(file, pos)| (file.expect("file should not be null in iceberg delete files"), pos.expect("pos should not be null in iceberg delete files")))
                 {
                     if delete_map.contains_key(file) {
-                        delete_map.get_mut(file).unwrap().push(*pos);
+                        delete_map.get_mut(file).unwrap().push(pos);
                     }
                 }
             }
