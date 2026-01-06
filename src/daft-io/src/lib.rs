@@ -32,6 +32,8 @@ use tos::TosSource;
 use unity::UnitySource;
 #[cfg(test)]
 mod integrations;
+#[cfg(test)]
+mod mock;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod range;
