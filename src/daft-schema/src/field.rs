@@ -1,5 +1,6 @@
 use std::{collections::HashMap, hash::Hash, sync::Arc};
 
+use arrow_schema::extension::{EXTENSION_TYPE_METADATA_KEY, EXTENSION_TYPE_NAME_KEY};
 use common_error::{DaftError, DaftResult};
 use daft_arrow::datatypes::Field as ArrowField;
 use derive_more::Display;
@@ -94,9 +95,9 @@ impl Field {
             DataType::Extension(name, dtype, metadata) => {
                 let physical = arrow_schema::Field::new(self.name.clone(), dtype.to_arrow()?, true);
                 let mut metadata_map = HashMap::new();
-                metadata_map.insert("ARROW:extension:name".to_string(), name.clone());
+                metadata_map.insert(EXTENSION_TYPE_NAME_KEY.to_string(), name.clone());
                 if let Some(metadata) = metadata {
-                    metadata_map.insert("ARROW:extension:metadata".to_string(), metadata.clone());
+                    metadata_map.insert(EXTENSION_TYPE_METADATA_KEY.to_string(), metadata.clone());
                 }
                 physical.with_metadata(metadata_map)
             }
@@ -112,11 +113,11 @@ impl Field {
 
                 let mut metadata_map = HashMap::new();
                 metadata_map.insert(
-                    "ARROW:extension:name".to_string(),
+                    EXTENSION_TYPE_NAME_KEY.to_string(),
                     DAFT_SUPER_EXTENSION_NAME.into(),
                 );
 
-                metadata_map.insert("ARROW:extension:metadata".to_string(), dtype.to_json()?);
+                metadata_map.insert(EXTENSION_TYPE_METADATA_KEY.to_string(), dtype.to_json()?);
 
                 physical.to_arrow()?.with_metadata(metadata_map)
             }
@@ -128,11 +129,11 @@ impl Field {
 
                 let mut metadata_map = HashMap::new();
                 metadata_map.insert(
-                    "ARROW:extension:name".to_string(),
+                    EXTENSION_TYPE_NAME_KEY.to_string(),
                     DAFT_SUPER_EXTENSION_NAME.into(),
                 );
 
-                metadata_map.insert("ARROW:extension:metadata".to_string(), dtype.to_json()?);
+                metadata_map.insert(EXTENSION_TYPE_METADATA_KEY.to_string(), dtype.to_json()?);
 
                 physical.to_arrow()?.with_metadata(metadata_map)
             }
@@ -213,11 +214,27 @@ impl TryFrom<&arrow_schema::Field> for Field {
     type Error = DaftError;
 
     fn try_from(value: &arrow_schema::Field) -> Result<Self, Self::Error> {
-        Ok(Self {
-            name: value.name().clone(),
-            dtype: value.try_into()?,
-            metadata: Arc::new(value.metadata().clone().into_iter().collect()),
-        })
+        if value.extension_type_name() == Some(DAFT_SUPER_EXTENSION_NAME) {
+            let metadata = value.extension_type_metadata()
+                .expect("DataType::try_from<&arrow_schema::Field> failed to get metadata for extension type");
+            let dtype = DataType::from_json(metadata)?;
+
+            let mut metadata = value.metadata().clone();
+            metadata.remove(EXTENSION_TYPE_NAME_KEY);
+            metadata.remove(EXTENSION_TYPE_METADATA_KEY);
+
+            Ok(Self {
+                name: value.name().clone(),
+                dtype,
+                metadata: Arc::new(metadata.into_iter().collect()),
+            })
+        } else {
+            Ok(Self {
+                name: value.name().clone(),
+                dtype: value.try_into()?,
+                metadata: Arc::new(value.metadata().clone().into_iter().collect()),
+            })
+        }
     }
 }
 
@@ -227,7 +244,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        dtype::DataType,
+        dtype::{DAFT_SUPER_EXTENSION_NAME, DataType},
         field::Field,
         media_type::MediaType,
         prelude::{ImageMode, TimeUnit},
@@ -243,17 +260,11 @@ mod tests {
         assert_eq!(arrow_field.name(), "embeddings");
         assert_eq!(arrow_field.metadata().len(), 2);
         assert_eq!(
-            arrow_field
-                .metadata()
-                .get("ARROW:extension:name")
-                .map(|s| s.as_str()),
-            Some("daft.super_extension")
+            arrow_field.extension_type_name(),
+            Some(DAFT_SUPER_EXTENSION_NAME)
         );
         assert_eq!(
-            arrow_field
-                .metadata()
-                .get("ARROW:extension:metadata")
-                .map(|s| s.as_str()),
+            arrow_field.extension_type_metadata(),
             Some(field.dtype.to_json()?.as_str())
         );
 

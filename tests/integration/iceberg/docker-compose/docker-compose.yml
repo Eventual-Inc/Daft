@@ -22,8 +22,10 @@ services:
     networks:
       iceberg_net:
     depends_on:
-    - rest
-    - minio
+      rest:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     volumes:
     - ./warehouse:/home/iceberg/warehouse
     - ./provision.py:/opt/spark/provision.py
@@ -53,6 +55,14 @@ services:
     - CATALOG_WAREHOUSE=s3://warehouse/
     - CATALOG_IO__IMPL=org.apache.iceberg.aws.s3.S3FileIO
     - CATALOG_S3_ENDPOINT=http://minio:9000
+    volumes:
+    - ./healthcheck.sh:/healthcheck.sh
+    healthcheck:
+      test: ["CMD", "bash", "/healthcheck.sh"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 10s
   minio:
     image: minio/minio
     container_name: pyiceberg-minio

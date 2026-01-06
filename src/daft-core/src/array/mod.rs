@@ -8,6 +8,7 @@ mod list_array;
 pub mod ops;
 mod serdes;
 mod struct_array;
+pub mod utf8;
 
 use arrow::array::make_array;
 use daft_arrow::{
