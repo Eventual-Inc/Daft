@@ -21,7 +21,7 @@ if TYPE_CHECKING:
         TextClassifierDescriptor,
         TextEmbedderDescriptor,
     )
-    from daft.ai.transformers.protocols.prompter import TransformersPromptOptions
+    from daft.ai.transformers.typing import TransformersPromptOptions
     from daft.ai.typing import (
         ClassifyImageOptions,
         ClassifyTextOptions,
@@ -44,9 +44,13 @@ class TransformersProvider(Provider):
         self._name = name if name else "transformers"
         self._options = options
 
-        from daft.dependencies import np, torch
+        from daft.dependencies import np, torch, transformers
 
-        if not torch.module_available() or not np.module_available():  # type: ignore[attr-defined]
+        if (
+            not torch.module_available()
+            or not np.module_available()  # type: ignore[attr-defined]
+            or not transformers.module_available()
+        ):
             raise ProviderImportError("transformers")
 
     @property
@@ -128,7 +132,7 @@ class TransformersProvider(Provider):
     def get_prompter(
         self,
         model: str | None = None,
-        return_format: BaseModel | None = None,
+        return_format: type[BaseModel] | None = None,
         system_message: str | None = None,
         **options: Unpack[TransformersPromptOptions],
     ) -> PrompterDescriptor:
@@ -136,11 +140,11 @@ class TransformersProvider(Provider):
             TransformersPrompterDescriptor,
         )
 
-        prompt_options: TransformersPromptOptions = options
+        # Pass options as dict - Descriptor resolves in __post_init__
         return TransformersPrompterDescriptor(
             provider_name=self._name,
             model_name=(model or self.DEFAULT_PROMPTER),
-            prompt_options=prompt_options,
+            prompt_options=dict(options),
             system_message=system_message,
             return_format=return_format,
         )

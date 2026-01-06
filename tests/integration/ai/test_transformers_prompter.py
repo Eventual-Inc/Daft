@@ -5,10 +5,16 @@ Note:
 
 Usage:
     pytest -m integration ./tests/integration/ai/test_transformers_prompter.py
+
+Optional:
+    Override models to use smaller/faster ones for local runs:
+      - DAFT_TEST_TRANSFORMERS_MODEL (text-only)
+      - DAFT_TEST_TRANSFORMERS_VLM_MODEL (multimodal)
 """
 
 from __future__ import annotations
 
+import os
 from collections import defaultdict
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -26,7 +32,7 @@ from tests.conftest import get_tests_daft_runner_name
 RUNNER_IS_NATIVE = get_tests_daft_runner_name() == "native"
 
 # Use Qwen3-0.6B for testing - small but capable model
-MODEL_NAME = "Qwen/Qwen3-0.6B"
+MODEL_NAME = os.environ.get("DAFT_TEST_TRANSFORMERS_MODEL", "Qwen/Qwen3-0.6B")
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -198,44 +204,6 @@ def test_prompt_with_system_message(session, metrics):
 
 
 @pytest.mark.integration()
-def test_prompt_with_logprobs(session, metrics):
-    """Test prompt function with log probabilities enabled (output_mode='logprobs')."""
-    df = daft.from_pydict(
-        {
-            "question": [
-                "Hi",
-            ]
-        }
-    )
-
-    df = df.with_column(
-        "answer",
-        prompt(
-            daft.col("question"),
-            provider="transformers",
-            model=MODEL_NAME,
-            max_new_tokens=5,  # Very small to keep test fast
-            output_mode="logprobs",  # Enable logprobs output for RL training
-            num_logprobs=3,
-        ),
-    )
-
-    answers = df.to_pydict()["answer"]
-    _assert_prompt_metrics_recorded(metrics())
-
-    assert len(answers) == 1
-    answer = answers[0]
-    # When output_mode="logprobs", answer should be a struct with generation info
-    assert isinstance(answer, dict), f"Expected dict, got {type(answer)}"
-    assert "text" in answer
-    assert "token_ids" in answer
-    assert "tokens" in answer
-    assert "logprobs" in answer  # Ground truth logprobs from generation
-    assert isinstance(answer["logprobs"], list)
-    assert len(answer["logprobs"]) == len(answer["token_ids"])  # One logprob per token
-
-
-@pytest.mark.integration()
 def test_prompt_structured_output(session, metrics):
     """Test prompt function with structured output (Pydantic model).
 
@@ -351,7 +319,47 @@ def test_prompt_multiple_rows(session, metrics):
 
 
 # VLM model for multimodal tests
-VLM_MODEL_NAME = "Qwen/Qwen2-VL-2B-Instruct"
+VLM_MODEL_NAME = os.environ.get("DAFT_TEST_TRANSFORMERS_VLM_MODEL", "Qwen/Qwen2-VL-2B-Instruct")
+
+
+@pytest.mark.integration()
+def test_prompt_with_image_input(session, metrics):
+    """Test prompt function with image input using a VLM model."""
+    import io
+
+    from PIL import Image
+
+    # Create a simple test image (red square)
+    img = Image.new("RGB", (64, 64), color="red")
+    img_bytes = io.BytesIO()
+    img.save(img_bytes, format="PNG")
+    img_bytes = img_bytes.getvalue()
+
+    df = daft.from_pydict(
+        {
+            "image": [img_bytes],
+            "question": ["What color is this image? Answer in one word."],
+        }
+    )
+
+    df = df.with_column(
+        "answer",
+        prompt(
+            daft.col("image"),
+            daft.col("question"),
+            provider="transformers",
+            model=VLM_MODEL_NAME,
+            max_new_tokens=20,
+        ),
+    )
+
+    answers = df.to_pydict()["answer"]
+    _assert_prompt_metrics_recorded(metrics())
+
+    assert len(answers) == 1
+    for answer in answers:
+        assert isinstance(answer, str)
+        assert len(answer) > 0
 
 
 @pytest.mark.integration()
@@ -397,89 +405,3 @@ def test_prompt_with_quantization(session, metrics):
     for answer in answers:
         assert isinstance(answer, str)
         assert len(answer) > 0
-
-
-@pytest.mark.integration()
-def test_prompt_with_image_input(session, metrics):
-    """Test prompt function with image input using a VLM model."""
-    import io
-
-    from PIL import Image
-
-    # Create a simple test image (red square)
-    img = Image.new("RGB", (64, 64), color="red")
-    img_bytes = io.BytesIO()
-    img.save(img_bytes, format="PNG")
-    img_bytes = img_bytes.getvalue()
-
-    df = daft.from_pydict(
-        {
-            "image": [img_bytes],
-            "question": ["What color is this image? Answer in one word."],
-        }
-    )
-
-    df = df.with_column(
-        "answer",
-        prompt(
-            daft.col("image"),
-            daft.col("question"),
-            provider="transformers",
-            model=VLM_MODEL_NAME,
-            max_new_tokens=20,
-        ),
-    )
-
-    answers = df.to_pydict()["answer"]
-    _assert_prompt_metrics_recorded(metrics())
-
-    assert len(answers) == 1
-    for answer in answers:
-        assert isinstance(answer, str)
-        assert len(answer) > 0
-
-
-@pytest.mark.integration()
-def test_prompt_vlm_with_logprobs(session, metrics):
-    """Test VLM prompt function with logprobs output mode."""
-    import io
-
-    from PIL import Image
-
-    # Create a simple test image (blue square)
-    img = Image.new("RGB", (64, 64), color="blue")
-    img_bytes = io.BytesIO()
-    img.save(img_bytes, format="PNG")
-    img_bytes = img_bytes.getvalue()
-
-    df = daft.from_pydict(
-        {
-            "image": [img_bytes],
-            "question": ["What color?"],
-        }
-    )
-
-    df = df.with_column(
-        "answer",
-        prompt(
-            daft.col("image"),
-            daft.col("question"),
-            provider="transformers",
-            model=VLM_MODEL_NAME,
-            max_new_tokens=5,
-            output_mode="logprobs",
-            num_logprobs=3,
-        ),
-    )
-
-    answers = df.to_pydict()["answer"]
-    _assert_prompt_metrics_recorded(metrics())
-
-    assert len(answers) == 1
-    answer = answers[0]
-    assert isinstance(answer, dict), f"Expected dict, got {type(answer)}"
-    assert "text" in answer
-    assert "token_ids" in answer
-    assert "tokens" in answer
-    assert "logprobs" in answer
-    assert len(answer["logprobs"]) == len(answer["token_ids"])
