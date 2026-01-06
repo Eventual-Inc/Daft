@@ -80,8 +80,10 @@ class RecordBatch:
         return tab
 
     @staticmethod
-    def _from_series(series: list[Series]) -> RecordBatch:
-        return RecordBatch._from_pyrecordbatch(_PyRecordBatch.from_pyseries_list([s._series for s in series]))
+    def _from_series(series: list[Series], provenance_columns: set[str] | None = None) -> RecordBatch:
+        return RecordBatch._from_pyrecordbatch(
+            _PyRecordBatch.from_pyseries_list([s._series for s in series], provenance_columns)
+        )
 
     @staticmethod
     def from_arrow_table(arrow_table: pa.Table) -> RecordBatch:
@@ -475,8 +477,11 @@ class RecordBatch:
 
     def __reduce__(
         self,
-    ) -> tuple[Callable[[list[Series]], RecordBatch], tuple[list[Series]]]:
-        return RecordBatch._from_series, (self.columns(),)
+    ) -> tuple[Callable[[list[Series], set[str] | None], RecordBatch], tuple[list[Series], set[str] | None]]:
+        provenance_columns = self.schema().provenance_column_names()
+        # Only include provenance if there are any, otherwise pass None for backward compatibility
+        prov = provenance_columns if provenance_columns else None
+        return RecordBatch._from_series, (self.columns(), prov)
 
     @classmethod
     def read_parquet(

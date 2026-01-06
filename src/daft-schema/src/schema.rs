@@ -331,10 +331,11 @@ impl Schema {
         // Map self's provenance columns
         for (new_idx, field) in fields.iter().enumerate() {
             let fields_with_name = self.get_fields_with_name(&field.name);
-            if let Some((old_idx, _)) = fields_with_name.first() {
-                if fields_with_name.len() == 1 && self.provenance_columns.contains(old_idx) {
-                    provenance_columns.insert(new_idx);
-                }
+            if let Some((old_idx, _)) = fields_with_name.first()
+                && fields_with_name.len() == 1
+                && self.provenance_columns.contains(old_idx)
+            {
+                provenance_columns.insert(new_idx);
             }
         }
 
@@ -343,12 +344,13 @@ impl Schema {
         for field in &other.fields {
             if !self_field_names.contains(field.name.as_str()) {
                 let fields_with_name = other.get_fields_with_name(&field.name);
-                if let Some((old_idx, _)) = fields_with_name.first() {
-                    if fields_with_name.len() == 1 && other.provenance_columns.contains(old_idx) {
-                        // Find the new index for this field
-                        if let Some(new_idx) = fields.iter().position(|f| f.name == field.name) {
-                            provenance_columns.insert(new_idx);
-                        }
+                if let Some((old_idx, _)) = fields_with_name.first()
+                    && fields_with_name.len() == 1
+                    && other.provenance_columns.contains(old_idx)
+                {
+                    // Find the new index for this field
+                    if let Some(new_idx) = fields.iter().position(|f| f.name == field.name) {
+                        provenance_columns.insert(new_idx);
                     }
                 }
             }

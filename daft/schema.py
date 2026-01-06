@@ -184,6 +184,16 @@ class Schema:
         """Returns the name of the column with the minimum estimated size."""
         return self._schema.min_estimated_size_column()
 
+    def provenance_column_names(self) -> set[str]:
+        """Returns the names of all provenance columns in this schema.
+
+        Provenance columns are hidden columns that track the origin/source of each row.
+
+        Returns:
+            set[str]: Set of provenance column names.
+        """
+        return self._schema.provenance_column_names()
+
     def _repr_html_(self) -> str:
         return self._schema._repr_html_()
 

@@ -680,9 +680,8 @@ class DataFrame:
         data_dict = {header: [row.get(header, None) for row in data] for header in headers_ordered}
 
         # Add provenance column if provenance_fn is provided
-        has_provenance = provenance_fn is not None
         provenance_columns = None
-        if has_provenance:
+        if provenance_fn is not None:
             provenance_values = [provenance_fn(row) for row in data]
             data_dict["__provenance"] = provenance_values
             provenance_columns = {"__provenance"}

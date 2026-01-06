@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 use common_py_serde::impl_bincode_py_state_serialization;
 use pyo3::prelude::*;
@@ -112,6 +112,17 @@ impl PySchema {
     #[pyo3(name = "min_estimated_size_column")]
     pub fn min_estimated_size_column(&self) -> Option<&str> {
         self.schema.min_estimated_size_column()
+    }
+
+    /// Get the names of all provenance columns in this schema
+    #[pyo3(name = "provenance_column_names")]
+    pub fn provenance_column_names(&self) -> HashSet<String> {
+        self.schema
+            .provenance_columns()
+            .iter()
+            .filter_map(|idx| self.schema.fields().get(*idx))
+            .map(|field| field.name.clone())
+            .collect()
     }
 }
 

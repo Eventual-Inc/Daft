@@ -58,10 +58,11 @@ impl UDFProject {
         for (new_idx, field) in fields.iter().enumerate() {
             // Check if this field was a provenance column in the input
             let fields_with_name = input_schema.get_fields_with_name(&field.name);
-            if let Some((old_idx, _)) = fields_with_name.first() {
-                if fields_with_name.len() == 1 && provenance_indices.contains(old_idx) {
-                    projected_provenance_indices.insert(new_idx);
-                }
+            if let Some((old_idx, _)) = fields_with_name.first()
+                && fields_with_name.len() == 1
+                && provenance_indices.contains(old_idx)
+            {
+                projected_provenance_indices.insert(new_idx);
             }
         }
 

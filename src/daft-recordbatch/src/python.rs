@@ -507,7 +507,11 @@ impl PyRecordBatch {
         })
     }
     #[staticmethod]
-    pub fn from_pyseries_list(pycolumns: Vec<PySeries>) -> PyResult<Self> {
+    #[pyo3(signature = (pycolumns, provenance_columns = None))]
+    pub fn from_pyseries_list(
+        pycolumns: Vec<PySeries>,
+        provenance_columns: Option<HashSet<String>>,
+    ) -> PyResult<Self> {
         if pycolumns.is_empty() {
             return Ok(Self {
                 record_batch: RecordBatch::empty(None),
@@ -523,14 +527,17 @@ impl PyRecordBatch {
             .map(|s| (s.series.field().clone(), s.series))
             .unzip::<_, _, Vec<Field>, Vec<Series>>();
 
+        let provenance_columns = provenance_columns.unwrap_or_default();
+        let schema = Schema::new_with_provenance_by_name(fields, provenance_columns);
+
         if first == 0 {
             return Ok(Self {
-                record_batch: RecordBatch::empty(Some(Arc::new(Schema::new(fields)))),
+                record_batch: RecordBatch::empty(Some(Arc::new(schema))),
             });
         }
 
         Ok(Self {
-            record_batch: RecordBatch::new_with_broadcast(Schema::new(fields), columns, num_rows)?,
+            record_batch: RecordBatch::new_with_broadcast(schema, columns, num_rows)?,
         })
     }
 
