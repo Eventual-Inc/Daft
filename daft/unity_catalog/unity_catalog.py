@@ -94,8 +94,6 @@ class UnityCatalog:
         base_url = endpoint.rstrip("/")
         self._endpoint = endpoint
 
-        print(type(unitycatalog.DefaultHttpxClient()))
-
         # should we use oauth?
         if oauth and not token:
             self._token_provider = OAuth2TokenProvider(base_url, oauth)

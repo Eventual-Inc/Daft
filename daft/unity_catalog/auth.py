@@ -67,6 +67,7 @@ class OAuth2TokenProvider(TokenProvider):
 
     def get_token(self) -> str:
         if self._token_expired():
+            print("\n\n==== Token expired, refreshing ====\n\n")
             self._refresh()
         if self._token is None:
             raise RuntimeError("Token refresh failed to set token")
@@ -82,7 +83,7 @@ class OAuth2TokenProvider(TokenProvider):
     def _token_expired(self) -> bool:
         if self._token is None or self._expiration == 0:
             return True
-        return not is_expired(self._expiration)
+        return is_expired(self._expiration)
 
 
 def is_expired(exp: int, skew_seconds: int = 300) -> bool:
@@ -105,8 +106,6 @@ def _generate_workspace_token(workspace_url: str, oauth: OAuth2Credentials) -> s
 
     max_retries = 3
     timeout = 10
-    initial_backoff_ms = 1000
-    max_backoff_ms = 10000
 
     for attempt in range(max_retries):
         request = urllib.request.Request(
@@ -158,9 +157,16 @@ def _generate_workspace_token(workspace_url: str, oauth: OAuth2Credentials) -> s
 
         # Exponential backoff with jitter
         if attempt < max_retries - 1:
-            backoff_ms = min(initial_backoff_ms * (2**attempt), max_backoff_ms)
-            jitter = random.randint(0, backoff_ms // 4)  # ±25% jitter
-            time.sleep((backoff_ms + jitter) / 1000)
+            _sleep_with_backoff(attempt)
 
     # Should never reach here, but included for safety
     raise RuntimeError(f"UnityCatalog token request to {token_url} failed after {max_retries} attempts")
+
+
+def _sleep_with_backoff(attempt: int) -> None:
+    initial_backoff_ms = 500  # 0.5s
+    max_backoff_ms = 10_000  # 10s cap
+
+    base_ms = min(initial_backoff_ms * (2**attempt), max_backoff_ms)
+    sleep_ms = random.uniform(0.0, base_ms)  # full jitter
+    time.sleep(sleep_ms / 1000.0)
