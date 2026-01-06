@@ -71,7 +71,7 @@ class NativeExecutor:
                         glob_paths_map[source_id] = paths
             
             # Run plan (creating if needed) and enqueue inputs with input_id 0
-            result_receiver = await self._executor.run_and_enqueue_inputs(
+            result_receiver = await self._executor.run(
                 local_physical_plan,
                 ctx._ctx,
                 0,

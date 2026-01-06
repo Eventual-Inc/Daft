@@ -11,4 +11,4 @@ def get_asset_dir() -> str:
 ASSET_FOLDER = get_asset_dir()
 
 TPCH_QUERIES = f"{ASSET_FOLDER}/tpch-sqlite-queries"
-TPCH_DBGEN_DIR = f"/Users/colinho/Desktop/Daft-2/data/tpch-dbgen"
+TPCH_DBGEN_DIR = f"{ASSET_FOLDER}/../../data/tpch-dbgen"

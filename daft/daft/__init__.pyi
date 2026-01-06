@@ -2014,24 +2014,18 @@ class PyResultReceiver:
     def __aiter__(self) -> PyResultReceiver: ...
     async def __anext__(self) -> PyMicroPartition | None: ...
 
-class PyExecutionEngineResult:
-    async def finish(self) -> bytes: ...
-    async def enqueue_inputs(
+class NativeExecutor:
+    def __init__(self) -> None: ...
+    async def run(
         self,
+        plan: LocalPhysicalPlan,
+        daft_ctx: PyDaftContext,
         input_id: int,
+        context: dict[str, str] | None = None,
         scan_tasks: dict[str, list[ScanTask]] | None = None,
         in_memory: dict[str, list[PyMicroPartition]] | None = None,
         glob_paths: dict[str, list[str]] | None = None,
     ) -> PyResultReceiver | None: ...
-
-class NativeExecutor:
-    def __init__(self) -> None: ...
-    def run(
-        self,
-        plan: LocalPhysicalPlan,
-        daft_ctx: PyDaftContext,
-        context: dict[str, str] | None = None,
-    ) -> PyExecutionEngineResult: ...
     @staticmethod
     def repr_ascii(builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, simple: bool) -> str: ...
     @staticmethod

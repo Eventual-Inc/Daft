@@ -7,7 +7,7 @@ from daft import col
 from daft.functions import format
 
 
-@pytest.fixture(params=["memory"], scope="session")
+@pytest.fixture(params=["memory", "parquet", "lance"], scope="session")
 def input_df(request, tmp_path_factory):
     with daft.execution_config_ctx(enable_dynamic_batching=True):
         df = daft.range(start=0, end=1024, partitions=100)

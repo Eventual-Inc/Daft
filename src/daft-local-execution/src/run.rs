@@ -210,27 +210,6 @@ impl PyNativeExecutor {
         }
     }
 
-    #[pyo3(signature = (local_physical_plan, daft_ctx, context=None))]
-    pub fn run(
-        &self,
-        py: Python,
-        local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
-        daft_ctx: &PyDaftContext,
-        context: Option<HashMap<String, String>>,
-    ) -> PyResult<u64> {
-        let daft_ctx: &DaftContext = daft_ctx.into();
-        let plan = local_physical_plan.plan.clone();
-        let exec_cfg = daft_ctx.execution_config();
-        let subscribers = daft_ctx.subscribers();
-        Ok(self.executor.lock_py_attached(py).unwrap().run(
-            &plan,
-            exec_cfg,
-            subscribers,
-            context,
-            should_enable_explain_analyze(),
-        )?)
-    }
-
     /// Finish execution for a plan by fingerprint
     pub fn finish<'py>(&self, py: Python<'py>, fingerprint: u64) -> PyResult<Bound<'py, PyAny>> {
         
@@ -256,7 +235,7 @@ impl PyNativeExecutor {
     /// Run a plan (creating it if it doesn't exist) and enqueue inputs, returning the result receiver.
     /// This combines the logic of run() and enqueue_inputs() into a single operation.
     #[pyo3(signature = (local_physical_plan, daft_ctx, input_id, context=None, scan_tasks=None, in_memory=None, glob_paths=None))]
-    pub fn run_and_enqueue_inputs<'py>(
+    pub fn run<'py>(
         &self,
         py: Python<'py>,
         local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
@@ -306,9 +285,9 @@ impl PyNativeExecutor {
         }
 
         let enqueue_future = {
-            // Lock the executor and call run_and_enqueue_inputs
+            // Lock the executor and call run
             let mut exec = self.executor.lock_py_attached(py).unwrap();
-            exec.run_and_enqueue_inputs(
+            exec.run(
                 &plan,
                 exec_cfg,
                 subscribers,
@@ -447,149 +426,7 @@ impl NativeExecutor {
         }
     }
 
-    pub fn run(
-        &mut self,
-        local_physical_plan: &LocalPhysicalPlanRef,
-        exec_cfg: Arc<DaftExecutionConfig>,
-        subscribers: Vec<Arc<dyn Subscriber>>,
-        additional_context: Option<HashMap<String, String>>,
-        enable_explain_analyze: bool,
-    ) -> DaftResult<u64> {
-        // Compute plan fingerprint for deduplication
-        let fingerprint = local_physical_plan.fingerprint();
-        // Get or create plan handle from registry
-        self.active_plans.get_or_create_plan(fingerprint, || {
-            // Create new execution
-            let cancel = self.cancel.clone();
-            let additional_context = additional_context.clone().unwrap_or_default();
-            let ctx = RuntimeContext::new_with_context(additional_context.clone());
-            let (pipeline, mut input_senders): (_, HashMap<String, InputSender>) =
-                translate_physical_plan_to_pipeline(local_physical_plan, &exec_cfg, &ctx)?;
 
-            let query_id: common_metrics::QueryID = additional_context
-                .get("query_id")
-                .ok_or_else(|| {
-                    common_error::DaftError::ValueError(
-                        "query_id not found in additional_context".to_string(),
-                    )
-                })?
-                .clone()
-                .into();
-
-            // Spawn execution on the global runtime - returns immediately
-            let handle = get_global_runtime();
-            let stats_manager = RuntimeStatsManager::try_new(handle, &pipeline, subscribers, query_id)?;
-            
-            // Create channel for enqueue_input messages
-            let (enqueue_input_tx, mut enqueue_input_rx) = create_channel(1);
-            
-            let task = async move {
-                let stats_manager_handle = stats_manager.handle();
-                let memory_manager = get_or_init_memory_manager();
-                let mut runtime_handle =
-                    ExecutionRuntimeContext::new(memory_manager.clone(), stats_manager_handle);
-                let mut receiver = pipeline.start(&mut runtime_handle)?;
-
-                // Message router handles routing messages to per-input_id channels
-                let mut message_router = MessageRouter::new(HashMap::new());
-
-                let mut input_exhausted = false;
-
-                let (result, finish_status) = loop {
-                    tokio::select! {
-                        biased;
-                        () = cancel.cancelled() => {
-                            log::info!("Execution engine cancelled");
-                            break (Ok(()), QueryEndState::Cancelled);
-                        }
-                        _ = tokio::signal::ctrl_c() => {
-                            log::info!("Received Ctrl-C, shutting down execution engine");
-                            break (Ok(()), QueryEndState::Cancelled);
-                        }
-                        Some(join_result) = runtime_handle.join_next() => {
-                            match join_result {
-                                Ok(Ok(())) => {
-                                    // Task completed successfully, continue
-                                }
-                                Ok(Err(e)) => {
-                                    // Task failed with error
-                                    break (Err(e.into()), QueryEndState::Failed);
-                                }
-                                Err(e) if !matches!(&e, crate::Error::JoinError { source } if source.is_cancelled()) => {
-                                    // Join error (unless cancelled)
-                                    break (Err(e.into()), QueryEndState::Failed);
-                                }
-                                _ => {
-                                    break (Ok(()), QueryEndState::Cancelled);
-                                }
-                            }
-                        }
-                        enqueue_msg = enqueue_input_rx.recv(), if !input_exhausted => {
-                            match enqueue_msg {
-                                Some(EnqueueInputMessage { input_id, plan_inputs_by_key, result_sender }) => {
-                                    // Store the result sender in message router's output_senders
-                                    message_router.insert_output_sender(input_id, result_sender);
-                                    
-                                    // Send inputs via local input_senders
-                                    for (key, input_id, plan_input) in plan_inputs_by_key {
-                                        if let Some(sender) = input_senders.get(&key) {
-                                            // If send fails (e.g., channel closed), continue with other inputs
-                                            let _ = sender.send(input_id, plan_input).await;
-                                        }
-                                    }
-                                }
-                                None => {
-                                    input_senders.clear();
-                                    input_exhausted = true;
-                                }
-                            }
-                        }
-                        msg = receiver.recv() => {
-                            match msg {
-                                Some(msg) => {
-                                    message_router.route_message(msg).await;
-                                }
-                                None => {
-                                    let res = runtime_handle.shutdown().await;
-                                    break (res, QueryEndState::Finished);
-                                }
-                            }
-                        }
-                    }
-                };
-                drop(message_router);
-                // Finish the stats manager
-                let final_stats = stats_manager.finish(finish_status).await;
-                // TODO: Move into a runtime stats subscriber
-                if enable_explain_analyze {
-                    let curr_ms = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .expect("Time went backwards")
-                        .as_millis();
-                    let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
-                    let mut file = File::create(file_name)?;
-                    writeln!(
-                        file,
-                        "```mermaid\n{}\n```",
-                        viz_pipeline_mermaid(
-                            pipeline.as_ref(),
-                            DisplayLevel::Verbose,
-                            true,
-                            Default::default()
-                        )
-                    )?;
-                }
-                flush_opentelemetry_providers();
-                result.map(|()| final_stats)
-            };
-
-            let handle = RuntimeTask::new(handle, task);
-            Ok((handle, enqueue_input_tx))
-        })?;
-
-        // Return the fingerprint
-        Ok(fingerprint)
-    }
 
     /// Finish execution for a plan by fingerprint
     pub fn finish(&mut self, fingerprint: u64) -> DaftResult<BoxFuture<'static, ExecutionEngineFinalResult>> {
@@ -648,7 +485,7 @@ impl NativeExecutor {
 
     /// Run a plan (creating it if it doesn't exist) and enqueue inputs, returning the result receiver.
     /// This combines the logic of run() and enqueue_input() into a single operation.
-    pub fn run_and_enqueue_inputs(
+    pub fn run(
         &mut self,
         local_physical_plan: &LocalPhysicalPlanRef,
         exec_cfg: Arc<DaftExecutionConfig>,

@@ -93,7 +93,7 @@ class RaySwordfishActor:
             # Run plan (creating if needed) and enqueue all inputs across all source_ids in a single call
             ctx = PyDaftContext()
             ctx._daft_execution_config = exec_cfg
-            result_receiver = await self.native_executor.run_and_enqueue_inputs(
+            result_receiver = await self.native_executor.run(
                 plan,
                 ctx,
                 task_id,
