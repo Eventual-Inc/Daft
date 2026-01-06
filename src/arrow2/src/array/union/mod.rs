@@ -1,3 +1,4 @@
+use super::{new_empty_array, new_null_array, Array};
 use crate::{
     bitmap::Bitmap,
     buffer::Buffer,
@@ -5,8 +6,6 @@ use crate::{
     error::Error,
     scalar::{new_scalar, Scalar},
 };
-
-use super::{new_empty_array, new_null_array, Array};
 
 #[cfg(feature = "arrow")]
 mod data;
@@ -27,6 +26,7 @@ type UnionComponents<'a> = (&'a [Field], Option<&'a [i32]>, UnionMode);
 // let value = field.value(offset);
 // ```
 #[derive(Clone)]
+#[deprecated(note = "arrow2 migration")]
 pub struct UnionArray {
     // Invariant: every item in `types` is `> 0 && < fields.len()`
     types: Buffer<i8>,

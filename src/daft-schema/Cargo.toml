@@ -1,5 +1,5 @@
 [dependencies]
-arrow-schema = "54.2.1"
+arrow-schema = {workspace = true}
 common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false}
 daft-arrow = {path = "../daft-arrow"}
 common-display = {path = "../common/display", default-features = false}

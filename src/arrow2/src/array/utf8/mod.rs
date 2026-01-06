@@ -1,3 +1,9 @@
+use either::Either;
+
+use super::{
+    specification::{try_check_offsets_bounds, try_check_utf8},
+    Array, GenericBinaryArray,
+};
 use crate::{
     bitmap::{
         utils::{BitmapIter, ZipValidity},
@@ -8,13 +14,6 @@ use crate::{
     error::{Error, Result},
     offset::{Offset, Offsets, OffsetsBuffer},
     trusted_len::TrustedLen,
-};
-
-use either::Either;
-
-use super::{
-    specification::{try_check_offsets_bounds, try_check_utf8},
-    Array, GenericBinaryArray,
 };
 
 #[cfg(feature = "arrow")]
@@ -69,6 +68,7 @@ impl<T: AsRef<str>> AsRef<[u8]> for StrAsBytes<T> {
 /// * A slice of `values` taken from two consecutives `offsets` is valid `utf8`.
 /// * `len` is equal to `validity.len()`, when defined.
 #[derive(Clone)]
+#[deprecated(note = "arrow2 migration")]
 pub struct Utf8Array<O: Offset> {
     data_type: DataType,
     offsets: OffsetsBuffer<O>,
