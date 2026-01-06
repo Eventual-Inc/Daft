@@ -16,6 +16,7 @@ pub use iterator::*;
 
 /// An array representing a (key, value), both of arbitrary logical types.
 #[derive(Clone)]
+#[deprecated(note = "arrow2 migration")]
 pub struct MapArray {
     data_type: DataType,
     // invariant: field.len() == offsets.len()

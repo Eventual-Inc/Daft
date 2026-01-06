@@ -469,12 +469,12 @@ def test_all_partition_order_by(make_df):
             expected_rank = value_to_rank[value]
             expected_dense_rank = value_to_dense_rank[value]
 
-            assert (
-                result_dict["category_rank"][idx] == expected_rank
-            ), f"Incorrect rank for value {value} in category {category}"
-            assert (
-                result_dict["category_dense_rank"][idx] == expected_dense_rank
-            ), f"Incorrect dense_rank for value {value} in category {category}"
+            assert result_dict["category_rank"][idx] == expected_rank, (
+                f"Incorrect rank for value {value} in category {category}"
+            )
+            assert result_dict["category_dense_rank"][idx] == expected_dense_rank, (
+                f"Incorrect dense_rank for value {value} in category {category}"
+            )
 
     for subcategory in [1, 2, 3]:
         subcategory_indices = [i for i, sc in enumerate(result_dict["subcategory"]) if sc == subcategory]
@@ -498,12 +498,12 @@ def test_all_partition_order_by(make_df):
             expected_rank = value_to_rank[value]
             expected_dense_rank = value_to_dense_rank[value]
 
-            assert (
-                result_dict["subcategory_rank"][idx] == expected_rank
-            ), f"Incorrect rank for value {value} in subcategory {subcategory}"
-            assert (
-                result_dict["subcategory_dense_rank"][idx] == expected_dense_rank
-            ), f"Incorrect dense_rank for value {value} in subcategory {subcategory}"
+            assert result_dict["subcategory_rank"][idx] == expected_rank, (
+                f"Incorrect rank for value {value} in subcategory {subcategory}"
+            )
+            assert result_dict["subcategory_dense_rank"][idx] == expected_dense_rank, (
+                f"Incorrect dense_rank for value {value} in subcategory {subcategory}"
+            )
 
     for category in ["A", "B", "C"]:
         for subcategory in [1, 2, 3]:
@@ -532,12 +532,12 @@ def test_all_partition_order_by(make_df):
                 expected_rank = value_to_rank[value]
                 expected_dense_rank = value_to_dense_rank[value]
 
-                assert (
-                    result_dict["combined_rank"][idx] == expected_rank
-                ), f"Incorrect rank for value {value} in {category}-{subcategory}"
-                assert (
-                    result_dict["combined_dense_rank"][idx] == expected_dense_rank
-                ), f"Incorrect dense_rank for value {value} in {category}-{subcategory}"
+                assert result_dict["combined_rank"][idx] == expected_rank, (
+                    f"Incorrect rank for value {value} in {category}-{subcategory}"
+                )
+                assert result_dict["combined_dense_rank"][idx] == expected_dense_rank, (
+                    f"Incorrect dense_rank for value {value} in {category}-{subcategory}"
+                )
 
     for category in ["A", "B", "C"]:
         for subcategory in [1, 2, 3]:
@@ -556,27 +556,27 @@ def test_all_partition_order_by(make_df):
                 idx = current_ts_indices[0]
 
                 if ts == 0:
-                    assert (
-                        result_dict["combined_lag"][idx] is None
-                    ), f"First ts in {category}-{subcategory} should have None lag"
+                    assert result_dict["combined_lag"][idx] is None, (
+                        f"First ts in {category}-{subcategory} should have None lag"
+                    )
                 else:
                     prev_ts_indices = [i for i in combined_indices if result_dict["ts"][i] == ts - 1]
                     if prev_ts_indices:
                         prev_idx = prev_ts_indices[0]
                         prev_value = result_dict["value"][prev_idx]
-                        assert (
-                            result_dict["combined_lag"][idx] == prev_value
-                        ), f"Incorrect lag for {category}-{subcategory}, ts {ts}"
+                        assert result_dict["combined_lag"][idx] == prev_value, (
+                            f"Incorrect lag for {category}-{subcategory}, ts {ts}"
+                        )
 
                 if ts == 4:
-                    assert (
-                        result_dict["combined_lead"][idx] is None
-                    ), f"Last ts in {category}-{subcategory} should have None lead"
+                    assert result_dict["combined_lead"][idx] is None, (
+                        f"Last ts in {category}-{subcategory} should have None lead"
+                    )
                 else:
                     next_ts_indices = [i for i in combined_indices if result_dict["ts"][i] == ts + 1]
                     if next_ts_indices:
                         next_idx = next_ts_indices[0]
                         next_value = result_dict["value"][next_idx]
-                        assert (
-                            result_dict["combined_lead"][idx] == next_value
-                        ), f"Incorrect lead for {category}-{subcategory}, ts {ts}"
+                        assert result_dict["combined_lead"][idx] == next_value, (
+                            f"Incorrect lead for {category}-{subcategory}, ts {ts}"
+                        )

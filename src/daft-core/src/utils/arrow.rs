@@ -124,15 +124,15 @@ fn coerce_to_daft_compatible_type(
 }
 
 fn coerce_arrow_to_daft_compatible_type(
-    dtype: &arrow_schema::DataType,
-) -> Option<arrow_schema::DataType> {
+    dtype: &arrow::datatypes::DataType,
+) -> Option<arrow::datatypes::DataType> {
     match dtype {
-        arrow_schema::DataType::Utf8 => Some(arrow_schema::DataType::LargeUtf8),
-        arrow_schema::DataType::Binary => Some(arrow_schema::DataType::LargeBinary),
-        arrow_schema::DataType::List(field) => {
+        arrow::datatypes::DataType::Utf8 => Some(arrow::datatypes::DataType::LargeUtf8),
+        arrow::datatypes::DataType::Binary => Some(arrow::datatypes::DataType::LargeBinary),
+        arrow::datatypes::DataType::List(field) => {
             let new_field = match coerce_arrow_to_daft_compatible_type(field.data_type()) {
                 Some(new_inner_dtype) => Arc::new(
-                    arrow_schema::Field::new(
+                    arrow::datatypes::Field::new(
                         field.name().clone(),
                         new_inner_dtype,
                         field.is_nullable(),
@@ -141,12 +141,12 @@ fn coerce_arrow_to_daft_compatible_type(
                 ),
                 None => field.clone(),
             };
-            Some(arrow_schema::DataType::LargeList(new_field))
+            Some(arrow::datatypes::DataType::LargeList(new_field))
         }
-        arrow_schema::DataType::LargeList(field) => {
+        arrow::datatypes::DataType::LargeList(field) => {
             let new_inner_dtype = coerce_arrow_to_daft_compatible_type(field.data_type())?;
-            Some(arrow_schema::DataType::LargeList(Arc::new(
-                arrow_schema::Field::new(
+            Some(arrow::datatypes::DataType::LargeList(Arc::new(
+                arrow::datatypes::Field::new(
                     field.name().clone(),
                     new_inner_dtype,
                     field.is_nullable(),
@@ -154,10 +154,10 @@ fn coerce_arrow_to_daft_compatible_type(
                 .with_metadata(field.metadata().clone()),
             )))
         }
-        arrow_schema::DataType::Map(field, sorted) => {
+        arrow::datatypes::DataType::Map(field, sorted) => {
             let new_field = match coerce_arrow_to_daft_compatible_type(field.data_type()) {
                 Some(new_inner_dtype) => Arc::new(
-                    arrow_schema::Field::new(
+                    arrow::datatypes::Field::new(
                         field.name().clone(),
                         new_inner_dtype,
                         field.is_nullable(),
@@ -166,13 +166,13 @@ fn coerce_arrow_to_daft_compatible_type(
                 ),
                 None => field.clone(),
             };
-            Some(arrow_schema::DataType::Map(new_field, *sorted))
+            Some(arrow::datatypes::DataType::Map(new_field, *sorted))
         }
-        arrow_schema::DataType::FixedSizeList(field, size) => {
+        arrow::datatypes::DataType::FixedSizeList(field, size) => {
             let new_inner_dtype = coerce_arrow_to_daft_compatible_type(field.data_type())?;
-            Some(arrow_schema::DataType::FixedSizeList(
+            Some(arrow::datatypes::DataType::FixedSizeList(
                 Arc::new(
-                    arrow_schema::Field::new(
+                    arrow::datatypes::Field::new(
                         field.name().clone(),
                         new_inner_dtype,
                         field.is_nullable(),
@@ -182,13 +182,13 @@ fn coerce_arrow_to_daft_compatible_type(
                 *size,
             ))
         }
-        arrow_schema::DataType::Struct(fields) => {
-            let new_fields = arrow_schema::Fields::from(
+        arrow::datatypes::DataType::Struct(fields) => {
+            let new_fields = arrow::datatypes::Fields::from(
                 fields
                     .iter()
                     .map(
                         |field| match coerce_arrow_to_daft_compatible_type(field.data_type()) {
-                            Some(new_inner_dtype) => arrow_schema::Field::new(
+                            Some(new_inner_dtype) => arrow::datatypes::Field::new(
                                 field.name().clone(),
                                 new_inner_dtype,
                                 field.is_nullable(),
@@ -197,14 +197,14 @@ fn coerce_arrow_to_daft_compatible_type(
                             None => field.as_ref().clone(),
                         },
                     )
-                    .collect::<Vec<arrow_schema::Field>>(),
+                    .collect::<Vec<arrow::datatypes::Field>>(),
             );
             if &new_fields == fields {
                 None
             } else {
-                Some(arrow_schema::DataType::Struct(arrow_schema::Fields::from(
-                    new_fields,
-                )))
+                Some(arrow::datatypes::DataType::Struct(
+                    arrow::datatypes::Fields::from(new_fields),
+                ))
             }
         }
         _ => None,
@@ -231,14 +231,15 @@ pub fn cast_array_for_daft_if_needed(
 pub fn cast_arrow_array_for_daft_if_needed(
     arrow_array: Arc<dyn arrow_array::Array>,
 ) -> Arc<dyn arrow_array::Array> {
-    let options = arrow_cast::CastOptions {
+    let options = arrow::compute::CastOptions {
         safe: false,
         ..Default::default()
     };
 
     match coerce_arrow_to_daft_compatible_type(arrow_array.data_type()) {
         Some(coerced_dtype) => {
-            arrow_cast::cast_with_options(arrow_array.as_ref(), &coerced_dtype, &options).unwrap()
+            arrow::compute::cast_with_options(arrow_array.as_ref(), &coerced_dtype, &options)
+                .unwrap()
         }
         None => arrow_array,
     }

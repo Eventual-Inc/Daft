@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 mod batch;
 mod batch_file_writer;
 mod csv_writer;

@@ -27,7 +27,7 @@ impl Series {
 
     pub fn try_from_field_and_arrow_array(
         field: impl Into<Arc<DaftField>>,
-        array: arrow_array::ArrayRef,
+        array: arrow::array::ArrayRef,
     ) -> DaftResult<Self> {
         let field = field.into();
         let dtype = &field.dtype;

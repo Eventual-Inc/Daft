@@ -1,3 +1,5 @@
+#![allow(deprecated, reason = "arrow2 migration")]
+
 use std::{borrow::Borrow, collections::HashSet, sync::Arc};
 
 use arrow_schema::{DataType, Field, Fields, Schema, TimeUnit};

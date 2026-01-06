@@ -230,6 +230,12 @@ members = [
 ahash = "0.8.12"
 arrow = "54.2.1"
 arrow-array = "54.2.1"
+arrow-buffer = "54.2.1"
+arrow-csv = "54.2.1"
+arrow-data = "54.2.1"
+arrow-flight = "54.2.1"
+arrow-ipc = "54.2.1"
+arrow-json = "54.2.1"
 arrow-schema = "54.2.1"
 approx = "0.5.1"
 arc-swap = "1.7.1"
@@ -303,6 +309,7 @@ opentelemetry = {version = "0.31", features = ["trace", "metrics", "logs"]}
 opentelemetry-otlp = {version = "0.31", features = ["grpc-tonic", "logs"]}
 opentelemetry_sdk = {version = "0.31", features = ["logs"]}
 parking_lot = "0.12.5"
+parquet = "54.2.1"
 path_macro = "1.0.0"
 pretty_assertions = "1.4.1"
 proptest = "1.9.0"

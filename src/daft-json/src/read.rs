@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use common_error::{DaftError, DaftResult};

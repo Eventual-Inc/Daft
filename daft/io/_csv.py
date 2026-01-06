@@ -1,7 +1,6 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
@@ -18,21 +17,21 @@ from daft.io.common import get_tabular_files_scan
 
 @PublicAPI
 def read_csv(
-    path: Union[str, list[str]],
+    path: str | list[str],
     infer_schema: bool = True,
-    schema: Optional[dict[str, DataType]] = None,
+    schema: dict[str, DataType] | None = None,
     has_headers: bool = True,
-    delimiter: Optional[str] = None,
+    delimiter: str | None = None,
     double_quote: bool = True,
-    quote: Optional[str] = None,
-    escape_char: Optional[str] = None,
-    comment: Optional[str] = None,
+    quote: str | None = None,
+    escape_char: str | None = None,
+    comment: str | None = None,
     allow_variable_columns: bool = False,
-    io_config: Optional[IOConfig] = None,
-    file_path_column: Optional[str] = None,
+    io_config: IOConfig | None = None,
+    file_path_column: str | None = None,
     hive_partitioning: bool = False,
-    _buffer_size: Optional[int] = None,
-    _chunk_size: Optional[int] = None,
+    _buffer_size: int | None = None,
+    _chunk_size: int | None = None,
 ) -> DataFrame:
     """Creates a DataFrame from CSV file(s).
 

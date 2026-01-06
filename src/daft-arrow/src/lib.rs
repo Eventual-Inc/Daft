@@ -16,9 +16,12 @@ pub mod io {
         /// Assigns every dictionary field a unique ID
         /// This is the same as arrow2::io::ipc::write::default_ipc_fields
         pub fn default_ipc_fields(fields: &[Field]) -> Vec<IpcField> {
+            #[allow(deprecated, reason = "arrow2 migration")]
             use arrow2::datatypes::DataType;
 
+            #[allow(deprecated, reason = "arrow2 migration")]
             fn default_ipc_field(data_type: &DataType, current_id: &mut i64) -> IpcField {
+                #[allow(deprecated, reason = "arrow2 migration")]
                 use DataType::*;
                 match data_type.to_logical_type() {
                     Map(inner, ..) | FixedSizeList(inner, _) | LargeList(inner) | List(inner) => {
@@ -96,6 +99,7 @@ pub mod datatypes {
     pub use arrow2::datatypes::*;
 
     #[deprecated(note = "use arrow instead of arrow2")]
+    #[allow(deprecated, reason = "arrow2 migration")]
     pub fn arrow2_field_to_arrow(field: Field) -> arrow_schema::Field {
         use arrow_schema::{Field as ArrowField, UnionFields};
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import daft.pickle
 
@@ -13,6 +13,7 @@ from daft.udf import udf as legacy_udf
 
 if TYPE_CHECKING:
     import pathlib
+    from collections.abc import Callable
 
     import lance
 
