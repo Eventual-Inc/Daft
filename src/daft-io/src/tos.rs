@@ -369,7 +369,6 @@ impl TosSource {
         }
 
         let client = builder
-            .max_retry_count(config.max_retries as isize)
             .build()
             .with_context(|_| ClientCreationSnafu { endpoint })?;
 
@@ -1094,19 +1093,28 @@ impl MultipartWriter for TosMultipartWriter {
         completed_parts.sort_by_key(|part| part.idx);
 
         if completed_parts.is_empty() {
-            // TODO: the tos rust sdk doesn't allow pass a empty parts list to complete_mpu currently, remove the follow code once allowed.
-            let uri = format!("tos://{}/{}", self.bucket, self.key);
-            self.client.put(uri.as_str(), Bytes::new(), None).await?;
-        } else {
-            self.client
-                .complete_mpu(
+            // Upload an empty part to complete the multipart upload.
+            let part = self
+                .client
+                .upload_part(
                     self.bucket.as_ref(),
                     self.key.as_ref(),
                     self.upload_id.as_ref(),
-                    completed_parts,
+                    1,
+                    Bytes::new(),
                 )
                 .await?;
+            completed_parts.push(part);
         }
+
+        self.client
+            .complete_mpu(
+                self.bucket.as_ref(),
+                self.key.as_ref(),
+                self.upload_id.as_ref(),
+                completed_parts,
+            )
+            .await?;
         Ok(())
     }
 }
