@@ -39,7 +39,7 @@ def _resolve_storage_uri(client, gvfs_path: str) -> str:
     storage_uri = fileset_obj.fileset_info.storage_location.rstrip("/")
 
     if rest:
-        storage_uri = f"{storage_uri}/{ '/'.join(rest) }".rstrip("/")
+        storage_uri = f"{storage_uri}/{'/'.join(rest)}".rstrip("/")
 
     return storage_uri
 
