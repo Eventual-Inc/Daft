@@ -74,7 +74,6 @@ impl FlightService for ShuffleFlightServer {
         unimplemented!("Get schema is not supported for shuffle server")
     }
 
-
     async fn do_get(
         &self,
         request: Request<Ticket>,

@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::{cmp::max, num::NonZeroUsize};
 
 use common_error::DaftError;

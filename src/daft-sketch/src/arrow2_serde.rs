@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::sync::LazyLock;
 
 use common_error::{DaftError, DaftResult};

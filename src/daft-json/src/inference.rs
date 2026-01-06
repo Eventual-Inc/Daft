@@ -1,5 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
-
 use std::{borrow::Borrow, collections::HashSet};
 
 use daft_arrow::{

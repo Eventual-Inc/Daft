@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::borrow::Cow;
 
 use common_error::{DaftError, DaftResult, ensure};

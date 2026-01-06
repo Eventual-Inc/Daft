@@ -1,4 +1,3 @@
-
 use common_error::DaftResult;
 use daft_arrow::{
     array::{Array, FixedSizeListArray, ListArray, PrimitiveArray, equal, ord::build_compare},

@@ -1,4 +1,3 @@
-
 use std::{
     iter::repeat_n,
     ops::{Div, Mul},

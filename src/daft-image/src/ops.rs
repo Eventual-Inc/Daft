@@ -194,7 +194,6 @@ impl ImageOps for FixedShapeImageArray {
     }
 }
 
-
 fn encode_images<Arr: AsImageObj>(
     images: &Arr,
     image_format: ImageFormat,

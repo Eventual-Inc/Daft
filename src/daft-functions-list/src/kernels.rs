@@ -1,5 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
-
 use std::{iter::repeat_n, sync::Arc};
 
 use common_error::DaftResult;

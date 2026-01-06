@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 #![feature(iterator_try_collect)]
 
 use std::{
@@ -1561,7 +1560,6 @@ impl RecordBatch {
         let mut writer = daft_arrow::io::ipc::write::StreamWriter::new(buffer, options);
         writer.start(&schema, None)?;
 
-
         let chunk = self.to_chunk();
         writer.write(&chunk, None)?;
 
@@ -1596,7 +1594,6 @@ impl RecordBatch {
 
 impl TryFrom<RecordBatch> for arrow_array::RecordBatch {
     type Error = DaftError;
-
 
     fn try_from(record_batch: RecordBatch) -> DaftResult<Self> {
         let schema = Arc::new(record_batch.schema.to_arrow2()?.into());

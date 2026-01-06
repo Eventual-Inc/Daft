@@ -1,4 +1,3 @@
-
 use std::ops::Not;
 
 use common_error::{DaftError, DaftResult};

@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
@@ -420,7 +419,6 @@ pub async fn stream_json(
     });
     Ok(Box::pin(tables))
 }
-
 
 async fn read_json_single_into_stream(
     uri: String,

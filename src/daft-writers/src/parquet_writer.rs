@@ -90,7 +90,6 @@ pub(crate) fn create_native_parquet_writer(
             .build(),
     );
 
-
     let arrow_schema = Arc::new(schema.to_arrow2()?.into());
 
     let parquet_schema = ArrowSchemaConverter::new()
@@ -188,7 +187,6 @@ impl<B: StorageBackend> ParquetWriter<B> {
             .collect();
         // Iterate through each record batch and extract its leaf columns.
         for record_batch in record_batches {
-
             let arrays = record_batch.get_inner_arrow_arrays();
             let mut leaf_column_slots = leaf_columns.iter_mut();
 

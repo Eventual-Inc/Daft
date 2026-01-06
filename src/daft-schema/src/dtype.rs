@@ -5,7 +5,6 @@ use std::{
 
 use arrow_schema::IntervalUnit;
 use common_error::{DaftError, DaftResult};
-
 use daft_arrow::datatypes::DataType as ArrowType;
 use serde::{Deserialize, Serialize};
 
@@ -495,7 +494,6 @@ impl DataType {
     #[inline]
     /// Is this DataType convertible to Arrow?
     pub fn is_arrow(&self) -> bool {
-
         self.to_arrow2().is_ok()
     }
 
@@ -1056,7 +1054,6 @@ impl DataType {
         }
     }
 }
-
 
 #[expect(
     clippy::fallible_impl_from,

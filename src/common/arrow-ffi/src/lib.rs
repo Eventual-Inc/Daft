@@ -1,5 +1,3 @@
-
-
 #[cfg(feature = "python")]
 use arrow::ffi::FFI_ArrowSchema;
 #[cfg(feature = "python")]

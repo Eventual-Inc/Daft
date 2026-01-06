@@ -1,4 +1,3 @@
-
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use common_error::{DaftError, DaftResult};

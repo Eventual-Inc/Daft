@@ -38,7 +38,6 @@ unsafe fn multicol_search_sorted(
     keys: &[Series],
     descending: &[bool],
 ) -> DaftResult<UInt64Array> {
-
     let data_arrow_vec: Vec<_> = data.iter().map(|s| s.to_arrow2()).collect();
 
     let keys_arrow_vec: Vec<_> = keys.iter().map(|s| s.to_arrow2()).collect();

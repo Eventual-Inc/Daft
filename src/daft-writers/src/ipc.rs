@@ -63,7 +63,6 @@ impl AsyncFileWriter for IPCWriter {
         let rows_written = data.len();
         let writer = self.get_or_create_writer(&data.schema())?;
         for table in data.record_batches() {
-
             let chunk = table.to_chunk();
             writer.write(&chunk, None)?;
         }

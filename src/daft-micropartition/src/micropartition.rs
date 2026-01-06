@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fmt::Display,
@@ -201,7 +200,6 @@ impl MicroPartition {
         let mut writer = daft_arrow::io::ipc::write::StreamWriter::new(buffer, options);
         writer.start(&schema, None)?;
         for table in self.record_batches() {
-
             let chunk = table.to_chunk();
             writer.write(&chunk, None)?;
         }

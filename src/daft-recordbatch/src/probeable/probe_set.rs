@@ -72,7 +72,6 @@ impl ProbeSet {
 
         let hashes = input.hash_rows()?;
 
-
         let input_arrays = input
             .columns
             .iter()
@@ -111,7 +110,6 @@ impl ProbeSet {
 
         assert!(table_idx < (1 << (64 - Self::TABLE_IDX_SHIFT)));
         assert!(table.len() < (1 << Self::TABLE_IDX_SHIFT));
-
 
         let current_arrays = table
             .columns

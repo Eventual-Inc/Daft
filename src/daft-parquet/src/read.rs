@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::{
     collections::{BTreeMap, HashMap},
     sync::Arc,
@@ -97,7 +96,6 @@ impl Default for ParquetSchemaInferenceOptions {
 impl From<ParquetSchemaInferenceOptions> for SchemaInferenceOptions {
     fn from(value: ParquetSchemaInferenceOptions) -> Self {
         Self {
-
             int96_coerce_to_timeunit: value.coerce_int96_timestamp_unit.to_arrow2(),
             string_encoding: value.string_encoding,
         }

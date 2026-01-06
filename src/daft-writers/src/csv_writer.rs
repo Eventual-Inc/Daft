@@ -62,7 +62,6 @@ use crate::{
 };
 
 pub(crate) fn native_csv_writer_supported(file_schema: &SchemaRef) -> DaftResult<bool> {
-
     let datatypes_convertable = file_schema.to_arrow2()?.fields.iter().all(|field| {
         field.data_type().can_convert_to_arrow_rs() && !is_nested_type(field.data_type())
     });

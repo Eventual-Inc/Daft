@@ -421,7 +421,6 @@ impl WarcRecordBatchIterator {
     }
 }
 
-
 fn create_record_batch(
     schema: SchemaRef,
     arrays: Vec<Box<dyn daft_arrow::array::Array>>,

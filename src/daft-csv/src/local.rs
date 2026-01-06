@@ -301,7 +301,6 @@ async fn get_schema_and_estimators(
     )
     .await?;
 
-
     let mut schema = if let Some(schema) = convert_options.schema.clone() {
         schema.to_arrow2()?
     } else {

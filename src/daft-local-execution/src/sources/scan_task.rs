@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::{
     collections::{HashMap, HashSet},
     future::Future,

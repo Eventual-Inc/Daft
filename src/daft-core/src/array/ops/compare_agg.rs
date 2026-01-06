@@ -1,4 +1,3 @@
-
 use common_error::DaftResult;
 use daft_arrow::array::Array;
 

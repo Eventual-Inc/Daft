@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use chrono::Datelike;
 use common_error::{DaftError, DaftResult, ensure};
 use daft_arrow::temporal_conversions;
