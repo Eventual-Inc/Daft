@@ -9,6 +9,7 @@ use std::{
     sync::Arc,
 };
 
+use arrow_array::ArrayRef;
 use common_display::table_display::{StrValue, make_comfy_table};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_compute_runtime;
@@ -257,10 +258,7 @@ impl RecordBatch {
         })
     }
 
-    pub fn from_arrow<S: Into<SchemaRef>>(
-        schema: S,
-        arrays: Vec<Box<dyn daft_arrow::array::Array>>,
-    ) -> DaftResult<Self> {
+    pub fn from_arrow<S: Into<SchemaRef>>(schema: S, arrays: Vec<ArrayRef>) -> DaftResult<Self> {
         // validate we have at least one array
         if arrays.is_empty() {
             value_err!("Cannot call RecordBatch::from_arrow() with no arrow arrays.")
@@ -290,7 +288,7 @@ impl RecordBatch {
                 )));
             }
             let field = Arc::new(field.clone());
-            let column = Series::from_arrow2(field, array)?;
+            let column = Series::from_arrow(field, array)?;
             columns.push(column);
         }
 
@@ -1554,40 +1552,34 @@ impl RecordBatch {
     }
 
     pub fn to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
-        let buffer = Vec::with_capacity(self.size_bytes());
-        #[allow(deprecated, reason = "arrow2 migration")]
-        let schema = self.schema.to_arrow2()?;
-        let options = daft_arrow::io::ipc::write::WriteOptions { compression: None };
-        let mut writer = daft_arrow::io::ipc::write::StreamWriter::new(buffer, options);
-        writer.start(&schema, None)?;
+        let mut buffer = Vec::with_capacity(self.size_bytes());
+        let arrow_schema = self.schema.to_arrow()?;
+        let mut writer =
+            daft_arrow::ipc::writer::StreamWriter::try_new(&mut buffer, &arrow_schema)?;
 
-        #[allow(deprecated, reason = "arrow2 migration")]
-        let chunk = self.to_chunk();
-        writer.write(&chunk, None)?;
+        let arrow_batch: daft_arrow::arrow_array::RecordBatch = self.clone().try_into()?;
+        writer.write(&arrow_batch)?;
 
         writer.finish()?;
-        let mut finished_buffer = writer.into_inner();
-        finished_buffer.shrink_to_fit();
-        Ok(finished_buffer)
+        buffer.shrink_to_fit();
+        Ok(buffer)
     }
 
     pub fn from_ipc_stream(buffer: &[u8]) -> DaftResult<Self> {
         let mut cursor = Cursor::new(buffer);
-        let stream_metadata = daft_arrow::io::ipc::read::read_stream_metadata(&mut cursor)?;
-        let schema = Arc::new(Schema::from(stream_metadata.schema.clone()));
-        let reader = daft_arrow::io::ipc::read::StreamReader::new(cursor, stream_metadata, None);
+        let reader = daft_arrow::ipc::reader::StreamReader::try_new(&mut cursor, None)?;
 
-        let mut tables = reader
-            .into_iter()
-            .map(|state| {
-                let state = state?;
-                let arrow_chunk = match state {
-                    daft_arrow::io::ipc::read::StreamState::Some(chunk) => chunk,
-                    _ => panic!("State should not be waiting when reading from IPC buffer"),
-                };
-                Self::from_arrow(schema.clone(), arrow_chunk.into_arrays())
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
+        let arrow_schema = reader.schema();
+        let schema: Arc<Schema> = Arc::new(arrow_schema.as_ref().try_into()?);
+
+        let mut tables = Vec::new();
+        for arrow_batch_result in reader {
+            let arrow_batch = arrow_batch_result?;
+            let arrow_arrays: Vec<ArrayRef> = arrow_batch.columns().to_vec();
+
+            let record_batch = Self::from_arrow(schema.clone(), arrow_arrays)?;
+            tables.push(record_batch);
+        }
 
         assert_eq!(tables.len(), 1);
         Ok(tables.pop().expect("Expected exactly one table"))
@@ -1740,6 +1732,21 @@ mod test {
         assert_eq!(*result.data_type(), DataType::Int64);
         assert_eq!(result.len(), 3);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_ipc_roundtrip() -> DaftResult<()> {
+        let string_values = vec!["a", "bb", "ccc"];
+        let table = RecordBatch::from_nonempty_columns(vec![
+            Int64Array::from(("a", vec![1, 2, 3])).into_series(),
+            Float64Array::from(("b", vec![1., 2., 3.])).into_series(),
+            Utf8Array::from_values("c", string_values.iter()).into_series(),
+        ])?;
+
+        let ipc_stream = table.to_ipc_stream()?;
+        let roundtrip_table = RecordBatch::from_ipc_stream(&ipc_stream)?;
+        assert_eq!(table, roundtrip_table);
         Ok(())
     }
 }
