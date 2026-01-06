@@ -1,4 +1,5 @@
-#![allow(deprecated, reason = "arrow2 migration")]
+use std::sync::Arc;
+
 use common_error::{DaftError, DaftResult, ensure};
 use daft_core::{
     datatypes::{format_string_has_offset, infer_timeunit_from_format_string},
@@ -100,10 +101,11 @@ fn to_datetime_impl(
     timezone: Option<&str>,
 ) -> DaftResult<TimestampArray> {
     let len = arr.len();
-    let arr_iter = arr.as_arrow2().iter();
+    let arr_arrow = arr.as_arrow()?;
     let timeunit = infer_timeunit_from_format_string(format);
     let mut timezone = timezone.map(|tz| tz.to_string());
-    let arrow_result = arr_iter
+    let arrow_result = arr_arrow
+            .iter()
             .map(|val| match val {
                 Some(val) => {
                     let timestamp = match timezone.as_deref() {
@@ -163,13 +165,105 @@ fn to_datetime_impl(
                 }
                 _ => Ok(None),
             })
-            .collect::<DaftResult<daft_arrow::array::Int64Array>>()?;
+            .collect::<DaftResult<arrow::array::Int64Array>>()?;
 
-    let result = Int64Array::from((arr.name(), Box::new(arrow_result)));
+    let result = Int64Array::from_arrow(
+        Arc::new(Field::new(arr.name(), DataType::Int64)),
+        Arc::new(arrow_result),
+    )?;
     let result = TimestampArray::new(
         Field::new(arr.name(), DataType::Timestamp(timeunit, timezone)),
         result,
     );
     assert_eq!(result.len(), len);
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_to_datetime_with_values() {
+        let arr = Utf8Array::from_iter(
+            "datetimes",
+            vec![Some("2023-01-15 10:30:00"), Some("2020-06-30 23:59:59")].into_iter(),
+        );
+        let format = "%Y-%m-%d %H:%M:%S";
+
+        let result = to_datetime_impl(&arr, format, None).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert!(result.get(0).is_some());
+        assert!(result.get(1).is_some());
+    }
+
+    #[test]
+    fn test_to_datetime_with_nulls() {
+        let arr = Utf8Array::from_iter(
+            "datetimes",
+            vec![
+                Some("2023-01-15 10:30:00"),
+                None,
+                Some("2020-06-30 23:59:59"),
+            ]
+            .into_iter(),
+        );
+        let format = "%Y-%m-%d %H:%M:%S";
+
+        let result = to_datetime_impl(&arr, format, None).unwrap();
+
+        assert_eq!(result.len(), 3);
+        assert!(result.get(0).is_some());
+        assert!(result.get(1).is_none());
+        assert!(result.get(2).is_some());
+    }
+
+    #[test]
+    fn test_to_datetime_with_milliseconds() {
+        let arr = Utf8Array::from_iter(
+            "datetimes",
+            vec![Some("2023-01-15 10:30:00.123")].into_iter(),
+        );
+        let format = "%Y-%m-%d %H:%M:%S%.3f";
+
+        let result = to_datetime_impl(&arr, format, None).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert!(result.get(0).is_some());
+    }
+
+    #[test]
+    fn test_to_datetime_unix_epoch() {
+        let arr = Utf8Array::from_iter("datetimes", vec![Some("1970-01-01 00:00:00")].into_iter());
+        let format = "%Y-%m-%d %H:%M:%S";
+
+        let result = to_datetime_impl(&arr, format, None).unwrap();
+
+        assert_eq!(result.get(0), Some(0));
+    }
+
+    #[test]
+    fn test_to_datetime_invalid_format_error() {
+        let arr = Utf8Array::from_iter("datetimes", vec![Some("not-a-datetime")].into_iter());
+        let format = "%Y-%m-%d %H:%M:%S";
+
+        let result = to_datetime_impl(&arr, format, None);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_to_datetime_with_offset() {
+        let arr = Utf8Array::from_iter(
+            "datetimes",
+            vec![Some("2023-01-15 10:30:00+05:00")].into_iter(),
+        );
+        let format = "%Y-%m-%d %H:%M:%S%z";
+
+        let result = to_datetime_impl(&arr, format, None).unwrap();
+
+        assert_eq!(result.len(), 1);
+        assert!(result.get(0).is_some());
+    }
 }
