@@ -146,6 +146,9 @@ overflow-checks = false
 [profile.dev.build-override]
 opt-level = 3
 
+[profile.release]
+strip = "symbols"
+
 [profile.dev-bench]
 codegen-units = 16
 debug = 1  # include symbols
