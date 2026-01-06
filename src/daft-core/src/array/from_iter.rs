@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arrow::array::ArrowPrimitiveType;
 use common_error::DaftResult;
 use daft_arrow::{
     array::{MutablePrimitiveArray, PrimitiveArray},
@@ -11,7 +12,7 @@ use pyo3::{Py, PyAny};
 use super::DataArray;
 use crate::{
     array::prelude::*,
-    datatypes::{DaftPrimitiveType, prelude::*},
+    datatypes::{DaftPrimitiveType, NumericNative, prelude::*},
 };
 
 impl<T> DataArray<T>
@@ -120,6 +121,45 @@ impl BooleanArray {
             arrow_array,
         )
         .unwrap()
+    }
+}
+
+impl FromIterator<Option<bool>> for BooleanArray {
+    fn from_iter<T: IntoIterator<Item = Option<bool>>>(iter: T) -> Self {
+        let arrow_array = arrow::array::BooleanArray::from_iter(iter);
+        Self::from_arrow(Field::new("", DataType::Boolean), Arc::new(arrow_array))
+            .expect("Failed to create BooleanArray")
+    }
+}
+
+impl<P: AsRef<str>> FromIterator<Option<P>> for Utf8Array {
+    #[inline]
+    fn from_iter<I: IntoIterator<Item = Option<P>>>(iter: I) -> Self {
+        let arrow_arr = arrow::array::LargeStringArray::from_iter(iter);
+        Self::from_arrow(Field::new("", DataType::Utf8), Arc::new(arrow_arr))
+            .expect("Failed to create Utf8Array")
+    }
+}
+
+impl<T>
+    FromIterator<Option<<<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native>>
+    for DataArray<T>
+where
+    T: DaftNumericType,
+{
+    #[inline]
+    fn from_iter<
+        I: IntoIterator<
+            Item = Option<<<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native>,
+        >,
+    >(
+        iter: I,
+    ) -> Self {
+        let arrow_arr =
+            arrow::array::PrimitiveArray::<<T::Native as NumericNative>::ARROWTYPE>::from_iter(
+                iter,
+            );
+        Self::from_arrow(Field::new("", T::get_dtype()), Arc::new(arrow_arr)).unwrap()
     }
 }
 
