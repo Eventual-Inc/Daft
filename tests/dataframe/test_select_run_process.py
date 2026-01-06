@@ -16,7 +16,7 @@ def test_run_process_tokens_echo():
 @pytest.mark.parametrize("text,expected", [("abc", 4), ("", 1)])
 def test_run_process_shell_pipeline_wc(text: str, expected: int):
     df = daft.from_pydict({"x": [text]})
-    expr = run_process(format("echo {} | wc -c", df["x"]), shell=True, return_dtype=int)
+    expr = run_process(format("echo {} | wc -c | tr -d ' '", df["x"]), shell=True, return_dtype=int)
     out = df.select(expr.alias("n")).to_pylist()
     assert out == [{"n": expected}]
 
