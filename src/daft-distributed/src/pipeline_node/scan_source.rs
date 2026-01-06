@@ -68,7 +68,7 @@ impl ScanSourceNode {
         result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
         if self.scan_tasks.is_empty() {
-            let transformed_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+            let transformed_plan = LocalPhysicalPlan::in_memory_scan(
                 self.node_id().to_string(),
                 self.config.schema.clone(),
                 0,
@@ -99,7 +99,7 @@ impl ScanSourceNode {
         self: &Arc<Self>,
         scan_task: ScanTaskLikeRef,
     ) -> DaftResult<SwordfishTaskBuilder> {
-        let streaming_physical_scan = LocalPhysicalPlan::streaming_physical_scan(
+        let physical_scan = LocalPhysicalPlan::physical_scan(
             self.node_id().to_string(),
             self.pushdowns.clone(),
             self.config.schema.clone(),
@@ -112,7 +112,7 @@ impl ScanSourceNode {
 
         // Create scan_tasks_map with a single scan task
         let scan_tasks_map = HashMap::from([(self.node_id().to_string(), vec![scan_task])]);
-        let builder = SwordfishTaskBuilder::new(streaming_physical_scan, self.as_ref())
+        let builder = SwordfishTaskBuilder::new(physical_scan, self.as_ref())
             .with_scan_tasks(scan_tasks_map);
         Ok(builder)
     }

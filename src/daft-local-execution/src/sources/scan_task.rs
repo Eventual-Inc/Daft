@@ -32,7 +32,7 @@ use crate::{
     sources::source::{Source, SourceStream},
 };
 
-pub struct StreamingScanTaskSource {
+pub struct ScanTaskSource {
     source_id: String,
     receiver: Mutex<Option<Receiver<(InputId, Vec<ScanTaskRef>)>>>,
     pushdowns: Pushdowns,
@@ -40,7 +40,7 @@ pub struct StreamingScanTaskSource {
     execution_config: Arc<DaftExecutionConfig>,
 }
 
-impl StreamingScanTaskSource {
+impl ScanTaskSource {
     pub fn new(
         source_id: String,
         receiver: Receiver<(InputId, Vec<ScanTaskRef>)>,
@@ -184,8 +184,8 @@ impl StreamingScanTaskSource {
 }
 
 #[async_trait]
-impl Source for StreamingScanTaskSource {
-    #[instrument(name = "StreamingScanTaskSource::get_data", level = "info", skip_all)]
+impl Source for ScanTaskSource {
+    #[instrument(name = "ScanTaskSource::get_data", level = "info", skip_all)]
     async fn get_data(
         &self,
         io_stats: IOStatsRef,
@@ -219,7 +219,7 @@ impl Source for StreamingScanTaskSource {
     fn name(&self) -> NodeName {
         // We can't access scan_tasks here anymore, so use a generic name
         // The actual format will be determined when we receive the tasks
-        "StreamingScanTaskSource".into()
+        "ScanTaskSource".into()
     }
 
     fn op_type(&self) -> NodeType {
@@ -238,12 +238,12 @@ impl Source for StreamingScanTaskSource {
     }
 }
 
-impl TreeDisplay for StreamingScanTaskSource {
+impl TreeDisplay for ScanTaskSource {
     fn display_as(&self, level: DisplayLevel) -> String {
         use std::fmt::Write;
-        fn base_display(scan: &StreamingScanTaskSource) -> String {
+        fn base_display(scan: &ScanTaskSource) -> String {
             format!(
-                "StreamingScanTaskSource:
+                "ScanTaskSource:
 Schema = {}
 ",
                 scan.schema.short_string()
@@ -290,7 +290,7 @@ Schema = {}
     }
 
     fn get_name(&self) -> String {
-        "StreamingScanTaskSource".to_string()
+        "ScanTaskSource".to_string()
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
@@ -390,7 +390,7 @@ pub(crate) async fn stream_scan_task(
 
     if scan_task.sources.len() != 1 {
         return Err(common_error::DaftError::TypeError(
-            "Streaming reads only supported for single source ScanTasks".to_string(),
+            "Reads only supported for single source ScanTasks".to_string(),
         ));
     }
     let source = scan_task.sources.first().unwrap();

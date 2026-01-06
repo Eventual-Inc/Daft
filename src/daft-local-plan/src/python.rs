@@ -32,10 +32,10 @@ impl PyLocalPhysicalPlan {
         ))
     }
 
-    /// Get the source_id from a StreamingPhysicalScan plan, or None if not a StreamingPhysicalScan
+    /// Get the source_id from a PhysicalScan plan, or None if not a PhysicalScan
     fn get_source_id(&self) -> Option<String> {
         match self.plan.as_ref() {
-            crate::LocalPhysicalPlan::StreamingPhysicalScan(scan) => Some(scan.source_id.clone()),
+            crate::LocalPhysicalPlan::PhysicalScan(scan) => Some(scan.source_id.clone()),
             _ => None,
         }
     }

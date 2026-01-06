@@ -72,8 +72,8 @@ impl InMemorySourceNode {
     }
 
     fn make_streaming_task(self: &Arc<Self>, partition_ref: PartitionRef) -> SwordfishTaskBuilder {
-        // Use node_id as source_id for StreamingInMemoryScan
-        let streaming_in_memory_scan = LocalPhysicalPlan::streaming_in_memory_scan(
+        // Use node_id as source_id for InMemoryScan
+        let in_memory_scan = LocalPhysicalPlan::in_memory_scan(
             self.node_id().to_string(),
             self.info.source_schema.clone(),
             partition_ref.size_bytes(),
@@ -88,7 +88,7 @@ impl InMemorySourceNode {
         // The actual data flow for streaming goes through input_senders, but psets
         // are needed for scheduling, worker affinity, and making refs available to the worker
         let psets = HashMap::from([(self.node_id().to_string(), vec![partition_ref])]);
-        SwordfishTaskBuilder::new(streaming_in_memory_scan, self.as_ref()).with_psets(psets)
+        SwordfishTaskBuilder::new(in_memory_scan, self.as_ref()).with_psets(psets)
     }
 }
 

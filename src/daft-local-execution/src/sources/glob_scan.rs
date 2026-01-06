@@ -23,7 +23,7 @@ use crate::{
     sources::source::SourceStream,
 };
 
-pub struct StreamingGlobScanSource {
+pub struct GlobScanSource {
     source_id: String,
     receiver: Mutex<Option<Receiver<(InputId, Vec<String>)>>>,
     pushdowns: Pushdowns,
@@ -31,7 +31,7 @@ pub struct StreamingGlobScanSource {
     io_config: Option<IOConfig>,
 }
 
-impl StreamingGlobScanSource {
+impl GlobScanSource {
     pub fn new(
         source_id: String,
         receiver: Receiver<(InputId, Vec<String>)>,
@@ -210,8 +210,8 @@ impl StreamingGlobScanSource {
 }
 
 #[async_trait]
-impl Source for StreamingGlobScanSource {
-    #[instrument(name = "StreamingGlobScanSource::get_data", level = "info", skip_all)]
+impl Source for GlobScanSource {
+    #[instrument(name = "GlobScanSource::get_data", level = "info", skip_all)]
     async fn get_data(
         &self,
         io_stats: IOStatsRef,
@@ -240,7 +240,7 @@ impl Source for StreamingGlobScanSource {
     }
 
     fn name(&self) -> NodeName {
-        "StreamingGlobScanSource".into()
+        "GlobScanSource".into()
     }
 
     fn op_type(&self) -> NodeType {
@@ -249,7 +249,7 @@ impl Source for StreamingGlobScanSource {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push("StreamingGlobScanSource:".to_string());
+        res.push("GlobScanSource:".to_string());
         res.push(format!("Schema = {}", self.schema.short_string()));
         if let Some(io_config) = &self.io_config {
             res.push(format!("IO Config = {:?}", io_config));

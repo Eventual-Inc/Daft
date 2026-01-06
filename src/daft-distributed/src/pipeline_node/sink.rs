@@ -135,7 +135,7 @@ impl SinkNode {
             input.materialize(scheduler, self.context.query_idx, task_id_counter);
         let materialized = materialized_stream.try_collect::<Vec<_>>().await?;
 
-        let in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+        let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
             self.node_id().to_string(),
             self.data_schema.clone(),
             materialized

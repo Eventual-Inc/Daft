@@ -55,9 +55,9 @@ pub type LocalPhysicalPlanRef = Arc<LocalPhysicalPlan>;
 #[derive(strum::IntoStaticStr, Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub enum LocalPhysicalPlan {
-    StreamingPhysicalScan(StreamingPhysicalScan),
-    StreamingInMemoryScan(StreamingInMemoryScan),
-    StreamingGlobScan(StreamingGlobScan),
+    PhysicalScan(PhysicalScan),
+    InMemoryScan(InMemoryScan),
+    GlobScan(GlobScan),
     PlaceholderScan(PlaceholderScan),
     Project(Project),
     UDFProject(UDFProject),
@@ -144,7 +144,7 @@ impl LocalPhysicalPlan {
 
         // Hash node-specific fields (excluding stats_state and RuntimePyObject/PyObjectWrapper)
         match self {
-            Self::StreamingPhysicalScan(StreamingPhysicalScan {
+            Self::PhysicalScan(PhysicalScan {
                 source_id,
                 pushdowns,
                 schema,
@@ -157,7 +157,7 @@ impl LocalPhysicalPlan {
                     f.dtype.hash(hasher);
                 });
             }
-            Self::StreamingInMemoryScan(StreamingInMemoryScan {
+            Self::InMemoryScan(InMemoryScan {
                 source_id,
                 schema,
                 size_bytes,
@@ -170,7 +170,7 @@ impl LocalPhysicalPlan {
                 });
                 size_bytes.hash(hasher);
             }
-            Self::StreamingGlobScan(StreamingGlobScan {
+            Self::GlobScan(GlobScan {
                 source_id,
                 pushdowns,
                 schema,
@@ -764,9 +764,9 @@ impl LocalPhysicalPlan {
 
     pub fn get_stats_state(&self) -> &StatsState {
         match self {
-            Self::StreamingPhysicalScan(StreamingPhysicalScan { stats_state, .. })
-            | Self::StreamingInMemoryScan(StreamingInMemoryScan { stats_state, .. })
-            | Self::StreamingGlobScan(StreamingGlobScan { stats_state, .. })
+            Self::PhysicalScan(PhysicalScan { stats_state, .. })
+            | Self::InMemoryScan(InMemoryScan { stats_state, .. })
+            | Self::GlobScan(GlobScan { stats_state, .. })
             | Self::PlaceholderScan(PlaceholderScan { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
             | Self::UDFProject(UDFProject { stats_state, .. })
@@ -812,9 +812,9 @@ impl LocalPhysicalPlan {
     #[allow(dead_code)]
     pub fn context(&self) -> &LocalNodeContext {
         match self {
-            Self::StreamingPhysicalScan(StreamingPhysicalScan { context, .. })
-            | Self::StreamingInMemoryScan(StreamingInMemoryScan { context, .. })
-            | Self::StreamingGlobScan(StreamingGlobScan { context, .. })
+            Self::PhysicalScan(PhysicalScan { context, .. })
+            | Self::InMemoryScan(InMemoryScan { context, .. })
+            | Self::GlobScan(GlobScan { context, .. })
             | Self::PlaceholderScan(PlaceholderScan { context, .. })
             | Self::Project(Project { context, .. })
             | Self::UDFProject(UDFProject { context, .. })
@@ -855,14 +855,14 @@ impl LocalPhysicalPlan {
         }
     }
 
-    pub fn streaming_physical_scan(
+    pub fn physical_scan(
         source_id: String,
         pushdowns: Pushdowns,
         schema: SchemaRef,
         stats_state: StatsState,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
-        Self::StreamingPhysicalScan(StreamingPhysicalScan {
+        Self::PhysicalScan(PhysicalScan {
             source_id,
             pushdowns,
             schema,
@@ -872,14 +872,14 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn streaming_in_memory_scan(
+    pub fn in_memory_scan(
         source_id: String,
         schema: SchemaRef,
         size_bytes: usize,
         stats_state: StatsState,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
-        Self::StreamingInMemoryScan(StreamingInMemoryScan {
+        Self::InMemoryScan(InMemoryScan {
             source_id,
             schema,
             size_bytes,
@@ -889,7 +889,7 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
-    pub fn streaming_glob_scan(
+    pub fn glob_scan(
         source_id: String,
         pushdowns: Pushdowns,
         schema: SchemaRef,
@@ -897,7 +897,7 @@ impl LocalPhysicalPlan {
         io_config: Option<IOConfig>,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
-        Self::StreamingGlobScan(StreamingGlobScan {
+        Self::GlobScan(GlobScan {
             source_id,
             pushdowns,
             schema,
@@ -1592,9 +1592,9 @@ impl LocalPhysicalPlan {
 
     pub fn schema(&self) -> &SchemaRef {
         match self {
-            Self::StreamingPhysicalScan(StreamingPhysicalScan { schema, .. })
-            | Self::StreamingInMemoryScan(StreamingInMemoryScan { schema, .. })
-            | Self::StreamingGlobScan(StreamingGlobScan { schema, .. })
+            Self::PhysicalScan(PhysicalScan { schema, .. })
+            | Self::InMemoryScan(InMemoryScan { schema, .. })
+            | Self::GlobScan(GlobScan { schema, .. })
             | Self::PlaceholderScan(PlaceholderScan { schema, .. })
             | Self::Filter(Filter { schema, .. })
             | Self::IntoBatches(IntoBatches { schema, .. })
@@ -1670,9 +1670,9 @@ impl LocalPhysicalPlan {
 
     fn children(&self) -> Vec<LocalPhysicalPlanRef> {
         match self {
-            Self::StreamingPhysicalScan(_)
-            | Self::StreamingInMemoryScan(_)
-            | Self::StreamingGlobScan(_)
+            Self::PhysicalScan(_)
+            | Self::InMemoryScan(_)
+            | Self::GlobScan(_)
             | Self::PlaceholderScan(_) => vec![],
             Self::Filter(Filter { input, .. })
             | Self::Limit(Limit { input, .. })
@@ -1723,9 +1723,9 @@ impl LocalPhysicalPlan {
     pub fn with_new_children(&self, children: &[Arc<Self>]) -> Arc<Self> {
         match children {
             [new_child] => match self {
-                Self::StreamingPhysicalScan(_) | Self::StreamingInMemoryScan(_) | Self::StreamingGlobScan(_)
+                Self::PhysicalScan(_) | Self::InMemoryScan(_) | Self::GlobScan(_)
                 | Self::PlaceholderScan(_) => panic!(
-                    "LocalPhysicalPlan::with_new_children: StreamingPhysicalScan, StreamingInMemoryScan, StreamingGlobScan, and PlaceholderScan do not have children"
+                    "LocalPhysicalPlan::with_new_children: PhysicalScan, InMemoryScan, GlobScan, and PlaceholderScan do not have children"
                 ),
                 Self::Filter(Filter {
                     predicate, context, ..
@@ -2184,14 +2184,14 @@ impl LocalPhysicalPlan {
                 Self::Concat(_) => {
                     panic!("LocalPhysicalPlan::with_new_children: Concat should have 2 children")
                 }
-                Self::StreamingInMemoryScan(_) => {
+                Self::InMemoryScan(_) => {
                     panic!(
-                        "LocalPhysicalPlan::with_new_children: StreamingInMemoryScan does not have children"
+                        "LocalPhysicalPlan::with_new_children: InMemoryScan does not have children"
                     )
                 }
-                Self::StreamingGlobScan(_) => {
+                Self::GlobScan(_) => {
                     panic!(
-                        "LocalPhysicalPlan::with_new_children: StreamingGlobScan does not have children"
+                        "LocalPhysicalPlan::with_new_children: GlobScan does not have children"
                     )
                 }
             },
@@ -2301,25 +2301,7 @@ impl DynTreeNode for LocalPhysicalPlan {
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
-pub struct InMemoryScan {
-    pub info: InMemoryInfo,
-    pub stats_state: StatsState,
-    pub context: LocalNodeContext,
-}
-
-#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
-#[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PhysicalScan {
-    pub scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
-    pub pushdowns: Pushdowns,
-    pub schema: SchemaRef,
-    pub stats_state: StatsState,
-    pub context: LocalNodeContext,
-}
-
-#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
-#[cfg_attr(debug_assertions, derive(Debug))]
-pub struct StreamingPhysicalScan {
     pub source_id: String,
     pub pushdowns: Pushdowns,
     pub schema: SchemaRef,
@@ -2329,7 +2311,7 @@ pub struct StreamingPhysicalScan {
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
-pub struct StreamingInMemoryScan {
+pub struct InMemoryScan {
     pub source_id: String,
     pub schema: SchemaRef,
     pub size_bytes: usize,
@@ -2339,23 +2321,12 @@ pub struct StreamingInMemoryScan {
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
 #[cfg_attr(debug_assertions, derive(Debug))]
-pub struct StreamingGlobScan {
+pub struct GlobScan {
     pub source_id: String,
     pub pushdowns: Pushdowns,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub io_config: Option<IOConfig>,
-    pub context: LocalNodeContext,
-}
-
-#[derive(Serialize, Deserialize, Eq, PartialEq, Hash)]
-#[cfg_attr(debug_assertions, derive(Debug))]
-pub struct GlobScan {
-    pub glob_paths: Arc<Vec<String>>,
-    pub pushdowns: Pushdowns,
-    pub schema: SchemaRef,
-    pub stats_state: StatsState,
-    pub io_config: Option<common_io_config::IOConfig>,
     pub context: LocalNodeContext,
 }
 

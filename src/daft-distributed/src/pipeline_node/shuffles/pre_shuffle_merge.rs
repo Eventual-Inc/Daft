@@ -133,7 +133,7 @@ impl PreShuffleMergeNode {
             {
                 // Drain the bucket and create a task to merge the outputs
                 if let Some(materialized_outputs) = worker_buckets.remove(&worker_id) {
-                    let in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+                    let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
                         self.node_id().to_string(),
                         self.config.schema.clone(),
                         materialized_outputs
@@ -169,7 +169,7 @@ impl PreShuffleMergeNode {
         // Handle any remaining buckets that haven't reached the threshold
         for (worker_id, materialized_outputs) in worker_buckets {
             if !materialized_outputs.is_empty() {
-                let in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+                let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
                     self.node_id().to_string(),
                     self.config.schema.clone(),
                     materialized_outputs

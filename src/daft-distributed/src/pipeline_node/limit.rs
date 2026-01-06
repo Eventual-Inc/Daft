@@ -168,7 +168,7 @@ impl LimitNode {
                     limit_state.decrement_take(num_rows);
                     self.stats.add_active_rows_out(num_rows as u64);
                     let materialized_outputs = vec![next_input];
-                    let in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+                    let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
                         self.node_id().to_string(),
                         self.config.schema.clone(),
                         materialized_outputs
@@ -205,7 +205,7 @@ impl LimitNode {
                 Ordering::Greater => {
                     let remaining = limit_state.remaining_take();
                     let materialized_outputs = vec![next_input];
-                    let in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+                    let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
                         self.node_id().to_string(),
                         self.config.schema.clone(),
                         materialized_outputs
@@ -283,7 +283,7 @@ impl LimitNode {
         }
 
         if send_empty {
-            let plan = LocalPhysicalPlan::streaming_in_memory_scan(
+            let plan = LocalPhysicalPlan::in_memory_scan(
                 self.node_id().to_string(),
                 self.config.schema.clone(),
                 0,

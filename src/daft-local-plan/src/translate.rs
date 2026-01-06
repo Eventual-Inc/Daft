@@ -35,7 +35,7 @@ fn translate_helper(
             let mut inputs = HashMap::new();
             let physical_plan = match source.source_info.as_ref() {
                 SourceInfo::InMemory(info) => {
-                    // Create a streaming in-memory scan
+                    // Create an in-memory scan
                     let source_id = format!("source_{}", *source_counter);
                     *source_counter += 1;
 
@@ -49,7 +49,7 @@ fn translate_helper(
                     };
                     inputs.insert(source_id.clone(), input_spec);
 
-                    LocalPhysicalPlan::streaming_in_memory_scan(
+                    LocalPhysicalPlan::in_memory_scan(
                         source_id,
                         source.output_schema.clone(),
                         info.size_bytes,
@@ -65,7 +65,7 @@ fn translate_helper(
                         }
                         ScanState::Tasks(scan_tasks) => scan_tasks.clone(),
                     };
-                    // Create a streaming physical scan
+                    // Create a physical scan
                     let source_id = format!("source_{}", *source_counter);
                     *source_counter += 1;
 
@@ -79,7 +79,7 @@ fn translate_helper(
                     };
                     inputs.insert(source_id.clone(), input_spec);
 
-                    LocalPhysicalPlan::streaming_physical_scan(
+                    LocalPhysicalPlan::physical_scan(
                         source_id,
                         info.pushdowns.clone(),
                         source.output_schema.clone(),
@@ -88,7 +88,7 @@ fn translate_helper(
                     )
                 }
                 SourceInfo::GlobScan(info) => {
-                    // Create a streaming glob scan
+                    // Create a glob scan
                     let source_id = format!("source_{}", *source_counter);
                     *source_counter += 1;
 
@@ -102,7 +102,7 @@ fn translate_helper(
                     };
                     inputs.insert(source_id.clone(), input_spec);
 
-                    LocalPhysicalPlan::streaming_glob_scan(
+                    LocalPhysicalPlan::glob_scan(
                         source_id,
                         info.pushdowns.clone(),
                         source.output_schema.clone(),

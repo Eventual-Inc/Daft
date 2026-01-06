@@ -94,7 +94,7 @@ impl IntoBatchesNode {
                     let group_size = std::mem::take(&mut current_group_size);
 
                     let materialized_outputs = std::mem::take(&mut current_group);
-                    let in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+                    let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
                         self.node_id().to_string(),
                         self.config.schema.clone(),
                         materialized_outputs
@@ -131,7 +131,7 @@ impl IntoBatchesNode {
         }
 
         if !current_group.is_empty() {
-            let in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+            let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
                 self.node_id().to_string(),
                 self.config.schema.clone(),
                 current_group

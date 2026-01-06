@@ -65,7 +65,7 @@ impl GlobScanSourceNode {
         result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
         if self.glob_paths.is_empty() {
-            let transformed_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+            let transformed_plan = LocalPhysicalPlan::in_memory_scan(
                 self.node_id().to_string(),
                 self.config.schema.clone(),
                 0,
@@ -81,8 +81,8 @@ impl GlobScanSourceNode {
             return Ok(());
         }
 
-        // Create a streaming_glob_scan plan instead of glob_scan
-        let streaming_glob_scan = LocalPhysicalPlan::streaming_glob_scan(
+        // Create a glob_scan plan instead of glob_scan
+        let glob_scan = LocalPhysicalPlan::glob_scan(
             self.node_id().to_string(),
             self.pushdowns.clone(),
             self.config.schema.clone(),
@@ -99,7 +99,7 @@ impl GlobScanSourceNode {
             self.node_id().to_string(),
             self.glob_paths.iter().cloned().collect::<Vec<String>>(),
         )]);
-        let builder = SwordfishTaskBuilder::new(streaming_glob_scan, self.as_ref())
+        let builder = SwordfishTaskBuilder::new(glob_scan, self.as_ref())
             .with_glob_paths(glob_paths_map);
         let _ = result_tx.send(builder).await;
         Ok(())

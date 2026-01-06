@@ -18,14 +18,14 @@ use crate::{
     sources::source::SourceStream,
 };
 
-pub struct StreamingInMemorySource {
+pub struct InMemorySource {
     source_id: String,
     receiver: Mutex<Option<Receiver<(InputId, PartitionSetRef<MicroPartitionRef>)>>>,
     schema: SchemaRef,
     size_bytes: usize,
 }
 
-impl StreamingInMemorySource {
+impl InMemorySource {
     pub fn new(
         source_id: String,
         receiver: Receiver<(InputId, PartitionSetRef<MicroPartitionRef>)>,
@@ -96,8 +96,8 @@ impl StreamingInMemorySource {
 }
 
 #[async_trait]
-impl Source for StreamingInMemorySource {
-    #[instrument(name = "StreamingInMemorySource::get_data", level = "info", skip_all)]
+impl Source for InMemorySource {
+    #[instrument(name = "InMemorySource::get_data", level = "info", skip_all)]
     async fn get_data(
         &self,
         _io_stats: IOStatsRef,
@@ -124,7 +124,7 @@ impl Source for StreamingInMemorySource {
     }
 
     fn name(&self) -> NodeName {
-        "StreamingInMemorySource".into()
+        "InMemorySource".into()
     }
 
     fn op_type(&self) -> NodeType {
@@ -133,7 +133,7 @@ impl Source for StreamingInMemorySource {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push("StreamingInMemorySource:".to_string());
+        res.push("InMemorySource:".to_string());
         res.push(format!("Schema = {}", self.schema.short_string()));
         res.push(format!("Size bytes = {}", self.size_bytes));
         res

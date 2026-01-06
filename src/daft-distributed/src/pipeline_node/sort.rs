@@ -130,7 +130,7 @@ pub(crate) fn create_sample_tasks(
             let sample_schema = sample_schema.clone();
             let node_id = pipeline_node.node_id();
             let materialized_outputs = vec![mo];
-            let in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+            let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
                 node_id.to_string(),
                 input_schema.clone(),
                 materialized_outputs
@@ -196,7 +196,7 @@ pub(crate) fn create_range_repartition_tasks(
     materialized_outputs
         .into_iter()
         .map(|mo| {
-            let in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+            let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
                 node_id.to_string(),
                 input_schema.clone(),
                 mo.size_bytes(),
@@ -302,7 +302,7 @@ impl SortNode {
         }
 
         if materialized_outputs.len() == 1 {
-            let in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+            let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
                 self.node_id().to_string(),
                 self.config.schema.clone(),
                 materialized_outputs
@@ -386,7 +386,7 @@ impl SortNode {
             transpose_materialized_outputs_from_vec(partitioned_outputs, num_partitions);
 
         for partition_group in transposed_outputs {
-            let in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+            let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
                 self.node_id().to_string(),
                 self.config.schema.clone(),
                 partition_group

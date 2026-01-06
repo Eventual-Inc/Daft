@@ -106,7 +106,7 @@ impl SortMergeJoinNode {
         right_partition_group: Vec<MaterializedOutput>,
         result_tx: &Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
-        let left_in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+        let left_in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
             self.left.node_id().to_string(),
             self.left.config().schema.clone(),
             left_partition_group
@@ -120,7 +120,7 @@ impl SortMergeJoinNode {
             },
         );
 
-        let right_in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+        let right_in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
             self.right.node_id().to_string(),
             self.right.config().schema.clone(),
             right_partition_group

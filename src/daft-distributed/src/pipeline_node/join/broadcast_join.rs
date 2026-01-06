@@ -102,7 +102,7 @@ impl BroadcastJoinNode {
             )
             .try_collect::<Vec<_>>()
             .await?;
-        let materialized_broadcast_data_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+        let materialized_broadcast_data_plan = LocalPhysicalPlan::in_memory_scan(
             self.node_id().to_string(),
             self.broadcaster_schema.clone(),
             materialized_broadcast_data

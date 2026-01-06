@@ -123,7 +123,7 @@ impl IntoPartitionsNode {
         while let Some(result) = output_futures.join_next().await {
             // Collect all the outputs from this task and coalesce them into a single task.
             let materialized_outputs = result??;
-            let in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+            let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
                 self.node_id().to_string(),
                 self.config.schema.clone(),
                 materialized_outputs
@@ -217,7 +217,7 @@ impl IntoPartitionsNode {
             if let Some(output) = materialized_outputs {
                 for output in output.split_into_materialized_outputs() {
                     let materialized_outputs = vec![output];
-                    let in_memory_source_plan = LocalPhysicalPlan::streaming_in_memory_scan(
+                    let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
                         self.node_id().to_string(),
                         self.config.schema.clone(),
                         materialized_outputs

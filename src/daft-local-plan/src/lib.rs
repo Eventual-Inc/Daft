@@ -14,9 +14,9 @@ pub use plan::{
     HashJoin, InMemoryScan, IntoBatches, IntoPartitions, Limit, LocalNodeContext,
     LocalPhysicalPlan, LocalPhysicalPlanRef, MonotonicallyIncreasingId, PhysicalScan,
     PhysicalWrite, Pivot, Project, Repartition, Sample, SamplingMethod, Sort, SortMergeJoin,
-    StreamingInMemoryScan, StreamingPhysicalScan, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject,
+    TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject,
     WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
-    WindowPartitionOnly, StreamingGlobScan,
+    WindowPartitionOnly,
 };
 #[cfg(feature = "python")]
 pub use python::{PyLocalPhysicalPlan, register_modules};

@@ -19,7 +19,7 @@ use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, GlobScan, HashAggregate,
     HashJoin, InMemoryScan, IntoBatches, Limit, LocalNodeContext, LocalPhysicalPlan,
     MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, Sample, Sort,
-    SortMergeJoin, StreamingGlobScan, StreamingInMemoryScan, StreamingPhysicalScan, TopN, UDFProject, UnGroupedAggregate, Unpivot,
+    SortMergeJoin, TopN, UDFProject, UnGroupedAggregate, Unpivot,
     VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
     WindowPartitionOnly,
 };
@@ -65,8 +65,8 @@ use crate::{
         write::{WriteFormat, WriteSink},
     },
     sources::{
-        source::SourceNode, streaming_in_memory::StreamingInMemorySource,
-        streaming_scan_task::StreamingScanTaskSource,
+        source::SourceNode, in_memory::InMemorySource,
+        scan_task::ScanTaskSource,
     },
     streaming_sink::{
         async_udf::AsyncUdfSink,
@@ -355,7 +355,7 @@ fn physical_plan_to_pipeline(
         LocalPhysicalPlan::PlaceholderScan(_) => {
             panic!("PlaceholderScan should not be converted to a pipeline node")
         }
-        LocalPhysicalPlan::StreamingPhysicalScan(StreamingPhysicalScan {
+        LocalPhysicalPlan::PhysicalScan(PhysicalScan {
             source_id,
             pushdowns,
             schema,
@@ -365,10 +365,10 @@ fn physical_plan_to_pipeline(
             let (tx, rx) = create_channel::<(crate::plan_input::InputId, Vec<ScanTaskRef>)>(100);
             input_senders.insert(source_id.clone(), InputSender::ScanTasks(tx.clone()));
 
-            let streaming_scan_task_source =
-                StreamingScanTaskSource::new(source_id.clone(), rx, pushdowns.clone(), schema.clone(), cfg);
+            let scan_task_source =
+                ScanTaskSource::new(source_id.clone(), rx, pushdowns.clone(), schema.clone(), cfg);
             SourceNode::new(
-                streaming_scan_task_source.arced(),
+                scan_task_source.arced(),
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
@@ -376,7 +376,7 @@ fn physical_plan_to_pipeline(
             )
             .boxed()
         }
-        LocalPhysicalPlan::StreamingInMemoryScan(StreamingInMemoryScan {
+        LocalPhysicalPlan::InMemoryScan(InMemoryScan {
             source_id,
             schema,
             size_bytes,
@@ -386,10 +386,10 @@ fn physical_plan_to_pipeline(
             let (tx, rx) = create_channel::<(crate::plan_input::InputId, PartitionSetRef<MicroPartitionRef>)>(100);
             input_senders.insert(source_id.clone(), InputSender::InMemory(tx.clone()));
 
-            let streaming_in_memory_source =
-                StreamingInMemorySource::new(source_id.clone(), rx, schema.clone(), *size_bytes);
+            let in_memory_source =
+                InMemorySource::new(source_id.clone(), rx, schema.clone(), *size_bytes);
             SourceNode::new(
-                streaming_in_memory_source.arced(),
+                in_memory_source.arced(),
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
@@ -397,7 +397,7 @@ fn physical_plan_to_pipeline(
             )
             .boxed()
         }
-        LocalPhysicalPlan::StreamingGlobScan(StreamingGlobScan {
+        LocalPhysicalPlan::GlobScan(GlobScan {
             source_id,
             pushdowns,
             schema,
@@ -405,14 +405,14 @@ fn physical_plan_to_pipeline(
             io_config,
             context,
         }) => {
-            use crate::sources::streaming_glob_scan::StreamingGlobScanSource;
+            use crate::sources::glob_scan::GlobScanSource;
             let (tx, rx) = create_channel::<(crate::plan_input::InputId, Vec<String>)>(100);
             input_senders.insert(source_id.clone(), InputSender::GlobPaths(tx.clone()));
 
-            let streaming_glob_scan_source =
-                StreamingGlobScanSource::new(source_id.clone(), rx, pushdowns.clone(), schema.clone(), io_config.clone());
+            let glob_scan_source =
+                GlobScanSource::new(source_id.clone(), rx, pushdowns.clone(), schema.clone(), io_config.clone());
             SourceNode::new(
-                streaming_glob_scan_source.arced(),
+                glob_scan_source.arced(),
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
