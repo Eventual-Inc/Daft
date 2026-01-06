@@ -1,5 +1,5 @@
 [dependencies]
-arrow = "54.2.1"
+arrow = {workspace = true}
 base64 = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-macros = {path = "../common/macros"}
