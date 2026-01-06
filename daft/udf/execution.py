@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Callable, Concatenate, TypeVar
+from typing import TYPE_CHECKING, Any, Concatenate, TypeVar
 
 from daft import DataType
 from daft.dependencies import np, pa
@@ -9,7 +9,7 @@ from daft.series import Series
 from daft.udf.metrics import _metrics_context
 
 if TYPE_CHECKING:
-    from collections.abc import Coroutine
+    from collections.abc import Callable, Coroutine
 
     from daft.daft import OperatorMetrics, PyDataType, PySeries
 

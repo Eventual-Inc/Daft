@@ -97,13 +97,13 @@ def test_to_ray_dataset_with_numpy(n_partitions: int):
 
     if RAY_VERSION < (2, 4, 0):
         if RAY_VERSION >= (2, 2, 0):
-            assert (
-                ds.dataset_format() == "arrow"
-            ), "Ray Dataset format should be arrow because it uses a Tensor extension type"
+            assert ds.dataset_format() == "arrow", (
+                "Ray Dataset format should be arrow because it uses a Tensor extension type"
+            )
         elif RAY_VERSION >= (2, 0, 0):
-            assert (
-                ds._dataset_format() == "arrow"
-            ), "Ray Dataset format should be arrow because it uses a Tensor extension type"
+            assert ds._dataset_format() == "arrow", (
+                "Ray Dataset format should be arrow because it uses a Tensor extension type"
+            )
 
     rows = sorted([_row_to_pydict(row) for row in ds.iter_rows()], key=lambda r: r["intcol"])
     np.testing.assert_equal(
@@ -131,13 +131,13 @@ def test_to_ray_dataset_with_numpy_variable_shaped(n_partitions: int):
 
     if RAY_VERSION < (2, 4, 0):
         if RAY_VERSION >= (2, 2, 0):
-            assert (
-                ds.dataset_format() == "arrow"
-            ), "Ray Dataset format should be arrow because it uses a Tensor extension type"
+            assert ds.dataset_format() == "arrow", (
+                "Ray Dataset format should be arrow because it uses a Tensor extension type"
+            )
         elif RAY_VERSION >= (2, 0, 0):
-            assert (
-                ds._dataset_format() == "simple"
-            ), "In old versions of Ray, we drop down to `simple` format because ArrowTensorType is not compatible with ragged tensors"
+            assert ds._dataset_format() == "simple", (
+                "In old versions of Ray, we drop down to `simple` format because ArrowTensorType is not compatible with ragged tensors"
+            )
 
     rows = sorted([_row_to_pydict(row) for row in ds.iter_rows()], key=lambda r: r["intcol"])
     np.testing.assert_equal(

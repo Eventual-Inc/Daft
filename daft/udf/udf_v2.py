@@ -4,12 +4,11 @@ import functools
 import inspect
 import uuid
 from abc import ABC, abstractmethod
-from collections.abc import Coroutine, Generator, Iterator
+from collections.abc import Callable, Coroutine, Generator, Iterator
 from dataclasses import dataclass, field
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Generic,
     ParamSpec,
     TypeVar,
@@ -195,7 +194,7 @@ class Func(Generic[P, T, C]):
                         f"The return type hint of a Daft generator function must be an iterator or generator, found: {return_dtype}"
                     )
                 return_dtype = args[0]
-        return DataType._infer(return_dtype)  # type: ignore[arg-type]
+        return DataType._infer(return_dtype)
 
     @overload
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> T: ...
@@ -237,7 +236,7 @@ class Func(Generic[P, T, C]):
                 row_wise_udf(
                     self.name,
                     self._cls,
-                    method,  # type: ignore[arg-type]
+                    method,
                     self.is_async,
                     DataType.list(self.return_dtype)._dtype,
                     self.gpus,

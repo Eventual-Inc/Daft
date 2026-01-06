@@ -20,6 +20,7 @@ pub use mutable::*;
 /// The Arrow's equivalent to an immutable `Vec<Option<[T; size]>>` where `T` is an Arrow type.
 /// Cloning and slicing this struct is `O(1)`.
 #[derive(Clone)]
+#[deprecated(note = "arrow2 migration")]
 pub struct FixedSizeListArray {
     size: usize, // this is redundant with `data_type`, but useful to not have to deconstruct the data_type.
     data_type: DataType,

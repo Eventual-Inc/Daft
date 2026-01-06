@@ -1,3 +1,5 @@
+#![allow(deprecated, reason = "arrow2 migration")]
+
 mod capitalize;
 mod contains;
 mod count_matches;

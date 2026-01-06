@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from functools import partial
 from pathlib import Path
-from typing import Callable, Literal
+from typing import Literal
 
 import numpy as np
 import pytest
