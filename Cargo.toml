@@ -142,6 +142,7 @@ debug = true
 [profile.dev]
 debug = true
 overflow-checks = false
+strip = "symbols"
 
 [profile.dev.build-override]
 opt-level = 3
