@@ -199,77 +199,28 @@ fn encode_images<Arr: AsImageObj>(
     images: &Arr,
     image_format: ImageFormat,
 ) -> DaftResult<BinaryArray> {
-    let arrow_array = if image_format == ImageFormat::TIFF {
-        // NOTE: A single writer/buffer can't be used for TIFF files because the encoder will overwrite the
-        // IFD offset for the first image instead of writing it for all subsequent images, producing corrupted
-        // TIFF files. We work around this by writing out a new buffer for each image.
-        // TODO(Clark): Fix this in the tiff crate.
-        let values = ImageBufferIter::new(images)
-            .map(|img| {
-                img.map(|img| {
-                    let buf = Vec::new();
-                    let mut writer: CountingWriter<std::io::BufWriter<_>> =
-                        std::io::BufWriter::new(std::io::Cursor::new(buf)).into();
-                    img.encode(image_format, &mut writer)?;
-                    // NOTE: BufWriter::into_inner() will flush the buffer.
-                    Ok(writer
-                        .into_inner()
-                        .into_inner()
-                        .map_err(|e| {
-                            DaftError::ValueError(format!(
-                                "Encoding image into file format {image_format} failed: {e}"
-                            ))
-                        })?
-                        .into_inner())
-                })
-                .transpose()
+    let values = ImageBufferIter::new(images)
+        .map(|img| {
+            img.map(|img| {
+                let buf = Vec::new();
+                let mut writer: CountingWriter<std::io::BufWriter<_>> =
+                    std::io::BufWriter::new(std::io::Cursor::new(buf)).into();
+                img.encode(image_format, &mut writer)?;
+                // NOTE: BufWriter::into_inner() will flush the buffer.
+                Ok(writer
+                    .into_inner()
+                    .into_inner()
+                    .map_err(|e| {
+                        DaftError::ValueError(format!(
+                            "Encoding image into file format {image_format} failed: {e}"
+                        ))
+                    })?
+                    .into_inner())
             })
-            .collect::<DaftResult<Vec<_>>>()?;
-        daft_arrow::array::BinaryArray::<i64>::from_iter(values)
-    } else {
-        let mut offsets = Vec::with_capacity(images.len() + 1);
-        offsets.push(0i64);
-        let mut validity = daft_arrow::buffer::NullBufferBuilder::new(images.len());
-        let buf = Vec::new();
-        let mut writer: CountingWriter<std::io::BufWriter<_>> =
-            std::io::BufWriter::new(std::io::Cursor::new(buf)).into();
-        ImageBufferIter::new(images)
-            .map(|img| {
-                if let Some(img) = img {
-                    img.encode(image_format, &mut writer)?;
-                    offsets.push(writer.count() as i64);
-                    validity.append_non_null();
-                } else {
-                    offsets.push(*offsets.last().unwrap());
-                    validity.append_null();
-                }
-                Ok(())
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
-        // NOTE: BufWriter::into_inner() will flush the buffer.
-        let values = writer
-            .into_inner()
-            .into_inner()
-            .map_err(|e| {
-                DaftError::ValueError(format!(
-                    "Encoding image into file format {image_format} failed: {e}"
-                ))
-            })?
-            .into_inner();
-        let encoded_data: daft_arrow::buffer::Buffer<u8> = values.into();
-        let offsets_buffer = daft_arrow::offset::OffsetsBuffer::try_from(offsets)?;
-        let validity = validity.finish();
-        daft_arrow::array::BinaryArray::<i64>::new(
-            daft_arrow::datatypes::DataType::LargeBinary,
-            offsets_buffer,
-            encoded_data,
-            daft_arrow::buffer::wrap_null_buffer(validity),
-        )
-    };
-    BinaryArray::new(
-        Field::new(images.name(), arrow_array.data_type().into()).into(),
-        arrow_array.boxed(),
-    )
+            .transpose()
+        })
+        .collect::<DaftResult<Vec<_>>>()?;
+    Ok(BinaryArray::from_iter(images.name(), values.into_iter()))
 }
 
 fn resize_images<Arr: AsImageObj>(images: &Arr, w: u32, h: u32) -> Vec<Option<CowImage<'_>>> {
