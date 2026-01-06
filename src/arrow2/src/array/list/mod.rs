@@ -18,6 +18,7 @@ pub use mutable::*;
 
 /// An [`Array`] semantically equivalent to `Vec<Option<Vec<Option<T>>>>` with Arrow's in-memory.
 #[derive(Clone)]
+#[deprecated(note = "arrow2 migration")]
 pub struct ListArray<O: Offset> {
     data_type: DataType,
     offsets: OffsetsBuffer<O>,

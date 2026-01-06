@@ -1,12 +1,13 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     fmt::Display,
-    io::Cursor,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
 };
 
+use arrow_array::ArrayRef;
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
@@ -96,10 +97,7 @@ impl MicroPartition {
         }
     }
 
-    pub fn from_arrow<S: Into<SchemaRef>>(
-        schema: S,
-        arrays: Vec<Box<dyn daft_arrow::array::Array>>,
-    ) -> DaftResult<Self> {
+    pub fn from_arrow<S: Into<SchemaRef>>(schema: S, arrays: Vec<ArrayRef>) -> DaftResult<Self> {
         let schema = schema.into();
         let batch = RecordBatch::from_arrow(schema.clone(), arrays)?;
         let batches = Arc::new(vec![batch]);
@@ -193,43 +191,40 @@ impl MicroPartition {
     }
 
     pub fn write_to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
-        let buffer = Vec::with_capacity(self.size_bytes());
-        #[allow(deprecated, reason = "arrow2 migration")]
-        let schema = self.schema.to_arrow2()?;
-        let options = daft_arrow::io::ipc::write::WriteOptions { compression: None };
-        let mut writer = daft_arrow::io::ipc::write::StreamWriter::new(buffer, options);
-        writer.start(&schema, None)?;
+        let mut buffer = Vec::with_capacity(self.size_bytes());
+        let arrow_schema = self.schema.to_arrow()?;
+        let mut writer =
+            daft_arrow::ipc::writer::StreamWriter::try_new(&mut buffer, &arrow_schema)?;
+
         for table in self.record_batches() {
-            #[allow(deprecated, reason = "arrow2 migration")]
-            let chunk = table.to_chunk();
-            writer.write(&chunk, None)?;
+            // Convert daft RecordBatch to arrow-rs RecordBatch
+            let arrow_batch: daft_arrow::arrow_array::RecordBatch = table.clone().try_into()?;
+            writer.write(&arrow_batch)?;
         }
+
         writer.finish()?;
-        let mut finished_buffer = writer.into_inner();
-        finished_buffer.shrink_to_fit();
-        Ok(finished_buffer)
+        buffer.shrink_to_fit();
+        Ok(buffer)
     }
 
     pub fn read_from_ipc_stream(buffer: &[u8]) -> DaftResult<Self> {
-        let mut cursor = Cursor::new(buffer);
-        let stream_metadata = daft_arrow::io::ipc::read::read_stream_metadata(&mut cursor).unwrap();
-        let schema = Arc::new(Schema::from(stream_metadata.schema.clone()));
-        let reader = daft_arrow::io::ipc::read::StreamReader::new(cursor, stream_metadata, None);
-        let tables = reader
-            .into_iter()
-            .map(|state| {
-                let state = state?;
-                let arrow_chunk = match state {
-                    daft_arrow::io::ipc::read::StreamState::Some(chunk) => chunk,
-                    _ => panic!("State should not be waiting when reading from IPC buffer"),
-                };
-                let record_batch =
-                    RecordBatch::from_arrow(schema.clone(), arrow_chunk.into_arrays())?;
-                Ok(record_batch)
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
+        let mut cursor = std::io::Cursor::new(buffer);
+        let reader = daft_arrow::ipc::reader::StreamReader::try_new(&mut cursor, None)?;
 
-        Ok(Self::new_loaded(schema.into(), Arc::new(tables), None))
+        let arrow_schema = reader.schema();
+        let schema: SchemaRef = Arc::new(arrow_schema.as_ref().try_into()?);
+
+        // Read all record batches
+        let mut tables = Vec::new();
+        for arrow_batch_result in reader {
+            let arrow_batch = arrow_batch_result?;
+            let arrow_arrays: Vec<ArrayRef> = arrow_batch.columns().to_vec();
+
+            let record_batch = RecordBatch::from_arrow(schema.clone(), arrow_arrays)?;
+            tables.push(record_batch);
+        }
+
+        Ok(Self::new_loaded(schema, Arc::new(tables), None))
     }
 }
 
@@ -801,7 +796,7 @@ mod tests {
 
     use common_error::DaftResult;
     use daft_core::{
-        datatypes::{DataType, Field, Int32Array},
+        datatypes::{DataType, Field, Float64Array, Int32Array, Utf8Array},
         prelude::Schema,
         series::IntoSeries,
     };
@@ -831,6 +826,36 @@ mod tests {
         assert_eq!(tbl, table1);
         let tbl = stream.next().await.unwrap().unwrap();
         assert_eq!(tbl, table2);
+        Ok(())
+    }
+
+    #[test]
+    fn test_ipc_roundtrip() -> DaftResult<()> {
+        let string_values = vec!["a", "bb", "ccc"];
+        let batch1 = RecordBatch::from_nonempty_columns(vec![
+            Int32Array::from(("a", vec![1, 2, 3])).into_series(),
+            Float64Array::from(("b", vec![1., 2., 3.])).into_series(),
+            Utf8Array::from_values("c", string_values.iter()).into_series(),
+        ])?;
+
+        let batch2 = RecordBatch::from_nonempty_columns(vec![
+            Int32Array::from(("a", vec![4, 5, 6])).into_series(),
+            Float64Array::from(("b", vec![4., 5., 6.])).into_series(),
+            Utf8Array::from_values("c", string_values.iter()).into_series(),
+        ])?;
+
+        assert_eq!(batch1.schema, batch2.schema);
+
+        let table = MicroPartition::new_loaded(
+            batch1.schema.clone(),
+            Arc::new(vec![batch1.clone(), batch2.clone()]),
+            None,
+        );
+
+        let ipc_stream = table.write_to_ipc_stream()?;
+        let roundtrip_table = MicroPartition::read_from_ipc_stream(&ipc_stream)?;
+        assert_eq!(batch1, roundtrip_table.record_batches()[0]);
+        assert_eq!(batch2, roundtrip_table.record_batches()[1]);
         Ok(())
     }
 }
