@@ -421,7 +421,7 @@ pub async fn stream_json(
     Ok(Box::pin(tables))
 }
 
-#[allow(deprecated, reason = "arrow2 migration")]
+
 async fn read_json_single_into_stream(
     uri: String,
     convert_options: JsonConvertOptions,
@@ -638,7 +638,7 @@ fn parse_into_column_array_chunk_stream(
 }
 
 #[cfg(test)]
-#[allow(deprecated, reason = "arrow2 migration")]
+
 mod tests {
     use std::{collections::HashSet, io::BufRead, sync::Arc};
 
@@ -1058,7 +1058,7 @@ mod tests {
     }
 
     #[test]
-    #[allow(deprecated, reason = "arrow2 migration")]
+
     fn test_json_read_local_all_null_column() -> DaftResult<()> {
         let file = format!(
             "{}/test/iris_tiny_all_null_column.jsonl",

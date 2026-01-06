@@ -421,7 +421,7 @@ impl WarcRecordBatchIterator {
     }
 }
 
-#[allow(deprecated, reason = "arrow2 migration")]
+
 fn create_record_batch(
     schema: SchemaRef,
     arrays: Vec<Box<dyn daft_arrow::array::Array>>,

@@ -1,4 +1,4 @@
-#![allow(deprecated, reason = "arrow2->arrow migration")]
+
 
 #[cfg(feature = "python")]
 use arrow::ffi::FFI_ArrowSchema;

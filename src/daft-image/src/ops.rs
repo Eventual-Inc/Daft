@@ -194,7 +194,7 @@ impl ImageOps for FixedShapeImageArray {
     }
 }
 
-#[allow(deprecated, reason = "arrow2 migration")]
+
 fn encode_images<Arr: AsImageObj>(
     images: &Arr,
     image_format: ImageFormat,

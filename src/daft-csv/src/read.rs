@@ -483,7 +483,7 @@ async fn read_csv_single_into_stream(
     io_client: Arc<IOClient>,
     io_stats: Option<IOStatsRef>,
 ) -> DaftResult<(impl TableStream + Send, Vec<Field>)> {
-    #[allow(deprecated, reason = "arrow2 migration")]
+
     let (mut schema, estimated_mean_row_size, estimated_std_row_size) =
         if let Some(schema) = convert_options.schema {
             (schema.to_arrow2()?, None, None)
@@ -720,7 +720,7 @@ pub fn fields_to_projection_indices(
 }
 
 #[cfg(test)]
-#[allow(deprecated, reason = "arrow2 migration")]
+
 mod tests {
     use std::sync::Arc;
 
@@ -741,7 +741,7 @@ mod tests {
     use crate::{CsvConvertOptions, CsvParseOptions, CsvReadOptions, char_to_byte};
 
     #[allow(clippy::too_many_arguments)]
-    #[allow(deprecated, reason = "arrow2 migration")]
+
     fn check_equal_local_arrow2(
         path: &str,
         out: &RecordBatch,

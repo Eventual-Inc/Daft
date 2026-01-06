@@ -39,7 +39,7 @@ pub mod datatypes {
     pub use arrow2::datatypes::*;
 
     #[deprecated(note = "use arrow instead of arrow2")]
-    #[allow(deprecated, reason = "arrow2 migration")]
+
     pub fn arrow2_field_to_arrow(field: Field) -> arrow_schema::Field {
         use arrow_schema::{Field as ArrowField, UnionFields};
 

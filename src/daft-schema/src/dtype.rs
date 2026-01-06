@@ -5,7 +5,7 @@ use std::{
 
 use arrow_schema::IntervalUnit;
 use common_error::{DaftError, DaftResult};
-#[allow(deprecated, reason = "arrow2 migration")]
+
 use daft_arrow::datatypes::DataType as ArrowType;
 use serde::{Deserialize, Serialize};
 
@@ -322,7 +322,7 @@ impl DataType {
     }
 
     #[deprecated(note = "use `to_arrow` instead")]
-    #[allow(deprecated, reason = "arrow2 migration")]
+
     pub fn to_arrow2(&self) -> DaftResult<ArrowType> {
         match self {
             Self::Null => Ok(ArrowType::Null),
@@ -495,7 +495,7 @@ impl DataType {
     #[inline]
     /// Is this DataType convertible to Arrow?
     pub fn is_arrow(&self) -> bool {
-        #[allow(deprecated, reason = "arrow2 migration")]
+
         self.to_arrow2().is_ok()
     }
 
@@ -1057,7 +1057,7 @@ impl DataType {
     }
 }
 
-#[allow(deprecated, reason = "arrow2 migration")]
+
 #[expect(
     clippy::fallible_impl_from,
     reason = "https://github.com/Eventual-Inc/Daft/issues/3015"

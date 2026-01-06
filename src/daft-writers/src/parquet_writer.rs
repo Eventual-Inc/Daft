@@ -39,7 +39,7 @@ pub(crate) fn native_parquet_writer_supported(
     }
 
     // TODO(desmond): Currently we do not support extension and timestamp types.
-    #[allow(deprecated, reason = "arrow2 migration")]
+
     let arrow_schema = match file_schema.to_arrow2() {
         Ok(schema)
             if schema
@@ -90,7 +90,7 @@ pub(crate) fn create_native_parquet_writer(
             .build(),
     );
 
-    #[allow(deprecated, reason = "arrow2 migration")]
+
     let arrow_schema = Arc::new(schema.to_arrow2()?.into());
 
     let parquet_schema = ArrowSchemaConverter::new()
@@ -188,7 +188,7 @@ impl<B: StorageBackend> ParquetWriter<B> {
             .collect();
         // Iterate through each record batch and extract its leaf columns.
         for record_batch in record_batches {
-            #[allow(deprecated, reason = "arrow2 migration")]
+
             let arrays = record_batch.get_inner_arrow_arrays();
             let mut leaf_column_slots = leaf_columns.iter_mut();
 

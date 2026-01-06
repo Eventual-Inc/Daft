@@ -72,13 +72,13 @@ impl ProbeSet {
 
         let hashes = input.hash_rows()?;
 
-        #[allow(deprecated, reason = "arrow2 migration")]
+
         let input_arrays = input
             .columns
             .iter()
             .map(|s| Ok(s.as_physical()?.to_arrow2()))
             .collect::<DaftResult<Vec<_>>>()?;
-        #[allow(deprecated, reason = "arrow2 migration")]
+
         let iter = hashes.as_arrow2().clone().into_iter();
 
         Ok(iter.enumerate().map(move |(idx, h)| {
@@ -112,7 +112,7 @@ impl ProbeSet {
         assert!(table_idx < (1 << (64 - Self::TABLE_IDX_SHIFT)));
         assert!(table.len() < (1 << Self::TABLE_IDX_SHIFT));
 
-        #[allow(deprecated, reason = "arrow2 migration")]
+
         let current_arrays = table
             .columns
             .iter()

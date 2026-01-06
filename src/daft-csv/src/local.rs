@@ -301,7 +301,7 @@ async fn get_schema_and_estimators(
     )
     .await?;
 
-    #[allow(deprecated, reason = "arrow2 migration")]
+
     let mut schema = if let Some(schema) = convert_options.schema.clone() {
         schema.to_arrow2()?
     } else {

@@ -73,7 +73,7 @@ pub fn record_batch_to_arrow(
 
     for i in 0..table.num_columns() {
         let s = table.get_column(i);
-        #[allow(deprecated, reason = "arrow2 migration")]
+
         let arrow_array = s.to_arrow2();
         let arrow_array = cast_array_from_daft_if_needed(arrow_array.to_boxed());
         let py_array = common_arrow_ffi::to_py_array(py, arrow_array, &pyarrow)?;

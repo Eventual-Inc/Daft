@@ -1,4 +1,4 @@
-#![allow(deprecated, reason = "arrow2->arrow migration")]
+
 use std::ops::Not;
 
 use common_error::{DaftError, DaftResult};

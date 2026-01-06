@@ -195,13 +195,13 @@ impl MicroPartition {
 
     pub fn write_to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
         let buffer = Vec::with_capacity(self.size_bytes());
-        #[allow(deprecated, reason = "arrow2 migration")]
+
         let schema = self.schema.to_arrow2()?;
         let options = daft_arrow::io::ipc::write::WriteOptions { compression: None };
         let mut writer = daft_arrow::io::ipc::write::StreamWriter::new(buffer, options);
         writer.start(&schema, None)?;
         for table in self.record_batches() {
-            #[allow(deprecated, reason = "arrow2 migration")]
+
             let chunk = table.to_chunk();
             writer.write(&chunk, None)?;
         }
