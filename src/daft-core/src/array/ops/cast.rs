@@ -1602,6 +1602,11 @@ impl ListArray {
 
                             // Add valid data for this slice
                             let (child_start, child_end) = self.offsets().start_end(start);
+                            let child_end = if end > start {
+                                self.offsets().start_end(end - 1).1
+                            } else {
+                                child_end
+                            };
                             parts.push(casted_child.slice(child_start, child_end)?);
 
                             invalid_ptr = end;
