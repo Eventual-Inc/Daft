@@ -86,7 +86,7 @@ impl GlobScanSource {
                 } else {
                     None
                 };
-                
+
                 for glob_path in unique_glob_paths {
                     let (source, path) = io_client.get_source_and_path(glob_path).await?;
                     let io_stats = io_stats.clone();
@@ -105,7 +105,7 @@ impl GlobScanSource {
                         .chunks(chunk_size)
                         .map(|files_chunk| {
                             use daft_core::series::IntoSeries;
-                            
+
                             let mut paths = Vec::with_capacity(files_chunk.len());
                             let mut sizes = Vec::with_capacity(files_chunk.len());
 
@@ -216,6 +216,7 @@ impl Source for GlobScanSource {
         &self,
         io_stats: IOStatsRef,
         chunk_size: usize,
+        _maintain_order: bool,
     ) -> DaftResult<SourceStream<'static>> {
         // Create output channel for results
         let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);
@@ -262,4 +263,3 @@ impl Source for GlobScanSource {
         &self.schema
     }
 }
-

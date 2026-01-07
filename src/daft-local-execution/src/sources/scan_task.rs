@@ -1,6 +1,6 @@
 #![allow(deprecated, reason = "arrow2 migration")]
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     sync::{Arc, Mutex},
 };
 
@@ -37,7 +37,7 @@ pub struct ScanTaskSource {
     receiver: Mutex<Option<Receiver<(InputId, Vec<ScanTaskRef>)>>>,
     pushdowns: Pushdowns,
     schema: SchemaRef,
-    execution_config: Arc<DaftExecutionConfig>,
+    num_parallel_tasks: usize,
 }
 
 impl ScanTaskSource {
@@ -48,12 +48,19 @@ impl ScanTaskSource {
         schema: SchemaRef,
         cfg: &DaftExecutionConfig,
     ) -> Self {
+        let num_cpus = get_compute_pool_num_threads();
+        // Use scantask_max_parallel from config if set (non-zero), otherwise use num_cpus
+        let num_parallel_tasks = if cfg.scantask_max_parallel > 0 {
+            cfg.scantask_max_parallel
+        } else {
+            num_cpus
+        };
         Self {
             source_id,
             receiver: Mutex::new(Some(receiver)),
             pushdowns,
             schema,
-            execution_config: Arc::new(cfg.clone()),
+            num_parallel_tasks,
         }
     }
 
@@ -69,113 +76,194 @@ impl ScanTaskSource {
         io_stats: IOStatsRef,
         chunk_size: usize,
         schema: SchemaRef,
+        maintain_order: bool,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
-        let num_cpus = get_compute_pool_num_threads();
-        let source_id = self.source_id.clone();
+        let num_parallel_tasks = self.num_parallel_tasks;
         let schema = schema.clone();
+        let io_runtime_clone = io_runtime.clone();
+
         io_runtime.spawn(async move {
+            // When maintain_order is true, use separate channels per scan task and spawn a forwarder
+            // When maintain_order is false, all scan tasks share the same output_sender
+            enum ForwarderMessage {
+                Receiver(Receiver<PipelineMessage>),
+                Flush(InputId),
+            }
+            let (receivers_sender, forwarder_task) = if maintain_order {
+                // Channel for receiving ordered task receivers
+                // Each forward_scan_task_stream task will send its receiver to this channel
+                let (rs, mut rr) = create_channel::<ForwarderMessage>(num_parallel_tasks * 2);
+
+                // Spawn ordered forwarder task that reads from receivers in order
+                let output_sender_for_forwarder = output_sender.clone();
+                let ft = io_runtime_clone.spawn(async move {
+                    // Read receivers in order and forward their messages
+                    while let Some(message) = rr.recv().await {
+                        // Forward all messages from this receiver to output_sender in order
+                        match message {
+                            ForwarderMessage::Receiver(mut receiver) => {
+                                while let Some(message) = receiver.recv().await {
+                                    if output_sender_for_forwarder.send(message).await.is_err() {
+                                        return Ok::<(), DaftError>(());
+                                    }
+                                }
+                            }
+                            ForwarderMessage::Flush(input_id) => {
+                                if output_sender_for_forwarder.send(PipelineMessage::Flush(input_id)).await.is_err() {
+                                    return Ok::<(), DaftError>(());
+                                }
+                            }
+                        }
+                    }
+                    Ok(())
+                });
+                (Some(rs), Some(ft))
+            } else {
+                (None, None)
+            };
+
             let mut task_set = TaskSet::new();
-            let mut pending_tasks = Vec::new();
+            // Store pending tasks: (scan_task, delete_map, input_id)
+            let mut pending_tasks = VecDeque::new();
             // Track how many scan tasks are pending per input_id
             // When count reaches 0, we send flush for that input_id
-            let input_id_pending_counts: Arc<Mutex<HashMap<InputId, usize>>> =
-                Arc::new(Mutex::new(HashMap::new()));
+            let mut input_id_pending_counts: HashMap<InputId, usize> = HashMap::new();
+            let max_parallel = num_parallel_tasks;
+            let mut receiver_exhausted = false;
 
-            loop {
-                // Try to fill up to num_cpus parallel tasks
-                let max_parallel = num_cpus;
+            while !receiver_exhausted || !pending_tasks.is_empty() || task_set.len() > 0 {
+                // First, try to spawn from pending_tasks if we have capacity
+                while task_set.len() < max_parallel && !pending_tasks.is_empty() {
+                    let (scan_task, delete_map, input_id) = pending_tasks.pop_front().unwrap();
+                    if maintain_order {
+                        // Create channel for this task when spawning
+                        let (task_sender, task_receiver) = create_channel::<PipelineMessage>(1);
 
-                while task_set.len() < max_parallel {
-                    // First, try to get a task from pending_tasks
-                    if let Some((scan_task, sender, delete_map, input_id)) = pending_tasks.pop() {
+                        // Send receiver to ordered forwarder only when spawning (maintains spawn order)
+                        if let Some(ref rs) = receivers_sender {
+                            if rs.send(ForwarderMessage::Receiver(task_receiver)).await.is_err() {
+                                return Ok(());
+                            }
+                        }
+
                         task_set.spawn(forward_scan_task_stream(
                             scan_task,
                             io_stats.clone(),
                             delete_map,
                             chunk_size,
-                            sender,
+                            task_sender,
                             input_id,
-                            source_id.clone(),
-                            input_id_pending_counts.clone(),
                         ));
-                        continue;
-                    }
-
-                    // If no pending tasks, try to receive from channel
-                    if let Some((input_id, scan_tasks_batch)) = receiver.recv().await {
-                        // Invariant: scan_tasks_batch always has at least one scan task
-                        // Compute delete_map for this batch
-                        let delete_map = get_delete_map(&scan_tasks_batch).await?.map(Arc::new);
-
-                        // Split all scan tasks for parallelism
-                        let split_tasks: Vec<Arc<ScanTask>> = scan_tasks_batch
-                            .into_iter()
-                            .flat_map(|scan_task| scan_task.split())
-                            .collect();
-
-                        // Track how many scan tasks we're processing for this input_id
-                        let num_tasks = split_tasks.len();
-                        {
-                            let mut counts = input_id_pending_counts.lock().unwrap();
-                            *counts.entry(input_id).or_insert(0) += num_tasks;
-                        }
-
-                        if num_tasks == 0 {
-                            let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
-                            let message = PipelineMessage::Morsel {
-                                input_id,
-                                partition: empty,
-                            };
-                            if output_sender.send(message).await.is_err() {
-                                break;
-                            }
-                            if output_sender.send(PipelineMessage::Flush(input_id)).await.is_err() {
-                                break;
-                            }
-                        }
-
-                        // All tasks from this batch share the same delete_map, output sender, and input_id
-                        // forward_scan_task_stream will handle sending empty micropartition if no data
-                        for scan_task in split_tasks {
-                            pending_tasks.push((
-                                scan_task,
-                                output_sender.clone(),
-                                delete_map.clone(),
-                                input_id,
-                            ));
-                        }
                     } else {
-                        // Channel is closed, no more tasks will arrive
-                        break;
+                        // All scan tasks share the same output_sender when maintain_order is false
+                        task_set.spawn(forward_scan_task_stream(
+                            scan_task,
+                            io_stats.clone(),
+                            delete_map,
+                            chunk_size,
+                            output_sender.clone(),
+                            input_id,
+                        ));
                     }
                 }
 
-                // Wait for at least one task to complete
-                if let Some(result) = task_set.join_next().await {
-                    result??;
-                } else {
-                    // No tasks running and no more to start, we're done
-                    break;
+                tokio::select! {
+                    // Receive from channel only if we have capacity and receiver is not exhausted
+                    recv_result = receiver.recv(), if !receiver_exhausted => {
+                        match recv_result {
+                            Some((input_id, scan_tasks_batch)) if scan_tasks_batch.is_empty() => {
+                                let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
+                                let message = PipelineMessage::Morsel {
+                                    input_id,
+                                    partition: empty,
+                                };
+                                if output_sender.send(message).await.is_err() {
+                                    return Ok(());
+                                }
+                                if output_sender.send(PipelineMessage::Flush(input_id)).await.is_err() {
+                                    return Ok(());
+                                }
+                            }
+                            Some((input_id, scan_tasks_batch)) => {
+                                // Compute delete_map for this batch
+                                let delete_map = get_delete_map(&scan_tasks_batch).await?.map(Arc::new);
+
+                                // Split all scan tasks for parallelism
+                                let split_tasks: Vec<Arc<ScanTask>> = scan_tasks_batch
+                                    .into_iter()
+                                    .flat_map(|scan_task| scan_task.split())
+                                    .collect();
+
+                                // Track how many scan tasks we're processing for this input_id
+                                let num_tasks = split_tasks.len();
+                                *input_id_pending_counts.entry(input_id).or_insert(0) += num_tasks;
+
+                                // All tasks from this batch share the same delete_map and input_id
+                                // Channel will be created when spawning to maintain order
+                                for scan_task in split_tasks {
+                                    pending_tasks.push_back((
+                                        scan_task,
+                                        delete_map.clone(),
+                                        input_id,
+                                    ));
+                                }
+                            }
+                            None => {
+                                // Channel is closed, no more tasks will arrive
+                                println!("Receiver is exhausted");
+                                receiver_exhausted = true;
+                            }
+                        }
+                    }
+                    // Wait for a task to complete
+                    Some(join_result) = task_set.join_next(), if task_set.len() > 0 => {
+                        match join_result {
+                            Ok(Ok(completed_input_id)) => {
+                                // task_result is DaftResult<InputId>
+                                // Decrement the count for this input_id and send flush only when all scan tasks for this input_id are done
+                                let count = input_id_pending_counts.get_mut(&completed_input_id).expect("Input id should be present in input_id_pending_counts");
+                                *count = count.saturating_sub(1);
+                                if *count == 0 {
+                                    input_id_pending_counts.remove(&completed_input_id);
+                                    if maintain_order  && let Some(ref rs) = receivers_sender {
+                                        if rs.send(ForwarderMessage::Flush(completed_input_id)).await.is_err() {
+                                            return Ok(());
+                                        }
+                                    } else {
+                                        if output_sender.send(PipelineMessage::Flush(completed_input_id)).await.is_err() {
+                                            return Ok(());
+                                        }
+                                    }
+                                }
+                            }
+                            Ok(Err(e)) => {
+                                // Error occurred joining the task, return it
+                                return Err(e.into());
+                            }
+                            Err(e) => {
+                                // Error occurred joining the task, return it
+                                return Err(e.into());
+                            }
+                        }
+                    }
                 }
             }
+            debug_assert!(pending_tasks.is_empty(), "Pending tasks should be empty");
+            debug_assert!(input_id_pending_counts.is_empty(), "Input id pending counts should be empty");
+            debug_assert!(task_set.len() == 0, "Task set should be empty");
+            debug_assert!(receiver_exhausted, "Receiver should be exhausted");
 
-            // Process any remaining pending tasks
-            while let Some((scan_task, sender, delete_map, input_id)) = pending_tasks.pop() {
-                task_set.spawn(forward_scan_task_stream(
-                    scan_task,
-                    io_stats.clone(),
-                    delete_map,
-                    chunk_size,
-                    sender,
-                    input_id,
-                    source_id.clone(),
-                    input_id_pending_counts.clone(),
-                ));
-            }
-            // Wait for all remaining tasks to complete
-            while let Some(result) = task_set.join_next().await {
-                result??;
+            // Close the receivers channel to signal the forwarder to exit (only if maintain_order is true)
+            if maintain_order {
+                if let Some(rs) = receivers_sender {
+                    drop(rs);
+                }
+
+                // Wait for the forwarder task to finish processing all messages
+                if let Some(ft) = forwarder_task {
+                    ft.await??;
+                }
             }
 
             Ok(())
@@ -190,6 +278,7 @@ impl Source for ScanTaskSource {
         &self,
         io_stats: IOStatsRef,
         chunk_size: usize,
+        maintain_order: bool,
     ) -> DaftResult<SourceStream<'static>> {
         // Create output channel for results
         let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);
@@ -205,6 +294,7 @@ impl Source for ScanTaskSource {
             io_stats.clone(),
             chunk_size,
             self.schema.clone(),
+            maintain_order,
         );
 
         // Convert receiver to stream
@@ -244,9 +334,9 @@ impl TreeDisplay for ScanTaskSource {
         fn base_display(scan: &ScanTaskSource) -> String {
             format!(
                 "ScanTaskSource:
-Schema = {}
+Num Parallel Scan Tasks = {}
 ",
-                scan.schema.short_string()
+                scan.num_parallel_tasks
             )
         }
         match level {
@@ -305,10 +395,7 @@ async fn forward_scan_task_stream(
     chunk_size: usize,
     sender: Sender<PipelineMessage>,
     input_id: InputId,
-    _source_id: String,
-    input_id_pending_counts: Arc<Mutex<HashMap<InputId, usize>>>,
-) -> DaftResult<()> {
-    use daft_micropartition::MicroPartition;
+) -> DaftResult<InputId> {
     let schema = scan_task.materialized_schema();
     let mut stream = stream_scan_task(scan_task, io_stats, delete_map, chunk_size).await?;
     let mut has_data = false;
@@ -334,24 +421,7 @@ async fn forward_scan_task_stream(
         let _ = sender.send(message).await;
     }
 
-    // Decrement the count for this input_id and send flush only when all scan tasks for this input_id are done
-    let should_send_flush = {
-        let mut counts = input_id_pending_counts.lock().unwrap();
-        let count = counts.entry(input_id).or_insert(0);
-        *count = count.saturating_sub(1);
-        if *count == 0 {
-            counts.remove(&input_id);
-            true
-        } else {
-            false
-        }
-    };
-
-    if should_send_flush {
-        let _ = sender.send(PipelineMessage::Flush(input_id)).await;
-    }
-
-    Ok(())
+    Ok(input_id)
 }
 
 pub(crate) async fn stream_scan_task(

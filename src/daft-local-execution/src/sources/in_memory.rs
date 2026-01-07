@@ -52,7 +52,6 @@ impl InMemorySource {
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
 
-        let source_id = self.source_id.clone();
         io_runtime.spawn(async move {
             while let Some((input_id, partition_set)) = receiver.recv().await {
                 let mut stream = partition_set.to_partition_stream();
@@ -68,7 +67,7 @@ impl InMemorySource {
                         break;
                     }
                 }
-                
+
                 // If no data for this input_id, send empty micropartition
                 if !has_data {
                     let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
@@ -80,7 +79,7 @@ impl InMemorySource {
                         break;
                     }
                 }
-                
+
                 // Always flush after processing each partition_set
                 if output_sender
                     .send(PipelineMessage::Flush(input_id))
@@ -102,6 +101,7 @@ impl Source for InMemorySource {
         &self,
         _io_stats: IOStatsRef,
         _chunk_size: usize,
+        _maintain_order: bool,
     ) -> DaftResult<SourceStream<'static>> {
         // Create output channel for results - note: SourceStream still returns Morsel
         // We'll convert PipelineMessage to Morsel in the stream

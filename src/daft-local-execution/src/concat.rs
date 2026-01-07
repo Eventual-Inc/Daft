@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
@@ -11,7 +11,7 @@ use tracing::instrument;
 use crate::{
     ExecutionRuntimeContext,
     channel::{Receiver, create_channel},
-    plan_input::{InputId, PipelineMessage},
+    plan_input::PipelineMessage,
     pipeline::{MorselSizeRequirement, PipelineNode, RuntimeContext},
     runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
@@ -148,10 +148,11 @@ impl PipelineNode for ConcatNode {
     #[instrument(level = "info", skip_all, name = "ConcatNode::start")]
     fn start(
         &self,
+        maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<PipelineMessage>> {
         // Start first child
-        let first_child_receiver: Receiver<PipelineMessage> = self.children[0].start(runtime_handle)?;
+        let first_child_receiver: Receiver<PipelineMessage> = self.children[0].start(maintain_order, runtime_handle)?;
         let mut first_counting_receiver = InitializingCountingReceiver::new(
             first_child_receiver,
             self.node_id(),
@@ -160,7 +161,7 @@ impl PipelineNode for ConcatNode {
         );
 
         // Start second child
-        let second_child_receiver: Receiver<PipelineMessage> = self.children[1].start(runtime_handle)?;
+        let second_child_receiver: Receiver<PipelineMessage> = self.children[1].start(maintain_order, runtime_handle)?;
         let mut second_counting_receiver = InitializingCountingReceiver::new(
             second_child_receiver,
             self.node_id(),
@@ -174,77 +175,46 @@ impl PipelineNode for ConcatNode {
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
 
-        // Consume both children concurrently, ensuring flush signals are sent only once per input_id
+        // Consume first receiver entirely, then second receiver entirely
         runtime_handle.spawn(
             async move {
-                let mut flushed_input_ids: HashSet<InputId> = HashSet::new();
-                let mut first_done = false;
-                let mut second_done = false;
-
-                loop {
-                    tokio::select! {
-                        // Consume from first child
-                        msg_opt = first_counting_receiver.recv(), if !first_done => {
-                            match msg_opt {
-                                Some(msg) => {
-                                    match msg {
-                                        PipelineMessage::Morsel { .. } => {
-                                            if counting_sender.send(msg).await.is_err() {
-                                                return Ok(());
-                                            }
-                                        }
-                                        PipelineMessage::Flush(input_id) => {
-                                            // First time: track it, don't send. Second time: send it.
-                                            if flushed_input_ids.insert(input_id) {
-                                                // First time seeing this flush, just track it
-                                            } else {
-                                                // Second time seeing this flush, send it
-                                                if counting_sender.send(PipelineMessage::Flush(input_id)).await.is_err() {
-                                                    return Ok(());
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                None => {
-                                    first_done = true;
-                                }
+                // First, consume entire first receiver
+                while let Some(msg) = first_counting_receiver.recv().await {
+                    match &msg {
+                        PipelineMessage::Morsel { input_id, .. } => {
+                            debug_assert_eq!(*input_id, 0, "Concat should only see input_id = 0");
+                            if counting_sender.send(msg).await.is_err() {
+                                return Ok(());
                             }
                         }
-                        // Consume from second child
-                        msg_opt = second_counting_receiver.recv(), if !second_done => {
-                            match msg_opt {
-                                Some(msg) => {
-                                    match msg {
-                                        PipelineMessage::Morsel { .. } => {
-                                            if counting_sender.send(msg).await.is_err() {
-                                                return Ok(());
-                                            }
-                                        }
-                                        PipelineMessage::Flush(input_id) => {
-                                            // First time: track it, don't send. Second time: send it.
-                                            if flushed_input_ids.insert(input_id) {
-                                                // First time seeing this flush, just track it
-                                            } else {
-                                                // Second time seeing this flush, send it
-                                                if counting_sender.send(PipelineMessage::Flush(input_id)).await.is_err() {
-                                                    return Ok(());
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                None => {
-                                    second_done = true;
-                                }
-                            }
+                        PipelineMessage::Flush(input_id) => {
+                            // Assert that we only ever see input_id = 0
+                            debug_assert_eq!(*input_id, 0, "Concat should only see input_id = 0");
+                            // Don't send flush yet, wait until second receiver is done
                         }
                     }
+                }
 
-                    // Break when both children are done
-                    if first_done && second_done {
-                        break;
+                // Then, consume entire second receiver
+                while let Some(msg) = second_counting_receiver.recv().await {
+                    match &msg {
+                        PipelineMessage::Morsel { input_id, .. } => {
+                            debug_assert_eq!(*input_id, 0, "Concat should only see input_id = 0");
+                            if counting_sender.send(msg).await.is_err() {
+                                return Ok(());
+                            }
+                        }
+                        PipelineMessage::Flush(input_id) => {
+                            // Assert that we only ever see input_id = 0
+                            debug_assert_eq!(*input_id, 0, "Concat should only see input_id = 0");
+                            // Don't send flush yet, wait until we're done
+                        }
                     }
+                }
+
+                // Call flush once after second receiver is through
+                if counting_sender.send(PipelineMessage::Flush(0)).await.is_err() {
+                    return Ok(());
                 }
 
                 stats_manager.finalize_node(node_id);
@@ -276,4 +246,3 @@ impl PipelineNode for ConcatNode {
         self.runtime_stats.clone()
     }
 }
-

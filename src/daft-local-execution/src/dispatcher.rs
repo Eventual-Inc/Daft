@@ -38,6 +38,123 @@ pub(crate) struct SpawnedDispatchResult {
     pub(crate) spawned_dispatch_task: SpawnedTask<DaftResult<()>>,
 }
 
+/// A dispatcher that distributes morsels to workers in a round-robin fashion.
+/// Used if the operator requires maintaining the order of the input.
+pub(crate) struct RoundRobinDispatcher<S: BatchingStrategy + 'static> {
+    batch_manager: Arc<BatchManager<S>>,
+}
+
+impl<S: BatchingStrategy + 'static> RoundRobinDispatcher<S> {
+    pub(crate) fn new(batch_manager: Arc<BatchManager<S>>) -> Self {
+        Self { batch_manager }
+    }
+
+    async fn dispatch_inner(
+        worker_senders: Vec<Sender<PipelineMessage>>,
+        mut input_receiver: InitializingCountingReceiver,
+        batch_manager: Arc<BatchManager<S>>,
+    ) -> DaftResult<()> {
+        let mut next_worker_idx = 0;
+        let mut send_to_next_worker = |data: PipelineMessage| {
+            let next_worker_sender = worker_senders.get(next_worker_idx).unwrap();
+            next_worker_idx = (next_worker_idx + 1) % worker_senders.len();
+            next_worker_sender.send(data)
+        };
+
+        let (lower, upper) = batch_manager.initial_requirements().values();
+        let mut buffers: HashMap<u32, RowBasedBuffer> = HashMap::new();
+
+        while let Some(msg) = input_receiver.recv().await {
+            match msg {
+                PipelineMessage::Morsel {
+                    input_id,
+                    partition,
+                } => {
+                    let buffer = buffers
+                        .entry(input_id)
+                        .or_insert_with(|| RowBasedBuffer::new(lower, upper));
+                    buffer.push(partition);
+                    while let Some(batch) = buffer.next_batch_if_ready()? {
+                        let output = PipelineMessage::Morsel {
+                            input_id,
+                            partition: batch,
+                        };
+                        if send_to_next_worker(output).await.is_err() {
+                            return Ok(());
+                        }
+
+                        let new_requirements = batch_manager.calculate_batch_size();
+                        let (lower, upper) = new_requirements.values();
+
+                        buffer.update_bounds(lower, upper);
+                    }
+                }
+                PipelineMessage::Flush(input_id) => {
+                    // Flush the buffer for this input_id
+                    if let Some(buffer) = buffers.get_mut(&input_id) {
+                        if let Some(last_morsel) = buffer.pop_all()? {
+                            let output = PipelineMessage::Morsel {
+                                input_id,
+                                partition: last_morsel,
+                            };
+                            if send_to_next_worker(output).await.is_err() {
+                                return Ok(());
+                            }
+                        }
+                        // Remove the buffer after flushing
+                        buffers.remove(&input_id);
+                    }
+                    // Propagate the flush signal - send to all workers in round-robin
+                    for worker_sender in worker_senders.iter() {
+                        if worker_sender
+                            .send(PipelineMessage::Flush(input_id))
+                            .await
+                            .is_err()
+                        {
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Clear all remaining morsels from all buffers at the end
+        for (input_id, buffer) in buffers.iter_mut() {
+            if let Some(last_morsel) = buffer.pop_all()? {
+                let output = PipelineMessage::Morsel {
+                    input_id: *input_id,
+                    partition: last_morsel,
+                };
+                if send_to_next_worker(output).await.is_err() {
+                    return Ok(());
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl<S: BatchingStrategy + 'static> DispatchSpawner for RoundRobinDispatcher<S> {
+    fn spawn_dispatch(
+        &self,
+        input_receiver: InitializingCountingReceiver,
+        num_workers: usize,
+        runtime_handle: &mut RuntimeHandle,
+    ) -> SpawnedDispatchResult {
+        let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
+            (0..num_workers).map(|_| create_channel(1)).unzip();
+        let batch_manager = self.batch_manager.clone();
+        let task = runtime_handle.spawn(async move {
+            Self::dispatch_inner(worker_senders, input_receiver, batch_manager).await
+        });
+
+        SpawnedDispatchResult {
+            worker_receivers,
+            spawned_dispatch_task: task,
+        }
+    }
+}
+
 /// A dispatcher that distributes morsels to workers in an unordered fashion.
 /// Used if the operator does not require maintaining the order of the input.
 pub(crate) struct UnorderedDispatcher {

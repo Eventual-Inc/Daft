@@ -13,16 +13,9 @@ use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use crate::{
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
-    channel::{Receiver, Sender, create_channel},
-    dispatcher::{DispatchSpawner, UnorderedDispatcher},
-    dynamic_batching::{BatchManager, BatchingStrategy},
-    pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
-    plan_input::{InputId, PipelineMessage},
-    resource_manager::MemoryManager,
-    runtime_stats::{
+    channel::{create_channel, create_ordering_aware_receiver_channel, OrderingAwareReceiver, Receiver, Sender}, dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher}, dynamic_batching::{BatchManager, BatchingStrategy}, pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext}, plan_input::{InputId, PipelineMessage}, resource_manager::MemoryManager, runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
-    },
+    }, ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu
 };
 
 pub(crate) type IntermediateOpExecuteResult<Op> =
@@ -55,6 +48,20 @@ pub(crate) trait IntermediateOperator: Send + Sync {
     }
 
     fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy>;
+
+    fn dispatch_spawner(
+        &self,
+        batch_manager: Arc<BatchManager<Self::BatchingStrategy>>,
+        maintain_order: bool,
+    ) -> Arc<dyn DispatchSpawner> {
+        if maintain_order {
+            Arc::new(RoundRobinDispatcher::new(batch_manager))
+        } else {
+            Arc::new(UnorderedDispatcher::new(
+                batch_manager.initial_requirements(),
+            ))
+        }
+    }
 }
 
 pub struct IntermediateNode<Op: IntermediateOperator> {
@@ -154,16 +161,18 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         &self,
         input_receivers: Vec<Receiver<PipelineMessage>>,
         runtime_handle: &mut ExecutionRuntimeContext,
+        maintain_order: bool,
         memory_manager: Arc<MemoryManager>,
         batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
-    ) -> Receiver<PipelineMessage> {
-        let (output_sender, output_receiver) = create_channel(input_receivers.len());
-        for input_receiver in input_receivers {
+    ) -> OrderingAwareReceiver<PipelineMessage> {
+        let (output_senders, output_receiver) =
+            create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
+        for (input_receiver, output_sender) in input_receivers.into_iter().zip(output_senders) {
             runtime_handle.spawn(
                 Self::run_worker(
                     self.intermediate_op.clone(),
                     input_receiver,
-                    output_sender.clone(),
+                    output_sender,
                     self.runtime_stats.clone(),
                     memory_manager.clone(),
                     batch_manager.clone(),
@@ -261,9 +270,11 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
 
     fn start(
         &self,
+        maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<PipelineMessage>> {
-        let child_result_receiver: Receiver<PipelineMessage> = self.child.start(runtime_handle)?;
+        let child_result_receiver: Receiver<PipelineMessage> =
+            self.child.start(false, runtime_handle)?;
         let child_result_receiver = InitializingCountingReceiver::new(
             child_result_receiver,
             self.node_id(),
@@ -282,7 +293,9 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
                     node_name: self.name().to_string(),
                 })?;
         let batch_manager = Arc::new(BatchManager::new(strategy));
-        let dispatch_spawner = UnorderedDispatcher::new(batch_manager.initial_requirements());
+        let dispatch_spawner = self
+            .intermediate_op
+            .dispatch_spawner(batch_manager.clone(), maintain_order);
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             child_result_receiver,
             num_workers,
@@ -297,6 +310,7 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         let mut output_receiver = self.spawn_workers(
             spawned_dispatch_result.worker_receivers,
             runtime_handle,
+            maintain_order,
             runtime_handle.memory_manager(),
             batch_manager,
         );

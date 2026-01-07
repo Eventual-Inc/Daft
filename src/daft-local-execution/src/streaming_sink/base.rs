@@ -12,16 +12,9 @@ use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
 
 use crate::{
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
-    channel::{Receiver, Sender, create_channel},
-    dispatcher::{DispatchSpawner, DynamicUnorderedDispatcher},
-    dynamic_batching::{BatchManager, BatchingStrategy},
-    pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
-    plan_input::{InputId, PipelineMessage},
-    resource_manager::MemoryManager,
-    runtime_stats::{
+    channel::{create_channel, create_ordering_aware_receiver_channel, OrderingAwareReceiver, Receiver, Sender}, dispatcher::{DispatchSpawner, DynamicUnorderedDispatcher, RoundRobinDispatcher}, dynamic_batching::{BatchManager, BatchingStrategy}, pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext}, plan_input::{InputId, PipelineMessage}, resource_manager::MemoryManager, runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
-    },
+    }, ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput
 };
 
 /// Unified message type for streaming sink workers that combines
@@ -105,8 +98,13 @@ pub(crate) trait StreamingSink: Send + Sync {
     fn dispatch_spawner(
         &self,
         batch_manager: Arc<BatchManager<Self::BatchingStrategy>>,
+        maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
-        Arc::new(DynamicUnorderedDispatcher::new(batch_manager))
+        if maintain_order {
+            Arc::new(RoundRobinDispatcher::new(batch_manager))
+        } else {
+            Arc::new(DynamicUnorderedDispatcher::new(batch_manager))
+        }
     }
 }
 
@@ -347,15 +345,17 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         runtime_stats: Arc<dyn RuntimeStats>,
         memory_manager: Arc<MemoryManager>,
         batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
-    ) -> Receiver<StreamingSinkWorkerMessage<Op::State>> {
-        let (output_sender, output_receiver) = create_channel(input_receivers.len());
+        maintain_order: bool,
+    ) -> OrderingAwareReceiver<StreamingSinkWorkerMessage<Op::State>> {
+        let (output_senders, output_receiver) =
+            create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
 
-        for input_receiver in input_receivers {
+        for (input_receiver, output_sender) in input_receivers.into_iter().zip(output_senders) {
             runtime_handle.spawn(
                 Self::run_worker(
                     op.clone(),
                     input_receiver,
-                    output_sender.clone(),
+                    output_sender,
                     runtime_stats.clone(),
                     memory_manager.clone(),
                     batch_manager.clone(),
@@ -452,9 +452,10 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
 
     fn start(
         &self,
+        maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<PipelineMessage>> {
-        let child_result_receiver = self.child.start(runtime_handle)?;
+        let child_result_receiver = self.child.start(maintain_order, runtime_handle)?;
         let child_result_receiver = InitializingCountingReceiver::new(
             child_result_receiver,
             self.node_id(),
@@ -470,7 +471,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         let num_workers = op.max_concurrency();
         let strategy = op.batching_strategy();
         let batch_manager = Arc::new(BatchManager::new(strategy));
-        let dispatch_spawner = op.dispatch_spawner(batch_manager.clone());
+        let dispatch_spawner = op.dispatch_spawner(batch_manager.clone(), maintain_order);
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
             child_result_receiver,
             num_workers,
@@ -490,6 +491,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
             self.runtime_stats.clone(),
             runtime_handle.memory_manager(),
             batch_manager.clone(),
+            maintain_order,
         );
 
         let memory_manager = runtime_handle.memory_manager();

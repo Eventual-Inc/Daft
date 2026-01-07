@@ -110,8 +110,8 @@ struct PlanState {
 
 impl PlanState {
     fn new(handle: RuntimeTask<ExecutionEngineFinalResult>, enqueue_input_sender: Sender<EnqueueInputMessage>) -> Self {
-        Self { 
-            handle, 
+        Self {
+            handle,
             enqueue_input_sender,
             active_input_ids: HashSet::new(),
         }
@@ -212,7 +212,7 @@ impl PyNativeExecutor {
 
     /// Finish execution for a plan by fingerprint
     pub fn finish<'py>(&self, py: Python<'py>, fingerprint: u64) -> PyResult<Bound<'py, PyAny>> {
-        
+
 
         let finish_future = self.executor.lock_py_attached(py).unwrap().finish(fingerprint)?;
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -250,7 +250,7 @@ impl PyNativeExecutor {
         let plan = local_physical_plan.plan.clone();
         let exec_cfg = daft_ctx.execution_config();
         let subscribers = daft_ctx.subscribers();
-        
+
         // Prepare plan inputs grouped by source_id
         let mut plan_inputs_by_key: Vec<(String, InputId, PlanInput)> = Vec::new();
 
@@ -497,7 +497,7 @@ impl NativeExecutor {
     ) -> DaftResult<BoxFuture<'static, DaftResult<Option<(InputId, Receiver<Arc<MicroPartition>>)>>>> {
         // Compute plan fingerprint for deduplication
         let fingerprint = local_physical_plan.fingerprint();
-        
+
         // Get or create plan handle from registry
         self.active_plans.get_or_create_plan(fingerprint, || {
             // Create new execution
@@ -520,16 +520,16 @@ impl NativeExecutor {
             // Spawn execution on the global runtime - returns immediately
             let handle = get_global_runtime();
             let stats_manager = RuntimeStatsManager::try_new(handle, &pipeline, subscribers, query_id)?;
-            
+
             // Create channel for enqueue_input messages
             let (enqueue_input_tx, mut enqueue_input_rx) = create_channel(1);
-            
+
             let task = async move {
                 let stats_manager_handle = stats_manager.handle();
                 let memory_manager = get_or_init_memory_manager();
                 let mut runtime_handle =
                     ExecutionRuntimeContext::new(memory_manager.clone(), stats_manager_handle);
-                let mut receiver = pipeline.start(&mut runtime_handle)?;
+                let mut receiver = pipeline.start(true, &mut runtime_handle)?;
 
                 // Message router handles routing messages to per-input_id channels
                 let mut message_router = MessageRouter::new(HashMap::new());
@@ -570,7 +570,7 @@ impl NativeExecutor {
                                 Some(EnqueueInputMessage { input_id, plan_inputs_by_key, result_sender }) => {
                                     // Store the result sender in message router's output_senders
                                     message_router.insert_output_sender(input_id, result_sender);
-                                    
+
                                     // Send inputs via local input_senders
                                     for (key, input_id, plan_input) in plan_inputs_by_key {
                                         if let Some(sender) = input_senders.get(&key) {

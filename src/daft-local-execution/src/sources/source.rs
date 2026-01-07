@@ -90,6 +90,7 @@ pub trait Source: Send + Sync {
         &self,
         io_stats: IOStatsRef,
         chunk_size: usize,
+        maintain_order: bool,
     ) -> DaftResult<SourceStream<'static>>;
     fn schema(&self) -> &SchemaRef;
 }
@@ -203,6 +204,7 @@ impl PipelineNode for SourceNode {
     }
     fn start(
         &self,
+        maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<PipelineMessage>> {
         let source = self.source.clone();
@@ -216,10 +218,9 @@ impl PipelineNode for SourceNode {
             MorselSizeRequirement::Strict(size) => size,
             MorselSizeRequirement::Flexible(_, upper) => upper,
         };
-        let source_name = self.name().clone();
         runtime_handle.spawn(
             async move {
-                let mut source_stream = source.get_data(io_stats, chunk_size).await?;
+                let mut source_stream = source.get_data(io_stats, chunk_size, maintain_order).await?;
                 stats_manager.activate_node(node_id);
                 while let Some(part) = source_stream.next().await {
                     let message: PipelineMessage = part?;

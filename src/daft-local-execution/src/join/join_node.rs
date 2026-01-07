@@ -17,8 +17,8 @@ use tracing::{info_span, instrument};
 
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner,
-    channel::{Receiver, Sender, create_channel},
-    dispatcher::{DispatchSpawner, DynamicUnorderedDispatcher, InputIdDispatcher},
+    channel::{Receiver, Sender, create_channel, create_ordering_aware_receiver_channel, OrderingAwareReceiver},
+    dispatcher::{DispatchSpawner, DynamicUnorderedDispatcher, InputIdDispatcher, RoundRobinDispatcher},
     dynamic_batching::BatchManager,
     join::join_operator::{JoinOperator, ProbeFinalizeOutput, ProbeOutput},
     pipeline::{MorselSizeRequirement, PipelineNode, RuntimeContext},
@@ -350,13 +350,15 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
         runtime_stats: Arc<dyn RuntimeStats>,
         memory_manager: Arc<MemoryManager>,
         batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
-    ) -> Receiver<ProbeWorkerOutput<Op>> {
-        let (output_sender, output_receiver) = create_channel(input_receivers.len());
-        for input_receiver in input_receivers {
+        maintain_order: bool,
+    ) -> OrderingAwareReceiver<ProbeWorkerOutput<Op>> {
+        let (output_senders, output_receiver) =
+            create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
+        for (input_receiver, output_sender) in input_receivers.into_iter().zip(output_senders) {
             runtime_handle.spawn(Self::run_probe_worker(
                 op.clone(),
                 input_receiver,
-                output_sender.clone(),
+                output_sender,
                 build_channels.clone(),
                 runtime_stats.clone(),
                 memory_manager.clone(),
@@ -469,10 +471,11 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
 
     fn start(
         &self,
+        maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<PipelineMessage>> {
         // Start build-side child (index 0)
-        let build_child_receiver: Receiver<PipelineMessage> = self.left.start(runtime_handle)?;
+        let build_child_receiver: Receiver<PipelineMessage> = self.left.start(false,runtime_handle)?;
         let build_counting_receiver = InitializingCountingReceiver::new(
             build_child_receiver,
             self.node_id(),
@@ -481,7 +484,7 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
         );
 
         // Start probe-side child (index 1) - will be consumed by multiple workers
-        let probe_child_receiver: Receiver<PipelineMessage> = self.right.start(runtime_handle)?;
+        let probe_child_receiver: Receiver<PipelineMessage> = self.right.start(maintain_order, runtime_handle)?;
         let probe_counting_receiver = InitializingCountingReceiver::new(
             probe_child_receiver,
             self.node_id(),
@@ -532,9 +535,14 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
 
                 // Create dispatcher for probe side and spawn dispatch
                 let batch_manager_for_dispatcher = batch_manager.clone();
+                let maintain_order_for_probe = maintain_order;
                 let spawned_probe_dispatch_result = {
                     let mut probe_runtime_handle = RuntimeHandle(current_handle.clone());
-                    let dispatcher = DynamicUnorderedDispatcher::new(batch_manager_for_dispatcher);
+                    let dispatcher: Arc<dyn DispatchSpawner> = if maintain_order_for_probe {
+                        Arc::new(RoundRobinDispatcher::new(batch_manager_for_dispatcher))
+                    } else {
+                        Arc::new(DynamicUnorderedDispatcher::new(batch_manager_for_dispatcher))
+                    };
                     dispatcher.spawn_dispatch(
                         probe_counting_receiver,
                         num_probe_workers,
@@ -567,6 +575,7 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
                     runtime_stats.clone(),
                     memory_manager.clone(),
                     batch_manager,
+                    maintain_order,
                 );
 
                 // Track states and flush counts per input_id

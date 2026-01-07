@@ -151,11 +151,11 @@ jobs:
         uv pip install pyarrow==${{ matrix.pyarrow-version }}
 
 
-    - name: Start tmate session if runner is native
-      if: ${{ matrix.daft-runner == 'native' }}
-      uses: mxschmitt/action-tmate@v3
-      with:
-        limit-access-to-actor: true
+    # - name: Start tmate session if runner is native
+    #   if: ${{ matrix.daft-runner == 'native' }}
+    #   uses: mxschmitt/action-tmate@v3
+    #   with:
+    #     limit-access-to-actor: true
 
     - name: Build library and Test with pytest
       run: |

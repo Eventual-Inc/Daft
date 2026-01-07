@@ -165,6 +165,7 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
     );
     fn start(
         &self,
+        maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<crate::plan_input::PipelineMessage>>;
 
@@ -1125,7 +1126,7 @@ fn physical_plan_to_pipeline(
                 } else {
                     true
                 };
-                
+
                 let build_child_node = physical_plan_to_pipeline(build_child, cfg, ctx, input_senders)?;
                 let probe_child_node = physical_plan_to_pipeline(probe_child, cfg, ctx, input_senders)?;
 
