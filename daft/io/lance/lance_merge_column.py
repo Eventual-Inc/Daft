@@ -111,7 +111,7 @@ class GroupFragmentMergeUDF:
     def __init__(
         self,
         lance_ds: lance.LanceDataset,
-        left_on: str = "_rowaddr",
+        left_on: str | None = "_rowaddr",
         right_on: str | None = None,
         read_columns: list[str] | None = None,
         reader_schema: pa.Schema | None = None,
@@ -128,8 +128,8 @@ class GroupFragmentMergeUDF:
             batch_size: Optional batch size when building RecordBatchReader from the provided data.
         """
         self.lance_ds = lance_ds
-        self.left_on = left_on
-        self.right_on = right_on or left_on
+        self.left_on = left_on or "_rowaddr"
+        self.right_on = right_on or self.left_on
         self.read_columns = read_columns or []
         self.reader_schema = reader_schema
         self.batch_size = batch_size
@@ -295,7 +295,7 @@ def merge_columns_from_df(
 
     # map_groups: pass data columns followed by fragment_id
     grouped = df.groupby("fragment_id").map_groups(
-        handler_udf(*(df[c] for c in read_columns), df["fragment_id"]).alias("commit_message")
+        handler_udf(*(df[c] for c in read_columns), df["fragment_id"]).alias("commit_message")  # type: ignore[attr-defined]
     )
 
     commit_messages = grouped.collect().to_pydict()["commit_message"]
