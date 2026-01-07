@@ -167,7 +167,6 @@ mod jaq {
 }
 
 #[cfg(test)]
-#[allow(deprecated, reason = "arrow2 migration")]
 mod tests {
     use daft_core::prelude::{AsArrow, Utf8Array};
 
