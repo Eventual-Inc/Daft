@@ -75,7 +75,7 @@ fn ilike_impl(arr: &Utf8Array, pattern: &Utf8Array) -> DaftResult<BooleanArray> 
 
     let self_iter = create_broadcasted_str_iter(arr, expected_size);
 
-    let result_vec: Vec<Option<bool>> = if pattern.len() == 1 {
+    let result_arr: BooleanArray = if pattern.len() == 1 {
         let pat = pattern.get(0).unwrap();
         let re = compile_like_regex(pat, true)?;
         self_iter.map(|val| Some(re.is_match(val?))).collect()
@@ -98,10 +98,10 @@ fn ilike_impl(arr: &Utf8Array, pattern: &Utf8Array) -> DaftResult<BooleanArray> 
                 }
                 _ => Ok(None),
             })
-            .collect::<DaftResult<Vec<Option<bool>>>>()?
+            .collect::<DaftResult<BooleanArray>>()?
     };
 
-    let result = BooleanArray::from((arr.name(), result_vec.as_slice()));
+    let result = result_arr.rename(arr.name());
     assert_eq!(result.len(), expected_size);
     Ok(result)
 }

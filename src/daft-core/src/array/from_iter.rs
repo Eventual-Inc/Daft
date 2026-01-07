@@ -170,6 +170,13 @@ impl BooleanArray {
         Self::new(Field::new(name, DataType::Boolean).into(), arrow_array).unwrap()
     }
 }
+impl FromIterator<Option<bool>> for BooleanArray {
+    fn from_iter<T: IntoIterator<Item = Option<bool>>>(iter: T) -> Self {
+        let arrow_array = Arc::new(arrow::array::BooleanArray::from_iter(iter));
+
+        Self::from_arrow(Field::new("", DataType::Boolean), arrow_array).unwrap()
+    }
+}
 
 impl IntervalArray {
     pub fn from_iter<S: Into<months_days_ns>>(
