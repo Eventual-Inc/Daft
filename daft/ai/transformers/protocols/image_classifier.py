@@ -19,7 +19,6 @@ from daft.ai.utils import get_gpu_udf_options, get_torch_device
 from daft.dependencies import tf, torch
 
 # Global lock to prevent concurrent model loading which can cause meta tensor issues
-# See: https://github.com/huggingface/transformers/issues/36247
 _model_loading_lock = threading.Lock()
 
 if TYPE_CHECKING:
@@ -94,9 +93,7 @@ class TransformersImageClassifier(ImageClassifier):
         self._model = model_name_or_path
         self._options = options
 
-        # Workaround for transformers issue #36247: Meta tensor error with concurrent loading
-        # Use a lock to prevent concurrent model loading which triggers the meta tensor bug
-        # See: https://github.com/huggingface/transformers/issues/36247
+        # Use a lock to prevent concurrent model loading which triggers meta tensor errors
         with _model_loading_lock:
             self._pipeline = pipeline(
                 task="zero-shot-image-classification",
