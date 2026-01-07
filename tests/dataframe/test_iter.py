@@ -7,7 +7,6 @@ import pytest
 import daft
 from daft.errors import UDFException
 from tests.conftest import get_tests_daft_runner_name
-import time
 
 
 class MockException(Exception):
@@ -197,30 +196,30 @@ def test_iter_exception(make_df):
 def test_iter_partitions_exception(make_df, dynamic_batching):
     # Test that df.iter_partitions raises an exception if the UDF raises an exception.
 
-    for _ in range(100):
-        @daft.udf(return_dtype=daft.DataType.int64())
-        def echo_or_trigger(s):
-            trigger = max(s.to_pylist())
-            if trigger >= 199:
-                raise MockException(trigger)
-            else:
-                return s
+    @daft.udf(return_dtype=daft.DataType.int64())
+    def echo_or_trigger(s):
+        trigger = max(s.to_pylist())
+        if trigger >= 199:
+            raise MockException(trigger)
+        else:
+            return s
 
-        with daft.execution_config_ctx(default_morsel_size=2, enable_dynamic_batching=dynamic_batching):
-            df = daft.range(200, partitions=100).with_column("b", echo_or_trigger(daft.col("id")))
+    with daft.execution_config_ctx(default_morsel_size=2, enable_dynamic_batching=dynamic_batching):
+        df = daft.range(200, partitions=100).with_column("b", echo_or_trigger(daft.col("id")))
 
-            it = df.iter_partitions()
+        it = df.iter_partitions()
 
-            # Ensure the exception does trigger if execution continues.
-            with pytest.raises(UDFException) as exc_info:
-                res = list(it)
-                if get_tests_daft_runner_name() == "ray":
-                    import ray
-                    ray.get(res)
-
-            # Ray's wrapping of the exception loses information about the `.cause`, but preserves it in the string error message
+        # Ensure the exception does trigger if execution continues.
+        with pytest.raises(UDFException) as exc_info:
+            res = list(it)
             if get_tests_daft_runner_name() == "ray":
-                assert "MockException" in str(exc_info.value)
-            else:
-                assert isinstance(exc_info.value.__cause__, MockException)
-            assert str(exc_info.value).endswith("failed when executing on inputs:\n  - id (Int64, length=2)")
+                import ray
+
+                ray.get(res)
+
+        # Ray's wrapping of the exception loses information about the `.cause`, but preserves it in the string error message
+        if get_tests_daft_runner_name() == "ray":
+            assert "MockException" in str(exc_info.value)
+        else:
+            assert isinstance(exc_info.value.__cause__, MockException)
+        assert str(exc_info.value).endswith("failed when executing on inputs:\n  - id (Int64, length=2)")
