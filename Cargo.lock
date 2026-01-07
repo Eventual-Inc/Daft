@@ -2975,7 +2975,6 @@ dependencies = [
  "base64 0.22.1",
  "common-error",
  "common-image",
- "daft-arrow",
  "daft-core",
  "daft-dsl",
  "daft-schema",
