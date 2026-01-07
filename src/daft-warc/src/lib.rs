@@ -212,6 +212,7 @@ impl WarcRecordBatchBuilder {
         self.record_id_array.len()
     }
 
+    #[allow(deprecated, reason = "arrow2 migration")]
     fn process_arrays(&mut self) -> DaftResult<Option<RecordBatch>> {
         let num_records = self.content_array.len();
         if num_records == 0 {
