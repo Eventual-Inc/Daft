@@ -38,19 +38,20 @@ pub(crate) fn native_parquet_writer_supported(
         return Ok(false);
     }
 
-    // TODO(desmond): Currently we do not support extension and timestamp types.
-    #[allow(deprecated, reason = "arrow2 migration")]
-    let arrow_schema = match file_schema.to_arrow2() {
-        Ok(schema)
-            if schema
-                .fields
-                .iter()
-                .all(|field| field.data_type().can_convert_to_arrow_rs()) =>
-        {
-            Arc::new(schema.into())
-        }
-        _ => return Ok(false),
+    // TODO: Newer versions of parquet support Duration, but we don't write
+    // the arrow schema metadata to Parquet, so we can't support it yet.
+    if file_schema
+        .fields()
+        .iter()
+        .any(|field| matches!(field.dtype, DataType::Duration(_)))
+    {
+        return Ok(false);
+    }
+
+    let Ok(arrow_schema) = file_schema.to_arrow() else {
+        return Ok(false);
     };
+
     let writer_properties = Arc::new(
         WriterProperties::builder()
             .set_writer_version(WriterVersion::PARQUET_1_0)
@@ -90,8 +91,7 @@ pub(crate) fn create_native_parquet_writer(
             .build(),
     );
 
-    #[allow(deprecated, reason = "arrow2 migration")]
-    let arrow_schema = Arc::new(schema.to_arrow2()?.into());
+    let arrow_schema = Arc::new(schema.to_arrow()?.into());
 
     let parquet_schema = ArrowSchemaConverter::new()
         .with_coerce_types(writer_properties.coerce_types())
@@ -370,11 +370,11 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
 
         // Return a recordbatch containing the filename that we wrote to.
         let field = Field::new(Self::PATH_FIELD_NAME, DataType::Utf8);
-        let filename_series = Series::from_arrow2(
+        let filename_series = Series::from_arrow(
             Arc::new(field.clone()),
-            Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice([&self
-                .filename
-                .to_string_lossy()])),
+            Arc::new(arrow_array::LargeStringArray::from_iter_values(
+                std::iter::once(&self.filename.to_string_lossy()),
+            )),
         )?;
         let record_batch =
             RecordBatch::new_with_size(Schema::new(vec![field]), vec![filename_series], 1)?;
