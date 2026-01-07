@@ -404,3 +404,11 @@ class LogicalPlanBuilder:
     def write_datasink(self, name: str, sink: DataSink[Any]) -> LogicalPlanBuilder:
         builder = self._builder.datasink_write(name, sink)
         return LogicalPlanBuilder(builder)
+
+    def insert_filter_after_source(self, predicate: Expression) -> LogicalPlanBuilder:
+        """Add a Filter(predicate) directly above the unique Source in the logical plan.
+
+        If there is not exactly one Source in the tree, this will raise an error.
+        """
+        builder = self._builder.insert_filter_after_source(predicate._expr)
+        return LogicalPlanBuilder(builder)
