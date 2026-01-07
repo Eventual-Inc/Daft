@@ -33,9 +33,22 @@ To set up your development environment:
 
 ### Note about Developing `daft-dashboard`
 
-If you wish to enable, or work on the daft-dashboard functionality, it does have an additional dependency of [bun.sh](https://bun.sh/).
+If you wish to enable, or work on the daft-dashboard functionality, it does have an additional dependency of [bun.sh](https://bun.sh/). You simply need to install bun, and everything else should work out of the box!
 
-You simply need to install bun, and everything else should work out of the box!
+Next (_make sure Daft is installed_), you can launch the dashboard using the `daft dashboard` command, for example:
+
+```bash
+# You can learn more about this command by `daft dashboard -h`
+daft dashboard -v -a 127.0.0.1 -p 3238
+```
+
+Before executing a specific Daft job, enable reporting query execution data to the dashboard by setting the `DAFT_DASHBOARD_URL` environment variable, for example:
+
+```bash
+export DAFT_DASHBOARD_URL="http://127.0.0.1:3238"
+```
+
+Next, you can access and view the dashboard through a web browser, for example, via address `http://127.0.0.1:3238`.
 
 ## Developing with Ray
 

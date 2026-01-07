@@ -8,7 +8,9 @@ mod list_array;
 pub mod ops;
 mod serdes;
 mod struct_array;
+pub mod utf8;
 
+use arrow::array::make_array;
 use daft_arrow::{
     array::to_data,
     buffer::{NullBuffer, wrap_null_buffer},
@@ -79,11 +81,10 @@ impl<T> DataArray<T> {
                 });
             }
             let arrow_data_type = arrow_array.data_type();
-
             assert!(
                 !(&expected_arrow_physical_type != arrow_data_type),
                 "Mismatch between expected and actual Arrow types for DataArray.\n\
-                Field name: {}\n\
+                Field name: '{}'\n\
                 Logical type: {}\n\
                 Physical type: {}\n\
                 Expected Arrow physical type: {:?}\n\
@@ -178,6 +179,9 @@ impl<T> DataArray<T> {
     pub fn to_data(&self) -> arrow::array::ArrayData {
         to_data(self.data())
     }
+    pub fn to_arrow(&self) -> arrow::array::ArrayRef {
+        make_array(self.to_data())
+    }
 
     pub fn name(&self) -> &str {
         self.field.name.as_str()
@@ -206,7 +210,7 @@ mod tests {
         let data = Box::new(daft_arrow::array::Utf8Array::<i32>::from(data.as_slice()));
         let daft_fld = Arc::new(Field::new("test", DataType::Utf8));
 
-        let s = Series::from_arrow(daft_fld, data);
+        let s = Series::from_arrow2(daft_fld, data);
         assert!(s.is_ok())
     }
 }

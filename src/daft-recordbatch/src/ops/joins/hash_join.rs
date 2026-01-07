@@ -2,7 +2,7 @@ use std::{cmp, iter::repeat_n, ops::Not, sync::Arc};
 
 use arrow_array::builder::BooleanBufferBuilder;
 use common_error::DaftResult;
-use daft_arrow::{buffer::NullBufferBuilder, types::IndexRange};
+use daft_arrow::buffer::NullBufferBuilder;
 use daft_core::{
     array::ops::{DaftIsNull, arrow::comparison::build_multi_array_is_equal},
     prelude::*,
@@ -284,20 +284,14 @@ pub(super) fn hash_outer_join(
     let (lidx, ridx) = if lkeys.columns.iter().any(|s| s.data_type().is_null())
         || rkeys.columns.iter().any(|s| s.data_type().is_null())
     {
-        let l_iter = IndexRange::new(0, lkeys.len() as u64)
-            .map(Some)
+        let l_iter = (0..lkeys.len())
+            .map(|i| Some(i as u64))
             .chain(repeat_n(None, rkeys.len()));
-        let r_iter =
-            repeat_n(None, lkeys.len()).chain(IndexRange::new(0, rkeys.len() as u64).map(Some));
-
-        let l_arrow =
-            Box::new(daft_arrow::array::PrimitiveArray::<u64>::from_trusted_len_iter(l_iter));
-        let r_arrow =
-            Box::new(daft_arrow::array::PrimitiveArray::<u64>::from_trusted_len_iter(r_iter));
+        let r_iter = repeat_n(None, lkeys.len()).chain((0..rkeys.len()).map(|i| Some(i as u64)));
 
         (
-            UInt64Array::from(("left_indices", l_arrow)),
-            UInt64Array::from(("right_indices", r_arrow)),
+            UInt64Array::from_iter(Field::new("left_indices", DataType::UInt64), l_iter),
+            UInt64Array::from_iter(Field::new("right_indices", DataType::UInt64), r_iter),
         )
     } else {
         // probe on the smaller table

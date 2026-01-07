@@ -78,9 +78,9 @@ def test_sharding_distribution_fairness(tmpdir) -> None:
     variance = sum((x - avg_files) ** 2 for x in files_per_shard) / len(files_per_shard)
     std_dev = variance**0.5
     coefficient_of_variation = std_dev / avg_files if avg_files > 0 else float("inf")
-    assert (
-        coefficient_of_variation <= 0.55
-    ), f"The distribution for sharding is too variable with a coefficient of variation of {coefficient_of_variation:.2f}"
+    assert coefficient_of_variation <= 0.55, (
+        f"The distribution for sharding is too variable with a coefficient of variation of {coefficient_of_variation:.2f}"
+    )
 
 
 def test_sharding_consistency(tmpdir) -> None:

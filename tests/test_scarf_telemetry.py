@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import socket
 import urllib
 from unittest.mock import MagicMock, patch
 
@@ -208,7 +207,7 @@ def test_scarf_telemetry_error_handling(
 
     mock_version.return_value = "0.0.0"
     mock_build_type.return_value = "release"
-    mock_urlopen.side_effect = urllib.error.URLError(socket.timeout("Timeout"))
+    mock_urlopen.side_effect = urllib.error.URLError(TimeoutError("Timeout"))
 
     if extra_params:
         request_thread, result_container = telemetry_fn(**extra_params)

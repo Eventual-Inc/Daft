@@ -839,3 +839,41 @@ def test_image_to_mode_fixed_size(input_mode, output_mode):
     s = s.cast(DataType.image(input_mode, 2, 2)).image.to_mode(output_mode)
     assert s.datatype() == DataType.image(output_mode, 2, 2)
     assert s.to_pylist()[0].shape[2] == MODE_TO_NUM_CHANNELS[output_mode]
+
+
+@pytest.mark.parametrize("input_mode", mode_cast_modes)
+def test_image_to_tensor(input_mode):
+    channels = MODE_TO_NUM_CHANNELS[input_mode]
+    data = [
+        np.arange(4 * channels, dtype=np.uint8).reshape((2, 2, channels)),
+        np.arange(4 * channels, 8 * channels, dtype=np.uint8).reshape((2, 2, channels)),
+        None,
+    ]
+    s = Series.from_pylist(data, dtype=DataType.python())
+    img = s.cast(DataType.image(input_mode))
+
+    t = img.image.to_tensor()
+    assert t.datatype() == DataType.tensor(DataType.uint8())
+
+    out = t.to_pylist()
+    assert out[-1] is None
+    np.testing.assert_equal(out[:-1], data[:-1])
+
+
+@pytest.mark.parametrize("input_mode", mode_cast_modes)
+def test_image_to_tensor_fixed_shape(input_mode):
+    channels = MODE_TO_NUM_CHANNELS[input_mode]
+    data = [
+        np.arange(4 * channels, dtype=np.uint8).reshape((2, 2, channels)),
+        np.arange(4 * channels, 8 * channels, dtype=np.uint8).reshape((2, 2, channels)),
+        None,
+    ]
+    s = Series.from_pylist(data, dtype=DataType.python())
+    img = s.cast(DataType.image(input_mode, 2, 2))
+    t = img.image.to_tensor()
+
+    assert t.datatype() == DataType.tensor(DataType.uint8(), shape=(2, 2, channels))
+
+    out = t.to_pylist()
+    assert out[-1] is None
+    np.testing.assert_equal(out[:-1], data[:-1])

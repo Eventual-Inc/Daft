@@ -321,7 +321,7 @@ class IcebergScanOperator(ScanOperator):
         return True
 
     def supports_count_pushdown(self) -> bool:
-        return True and not self._has_delete_files()
+        return not self._has_delete_files()
 
     def supported_count_modes(self) -> list[CountMode]:
         return [CountMode.All]

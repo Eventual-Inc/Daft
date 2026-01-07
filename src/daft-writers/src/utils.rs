@@ -20,7 +20,9 @@ pub(crate) fn build_filename(
 
     match source_type {
         SourceType::File => build_local_file_path(root_dir, partition_path, filename),
-        SourceType::S3 => build_s3_path(root_dir, partition_path, filename),
+        source if source.supports_native_writer() => {
+            build_object_path(root_dir, partition_path, filename)
+        }
         _ => Err(DaftError::ValueError(format!(
             "Unsupported source type: {:?}",
             source_type
@@ -97,8 +99,12 @@ fn build_local_file_path(
     Ok(dir.join(filename))
 }
 
-/// Helper function to build the path to an S3 url.
-fn build_s3_path(root_dir: &str, partition_path: PathBuf, filename: String) -> DaftResult<PathBuf> {
+/// Helper function to build the path to an object url. The pattern of object url is `{bucket}/{key}`. TODO consider include the scheme in the return value
+fn build_object_path(
+    root_dir: &str,
+    partition_path: PathBuf,
+    filename: String,
+) -> DaftResult<PathBuf> {
     let ObjectPath {
         scheme: _scheme,
         bucket,
@@ -123,21 +129,21 @@ mod tests {
 
     #[test]
     fn test_record_batch_to_partition_string() -> DaftResult<()> {
-        let year_series = Series::from_arrow(
+        let year_series = Series::from_arrow2(
             Arc::new(Field::new("year", DataType::Utf8)),
             Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(&["2023"])),
         )?;
-        let month_series = Series::from_arrow(
+        let month_series = Series::from_arrow2(
             Arc::new(Field::new("month", DataType::Utf8)),
             Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(&["1"])),
         )?;
         // Include a column with a null value.
-        let day_series = Series::from_arrow(
+        let day_series = Series::from_arrow2(
             Arc::new(Field::new("day", DataType::Utf8)),
             Box::new(daft_arrow::array::Utf8Array::<i64>::from([None::<&str>])),
         )?;
         // Include a column with a name that needs to be URL-encoded.
-        let date_series = Series::from_arrow(
+        let date_series = Series::from_arrow2(
             Arc::new(Field::new("today's date", DataType::Utf8)),
             Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(&[
                 "2025/04/29",
@@ -172,13 +178,13 @@ mod tests {
 
     #[test]
     fn test_record_batch_to_partition_string_multi_row_error() -> DaftResult<()> {
-        let year_series = Series::from_arrow(
+        let year_series = Series::from_arrow2(
             Arc::new(Field::new("year", DataType::Utf8)),
             Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(&[
                 "2023", "2024",
             ])),
         )?;
-        let month_series = Series::from_arrow(
+        let month_series = Series::from_arrow2(
             Arc::new(Field::new("month", DataType::Utf8)),
             Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(&["1", "2"])),
         )?;

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arrow::array::ArrayRef;
 use common_error::{DaftError, DaftResult};
 use common_py_serde::pickle_dumps;
 use daft_arrow::{
@@ -70,7 +71,8 @@ impl PythonArray {
         }
     }
 
-    pub fn to_pickled_arrow(&self) -> DaftResult<daft_arrow::array::BinaryArray<i64>> {
+    #[deprecated(note = "arrow2 migration")]
+    pub fn to_pickled_arrow2(&self) -> DaftResult<daft_arrow::array::BinaryArray<i64>> {
         let pickled = Python::attach(|py| {
             self.iter()
                 .map(|v| v.map(|obj| pickle_dumps(py, obj)).transpose())
@@ -80,11 +82,26 @@ impl PythonArray {
         Ok(daft_arrow::array::BinaryArray::from(pickled))
     }
 
-    pub fn to_arrow(&self) -> DaftResult<Box<dyn daft_arrow::array::Array>> {
+    pub fn to_pickled_arrow(&self) -> DaftResult<arrow::array::LargeBinaryArray> {
+        Python::attach(|py| {
+            self.iter()
+                .map(|v| v.map(|obj| pickle_dumps(py, obj)).transpose())
+                .collect::<PyResult<arrow::array::LargeBinaryArray>>()
+        })
+        .map_err(DaftError::from)
+    }
+
+    #[deprecated(note = "arrow2 migration")]
+    pub fn to_arrow2(&self) -> DaftResult<Box<dyn daft_arrow::array::Array>> {
         let arrow_logical_type = self.data_type().to_arrow2().unwrap();
-        let physical_arrow_array = self.to_pickled_arrow()?;
+        let physical_arrow_array = self.to_pickled_arrow2()?;
         let logical_arrow_array = physical_arrow_array.convert_logical_type(arrow_logical_type);
         Ok(logical_arrow_array)
+    }
+
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
+        // unlike arrow2, the extension type is stored in the field, so we can just directly return the physical array
+        self.to_pickled_arrow().map(|arr| Arc::new(arr) as _)
     }
 
     pub fn len(&self) -> usize {

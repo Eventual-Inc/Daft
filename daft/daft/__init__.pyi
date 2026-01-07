@@ -1,8 +1,8 @@
 import builtins
 import datetime
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Concatenate, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Concatenate, Literal, TypeVar
 
 from daft.dataframe.display import MermaidOptions
 from daft.io import DataSink
@@ -731,6 +731,37 @@ class UnityConfig:
         """Replaces values if provided, returning a new UnityConfig."""
         ...
 
+class GravitinoConfig:
+    """I/O configuration for Gravitino filesets."""
+
+    endpoint: str | None
+    metalake_name: str | None
+    auth_type: str | None
+    username: str | None
+    password: str | None
+    token: str | None
+
+    def __init__(
+        self,
+        endpoint: str | None,
+        metalake_name: str | None,
+        auth_type: str | None,
+        username: str | None,
+        password: str | None,
+        token: str | None,
+    ): ...
+    def replace(
+        self,
+        endpoint: str | None,
+        metalake_name: str | None,
+        auth_type: str | None,
+        username: str | None,
+        password: str | None,
+        token: str | None,
+    ) -> GravitinoConfig:
+        """Replaces values if provided, returning a new GravitinoConfig."""
+        ...
+
 class HuggingFaceConfig:
     """I/O configuration for accessing Hugging Face datasets.
 
@@ -871,6 +902,7 @@ class IOConfig:
     hf: HuggingFaceConfig
     disable_suffix_range: bool
     tos: TosConfig
+    gravitino: GravitinoConfig
 
     def __init__(
         self,
@@ -882,6 +914,7 @@ class IOConfig:
         hf: HuggingFaceConfig | None = None,
         disable_suffix_range: bool | None = None,
         tos: TosConfig | None = None,
+        gravitino: GravitinoConfig | None = None,
     ): ...
     def replace(
         self,
@@ -893,6 +926,7 @@ class IOConfig:
         hf: HuggingFaceConfig | None = None,
         disable_suffix_range: bool | None = None,
         tos: TosConfig | None = None,
+        gravitino: GravitinoConfig | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig."""
         ...
@@ -1453,7 +1487,7 @@ def row_wise_udf(
     method: Callable[Concatenate[Any, ...], Any],
     is_async: bool,
     return_dtype: PyDataType,
-    gpus: int,
+    gpus: float,
     use_process: bool | None,
     max_concurrency: int | None,
     max_retries: int | None,
@@ -1467,7 +1501,7 @@ def batch_udf(
     method: Callable[Concatenate[Any, ...], Any],
     is_async: bool,
     return_dtype: PyDataType,
-    gpus: int,
+    gpus: float,
     use_process: bool | None,
     max_concurrency: int | None,
     batch_size: int | None,

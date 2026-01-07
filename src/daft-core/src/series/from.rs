@@ -20,7 +20,7 @@ impl Series {
         let dtype = &field.dtype;
 
         with_match_daft_types!(dtype, |$T| {
-            Ok(<$T as DaftDataType>::ArrayType::from_arrow(field, array)?.into_series())
+            Ok(<$T as DaftDataType>::ArrayType::from_arrow2(field, array)?.into_series())
         })
     }
 

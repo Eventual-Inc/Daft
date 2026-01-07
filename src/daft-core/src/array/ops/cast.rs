@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2->arrow migration")]
 use std::{
     iter::repeat_n,
     ops::{Div, Mul},
@@ -148,7 +149,7 @@ where
                 };
 
                 let new_field = Arc::new(Field::new(self.name(), dtype.clone()));
-                Series::from_arrow(new_field, result_array)
+                Series::from_arrow2(new_field, result_array)
             }
         }
     }
@@ -675,7 +676,7 @@ impl ImageArray {
                     fixed_shape_tensor_array.downcast::<FixedShapeTensorArray>()?;
                 fixed_shape_tensor_array.cast(dtype)
             }
-            DataType::Tensor(_) => {
+            DataType::Tensor(inner_dtype) => {
                 let ndim = 3;
                 let mut shapes = Vec::with_capacity(ndim * self.len());
                 let shape_offsets = (0..=ndim * self.len())
@@ -683,7 +684,11 @@ impl ImageArray {
                     .map(|v| v as i64)
                     .collect::<Vec<i64>>();
                 let validity = self.physical.validity();
-                let data_array = self.data_array();
+                let data_series = self
+                    .data_array()
+                    .clone()
+                    .into_series()
+                    .cast(&DataType::List(inner_dtype.clone()))?;
                 let ca = self.channel_array();
                 let ha = self.height_array();
                 let wa = self.width_array();
@@ -709,7 +714,7 @@ impl ImageArray {
 
                 let struct_array = StructArray::new(
                     Field::new(self.name(), physical_type),
-                    vec![data_array.clone().into_series(), shapes_array.into_series()],
+                    vec![data_series, shapes_array.into_series()],
                     validity.cloned(),
                 );
                 Ok(
@@ -1784,7 +1789,7 @@ mod tests {
             "test_decimal",
             DataType::Decimal128(precision, scale),
         ));
-        DataArray::<Decimal128Type>::from_arrow(field, Box::new(arrow_array))
+        DataArray::<Decimal128Type>::from_arrow2(field, Box::new(arrow_array))
             .expect("Failed to create test decimal array")
     }
 
@@ -1792,7 +1797,7 @@ mod tests {
         let arrow_array =
             PrimitiveArray::from_vec(values).to(daft_arrow::datatypes::DataType::Float64);
         let field = Arc::new(Field::new("test_float", DataType::Float64));
-        Float64Array::from_arrow(field, Box::new(arrow_array))
+        Float64Array::from_arrow2(field, Box::new(arrow_array))
             .expect("Failed to create test float array")
     }
 
@@ -1800,7 +1805,7 @@ mod tests {
         let arrow_array =
             PrimitiveArray::from_vec(values).to(daft_arrow::datatypes::DataType::Int64);
         let field = Arc::new(Field::new("test_int", DataType::Int64));
-        Int64Array::from_arrow(field, Box::new(arrow_array))
+        Int64Array::from_arrow2(field, Box::new(arrow_array))
             .expect("Failed to create test int array")
     }
 

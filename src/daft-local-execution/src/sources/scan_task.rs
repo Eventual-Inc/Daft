@@ -12,7 +12,7 @@ use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_metrics::ops::NodeType;
 use common_runtime::{combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use common_scan_info::Pushdowns;
-use daft_core::prelude::{AsArrow, Int64Array, SchemaRef, Utf8Array};
+use daft_core::prelude::{Int64Array, SchemaRef, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{AggExpr, Expr};
 use daft_io::{GetRange, IOStatsRef};
@@ -388,6 +388,109 @@ Num Parallel Scan Tasks = {}
     }
 }
 
+// Read all iceberg delete files and return a map of file paths to delete positions
+async fn get_delete_map(
+    scan_tasks: &[Arc<ScanTask>],
+) -> DaftResult<Option<HashMap<String, Vec<i64>>>> {
+    let delete_files = scan_tasks
+        .iter()
+        .flat_map(|st| {
+            st.sources
+                .iter()
+                .filter_map(|source| source.get_iceberg_delete_files())
+                .flatten()
+                .cloned()
+        })
+        .collect::<HashSet<_>>();
+    if delete_files.is_empty() {
+        return Ok(None);
+    }
+
+    let (runtime, io_client) = scan_tasks
+        .first()
+        .unwrap() // Safe to unwrap because we checked that the list is not empty
+        .storage_config
+        .get_io_client_and_runtime()?;
+    let scan_tasks = scan_tasks.to_vec();
+    runtime
+        .spawn(async move {
+            let mut delete_map = scan_tasks
+                .iter()
+                .flat_map(|st| st.sources.iter().map(|s| s.get_path().to_string()))
+                .map(|path| (path, vec![]))
+                .collect::<std::collections::HashMap<_, _>>();
+            let columns_to_read = Some(vec!["file_path".to_string(), "pos".to_string()]);
+            let result = read_parquet_bulk_async(
+                delete_files.into_iter().collect(),
+                columns_to_read,
+                None,
+                None,
+                None,
+                None,
+                io_client,
+                None,
+                get_compute_pool_num_threads(),
+                ParquetSchemaInferenceOptions::new(None),
+                None,
+                None,
+                None,
+                None,
+            )
+            .await?;
+
+            for table_result in result {
+                let table = table_result?;
+                // values in the file_path column are guaranteed by the iceberg spec to match the full URI of the corresponding data file
+                // https://iceberg.apache.org/spec/#position-delete-files
+
+                let get_column_by_name = |name| {
+                    if let [(idx, _)] = table.schema.get_fields_with_name(name)[..] {
+                        Ok(table.get_column(idx))
+                    } else {
+                        Err(DaftError::SchemaMismatch(format!(
+                            "Iceberg delete files must have columns \"file_path\" and \"pos\", found: {}",
+                            table.schema
+                        )))
+                    }
+                };
+
+                let file_paths = get_column_by_name("file_path")?.downcast::<Utf8Array>()?;
+                let positions = get_column_by_name("pos")?.downcast::<Int64Array>()?;
+
+                for (file, pos) in file_paths
+                    .into_iter()
+                    .zip(positions.into_iter())
+                    .map(|(file, pos)| {
+                        (
+                            file.expect("file should not be null in iceberg delete files"),
+                            *pos.expect("pos should not be null in iceberg delete files"),
+                        )
+                    })
+                {
+                    if delete_map.contains_key(file) {
+                        delete_map.get_mut(file).unwrap().push(pos);
+                    }
+                }
+            }
+            Ok(Some(delete_map))
+        })
+        .await?
+}
+
+/// Creates the final result stream by flattening receivers and handling task completion
+fn flatten_receivers_into_stream(
+    receivers: Vec<crate::channel::Receiver<Arc<MicroPartition>>>,
+    background_task: impl Future<Output = DaftResult<()>>,
+) -> impl Stream<Item = DaftResult<Arc<MicroPartition>>> {
+    let flattened_receivers =
+        futures::stream::iter(receivers.into_iter().map(|rx| rx.into_stream()))
+            .flatten()
+            .map(Ok);
+
+    // Handle the background task completion and forward any errors
+    combine_stream(Box::pin(flattened_receivers), background_task)
+}
+
 async fn forward_scan_task_stream(
     scan_task: Arc<ScanTask>,
     io_stats: IOStatsRef,
@@ -424,7 +527,7 @@ async fn forward_scan_task_stream(
     Ok(input_id)
 }
 
-pub(crate) async fn stream_scan_task(
+async fn stream_scan_task(
     scan_task: Arc<ScanTask>,
     io_stats: IOStatsRef,
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
@@ -671,88 +774,4 @@ pub(crate) async fn stream_scan_task(
         ));
         Ok(mp)
     }))
-}
-
-// Read all iceberg delete files and return a map of file paths to delete positions
-pub(crate) async fn get_delete_map(
-    scan_tasks: &[Arc<ScanTask>],
-) -> DaftResult<Option<HashMap<String, Vec<i64>>>> {
-    let delete_files = scan_tasks
-        .iter()
-        .flat_map(|st| {
-            st.sources
-                .iter()
-                .filter_map(|source| source.get_iceberg_delete_files())
-                .flatten()
-                .cloned()
-        })
-        .collect::<HashSet<_>>();
-    if delete_files.is_empty() {
-        return Ok(None);
-    }
-
-    let (runtime, io_client) = scan_tasks
-        .first()
-        .unwrap() // Safe to unwrap because we checked that the list is not empty
-        .storage_config
-        .get_io_client_and_runtime()?;
-    let scan_tasks = scan_tasks.to_vec();
-    runtime
-        .spawn(async move {
-            let mut delete_map = scan_tasks
-                .iter()
-                .flat_map(|st| st.sources.iter().map(|s| s.get_path().to_string()))
-                .map(|path| (path, vec![]))
-                .collect::<std::collections::HashMap<_, _>>();
-            let columns_to_read = Some(vec!["file_path".to_string(), "pos".to_string()]);
-            let result = read_parquet_bulk_async(
-                delete_files.into_iter().collect(),
-                columns_to_read,
-                None,
-                None,
-                None,
-                None,
-                io_client,
-                None,
-                get_compute_pool_num_threads(),
-                ParquetSchemaInferenceOptions::new(None),
-                None,
-                None,
-                None,
-                None,
-            )
-            .await?;
-
-            for table_result in result {
-                let table = table_result?;
-                // values in the file_path column are guaranteed by the iceberg spec to match the full URI of the corresponding data file
-                // https://iceberg.apache.org/spec/#position-delete-files
-
-                let get_column_by_name = |name| {
-                    if let [(idx, _)] = table.schema.get_fields_with_name(name)[..] {
-                        Ok(table.get_column(idx))
-                    } else {
-                        Err(DaftError::SchemaMismatch(format!(
-                            "Iceberg delete files must have columns \"file_path\" and \"pos\", found: {}",
-                            table.schema
-                        )))
-                    }
-                };
-
-                let file_paths = get_column_by_name("file_path")?.downcast::<Utf8Array>()?;
-                let positions = get_column_by_name("pos")?.downcast::<Int64Array>()?;
-
-                for (file, pos) in file_paths
-                    .as_arrow2()
-                    .values_iter()
-                    .zip(positions.as_arrow2().values_iter())
-                {
-                    if delete_map.contains_key(file) {
-                        delete_map.get_mut(file).unwrap().push(*pos);
-                    }
-                }
-            }
-            Ok(Some(delete_map))
-        })
-        .await?
 }

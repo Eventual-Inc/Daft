@@ -56,7 +56,7 @@ impl ScalarUDF for ListAppend {
         let input_exploded = input.to_exploded_field()?;
 
         ensure!(
-            input_exploded.dtype == other.dtype,
+            input_exploded.dtype == other.dtype || other.dtype.is_null(),
             TypeError: "Cannot append value of type {} to list of type {}",
             other.dtype,
             input_exploded.dtype
