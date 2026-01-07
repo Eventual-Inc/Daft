@@ -30,7 +30,7 @@ use crate::DaftCoreComputeSnafu;
 
 pub type MicroPartitionRef = Arc<MicroPartition>;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct MicroPartition {
     /// Schema of the MicroPartition
     ///

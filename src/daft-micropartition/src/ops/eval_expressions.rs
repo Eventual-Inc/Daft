@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use daft_core::prelude::{DataType, Field, Schema};
-use daft_dsl::{Expr, expr::bound_expr::BoundExpr};
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_stats::{ColumnRangeStatistics, TableStatistics};
 use snafu::ResultExt;
 
@@ -20,9 +20,6 @@ fn infer_schema(exprs: &[BoundExpr], schema: &Schema) -> DaftResult<Schema> {
 impl MicroPartition {
     // TODO(universalmind303): make this async
     pub fn eval_expression_list(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
-        if self.is_empty() && exprs.iter().all(|e| !daft_dsl::has_agg(e.inner())) {
-            return Ok(self.clone());
-        }
         let expected_schema = infer_schema(exprs, &self.schema)?;
 
         let evaluated_tables: Vec<_> = self
@@ -44,13 +41,6 @@ impl MicroPartition {
         ))
     }
     pub async fn eval_expression_list_async(&self, exprs: Vec<BoundExpr>) -> DaftResult<Self> {
-        if self.is_empty()
-            && exprs
-                .iter()
-                .all(|e| !daft_dsl::has_agg(e.inner()))
-        {
-            return Ok(self.clone());
-        }
         let expected_schema = infer_schema(exprs.as_ref(), &self.schema)?;
 
         let evaluated_table_futs = self
@@ -78,9 +68,6 @@ impl MicroPartition {
         exprs: &[BoundExpr],
         num_parallel_tasks: usize,
     ) -> DaftResult<Self> {
-        if self.is_empty() && exprs.iter().all(|e| !daft_dsl::has_agg(e.inner())) {
-            return Ok(self.clone());
-        }
         let expected_schema = infer_schema(exprs, &self.schema)?;
 
         let evaluated_table_futs = self
