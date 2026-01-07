@@ -1,9 +1,8 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::{borrow::Borrow, sync::LazyLock};
 
 use common_error::{DaftError, DaftResult, ensure};
 use daft_core::{
-    prelude::{AsArrow, DataType, Field, FullNull, Schema, Utf8Array},
+    prelude::{DataType, Field, FullNull, Schema, Utf8Array},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
@@ -144,10 +143,7 @@ fn replace_impl(
             regex_replace(arr_iter, regex_iter, replacement_iter, arr.name())?
         }
         (true, _) => {
-            let regex_iter = pattern
-                .as_arrow2()
-                .iter()
-                .map(|pat| pat.map(regex::Regex::new));
+            let regex_iter = pattern.into_iter().map(|pat| pat.map(regex::Regex::new));
             regex_replace(arr_iter, regex_iter, replacement_iter, arr.name())?
         }
         (false, _) => {
