@@ -462,10 +462,10 @@ def test_dynamic_batching_same_result():
     def stringify_and_sum(a: int, b: int) -> str:
         return f"{a + b}"
 
-    non_dynamic_batching_df = df.select("*", stringify_and_sum(col("x"), col("y")).alias("sum")).collect().sort("id")
+    non_dynamic_batching_df = df.select("*", stringify_and_sum(col("x"), col("y")).alias("sum")).collect()
 
     # dynamic batching is feature flagged
     with daft.execution_config_ctx(maintain_order=False, enable_dynamic_batching=True):
         dynamic_batching_df = df.select("*", stringify_and_sum(col("x"), col("y")).alias("sum"))
-        dynamic_batching_df = dynamic_batching_df.collect()
+        dynamic_batching_df = dynamic_batching_df.collect().sort("id")
         assert non_dynamic_batching_df.to_pydict() == dynamic_batching_df.to_pydict()
