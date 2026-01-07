@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use common_error::{DaftError, DaftResult, ensure};
 use daft_core::{
     datatypes::{format_string_has_offset, infer_timeunit_from_format_string},
@@ -100,7 +99,7 @@ fn to_datetime_impl(
     timezone: Option<&str>,
 ) -> DaftResult<TimestampArray> {
     let len = arr.len();
-    let arr_iter = arr.as_arrow2().iter();
+    let arr_iter = arr.into_iter();
     let timeunit = infer_timeunit_from_format_string(format);
     let mut timezone = timezone.map(|tz| tz.to_string());
     let arrow_result = arr_iter
