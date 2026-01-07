@@ -8,7 +8,7 @@ use std::{borrow::Cow, sync::Arc};
 use common_error::{DaftError, DaftResult};
 
 use crate::{
-    datatypes::NumericNative,
+    datatypes::{DaftPrimitiveType, NumericNative},
     prelude::*,
     series::{ArrayWrapper, SeriesLike},
 };
@@ -75,7 +75,7 @@ where
 
 impl<T> From<(&str, &[T::Native])> for DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
 {
     fn from(item: (&str, &[T::Native])) -> Self {
         let (name, slice) = item;
@@ -88,7 +88,7 @@ where
 
 impl<T> From<(&str, Vec<T::Native>)> for DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
 {
     fn from(item: (&str, Vec<T::Native>)) -> Self {
         let (name, v) = item;
