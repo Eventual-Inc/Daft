@@ -364,36 +364,11 @@ impl SortNode {
             transpose_materialized_outputs_from_vec(partitioned_outputs, num_partitions);
 
         for partition_group in transposed_outputs {
-            let total_size_bytes = partition_group
-                .iter()
-                .map(|output| output.size_bytes())
-                .sum::<usize>();
-            let total_num_rows = partition_group
-                .iter()
-                .map(|output| output.num_rows())
-                .sum::<usize>();
-            let info = InMemoryInfo::new(
+            let (in_memory_source_plan, psets) = MaterializedOutput::into_in_memory_scan_with_psets(
+                partition_group,
                 self.config.schema.clone(),
-                self.node_id().to_string(),
-                None,
-                1,
-                total_size_bytes,
-                total_num_rows,
-                None,
-                None,
+                self.node_id(),
             );
-            let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
-                info,
-                StatsState::NotMaterialized,
-                LocalNodeContext {
-                    origin_node_id: Some(self.node_id() as usize),
-                    additional: None,
-                },
-            );
-            let partition_refs = partition_group
-                .into_iter()
-                .flat_map(|output| output.into_inner().0)
-                .collect::<Vec<_>>();
             let plan = LocalPhysicalPlan::sort(
                 in_memory_source_plan,
                 self.sort_by.clone(),
@@ -405,7 +380,6 @@ impl SortNode {
                     additional: None,
                 },
             );
-            let psets = HashMap::from([(self.node_id().to_string(), partition_refs)]);
             let task = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
             let _ = result_tx.send(task).await;
         }
