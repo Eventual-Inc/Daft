@@ -1,8 +1,7 @@
-#![allow(deprecated, reason = "arrow2->arrow migration")]
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_arrow::array::Array;
+use daft_arrow::array::Array as _;
 use sketches_ddsketch::{Config, DDSketch};
 
 use super::{DaftApproxSketchAggable, as_arrow::AsArrow, from_arrow::FromArrow};
