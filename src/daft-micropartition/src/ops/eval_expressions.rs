@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::prelude::Schema;
+use daft_core::prelude::{DataType, Field, Schema};
 use daft_dsl::{Expr, expr::bound_expr::BoundExpr};
 use daft_stats::{ColumnRangeStatistics, TableStatistics};
 use snafu::ResultExt;
@@ -103,15 +103,23 @@ impl MicroPartition {
         ))
     }
 
-    pub fn explode(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
+    pub fn explode(&self, exprs: &[BoundExpr], index_column: Option<&str>) -> DaftResult<Self> {
         let evaluated_tables = self
             .record_batches()
             .iter()
-            .map(|t| t.explode(exprs))
+            .map(|t| t.explode(exprs, index_column))
             .collect::<DaftResult<Vec<_>>>()?;
         let expected_new_columns = infer_schema(exprs, &self.schema)?;
 
-        let expected_schema = Arc::new(self.schema.non_distinct_union(&expected_new_columns)?);
+        let additional_fields =
+            index_column.map(|idx_col| vec![Field::new(idx_col, DataType::UInt64)]);
+        let expected_schema = {
+            let mut schema = self.schema.non_distinct_union(&expected_new_columns)?;
+            if let Some(fields) = additional_fields {
+                schema = schema.non_distinct_union(&Schema::new(fields))?;
+            }
+            Arc::new(schema)
+        };
 
         let eval_stats = if let Some(stats) = &self.statistics {
             let new_stats = expected_schema
