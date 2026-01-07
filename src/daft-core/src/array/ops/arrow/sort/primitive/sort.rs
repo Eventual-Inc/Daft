@@ -158,101 +158,96 @@ where
         (buffer.into(), None)
     };
 
-    PrimitiveArray::<T>::new(ScalarBuffer::new(buffer.into(), 0, array.len()), validity)
+    PrimitiveArray::<T>::new(ScalarBuffer::new(buffer, 0, limit), validity)
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use daft_arrow::{
-//         array::{Array, ord},
-//         datatypes::DataType,
-//     };
+#[cfg(test)]
+mod tests {
+    use arrow::{
+        array::{ArrowPrimitiveType, PrimitiveArray},
+        datatypes::Int8Type,
+    };
+    use daft_arrow::compute::sort::SortOptions;
 
-//     use super::*;
+    use super::sort_by;
 
-//     fn test_sort_primitive_arrays<T>(
-//         data: &[Option<T>],
-//         data_type: DataType,
-//         options: SortOptions,
-//         expected_data: &[Option<T>],
-//     ) where
-//         T: NativeType + std::cmp::Ord,
-//     {
-//         let input = Arrow2PrimitiveArray::<T>::from(data)
-//             .to(data_type.clone())
-//             .as_any()
-//             .downcast_ref::<Arrow2PrimitiveArray<T>>()
-//             .unwrap()
-//             .clone();
-//         let expected = Arrow2PrimitiveArray::<T>::from(expected_data)
-//             .to(data_type.clone())
-//             .as_any()
-//             .downcast_ref::<Arrow2PrimitiveArray<T>>()
-//             .unwrap()
-//             .clone();
-//         let output = sort_by(&input, ord::total_cmp, &options, None);
-//         assert_eq!(expected, output);
+    fn test_sort_primitive_arrays<T>(
+        data: Vec<Option<T::Native>>,
+        options: SortOptions,
+        expected_data: Vec<Option<T::Native>>,
+    ) where
+        T: ArrowPrimitiveType,
+        T::Native: Ord,
+    {
+        let input = {
+            let mut builder = PrimitiveArray::<T>::builder(data.len());
+            builder.extend(data.into_iter());
+            builder.finish()
+        };
+        let expected = {
+            let mut builder = PrimitiveArray::<T>::builder(expected_data.len());
+            builder.extend(expected_data.clone().into_iter());
+            builder.finish()
+        };
+        let output = sort_by(&input, |l, r| l.cmp(r), &options, None);
+        assert_eq!(expected, output);
 
-//         // with limit
-//         let expected = Arrow2PrimitiveArray::<T>::from(&expected_data[..3])
-//             .to(data_type)
-//             .as_any()
-//             .downcast_ref::<Arrow2PrimitiveArray<T>>()
-//             .unwrap()
-//             .clone();
-//         let output = sort_by(&input, ord::total_cmp, &options, Some(3));
-//         assert_eq!(expected, output);
-//     }
+        // with limit
+        let limit = 3;
+        let expected = {
+            let mut builder = PrimitiveArray::<T>::builder(limit);
+            builder.extend(expected_data.into_iter().take(limit));
+            builder.finish()
+        };
+        let output = sort_by(&input, |l, r| l.cmp(r), &options, Some(limit));
+        assert_eq!(expected, output);
+    }
 
-//     #[test]
-//     fn ascending_nulls_first() {
-//         test_sort_primitive_arrays::<i8>(
-//             &[None, Some(3), Some(5), Some(2), Some(3), None],
-//             DataType::Int8,
-//             SortOptions {
-//                 descending: false,
-//                 nulls_first: true,
-//             },
-//             &[None, None, Some(2), Some(3), Some(3), Some(5)],
-//         );
-//     }
+    #[test]
+    fn ascending_nulls_first() {
+        test_sort_primitive_arrays::<Int8Type>(
+            vec![None, Some(3), Some(5), Some(2), Some(3), None],
+            SortOptions {
+                descending: false,
+                nulls_first: true,
+            },
+            vec![None, None, Some(2), Some(3), Some(3), Some(5)],
+        );
+    }
 
-//     #[test]
-//     fn ascending_nulls_last() {
-//         test_sort_primitive_arrays::<i8>(
-//             &[None, Some(3), Some(5), Some(2), Some(3), None],
-//             DataType::Int8,
-//             SortOptions {
-//                 descending: false,
-//                 nulls_first: false,
-//             },
-//             &[Some(2), Some(3), Some(3), Some(5), None, None],
-//         );
-//     }
+    #[test]
+    fn ascending_nulls_last() {
+        test_sort_primitive_arrays::<Int8Type>(
+            vec![None, Some(3), Some(5), Some(2), Some(3), None],
+            SortOptions {
+                descending: false,
+                nulls_first: false,
+            },
+            vec![Some(2), Some(3), Some(3), Some(5), None, None],
+        );
+    }
 
-//     #[test]
-//     fn descending_nulls_first() {
-//         test_sort_primitive_arrays::<i8>(
-//             &[None, Some(3), Some(5), Some(2), Some(3), None],
-//             DataType::Int8,
-//             SortOptions {
-//                 descending: true,
-//                 nulls_first: true,
-//             },
-//             &[None, None, Some(5), Some(3), Some(3), Some(2)],
-//         );
-//     }
+    #[test]
+    fn descending_nulls_first() {
+        test_sort_primitive_arrays::<Int8Type>(
+            vec![None, Some(3), Some(5), Some(2), Some(3), None],
+            SortOptions {
+                descending: true,
+                nulls_first: true,
+            },
+            vec![None, None, Some(5), Some(3), Some(3), Some(2)],
+        );
+    }
 
-//     #[test]
-//     fn descending_nulls_last() {
-//         test_sort_primitive_arrays::<i8>(
-//             &[None, Some(3), Some(5), Some(2), Some(3), None],
-//             DataType::Int8,
-//             SortOptions {
-//                 descending: true,
-//                 nulls_first: false,
-//             },
-//             &[Some(5), Some(3), Some(3), Some(2), None, None],
-//         );
-//     }
-// }
+    #[test]
+    fn descending_nulls_last() {
+        test_sort_primitive_arrays::<Int8Type>(
+            vec![None, Some(3), Some(5), Some(2), Some(3), None],
+            SortOptions {
+                descending: true,
+                nulls_first: false,
+            },
+            vec![Some(5), Some(3), Some(3), Some(2), None, None],
+        );
+    }
+}
