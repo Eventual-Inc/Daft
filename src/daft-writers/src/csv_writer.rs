@@ -119,6 +119,18 @@ pub(crate) fn create_native_csv_writer(
                 storage_backend,
             )))
         }
+        SourceType::Gravitino => {
+            let ObjectPath { scheme, .. } = daft_io::utils::parse_object_url(root_dir.as_ref())?;
+            let io_config = io_config.ok_or_else(|| {
+                DaftError::InternalError("IO config is required for Gravitino writes".to_string())
+            })?;
+            let storage_backend = ObjectStorageBackend::new(scheme, io_config);
+            Ok(Box::new(make_csv_writer(
+                filename,
+                partition_values.cloned(),
+                storage_backend,
+            )))
+        }
         _ => Err(DaftError::ValueError(format!(
             "Unsupported source type: {:?}",
             source_type
