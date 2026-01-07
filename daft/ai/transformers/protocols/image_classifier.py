@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -16,6 +17,10 @@ from daft.ai.protocols import ImageClassifier, ImageClassifierDescriptor
 from daft.ai.typing import ClassifyImageOptions
 from daft.ai.utils import get_gpu_udf_options, get_torch_device
 from daft.dependencies import tf, torch
+
+# Global lock to prevent concurrent model loading which can cause meta tensor issues
+# See: https://github.com/huggingface/transformers/issues/36247
+_model_loading_lock = threading.Lock()
 
 if TYPE_CHECKING:
     from PIL import Image
@@ -89,12 +94,16 @@ class TransformersImageClassifier(ImageClassifier):
         self._model = model_name_or_path
         self._options = options
 
-        self._pipeline = pipeline(
-            task="zero-shot-image-classification",
-            model=model_name_or_path,
-            device=get_torch_device(),
-            pipeline_class=TransformersImageClassifierPipeline,
-        )
+        # Workaround for transformers issue #36247: Meta tensor error with concurrent loading
+        # Use a lock to prevent concurrent model loading which triggers the meta tensor bug
+        # See: https://github.com/huggingface/transformers/issues/36247
+        with _model_loading_lock:
+            self._pipeline = pipeline(
+                task="zero-shot-image-classification",
+                model=model_name_or_path,
+                device=get_torch_device(),
+                pipeline_class=TransformersImageClassifierPipeline,
+            )
 
     def classify_image(self, images: list[Image.Image], labels: Label | list[Label]) -> list[Label]:
         batch_size = self._options.get("batch_size", None)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, TypedDict
 
@@ -15,6 +16,10 @@ else:
 from daft.ai.protocols import TextClassifier, TextClassifierDescriptor
 from daft.ai.typing import ClassifyTextOptions
 from daft.ai.utils import get_gpu_udf_options, get_torch_device
+
+# Global lock to prevent concurrent model loading which can cause meta tensor issues
+# See: https://github.com/huggingface/transformers/issues/36247
+_model_loading_lock = threading.Lock()
 
 if TYPE_CHECKING:
     from daft.ai.typing import Label, Options, UDFOptions
@@ -67,11 +72,16 @@ class TransformersTextClassifier(TextClassifier):
     def __init__(self, model_name_or_path: str, **options: Unpack[ClassifyTextOptions]):
         self._model = model_name_or_path
         self._options = options
-        self._pipeline = pipeline(
-            task="zero-shot-classification",
-            model=model_name_or_path,
-            device=get_torch_device(),
-        )
+
+        # Workaround for transformers issue #36247: BART meta tensor error
+        # Use a lock to prevent concurrent model loading which triggers the meta tensor bug
+        # See: https://github.com/huggingface/transformers/issues/36247
+        with _model_loading_lock:
+            self._pipeline = pipeline(
+                task="zero-shot-classification",
+                model=model_name_or_path,
+                device=get_torch_device(),
+            )
 
     def classify_text(self, text: list[str], labels: Label | list[Label]) -> list[Label]:
         batch_size = self._options.get("batch_size", None)
