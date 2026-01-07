@@ -177,9 +177,9 @@ class LogicalPlanBuilder:
         builder = self._builder.shard(strategy, world_size, rank)
         return LogicalPlanBuilder(builder)
 
-    def explode(self, explode_expressions: list[Expression]) -> LogicalPlanBuilder:
+    def explode(self, explode_expressions: list[Expression], index_column: str | None = None) -> LogicalPlanBuilder:
         explode_pyexprs = [expr._expr for expr in explode_expressions]
-        builder = self._builder.explode(explode_pyexprs)
+        builder = self._builder.explode(explode_pyexprs, index_column)
         return LogicalPlanBuilder(builder)
 
     def unpivot(

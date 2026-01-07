@@ -2559,6 +2559,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
+ "arrow-ipc",
  "arrow-schema",
  "arrow2",
 ]
@@ -3192,6 +3193,7 @@ dependencies = [
 name = "daft-micropartition"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
  "bincode",
  "common-error",
  "common-partitioning",
@@ -3386,10 +3388,10 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow-flight",
  "arrow-ipc",
+ "arrow-schema",
  "async-channel 2.5.0",
  "common-error",
  "common-runtime",
- "daft-arrow",
  "daft-core",
  "daft-dsl",
  "daft-io",
@@ -3461,10 +3463,10 @@ dependencies = [
 name = "daft-warc"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
  "chrono",
  "common-error",
  "common-runtime",
- "daft-arrow",
  "daft-compression",
  "daft-core",
  "daft-dsl",

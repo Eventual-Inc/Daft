@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::{borrow::Borrow, fmt::Write};
 
 use chrono::{Datelike, Timelike};

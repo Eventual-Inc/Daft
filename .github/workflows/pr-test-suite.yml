@@ -136,6 +136,16 @@ jobs:
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
 
+    - name: Detect Conda home path
+      run: |
+        if command -v conda &> /dev/null; then
+          CONDA_HOME_PATH=$(conda info --base)
+          echo "Conda home is $CONDA_HOME_PATH"
+          echo "CONDA_HOME=$CONDA_HOME_PATH" >> $GITHUB_ENV
+        else
+          echo "::warning::Conda not detected."
+        fi
+
     - name: Install dependencies
       uses: nick-fields/retry@v3
       with:
@@ -171,6 +181,9 @@ jobs:
         CARGO_LLVM_COV_SHOW_ENV: 1
         CARGO_LLVM_COV_TARGET_DIR: ./target
         CARGO_TARGET_DIR: ./target
+
+        RAY_CONDA_HOME: ${{ env.CONDA_HOME }}
+        CONDA_EXE: ${{ env.CONDA_HOME }}/bin/conda
 
         DAFT_RUNNER: ${{ matrix.daft-runner }}
 
@@ -725,6 +738,12 @@ jobs:
         pushd ./tests/integration/iceberg/docker-compose/
         docker compose -f ./docker-compose.yml up -d
         popd
+    # Gravitino test setup
+    - name: Spin up Gravitino service
+      run: |
+        pushd ./tests/integration/gravitino/docker-compose/
+        docker compose -f ./docker-compose.yml up -d
+        popd
 
     # Unity tests
     - name: Run Unity integration tests (native)
@@ -785,6 +804,40 @@ jobs:
         python tools/aggregate_test_durations.py delta_lake_pytest_output.txt
       env:
         DAFT_RUNNER: ray
+    # Gravitino tests
+    - name: Run Gravitino integration tests (native)
+      if: always()
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        pytest tests/integration/gravitino -m 'integration' --durations=0 | ./tools/capture-durations.sh "gravitino_pytest_output.txt"
+        python tools/aggregate_test_durations.py gravitino_pytest_output.txt
+      env:
+        DAFT_RUNNER: native
+        GRAVITINO_ENDPOINT: http://127.0.0.1:8090
+        GRAVITINO_METALAKE: metalake_demo
+    - name: Run Gravitino integration tests (ray)
+      if: always()
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        pytest tests/integration/gravitino -m 'integration' --durations=0 | ./tools/capture-durations.sh "gravitino_pytest_output.txt"
+        python tools/aggregate_test_durations.py gravitino_pytest_output.txt
+      env:
+        DAFT_RUNNER: ray
+        GRAVITINO_ENDPOINT: http://127.0.0.1:8090
+        GRAVITINO_METALAKE: metalake_demo
+
+    # Cleanup docker services
+    - name: Cleanup Docker services
+      if: always()
+      run: |
+        pushd ./tests/integration/gravitino/docker-compose/
+        docker compose -f ./docker-compose.yml down --volumes || true
+        popd
+        pushd ./tests/integration/iceberg/docker-compose/
+        docker compose -f ./docker-compose.yml down --volumes || true
+        popd
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1

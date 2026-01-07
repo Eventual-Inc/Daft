@@ -7,7 +7,6 @@ use arrow_flight::{
 };
 use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
-use daft_arrow::io::{flight::default_ipc_fields, ipc::write::schema_to_bytes};
 use futures::{Stream, StreamExt, TryStreamExt};
 use tonic::{Request, Response, Status, transport::Server};
 
@@ -74,6 +73,7 @@ impl FlightService for ShuffleFlightServer {
         unimplemented!("Get schema is not supported for shuffle server")
     }
 
+    #[allow(deprecated, reason = "arrow2 migration")]
     async fn do_get(
         &self,
         request: Request<Ticket>,
@@ -87,6 +87,7 @@ impl FlightService for ShuffleFlightServer {
         let file_paths = self.shuffle_cache.file_paths_for_partition(partition_idx);
 
         let file_path_stream = futures::stream::iter(file_paths);
+        #[allow(unused)]
         let flight_data_stream = file_path_stream
             .map(|file_path| {
                 let reader = File::open(file_path)
@@ -100,13 +101,18 @@ impl FlightService for ShuffleFlightServer {
             })
             .try_flatten();
 
+        #[allow(unused)]
         #[allow(deprecated, reason = "arrow2 migration")]
         let schema =
             self.shuffle_cache.schema().to_arrow2().map_err(|e| {
                 Status::internal(format!("Error converting schema to arrow: {}", e))
             })?;
+
+        #[allow(clippy::unnecessary_struct_initialization)]
         let flight_schema = FlightData {
-            data_header: schema_to_bytes(&schema, &default_ipc_fields(&schema.fields)).into(),
+            // TODO: We do not actually support flight anywhere right now
+            // Once we start working on it, figure out how to serialize the schema in the header
+            // data_header: todo!(),
             ..Default::default()
         };
         let flight_data =

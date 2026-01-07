@@ -1,10 +1,9 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::{collections::BinaryHeap, sync::Arc, time::Duration};
 
 use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
 use daft_core::{
-    prelude::{AsArrow, SchemaRef, Utf8Array},
+    prelude::{SchemaRef, Utf8Array},
     series::IntoSeries,
 };
 use daft_dsl::{
@@ -345,20 +344,16 @@ impl VLLMSink {
         let prompts = batch.eval_expression(&expr_input)?;
 
         // TODO: handle nulls
-        let prompts_vec = prompts
+        prompts
             .utf8()
+            .cloned()
             .map_err(|_| {
                 DaftError::type_error(format!(
                     "Expected input to `prompt` to be string, got {}",
                     prompts.data_type()
                 ))
             })?
-            .as_arrow2()
-            .values_iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>();
-
-        Ok(prompts_vec)
+            .into_values()
     }
 }
 
