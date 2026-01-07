@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import os
 from typing import Any
 
@@ -210,8 +211,6 @@ class GravitinoOutputStream:
             )
         except Exception as e:
             # Log the error but don't fail silently
-            import logging
-
             logger = logging.getLogger(__name__)
             logger.error("Failed to write to %s: %s", self.path, e)
             raise
