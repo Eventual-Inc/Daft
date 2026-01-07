@@ -1,8 +1,3 @@
-use arrow::{
-    array::{Array, ArrowPrimitiveType, PrimitiveArray},
-    buffer::{Buffer, ScalarBuffer},
-    datatypes::ArrowNativeType,
-};
 /// Adapted from https://github.com/jorgecarleitao/arrow2/blob/main/src/compute/sort/primitive/sort.rs
 // Licensed to the Apache Software Foundation (ASF) under one
 // or more contributor license agreements.  See the NOTICE file
@@ -20,8 +15,12 @@ use arrow::{
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-use daft_arrow::buffer::NullBuffer;
-use daft_arrow::{buffer::NullBufferBuilder, compute::sort::SortOptions};
+use arrow::{
+    array::{Array, ArrowPrimitiveType, NullBufferBuilder, PrimitiveArray},
+    buffer::{Buffer, NullBuffer, ScalarBuffer},
+    datatypes::ArrowNativeType,
+};
+use daft_arrow::compute::sort::SortOptions;
 
 /// # Safety
 /// `indices[i] < values.len()` for all i
