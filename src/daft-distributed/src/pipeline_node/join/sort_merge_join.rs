@@ -1,4 +1,4 @@
-use std::{collections::HashMap, future, sync::Arc};
+use std::{future, sync::Arc};
 
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -10,8 +10,7 @@ use futures::{TryStreamExt, future::try_join_all};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
-        PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream,
-        make_in_memory_scan_from_materialized_outputs,
+        PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
         sort::{
             create_range_repartition_tasks, create_sample_tasks,
             get_partition_boundaries_from_samples,
@@ -19,8 +18,8 @@ use crate::{
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
-        scheduler::{SchedulerHandle, SubmittableTask},
-        task::{SwordfishTask, TaskContext},
+        scheduler::SchedulerHandle,
+        task::{SwordfishTask, SwordfishTaskBuilder},
     },
     utils::{
         channel::{Sender, create_channel},
@@ -102,41 +101,28 @@ impl SortMergeJoinNode {
 
     /// Creates and submits a sort-merge join task for a pair of partition groups.
     async fn create_and_submit_join_task(
-        &self,
+        self: &Arc<Self>,
         left_partition_group: Vec<MaterializedOutput>,
         right_partition_group: Vec<MaterializedOutput>,
-        task_id_counter: &TaskIDCounter,
-        result_tx: &Sender<SubmittableTask<SwordfishTask>>,
+        result_tx: &Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
-        let left_cache_key = self.left.node_id().to_string();
-        let right_cache_key = self.right.node_id().to_string();
+        let (left_in_memory_source_plan, left_psets) =
+            MaterializedOutput::into_in_memory_scan_with_psets(
+                left_partition_group,
+                self.left.config().schema.clone(),
+                self.left.node_id(),
+            );
 
-        let left_in_memory_source_plan = make_in_memory_scan_from_materialized_outputs(
-            &left_partition_group,
-            self.left.config().schema.clone(),
-            self.left.node_id(),
-        );
+        let (right_in_memory_source_plan, right_psets) =
+            MaterializedOutput::into_in_memory_scan_with_psets(
+                right_partition_group,
+                self.right.config().schema.clone(),
+                self.right.node_id(),
+            );
 
-        let right_in_memory_source_plan = make_in_memory_scan_from_materialized_outputs(
-            &right_partition_group,
-            self.right.config().schema.clone(),
-            self.right.node_id(),
-        );
-
-        let left_partition_refs = left_partition_group
-            .into_iter()
-            .flat_map(|output| output.into_inner().0)
-            .collect::<Vec<_>>();
-
-        let right_partition_refs = right_partition_group
-            .into_iter()
-            .flat_map(|output| output.into_inner().0)
-            .collect::<Vec<_>>();
-
-        // Create psets with both left and right partition refs
-        let mut psets = HashMap::new();
-        psets.insert(left_cache_key, left_partition_refs);
-        psets.insert(right_cache_key, right_partition_refs);
+        // Merge left and right psets
+        let mut psets = left_psets;
+        psets.extend(right_psets);
 
         // Build the join plan
         let plan = LocalPhysicalPlan::sort_merge_join(
@@ -154,17 +140,9 @@ impl SortMergeJoinNode {
         );
 
         // Create the task
-        let task_context = TaskContext::from((&self.context, task_id_counter.next()));
-        let task = SwordfishTask::new(
-            task_context,
-            plan,
-            self.config.execution_config.clone(),
-            psets,
-            crate::scheduling::task::SchedulingStrategy::Spread,
-            self.context().to_hashmap(),
-        );
+        let builder = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
 
-        result_tx.send(SubmittableTask::new(task)).await.ok();
+        result_tx.send(builder).await.ok();
         Ok(())
     }
 
@@ -176,7 +154,7 @@ impl SortMergeJoinNode {
         left_materialized: Vec<MaterializedOutput>,
         right_materialized: Vec<MaterializedOutput>,
         task_id_counter: &TaskIDCounter,
-        result_tx: &Sender<SubmittableTask<SwordfishTask>>,
+        result_tx: &Sender<SwordfishTaskBuilder>,
         scheduler_handle: &SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
         let num_partitions = self.num_partitions;
@@ -188,7 +166,7 @@ impl SortMergeJoinNode {
             left_materialized.clone(),
             self.left.config().schema.clone(),
             self.left_on.clone(),
-            &(self.clone() as Arc<dyn PipelineNodeImpl>),
+            self.as_ref(),
             task_id_counter,
             scheduler_handle,
         )?;
@@ -198,7 +176,7 @@ impl SortMergeJoinNode {
             right_materialized.clone(),
             self.right.config().schema.clone(),
             self.right_on.clone(),
-            &(self.clone() as Arc<dyn PipelineNodeImpl>),
+            self.as_ref(),
             task_id_counter,
             scheduler_handle,
         )?;
@@ -233,7 +211,7 @@ impl SortMergeJoinNode {
             descending.clone(),
             boundaries.clone(),
             num_partitions,
-            &(self.clone() as Arc<dyn PipelineNodeImpl>),
+            self.as_ref(),
             task_id_counter,
             scheduler_handle,
         )?;
@@ -247,7 +225,7 @@ impl SortMergeJoinNode {
             descending,
             boundaries,
             num_partitions,
-            &(self.clone() as Arc<dyn PipelineNodeImpl>),
+            self.as_ref(),
             task_id_counter,
             scheduler_handle,
         )?;
@@ -282,7 +260,6 @@ impl SortMergeJoinNode {
             self.create_and_submit_join_task(
                 left_partition_group,
                 right_partition_group,
-                task_id_counter,
                 result_tx,
             )
             .await?;
@@ -292,21 +269,29 @@ impl SortMergeJoinNode {
 
     async fn execution_loop(
         self: Arc<Self>,
-        left_inputs: SubmittableTaskStream,
-        right_inputs: SubmittableTaskStream,
+        left_inputs: TaskBuilderStream,
+        right_inputs: TaskBuilderStream,
         task_id_counter: TaskIDCounter,
-        result_tx: Sender<SubmittableTask<SwordfishTask>>,
+        result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
         // Materialize both inputs
         let left_materialized = left_inputs
-            .materialize(scheduler_handle.clone())
+            .materialize(
+                scheduler_handle.clone(),
+                self.context.query_idx,
+                task_id_counter.clone(),
+            )
             .try_filter(|output| future::ready(output.num_rows() > 0))
             .try_collect::<Vec<_>>()
             .await?;
 
         let right_materialized = right_inputs
-            .materialize(scheduler_handle.clone())
+            .materialize(
+                scheduler_handle.clone(),
+                self.context.query_idx,
+                task_id_counter.clone(),
+            )
             .try_filter(|output| future::ready(output.num_rows() > 0))
             .try_collect::<Vec<_>>()
             .await?;
@@ -318,13 +303,8 @@ impl SortMergeJoinNode {
 
         // Special case: if both sides have only 1 partition, just do a direct join
         if left_materialized.len() == 1 && right_materialized.len() == 1 {
-            self.create_and_submit_join_task(
-                left_materialized,
-                right_materialized,
-                &task_id_counter,
-                &result_tx,
-            )
-            .await
+            self.create_and_submit_join_task(left_materialized, right_materialized, &result_tx)
+                .await
         } else {
             // Multi-partition join case: sample, repartition, and join
             self.range_shuffle_and_join(
@@ -359,7 +339,7 @@ impl PipelineNodeImpl for SortMergeJoinNode {
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let left_input = self.left.clone().produce_tasks(plan_context);
         let right_input = self.right.clone().produce_tasks(plan_context);
         let (result_tx, result_rx) = create_channel(1);
@@ -370,6 +350,6 @@ impl PipelineNodeImpl for SortMergeJoinNode {
             result_tx,
             plan_context.scheduler_handle(),
         ));
-        SubmittableTaskStream::from(result_rx)
+        TaskBuilderStream::from(result_rx)
     }
 }

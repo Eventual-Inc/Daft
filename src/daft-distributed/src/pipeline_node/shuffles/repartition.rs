@@ -1,19 +1,19 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::{partitioning::RepartitionSpec, stats::StatsState};
+use daft_logical_plan::{InMemoryInfo, partitioning::RepartitionSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        PipelineNodeImpl, SubmittableTaskStream, make_in_memory_task_from_materialized_outputs,
+        PipelineNodeImpl, TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
-        scheduler::{SchedulerHandle, SubmittableTask},
-        task::{SwordfishTask, TaskContext},
+        scheduler::SchedulerHandle,
+        task::{SwordfishTask, SwordfishTaskBuilder},
     },
     utils::{
         channel::{Sender, create_channel},
@@ -70,30 +70,59 @@ impl RepartitionNode {
     // Async execution to get all partitions out
     async fn execution_loop(
         self: Arc<Self>,
-        local_repartition_node: SubmittableTaskStream,
+        local_repartition_node: TaskBuilderStream,
         task_id_counter: TaskIDCounter,
-        result_tx: Sender<SubmittableTask<SwordfishTask>>,
+        result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> DaftResult<()> {
         // Trigger materialization of the partitions
         // This will produce a stream of materialized outputs, each containing a vector of num_partitions partitions
-        let materialized_stream = local_repartition_node.materialize(scheduler_handle.clone());
+        let materialized_stream = local_repartition_node.materialize(
+            scheduler_handle,
+            self.context.query_idx,
+            task_id_counter,
+        );
         let transposed_outputs =
             transpose_materialized_outputs_from_stream(materialized_stream, self.num_partitions)
                 .await?;
 
         // Make each partition group (partitions equal by (hash % num_partitions)) input to a in-memory scan
         for partition_group in transposed_outputs {
-            let self_clone = self.clone();
-            let task = make_in_memory_task_from_materialized_outputs(
-                TaskContext::from((&self_clone.context, task_id_counter.next())),
-                partition_group,
-                self_clone.config.schema.clone(),
-                &(self_clone as Arc<dyn PipelineNodeImpl>),
+            let total_size_bytes = partition_group
+                .iter()
+                .map(|output| output.size_bytes())
+                .sum::<usize>();
+            let total_num_rows = partition_group
+                .iter()
+                .map(|output| output.num_rows())
+                .sum::<usize>();
+            let info = InMemoryInfo::new(
+                self.config.schema.clone(),
+                self.node_id().to_string(),
+                None,
+                partition_group.len(),
+                total_size_bytes,
+                total_num_rows,
+                None,
                 None,
             );
+            let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
+                info,
+                StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(self.node_id() as usize),
+                    additional: None,
+                },
+            );
+            let partition_refs = partition_group
+                .into_iter()
+                .flat_map(|output| output.into_inner().0)
+                .collect::<Vec<_>>();
+            let psets = HashMap::from([(self.node_id().to_string(), partition_refs)]);
+            let builder =
+                SwordfishTaskBuilder::new(in_memory_source_plan, self.as_ref()).with_psets(psets);
 
-            let _ = result_tx.send(task).await;
+            let _ = result_tx.send(builder).await;
         }
 
         Ok(())
@@ -122,13 +151,12 @@ impl PipelineNodeImpl for RepartitionNode {
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
-        let self_arc = self.clone();
 
         // First pipeline the local repartition op
         let self_clone = self.clone();
-        let local_repartition_node = input_node.pipeline_instruction(self, move |input| {
+        let local_repartition_node = input_node.pipeline_instruction(self.clone(), move |input| {
             LocalPhysicalPlan::repartition(
                 input,
                 self_clone.repartition_spec.clone(),
@@ -144,21 +172,12 @@ impl PipelineNodeImpl for RepartitionNode {
 
         let (result_tx, result_rx) = create_channel(1);
 
-        let task_id_counter = plan_context.task_id_counter();
-        let scheduler_handle = plan_context.scheduler_handle();
-
-        let map_reduce_execution = async move {
-            self_arc
-                .execution_loop(
-                    local_repartition_node,
-                    task_id_counter,
-                    result_tx,
-                    scheduler_handle,
-                )
-                .await
-        };
-
-        plan_context.spawn(map_reduce_execution);
-        SubmittableTaskStream::from(result_rx)
+        plan_context.spawn(self.execution_loop(
+            local_repartition_node,
+            plan_context.task_id_counter(),
+            result_tx,
+            plan_context.scheduler_handle(),
+        ));
+        TaskBuilderStream::from(result_rx)
     }
 }
