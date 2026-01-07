@@ -545,9 +545,14 @@ impl LogicalPlan {
                 Self::Offset(Offset { offset, .. }) => {
                     Self::Offset(Offset::new(input.clone(), *offset))
                 }
-                Self::Explode(Explode { to_explode, .. }) => {
-                    Self::Explode(Explode::try_new(input.clone(), to_explode.clone()).unwrap())
-                }
+                Self::Explode(Explode {
+                    to_explode,
+                    index_column,
+                    ..
+                }) => Self::Explode(
+                    Explode::try_new(input.clone(), to_explode.clone(), index_column.clone())
+                        .unwrap(),
+                ),
                 Self::Sort(Sort {
                     sort_by,
                     descending,
