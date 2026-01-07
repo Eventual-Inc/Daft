@@ -3,7 +3,6 @@ from __future__ import annotations
 import pytest
 
 import daft
-from tests.utils import sort_arrow_table
 
 
 def write_test_files(tmpdir, num_files: int) -> None:
@@ -100,16 +99,13 @@ def test_sharding_consistency(tmpdir) -> None:
             ._shard(strategy="file", world_size=world_size, rank=rank)
             .to_arrow()
         )
-        # Sort to handle non-deterministic ordering
-        canonical_result = sort_arrow_table(canonical_result, "file_path", "row_id", ascending=True)
-        # Shard contents should be consistent across runs (order may vary).
+        # Shard contents and order should be consistent across runs.
         for _ in range(3):
             new_result = (
                 daft.read_parquet(f"{tmpdir}/**/*.parquet", file_path_column="file_path")
                 ._shard(strategy="file", world_size=world_size, rank=rank)
                 .to_arrow()
             )
-            new_result = sort_arrow_table(new_result, "file_path", "row_id", ascending=True)
             assert canonical_result == new_result, "Sharding result is inconsistent between runs"
 
 

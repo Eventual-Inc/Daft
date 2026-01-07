@@ -28,14 +28,14 @@ def test_image_resize_mixed_modes(with_morsel_size) -> None:
     ]
 
     s = Series.from_pylist(data, dtype=DataType.python())
-    df = daft.from_pydict({"img": s, "id": [1, 2, 3, 4, 5, 6]})
+    df = daft.from_pydict({"img": s})
 
     target_dtype = DataType.image()
-    df = df.select(df["img"].cast(target_dtype), df["id"])
+    df = df.select(df["img"].cast(target_dtype))
 
     assert df.schema()["img"].dtype == target_dtype
 
-    df = df.with_column("resized", df["img"].resize(5, 5)).sort("id")
+    df = df.with_column("resized", df["img"].resize(5, 5))
 
     assert df.schema()["resized"].dtype == target_dtype
 

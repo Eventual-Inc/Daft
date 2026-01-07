@@ -431,11 +431,7 @@ def test_create_dataframe_multiple_csvs_with_file_path_column(valid_data: list[d
         pd_df = df.to_pandas()
         assert list(pd_df.columns) == COL_NAMES + ["file_path"]
         assert len(pd_df) == (len(valid_data) * 2)
-        # Sort by file_path to handle non-deterministic ordering
-        pd_df_sorted = pd_df.sort_values("file_path").reset_index(drop=True)
-        file_paths = pd_df_sorted["file_path"].to_list()
-        # Check that we have the expected number of each file path
-        assert file_paths == sorted([f1name] * len(valid_data) + [f2name] * len(valid_data))
+        assert pd_df["file_path"].to_list() == [f1name] * len(valid_data) + [f2name] * len(valid_data)
 
 
 def test_create_dataframe_csv_with_file_path_column_and_pushdowns(valid_data: list[dict[str, float]]) -> None:
@@ -752,11 +748,7 @@ def test_create_dataframe_multiple_jsons_with_file_path_column(valid_data: list[
         pd_df = df.to_pandas()
         assert list(pd_df.columns) == COL_NAMES + ["file_path"]
         assert len(pd_df) == (len(valid_data) * 2)
-        # Sort by file_path to handle non-deterministic ordering
-        pd_df_sorted = pd_df.sort_values("file_path").reset_index(drop=True)
-        file_paths = pd_df_sorted["file_path"].to_list()
-        # Check that we have the expected number of each file path
-        assert file_paths == sorted([f1name] * len(valid_data) + [f2name] * len(valid_data))
+        assert pd_df["file_path"].to_list() == [f1name] * len(valid_data) + [f2name] * len(valid_data)
 
 
 def test_create_dataframe_json_with_file_path_column_and_pushdowns(valid_data: list[dict[str, float]]) -> None:
@@ -1037,11 +1029,7 @@ def test_create_dataframe_multiple_parquets_with_file_path_column(valid_data: li
         pd_df = df.to_pandas()
         assert list(pd_df.columns) == COL_NAMES + ["file_path"]
         assert len(pd_df) == (len(valid_data) * 2)
-        # Sort by file_path to handle non-deterministic ordering
-        pd_df_sorted = pd_df.sort_values("file_path").reset_index(drop=True)
-        file_paths = pd_df_sorted["file_path"].to_list()
-        # Check that we have the expected number of each file path
-        assert file_paths == sorted([f1name] * len(valid_data) + [f2name] * len(valid_data))
+        assert pd_df["file_path"].to_list() == [f1name] * len(valid_data) + [f2name] * len(valid_data)
 
 
 def test_create_dataframe_parquet_with_file_path_column_and_pushdowns(valid_data: list[dict[str, float]]) -> None:
@@ -1273,12 +1261,7 @@ def test_create_dataframe_parquet_read_mismatched_schemas_with_pushdown_no_rows_
         df = daft.read_parquet([f1, f2])
         df = df.select("x")  # Applies column selection pushdown on each read
         assert df.schema().column_names() == ["x"]
-        result = df.to_pydict()["x"]
-        # Sort to handle non-deterministic ordering: [1, 2, 3, 4] from f1, [None, None, None, None] from f2
-        # Separate non-None and None values, sort non-None values
-        non_none = sorted([x for x in result if x is not None])
-        none_count = sum(1 for x in result if x is None)
-        assert non_none == [1, 2, 3, 4] and none_count == 4
+        assert df.to_pydict() == {"x": [1, 2, 3, 4, None, None, None, None]}
 
 
 def test_create_dataframe_of_tuples():

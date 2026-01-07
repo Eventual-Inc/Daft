@@ -79,21 +79,7 @@ def test_sample_with_seed(make_df, valid_data: list[dict[str, float]], repartiti
 
     assert len(df1) == len(df2)
     assert df1.column_names == df2.column_names == list(valid_data[0].keys())
-    # Compare as sets of rows to handle non-deterministic ordering
-    # Convert each row to a tuple for hashing (using sorted column names for consistent ordering)
-    col_names = sorted(df1.column_names)
-    df1_rows = {tuple(row[col] for col in col_names) for row in df1.to_pylist()}
-    df2_rows = {tuple(row[col] for col in col_names) for row in df2.to_pylist()}
-    # With parquet and multiple partitions, sampling may select different rows due to non-deterministic partitioning
-    # So we only assert exact match if the sets are the same, otherwise just verify they're both valid samples
-    if df1_rows == df2_rows:
-        # Exact match - great!
-        pass
-    else:
-        # Different rows selected - verify both samples contain valid rows from the original dataset
-        valid_rows = {tuple(row[col] for col in col_names) for row in valid_data}
-        assert df1_rows.issubset(valid_rows), "df1 contains invalid rows"
-        assert df2_rows.issubset(valid_rows), "df2 contains invalid rows"
+    assert df1.to_pydict() == df2.to_pydict()
 
 
 def test_sample_with_replacement(make_df, valid_data: list[dict[str, float]]) -> None:
@@ -145,15 +131,8 @@ def test_sample_with_concat(
 
     assert len(df) == 4
     assert df.column_names == list(valid_data[0].keys())
-    # Sort to handle non-deterministic ordering, then check that we have pairs of identical rows
-    sort_keys = list(df.column_names)
-    df_sorted = df.sort(sort_keys)
-    df_dict = df_sorted.to_pydict()
-    # After sorting, identical rows should be adjacent
-    # Check that rows 0-1 are identical and rows 2-3 are identical
-    # This means we have 2 unique rows, each appearing twice (from the same sample with seed=42)
-    assert all(col[0] == col[1] for col in df_dict.values()), "First two rows should be identical"
-    assert all(col[2] == col[3] for col in df_dict.values()), "Last two rows should be identical"
+    # Check that the two rows are the same, which should be for this seed.
+    assert all(col[:2] == col[2:] for col in df.to_pydict().values())
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -252,21 +231,7 @@ def test_sample_size_with_seed(
 
     assert len(df1) == len(df2) == 2
     assert df1.column_names == df2.column_names == list(valid_data[0].keys())
-    # Compare as sets of rows to handle non-deterministic ordering
-    # Convert each row to a tuple for hashing (using sorted column names for consistent ordering)
-    col_names = sorted(df1.column_names)
-    df1_rows = {tuple(row[col] for col in col_names) for row in df1.to_pylist()}
-    df2_rows = {tuple(row[col] for col in col_names) for row in df2.to_pylist()}
-    # With parquet and multiple partitions, sampling may select different rows due to non-deterministic partitioning
-    # So we only assert exact match if the sets are the same, otherwise just verify they're both valid samples
-    if df1_rows == df2_rows:
-        # Exact match - great!
-        pass
-    else:
-        # Different rows selected - verify both samples contain valid rows from the original dataset
-        valid_rows = {tuple(row[col] for col in col_names) for row in valid_data}
-        assert df1_rows.issubset(valid_rows), "df1 contains invalid rows"
-        assert df2_rows.issubset(valid_rows), "df2 contains invalid rows"
+    assert df1.to_pydict() == df2.to_pydict()
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])

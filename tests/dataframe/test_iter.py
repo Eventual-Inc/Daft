@@ -135,7 +135,7 @@ def test_iter_rows_lists_to_numpy(make_df, data, expected, dynamic_batching):
 @pytest.mark.parametrize("materialized", [False, True])
 @pytest.mark.parametrize("dynamic_batching", [True, False])
 def test_iter_partitions(make_df, materialized, dynamic_batching):
-    # Test that df.iter_partitions() produces partitions.
+    # Test that df.iter_partitions() produces partitions in the correct order.
     # It should work regardless of whether the dataframe has already been materialized or not.
 
     with daft.execution_config_ctx(default_morsel_size=2, enable_dynamic_batching=dynamic_batching):
@@ -151,9 +151,6 @@ def test_iter_partitions(make_df, materialized, dynamic_batching):
             parts = ray.get(parts)
         parts = [_.to_pydict() for _ in parts]
 
-        # Sort partitions by first value of 'a' to handle non-deterministic ordering
-        parts = sorted(parts, key=lambda p: p["a"][0] if p["a"] else float("inf"))
-
         assert parts == [
             {"a": [0, 1], "b": [100, 101]},
             {"a": [2, 3], "b": [102, 103]},
@@ -164,7 +161,8 @@ def test_iter_partitions(make_df, materialized, dynamic_batching):
 
 
 def test_iter_exception(make_df):
-    # Test that df.__iter__ raises an exception if the UDF raises an exception.
+    # Test that df.__iter__ actually returns results before completing execution.
+    # We test this by raising an exception in a UDF if too many partitions are executed.
 
     @daft.udf(return_dtype=daft.DataType.int64())
     def echo_or_trigger(s):
@@ -178,6 +176,7 @@ def test_iter_exception(make_df):
         df = make_df({"a": list(range(200))}).into_partitions(100).with_column("b", echo_or_trigger(daft.col("a")))
 
         it = iter(df)
+        assert next(it) == {"a": 0, "b": 0}
 
         # Ensure the exception does trigger if execution continues.
         with pytest.raises(UDFException) as exc_info:
@@ -194,7 +193,8 @@ def test_iter_exception(make_df):
 
 @pytest.mark.parametrize("dynamic_batching", [True, False])
 def test_iter_partitions_exception(make_df, dynamic_batching):
-    # Test that df.iter_partitions raises an exception if the UDF raises an exception.
+    # Test that df.iter_partitions actually returns results before completing execution.
+    # We test this by raising an exception in a UDF if too many partitions are executed.
 
     @daft.udf(return_dtype=daft.DataType.int64())
     def echo_or_trigger(s):
@@ -205,16 +205,22 @@ def test_iter_partitions_exception(make_df, dynamic_batching):
             return s
 
     with daft.execution_config_ctx(default_morsel_size=2, enable_dynamic_batching=dynamic_batching):
-        df = daft.range(200, partitions=100).with_column("b", echo_or_trigger(daft.col("id")))
+        df = make_df({"a": list(range(200))}).into_partitions(100).with_column("b", echo_or_trigger(daft.col("a")))
 
         it = df.iter_partitions()
+        part = next(it)
+        if get_tests_daft_runner_name() == "ray":
+            import ray
+
+            part = ray.get(part)
+        part = part.to_pydict()
+
+        assert part == {"a": [0, 1], "b": [0, 1]}
 
         # Ensure the exception does trigger if execution continues.
         with pytest.raises(UDFException) as exc_info:
             res = list(it)
             if get_tests_daft_runner_name() == "ray":
-                import ray
-
                 ray.get(res)
 
         # Ray's wrapping of the exception loses information about the `.cause`, but preserves it in the string error message
@@ -222,4 +228,4 @@ def test_iter_partitions_exception(make_df, dynamic_batching):
             assert "MockException" in str(exc_info.value)
         else:
             assert isinstance(exc_info.value.__cause__, MockException)
-        assert str(exc_info.value).endswith("failed when executing on inputs:\n  - id (Int64, length=2)")
+        assert str(exc_info.value).endswith("failed when executing on inputs:\n  - a (Int64, length=2)")

@@ -86,7 +86,6 @@ def test_monotonically_increasing_id_from_generator() -> None:
             yield generator
 
     df = read_generator(generators(), schema=table.schema())._add_monotonically_increasing_id().collect()
-    df = df.sort("id").collect()
 
     assert len(df) == 90
     assert set(df.column_names) == {"id", "a"}
@@ -94,7 +93,6 @@ def test_monotonically_increasing_id_from_generator() -> None:
 
     # Test new function matches old behavior
     df2 = read_generator(generators(), schema=table.schema()).with_column("id", monotonically_increasing_id()).collect()
-    df2 = df2.sort("id").collect()
     assert df.to_pydict() == df2.to_pydict()
 
     if get_tests_daft_runner_name() == "native":
