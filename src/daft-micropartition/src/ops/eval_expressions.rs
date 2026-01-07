@@ -47,7 +47,7 @@ impl MicroPartition {
         if self.is_empty()
             && exprs
                 .iter()
-                .all(|e| !matches!(e.inner().as_ref(), Expr::Agg(..)))
+                .all(|e| !daft_dsl::has_agg(e.inner()))
         {
             return Ok(self.clone());
         }
