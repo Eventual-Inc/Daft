@@ -11,8 +11,8 @@ use tracing::instrument;
 use crate::{
     ExecutionRuntimeContext,
     channel::{Receiver, create_channel},
-    plan_input::PipelineMessage,
     pipeline::{MorselSizeRequirement, PipelineNode, RuntimeContext},
+    plan_input::PipelineMessage,
     runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
     },
@@ -138,10 +138,7 @@ impl PipelineNode for ConcatNode {
     ) {
         self.morsel_size_requirement = downstream_requirement;
         for child in &mut self.children {
-            child.propagate_morsel_size_requirement(
-                downstream_requirement,
-                default_requirement,
-            );
+            child.propagate_morsel_size_requirement(downstream_requirement, default_requirement);
         }
     }
 
@@ -152,7 +149,8 @@ impl PipelineNode for ConcatNode {
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<PipelineMessage>> {
         // Start first child
-        let first_child_receiver: Receiver<PipelineMessage> = self.children[0].start(maintain_order, runtime_handle)?;
+        let first_child_receiver: Receiver<PipelineMessage> =
+            self.children[0].start(maintain_order, runtime_handle)?;
         let mut first_counting_receiver = InitializingCountingReceiver::new(
             first_child_receiver,
             self.node_id(),
@@ -161,7 +159,8 @@ impl PipelineNode for ConcatNode {
         );
 
         // Start second child
-        let second_child_receiver: Receiver<PipelineMessage> = self.children[1].start(maintain_order, runtime_handle)?;
+        let second_child_receiver: Receiver<PipelineMessage> =
+            self.children[1].start(maintain_order, runtime_handle)?;
         let mut second_counting_receiver = InitializingCountingReceiver::new(
             second_child_receiver,
             self.node_id(),
@@ -191,6 +190,7 @@ impl PipelineNode for ConcatNode {
                             // Assert that we only ever see input_id = 0
                             debug_assert_eq!(*input_id, 0, "Concat should only see input_id = 0");
                             // Don't send flush yet, wait until second receiver is done
+                            break;
                         }
                     }
                 }
@@ -208,12 +208,17 @@ impl PipelineNode for ConcatNode {
                             // Assert that we only ever see input_id = 0
                             debug_assert_eq!(*input_id, 0, "Concat should only see input_id = 0");
                             // Don't send flush yet, wait until we're done
+                            break;
                         }
                     }
                 }
 
                 // Call flush once after second receiver is through
-                if counting_sender.send(PipelineMessage::Flush(0)).await.is_err() {
+                if counting_sender
+                    .send(PipelineMessage::Flush(0))
+                    .await
+                    .is_err()
+                {
                     return Ok(());
                 }
 

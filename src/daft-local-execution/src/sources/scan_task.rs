@@ -18,7 +18,7 @@ use daft_dsl::{AggExpr, Expr};
 use daft_io::{GetRange, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
 use daft_micropartition::MicroPartition;
-use daft_parquet::read::{read_parquet_bulk_async, ParquetSchemaInferenceOptions};
+use daft_parquet::read::{ParquetSchemaInferenceOptions, read_parquet_bulk_async};
 use daft_scan::{ChunkSpec, ScanTask, ScanTaskRef};
 use daft_warc::WarcConvertOptions;
 use futures::{FutureExt, Stream, StreamExt};
@@ -475,20 +475,6 @@ async fn get_delete_map(
             Ok(Some(delete_map))
         })
         .await?
-}
-
-/// Creates the final result stream by flattening receivers and handling task completion
-fn flatten_receivers_into_stream(
-    receivers: Vec<crate::channel::Receiver<Arc<MicroPartition>>>,
-    background_task: impl Future<Output = DaftResult<()>>,
-) -> impl Stream<Item = DaftResult<Arc<MicroPartition>>> {
-    let flattened_receivers =
-        futures::stream::iter(receivers.into_iter().map(|rx| rx.into_stream()))
-            .flatten()
-            .map(Ok);
-
-    // Handle the background task completion and forward any errors
-    combine_stream(Box::pin(flattened_receivers), background_task)
 }
 
 async fn forward_scan_task_stream(

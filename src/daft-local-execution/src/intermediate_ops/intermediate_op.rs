@@ -13,9 +13,19 @@ use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use crate::{
-    channel::{create_channel, create_ordering_aware_receiver_channel, OrderingAwareReceiver, Receiver, Sender}, dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher}, dynamic_batching::{BatchManager, BatchingStrategy}, pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext}, plan_input::{InputId, PipelineMessage}, resource_manager::MemoryManager, runtime_stats::{
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
+    channel::{
+        OrderingAwareReceiver, Receiver, Sender, create_channel,
+        create_ordering_aware_receiver_channel,
+    },
+    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    dynamic_batching::{BatchManager, BatchingStrategy},
+    pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
+    plan_input::{InputId, PipelineMessage},
+    resource_manager::MemoryManager,
+    runtime_stats::{
         CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
-    }, ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu
+    },
 };
 
 pub(crate) type IntermediateOpExecuteResult<Op> =
@@ -274,7 +284,7 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<PipelineMessage>> {
         let child_result_receiver: Receiver<PipelineMessage> =
-            self.child.start(false, runtime_handle)?;
+            self.child.start(maintain_order, runtime_handle)?;
         let child_result_receiver = InitializingCountingReceiver::new(
             child_result_receiver,
             self.node_id(),
