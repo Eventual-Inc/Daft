@@ -194,6 +194,9 @@ impl PyMicroPartition {
     }
 
     pub fn eval_expression_list(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
+        if self.inner.is_empty() {
+            return Ok(self.clone());
+        }
         let converted_exprs = BoundExpr::bind_all(&exprs, &self.inner.schema)?;
         py.detach(|| {
             Ok(self

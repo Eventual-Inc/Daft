@@ -20,6 +20,9 @@ fn infer_schema(exprs: &[BoundExpr], schema: &Schema) -> DaftResult<Schema> {
 impl MicroPartition {
     // TODO(universalmind303): make this async
     pub fn eval_expression_list(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
+        if self.is_empty() {
+            return Ok(self.clone());
+        }
         let expected_schema = infer_schema(exprs, &self.schema)?;
 
         let evaluated_tables: Vec<_> = self
@@ -41,6 +44,9 @@ impl MicroPartition {
         ))
     }
     pub async fn eval_expression_list_async(&self, exprs: Vec<BoundExpr>) -> DaftResult<Self> {
+        if self.is_empty() {
+            return Ok(self.clone());
+        }
         let expected_schema = infer_schema(exprs.as_ref(), &self.schema)?;
 
         let evaluated_table_futs = self
@@ -68,6 +74,9 @@ impl MicroPartition {
         exprs: &[BoundExpr],
         num_parallel_tasks: usize,
     ) -> DaftResult<Self> {
+        if self.is_empty() {
+            return Ok(self.clone());
+        }
         let expected_schema = infer_schema(exprs, &self.schema)?;
 
         let evaluated_table_futs = self

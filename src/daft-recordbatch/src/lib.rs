@@ -1301,6 +1301,9 @@ impl RecordBatch {
     // TODO(universalmind303): since we now have async expressions, the entire evaluation should happen async
     // Refactor all eval_expression's to async and remove the sync version.
     pub fn eval_expression_list(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
+        if self.is_empty() {
+            return Ok(self.clone());
+        }
         let result_series: Vec<_> = exprs
             .iter()
             .map(|e| self.eval_expression(e))
