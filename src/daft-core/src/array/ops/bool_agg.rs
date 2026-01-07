@@ -37,8 +37,11 @@ impl DaftBoolAggable for DataArray<BooleanType> {
 
             for &idx in group {
                 if let Some(value) = self.get(idx as usize) {
-                    result = result && value;
                     all_null = false;
+                    if !value {
+                        result = false;
+                        break;
+                    }
                 }
             }
 
@@ -62,8 +65,11 @@ impl DaftBoolAggable for DataArray<BooleanType> {
 
             for &idx in group {
                 if let Some(value) = self.get(idx as usize) {
-                    result = result || value;
                     all_null = false;
+                    if value {
+                        result = true;
+                        break;
+                    }
                 }
             }
 
