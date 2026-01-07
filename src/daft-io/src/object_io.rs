@@ -13,6 +13,7 @@ use crate::{
     FileFormat,
     local::{LocalFile, collect_file},
     stats::IOStatsRef,
+    stream_utils::io_stats_on_bytestream,
 };
 
 pub struct StreamingRetryParams {
@@ -95,9 +96,8 @@ impl GetResult {
                             | super::Error::UnableToReadBytes { .. }
                             | super::Error::UnableToOpenFile { .. },
                         ) if let Some(rp) = &retry_params => {
-                            let jitter = rand::thread_rng()
-                                .gen_range(0..((1 << (attempt - 1)) * JITTER_MS))
-                                as u64;
+                            let jitter =
+                                rand::thread_rng().gen_range(0..((1 << (attempt - 1)) * JITTER_MS));
                             let jitter = jitter.min(MAX_BACKOFF_MS);
 
                             log::warn!(
@@ -114,7 +114,7 @@ impl GetResult {
                                     rp.io_stats.clone(),
                                 )
                                 .await?;
-                            if let Self::Stream(stream, size, permit, _) = get_result {
+                            if let Stream(stream, size, permit, _) = get_result {
                                 result = collect_bytes(stream, size, permit).await;
                             } else {
                                 unreachable!("Retrying a stream should always be a stream");
@@ -133,9 +133,106 @@ impl GetResult {
         match self {
             Self::File(..) => self,
             Self::Stream(s, size, permit, _) => {
-                Self::Stream(s, size, permit, Some(Box::new(params)))
+                let resumable = ResumableByteStream::new(s, params).into_stream();
+                Self::Stream(resumable, size, permit, None)
             }
         }
+    }
+}
+
+const JITTER_MS: u64 = 2_500;
+const MAX_BACKOFF_MS: u64 = 20_000;
+const MAX_NUM_TRIES: u64 = 3;
+struct ResumableByteStream {
+    inner: BoxStream<'static, super::Result<Bytes>>,
+    delivered: usize,
+    retry: StreamingRetryParams,
+    attempt: u64,
+}
+
+impl ResumableByteStream {
+    fn new(inner: BoxStream<'static, super::Result<Bytes>>, retry: StreamingRetryParams) -> Self {
+        Self {
+            inner,
+            delivered: 0,
+            retry,
+            attempt: 0,
+        }
+    }
+
+    fn make_range(&self) -> Option<GetRange> {
+        match self.retry.range.clone() {
+            Some(GetRange::Bounded(r)) => {
+                let start = r.start + self.delivered;
+                let end = r.end;
+                if start >= end {
+                    Some(GetRange::Bounded(end..end))
+                } else {
+                    Some(GetRange::Bounded(start..end))
+                }
+            }
+            Some(GetRange::Offset(o)) => Some(GetRange::Offset(o + self.delivered)),
+            Some(GetRange::Suffix(n)) => {
+                let rem = n.saturating_sub(self.delivered);
+                Some(GetRange::Suffix(rem))
+            }
+            None => Some(GetRange::Offset(self.delivered)),
+        }
+    }
+}
+impl ResumableByteStream {
+    fn into_stream(mut self) -> BoxStream<'static, super::Result<Bytes>> {
+        stream! {
+            loop {
+                match self.inner.next().await {
+                    Some(Ok(chunk)) => {
+                        self.delivered += chunk.len();
+                        yield Ok(chunk);
+                    }
+                    Some(Err(e)) => {
+                        match e {
+                            super::Error::SocketError { .. }
+                            | super::Error::UnableToReadBytes { .. }
+                            | super::Error::UnableToOpenFile { .. } => {
+                                self.attempt += 1;
+                                if self.attempt > MAX_NUM_TRIES {
+                                    yield Err(e);
+                                    break;
+                                }
+
+                                let jitter = rand::thread_rng().gen_range(0..((1 << (self.attempt - 1)) * JITTER_MS));
+                                let backoff_ms = jitter.min(MAX_BACKOFF_MS);
+                                tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+
+                                let range = self.make_range();
+                                log::warn!("Received Socket Error when streaming bytes! Attempt {} out of {} tries. Trying again in {}ms with range {:?}",
+                                self.attempt, MAX_NUM_TRIES, backoff_ms, range);
+
+                                match self.retry.source.get(&self.retry.input, range, self.retry.io_stats.clone()).await {
+                                    Ok(GetResult::Stream(s2, _size2, _permit2, _)) => {
+                                        let wrapped = io_stats_on_bytestream(s2, self.retry.io_stats.clone());
+                                        self.inner = wrapped;
+                                    }
+                                    Ok(_) => {
+                                        yield Err(e);
+                                        break;
+                                    }
+                                    Err(err2) => {
+                                        yield Err(err2);
+                                        break;
+                                    }
+                                }
+                            }
+                            _ => {
+                                yield Err(e);
+                                break;
+                            }
+                        }
+                    }
+                    None => break,
+                }
+            }
+        }.boxed()
     }
 }
 
@@ -179,6 +276,7 @@ pub struct LSResult {
 }
 
 use async_stream::stream;
+use rand::Rng;
 
 use crate::{multipart::MultipartWriter, range::GetRange};
 

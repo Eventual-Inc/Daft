@@ -5,12 +5,14 @@ use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use daft_dsl::{
     AggExpr, Column, Expr, ExprRef, PlanRef, ResolvedColumn, UnresolvedColumn,
-    expr::window::WindowSpec,
+    expr::{MapGroupsFn, window::WindowSpec},
     functions::{
         BuiltinScalarFn, FunctionArg, FunctionArgs, FunctionExpr, scalar::ScalarFn,
         struct_::StructExpr,
     },
-    has_agg, is_actor_pool_udf, left_col, resolved_col, right_col,
+    has_agg, is_actor_pool_udf, left_col,
+    python_udf::PyScalarFn,
+    resolved_col, right_col,
 };
 use typed_builder::TypedBuilder;
 
@@ -251,19 +253,33 @@ fn resolve_to_basic_and_outer_cols(expr: ExprRef, plan: &LogicalPlanRef) -> Daft
     .map(|res| res.data)
 }
 
-fn convert_udfs_to_map_groups(expr: &ExprRef) -> ExprRef {
-    expr.clone()
+fn convert_udfs_to_map_groups(expr: &ExprRef) -> DaftResult<ExprRef> {
+    expr
+        .clone()
         .transform(|e| match e.as_ref() {
             Expr::Function { func, inputs } if matches!(func, FunctionExpr::Python(_)) => {
+                let FunctionExpr::Python(legacy_udf) = func else {
+                    unreachable!("Matched Python function but not LegacyPythonUDF");
+                };
                 Ok(Transformed::yes(Arc::new(Expr::Agg(AggExpr::MapGroups {
-                    func: func.clone(),
+                    func: MapGroupsFn::Legacy(legacy_udf.clone()),
                     inputs: inputs.clone(),
                 }))))
             }
+            Expr::ScalarFn(ScalarFn::Python(py_scalar_fn)) => match py_scalar_fn {
+                PyScalarFn::RowWise(_) => Err(DaftError::ValueError(
+                    "Row-wise Python UDFs (daft.func or @daft.method) are not supported in aggregations; use daft.func.batch or @daft.method.batch for group-wise UDFs, or apply the row-wise UDF in a projection before aggregation.".to_string(),
+                )),
+                PyScalarFn::Batch(_) => Ok(Transformed::yes(Arc::new(Expr::Agg(
+                    AggExpr::MapGroups {
+                        func: MapGroupsFn::Python(py_scalar_fn.clone()),
+                        inputs: py_scalar_fn.args(),
+                    },
+                )))),
+            },
             _ => Ok(Transformed::no(e)),
         })
-        .unwrap()
-        .data
+        .map(|res| res.data)
 }
 
 /// Used for resolving and validating expressions.
@@ -437,7 +453,7 @@ impl ExprResolver<'_> {
     }
 
     fn validate_expr_in_agg(&self, expr: ExprRef) -> DaftResult<ExprRef> {
-        let converted_expr = convert_udfs_to_map_groups(&expr);
+        let converted_expr = convert_udfs_to_map_groups(&expr)?;
 
         if !self.is_valid_expr_in_agg(&converted_expr) {
             return Err(DaftError::ValueError(format!(
@@ -466,12 +482,20 @@ impl ExprResolver<'_> {
     /// - sum(col("a")) + col("b") when "b" is not a group by key
     ///     - not all branches are aggregations, literals, or group by keys
     fn is_valid_expr_in_agg(&self, expr: &ExprRef) -> bool {
-        self.groupby.contains(expr)
-            || match expr.as_ref() {
-                Expr::Agg(agg_expr) => !agg_expr.children().iter().any(has_agg),
-                Expr::Column(_) => false,
-                Expr::Literal(_) => true,
-                _ => expr.children().iter().all(|e| self.is_valid_expr_in_agg(e)),
+        if self.groupby.contains(expr) {
+            return true;
+        }
+
+        match expr.as_ref() {
+            Expr::Agg(agg_expr) => {
+                // MapGroups is special: it's an aggregation but we need to make sure its inputs are valid.
+                // However, our current convert_udfs_to_map_groups already ensures this by transforming
+                // UDFs into MapGroups.
+                !agg_expr.children().iter().any(has_agg)
             }
+            Expr::Column(_) => false,
+            Expr::Literal(_) => true,
+            _ => expr.children().iter().all(|e| self.is_valid_expr_in_agg(e)),
+        }
     }
 }
