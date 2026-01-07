@@ -33,21 +33,15 @@ def input_df(request, tmp_path_factory):
 def test_negative_limit(input_df):
     with pytest.raises(ValueError) as excinfo:
         input_df.select("name").limit(-1)
-    assert "LIMIT <n> must be greater than or equal to 0, instead got: -1" in str(
-        excinfo.value
-    )
+    assert "LIMIT <n> must be greater than or equal to 0, instead got: -1" in str(excinfo.value)
 
 
 @pytest.mark.parametrize(
     "df_fn,expected_count",
     [
+        pytest.param(lambda input_df: input_df.select("name").limit(0), 0, id="limit_0"),
         pytest.param(
-            lambda input_df: input_df.select("name").limit(0), 0, id="limit_0"
-        ),
-        pytest.param(
-            lambda input_df: input_df.select("id", "name")
-            .filter(col("id") > 127)
-            .limit(1),
+            lambda input_df: input_df.select("id", "name").filter(col("id") > 127).limit(1),
             1,
             id="filter_gt_127_then_limit_1",
         ),
@@ -57,23 +51,17 @@ def test_negative_limit(input_df):
             id="limit_equal_total",
         ),
         pytest.param(
-            lambda input_df: input_df.select("id", "name")
-            .filter(col("id") >= 25)
-            .limit(1024),
+            lambda input_df: input_df.select("id", "name").filter(col("id") >= 25).limit(1024),
             999,
             id="filter_ge_25_limit_1024",
         ),
         pytest.param(
-            lambda input_df: input_df.select("id", "name")
-            .filter(col("id") >= 1023)
-            .limit(1024),
+            lambda input_df: input_df.select("id", "name").filter(col("id") >= 1023).limit(1024),
             1,
             id="filter_ge_1023_limit_1024",
         ),
         pytest.param(
-            lambda input_df: input_df.select("id", "name")
-            .filter(col("id") > 1023)
-            .limit(1024),
+            lambda input_df: input_df.select("id", "name").filter(col("id") > 1023).limit(1024),
             0,
             id="filter_gt_1023_limit_1024",
         ),
@@ -98,39 +86,26 @@ def test_limit(input_df, df_fn, expected_count):
             id="sort_asc_limit_1",
         ),
         pytest.param(
-            lambda input_df: input_df.sort(by="id")
-            .filter(col("id") > 17)
-            .select("name")
-            .limit(1),
+            lambda input_df: input_df.sort(by="id").filter(col("id") > 17).select("name").limit(1),
             {"name": [f"user_{i}" for i in range(18, 19)]},
             id="sort_asc_filter_gt_17_limit_1",
         ),
         pytest.param(
             lambda input_df: (
-                input_df.sort(by="id")
-                .filter(col("id") > 17)
-                .limit(185)
-                .filter(col("id") < 100)
-                .select("name")
+                input_df.sort(by="id").filter(col("id") > 17).limit(185).filter(col("id") < 100).select("name")
             ),
             {"name": [f"user_{i}" for i in range(18, 100)]},
             id="sort_asc_filter_gt_17_limit_185_filter_lt_100",
         ),
         pytest.param(
             lambda input_df: (
-                input_df.sort(by="id")
-                .filter(col("id") > 17)
-                .limit(15)
-                .filter(col("id") < 100)
-                .select("name")
+                input_df.sort(by="id").filter(col("id") > 17).limit(15).filter(col("id") < 100).select("name")
             ),
             {"name": [f"user_{i}" for i in range(18, 33)]},
             id="sort_asc_filter_gt_17_limit_15_filter_lt_100",
         ),
         pytest.param(
-            lambda input_df: input_df.select("id", "name")
-            .sort(by="id", desc=True)
-            .limit(1024),
+            lambda input_df: input_df.select("id", "name").sort(by="id", desc=True).limit(1024),
             {
                 "id": [i for i in range(1023, -1, -1)],
                 "name": [f"user_{i}" for i in range(1023, -1, -1)],
@@ -139,10 +114,7 @@ def test_limit(input_df, df_fn, expected_count):
         ),
         pytest.param(
             lambda input_df: (
-                input_df.select("id", "name")
-                .sort(by="id", desc=True)
-                .filter(col("id") >= 24)
-                .limit(1024)
+                input_df.select("id", "name").sort(by="id", desc=True).filter(col("id") >= 24).limit(1024)
             ),
             {
                 "id": [i for i in range(1023, 23, -1)],
@@ -152,10 +124,7 @@ def test_limit(input_df, df_fn, expected_count):
         ),
         pytest.param(
             lambda input_df: (
-                input_df.select("id", "name")
-                .sort(by="id", desc=True)
-                .filter(col("id") >= 24)
-                .limit(1000)
+                input_df.select("id", "name").sort(by="id", desc=True).filter(col("id") >= 24).limit(1000)
             ),
             {
                 "id": [i for i in range(1023, 23, -1)],
@@ -165,10 +134,7 @@ def test_limit(input_df, df_fn, expected_count):
         ),
         pytest.param(
             lambda input_df: (
-                input_df.select("id", "name")
-                .sort(by="id", desc=True)
-                .filter(col("id") >= 24)
-                .limit(100)
+                input_df.select("id", "name").sort(by="id", desc=True).filter(col("id") >= 24).limit(100)
             ),
             {
                 "id": [i for i in range(1023, 923, -1)],
@@ -202,9 +168,7 @@ def test_limit(input_df, df_fn, expected_count):
             id="sort_desc_filter_ge_24_limit_100_filter_lt_100",
         ),
         pytest.param(
-            lambda input_df: input_df.sort(by="id")
-            .select("name")
-            .limit(9223372036854775807),
+            lambda input_df: input_df.sort(by="id").select("name").limit(9223372036854775807),
             {"name": [f"user_{i}" for i in range(0, 1024)]},
             id="sort_asc_large_limit",
         ),
@@ -246,17 +210,13 @@ def test_limit_with_sort(input_df, df_fn, expected_dict):
 def test_negative_offset(input_df):
     with pytest.raises(ValueError) as excinfo:
         input_df.select("name").offset(-1).limit(1).collect()
-    assert "OFFSET <n> must be greater than or equal to 0, instead got: -1" in str(
-        excinfo.value
-    )
+    assert "OFFSET <n> must be greater than or equal to 0, instead got: -1" in str(excinfo.value)
 
 
 def test_offset_without_limit(input_df):
     with pytest.raises(Exception) as excinfo:
         input_df.select("name").offset(17).collect()
-    assert "Not Yet Implemented: Offset without limit is unsupported now!" in str(
-        excinfo.value
-    )
+    assert "Not Yet Implemented: Offset without limit is unsupported now!" in str(excinfo.value)
 
 
 @pytest.mark.parametrize(
@@ -273,20 +233,13 @@ def test_offset_without_limit(input_df):
             id="limit_0_offset_7",
         ),
         pytest.param(
-            lambda input_df: input_df.select("id", "name")
-            .filter(col("id") > 511)
-            .limit(7)
-            .offset(2),
+            lambda input_df: input_df.select("id", "name").filter(col("id") > 511).limit(7).offset(2),
             5,
             id="filter_gt_511_limit_7_offset_2",
         ),
         pytest.param(
             lambda input_df: (
-                input_df.select("id", "name")
-                .filter(col("id") > 511)
-                .limit(7)
-                .offset(2)
-                .filter(col("id") < 512)
+                input_df.select("id", "name").filter(col("id") > 511).limit(7).offset(2).filter(col("id") < 512)
             ),
             0,
             id="filter_gt_511_limit_7_offset_2_filter_lt_512",
@@ -297,12 +250,7 @@ def test_offset_without_limit(input_df):
             id="limit_7_offset_7",
         ),
         pytest.param(
-            lambda input_df: input_df.limit(7)
-            .offset(1)
-            .select("name")
-            .limit(5)
-            .offset(2)
-            .limit(1024),
+            lambda input_df: input_df.limit(7).offset(1).select("name").limit(5).offset(2).limit(1024),
             3,
             id="limit_7_offset_1_limit_5_offset_2",
         ),
@@ -370,24 +318,12 @@ def test_limit_before_offset_loop(input_df):
             id="offset_2_limit_7",
         ),
         pytest.param(
-            lambda input_df: (
-                input_df.select("id", "name")
-                .filter(col("id") > 997)
-                .select("name")
-                .offset(2)
-                .limit(7)
-            ),
+            lambda input_df: (input_df.select("id", "name").filter(col("id") > 997).select("name").offset(2).limit(7)),
             7,
             id="filter_gt_997_offset_2_limit_7",
         ),
         pytest.param(
-            lambda input_df: (
-                input_df.select("id", "name")
-                .filter(col("id") > 1020)
-                .select("name")
-                .offset(2)
-                .limit(7)
-            ),
+            lambda input_df: (input_df.select("id", "name").filter(col("id") > 1020).select("name").offset(2).limit(7)),
             1,
             id="filter_gt_1020_offset_2_limit_7",
         ),
@@ -398,13 +334,7 @@ def test_limit_before_offset_loop(input_df):
         ),
         pytest.param(
             lambda input_df: (
-                input_df.select("id", "name")
-                .offset(7)
-                .limit(17)
-                .select("name")
-                .offset(5)
-                .limit(11)
-                .offset(7)
+                input_df.select("id", "name").offset(7).limit(17).select("name").offset(5).limit(11).offset(7)
             ),
             4,
             id="offset_7_limit_17_offset_5_limit_11_offset_7",
@@ -458,10 +388,7 @@ def test_limit_after_offset_loop(input_df):
     "df_fn,expected_result",
     [
         pytest.param(
-            lambda input_df: input_df.select("id", "name")
-            .sort(by=col("id"), desc=False)
-            .limit(7)
-            .offset(0),
+            lambda input_df: input_df.select("id", "name").sort(by=col("id"), desc=False).limit(7).offset(0),
             {
                 "id": [i for i in range(0, 7)],
                 "name": [f"user_{i}" for i in range(0, 7)],
@@ -469,18 +396,12 @@ def test_limit_after_offset_loop(input_df):
             id="sort_asc_limit_7_offset_0",
         ),
         pytest.param(
-            lambda input_df: input_df.select("id", "name")
-            .sort(by=col("id"), desc=True)
-            .limit(0)
-            .offset(7),
+            lambda input_df: input_df.select("id", "name").sort(by=col("id"), desc=True).limit(0).offset(7),
             0,
             id="sort_desc_limit_0_offset_7",
         ),
         pytest.param(
-            lambda input_df: input_df.select("id", "name")
-            .sort(by=col("id"), desc=True)
-            .limit(7)
-            .offset(2),
+            lambda input_df: input_df.select("id", "name").sort(by=col("id"), desc=True).limit(7).offset(2),
             {
                 "id": [i for i in range(1021, 1016, -1)],
                 "name": [f"user_{i}" for i in range(1021, 1016, -1)],
@@ -489,11 +410,7 @@ def test_limit_after_offset_loop(input_df):
         ),
         pytest.param(
             lambda input_df: (
-                input_df.select("id", "name")
-                .sort(by=col("id"), desc=True)
-                .filter(col("id") < 127)
-                .limit(7)
-                .offset(2)
+                input_df.select("id", "name").sort(by=col("id"), desc=True).filter(col("id") < 127).limit(7).offset(2)
             ),
             {
                 "id": [i for i in range(124, 119, -1)],
@@ -517,10 +434,7 @@ def test_limit_after_offset_loop(input_df):
             id="sort_desc_filter_lt_127_limit_7_offset_2_filter_ge_122",
         ),
         pytest.param(
-            lambda input_df: input_df.select("id", "name")
-            .sort(by=col("id"), desc=False)
-            .limit(7)
-            .offset(7),
+            lambda input_df: input_df.select("id", "name").sort(by=col("id"), desc=False).limit(7).offset(7),
             0,
             id="sort_asc_limit_7_offset_7",
         ),
@@ -609,14 +523,9 @@ def test_limit_before_offset_with_sort_loop_1(input_df):
     assert df.to_pydict() == {"name": [f"user_{i}" for i in range(507, 504, -1)]}
 
 
-def test_limit_before_offset_with_sort_loop_2(input_df):
+def test_limit_before_offset_with_sort_and_filter_loop(input_df):
     # 518..0 -> 2..0
-    df = (
-        input_df.select("id", "name")
-        .sort(by="id", desc=True)
-        .filter(col("id") < 519)
-        .limit(1024)
-    )
+    df = input_df.select("id", "name").sort(by="id", desc=True).filter(col("id") < 519).limit(1024)
     for i in range(1, 517):
         df = df.offset(1)
     df = df.limit(3).select("name")
@@ -627,18 +536,12 @@ def test_limit_before_offset_with_sort_loop_2(input_df):
     "df_fn,expected_result",
     [
         pytest.param(
-            lambda input_df: input_df.select("id", "name")
-            .sort(by=col("id"), desc=False)
-            .offset(2)
-            .limit(0),
+            lambda input_df: input_df.select("id", "name").sort(by=col("id"), desc=False).offset(2).limit(0),
             0,
             id="sort_asc_offset_2_limit_0",
         ),
         pytest.param(
-            lambda input_df: input_df.select("id", "name")
-            .sort(by=col("id"), desc=False)
-            .offset(0)
-            .limit(7),
+            lambda input_df: input_df.select("id", "name").sort(by=col("id"), desc=False).offset(0).limit(7),
             {
                 "id": [i for i in range(0, 7)],
                 "name": [f"user_{i}" for i in range(0, 7)],
@@ -646,10 +549,7 @@ def test_limit_before_offset_with_sort_loop_2(input_df):
             id="sort_asc_offset_0_limit_7",
         ),
         pytest.param(
-            lambda input_df: input_df.select("id", "name")
-            .sort(by=col("id"), desc=True)
-            .offset(2)
-            .limit(7),
+            lambda input_df: input_df.select("id", "name").sort(by=col("id"), desc=True).offset(2).limit(7),
             {
                 "id": [i for i in range(1021, 1014, -1)],
                 "name": [f"user_{i}" for i in range(1021, 1014, -1)],
@@ -658,11 +558,7 @@ def test_limit_before_offset_with_sort_loop_2(input_df):
         ),
         pytest.param(
             lambda input_df: (
-                input_df.select("id", "name")
-                .sort(by=col("id"), desc=True)
-                .filter(col("id") <= 100)
-                .offset(2)
-                .limit(7)
+                input_df.select("id", "name").sort(by=col("id"), desc=True).filter(col("id") <= 100).offset(2).limit(7)
             ),
             {
                 "id": [i for i in range(98, 91, -1)],
@@ -671,10 +567,7 @@ def test_limit_before_offset_with_sort_loop_2(input_df):
             id="sort_desc_filter_le_100_offset_2_limit_7",
         ),
         pytest.param(
-            lambda input_df: input_df.select("id", "name")
-            .sort(by=col("id"), desc=False)
-            .offset(7)
-            .limit(7),
+            lambda input_df: input_df.select("id", "name").sort(by=col("id"), desc=False).offset(7).limit(7),
             {
                 "id": [i for i in range(7, 14)],
                 "name": [f"user_{i}" for i in range(7, 14)],
@@ -764,7 +657,7 @@ def test_limit_after_offset_with_sort(input_df, df_fn, expected_result):
         assert df.to_pydict() == expected_result
 
 
-def test_limit_after_offset_with_sort_loop_1(input_df):
+def test_limit_after_offset_with_sort_loop(input_df):
     # 516..522 -> 519..522
     df = input_df.select("id", "name").sort(by=col("id"), desc=False)
     for i in range(1, 517):
@@ -773,13 +666,9 @@ def test_limit_after_offset_with_sort_loop_1(input_df):
     assert df.to_pydict() == {"name": [f"user_{i}" for i in range(519, 522)]}
 
 
-def test_limit_after_offset_with_sort_loop_2(input_df):
+def test_limit_after_offset_with_sort_and_filter_loop(input_df):
     # 516..518 -> 519..518
-    df = (
-        input_df.select("id", "name")
-        .sort(by=col("id"), desc=False)
-        .filter(col("id") < 519)
-    )
+    df = input_df.select("id", "name").sort(by=col("id"), desc=False).filter(col("id") < 519)
     for i in range(1, 517):
         df = df.offset(1).select("name")
     df = df.limit(15).limit(12).limit(6).offset(3)
@@ -792,12 +681,7 @@ def test_paging(input_df):
 
     total = input_df.count_rows()
     while offset < total:
-        paged_df = (
-            input_df.select("id", "name")
-            .sort(by=col("id"), desc=False)
-            .offset(offset)
-            .limit(limit)
-        )
+        paged_df = input_df.select("id", "name").sort(by=col("id"), desc=False).offset(offset).limit(limit)
 
         assert paged_df.to_pydict() == {
             "id": [i for i in range(offset, min(total, offset + limit))],
