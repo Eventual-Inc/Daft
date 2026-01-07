@@ -149,24 +149,26 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult<Self> {
         let memory_request = self.memory_request;
+        let op_name = self.name();
         #[cfg(feature = "python")]
         {
             tracing::info!(
                 target: "daft.dispatch",
-                op_name = %self.name(),
+                op_name = %op_name,
                 rows = input.len(),
-                bytes = input.size_bytes().unwrap_or(0),
+                bytes = input.size_bytes(),
                 "op=udf_submit",
             );
 
+            let op_name = op_name.clone(); // Clone for the async block
             let fut = task_spawner.spawn_with_memory_request(
                 memory_request,
                 async move {
                     tracing::info!(
                         target: "daft.dispatch",
-                        op_name = "DistributedActorPoolProject",
+                        op_name = %op_name,
                         rows = input.len(),
-                        bytes = input.size_bytes().unwrap_or(0),
+                        bytes = input.size_bytes(),
                         "op=udf_start",
                     );
 

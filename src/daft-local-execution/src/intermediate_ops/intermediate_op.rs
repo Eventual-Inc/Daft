@@ -72,33 +72,29 @@ pub(crate) trait IntermediateOperator: Send + Sync {
         batch_manager: Arc<BatchManager<Self::BatchingStrategy>>,
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
-        let strategy = if maintain_order {
-            "RoundRobinDispatcher"
-        } else {
-            "UnorderedDispatcher"
-        };
-        tracing::debug!(
-            target: "daft.dispatch",
-            strategy = %strategy,
-            maintain_order,
-            op_name = %self.name().to_string(),
-            runner = "native",
-            morsel_requirement = ?morsel_size_requirement
-        );
-        if maintain_order {
+        let strategy: Arc<dyn DispatchSpawner> = if maintain_order {
             Arc::new(RoundRobinDispatcher::new(batch_manager))
         } else {
             Arc::new(UnorderedDispatcher::new(
                 batch_manager.initial_requirements(),
             ))
-        }
+        };
+        tracing::debug!(
+            target: "daft.dispatch",
+            strategy = ?strategy,
+            maintain_order,
+            op_name = %self.name().to_string(),
+            runner = "native",
+            morsel_requirement = ?self.morsel_size_requirement()
+        );
+        strategy
     }
 }
 
 // Preview first up to 10 values from a preferred column and compute a simple fingerprint.
 fn compute_preview_and_fp(mp: &MicroPartition) -> String {
-    if let Ok(tables) = mp.get_tables()
-        && let Some(first) = tables.first()
+    let tables = mp.record_batches();
+    if let Some(first) = tables.first()
         && !first.is_empty()
         && let Ok(first_row_batch) = first.slice(0, 1)
     {
@@ -170,7 +166,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         while let Some(morsel) = receiver.recv().await {
             // Structured log: recv
             let rows = morsel.len();
-            let bytes = morsel.size_bytes().unwrap_or(0);
+            let bytes = morsel.size_bytes();
             let columns_count = morsel.column_names().len();
             if tracing::span_enabled!(tracing::Level::DEBUG) {
                 tracing::debug!(
@@ -194,7 +190,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 tracing::debug!(
                     op_name = %op.name(),
                     worker_idx,
-                    elapsed.as_millis(),
+                    elapsed_ms = elapsed.as_millis(),
                     result_kind = %result_kind,
                     "execute_end"
                 );
@@ -202,15 +198,15 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 match result.1 {
                     IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
                         if tracing::span_enabled!(tracing::Level::DEBUG) {
-                                                    tracing::debug!(
-                                                        op_name = %op.name(),
-                                                        worker_idx,
-                                                        rows = mp.len(),
-                                                        bytes = mp.size_bytes().unwrap_or(0),
-                                                        items_preview = compute_preview_and_fp(&mp),
-                                                        "send"
-                                                    );
-                                                }
+                            tracing::debug!(
+                                op_name = %op.name(),
+                                worker_idx,
+                                rows = mp.len(),
+                                bytes = mp.size_bytes(),
+                                items_preview = compute_preview_and_fp(&mp),
+                                "send"
+                            );
+                        }
                         batch_manager.record_execution_stats(
                             runtime_stats.clone(),
                             mp.len(),
@@ -227,15 +223,15 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                     }
                     IntermediateOperatorResult::HasMoreOutput(mp) => {
                         if tracing::span_enabled!(tracing::Level::DEBUG) {
-                                                    tracing::debug!(
-                                                        op_name = %op.name(),
-                                                        worker_idx,
-                                                        rows = mp.len(),
-                                                        bytes = mp.size_bytes().unwrap_or(0),
-                                                        items_preview = compute_preview_and_fp(&mp),
-                                                        "send"
-                                                    );
-                                                }
+                            tracing::debug!(
+                                op_name = %op.name(),
+                                worker_idx,
+                                rows = mp.len(),
+                                bytes = mp.size_bytes(),
+                                items_preview = compute_preview_and_fp(&mp),
+                                "send"
+                            );
+                        }
                         batch_manager.record_execution_stats(
                             runtime_stats.clone(),
                             mp.len(),

@@ -51,18 +51,6 @@ impl<W: Worker> Dispatcher<W> {
 
         let result_handles = worker_manager.submit_tasks_to_workers(worker_to_tasks)?;
 
-        tracing::debug!(target: DISPATCHER_LOG_TARGET, num_tasks = result_handles.len(), "dispatch_submit");
-
-        for result_handle in &result_handles {
-            if let Some(scheduled_task) = task_context_to_task.get(&result_handle.task_context()) {
-                let task = scheduled_task.task();
-                let task_type = std::any::type_name::<W::Task>();
-                let op_kind = task.op_kind();
-
-                tracing::debug!(target: DISPATCHER_LOG_TARGET, task_id = task.task_context().task_id, task_name = %task.task_name(), task_type = %task_type, op_kind = %op_kind, "dispatch_task");
-            }
-        }
-
         for result_handle in result_handles {
             let scheduled_task = task_context_to_task
                 .remove(&result_handle.task_context())
@@ -106,22 +94,13 @@ impl<W: Worker> Dispatcher<W> {
                 task_results.push(CompletedTask::new(task_result, scheduled_task));
             }
 
-            tracing::debug!(target: DISPATCHER_LOG_TARGET, num_tasks = task_results.len(), "await_completed_tasks");
-
-            for task_result in &task_results {
-                let scheduled_task = &task_result.task;
-                let task_obj = scheduled_task.task();
-                let task_type = std::any::type_name::<W::Task>();
-                let op_kind = task_obj.op_kind();
-                tracing::debug!(target: DISPATCHER_LOG_TARGET, task_id = task_obj.task_context().task_id, task_name = %task_obj.task_name(), task_type = %task_type, op_kind = %op_kind, "completed_task");
-            }
+            tracing::info!(target: DISPATCHER_LOG_TARGET, num_tasks = task_results.len(), "await_completed_tasks");
 
             tracing::debug!(target: DISPATCHER_LOG_TARGET, completed_count = task_results.len(), completed_tasks = ?task_results, "completed_tasks_batch");
 
             // Process all completed tasks
             for CompletedTask { task_result, task } in task_results {
                 let (worker_id, task_obj, result_tx, canc) = task.into_inner();
-                let op_kind = task_obj.op_kind();
 
                 // Always mark the task as finished regardless of the result
                 worker_manager.mark_task_finished(task_obj.task_context(), worker_id.clone());
@@ -140,7 +119,6 @@ impl<W: Worker> Dispatcher<W> {
                                               task_id = task_obj.task_context().task_id,
                                               task_name = %task_obj.task_name(),
                                               task_type = %task_type,
-                                              op_kind = %op_kind,
                                               task_context = ?task_obj.task_context());
                             }
                         }
@@ -154,7 +132,6 @@ impl<W: Worker> Dispatcher<W> {
                                               task_id = task_obj.task_context().task_id,
                                               task_name = %task_obj.task_name(),
                                               task_type = %task_type,
-                                              op_kind = %op_kind,
                                               task_context = ?task_obj.task_context());
                             }
                         }
@@ -184,7 +161,6 @@ impl<W: Worker> Dispatcher<W> {
                                           task_id = task_obj.task_context().task_id,
                                           task_name = %task_obj.task_name(),
                                           task_type = %task_type,
-                                          op_kind = %op_kind,
                                           task_context = ?task_obj.task_context());
                         }
                     }
@@ -215,7 +191,8 @@ impl<T: Task> std::fmt::Debug for CompletedTask<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "CompletedTask({:?}, {:?})",
+            "CompletedTask(name: {}, ctx: {:?}, res: {:?})",
+            self.task.task().task_name(),
             self.task.task().task_context(),
             self.task_result
         )
@@ -574,7 +551,6 @@ mod tests {
 
         // Verify worker state: Workers 1 and 3 should be dead, worker 2 should be alive
         let worker_snapshots = worker_manager.worker_snapshots()?;
-        tracing::debug!(target: DISPATCHER_LOG_TARGET, worker_snapshots = ?worker_snapshots, "worker_snapshots");
         assert_eq!(
             worker_snapshots.len(),
             1,
