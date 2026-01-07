@@ -1,7 +1,6 @@
 [dependencies]
 arrow = {workspace = true}
 base64 = {workspace = true}
-daft-arrow = {path = "../daft-arrow"}
 common-error = {path = "../common/error", default-features = false}
 common-image = {workspace = true}
 daft-core = {path = "../daft-core", default-features = false}
