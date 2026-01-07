@@ -1,9 +1,8 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::{borrow::Borrow, sync::LazyLock};
 
 use common_error::{DaftError, DaftResult, ensure};
 use daft_core::{
-    prelude::{AsArrow, DataType, Field, FullNull, Schema, Utf8Array},
+    prelude::{DataType, Field, FullNull, Schema, Utf8Array},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
@@ -144,10 +143,7 @@ fn replace_impl(
             regex_replace(arr_iter, regex_iter, replacement_iter, arr.name())?
         }
         (true, _) => {
-            let regex_iter = pattern
-                .as_arrow2()
-                .iter()
-                .map(|pat| pat.map(regex::Regex::new));
+            let regex_iter = pattern.into_iter().map(|pat| pat.map(regex::Regex::new));
             regex_replace(arr_iter, regex_iter, replacement_iter, arr.name())?
         }
         (false, _) => {
@@ -175,7 +171,7 @@ fn regex_replace<'a, R: Borrow<regex::Regex>>(
     replacement_iter: impl Iterator<Item = Option<&'a str>>,
     name: &str,
 ) -> DaftResult<Utf8Array> {
-    let arrow_result = arr_iter
+    let result = arr_iter
         .zip(regex_iter)
         .zip(replacement_iter)
         .map(|((val, re), replacement)| match (val, re, replacement) {
@@ -185,9 +181,9 @@ fn regex_replace<'a, R: Borrow<regex::Regex>>(
             }
             _ => Ok(None),
         })
-        .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>();
+        .collect::<DaftResult<Utf8Array>>()?;
 
-    Ok(Utf8Array::from((name, Box::new(arrow_result?))))
+    Ok(result.rename(name))
 }
 fn replace_on_literal<'a>(
     arr_iter: impl Iterator<Item = Option<&'a str>>,
@@ -195,14 +191,111 @@ fn replace_on_literal<'a>(
     replacement_iter: impl Iterator<Item = Option<&'a str>>,
     name: &str,
 ) -> DaftResult<Utf8Array> {
-    let arrow_result = arr_iter
+    let result = arr_iter
         .zip(pattern_iter)
         .zip(replacement_iter)
         .map(|((val, pat), replacement)| match (val, pat, replacement) {
             (Some(val), Some(pat), Some(replacement)) => Ok(Some(val.replace(pat, replacement))),
             _ => Ok(None),
         })
-        .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>();
+        .collect::<DaftResult<Utf8Array>>()?;
 
-    Ok(Utf8Array::from((name, Box::new(arrow_result?))))
+    Ok(result.rename(name))
+}
+
+#[cfg(test)]
+mod tests {
+    use daft_core::prelude::Utf8Array;
+
+    use super::*;
+
+    #[test]
+    fn test_replace_literal_with_values() {
+        let arr = Utf8Array::from_iter(
+            "a",
+            vec![Some("hello world"), Some("hello hello"), Some("world")].into_iter(),
+        );
+        let pattern = Utf8Array::from_iter("p", vec![Some("hello")].into_iter());
+        let replacement = Utf8Array::from_iter("r", vec![Some("hi")].into_iter());
+
+        let result = replace_impl(&arr, &pattern, &replacement, false).unwrap();
+
+        assert_eq!(result.get(0), Some("hi world"));
+        assert_eq!(result.get(1), Some("hi hi"));
+        assert_eq!(result.get(2), Some("world"));
+    }
+
+    #[test]
+    fn test_replace_literal_with_nulls() {
+        let arr = Utf8Array::from_iter(
+            "a",
+            vec![Some("hello world"), None, Some("world")].into_iter(),
+        );
+        let pattern = Utf8Array::from_iter("p", vec![Some("world")].into_iter());
+        let replacement = Utf8Array::from_iter("r", vec![Some("earth")].into_iter());
+
+        let result = replace_impl(&arr, &pattern, &replacement, false).unwrap();
+
+        assert_eq!(result.get(0), Some("hello earth"));
+        assert!(result.get(1).is_none());
+        assert_eq!(result.get(2), Some("earth"));
+    }
+
+    #[test]
+    fn test_regexp_replace_with_values() {
+        let arr = Utf8Array::from_iter(
+            "a",
+            vec![Some("hello123world"), Some("abc456def"), Some("nodigits")].into_iter(),
+        );
+        let pattern = Utf8Array::from_iter("p", vec![Some(r"\d+")].into_iter());
+        let replacement = Utf8Array::from_iter("r", vec![Some("NUM")].into_iter());
+
+        let result = replace_impl(&arr, &pattern, &replacement, true).unwrap();
+
+        assert_eq!(result.get(0), Some("helloNUMworld"));
+        assert_eq!(result.get(1), Some("abcNUMdef"));
+        assert_eq!(result.get(2), Some("nodigits"));
+    }
+
+    #[test]
+    fn test_regexp_replace_with_nulls() {
+        let arr = Utf8Array::from_iter(
+            "a",
+            vec![Some("hello123"), None, Some("world456")].into_iter(),
+        );
+        let pattern = Utf8Array::from_iter("p", vec![Some(r"\d+")].into_iter());
+        let replacement = Utf8Array::from_iter("r", vec![Some("")].into_iter());
+
+        let result = replace_impl(&arr, &pattern, &replacement, true).unwrap();
+
+        assert_eq!(result.get(0), Some("hello"));
+        assert!(result.get(1).is_none());
+        assert_eq!(result.get(2), Some("world"));
+    }
+
+    #[test]
+    fn test_replace_broadcast_pattern() {
+        let arr =
+            Utf8Array::from_iter("a", vec![Some("aaa"), Some("bbb"), Some("ccc")].into_iter());
+        let pattern = Utf8Array::from_iter("p", vec![Some("a"), Some("b"), Some("c")].into_iter());
+        let replacement = Utf8Array::from_iter("r", vec![Some("X")].into_iter());
+
+        let result = replace_impl(&arr, &pattern, &replacement, false).unwrap();
+
+        assert_eq!(result.get(0), Some("XXX"));
+        assert_eq!(result.get(1), Some("XXX"));
+        assert_eq!(result.get(2), Some("XXX"));
+    }
+
+    #[test]
+    fn test_regexp_replace_with_capture_groups() {
+        let arr = Utf8Array::from_iter("a", vec![Some("hello world")].into_iter());
+        let pattern = Utf8Array::from_iter("p", vec![Some(r"(\w+) (\w+)")].into_iter());
+        // Using POSIX-style capture group replacement
+        let replacement = Utf8Array::from_iter("r", vec![Some(r"\2 \1")].into_iter());
+
+        let result = replace_impl(&arr, &pattern, &replacement, true).unwrap();
+
+        assert_eq!(result.get(0), Some("world hello"));
+    }
 }
