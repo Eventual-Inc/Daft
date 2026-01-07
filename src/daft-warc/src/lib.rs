@@ -1,14 +1,14 @@
 use std::{num::NonZeroUsize, sync::Arc};
 
+use arrow_array::{
+    ArrayRef,
+    builder::{ArrayBuilder, Int64Builder, LargeBinaryBuilder, LargeStringBuilder},
+};
 use chrono::{DateTime, Utc};
 use common_error::{DaftError, DaftResult};
 use common_runtime::{get_compute_runtime, get_io_runtime};
-#[allow(deprecated, reason = "arrow2 migration")]
-use daft_arrow::array::{
-    MutableArray, MutableBinaryArray, MutablePrimitiveArray, MutableUtf8Array,
-};
 use daft_compression::CompressionCodec;
-use daft_core::{prelude::SchemaRef, series::Series};
+use daft_core::prelude::SchemaRef;
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use daft_io::{CountingReader, GetResult, IOClient, IOStatsRef};
 use daft_recordbatch::RecordBatch;
@@ -119,16 +119,14 @@ impl WarcHeaderState {
 struct WarcRecordBatchBuilder {
     chunk_size: usize,
     schema: SchemaRef,
-    record_id_array: MutableUtf8Array<i64>,
-    warc_target_uri_array: MutableUtf8Array<i64>,
-    warc_type_array: MutableUtf8Array<i64>,
-    #[allow(deprecated, reason = "arrow2 migration")]
-    warc_date_array: MutablePrimitiveArray<i64>,
-    #[allow(deprecated, reason = "arrow2 migration")]
-    warc_content_length_array: MutablePrimitiveArray<i64>,
-    warc_identified_payload_type_array: MutableUtf8Array<i64>,
-    content_array: MutableBinaryArray<i64>,
-    header_array: MutableUtf8Array<i64>,
+    record_id_array: LargeStringBuilder,
+    warc_target_uri_array: LargeStringBuilder,
+    warc_type_array: LargeStringBuilder,
+    warc_date_array: Int64Builder,
+    warc_content_length_array: Int64Builder,
+    warc_identified_payload_type_array: LargeStringBuilder,
+    content_array: LargeBinaryBuilder,
+    header_array: LargeStringBuilder,
     rows_processed: usize,
     record_id_elements_so_far: usize,
     warc_target_uri_elements_so_far: usize,
@@ -145,31 +143,29 @@ impl WarcRecordBatchBuilder {
         Self {
             chunk_size,
             schema,
-            record_id_array: MutableUtf8Array::with_capacities(
+            record_id_array: LargeStringBuilder::with_capacity(
                 chunk_size,
                 Self::DEFAULT_STRING_LENGTH * chunk_size,
             ),
-            warc_target_uri_array: MutableUtf8Array::with_capacities(
+            warc_target_uri_array: LargeStringBuilder::with_capacity(
                 chunk_size,
                 Self::DEFAULT_STRING_LENGTH * chunk_size,
             ),
-            warc_type_array: MutableUtf8Array::with_capacities(
+            warc_type_array: LargeStringBuilder::with_capacity(
                 chunk_size,
                 Self::DEFAULT_STRING_LENGTH * chunk_size,
             ),
-            #[allow(deprecated, reason = "arrow2 migration")]
-            warc_date_array: MutablePrimitiveArray::with_capacity(chunk_size),
-            #[allow(deprecated, reason = "arrow2 migration")]
-            warc_content_length_array: MutablePrimitiveArray::with_capacity(chunk_size),
-            warc_identified_payload_type_array: MutableUtf8Array::with_capacities(
+            warc_date_array: Int64Builder::with_capacity(chunk_size),
+            warc_content_length_array: Int64Builder::with_capacity(chunk_size),
+            warc_identified_payload_type_array: LargeStringBuilder::with_capacity(
                 chunk_size,
                 Self::DEFAULT_STRING_LENGTH * chunk_size,
             ),
-            content_array: MutableBinaryArray::with_capacities(
+            content_array: LargeBinaryBuilder::with_capacity(
                 chunk_size,
                 Self::DEFAULT_CONTENT_LENGTH * chunk_size,
             ),
-            header_array: MutableUtf8Array::with_capacities(
+            header_array: LargeStringBuilder::with_capacity(
                 chunk_size,
                 Self::DEFAULT_STRING_LENGTH * chunk_size,
             ),
@@ -193,14 +189,16 @@ impl WarcRecordBatchBuilder {
         warc_identified_payload_type: Option<&str>,
         header: Option<&str>,
     ) {
-        self.record_id_array.push(record_id);
-        self.warc_target_uri_array.push(warc_target_uri);
-        self.warc_type_array.push(warc_type);
-        self.warc_date_array.push(warc_date);
-        self.warc_content_length_array.push(warc_content_length);
+        self.record_id_array.append_option(record_id);
+        self.warc_target_uri_array.append_option(warc_target_uri);
+        self.warc_type_array.append_option(warc_type);
+        self.warc_date_array.append_option(warc_date);
+        self.warc_content_length_array
+            .append_option(warc_content_length);
         self.warc_identified_payload_type_array
-            .push(warc_identified_payload_type);
-        self.header_array.push(header);
+            .append_option(warc_identified_payload_type);
+        self.header_array.append_option(header);
+
         // book keeping
         self.rows_processed += 1;
         self.record_id_elements_so_far += record_id.map(|s| s.len()).unwrap_or(0);
@@ -220,30 +218,31 @@ impl WarcRecordBatchBuilder {
         if num_records == 0 {
             Ok(None)
         } else {
-            let record_batch = create_record_batch(
+            let record_batch = RecordBatch::from_arrow(
                 self.schema.clone(),
                 vec![
-                    self.record_id_array.as_box(),
-                    self.warc_target_uri_array.as_box(),
-                    self.warc_type_array.as_box(),
-                    self.warc_date_array.as_box(),
-                    self.warc_content_length_array.as_box(),
-                    self.warc_identified_payload_type_array.as_box(),
-                    self.content_array.as_box(),
-                    self.header_array.as_box(),
+                    Arc::new(self.record_id_array.finish()) as ArrayRef,
+                    Arc::new(self.warc_target_uri_array.finish()) as ArrayRef,
+                    Arc::new(self.warc_type_array.finish()) as ArrayRef,
+                    Arc::new(self.warc_date_array.finish()) as ArrayRef,
+                    Arc::new(self.warc_content_length_array.finish()) as ArrayRef,
+                    Arc::new(self.warc_identified_payload_type_array.finish()) as ArrayRef,
+                    Arc::new(self.content_array.finish()) as ArrayRef,
+                    Arc::new(self.header_array.finish()) as ArrayRef,
                 ],
-                num_records,
             )?;
             let chunk_size = self.chunk_size;
             let rows_processed = self.rows_processed;
             let avg_record_id_size = self.record_id_elements_so_far / rows_processed;
+
             // Reset arrays.
+            // TODO: Is this necessary with arrow_array::builder::ArrayBuilder?
             self.record_id_array =
-                MutableUtf8Array::with_capacities(chunk_size, avg_record_id_size * chunk_size);
+                LargeStringBuilder::with_capacity(chunk_size, avg_record_id_size * chunk_size);
 
             let avg_warc_target_uri_size = self.warc_target_uri_elements_so_far / rows_processed;
 
-            self.warc_target_uri_array = MutableUtf8Array::with_capacities(
+            self.warc_target_uri_array = LargeStringBuilder::with_capacity(
                 chunk_size,
                 avg_warc_target_uri_size * chunk_size,
             );
@@ -251,21 +250,19 @@ impl WarcRecordBatchBuilder {
             let avg_warc_type_size = self.warc_type_elements_so_far / rows_processed;
 
             self.warc_type_array =
-                MutableUtf8Array::with_capacities(chunk_size, avg_warc_type_size * chunk_size);
-            self.warc_date_array = MutablePrimitiveArray::with_capacity(chunk_size);
-            self.warc_content_length_array = MutablePrimitiveArray::with_capacity(chunk_size);
+                LargeStringBuilder::with_capacity(chunk_size, avg_warc_type_size * chunk_size);
+            self.warc_date_array = Int64Builder::with_capacity(chunk_size);
+            self.warc_content_length_array = Int64Builder::with_capacity(chunk_size);
             self.warc_identified_payload_type_array =
-                MutableUtf8Array::with_capacities(chunk_size, avg_warc_type_size * chunk_size);
+                LargeStringBuilder::with_capacity(chunk_size, avg_warc_type_size * chunk_size);
 
             let avg_content_size = self.content_bytes_so_far / rows_processed;
-
             self.content_array =
-                MutableBinaryArray::with_capacities(chunk_size, avg_content_size * chunk_size);
+                LargeBinaryBuilder::with_capacity(chunk_size, avg_content_size * chunk_size);
 
             let avg_header_size = self.header_elements_so_far / rows_processed;
-
             self.header_array =
-                MutableUtf8Array::with_capacities(chunk_size, avg_header_size * chunk_size);
+                LargeStringBuilder::with_capacity(chunk_size, avg_header_size * chunk_size);
             Ok(Some(record_batch))
         }
     }
@@ -355,10 +352,11 @@ impl WarcRecordBatchIterator {
 
                     // Handle content array separately to avoid an intermediate copy
                     if len == 0 {
-                        self.rb_builder.content_array.push_null();
+                        self.rb_builder.content_array.append_null();
                     } else {
-                        let slice = self.rb_builder.content_array.allocate_slice(len);
-                        self.reader.read_exact(slice).await?;
+                        let mut buffer = vec![0u8; len];
+                        self.reader.read_exact(&mut buffer).await?;
+                        self.rb_builder.content_array.append_value(&buffer);
                         self.bytes_read += len;
                     }
 
@@ -425,20 +423,6 @@ impl WarcRecordBatchIterator {
         }
         self.rb_builder.process_arrays()
     }
-}
-
-#[allow(deprecated, reason = "arrow2 migration")]
-fn create_record_batch(
-    schema: SchemaRef,
-    arrays: Vec<Box<dyn daft_arrow::array::Array>>,
-    num_records: usize,
-) -> DaftResult<RecordBatch> {
-    let mut series_vec = Vec::with_capacity(schema.len());
-    for (field, array) in schema.into_iter().zip(arrays.into_iter()) {
-        let series = Series::from_arrow2(Arc::new(field.clone()), array)?;
-        series_vec.push(series);
-    }
-    RecordBatch::new_with_size(schema, series_vec, num_records)
 }
 
 pub fn read_warc_bulk(
