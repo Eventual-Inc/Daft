@@ -1,6 +1,6 @@
 use arrow::{
     array::{Array, ArrowPrimitiveType, PrimitiveArray},
-    datatypes::{ArrowNativeType, UInt64Type},
+    datatypes::UInt64Type,
 };
 
 use super::common;
@@ -16,15 +16,14 @@ where
     T: ArrowPrimitiveType,
     F: Fn(&T::Native, &T::Native) -> std::cmp::Ordering,
 {
-    let values = array.values().inner().typed_data::<T::Native>();
-
     unsafe {
         common::idx_sort(
             array.nulls(),
             |l: &u64, r: &u64| {
+                // idx_sort generates indices from array.len(), so conversion back to usize is safe
                 cmp(
-                    values.get_unchecked((*l).to_usize().unwrap_unchecked()),
-                    values.get_unchecked((*r).to_usize().unwrap_unchecked()),
+                    &array.value_unchecked(*l as usize),
+                    &array.value_unchecked(*r as usize),
                 )
             },
             array.len(),
