@@ -2,7 +2,7 @@ use arrow::datatypes::ArrowPrimitiveType;
 use common_error::DaftResult;
 use num_traits::Float;
 
-use super::{DaftIsInf, DaftIsNan, DaftNotNan, as_arrow::AsArrow, full::FullNull};
+use super::{DaftIsInf, DaftIsNan, DaftNotNan, full::FullNull};
 use crate::{
     array::DataArray,
     datatypes::{
@@ -20,9 +20,8 @@ where
     type Output = DaftResult<DataArray<BooleanType>>;
 
     fn is_nan(&self) -> Self::Output {
-        let arrow_array = self.as_arrow()?;
         let result =
-            BooleanArray::from_values(self.name(), arrow_array.values().iter().map(|v| v.is_nan()));
+            BooleanArray::from_values(self.name(), self.values().iter().map(|v| v.is_nan()));
         result.with_validity(self.validity().cloned())
     }
 }
@@ -49,11 +48,8 @@ where
     type Output = DaftResult<DataArray<BooleanType>>;
 
     fn is_inf(&self) -> Self::Output {
-        let arrow_array = self.as_arrow()?;
-        let result = BooleanArray::from_values(
-            self.name(),
-            arrow_array.values().iter().map(|v| v.is_infinite()),
-        );
+        let result =
+            BooleanArray::from_values(self.name(), self.values().iter().map(|v| v.is_infinite()));
         result.with_validity(self.validity().cloned())
     }
 }
@@ -79,11 +75,8 @@ where
     type Output = DaftResult<DataArray<BooleanType>>;
 
     fn not_nan(&self) -> Self::Output {
-        let arrow_array = self.as_arrow()?;
-        let result = BooleanArray::from_values(
-            self.name(),
-            arrow_array.values().iter().map(|v| !v.is_nan()),
-        );
+        let result =
+            BooleanArray::from_values(self.name(), self.values().iter().map(|v| !v.is_nan()));
         result.with_validity(self.validity().cloned())
     }
 }
