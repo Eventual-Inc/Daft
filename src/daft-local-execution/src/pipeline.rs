@@ -19,9 +19,8 @@ use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, GlobScan, HashAggregate,
     HashJoin, InMemoryScan, IntoBatches, Limit, LocalNodeContext, LocalPhysicalPlan,
     MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, Sample, Sort,
-    SortMergeJoin, TopN, UDFProject, UnGroupedAggregate, Unpivot,
-    VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
-    WindowPartitionOnly,
+    SortMergeJoin, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
+    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{
@@ -36,16 +35,15 @@ use snafu::ResultExt;
 use crate::{
     ExecutionRuntimeContext, PipelineCreationSnafu,
     channel::{Receiver, create_channel},
+    concat::ConcatNode,
     intermediate_ops::{
         distributed_actor_pool_project::DistributedActorPoolProjectOperator,
-        explode::ExplodeOperator, filter::FilterOperator,
-        intermediate_op::IntermediateNode,
+        explode::ExplodeOperator, filter::FilterOperator, intermediate_op::IntermediateNode,
         into_batches::IntoBatchesOperator, project::ProjectOperator, udf::UdfOperator,
         unpivot::UnpivotOperator,
     },
     join::{HashJoinOperator, JoinNode},
-    concat::ConcatNode,
-    plan_input::{InputSender},
+    plan_input::InputSender,
     runtime_stats::RuntimeStats,
     sinks::{
         aggregate::AggregateSink,
@@ -64,15 +62,10 @@ use crate::{
         window_partition_only::WindowPartitionOnlySink,
         write::{WriteFormat, WriteSink},
     },
-    sources::{
-        source::SourceNode, in_memory::InMemorySource,
-        scan_task::ScanTaskSource,
-    },
+    sources::{in_memory::InMemorySource, scan_task::ScanTaskSource, source::SourceNode},
     streaming_sink::{
-        async_udf::AsyncUdfSink,
-        base::StreamingSinkNode, limit::LimitSink,
-        monotonically_increasing_id::MonotonicallyIncreasingIdSink,
-        sample::SampleSink,
+        async_udf::AsyncUdfSink, base::StreamingSinkNode, limit::LimitSink,
+        monotonically_increasing_id::MonotonicallyIncreasingIdSink, sample::SampleSink,
         vllm::VLLMSink,
     },
 };
@@ -337,8 +330,7 @@ pub fn translate_physical_plan_to_pipeline(
     ctx: &RuntimeContext,
 ) -> crate::Result<(Box<dyn PipelineNode>, HashMap<String, InputSender>)> {
     let mut input_senders = HashMap::new();
-    let mut pipeline_node =
-        physical_plan_to_pipeline(physical_plan, cfg, ctx, &mut input_senders)?;
+    let mut pipeline_node = physical_plan_to_pipeline(physical_plan, cfg, ctx, &mut input_senders)?;
     pipeline_node.propagate_morsel_size_requirement(
         MorselSizeRequirement::Flexible(0, cfg.default_morsel_size),
         MorselSizeRequirement::Flexible(0, cfg.default_morsel_size),
@@ -366,8 +358,13 @@ fn physical_plan_to_pipeline(
             let (tx, rx) = create_channel::<(crate::plan_input::InputId, Vec<ScanTaskRef>)>(100);
             input_senders.insert(source_id.clone(), InputSender::ScanTasks(tx.clone()));
 
-            let scan_task_source =
-                ScanTaskSource::new(source_id.clone(), rx, pushdowns.clone(), schema.clone(), cfg);
+            let scan_task_source = ScanTaskSource::new(
+                source_id.clone(),
+                rx,
+                pushdowns.clone(),
+                schema.clone(),
+                cfg,
+            );
             SourceNode::new(
                 scan_task_source.arced(),
                 stats_state.clone(),
@@ -384,7 +381,10 @@ fn physical_plan_to_pipeline(
             stats_state,
             context,
         }) => {
-            let (tx, rx) = create_channel::<(crate::plan_input::InputId, PartitionSetRef<MicroPartitionRef>)>(100);
+            let (tx, rx) = create_channel::<(
+                crate::plan_input::InputId,
+                PartitionSetRef<MicroPartitionRef>,
+            )>(100);
             input_senders.insert(source_id.clone(), InputSender::InMemory(tx.clone()));
 
             let in_memory_source =
@@ -410,8 +410,13 @@ fn physical_plan_to_pipeline(
             let (tx, rx) = create_channel::<(crate::plan_input::InputId, Vec<String>)>(100);
             input_senders.insert(source_id.clone(), InputSender::GlobPaths(tx.clone()));
 
-            let glob_scan_source =
-                GlobScanSource::new(source_id.clone(), rx, pushdowns.clone(), schema.clone(), io_config.clone());
+            let glob_scan_source = GlobScanSource::new(
+                source_id.clone(),
+                rx,
+                pushdowns.clone(),
+                schema.clone(),
+                io_config.clone(),
+            );
             SourceNode::new(
                 glob_scan_source.arced(),
                 stats_state.clone(),
@@ -667,8 +672,12 @@ fn physical_plan_to_pipeline(
             stats_state,
             context,
         }) => {
-            let sample_sink =
-                SampleSink::new(sampling_method.clone(), *with_replacement, *seed, schema.clone());
+            let sample_sink = SampleSink::new(
+                sampling_method.clone(),
+                *with_replacement,
+                *seed,
+                schema.clone(),
+            );
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             StreamingSinkNode::new(
                 Arc::new(sample_sink),
@@ -722,11 +731,12 @@ fn physical_plan_to_pipeline(
         LocalPhysicalPlan::Explode(Explode {
             input,
             to_explode,
+            index_column,
             schema,
             stats_state,
             context,
         }) => {
-            let explode_op = ExplodeOperator::new(to_explode.clone());
+            let explode_op = ExplodeOperator::new(to_explode.clone(), index_column.clone());
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             IntermediateNode::new(
                 Arc::new(explode_op),
@@ -1200,10 +1210,7 @@ fn physical_plan_to_pipeline(
             let probe_child_node =
                 physical_plan_to_pipeline(stream_child, cfg, ctx, input_senders)?;
 
-            let cross_join_op = crate::join::CrossJoinOperator::new(
-                schema.clone(),
-                stream_side,
-            );
+            let cross_join_op = crate::join::CrossJoinOperator::new(schema.clone(), stream_side);
 
             JoinNode::new(
                 Arc::new(cross_join_op),

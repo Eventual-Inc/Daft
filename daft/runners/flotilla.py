@@ -43,10 +43,6 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def _nowstr():
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-
-
 class SwordfishTaskMetadata(NamedTuple):
     partition_metadatas: list[PartitionMetadata]
     stats: bytes | None

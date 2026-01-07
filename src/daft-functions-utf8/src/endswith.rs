@@ -66,22 +66,8 @@ mod tests {
 
     #[test]
     fn check_endswith_utf_arrays_broadcast() -> DaftResult<()> {
-        let data = Utf8Array::from((
-            "data",
-            Box::new(daft_arrow::array::Utf8Array::<i64>::from(vec![
-                "x_foo".into(),
-                "y_foo".into(),
-                "z_bar".into(),
-            ])),
-        ))
-        .into_series();
-        let pattern = Utf8Array::from((
-            "pattern",
-            Box::new(daft_arrow::array::Utf8Array::<i64>::from(vec![
-                "foo".into(),
-            ])),
-        ))
-        .into_series();
+        let data = Utf8Array::from_values("data", ["x_foo", "y_foo", "z_bar"].iter()).into_series();
+        let pattern = Utf8Array::from_values("pattern", ["foo"].iter()).into_series();
         let result = super::endswith_impl(&data, &pattern)?;
         let result = result.bool()?;
 
@@ -94,24 +80,9 @@ mod tests {
 
     #[test]
     fn check_endswith_utf_arrays() -> DaftResult<()> {
-        let data = Utf8Array::from((
-            "data",
-            Box::new(daft_arrow::array::Utf8Array::<i64>::from(vec![
-                "x_foo".into(),
-                "y_foo".into(),
-                "z_bar".into(),
-            ])),
-        ))
-        .into_series();
-        let pattern = Utf8Array::from((
-            "pattern",
-            Box::new(daft_arrow::array::Utf8Array::<i64>::from(vec![
-                "foo".into(),
-                "wrong".into(),
-                "bar".into(),
-            ])),
-        ))
-        .into_series();
+        let data = Utf8Array::from_values("data", ["x_foo", "y_foo", "z_bar"].iter()).into_series();
+        let pattern =
+            Utf8Array::from_values("pattern", ["foo", "wrong", "bar"].iter()).into_series();
         let result = super::endswith_impl(&data, &pattern)?;
 
         let result = result.bool()?;

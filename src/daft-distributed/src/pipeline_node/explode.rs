@@ -15,6 +15,7 @@ pub(crate) struct ExplodeNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     to_explode: Vec<BoundExpr>,
+    index_column: Option<String>,
     child: DistributedPipelineNode,
 }
 
@@ -25,6 +26,7 @@ impl ExplodeNode {
         node_id: NodeID,
         plan_config: &PlanConfig,
         to_explode: Vec<BoundExpr>,
+        index_column: Option<String>,
         schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> Self {
@@ -43,6 +45,7 @@ impl ExplodeNode {
             config,
             context,
             to_explode,
+            index_column,
             child,
         }
     }
@@ -67,10 +70,14 @@ impl PipelineNodeImpl for ExplodeNode {
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         use itertools::Itertools;
-        vec![format!(
+        let mut res = vec![format!(
             "Explode: {}",
             self.to_explode.iter().map(|e| e.to_string()).join(", ")
-        )]
+        )];
+        if let Some(ref idx_col) = self.index_column {
+            res.push(format!("Index column = {}", idx_col));
+        }
+        res
     }
 
     fn produce_tasks(
@@ -79,12 +86,14 @@ impl PipelineNodeImpl for ExplodeNode {
     ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
         let to_explode = self.to_explode.clone();
+        let index_column = self.index_column.clone();
         let schema = self.config.schema.clone();
         let node_id = self.node_id();
         input_node.pipeline_instruction(self, move |input| {
             LocalPhysicalPlan::explode(
                 input,
                 to_explode.clone(),
+                index_column.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,
                 LocalNodeContext {

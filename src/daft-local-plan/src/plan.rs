@@ -979,6 +979,7 @@ impl LocalPhysicalPlan {
     pub fn explode(
         input: LocalPhysicalPlanRef,
         to_explode: Vec<BoundExpr>,
+        index_column: Option<String>,
         schema: SchemaRef,
         stats_state: StatsState,
         context: LocalNodeContext,
@@ -986,6 +987,7 @@ impl LocalPhysicalPlan {
         Self::Explode(Explode {
             input,
             to_explode,
+            index_column,
             schema,
             stats_state,
             context,
@@ -1723,7 +1725,9 @@ impl LocalPhysicalPlan {
     pub fn with_new_children(&self, children: &[Arc<Self>]) -> Arc<Self> {
         match children {
             [new_child] => match self {
-                Self::PhysicalScan(_) | Self::InMemoryScan(_) | Self::GlobScan(_)
+                Self::PhysicalScan(_)
+                | Self::InMemoryScan(_)
+                | Self::GlobScan(_)
                 | Self::PlaceholderScan(_) => panic!(
                     "LocalPhysicalPlan::with_new_children: PhysicalScan, InMemoryScan, GlobScan, and PlaceholderScan do not have children"
                 ),
@@ -1879,12 +1883,14 @@ impl LocalPhysicalPlan {
                 ),
                 Self::Explode(Explode {
                     to_explode,
+                    index_column,
                     schema,
                     context,
                     ..
                 }) => Self::explode(
                     new_child.clone(),
                     to_explode.clone(),
+                    index_column.clone(),
                     schema.clone(),
                     StatsState::NotMaterialized,
                     context.clone(),
@@ -2190,9 +2196,7 @@ impl LocalPhysicalPlan {
                     )
                 }
                 Self::GlobScan(_) => {
-                    panic!(
-                        "LocalPhysicalPlan::with_new_children: GlobScan does not have children"
-                    )
+                    panic!("LocalPhysicalPlan::with_new_children: GlobScan does not have children")
                 }
             },
             [new_left, new_right] => match self {
@@ -2418,6 +2422,7 @@ pub struct Limit {
 pub struct Explode {
     pub input: LocalPhysicalPlanRef,
     pub to_explode: Vec<BoundExpr>,
+    pub index_column: Option<String>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
