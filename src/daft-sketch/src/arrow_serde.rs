@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::sync::{Arc, LazyLock};
 
 use arrow_schema::DataType;
@@ -12,7 +11,7 @@ use snafu::{ResultExt, Snafu};
 
 #[derive(Debug, Snafu)]
 enum Error {
-    #[snafu(display("Unable to deserialize from arrow2"))]
+    #[snafu(display("Unable to deserialize from arrow"))]
     DeserializationError { source: serde_arrow::Error },
 }
 
@@ -50,7 +49,7 @@ static ARROW_DDSKETCH_FIELDS: LazyLock<arrow_schema::Fields> = LazyLock::new(|| 
     fields
 });
 
-/// Converts a Vec<Option<DDSketch>> into an arrow2 Array
+/// Converts a Vec<Option<DDSketch>> into an Arrow Array
 #[must_use]
 pub fn into_arrow(sketches: Vec<Option<DDSketch>>) -> arrow_array::ArrayRef {
     if sketches.is_empty() {
@@ -67,7 +66,7 @@ pub fn into_arrow(sketches: Vec<Option<DDSketch>>) -> arrow_array::ArrayRef {
     arrow_arrays.pop().unwrap()
 }
 
-/// Converts an arrow2 Array into a Vec<Option<DDSketch>>
+/// Converts an Arrow Array into a Vec<Option<DDSketch>>
 pub fn from_arrow(arrow_array: arrow_array::ArrayRef) -> DaftResult<Vec<Option<DDSketch>>> {
     if arrow_array.is_empty() {
         return Ok(vec![]);
