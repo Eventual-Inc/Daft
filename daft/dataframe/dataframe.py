@@ -831,9 +831,6 @@ class DataFrame:
         """
         from daft.io._sql import SQLDataSink
 
-        if write_mode not in ["append", "overwrite", "fail"]:
-            raise ValueError(f"Invalid write_mode: {write_mode}. Must be one of 'append', 'overwrite', 'fail'.")
-
         # Build an empty pandas DataFrame that defines the schema for table creation on the driver side.
         empty_pdf = self.limit(0).to_pandas()
 

@@ -77,10 +77,7 @@ def test_write_sql_append_creates_table(test_db):
     table_name = f"write_test_append_new_{uuid.uuid4().hex}"
     df = daft.from_pydict({"id": [1], "name": ["A"]})
 
-    def create_conn():
-        return sqlalchemy.create_engine(test_db).connect()
-
-    df.write_sql(table_name, create_conn, write_mode="append")
+    df.write_sql(table_name, test_db, write_mode="append")
 
     read_df = daft.read_sql(f"SELECT * FROM {table_name}", test_db).sort("id").collect()
     expected_df = df.sort("id").collect()
@@ -98,12 +95,74 @@ def test_write_sql_invalid_mode(test_db):
 
 
 @pytest.mark.integration()
+@pytest.mark.parametrize("chunk_size", [None, 10, 500])
+def test_write_sql_chunk_sizes(test_db, chunk_size):
+    table_name = f"write_test_chunk_size_{uuid.uuid4().hex}"
+    num_rows = 2000
+    df = daft.from_pydict({"id": list(range(num_rows)), "val": [f"val_{i}" for i in range(num_rows)]})
+
+    write_kwargs = {} if chunk_size is None else {"chunk_size": chunk_size}
+    df.write_sql(table_name, test_db, **write_kwargs)
+
+    read_df = daft.read_sql(f"SELECT * FROM {table_name}", test_db).collect()
+    assert len(read_df) == num_rows
+
+    pydict = read_df.to_pydict()
+    assert sorted(pydict["id"]) == list(range(num_rows))
+
+
+@pytest.mark.integration()
+def test_write_sql_empty(test_db):
+    table_name = f"write_test_empty_{uuid.uuid4().hex}"
+    df = daft.from_pydict({"id": [], "name": []})
+    df = df.select(df["id"].cast(daft.DataType.int64()), df["name"].cast(daft.DataType.string()))
+
+    df.write_sql(table_name, test_db)
+
+    read_df = daft.read_sql(f"SELECT * FROM {table_name}", test_db).collect()
+    assert len(read_df) == 0
+    assert read_df.column_names == ["id", "name"]
+
+
+@pytest.mark.integration()
+def test_write_sql_returns_metrics_dataframe(test_db):
+    table_name = f"write_test_metrics_{uuid.uuid4().hex}"
+    df = daft.from_pydict({"id": [1, 2, 3], "name": ["A", "B", "C"]})
+
+    metrics_df = df.write_sql(table_name, test_db)
+
+    assert metrics_df.column_names == ["total_written_rows", "total_written_bytes"]
+
+    metrics = metrics_df.to_pydict()
+    assert metrics["total_written_rows"][0] == 3
+    assert metrics["total_written_bytes"][0] > 0
+
+
+@pytest.mark.integration()
+def test_write_sql_connection_factory(test_db):
+    table_name = f"write_test_conn_factory_{uuid.uuid4().hex}"
+    df = daft.from_pydict({"id": [1], "name": ["A"]})
+
+    def create_conn():
+        return sqlalchemy.create_engine(test_db).connect()
+
+    df.write_sql(table_name, create_conn)
+
+    read_df = daft.read_sql(f"SELECT * FROM {table_name}", test_db).collect()
+    assert len(read_df) == 1
+    assert read_df.to_pydict()["id"][0] == 1
+
+
+@pytest.mark.integration()
 def test_write_sql_schema_mismatch_append(test_db):
     table_name = f"write_test_mismatch_{uuid.uuid4().hex}"
     df1 = daft.from_pydict({"id": [1], "name": ["A"]})
     df1.write_sql(table_name, test_db)
 
+    # Different schema (extra column)
     df2 = daft.from_pydict({"id": [2], "name": ["B"], "extra": [3]})
+
+    # Appending data with extra columns should fail
     with pytest.raises(Exception):
         df2.write_sql(table_name, test_db, write_mode="append")
 
@@ -116,7 +175,21 @@ def test_write_sql_invalid_connection_string():
 
 
 @pytest.mark.integration()
-def test_write_sql_dtype_basic_types_with_metrics(test_db):
+def test_write_sql_multi_db(test_db):
+    table_name = f"write_test_multidb_{uuid.uuid4().hex}"
+    df = daft.from_pydict({"id": [1, 2], "val": ["x", "y"]})
+
+    df.write_sql(table_name, test_db)
+
+    read_df = daft.read_sql(f"SELECT * FROM {table_name}", test_db).sort("id").collect()
+    assert len(read_df) == 2
+    data = read_df.to_pydict()
+    assert data["id"] == [1, 2]
+    assert data["val"] == ["x", "y"]
+
+
+@pytest.mark.integration()
+def test_write_sql_dtype_basic_types(test_db):
     table_name = f"write_test_dtype_basic_{uuid.uuid4().hex}"
 
     data = {
@@ -132,12 +205,7 @@ def test_write_sql_dtype_basic_types_with_metrics(test_db):
 
     dtype = {"id": Integer(), "name": String(length=64), "created_at": DateTime()}
 
-    metrics_df = df.write_sql(table_name, test_db, dtype=dtype)
-    assert metrics_df.column_names == ["total_written_rows", "total_written_bytes"]
-
-    metrics = metrics_df.to_pydict()
-    assert metrics["total_written_rows"][0] == 3
-    assert metrics["total_written_bytes"][0] > 0
+    df.write_sql(table_name, test_db, dtype=dtype)
 
     engine = sqlalchemy.create_engine(test_db)
     try:
