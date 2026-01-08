@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from openai import NOT_GIVEN, AsyncOpenAI, OpenAIError, RateLimitError
+from openai import OpenAI as OpenAIClient
 from openai.types.create_embedding_response import Usage
 
 from daft import DataType
@@ -100,8 +101,6 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
                 return _models[self.model_name].dimensions
 
             try:
-                from openai import OpenAI as OpenAIClient
-
                 merged_provider_options: dict[str, Any] = merge_provider_and_api_options(
                     provider_options=self.provider_options,
                     api_options=self.embed_options,
