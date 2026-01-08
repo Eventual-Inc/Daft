@@ -136,11 +136,12 @@ class ProgressBar:
             # Find index (1-based)
             try:
                 idx = list(self.pbars.keys()).index(bar_id) + 1
+                idx_val = str(idx)
             except ValueError:
-                idx = "?"
+                idx_val = "?"
 
             # Icon and Index
-            prefix = f"\U0001f6a2[{idx}]"
+            prefix = f"\U0001f6a2[{idx_val}]"
 
             # Checkmark
             status_icon = " ✓" if is_finished else ""
