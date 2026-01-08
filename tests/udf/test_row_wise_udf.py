@@ -93,6 +93,52 @@ def test_row_wise_udf_override_return_dtype():
     assert actual.to_pydict() == expected
 
 
+def test_row_wise_udf_with_ray_options():
+    @daft.func(ray_options={"num_cpus": 1, "num_gpus": 0.5})
+    def my_udf(x: int) -> int:
+        return x
+
+    df = daft.from_pydict({"x": [1, 2, 3]})
+
+    # We can only verify that the options are passed correctly via explain
+    import io
+
+    f = io.StringIO()
+    df.select(my_udf(col("x"))).explain(file=f, show_all=True)
+    explanation = f.getvalue()
+
+    assert "'num_cpus': 1" in explanation
+    assert "'num_gpus': 0.5" in explanation
+
+    # Also verify execution
+    actual = df.select(my_udf(col("x"))).to_pydict()
+    expected = {"x": [1, 2, 3]}
+    assert actual == expected
+
+
+def test_row_wise_udf_override_concurrency():
+    @daft.func(return_dtype=DataType.int64())
+    def my_udf(x):
+        return x
+
+    # Override concurrency
+    func = my_udf.with_concurrency(10)
+
+    df = daft.from_pydict({"x": [1, 2, 3]})
+
+    import io
+
+    f = io.StringIO()
+    df.select(func(col("x"))).explain(file=f, show_all=True)
+    explanation = f.getvalue()
+
+    assert "concurrency = 10" in explanation
+
+    actual = df.select(func(col("x"))).to_pydict()
+    expected = {"x": [1, 2, 3]}
+    assert actual == expected
+
+
 def test_row_wise_udf_literal_eval():
     @daft.func
     def my_stringify_and_sum(a: int, b: int) -> str:
