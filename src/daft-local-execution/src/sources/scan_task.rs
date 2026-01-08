@@ -74,7 +74,6 @@ impl ScanTaskSource {
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
         let num_parallel_tasks = self.num_parallel_tasks;
-        let schema = schema.clone();
         let io_runtime_clone = io_runtime.clone();
 
         io_runtime.spawn(async move {
@@ -119,10 +118,9 @@ impl ScanTaskSource {
                         let (task_sender, task_receiver) = create_channel::<Arc<MicroPartition>>(1);
 
                         // Send receiver to ordered forwarder only when spawning (maintains spawn order)
-                        if let Some(ref rs) = receivers_sender {
-                            if rs.send(task_receiver).await.is_err() {
+                        if let Some(ref rs) = receivers_sender && rs.send(task_receiver).await.is_err() {
                                 return Ok(());
-                            }
+
                         }
 
                         task_set.spawn(forward_scan_task_stream(
@@ -255,7 +253,7 @@ impl Source for ScanTaskSource {
         let processor_task = self.spawn_scan_task_processor(
             receiver_clone,
             output_sender,
-            io_stats.clone(),
+            io_stats,
             chunk_size,
             self.schema.clone(),
             maintain_order,

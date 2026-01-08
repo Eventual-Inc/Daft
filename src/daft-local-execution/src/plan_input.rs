@@ -27,7 +27,7 @@ pub(crate) enum InputSender {
 impl InputSender {
     pub async fn send(&self, input_id: InputId, input: PlanInput) -> DaftResult<()> {
         match (self, input) {
-            (InputSender::ScanTasks(sender), PlanInput::ScanTasks(tasks)) => {
+            (Self::ScanTasks(sender), PlanInput::ScanTasks(tasks)) => {
                 // Convert ScanTaskLikeRef to ScanTaskRef
                 let tasks: Vec<ScanTaskRef> = tasks
                     .into_iter()
@@ -38,11 +38,11 @@ impl InputSender {
                     .await
                     .map_err(|e| DaftError::ValueError(e.to_string()))
             }
-            (InputSender::InMemory(sender), PlanInput::InMemoryPartitions(partitions)) => sender
+            (Self::InMemory(sender), PlanInput::InMemoryPartitions(partitions)) => sender
                 .send((input_id, partitions))
                 .await
                 .map_err(|e| DaftError::ValueError(e.to_string())),
-            (InputSender::GlobPaths(sender), PlanInput::GlobPaths(glob_paths)) => sender
+            (Self::GlobPaths(sender), PlanInput::GlobPaths(glob_paths)) => sender
                 .send((input_id, glob_paths))
                 .await
                 .map_err(|e| DaftError::ValueError(e.to_string())),

@@ -4,7 +4,6 @@ use common_daft_config::PyDaftExecutionConfig;
 use common_metrics::StatSnapshot;
 use common_partitioning::{Partition, PartitionRef};
 use daft_local_plan::PyLocalPhysicalPlan;
-#[cfg(feature = "python")]
 use daft_scan::python::pylib::PyScanTask;
 use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 
@@ -236,7 +235,6 @@ impl RaySwordfishTask {
         self.task.task_context().last_node_id
     }
 
-    #[cfg(feature = "python")]
     fn scan_tasks(&self) -> PyResult<HashMap<String, Vec<PyScanTask>>> {
         let scan_tasks_map = self.task.scan_tasks();
         // Convert HashMap<String, Vec<ScanTaskLikeRef>> to HashMap<String, Vec<PyScanTask>>

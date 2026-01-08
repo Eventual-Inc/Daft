@@ -203,12 +203,8 @@ impl Source for GlobScanSource {
         let receiver_clone = self.receiver.take().expect("Receiver not found");
 
         // Spawn the glob path processor that continuously reads from receiver
-        let processor_task = self.spawn_glob_path_processor(
-            receiver_clone,
-            output_sender,
-            io_stats.clone(),
-            chunk_size,
-        );
+        let processor_task =
+            self.spawn_glob_path_processor(receiver_clone, output_sender, io_stats, chunk_size);
 
         // Convert receiver to stream
         let result_stream = output_receiver.into_stream().map(Ok);

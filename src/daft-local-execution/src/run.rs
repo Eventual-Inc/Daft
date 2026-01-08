@@ -94,6 +94,7 @@ impl PyNativeExecutor {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (local_physical_plan, daft_ctx, input_id, context=None, scan_tasks=None, in_memory=None, glob_paths=None))]
     pub fn run<'py>(
         &self,

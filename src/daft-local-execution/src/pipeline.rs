@@ -376,7 +376,7 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let (tx, rx) = create_channel::<(InputId, Vec<ScanTaskRef>)>(0);
-            input_senders.insert(source_id.clone(), InputSender::ScanTasks(tx.clone()));
+            input_senders.insert(source_id.clone(), InputSender::ScanTasks(tx));
 
             let scan_task_source = ScanTaskSource::new(rx, pushdowns.clone(), schema.clone(), cfg);
             SourceNode::new(
@@ -417,7 +417,7 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let (tx, rx) = create_channel::<(InputId, Vec<String>)>(0);
-            input_senders.insert(source_id.clone(), InputSender::GlobPaths(tx.clone()));
+            input_senders.insert(source_id.clone(), InputSender::GlobPaths(tx));
 
             let glob_scan_source =
                 GlobScanSource::new(rx, pushdowns.clone(), schema.clone(), io_config.clone());
@@ -676,12 +676,8 @@ fn physical_plan_to_pipeline(
             stats_state,
             context,
         }) => {
-            let sample_sink = SampleSink::new(
-                sampling_method.clone(),
-                *with_replacement,
-                *seed,
-                schema.clone(),
-            );
+            let sample_sink =
+                SampleSink::new(*sampling_method, *with_replacement, *seed, schema.clone());
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             StreamingSinkNode::new(
                 Arc::new(sample_sink),
