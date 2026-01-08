@@ -66,6 +66,7 @@ class NativeRunner(Runner[MicroPartition]):
         super().__init__()
         if num_threads is not None:
             set_compute_runtime_num_worker_threads(num_threads)
+        self.native_executor = NativeExecutor()
 
     def initialize_partition_set_cache(self) -> PartitionSetCache:
         return LOCAL_PARTITION_SET_CACHE
@@ -102,8 +103,7 @@ class NativeRunner(Runner[MicroPartition]):
         ctx._notify_optimization_end(query_id, builder.repr_json())
 
         plan = LocalPhysicalPlan.from_logical_plan_builder(builder._builder)
-        executor = NativeExecutor()
-        results_gen = executor.run(
+        results_gen = self.native_executor.run(
             plan,
             {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
             ctx,

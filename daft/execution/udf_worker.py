@@ -11,8 +11,10 @@ import daft.pickle
 from daft.daft import set_compute_runtime_num_worker_threads
 from daft.errors import UDFException
 from daft.execution.udf import (
-    _ENTER,
+    _CLEANUP_UDFS,
     _ERROR,
+    _EVAL,
+    _INIT,
     _OUTPUT_DIVIDER,
     _READY,
     _SENTINEL,
@@ -24,50 +26,89 @@ from daft.expressions.expressions import ExpressionsProjection
 from daft.recordbatch import RecordBatch
 
 
-def udf_event_loop(
+def udf_worker_event_loop(
     secret: bytes,
     socket_path: str,
 ) -> None:
+    """UDF worker event loop.
+
+    This worker can cache and execute multiple UDFs. It exits when its cache
+    becomes empty after a cleanup operation.
+    """
     # Initialize the client-side communication
     conn = Client(socket_path, authkey=secret)
-
-    # Wait for the expression projection
-    name, expr_projection_bytes = conn.recv()
-    if name != _ENTER:
-        raise ValueError(f"Expected '{_ENTER}' but got {name}")
-
     transport = SharedMemoryTransport()
 
     # Set the compute runtime num worker threads to 1 for the UDF worker
     set_compute_runtime_num_worker_threads(1)
+
+    # Cache of initialized UDF projections: udf_name -> ExpressionsProjection
+    udf_cache: dict[str, ExpressionsProjection] = {}
+
     try:
         conn.send(_READY)
 
-        expression_projection = None
         while True:
-            name, size = conn.recv()
-            if (name, size) == _SENTINEL:
+            msg = conn.recv()
+            if msg == _SENTINEL:
                 break
 
-            # We initialize after ready to avoid blocking the main thread
-            if expression_projection is None:
-                uninitialized_projection: ExpressionsProjection = daft.pickle.loads(expr_projection_bytes)
-                expression_projection = ExpressionsProjection([e._initialize_udfs() for e in uninitialized_projection])
+            msg_type = msg[0]
+            if msg_type == _INIT:
+                # INIT message: (msg_type, udf_name, expr_bytes)
+                _, udf_name, expr_bytes = msg
 
-            input_bytes = transport.read_and_release(name, size)
-            input = RecordBatch.from_ipc_stream(input_bytes)
+                # Initialize UDF if not already in cache
+                if udf_name not in udf_cache:
+                    uninitialized_projection: ExpressionsProjection = daft.pickle.loads(expr_bytes)
+                    udf_cache[udf_name] = ExpressionsProjection(
+                        [e._initialize_udfs() for e in uninitialized_projection]
+                    )
+                    conn.send(_SUCCESS)
+                else:
+                    conn.send(_SUCCESS)
 
-            evaluated, metrics = input.eval_expression_list_with_metrics(expression_projection)
+            elif msg_type == _EVAL:
+                # EVAL message: (msg_type, udf_name, shm_name, shm_size)
+                _, udf_name, shm_name, shm_size = msg
 
-            output_bytes = evaluated.to_ipc_stream()
-            out_name, out_size = transport.write_and_close(output_bytes)
+                # UDF must already be in cache (initialized via INIT)
+                if udf_name not in udf_cache:
+                    conn.send((_ERROR, f"UDF '{udf_name}' not in cache. Call INIT first."))
+                    continue
 
-            # Mark end of UDF's stdout and flush
-            print(_OUTPUT_DIVIDER.decode(), end="", file=sys.stderr, flush=True)
-            sys.stdout.flush()
-            sys.stderr.flush()
+                # Read input from shared memory
+                input_bytes = transport.read_and_release(shm_name, shm_size)
+                input_batch = RecordBatch.from_ipc_stream(input_bytes)
 
-            conn.send((_SUCCESS, out_name, out_size, metrics))
+                # Evaluate the UDF
+                projection = udf_cache[udf_name]
+                evaluated, metrics = input_batch.eval_expression_list_with_metrics(projection)
+
+                # Write output to shared memory
+                output_bytes = evaluated.to_ipc_stream()
+                out_name, out_size = transport.write_and_close(output_bytes)
+
+                # Mark end of UDF's stdout and flush
+                print(_OUTPUT_DIVIDER.decode(), end="", file=sys.stderr, flush=True)
+                sys.stdout.flush()
+                sys.stderr.flush()
+
+                conn.send((_SUCCESS, out_name, out_size, metrics))
+
+            elif msg_type == _CLEANUP_UDFS:
+                # CLEANUP_UDFS message: (msg_type, udf_names)
+                _, udf_names = msg
+
+                # Remove UDF from cache
+                for udf_name in udf_names:
+                    if udf_name in udf_cache:
+                        del udf_cache[udf_name]
+
+                conn.send(_SUCCESS)
+            else:
+                conn.send((_ERROR, f"Unknown message type: {msg_type}"))
+
     except UDFException as e:
         exc = e.__cause__
         assert exc is not None
@@ -116,4 +157,4 @@ if __name__ == "__main__":
         datefmt=os.getenv("LOG_DATE_FORMAT", "%Y-%m-%d %H:%M:%S"),
     )
 
-    udf_event_loop(secret, socket_path)
+    udf_worker_event_loop(secret, socket_path)

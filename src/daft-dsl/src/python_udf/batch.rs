@@ -1,4 +1,4 @@
-use std::{fmt::Display, num::NonZeroUsize, sync::Arc};
+use std::{fmt::Display, num::NonZeroUsize};
 
 use common_error::DaftResult;
 use common_metrics::MetricsCollector;
@@ -16,7 +16,7 @@ use crate::python_udf::{
 use crate::{
     Expr, ExprRef,
     functions::{
-        python::{OnError, RuntimePyObject},
+        python::{OnError, RuntimePyObject, UDFName},
         scalar::ScalarFn,
     },
     python_udf::PyScalarFn,
@@ -39,7 +39,7 @@ pub fn batch_udf(
     on_error: OnError,
 ) -> Expr {
     Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
-        function_name: Arc::from(name),
+        function_name: name.into(),
         cls,
         method,
         is_async,
@@ -57,7 +57,7 @@ pub fn batch_udf(
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct BatchPyFn {
-    pub function_name: Arc<str>,
+    pub function_name: UDFName,
     pub cls: RuntimePyObject,
     pub method: RuntimePyObject,
     pub is_async: bool,

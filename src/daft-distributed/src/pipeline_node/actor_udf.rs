@@ -76,7 +76,7 @@ impl UDFActors {
                         memory_request,
                         py_ray_options,
                         actor_ready_timeout,
-                        actor_name,
+                        actor_name.as_ref(),
                     ),
                 )
             })

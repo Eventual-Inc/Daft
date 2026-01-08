@@ -197,6 +197,8 @@ impl ConcreteTreeNode for Box<dyn PipelineNode> {
 pub struct RuntimeContext {
     index_counter: std::cell::RefCell<usize>,
     context: HashMap<String, String>,
+    #[cfg(feature = "python")]
+    process_pool: Arc<crate::udf_process_pool::ProcessPoolManager>,
 }
 
 impl RuntimeContext {
@@ -208,7 +210,26 @@ impl RuntimeContext {
         Self {
             index_counter: std::cell::RefCell::new(0),
             context,
+            #[cfg(feature = "python")]
+            process_pool: std::sync::Arc::new(crate::udf_process_pool::ProcessPoolManager::new()),
         }
+    }
+
+    #[cfg(feature = "python")]
+    pub fn new_with_process_pool(
+        context: HashMap<String, String>,
+        process_pool: Arc<crate::udf_process_pool::ProcessPoolManager>,
+    ) -> Self {
+        Self {
+            index_counter: std::cell::RefCell::new(0),
+            context,
+            process_pool,
+        }
+    }
+
+    #[cfg(feature = "python")]
+    pub fn process_pool(&self) -> &Arc<crate::udf_process_pool::ProcessPoolManager> {
+        &self.process_pool
     }
 
     pub fn next_id(&self) -> usize {
@@ -601,6 +622,19 @@ fn physical_plan_to_pipeline(
                 )
                 .boxed()
             } else {
+                #[cfg(feature = "python")]
+                let proj_op = UdfOperator::try_new(
+                    expr.clone(),
+                    udf_properties.clone(),
+                    passthrough_columns.clone(),
+                    schema,
+                    input.schema(),
+                    ctx.process_pool().clone(),
+                )
+                .with_context(|_| PipelineCreationSnafu {
+                    plan_name: physical_plan.name(),
+                })?;
+                #[cfg(not(feature = "python"))]
                 let proj_op = UdfOperator::try_new(
                     expr.clone(),
                     udf_properties.clone(),

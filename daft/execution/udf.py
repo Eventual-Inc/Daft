@@ -8,22 +8,22 @@ import sys
 import tempfile
 from multiprocessing import resource_tracker, shared_memory
 from multiprocessing.connection import Listener
-from typing import IO, TYPE_CHECKING, cast
+from typing import IO, Any, cast
 
 import daft.pickle
-from daft.daft import OperatorMetrics, PyRecordBatch
+from daft import Expression
+from daft.daft import OperatorMetrics, PyExpr, PyRecordBatch
 from daft.errors import UDFException
-from daft.expressions import Expression, ExpressionsProjection
-
-if TYPE_CHECKING:
-    from daft.daft import PyExpr
+from daft.expressions import ExpressionsProjection
 
 logger = logging.getLogger(__name__)
 
-_ENTER = "__ENTER__"
+_INIT = "__INIT__"
+_EVAL = "__EVAL__"
 _READY = "ready"
 _SUCCESS = "success"
 _UDF_ERROR = "udf_error"
+_CLEANUP_UDFS = "__CLEANUP_UDFS__"
 _ERROR = "error"
 _OUTPUT_DIVIDER = b"_DAFT_OUTPUT_DIVIDER_\n"
 _SENTINEL = ("__EXIT__", 0)
@@ -54,8 +54,15 @@ class SharedMemoryTransport:
         return data
 
 
-class UdfHandle:
-    def __init__(self, udf_expr: PyExpr) -> None:
+class UdfWorkerHandle:
+    """Handle for a udf worker process in the global UDF process pool.
+
+    This worker can cache and execute multiple UDFs, with state persisted
+    across invocations.
+    """
+
+    def __init__(self) -> None:
+        """Start a new udf worker process."""
         # Construct UNIX socket path for basic communication
         with tempfile.NamedTemporaryFile(delete=True) as tmp:
             self.socket_path = tmp.name
@@ -97,40 +104,121 @@ class UdfHandle:
         self.handle_conn = self.listener.accept()
         self.transport = SharedMemoryTransport()
 
-        # Serialize and send the expression projection
-        expr_projection = ExpressionsProjection([Expression._from_pyexpr(udf_expr)])
-        expr_projection_bytes = daft.pickle.dumps(expr_projection)
-        self.handle_conn.send((_ENTER, expr_projection_bytes))
+        # Wait for ready signal
         response = self.handle_conn.recv()
         if response != _READY:
             raise RuntimeError(f"Expected '{_READY}' but got {response}")
 
+    def is_alive(self) -> bool:
+        """Check if the worker process is still running."""
+        return self.process.poll() is None
+
+    def get_exit_code(self) -> int | None:
+        """Get the exit code of the worker process, or None if still running."""
+        return self.process.poll()
+
+    def get_termination_signal(self) -> str | None:
+        """Get termination signal name if process was killed by signal."""
+        exit_code = self.get_exit_code()
+        if exit_code is None:
+            return None
+
+        # Negative exit codes indicate signals on Unix
+        if exit_code < 0:
+            signal_num = -exit_code
+            # Map common signals
+            signal_map = {
+                6: "SIGABRT (abort/assertion failure)",
+                9: "SIGKILL (killed)",
+                11: "SIGSEGV (segmentation fault)",
+                15: "SIGTERM (terminated)",
+            }
+            return signal_map.get(signal_num, f"signal {signal_num}")
+        return None
+
+    def _format_termination_error(self) -> str:
+        """Format an error message based on how the process terminated."""
+        signal = self.get_termination_signal()
+        if signal:
+            msg = f"UDF worker process terminated by {signal}"
+        else:
+            exit_code = self.get_exit_code()
+            msg = f"UDF worker process has terminated with exit code {exit_code}"
+        return msg
+
+    def _raise_if_dead(self) -> None:
+        """Raise RuntimeError if worker is dead, with diagnostic information."""
+        if not self.is_alive():
+            raise RuntimeError(self._format_termination_error())
+
+    def _recv_response(self) -> Any:
+        """Receive response from worker with connection error handling."""
+        try:
+            return self.handle_conn.recv()
+        except EOFError as e:
+            stdout = self.trace_output()
+            raise RuntimeError(
+                f"{self._format_termination_error()}. Connection error: {type(e).__name__}, stdout: {stdout}"
+            )
+
     def trace_output(self) -> list[str]:
+        """Read any pending stdout from the worker process."""
         lines = []
         while True:
             line = cast("IO[bytes]", self.process.stdout).readline()
-            # UDF process is expected to return the divider
-            # after initialization and every iteration
-            if line == b"" or line == _OUTPUT_DIVIDER or self.process.poll() is not None:
+            if line == b"" or line == _OUTPUT_DIVIDER or not self.is_alive():
                 break
             lines.append(line.decode().rstrip())
         return lines
 
-    def eval_input(self, input: PyRecordBatch) -> tuple[PyRecordBatch, list[str], OperatorMetrics]:
-        if self.process.poll() is not None:
-            raise RuntimeError("UDF process has terminated")
+    def init_udf(self, udf_name: str, py_expr: PyExpr) -> None:
+        """Initialize a UDF on this worker.
 
+        Args:
+            udf_name: Unique identifier for the UDF
+            py_expr: PyExpr object that will be pickled
+        """
+        self._raise_if_dead()
+
+        expression = Expression._from_pyexpr(py_expr)
+        expr_projection = ExpressionsProjection([expression])
+
+        # Serialize the projection
+        expr_bytes = daft.pickle.dumps(expr_projection)
+
+        # Send INIT message
+        self.handle_conn.send((_INIT, udf_name, expr_bytes))
+
+        response = self._recv_response()
+        if response != _SUCCESS:
+            raise RuntimeError(f"UDF initialization failed: unexpected response from worker: {response}")
+
+    def eval_input(
+        self,
+        udf_name: str,
+        input: PyRecordBatch,
+    ) -> tuple[PyRecordBatch, list[str], OperatorMetrics]:
+        """Execute a UDF on the given input.
+
+        Args:
+            udf_name: Unique identifier for the UDF (must be initialized via init_udf first)
+            input: Input data to process
+
+        Returns:
+            Tuple of (output data, stdout lines, metrics)
+        """
+        self._raise_if_dead()
+
+        # Serialize input data to shared memory
         serialized = input.to_ipc_stream()
         shm_name, shm_size = self.transport.write_and_close(serialized)
-        self.handle_conn.send((shm_name, shm_size))
 
-        try:
-            response = self.handle_conn.recv()
-        except EOFError:
-            stdout = self.trace_output()
-            raise RuntimeError(f"UDF process closed the connection unexpectedly (EOF reached), stdout: {stdout}")
+        # Send EVAL message with UDF name and data location
+        self.handle_conn.send((_EVAL, udf_name, shm_name, shm_size))
 
+        response = self._recv_response()
         stdout = self.trace_output()
+
         if response[0] == _UDF_ERROR:
             try:
                 base_exc: Exception | None = daft.pickle.loads(response[3])
@@ -159,20 +247,41 @@ class UdfHandle:
             deserialized = PyRecordBatch.from_ipc_stream(output_bytes)
             return (deserialized, stdout, metrics)
         else:
-            raise RuntimeError(f"Unknown response from actor: {response}")
+            raise RuntimeError(f"Evaluation failed: unexpected response from UDF worker: {response}")
 
-    def teardown(self, timeout: float = 5.0) -> None:
+    def cleanup_udfs(self, udf_names: list[str]) -> None:
+        """Clean up UDFs on this worker, removing their state from the cache.
+
+        Args:
+            udf_names: List of unique identifiers for the UDFs
+
+        Raises:
+            RuntimeError: If worker is dead, connection fails, or cleanup fails
+        """
+        self._raise_if_dead()
+
+        self.handle_conn.send((_CLEANUP_UDFS, udf_names))
+        response = self._recv_response()
+
+        if response != _SUCCESS:
+            raise RuntimeError(f"UDF cleanup failed: unexpected response from UDF worker: {response}")
+
+    def shutdown(self, timeout: float = 5.0) -> None:
+        """Gracefully shut down the UDF worker process."""
+        if not self.is_alive():
+            logger.warning("UDF worker process is already terminated; skipping shutdown")
+            return
+
         try:
             self.handle_conn.send(_SENTINEL)
         except (BrokenPipeError, EOFError):
-            # If the connection is broken, just exit and join the process.
             pass
         self.handle_conn.close()
         self.listener.close()
 
         self.process.wait(timeout)
-        if self.process.poll() is None:
-            logger.warning("UDF did not shut down in time; terminating...")
+        if self.is_alive():
+            logger.warning("UDF worker did not shut down in time; terminating...")
             self.process.terminate()
             self.process.wait()
 

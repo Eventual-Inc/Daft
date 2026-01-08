@@ -17,7 +17,10 @@ use serde::{Deserialize, Serialize};
 use crate::python_udf::retry_with_backoff;
 use crate::{
     Expr, ExprRef,
-    functions::{python::RuntimePyObject, scalar::ScalarFn},
+    functions::{
+        python::{RuntimePyObject, UDFName},
+        scalar::ScalarFn,
+    },
     python_udf::PyScalarFn,
 };
 
@@ -54,7 +57,7 @@ pub fn row_wise_udf(
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RowWisePyFn {
-    pub function_name: Arc<str>,
+    pub function_name: UDFName,
     pub cls: RuntimePyObject,
     pub method: RuntimePyObject,
     pub is_async: bool,

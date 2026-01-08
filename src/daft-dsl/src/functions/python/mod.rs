@@ -113,7 +113,7 @@ impl WrappedUDFClass {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct LegacyPythonUDF {
-    pub name: Arc<String>,
+    pub name: UDFName,
     pub func: MaybeInitializedUDF,
     pub bound_args: RuntimePyObject,
     pub num_expressions: usize,
@@ -129,7 +129,7 @@ impl LegacyPythonUDF {
     #[cfg(feature = "test-utils")]
     pub fn new_testing_udf() -> Self {
         Self {
-            name: Arc::new("dummy_udf".to_string()),
+            name: "dummy_udf".into(),
             func: MaybeInitializedUDF::Uninitialized {
                 inner: RuntimePyObject::new_none(),
                 init_args: RuntimePyObject::new_none(),
@@ -162,7 +162,7 @@ pub fn udf(
 ) -> DaftResult<Expr> {
     Ok(Expr::Function {
         func: super::FunctionExpr::Python(LegacyPythonUDF {
-            name: name.to_string().into(),
+            name: name.into(),
             func: MaybeInitializedUDF::Uninitialized { inner, init_args },
             bound_args,
             num_expressions: expressions.len(),
@@ -268,9 +268,11 @@ pub fn initialize_udfs(expr: ExprRef) -> DaftResult<ExprRef> {
     .map(|transformed| transformed.data)
 }
 
+pub type UDFName = Arc<str>;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct UDFProperties {
-    pub name: String,
+    pub name: Arc<str>,
     pub resource_request: Option<ResourceRequest>,
     pub batch_size: Option<usize>,
     pub concurrency: Option<NonZeroUsize>,
@@ -304,7 +306,7 @@ impl UDFProperties {
                 } => {
                     num_udfs += 1;
                     udf_properties = Some(Self {
-                        name: name.as_ref().clone(),
+                        name: name.clone(),
                         resource_request: resource_request.clone(),
                         batch_size: *batch_size,
                         concurrency: *concurrency,
@@ -319,7 +321,7 @@ impl UDFProperties {
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(row_wise_fn))) => {
                     num_udfs += 1;
                     udf_properties = Some(Self {
-                        name: row_wise_fn.function_name.to_string(),
+                        name: row_wise_fn.function_name.clone(),
                         resource_request: Some(ResourceRequest::try_new_internal(
                             None,
                             Some(row_wise_fn.gpus.0),
@@ -348,7 +350,7 @@ impl UDFProperties {
                 }))) => {
                     num_udfs += 1;
                     udf_properties = Some(Self {
-                        name: function_name.to_string(),
+                        name: function_name.clone(),
                         resource_request: Some(ResourceRequest::try_new_internal(
                             None,
                             Some(gpus.0),
