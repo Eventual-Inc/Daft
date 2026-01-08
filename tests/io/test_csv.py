@@ -57,6 +57,13 @@ PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumer
             DataType.timestamp(TimeUnit.s()),
         ),
         (
+            [datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None],
+            pa.timestamp("us", tz="America/New_York"),
+            DataType.timestamp(TimeUnit.us(), timezone="America/New_York"),
+            # NOTE: Timezone inference uses the offset value, not the timezone string
+            DataType.timestamp(TimeUnit.s(), timezone="-05:00"),
+        ),
+        (
             [datetime.timedelta(days=1), datetime.timedelta(days=2), None],
             pa.duration("ms"),
             DataType.duration(TimeUnit.ms()),
