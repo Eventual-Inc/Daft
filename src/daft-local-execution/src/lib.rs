@@ -1,15 +1,17 @@
 mod buffer;
 mod channel;
+mod concat;
 mod dispatcher;
 mod dynamic_batching;
 mod intermediate_ops;
+mod join;
 mod pipeline;
+mod plan_input;
 mod resource_manager;
 mod run;
 mod runtime_stats;
 mod sinks;
 mod sources;
-mod state_bridge;
 mod streaming_sink;
 use std::{
     future::Future,
@@ -22,8 +24,8 @@ use arc_swap::ArcSwap;
 use common_error::{DaftError, DaftResult};
 use common_runtime::{RuntimeRef, RuntimeTask};
 use console::style;
+pub use plan_input::PlanInput;
 use resource_manager::MemoryManager;
-pub use run::{ExecutionEngineResult, NativeExecutor};
 use runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle, TimedFuture};
 use snafu::{ResultExt, Snafu, futures::TryFutureExt};
 use tracing::Instrument;
@@ -347,8 +349,9 @@ type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
-    use run::PyNativeExecutor;
+    use run::{PyNativeExecutor, PyResultReceiver};
 
     parent.add_class::<PyNativeExecutor>()?;
+    parent.add_class::<PyResultReceiver>()?;
     Ok(())
 }

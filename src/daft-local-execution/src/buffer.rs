@@ -35,9 +35,9 @@ impl RowBasedBuffer {
     }
 
     // Push a morsel to the buffer
-    pub fn push(&mut self, part: &Arc<MicroPartition>) {
+    pub fn push(&mut self, part: Arc<MicroPartition>) {
         self.curr_len += part.len();
-        self.buffer.push_back(part.clone());
+        self.buffer.push_back(part);
     }
 
     fn buffer_state(&self) -> BufferState {
@@ -159,12 +159,12 @@ mod tests {
         assert_eq!(buffer.buffer_state(), BufferState::BelowLowerBound);
 
         // Add small chunk - should stay below lower bound
-        buffer.push(&make_dummy_mp(5));
+        buffer.push(make_dummy_mp(5));
         assert_eq!(buffer.buffer_state(), BufferState::BelowLowerBound);
         assert!(buffer.pop_enough()?.is_none());
 
         // Add more to get within range
-        buffer.push(&make_dummy_mp(10));
+        buffer.push(make_dummy_mp(10));
         assert_eq!(buffer.buffer_state(), BufferState::WithinRange);
 
         // Pop should return combined chunks
@@ -173,7 +173,7 @@ mod tests {
         assert_eq!(popped[0].len(), 15);
 
         // Add chunks to exceed upper bound
-        buffer.push(&make_dummy_mp(25));
+        buffer.push(make_dummy_mp(25));
         assert_eq!(buffer.buffer_state(), BufferState::AboveUpperBound);
 
         // Should return chunks of upper_bound size
@@ -196,8 +196,8 @@ mod tests {
         assert!(buffer.pop_all()?.is_none());
 
         // Add some chunks below upper bound
-        buffer.push(&make_dummy_mp(5));
-        buffer.push(&make_dummy_mp(5));
+        buffer.push(make_dummy_mp(5));
+        buffer.push(make_dummy_mp(5));
 
         // pop_all should return combined chunks
         let popped = buffer.pop_all()?.unwrap();

@@ -524,7 +524,6 @@ pub async fn local_parquet_stream(
     predicate: Option<ExprRef>,
     schema_infer_options: ParquetSchemaInferenceOptions,
     metadata: Option<Arc<parquet2::metadata::FileMetaData>>,
-    maintain_order: bool,
     io_stats: Option<IOStatsRef>,
     chunk_size: Option<usize>,
 ) -> DaftResult<(
@@ -592,10 +591,7 @@ pub async fn local_parquet_stream(
     let stream_of_streams =
         futures::stream::iter(output_receivers.into_iter().map(ReceiverStream::new));
     let parquet_task = parquet_task.map(|x| x?);
-    let combined = match maintain_order {
-        true => combine_stream(stream_of_streams.flatten(), parquet_task).boxed(),
-        false => combine_stream(stream_of_streams.flatten_unordered(None), parquet_task).boxed(),
-    };
+    let combined = combine_stream(stream_of_streams.flatten_unordered(None), parquet_task).boxed();
     Ok((metadata, combined))
 }
 

@@ -9,7 +9,7 @@ export type OperatorStatus = "Pending" | "Executing" | "Finished";
 export type NodeInfo = {
   name: string;
   id: number;
-  node_category: "Intermediate" | "Source" | "StreamingSink" | "BlockingSink";
+  node_category: "Intermediate" | "Source" | "StreamingSink" | "BlockingSink" | "Join";
   context: Record<string, string>;
 };
 

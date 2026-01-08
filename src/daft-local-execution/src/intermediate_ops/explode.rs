@@ -11,9 +11,7 @@ use itertools::Itertools;
 use opentelemetry::{KeyValue, global};
 use tracing::{Span, instrument};
 
-use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
-};
+use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
 use crate::{
     ExecutionTaskSpawner,
     pipeline::NodeName,
@@ -112,10 +110,7 @@ impl IntermediateOperator for ExplodeOperator {
             .spawn(
                 async move {
                     let out = input.explode(&to_explode, index_column.as_deref())?;
-                    Ok((
-                        state,
-                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
-                    ))
+                    Ok((state, Arc::new(out)))
                 },
                 Span::current(),
             )
@@ -137,8 +132,8 @@ impl IntermediateOperator for ExplodeOperator {
         "Explode".into()
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
-        Ok(())
+    fn make_state(&self) -> Self::State {
+        ()
     }
 
     fn op_type(&self) -> NodeType {

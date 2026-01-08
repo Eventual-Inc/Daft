@@ -398,7 +398,6 @@ impl ParquetFileReader {
     pub async fn read_from_ranges_into_table_stream(
         self,
         ranges: Arc<RangesContainer>,
-        maintain_order: bool,
         predicate: Option<ExprRef>,
         original_columns: Option<Vec<String>>,
         original_num_rows: Option<usize>,
@@ -542,12 +541,7 @@ impl ParquetFileReader {
         let stream_of_streams =
             futures::stream::iter(receivers.into_iter().map(ReceiverStream::new));
         let parquet_task = parquet_task.map(|x| x?);
-        match maintain_order {
-            true => Ok(combine_stream(stream_of_streams.flatten(), parquet_task).boxed()),
-            false => {
-                Ok(combine_stream(stream_of_streams.flatten_unordered(None), parquet_task).boxed())
-            }
-        }
+        Ok(combine_stream(stream_of_streams.flatten_unordered(None), parquet_task).boxed())
     }
 
     pub async fn read_from_ranges_into_table(

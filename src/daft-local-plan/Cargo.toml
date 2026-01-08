@@ -5,9 +5,11 @@ common-py-serde = {path = "../common/py-serde", default-features = false}
 common-resource-request = {path = "../common/resource-request", default-features = false}
 common-scan-info = {path = "../common/scan-info", default-features = false}
 common-treenode = {path = "../common/treenode", default-features = false}
+common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
+daft-scan = {path = "../daft-scan", default-features = false}
 log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
@@ -25,7 +27,8 @@ python = [
   "common-py-serde/python",
   "daft-core/python",
   "daft-dsl/python",
-  "daft-logical-plan/python"
+  "daft-logical-plan/python",
+  "daft-scan/python"
 ]
 
 [lints]

@@ -9,10 +9,7 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-    BlockingSinkStatus,
-};
+use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) enum AggregateState {
@@ -93,7 +90,7 @@ impl BlockingSink for AggregateSink {
                 async move {
                     let agged = Arc::new(input.agg(&params.sink_agg_exprs, &[])?);
                     state.push(agged);
-                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                    Ok(state)
                 },
                 Span::current(),
             )
@@ -105,7 +102,7 @@ impl BlockingSink for AggregateSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let params = self.agg_sink_params.clone();
         spawner
             .spawn(
@@ -114,9 +111,7 @@ impl BlockingSink for AggregateSink {
                     let concated = MicroPartition::concat(all_parts)?;
                     let agged = concated.agg(&params.finalize_agg_exprs, &[])?;
                     let projected = agged.eval_expression_list(&params.final_projections)?;
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
-                        projected,
-                    )]))
+                    Ok(vec![Arc::new(projected)])
                 },
                 Span::current(),
             )

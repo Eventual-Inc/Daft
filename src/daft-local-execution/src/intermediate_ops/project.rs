@@ -13,9 +13,7 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
-};
+use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
 use crate::{
     ExecutionTaskSpawner,
     dynamic_batching::{
@@ -133,10 +131,7 @@ impl IntermediateOperator for ProjectOperator {
                             .eval_expression_list_async(Arc::unwrap_or_clone(projection))
                             .await?
                     };
-                    Ok((
-                        state,
-                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
-                    ))
+                    Ok((state, Arc::new(out)))
                 },
                 Span::current(),
             )
@@ -160,8 +155,8 @@ impl IntermediateOperator for ProjectOperator {
         res
     }
 
-    fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(self.max_concurrency)
+    fn max_concurrency(&self) -> usize {
+        self.max_concurrency
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
@@ -169,8 +164,8 @@ impl IntermediateOperator for ProjectOperator {
             .map(|batch_size| MorselSizeRequirement::Flexible(0, batch_size))
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
-        Ok(())
+    fn make_state(&self) -> Self::State {
+        ()
     }
 
     fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {

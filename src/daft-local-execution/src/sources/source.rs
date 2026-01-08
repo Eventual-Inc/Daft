@@ -16,7 +16,6 @@ use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
-use daft_micropartition::MicroPartition;
 use futures::{StreamExt, stream::BoxStream};
 use opentelemetry::{KeyValue, global};
 
@@ -24,10 +23,11 @@ use crate::{
     ExecutionRuntimeContext,
     channel::{Receiver, create_channel},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
+    plan_input::PipelineMessage,
     runtime_stats::{Counter, CountingSender, RuntimeStats},
 };
 
-pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
+pub type SourceStream<'a> = BoxStream<'a, DaftResult<PipelineMessage>>;
 
 pub(crate) struct SourceStats {
     cpu_us: Counter,
@@ -88,9 +88,9 @@ pub trait Source: Send + Sync {
     fn multiline_display(&self) -> Vec<String>;
     async fn get_data(
         &self,
-        maintain_order: bool,
         io_stats: IOStatsRef,
         chunk_size: usize,
+        maintain_order: bool,
     ) -> DaftResult<SourceStream<'static>>;
     fn schema(&self) -> &SchemaRef;
 }
@@ -206,40 +206,27 @@ impl PipelineNode for SourceNode {
         &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<Receiver<PipelineMessage>> {
         let source = self.source.clone();
         let io_stats = self.runtime_stats.io_stats.clone();
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
 
-        let (destination_sender, destination_receiver) = create_channel(0);
+        let (destination_sender, destination_receiver) = create_channel(1);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
         let chunk_size = match self.morsel_size_requirement {
             MorselSizeRequirement::Strict(size) => size,
             MorselSizeRequirement::Flexible(_, upper) => upper,
         };
-
         runtime_handle.spawn(
             async move {
-                let mut has_data = false;
-                let mut source_stream = source
-                    .get_data(maintain_order, io_stats, chunk_size)
-                    .await?;
+                let mut source_stream = source.get_data(io_stats, chunk_size, maintain_order).await?;
                 stats_manager.activate_node(node_id);
-
                 while let Some(part) = source_stream.next().await {
-                    has_data = true;
-                    if counting_sender.send(part?).await.is_err() {
-                        stats_manager.finalize_node(node_id);
-                        return Ok(());
+                    let message: PipelineMessage = part?;
+                    if counting_sender.send(message).await.is_err() {
                     }
                 }
-                if !has_data {
-                    stats_manager.activate_node(node_id);
-                    let empty = Arc::new(MicroPartition::empty(Some(source.schema().clone())));
-                    let _ = counting_sender.send(empty).await;
-                }
-
                 stats_manager.finalize_node(node_id);
                 Ok(())
             },

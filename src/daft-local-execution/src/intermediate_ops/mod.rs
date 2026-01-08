@@ -1,8 +1,6 @@
-pub mod cross_join;
 pub mod distributed_actor_pool_project;
 pub mod explode;
 pub mod filter;
-pub mod inner_hash_join_probe;
 pub mod intermediate_op;
 pub mod into_batches;
 pub mod project;

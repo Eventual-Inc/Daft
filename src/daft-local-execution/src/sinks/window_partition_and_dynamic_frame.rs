@@ -13,10 +13,7 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::{
-    blocking_sink::{
-        BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult,
-        BlockingSinkSinkResult, BlockingSinkStatus,
-    },
+    blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult},
     window_base::{WindowBaseState, WindowSinkParams},
 };
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
@@ -102,7 +99,7 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
             .spawn(
                 async move {
                     state.push(input, params.partition_by(), &sink_name)?;
-                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                    Ok(state)
                 },
                 Span::current(),
             )
@@ -114,7 +111,7 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let params = self.window_partition_and_dynamic_frame_params.clone();
         let num_partitions = self.num_partitions();
 
@@ -213,9 +210,7 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
                     if results.is_empty() {
                         let empty_result =
                             MicroPartition::empty(Some(params.original_schema.clone()));
-                        return Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
-                            empty_result,
-                        )]));
+                        return Ok(vec![Arc::new(empty_result)]);
                     }
 
                     let final_result = MicroPartition::new_loaded(
@@ -223,9 +218,7 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
                         results.into(),
                         None,
                     );
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
-                        final_result,
-                    )]))
+                    Ok(vec![Arc::new(final_result)])
                 },
                 Span::current(),
             )

@@ -6,6 +6,7 @@ import os
 import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NamedTuple
+from datetime import datetime  # <-- added
 
 from daft.daft import (
     DistributedPhysicalPlan,
@@ -44,7 +45,7 @@ logger = logging.getLogger(__name__)
 
 class SwordfishTaskMetadata(NamedTuple):
     partition_metadatas: list[PartitionMetadata]
-    stats: bytes
+    stats: bytes | None
 
 
 @ray.remote
@@ -61,6 +62,7 @@ class RaySwordfishActor:
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
         set_compute_runtime_num_worker_threads(num_cpus)
         set_event_loop(asyncio.get_running_loop())
+        self.native_executor = NativeExecutor()
 
     async def run_plan(
         self,
@@ -68,29 +70,67 @@ class RaySwordfishActor:
         exec_cfg: PyDaftExecutionConfig,
         psets: dict[str, list[ray.ObjectRef]],
         context: dict[str, str] | None,
+        scan_tasks: dict[str, list] | None = None,
+        glob_paths: dict[str, list[str]] | None = None,
     ) -> AsyncGenerator[MicroPartition | SwordfishTaskMetadata, None]:
         """Run a plan on swordfish and yield partitions."""
         # We import PyDaftContext inside the function because PyDaftContext is not serializable.
         from daft.daft import PyDaftContext
 
         with profile():
+            # Get task_id from the context to use as input_id
+            task_id = int(context.get("task_id", "0")) if context else 0
+
+            # Await the partition refs from Ray
             psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
+
+            # Extract the _micropartition objects for enqueueing
             psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
 
-            metas = []
-            native_executor = NativeExecutor()
+            # Run plan (creating if needed) and enqueue all inputs across all source_ids in a single call
             ctx = PyDaftContext()
             ctx._daft_execution_config = exec_cfg
-            result_handle = native_executor.run(plan, psets_mp, ctx, None, context)
-            async for partition in result_handle:
+            result_receiver = await self.native_executor.run(
+                plan,
+                ctx,
+                task_id,
+                context,
+                scan_tasks if scan_tasks and len(scan_tasks) > 0 else None,
+                psets_mp if psets_mp and len(psets_mp) > 0 else None,
+                glob_paths if glob_paths and len(glob_paths) > 0 else None,
+            )
+            
+            # Get fingerprint for mark_input_complete later
+            fingerprint = plan.fingerprint()
+
+            if result_receiver is None:
+                # Plan was cancelled or channel closed before we could get the receiver
+                yield SwordfishTaskMetadata(partition_metadatas=[], stats=None)
+                return
+
+            metas = []
+            async for partition in result_receiver:
                 if partition is None:
                     break
                 mp = MicroPartition._from_pymicropartition(partition)
                 metas.append(PartitionMetadata.from_table(mp))
                 yield mp
 
-            stats = await result_handle.finish()
-            yield SwordfishTaskMetadata(partition_metadatas=metas, stats=stats)
+            # Mark input as complete and check for execution errors during iteration
+            # This propagates any errors from the shared execution to this task
+            # If this was the last active input, this will finish the plan
+            await self.native_executor.mark_input_complete(fingerprint, task_id)
+
+            # PyResultReceiver will be dropped here, auto-decrementing refcount
+            # If this was the last receiver, NativeExecutor will automatically call finish()
+
+            # Ignore stats for now (always None)
+            yield SwordfishTaskMetadata(partition_metadatas=metas, stats=None)
+
+    async def cancel(self, plan: LocalPhysicalPlan) -> None:
+        """Cancel a plan by fingerprint."""
+        fingerprint = plan.fingerprint()
+        self.native_executor.cancel_plan(fingerprint)
 
 
 @ray.remote  # type: ignore[untyped-decorator]
@@ -130,6 +170,7 @@ class RaySwordfishTaskHandle:
 
     result_handle: ray.ObjectRef
     actor_handle: ray.actor.ActorHandle
+    plan: LocalPhysicalPlan
     task: asyncio.Task[RayTaskResult] | None = None
 
     async def _get_result(self) -> RayTaskResult:
@@ -160,9 +201,8 @@ class RaySwordfishTaskHandle:
         return await self.task
 
     def cancel(self) -> None:
-        if self.task:
-            self.task.cancel()
-        ray.cancel(self.result_handle)
+        # Cancel the plan on the actor
+        self.actor_handle.cancel.remote(self.plan)
 
 
 class RaySwordfishActorHandle:
@@ -179,12 +219,21 @@ class RaySwordfishActorHandle:
 
     def submit_task(self, task: RaySwordfishTask) -> RaySwordfishTaskHandle:
         psets = {k: [v.object_ref for v in v] for k, v in task.psets().items()}
+        # Get scan_tasks if available (now returns HashMap<String, Vec<PyScanTask>>)
+        scan_tasks = task.scan_tasks()
+        # Pass the HashMap directly (or empty dict if None)
+        scan_tasks_map = scan_tasks if scan_tasks is not None else {}
+        # Get glob_paths if available
+        glob_paths = task.glob_paths()
+        glob_paths_map = glob_paths if glob_paths is not None else {}
+        plan = task.plan()
         result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(
-            task.plan(), task.config(), psets, task.context()
+            plan, task.config(), psets, task.context(), scan_tasks_map, glob_paths_map
         )
         return RaySwordfishTaskHandle(
             result_handle,
             self.actor_handle,
+            plan,
         )
 
     def shutdown(self) -> None:

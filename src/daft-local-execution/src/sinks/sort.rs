@@ -7,10 +7,7 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-    BlockingSinkStatus,
-};
+use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) enum SortState {
@@ -70,7 +67,7 @@ impl BlockingSink for SortSink {
         _spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         state.push(input);
-        Ok(BlockingSinkStatus::NeedMoreInput(state)).into()
+        Ok(state).into()
     }
 
     #[instrument(skip_all, name = "SortSink::finalize")]
@@ -78,7 +75,7 @@ impl BlockingSink for SortSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let params = self.params.clone();
         spawner
             .spawn(
@@ -90,7 +87,7 @@ impl BlockingSink for SortSink {
                         &params.descending,
                         &params.nulls_first,
                     )?);
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![sorted]))
+                    Ok(vec![sorted])
                 },
                 Span::current(),
             )
@@ -129,5 +126,9 @@ impl BlockingSink for SortSink {
 
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(SortState::Building(Vec::new()))
+    }
+
+    fn max_concurrency(&self) -> usize {
+        1
     }
 }

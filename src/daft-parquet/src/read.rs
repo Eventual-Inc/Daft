@@ -380,7 +380,6 @@ async fn stream_parquet_single(
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     metadata: Option<Arc<FileMetaData>>,
     delete_rows: Option<Vec<i64>>,
-    maintain_order: bool,
     chunk_size: Option<usize>,
 ) -> DaftResult<impl Stream<Item = DaftResult<RecordBatch>> + Send> {
     let field_id_mapping_provided = field_id_mapping.is_some();
@@ -424,7 +423,6 @@ async fn stream_parquet_single(
             predicate.clone(),
             schema_infer_options,
             metadata,
-            maintain_order,
             io_stats,
             chunk_size,
         )
@@ -473,7 +471,6 @@ async fn stream_parquet_single(
             parquet_reader
                 .read_from_ranges_into_table_stream(
                     ranges,
-                    maintain_order,
                     predicate.clone(),
                     columns_to_return,
                     num_rows_to_return,
@@ -888,7 +885,6 @@ pub async fn stream_parquet(
     schema_infer_options: &ParquetSchemaInferenceOptions,
     field_id_mapping: Option<Arc<BTreeMap<i32, Field>>>,
     metadata: Option<Arc<FileMetaData>>,
-    maintain_order: bool,
     delete_rows: Option<Vec<i64>>,
     chunk_size: Option<usize>,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
@@ -904,7 +900,6 @@ pub async fn stream_parquet(
         field_id_mapping,
         metadata,
         delete_rows,
-        maintain_order,
         chunk_size,
     )
     .await?;
@@ -1216,7 +1211,6 @@ mod tests {
                 &Default::default(),
                 None,
                 None,
-                false,
                 None,
                 None,
             )

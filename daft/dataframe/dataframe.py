@@ -6,7 +6,6 @@
 # For technical details, see https://github.com/Eventual-Inc/Daft/pull/630
 
 import io
-import multiprocessing
 import os
 import pathlib
 import typing
@@ -406,7 +405,7 @@ class DataFrame:
         Tip:
             See also [`df.iter_rows()`][daft.DataFrame.iter_rows]: iterator over rows with more options
         """
-        return self.iter_rows(results_buffer_size=None)
+        return self.iter_rows()
 
     @DataframePublicAPI
     def iter_rows(
@@ -424,18 +423,8 @@ class DataFrame:
 
         Args:
             results_buffer_size: how many partitions to allow in the results buffer (defaults to the total number of CPUs
-                available on the machine).
+                available on the machine). # deprecated
             column_format: the format of the columns to iterate over. One of "python" or "arrow". Defaults to "python".
-
-        Note: A quick note on configuring asynchronous/parallel execution using `results_buffer_size`.
-            The `results_buffer_size` kwarg controls how many results Daft will allow to be in the buffer while iterating.
-            Once this buffer is filled, Daft will not run any more work until some partition is consumed from the buffer.
-
-            * Increasing this value means the iterator will consume more memory and CPU resources but have higher throughput
-            * Decreasing this value means the iterator will consume lower memory and CPU resources, but have lower throughput
-            * Setting this value to `None` means the iterator will consume as much resources as it deems appropriate per-iteration
-
-            The default value is the total number of CPUs available on the current machine.
 
         Returns:
             Iterator[dict[str, Any]]: An iterator over the rows of the DataFrame, where each row is a dictionary
@@ -454,8 +443,6 @@ class DataFrame:
         Tip:
             See also [`df.iter_partitions()`][daft.DataFrame.iter_partitions]: iterator over entire partitions instead of single rows
         """
-        if results_buffer_size == "num_cpus":
-            results_buffer_size = multiprocessing.cpu_count()
 
         def arrow_iter_rows(table: "pyarrow.Table") -> Iterator[dict[str, Any]]:
             columns = table.columns
@@ -482,7 +469,7 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             partitions_iter = get_or_create_runner().run_iter_tables(
-                self._builder, results_buffer_size=results_buffer_size
+                self._builder,
             )
 
             # Iterate through partitions.
@@ -505,14 +492,7 @@ class DataFrame:
 
         Args:
             results_buffer_size: how many partitions to allow in the results buffer (defaults to the total number of CPUs
-                available on the machine).
-        Note: A quick note on configuring asynchronous/parallel execution using `results_buffer_size`.
-            The `results_buffer_size` kwarg controls how many results Daft will allow to be in the buffer while iterating.
-            Once this buffer is filled, Daft will not run any more work until some partition is consumed from the buffer.
-            * Increasing this value means the iterator will consume more memory and CPU resources but have higher throughput
-            * Decreasing this value means the iterator will consume lower memory and CPU resources, but have lower throughput
-            * Setting this value to `None` means the iterator will consume as much resources as it deems appropriate per-iteration
-            The default value is the total number of CPUs available on the current machine.
+                available on the machine). # deprecated
 
         Returns:
             Iterator[pyarrow.RecordBatch]: An iterator over the RecordBatches of the DataFrame.
@@ -530,11 +510,6 @@ class DataFrame:
             foo: [1,2,3]
             bar: ["a","b","c"]
         """
-        if results_buffer_size == "num_cpus":
-            results_buffer_size = multiprocessing.cpu_count()
-        if results_buffer_size is not None and not results_buffer_size > 0:
-            raise ValueError(f"Provided `results_buffer_size` value must be > 0, received: {results_buffer_size}")
-
         results = self._result
         if results is not None:
             # If the dataframe has already finished executing,
@@ -545,7 +520,7 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             partitions_iter = get_or_create_runner().run_iter_tables(
-                self._builder, results_buffer_size=results_buffer_size
+                self._builder,
             )
 
             # Iterate through partitions.
@@ -563,17 +538,7 @@ class DataFrame:
 
         Args:
             results_buffer_size: how many partitions to allow in the results buffer (defaults to the total number of CPUs
-                available on the machine).
-
-        Note: A quick note on configuring asynchronous/parallel execution using `results_buffer_size`.
-            The `results_buffer_size` kwarg controls how many results Daft will allow to be in the buffer while iterating.
-            Once this buffer is filled, Daft will not run any more work until some partition is consumed from the buffer.
-
-            * Increasing this value means the iterator will consume more memory and CPU resources but have higher throughput
-            * Decreasing this value means the iterator will consume lower memory and CPU resources, but have lower throughput
-            * Setting this value to `None` means the iterator will consume as much resources as it deems appropriate per-iteration
-
-            The default value is the total number of CPUs available on the current machine.
+                available on the machine). # deprecated
 
         Returns:
             Iterator[Union[MicroPartition, ray.ObjectRef]]: An iterator over the partitions of the DataFrame.
@@ -605,11 +570,6 @@ class DataFrame:
             <BLANKLINE>
             Statistics: missing
         """
-        if results_buffer_size == "num_cpus":
-            results_buffer_size = multiprocessing.cpu_count()
-        elif results_buffer_size is not None and not results_buffer_size > 0:
-            raise ValueError(f"Provided `results_buffer_size` value must be > 0, received: {results_buffer_size}")
-
         results = self._result
         if results is not None:
             # If the dataframe has already finished executing,
@@ -620,7 +580,7 @@ class DataFrame:
         else:
             # Execute the dataframe in a streaming fashion.
             results_iter: Iterator[MaterializedResult[Any]] = get_or_create_runner().run_iter(
-                self._builder, results_buffer_size=results_buffer_size
+                self._builder,
             )
             for result in results_iter:
                 yield result.partition()
@@ -2681,6 +2641,7 @@ class DataFrame:
             return len(self._result)
         builder = self._builder.count()
         count_df = DataFrame(builder)
+        count_df.explain(True)
         # Expects builder to produce a single-partition, single-row DataFrame containing
         # a "count" column, where the lone value represents the row count for the DataFrame.
         return count_df.to_pydict()["count"][0]
@@ -4173,7 +4134,7 @@ class DataFrame:
             # Iteratively retrieve partitions until enough data has been materialized
             tables = []
             seen = 0
-            for table in get_or_create_runner().run_iter_tables(builder, results_buffer_size=1):
+            for table in get_or_create_runner().run_iter_tables(builder):
                 tables.append(table)
                 seen += len(table)
                 if seen >= n:
@@ -4387,7 +4348,7 @@ class DataFrame:
         """
         import pyarrow as pa
 
-        arrow_rb_iter = self.to_arrow_iter(results_buffer_size=None)
+        arrow_rb_iter = self.to_arrow_iter()
         return pa.Table.from_batches(arrow_rb_iter, schema=self.schema().to_pyarrow_schema())
 
     @DataframePublicAPI

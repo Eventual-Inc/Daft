@@ -14,10 +14,7 @@ use daft_writers::{AsyncFileWriter, WriteResult, WriterFactory};
 use opentelemetry::{KeyValue, global};
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-    BlockingSinkStatus,
-};
+use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
 use crate::{
     ExecutionTaskSpawner,
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
@@ -162,7 +159,7 @@ impl BlockingSink for WriteSink {
                         .expect("WriteStats should be the additional stats builder")
                         .add_write_result(write_result);
 
-                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                    Ok(state)
                 },
                 Span::current(),
             )
@@ -174,7 +171,7 @@ impl BlockingSink for WriteSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let file_schema = self.file_schema.clone();
         spawner
             .spawn(
@@ -188,7 +185,7 @@ impl BlockingSink for WriteSink {
                         results.into(),
                         None,
                     ));
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![mp]))
+                    Ok(vec![mp])
                 },
                 Span::current(),
             )

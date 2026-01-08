@@ -12,6 +12,7 @@ pub mod test;
 
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
+use common_file_formats::FileFormatConfig;
 use daft_schema::schema::SchemaRef;
 pub use expr_rewriter::{PredicateGroups, rewrite_predicate_for_partitioning};
 pub use partitioning::{PartitionField, PartitionTransform};
@@ -56,7 +57,26 @@ impl ScanState {
         match self {
             Self::Operator(scan_op) => scan_op.0.multiline_display(),
             Self::Tasks(scan_tasks) => {
-                vec![format!("Num Scan Tasks = {}", scan_tasks.len())]
+                let mut res = vec![format!("Num Scan Tasks = {}", scan_tasks.len())];
+                // If we have scan tasks, check if they contain Python factory functions
+                // and display the function name
+                if !scan_tasks.is_empty() {
+                    #[cfg(feature = "python")]
+                    {
+                        let file_format_config = scan_tasks[0].file_format_config();
+                        if let FileFormatConfig::PythonFunction {
+                            module_name,
+                            function_name,
+                            ..
+                        } = file_format_config.as_ref()
+                        {
+                            if let (Some(module), Some(func)) = (module_name, function_name) {
+                                res.push(format!("{module}:{func}"));
+                            }
+                        }
+                    }
+                }
+                res
             }
         }
     }

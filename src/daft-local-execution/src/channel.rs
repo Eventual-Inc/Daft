@@ -1,50 +1,57 @@
 use futures::Stream;
 
-#[derive(Clone)]
-pub(crate) struct Sender<T>(kanal::AsyncSender<T>);
+pub(crate) struct Sender<T>(tokio::sync::mpsc::Sender<T>);
 impl<T> Sender<T> {
-    pub(crate) async fn send(&self, val: T) -> Result<(), kanal::SendError> {
+    pub(crate) async fn send(&self, val: T) -> Result<(), tokio::sync::mpsc::error::SendError<T>> {
         self.0.send(val).await
+    }
+
+    pub(crate) fn try_send(&self, val: T) -> Result<(), tokio::sync::mpsc::error::TrySendError<T>> {
+        self.0.try_send(val)
     }
 }
 
-#[derive(Clone)]
-pub(crate) struct Receiver<T>(kanal::AsyncReceiver<T>);
+impl<T> Clone for Sender<T> {
+    fn clone(&self) -> Self {
+        Sender(self.0.clone())
+    }
+}
+
+pub(crate) struct Receiver<T>(tokio::sync::mpsc::Receiver<T>);
 impl<T> Receiver<T> {
-    pub(crate) async fn recv(&self) -> Option<T> {
-        self.0.recv().await.ok()
+    pub(crate) async fn recv(&mut self) -> Option<T> {
+        self.0.recv().await
     }
 
     pub(crate) fn into_stream(self) -> impl Stream<Item = T> {
-        futures::stream::unfold(
-            self,
-            |rx| async move { rx.recv().await.map(|item| (item, rx)) },
-        )
+        futures::stream::unfold(self, |mut rx| async move {
+            rx.recv().await.map(|item| (item, rx))
+        })
     }
 }
 
 pub(crate) fn create_channel<T>(buffer_size: usize) -> (Sender<T>, Receiver<T>) {
-    let (tx, rx) = kanal::bounded_async::<T>(buffer_size);
+    let (tx, rx) = tokio::sync::mpsc::channel(buffer_size);
     (Sender(tx), Receiver(rx))
 }
 
 /// A multi-producer, single-consumer channel that is aware of the ordering of the senders.
 /// If `ordered` is true, the receiver will try to receive from each sender in a round-robin fashion.
 /// This is useful when collecting results from multiple workers in a specific order.
-pub(crate) fn create_ordering_aware_receiver_channel<T: Clone>(
+pub(crate) fn create_ordering_aware_receiver_channel<T>(
     ordered: bool,
     buffer_size: usize,
 ) -> (Vec<Sender<T>>, OrderingAwareReceiver<T>) {
     match ordered {
         true => {
-            let (senders, receiver) = (0..buffer_size).map(|_| create_channel::<T>(0)).unzip();
+            let (senders, receiver) = (0..buffer_size).map(|_| create_channel::<T>(1)).unzip();
             (
                 senders,
                 OrderingAwareReceiver::InOrder(RoundRobinReceiver::new(receiver)),
             )
         }
         false => {
-            let (sender, receiver) = create_channel::<T>(buffer_size);
+            let (sender, receiver) = create_channel::<T>(1);
             (
                 (0..buffer_size).map(|_| sender.clone()).collect(),
                 OrderingAwareReceiver::OutOfOrder(receiver),

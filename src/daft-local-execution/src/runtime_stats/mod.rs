@@ -13,7 +13,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_metrics::{NodeID, QueryID, StatSnapshot};
 use common_runtime::RuntimeTask;
 use daft_context::Subscriber;
@@ -21,7 +21,6 @@ use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_micropartition::MicroPartition;
 use futures::future;
 use itertools::Itertools;
-use kanal::SendError;
 use tokio::{
     runtime::Handle,
     sync::{mpsc, oneshot},
@@ -33,6 +32,7 @@ pub use values::{Counter, DefaultRuntimeStats, Gauge, RuntimeStats};
 use crate::{
     channel::{Receiver, Sender},
     pipeline::PipelineNode,
+    plan_input::PipelineMessage,
     runtime_stats::subscribers::{
         RuntimeStatsSubscriber, progress_bar::make_progress_bar_manager, query::SubscriberWrapper,
     },
@@ -289,18 +289,23 @@ impl<F: Future> Future for TimedFuture<F> {
 
 /// Sender that wraps an internal sender and counts the number of rows passed through
 pub struct CountingSender {
-    sender: Sender<Arc<MicroPartition>>,
+    sender: Sender<PipelineMessage>,
     rt: Arc<dyn RuntimeStats>,
 }
 
 impl CountingSender {
-    pub(crate) fn new(sender: Sender<Arc<MicroPartition>>, rt: Arc<dyn RuntimeStats>) -> Self {
+    pub(crate) fn new(sender: Sender<PipelineMessage>, rt: Arc<dyn RuntimeStats>) -> Self {
         Self { sender, rt }
     }
     #[inline]
-    pub(crate) async fn send(&self, v: Arc<MicroPartition>) -> Result<(), SendError> {
-        self.rt.add_rows_out(v.len() as u64);
-        self.sender.send(v).await?;
+    pub(crate) async fn send(&self, v: PipelineMessage) -> DaftResult<()> {
+        if let PipelineMessage::Morsel { ref partition, .. } = v {
+            self.rt.add_rows_out(MicroPartition::len(partition) as u64);
+        }
+        self.sender
+            .send(v)
+            .await
+            .map_err(|e| DaftError::ValueError(e.to_string()))?;
         Ok(())
     }
 }
@@ -309,7 +314,7 @@ impl CountingSender {
 /// - Counts the number of rows passed through
 /// - Activates the associated node on first receive
 pub struct InitializingCountingReceiver {
-    receiver: Receiver<Arc<MicroPartition>>,
+    receiver: Receiver<PipelineMessage>,
     rt: Arc<dyn RuntimeStats>,
 
     first_receive: AtomicBool,
@@ -319,7 +324,7 @@ pub struct InitializingCountingReceiver {
 
 impl InitializingCountingReceiver {
     pub(crate) fn new(
-        receiver: Receiver<Arc<MicroPartition>>,
+        receiver: Receiver<PipelineMessage>,
         node_id: usize,
         rt: Arc<dyn RuntimeStats>,
         stats_manager: RuntimeStatsManagerHandle,
@@ -333,17 +338,27 @@ impl InitializingCountingReceiver {
         }
     }
     #[inline]
-    pub(crate) async fn recv(&self) -> Option<Arc<MicroPartition>> {
+    pub(crate) async fn recv(&mut self) -> Option<PipelineMessage> {
         let v = self.receiver.recv().await;
-        if let Some(ref v) = v {
-            if self
-                .first_receive
-                .compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed)
-                .is_ok()
-            {
-                self.stats_manager.activate_node(self.node_id);
+        if let Some(v) = &v {
+            match v {
+                PipelineMessage::Morsel {
+                    input_id,
+                    partition,
+                } => {
+                    if self
+                        .first_receive
+                        .compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed)
+                        .is_ok()
+                    {
+                        self.stats_manager.activate_node(self.node_id);
+                    }
+                    self.rt.add_rows_in(MicroPartition::len(partition) as u64);
+                }
+                PipelineMessage::Flush(_) => {
+                    // Flush signals don't count as rows
+                }
             }
-            self.rt.add_rows_in(v.len() as u64);
         }
         v
     }

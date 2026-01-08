@@ -16,9 +16,7 @@ use pyo3::prelude::*;
 use rand::Rng;
 use tracing::{Span, instrument};
 
-use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
-};
+use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{MorselSizeRequirement, NodeName},
@@ -154,10 +152,7 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
             let fut = task_spawner.spawn_with_memory_request(
                 memory_request,
                 async move {
-                    let res =
-                        state.actor_handle.eval_input(input).await.map(|result| {
-                            IntermediateOperatorResult::NeedMoreInput(Some(result))
-                        })?;
+                    let res = state.actor_handle.eval_input(input).await?;
                     Ok((state, res))
                 },
                 Span::current(),
@@ -188,16 +183,16 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         res
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self) -> Self::State {
         // Check if we need to initialize the filtered actor handles
         #[cfg(feature = "python")]
         {
             let next_actor_handle_idx =
                 self.counter.fetch_add(1, Ordering::SeqCst) % self.actor_handles.len();
             let next_actor_handle = &self.actor_handles[next_actor_handle_idx];
-            Ok(DistributedActorPoolProjectState {
+            DistributedActorPoolProjectState {
                 actor_handle: next_actor_handle.clone(),
-            })
+            }
         }
         #[cfg(not(feature = "python"))]
         {
@@ -207,10 +202,10 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         }
     }
 
-    fn max_concurrency(&self) -> DaftResult<usize> {
+    fn max_concurrency(&self) -> usize {
         // We set the max concurrency to be the number of actor handles * 2 to such that each actor handle has 2 workers submitting to it.
         // This allows inputs to be queued up concurrently with UDF execution.
-        Ok(self.actor_handles.len() * 2)
+        self.actor_handles.len() * 2
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {

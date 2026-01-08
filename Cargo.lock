@@ -2740,6 +2740,7 @@ dependencies = [
  "common-display",
  "common-error",
  "common-file-formats",
+ "common-hashable-float-wrapper",
  "common-io-config",
  "common-metrics",
  "common-partitioning",
@@ -2753,6 +2754,7 @@ dependencies = [
  "daft-logical-plan",
  "daft-micropartition",
  "daft-recordbatch",
+ "daft-scan",
  "daft-schema",
  "futures",
  "itertools 0.14.0",
@@ -3108,7 +3110,6 @@ dependencies = [
  "indexmap 2.11.4",
  "indicatif 0.18.0",
  "itertools 0.14.0",
- "kanal",
  "log",
  "opentelemetry",
  "parking_lot 0.12.5",
@@ -3129,6 +3130,7 @@ name = "daft-local-plan"
 version = "0.3.0-dev0"
 dependencies = [
  "common-error",
+ "common-hashable-float-wrapper",
  "common-io-config",
  "common-py-serde",
  "common-resource-request",
@@ -3139,6 +3141,7 @@ dependencies = [
  "daft-functions",
  "daft-functions-list",
  "daft-logical-plan",
+ "daft-scan",
  "indexmap 2.11.4",
  "log",
  "pyo3",
@@ -5295,16 +5298,6 @@ dependencies = [
  "serde",
  "serde_json",
  "simple_asn1",
-]
-
-[[package]]
-name = "kanal"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e3953adf0cd667798b396c2fa13552d6d9b3269d7dd1154c4c416442d1ff574"
-dependencies = [
- "futures-core",
- "lock_api",
 ]
 
 [[package]]

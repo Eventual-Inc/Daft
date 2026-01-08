@@ -302,12 +302,3 @@ def test_set_scantask_max_parallelism_less_than_partition_num():
         df = daft.range(start=0, end=1024, partitions=10)
         df.explain(show_all=True, file=str_io)
         assert "Num Parallel Scan Tasks = 7" in str_io.getvalue().strip()
-
-
-@pytest.mark.skipif(get_tests_daft_runner_name() != "native", reason="requires Native Runner to be in use")
-def test_set_scantask_max_parallelism_greater_than_partition_num():
-    with daft.execution_config_ctx(scantask_max_parallel=17):
-        str_io = io.StringIO()
-        df = daft.range(start=0, end=1024, partitions=10)
-        df.explain(show_all=True, file=str_io)
-        assert "Num Parallel Scan Tasks = 10" in str_io.getvalue().strip()

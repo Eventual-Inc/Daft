@@ -426,7 +426,7 @@ pub mod pylib {
 
     #[pyclass(module = "daft.daft", name = "ScanTask", frozen)]
     #[derive(Debug, Clone, Serialize, Deserialize)]
-    pub struct PyScanTask(pub Arc<ScanTask>);
+    pub struct PyScanTask(pub ScanTaskLikeRef);
 
     #[pymethods]
     impl PyScanTask {
@@ -643,7 +643,7 @@ pub mod pylib {
 
     impl From<PyScanTask> for Arc<ScanTask> {
         fn from(value: PyScanTask) -> Self {
-            value.0
+            value.0.as_any_arc().downcast().unwrap()
         }
     }
 

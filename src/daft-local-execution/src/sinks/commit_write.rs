@@ -14,10 +14,7 @@ use futures::TryStreamExt;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-    BlockingSinkStatus,
-};
+use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) struct CommitWriteState {
@@ -67,7 +64,7 @@ impl BlockingSink for CommitWriteSink {
         _spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         state.append(input.record_batches().iter().cloned());
-        Ok(BlockingSinkStatus::NeedMoreInput(state)).into()
+        Ok(state).into()
     }
 
     #[instrument(skip_all, name = "WriteSink::finalize")]
@@ -75,7 +72,7 @@ impl BlockingSink for CommitWriteSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let data_schema = self.data_schema.clone();
         let file_schema = self.file_schema.clone();
         let file_info = self.file_info.clone();
@@ -162,9 +159,7 @@ impl BlockingSink for CommitWriteSink {
                         written_file_path_record_batches.into(),
                         None,
                     );
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
-                        written_file_paths_mp,
-                    )]))
+                    Ok(vec![Arc::new(written_file_paths_mp)])
                 },
                 Span::current(),
             )

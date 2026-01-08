@@ -10,7 +10,7 @@ use super::PipelineNodeImpl;
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        SubmittableTaskStream,
+        TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext},
 };
@@ -112,7 +112,7 @@ impl PipelineNodeImpl for UDFNode {
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
 
         let expr = self.expr.clone();

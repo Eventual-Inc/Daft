@@ -258,14 +258,14 @@ impl StreamingSink for SampleSink {
         state: Self::State,
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult<Self> {
-        let method = self.params.sampling_method;
+        let method = self.params.sampling_method.clone();
         let with_replacement = self.params.with_replacement;
         let seed = self.params.seed;
         match (state, method) {
             (SampleState::Fraction(()), SamplingMethod::Fraction(fraction)) => spawner
                 .spawn(
                     async move {
-                        let out = input.sample_by_fraction(fraction, with_replacement, seed)?;
+                        let out = input.sample_by_fraction(fraction.0, with_replacement, seed)?;
                         Ok((
                             SampleState::Fraction(()),
                             StreamingSinkOutput::NeedMoreInput(Some(Arc::new(out))),
@@ -327,7 +327,7 @@ impl StreamingSink for SampleSink {
 
     fn name(&self) -> NodeName {
         match &self.params.sampling_method {
-            SamplingMethod::Fraction(fraction) => format!("Sample fraction = {}", fraction).into(),
+            SamplingMethod::Fraction(fraction) => format!("Sample fraction = {}", fraction.0).into(),
             SamplingMethod::Size(size) => format!("Sample Size = {}", size).into(),
         }
     }
@@ -340,7 +340,7 @@ impl StreamingSink for SampleSink {
         let mut res = vec![];
         match &self.params.sampling_method {
             SamplingMethod::Fraction(fraction) => {
-                res.push(format!("Sample fraction = {}", fraction));
+                res.push(format!("Sample fraction = {}", fraction.0));
             }
             SamplingMethod::Size(size) => {
                 res.push(format!("Sample Size = {}", size));

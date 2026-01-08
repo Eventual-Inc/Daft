@@ -22,7 +22,7 @@ use super::PipelineNodeImpl;
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        SubmittableTaskStream, project::ProjectNode,
+        TaskBuilderStream, project::ProjectNode,
         translate::LogicalPlanToPipelineNodeTranslator,
     },
     plan::{PlanConfig, PlanExecutionContext},
@@ -119,7 +119,7 @@ impl PipelineNodeImpl for AggregateNode {
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
 
         // Pipeline the aggregation
