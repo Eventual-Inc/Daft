@@ -2699,6 +2699,7 @@ dependencies = [
 name = "daft-decoding"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-schema",
  "atoi_simd",
  "chrono",
  "csv-async",
@@ -3285,6 +3286,7 @@ dependencies = [
 name = "daft-scan"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-schema",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -3294,7 +3296,6 @@ dependencies = [
  "common-runtime",
  "common-scan-info",
  "ctor",
- "daft-arrow",
  "daft-compression",
  "daft-core",
  "daft-csv",

@@ -1,7 +1,5 @@
-#![allow(deprecated, reason = "arrow2 migration")]
-
+use arrow_schema::DataType;
 use common_error::DaftResult;
-use daft_arrow::datatypes::DataType;
 use daft_core::series::Series;
 use daft_decoding::{deserialize::deserialize_single_value_to_arrow, inference::infer};
 use daft_schema::{dtype::DaftDataType, field::Field, schema::Schema};
@@ -111,7 +109,8 @@ pub fn hive_partitions_to_fields(partitions: &IndexMap<String, String>) -> Vec<F
             } else {
                 inferred_type
             };
-            Field::new(key, DaftDataType::from(&inferred_type))
+            // daft_decoding::inference::infer should always return a valid Daft DataType
+            Field::new(key, DaftDataType::try_from(&inferred_type).unwrap())
         })
         .collect()
 }
