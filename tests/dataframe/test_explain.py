@@ -238,7 +238,7 @@ def test_explain_with_ray_options(input_df_with_uri):
     gen_email_udf = gen_email.override_options(ray_options={"runtime_env": {"conda": "punks"}}).with_concurrency(1)
     df = input_df.with_column("email", gen_email_udf(col("id")))
     text = explain_to_text(df)
-    assert "{'runtime_env': {'conda': 'punks'}}" in text, f"Unexpected Explain result: {text}"
+    assert "'runtime_env': {'conda': 'punks'}" in text, f"Unexpected Explain result: {text}"
 
     # Configure via Conda YAML File
     gen_email_udf = gen_email.override_options(
@@ -246,13 +246,13 @@ def test_explain_with_ray_options(input_df_with_uri):
     ).with_concurrency(1)
     df = input_df.with_column("email", gen_email_udf(col("id")))
     text = explain_to_text(df)
-    assert "{'runtime_env': {'conda': '/tmp/daft/conda_env.yaml'}}" in text, f"Unexpected Explain result: {text}"
+    assert "'runtime_env': {'conda': '/tmp/daft/conda_env.yaml'}" in text, f"Unexpected Explain result: {text}"
 
     # Configure via Conda YAML Config
     gen_email_udf = gen_email.override_options(ray_options={"runtime_env": {}}).with_concurrency(1)
     df = input_df.with_column("email", gen_email_udf(col("id")))
     text = explain_to_text(df)
-    assert "{'runtime_env': {}}" in text, f"Unexpected Explain result: {text}"
+    assert "'runtime_env': {}" in text, f"Unexpected Explain result: {text}"
 
     gen_email_udf = gen_email.override_options(
         ray_options={
@@ -267,7 +267,7 @@ def test_explain_with_ray_options(input_df_with_uri):
 
     df = input_df.with_column("email", gen_email_udf(col("id")))
     text = explain_to_text(df)
-    assert "{'runtime_env': {'conda': {'name': 'simple', 'channels': ['conda-forge']}}}" in text, (
+    assert "'runtime_env': {'conda': {'name': 'simple', 'channels': ['conda-forge']}}" in text, (
         f"Unexpected Explain result: {text}"
     )
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+import warnings
 from typing import TYPE_CHECKING, Any
 
 from daft.expressions.expressions import Expression, ExpressionsProjection
@@ -85,13 +86,35 @@ async def start_udf_actors(
 ) -> list[UDFActorHandle]:
     expr_projection = ExpressionsProjection([Expression._from_pyexpr(projection)])
 
+    # If resources are already in ray_options, we should prioritize them and avoid passing them twice
+    # to avoid "keyword argument repeated" errors.
+    ray_options = (ray_options or {}).copy()
+    if "num_gpus" in ray_options:
+        if num_gpus_per_actor is not None and num_gpus_per_actor != ray_options["num_gpus"]:
+            warnings.warn(
+                f"Overriding explicit num_gpus={num_gpus_per_actor} with value from ray_options: {ray_options['num_gpus']}"
+            )
+        num_gpus_per_actor = ray_options.pop("num_gpus")
+    if "num_cpus" in ray_options:
+        if num_cpus_per_actor is not None and num_cpus_per_actor != ray_options["num_cpus"]:
+            warnings.warn(
+                f"Overriding explicit num_cpus={num_cpus_per_actor} with value from ray_options: {ray_options['num_cpus']}"
+            )
+        num_cpus_per_actor = ray_options.pop("num_cpus")
+    if "memory" in ray_options:
+        if memory_per_actor is not None and memory_per_actor != ray_options["memory"]:
+            warnings.warn(
+                f"Overriding explicit memory={memory_per_actor} with value from ray_options: {ray_options['memory']}"
+            )
+        memory_per_actor = ray_options.pop("memory")
+
     udf_options = validate_and_normalize_ray_options(
         {
             "scheduling_strategy": "SPREAD",
             "num_gpus": num_gpus_per_actor,
             "num_cpus": num_cpus_per_actor,
             "memory": memory_per_actor,
-            **(ray_options or {}),
+            **ray_options,
         }
     )
 
