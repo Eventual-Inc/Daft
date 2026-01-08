@@ -46,9 +46,6 @@ impl RowBasedBuffer {
 
     // Push a morsel to the buffer
     pub fn push(&mut self, part: Arc<MicroPartition>) {
-        if part.is_empty() {
-            return;
-        }
         self.curr_len += part.len();
         self.buffer.push_back(part);
     }
@@ -174,6 +171,37 @@ mod tests {
         assert!(buffer.buffer.is_empty());
         assert_eq!(buffer.curr_len, 0);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_single_empty_partition() -> DaftResult<()> {
+        let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(1).unwrap());
+        buffer.push(Arc::new(MicroPartition::empty(None)));
+        assert!(buffer.next_batch_if_ready()?.is_some());
+        assert!(buffer.next_batch_if_ready()?.is_none());
+        assert!(buffer.pop_all()?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_multiple_empty_partitions() -> DaftResult<()> {
+        let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(1).unwrap());
+        buffer.push(Arc::new(MicroPartition::empty(None)));
+        buffer.push(Arc::new(MicroPartition::empty(None)));
+        assert!(buffer.next_batch_if_ready()?.is_some());
+        assert!(buffer.next_batch_if_ready()?.is_none());
+        assert!(buffer.pop_all()?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_multiple_empty_partitions_pop_all() -> DaftResult<()> {
+        let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(1).unwrap());
+        buffer.push(Arc::new(MicroPartition::empty(None)));
+        buffer.push(Arc::new(MicroPartition::empty(None)));
+        assert!(buffer.pop_all()?.is_some());
+        assert!(buffer.pop_all()?.is_none());
         Ok(())
     }
 }
