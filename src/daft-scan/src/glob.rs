@@ -380,7 +380,7 @@ impl GlobScanOperator {
         // If hive partitioning is set, create partition fields from the hive partitions.
         let mut partition_fields = if hive_partitioning {
             let hive_partitions = parse_hive_partitioning(&first_filepath)?;
-            hive_partitions_to_fields(&hive_partitions)
+            hive_partitions_to_fields(&hive_partitions)?
         } else {
             vec![]
         };

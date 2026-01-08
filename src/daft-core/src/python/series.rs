@@ -25,7 +25,7 @@ use crate::{
         from_lit::{combine_lit_types, series_from_literals_iter},
     },
     utils::{
-        arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
+        arrow::{cast_array_for_daft_if_needed, cast_arrow2_array_from_daft_if_needed},
         supertype::try_get_collection_supertype,
     },
 };
@@ -70,7 +70,7 @@ impl PySeries {
 
         let series = if let Some(dtype) = dtype {
             let field = Field::new(name, dtype.into());
-            series::Series::try_from_field_and_arrow_array(field, arrow_array)?
+            series::Series::try_from_field_and_arrow2_array(field, arrow_array)?
         } else {
             series::Series::try_from((name, arrow_array))?
         };
@@ -130,7 +130,7 @@ impl PySeries {
 
     pub fn to_arrow<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
         let arrow_array = self.series.to_arrow2();
-        let arrow_array = cast_array_from_daft_if_needed(arrow_array);
+        let arrow_array = cast_arrow2_array_from_daft_if_needed(arrow_array);
         let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
         ffi::to_py_array(py, arrow_array, &pyarrow)
     }

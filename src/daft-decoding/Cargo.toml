@@ -1,5 +1,7 @@
 [dependencies]
 atoi_simd = "0.16.1"
+arrow-schema = {workspace = true}
+arrow-array = {workspace = true}
 daft-arrow = {path = "../daft-arrow"}
 daft-schema = {path = "../daft-schema"}
 chrono = {workspace = true}

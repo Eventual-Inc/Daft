@@ -1,10 +1,9 @@
 use std::collections::HashSet;
 
+use arrow_schema::{DataType, Field};
+
 /// Merges two Arrow2 schemas
-pub fn merge_schema(
-    headers: &[String],
-    column_types: &mut [HashSet<daft_arrow::datatypes::DataType>],
-) -> Vec<daft_arrow::datatypes::Field> {
+pub fn merge_schema(headers: &[String], column_types: &mut [HashSet<DataType>]) -> Vec<Field> {
     headers
         .iter()
         .zip(column_types.iter_mut())
@@ -12,12 +11,7 @@ pub fn merge_schema(
         .collect()
 }
 
-fn merge_fields(
-    field_name: &str,
-    possibilities: &mut HashSet<daft_arrow::datatypes::DataType>,
-) -> daft_arrow::datatypes::Field {
-    use daft_arrow::datatypes::DataType;
-
+fn merge_fields(field_name: &str, possibilities: &mut HashSet<DataType>) -> Field {
     if possibilities.len() > 1 {
         // Drop nulls from possibilities.
         possibilities.remove(&DataType::Null);
@@ -39,5 +33,6 @@ fn merge_fields(
         }
         _ => DataType::Utf8,
     };
-    daft_arrow::datatypes::Field::new(field_name, data_type, true)
+
+    Field::new(field_name, data_type, true)
 }
