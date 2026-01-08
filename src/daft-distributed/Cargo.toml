@@ -41,7 +41,8 @@ python = [
   "common-runtime/python",
   "common-treenode/python",
   "daft-logical-plan/python",
-  "daft-local-plan/python"
+  "daft-local-plan/python",
+  "daft-scan/python"
 ]
 
 [lints]
