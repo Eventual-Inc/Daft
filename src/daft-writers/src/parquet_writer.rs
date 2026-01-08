@@ -29,24 +29,24 @@ use crate::{
 type ColumnWriterFuture = dyn Future<Output = DaftResult<ArrowColumnChunk>> + Send;
 
 /// Helper function to check if we support writing a specific data type to Parquet.
-fn support_data_type(data_type: &DataType) -> bool {
+fn native_parquet_field_supported(field: &arrow_schema::Field) -> bool {
+    // TODO: Include extension info in parquet metadata
+    if field.extension_type_name().is_some() {
+        return false;
+    }
+
     // TODO: Newer versions of parquet support Duration, but we don't write
     // the arrow schema metadata to Parquet, so we can't support it yet.
     // Similarly, we don't support TimestampTz or Extension
-    match data_type {
-        DataType::Duration(_) => false,
-        DataType::Extension(_, _, _) => false,
-        DataType::Tensor(_) => false,
-        DataType::SparseTensor(..) => false,
-        DataType::FixedShapeSparseTensor(..) => false,
-        DataType::Timestamp(_, tz) => tz.is_none(),
-        DataType::List(dtype) | DataType::FixedSizeList(dtype, _) => {
-            support_data_type(dtype.as_ref())
-        }
-        DataType::Map { key, value } => {
-            support_data_type(key.as_ref()) && support_data_type(value.as_ref())
-        }
-        DataType::Struct(fields) => fields.iter().all(|field| support_data_type(&field.dtype)),
+    match field.data_type() {
+        arrow_schema::DataType::Duration(_) => false,
+        arrow_schema::DataType::Timestamp(_, tz) => tz.is_none(),
+        arrow_schema::DataType::List(field)
+        | arrow_schema::DataType::FixedSizeList(field, _)
+        | arrow_schema::DataType::Map(field, _) => native_parquet_field_supported(field.as_ref()),
+        arrow_schema::DataType::Struct(fields) => fields
+            .iter()
+            .all(|field| native_parquet_field_supported(field.as_ref())),
         _ => true,
     }
 }
@@ -61,17 +61,17 @@ pub(crate) fn native_parquet_writer_supported(
         return Ok(false);
     }
 
-    if file_schema
-        .fields()
-        .iter()
-        .any(|field| !support_data_type(&field.dtype))
-    {
-        return Ok(false);
-    }
-
     let Ok(arrow_schema) = file_schema.to_arrow() else {
         return Ok(false);
     };
+
+    if arrow_schema
+        .fields()
+        .iter()
+        .any(|field| !native_parquet_field_supported(field.as_ref()))
+    {
+        return Ok(false);
+    }
 
     let writer_properties = Arc::new(
         WriterProperties::builder()
