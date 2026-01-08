@@ -87,7 +87,8 @@ def test_custom_base_url_dimensions_none_probes_for_non_native_model():
     from openai.types.create_embedding_response import CreateEmbeddingResponse
     from openai.types.embedding import Embedding as OpenAIEmbedding
 
-    with patch("openai.OpenAI") as mock_openai_sync_client:
+    # Patch the module-local import used by OpenAITextEmbedderDescriptor.
+    with patch("daft.ai.openai.protocols.text_embedder.OpenAIClient") as mock_openai_sync_client:
         mock_sync_client = Mock()
         mock_sync_client.embeddings = Mock()
         mock_sync_client.embeddings.create = Mock(
