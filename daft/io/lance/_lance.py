@@ -1,7 +1,6 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 import pathlib
-import warnings
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Optional, Union
 
@@ -228,13 +227,6 @@ def merge_columns(
         ...     return batch.append_column("new_column", pc.multiply(batch["c"], 2))
         >>> daft.io.lance.merge_columns("s3://my-lancedb-bucket/data/", transform=double_score)
     """
-    warnings.warn(
-        "daft.io.lance.merge_columns is deprecated and will be removed in a future release. "
-        "Please use daft.io.lance.merge_columns_df instead.",
-        category=DeprecationWarning,
-        stacklevel=2,
-    )
-
     if transform is None:
         raise ValueError(
             "merge_columns requires a `transform` function; prefer using merge_columns_df with a prepared DataFrame if no transform is needed."
