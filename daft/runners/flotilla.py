@@ -89,9 +89,9 @@ class RaySwordfishActor:
                 ctx,
                 0,
                 context,
-                scan_tasks if scan_tasks and len(scan_tasks) > 0 else None,
-                psets_mp if psets_mp and len(psets_mp) > 0 else None,
-                glob_paths if glob_paths and len(glob_paths) > 0 else None,
+                scan_tasks,
+                psets_mp,
+                glob_paths,
             )
             async for partition in result_handle:
                 if partition is None:

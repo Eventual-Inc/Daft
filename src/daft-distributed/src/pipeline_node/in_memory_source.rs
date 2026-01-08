@@ -86,7 +86,7 @@ impl InMemorySourceNode {
             },
         );
 
-        let psets = HashMap::from([(self.info.cache_key.clone(), vec![partition_ref])]);
+        let psets = HashMap::from([(self.node_id().to_string(), vec![partition_ref])]);
         SwordfishTaskBuilder::new(in_memory_scan, self.as_ref()).with_psets(psets)
     }
 }
