@@ -201,6 +201,7 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
                     index=False,
                     dtype=self.dtype,
                 )
+                connection.commit()
             elif self.write_mode == "overwrite":
                 # Replace any existing table with an empty table that defines the schema.
                 self.empty_pdf.to_sql(
@@ -210,6 +211,7 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
                     index=False,
                     dtype=self.dtype,
                 )
+                connection.commit()
             else:  # append
                 if not table_exists:
                     # Create the table once if it does not exist so workers can append safely.
@@ -220,6 +222,7 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
                         index=False,
                         dtype=self.dtype,
                     )
+                    connection.commit()
         finally:
             if connection is not None:
                 connection.close()
@@ -262,6 +265,7 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
                     chunksize=self.chunk_size,
                     dtype=self.dtype,
                 )
+                connection.commit()
 
                 yield WriteResult(
                     result=None,

@@ -12,10 +12,6 @@ from daft.api_annotations import APITypeError
 from tests.conftest import assert_df_equals
 
 
-def get_conn(test_db):
-    return sqlalchemy.create_engine(test_db).connect()
-
-
 @pytest.mark.integration()
 @pytest.mark.parametrize("source", ["pydict", "csv", "json"])
 def test_write_sql_from_sources(test_db, tmp_path, source):
