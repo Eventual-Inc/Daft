@@ -49,7 +49,7 @@ pub fn infer_string(string: &str) -> DataType {
     } else if let Some(time_unit) = is_naive_datetime(string) {
         DataType::Timestamp(time_unit, None)
     } else {
-        DataType::Utf8
+        DataType::LargeUtf8
     }
 }
 

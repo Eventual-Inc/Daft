@@ -110,11 +110,7 @@ pub fn hive_partitions_to_fields(partitions: &IndexMap<String, String>) -> Vec<F
                 inferred_type
             };
             // daft_decoding::inference::infer should always return a valid Daft DataType
-            Field::new(
-                key,
-                DaftDataType::try_from(&inferred_type)
-                    .expect("Failed to convert arrow data type to daft data type"),
-            )
+            Field::new(key, DaftDataType::try_from(&inferred_type).unwrap())
         })
         .collect()
 }
