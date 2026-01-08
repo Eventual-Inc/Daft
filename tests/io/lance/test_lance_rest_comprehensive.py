@@ -288,7 +288,7 @@ class TestLanceRestFactoryFunctions:
 
         # Test with result that has to_batches method
         mock_result_with_batches = Mock()
-        mock_batch = pa.record_batch({"id": [1]})
+        mock_batch = pa.record_batch([pa.array([1])], names=["id"])
         mock_result_with_batches.to_batches.return_value = [mock_batch]
         mock_client.query_table.return_value = mock_result_with_batches
 
