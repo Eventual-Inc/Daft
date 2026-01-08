@@ -19,7 +19,7 @@ impl DaftStddevAggable for DataArray<Float64Type> {
         let stddev = stats::calculate_stddev(stats, values);
         let field = self.field.clone();
         let data = PrimitiveArray::<f64>::from([stddev]).boxed();
-        Self::from_field_and_array(field, data)
+        Self::new_from_arrow2(field, data)
     }
 
     fn grouped_stddev(&self, groups: &GroupIndices) -> Self::Output {
@@ -29,6 +29,6 @@ impl DaftStddevAggable for DataArray<Float64Type> {
         });
         let field = self.field.clone();
         let data = PrimitiveArray::<f64>::from_iter(grouped_stddevs_iter).boxed();
-        Self::from_field_and_array(field, data)
+        Self::new_from_arrow2(field, data)
     }
 }

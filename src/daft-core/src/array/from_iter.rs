@@ -29,7 +29,7 @@ where
         let mut array = MutablePrimitiveArray::<T::Native>::from(field.dtype.to_arrow2().unwrap());
         array.extend_trusted_len(iter);
         let data_array: PrimitiveArray<_> = array.into();
-        Self::from_field_and_array(field, data_array.boxed()).unwrap()
+        Self::new_from_arrow2(field, data_array.boxed()).unwrap()
     }
 
     pub fn from_values_iter<F: Into<Arc<Field>>>(
@@ -42,7 +42,7 @@ where
         let mut array = MutablePrimitiveArray::<T::Native>::from(field.dtype.to_arrow2().unwrap());
         array.extend_trusted_len_values(iter);
         let data_array: PrimitiveArray<_> = array.into();
-        Self::from_field_and_array(field, data_array.boxed()).unwrap()
+        Self::new_from_arrow2(field, data_array.boxed()).unwrap()
     }
 
     pub fn from_regular_iter<F, I>(field: F, iter: I) -> DaftResult<Self>
@@ -59,7 +59,7 @@ where
         }
         array.extend(iter);
         let array = PrimitiveArray::from(array).boxed();
-        Self::from_field_and_array(field, array)
+        Self::new_from_arrow2(field, array)
     }
 }
 
@@ -71,7 +71,7 @@ impl Utf8Array {
         let arrow_array = Box::new(daft_arrow::array::Utf8Array::<i64>::from_trusted_len_iter(
             iter,
         ));
-        Self::from_field_and_array(
+        Self::new_from_arrow2(
             Field::new(name, crate::datatypes::DataType::Utf8).into(),
             arrow_array,
         )
@@ -86,7 +86,7 @@ impl BinaryArray {
     ) -> Self {
         let arrow_array =
             Box::new(daft_arrow::array::BinaryArray::<i64>::from_trusted_len_iter(iter));
-        Self::from_field_and_array(
+        Self::new_from_arrow2(
             Field::new(name, crate::datatypes::DataType::Binary).into(),
             arrow_array,
         )
@@ -102,7 +102,7 @@ impl FixedSizeBinaryArray {
         let arrow_array = Box::new(daft_arrow::array::FixedSizeBinaryArray::from_iter(
             iter, size,
         ));
-        Self::from_field_and_array(
+        Self::new_from_arrow2(
             Field::new(name, crate::datatypes::DataType::FixedSizeBinary(size)).into(),
             arrow_array,
         )
@@ -116,7 +116,7 @@ impl BooleanArray {
         iter: impl daft_arrow::trusted_len::TrustedLen<Item = Option<bool>>,
     ) -> Self {
         let arrow_array = Box::new(daft_arrow::array::BooleanArray::from_trusted_len_iter(iter));
-        Self::from_field_and_array(
+        Self::new_from_arrow2(
             Field::new(name, crate::datatypes::DataType::Boolean).into(),
             arrow_array,
         )
@@ -192,7 +192,7 @@ where
         let arrow_array = Box::new(
             daft_arrow::array::PrimitiveArray::<T::Native>::from_trusted_len_values_iter(iter),
         );
-        Self::from_field_and_array(Field::new(name, T::get_dtype()).into(), arrow_array).unwrap()
+        Self::new_from_arrow2(Field::new(name, T::get_dtype()).into(), arrow_array).unwrap()
     }
 }
 
@@ -203,7 +203,7 @@ impl Utf8Array {
     ) -> Self {
         let arrow_array =
             Box::new(daft_arrow::array::Utf8Array::<i64>::from_trusted_len_values_iter(iter));
-        Self::from_field_and_array(Field::new(name, DataType::Utf8).into(), arrow_array).unwrap()
+        Self::new_from_arrow2(Field::new(name, DataType::Utf8).into(), arrow_array).unwrap()
     }
 }
 
@@ -214,7 +214,7 @@ impl BinaryArray {
     ) -> Self {
         let arrow_array =
             Box::new(daft_arrow::array::BinaryArray::<i64>::from_trusted_len_values_iter(iter));
-        Self::from_field_and_array(Field::new(name, DataType::Binary).into(), arrow_array).unwrap()
+        Self::new_from_arrow2(Field::new(name, DataType::Binary).into(), arrow_array).unwrap()
     }
 }
 
@@ -225,7 +225,7 @@ impl BooleanArray {
     ) -> Self {
         let arrow_array =
             Box::new(daft_arrow::array::BooleanArray::from_trusted_len_values_iter(iter));
-        Self::from_field_and_array(Field::new(name, DataType::Boolean).into(), arrow_array).unwrap()
+        Self::new_from_arrow2(Field::new(name, DataType::Boolean).into(), arrow_array).unwrap()
     }
 }
 
@@ -237,8 +237,7 @@ impl IntervalArray {
         let arrow_array = Box::new(daft_arrow::array::MonthsDaysNsArray::from_trusted_len_iter(
             iter.map(|x| x.map(|x| x.into())),
         ));
-        Self::from_field_and_array(Field::new(name, DataType::Interval).into(), arrow_array)
-            .unwrap()
+        Self::new_from_arrow2(Field::new(name, DataType::Interval).into(), arrow_array).unwrap()
     }
 }
 
@@ -252,8 +251,7 @@ impl IntervalArray {
                 iter.map(|x| x.into()),
             ),
         );
-        Self::from_field_and_array(Field::new(name, DataType::Interval).into(), arrow_array)
-            .unwrap()
+        Self::new_from_arrow2(Field::new(name, DataType::Interval).into(), arrow_array).unwrap()
     }
 }
 

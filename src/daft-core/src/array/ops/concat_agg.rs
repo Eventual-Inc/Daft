@@ -127,7 +127,7 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
         );
 
         let result_box = Box::new(output);
-        Self::from_field_and_array(self.field().clone().into(), result_box)
+        Self::new_from_arrow2(self.field().clone().into(), result_box)
     }
 
     fn grouped_concat(&self, groups: &super::GroupIndices) -> Self::Output {

@@ -79,7 +79,7 @@ impl ImageArray {
     ) -> DaftResult<Self> {
         let values: Vec<Series> = vec![
             data_array.into_series().rename("data"),
-            UInt16Array::from_field_and_array(
+            UInt16Array::new_from_arrow2(
                 Arc::new(Field::new("channel", DataType::UInt16)),
                 Box::new(
                     daft_arrow::array::UInt16Array::from_vec(sidecar_data.channels).with_validity(
@@ -88,7 +88,7 @@ impl ImageArray {
                 ),
             )?
             .into_series(),
-            UInt16Array::from_field_and_array(
+            UInt16Array::new_from_arrow2(
                 Arc::new(Field::new("height", DataType::UInt16)),
                 Box::new(
                     daft_arrow::array::UInt32Array::from_vec(sidecar_data.heights).with_validity(
@@ -97,7 +97,7 @@ impl ImageArray {
                 ),
             )?
             .into_series(),
-            UInt16Array::from_field_and_array(
+            UInt16Array::new_from_arrow2(
                 Arc::new(Field::new("width", DataType::UInt16)),
                 Box::new(
                     daft_arrow::array::UInt32Array::from_vec(sidecar_data.widths).with_validity(
@@ -106,7 +106,7 @@ impl ImageArray {
                 ),
             )?
             .into_series(),
-            UInt8Array::from_field_and_array(
+            UInt8Array::new_from_arrow2(
                 Arc::new(Field::new("mode", DataType::UInt8)),
                 Box::new(
                     daft_arrow::array::UInt8Array::from_vec(sidecar_data.modes).with_validity(

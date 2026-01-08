@@ -41,7 +41,7 @@ where
         let as_arrowed = self.as_arrow2();
         let seed = seed.map(|v| v.as_arrow2());
         let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
-        DataArray::from_field_and_array(self.field().clone().into(), Box::new(result))
+        DataArray::new_from_arrow2(self.field().clone().into(), Box::new(result))
     }
 }
 
@@ -58,7 +58,7 @@ impl Utf8Array {
         let seed = seed.map(|v| v.as_arrow2());
         let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
 
-        DataArray::from_field_and_array(self.field().clone().into(), Box::new(result))
+        DataArray::new_from_arrow2(self.field().clone().into(), Box::new(result))
     }
 }
 
@@ -75,7 +75,7 @@ impl BinaryArray {
         let seed = seed.map(|v| v.as_arrow2());
         let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
 
-        DataArray::from_field_and_array(self.field().clone().into(), Box::new(result))
+        DataArray::new_from_arrow2(self.field().clone().into(), Box::new(result))
     }
 }
 
@@ -92,7 +92,7 @@ impl FixedSizeBinaryArray {
         let seed = seed.map(|v| v.as_arrow2());
         let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
 
-        DataArray::from_field_and_array(self.field().clone().into(), Box::new(result))
+        DataArray::new_from_arrow2(self.field().clone().into(), Box::new(result))
     }
 }
 
@@ -109,7 +109,7 @@ impl BooleanArray {
         let seed = seed.map(|v| v.as_arrow2());
         let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
 
-        DataArray::from_field_and_array(self.field().clone().into(), Box::new(result))
+        DataArray::new_from_arrow2(self.field().clone().into(), Box::new(result))
     }
 }
 
@@ -126,7 +126,7 @@ impl NullArray {
         let seed = seed.map(|v| v.as_arrow2());
         let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
 
-        DataArray::from_field_and_array(self.field().clone().into(), Box::new(result))
+        DataArray::new_from_arrow2(self.field().clone().into(), Box::new(result))
     }
 }
 
@@ -442,7 +442,7 @@ impl Decimal128Array {
             })
         });
         let array = Box::new(daft_arrow::array::Int32Array::from_iter(hashes));
-        DataArray::from_field_and_array(self.field().clone().into(), array)
+        DataArray::new_from_arrow2(self.field().clone().into(), array)
     }
 }
 
@@ -457,7 +457,7 @@ fn murmur3_32_hash_from_iter_with_nulls<B: AsRef<[u8]>>(
         })
     });
     let array = Box::new(daft_arrow::array::Int32Array::from_iter(hashes));
-    DataArray::from_field_and_array(Field::new(name, DataType::Int32).into(), array)
+    DataArray::new_from_arrow2(Field::new(name, DataType::Int32).into(), array)
 }
 
 fn murmur3_32_hash_from_iter_no_nulls<B: AsRef<[u8]>>(

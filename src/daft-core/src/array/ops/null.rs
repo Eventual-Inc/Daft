@@ -30,7 +30,7 @@ where
                 None,
             ),
         });
-        DataArray::<BooleanType>::from_field_and_array(
+        DataArray::<BooleanType>::new_from_arrow2(
             Arc::new(Field::new(self.field.name.clone(), DataType::Boolean)),
             result_arrow_array,
         )
@@ -75,7 +75,7 @@ impl PythonArray {
             daft_arrow::buffer::NullBuffer::new_valid(self.len())
         };
 
-        BooleanArray::from_field_and_array(
+        BooleanArray::new_from_arrow2(
             Arc::new(Field::new(self.name(), DataType::Boolean)),
             Box::new(daft_arrow::array::BooleanArray::new(
                 daft_arrow::datatypes::DataType::Boolean,

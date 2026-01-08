@@ -89,11 +89,11 @@ where
         match field.dtype {
             crate::datatypes::DataType::Utf8 => {
                 let cat_array = utf8_concat(arrow_arrays.as_slice())?;
-                Self::from_field_and_array(field.clone(), cat_array)
+                Self::new_from_arrow2(field.clone(), cat_array)
             }
             crate::datatypes::DataType::Binary => {
                 let cat_array = binary_concat(arrow_arrays.as_slice())?;
-                Self::from_field_and_array(field.clone(), cat_array)
+                Self::new_from_arrow2(field.clone(), cat_array)
             }
             _ => {
                 let cat_array: Box<dyn Array> =

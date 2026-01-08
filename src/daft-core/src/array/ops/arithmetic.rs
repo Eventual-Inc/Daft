@@ -49,7 +49,7 @@ where
     F: Fn(T::Native, T::Native) -> T::Native,
 {
     match (lhs.len(), rhs.len()) {
-        (a, b) if a == b => DataArray::from_field_and_array(
+        (a, b) if a == b => DataArray::new_from_arrow2(
             lhs.field.clone(),
             Box::new(kernel(lhs.as_arrow2(), rhs.as_arrow2())),
         ),
@@ -208,7 +208,7 @@ where
             arithmetic_helper(self, rhs, basic::rem, |l, r| l % r)
         } else {
             match (self.len(), rhs.len()) {
-                (a, b) if a == b => DataArray::from_field_and_array(
+                (a, b) if a == b => DataArray::new_from_arrow2(
                     self.field().clone().into(),
                     Box::new(rem_with_nulls(self.as_arrow2(), rhs.as_arrow2())),
                 ),
@@ -257,7 +257,7 @@ where
             arithmetic_helper(self, rhs, basic::div, |l, r| l / r)
         } else {
             match (self.len(), rhs.len()) {
-                (a, b) if a == b => DataArray::from_field_and_array(
+                (a, b) if a == b => DataArray::new_from_arrow2(
                     self.field().clone().into(),
                     Box::new(div_with_nulls(self.as_arrow2(), rhs.as_arrow2())),
                 ),

@@ -42,7 +42,7 @@ pub struct DataArray<T> {
 
 impl<T: DaftPhysicalType> Clone for DataArray<T> {
     fn clone(&self) -> Self {
-        Self::from_field_and_array(self.field.clone(), self.data.clone()).unwrap()
+        Self::new_from_arrow2(self.field.clone(), self.data.clone()).unwrap()
     }
 }
 
@@ -58,12 +58,12 @@ impl<T: DaftPhysicalType> DataArray<T> {
             <T as DaftDataType>::get_dtype(),
         ));
 
-        Self::from_field_and_array(field, arr.into())
+        Self::new_from_arrow2(field, arr.into())
     }
 }
 
 impl<T> DataArray<T> {
-    pub fn from_field_and_array(
+    pub fn new_from_arrow2(
         physical_field: Arc<DaftField>,
         arrow_array: Box<dyn daft_arrow::array::Array>,
     ) -> DaftResult<Self> {
@@ -150,7 +150,7 @@ impl<T> DataArray<T> {
         let with_bitmap = self
             .data
             .with_validity(wrap_null_buffer(Some(NullBuffer::from(validity))));
-        Self::from_field_and_array(self.field.clone(), with_bitmap)
+        Self::new_from_arrow2(self.field.clone(), with_bitmap)
     }
 
     pub fn with_validity(&self, validity: Option<NullBuffer>) -> DaftResult<Self> {
@@ -164,7 +164,7 @@ impl<T> DataArray<T> {
             )));
         }
         let with_bitmap = self.data.with_validity(wrap_null_buffer(validity));
-        Self::from_field_and_array(self.field.clone(), with_bitmap)
+        Self::new_from_arrow2(self.field.clone(), with_bitmap)
     }
 
     pub fn validity(&self) -> Option<&NullBuffer> {
@@ -178,7 +178,7 @@ impl<T> DataArray<T> {
             )));
         }
         let sliced = self.data.sliced(start, end - start);
-        Self::from_field_and_array(self.field.clone(), sliced)
+        Self::new_from_arrow2(self.field.clone(), sliced)
     }
 
     pub fn head(&self, num: usize) -> DaftResult<Self> {
@@ -201,7 +201,7 @@ impl<T> DataArray<T> {
     }
 
     pub fn rename(&self, name: &str) -> Self {
-        Self::from_field_and_array(Arc::new(self.field.rename(name)), self.data.clone()).unwrap()
+        Self::new_from_arrow2(Arc::new(self.field.rename(name)), self.data.clone()).unwrap()
     }
 
     pub fn field(&self) -> &Field {
@@ -209,7 +209,7 @@ impl<T> DataArray<T> {
     }
 
     pub fn with_field<F: Into<FieldRef>>(&self, field: F) -> Self {
-        Self::from_field_and_array(field.into(), self.data.clone()).unwrap()
+        Self::new_from_arrow2(field.into(), self.data.clone()).unwrap()
     }
 }
 

@@ -164,7 +164,7 @@ impl DaftCompareAggable for DataArray<Utf8Type> {
         let result = daft_arrow::compute::aggregate::min_string(arrow_array);
         let res_arrow_array = daft_arrow::array::Utf8Array::<i64>::from([result]);
 
-        Self::from_field_and_array(self.field.clone(), Box::new(res_arrow_array))
+        Self::new_from_arrow2(self.field.clone(), Box::new(res_arrow_array))
     }
     fn max(&self) -> Self::Output {
         let arrow_array: &daft_arrow::array::Utf8Array<i64> = self.as_arrow2();
@@ -172,7 +172,7 @@ impl DaftCompareAggable for DataArray<Utf8Type> {
         let result = daft_arrow::compute::aggregate::max_string(arrow_array);
         let res_arrow_array = daft_arrow::array::Utf8Array::<i64>::from([result]);
 
-        Self::from_field_and_array(self.field.clone(), Box::new(res_arrow_array))
+        Self::new_from_arrow2(self.field.clone(), Box::new(res_arrow_array))
     }
 
     fn grouped_min(&self, groups: &GroupIndices) -> Self::Output {
@@ -242,7 +242,7 @@ impl DaftCompareAggable for DataArray<BinaryType> {
         let result = daft_arrow::compute::aggregate::min_binary(arrow_array);
         let res_arrow_array = daft_arrow::array::BinaryArray::<i64>::from([result]);
 
-        Self::from_field_and_array(self.field.clone(), Box::new(res_arrow_array))
+        Self::new_from_arrow2(self.field.clone(), Box::new(res_arrow_array))
     }
     fn max(&self) -> Self::Output {
         let arrow_array: &daft_arrow::array::BinaryArray<i64> = self.as_arrow2();
@@ -250,7 +250,7 @@ impl DaftCompareAggable for DataArray<BinaryType> {
         let result = daft_arrow::compute::aggregate::max_binary(arrow_array);
         let res_arrow_array = daft_arrow::array::BinaryArray::<i64>::from([result]);
 
-        Self::from_field_and_array(self.field.clone(), Box::new(res_arrow_array))
+        Self::new_from_arrow2(self.field.clone(), Box::new(res_arrow_array))
     }
 
     fn grouped_min(&self, groups: &GroupIndices) -> Self::Output {
@@ -428,7 +428,7 @@ impl DaftCompareAggable for DataArray<BooleanType> {
         let result = daft_arrow::compute::aggregate::min_boolean(arrow_array);
         let res_arrow_array = daft_arrow::array::BooleanArray::from([result]);
 
-        Self::from_field_and_array(self.field.clone(), Box::new(res_arrow_array))
+        Self::new_from_arrow2(self.field.clone(), Box::new(res_arrow_array))
     }
     fn max(&self) -> Self::Output {
         let arrow_array: &daft_arrow::array::BooleanArray = self.as_arrow2();
@@ -436,7 +436,7 @@ impl DaftCompareAggable for DataArray<BooleanType> {
         let result = daft_arrow::compute::aggregate::max_boolean(arrow_array);
         let res_arrow_array = daft_arrow::array::BooleanArray::from([result]);
 
-        Self::from_field_and_array(self.field.clone(), Box::new(res_arrow_array))
+        Self::new_from_arrow2(self.field.clone(), Box::new(res_arrow_array))
     }
 
     fn grouped_min(&self, groups: &GroupIndices) -> Self::Output {
@@ -454,7 +454,7 @@ impl DaftCompareAggable for DataArray<NullType> {
     fn min(&self) -> Self::Output {
         let res_arrow_array =
             daft_arrow::array::NullArray::new(daft_arrow::datatypes::DataType::Null, 1);
-        Self::from_field_and_array(self.field.clone(), Box::new(res_arrow_array))
+        Self::new_from_arrow2(self.field.clone(), Box::new(res_arrow_array))
     }
 
     fn max(&self) -> Self::Output {

@@ -701,7 +701,7 @@ impl ImageArray {
                 let shape_offsets = daft_arrow::offset::OffsetsBuffer::try_from(shape_offsets)?;
                 let shapes_array = ListArray::new(
                     Field::new("shape", shapes_dtype),
-                    UInt64Array::from_field_and_array(
+                    UInt64Array::new_from_arrow2(
                         Field::new("shape", DataType::UInt64).into(),
                         Box::new(daft_arrow::array::PrimitiveArray::from_vec(shapes)),
                     )?
