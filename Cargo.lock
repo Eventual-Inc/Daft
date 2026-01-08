@@ -2828,6 +2828,7 @@ dependencies = [
  "serde",
  "snafu",
  "typetag",
+ "uuid 1.19.0",
 ]
 
 [[package]]

@@ -716,6 +716,16 @@ impl RecordBatch {
             .await
     }
 
+    fn maybe_inject_uuid_length_arg(&self, func_name: &str, args: &mut Vec<FunctionArg<Series>>) {
+        if args.is_empty() && func_name == "uuid" {
+            args.push(FunctionArg::Unnamed(Series::full_null(
+                "",
+                &DataType::Null,
+                self.len(),
+            )));
+        }
+    }
+
     #[async_recursion::async_recursion]
     pub async fn eval_expression_async_with_metrics(
         &self,
@@ -937,6 +947,7 @@ impl RecordBatch {
                     };
                     evaluated_args.push(evaluated);
                 }
+                self.maybe_inject_uuid_length_arg(func.name(), &mut evaluated_args);
                 let args = FunctionArgs::new_unchecked(evaluated_args);
                 match &func.func {
                     BuiltinScalarFnVariant::Sync(func) => func.call(args),
@@ -1202,6 +1213,7 @@ impl RecordBatch {
                     };
                     evaluated_args.push(evaluated);
                 }
+                self.maybe_inject_uuid_length_arg(func.name(), &mut evaluated_args);
                 let args = FunctionArgs::new_unchecked(evaluated_args);
                 match func {
                     BuiltinScalarFnVariant::Sync(f) => f.call(args),

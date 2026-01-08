@@ -49,6 +49,11 @@ def monotonically_increasing_id() -> Expression:
     return Expression._from_pyexpr(f())
 
 
+def uuid() -> Expression:
+    """Generates a column of UUID strings."""
+    return Expression._call_builtin_scalar_fn("uuid")
+
+
 def eq_null_safe(left: Expression, right: Expression) -> Expression:
     """Performs a null-safe equality comparison between two expressions.
 
