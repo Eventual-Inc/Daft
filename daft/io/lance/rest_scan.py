@@ -22,6 +22,12 @@ if TYPE_CHECKING:
     except ImportError:
         lance_namespace = None
 
+# Make lance_namespace available for testing/mocking
+try:
+    import lance_namespace
+except ImportError:
+    lance_namespace = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,12 +38,10 @@ def _lance_rest_factory_function(
     query_params: dict[str, Any],
 ) -> Iterator[PyRecordBatch]:
     """Factory function for REST-based Lance table scanning."""
-    try:
-        import lance_namespace
-    except ImportError as e:
+    if lance_namespace is None:
         raise ImportError(
             "Unable to import the `lance_namespace` package, please ensure it is installed: `pip install lance-namespace`"
-        ) from e
+        )
 
     # Create REST client
     client_config: dict[str, Any] = {"uri": rest_config.base_url}
@@ -110,12 +114,10 @@ def _lance_rest_count_function(
     filter_expr: str | None = None,
 ) -> Iterator[PyRecordBatch]:
     """Factory function for counting rows in REST-based Lance table."""
-    try:
-        import lance_namespace
-    except ImportError as e:
+    if lance_namespace is None:
         raise ImportError(
             "Unable to import the `lance_namespace` package, please ensure it is installed: `pip install lance-namespace`"
-        ) from e
+        )
 
     # Create REST client
     client_config: dict[str, Any] = {"uri": rest_config.base_url}
@@ -317,12 +319,10 @@ class LanceRestScanOperator(ScanOperator, SupportsPushdownFilters):
 
     def _fetch_table_schema(self) -> Schema:
         """Fetch table schema via REST API."""
-        try:
-            import lance_namespace
-        except ImportError as e:
+        if lance_namespace is None:
             raise ImportError(
                 "Unable to import the `lance_namespace` package, please ensure it is installed: `pip install lance-namespace`"
-            ) from e
+            )
 
         # Create REST client
         client_config: dict[str, Any] = {"uri": self._rest_config.base_url}

@@ -8,6 +8,12 @@ from daft.recordbatch import MicroPartition
 
 from .rest_config import LanceRestConfig
 
+# Make lance_namespace available for testing/mocking
+try:
+    import lance_namespace
+except ImportError:
+    lance_namespace = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -34,12 +40,10 @@ def write_lance_rest(
     Returns:
         MicroPartition containing write metadata
     """
-    try:
-        import lance_namespace
-    except ImportError as e:
+    if lance_namespace is None:
         raise ImportError(
             "Unable to import the `lance_namespace` package, please ensure it is installed: `pip install lance-namespace`"
-        ) from e
+        )
 
     # Create REST client
     client_config: dict[str, Any] = {"uri": rest_config.base_url}
@@ -131,12 +135,10 @@ def create_lance_table_rest(
     Returns:
         Dictionary containing creation metadata
     """
-    try:
-        import lance_namespace
-    except ImportError as e:
+    if lance_namespace is None:
         raise ImportError(
             "Unable to import the `lance_namespace` package, please ensure it is installed: `pip install lance-namespace`"
-        ) from e
+        )
 
     # Create REST client
     client_config: dict[str, Any] = {"uri": rest_config.base_url}
@@ -177,12 +179,10 @@ def register_lance_table_rest(
     Returns:
         Dictionary containing registration metadata
     """
-    try:
-        import lance_namespace
-    except ImportError as e:
+    if lance_namespace is None:
         raise ImportError(
             "Unable to import the `lance_namespace` package, please ensure it is installed: `pip install lance-namespace`"
-        ) from e
+        )
 
     # Create REST client
     client_config: dict[str, Any] = {"uri": rest_config.base_url}
