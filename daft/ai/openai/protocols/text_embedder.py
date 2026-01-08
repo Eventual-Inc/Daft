@@ -4,7 +4,8 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from openai import NOT_GIVEN, AsyncOpenAI, OpenAIError, RateLimitError
+from openai import AsyncOpenAI, OpenAIError, RateLimitError
+from openai._types import Omit, omit
 from openai.types.create_embedding_response import Usage
 
 from daft import DataType
@@ -109,7 +110,7 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
             provider_options=self.provider_options,
             model=self.model_name,
             embed_options=self.embed_options,
-            dimensions=self.dimensions,
+            dimensions=self.dimensions if self.embed_options.get("supports_overriding_dimensions", False) else omit,
             provider_name=self.provider_name,
         )
 
@@ -201,11 +202,12 @@ class OpenAITextEmbedder(TextEmbedder):
     async def _embed_text_batch(self, input_batch: list[str]) -> list[Embedding]:
         """Embeds text as a batch call, falling back to _embed_text on rate limit exceptions."""
         try:
+            dimensions: int | Omit = self._dimensions if self._dimensions is not None else omit
             response = await self._client.embeddings.create(
                 input=input_batch,
                 model=self._model,
                 encoding_format="float",
-                dimensions=self._dimensions or NOT_GIVEN,
+                dimensions=dimensions,
             )
             self._record_usage_metrics(response)
             return [np.array(embedding.embedding) for embedding in response.data]
@@ -219,11 +221,12 @@ class OpenAITextEmbedder(TextEmbedder):
     async def _embed_text(self, input_text: str) -> Embedding:
         """Embeds a single text input and possibly returns a zero vector."""
         try:
+            dimensions: int | Omit = self._dimensions if self._dimensions is not None else omit
             response: CreateEmbeddingResponse = await self._client.embeddings.create(
                 input=input_text,
                 model=self._model,
                 encoding_format="float",
-                dimensions=self._dimensions or NOT_GIVEN,
+                dimensions=dimensions,
             )
             self._record_usage_metrics(response)
             return np.array(response.data[0].embedding)
