@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
+    num::NonZeroUsize,
     sync::{Arc, Mutex, atomic::Ordering},
     time::Duration,
 };
@@ -368,11 +369,15 @@ impl StreamingSink for AsyncUdfSink {
         self.params
             .udf_properties
             .batch_size
-            .map(MorselSizeRequirement::Strict)
+            .map(|size| {
+                MorselSizeRequirement::Strict(
+                    NonZeroUsize::new(size).expect("batch size for AsyncUDF sink must be non-zero"),
+                )
+            })
             .or_else(|| {
                 let is_scalar_udf = self.params.udf_properties.is_scalar;
                 if is_scalar_udf {
-                    Some(MorselSizeRequirement::Strict(1))
+                    Some(MorselSizeRequirement::Strict(NonZeroUsize::new(1).unwrap()))
                 } else {
                     None
                 }
