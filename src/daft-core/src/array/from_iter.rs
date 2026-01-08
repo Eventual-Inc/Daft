@@ -167,6 +167,24 @@ impl<T> DataArray<T>
 where
     T: DaftNumericType,
 {
+    pub fn from_iter_values<
+        I: IntoIterator<
+            Item = <<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native,
+        >,
+    >(
+        iter: I,
+    ) -> Self {
+        let arrow_arr =
+            arrow::array::PrimitiveArray::<<T::Native as NumericNative>::ARROWTYPE>::from_iter_values(
+                iter,
+            );
+        Self::from_arrow(Field::new("", T::get_dtype()), Arc::new(arrow_arr)).unwrap()
+    }
+}
+impl<T> DataArray<T>
+where
+    T: DaftNumericType,
+{
     pub fn from_values(
         name: &str,
         iter: impl daft_arrow::trusted_len::TrustedLen<Item = T::Native>,
