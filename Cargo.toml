@@ -228,15 +228,15 @@ members = [
 
 [workspace.dependencies]
 ahash = "0.8.12"
-arrow = "54.2.1"
-arrow-array = "54.2.1"
-arrow-buffer = "54.2.1"
-arrow-csv = "54.2.1"
-arrow-data = "54.2.1"
-arrow-flight = "54.2.1"
-arrow-ipc = "54.2.1"
-arrow-json = "54.2.1"
-arrow-schema = "54.2.1"
+arrow = "57.1.0"
+arrow-array = "57.1.0"
+arrow-buffer = "57.1.0"
+arrow-csv = "57.1.0"
+arrow-data = "57.1.0"
+arrow-flight = "57.1.0"
+arrow-ipc = "57.1.0"
+arrow-json = "57.1.0"
+arrow-schema = "57.1.0"
 approx = "0.5.1"
 arc-swap = "1.7.1"
 async-compat = "0.2.5"
@@ -309,7 +309,7 @@ opentelemetry = {version = "0.31", features = ["trace", "metrics", "logs"]}
 opentelemetry-otlp = {version = "0.31", features = ["grpc-tonic", "logs"]}
 opentelemetry_sdk = {version = "0.31", features = ["logs"]}
 parking_lot = "0.12.5"
-parquet = "54.2.1"
+parquet = "57.1.0"
 path_macro = "1.0.0"
 pretty_assertions = "1.4.1"
 proptest = "1.9.0"
@@ -345,8 +345,8 @@ tokio = {version = "1.48.0", features = [
 ]}
 tokio-stream = {version = "0.1.14", features = ["fs", "io-util", "time"]}
 tokio-util = "0.7.17"
-tonic = "0.12.3"
-tonic-build = "0.12.3"
+tonic = "0.14.2"
+tonic-build = "0.14.2"
 tracing = {version = "0.1", features = ["log"]}
 tracing-subscriber = {version = "0.3.22", default-features = false, features = ["std", "fmt", "ansi", "env-filter"]}
 typed-builder = "0.20.0"

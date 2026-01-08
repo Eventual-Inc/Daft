@@ -6,7 +6,7 @@ pub mod python;
 use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_metrics::{NodeID, QueryEndState, QueryID, QueryPlan, StatSnapshot};
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartitionRef;
@@ -48,9 +48,12 @@ pub fn default_subscribers() -> HashMap<String, Arc<dyn Subscriber>> {
         Ok(Some(s)) => {
             subscribers.insert("_dashboard".to_string(), Arc::new(s));
         }
-        Err(e) => {
-            log::error!("Failed to connect to the daft dashboard: {}", e);
-        }
+        Err(e) => match e {
+            DaftError::NotImplemented(msg) => {
+                panic!("{}", msg);
+            }
+            _ => log::error!("Failed to connect to the daft dashboard: {}", e),
+        },
         _ => {}
     }
 

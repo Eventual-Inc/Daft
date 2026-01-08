@@ -1,4 +1,4 @@
-use std::{cmp::max, sync::Arc, time::Duration};
+use std::{cmp::max, num::NonZeroUsize, sync::Arc, time::Duration};
 
 use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
@@ -166,6 +166,7 @@ impl IntermediateOperator for ProjectOperator {
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
         self.batch_size
+            .and_then(NonZeroUsize::new)
             .map(|batch_size| MorselSizeRequirement::Flexible(0, batch_size))
     }
 
@@ -194,7 +195,7 @@ impl IntermediateOperator for ProjectOperator {
                         step_size_alpha: 2048,
                         correction_delta: 64,
                         b_min: min_batch_size,
-                        b_max: max_batch_size,
+                        b_max: max_batch_size.get(),
                     }
                     .into()
                 }

@@ -220,7 +220,7 @@ impl PipelineNode for SourceNode {
 
         let mut source_stream = self
             .source
-            .get_data(maintain_order, io_stats, chunk_size)
+            .get_data(maintain_order, io_stats, chunk_size.into())
             .with_context(|_| PipelineExecutionSnafu {
                 node_name: self.name().to_string(),
             })?;
