@@ -65,6 +65,7 @@ class Func(Generic[P, T, C]):
     return_dtype: DataType
     name_override: str | None = None
     func_id: str = field(init=False)
+    ray_options: dict[str, Any] | None = None
     name: str = field(init=False)
 
     @classmethod
@@ -79,6 +80,7 @@ class Func(Generic[P, T, C]):
         max_retries: int | None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
         name_override: str | None = None,
+        ray_options: dict[str, Any] | None = None,
     ) -> Func[P, T, None]:
         # create a class instance with no setup method
         class NoopCls(ClsBase[None]):
@@ -111,6 +113,7 @@ class Func(Generic[P, T, C]):
             on_error,
             return_dtype,
             name_override,
+            ray_options,
         )
 
     @classmethod
@@ -124,6 +127,7 @@ class Func(Generic[P, T, C]):
         max_retries: int | None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
         name_override: str | None = None,
+        ray_options: dict[str, Any] | None = None,
     ) -> Func[P, T, C]:
         is_generator = inspect.isgeneratorfunction(method)
         is_async = inspect.iscoroutinefunction(method)
@@ -148,6 +152,7 @@ class Func(Generic[P, T, C]):
             on_error,
             return_dtype,
             name_override,
+            ray_options,
         )
 
     def __post_init__(self) -> None:
@@ -239,6 +244,9 @@ class Func(Generic[P, T, C]):
             "Daft classes must be serializable. If your class accesses a non-serializable global or nonlocal variable, initialize it in the setup method instead.",
         )
 
+        # Extract resource requests from ray_options if present
+        ray_options = self.ray_options.copy() if self.ray_options is not None else None
+
         # TODO: implement generator UDFs on the engine side
         if self.is_generator:
 
@@ -261,6 +269,7 @@ class Func(Generic[P, T, C]):
                     self.on_error,
                     (args, kwargs),
                     expr_args,
+                    ray_options,
                 )
             ).explode()
         elif self.is_batch:
@@ -281,6 +290,7 @@ class Func(Generic[P, T, C]):
                     self.on_error,
                     (args, kwargs),
                     expr_args,
+                    ray_options,
                 )
             )
         else:
@@ -300,6 +310,7 @@ class Func(Generic[P, T, C]):
                     self.on_error,
                     (args, kwargs),
                     expr_args,
+                    ray_options,
                 )
             )
 
@@ -361,6 +372,7 @@ def wrap_cls(
     max_retries: int | None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
     name_override: str | None = None,
+    ray_options: dict[str, Any] | None = None,
 ) -> type:
     class Cls(ClsBase[cls]):  # type: ignore[valid-type]
         def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -385,7 +397,15 @@ def wrap_cls(
                 raise AttributeError("Can only access methods on a Daft class instance.")
 
             return Func._from_method(
-                self, attr, gpus, use_process, max_concurrency, max_retries, on_error, name_override
+                self,
+                attr,
+                gpus,
+                use_process,
+                max_concurrency,
+                max_retries,
+                on_error,
+                name_override,
+                ray_options,
             )
 
         def __call__(self, *args: Any, **kwargs: Any) -> Any:

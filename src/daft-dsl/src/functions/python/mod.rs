@@ -59,11 +59,7 @@ impl FromStr for OnError {
 use super::FunctionExpr;
 #[cfg(feature = "python")]
 use crate::python::PyExpr;
-use crate::{
-    Expr, ExprRef,
-    functions::scalar::ScalarFn,
-    python_udf::{BatchPyFn, PyScalarFn},
-};
+use crate::{Expr, ExprRef, functions::scalar::ScalarFn, python_udf::PyScalarFn};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum MaybeInitializedUDF {
@@ -320,14 +316,22 @@ impl UDFProperties {
                 }
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(row_wise_fn))) => {
                     num_udfs += 1;
+                    let cpus = Python::attach(|py| {
+                        row_wise_fn.ray_options.as_ref().and_then(|options| {
+                            options
+                                .as_ref()
+                                .bind(py)
+                                .get_item("num_cpus")
+                                .ok()
+                                .and_then(|v| v.extract::<f64>().ok())
+                        })
+                    });
+                    let resource_request =
+                        ResourceRequest::try_new_internal(cpus, Some(row_wise_fn.gpus.0), None)?;
                     udf_properties = Some(Self {
                         name: row_wise_fn.function_name.to_string(),
-                        resource_request: Some(ResourceRequest::try_new_internal(
-                            None,
-                            Some(row_wise_fn.gpus.0),
-                            None,
-                        )?),
-                        batch_size: None, // Row-wise functions don't have batch_size
+                        resource_request: Some(resource_request),
+                        batch_size: None,
                         concurrency: row_wise_fn.max_concurrency,
                         use_process: row_wise_fn.use_process,
                         max_retries: row_wise_fn.max_retries,
@@ -335,38 +339,35 @@ impl UDFProperties {
                         is_async: row_wise_fn.is_async,
                         on_error: Some(row_wise_fn.on_error),
                         is_scalar: false,
-                        ray_options: None,
+                        ray_options: row_wise_fn.ray_options.clone(),
                     });
                 }
-                Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
-                    function_name,
-                    gpus,
-                    max_concurrency,
-                    use_process,
-                    batch_size,
-                    max_retries,
-                    on_error,
-                    builtin_name,
-                    is_async,
-                    ..
-                }))) => {
+                Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(batch_fn))) => {
                     num_udfs += 1;
+                    let cpus = Python::attach(|py| {
+                        batch_fn.ray_options.as_ref().and_then(|options| {
+                            options
+                                .as_ref()
+                                .bind(py)
+                                .get_item("num_cpus")
+                                .ok()
+                                .and_then(|v| v.extract::<f64>().ok())
+                        })
+                    });
+                    let resource_request =
+                        ResourceRequest::try_new_internal(cpus, Some(batch_fn.gpus.0), None)?;
                     udf_properties = Some(Self {
-                        name: function_name.to_string(),
-                        resource_request: Some(ResourceRequest::try_new_internal(
-                            None,
-                            Some(gpus.0),
-                            None,
-                        )?),
-                        batch_size: *batch_size,
-                        concurrency: *max_concurrency,
-                        use_process: *use_process,
-                        max_retries: *max_retries,
-                        builtin_name: *builtin_name,
-                        is_async: *is_async,
-                        on_error: Some(*on_error),
+                        name: batch_fn.function_name.to_string(),
+                        resource_request: Some(resource_request),
+                        batch_size: batch_fn.batch_size,
+                        concurrency: batch_fn.max_concurrency,
+                        use_process: batch_fn.use_process,
+                        max_retries: batch_fn.max_retries,
+                        is_async: batch_fn.is_async,
+                        on_error: Some(batch_fn.on_error),
+                        builtin_name: batch_fn.builtin_name,
                         is_scalar: false,
-                        ray_options: None,
+                        ray_options: batch_fn.ray_options.clone(),
                     });
                 }
                 _ => {}

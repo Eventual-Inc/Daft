@@ -28,6 +28,7 @@ class _FuncDecorator:
         use_process: bool | None = None,
         max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
+        ray_options: dict[str, Any] | None = None,
     ) -> Callable[[Callable[P, T]], Func[P, T, None]]: ...
     @overload
     def __call__(
@@ -50,6 +51,7 @@ class _FuncDecorator:
         use_process: bool | None = None,
         max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
+        ray_options: dict[str, Any] | None = None,
     ) -> Callable[[Callable[P, T]], Func[P, T, None]] | Func[P, T, None]:
         """Decorator to convert a Python function into a Daft user-defined function.
 
@@ -221,7 +223,15 @@ class _FuncDecorator:
 
         def partial_func(fn: Callable[P, T]) -> Func[P, T, None]:
             return Func._from_func(
-                fn, return_dtype, unnest, use_process, False, None, max_retries=max_retries, on_error=on_error
+                fn,
+                return_dtype,
+                unnest,
+                use_process,
+                False,
+                None,
+                max_retries=max_retries,
+                on_error=on_error,
+                ray_options=ray_options,
             )
 
         return partial_func if fn is None else partial_func(fn)
@@ -235,6 +245,7 @@ class _FuncDecorator:
         batch_size: int | None = None,
         max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
+        ray_options: dict[str, Any] | None = None,
     ) -> Callable[[Callable[P, T]], Func[P, T, None]]:
         """Decorator to convert a Python function into a Daft user-defined batch function.
 
@@ -307,7 +318,9 @@ class _FuncDecorator:
         """
 
         def partial_func(fn: Callable[P, T]) -> Func[P, T, None]:
-            return Func._from_func(fn, return_dtype, unnest, use_process, True, batch_size, max_retries, on_error)
+            return Func._from_func(
+                fn, return_dtype, unnest, use_process, True, batch_size, max_retries, on_error, ray_options=ray_options
+            )
 
         return partial_func
 
@@ -324,6 +337,7 @@ def cls(
     max_retries: int | None = None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
     name_override: str | None = None,
+    ray_options: dict[str, Any] | None = None,
 ) -> Callable[[type], type]: ...
 @overload
 def cls(
@@ -335,6 +349,7 @@ def cls(
     max_retries: int | None = None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
     name_override: str | None = None,
+    ray_options: dict[str, Any] | None = None,
 ) -> type: ...
 def cls(
     class_: type | None = None,
@@ -345,6 +360,7 @@ def cls(
     max_retries: int | None = None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
     name_override: str | None = None,
+    ray_options: dict[str, Any] | None = None,
 ) -> type | Callable[[type], type]:
     """Decorator to convert a Python class into a Daft user-defined class.
 
@@ -355,6 +371,7 @@ def cls(
         use_process: Whether to run each instance of the class in a separate process. If unset, Daft will automatically choose based on runtime performance.
         max_concurrency: The maximum number of concurrent instances of the class.
         name_override: The name to display for the UDF class in the plan and progress bars.
+        ray_options: Options to pass to the Ray executor (e.g. {"num_cpus": 1, "num_gpus": 1}).
 
     Daft classes allow you to initialize a class instance once, and then reuse it for multiple rows of data.
     This is useful for expensive initializations that need to be amortized across multiple rows of data, such as loading a model or establishing a network connection.
@@ -427,7 +444,9 @@ def cls(
         raise ValueError(f"ResourceRequest num_gpus greater than 1 must be an integer, got {gpus}")
 
     def partial_cls(c: type) -> type:
-        return wrap_cls(c, gpus, use_process, max_concurrency, max_retries, on_error, name_override)
+        return wrap_cls(
+            c, gpus, use_process, max_concurrency, max_retries, on_error, name_override, ray_options=ray_options
+        )
 
     return partial_cls if class_ is None else partial_cls(class_)
 
