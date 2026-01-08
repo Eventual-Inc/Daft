@@ -85,19 +85,19 @@ def test_order_by_only_row_number(make_df, repartition_nparts, with_morsel_size)
     for _, row in result_df.iterrows():
         assert row["row_by_x_asc"] == row["x"], f"row_by_x_asc {row['row_by_x_asc']} should equal x {row['x']}"
         assert row["row_by_y_asc"] == row["y"], f"row_by_y_asc {row['row_by_y_asc']} should equal y {row['y']}"
-        assert (
-            row["row_by_value_asc"] == row["value"]
-        ), f"row_by_value_asc {row['row_by_value_asc']} should equal value {row['value']}"
+        assert row["row_by_value_asc"] == row["value"], (
+            f"row_by_value_asc {row['row_by_value_asc']} should equal value {row['value']}"
+        )
 
-        assert (
-            row["row_by_x_desc"] == total - row["x"]
-        ), f"row_by_x_desc {row['row_by_x_desc']} should equal {total} - x {row['x']}"
-        assert (
-            row["row_by_y_desc"] == total - row["y"]
-        ), f"row_by_y_desc {row['row_by_y_desc']} should equal {total} - y {row['y']}"
-        assert (
-            row["row_by_value_desc"] == total - row["value"]
-        ), f"row_by_value_desc {row['row_by_value_desc']} should equal {total} - value {row['value']}"
+        assert row["row_by_x_desc"] == total - row["x"], (
+            f"row_by_x_desc {row['row_by_x_desc']} should equal {total} - x {row['x']}"
+        )
+        assert row["row_by_y_desc"] == total - row["y"], (
+            f"row_by_y_desc {row['row_by_y_desc']} should equal {total} - y {row['y']}"
+        )
+        assert row["row_by_value_desc"] == total - row["value"], (
+            f"row_by_value_desc {row['row_by_value_desc']} should equal {total} - value {row['value']}"
+        )
 
         assert row["row_by_xy_asc"] == row["x"], f"row_by_xy_asc {row['row_by_xy_asc']} should equal x {row['x']}"
         assert row["row_by_xy_mixed"] == row["x"], f"row_by_xy_mixed {row['row_by_xy_mixed']} should equal x {row['x']}"

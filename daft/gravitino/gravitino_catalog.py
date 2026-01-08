@@ -7,7 +7,7 @@ from typing import Any, Literal
 from urllib.parse import urlparse
 
 from daft.dependencies import requests
-from daft.io import AzureConfig, IOConfig, S3Config
+from daft.io import AzureConfig, GravitinoConfig, IOConfig, S3Config
 
 
 @dataclasses.dataclass(frozen=True)
@@ -362,6 +362,23 @@ class GravitinoClient:
 
         except Exception as e:
             raise Exception(f"Failed to load fileset {fileset_name}: {e}")
+
+    def to_io_config(self) -> IOConfig:
+        """Convert client configuration to IOConfig.
+
+        Returns an IOConfig with only the Gravitino configuration from this client.
+        S3 and other storage credentials are handled per-fileset by the Gravitino source.
+        """
+        gravitino_config = GravitinoConfig(
+            endpoint=self._endpoint,
+            metalake_name=self._metalake_name,
+            auth_type=self._auth_type,
+            username=self._username,
+            password=self._password,
+            token=self._token,
+        )
+        # Only include Gravitino config - let Gravitino source handle storage credentials
+        return IOConfig(gravitino=gravitino_config)
 
 
 def _io_config_from_storage_location(storage_location: str, properties: dict[str, str]) -> IOConfig | None:

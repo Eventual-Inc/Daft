@@ -31,7 +31,7 @@ where
             T::get_dtype()
         );
 
-        let arrow_dtype = dtype.to_arrow();
+        let arrow_dtype = dtype.to_arrow2();
         match arrow_dtype {
             Ok(arrow_dtype) => Self::new(
                 Arc::new(Field::new(name.to_string(), dtype.clone())),
@@ -43,7 +43,7 @@ where
     }
 
     fn empty(name: &str, dtype: &DataType) -> Self {
-        let arrow_dtype = dtype.to_arrow();
+        let arrow_dtype = dtype.to_arrow2();
         match arrow_dtype {
             Ok(arrow_dtype) => Self::new(
                 Arc::new(Field::new(name.to_string(), dtype.clone())),

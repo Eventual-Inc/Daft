@@ -2,9 +2,9 @@ use std::{cmp, iter::repeat_n, ops::Not, sync::Arc};
 
 use arrow_array::builder::BooleanBufferBuilder;
 use common_error::DaftResult;
-use daft_arrow::{buffer::NullBufferBuilder, types::IndexRange};
+use daft_arrow::buffer::NullBufferBuilder;
 use daft_core::{
-    array::ops::{DaftIsNull, arrow::comparison::build_multi_array_is_equal, as_arrow::AsArrow},
+    array::ops::{DaftIsNull, arrow::comparison::build_multi_array_is_equal},
     prelude::*,
 };
 use daft_dsl::{
@@ -60,7 +60,7 @@ pub(super) fn hash_inner_join(
         let mut left_idx = vec![];
         let mut right_idx = vec![];
 
-        for (r_idx, h) in r_hashes.as_arrow().values_iter().enumerate() {
+        for (r_idx, h) in r_hashes.values().iter().enumerate() {
             if let Some((_, indices)) = probe_table.raw_entry().from_hash(*h, |other| {
                 *h == other.hash && {
                     let l_idx = other.idx;
@@ -152,7 +152,7 @@ pub(super) fn hash_left_right_join(
 
         let mut l_valid = NullBufferBuilder::new(min_rows);
 
-        for (r_idx, h) in r_hashes.as_arrow().values_iter().enumerate() {
+        for (r_idx, h) in r_hashes.values().iter().enumerate() {
             if let Some((_, indices)) = probe_table.raw_entry().from_hash(*h, |other| {
                 *h == other.hash && {
                     let l_idx = other.idx;
@@ -247,7 +247,7 @@ pub(super) fn hash_semi_anti_join(
 
         let mut left_idx = Vec::with_capacity(rows);
         let is_semi = !is_anti;
-        for (l_idx, h) in l_hashes.as_arrow().values_iter().enumerate() {
+        for (l_idx, h) in l_hashes.values().iter().enumerate() {
             let is_match = probe_table
                 .raw_entry()
                 .from_hash(*h, |other| {
@@ -284,20 +284,14 @@ pub(super) fn hash_outer_join(
     let (lidx, ridx) = if lkeys.columns.iter().any(|s| s.data_type().is_null())
         || rkeys.columns.iter().any(|s| s.data_type().is_null())
     {
-        let l_iter = IndexRange::new(0, lkeys.len() as u64)
-            .map(Some)
+        let l_iter = (0..lkeys.len())
+            .map(|i| Some(i as u64))
             .chain(repeat_n(None, rkeys.len()));
-        let r_iter =
-            repeat_n(None, lkeys.len()).chain(IndexRange::new(0, rkeys.len() as u64).map(Some));
-
-        let l_arrow =
-            Box::new(daft_arrow::array::PrimitiveArray::<u64>::from_trusted_len_iter(l_iter));
-        let r_arrow =
-            Box::new(daft_arrow::array::PrimitiveArray::<u64>::from_trusted_len_iter(r_iter));
+        let r_iter = repeat_n(None, lkeys.len()).chain((0..rkeys.len()).map(|i| Some(i as u64)));
 
         (
-            UInt64Array::from(("left_indices", l_arrow)),
-            UInt64Array::from(("right_indices", r_arrow)),
+            UInt64Array::from_iter(Field::new("left_indices", DataType::UInt64), l_iter),
+            UInt64Array::from_iter(Field::new("right_indices", DataType::UInt64), r_iter),
         )
     } else {
         // probe on the smaller table
@@ -331,7 +325,7 @@ pub(super) fn hash_outer_join(
 
         let mut left_idx_used = BooleanBufferBuilder::new(lkeys.len());
 
-        for (r_idx, h) in r_hashes.as_arrow().values_iter().enumerate() {
+        for (r_idx, h) in r_hashes.values().iter().enumerate() {
             if let Some((_, indices)) = probe_table.raw_entry().from_hash(*h, |other| {
                 *h == other.hash && {
                     let l_idx = other.idx;

@@ -21,9 +21,6 @@ data2 = {
     "long": [-123.7, -75.1],
 }
 
-PYARROW_LOWER_BOUND_SKIP = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) < (9, 0, 0)
-pytestmark = pytest.mark.skipif(PYARROW_LOWER_BOUND_SKIP, reason="lance not supported on old versions of pyarrow")
-
 
 @pytest.fixture(scope="function")
 def lance_dataset_path(tmp_path_factory):

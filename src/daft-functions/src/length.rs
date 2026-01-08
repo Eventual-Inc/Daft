@@ -22,7 +22,7 @@ impl ScalarUDF for Length {
 
         Ok(match input.data_type() {
             DataType::Utf8 => {
-                let arrow_arr = input.utf8()?.as_arrow();
+                let arrow_arr = input.utf8()?.as_arrow2();
 
                 let field = Field::new(input.name(), DataType::UInt64);
                 let output_arr = UInt64Array::from_iter(
@@ -36,7 +36,7 @@ impl ScalarUDF for Length {
                 output_arr.into_series()
             }
             DataType::Binary => {
-                let arrow_arr = input.binary()?.as_arrow();
+                let arrow_arr = input.binary()?.as_arrow2();
 
                 let length_vec = arrow_arr
                     .offsets()
@@ -79,7 +79,7 @@ impl ScalarUDF for Length {
 
         // let (offsets, validity) = match input.data_type() {
         //     DataType::Binary => {
-        //         let arrow_arr = input.binary()?.as_arrow();
+        //         let arrow_arr = input.binary()?.as_arrow2();
         //         (arrow_arr.offsets(), arrow_arr.validity())
         //     }
         //     DataType::List(_) => {
@@ -96,7 +96,7 @@ impl ScalarUDF for Length {
         //         return Ok(length_arr.into_series());
         //     }
         //     DataType::Utf8 => {
-        //         let arrow_arr = input.utf8()?.as_arrow();
+        //         let arrow_arr = input.utf8()?.as_arrow2();
         //         (arrow_arr.offsets(), arrow_arr.validity())
         //     }
         //     DataType::Null => return Ok(input),

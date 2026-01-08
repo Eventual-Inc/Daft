@@ -55,7 +55,6 @@ def test_lm_studio_text_embedder(model, embedding_dim):
 
         with (
             patch("daft.ai.openai.protocols.text_embedder.AsyncOpenAI") as mock_openai_async,
-            patch("daft.ai.lm_studio.protocols.text_embedder.AsyncOpenAI") as mock_lm_async,
         ):
             mock_async_client = Mock()
             mock_async_client.embeddings = Mock()
@@ -63,7 +62,6 @@ def test_lm_studio_text_embedder(model, embedding_dim):
                 side_effect=lambda **kwargs: mock_embedding_response(kwargs.get("input"))
             )
             mock_openai_async.return_value = mock_async_client
-            mock_lm_async.return_value = mock_async_client
 
             descriptor = LMStudioProvider().get_text_embedder(model=model)
             assert isinstance(descriptor, TextEmbedderDescriptor)

@@ -98,3 +98,52 @@ def test_fixed_list_append_literal(fixed_table):
         ["b"],
     ]
     assert result["col"] == expected
+
+
+def test_list_append_with_null_literal():
+    """Test appending None to lists - fixes issue #5898."""
+    table = MicroPartition.from_pydict(
+        {
+            "int_list": [[1, 2], [3, 4]],
+            "str_list": [["a", "b"], ["c"]],
+        }
+    )
+
+    # Integer list + None
+    result = table.eval_expression_list([col("int_list").list_append(lit(None))])
+    assert result.to_pydict()["int_list"] == [[1, 2, None], [3, 4, None]]
+
+    # String list + None
+    result = table.eval_expression_list([col("str_list").list_append(lit(None))])
+    assert result.to_pydict()["str_list"] == [["a", "b", None], ["c", None]]
+
+
+def test_list_append_null_column():
+    """Test appending a column with null type."""
+    table = MicroPartition.from_pydict(
+        {
+            "col": [[1, 2], [3]],
+            "null_col": [None, None],
+        }
+    )
+
+    result = table.eval_expression_list([col("col").list_append(col("null_col"))])
+    assert result.to_pydict()["col"] == [[1, 2, None], [3, None]]
+
+
+def test_list_append_fixed_size_list_with_null():
+    """Test appending None to a fixed size list."""
+    table = MicroPartition.from_pydict(
+        {
+            "col": [["a", "a"], ["a", "a"]],
+        }
+    )
+
+    fixed_dtype = DataType.fixed_size_list(DataType.string(), 2)
+    table = table.eval_expression_list([col("col").cast(fixed_dtype)])
+
+    result = table.eval_expression_list([col("col").list_append(lit(None))])
+
+    # Fixed size list becomes variable length list when appended to
+    expected = [["a", "a", None], ["a", "a", None]]
+    assert result.to_pydict()["col"] == expected

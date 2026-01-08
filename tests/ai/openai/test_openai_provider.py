@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 pytest.importorskip("openai")
@@ -58,7 +60,7 @@ def test_openai_text_embedder_instantiation():
         provider_options={"api_key": "test_key"},
         model_name="text-embedding-ada-002",
         dimensions=None,
-        model_options={},
+        embed_options={},
     )
 
     embedder = descriptor.instantiate()
@@ -72,7 +74,7 @@ def test_openai_text_embedder_dimensions():
         provider_options={"api_key": "test_key"},
         model_name="text-embedding-ada-002",
         dimensions=None,
-        model_options={},
+        embed_options={},
     )
     assert descriptor_ada.get_dimensions().size == 1536
 
@@ -81,7 +83,7 @@ def test_openai_text_embedder_dimensions():
         provider_options={"api_key": "test_key"},
         model_name="text-embedding-3-small",
         dimensions=None,
-        model_options={},
+        embed_options={},
     )
     assert descriptor_small.get_dimensions().size == 1536
 
@@ -90,7 +92,7 @@ def test_openai_text_embedder_dimensions():
         provider_options={"api_key": "test_key"},
         model_name="text-embedding-3-large",
         dimensions=None,
-        model_options={},
+        embed_options={},
     )
     assert descriptor_large.get_dimensions().size == 3072
 
@@ -101,7 +103,20 @@ def test_openai_text_embedder_descriptor_overridden_dimensions():
         provider_options={"api_key": "test_key"},
         model_name="text-embedding-3-large",
         dimensions=256,
-        model_options={},
+        embed_options={},
     )
 
     assert descriptor.get_dimensions().size == 256
+
+
+def test_openai_provider_raises_import_error_without_numpy():
+    with patch("daft.dependencies.np.module_available", return_value=False):
+        with pytest.raises(ImportError, match=r"Please `pip install 'daft\[openai\]'` with this provider"):
+            OpenAIProvider(api_key="test-key")
+
+
+def test_openai_provider_raises_import_error_without_openai():
+    # We need to mock openai module if it is installed
+    with patch.dict("sys.modules", {"openai": None}):
+        with pytest.raises(ImportError, match=r"Please `pip install 'daft\[openai\]'` with this provider"):
+            OpenAIProvider(api_key="test-key")

@@ -34,11 +34,10 @@ pub(crate) fn native_parquet_writer_supported(
     file_schema: &SchemaRef,
 ) -> DaftResult<bool> {
     let (source_type, _) = parse_url(root_dir)?;
-    match source_type {
-        SourceType::File => {}
-        SourceType::S3 => {}
-        _ => return Ok(false),
+    if !source_type.supports_native_writer() {
+        return Ok(false);
     }
+
     // TODO(desmond): Currently we do not support extension and timestamp types.
     #[allow(deprecated, reason = "arrow2 migration")]
     let arrow_schema = match file_schema.to_arrow2() {
@@ -111,7 +110,7 @@ pub(crate) fn create_native_parquet_writer(
                 storage_backend,
             )))
         }
-        SourceType::S3 => {
+        source if source.supports_native_writer() => {
             let ObjectPath { scheme, .. } = daft_io::utils::parse_object_url(root_dir.as_ref())?;
             let io_config = io_config.ok_or_else(|| {
                 DaftError::InternalError("IO config is required for S3 writes".to_string())
@@ -189,6 +188,7 @@ impl<B: StorageBackend> ParquetWriter<B> {
             .collect();
         // Iterate through each record batch and extract its leaf columns.
         for record_batch in record_batches {
+            #[allow(deprecated, reason = "arrow2 migration")]
             let arrays = record_batch.get_inner_arrow_arrays();
             let mut leaf_column_slots = leaf_columns.iter_mut();
 
@@ -370,7 +370,7 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
 
         // Return a recordbatch containing the filename that we wrote to.
         let field = Field::new(Self::PATH_FIELD_NAME, DataType::Utf8);
-        let filename_series = Series::from_arrow(
+        let filename_series = Series::from_arrow2(
             Arc::new(field.clone()),
             Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice([&self
                 .filename

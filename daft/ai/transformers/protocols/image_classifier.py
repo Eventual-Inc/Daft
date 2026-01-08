@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypedDict
+import threading
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
 import transformers
 from transformers import pipeline
@@ -13,8 +14,12 @@ else:
     from typing import Unpack
 
 from daft.ai.protocols import ImageClassifier, ImageClassifierDescriptor
+from daft.ai.typing import ClassifyImageOptions
 from daft.ai.utils import get_gpu_udf_options, get_torch_device
 from daft.dependencies import tf, torch
+
+# Global lock to prevent concurrent model loading which can cause meta tensor issues
+_model_loading_lock = threading.Lock()
 
 if TYPE_CHECKING:
     from PIL import Image
@@ -22,15 +27,11 @@ if TYPE_CHECKING:
     from daft.ai.typing import Label, Options, UDFOptions
 
 
-class TransformersImageClassifierOptions(TypedDict, total=False):
-    batch_size: int | None
-
-
 @dataclass
 class TransformersImageClassifierDescriptor(ImageClassifierDescriptor):
     provider_name: str
     model_name: str
-    model_options: TransformersImageClassifierOptions
+    classify_options: ClassifyImageOptions = field(default_factory=lambda: ClassifyImageOptions(batch_size=16))
 
     def get_provider(self) -> str:
         return self.provider_name
@@ -39,13 +40,17 @@ class TransformersImageClassifierDescriptor(ImageClassifierDescriptor):
         return self.model_name
 
     def get_options(self) -> Options:
-        return self.model_options  # type: ignore
+        return dict(self.classify_options)
 
     def get_udf_options(self) -> UDFOptions:
-        return get_gpu_udf_options()
+        udf_options = get_gpu_udf_options()
+        for key, value in self.classify_options.items():
+            if key in udf_options.__annotations__.keys():
+                setattr(udf_options, key, value)
+        return udf_options
 
     def instantiate(self) -> ImageClassifier:
-        return TransformersImageClassifier(self.model_name, **self.model_options)
+        return TransformersImageClassifier(self.model_name, **self.classify_options)
 
 
 class TransformersImageClassifierPipeline(transformers.ZeroShotImageClassificationPipeline):  # type: ignore
@@ -81,19 +86,21 @@ class TransformersImageClassifier(ImageClassifier):
     """Pipeline based zero-shot image classification."""
 
     _model: str
-    _options: TransformersImageClassifierOptions
+    _options: ClassifyImageOptions
     _pipeline: transformers.ZeroShotImageClassificationPipeline
 
-    def __init__(self, model_name_or_path: str, **options: Unpack[TransformersImageClassifierOptions]):
+    def __init__(self, model_name_or_path: str, **options: Unpack[ClassifyImageOptions]):
         self._model = model_name_or_path
         self._options = options
 
-        self._pipeline = pipeline(
-            task="zero-shot-image-classification",
-            model=model_name_or_path,
-            device=get_torch_device(),
-            pipeline_class=TransformersImageClassifierPipeline,
-        )
+        # Use a lock to prevent concurrent model loading which triggers meta tensor errors
+        with _model_loading_lock:
+            self._pipeline = pipeline(
+                task="zero-shot-image-classification",
+                model=model_name_or_path,
+                device=get_torch_device(),
+                pipeline_class=TransformersImageClassifierPipeline,
+            )
 
     def classify_image(self, images: list[Image.Image], labels: Label | list[Label]) -> list[Label]:
         batch_size = self._options.get("batch_size", None)

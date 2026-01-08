@@ -1,17 +1,24 @@
 use std::{fmt::Display, num::NonZeroUsize};
 
 use common_error::DaftResult;
+use common_metrics::MetricsCollector;
+#[cfg(feature = "python")]
+use common_metrics::python::PyOperatorMetrics;
 use daft_core::{prelude::*, series::Series};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "python")]
+use crate::python_udf::{
+    collect_operator_metrics,
+    retry::{retry_with_backoff, retry_with_backoff_async},
+};
 use crate::{
     Expr, ExprRef,
     functions::{
-        python::{RuntimePyObject, UDFName},
+        python::{OnError, RuntimePyObject, UDFName},
         scalar::ScalarFn,
     },
-    operator_metrics::MetricsCollector,
     python_udf::PyScalarFn,
 };
 
@@ -22,14 +29,14 @@ pub fn batch_udf(
     method: RuntimePyObject,
     is_async: bool,
     return_dtype: DataType,
-    gpus: usize,
+    gpus: common_hashable_float_wrapper::FloatWrapper<f64>,
     use_process: Option<bool>,
     max_concurrency: Option<NonZeroUsize>,
     batch_size: Option<usize>,
     original_args: RuntimePyObject,
     args: Vec<ExprRef>,
     max_retries: Option<usize>,
-    on_error: crate::functions::python::OnError,
+    on_error: OnError,
 ) -> Expr {
     Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
         function_name: name.into(),
@@ -55,14 +62,14 @@ pub struct BatchPyFn {
     pub method: RuntimePyObject,
     pub is_async: bool,
     pub return_dtype: DataType,
-    pub gpus: usize,
+    pub gpus: common_hashable_float_wrapper::FloatWrapper<f64>,
     pub use_process: Option<bool>,
     pub max_concurrency: Option<NonZeroUsize>,
     pub batch_size: Option<usize>,
     pub original_args: RuntimePyObject,
     pub args: Vec<ExprRef>,
     pub max_retries: Option<usize>,
-    pub on_error: crate::functions::python::OnError,
+    pub on_error: OnError,
 }
 
 impl Display for BatchPyFn {
@@ -87,7 +94,7 @@ impl BatchPyFn {
             method: self.method.clone(),
             is_async: self.is_async,
             return_dtype: self.return_dtype.clone(),
-            gpus: self.gpus,
+            gpus: self.gpus.clone(),
             use_process: self.use_process,
             max_concurrency: self.max_concurrency,
             batch_size: self.batch_size,
@@ -99,22 +106,21 @@ impl BatchPyFn {
     }
 
     #[cfg(feature = "python")]
-    pub fn call(&self, args: &[Series], metrics: &mut dyn MetricsCollector) -> DaftResult<Series> {
-        use common_error::DaftError;
+    pub fn call(
+        &self,
+        args: &[Series],
+        metrics_collector: &mut dyn MetricsCollector,
+    ) -> DaftResult<Series> {
         use daft_core::python::PySeries;
         use pyo3::prelude::*;
-
-        use crate::functions::python::OnError;
         let max_retries = self.max_retries.unwrap_or(0);
         let py_args = args
             .iter()
             .map(|s| PySeries::from(s.clone()))
             .collect::<Vec<_>>();
 
-        let mut try_call_batch = || {
+        let try_call_batch = || {
             Python::attach(|py| {
-                use common_metrics::python::PyOperatorMetrics;
-
                 let func = py
                     .import(pyo3::intern!(py, "daft.udf.execution"))?
                     .getattr(pyo3::intern!(py, "call_batch_func"))?;
@@ -128,44 +134,20 @@ impl BatchPyFn {
 
                 let (result_series, operator_metrics): (PySeries, PyOperatorMetrics) =
                     result.extract()?;
-                for (key, counter) in operator_metrics.inner {
-                    metrics.inc_counter(
-                        &key,
-                        counter.value,
-                        counter.description.as_deref(),
-                        Some(counter.attributes),
-                    );
-                }
 
-                PyResult::Ok(result_series.series)
+                DaftResult::Ok((result_series.series, operator_metrics))
             })
         };
 
-        let mut result_series = try_call_batch();
-        let mut delay_ms: u64 = 100; // Start with 100 ms
-        const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
-        for attempt in 0..=max_retries {
-            if result_series.is_ok() {
-                break;
-            }
-            result_series = try_call_batch();
-
-            // Update our failure map for next iteration
-            if attempt < max_retries {
-                use std::{thread, time::Duration};
-                thread::sleep(Duration::from_millis(delay_ms));
-                // Exponential backoff: multiply by 2, cap at MAX_DELAY_MS
-                delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
-            }
-        }
+        let result = retry_with_backoff(None, try_call_batch, max_retries);
         let name = args[0].name();
 
-        let result_series = result_series
-            .map_err(DaftError::from)
-            .and_then(|s| Ok(s.cast(&self.return_dtype)?.rename(name)));
+        if let Ok((_, operator_metrics)) = &result {
+            collect_operator_metrics(operator_metrics, metrics_collector);
+        }
 
-        match (result_series, self.on_error) {
-            (Ok(result_series), _) => Ok(result_series),
+        match (result, self.on_error) {
+            (Ok((result_series, _)), _) => Ok(result_series.cast(&self.return_dtype)?.rename(name)),
             (Err(err), OnError::Raise) => Err(err),
             (Err(err), OnError::Log) => {
                 log::warn!("Python UDF error: {}", err);
@@ -197,36 +179,21 @@ impl BatchPyFn {
         args: &[Series],
         metrics: &mut dyn MetricsCollector,
     ) -> DaftResult<Series> {
-        use common_error::DaftError;
-
-        use crate::functions::python::OnError;
-
         let max_retries = self.max_retries.unwrap_or(0);
         let name = args[0].name();
 
-        // TODO(cory): consider exposing delay and max_delay to users.
-        let mut delay_ms: u64 = 100; // Start with 100 ms
-        const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
+        let result = retry_with_backoff_async(
+            || async { self.call_async_once(args, name).await },
+            max_retries,
+        )
+        .await;
 
-        let mut result_series = self.call_async_once(args, name, metrics).await;
-
-        for _attempt in 0..max_retries {
-            if result_series.is_ok() {
-                break;
-            }
-
-            tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
-            delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
-
-            result_series = self.call_async_once(args, name, metrics).await;
+        if let Ok((_, operator_metrics)) = &result {
+            collect_operator_metrics(operator_metrics, metrics);
         }
 
-        let result_series = result_series
-            .map_err(DaftError::from)
-            .and_then(|s| Ok(s.cast(&self.return_dtype)?.rename(name)));
-
-        match (result_series, self.on_error) {
-            (Ok(result_series), _) => Ok(result_series),
+        match (result, self.on_error) {
+            (Ok((result_series, _)), _) => Ok(result_series.cast(&self.return_dtype)?.rename(name)),
             (Err(err), OnError::Raise) => Err(err),
             (Err(err), OnError::Log) => {
                 log::warn!("Python UDF error: {}", err);
@@ -245,9 +212,7 @@ impl BatchPyFn {
         &self,
         args: &[Series],
         name: &str,
-        metrics: &mut dyn MetricsCollector,
-    ) -> DaftResult<Series> {
-        use common_metrics::python::PyOperatorMetrics;
+    ) -> DaftResult<(Series, common_metrics::python::PyOperatorMetrics)> {
         use daft_core::python::PySeries;
         use pyo3::prelude::*;
 
@@ -279,16 +244,8 @@ impl BatchPyFn {
             Ok(coroutine)
         })
         .await?;
-        for (key, counter) in operator_metrics.inner {
-            metrics.inc_counter(
-                &key,
-                counter.value,
-                counter.description.as_deref(),
-                Some(counter.attributes),
-            );
-        }
 
-        Ok(py_series.series.rename(name))
+        Ok((py_series.series.rename(name), operator_metrics))
     }
 
     #[cfg(not(feature = "python"))]

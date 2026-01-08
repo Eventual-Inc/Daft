@@ -38,7 +38,7 @@ fn generic_if_else<T: GrowableArray + FullNull + Clone + IntoSeries>(
     }
 
     // Build the result using a Growable
-    let predicate = predicate.as_arrow();
+    let predicate = predicate.as_arrow2();
     let mut growable = T::make_growable(
         name,
         dtype,

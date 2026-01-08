@@ -1,11 +1,7 @@
 use std::ops::Rem;
 
 use common_error::{DaftError, DaftResult};
-use daft_arrow::array::{Array, DictionaryKey};
-use daft_core::{
-    array::ops::{IntoGroups, as_arrow::AsArrow},
-    datatypes::UInt64Array,
-};
+use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use rand::SeedableRng;
 
@@ -26,21 +22,21 @@ impl RecordBatch {
         }
         let mut output_to_input_idx =
             vec![Vec::with_capacity(self.len() / num_partitions); num_partitions];
-        if targets.as_arrow().null_count() != 0 {
+        if targets.null_count() != 0 {
             return Err(DaftError::ComputeError(format!(
                 "target array can not contain nulls, contains {} nulls",
-                targets.as_arrow().null_count()
+                targets.null_count()
             )));
         }
 
-        for (s_idx, t_idx) in targets.as_arrow().values_iter().enumerate() {
+        for (s_idx, t_idx) in targets.values().iter().enumerate() {
             if *t_idx >= (num_partitions as u64) {
                 return Err(DaftError::ComputeError(format!(
                     "idx in target array is out of bounds, target idx {t_idx} at index {s_idx} out of {num_partitions} partitions"
                 )));
             }
 
-            output_to_input_idx[unsafe { t_idx.as_usize() }].push(s_idx as u64);
+            output_to_input_idx[*t_idx as usize].push(s_idx as u64);
         }
         output_to_input_idx
             .into_iter()

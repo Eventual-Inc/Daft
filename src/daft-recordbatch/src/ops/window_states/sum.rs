@@ -118,11 +118,7 @@ where
     }
 
     fn build(&self) -> DaftResult<Series> {
-        let field = self.source.field().clone();
-        let arrow_array = Box::new(daft_arrow::array::PrimitiveArray::from_vec(
-            self.sum_vec.clone(),
-        ));
-        DataArray::<T>::new(field.into(), arrow_array)?
+        DataArray::from((self.source.name(), self.sum_vec.as_ref()))
             .into_series()
             .with_validity(self.validity.finish_cloned())
     }

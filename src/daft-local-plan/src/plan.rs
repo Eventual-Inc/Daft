@@ -333,6 +333,7 @@ impl LocalPhysicalPlan {
     pub fn explode(
         input: LocalPhysicalPlanRef,
         to_explode: Vec<BoundExpr>,
+        index_column: Option<String>,
         schema: SchemaRef,
         stats_state: StatsState,
         context: LocalNodeContext,
@@ -340,6 +341,7 @@ impl LocalPhysicalPlan {
         Self::Explode(Explode {
             input,
             to_explode,
+            index_column,
             schema,
             stats_state,
             context,
@@ -812,6 +814,7 @@ impl LocalPhysicalPlan {
 
     pub fn commit_write(
         input: LocalPhysicalPlanRef,
+        data_schema: SchemaRef,
         file_schema: SchemaRef,
         file_info: OutputFileInfo<BoundExpr>,
         stats_state: StatsState,
@@ -819,6 +822,7 @@ impl LocalPhysicalPlan {
     ) -> LocalPhysicalPlanRef {
         Self::CommitWrite(CommitWrite {
             input,
+            data_schema,
             file_schema,
             file_info,
             stats_state,
@@ -1235,12 +1239,14 @@ impl LocalPhysicalPlan {
                 ),
                 Self::Explode(Explode {
                     to_explode,
+                    index_column,
                     schema,
                     context,
                     ..
                 }) => Self::explode(
                     new_child.clone(),
                     to_explode.clone(),
+                    index_column.clone(),
                     schema.clone(),
                     StatsState::NotMaterialized,
                     context.clone(),
@@ -1407,6 +1413,7 @@ impl LocalPhysicalPlan {
                 ),
                 Self::CommitWrite(CommitWrite {
                     input,
+                    data_schema,
                     stats_state,
                     file_schema,
                     file_info,
@@ -1414,6 +1421,7 @@ impl LocalPhysicalPlan {
                     ..
                 }) => Self::commit_write(
                     new_child.clone(),
+                    data_schema.clone(),
                     file_schema.clone(),
                     file_info.clone(),
                     stats_state.clone(),
@@ -1763,6 +1771,7 @@ pub struct Limit {
 pub struct Explode {
     pub input: LocalPhysicalPlanRef,
     pub to_explode: Vec<BoundExpr>,
+    pub index_column: Option<String>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
@@ -1945,6 +1954,7 @@ pub struct PhysicalWrite {
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct CommitWrite {
     pub input: LocalPhysicalPlanRef,
+    pub data_schema: SchemaRef,
     pub file_schema: SchemaRef,
     pub file_info: OutputFileInfo<BoundExpr>,
     pub stats_state: StatsState,

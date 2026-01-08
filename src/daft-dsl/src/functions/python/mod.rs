@@ -9,7 +9,7 @@ use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use itertools::Itertools;
 #[cfg(feature = "python")]
-use pyo3::{Bound, Py, PyAny, PyResult, Python, call::PyCallArgs, types::PyDict};
+use pyo3::{Bound, Py, PyAny, PyResult, Python, call::PyCallArgs, prelude::*, types::PyDict};
 pub use runtime_py_object::RuntimePyObject;
 use serde::{Deserialize, Serialize};
 
@@ -324,7 +324,7 @@ impl UDFProperties {
                         name: row_wise_fn.function_name.clone(),
                         resource_request: Some(ResourceRequest::try_new_internal(
                             None,
-                            Some(row_wise_fn.gpus as f64),
+                            Some(row_wise_fn.gpus.0),
                             None,
                         )?),
                         batch_size: None, // Row-wise functions don't have batch_size
@@ -353,7 +353,7 @@ impl UDFProperties {
                         name: function_name.clone(),
                         resource_request: Some(ResourceRequest::try_new_internal(
                             None,
-                            Some(*gpus as f64),
+                            Some(gpus.0),
                             None,
                         )?),
                         batch_size: *batch_size,
@@ -416,6 +416,27 @@ impl UDFProperties {
 
         properties.push(format!("async = {}", &self.is_async));
         properties.push(format!("scalar = {}", &self.is_scalar));
+
+        #[cfg(feature = "python")]
+        {
+            if let Some(ray_options) = &self.ray_options {
+                // FIXME(zhenchao) Perhaps the layout should be optimized to improve readability
+                let ray_options = Python::attach(|py| -> PyResult<Option<String>> {
+                    let bound = ray_options.as_ref().bind(py);
+                    if bound.is_instance_of::<PyDict>() {
+                        let repr = bound.repr()?;
+                        Ok(Some(format!("ray_options = {}", repr)))
+                    } else {
+                        Ok(None)
+                    }
+                })
+                .unwrap_or(None);
+
+                if let Some(prop) = ray_options {
+                    properties.push(prop);
+                }
+            }
+        }
 
         properties
     }

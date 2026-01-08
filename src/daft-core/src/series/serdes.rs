@@ -152,9 +152,9 @@ impl<'d> serde::Deserialize<'d> for Series {
                     .into_series()),
                     DataType::Extension(..) => {
                         let physical = map.next_value::<Series>()?;
-                        let physical = physical.to_arrow();
+                        let physical = physical.to_arrow2();
                         let ext_array =
-                            physical.convert_logical_type(field.dtype.to_arrow().unwrap());
+                            physical.convert_logical_type(field.dtype.to_arrow2().unwrap());
                         Ok(ExtensionArray::new(Arc::new(field), ext_array)
                             .unwrap()
                             .into_series())
@@ -194,7 +194,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                             .unwrap();
                         let offsets_array = offsets_series.i64().unwrap();
                         let offsets = OffsetsBuffer::<i64>::try_from(
-                            offsets_array.as_arrow().values().clone(),
+                            offsets_array.as_arrow2().values().clone(),
                         )
                         .unwrap();
                         let flat_child = all_series

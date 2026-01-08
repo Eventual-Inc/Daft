@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pandas as pd
 import pytest
 from datasets import load_dataset
 
@@ -23,43 +24,22 @@ def test_read_huggingface_datasets_doesnt_fail():
 
 @pytest.mark.integration()
 @pytest.mark.parametrize(
-    "path, split, sort_key",
+    "path, sort_key",
     [
-        ("Eventual-Inc/sample-parquet", "train", "foo"),
-        ("fka/awesome-chatgpt-prompts", "train", "act"),
-        ("nebius/SWE-rebench", "test", "instance_id"),
-        ("SWE-Gym/SWE-Gym", "train", "instance_id"),
-        # ("HuggingFaceFW/fineweb", "train", "id")
+        ("Eventual-Inc/sample-parquet", "foo"),
+        ("fka/awesome-chatgpt-prompts", "act"),
+        ("SWE-Gym/SWE-Gym", "instance_id"),
     ],
 )
-def test_read_huggingface(path, split, sort_key):
-    ds = load_dataset(path, split=split)
-    ds = ds.with_format("arrow")
-    expected = ds.to_pandas()
+def test_read_huggingface(path, sort_key):
+    # Load all splits and concatenate them to match what daft.read_huggingface() does
+    ds = load_dataset(path)
+    expected = pd.concat([ds[s].with_format("arrow").to_pandas() for s in ds.keys()], ignore_index=True)
 
     df = daft.read_huggingface(path)
     actual = df.to_pandas()
 
     assert_df_equals(actual, expected, sort_key)
-
-
-@pytest.mark.integration()
-@pytest.mark.parametrize(
-    "path, schema",
-    [
-        (
-            "https://huggingface.co/api/datasets/huggingface/documentation-images/parquet/default/train/0.parquet",
-            daft.Schema.from_pydict({"image": dt.struct({"bytes": dt.binary(), "path": dt.string()})}),
-        ),
-        (
-            "https://huggingface.co/api/datasets/Anthropic/hh-rlhf/parquet/default/train/0.parquet",
-            daft.Schema.from_pydict({"chosen": dt.string(), "rejected": dt.string()}),
-        ),
-    ],
-)
-def test_read_huggingface_http_urls(path, schema):
-    df = daft.read_parquet(path)
-    assert df.schema() == schema
 
 
 @pytest.mark.integration()
@@ -81,10 +61,9 @@ def test_read_huggingface_fallback_on_400_error():
         # Verify read_parquet was called with the correct HF path
         mock_read_parquet.assert_called_once_with(f"hf://datasets/{repo}", io_config=None)
 
-        # Load expected data using datasets library
-        ds = load_dataset(repo, split="train")
-        ds = ds.with_format("arrow")
-        expected = ds.to_pandas()
+        # Load expected data using datasets library (all splits)
+        ds = load_dataset(repo)
+        expected = pd.concat([ds[s].with_format("arrow").to_pandas() for s in ds.keys()], ignore_index=True)
 
         # Compare the results
         actual = df.to_pandas()

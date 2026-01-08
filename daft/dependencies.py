@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     import soundfile as sf
     import tensorflow as tf
     import torch
+    import torchvision
 else:
     av = LazyImport("av")
     flight = LazyImport("pyarrow.flight")
@@ -42,6 +43,7 @@ else:
     requests = LazyImport("requests")
     tf = LazyImport("tensorflow")
     torch = LazyImport("torch")
+    torchvision = LazyImport("torchvision")
 
 unity_catalog = LazyImport("daft.unity_catalog")
 
@@ -64,5 +66,6 @@ __all__ = [
     "sf",
     "tf",
     "torch",
+    "torchvision",
     "unity_catalog",
 ]

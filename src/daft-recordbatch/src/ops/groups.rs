@@ -1,8 +1,9 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use common_error::DaftResult;
 use daft_core::{
     array::ops::{
         GroupIndicesPair, IntoGroups, IntoUniqueIdxs, VecIndices,
-        arrow::comparison::build_multi_array_is_equal, as_arrow::AsArrow,
+        arrow::comparison::build_multi_array_is_equal,
     },
     datatypes::UInt64Array,
     series::Series,
@@ -79,7 +80,7 @@ impl RecordBatch {
 
         let mut group_begin_indices: Option<(usize, usize)> = None;
 
-        for (argarray_index, table_index) in argsort_array.as_arrow().iter().enumerate() {
+        for (argarray_index, table_index) in argsort_array.into_iter().enumerate() {
             let table_index = *table_index.unwrap() as usize;
 
             match group_begin_indices {

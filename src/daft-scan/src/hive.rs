@@ -1,3 +1,5 @@
+#![allow(deprecated, reason = "arrow2 migration")]
+
 use common_error::DaftResult;
 use daft_arrow::datatypes::DataType;
 use daft_core::series::Series;
@@ -16,7 +18,7 @@ fn parse_hive_value_to_dtype(
         return Ok(Series::full_null(field_name, target_dtype, 1));
     }
     #[allow(deprecated, reason = "arrow2 migration")]
-    let arrow_dtype = target_dtype.to_arrow().map_err(|e| {
+    let arrow_dtype = target_dtype.to_arrow2().map_err(|e| {
         common_error::DaftError::ValueError(format!("Failed to convert dtype to arrow: {}", e))
     })?;
     let arrow_array = deserialize_single_value_to_arrow(value.as_bytes(), arrow_dtype)?;

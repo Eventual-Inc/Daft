@@ -129,7 +129,6 @@ async fn url_download(
         reason = "This actually might be needed, but need to double check TODO:(andrewgazelka)"
     )]
     let urls = owned_array
-        .as_arrow()
         .into_iter()
         .map(|s| s.map(std::string::ToString::to_string))
         .collect::<Vec<_>>();

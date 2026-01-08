@@ -751,11 +751,12 @@ fn physical_plan_to_pipeline(
         LocalPhysicalPlan::Explode(Explode {
             input,
             to_explode,
+            index_column,
             schema,
             stats_state,
             context,
         }) => {
-            let explode_op = ExplodeOperator::new(to_explode.clone());
+            let explode_op = ExplodeOperator::new(to_explode.clone(), index_column.clone());
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(explode_op),
@@ -1382,13 +1383,15 @@ fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::CommitWrite(CommitWrite {
             input,
+            data_schema,
             file_schema,
             file_info,
             stats_state,
             context,
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            let write_sink = CommitWriteSink::new(file_schema.clone(), file_info.clone());
+            let write_sink =
+                CommitWriteSink::new(data_schema.clone(), file_schema.clone(), file_info.clone());
             BlockingSinkNode::new(
                 Arc::new(write_sink),
                 child_node,

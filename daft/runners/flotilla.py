@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -92,7 +93,7 @@ class RaySwordfishActor:
             yield SwordfishTaskMetadata(partition_metadatas=metas, stats=stats)
 
 
-@ray.remote  # type: ignore[misc]
+@ray.remote  # type: ignore[untyped-decorator]
 def get_boundaries_remote(
     sort_by: list[Expression],
     descending: list[bool],
@@ -283,6 +284,44 @@ class RemoteFlotillaRunner:
 
 FLOTILLA_RUNNER_NAMESPACE = "daft"
 FLOTILLA_RUNNER_NAME = "flotilla-plan-runner"
+_FLOTILLA_RUNNER_NAME_SUFFIX: str | None = None
+
+
+def _get_ray_job_id_for_actor_naming() -> str | None:
+    """Best-effort detection of the current Ray job id for flotilla actor naming."""
+    try:
+        runtime_ctx = ray.get_runtime_context()
+    except Exception:
+        runtime_ctx = None
+
+    if runtime_ctx is not None:
+        job_id = getattr(runtime_ctx, "job_id", None)
+        if job_id is not None:
+            try:
+                return job_id.hex()
+            except Exception:
+                return str(job_id)
+
+    return None
+
+
+def get_flotilla_runner_actor_name() -> str:
+    """Return the per-Ray-job actor name for RemoteFlotillaRunner."""
+    global _FLOTILLA_RUNNER_NAME_SUFFIX
+
+    if _FLOTILLA_RUNNER_NAME_SUFFIX is None:
+        job_id: str | None
+        try:
+            job_id = _get_ray_job_id_for_actor_naming()
+        except Exception:
+            job_id = None
+
+        if job_id is None:
+            _FLOTILLA_RUNNER_NAME_SUFFIX = uuid.uuid4().hex
+        else:
+            _FLOTILLA_RUNNER_NAME_SUFFIX = job_id
+
+    return f"{FLOTILLA_RUNNER_NAME}-{_FLOTILLA_RUNNER_NAME_SUFFIX}"
 
 
 def get_head_node_id() -> str | None:
@@ -302,7 +341,7 @@ class FlotillaRunner:
     def __init__(self) -> None:
         head_node_id = get_head_node_id()
         self.runner = RemoteFlotillaRunner.options(  # type: ignore
-            name=FLOTILLA_RUNNER_NAME,
+            name=get_flotilla_runner_actor_name(),
             namespace=FLOTILLA_RUNNER_NAMESPACE,
             get_if_exists=True,
             scheduling_strategy=(

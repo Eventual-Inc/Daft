@@ -1,8 +1,15 @@
+use std::sync::Arc;
+
+use arrow::{
+    array::{Array, AsArray, LargeStringArray},
+    compute::cast,
+    datatypes::{DataType as ArrowDataType, Int64Type},
+};
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::DataArray,
     prelude::{
-        AsArrow, DaftIntegerType, DaftNumericType, DataType, Field, FullNull, Schema, Utf8Array,
+        DaftIntegerType, DaftNumericType, DataType, Field, FromArrow, FullNull, Schema, Utf8Array,
     },
     series::{IntoSeries, Series},
     with_match_integer_daft_types,
@@ -99,36 +106,36 @@ where
     }
 
     let arr_iter = create_broadcasted_str_iter(arr, expected_size);
-    let result: Utf8Array = match nchars.len() {
+
+    let nchars_arrow = nchars.to_arrow();
+    let nchars_arrow = cast(&nchars_arrow, &ArrowDataType::Int64)?;
+    let nchars_arrow = nchars_arrow.as_primitive::<Int64Type>();
+
+    let result: LargeStringArray = match nchars.len() {
         1 => {
-            let n = nchars.get(0).unwrap();
+            let n = nchars_arrow.iter().next().unwrap().unwrap();
             let n: usize = NumCast::from(n).ok_or_else(|| {
                 DaftError::ComputeError(format!("Error in right: failed to cast rhs as usize {n}"))
             })?;
-            let arrow_result = arr_iter
+            arr_iter
                 .map(|val| Some(right_most_chars(val?, n)))
-                .collect::<daft_arrow::array::Utf8Array<i64>>();
-            Utf8Array::from((arr.name(), Box::new(arrow_result)))
+                .collect()
         }
-        _ => {
-            let arrow_result = arr_iter
-                .zip(nchars.as_arrow().iter())
-                .map(|(val, n)| match (val, n) {
-                    (Some(val), Some(nchar)) => {
-                        let nchar: usize = NumCast::from(*nchar).ok_or_else(|| {
-                            DaftError::ComputeError(format!(
-                                "Error in right: failed to cast rhs as usize {nchar}"
-                            ))
-                        })?;
-                        Ok(Some(right_most_chars(val, nchar)))
-                    }
-                    _ => Ok(None),
-                })
-                .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>()?;
-
-            Utf8Array::from((arr.name(), Box::new(arrow_result)))
-        }
+        _ => arr_iter
+            .zip(nchars_arrow.iter())
+            .map(|(val, n)| match (val, n) {
+                (Some(val), Some(nchar)) => {
+                    let nchar: usize = NumCast::from(nchar).ok_or_else(|| {
+                        DaftError::ComputeError(format!(
+                            "Error in right: failed to cast rhs as usize {nchar}"
+                        ))
+                    })?;
+                    Ok(Some(right_most_chars(val, nchar)))
+                }
+                _ => Ok(None),
+            })
+            .collect::<DaftResult<LargeStringArray>>()?,
     };
     assert_eq!(result.len(), expected_size);
-    Ok(result)
+    Utf8Array::from_arrow(Field::new(arr.name(), DataType::Utf8), Arc::new(result))
 }

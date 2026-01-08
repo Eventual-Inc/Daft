@@ -1,5 +1,4 @@
 use daft_dsl::functions::prelude::*;
-
 /// Executes a JSON filter on a UTF-8 string array.
 ///
 /// # Arguments
@@ -46,7 +45,7 @@ impl ScalarUDF for Jq {
 mod jaq {
     use common_error::{DaftError, DaftResult};
     use daft_core::{
-        prelude::{AsArrow, DataType, Utf8Array},
+        prelude::{DataType, Utf8Array},
         series::Series,
     };
     use jaq_core::{
@@ -98,11 +97,10 @@ mod jaq {
 
         // used for the output array
         let name = arr.name().to_string();
-        let self_arrow = arr.as_arrow();
 
         // execute the filter on each input, mapping to some string result
-        let values = self_arrow
-            .iter()
+        let values = arr
+            .into_iter()
             .map(|value| {
                 value.map_or(Ok(None), |input| {
                     parse_json(input).and_then(|val| {
@@ -121,9 +119,7 @@ mod jaq {
             .collect::<DaftResult<Utf8Array>>()?;
 
         // be sure to apply the name and validity of the input
-        values
-            .rename(&name)
-            .with_validity(self_arrow.validity().cloned().map(Into::into))
+        values.rename(&name).with_validity(arr.validity().cloned())
     }
 
     /// We need serde_json to parse, but then convert to a jaq Val to be evaluated.
@@ -191,9 +187,9 @@ mod tests {
         let filter = r".foo.bar";
         let result = jaq::execute_jaq_filter(&data, filter)?;
         assert_eq!(result.len(), 3);
-        assert_eq!(result.as_arrow().value(0), "1");
-        assert_eq!(result.as_arrow().value(1), "2");
-        assert_eq!(result.as_arrow().value(2), "3");
+        assert_eq!(result.as_arrow()?.value(0), "1");
+        assert_eq!(result.as_arrow()?.value(1), "2");
+        assert_eq!(result.as_arrow()?.value(2), "3");
         Ok(())
     }
 }
