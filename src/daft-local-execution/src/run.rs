@@ -265,6 +265,7 @@ impl NativeExecutor {
                         }
                     }
                 }
+                drop(input_senders);
 
                 while let Some(val) = receiver.recv().await {
                     if tx.send(val).await.is_err() {
