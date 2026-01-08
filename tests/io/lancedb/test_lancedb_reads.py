@@ -149,6 +149,7 @@ def test_lancedb_read_parallelism_fragment_merging(large_lance_dataset_path):
 
 def test_lancedb_read_filter_passthrough(tmp_path):
     """Test passing raw SQL filter string to Lance via default_scan_options."""
+    pytest.importorskip("shapely")
     import lance
     from shapely.geometry import Point
 
@@ -174,6 +175,7 @@ def test_lancedb_read_filter_passthrough(tmp_path):
     res = df.to_pydict()
 
     assert len(res["id"]) == 2
+    assert sorted(res["id"]) == [1, 2]
     assert 0 not in res["id"]
     assert 1 in res["id"]
     assert 2 in res["id"]
@@ -193,17 +195,39 @@ def test_lancedb_geo_projection_and_filter(tmp_path):
     except ImportError:
         pytest.skip("geoarrow-pyarrow not installed")
 
+    np.random.seed(42)
     num_rows = 10000
     # Points
     x_coords = np.random.rand(num_rows) * 100
     y_coords = np.random.rand(num_rows) * 100
-    points_2d = point().from_geobuffers(None, x_coords, y_coords)
 
     # LineStrings
     # Create simple linestrings. Each linestring has 2 points.
     # We need 2 * num_rows coordinates for linestrings
     ls_x = np.random.randn(num_rows * 2) * 100
     ls_y = np.random.randn(num_rows * 2) * 100
+
+    # Force first linestring to intersect with 'LINESTRING ( 2 0, 0 2 )'
+    # Row 0: Linestring (0,0)->(2,2). Intersects query at (1,1).
+    ls_x[0], ls_y[0] = 0.0, 0.0
+    ls_x[1], ls_y[1] = 2.0, 2.0
+    # Set Row 0 point to (1,1) so distance to linestring is 0
+    x_coords[0], y_coords[0] = 1.0, 1.0
+
+    # Row 1: Linestring (100,100)->(102,102). Does NOT intersect.
+    ls_x[2], ls_y[2] = 100.0, 100.0
+    ls_x[3], ls_y[3] = 102.0, 102.0
+
+    # Move all other random data far away to ensure no accidental intersections
+    # Points from index 1 onwards (Row 1+)
+    x_coords[1:] += 1000.0
+    y_coords[1:] += 1000.0
+    # Linestrings from index 4 onwards (Row 2+)
+    ls_x[4:] += 1000.0
+    ls_y[4:] += 1000.0
+
+    points_2d = point().from_geobuffers(None, x_coords, y_coords)
+
     # Offsets: 0, 2, 4, ...
     line_offsets = np.arange(num_rows + 1, dtype=np.int32) * 2
 
@@ -244,6 +268,15 @@ def test_lancedb_geo_projection_and_filter(tmp_path):
 
     # Check if we got any rows (might be 0 if random data doesn't intersect)
     print(f"Result rows: {len(res['distance'])}")
+
+    # We forced exactly one intersection (Row 0)
+    # All other rows are shifted far away
+    assert len(res["distance"]) == 1
+
+    # Verify the distance calculation for the matching row
+    # Point (1,1) is on Linestring (0,0)->(2,2), so distance should be 0.0
+    # Use approx for float comparison
+    assert abs(res["distance"][0]) < 1e-6
 
 
 class TestLanceDBCountPushdown:
