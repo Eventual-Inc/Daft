@@ -4,7 +4,6 @@ use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, SamplingMethod};
 use daft_logical_plan::{
-    InMemoryInfo,
     partitioning::{RangeRepartitionConfig, RepartitionSpec},
     stats::StatsState,
 };
@@ -179,18 +178,10 @@ pub(crate) fn create_range_repartition_tasks(
     materialized_outputs
         .into_iter()
         .map(|mo| {
-            let info = InMemoryInfo::new(
-                input_schema.clone(),
-                node_id.to_string(),
-                None,
-                1,
-                mo.size_bytes(),
-                mo.num_rows(),
-                None,
-                None,
-            );
             let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
-                info,
+                node_id.to_string(),
+                input_schema.clone(),
+                mo.size_bytes(),
                 StatsState::NotMaterialized,
                 LocalNodeContext {
                     origin_node_id: Some(node_id as usize),

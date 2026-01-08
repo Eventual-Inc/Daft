@@ -18,6 +18,7 @@ from daft.daft import (
     RaySwordfishTask,
     RaySwordfishWorker,
     RayTaskResult,
+    ScanTask,
     set_compute_runtime_num_worker_threads,
 )
 from daft.event_loop import set_event_loop
@@ -61,6 +62,7 @@ class RaySwordfishActor:
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
         set_compute_runtime_num_worker_threads(num_cpus)
         set_event_loop(asyncio.get_running_loop())
+        self.native_executor = NativeExecutor()
 
     async def run_plan(
         self,
@@ -68,6 +70,8 @@ class RaySwordfishActor:
         exec_cfg: PyDaftExecutionConfig,
         psets: dict[str, list[ray.ObjectRef]],
         context: dict[str, str] | None,
+        scan_tasks: dict[str, list[ScanTask]] | None = None,
+        glob_paths: dict[str, list[str]] | None = None,
     ) -> AsyncGenerator[MicroPartition | SwordfishTaskMetadata, None]:
         """Run a plan on swordfish and yield partitions."""
         # We import PyDaftContext inside the function because PyDaftContext is not serializable.
@@ -78,10 +82,17 @@ class RaySwordfishActor:
             psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
 
             metas = []
-            native_executor = NativeExecutor()
             ctx = PyDaftContext()
             ctx._daft_execution_config = exec_cfg
-            result_handle = native_executor.run(plan, psets_mp, ctx, None, context)
+            result_handle = await self.native_executor.run(
+                plan,
+                ctx,
+                0,
+                context,
+                scan_tasks if scan_tasks and len(scan_tasks) > 0 else None,
+                psets_mp if psets_mp and len(psets_mp) > 0 else None,
+                glob_paths if glob_paths and len(glob_paths) > 0 else None,
+            )
             async for partition in result_handle:
                 if partition is None:
                     break
@@ -180,7 +191,12 @@ class RaySwordfishActorHandle:
     def submit_task(self, task: RaySwordfishTask) -> RaySwordfishTaskHandle:
         psets = {k: [v.object_ref for v in v] for k, v in task.psets().items()}
         result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(
-            task.plan(), task.config(), psets, task.context()
+            task.plan(),
+            task.config(),
+            psets,
+            task.context(),
+            task.scan_tasks(),
+            task.glob_paths(),
         )
         return RaySwordfishTaskHandle(
             result_handle,

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_display::{DisplayAs, DisplayLevel};
 use common_error::DaftResult;
@@ -92,9 +92,8 @@ impl ScanSourceNode {
         self: &Arc<Self>,
         scan_task: ScanTaskLikeRef,
     ) -> DaftResult<SwordfishTaskBuilder> {
-        let scan_tasks = Arc::new(vec![scan_task]);
         let physical_scan = LocalPhysicalPlan::physical_scan(
-            scan_tasks,
+            self.node_id().to_string(),
             self.pushdowns.clone(),
             self.config.schema.clone(),
             StatsState::NotMaterialized,
@@ -104,7 +103,9 @@ impl ScanSourceNode {
             },
         );
 
-        let builder = SwordfishTaskBuilder::new(physical_scan, self.as_ref());
+        let scan_tasks_map = HashMap::from([(self.node_id().to_string(), vec![scan_task])]);
+        let builder =
+            SwordfishTaskBuilder::new(physical_scan, self.as_ref()).with_scan_tasks(scan_tasks_map);
         Ok(builder)
     }
 }

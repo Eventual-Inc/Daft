@@ -15,11 +15,8 @@ use common_tracing::flush_opentelemetry_providers;
 use daft_context::{DaftContext, Subscriber};
 use daft_local_plan::{LocalPhysicalPlanRef, translate};
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::{
-    MicroPartition, MicroPartitionRef,
-    partitioning::{InMemoryPartitionSetCache, MicroPartitionSet, PartitionSetCache},
-};
-use futures::Stream;
+use daft_micropartition::{MicroPartition, MicroPartitionRef, partitioning::MicroPartitionSet};
+use futures::{FutureExt, Stream, future::BoxFuture};
 use tokio::{runtime::Handle, sync::Mutex};
 use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
@@ -28,7 +25,7 @@ use {
     daft_context::python::PyDaftContext,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    pyo3::{Bound, IntoPyObject, PyAny, PyRef, PyResult, Python, pyclass, pymethods},
+    pyo3::{Bound, PyAny, PyRef, PyResult, Python, pyclass, pymethods},
 };
 
 use crate::{
@@ -38,6 +35,7 @@ use crate::{
         RelationshipInformation, RuntimeContext, get_pipeline_relationship_mapping,
         translate_physical_plan_to_pipeline, viz_pipeline_ascii, viz_pipeline_mermaid,
     },
+    plan_input::{InputId, PlanInput},
     resource_manager::get_or_init_memory_manager,
     runtime_stats::{QueryEndState, RuntimeStatsManager},
 };
@@ -62,6 +60,13 @@ fn get_global_runtime() -> &'static Handle {
 #[cfg(not(feature = "python"))]
 fn get_global_runtime() -> &'static Handle {
     unimplemented!("get_global_runtime is not implemented without python feature");
+}
+
+pub(crate) struct EnqueueInputMessage {
+    /// The input_id for this enqueue operation
+    input_id: InputId,
+    /// Plan inputs grouped by source_id (key, PlanInput)
+    plan_inputs_by_key: Vec<(String, PlanInput)>,
 }
 
 #[cfg_attr(
@@ -89,48 +94,73 @@ impl PyNativeExecutor {
         }
     }
 
-    #[pyo3(signature = (local_physical_plan, psets, daft_ctx, results_buffer_size=None, context=None))]
-    pub fn run<'a>(
+    #[pyo3(signature = (local_physical_plan, daft_ctx, input_id, context=None, scan_tasks=None, in_memory=None, glob_paths=None))]
+    pub fn run<'py>(
         &self,
-        py: Python<'a>,
+        py: Python<'py>,
         local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
-        psets: HashMap<String, Vec<PyMicroPartition>>,
         daft_ctx: &PyDaftContext,
-        results_buffer_size: Option<usize>,
+        input_id: u32,
         context: Option<HashMap<String, String>>,
-    ) -> PyResult<Bound<'a, PyAny>> {
-        let native_psets: HashMap<String, Arc<MicroPartitionSet>> = psets
-            .into_iter()
-            .map(|(part_id, parts)| {
-                (
-                    part_id,
-                    Arc::new(
-                        parts
-                            .into_iter()
-                            .map(std::convert::Into::into)
-                            .collect::<Vec<Arc<MicroPartition>>>()
-                            .into(),
-                    ),
-                )
-            })
-            .collect();
-        let psets = InMemoryPartitionSetCache::new(&native_psets);
+        scan_tasks: Option<HashMap<String, Vec<daft_scan::python::pylib::PyScanTask>>>,
+        in_memory: Option<HashMap<String, Vec<PyMicroPartition>>>,
+        glob_paths: Option<HashMap<String, Vec<String>>>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         let daft_ctx: &DaftContext = daft_ctx.into();
-        let res = py.detach(|| {
-            self.executor.run(
-                &local_physical_plan.plan,
-                &psets,
-                daft_ctx.execution_config(),
-                daft_ctx.subscribers(),
-                results_buffer_size,
-                context,
-            )
-        })?;
+        let plan = local_physical_plan.plan.clone();
+        let exec_cfg = daft_ctx.execution_config();
+        let subscribers = daft_ctx.subscribers();
 
-        let py_execution_result = PyExecutionEngineResult {
-            result: Arc::new(Mutex::new(Some(res))),
+        // Prepare plan inputs grouped by source_id
+        let mut plan_inputs_by_key: Vec<(String, PlanInput)> = Vec::new();
+
+        if let Some(tasks_map) = scan_tasks {
+            for (key, tasks) in tasks_map {
+                use common_scan_info::ScanTaskLikeRef;
+
+                let scan_tasks: Vec<ScanTaskLikeRef> = tasks
+                    .into_iter()
+                    .map(|pytask| pytask.0 as Arc<dyn common_scan_info::ScanTaskLike>)
+                    .collect();
+                plan_inputs_by_key.push((key, PlanInput::ScanTasks(scan_tasks)));
+            }
+        }
+
+        if let Some(partitions_map) = in_memory {
+            for (key, partitions) in partitions_map {
+                use daft_micropartition::partitioning::PartitionSetRef;
+
+                let micro_partitions: Vec<MicroPartitionRef> =
+                    partitions.into_iter().map(|pymp| pymp.into()).collect();
+                let partition_set: PartitionSetRef<MicroPartitionRef> =
+                    Arc::new(MicroPartitionSet::from(micro_partitions));
+                plan_inputs_by_key.push((key, PlanInput::InMemoryPartitions(partition_set)));
+            }
+        }
+
+        if let Some(paths_map) = glob_paths {
+            for (key, paths) in paths_map {
+                plan_inputs_by_key.push((key, PlanInput::GlobPaths(paths)));
+            }
+        }
+
+        let enqueue_future = {
+            self.executor.run(
+                &plan,
+                exec_cfg,
+                subscribers,
+                context,
+                input_id,
+                plan_inputs_by_key,
+            )?
         };
-        Ok(py_execution_result.into_pyobject(py)?.into_any())
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let result = enqueue_future.await;
+            Ok(PyExecutionEngineResult {
+                result: Arc::new(Mutex::new(Some(result))),
+            })
+        })
     }
 
     #[staticmethod]
@@ -171,48 +201,35 @@ impl PyNativeExecutor {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct NativeExecutor {
+pub(crate) struct NativeExecutor {
     cancel: CancellationToken,
-    enable_explain_analyze: bool,
-}
-
-impl Default for NativeExecutor {
-    fn default() -> Self {
-        Self {
-            cancel: CancellationToken::new(),
-            enable_explain_analyze: should_enable_explain_analyze(),
-        }
-    }
 }
 
 impl NativeExecutor {
     pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn enable_explain_analyze(mut self, b: bool) -> Self {
-        self.enable_explain_analyze = b;
-        self
+        Self {
+            cancel: CancellationToken::new(),
+        }
     }
 
     pub fn run(
         &self,
         local_physical_plan: &LocalPhysicalPlanRef,
-        psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
         exec_cfg: Arc<DaftExecutionConfig>,
         subscribers: Vec<Arc<dyn Subscriber>>,
-        results_buffer_size: Option<usize>,
         additional_context: Option<HashMap<String, String>>,
-    ) -> DaftResult<ExecutionEngineResult> {
+        input_id: InputId,
+        plan_inputs_by_key: Vec<(String, PlanInput)>,
+    ) -> DaftResult<BoxFuture<'static, ExecutionEngineResult>> {
+        // Create new execution
         let cancel = self.cancel.clone();
         let additional_context = additional_context.unwrap_or_default();
         let ctx = RuntimeContext::new_with_context(additional_context.clone());
-        let pipeline =
-            translate_physical_plan_to_pipeline(local_physical_plan, psets, &exec_cfg, &ctx)?;
+        let (mut pipeline, input_senders) =
+            translate_physical_plan_to_pipeline(local_physical_plan, &exec_cfg, &ctx)?;
 
-        let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
-        let enable_explain_analyze = self.enable_explain_analyze;
+        let (tx, rx) = create_channel(0);
+        let enable_explain_analyze = should_enable_explain_analyze();
 
         let query_id: common_metrics::QueryID = additional_context
             .get("query_id")
@@ -227,13 +244,26 @@ impl NativeExecutor {
         // Spawn execution on the global runtime - returns immediately
         let handle = get_global_runtime();
         let stats_manager = RuntimeStatsManager::try_new(handle, &pipeline, subscribers, query_id)?;
+
+        // Create channel for enqueue_input messages
+        let (enqueue_input_tx, enqueue_input_rx) = create_channel::<EnqueueInputMessage>(0);
+
         let task = async move {
             let stats_manager_handle = stats_manager.handle();
             let execution_task = async {
                 let memory_manager = get_or_init_memory_manager();
                 let mut runtime_handle =
                     ExecutionRuntimeContext::new(memory_manager.clone(), stats_manager_handle);
-                let receiver = pipeline.start(exec_cfg.maintain_order, &mut runtime_handle)?;
+                let receiver = pipeline.start(true, &mut runtime_handle)?;
+
+                if let Some(message) = enqueue_input_rx.recv().await {
+                    for (key, plan_input) in message.plan_inputs_by_key {
+                        if let Some(sender) = input_senders.get(&key) {
+                            // If send fails (e.g., channel closed), continue with other inputs
+                            let _ = sender.send(message.input_id, plan_input).await;
+                        }
+                    }
+                }
 
                 while let Some(val) = receiver.recv().await {
                     if tx.send(val).await.is_err() {
@@ -248,11 +278,11 @@ impl NativeExecutor {
                 biased;
                 () = cancel.cancelled() => {
                     log::info!("Execution engine cancelled");
-                    (Ok(()), QueryEndState::Cancelled)
+                (Ok(()), QueryEndState::Cancelled)
                 }
                 _ = tokio::signal::ctrl_c() => {
                     log::info!("Received Ctrl-C, shutting down execution engine");
-                    (Ok(()), QueryEndState::Cancelled)
+                (Ok(()), QueryEndState::Cancelled)
                 }
                 result = execution_task => {
                     let status = if result.is_err() {
@@ -290,10 +320,22 @@ impl NativeExecutor {
             result.map(|()| final_stats)
         };
 
-        Ok(ExecutionEngineResult {
-            receiver: rx,
-            handle: RuntimeTask::new(handle, task),
-        })
+        let handle = RuntimeTask::new(handle, task);
+
+        Ok(async move {
+            let enqueue_msg = EnqueueInputMessage {
+                input_id,
+                plan_inputs_by_key,
+            };
+
+            // If send fails (e.g., channel closed due to cancellation), return None
+            let _ = enqueue_input_tx.send(enqueue_msg).await;
+            ExecutionEngineResult {
+                handle,
+                receiver: rx,
+            }
+        }
+        .boxed())
     }
 
     fn repr_ascii(
@@ -302,15 +344,10 @@ impl NativeExecutor {
         simple: bool,
     ) -> String {
         let logical_plan = logical_plan_builder.build();
-        let physical_plan = translate(&logical_plan).unwrap();
+        let (physical_plan, _) = translate(&logical_plan).unwrap();
         let ctx = RuntimeContext::new();
-        let pipeline_node = translate_physical_plan_to_pipeline(
-            &physical_plan,
-            &InMemoryPartitionSetCache::empty(),
-            &cfg,
-            &ctx,
-        )
-        .unwrap();
+        let (pipeline_node, _) =
+            translate_physical_plan_to_pipeline(&physical_plan, &cfg, &ctx).unwrap();
 
         viz_pipeline_ascii(pipeline_node.as_ref(), simple)
     }
@@ -321,15 +358,10 @@ impl NativeExecutor {
         options: MermaidDisplayOptions,
     ) -> String {
         let logical_plan = logical_plan_builder.build();
-        let physical_plan = translate(&logical_plan).unwrap();
+        let (physical_plan, _) = translate(&logical_plan).unwrap();
         let ctx = RuntimeContext::new();
-        let pipeline_node = translate_physical_plan_to_pipeline(
-            &physical_plan,
-            &InMemoryPartitionSetCache::empty(),
-            &cfg,
-            &ctx,
-        )
-        .unwrap();
+        let (pipeline_node, _) =
+            translate_physical_plan_to_pipeline(&physical_plan, &cfg, &ctx).unwrap();
 
         let display_type = if options.simple {
             DisplayLevel::Compact
@@ -348,15 +380,10 @@ impl NativeExecutor {
         cfg: Arc<DaftExecutionConfig>,
     ) -> RelationshipInformation {
         let logical_plan = logical_plan_builder.build();
-        let physical_plan = translate(&logical_plan).unwrap();
+        let (physical_plan, _) = translate(&logical_plan).unwrap();
         let ctx = RuntimeContext::new();
-        let pipeline_node = translate_physical_plan_to_pipeline(
-            &physical_plan,
-            &InMemoryPartitionSetCache::empty(),
-            &cfg,
-            &ctx,
-        )
-        .unwrap();
+        let (pipeline_node, _) =
+            translate_physical_plan_to_pipeline(&physical_plan, &cfg, &ctx).unwrap();
         get_pipeline_relationship_mapping(&*pipeline_node)
     }
 }

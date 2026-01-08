@@ -332,16 +332,17 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
     }
 
     fn start(
-        &self,
+        &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
-        for child in &self.children {
+        let node_id = self.node_id();
+        for child in &mut self.children {
             let child_result_receiver = child.start(maintain_order, runtime_handle)?;
             child_result_receivers.push(InitializingCountingReceiver::new(
                 child_result_receiver,
-                self.node_id(),
+                node_id,
                 self.runtime_stats.clone(),
                 runtime_handle.stats_manager(),
             ));

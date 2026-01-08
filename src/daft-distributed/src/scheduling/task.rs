@@ -5,6 +5,7 @@ use common_error::DaftError;
 use common_metrics::StatSnapshot;
 use common_partitioning::PartitionRef;
 use common_resource_request::ResourceRequest;
+use common_scan_info::ScanTaskLikeRef;
 use daft_local_plan::LocalPhysicalPlanRef;
 use tokio_util::sync::CancellationToken;
 
@@ -206,17 +207,32 @@ impl Ord for SwordfishTaskPriority {
 impl TaskPriority for SwordfishTaskPriority {}
 
 #[derive(Debug, Clone)]
+pub(crate) struct TaskInputs {
+    pub psets: HashMap<String, Vec<PartitionRef>>,
+    pub scan_tasks: HashMap<String, Vec<ScanTaskLikeRef>>,
+    pub glob_paths: HashMap<String, Vec<String>>,
+}
+
+#[derive(Debug, Clone)]
 pub(crate) struct SwordfishTask {
     task_context: TaskContext,
     plan: LocalPhysicalPlanRef,
     resource_request: TaskResourceRequest,
     config: Arc<DaftExecutionConfig>,
-    psets: HashMap<String, Vec<PartitionRef>>,
+    inputs: TaskInputs,
     strategy: SchedulingStrategy,
     context: HashMap<String, String>,
 }
 
 impl SwordfishTask {
+    pub fn scan_tasks(&self) -> &HashMap<String, Vec<ScanTaskLikeRef>> {
+        &self.inputs.scan_tasks
+    }
+
+    pub fn glob_paths(&self) -> &HashMap<String, Vec<String>> {
+        &self.inputs.glob_paths
+    }
+
     pub fn plan(&self) -> LocalPhysicalPlanRef {
         self.plan.clone()
     }
@@ -226,7 +242,7 @@ impl SwordfishTask {
     }
 
     pub fn psets(&self) -> &HashMap<String, Vec<PartitionRef>> {
-        &self.psets
+        &self.inputs.psets
     }
 
     pub fn context(&self) -> &HashMap<String, String> {
@@ -270,6 +286,8 @@ pub(crate) struct SwordfishTaskBuilder {
     plan: LocalPhysicalPlanRef,
     config: Arc<DaftExecutionConfig>,
     psets: HashMap<String, Vec<PartitionRef>>,
+    scan_tasks: HashMap<String, Vec<ScanTaskLikeRef>>,
+    glob_paths: HashMap<String, Vec<String>>,
     strategy: Option<SchedulingStrategy>,
     context: HashMap<String, String>,
     node_context: Option<PipelineNodeContext>,
@@ -285,6 +303,8 @@ impl SwordfishTaskBuilder {
             plan,
             config: node.config().execution_config.clone(),
             psets: HashMap::new(),
+            scan_tasks: HashMap::new(),
+            glob_paths: HashMap::new(),
             strategy: None,
             context: node.context().to_hashmap(),
             node_context: None,
@@ -322,6 +342,12 @@ impl SwordfishTaskBuilder {
         let mut psets = left.psets.clone();
         psets.extend(right.psets.clone());
 
+        let mut scan_tasks = left.scan_tasks.clone();
+        scan_tasks.extend(right.scan_tasks.clone());
+
+        let mut glob_paths = left.glob_paths.clone();
+        glob_paths.extend(right.glob_paths.clone());
+
         // Merge pending_node_ids from both sides, then add the current node's node_id
         let mut pending_node_ids = left.pending_node_ids.clone();
         pending_node_ids.extend(right.pending_node_ids.clone());
@@ -331,6 +357,8 @@ impl SwordfishTaskBuilder {
             plan: combined_plan,
             config: left.config.clone(),
             psets,
+            scan_tasks,
+            glob_paths,
             strategy: left.strategy.clone(),
             context: left.context.clone(),
             node_context: left.node_context.clone(),
@@ -342,6 +370,18 @@ impl SwordfishTaskBuilder {
     /// Conditionally set the scheduling strategy. If None, no-op.
     pub fn with_strategy(mut self, strategy: Option<SchedulingStrategy>) -> Self {
         self.strategy = strategy;
+        self
+    }
+
+    /// Set scan tasks (replaces any existing scan tasks).
+    pub fn with_scan_tasks(mut self, scan_tasks: HashMap<String, Vec<ScanTaskLikeRef>>) -> Self {
+        self.scan_tasks = scan_tasks;
+        self
+    }
+
+    /// Set glob paths (replaces any existing glob paths).
+    pub fn with_glob_paths(mut self, glob_paths: HashMap<String, Vec<String>>) -> Self {
+        self.glob_paths = glob_paths;
         self
     }
 
@@ -395,7 +435,11 @@ impl SwordfishTaskBuilder {
             plan: self.plan,
             resource_request,
             config: self.config.clone(),
-            psets: self.psets,
+            inputs: TaskInputs {
+                psets: self.psets,
+                scan_tasks: self.scan_tasks,
+                glob_paths: self.glob_paths,
+            },
             strategy,
             context,
         };

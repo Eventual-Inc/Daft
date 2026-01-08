@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
 use common_io_config::IOConfig;
@@ -65,7 +65,7 @@ impl GlobScanSourceNode {
         result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
         let glob_scan_plan = LocalPhysicalPlan::glob_scan(
-            self.glob_paths.clone(),
+            self.node_id().to_string(),
             self.pushdowns.clone(),
             self.config.schema.clone(),
             StatsState::NotMaterialized,
@@ -76,7 +76,12 @@ impl GlobScanSourceNode {
             },
         );
 
-        let builder = SwordfishTaskBuilder::new(glob_scan_plan, self.as_ref());
+        let glob_paths_map = HashMap::from([(
+            self.node_id().to_string(),
+            self.glob_paths.iter().cloned().collect::<Vec<String>>(),
+        )]);
+        let builder = SwordfishTaskBuilder::new(glob_scan_plan, self.as_ref())
+            .with_glob_paths(glob_paths_map);
         let _ = result_tx.send(builder).await;
         Ok(())
     }

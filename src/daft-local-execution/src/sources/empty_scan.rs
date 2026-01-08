@@ -19,16 +19,13 @@ impl EmptyScanSource {
     pub fn new(schema: SchemaRef) -> Self {
         Self { schema }
     }
-    pub fn arced(self) -> Arc<dyn Source> {
-        Arc::new(self) as Arc<dyn Source>
-    }
 }
 
 #[async_trait]
 impl Source for EmptyScanSource {
     #[instrument(name = "EmptyScanSource::get_data", level = "info", skip_all)]
-    async fn get_data(
-        &self,
+    fn get_data(
+        &mut self,
         _maintain_order: bool,
         _io_stats: IOStatsRef,
         _chunk_size: usize,
@@ -50,9 +47,5 @@ impl Source for EmptyScanSource {
         res.push("EmptyScan:".to_string());
         res.push(format!("Schema = {}", self.schema.short_string()));
         res
-    }
-
-    fn schema(&self) -> &SchemaRef {
-        &self.schema
     }
 }
