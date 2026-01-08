@@ -88,7 +88,7 @@ pub mod pylib {
     use super::PythonTablesFactoryArgs;
     use crate::{
         DataSource, ScanTask, anonymous::AnonymousScanOperator, glob::GlobScanOperator,
-        storage_config::StorageConfig,
+        kafka::KafkaScanOperator, storage_config::StorageConfig,
     };
 
     #[pyclass(module = "daft.daft", frozen)]
@@ -166,6 +166,62 @@ pub mod pylib {
                 let operator = executor.block_within_async_context(task)??;
                 let operator = Arc::new(operator);
 
+                Ok(Self {
+                    scan_op: ScanOperatorRef(operator),
+                })
+            })
+        }
+
+        #[staticmethod]
+        #[pyo3(signature = (
+            bootstrap_servers,
+            group_id,
+            topics,
+            start_kind,
+            start_timestamp_ms=None,
+            start_topic_partition_offsets=None,
+            end_kind="latest".to_string(),
+            end_timestamp_ms=None,
+            end_topic_partition_offsets=None,
+            partitions=None,
+            kafka_client_config=None,
+            timeout_ms=10_000
+        ))]
+        #[allow(clippy::too_many_arguments)]
+        pub fn kafka_scan_bounded(
+            py: Python,
+            bootstrap_servers: String,
+            group_id: String,
+            topics: Vec<String>,
+            start_kind: String,
+            start_timestamp_ms: Option<i64>,
+            start_topic_partition_offsets: Option<
+                std::collections::BTreeMap<String, std::collections::BTreeMap<i32, i64>>,
+            >,
+            end_kind: String,
+            end_timestamp_ms: Option<i64>,
+            end_topic_partition_offsets: Option<
+                std::collections::BTreeMap<String, std::collections::BTreeMap<i32, i64>>,
+            >,
+            partitions: Option<Vec<i32>>,
+            kafka_client_config: Option<std::collections::BTreeMap<String, String>>,
+            timeout_ms: u64,
+        ) -> PyResult<Self> {
+            py.detach(|| {
+                let operator = Arc::new(KafkaScanOperator::new(
+                    bootstrap_servers,
+                    group_id,
+                    topics,
+                    start_kind,
+                    start_timestamp_ms,
+                    start_topic_partition_offsets,
+                    end_kind,
+                    end_timestamp_ms,
+                    end_topic_partition_offsets,
+                    partitions,
+                    kafka_client_config,
+                    timeout_ms,
+                ));
                 Ok(Self {
                     scan_op: ScanOperatorRef(operator),
                 })

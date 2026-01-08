@@ -50,6 +50,7 @@ tracing = {workspace = true}
 serde_json = {workspace = true}
 bincode = {workspace = true}
 opentelemetry = {workspace = true}
+rdkafka = {workspace = true}
 
 [features]
 python = [

@@ -1,7 +1,7 @@
 use std::{
     any::Any,
     borrow::Cow,
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fmt::Debug,
     hash::{Hash, Hasher},
     sync::{Arc, OnceLock},
@@ -26,6 +26,8 @@ use common_daft_config::DaftExecutionConfig;
 pub mod builder;
 pub mod scan_task_iters;
 
+#[cfg(feature = "python")]
+pub mod kafka;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod storage_config;
@@ -151,6 +153,17 @@ pub enum DataSource {
         metadata: Option<TableMetadata>,
         statistics: Option<TableStatistics>,
     },
+    Kafka {
+        path: String,
+        bootstrap_servers: String,
+        group_id: String,
+        topic: String,
+        partition: i32,
+        start_offset: i64,
+        end_offset: i64,
+        kafka_client_config: Option<BTreeMap<String, String>>,
+        timeout_ms: u64,
+    },
     #[cfg(feature = "python")]
     PythonFactoryFunction {
         module: String,
@@ -198,6 +211,27 @@ impl Hash for DataSource {
                 metadata.hash(state);
                 statistics.hash(state);
             }
+            Self::Kafka {
+                path,
+                bootstrap_servers,
+                group_id,
+                topic,
+                partition,
+                start_offset,
+                end_offset,
+                kafka_client_config,
+                timeout_ms,
+            } => {
+                path.hash(state);
+                bootstrap_servers.hash(state);
+                group_id.hash(state);
+                topic.hash(state);
+                partition.hash(state);
+                start_offset.hash(state);
+                end_offset.hash(state);
+                kafka_client_config.hash(state);
+                timeout_ms.hash(state);
+            }
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction {
                 module,
@@ -224,7 +258,9 @@ impl DataSource {
     #[must_use]
     pub fn get_path(&self) -> &str {
         match self {
-            Self::File { path, .. } | Self::Database { path, .. } => path,
+            Self::File { path, .. } | Self::Database { path, .. } | Self::Kafka { path, .. } => {
+                path
+            }
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { module, .. } => module,
         }
@@ -244,7 +280,7 @@ impl DataSource {
     pub fn get_chunk_spec(&self) -> Option<&ChunkSpec> {
         match self {
             Self::File { chunk_spec, .. } => chunk_spec.as_ref(),
-            Self::Database { .. } => None,
+            Self::Database { .. } | Self::Kafka { .. } => None,
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { .. } => None,
         }
@@ -254,6 +290,7 @@ impl DataSource {
     pub fn get_size_bytes(&self) -> Option<u64> {
         match self {
             Self::File { size_bytes, .. } | Self::Database { size_bytes, .. } => *size_bytes,
+            Self::Kafka { .. } => None,
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { size_bytes, .. } => *size_bytes,
         }
@@ -263,6 +300,7 @@ impl DataSource {
     pub fn get_metadata(&self) -> Option<&TableMetadata> {
         match self {
             Self::File { metadata, .. } | Self::Database { metadata, .. } => metadata.as_ref(),
+            Self::Kafka { .. } => None,
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { metadata, .. } => metadata.as_ref(),
         }
@@ -274,6 +312,7 @@ impl DataSource {
             Self::File { statistics, .. } | Self::Database { statistics, .. } => {
                 statistics.as_ref()
             }
+            Self::Kafka { .. } => None,
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { statistics, .. } => statistics.as_ref(),
         }
@@ -283,7 +322,7 @@ impl DataSource {
     pub fn get_partition_spec(&self) -> Option<&PartitionSpec> {
         match self {
             Self::File { partition_spec, .. } => partition_spec.as_ref(),
-            Self::Database { .. } => None,
+            Self::Database { .. } | Self::Kafka { .. } => None,
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction { partition_spec, .. } => partition_spec.as_ref(),
         }
@@ -363,6 +402,30 @@ impl DataSource {
                     res.push(format!("Statistics = {statistics}"));
                 }
             }
+            Self::Kafka {
+                path,
+                bootstrap_servers,
+                group_id,
+                topic,
+                partition,
+                start_offset,
+                end_offset,
+                kafka_client_config,
+                timeout_ms,
+            } => {
+                res.push(format!("Path = {path}"));
+                res.push(format!("Bootstrap servers = {bootstrap_servers}"));
+                res.push(format!("Group id = {group_id}"));
+                res.push(format!("Topic = {topic}"));
+                res.push(format!("Partition = {partition}"));
+                res.push(format!("Start offset = {start_offset}"));
+                res.push(format!("End offset = {end_offset}"));
+                res.push(format!("Timeout ms = {timeout_ms}"));
+                if let Some(cfg) = kafka_client_config {
+                    let keys = cfg.keys().cloned().collect::<Vec<_>>();
+                    res.push(format!("Kafka client config keys = {keys:?}"));
+                }
+            }
             #[cfg(feature = "python")]
             Self::PythonFactoryFunction {
                 module,
@@ -407,6 +470,13 @@ impl DisplayAs for DataSource {
                         format!("File {{{path}}}")
                     }
                     Self::Database { path, .. } => format!("Database {{{path}}}"),
+                    Self::Kafka {
+                        topic,
+                        partition,
+                        start_offset,
+                        end_offset,
+                        ..
+                    } => format!("Kafka {{{topic}:{partition} [{start_offset}, {end_offset})}}"),
                     #[cfg(feature = "python")]
                     Self::PythonFactoryFunction {
                         module, func_name, ..
