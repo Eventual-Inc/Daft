@@ -276,10 +276,10 @@ class MicroPartition:
     def quantiles(self, num: int) -> MicroPartition:
         return MicroPartition._from_pymicropartition(self._micropartition.quantiles(num))
 
-    def explode(self, columns: ExpressionsProjection) -> MicroPartition:
+    def explode(self, columns: ExpressionsProjection, index_column: str | None = None) -> MicroPartition:
         """NOTE: Expressions here must be Explode expressions."""
         to_explode_pyexprs = [e._expr for e in columns]
-        return MicroPartition._from_pymicropartition(self._micropartition.explode(to_explode_pyexprs))
+        return MicroPartition._from_pymicropartition(self._micropartition.explode(to_explode_pyexprs, index_column))
 
     def unpivot(
         self, ids: ExpressionsProjection, values: ExpressionsProjection, variable_name: str, value_name: str

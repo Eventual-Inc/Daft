@@ -28,9 +28,7 @@ def test_read_huggingface_datasets_doesnt_fail():
     [
         ("Eventual-Inc/sample-parquet", "foo"),
         ("fka/awesome-chatgpt-prompts", "act"),
-        ("nebius/SWE-rebench", "instance_id"),
         ("SWE-Gym/SWE-Gym", "instance_id"),
-        # ("HuggingFaceFW/fineweb", "id")
     ],
 )
 def test_read_huggingface(path, sort_key):

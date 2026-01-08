@@ -488,6 +488,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             Ok(LocalPhysicalPlan::explode(
                 input,
                 to_explode,
+                explode.index_column.clone(),
                 explode.exploded_schema.clone(),
                 explode.stats_state.clone(),
                 LocalNodeContext::default(),
