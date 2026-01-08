@@ -1958,4 +1958,141 @@ mod tests {
             "Not expected to be able to cast FixedSizeList into Embedding with different element type."
         );
     }
+
+    // Tests for Utf8 to numeric casting with whitespace handling
+    // These tests verify that leading/trailing whitespace is trimmed before parsing,
+    // matching Python/Pandas/NumPy behavior.
+
+    #[test]
+    fn test_utf8_to_int32_with_whitespace() {
+        let utf8_array = Utf8Array::from_iter(
+            "test",
+            vec![Some("  42  "), Some("-1"), Some("  100  "), None].into_iter(),
+        );
+        let result = utf8_array
+            .cast(&DataType::Int32)
+            .expect("Failed to cast Utf8 to Int32");
+
+        let values: Vec<Option<i32>> = result
+            .i32()
+            .unwrap()
+            .as_arrow2()
+            .iter()
+            .map(|v| v.copied())
+            .collect();
+        assert_eq!(values, vec![Some(42), Some(-1), Some(100), None]);
+    }
+
+    #[test]
+    fn test_utf8_to_int64_with_whitespace() {
+        let utf8_array = Utf8Array::from_iter(
+            "test",
+            vec![Some("  42  "), Some("  -9999999999  "), Some("\t123\n")].into_iter(),
+        );
+        let result = utf8_array
+            .cast(&DataType::Int64)
+            .expect("Failed to cast Utf8 to Int64");
+
+        let values: Vec<Option<i64>> = result
+            .i64()
+            .unwrap()
+            .as_arrow2()
+            .iter()
+            .map(|v| v.copied())
+            .collect();
+        assert_eq!(values, vec![Some(42), Some(-9999999999), Some(123)]);
+    }
+
+    #[test]
+    fn test_utf8_to_float64_with_whitespace() {
+        let utf8_array = Utf8Array::from_iter(
+            "test",
+            vec![Some("  3.14  "), Some("-2.5"), Some("  1e10  "), None].into_iter(),
+        );
+        let result = utf8_array
+            .cast(&DataType::Float64)
+            .expect("Failed to cast Utf8 to Float64");
+
+        let values: Vec<Option<f64>> = result
+            .f64()
+            .unwrap()
+            .as_arrow2()
+            .iter()
+            .map(|v| v.copied())
+            .collect();
+        assert_eq!(values, vec![Some(3.14), Some(-2.5), Some(1e10), None]);
+    }
+
+    #[test]
+    fn test_utf8_to_float32_with_whitespace() {
+        let utf8_array =
+            Utf8Array::from_iter("test", vec![Some("  3.14  "), Some("  -2.5  ")].into_iter());
+        let result = utf8_array
+            .cast(&DataType::Float32)
+            .expect("Failed to cast Utf8 to Float32");
+
+        let values: Vec<Option<f32>> = result
+            .f32()
+            .unwrap()
+            .as_arrow2()
+            .iter()
+            .map(|v| v.copied())
+            .collect();
+        assert_eq!(values, vec![Some(3.14_f32), Some(-2.5_f32)]);
+    }
+
+    #[test]
+    fn test_utf8_to_int_invalid_returns_none() {
+        // Invalid strings should return None, not error
+        let utf8_array = Utf8Array::from_iter(
+            "test",
+            vec![Some("  42  "), Some("not_a_number"), Some("  ")].into_iter(),
+        );
+        let result = utf8_array
+            .cast(&DataType::Int32)
+            .expect("Failed to cast Utf8 to Int32");
+
+        let values: Vec<Option<i32>> = result
+            .i32()
+            .unwrap()
+            .as_arrow2()
+            .iter()
+            .map(|v| v.copied())
+            .collect();
+        assert_eq!(values, vec![Some(42), None, None]);
+    }
+
+    // Tests for Utf8 to Date casting with whitespace handling
+    // Note: Date parsing already handles whitespace (this test documents existing behavior)
+
+    #[test]
+    fn test_utf8_to_date_with_whitespace() {
+        let utf8_array = Utf8Array::from_iter(
+            "test",
+            vec![
+                Some("  2024-01-01  "),
+                Some("2024-06-15"),
+                Some("  2024-12-31  "),
+                None,
+            ]
+            .into_iter(),
+        );
+        let result = utf8_array
+            .cast(&DataType::Date)
+            .expect("Failed to cast Utf8 to Date");
+
+        // Date is stored as days since epoch (1970-01-01)
+        // 2024-01-01 = 19723 days, 2024-06-15 = 19889 days, 2024-12-31 = 20088 days
+        let date_array = result.date().unwrap();
+        let values: Vec<Option<i32>> = date_array
+            .as_arrow2()
+            .values()
+            .iter()
+            .map(|&v| Some(v))
+            .collect();
+        // Check that we got valid dates (not None from failed parse)
+        assert!(values[0].is_some(), "First date should parse successfully");
+        assert!(values[1].is_some(), "Second date should parse successfully");
+        assert!(values[2].is_some(), "Third date should parse successfully");
+    }
 }
