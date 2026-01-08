@@ -53,6 +53,7 @@ pub enum LocalPhysicalPlan {
     // Split(Split),
     Sample(Sample),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
+    Uuid(Uuid),
     // Coalesce(Coalesce),
     // Flatten(Flatten),
     // FanoutRandom(FanoutRandom),
@@ -127,6 +128,7 @@ impl LocalPhysicalPlan {
             | Self::TopN(TopN { stats_state, .. })
             | Self::Sample(Sample { stats_state, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. })
+            | Self::Uuid(Uuid { stats_state, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { stats_state, .. })
             | Self::HashAggregate(HashAggregate { stats_state, .. })
             | Self::Dedup(Dedup { stats_state, .. })
@@ -176,6 +178,7 @@ impl LocalPhysicalPlan {
             | Self::TopN(TopN { context, .. })
             | Self::Sample(Sample { context, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { context, .. })
+            | Self::Uuid(Uuid { context, .. })
             | Self::UnGroupedAggregate(UnGroupedAggregate { context, .. })
             | Self::HashAggregate(HashAggregate { context, .. })
             | Self::Dedup(Dedup { context, .. })
@@ -707,6 +710,23 @@ impl LocalPhysicalPlan {
         .arced()
     }
 
+    pub fn uuid(
+        input: LocalPhysicalPlanRef,
+        column_name: String,
+        schema: SchemaRef,
+        stats_state: StatsState,
+        context: LocalNodeContext,
+    ) -> LocalPhysicalPlanRef {
+        Self::Uuid(Uuid {
+            input,
+            column_name,
+            schema,
+            stats_state,
+            context,
+        })
+        .arced()
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn hash_join(
         left: LocalPhysicalPlanRef,
@@ -971,6 +991,7 @@ impl LocalPhysicalPlan {
             | Self::Unpivot(Unpivot { schema, .. })
             | Self::Concat(Concat { schema, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { schema, .. })
+            | Self::Uuid(Uuid { schema, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { schema, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { schema, .. })
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
@@ -1047,6 +1068,7 @@ impl LocalPhysicalPlan {
             | Self::Unpivot(Unpivot { input, .. })
             | Self::Concat(Concat { input, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. })
+            | Self::Uuid(Uuid { input, .. })
             | Self::WindowPartitionOnly(WindowPartitionOnly { input, .. })
             | Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy { input, .. })
             | Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
@@ -1290,6 +1312,18 @@ impl LocalPhysicalPlan {
                     new_child.clone(),
                     column_name.clone(),
                     *starting_offset,
+                    schema.clone(),
+                    StatsState::NotMaterialized,
+                    context.clone(),
+                ),
+                Self::Uuid(Uuid {
+                    column_name,
+                    schema,
+                    context,
+                    ..
+                }) => Self::uuid(
+                    new_child.clone(),
+                    column_name.clone(),
                     schema.clone(),
                     StatsState::NotMaterialized,
                     context.clone(),
@@ -1827,6 +1861,16 @@ pub struct MonotonicallyIncreasingId {
     pub input: LocalPhysicalPlanRef,
     pub column_name: String,
     pub starting_offset: Option<u64>,
+    pub schema: SchemaRef,
+    pub stats_state: StatsState,
+    pub context: LocalNodeContext,
+}
+
+#[derive(Serialize, Deserialize)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+pub struct Uuid {
+    pub input: LocalPhysicalPlanRef,
+    pub column_name: String,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,

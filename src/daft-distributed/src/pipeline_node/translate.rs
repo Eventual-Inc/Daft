@@ -297,6 +297,14 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
                 .into_node()
             }
+            LogicalPlan::Uuid(uuid) => crate::pipeline_node::uuid::UuidNode::new(
+                self.get_next_pipeline_node_id(),
+                &self.plan_config,
+                uuid.column_name.clone(),
+                node.schema(),
+                self.curr_node.pop().unwrap(),
+            )
+            .into_node(),
             LogicalPlan::Concat(_) => ConcatNode::new(
                 self.get_next_pipeline_node_id(),
                 &self.plan_config,

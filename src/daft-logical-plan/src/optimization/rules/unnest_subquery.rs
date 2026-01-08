@@ -519,6 +519,7 @@ fn pull_up_correlated_cols(
         // ops that can trivially pull up correlated cols
         LogicalPlan::Distinct(..)
         | LogicalPlan::MonotonicallyIncreasingId(..)
+        | LogicalPlan::Uuid(..)
         | LogicalPlan::Repartition(..)
         | LogicalPlan::IntoBatches(..)
         | LogicalPlan::Union(..)

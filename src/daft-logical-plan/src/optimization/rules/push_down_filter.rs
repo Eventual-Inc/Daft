@@ -427,6 +427,7 @@ impl PushDownFilter {
             | LogicalPlan::Union(..)
             | LogicalPlan::Sink(..)
             | LogicalPlan::MonotonicallyIncreasingId(..)
+            | LogicalPlan::Uuid(..)
             | LogicalPlan::SubqueryAlias(..)
             | LogicalPlan::Window(..)
             | LogicalPlan::Distinct(..)

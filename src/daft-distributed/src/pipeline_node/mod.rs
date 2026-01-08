@@ -60,6 +60,7 @@ mod top_n;
 mod translate;
 mod udf;
 mod unpivot;
+mod uuid;
 mod vllm;
 mod window;
 

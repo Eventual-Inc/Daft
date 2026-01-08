@@ -7,14 +7,14 @@ use common_treenode::Transformed;
 use super::{
     logical_plan_tracker::LogicalPlanTracker,
     rules::{
-        DetectMonotonicId, DropIntoBatches, DropRepartition, EliminateCrossJoin, EliminateOffsets,
-        EliminateSubqueryAliasRule, EnrichWithStats, ExtractWindowFunction, FilterNullJoinKey,
-        LiftProjectFromAgg, MaterializeScans, OptimizerRule, PushDownAggregation,
-        PushDownAntiSemiJoin, PushDownFilter, PushDownJoinPredicate, PushDownLimit,
-        PushDownProjection, PushDownShard, ReorderJoins, RewriteCountDistinct, RewriteOffset,
-        ShardScans, SimplifyExpressionsRule, SimplifyNullFilteredJoin, SplitExplodeFromProject,
-        SplitGranularProjection, SplitUDFs, SplitUDFsFromFilters, UnnestPredicateSubquery,
-        UnnestScalarSubquery,
+        DetectMonotonicId, DetectUuid, DropIntoBatches, DropRepartition, EliminateCrossJoin,
+        EliminateOffsets, EliminateSubqueryAliasRule, EnrichWithStats, ExtractWindowFunction,
+        FilterNullJoinKey, LiftProjectFromAgg, MaterializeScans, OptimizerRule,
+        PushDownAggregation, PushDownAntiSemiJoin, PushDownFilter, PushDownJoinPredicate,
+        PushDownLimit, PushDownProjection, PushDownShard, ReorderJoins, RewriteCountDistinct,
+        RewriteOffset, ShardScans, SimplifyExpressionsRule, SimplifyNullFilteredJoin,
+        SplitExplodeFromProject, SplitGranularProjection, SplitUDFs, SplitUDFsFromFilters,
+        UnnestPredicateSubquery, UnnestScalarSubquery,
     },
 };
 use crate::{LogicalPlan, optimization::rules::SplitVLLM};
@@ -195,6 +195,7 @@ impl OptimizerBuilder {
                     Box::new(SplitVLLM),
                     Box::new(PushDownProjection::new()),
                     Box::new(DetectMonotonicId::new()),
+                    Box::new(DetectUuid::new()),
                 ],
                 RuleExecutionStrategy::Once,
             ),

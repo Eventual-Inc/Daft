@@ -421,6 +421,16 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 LocalNodeContext::default(),
             ))
         }
+        LogicalPlan::Uuid(uuid) => {
+            let input = translate(&uuid.input)?;
+            Ok(LocalPhysicalPlan::uuid(
+                input,
+                uuid.column_name.clone(),
+                uuid.schema.clone(),
+                uuid.stats_state.clone(),
+                LocalNodeContext::default(),
+            ))
+        }
         LogicalPlan::Sink(sink) => {
             use daft_logical_plan::SinkInfo;
             let input = translate(&sink.input)?;

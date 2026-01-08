@@ -215,6 +215,7 @@ impl PushDownLimit {
                     | LogicalPlan::Union(..)
                     | LogicalPlan::Sink(..)
                     | LogicalPlan::MonotonicallyIncreasingId(..)
+                    | LogicalPlan::Uuid(..)
                     | LogicalPlan::SubqueryAlias(..)
                     | LogicalPlan::Window(..)
                     | LogicalPlan::Concat(_)

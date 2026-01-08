@@ -238,6 +238,7 @@ impl LogicalPlanBuilder {
         let expr_resolver = ExprResolver::builder()
             .allow_actor_pool_udf(true)
             .allow_monotonic_id(true)
+            .allow_uuid(true)
             .allow_explode(true)
             .build();
 
@@ -251,6 +252,7 @@ impl LogicalPlanBuilder {
         let expr_resolver = ExprResolver::builder()
             .allow_actor_pool_udf(true)
             .allow_monotonic_id(true)
+            .allow_uuid(true)
             .allow_explode(true)
             .build();
 

@@ -418,6 +418,12 @@ impl RecordBatch {
         Self::from_nonempty_columns([&[id_series], &self.columns[..]].concat())
     }
 
+    pub fn add_uuid_column(&self, column_name: &str) -> DaftResult<Self> {
+        let iter = (0..self.len()).map(|_| Some(::uuid::Uuid::new_v4().to_string()));
+        let uuid_series = Utf8Array::from_iter(column_name, iter).into_series();
+        Self::from_nonempty_columns([&[uuid_series], &self.columns[..]].concat())
+    }
+
     pub fn quantiles(&self, num: usize) -> DaftResult<Self> {
         if self.is_empty() {
             return Ok(self.clone());

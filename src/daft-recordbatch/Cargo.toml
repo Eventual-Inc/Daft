@@ -24,6 +24,7 @@ pyo3 = {workspace = true, optional = true}
 rand = {workspace = true}
 serde = {workspace = true}
 serde_json = {workspace = true}
+uuid = {workspace = true}
 
 [features]
 python = [

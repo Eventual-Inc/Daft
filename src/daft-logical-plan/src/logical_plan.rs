@@ -51,6 +51,7 @@ pub enum LogicalPlan {
     Sink(Sink),
     Sample(Sample),
     MonotonicallyIncreasingId(MonotonicallyIncreasingId),
+    Uuid(Uuid),
     SubqueryAlias(SubqueryAlias),
     Window(Window),
     TopN(TopN),
@@ -174,6 +175,7 @@ impl LogicalPlan {
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { schema, .. }) => {
                 schema.clone()
             }
+            Self::Uuid(Uuid { schema, .. }) => schema.clone(),
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => input.schema(),
             Self::Window(Window { schema, .. }) => schema.clone(),
             Self::TopN(TopN { input, .. }) => input.schema(),
@@ -189,7 +191,8 @@ impl LogicalPlan {
             | Self::IntoBatches(..)
             | Self::Offset(..)
             | Self::Sample(..)
-            | Self::MonotonicallyIncreasingId(..) => RequiredCols::new(IndexSet::new(), None),
+            | Self::MonotonicallyIncreasingId(..)
+            | Self::Uuid(..) => RequiredCols::new(IndexSet::new(), None),
             Self::Concat(..) => RequiredCols::new(IndexSet::new(), Some(IndexSet::new())),
             Self::Project(projection) => {
                 let res = projection
@@ -365,6 +368,7 @@ impl LogicalPlan {
             Self::Sink(..) => "Sink",
             Self::Sample(..) => "Sample",
             Self::MonotonicallyIncreasingId(..) => "MonotonicallyIncreasingId",
+            Self::Uuid(..) => "Uuid",
             Self::SubqueryAlias(..) => "Alias",
             Self::Window(..) => "Window",
             Self::TopN(..) => "TopN",
@@ -394,6 +398,7 @@ impl LogicalPlan {
             | Self::Sink(Sink { stats_state, .. })
             | Self::Sample(Sample { stats_state, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { stats_state, .. })
+            | Self::Uuid(Uuid { stats_state, .. })
             | Self::Window(Window { stats_state, .. })
             | Self::TopN(TopN { stats_state, .. })
             | Self::VLLMProject(VLLMProject { stats_state, .. }) => stats_state,
@@ -436,6 +441,7 @@ impl LogicalPlan {
             Self::MonotonicallyIncreasingId(plan) => {
                 Self::MonotonicallyIncreasingId(plan.with_materialized_stats())
             }
+            Self::Uuid(plan) => Self::Uuid(plan.with_materialized_stats()),
             Self::Window(plan) => Self::Window(plan.with_materialized_stats()),
             Self::TopN(plan) => Self::TopN(plan.with_materialized_stats()),
             Self::VLLMProject(plan) => Self::VLLMProject(plan.with_materialized_stats()),
@@ -474,6 +480,7 @@ impl LogicalPlan {
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 monotonically_increasing_id.multiline_display()
             }
+            Self::Uuid(uuid) => uuid.multiline_display(),
             Self::SubqueryAlias(alias) => alias.multiline_display(),
             Self::Window(window) => window.multiline_display(),
             Self::TopN(top_n) => top_n.multiline_display(),
@@ -507,6 +514,7 @@ impl LogicalPlan {
             Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { input, .. }) => {
                 vec![input]
             }
+            Self::Uuid(Uuid { input, .. }) => vec![input],
             Self::SubqueryAlias(SubqueryAlias { input, .. }) => vec![input],
             Self::Window(Window { input, .. }) => vec![input],
             Self::TopN(TopN { input, .. }) => vec![input],
@@ -619,6 +627,9 @@ impl LogicalPlan {
                     )
                     .unwrap(),
                 ),
+                Self::Uuid(Uuid { column_name, .. }) => {
+                    Self::Uuid(Uuid::try_new(input.clone(), Some(column_name)).unwrap())
+                }
                 Self::Unpivot(Unpivot {
                     ids,
                     values,
@@ -891,6 +902,7 @@ impl LogicalPlan {
             | Self::Sink(Sink { plan_id, .. })
             | Self::Sample(Sample { plan_id, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { plan_id, .. })
+            | Self::Uuid(Uuid { plan_id, .. })
             | Self::SubqueryAlias(SubqueryAlias { plan_id, .. })
             | Self::Window(Window { plan_id, .. })
             | Self::TopN(TopN { plan_id, .. })
@@ -922,6 +934,7 @@ impl LogicalPlan {
             | Self::Sink(Sink { node_id, .. })
             | Self::Sample(Sample { node_id, .. })
             | Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId { node_id, .. })
+            | Self::Uuid(Uuid { node_id, .. })
             | Self::SubqueryAlias(SubqueryAlias { node_id, .. })
             | Self::Window(Window { node_id, .. })
             | Self::TopN(TopN { node_id, .. })
@@ -958,6 +971,7 @@ impl LogicalPlan {
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 Self::MonotonicallyIncreasingId(monotonically_increasing_id.with_plan_id(plan_id))
             }
+            Self::Uuid(uuid) => Self::Uuid(uuid.with_plan_id(plan_id)),
             Self::SubqueryAlias(alias) => Self::SubqueryAlias(alias.with_plan_id(plan_id)),
             Self::Window(window) => Self::Window(window.with_plan_id(plan_id)),
             Self::TopN(top_n) => Self::TopN(top_n.with_plan_id(plan_id)),
@@ -996,6 +1010,7 @@ impl LogicalPlan {
             Self::MonotonicallyIncreasingId(monotonically_increasing_id) => {
                 Self::MonotonicallyIncreasingId(monotonically_increasing_id.with_node_id(node_id))
             }
+            Self::Uuid(uuid) => Self::Uuid(uuid.with_node_id(node_id)),
             Self::SubqueryAlias(alias) => Self::SubqueryAlias(alias.with_node_id(node_id)),
             Self::Window(window) => Self::Window(window.with_node_id(node_id)),
             Self::TopN(top_n) => Self::TopN(top_n.with_node_id(node_id)),
@@ -1108,5 +1123,6 @@ impl_from_data_struct_for_logical_plan!(Join);
 impl_from_data_struct_for_logical_plan!(Sink);
 impl_from_data_struct_for_logical_plan!(Sample);
 impl_from_data_struct_for_logical_plan!(MonotonicallyIncreasingId);
+impl_from_data_struct_for_logical_plan!(Uuid);
 impl_from_data_struct_for_logical_plan!(Window);
 impl_from_data_struct_for_logical_plan!(TopN);

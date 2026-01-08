@@ -292,6 +292,8 @@ pub struct ExprResolver<'a> {
     #[builder(default)]
     allow_monotonic_id: bool,
     #[builder(default)]
+    allow_uuid: bool,
+    #[builder(default)]
     allow_explode: bool,
     #[builder(via_mutators, mutators(
         pub fn in_agg_context(&mut self, in_agg_context: bool) {
@@ -327,6 +329,17 @@ impl ExprResolver<'_> {
         {
             return Err(DaftError::ValueError(
                 "monotonically_increasing_id() is only allowed in projections".to_string(),
+            ));
+        }
+
+        if !self.allow_uuid
+            && expr.exists(|e| match e.as_ref() {
+                Expr::ScalarFn(ScalarFn::Builtin(func)) => func.name() == "uuid",
+                _ => false,
+            })
+        {
+            return Err(DaftError::ValueError(
+                "uuid() is only allowed in projections".to_string(),
             ));
         }
 
