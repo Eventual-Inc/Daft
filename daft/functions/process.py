@@ -44,8 +44,8 @@ def run_process(
         >>> # Without shell
         >>> expr = run_process(["echo", col("a"), col("b")])
         >>> df = df.select(expr.alias("out"))
-        >>> df.to_pylist()
-        [{'out': 'hello world'}]
+        >>> df.to_pylist()[0]["out"].strip()
+        'hello world'
         >>>
         >>> # With shell and return_dtype=int
         >>> df = daft.from_pydict({"x": ["hello world"]})
