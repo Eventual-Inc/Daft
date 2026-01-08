@@ -28,6 +28,29 @@ use crate::{
 
 type ColumnWriterFuture = dyn Future<Output = DaftResult<ArrowColumnChunk>> + Send;
 
+/// Helper function to check if we support writing a specific data type to Parquet.
+fn support_data_type(data_type: &DataType) -> bool {
+    // TODO: Newer versions of parquet support Duration, but we don't write
+    // the arrow schema metadata to Parquet, so we can't support it yet.
+    // Similarly, we don't support TimestampTz or Extension
+    match data_type {
+        DataType::Duration(_) => false,
+        DataType::Extension(_, _, _) => false,
+        DataType::Tensor(_) => false,
+        DataType::SparseTensor(..) => false,
+        DataType::FixedShapeSparseTensor(..) => false,
+        DataType::Timestamp(_, tz) => tz.is_none(),
+        DataType::List(dtype) | DataType::FixedSizeList(dtype, _) => {
+            support_data_type(dtype.as_ref())
+        }
+        DataType::Map { key, value } => {
+            support_data_type(key.as_ref()) && support_data_type(value.as_ref())
+        }
+        DataType::Struct(fields) => fields.iter().all(|field| support_data_type(&field.dtype)),
+        _ => true,
+    }
+}
+
 /// Helper function that checks if we support native writes given the file format, root directory, and schema.
 pub(crate) fn native_parquet_writer_supported(
     root_dir: &str,
@@ -38,12 +61,10 @@ pub(crate) fn native_parquet_writer_supported(
         return Ok(false);
     }
 
-    // TODO: Newer versions of parquet support Duration, but we don't write
-    // the arrow schema metadata to Parquet, so we can't support it yet.
     if file_schema
         .fields()
         .iter()
-        .any(|field| matches!(field.dtype, DataType::Duration(_)))
+        .any(|field| !support_data_type(&field.dtype))
     {
         return Ok(false);
     }
