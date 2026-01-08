@@ -3177,7 +3177,6 @@ dependencies = [
  "common-error",
  "common-partitioning",
  "common-runtime",
- "daft-arrow",
  "daft-core",
  "daft-csv",
  "daft-dsl",
