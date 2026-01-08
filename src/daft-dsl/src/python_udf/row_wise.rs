@@ -37,6 +37,7 @@ pub fn row_wise_udf(
     on_error: crate::functions::python::OnError,
     original_args: RuntimePyObject,
     args: Vec<ExprRef>,
+    ray_options: Option<RuntimePyObject>,
 ) -> Expr {
     Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
         func_id: Arc::from(func_id),
@@ -53,6 +54,7 @@ pub fn row_wise_udf(
         gpus,
         use_process,
         max_concurrency,
+        ray_options,
     })))
 }
 
@@ -72,6 +74,7 @@ pub struct RowWisePyFn {
     pub max_concurrency: Option<NonZeroUsize>,
     pub max_retries: Option<usize>,
     pub on_error: crate::functions::python::OnError,
+    pub ray_options: Option<RuntimePyObject>,
 }
 
 impl Display for RowWisePyFn {
@@ -105,6 +108,7 @@ impl RowWisePyFn {
             max_concurrency: self.max_concurrency,
             max_retries: self.max_retries,
             on_error: self.on_error,
+            ray_options: self.ray_options.clone(),
         }
     }
 

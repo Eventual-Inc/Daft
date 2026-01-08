@@ -263,6 +263,7 @@ pub fn row_wise_udf(
     on_error: Option<String>,
     original_args: Py<PyAny>,
     expr_args: Vec<PyExpr>,
+    ray_options: Option<Py<PyAny>>,
 ) -> PyResult<PyExpr> {
     let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
 
@@ -300,6 +301,7 @@ pub fn row_wise_udf(
             on_error_enum.unwrap_or_default(),
             original_args.into(),
             args,
+            ray_options.map(|o| o.into()),
         )
         .into(),
     })
@@ -323,11 +325,20 @@ pub fn batch_udf(
     on_error: Option<String>,
     original_args: Py<PyAny>,
     expr_args: Vec<PyExpr>,
+    ray_options: Option<Py<PyAny>>,
 ) -> PyResult<PyExpr> {
     let args = expr_args.into_iter().map(|pyexpr| pyexpr.expr).collect();
-    let on_error = on_error
-        .and_then(|v| crate::functions::python::OnError::from_str(&v).ok())
-        .unwrap_or_default();
+
+    // Convert string on_error to OnError enum
+    let on_error_enum = on_error
+        .as_ref()
+        .and_then(|s| crate::functions::python::OnError::from_str(s).ok());
+
+    if on_error.is_some() && on_error_enum.is_none() {
+        return Err(PyValueError::new_err(
+            "Invalid on_error value. Must be one of: 'raise', 'log', or 'ignore'",
+        ));
+    }
 
     let max_concurrency = max_concurrency
         .map(|c| {
@@ -352,7 +363,8 @@ pub fn batch_udf(
             original_args.into(),
             args,
             max_retries,
-            on_error,
+            on_error_enum.unwrap_or_default(),
+            ray_options.map(|o| o.into()),
         )
         .into(),
     })
