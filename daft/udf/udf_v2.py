@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import functools
 import inspect
-import uuid
+import random
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Coroutine, Generator, Iterator
 from dataclasses import dataclass, field
@@ -174,21 +174,13 @@ class Func(Generic[P, T, C]):
         if self.name_override:
             name = self.name_override
         else:
-            if self.is_async:
-                prefix = "Async UDF "
-            elif self.is_generator:
-                prefix = "Generator UDF "
-            elif self.is_batch:
-                prefix = "Batch UDF "
-            else:
-                prefix = "UDF "
-
             if module_name:
-                name = f"{prefix} {module_name}.{qual_name}"
+                name = f"{module_name}.{qual_name}"
             else:
-                name = f"{prefix} {qual_name}"
+                name = f"{qual_name}"
 
-        return (f"{name}-{uuid.uuid4()}", name)
+        random_suffix = random.randint(0, 1000000)
+        return (f"{name}-{random_suffix}", name)
 
     @staticmethod
     def _get_return_dtype(
@@ -259,6 +251,7 @@ class Func(Generic[P, T, C]):
                     self.name,
                     self._cls,
                     method,
+                    self.name_override is not None,
                     self.is_async,
                     DataType.list(self.return_dtype)._dtype,
                     self.gpus,
@@ -277,6 +270,7 @@ class Func(Generic[P, T, C]):
                     self.name,
                     self._cls,
                     self._method,
+                    self.name_override is not None,
                     self.is_async,
                     self.return_dtype._dtype,
                     self.gpus,
@@ -296,6 +290,7 @@ class Func(Generic[P, T, C]):
                     self.name,
                     self._cls,
                     self._method,
+                    self.name_override is not None,
                     self.is_async,
                     self.return_dtype._dtype,
                     self.gpus,

@@ -496,7 +496,19 @@ impl IntermediateOperator for UdfOperator {
     }
 
     fn name(&self) -> NodeName {
-        self.params.udf_properties.name.clone().into()
+        if self.params.udf_properties.builtin_name {
+            let name = self.params.udf_properties.name.clone();
+            name.into()
+        } else {
+            let udf_name =
+                if let Some((_, udf_name)) = self.params.udf_properties.name.rsplit_once('.') {
+                    udf_name
+                } else {
+                    self.params.udf_properties.name.as_str()
+                };
+
+            format!("UDF {}", udf_name).into()
+        }
     }
 
     fn op_type(&self) -> NodeType {
@@ -509,7 +521,15 @@ impl IntermediateOperator for UdfOperator {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![
-            format!("{}", self.params.udf_properties.name.as_str()),
+            format!(
+                "{}{}:",
+                if self.params.udf_properties.builtin_name {
+                    "Builtin UDF "
+                } else {
+                    "UDF "
+                },
+                self.params.udf_properties.name.as_str()
+            ),
             format!("Expr = {}", self.expr),
             format!(
                 "Passthrough Columns = [{}]",
@@ -572,7 +592,7 @@ impl IntermediateOperator for UdfOperator {
                 } else {
                     // Cannot use process with non-arrow types, fall back to thread
                     log::warn!(
-                        "`{}` requires a non-arrow-serializable input column. The UDF will run on the same thread as the daft process.",
+                        "UDF `{}` requires a non-arrow-serializable input column. The UDF will run on the same thread as the daft process.",
                         self.params.udf_properties.name
                     );
                     UdfHandle::Thread

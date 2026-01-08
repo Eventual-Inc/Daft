@@ -3,6 +3,8 @@ mod batch;
 mod retry;
 mod row_wise;
 
+use std::sync::Arc;
+
 pub use batch::{BatchPyFn, batch_udf};
 use common_error::DaftResult;
 use daft_core::prelude::*;
@@ -21,12 +23,20 @@ pub enum PyScalarFn {
 }
 
 impl PyScalarFn {
-    pub fn name(&self) -> &str {
+    pub fn id(&self) -> Arc<str> {
         match self {
-            Self::RowWise(RowWisePyFn { function_name, .. })
-            | Self::Batch(BatchPyFn { function_name, .. }) => function_name,
+            Self::RowWise(func) => func.func_id.clone(),
+            Self::Batch(func) => func.func_id.clone(),
         }
     }
+
+    // pub fn name(&self) -> &str {
+    //     match self {
+    //         Self::RowWise(RowWisePyFn { function_name, .. })
+    //         | Self::Batch(BatchPyFn { function_name, .. }) => function_name,
+    //     }
+    // }
+
     pub fn call(&self, args: &[Series], metrics: &mut dyn MetricsCollector) -> DaftResult<Series> {
         match self {
             Self::RowWise(func) => func.call(args, metrics),

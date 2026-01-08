@@ -86,7 +86,15 @@ impl UDFProject {
 
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![
-            format!("UDF: {}", self.udf_properties.name),
+            format!(
+                "{}{}:",
+                if self.udf_properties.builtin_name {
+                    "Builtin UDF "
+                } else {
+                    "UDF "
+                },
+                self.udf_properties.name.as_str()
+            ),
             format!("Expr = {}", self.expr),
             format!(
                 "Passthrough Columns = {}",
