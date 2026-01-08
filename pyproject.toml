@@ -159,7 +159,8 @@ dev = [
   "mcap-ros2-support==0.5.6",
   "mcap-protobuf-support==0.5.3",
   # BigTable
-  "google-cloud-bigtable==2.34.0"
+  "google-cloud-bigtable==2.34.0",
+  "kafka-python==2.0.2"
 ]
 docs = [
   "markdown-exec==1.12.1",
