@@ -4,6 +4,7 @@ use crate::{
     array::DataArray,
     datatypes::{DaftArrowBackedType, UInt64Array},
     kernels::search_sorted,
+    prelude::FromArrow,
 };
 
 impl<T> DataArray<T>
@@ -14,6 +15,6 @@ where
         let array =
             search_sorted::search_sorted(self.data.as_ref(), keys.data.as_ref(), descending)?;
 
-        Ok(DataArray::from((self.name(), Box::new(array))))
+        UInt64Array::from_arrow2(self.field.clone(), Box::new(array))
     }
 }

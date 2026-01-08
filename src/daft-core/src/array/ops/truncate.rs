@@ -1,6 +1,7 @@
 use std::ops::Rem;
 
 use common_error::DaftResult;
+use daft_schema::field::Field;
 use num_traits::ToPrimitive;
 
 use super::as_arrow::AsArrow;
@@ -10,24 +11,25 @@ use crate::{
         DaftNumericType, Decimal128Array, Int8Type, Int16Type, Int32Type, Int64Type, UInt8Type,
         UInt16Type, UInt32Type, UInt64Type, Utf8Array,
     },
-    prelude::BinaryArray,
+    prelude::{BinaryArray, DaftDataType},
 };
 
 macro_rules! impl_int_truncate {
     ($DT:ty) => {
         impl DataArray<$DT> {
             pub fn iceberg_truncate(&self, w: i64) -> DaftResult<DataArray<$DT>> {
-                let as_arrowed = self.as_arrow2();
-
-                let trun_value = as_arrowed.into_iter().map(|v| {
+                let iter = self.into_iter().map(|v| {
                     v.map(|v| {
                         let i = v.to_i64().unwrap();
                         let t = (i - (((i.rem(w)) + w).rem(w)));
                         t as <$DT as DaftNumericType>::Native
                     })
                 });
-                let array = Box::new(daft_arrow::array::PrimitiveArray::from_iter(trun_value));
-                Ok(<DataArray<$DT>>::from((self.name(), array)))
+
+                Ok(DataArray::<$DT>::from_iter(
+                    Field::new(self.name(), <$DT>::get_dtype()),
+                    iter,
+                ))
             }
         }
     };
@@ -45,8 +47,7 @@ impl_int_truncate!(UInt64Type);
 
 impl Decimal128Array {
     pub fn iceberg_truncate(&self, w: i64) -> DaftResult<Self> {
-        let as_arrow = self.as_arrow2();
-        let trun_value = as_arrow.into_iter().map(|v| {
+        let trun_value = self.into_iter().map(|v| {
             v.map(|i| {
                 let w = w as i128;
                 let remainder = ((i.rem(w)) + w).rem(w);

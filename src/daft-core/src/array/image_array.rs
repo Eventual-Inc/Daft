@@ -1,4 +1,4 @@
-use std::vec;
+use std::{sync::Arc, vec};
 
 use common_error::DaftResult;
 
@@ -79,41 +79,41 @@ impl ImageArray {
     ) -> DaftResult<Self> {
         let values: Vec<Series> = vec![
             data_array.into_series().rename("data"),
-            UInt16Array::from((
-                "channel",
+            UInt16Array::from_field_and_array(
+                Arc::new(Field::new("channel", DataType::UInt16)),
                 Box::new(
                     daft_arrow::array::UInt16Array::from_vec(sidecar_data.channels).with_validity(
                         daft_arrow::buffer::wrap_null_buffer(sidecar_data.validity.clone()),
                     ),
                 ),
-            ))
+            )?
             .into_series(),
-            UInt32Array::from((
-                "height",
+            UInt16Array::from_field_and_array(
+                Arc::new(Field::new("height", DataType::UInt16)),
                 Box::new(
                     daft_arrow::array::UInt32Array::from_vec(sidecar_data.heights).with_validity(
                         daft_arrow::buffer::wrap_null_buffer(sidecar_data.validity.clone()),
                     ),
                 ),
-            ))
+            )?
             .into_series(),
-            UInt32Array::from((
-                "width",
+            UInt16Array::from_field_and_array(
+                Arc::new(Field::new("width", DataType::UInt16)),
                 Box::new(
                     daft_arrow::array::UInt32Array::from_vec(sidecar_data.widths).with_validity(
                         daft_arrow::buffer::wrap_null_buffer(sidecar_data.validity.clone()),
                     ),
                 ),
-            ))
+            )?
             .into_series(),
-            UInt8Array::from((
-                "mode",
+            UInt8Array::from_field_and_array(
+                Arc::new(Field::new("mode", DataType::UInt8)),
                 Box::new(
                     daft_arrow::array::UInt8Array::from_vec(sidecar_data.modes).with_validity(
                         daft_arrow::buffer::wrap_null_buffer(sidecar_data.validity.clone()),
                     ),
                 ),
-            ))
+            )?
             .into_series(),
         ];
         let physical_type = data_type.to_physical();

@@ -190,7 +190,7 @@ impl ListArrayExtension for ListArray {
     }
 
     fn count(&self, mode: CountMode) -> DaftResult<UInt64Array> {
-        let counts = match (mode, self.flat_child.validity()) {
+        let counts: Vec<_> = match (mode, self.flat_child.validity()) {
             (CountMode::All, _) | (CountMode::Valid, None) => {
                 self.offsets().lengths().map(|l| l as u64).collect()
             }
@@ -214,13 +214,9 @@ impl ListArrayExtension for ListArray {
                 })
                 .collect(),
         };
-
-        let array = Box::new(
-            daft_arrow::array::PrimitiveArray::from_vec(counts).with_validity(
-                daft_arrow::buffer::wrap_null_buffer(self.validity().cloned()),
-            ),
-        );
-        Ok(UInt64Array::from((self.name(), array)))
+        UInt64Array::from_iter_values(counts.into_iter())
+            .rename(self.name())
+            .with_validity(self.validity().cloned())
     }
 
     fn explode(&self) -> DaftResult<Series> {
@@ -513,7 +509,7 @@ impl ListArrayExtension for FixedSizeListArray {
 
     fn count(&self, mode: CountMode) -> DaftResult<UInt64Array> {
         let size = self.fixed_element_len();
-        let counts = match (mode, self.flat_child.validity()) {
+        let counts: Vec<_> = match (mode, self.flat_child.validity()) {
             (CountMode::All, _) | (CountMode::Valid, None) => {
                 repeat_n(size as u64, self.len()).collect()
             }
@@ -534,12 +530,9 @@ impl ListArrayExtension for FixedSizeListArray {
                 .collect(),
         };
 
-        let array = Box::new(
-            daft_arrow::array::PrimitiveArray::from_vec(counts).with_validity(
-                daft_arrow::buffer::wrap_null_buffer(self.validity().cloned()),
-            ),
-        );
-        Ok(UInt64Array::from((self.name(), array)))
+        UInt64Array::from_iter_values(counts.into_iter())
+            .rename(self.name())
+            .with_validity(self.validity().cloned())
     }
 
     fn explode(&self) -> DaftResult<Series> {

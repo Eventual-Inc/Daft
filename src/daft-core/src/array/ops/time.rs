@@ -72,7 +72,10 @@ impl DateArray {
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let day_arr = daft_arrow::compute::temporal::day(&input_array)?;
-        Ok((self.name(), Box::new(day_arr)).into())
+        UInt32Array::from_arrow2(
+            Field::new(self.name(), DataType::UInt32).into(),
+            Box::new(day_arr),
+        )
     }
 
     pub fn month(&self) -> DaftResult<UInt32Array> {
@@ -82,7 +85,10 @@ impl DateArray {
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let month_arr = daft_arrow::compute::temporal::month(&input_array)?;
-        Ok((self.name(), Box::new(month_arr)).into())
+        UInt32Array::from_arrow2(
+            Field::new(self.name(), DataType::UInt32).into(),
+            Box::new(month_arr),
+        )
     }
 
     pub fn quarter(&self) -> DaftResult<UInt32Array> {
@@ -92,11 +98,11 @@ impl DateArray {
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let month_arr = daft_arrow::compute::temporal::month(&input_array)?;
-        let quarter_arr = month_arr
+        Ok(month_arr
             .into_iter()
             .map(|opt_month| opt_month.map(|month_val| month_val.div_ceil(3)))
-            .collect();
-        Ok((self.name(), Box::new(quarter_arr)).into())
+            .collect::<UInt32Array>()
+            .rename(self.name()))
     }
 
     pub fn year(&self) -> DaftResult<Int32Array> {
@@ -106,7 +112,10 @@ impl DateArray {
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let year_arr = daft_arrow::compute::temporal::year(&input_array)?;
-        Ok((self.name(), Box::new(year_arr)).into())
+        Int32Array::from_arrow2(
+            Field::new(self.name(), DataType::Int32).into(),
+            Box::new(year_arr),
+        )
     }
 
     pub fn day_of_week(&self) -> DaftResult<UInt32Array> {
@@ -116,7 +125,10 @@ impl DateArray {
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let day_arr = daft_arrow::compute::temporal::weekday(&input_array)?;
-        Ok((self.name(), Box::new(day_arr.sub(&1))).into())
+        UInt32Array::from_arrow2(
+            Field::new(self.name(), DataType::UInt32).into(),
+            Box::new(day_arr.sub(&1)),
+        )
     }
 
     pub fn day_of_month(&self) -> DaftResult<UInt32Array> {
@@ -126,7 +138,10 @@ impl DateArray {
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let day_arr = daft_arrow::compute::temporal::day_of_month(&input_array)?;
-        Ok((self.name(), Box::new(day_arr)).into())
+        UInt32Array::from_arrow2(
+            Field::new(self.name(), DataType::UInt32).into(),
+            Box::new(day_arr),
+        )
     }
 
     pub fn day_of_year(&self) -> DaftResult<UInt32Array> {
@@ -136,7 +151,10 @@ impl DateArray {
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let ordinal_day_arr = daft_arrow::compute::temporal::day_of_year(&input_array)?;
-        Ok((self.name(), Box::new(ordinal_day_arr)).into())
+        UInt32Array::from_arrow2(
+            Field::new(self.name(), DataType::UInt32).into(),
+            Box::new(ordinal_day_arr),
+        )
     }
 
     pub fn week_of_year(&self) -> DaftResult<UInt32Array> {
@@ -146,13 +164,16 @@ impl DateArray {
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let day_arr = daft_arrow::compute::temporal::week_of_year(&input_array)?;
-        Ok((self.name(), Box::new(day_arr)).into())
+        UInt32Array::from_arrow2(
+            Field::new(self.name(), DataType::UInt32).into(),
+            Box::new(day_arr),
+        )
     }
 }
 
 impl TimestampArray {
     pub fn date(&self) -> DaftResult<DateArray> {
-        let physical = self.physical.as_arrow2();
+        let physical = &self.physical;
         let DataType::Timestamp(timeunit, tz) = self.data_type() else {
             unreachable!("Timestamp array must have Timestamp datatype")
         };
@@ -161,27 +182,29 @@ impl TimestampArray {
         let date_arrow = match tz {
             Some(tz) => {
                 if let Ok(tz) = daft_schema::time_unit::parse_offset(tz) {
-                    Ok(daft_arrow::array::PrimitiveArray::<i32>::from_iter(
-                        physical.iter().map(|ts| {
+                    Ok(physical
+                        .into_iter()
+                        .map(|ts| {
                             ts.map(|ts| {
                                 (daft_schema::time_unit::timestamp_to_datetime(*ts, tu, &tz)
                                     .date_naive()
                                     - epoch_date)
                                     .num_days() as i32
                             })
-                        }),
-                    ))
+                        })
+                        .collect::<Int32Array>())
                 } else if let Ok(tz) = daft_schema::time_unit::parse_offset_tz(tz) {
-                    Ok(daft_arrow::array::PrimitiveArray::<i32>::from_iter(
-                        physical.iter().map(|ts| {
+                    Ok(physical
+                        .into_iter()
+                        .map(|ts| {
                             ts.map(|ts| {
                                 (daft_schema::time_unit::timestamp_to_datetime(*ts, tu, &tz)
                                     .date_naive()
                                     - epoch_date)
                                     .num_days() as i32
                             })
-                        }),
-                    ))
+                        })
+                        .collect::<Int32Array>())
                 } else {
                     Err(DaftError::TypeError(format!(
                         "Cannot parse timezone in Timestamp datatype: {}",
@@ -189,24 +212,25 @@ impl TimestampArray {
                     )))
                 }
             }
-            None => Ok(daft_arrow::array::PrimitiveArray::<i32>::from_iter(
-                physical.iter().map(|ts| {
+            None => Ok(physical
+                .into_iter()
+                .map(|ts| {
                     ts.map(|ts| {
                         (daft_schema::time_unit::timestamp_to_naive_datetime(*ts, tu).date()
                             - epoch_date)
                             .num_days() as i32
                     })
-                }),
-            )),
+                })
+                .collect::<Int32Array>()),
         }?;
         Ok(DateArray::new(
             Field::new(self.name(), DataType::Date),
-            Int32Array::from((self.name(), Box::new(date_arrow))),
+            date_arrow.rename(self.name()),
         ))
     }
 
     pub fn time(&self, timeunit_for_cast: &TimeUnit) -> DaftResult<TimeArray> {
-        let physical = self.physical.as_arrow2();
+        let physical = &self.physical;
         let DataType::Timestamp(timeunit, tz) = self.data_type() else {
             unreachable!("Timestamp array must have Timestamp datatype")
         };
@@ -222,9 +246,8 @@ impl TimestampArray {
         let time_arrow = match tz {
             Some(tz) => {
                 if let Ok(tz) = daft_schema::time_unit::parse_offset(tz) {
-                Ok(daft_arrow::array::PrimitiveArray::<i64>::from_iter(
-                    physical.iter().map(|ts| {
-                        ts.map(|ts| {
+                Ok(
+                    physical.map_values(|ts| {
                             let dt =
                                 daft_schema::time_unit::timestamp_to_datetime(*ts, tu, &tz);
                                 let time_delta = dt.time() - NaiveTime::from_hms_opt(0,0,0).unwrap();
@@ -233,13 +256,11 @@ impl TimestampArray {
                                     TimeUnit::Nanoseconds => time_delta.num_nanoseconds().unwrap(),
                                     _ => unreachable!("Only microseconds and nanoseconds time units are supported for the Time dtype, but got {timeunit_for_cast}"),
                                 }
-                            })
-                        }),
-                    ))
+                            }))
+
                 } else if let Ok(tz) = daft_schema::time_unit::parse_offset_tz(tz) {
-                Ok(daft_arrow::array::PrimitiveArray::<i64>::from_iter(
-                    physical.iter().map(|ts| {
-                        ts.map(|ts| {
+                Ok(
+                    physical.map_values(|ts| {
                             let dt =
                                 daft_schema::time_unit::timestamp_to_datetime(*ts, tu, &tz);
                                 let time_delta = dt.time() - NaiveTime::from_hms_opt(0,0,0).unwrap();
@@ -249,36 +270,35 @@ impl TimestampArray {
                                     _ => unreachable!("Only microseconds and nanoseconds time units are supported for the Time dtype, but got {timeunit_for_cast}"),
                                 }
                             })
-                        }),
-                    ))
+
+                    )
                 } else {
                 Err(DaftError::TypeError(format!(
                     "Cannot parse timezone in Timestamp datatype: {}",
                     tz
                 )))}
             },
-            None => Ok(daft_arrow::array::PrimitiveArray::<i64>::from_iter(
-                physical.iter().map(|ts| {
-                    ts.map(|ts| {
-                        let dt = daft_schema::time_unit::timestamp_to_naive_datetime(*ts, tu);
-                        let time_delta = dt.time() - NaiveTime::from_hms_opt(0,0,0).unwrap();
-                        match timeunit_for_cast {
-                            TimeUnit::Microseconds => time_delta.num_microseconds().unwrap(),
-                            TimeUnit::Nanoseconds => time_delta.num_nanoseconds().unwrap(),
-                            _ => unreachable!("Only microseconds and nanoseconds time units are supported for the Time dtype, but got {timeunit_for_cast}"),
-                        }
-                    })
-                }),
-            )),
+            None => Ok(
+                                physical.map_values(|ts| {
+                                    let dt = daft_schema::time_unit::timestamp_to_naive_datetime(*ts, tu);
+                                    let time_delta = dt.time() - NaiveTime::from_hms_opt(0,0,0).unwrap();
+                                    match timeunit_for_cast {
+                                        TimeUnit::Microseconds => time_delta.num_microseconds().unwrap(),
+                                        TimeUnit::Nanoseconds => time_delta.num_nanoseconds().unwrap(),
+                                        _ => unreachable!("Only microseconds and nanoseconds time units are supported for the Time dtype, but got {timeunit_for_cast}"),
+                                    }
+                                })
+
+            ),
         }?;
         Ok(TimeArray::new(
             Field::new(self.name(), DataType::Time(*timeunit_for_cast)),
-            Int64Array::from((self.name(), Box::new(time_arrow))),
+            time_arrow.rename(self.name()),
         ))
     }
 
     pub fn truncate(&self, interval: &str, relative_to: Option<i64>) -> DaftResult<Self> {
-        let physical = self.physical.as_arrow2();
+        let physical = &self.physical;
         let DataType::Timestamp(timeunit, tz) = self.data_type() else {
             unreachable!("Timestamp array must have Timestamp datatype")
         };
@@ -377,7 +397,7 @@ impl TimestampArray {
         }
 
         let result_timestamps = physical
-            .iter()
+            .into_iter()
             .map(|ts| {
                 ts.map_or(Ok(None), |ts| {
                     let truncated_ts = match tz {
@@ -404,11 +424,11 @@ impl TimestampArray {
                     truncated_ts.map(Some)
                 })
             })
-            .collect::<DaftResult<daft_arrow::array::PrimitiveArray<i64>>>()?;
+            .collect::<DaftResult<Int64Array>>()?;
 
         Ok(TimestampArray::new(
             Field::new(self.name(), self.data_type().clone()),
-            Int64Array::from((self.name(), Box::new(result_timestamps))),
+            result_timestamps.rename(self.name()),
         ))
     }
 
@@ -448,7 +468,7 @@ impl TimestampArray {
 
         Ok(Self::new(
             self.field.clone(),
-            Int64Array::new(physical_field, Box::new(physical_res))?,
+            Int64Array::from_arrow2(physical_field, Box::new(physical_res))?,
         ))
     }
 
@@ -464,7 +484,10 @@ impl TimestampArray {
             .to(daft_arrow::datatypes::DataType::Timestamp(tu, tz));
 
         let ordinal_day_arr = daft_arrow::compute::temporal::day_of_month(&input_array)?;
-        Ok((self.name(), Box::new(ordinal_day_arr)).into())
+        UInt32Array::from_arrow2(
+            Field::new(self.name(), DataType::UInt32).into(),
+            Box::new(ordinal_day_arr),
+        )
     }
 
     pub fn day_of_year(&self) -> DaftResult<UInt32Array> {
@@ -479,7 +502,10 @@ impl TimestampArray {
             .to(daft_arrow::datatypes::DataType::Timestamp(tu, tz));
 
         let ordinal_day_arr = daft_arrow::compute::temporal::day_of_year(&input_array)?;
-        Ok((self.name(), Box::new(ordinal_day_arr)).into())
+        UInt32Array::from_arrow2(
+            Field::new(self.name(), DataType::UInt32).into(),
+            Box::new(ordinal_day_arr),
+        )
     }
 
     pub fn week_of_year(&self) -> DaftResult<UInt32Array> {
@@ -494,7 +520,10 @@ impl TimestampArray {
             .to(daft_arrow::datatypes::DataType::Timestamp(tu, tz));
 
         let ordinal_day_arr = daft_arrow::compute::temporal::week_of_year(&input_array)?;
-        Ok((self.name(), Box::new(ordinal_day_arr)).into())
+        UInt32Array::from_arrow2(
+            Field::new(self.name(), DataType::UInt32).into(),
+            Box::new(ordinal_day_arr),
+        )
     }
 
     pub fn unix_date(&self) -> DaftResult<UInt64Array> {
@@ -524,7 +553,7 @@ impl TimestampArray {
             })
             .collect::<Vec<_>>();
 
-        UInt64Array::new(
+        UInt64Array::from_arrow2(
             std::sync::Arc::new(Field::new(self.name(), DataType::UInt64)),
             Box::new(PrimitiveArray::from(date_arrow)),
         )
@@ -537,7 +566,7 @@ impl IntervalArray {
         let arrow_factor = factor.as_arrow2();
         let result =
             daft_arrow::compute::arithmetics::time::mul_interval(arrow_interval, arrow_factor)?;
-        Self::new(self.field.clone(), Box::new(result))
+        Self::from_arrow2(self.field.clone(), Box::new(result))
     }
 }
 
@@ -563,7 +592,7 @@ impl TimeArray {
             })
             .collect::<Vec<_>>();
 
-        UInt32Array::new(
+        UInt32Array::from_arrow2(
             std::sync::Arc::new(Field::new(self.name(), DataType::UInt32)),
             Box::new(PrimitiveArray::from(date_arrow)),
         )
@@ -590,7 +619,7 @@ impl TimeArray {
             })
             .collect::<Vec<_>>();
 
-        UInt32Array::new(
+        UInt32Array::from_arrow2(
             std::sync::Arc::new(Field::new(self.name(), DataType::UInt32)),
             Box::new(PrimitiveArray::from(date_arrow)),
         )
@@ -617,7 +646,7 @@ impl TimeArray {
             })
             .collect::<Vec<_>>();
 
-        UInt32Array::new(
+        UInt32Array::from_arrow2(
             std::sync::Arc::new(Field::new(self.name(), DataType::UInt32)),
             Box::new(PrimitiveArray::from(date_arrow)),
         )
@@ -645,7 +674,7 @@ impl TimeArray {
             })
             .collect::<Vec<_>>();
 
-        UInt32Array::new(
+        UInt32Array::from_arrow2(
             std::sync::Arc::new(Field::new(self.name(), DataType::UInt32)),
             Box::new(PrimitiveArray::from(date_arrow)),
         )
@@ -673,7 +702,7 @@ impl TimeArray {
             })
             .collect::<Vec<_>>();
 
-        UInt32Array::new(
+        UInt32Array::from_arrow2(
             std::sync::Arc::new(Field::new(self.name(), DataType::UInt32)),
             Box::new(PrimitiveArray::from(date_arrow)),
         )
@@ -700,7 +729,7 @@ impl TimeArray {
             })
             .collect::<Vec<_>>();
 
-        UInt32Array::new(
+        UInt32Array::from_arrow2(
             std::sync::Arc::new(Field::new(self.name(), DataType::UInt32)),
             Box::new(PrimitiveArray::from(date_arrow)),
         )

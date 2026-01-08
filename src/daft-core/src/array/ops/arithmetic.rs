@@ -49,7 +49,7 @@ where
     F: Fn(T::Native, T::Native) -> T::Native,
 {
     match (lhs.len(), rhs.len()) {
-        (a, b) if a == b => DataArray::new(
+        (a, b) if a == b => DataArray::from_field_and_array(
             lhs.field.clone(),
             Box::new(kernel(lhs.as_arrow2(), rhs.as_arrow2())),
         ),
@@ -208,10 +208,10 @@ where
             arithmetic_helper(self, rhs, basic::rem, |l, r| l % r)
         } else {
             match (self.len(), rhs.len()) {
-                (a, b) if a == b => Ok(DataArray::from((
-                    self.name(),
+                (a, b) if a == b => DataArray::from_field_and_array(
+                    self.field().clone().into(),
                     Box::new(rem_with_nulls(self.as_arrow2(), rhs.as_arrow2())),
-                ))),
+                ),
                 // broadcast right path
                 (_, 1) => {
                     let opt_rhs = rhs.get(0);
@@ -228,13 +228,7 @@ where
                     let opt_lhs = self.get(0);
                     Ok(match opt_lhs {
                         None => DataArray::full_null(rhs.name(), rhs.data_type(), rhs.len()),
-                        Some(lhs) => {
-                            let values_iter = rhs.as_arrow2().iter().map(|v| v.map(|v| lhs % *v));
-                            let arrow_array = unsafe {
-                                PrimitiveArray::from_trusted_len_iter_unchecked(values_iter)
-                            };
-                            DataArray::from((self.name(), Box::new(arrow_array)))
-                        }
+                        Some(lhs) => rhs.map_values(|v| lhs % *v),
                     })
                 }
                 (a, b) => Err(DaftError::ValueError(format!(
@@ -263,10 +257,10 @@ where
             arithmetic_helper(self, rhs, basic::div, |l, r| l / r)
         } else {
             match (self.len(), rhs.len()) {
-                (a, b) if a == b => Ok(DataArray::from((
-                    self.name(),
+                (a, b) if a == b => DataArray::from_field_and_array(
+                    self.field().clone().into(),
                     Box::new(div_with_nulls(self.as_arrow2(), rhs.as_arrow2())),
-                ))),
+                ),
                 // broadcast right path
                 (_, 1) => {
                     let opt_rhs = rhs.get(0);
@@ -283,13 +277,7 @@ where
                     let opt_lhs = self.get(0);
                     Ok(match opt_lhs {
                         None => DataArray::full_null(rhs.name(), rhs.data_type(), rhs.len()),
-                        Some(lhs) => {
-                            let values_iter = rhs.as_arrow2().iter().map(|v| v.map(|v| lhs / *v));
-                            let arrow_array = unsafe {
-                                PrimitiveArray::from_trusted_len_iter_unchecked(values_iter)
-                            };
-                            DataArray::from((self.name(), Box::new(arrow_array)))
-                        }
+                        Some(lhs) => rhs.map_values(|v| lhs / *v),
                     })
                 }
                 (a, b) => Err(DaftError::ValueError(format!(
@@ -319,15 +307,14 @@ impl Div for &Decimal128Array {
         } else {
             match (self.len(), rhs.len()) {
                 (a, b) if a == b => {
-                    let values =
-                        self.as_arrow2()
-                            .iter()
-                            .zip(rhs.as_arrow2().iter())
-                            .map(|(l, r)| match (l, r) {
-                                (None, _) => None,
-                                (_, None) => None,
-                                (Some(l), Some(r)) => Some((l * scale) / r),
-                            });
+                    let values = self
+                        .into_iter()
+                        .zip(rhs.into_iter())
+                        .map(|(l, r)| match (l, r) {
+                            (None, _) => None,
+                            (_, None) => None,
+                            (Some(l), Some(r)) => Some((l * scale) / r),
+                        });
                     Ok(Decimal128Array::from_iter(self.field.clone(), values))
                 }
                 // broadcast right path
@@ -347,10 +334,8 @@ impl Div for &Decimal128Array {
                     Ok(match opt_lhs {
                         None => DataArray::full_null(rhs.name(), rhs.data_type(), rhs.len()),
                         Some(lhs) => {
-                            let values_iter = rhs
-                                .as_arrow2()
-                                .iter()
-                                .map(|v| v.map(|v| (lhs * scale) / *v));
+                            let values_iter =
+                                rhs.into_iter().map(|v| v.map(|v| (lhs * scale) / *v));
                             Decimal128Array::from_iter(self.field.clone(), values_iter)
                         }
                     })

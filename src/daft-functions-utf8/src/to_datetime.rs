@@ -102,7 +102,7 @@ fn to_datetime_impl(
     let arr_iter = arr.into_iter();
     let timeunit = infer_timeunit_from_format_string(format);
     let mut timezone = timezone.map(|tz| tz.to_string());
-    let arrow_result = arr_iter
+    let result = arr_iter
             .map(|val| match val {
                 Some(val) => {
                     let timestamp = match timezone.as_deref() {
@@ -162,12 +162,11 @@ fn to_datetime_impl(
                 }
                 _ => Ok(None),
             })
-            .collect::<DaftResult<daft_arrow::array::Int64Array>>()?;
+            .collect::<DaftResult<Int64Array>>()?;
 
-    let result = Int64Array::from((arr.name(), Box::new(arrow_result)));
     let result = TimestampArray::new(
         Field::new(arr.name(), DataType::Timestamp(timeunit, timezone)),
-        result,
+        result.rename(arr.name()),
     );
     assert_eq!(result.len(), len);
     Ok(result)

@@ -36,7 +36,7 @@ impl<T: DaftPhysicalType> FromArrow for DataArray<T> {
     }
 
     fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
-        Self::new(field.into(), arrow_arr.into())
+        Self::from_field_and_array(field.into(), arrow_arr.into())
     }
 }
 

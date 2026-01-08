@@ -19,7 +19,7 @@ impl DaftSkewAggable for DataArray<Float64Type> {
         let skew = stats::calculate_skew(stats, values);
         let field = self.field.clone();
         let data = PrimitiveArray::<f64>::from([skew]).boxed();
-        Self::new(field, data)
+        Self::from_field_and_array(field, data)
     }
 
     fn grouped_skew(&self, groups: &GroupIndices) -> Self::Output {
@@ -31,6 +31,6 @@ impl DaftSkewAggable for DataArray<Float64Type> {
 
         let field = self.field.clone();
         let data = PrimitiveArray::<f64>::from_iter(grouped_skew_iter).boxed();
-        Self::new(field, data)
+        Self::from_field_and_array(field, data)
     }
 }

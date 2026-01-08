@@ -454,7 +454,7 @@ impl BooleanArray {
 
         let result = sort_to_indices::<u64>(self.data(), &options, None)?;
 
-        Ok(UInt64Array::from((self.name(), Box::new(result))))
+        UInt64Array::from_arrow2(self.field.clone(), Box::new(result))
     }
 
     pub fn argsort_multikey(
@@ -519,7 +519,7 @@ impl BooleanArray {
 
         let result = daft_arrow::compute::sort::sort(self.data(), &options, None)?;
 
-        Self::try_from((self.field.clone(), result))
+        Self::from_arrow2(self.field.clone(), result)
     }
 }
 
@@ -534,7 +534,7 @@ macro_rules! impl_binary_like_sort {
 
                 let result = sort_to_indices::<u64>(self.data(), &options, None)?;
 
-                Ok(UInt64Array::from((self.name(), Box::new(result))))
+                UInt64Array::from_arrow2(self.field.clone(), Box::new(result))
             }
 
             pub fn argsort_multikey(
@@ -601,7 +601,7 @@ macro_rules! impl_binary_like_sort {
 
                 let result = sort(self.data(), &options, None)?;
 
-                $da::try_from((self.field.clone(), result))
+                $da::from_arrow2(self.field.clone(), result)
             }
         }
     };

@@ -100,16 +100,11 @@ impl SeriesListExtension for Series {
                 let struct_array = self.as_physical()?;
                 let data_array = struct_array.struct_()?.children[0].list().unwrap();
                 let offsets = data_array.offsets();
-                let array = Box::new(
-                    #[allow(deprecated, reason = "arrow2 migration")]
-                    daft_arrow::array::PrimitiveArray::from_vec(
-                        offsets.lengths().map(|l| l as u64).collect(),
-                    )
-                    .with_validity(daft_arrow::buffer::wrap_null_buffer(
-                        data_array.validity().cloned(),
-                    )),
-                );
-                Ok(UInt64Array::from((self.name(), array)))
+
+                let iter = offsets.lengths().map(|l| l as u64);
+                UInt64Array::from_iter_values(iter)
+                    .rename(self.name())
+                    .with_validity(data_array.validity().cloned())
             }
             dt => Err(DaftError::TypeError(format!(
                 "Count not implemented for {}",

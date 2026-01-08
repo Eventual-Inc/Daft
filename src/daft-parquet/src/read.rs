@@ -1116,24 +1116,22 @@ pub fn read_parquet_statistics(
         .collect::<DaftResult<Vec<_>>>()?;
     assert_eq!(all_tuples.len(), uris.len());
 
-    let row_count_series = UInt64Array::from((
-        "row_count",
-        Box::new(daft_arrow::array::UInt64Array::from_iter(
-            all_tuples.iter().map(|v| v.0.map(|v| v as u64)),
-        )),
-    ));
-    let row_group_series = UInt64Array::from((
-        "row_group_count",
-        Box::new(daft_arrow::array::UInt64Array::from_iter(
-            all_tuples.iter().map(|v| v.1.map(|v| v as u64)),
-        )),
-    ));
-    let version_series = Int32Array::from((
-        "version",
-        Box::new(daft_arrow::array::Int32Array::from_iter(
-            all_tuples.iter().map(|v| v.2),
-        )),
-    ));
+    let row_count_series = all_tuples
+        .iter()
+        .map(|v| v.0.map(|v| v as u64))
+        .collect::<UInt64Array>()
+        .rename("row_count");
+
+    let row_group_series = all_tuples
+        .iter()
+        .map(|v| v.1.map(|v| v as u64))
+        .collect::<UInt64Array>()
+        .rename("row_group_count");
+    let version_series = all_tuples
+        .iter()
+        .map(|v| v.2)
+        .collect::<Int32Array>()
+        .rename("version");
 
     RecordBatch::from_nonempty_columns(vec![
         uris.clone(),

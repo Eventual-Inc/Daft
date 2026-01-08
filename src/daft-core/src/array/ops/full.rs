@@ -33,7 +33,7 @@ where
 
         let arrow_dtype = dtype.to_arrow2();
         match arrow_dtype {
-            Ok(arrow_dtype) => Self::new(
+            Ok(arrow_dtype) => Self::from_field_and_array(
                 Arc::new(Field::new(name.to_string(), dtype.clone())),
                 daft_arrow::array::new_null_array(arrow_dtype, length),
             )
@@ -45,7 +45,7 @@ where
     fn empty(name: &str, dtype: &DataType) -> Self {
         let arrow_dtype = dtype.to_arrow2();
         match arrow_dtype {
-            Ok(arrow_dtype) => Self::new(
+            Ok(arrow_dtype) => Self::from_field_and_array(
                 Arc::new(Field::new(name.to_string(), dtype.clone())),
                 daft_arrow::array::new_empty_array(arrow_dtype),
             )

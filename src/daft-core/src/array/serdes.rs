@@ -1,5 +1,6 @@
 use std::cell::RefCell;
 
+use daft_schema::field::Field;
 use serde::ser::SerializeMap;
 
 use super::{DataArray, FixedSizeListArray, ListArray, StructArray, ops::as_arrow::AsArrow};
@@ -11,6 +12,7 @@ use crate::{
         FixedSizeBinaryArray, Int64Array, IntervalArray, NullArray, Utf8Array,
         logical::LogicalArray,
     },
+    prelude::FromArrow,
     series::{IntoSeries, Series},
 };
 
@@ -197,7 +199,12 @@ impl serde::Serialize for ListArray {
             self.offsets().buffer().clone(),
             None,
         );
-        let offsets = Int64Array::from(("offsets", Box::new(arrow2_offsets))).into_series();
+        let offsets = Int64Array::from_arrow2(
+            Field::new("offsets", DataType::Int64).into(),
+            Box::new(arrow2_offsets),
+        )
+        .unwrap()
+        .into_series();
         values.push(Some(&offsets));
 
         let validity = self.validity().map(|b| {

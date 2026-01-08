@@ -1,5 +1,5 @@
 use common_error::{DaftError, DaftResult};
-use daft_arrow::{array::PrimitiveArray, offset::OffsetsBuffer};
+use daft_arrow::offset::OffsetsBuffer;
 
 use crate::{
     array::{
@@ -13,6 +13,7 @@ use crate::{
     },
     count_mode::CountMode,
     datatypes::*,
+    prelude::FullNull,
     series::{Series, array_impl::IntoSeries},
     with_match_physical_daft_types,
 };
@@ -272,15 +273,19 @@ impl Series {
         let indices = match groups {
             Some(groups) => {
                 if self.data_type().is_null() {
-                    PrimitiveArray::new_null(daft_arrow::datatypes::DataType::UInt64, groups.len())
+                    UInt64Array::full_null("", &DataType::UInt64, groups.len())
                 } else if ignore_nulls && let Some(validity) = self.validity() {
-                    PrimitiveArray::from_trusted_len_iter(
+                    UInt64Array::from_iter(
+                        Field::new("", DataType::UInt64),
                         groups
                             .iter()
                             .map(|g| g.iter().find(|i| validity.is_valid(**i as usize)).copied()),
                     )
                 } else {
-                    PrimitiveArray::from_trusted_len_iter(groups.iter().map(|g| g.first().copied()))
+                    UInt64Array::from_iter(
+                        Field::new("", DataType::UInt64),
+                        groups.iter().map(|g| g.first().copied()),
+                    )
                 }
             }
             None => {
@@ -291,12 +296,11 @@ impl Series {
                 } else {
                     Some(0)
                 };
-
-                PrimitiveArray::from([idx])
+                UInt64Array::from_iter(Field::new("", DataType::UInt64), vec![idx].into_iter())
             }
         };
 
-        self.take(&UInt64Array::from(("", Box::new(indices))))
+        self.take(&indices)
     }
 
     pub fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {

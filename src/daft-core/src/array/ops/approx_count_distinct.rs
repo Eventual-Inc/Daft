@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 
 use common_error::DaftResult;
-use daft_arrow::array::PrimitiveArray;
 
 use crate::{
     array::ops::{DaftApproxCountDistinctAggable, as_arrow::AsArrow},
@@ -39,8 +38,6 @@ impl DaftApproxCountDistinctAggable for UInt64Array {
             }
             set.len() as u64
         });
-        let data = Box::new(PrimitiveArray::from_trusted_len_values_iter(count_iter));
-        let array = (self.name(), data).into();
-        Ok(array)
+        Ok(Self::from_iter_values(count_iter))
     }
 }

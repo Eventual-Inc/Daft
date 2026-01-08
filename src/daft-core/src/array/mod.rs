@@ -10,7 +10,7 @@ mod serdes;
 mod struct_array;
 pub mod utf8;
 
-use arrow::array::make_array;
+use arrow::array::{ArrayRef, make_array};
 use daft_arrow::{
     array::to_data,
     buffer::{NullBuffer, wrap_null_buffer},
@@ -25,9 +25,12 @@ pub mod prelude;
 use std::{marker::PhantomData, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
-use daft_schema::field::DaftField;
+use daft_schema::field::{DaftField, FieldRef};
 
-use crate::datatypes::{DaftArrayType, DaftPhysicalType, DataType, Field};
+use crate::{
+    datatypes::{DaftArrayType, DaftPhysicalType, DataType, Field},
+    prelude::DaftDataType,
+};
 
 #[derive(Debug)]
 pub struct DataArray<T> {
@@ -39,7 +42,7 @@ pub struct DataArray<T> {
 
 impl<T: DaftPhysicalType> Clone for DataArray<T> {
     fn clone(&self) -> Self {
-        Self::new(self.field.clone(), self.data.clone()).unwrap()
+        Self::from_field_and_array(self.field.clone(), self.data.clone()).unwrap()
     }
 }
 
@@ -48,9 +51,19 @@ impl<T: DaftPhysicalType> DaftArrayType for DataArray<T> {
         &self.field.as_ref().dtype
     }
 }
+impl<T: DaftPhysicalType> DataArray<T> {
+    pub fn new<S: AsRef<str>>(name: S, arr: ArrayRef) -> DaftResult<Self> {
+        let field = Arc::new(DaftField::new(
+            name.as_ref(),
+            <T as DaftDataType>::get_dtype(),
+        ));
+
+        Self::from_field_and_array(field, arr.into())
+    }
+}
 
 impl<T> DataArray<T> {
-    pub fn new(
+    pub fn from_field_and_array(
         physical_field: Arc<DaftField>,
         arrow_array: Box<dyn daft_arrow::array::Array>,
     ) -> DaftResult<Self> {
@@ -137,7 +150,7 @@ impl<T> DataArray<T> {
         let with_bitmap = self
             .data
             .with_validity(wrap_null_buffer(Some(NullBuffer::from(validity))));
-        Self::new(self.field.clone(), with_bitmap)
+        Self::from_field_and_array(self.field.clone(), with_bitmap)
     }
 
     pub fn with_validity(&self, validity: Option<NullBuffer>) -> DaftResult<Self> {
@@ -151,7 +164,7 @@ impl<T> DataArray<T> {
             )));
         }
         let with_bitmap = self.data.with_validity(wrap_null_buffer(validity));
-        Self::new(self.field.clone(), with_bitmap)
+        Self::from_field_and_array(self.field.clone(), with_bitmap)
     }
 
     pub fn validity(&self) -> Option<&NullBuffer> {
@@ -165,7 +178,7 @@ impl<T> DataArray<T> {
             )));
         }
         let sliced = self.data.sliced(start, end - start);
-        Self::new(self.field.clone(), sliced)
+        Self::from_field_and_array(self.field.clone(), sliced)
     }
 
     pub fn head(&self, num: usize) -> DaftResult<Self> {
@@ -188,11 +201,15 @@ impl<T> DataArray<T> {
     }
 
     pub fn rename(&self, name: &str) -> Self {
-        Self::new(Arc::new(self.field.rename(name)), self.data.clone()).unwrap()
+        Self::from_field_and_array(Arc::new(self.field.rename(name)), self.data.clone()).unwrap()
     }
 
     pub fn field(&self) -> &Field {
         &self.field
+    }
+
+    pub fn with_field<F: Into<FieldRef>>(&self, field: F) -> Self {
+        Self::from_field_and_array(field.into(), self.data.clone()).unwrap()
     }
 }
 

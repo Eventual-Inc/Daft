@@ -127,7 +127,7 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
         );
 
         let result_box = Box::new(output);
-        Self::new(self.field().clone().into(), result_box)
+        Self::from_field_and_array(self.field().clone().into(), result_box)
     }
 
     fn grouped_concat(&self, groups: &super::GroupIndices) -> Self::Output {
@@ -166,7 +166,10 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
 
 #[cfg(test)]
 mod test {
-    use std::iter::{self, repeat_n};
+    use std::{
+        iter::{self, repeat_n},
+        sync::Arc,
+    };
 
     use common_error::DaftResult;
 
@@ -181,13 +184,12 @@ mod test {
         // [None, None, None]
         let list_array = ListArray::new(
             Field::new("foo", DataType::List(Box::new(DataType::Int64))),
-            Int64Array::from((
+            Int64Array::new(
                 "item",
-                Box::new(daft_arrow::array::Int64Array::from_iter(iter::empty::<
-                    &Option<i64>,
-                >(
-                ))),
-            ))
+                Arc::new(arrow::array::Int64Array::from_iter(iter::empty::<
+                    Option<i64>,
+                >())),
+            )?
             .into_series(),
             daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 0, 0, 0])?,
             Some(daft_arrow::buffer::NullBuffer::from_iter(repeat_n(
@@ -212,12 +214,12 @@ mod test {
         // [[0], [1, 1], [2, None], [None], [], None, None]
         let list_array = ListArray::new(
             Field::new("foo", DataType::List(Box::new(DataType::Int64))),
-            Int64Array::from((
+            Int64Array::new(
                 "item",
-                Box::new(daft_arrow::array::Int64Array::from_iter(
+                Arc::new(arrow::array::Int64Array::from_iter(
                     [Some(0), Some(1), Some(1), Some(2), None, None, Some(10000)].iter(),
                 )),
-            ))
+            )?
             .into_series(),
             daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 3, 5, 6, 6, 6, 7])?,
             Some(daft_arrow::buffer::NullBuffer::from(vec![
@@ -247,9 +249,9 @@ mod test {
         //  |  group0 |  |     group1    |  | group 2     |  group 3   |
         let list_array = ListArray::new(
             Field::new("foo", DataType::List(Box::new(DataType::Int64))),
-            Int64Array::from((
+            Int64Array::new(
                 "item",
-                Box::new(daft_arrow::array::Int64Array::from_iter(
+                Arc::new(arrow::array::Int64Array::from_iter(
                     [
                         Some(0),
                         Some(0),
@@ -263,7 +265,7 @@ mod test {
                     ]
                     .iter(),
                 )),
-            ))
+            )?
             .into_series(),
             daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 3, 5, 6, 8, 8, 8, 9])?,
             Some(daft_arrow::buffer::NullBuffer::from(vec![

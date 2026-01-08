@@ -29,37 +29,18 @@ mod tests {
 
         let list_array = ListArray::new(
             Field::new("data", DataType::List(Box::new(DataType::Int64))),
-            Int64Array::from((
-                "item",
-                Box::new(daft_arrow::array::Int64Array::from_iter(
-                    [
-                        Some(0),
-                        Some(1),
-                        Some(2),
-                        Some(100),
-                        Some(101),
-                        Some(102),
-                        Some(0),
-                        Some(0),
-                        Some(3),
-                    ]
-                    .iter(),
-                )),
-            ))
-            .into_series(),
+            Int64Array::from_iter_values(vec![0, 1, 2, 100, 101, 102, 0, 0, 3].into_iter())
+                .rename("item")
+                .into_series(),
             daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 3, 6, 9])?,
             Some(validity.clone()),
         )
         .into_series();
         let shapes_array = ListArray::new(
             Field::new("shape", DataType::List(Box::new(DataType::UInt64))),
-            UInt64Array::from((
-                "item",
-                Box::new(daft_arrow::array::UInt64Array::from_iter(
-                    [Some(3), Some(3), Some(3)].iter(),
-                )),
-            ))
-            .into_series(),
+            UInt64Array::from_iter_values(vec![3, 3, 3].into_iter())
+                .rename("item")
+                .into_series(),
             daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 2, 3])?,
             Some(validity.clone()),
         )
