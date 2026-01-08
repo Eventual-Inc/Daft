@@ -98,6 +98,25 @@ where
                 let self_arrow_type = self.data_type().to_arrow2()?;
                 let self_physical_arrow_type = self_physical_type.to_arrow2()?;
 
+                // Special case: Utf8 -> numeric needs whitespace trimming
+                // This matches Python/Pandas/NumPy behavior
+                let trimmed_utf8: Option<Utf8Array>;
+                let data_to_cast: &dyn daft_arrow::array::Array =
+                    if self.data_type() == &DataType::Utf8 && dtype.is_numeric() {
+                        let utf8_array = self
+                            .data()
+                            .as_any()
+                            .downcast_ref::<daft_arrow::array::Utf8Array<i64>>()
+                            .expect("Expected LargeUtf8 array for Utf8 DataType");
+                        trimmed_utf8 = Some(Utf8Array::from_iter(
+                            self.name(),
+                            utf8_array.iter().map(|opt_s| opt_s.map(|s| s.trim())),
+                        ));
+                        trimmed_utf8.as_ref().unwrap().data()
+                    } else {
+                        self.data()
+                    };
+
                 let result_array = if target_arrow_physical_type == target_arrow_type {
                     if !can_cast_types(&self_arrow_type, &target_arrow_type) {
                         return Err(DaftError::TypeError(format!(
@@ -109,7 +128,7 @@ where
                         )));
                     }
                     cast(
-                        self.data(),
+                        data_to_cast,
                         &target_arrow_type,
                         CastOptions {
                             wrapped: true,
@@ -119,7 +138,7 @@ where
                 } else if can_cast_types(&self_arrow_type, &target_arrow_type) {
                     // Cast from logical Arrow2 type to logical Arrow2 type.
                     cast(
-                        self.data(),
+                        data_to_cast,
                         &target_arrow_type,
                         CastOptions {
                             wrapped: true,
@@ -129,7 +148,7 @@ where
                 } else if can_cast_types(&self_physical_arrow_type, &target_arrow_physical_type) {
                     // Cast from physical Arrow2 type to physical Arrow2 type.
                     cast(
-                        self.data(),
+                        data_to_cast,
                         &target_arrow_physical_type,
                         CastOptions {
                             wrapped: true,
