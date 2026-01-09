@@ -23,9 +23,11 @@ use crate::{
 
 #[allow(clippy::too_many_arguments)]
 pub fn row_wise_udf(
+    func_id: &str,
     name: &str,
     cls: RuntimePyObject,
     method: RuntimePyObject,
+    builtin_name: bool,
     is_async: bool,
     return_dtype: DataType,
     gpus: HashableF64<f64>,
@@ -37,9 +39,11 @@ pub fn row_wise_udf(
     args: Vec<ExprRef>,
 ) -> Expr {
     Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
+        func_id: Arc::from(func_id),
         function_name: Arc::from(name),
         cls,
         method,
+        builtin_name,
         is_async,
         return_dtype,
         original_args,
@@ -54,9 +58,11 @@ pub fn row_wise_udf(
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RowWisePyFn {
+    pub func_id: Arc<str>,
     pub function_name: Arc<str>,
     pub cls: RuntimePyObject,
     pub method: RuntimePyObject,
+    pub builtin_name: bool,
     pub is_async: bool,
     pub return_dtype: DataType,
     pub original_args: RuntimePyObject,
@@ -72,7 +78,7 @@ impl Display for RowWisePyFn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let children_str = self.args.iter().map(|expr| expr.to_string()).join(", ");
 
-        write!(f, "{}({})", self.function_name, children_str)
+        write!(f, "{}({})", self.func_id, children_str)
     }
 }
 
@@ -85,9 +91,11 @@ impl RowWisePyFn {
         );
 
         Self {
+            func_id: self.func_id.clone(),
             function_name: self.function_name.clone(),
             cls: self.cls.clone(),
             method: self.method.clone(),
+            builtin_name: self.builtin_name,
             is_async: self.is_async,
             return_dtype: self.return_dtype.clone(),
             original_args: self.original_args.clone(),
