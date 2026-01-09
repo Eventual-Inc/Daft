@@ -221,25 +221,25 @@ impl ScanOperator for KafkaScanOperator {
             .partitions
             .as_ref()
             .map(|ps| ps.iter().copied().collect());
-        let mut partitions: Vec<(String, i32)> = Vec::new();
+        let mut topic_partitions: Vec<(String, i32)> = Vec::new();
         for topic in &self.topics {
-            let md = consumer
+            let metadata = consumer
                 .fetch_metadata(Some(topic.as_str()), Duration::from_millis(self.timeout_ms))
                 .map_err(|e| DaftError::External(Box::new(e)))?;
-            let t = md
+            let topic_metadata = metadata
                 .topics()
                 .iter()
-                .find(|t| t.name() == topic)
+                .find(|topic_metadata| topic_metadata.name() == topic)
                 .ok_or_else(|| DaftError::ValueError(format!("topic not found: {topic}")))?;
-            for p in t.partitions() {
-                let pid = p.id();
+            for partition_metadata in topic_metadata.partitions() {
+                let partition_id = partition_metadata.id();
                 if partition_filter
                     .as_ref()
-                    .is_some_and(|filter| !filter.contains(&pid))
+                    .is_some_and(|filter| !filter.contains(&partition_id))
                 {
                     continue;
                 }
-                partitions.push((topic.clone(), pid));
+                topic_partitions.push((topic.clone(), partition_id));
             }
         }
 
@@ -267,8 +267,8 @@ impl ScanOperator for KafkaScanOperator {
             function_name: None,
         });
 
-        let mut scan_tasks: Vec<ScanTaskLikeRef> = Vec::with_capacity(partitions.len());
-        for (topic, partition) in partitions {
+        let mut scan_tasks: Vec<ScanTaskLikeRef> = Vec::with_capacity(topic_partitions.len());
+        for (topic, partition) in topic_partitions {
             let (low, high) = consumer
                 .fetch_watermarks(topic.as_str(), partition, timeout)
                 .map_err(|e| DaftError::External(Box::new(e)))?;
