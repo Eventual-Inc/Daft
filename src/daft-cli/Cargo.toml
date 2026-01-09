@@ -5,6 +5,7 @@ console = "0.16"
 pyo3 = {workspace = true, optional = true}
 tokio = {workspace = true, optional = true}
 tracing-subscriber = {workspace = true}
+libc = "0.2.178"
 
 [features]
 python = ["dep:pyo3", "dep:clap", "dep:tokio", "dep:daft-dashboard"]
