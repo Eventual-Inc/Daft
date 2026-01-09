@@ -281,7 +281,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 biased;
 
                 // Branch 1: Join completed task (only if tasks exist)
-                Some(join_result) = task_set.join_next(), if task_set.is_empty() => {
+                Some(join_result) = task_set.join_next(), if !task_set.is_empty() => {
                     if !Self::handle_task_completion(
                         join_result??,
                         state_pool,
