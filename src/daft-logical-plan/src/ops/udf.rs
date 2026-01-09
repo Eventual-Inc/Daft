@@ -87,11 +87,11 @@ impl UDFProject {
     pub fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![
             format!(
-                "{}{}:",
+                "{} {}:",
                 if self.udf_properties.builtin_name {
-                    "Builtin UDF "
+                    "Builtin UDF"
                 } else {
-                    "UDF "
+                    "UDF"
                 },
                 self.udf_properties.name.as_str()
             ),

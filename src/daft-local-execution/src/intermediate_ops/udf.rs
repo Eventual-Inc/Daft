@@ -522,11 +522,11 @@ impl IntermediateOperator for UdfOperator {
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![
             format!(
-                "{}{}:",
+                "{} {}:",
                 if self.params.udf_properties.builtin_name {
-                    "Builtin UDF "
+                    "Builtin UDF"
                 } else {
-                    "UDF "
+                    "UDF"
                 },
                 self.params.udf_properties.name.as_str()
             ),
