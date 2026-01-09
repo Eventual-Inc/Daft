@@ -334,16 +334,6 @@ def test_table_join_single_column_name_null(join_impl) -> None:
     assert result_sorted.get_column_by_name("right.y").to_pylist() == []
 
 
-def test_table_join_anti() -> None:
-    left_table = MicroPartition.from_pydict({"x": [1, 2, 3, 4], "y": [3, 4, 5, 6]})
-    right_table = MicroPartition.from_pydict({"x": [2, 3, 5]})
-
-    result_table = left_table.hash_join(right_table, left_on=[col("x")], right_on=[col("x")], how=JoinType.Anti)
-    assert result_table.column_names() == ["x", "y"]
-    result_sorted = result_table.sort([col("x")])
-    assert result_sorted.get_column_by_name("y").to_pylist() == [3, 6]
-
-
 def test_table_join_anti_different_names() -> None:
     left_table = MicroPartition.from_pydict({"x": [1, 2, 3, 4], "y": [3, 4, 5, 6]})
     right_table = MicroPartition.from_pydict({"z": [2, 3, 5]})
@@ -352,3 +342,121 @@ def test_table_join_anti_different_names() -> None:
     assert result_table.column_names() == ["x", "y"]
     result_sorted = result_table.sort([col("x")])
     assert result_sorted.get_column_by_name("y").to_pylist() == [3, 6]
+
+
+@pytest.mark.parametrize("join_impl", ["hash_join", "sort_merge_join"])
+def test_table_join_semi(join_impl) -> None:
+    left_table = MicroPartition.from_pydict({"x": [1, 2, 3, 4], "y": [3, 4, 5, 6]})
+    right_table = MicroPartition.from_pydict({"x": [2, 3, 5]})
+
+    result_table = getattr(left_table, join_impl)(
+        right_table, left_on=[col("x")], right_on=[col("x")], how=JoinType.Semi
+    )
+    assert result_table.column_names() == ["x", "y"]
+    result_sorted = result_table.sort([col("x")])
+    assert result_sorted.get_column_by_name("x").to_pylist() == [2, 3]
+    assert result_sorted.get_column_by_name("y").to_pylist() == [4, 5]
+
+
+@pytest.mark.parametrize("join_impl", ["hash_join", "sort_merge_join"])
+def test_table_join_anti(join_impl) -> None:
+    left_table = MicroPartition.from_pydict({"x": [1, 2, 3, 4], "y": [3, 4, 5, 6]})
+    right_table = MicroPartition.from_pydict({"x": [2, 3, 5]})
+
+    result_table = getattr(left_table, join_impl)(
+        right_table, left_on=[col("x")], right_on=[col("x")], how=JoinType.Anti
+    )
+    assert result_table.column_names() == ["x", "y"]
+    result_sorted = result_table.sort([col("x")])
+    assert result_sorted.get_column_by_name("x").to_pylist() == [1, 4]
+    assert result_sorted.get_column_by_name("y").to_pylist() == [3, 6]
+
+
+@pytest.mark.parametrize("join_impl", ["hash_join", "sort_merge_join"])
+def test_table_join_semi_duplicate_keys(join_impl) -> None:
+    """Test semi join with duplicate keys in left table."""
+    left_table = MicroPartition.from_pydict({"x": [1, 2, 2, 3, 4], "y": [1, 2, 3, 4, 5]})
+    right_table = MicroPartition.from_pydict({"x": [2, 3, 5]})
+
+    result_table = getattr(left_table, join_impl)(
+        right_table, left_on=[col("x")], right_on=[col("x")], how=JoinType.Semi
+    )
+    assert result_table.column_names() == ["x", "y"]
+    result_sorted = result_table.sort([col("x"), col("y")])
+    assert result_sorted.get_column_by_name("x").to_pylist() == [2, 2, 3]
+    assert result_sorted.get_column_by_name("y").to_pylist() == [2, 3, 4]
+
+
+@pytest.mark.parametrize("join_impl", ["hash_join", "sort_merge_join"])
+def test_table_join_anti_duplicate_keys(join_impl) -> None:
+    """Test anti join with duplicate keys in left table."""
+    left_table = MicroPartition.from_pydict({"x": [1, 2, 2, 3, 4], "y": [1, 2, 3, 4, 5]})
+    right_table = MicroPartition.from_pydict({"x": [2, 3, 5]})
+
+    result_table = getattr(left_table, join_impl)(
+        right_table, left_on=[col("x")], right_on=[col("x")], how=JoinType.Anti
+    )
+    assert result_table.column_names() == ["x", "y"]
+    result_sorted = result_table.sort([col("x"), col("y")])
+    assert result_sorted.get_column_by_name("x").to_pylist() == [1, 4]
+    assert result_sorted.get_column_by_name("y").to_pylist() == [1, 5]
+
+
+@pytest.mark.parametrize("join_impl", ["hash_join", "sort_merge_join"])
+def test_table_join_semi_empty_right(join_impl) -> None:
+    """Test semi join with empty right table."""
+    left_table = MicroPartition.from_pydict({"x": [1, 2, 3, 4], "y": [3, 4, 5, 6]})
+    right_table = MicroPartition.from_pydict({"x": []})
+
+    result_table = getattr(left_table, join_impl)(
+        right_table, left_on=[col("x")], right_on=[col("x")], how=JoinType.Semi
+    )
+    assert result_table.column_names() == ["x", "y"]
+    assert len(result_table) == 0
+
+
+@pytest.mark.parametrize("join_impl", ["hash_join", "sort_merge_join"])
+def test_table_join_anti_empty_right(join_impl) -> None:
+    """Test anti join with empty right table."""
+    left_table = MicroPartition.from_pydict({"x": [1, 2, 3, 4], "y": [3, 4, 5, 6]})
+    right_table = MicroPartition.from_pydict({"x": []})
+
+    result_table = getattr(left_table, join_impl)(
+        right_table, left_on=[col("x")], right_on=[col("x")], how=JoinType.Anti
+    )
+    assert result_table.column_names() == ["x", "y"]
+    result_sorted = result_table.sort([col("x")])
+    assert result_sorted.get_column_by_name("x").to_pylist() == [1, 2, 3, 4]
+    assert result_sorted.get_column_by_name("y").to_pylist() == [3, 4, 5, 6]
+
+
+@pytest.mark.parametrize("join_impl", ["hash_join", "sort_merge_join"])
+def test_table_join_semi_nulls(join_impl) -> None:
+    """Test semi join with nulls in join keys."""
+    left_table = MicroPartition.from_pydict({"x": [1, 2, None, 4], "y": [3, 4, 5, 6]})
+    right_table = MicroPartition.from_pydict({"x": [2, 3, None]})
+
+    result_table = getattr(left_table, join_impl)(
+        right_table, left_on=[col("x")], right_on=[col("x")], how=JoinType.Semi
+    )
+    assert result_table.column_names() == ["x", "y"]
+    result_sorted = result_table.sort([col("y")])
+    # Nulls don't match in semi join, so only x=2 should match.
+    assert result_sorted.get_column_by_name("x").to_pylist() == [2]
+    assert result_sorted.get_column_by_name("y").to_pylist() == [4]
+
+
+@pytest.mark.parametrize("join_impl", ["hash_join", "sort_merge_join"])
+def test_table_join_anti_nulls(join_impl) -> None:
+    """Test anti join with nulls in join keys."""
+    left_table = MicroPartition.from_pydict({"x": [1, 2, None, 4], "y": [3, 4, 5, 6]})
+    right_table = MicroPartition.from_pydict({"x": [2, 3]})
+
+    result_table = getattr(left_table, join_impl)(
+        right_table, left_on=[col("x")], right_on=[col("x")], how=JoinType.Anti
+    )
+    assert result_table.column_names() == ["x", "y"]
+    result_sorted = result_table.sort([col("y")])
+    # Nulls don't match, so x=1, x=None, and x=4 should be returned (x=2 matches and is excluded).
+    assert set(result_sorted.get_column_by_name("x").to_pylist()) == {1, 4, None}
+    assert set(result_sorted.get_column_by_name("y").to_pylist()) == {3, 5, 6}
