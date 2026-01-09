@@ -6,6 +6,7 @@ pub mod decode;
 pub mod encode;
 pub mod resize;
 pub mod to_mode;
+pub mod to_tensor;
 
 pub struct ImageFunctions;
 
@@ -15,6 +16,7 @@ impl FunctionModule for ImageFunctions {
         parent.add_fn(decode::ImageDecode);
         parent.add_fn(encode::ImageEncode);
         parent.add_fn(resize::ImageResize);
+        parent.add_fn(to_tensor::ImageToTensor);
         parent.add_fn(to_mode::ImageToMode);
         parent.add_fn(attribute::ImageAttribute);
     }

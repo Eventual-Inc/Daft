@@ -180,15 +180,13 @@ impl RecordBatch {
                             lcol.len(),
                         );
 
-                        for (li, ri) in lidx.as_arrow2().iter().zip(ridx.as_arrow2().iter()) {
-                            match (li, ri) {
-                                (Some(i), _) => growable.extend(0, *i as usize, 1),
-                                (None, Some(i)) => growable.extend(1, *i as usize, 1),
-                                (None, None) => {
-                                    unreachable!("Join should not have None for both sides")
-                                }
-                            }
-                        }
+                for (li, ri) in lidx.into_iter().zip(ridx.into_iter()) {
+                    match (li, ri) {
+                        (Some(i), _) => growable.extend(0, *i as usize, 1),
+                        (None, Some(i)) => growable.extend(1, *i as usize, 1),
+                        (None, None) => unreachable!("Join should not have None for both sides"),
+                    }
+                }
 
                         growable.build()
                     })

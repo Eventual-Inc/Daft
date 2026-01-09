@@ -211,13 +211,18 @@ impl PyRecordBatch {
         })
     }
 
-    pub fn explode(&self, py: Python, to_explode: Vec<PyExpr>) -> PyResult<Self> {
+    pub fn explode(
+        &self,
+        py: Python,
+        to_explode: Vec<PyExpr>,
+        index_column: Option<&str>,
+    ) -> PyResult<Self> {
         let converted_to_explode = BoundExpr::bind_all(&to_explode, &self.record_batch.schema)?;
 
         py.detach(|| {
             Ok(self
                 .record_batch
-                .explode(converted_to_explode.as_slice())?
+                .explode(converted_to_explode.as_slice(), index_column)?
                 .into())
         })
     }

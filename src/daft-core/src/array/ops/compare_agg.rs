@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2->arrow migration")]
 use common_error::DaftResult;
 use daft_arrow::array::Array;
 

@@ -8,7 +8,7 @@ use std::{borrow::Cow, sync::Arc};
 use common_error::{DaftError, DaftResult};
 
 use crate::{
-    datatypes::NumericNative,
+    datatypes::{DaftPrimitiveType, NumericNative},
     prelude::*,
     series::{ArrayWrapper, SeriesLike},
 };
@@ -75,7 +75,7 @@ where
 
 impl<T> From<(&str, &[T::Native])> for DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
 {
     fn from(item: (&str, &[T::Native])) -> Self {
         let (name, slice) = item;
@@ -88,7 +88,7 @@ where
 
 impl<T> From<(&str, Vec<T::Native>)> for DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
 {
     fn from(item: (&str, Vec<T::Native>)) -> Self {
         let (name, v) = item;
@@ -336,5 +336,21 @@ impl ListArray {
             offsets,
             Some(validity),
         )
+    }
+
+    pub fn from_series(name: &str, data: Vec<Option<Series>>) -> DaftResult<Self> {
+        let lengths = data.iter().map(|s| s.as_ref().map_or(0, |s| s.len()));
+        let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)?.into();
+
+        let validity = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
+
+        let flat_child = Series::concat(&data.iter().flatten().collect::<Vec<_>>())?;
+
+        Ok(Self::new(
+            flat_child.field().to_list_field().rename(name),
+            flat_child,
+            offsets,
+            Some(validity),
+        ))
     }
 }

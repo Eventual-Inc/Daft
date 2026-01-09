@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 import warnings
 from types import GenericAlias
-from typing import TYPE_CHECKING, Any, Callable, Union
+from typing import TYPE_CHECKING, Any
 
 from packaging.version import parse
 
@@ -13,6 +13,7 @@ from daft.runners import get_or_create_runner
 
 if TYPE_CHECKING:
     import builtins
+    from collections.abc import Callable
 
     import jaxtyping
 
@@ -1461,7 +1462,7 @@ class DataType:
 
 
 # Type alias for a union of types that can be inferred into a DataType
-DataTypeLike = Union[DataType, type, GenericAlias, str]
+DataTypeLike = DataType | type | GenericAlias | str
 
 
 _EXT_TYPE_REGISTRATION_LOCK = threading.Lock()

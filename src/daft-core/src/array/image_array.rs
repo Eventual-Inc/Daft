@@ -139,7 +139,7 @@ impl ImageArray {
         let arrow_dtype: daft_arrow::datatypes::DataType = T::PRIMITIVE.into();
         if let DataType::Image(Some(mode)) = &data_type {
             assert!(
-                !(mode.get_dtype().to_arrow()? != arrow_dtype),
+                !(mode.get_dtype().to_arrow2()? != arrow_dtype),
                 "Inner value dtype of provided dtype {data_type:?} is inconsistent with inferred value dtype {arrow_dtype:?}"
             );
         }

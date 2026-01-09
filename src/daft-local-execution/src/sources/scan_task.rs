@@ -13,7 +13,7 @@ use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_metrics::ops::NodeType;
 use common_runtime::{combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use common_scan_info::{Pushdowns, ScanTaskLike};
-use daft_core::prelude::{AsArrow, Int64Array, SchemaRef, Utf8Array};
+use daft_core::prelude::{Int64Array, SchemaRef, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{AggExpr, Expr};
 use daft_io::{GetRange, IOStatsRef};
@@ -37,6 +37,7 @@ pub struct ScanTaskSource {
     scan_tasks: Vec<Arc<ScanTask>>,
     num_parallel_tasks: usize,
     schema: SchemaRef,
+    execution_config: Arc<DaftExecutionConfig>,
 }
 
 impl ScanTaskSource {
@@ -100,6 +101,7 @@ impl ScanTaskSource {
             scan_tasks,
             num_parallel_tasks,
             schema,
+            execution_config: Arc::new(cfg.clone()),
         }
     }
 
@@ -227,7 +229,11 @@ impl TreeDisplay for ScanTaskSource {
             let total_bytes: usize = scan
                 .scan_tasks
                 .iter()
-                .map(|st| st.size_bytes_on_disk().unwrap_or(0))
+                .map(|st| {
+                    st.estimate_in_memory_size_bytes(Some(scan.execution_config.as_ref()))
+                        .or_else(|| st.size_bytes_on_disk())
+                        .unwrap_or(0)
+                })
                 .sum();
 
             let num_parallel_tasks = scan.num_parallel_tasks;
@@ -383,12 +389,17 @@ async fn get_delete_map(
                 let positions = get_column_by_name("pos")?.downcast::<Int64Array>()?;
 
                 for (file, pos) in file_paths
-                    .as_arrow2()
-                    .values_iter()
-                    .zip(positions.as_arrow2().values_iter())
+                    .into_iter()
+                    .zip(positions.into_iter())
+                    .map(|(file, pos)| {
+                        (
+                            file.expect("file should not be null in iceberg delete files"),
+                            *pos.expect("pos should not be null in iceberg delete files"),
+                        )
+                    })
                 {
                     if delete_map.contains_key(file) {
-                        delete_map.get_mut(file).unwrap().push(*pos);
+                        delete_map.get_mut(file).unwrap().push(pos);
                     }
                 }
             }

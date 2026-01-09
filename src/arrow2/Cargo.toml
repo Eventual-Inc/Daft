@@ -4,12 +4,12 @@ rustc_version = "0.4.0"
 [dependencies]
 # Faster hashing
 ahash = "0.8"
-arrow-array = {version = "=54.2.1", optional = true}
+arrow-array = {workspace = true, optional = true}
 # Support conversion to/from arrow-rs
-arrow-buffer = {version = "=54.2.1", optional = true}
-arrow-data = {version = "=54.2.1", optional = true}
+arrow-buffer = {workspace = true, optional = true}
+arrow-data = {workspace = true, optional = true}
 arrow-format = {version = "0.8", optional = true, features = ["ipc"]}
-arrow-schema = {version = "=54.2.1", optional = true}
+arrow-schema = {workspace = true, optional = true}
 # to read IPC as a stream
 async-stream = {version = "0.3.6", optional = true}
 # avro support
@@ -58,7 +58,7 @@ num-traits = "0.2"
 orc-format = {version = "0.3.0", optional = true}
 rand = {version = "0.8", optional = true}
 regex = {version = "1.12", optional = true}
-regex-syntax = {version = "0.8", optional = true}
+common-pattern = {path = "../common/pattern", optional = true}
 # Arrow integration tests support
 serde = {version = "^1.0", features = ["rc", "derive"]}
 serde_derive = {version = "^1.0", optional = true}
@@ -142,7 +142,7 @@ compute_filter = []
 compute_hash = ["multiversion"]
 compute_if_then_else = []
 compute_length = []
-compute_like = ["regex", "regex-syntax", "dep:memchr"]
+compute_like = ["regex", "dep:memchr", "common-pattern"]
 compute_limit = []
 compute_merge_sort = ["itertools", "compute_sort"]
 compute_nullif = ["compute_comparison"]
@@ -168,7 +168,6 @@ full = [
   "io_parquet_async",
   "io_parquet_compression",
   "regex",
-  "regex-syntax",
   "compute",
   # parses timezones used in timestamp conversions
   "chrono-tz"

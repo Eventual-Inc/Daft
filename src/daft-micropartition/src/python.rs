@@ -379,10 +379,20 @@ impl PyMicroPartition {
         py.detach(|| Ok(self.inner.cross_join(&right.inner, outer_loop_side)?.into()))
     }
 
-    pub fn explode(&self, py: Python, to_explode: Vec<PyExpr>) -> PyResult<Self> {
+    pub fn explode(
+        &self,
+        py: Python,
+        to_explode: Vec<PyExpr>,
+        index_column: Option<&str>,
+    ) -> PyResult<Self> {
         let converted_to_explode = BoundExpr::bind_all(&to_explode, &self.inner.schema)?;
 
-        py.detach(|| Ok(self.inner.explode(converted_to_explode.as_slice())?.into()))
+        py.detach(|| {
+            Ok(self
+                .inner
+                .explode(converted_to_explode.as_slice(), index_column)?
+                .into())
+        })
     }
 
     pub fn unpivot(

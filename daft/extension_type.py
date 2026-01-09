@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from typing import Callable
+from typing import TYPE_CHECKING
 
 from daft.dependencies import pa
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class DaftExtension(pa.ExtensionType):  # type: ignore[misc]

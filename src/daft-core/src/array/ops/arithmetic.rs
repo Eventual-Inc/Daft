@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2->arrow migration")]
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use common_error::{DaftError, DaftResult};
@@ -131,19 +132,14 @@ impl Mul for &Decimal128Array {
 impl Add for &BinaryArray {
     type Output = DaftResult<BinaryArray>;
     fn add(self, rhs: Self) -> Self::Output {
-        let result = Box::new(add_binary_arrays(self.as_arrow2(), rhs.as_arrow2())?);
-        Ok(BinaryArray::from((self.name(), result)))
+        add_binary_arrays(self, rhs)
     }
 }
 
 impl Add for &FixedSizeBinaryArray {
     type Output = DaftResult<FixedSizeBinaryArray>;
     fn add(self, rhs: Self) -> Self::Output {
-        let result = Box::new(add_fixed_size_binary_arrays(
-            self.as_arrow2(),
-            rhs.as_arrow2(),
-        )?);
-        Ok(FixedSizeBinaryArray::from((self.name(), result)))
+        add_fixed_size_binary_arrays(self, rhs)
     }
 }
 

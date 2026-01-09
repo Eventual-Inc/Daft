@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
 
 # Ray is required for this module but imported locally in functions that use it
 
@@ -46,31 +50,43 @@ def _parse_label_selector_to_strategy(label_selector: dict[str, str]) -> Any:
     return NodeLabelSchedulingStrategy(hard=hard_map)
 
 
-def normalize_ray_options_with_label_selector(options: dict[str, Any]) -> dict[str, Any]:
-    """Normalize Ray .options(**kwargs) for cross-version compatibility.
+def validate_and_normalize_ray_options(options: dict[str, Any]) -> dict[str, Any]:
+    """Validate and normalize the ray options.
 
+    For the label_selector option:
     - If current Ray supports "label_selector" option, return as-is.
     - Otherwise, convert {label_selector: {...}} to scheduling_strategy=NodeLabelSchedulingStrategy
       and drop the unsupported "label_selector" key.
+
+    For the runtime_env option:
+    - Currently only Conda Env is allowed to be configured.
     """
     if not options:
         return options
 
-    if "label_selector" not in options:
-        return options
+    # label selector
+    if not _supports_label_selector_option() and (label_selector := options.get("label_selector")):
+        if not isinstance(label_selector, dict):
+            raise ValueError(f"label_selector must be a dict, but got '{type(label_selector)}'")
 
-    if _supports_label_selector_option():
-        # Newer Ray versions accept label_selector directly.
-        return options
+        # Newer Ray versions accept label_selector directly, but older versions of Ray need to convert
+        # it to NodeLabelSchedulingStrategy
 
-    # Older Ray: convert to NodeLabelSchedulingStrategy and remove label_selector.
-    label_selector = options.get("label_selector") or {}
-    if not isinstance(label_selector, dict):
-        # Invalid format; leave options untouched to let Ray raise errors
-        return options
+        strategy = _parse_label_selector_to_strategy(label_selector)
+        # Avoid conflicting strategies: override existing scheduling_strategy if any
+        options = {k: v for k, v in options.items() if k != "label_selector"}
+        options["scheduling_strategy"] = strategy
 
-    strategy = _parse_label_selector_to_strategy(label_selector)
-    # Avoid conflicting strategies: override existing scheduling_strategy if any
-    options = {k: v for k, v in options.items() if k != "label_selector"}
-    options["scheduling_strategy"] = strategy
+    # runtime env
+    if runtime_env := options.get("runtime_env"):
+        if not isinstance(runtime_env, dict):
+            raise ValueError(f"runtime_env must be a dict, but got '{type(runtime_env)}'")
+
+        # TODO(zhenchao) Support more runtime env configuration items if necessary
+        if set(runtime_env.keys()) != {"conda"}:
+            raise ValueError(
+                f"The conda environment is only allowed to be configured through runtime_env in ray_options, "
+                f"but got '{runtime_env}'"
+            )
+
     return options
