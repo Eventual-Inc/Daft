@@ -34,6 +34,7 @@ pub type ArrowField = Field;
 /// Use `to_logical_type` to desugar such type and return its corresponding logical type.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde_types", derive(Serialize, Deserialize))]
+#[deprecated(note = "arrow2 migration")]
 pub enum DataType {
     /// Null type
     Null,
@@ -371,6 +372,8 @@ impl From<arrow_schema::DataType> for DataType {
             DataType::Utf8View => panic!("Utf8View not supported by arrow2"),
             DataType::ListView(_) => panic!("ListView not supported by arrow2"),
             DataType::LargeListView(_) => panic!("LargeListView not supported by arrow2"),
+            DataType::Decimal32(..) => panic!("Decimal32 not supported by arrow2"),
+            DataType::Decimal64(..) => panic!("Decimal64 not supported by arrow2"),
         }
     }
 }
@@ -503,7 +506,8 @@ impl From<arrow_schema::IntervalUnit> for IntervalUnit {
 #[cfg(feature = "arrow")]
 impl From<Schema> for arrow_schema::Schema {
     fn from(schema: Schema) -> Self {
-        let fields: Vec<arrow_schema::Field> = schema.fields.into_iter().map(|f| f.into()).collect();
+        let fields: Vec<arrow_schema::Field> =
+            schema.fields.into_iter().map(|f| f.into()).collect();
         arrow_schema::Schema::new(fields)
     }
 }

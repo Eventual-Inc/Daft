@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, time::Duration};
+use std::{collections::VecDeque, num::NonZeroUsize, time::Duration};
 
 use crate::{
     dynamic_batching::{BatchingState, BatchingStrategy},
@@ -157,7 +157,7 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
         let default_morsel_size = daft_context::get_context()
             .execution_config()
             .default_morsel_size;
-        let upper_bound = default_morsel_size.min(256);
+        let upper_bound = default_morsel_size.min(NonZeroUsize::new(256).unwrap());
         // start with a small initial requirement that matches our search space
         MorselSizeRequirement::Flexible(1, upper_bound)
     }
@@ -269,7 +269,10 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
             state.b_high,
             state.current_batch_size,
         );
-        MorselSizeRequirement::Flexible(self.b_min, state.current_batch_size)
+        MorselSizeRequirement::Flexible(
+            self.b_min,
+            NonZeroUsize::new(state.current_batch_size).unwrap_or(NonZeroUsize::MIN),
+        )
     }
 }
 

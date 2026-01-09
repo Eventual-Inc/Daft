@@ -8,6 +8,7 @@ mod list_array;
 pub mod ops;
 mod serdes;
 mod struct_array;
+pub mod utf8;
 
 use arrow::array::make_array;
 use daft_arrow::{
@@ -31,7 +32,7 @@ use crate::datatypes::{DaftArrayType, DaftPhysicalType, DataType, Field};
 #[derive(Debug)]
 pub struct DataArray<T> {
     pub field: Arc<Field>,
-    pub data: Box<dyn daft_arrow::array::Array>,
+    data: Box<dyn daft_arrow::array::Array>,
     validity: Option<daft_arrow::buffer::NullBuffer>,
     marker_: PhantomData<T>,
 }
@@ -178,6 +179,7 @@ impl<T> DataArray<T> {
     pub fn to_data(&self) -> arrow::array::ArrayData {
         to_data(self.data())
     }
+
     pub fn to_arrow(&self) -> arrow::array::ArrayRef {
         make_array(self.to_data())
     }
@@ -199,6 +201,7 @@ impl<T> DataArray<T> {
 mod tests {
     use std::sync::Arc;
 
+    use arrow::array::StringArray;
     use daft_schema::{dtype::DataType, field::Field};
 
     use crate::series::Series;
@@ -206,10 +209,11 @@ mod tests {
     #[test]
     fn from_small_utf8_arrow() {
         let data = vec![Some("hello"), Some("world")];
-        let data = Box::new(daft_arrow::array::Utf8Array::<i32>::from(data.as_slice()));
+        let data = Arc::new(StringArray::from_iter(data.into_iter()));
         let daft_fld = Arc::new(Field::new("test", DataType::Utf8));
 
-        let s = Series::from_arrow2(daft_fld, data);
-        assert!(s.is_ok())
+        let s = Series::from_arrow(daft_fld, data);
+        assert!(s.is_ok());
+        assert_eq!(s.unwrap().data_type(), &DataType::Utf8);
     }
 }

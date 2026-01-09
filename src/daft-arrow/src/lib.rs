@@ -1,7 +1,66 @@
 // Re-export arrow2::* modules for centralized access
-pub use arrow_array::temporal_conversions;
-pub use arrow_schema::ArrowError;
-pub use arrow2::{array, chunk, compute, error, io, offset, scalar, trusted_len, types};
+pub use arrow_array::{self, temporal_conversions};
+// IPC module that exports arrow-ipc functionality
+pub use arrow_schema::{self, ArrowError};
+pub use arrow2::{array, chunk, compute, error, offset, scalar, trusted_len, types};
+
+// Re-export io module but with our own IPC and Flight implementations
+pub mod io {
+    // Re-export arrow2::io modules except ipc and flight
+    pub use arrow2::io::{csv, json, parquet};
+
+    pub mod flight {
+        use arrow2::{datatypes::Field, io::ipc::IpcField};
+
+        /// Assigns every dictionary field a unique ID
+        /// This is the same as arrow2::io::ipc::write::default_ipc_fields
+        pub fn default_ipc_fields(fields: &[Field]) -> Vec<IpcField> {
+            #[allow(deprecated, reason = "arrow2 migration")]
+            use arrow2::datatypes::DataType;
+
+            #[allow(deprecated, reason = "arrow2 migration")]
+            fn default_ipc_field(data_type: &DataType, current_id: &mut i64) -> IpcField {
+                #[allow(deprecated, reason = "arrow2 migration")]
+                use DataType::*;
+                match data_type.to_logical_type() {
+                    Map(inner, ..) | FixedSizeList(inner, _) | LargeList(inner) | List(inner) => {
+                        IpcField {
+                            fields: vec![default_ipc_field(inner.data_type(), current_id)],
+                            dictionary_id: None,
+                        }
+                    }
+                    Union(fields, ..) | Struct(fields) => IpcField {
+                        fields: fields
+                            .iter()
+                            .map(|f| default_ipc_field(f.data_type(), current_id))
+                            .collect(),
+                        dictionary_id: None,
+                    },
+                    Dictionary(_, data_type, _) => {
+                        let dictionary_id = Some(*current_id);
+                        *current_id += 1;
+                        IpcField {
+                            fields: vec![default_ipc_field(data_type, current_id)],
+                            dictionary_id,
+                        }
+                    }
+                    _ => IpcField {
+                        fields: vec![],
+                        dictionary_id: None,
+                    },
+                }
+            }
+
+            let mut dictionary_id = 0i64;
+            fields
+                .iter()
+                .map(|field| {
+                    default_ipc_field(field.data_type().to_logical_type(), &mut dictionary_id)
+                })
+                .collect()
+        }
+    }
+}
 
 pub mod buffer {
     pub use arrow_buffer::{BooleanBufferBuilder, NullBuffer, NullBufferBuilder};
@@ -39,6 +98,7 @@ pub mod datatypes {
     pub use arrow2::datatypes::*;
 
     #[deprecated(note = "use arrow instead of arrow2")]
+    #[allow(deprecated, reason = "arrow2 migration")]
     pub fn arrow2_field_to_arrow(field: Field) -> arrow_schema::Field {
         use arrow_schema::{Field as ArrowField, UnionFields};
 
