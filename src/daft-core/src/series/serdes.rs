@@ -177,8 +177,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                             .map(|s| s.unwrap())
                             .collect::<Vec<_>>();
 
-                        let validity =
-                            validity.map(|v| v.bool().unwrap().as_bitmap().clone().into());
+                        let validity = validity.map(|v| v.bool().unwrap().values().into());
                         Ok(StructArray::new(Arc::new(field), children, validity).into_series())
                     }
                     DataType::List(..) => {
@@ -186,8 +185,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                         let validity = all_series
                             .pop()
                             .ok_or_else(|| serde::de::Error::missing_field("validity"))?;
-                        let validity =
-                            validity.map(|v| v.bool().unwrap().as_bitmap().clone().into());
+                        let validity = validity.map(|v| v.bool().unwrap().values().into());
                         let offsets_series = all_series
                             .pop()
                             .ok_or_else(|| serde::de::Error::missing_field("offsets"))?
@@ -213,8 +211,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                             .ok_or_else(|| serde::de::Error::missing_field("flat_child"))?
                             .unwrap();
 
-                        let validity =
-                            validity.map(|v| v.bool().unwrap().as_bitmap().clone().into());
+                        let validity = validity.map(|v| v.bool().unwrap().values().into());
                         Ok(FixedSizeListArray::new(field, flat_child, validity).into_series())
                     }
                     DataType::Decimal128(..) => Ok(Decimal128Array::from_iter(

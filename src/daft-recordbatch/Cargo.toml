@@ -1,4 +1,5 @@
 [dependencies]
+arrow = {workspace = true}
 async-recursion = "1.0.4"
 arrow-array = {workspace = true}
 arrow-ipc = {workspace = true}

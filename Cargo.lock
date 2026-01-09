@@ -3246,6 +3246,7 @@ dependencies = [
 name = "daft-recordbatch"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
  "arrow-array",
  "arrow-ipc",
  "async-recursion",
