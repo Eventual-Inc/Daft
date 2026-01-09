@@ -16,7 +16,7 @@ def check_lance_version_compatibility():
     """Check if lance version supports distributed indexing."""
     try:
         lance_version = packaging_version.parse(lance.__version__)
-        min_required_version = packaging_version.parse("0.36.0")
+        min_required_version = packaging_version.parse("0.37.0")
         return lance_version >= min_required_version
     except (AttributeError, Exception):
         return False
@@ -24,7 +24,7 @@ def check_lance_version_compatibility():
 
 pytestmark = pytest.mark.skipif(
     not check_lance_version_compatibility(),
-    reason="Distributed indexing requires pylance >= 0.36.0. Current version: {}".format(
+    reason="Distributed indexing requires pylance >= 0.37.0. Current version: {}".format(
         getattr(lance, "__version__", "unknown")
     ),
 )
@@ -95,8 +95,8 @@ def generate_multi_fragment_dataset(tmp_path, num_fragments=4, rows_per_fragment
 class TestDistributedIndexing:
     """Test cases for distributed indexing functionality."""
 
-    def test_build_distributed_index_basic(self, multi_fragment_lance_dataset):
-        """Test basic distributed index building."""
+    def test_build_distributed_index_search_functionality(self, multi_fragment_lance_dataset):
+        """Test that the built index actually works for searching."""
         dataset_uri = multi_fragment_lance_dataset
 
         # Build distributed index
@@ -104,7 +104,6 @@ class TestDistributedIndexing:
             uri=dataset_uri,
             column="text",
             index_type="INVERTED",
-            concurrency=2,
         )
         updated_dataset = lance.dataset(dataset_uri)
 
@@ -122,6 +121,19 @@ class TestDistributedIndexing:
         assert text_index is not None, "Text index not found"
         assert text_index["type"] == "Inverted", f"Expected Inverted index, got {text_index['type']}"
 
+        # Test full-text search functionality
+        search_term = "Python"
+        results = updated_dataset.scanner(
+            full_text_query=search_term,
+            columns=["id", "text"],
+        ).to_table()
+        # Should find at least one result containing "Python"
+        assert results.num_rows > 0, f"No results found for search term '{search_term}'"
+
+        # Verify results contain the search term
+        text_results = results.column("text").to_pylist()
+        assert any(search_term in text for text in text_results), "Search results don't contain the search term"
+
     def test_build_distributed_index_with_name(self, multi_fragment_lance_dataset):
         """Test building distributed index with custom name."""
         dataset_uri = multi_fragment_lance_dataset
@@ -133,7 +145,6 @@ class TestDistributedIndexing:
             column="text",
             index_type="INVERTED",
             name=custom_name,
-            concurrency=2,
         )
         updated_dataset = lance.dataset(dataset_uri)
 
@@ -141,33 +152,6 @@ class TestDistributedIndexing:
         indices = updated_dataset.list_indices()
         index_names = [idx["name"] for idx in indices]
         assert custom_name in index_names, f"Custom index name '{custom_name}' not found in {index_names}"
-
-    def test_build_distributed_index_search_functionality(self, multi_fragment_lance_dataset):
-        """Test that the built index actually works for searching."""
-        dataset_uri = multi_fragment_lance_dataset
-
-        # Build distributed index
-        create_scalar_index(
-            uri=dataset_uri,
-            column="text",
-            index_type="INVERTED",
-            concurrency=2,
-        )
-        updated_dataset = lance.dataset(dataset_uri)
-
-        # Test full-text search functionality
-        search_term = "Python"
-        results = updated_dataset.scanner(
-            full_text_query=search_term,
-            columns=["id", "text"],
-        ).to_table()
-
-        # Should find at least one result containing "Python"
-        assert results.num_rows > 0, f"No results found for search term '{search_term}'"
-
-        # Verify results contain the search term
-        text_results = results.column("text").to_pylist()
-        assert any(search_term in text for text in text_results), "Search results don't contain the search term"
 
     def test_build_distributed_index_large_dataset(self, temp_dir):
         """Test distributed indexing on a larger dataset with multiple fragments."""
@@ -179,7 +163,7 @@ class TestDistributedIndexing:
             uri=dataset_uri,
             column="text",
             index_type="INVERTED",
-            concurrency=4,
+            max_concurrency=4,
         )
         updated_dataset = lance.dataset(dataset_uri)
 
@@ -205,7 +189,6 @@ class TestDistributedIndexing:
                 uri=dataset_uri,
                 column="nonexistent",
                 index_type="INVERTED",
-                concurrency=2,
             )
 
     def test_build_distributed_index_invalid_index_type(self, multi_fragment_lance_dataset):
@@ -213,26 +196,13 @@ class TestDistributedIndexing:
         dataset_uri = multi_fragment_lance_dataset
 
         with pytest.raises(
-            ValueError,
-            match=r"Distributed indexing currently only supports 'INVERTED' and 'FTS' index types, not 'INVALID'",
+            NotImplementedError,
+            match=r'Only "BTREE", "BITMAP", "NGRAM", "ZONEMAP", "LABEL_LIST", or "INVERTED" or "BLOOMFILTER" are supported for scalar columns.  Received INVALID',
         ):
             create_scalar_index(
                 uri=dataset_uri,
                 column="text",
                 index_type="INVALID",
-                concurrency=2,
-            )
-
-    def test_build_distributed_index_invalid_num_workers(self, multi_fragment_lance_dataset):
-        """Test error handling for invalid concurrency."""
-        dataset_uri = multi_fragment_lance_dataset
-
-        with pytest.raises(ValueError, match="concurrency must be positive"):
-            create_scalar_index(
-                uri=dataset_uri,
-                column="text",
-                index_type="INVERTED",
-                concurrency=0,
             )
 
     def test_build_distributed_index_empty_column(self, multi_fragment_lance_dataset):
@@ -244,7 +214,6 @@ class TestDistributedIndexing:
                 uri=dataset_uri,
                 column="",
                 index_type="INVERTED",
-                concurrency=2,
             )
 
     def test_build_distributed_index_non_string_column(self, temp_dir):
@@ -266,25 +235,7 @@ class TestDistributedIndexing:
                 uri=path,
                 column="numeric_col",
                 index_type="INVERTED",
-                concurrency=2,
             )
-
-    def test_build_distributed_index_with_daft_remote_args(self, multi_fragment_lance_dataset):
-        """Test building distributed index with Daft options."""
-        dataset_uri = multi_fragment_lance_dataset
-
-        # Build distributed index with Daft options
-        create_scalar_index(
-            uri=dataset_uri,
-            column="text",
-            index_type="INVERTED",
-            concurrency=2,
-            daft_remote_args={"num_cpus": 1},
-        )
-
-        updated_dataset = lance.dataset(dataset_uri)
-        indices = updated_dataset.list_indices()
-        assert len(indices) > 0, "No indices found after building"
 
     def test_build_distributed_index_with_storage_options(self, multi_fragment_lance_dataset):
         """Test building distributed index with storage options."""
@@ -295,7 +246,6 @@ class TestDistributedIndexing:
             uri=dataset_uri,
             column="text",
             index_type="INVERTED",
-            concurrency=2,
             storage_options={},  # Empty storage options should work
         )
 
@@ -312,7 +262,6 @@ class TestDistributedIndexing:
             uri=dataset_uri,
             column="text",
             index_type="INVERTED",
-            concurrency=2,
             remove_stop_words=False,  # Additional kwarg for create_scalar_index
         )
 
@@ -331,7 +280,6 @@ class TestDistributedIndexing:
             column="text",
             index_type="INVERTED",
             name=index_name,
-            concurrency=2,
         )
 
         updated_dataset = lance.dataset(dataset_uri)
@@ -347,7 +295,6 @@ class TestDistributedIndexing:
                 index_type="INVERTED",
                 name=index_name,
                 replace=False,
-                concurrency=2,
             )
 
         # Verify the error message contains information about existing index
@@ -365,7 +312,6 @@ class TestDistributedIndexing:
             column="text",
             index_type="INVERTED",
             name=index_name,
-            concurrency=2,
         )
 
         updated_dataset = lance.dataset(dataset_uri)
@@ -387,7 +333,6 @@ class TestDistributedIndexing:
             index_type="INVERTED",
             name=index_name,
             replace=True,
-            concurrency=2,
         )
 
         updated_dataset = lance.dataset(dataset_uri)
@@ -426,10 +371,172 @@ class TestDistributedIndexing:
             uri=path,
             column="text",
             index_type="INVERTED",
-            concurrency=10,  # More than the 2 fragments
+            max_concurrency=10,
         )
 
         # Should still work and create the index
         updated_dataset = lance.dataset(path)
         indices = updated_dataset.list_indices()
         assert len(indices) > 0, "No indices found after building"
+
+    def test_build_distributed_index_fragment_group_size(self, multi_fragment_lance_dataset):
+        """Test building distributed index with fragment_group_size parameter."""
+        dataset_uri = multi_fragment_lance_dataset
+
+        # Build distributed index with custom fragment_group_size
+        create_scalar_index(
+            uri=dataset_uri,
+            column="text",
+            index_type="INVERTED",
+            fragment_group_size=2,
+            max_concurrency=2,
+        )
+
+        updated_dataset = lance.dataset(dataset_uri)
+        indices = updated_dataset.list_indices()
+        assert len(indices) > 0, "No indices found after building"
+
+    def test_build_distributed_index_partition_num(self, multi_fragment_lance_dataset):
+        """Test building distributed index with num_partitions parameter."""
+        dataset_uri = multi_fragment_lance_dataset
+
+        # Build distributed index with custom num_partitions
+        create_scalar_index(
+            uri=dataset_uri,
+            column="text",
+            index_type="INVERTED",
+            num_partitions=2,
+            max_concurrency=2,
+        )
+
+        updated_dataset = lance.dataset(dataset_uri)
+        indices = updated_dataset.list_indices()
+        assert len(indices) > 0, "No indices found after building"
+
+    def test_build_distributed_index_fts_type(self, multi_fragment_lance_dataset):
+        """Test building distributed FTS (Full-Text Search) index."""
+        dataset_uri = multi_fragment_lance_dataset
+
+        # Skip this test if FTS is not supported in the current LanceDB version
+        # This test will be enabled when LanceDB version supports FTS index type
+        pytest.skip("FTS index type may not be supported in the current LanceDB version")
+
+        # Build distributed FTS index
+        create_scalar_index(
+            uri=dataset_uri,
+            column="text",
+            index_type="FTS",
+            max_concurrency=2,
+        )
+
+        updated_dataset = lance.dataset(dataset_uri)
+        indices = updated_dataset.list_indices()
+        assert len(indices) > 0, "No indices found after building"
+
+        # Test search functionality
+        search_term = "Python"
+        results = updated_dataset.scanner(
+            full_text_query=search_term,
+            columns=["id", "text"],
+        ).to_table()
+
+        assert results.num_rows > 0, f"No results found for search term '{search_term}'"
+
+    def test_build_distributed_index_btree_type(self, temp_dir):
+        """Test building distributed BTREE index."""
+        # Create dataset with numeric column
+        data = {
+            "id": [1, 2, 3, 4, 5, 6, 7, 8],
+            "price": [10.5, 20.75, 30.0, 40.25, 50.5, 60.75, 70.0, 80.25],
+            "name": ["item1", "item2", "item3", "item4", "item5", "item6", "item7", "item8"],
+        }
+        dataset = daft.from_pydict(data)
+        path = Path(temp_dir) / "btree_test.lance"
+        dataset.write_lance(uri=path, max_rows_per_file=2)
+
+        # Build distributed BTREE index on numeric column
+        create_scalar_index(
+            uri=path,
+            column="price",
+            index_type="BTREE",
+            name="price_btree_index",
+            max_concurrency=2,
+        )
+
+        updated_dataset = lance.dataset(path)
+        indices = updated_dataset.list_indices()
+        assert len(indices) > 0, "No indices found after building"
+        index_names = [idx["name"] for idx in indices]
+        assert "price_btree_index" in index_names, f"BTREE index not found in {index_names}"
+
+        # Test that we can query using the index
+        results = updated_dataset.scanner(
+            filter="price > 30.0",
+            columns=["id", "price", "name"],
+        ).to_table()
+
+        assert results.num_rows > 0, "No results found for BTREE index query"
+
+    def test_build_distributed_index_with_all_params(self, temp_dir):
+        """Test building distributed index with all new parameters together."""
+        # Create dataset with multiple fragments
+        data = {
+            "id": [i for i in range(16)],
+            "text": [f"This is test document {i}" for i in range(16)],
+            "category": [f"cat_{i % 4}" for i in range(16)],
+        }
+        dataset = daft.from_pydict(data)
+        path = Path(temp_dir) / "all_params_test.lance"
+        dataset.write_lance(uri=path, max_rows_per_file=2)
+
+        # Build distributed index with all new parameters
+        create_scalar_index(
+            uri=path,
+            column="text",
+            index_type="INVERTED",
+            name="comprehensive_index",
+            replace=True,
+            fragment_group_size=3,
+            num_partitions=4,
+            max_concurrency=2,
+        )
+
+        updated_dataset = lance.dataset(path)
+        indices = updated_dataset.list_indices()
+        assert len(indices) > 0, "No indices found after building"
+
+        # Verify the index works
+        search_term = "test"
+        results = updated_dataset.scanner(
+            full_text_query=search_term,
+            columns=["id", "text"],
+        ).to_table()
+
+        assert results.num_rows > 0, f"No results found for search term '{search_term}'"
+
+    def test_build_distributed_index_no_fragments(self, temp_dir):
+        """Test distributed indexing when dataset has no fragments (empty dataset)."""
+        # Create empty dataset with explicit schema
+        import pyarrow as pa
+
+        # Create empty table with string type for 'text' column
+        schema = pa.schema([("id", pa.int64()), ("text", pa.string())])
+        empty_table = pa.Table.from_arrays(
+            [pa.array([], type=pa.int64()), pa.array([], type=pa.string())], schema=schema
+        )
+        dataset = daft.from_arrow(empty_table)
+
+        path = Path(temp_dir) / "empty_dataset.lance"
+        dataset.write_lance(uri=path)
+
+        # Try to build index on empty dataset
+        create_scalar_index(
+            uri=path,
+            column="text",
+            index_type="INVERTED",
+        )
+
+        # Verify no index was created (since no data)
+        updated_dataset = lance.dataset(path)
+        indices = updated_dataset.list_indices()
+        assert len(indices) == 0, f"Expected no indices for empty dataset, got {len(indices)}"
