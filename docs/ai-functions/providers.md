@@ -1,6 +1,6 @@
 # AI Providers Overview
 
-Providers in Daft give you flexible control over where and how your AI inference runs. Whether you're using commercial APIs like OpenAI, running local models with LM Studio, or leveraging open-source models from Hugging Face, providers offer a unified interface for managing authentication, routing, and configuration.
+Providers in Daft give you flexible control over where and how your AI inference runs. Whether you're using commercial APIs like OpenAI, running local models with LM Studio, or leveraging open-source models from Hugging Face, providers offer a unified interface for configuration.
 
 This guide covers:
 
@@ -34,10 +34,10 @@ provider = daft.get_provider("openai")
 
 Daft supports the following [AI Providers](../api/ai.md#providers):
 
-- **[OpenAI](https://platform.openai.com/docs/api-reference/introduction)** - State-of-the-art AI models for text generation, natural language processing, computer vision, and more.
-- **[Transformers](https://huggingface.co/docs/transformers/index)** - Hugging Face's model framework for machine learning models in text, computer vision, audio, video, and multimodal domains.
-- **[Google](https://ai.google.dev/gemini-api/docs)** - Google's Gemini API for text generation, natural language processing, computer vision, and more.
-- **[LM Studio](https://lmstudio.ai/)** - Run local AI models like gpt-oss, Qwen, Gemma, DeepSeek and many more on your computer, privately and for free.
+- **[OpenAI](https://platform.openai.com/docs/api-reference/introduction)** - Commercial API for GPT models and other AI capabilities
+- **[Transformers](https://huggingface.co/docs/transformers/index)** - Hugging Face models for local inference
+- **[Google](https://ai.google.dev/gemini-api/docs)** - Google's Gemini API
+- **[LM Studio](https://lmstudio.ai/)** - Run local models privately on your computer
 
 ## Setting a named OpenAI Provider within a Session
 
@@ -54,14 +54,12 @@ openrouter_provider = OpenAIProvider(
     base_url="https://openrouter.ai/api/v1",
     api_key=os.environ.get("OPENROUTER_API_KEY")
 )
-sess.attach_provider(openrouter_provider)
-sess.set_provider("OpenRouter")
+sess.attach_provider(openrouter_provider)  # Register the provider
+sess.set_provider("OpenRouter")  # Set as default for the session
 
 # Retrieve Provider for an AI Function
 provider = sess.get_provider("OpenRouter")
 ```
-
-You can then specify the `name` of the provider in the
 
 ## Using the Google Provider
 
@@ -98,6 +96,7 @@ with daft.session() as session:
 ```
 
 The Google provider supports all the same features as other providers:
+
 - **Structured outputs** with Pydantic models
 - **Multimodal inputs** (text, images, PDFs, documents)
 - **System messages** for custom instructions
@@ -137,13 +136,11 @@ openrouter_provider = OpenAIProvider(
     api_key=os.environ.get("OPENROUTER_API_KEY")
 )
 
-# Create a session and attach the provider
+# Create a session and register both providers
 sess = Session()
 sess.attach_provider(openai_provider)
 sess.attach_provider(openrouter_provider)
-
-# Set OpenRouter as Default
-sess.set_provider("OpenRouter")
+sess.set_provider("OpenRouter")  # Set OpenRouter as default
 
 # Create a dataframe with the quotes
 df = daft.from_pydict({
@@ -153,7 +150,7 @@ df = daft.from_pydict({
     ],
 })
 
-# Use the prompt function to classify the quotes
+# Use different providers for different tasks in the same pipeline
 df = (
     df
     .with_column(
@@ -162,7 +159,7 @@ df = (
             daft.col("quote"),
             system_message="You are an anime expert. Classify the anime based on the text and returns the name, character, and quote.",
             return_format=Anime,
-            provider=sess.get_provider("OpenRouter"),
+            provider=sess.get_provider("OpenRouter"),  # Use OpenRouter for initial classification
             model="nvidia/nemotron-nano-9b-v2:free"
         )
     )
@@ -173,7 +170,7 @@ df = (
             format("""Does the quote "{}" match the assigned anime series name {} and attributed character {}""", daft.col("quote"), daft.col("show"), daft.col("character")),
             system_message="Validate whether the user prompt is correct or not.",
             return_format=Anime,
-            provider=sess.get_provider("OAI_DEV"),
+            provider=sess.get_provider("OAI_DEV"),  # Use OpenAI for validation
             model="gpt-5"
         )
     )
