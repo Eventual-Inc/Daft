@@ -463,7 +463,7 @@ pub type ExtensionArray = DataArray<ExtensionType>;
 pub type IntervalArray = DataArray<IntervalType>;
 pub type Decimal128Array = DataArray<Decimal128Type>;
 
-impl<T: DaftNumericType> DataArray<T> {
+impl<T: DaftPrimitiveType> DataArray<T> {
     pub fn as_slice(&self) -> &[T::Native] {
         self.as_arrow2().values().as_slice()
     }
