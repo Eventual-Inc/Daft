@@ -2194,16 +2194,19 @@ impl FromStr for Operator {
     }
 }
 
-// Check if one set of columns is a reordering of the other
+// Check if two sets of partition expressions are compatible (order-insensitive)
+// Compare by semantic identifiers based on expression names, so that Resolved vs Bound
+// columns with the same names are treated as compatible regardless of object identity.
 pub fn is_partition_compatible<'a, A, B>(a: A, b: B) -> bool
 where
     A: IntoIterator<Item = &'a ExprRef>,
     B: IntoIterator<Item = &'a ExprRef>,
 {
-    // sort a and b by name
-    let a_set: HashSet<&ExprRef> = HashSet::from_iter(a);
-    let b_set: HashSet<&ExprRef> = HashSet::from_iter(b);
-    a_set == b_set
+    let to_name_set =
+        |iter: A| -> HashSet<String> { iter.into_iter().map(|e| e.name().to_string()).collect() };
+    let a_names = to_name_set(a);
+    let b_names = to_name_set(b);
+    a_names == b_names
 }
 
 pub fn has_agg(expr: &ExprRef) -> bool {

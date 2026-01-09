@@ -575,3 +575,132 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
         Ok(TreeNodeRecursion::Continue)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, sync::Arc};
+
+    use common_daft_config::DaftExecutionConfig;
+    use daft_core::prelude::{DataType, Field, Schema};
+    use daft_dsl::{expr::bound_expr::BoundExpr, resolved_col};
+    use daft_logical_plan::{
+        JoinType,
+        partitioning::{HashRepartitionConfig, RepartitionSpec},
+        source_info::InMemoryInfo,
+    };
+
+    use super::*;
+    use crate::pipeline_node::{
+        in_memory_source::InMemorySourceNode, shuffles::repartition::RepartitionNode,
+    };
+
+    fn make_plan_config() -> PlanConfig {
+        PlanConfig::new(0, "test".into(), Arc::new(DaftExecutionConfig::default()))
+    }
+
+    fn make_schema() -> daft_schema::schema::SchemaRef {
+        let schema_dc = Schema::new(vec![
+            Field::new("A", DataType::Int64),
+            Field::new("B", DataType::Utf8),
+        ]);
+        schema_dc.into()
+    }
+
+    fn make_in_memory_node(
+        plan_cfg: &PlanConfig,
+        schema: daft_schema::schema::SchemaRef,
+        cache_key: &str,
+        num_parts: usize,
+    ) -> DistributedPipelineNode {
+        let info = InMemoryInfo::new(
+            schema.clone(),
+            cache_key.to_string(),
+            None,
+            num_parts,
+            0,
+            0,
+            None,
+            None,
+        );
+        let psets = Arc::new(HashMap::from([(cache_key.to_string(), vec![])]));
+        InMemorySourceNode::new(1, plan_cfg, info, psets).into_node()
+    }
+
+    #[test]
+    fn gen_shuffle_node_dedup_when_already_hash_partitioned() -> DaftResult<()> {
+        let plan_cfg = make_plan_config();
+        let schema = make_schema();
+        let child_source = make_in_memory_node(&plan_cfg, schema.clone(), "left", 4);
+
+        // child already hash-partitioned by A with 4 partitions
+        let initial_spec =
+            RepartitionSpec::Hash(HashRepartitionConfig::new(Some(4), vec![resolved_col("A")]));
+        let child_hash = RepartitionNode::new(
+            2,
+            &plan_cfg,
+            initial_spec.clone(),
+            4,
+            schema.clone(),
+            child_source,
+        )
+        .into_node();
+
+        let mut translator =
+            LogicalPlanToPipelineNodeTranslator::new(plan_cfg, Arc::new(HashMap::new()));
+        // ask to repartition by the same spec
+        let new_node =
+            translator.gen_shuffle_node(initial_spec, schema.clone(), child_hash.clone())?;
+        assert_eq!(new_node.node_id(), child_hash.node_id());
+        Ok(())
+    }
+
+    #[test]
+    fn hash_join_skips_shuffle_when_prepartitioned() -> DaftResult<()> {
+        let plan_cfg = make_plan_config();
+        let schema = make_schema();
+        let left_src = make_in_memory_node(&plan_cfg, schema.clone(), "left", 4);
+        let right_src = make_in_memory_node(&plan_cfg, schema.clone(), "right", 4);
+        let hash_spec =
+            RepartitionSpec::Hash(HashRepartitionConfig::new(Some(4), vec![resolved_col("A")]));
+        let left = RepartitionNode::new(
+            10,
+            &plan_cfg,
+            hash_spec.clone(),
+            4,
+            schema.clone(),
+            left_src,
+        )
+        .into_node();
+        let right = RepartitionNode::new(
+            20,
+            &plan_cfg,
+            hash_spec.clone(),
+            4,
+            schema.clone(),
+            right_src,
+        )
+        .into_node();
+
+        let mut translator =
+            LogicalPlanToPipelineNodeTranslator::new(plan_cfg, Arc::new(HashMap::new()));
+        let schema_dc: Schema = Schema::new(vec![
+            Field::new("A", DataType::Int64),
+            Field::new("B", DataType::Utf8),
+        ]);
+        let left_on = BoundExpr::bind_all(&vec![resolved_col("A")], &schema_dc)?;
+        let right_on = BoundExpr::bind_all(&vec![resolved_col("A")], &schema_dc)?;
+        let join = translator.gen_hash_join_nodes(
+            left.clone(),
+            right.clone(),
+            left_on,
+            right_on,
+            vec![false],
+            JoinType::Inner,
+            schema.clone(),
+        )?;
+        let children = join.children();
+        assert_eq!(children[0].node_id(), left.node_id());
+        assert_eq!(children[1].node_id(), right.node_id());
+        Ok(())
+    }
+}
