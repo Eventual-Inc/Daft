@@ -350,14 +350,14 @@ class GlueCsvTable(GlueTable):
     def append(self, df: DataFrame, **options: Any) -> None:
         df.write_csv(
             root_dir=self._path,
-            write_mode="append",
+            mode="append",
             partition_cols=self._hive_partitioning_cols if self._hive_partitioning else None,
         )
 
     def overwrite(self, df: DataFrame, **options: Any) -> None:
         df.write_csv(
             root_dir=self._path,
-            write_mode="overwrite",
+            mode="overwrite",
             partition_cols=self._hive_partitioning_cols if self._hive_partitioning else None,
         )
 
@@ -415,7 +415,7 @@ class GlueParquetTable(GlueTable):
         df.write_parquet(
             root_dir=self._path,
             compression="snappy",
-            write_mode="append",
+            mode="append",
             partition_cols=self._hive_partitioning_cols if self._hive_partitioning else None,
             io_config=self._io_config,
         )
@@ -424,7 +424,7 @@ class GlueParquetTable(GlueTable):
         df.write_parquet(
             root_dir=self._path,
             compression="snappy",
-            write_mode="overwrite",
+            mode="overwrite",
             partition_cols=self._hive_partitioning_cols if self._hive_partitioning else None,
             io_config=self._io_config,
         )

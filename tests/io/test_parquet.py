@@ -449,7 +449,7 @@ def test_parquet_count(tmp_path_factory, capsys):
         "int_id": [1] * 10,
     }
     df = daft.from_pydict(data)
-    df.write_parquet(path, write_mode="overwrite")
+    df.write_parquet(path, mode="overwrite")
 
     df = daft.read_parquet(path).count(1)
     _ = capsys.readouterr()
@@ -465,6 +465,6 @@ def test_parquet_count(tmp_path_factory, capsys):
 def test_write_and_read_empty_parquet(tmp_path_factory):
     empty_parquet_files = str(tmp_path_factory.mktemp("empty_parquet"))
     df = daft.from_pydict({"a": []})
-    df.write_parquet(empty_parquet_files, write_mode="overwrite")
+    df.write_parquet(empty_parquet_files, mode="overwrite")
 
     assert daft.read_parquet(empty_parquet_files).to_pydict() == {"a": []}
