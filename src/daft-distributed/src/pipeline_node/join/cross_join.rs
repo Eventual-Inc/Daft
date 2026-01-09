@@ -161,9 +161,9 @@ impl PipelineNodeImpl for CrossJoinNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        let mut res = vec!["Cross Join".to_string()];
-        res.push(format!("Left side: {}", self.left_node.name()));
-        res.push(format!("Right side: {}", self.right_node.name()));
+        let mut res = vec!["CrossJoin".to_string()];
+        res.push(format!("Left: Node name = {}", self.left_node.name()));
+        res.push(format!("Right: Node name = {}", self.right_node.name()));
         res
     }
 

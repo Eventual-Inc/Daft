@@ -217,6 +217,7 @@ dependencies = [
  "arrow-data",
  "arrow-schema",
  "chrono",
+ "chrono-tz",
  "half",
  "hashbrown 0.16.0",
  "num-complex",
@@ -2536,7 +2537,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
- "arrow-ipc",
  "arrow-schema",
  "arrow2",
 ]
@@ -3172,11 +3172,11 @@ name = "daft-micropartition"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
+ "arrow-ipc",
  "bincode",
  "common-error",
  "common-partitioning",
  "common-runtime",
- "daft-arrow",
  "daft-core",
  "daft-csv",
  "daft-dsl",
@@ -3247,6 +3247,7 @@ name = "daft-recordbatch"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
+ "arrow-ipc",
  "async-recursion",
  "comfy-table 7.1.4",
  "common-arrow-ffi",
@@ -3467,6 +3468,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
  "arrow-csv",
+ "arrow-ipc",
  "arrow-json",
  "arrow-schema",
  "async-trait",
@@ -3474,7 +3476,6 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-runtime",
- "daft-arrow",
  "daft-core",
  "daft-dsl",
  "daft-io",
@@ -8971,9 +8972,9 @@ dependencies = [
 
 [[package]]
 name = "ve-tos-rust-sdk"
-version = "2.9.6"
+version = "2.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e61f185783b4e2b8e90a7948fcdead612178c1a4ff265c173464a7017598e89"
+checksum = "7af40f90801f4b70755fea0d5d1d0483f2676a113bccf9cdd00dfccc07672427"
 dependencies = [
  "arc-swap",
  "async-channel 2.5.0",
