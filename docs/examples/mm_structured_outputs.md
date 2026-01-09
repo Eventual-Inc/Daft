@@ -15,19 +15,19 @@ Our pipeline will:
 
 Check out the [blog post](https://www.daft.ai/blog/multimodal-structured-outputs-evaluating-vlm-image-understanding-at-scale) where we use the [production-ready version](https://github.com/Eventual-Inc/daft-examples/blob/main/use_cases/image_understanding_eval/eval_image_understanding.py) of this pipeline to evaluate Qwen3-VL-4B on 20k rows across 3 datasets.
 
-## Notebook vs. Production Pipeline (How this maps)
+## Tutorial vs. Production Pipeline (How this maps)
 
 This document is the **interactive companion** to the production evaluation pipeline in [daft-examples](https://github.com/Eventual-Inc/daft-examples/tree/main/use_cases/image_understanding_eval/eval_image_understanding.py) and the methodology described in the blog post: [Multimodal Structured Outputs: Evaluating VLM Image Understanding at Scale](https://www.daft.ai/blog/multimodal-structured-outputs-evaluating-vlm-image-understanding-at-scale).
 
-The notebook keeps `LIMIT` small so you can inspect examples, but the stages are the same:
+This tutorial keeps `LIMIT` small so you can inspect examples, but the stages are the same:
 
-| Notebook section | Pipeline function | Purpose |
+| Tutorial section | Pipeline function | Purpose |
 |---|---|---|
 | Preprocessing | `preprocess()` | Extract `answer` from Cauldron text format and track config |
 | Structured Outputs (with image) | `run_inference(with_image=True)` | Predict multiple-choice letter with the image attached |
 | Ablation (no image) | `run_inference(with_image=False)` | Predict the same question *without* the image |
 | Quadrant classification | `classify_quadrants()` | Bucket behavior into Both Correct / Image Helped / Image Hurt / Both Incorrect |
-| LLM-as-a-Judge | `run_judge()` | Diagnose failure modes on the “Image Hurt” + “Both Incorrect” subsets |
+| VLM-as-a-Judge | `run_judge()` | Diagnose failure modes on the "Image Hurt" + "Both Incorrect" subsets |
 
 ### Table of Contents
 
@@ -36,7 +36,7 @@ The notebook keeps `LIMIT` small so you can inspect examples, but the stages are
 3. [Preprocessing](#3-preprocessing)
 4. [Structured Outputs with `prompt`](#4-structured-outputs-with-prompt)
 5. [Ablation Study](#5-ablation-study)
-6. [LLM-as-a-Judge](#6-llm-as-a-judge)
+6. [VLM-as-a-Judge](#6-vlm-as-a-judge)
 7. [Scale with Daft Cloud](#7-scale-with-daft-cloud)
 8. [Conclusion](#8-conclusion)
 
@@ -47,6 +47,15 @@ First, install the required dependencies:
 ```bash
 pip install daft openai numpy pillow python-dotenv pydantic
 ```
+
+Next, create a `.env` file in your project directory and add your HuggingFace token:
+
+```bash
+# .env
+HF_TOKEN=your_huggingface_token_here
+```
+
+You can get a HuggingFace token from [https://huggingface.co/settings/tokens](https://huggingface.co/settings/tokens).
 
 Then, set up your environment variables and configuration:
 
@@ -90,9 +99,14 @@ df_raw = daft.read_huggingface("HuggingFaceM4/the_cauldron/ai2d").limit(LIMIT).c
 df_raw.show(3)
 ```
 
+**Expected output:**
+
+The dataset contains nested structures with `images` (bytes), `texts` (user/assistant pairs), and metadata. Each row represents a multiple-choice question with an accompanying diagram.
+
 ## 3. Preprocessing
 
 We need to:
+
 1. Decode images into Daft's Image type
 2. Extract the question, choices, and correct answer from the text
 
@@ -166,7 +180,6 @@ print(f"Accuracy (with image): {accuracy:.1%}")
 Let's look at some results:
 
 ```python
-# Let's look at some results
 df_eval.select("user", "image", "answer", col("result")["choice"].alias("predicted"), "is_correct").show(5)
 ```
 
@@ -279,9 +292,9 @@ df_results = df_classified.groupby("quadrant").count().select(
 df_results.show()
 ```
 
-## 6. LLM-as-a-Judge
+## 6. VLM-as-a-Judge
 
-We can go beyond pass/fail metrics by using **LLM-as-a-Judge** to explain *why* the model failed—especially on the most informative failure subsets:
+We can go beyond pass/fail metrics by using **VLM-as-a-Judge** to explain *why* the model failed—especially on the most informative failure subsets:
 - **Image Hurt**: correct without the image, incorrect with the image
 - **Both Incorrect**: incorrect with and without the image
 
@@ -387,33 +400,26 @@ print(f"Judge rows: {df_judged.count_rows()}")
 
 **Everything above runs locally on 50 rows.**
 
-But The Cauldron contains **millions of rows across 50 subsets**. To run this evaluation at scale with strong consistent performance we can scale on [Daft Cloud](https://daft.ai/cloud). The python script version of this notebook is available in the [daft-examples](https://github.com/Eventual-Inc/daft-examples) repo in the [use_cases/image_understanding_eval](https://github.com/Eventual-Inc/daft-examples/tree/main/use_cases/image_understanding_eval) directory.
+But The Cauldron contains **millions of rows across 50 subsets**. To run this evaluation at scale with strong consistent performance we can scale on [Daft Cloud](https://daft.ai/cloud). The python script version of this tutorial is available in the [daft-examples](https://github.com/Eventual-Inc/daft-examples) repo in the [use_cases/image_understanding_eval](https://github.com/Eventual-Inc/daft-examples/tree/main/use_cases/image_understanding_eval) directory.
 
 👉 [**Sign up for early access**](https://daft.ai/cloud) | [**Book a demo**](https://www.daft.ai/demo)
 
-### Take this one step further with LLM-as-a-judge
+### Scale this pipeline with production configuration
 
-For a daft cloud ready-to-run script with a bonus LLM-as-a-judge section, check out [`eval_image_understanding.py`](https://github.com/Eventual-Inc/daft-examples/blob/main/use_cases/image_understanding_eval/eval_image_understanding.py) in the [daft-examples](https://github.com/Eventual-Inc/daft-examples) repo.
+For a production-ready script with full configuration options, check out [`eval_image_understanding.py`](https://github.com/Eventual-Inc/daft-examples/blob/main/use_cases/image_understanding_eval/eval_image_understanding.py) in the [daft-examples](https://github.com/Eventual-Inc/daft-examples) repo.
 
 ## 8. Conclusion
 
-In this notebook, we built a small pipeline to evaluate Qwen3-VL's image understanding:
+In this tutorial, we built a small pipeline to evaluate Qwen3-VL's image understanding:
 
 1. **Structured Outputs**: Used Pydantic models to enforce consistent responses
 2. **Ablation Study**: Isolated image understanding from general reasoning
 3. **Quadrant Analysis**: Classified results into actionable categories
-4. **LLM-as-a-Judge**: Diagnosed failures on the most informative subsets ("Image Hurt" + "Both Incorrect")
+4. **VLM-as-a-Judge**: Diagnosed failures on the most informative subsets ("Image Hurt" + "Both Incorrect")
 
 ### Next Steps
 
-**Multi-Dataset Evaluation**: Extend across all 50 Cauldron subsets
-
-```python
-subsets = ["ai2d", "chartqa", "docvqa", "infographicvqa", ...]
-for subset in subsets:
-    df = run_full_pipeline(subset, MODEL_ID)
-    df.write_parquet(f"results/{subset}.parquet")
-```
+**Multi-Dataset Evaluation**: The production pipeline supports evaluating across all 50 Cauldron subsets. See [`eval_image_understanding.py`](https://github.com/Eventual-Inc/daft-examples/blob/main/use_cases/image_understanding_eval/eval_image_understanding.py) for the full implementation with dataset iteration, batch processing, and result aggregation.
 
 **Experiment Tracking**: Wire judge feedback into MLflow or W&B to track improvements over time.
 
