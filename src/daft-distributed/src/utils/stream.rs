@@ -192,7 +192,7 @@ mod tests {
         let mut count = 0;
         while let Some(result) = stream.next().await {
             if let Err(e) = result {
-                assert!(matches!(e, DaftError::External(_)));
+                assert!(matches!(e, DaftError::JoinError(_)));
                 assert!(e.to_string().contains("test panic"));
             } else {
                 assert_eq!(result.unwrap(), 1);

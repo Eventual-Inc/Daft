@@ -117,7 +117,10 @@ impl IntermediateOperator for CrossJoinOperator {
                         IntermediateOperatorResult::NeedMoreInput(Some(output_morsel))
                     } else {
                         // still looping through tables
-                        IntermediateOperatorResult::HasMoreOutput(output_morsel)
+                        IntermediateOperatorResult::HasMoreOutput {
+                            input,
+                            output: output_morsel,
+                        }
                     };
                     Ok((state, result))
                 },

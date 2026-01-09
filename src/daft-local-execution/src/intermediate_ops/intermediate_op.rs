@@ -28,7 +28,10 @@ use crate::{
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub enum IntermediateOperatorResult {
     NeedMoreInput(Option<Arc<MicroPartition>>),
-    HasMoreOutput(Arc<MicroPartition>),
+    HasMoreOutput {
+        input: Arc<MicroPartition>,
+        output: Arc<MicroPartition>,
+    },
 }
 
 pub(crate) type IntermediateOpExecuteResult<Op> = OperatorOutput<
@@ -76,42 +79,11 @@ pub struct IntermediateNode<Op: IntermediateOperator> {
     node_info: Arc<NodeInfo>,
 }
 
-// ========== State Pool and Helper Types ==========
-
 type StateId = usize;
-
-struct StatePool<S> {
-    available: HashMap<StateId, S>,
-}
-
-impl<S> StatePool<S> {
-    fn new(states: impl IntoIterator<Item = S>) -> Self {
-        Self {
-            available: states.into_iter().enumerate().collect(),
-        }
-    }
-
-    fn checkout(&mut self) -> Option<(StateId, S)> {
-        self.available
-            .iter()
-            .next()
-            .map(|(id, _)| *id)
-            .and_then(|id| self.available.remove(&id).map(|state| (id, state)))
-    }
-
-    fn return_state(&mut self, id: StateId, state: S) {
-        self.available.insert(id, state);
-    }
-
-    fn has_available(&self) -> bool {
-        !self.available.is_empty()
-    }
-}
 
 struct ExecutionTaskResult<S> {
     state_id: StateId,
     state: S,
-    input: Arc<MicroPartition>,
     result: IntermediateOperatorResult,
     elapsed: Duration,
 }
@@ -165,13 +137,12 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
     ) {
         task_set.spawn(async move {
             let now = Instant::now();
-            let (new_state, result) = op.execute(input.clone(), state, &task_spawner).await??;
+            let (new_state, result) = op.execute(input, state, &task_spawner).await??;
             let elapsed = now.elapsed();
 
             Ok(ExecutionTaskResult {
                 state_id,
                 state: new_state,
-                input,
                 result,
                 elapsed,
             })
@@ -181,7 +152,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
     #[allow(clippy::too_many_arguments)]
     async fn handle_task_completion(
         result: ExecutionTaskResult<Op::State>,
-        state_pool: &mut StatePool<Op::State>,
+        state_pool: &mut HashMap<StateId, Op::State>,
         output_sender: &CountingSender,
         batch_manager: &Arc<BatchManager<Op::BatchingStrategy>>,
         task_set: &mut OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
@@ -200,25 +171,25 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 }
 
                 // Return state to pool
-                state_pool.return_state(result.state_id, result.state);
+                state_pool.insert(result.state_id, result.state);
             }
             IntermediateOperatorResult::NeedMoreInput(None) => {
                 // No output, just return state to pool
-                state_pool.return_state(result.state_id, result.state);
+                state_pool.insert(result.state_id, result.state);
             }
-            IntermediateOperatorResult::HasMoreOutput(mp) => {
+            IntermediateOperatorResult::HasMoreOutput { input, output } => {
                 // Record execution stats
-                batch_manager.record_execution_stats(runtime_stats, mp.len(), result.elapsed);
+                batch_manager.record_execution_stats(runtime_stats, output.len(), result.elapsed);
 
                 // Send output
-                if output_sender.send(mp).await.is_err() {
+                if output_sender.send(output).await.is_err() {
                     return Ok(false);
                 }
 
                 // Spawn another execution with same input and state (don't return state)
                 Self::spawn_execution_task(
                     task_set,
-                    result.input,
+                    input,
                     result.state,
                     result.state_id,
                     op,
@@ -231,17 +202,21 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
 
     fn spawn_ready_batches(
         buffer: &mut RowBasedBuffer,
-        state_pool: &mut StatePool<Op::State>,
+        state_pool: &mut HashMap<StateId, Op::State>,
         task_set: &mut OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
         op: Arc<Op>,
         task_spawner: ExecutionTaskSpawner,
     ) -> DaftResult<()> {
         // Check buffer for ready batches and spawn tasks while states available
-        while state_pool.has_available()
+        while !state_pool.is_empty()
             && let Some(batch) = buffer.next_batch_if_ready()?
         {
-            let (state_id, state) = state_pool
-                .checkout()
+            let state_id = *state_pool
+                .keys()
+                .next()
+                .expect("State pool should have states when has_available() returns true");
+            let state = state_pool
+                .remove(&state_id)
                 .expect("State pool should have states when has_available() returns true");
 
             Self::spawn_execution_task(
@@ -261,7 +236,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         mut receiver: InitializingCountingReceiver,
         output_sender: &CountingSender,
         op: Arc<Op>,
-        state_pool: &mut StatePool<Op::State>,
+        state_pool: &mut HashMap<StateId, Op::State>,
         batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
         task_spawner: ExecutionTaskSpawner,
         runtime_stats: Arc<dyn RuntimeStats>,
@@ -310,7 +285,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 }
 
                 // Branch 2: Receive input (only if states available and receiver open)
-                morsel = receiver.recv(), if state_pool.has_available() && !input_closed => {
+                morsel = receiver.recv(), if !state_pool.is_empty() && !input_closed => {
                     match morsel {
                         Some(morsel) => {
                             buffer.push(morsel);
@@ -337,9 +312,13 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         // Handle remaining buffered data
         if let Some(last_batch) = buffer.pop_all()? {
             // Since task_set is empty, all states should be back in the pool
-            let (state_id, state) = state_pool
-                .checkout()
-                .expect("State pool should have available states after all tasks completed");
+            let state_id = *state_pool
+                .keys()
+                .next()
+                .expect("State pool should have states after all tasks completed");
+            let state = state_pool
+                .remove(&state_id)
+                .expect("State pool should have states after all tasks completed");
 
             Self::spawn_execution_task(
                 &mut task_set,
@@ -510,7 +489,10 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         runtime_handle.spawn(
             async move {
                 // Initialize state pool with max_concurrency states
-                let mut state_pool = StatePool::new((0..max_concurrency).map(|_| op.make_state()));
+                let mut state_pool = HashMap::new();
+                for i in 0..max_concurrency {
+                    state_pool.insert(i, op.make_state());
+                }
 
                 // Process each child receiver sequentially
                 for receiver in child_result_receivers {
