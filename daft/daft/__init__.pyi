@@ -1867,6 +1867,20 @@ class PyMicroPartitionSet:
     def get_preview_micropartitions(self, num_rows: int) -> list[PyMicroPartition]: ...
     def items(self) -> list[tuple[int, PyMicroPartition]]: ...
 
+class PyFormatSinkOption:
+    @classmethod
+    def csv(
+        cls,
+        delimiter: str | None = None,
+        quote: str | None = None,
+        escape: str | None = None,
+        header: bool | None = None,
+    ) -> PyFormatSinkOption: ...
+    @classmethod
+    def json(cls) -> PyFormatSinkOption: ...
+    @classmethod
+    def parquet(cls) -> PyFormatSinkOption: ...
+
 class LogicalPlanBuilder:
     """A logical plan builder, which simplifies constructing logical plans via a fluent interface.
 
@@ -1950,6 +1964,7 @@ class LogicalPlanBuilder:
         root_dir: str,
         write_mode: WriteMode,
         file_format: FileFormat,
+        file_format_options: PyFormatSinkOption | None = None,
         partition_cols: list[PyExpr] | None = None,
         compression: str | None = None,
         io_config: IOConfig | None = None,

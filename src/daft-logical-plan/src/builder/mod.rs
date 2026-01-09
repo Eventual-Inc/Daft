@@ -26,6 +26,7 @@ use indexmap::IndexSet;
 use resolve_expr::ExprResolver;
 #[cfg(feature = "python")]
 use {
+    crate::PyFormatSinkOption,
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
     common_daft_config::PyDaftPlanningConfig,
     common_io_config::python::IOConfig as PyIOConfig,
@@ -48,7 +49,7 @@ use crate::{
     partitioning::{
         HashRepartitionConfig, IntoPartitionsConfig, RandomShuffleConfig, RepartitionSpec,
     },
-    sink_info::{OutputFileInfo, SinkInfo},
+    sink_info::{FormatSinkOption, OutputFileInfo, SinkInfo},
     source_info::{GlobScanInfo, InMemoryInfo, SourceInfo},
 };
 
@@ -698,11 +699,14 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    #[cfg(feature = "python")]
+    #[allow(clippy::too_many_arguments)]
     pub fn table_write(
         &self,
         root_dir: &str,
         write_mode: WriteMode,
         file_format: FileFormat,
+        format_option: Option<FormatSinkOption>,
         partition_cols: Option<Vec<ExprRef>>,
         compression: Option<String>,
         io_config: Option<IOConfig>,
@@ -717,6 +721,7 @@ impl LogicalPlanBuilder {
             root_dir.into(),
             write_mode,
             file_format,
+            format_option,
             partition_cols,
             compression,
             io_config,
@@ -1362,10 +1367,12 @@ impl PyLogicalPlanBuilder {
             .into())
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
         root_dir,
         write_mode,
         file_format,
+        format_option=None,
         partition_cols=None,
         compression=None,
         io_config=None
@@ -1375,6 +1382,7 @@ impl PyLogicalPlanBuilder {
         root_dir: &str,
         write_mode: WriteMode,
         file_format: FileFormat,
+        format_option: Option<PyFormatSinkOption>,
         partition_cols: Option<Vec<PyExpr>>,
         compression: Option<String>,
         io_config: Option<common_io_config::python::IOConfig>,
@@ -1385,6 +1393,7 @@ impl PyLogicalPlanBuilder {
                 root_dir,
                 write_mode,
                 file_format,
+                format_option.map(|p| p.inner),
                 partition_cols.map(pyexprs_to_exprs),
                 compression,
                 io_config.map(|cfg| cfg.config),
