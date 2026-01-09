@@ -44,8 +44,8 @@ def run_process(
         >>> # Without shell
         >>> expr = run_process(["echo", col("a"), col("b")])
         >>> df = df.select(expr.alias("out"))
-        >>> df.to_pylist()
-        [{'out': 'hello world'}]
+        >>> df.to_pylist()[0]["out"].strip()
+        'hello world'
         >>>
         >>> # With shell and return_dtype=int
         >>> df = daft.from_pydict({"x": ["hello world"]})
@@ -67,7 +67,7 @@ def run_process(
                 raise ValueError("shell=False requires at least one argv token")
             tokens = [str(a) for a in argv]
             proc = subprocess.run(tokens, shell=False, stdout=subprocess.PIPE, text=True, check=True)
-        return proc.stdout.rstrip("\n") if proc.stdout is not None else None
+        return proc.stdout
 
     if isinstance(args, Expression):
         args = [args]
