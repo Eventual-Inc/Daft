@@ -4,9 +4,8 @@ use std::{
 };
 
 use common_error::DaftResult;
+use common_runtime::JoinSet;
 use futures::{Stream, StreamExt};
-
-use crate::utils::joinset::JoinSet;
 
 #[derive(Debug)]
 enum ForwardingStreamState<S: Stream + Send + Unpin + 'static> {

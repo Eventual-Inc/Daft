@@ -137,8 +137,8 @@ impl IntermediateOperator for ExplodeOperator {
         "Explode".into()
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
-        Ok(())
+    fn make_state(&self) -> Self::State {
+        ()
     }
 
     fn op_type(&self) -> NodeType {

@@ -11,6 +11,7 @@ use common_metrics::{
     CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, operator_metrics::OperatorCounter,
     ops::NodeType,
 };
+use common_runtime::JoinSet;
 use daft_core::{prelude::SchemaRef, series::Series};
 use daft_dsl::{
     expr::bound_expr::BoundExpr, functions::python::UDFProperties,
@@ -28,7 +29,7 @@ use super::base::{
     StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
 use crate::{
-    ExecutionTaskSpawner, TaskSet,
+    ExecutionTaskSpawner,
     intermediate_ops::udf::remap_used_cols,
     pipeline::{MorselSizeRequirement, NodeName},
     runtime_stats::{Counter, RuntimeStats},
@@ -176,7 +177,7 @@ impl AsyncUdfSink {
 
 pub struct AsyncUdfState {
     udf_expr: BoundExpr,
-    task_set: TaskSet<DaftResult<RecordBatch>>,
+    task_set: JoinSet<DaftResult<RecordBatch>>,
     udf_initialized: bool,
 }
 
@@ -366,7 +367,7 @@ impl StreamingSink for AsyncUdfSink {
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(AsyncUdfState {
             udf_expr: self.params.expr.clone(),
-            task_set: TaskSet::new(),
+            task_set: JoinSet::new(),
             udf_initialized: false,
         })
     }

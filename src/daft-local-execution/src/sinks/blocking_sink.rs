@@ -4,7 +4,7 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
-use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
+use common_runtime::{JoinSet, get_compute_pool_num_threads, get_compute_runtime};
 use daft_core::prelude::SchemaRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
@@ -12,7 +12,7 @@ use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
 
 use crate::{
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
     channel::{Receiver, create_channel},
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
@@ -156,7 +156,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
     fn spawn_workers(
         op: Arc<Op>,
         input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
-        task_set: &mut TaskSet<DaftResult<Op::State>>,
+        task_set: &mut JoinSet<DaftResult<Op::State>>,
         runtime_stats: Arc<dyn RuntimeStats>,
         memory_manager: Arc<MemoryManager>,
     ) {
@@ -289,7 +289,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         let node_id = self.node_id();
         runtime_handle.spawn(
             async move {
-                let mut task_set = TaskSet::new();
+                let mut task_set = JoinSet::new();
                 Self::spawn_workers(
                     op.clone(),
                     spawned_dispatch_result.worker_receivers,

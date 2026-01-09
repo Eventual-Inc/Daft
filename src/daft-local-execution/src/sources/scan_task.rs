@@ -11,7 +11,7 @@ use common_display::{DisplayAs, DisplayLevel, tree::TreeDisplay};
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_metrics::ops::NodeType;
-use common_runtime::{combine_stream, get_compute_pool_num_threads, get_io_runtime};
+use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use common_scan_info::{Pushdowns, ScanTaskLike};
 use daft_core::prelude::{Int64Array, SchemaRef, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
@@ -27,7 +27,6 @@ use snafu::ResultExt;
 use tracing::instrument;
 
 use crate::{
-    TaskSet,
     channel::{Sender, create_channel},
     pipeline::NodeName,
     sources::source::{Source, SourceStream},
@@ -123,7 +122,7 @@ impl ScanTaskSource {
         let num_parallel_tasks = self.num_parallel_tasks;
 
         io_runtime.spawn(async move {
-            let mut task_set = TaskSet::new();
+            let mut task_set = JoinSet::new();
             let mut scan_task_and_sender_iter = scan_tasks.into_iter().zip(senders.into_iter());
 
             // Start initial batch of parallel tasks
