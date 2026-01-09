@@ -195,7 +195,6 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 batch_manager.record_execution_stats(runtime_stats, mp.len(), result.elapsed);
 
                 // Send output
-                println!("IntermediateOp {} sending output: {:#?}", op.name(), mp);
                 if output_sender.send(mp).await.is_err() {
                     return Ok(false);
                 }
@@ -212,7 +211,6 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 batch_manager.record_execution_stats(runtime_stats, mp.len(), result.elapsed);
 
                 // Send output
-                println!("IntermediateOp {} sending output: {:#?}", op.name(), mp);
                 if output_sender.send(mp).await.is_err() {
                     return Ok(false);
                 }
@@ -315,7 +313,6 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 morsel = receiver.recv(), if state_pool.has_available() && !input_closed => {
                     match morsel {
                         Some(morsel) => {
-                            println!("IntermediateOp {} receiving input: {:#?}", op.name(), morsel);
                             buffer.push(morsel);
                             Self::spawn_ready_batches(
                                 &mut buffer,
