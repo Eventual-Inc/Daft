@@ -78,6 +78,8 @@ impl From<Error> for DaftError {
     }
 }
 
+type ParquetInferResult = (Schema, Option<(String, TableMetadata)>, String);
+
 // Optimization for when the glob scan operator is given a manifest of file paths. In this case, we can avoid the overhead of globbing
 // and just return the file metadata for each file path.
 fn generate_metadata_from_manifest(
@@ -196,36 +198,93 @@ impl GlobScanOperator {
                 .into()),
             }?;
 
-            // Infer schema from the candidate file, with minimal behavior: only skip empty JSON files when configured.
+            // Infer schema from the candidate file. For Parquet, honor ignore_corrupt_files by
+            // trying additional files in the glob if needed.
             let (inferred_schema, first_metadata, first_filepath) = match file_format_config
                 .as_ref()
             {
                 &FileFormatConfig::Parquet(ParquetSourceConfig {
                     coerce_int96_timestamp_unit,
                     ref field_id_mapping,
+                    ignore_corrupt_files,
                     ..
                 }) => {
-                    let io_stats = IOStatsContext::new(format!(
-                        "GlobScanOperator constructor read_parquet_schema: for uri {first_filepath}"
-                    ));
-                    let (schema, metadata) = daft_parquet::read::read_parquet_schema_and_metadata(
-                        first_filepath.as_str(),
-                        io_client.clone(),
-                        Some(io_stats),
-                        ParquetSchemaInferenceOptions {
-                            coerce_int96_timestamp_unit,
-                            ..Default::default()
-                        },
-                        field_id_mapping.clone(),
-                    )
-                    .await?;
-                    let first_metadata = Some((
-                        first_filepath.clone(),
-                        TableMetadata {
-                            length: metadata.num_rows,
-                        },
-                    ));
-                    (schema, first_metadata, first_filepath)
+                    let mut last_error: Option<DaftError> = None;
+
+                    let mut candidate_paths = Vec::new();
+                    candidate_paths.push(first_filepath.clone());
+
+                    if ignore_corrupt_files {
+                        let mut stream = run_glob(
+                            first_glob_path.clone(),
+                            None,
+                            io_client.clone(),
+                            Some(io_stats.clone()),
+                            file_format,
+                        )
+                        .await?;
+
+                        while let Some(fm) = stream.next().await {
+                            let FileMetadata { filepath, .. } = fm?;
+                            if filepath != first_filepath {
+                                candidate_paths.push(filepath);
+                            }
+                        }
+                    }
+
+                    let mut chosen: Option<ParquetInferResult> = None;
+
+                    for path in candidate_paths {
+                        let io_stats = IOStatsContext::new(format!(
+                            "GlobScanOperator constructor read_parquet_schema: for uri {path}"
+                        ));
+                        match daft_parquet::read::read_parquet_schema_and_metadata(
+                            path.as_str(),
+                            io_client.clone(),
+                            Some(io_stats),
+                            ParquetSchemaInferenceOptions {
+                                coerce_int96_timestamp_unit,
+                                ..Default::default()
+                            },
+                            field_id_mapping.clone(),
+                        )
+                        .await
+                        {
+                            Ok((schema, metadata)) => {
+                                let meta = Some((
+                                    path.clone(),
+                                    TableMetadata {
+                                        length: metadata.num_rows,
+                                    },
+                                ));
+                                chosen = Some((schema, meta, path));
+                                break;
+                            }
+                            Err(e) => {
+                                if !ignore_corrupt_files {
+                                    return Err(e);
+                                }
+                                log::warn!(
+                                    "Skipping unreadable/corrupt parquet file {} during schema inference: {}",
+                                    path,
+                                    e
+                                );
+                                last_error = Some(e);
+                            }
+                        }
+                    }
+
+                    match chosen {
+                        Some(triple) => triple,
+                        None => {
+                            return Err(last_error.unwrap_or_else(|| {
+                                DaftError::ValueError(
+                                    "No readable parquet files found for schema inference"
+                                        .to_string(),
+                                )
+                            }));
+                        }
+                    }
                 }
                 FileFormatConfig::Csv(CsvSourceConfig {
                     delimiter,

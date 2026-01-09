@@ -32,6 +32,7 @@ def _lancedb_table_factory_function(
     filter: Optional["pa.compute.Expression"] = None,
     limit: int | None = None,
     include_fragment_id: bool | None = False,
+    ignore_corrupt_files: bool = False,
 ) -> Iterator[PyRecordBatch]:
     try:
         import lance
@@ -61,7 +62,18 @@ def _lancedb_table_factory_function(
                 fragment_limit = limit - rows_yielded
 
             scanner = ds.scanner(fragments=[fragment], columns=cols or None, filter=filter, limit=fragment_limit)
-            for rb in scanner.to_batches():
+            batch_iter = scanner.to_batches()
+            while True:
+                try:
+                    rb = next(batch_iter)
+                except StopIteration:
+                    break
+                except Exception as e:
+                    if ignore_corrupt_files:
+                        logger.warning("Skipping unreadable/corrupt lance fragment(s) %s: %s", fragment_ids, e)
+                        return
+                    raise
+
                 # If we have a limit, we may need to truncate this batch
                 if limit is not None:
                     remaining_rows = limit - rows_yielded
@@ -124,6 +136,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         ds: "lance.LanceDataset",
         fragment_group_size: int | None = None,
         include_fragment_id: bool | None = False,
+        ignore_corrupt_files: bool = False,
     ):
         self._ds = ds
         self._pushed_filters: list[PyExpr] | None = None
@@ -137,6 +150,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             self._schema = Schema.from_pyarrow_schema(new_schema)
         else:
             self._schema = Schema.from_pyarrow_schema(base)
+        self._ignore_corrupt_files = ignore_corrupt_files
 
     def name(self) -> str:
         return "LanceDBScanOperator"
@@ -328,6 +342,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     pushed_expr,
                     self._compute_limit_pushdown_with_filter(pushdowns),
                     self._include_fragment_id,
+                    self._ignore_corrupt_files,
                 ),
                 schema=self.schema()._schema,
                 num_rows=num_rows,

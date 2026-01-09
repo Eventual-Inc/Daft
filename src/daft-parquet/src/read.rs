@@ -891,8 +891,9 @@ pub async fn stream_parquet(
     maintain_order: bool,
     delete_rows: Option<Vec<i64>>,
     chunk_size: Option<usize>,
+    ignore_corrupt_files: bool,
 ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-    let stream = stream_parquet_single(
+    let stream_result = stream_parquet_single(
         uri.to_string(),
         columns,
         num_rows,
@@ -907,8 +908,34 @@ pub async fn stream_parquet(
         maintain_order,
         chunk_size,
     )
-    .await?;
-    Ok(Box::pin(stream))
+    .await;
+
+    match stream_result {
+        Ok(stream) => {
+            if ignore_corrupt_files {
+                let stream = stream.filter_map(move |result| {
+                    futures::future::ready(match result {
+                        Ok(val) => Some(Ok(val)),
+                        Err(err) => {
+                            log::warn!("Skipping unreadable/corrupt parquet file part: {err}");
+                            None
+                        }
+                    })
+                });
+                Ok(Box::pin(stream))
+            } else {
+                Ok(Box::pin(stream))
+            }
+        }
+        Err(err) => {
+            if ignore_corrupt_files {
+                log::warn!("Skipping unreadable/corrupt parquet file {uri}: {err}");
+                Ok(Box::pin(futures::stream::empty()))
+            } else {
+                Err(err)
+            }
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1219,6 +1246,7 @@ mod tests {
                 false,
                 None,
                 None,
+                false,
             )
             .await?
             .collect::<Vec<_>>()

@@ -32,6 +32,7 @@ def read_csv(
     hive_partitioning: bool = False,
     _buffer_size: int | None = None,
     _chunk_size: int | None = None,
+    ignore_corrupt_files: bool = False,
 ) -> DataFrame:
     """Creates a DataFrame from CSV file(s).
 
@@ -84,6 +85,7 @@ def read_csv(
         allow_variable_columns=allow_variable_columns,
         buffer_size=_buffer_size,
         chunk_size=_chunk_size,
+        ignore_corrupt_files=ignore_corrupt_files,
     )
     file_format_config = FileFormatConfig.from_csv_config(csv_config)
     storage_config = StorageConfig(True, io_config)

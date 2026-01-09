@@ -430,8 +430,15 @@ async fn forward_scan_task_stream(
     chunk_size: usize,
     sender: Sender<Arc<MicroPartition>>,
 ) -> DaftResult<()> {
-    let mut stream =
-        stream_scan_task(scan_task, io_stats, delete_map, maintain_order, chunk_size).await?;
+    let stream_res = stream_scan_task(
+        scan_task.clone(),
+        io_stats,
+        delete_map,
+        maintain_order,
+        chunk_size,
+    )
+    .await;
+    let mut stream = stream_res?;
     while let Some(result) = stream.next().await {
         if sender.send(result?).await.is_err() {
             break;
@@ -495,6 +502,7 @@ async fn stream_scan_task(
             coerce_int96_timestamp_unit,
             field_id_mapping,
             chunk_size: chunk_size_from_config,
+            ignore_corrupt_files,
             ..
         }) => {
             if let Some(aggregation) = &scan_task.pushdowns.aggregation
@@ -538,6 +546,7 @@ async fn stream_scan_task(
                     maintain_order,
                     delete_rows,
                     parquet_chunk_size,
+                    *ignore_corrupt_files,
                 )
                 .await?
             }
@@ -557,7 +566,7 @@ async fn stream_scan_task(
                 col_names
                     .as_ref()
                     .map(|cols| cols.iter().map(|col| (*col).to_string()).collect()),
-                Some(schema_of_file),
+                Some(schema_of_file.clone()),
                 scan_task.pushdowns.filters.clone(),
             );
             let parse_options = CsvParseOptions::new_with_defaults(
@@ -571,6 +580,7 @@ async fn stream_scan_task(
             )?;
             let csv_chunk_size = cfg.chunk_size.or(Some(chunk_size));
             let read_options = CsvReadOptions::new_internal(cfg.buffer_size, csv_chunk_size);
+            // Do not enforce schema equality for CSV scans here; corrupt files are already handled upstream.
             daft_csv::stream_csv(
                 url.to_string(),
                 Some(convert_options),
@@ -579,7 +589,7 @@ async fn stream_scan_task(
                 io_client,
                 Some(io_stats.clone()),
                 None,
-                // maintain_order, TODO: Implement maintain_order for CSV
+                cfg.ignore_corrupt_files,
             )
             .await?
         }
