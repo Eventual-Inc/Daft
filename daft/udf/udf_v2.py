@@ -5,7 +5,7 @@ import inspect
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Coroutine, Generator, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -58,11 +58,13 @@ class Func(Generic[P, T, C]):
     batch_size: int | None
     unnest: bool
     gpus: float
+    cpus: float | None
     use_process: bool | None
     max_concurrency: int | None
     max_retries: int | None
     on_error: str | None
     return_dtype: DataType
+    ray_options: dict[str, Any] | None
     name: str = field(init=False)
 
     @classmethod
@@ -76,6 +78,7 @@ class Func(Generic[P, T, C]):
         batch_size: int | None,
         max_retries: int | None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
+        ray_options: dict[str, Any] | None = None,
     ) -> Func[P, T, None]:
         # create a class instance with no setup method
         class NoopCls(ClsBase[None]):
@@ -102,11 +105,13 @@ class Func(Generic[P, T, C]):
             batch_size,
             unnest,
             0,
+            None,
             use_process,
             None,
             max_retries,
             on_error,
             return_dtype,
+            ray_options,
         )
 
     @classmethod
@@ -115,10 +120,12 @@ class Func(Generic[P, T, C]):
         cls_: ClsBase[C],
         method: Callable[Concatenate[C, P], T],
         gpus: float,
+        cpus: float | None,
         use_process: bool | None,
         max_concurrency: int | None,
         max_retries: int | None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
+        ray_options: dict[str, Any] | None = None,
     ) -> Func[P, T, C]:
         is_generator = inspect.isgeneratorfunction(method)
         is_async = inspect.iscoroutinefunction(method)
@@ -137,11 +144,13 @@ class Func(Generic[P, T, C]):
             batch_size,
             unnest,
             gpus,
+            cpus,
             use_process,
             max_concurrency,
             max_retries,
             on_error,
             return_dtype,
+            ray_options,
         )
 
     def __post_init__(self) -> None:
@@ -226,6 +235,14 @@ class Func(Generic[P, T, C]):
             "Daft classes must be serializable. If your class accesses a non-serializable global or nonlocal variable, initialize it in the setup method instead.",
         )
 
+        # Extract resource requests from ray_options if present
+        cpus = self.cpus
+        ray_options = self.ray_options.copy() if self.ray_options is not None else None
+
+        if ray_options:
+            if "num_cpus" in ray_options:
+                cpus = ray_options["num_cpus"]
+
         # TODO: implement generator UDFs on the engine side
         if self.is_generator:
 
@@ -240,12 +257,14 @@ class Func(Generic[P, T, C]):
                     self.is_async,
                     DataType.list(self.return_dtype)._dtype,
                     self.gpus,
+                    cpus,
                     self.use_process,
                     self.max_concurrency,
                     self.max_retries,
                     self.on_error,
                     (args, kwargs),
                     expr_args,
+                    ray_options,
                 )
             ).explode()
         elif self.is_batch:
@@ -257,6 +276,7 @@ class Func(Generic[P, T, C]):
                     self.is_async,
                     self.return_dtype._dtype,
                     self.gpus,
+                    cpus,
                     self.use_process,
                     self.max_concurrency,
                     self.batch_size,
@@ -264,6 +284,7 @@ class Func(Generic[P, T, C]):
                     self.on_error,
                     (args, kwargs),
                     expr_args,
+                    ray_options,
                 )
             )
         else:
@@ -275,12 +296,14 @@ class Func(Generic[P, T, C]):
                     self.is_async,
                     self.return_dtype._dtype,
                     self.gpus,
+                    cpus,
                     self.use_process,
                     self.max_concurrency,
                     self.max_retries,
                     self.on_error,
                     (args, kwargs),
                     expr_args,
+                    ray_options,
                 )
             )
 
@@ -288,6 +311,53 @@ class Func(Generic[P, T, C]):
             expr = expr.unnest()
 
         return expr
+
+    def override_options(
+        self,
+        num_cpus: float | None = None,
+        num_gpus: float | None = None,
+        max_concurrency: int | None = None,
+        ray_options: dict[str, Any] | None = None,
+    ) -> Func[P, T, C]:
+        """Override the options of this UDF.
+
+        Args:
+            num_cpus: Number of CPUs to allocate for the UDF.
+            num_gpus: Number of GPUs to allocate for the UDF.
+            max_concurrency: The maximum number of concurrent instances of the class.
+            ray_options: Options to pass to the Ray executor (e.g. {"num_cpus": 1, "num_gpus": 1, "scheduling_strategy": ...}).
+        """
+        updates: dict[str, Any] = {}
+        if max_concurrency is not None:
+            updates["max_concurrency"] = max_concurrency
+
+        if num_gpus is not None:
+            updates["gpus"] = num_gpus
+
+        new_ray_options = self.ray_options.copy() if self.ray_options else {}
+
+        if ray_options is not None:
+            new_ray_options.update(ray_options)
+
+        if num_cpus is not None:
+            updates["cpus"] = num_cpus
+            new_ray_options["num_cpus"] = num_cpus
+
+        if num_gpus is not None:
+            new_ray_options["num_gpus"] = num_gpus
+
+        if new_ray_options:
+            updates["ray_options"] = new_ray_options
+
+        return replace(self, **updates)
+
+    def with_concurrency(self, max_concurrency: int) -> Func[P, T, C]:
+        """Override the concurrency of this UDF.
+
+        Args:
+            max_concurrency: The maximum number of concurrent instances of the class.
+        """
+        return self.override_options(max_concurrency=max_concurrency)
 
 
 def mark_cls_method(
@@ -337,10 +407,12 @@ class ClsBase(ABC, Generic[C]):
 def wrap_cls(
     cls: type,
     gpus: float,
+    cpus: float | None,
     use_process: bool | None,
     max_concurrency: int | None,
     max_retries: int | None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
+    ray_options: dict[str, Any] | None = None,
 ) -> type:
     class Cls(ClsBase[cls]):  # type: ignore[valid-type]
         def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -364,7 +436,9 @@ def wrap_cls(
             if not inspect.isfunction(attr) or isinstance(attr, (classmethod, staticmethod)):
                 raise AttributeError("Can only access methods on a Daft class instance.")
 
-            return Func._from_method(self, attr, gpus, use_process, max_concurrency, max_retries, on_error)
+            return Func._from_method(
+                self, attr, gpus, cpus, use_process, max_concurrency, max_retries, on_error, ray_options
+            )
 
         def __call__(self, *args: Any, **kwargs: Any) -> Any:
             return self.__getattr__("__call__")(*args, **kwargs)

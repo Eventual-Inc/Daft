@@ -30,6 +30,7 @@ pub fn batch_udf(
     is_async: bool,
     return_dtype: DataType,
     gpus: common_hashable_float_wrapper::FloatWrapper<f64>,
+    cpus: Option<common_hashable_float_wrapper::FloatWrapper<f64>>,
     use_process: Option<bool>,
     max_concurrency: Option<NonZeroUsize>,
     batch_size: Option<usize>,
@@ -37,6 +38,7 @@ pub fn batch_udf(
     args: Vec<ExprRef>,
     max_retries: Option<usize>,
     on_error: OnError,
+    ray_options: Option<RuntimePyObject>,
 ) -> Expr {
     Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
         function_name: Arc::from(name),
@@ -45,6 +47,7 @@ pub fn batch_udf(
         is_async,
         return_dtype,
         gpus,
+        cpus,
         use_process,
         max_concurrency,
         batch_size,
@@ -52,6 +55,7 @@ pub fn batch_udf(
         args,
         max_retries,
         on_error,
+        ray_options,
     })))
 }
 
@@ -63,6 +67,7 @@ pub struct BatchPyFn {
     pub is_async: bool,
     pub return_dtype: DataType,
     pub gpus: common_hashable_float_wrapper::FloatWrapper<f64>,
+    pub cpus: Option<common_hashable_float_wrapper::FloatWrapper<f64>>,
     pub use_process: Option<bool>,
     pub max_concurrency: Option<NonZeroUsize>,
     pub batch_size: Option<usize>,
@@ -70,6 +75,7 @@ pub struct BatchPyFn {
     pub args: Vec<ExprRef>,
     pub max_retries: Option<usize>,
     pub on_error: OnError,
+    pub ray_options: Option<RuntimePyObject>,
 }
 
 impl Display for BatchPyFn {
@@ -95,6 +101,7 @@ impl BatchPyFn {
             is_async: self.is_async,
             return_dtype: self.return_dtype.clone(),
             gpus: self.gpus.clone(),
+            cpus: self.cpus.clone(),
             use_process: self.use_process,
             max_concurrency: self.max_concurrency,
             batch_size: self.batch_size,
@@ -102,6 +109,7 @@ impl BatchPyFn {
             args: children,
             max_retries: self.max_retries,
             on_error: self.on_error,
+            ray_options: self.ray_options.clone(),
         }
     }
 
