@@ -30,7 +30,7 @@ from daft.logical.schema import Field, Schema
 
 if TYPE_CHECKING:
     from daft.dependencies import pc
-    from daft.io import IOConfig
+    from daft.io import FilenameProvider, IOConfig
     from daft.series import Series
     from daft.udf.legacy import BoundUDFArgs, InitArgsType, UninitializedUdf
     from daft.window import Window
@@ -1465,6 +1465,8 @@ class Expression:
         max_connections: int = 32,
         on_error: Literal["raise", "null"] = "raise",
         io_config: IOConfig | None = None,
+        filename_provider: FilenameProvider | None = None,
+        filename_provider_row: Expression | None = None,
     ) -> Expression:
         """Uploads a column of binary data to the provided location(s) (also supports S3, local etc).
 
@@ -1473,7 +1475,15 @@ class Expression:
         """
         from daft.functions import upload
 
-        return upload(self, location, max_connections, on_error, io_config)
+        return upload(
+            self,
+            location,
+            max_connections=max_connections,
+            on_error=on_error,
+            io_config=io_config,
+            filename_provider=filename_provider,
+            filename_provider_row=filename_provider_row,
+        )
 
     def date(self) -> Expression:
         """Retrieves the date for a datetime column."""

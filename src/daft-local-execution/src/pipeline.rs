@@ -196,7 +196,7 @@ impl ConcreteTreeNode for Box<dyn PipelineNode> {
 /// It generates a plan_id, and node ids for each plan.
 pub struct RuntimeContext {
     index_counter: std::cell::RefCell<usize>,
-    context: HashMap<String, String>,
+    pub context: HashMap<String, String>,
 }
 
 impl RuntimeContext {
@@ -209,6 +209,10 @@ impl RuntimeContext {
             index_counter: std::cell::RefCell::new(0),
             context,
         }
+    }
+
+    pub fn get_context_value(&self, key: &str) -> Option<&String> {
+        self.context.get(key)
     }
 
     pub fn next_id(&self) -> usize {
@@ -1331,11 +1335,15 @@ fn physical_plan_to_pipeline(
                 (FileFormat::Json, false) => WriteFormat::Json,
                 (_, _) => panic!("Unsupported file format"),
             };
+            let partition_idx = ctx
+                .get_context_value("task_id")
+                .and_then(|s| s.parse::<usize>().ok());
             let write_sink = WriteSink::new(
                 write_format,
                 writer_factory,
                 file_info.partition_cols.clone(),
                 file_schema.clone(),
+                partition_idx,
             );
             BlockingSinkNode::new(
                 Arc::new(write_sink),
@@ -1407,11 +1415,15 @@ fn physical_plan_to_pipeline(
             };
             let writer_factory =
                 daft_writers::make_catalog_writer_factory(catalog_type, &partition_by, cfg);
+            let partition_idx = ctx
+                .get_context_value("task_id")
+                .and_then(|s| s.parse::<usize>().ok());
             let write_sink = WriteSink::new(
                 write_format,
                 writer_factory,
                 partition_by,
                 file_schema.clone(),
+                partition_idx,
             );
             BlockingSinkNode::new(
                 Arc::new(write_sink),
@@ -1434,11 +1446,15 @@ fn physical_plan_to_pipeline(
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             let writer_factory = daft_writers::make_lance_writer_factory(lance_info.clone());
+            let partition_idx = ctx
+                .get_context_value("task_id")
+                .and_then(|s| s.parse::<usize>().ok());
             let write_sink = WriteSink::new(
                 WriteFormat::Lance,
                 writer_factory,
                 None,
                 file_schema.clone(),
+                partition_idx,
             );
             BlockingSinkNode::new(
                 Arc::new(write_sink),
@@ -1461,11 +1477,15 @@ fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             let writer_factory =
                 daft_writers::make_data_sink_writer_factory(data_sink_info.clone());
+            let partition_idx = ctx
+                .get_context_value("task_id")
+                .and_then(|s| s.parse::<usize>().ok());
             let write_sink = WriteSink::new(
                 WriteFormat::DataSink(data_sink_info.name.clone()),
                 writer_factory,
                 None,
                 file_schema.clone(),
+                partition_idx,
             );
             BlockingSinkNode::new(
                 Arc::new(write_sink),

@@ -5,11 +5,17 @@ use common_runtime::get_io_runtime;
 use daft_core::prelude::*;
 use daft_dsl::{
     ExprRef,
-    functions::{FunctionArgs, ScalarUDF},
+    functions::{FunctionArgs, ScalarUDF, python::RuntimePyObject},
 };
 use daft_io::{IOConfig, IOStatsRef, SourceType, get_io_client};
 use futures::{StreamExt, TryStreamExt};
+#[cfg(feature = "python")]
+use pyo3::{
+    IntoPyObject, Python,
+    types::{PyDict, PyDictMethods},
+};
 use serde::Serialize;
+use uuid;
 
 #[derive(Clone, Serialize, serde::Deserialize, PartialEq, Eq, Hash)]
 pub struct UrlUpload;
@@ -18,6 +24,8 @@ pub struct UrlUpload;
 struct UrlUploadArgs<T> {
     input: T,
     location: T,
+    #[arg(optional)]
+    filename_provider_row: Option<T>,
     #[arg(optional)]
     max_connections: Option<usize>,
     #[arg(optional)]
@@ -28,6 +36,10 @@ struct UrlUploadArgs<T> {
     is_single_folder: Option<bool>,
     #[arg(optional)]
     io_config: Option<IOConfig>,
+    #[arg(optional)]
+    filename_provider: Option<RuntimePyObject>,
+    #[arg(optional)]
+    write_uuid: Option<String>,
 }
 
 #[typetag::serde]
@@ -36,11 +48,14 @@ impl ScalarUDF for UrlUpload {
         let UrlUploadArgs {
             input,
             location,
+            filename_provider_row,
             max_connections,
             on_error,
             multi_thread,
             is_single_folder,
             io_config,
+            filename_provider,
+            write_uuid,
         } = inputs.try_into()?;
 
         let max_connections = max_connections.unwrap_or(32);
@@ -63,12 +78,15 @@ impl ScalarUDF for UrlUpload {
         url_upload(
             &input,
             &location,
+            filename_provider_row.as_ref(),
             max_connections,
             raise_error_on_failure,
             multi_thread,
             is_single_folder,
             Arc::new(io_config),
             None,
+            filename_provider,
+            write_uuid,
         )
     }
 
@@ -82,8 +100,16 @@ impl ScalarUDF for UrlUpload {
         schema: &Schema,
     ) -> DaftResult<Field> {
         let UrlUploadArgs {
-            input, location, ..
+            input,
+            location,
+            filename_provider_row,
+            ..
         } = inputs.try_into()?;
+
+        if let Some(row_expr) = filename_provider_row {
+            let row_field = row_expr.to_field(schema)?;
+            ensure!(row_field.dtype.is_struct(), TypeError: "filename_provider_row must be a struct");
+        }
 
         let field = input.to_field(schema)?;
         ensure!(
@@ -185,12 +211,15 @@ fn prepare_folder_paths(
 pub fn url_upload(
     series: &Series,
     folder_paths: &Series,
+    filename_provider_row: Option<&Series>,
     max_connections: usize,
     raise_error_on_failure: bool,
     multi_thread: bool,
     is_single_folder: bool,
     config: Arc<IOConfig>,
     io_stats: Option<IOStatsRef>,
+    filename_provider: Option<RuntimePyObject>,
+    write_uuid: Option<String>,
 ) -> DaftResult<Series> {
     #[allow(clippy::too_many_arguments)]
     fn upload_bytes_to_folder(
@@ -202,12 +231,15 @@ pub fn url_upload(
         // Alternatively, we can find a way of creating a `bytes::Bytes` that just references the underlying
         // arrow2 buffer, without making a copy. This would be the ideal case.
         to_upload: Vec<Option<bytes::Bytes>>,
+        filename_provider_row: Option<Series>,
         max_connections: usize,
         raise_error_on_failure: bool,
         multi_thread: bool,
         is_single_folder: bool,
         config: Arc<IOConfig>,
         io_stats: Option<IOStatsRef>,
+        filename_provider: Option<RuntimePyObject>,
+        write_uuid: Option<String>,
     ) -> DaftResult<Vec<Option<String>>> {
         let runtime_handle = get_io_runtime(multi_thread);
         let max_connections = match multi_thread {
@@ -217,35 +249,95 @@ pub fn url_upload(
         let io_client = get_io_client(multi_thread, config)?;
 
         let uploads = async move {
-            futures::stream::iter(to_upload.into_iter().zip(folder_path_iter).enumerate().map(
-                |(i, (data, folder_path))| {
-                    let owned_client = io_client.clone();
-                    let owned_io_stats = io_stats.clone();
+            futures::stream::iter(
+                to_upload
+                    .into_iter()
+                    .zip(folder_path_iter)
+                    .enumerate()
+                    .map(move |(i, (data, folder_path))| {
+                        #[cfg(feature = "python")]
+                        let filename_provider = filename_provider.clone();
+                        #[cfg(feature = "python")]
+                        let write_uuid = write_uuid.clone();
+                        #[cfg(feature = "python")]
+                        let filename_provider_row = filename_provider_row.clone();
+                        let owned_client = io_client.clone();
+                        let owned_io_stats = io_stats.clone();
 
-                    // TODO: Allow configuration of the folder path (e.g. providing a file extension, or a corresponding Series with matching length with filenames)
+                        tokio::spawn(async move {
+                            // If the user specifies a single location via a string, we should upload to a
+                            // single folder. When a filename provider is present, we delegate filename
+                            // construction to it; otherwise we fall back to a UUID-based name. If the user
+                            // gave an expression, we assume that each row has a specific url to upload to
+                            // and we respect the user-provided path.
+                            let path = if is_single_folder {
+                                #[cfg(feature = "python")]
+                                if let Some(provider) = filename_provider {
+                                    {
+                                        let filename_res = Python::attach(|py| {
+                                            let row = PyDict::new(py);
 
-                    // If the user specifies a single location via a string, we should upload to a single folder by appending a UUID to each path. Otherwise,
-                    // if the user gave an expression, we assume that each row has a specific url to upload to.
-                    let path = if is_single_folder {
-                        format!("{}/{}", folder_path, uuid::Uuid::new_v4())
-                    } else {
-                        folder_path
-                    };
-                    tokio::spawn(async move {
-                        (
-                            i,
-                            owned_client
+                                            if let Some(row_series) = filename_provider_row.as_ref() {
+                                                let struct_arr = row_series.struct_()?;
+                                                for child in &struct_arr.children {
+                                                    let lit = child.get_lit(i);
+                                                    row.set_item(child.name(), lit.into_pyobject(py)?)?;
+                                                }
+                                            }
+
+                                            let write_uuid = write_uuid.as_deref().unwrap_or("");
+                                            let provider_ref = provider.as_ref();
+                                            let filename: String = provider_ref
+                                                .call_method1(
+                                                    py,
+                                                    pyo3::intern!(py, "get_filename_for_row"),
+                                                    (row, write_uuid, 0i64, 0i64, i as i64, ""),
+                                                )?
+                                                .extract(py)?;
+                                            Ok::<_, DaftError>(filename)
+                                        });
+
+                                        let filename = match filename_res {
+                                            Ok(f) => f,
+                                            Err(err) => {
+                                                return (
+                                                    i,
+                                                    Err(daft_io::Error::InvalidArgument {
+                                                        msg: format!(
+                                                            "Filename provider failed to generate name: {}",
+                                                            err
+                                                        ),
+                                                    }),
+                                                );
+                                            }
+                                        };
+                                        format!("{}/{}", folder_path, filename)
+                                    }
+                                } else {
+                                    format!("{}/{}", folder_path, uuid::Uuid::new_v4())
+                                }
+                                #[cfg(not(feature = "python"))]
+                                {
+                                    format!("{}/{}", folder_path, uuid::Uuid::new_v4())
+                                }
+                            } else {
+                                // Row-specific URL: respect the user-provided full path and do not override it.
+                                folder_path
+                            };
+
+                            let upload_result = owned_client
                                 .single_url_upload(
                                     path,
                                     data,
                                     raise_error_on_failure,
                                     owned_io_stats,
                                 )
-                                .await,
-                        )
-                    })
-                },
-            ))
+                                .await;
+
+                            (i, upload_result)
+                        })
+                    }),
+            )
             .buffer_unordered(max_connections)
             .then(async move |r| match r {
                 Ok((i, Ok(v))) => Ok((i, v)),
@@ -265,6 +357,7 @@ pub fn url_upload(
     let folder_path_series = folder_paths.cast(&DataType::Utf8)?;
     let folder_path_arr = folder_path_series.utf8().unwrap();
     let folder_path_arr = prepare_folder_paths(folder_path_arr, series.len(), is_single_folder)?;
+    let filename_provider_row = filename_provider_row.cloned();
     let results = match series.data_type() {
         DataType::Binary => {
             let bytes_array = series
@@ -276,12 +369,15 @@ pub fn url_upload(
             upload_bytes_to_folder(
                 folder_path_arr,
                 bytes_array,
+                filename_provider_row,
                 max_connections,
                 raise_error_on_failure,
                 multi_thread,
                 is_single_folder,
                 config,
                 io_stats,
+                filename_provider,
+                write_uuid,
             )
         }
         DataType::FixedSizeBinary(..) => {
@@ -294,12 +390,15 @@ pub fn url_upload(
             upload_bytes_to_folder(
                 folder_path_arr,
                 bytes_array,
+                filename_provider_row,
                 max_connections,
                 raise_error_on_failure,
                 multi_thread,
                 is_single_folder,
                 config,
                 io_stats,
+                filename_provider,
+                write_uuid,
             )
         }
         DataType::Utf8 => {
@@ -312,12 +411,15 @@ pub fn url_upload(
             upload_bytes_to_folder(
                 folder_path_arr,
                 bytes_array,
+                filename_provider_row,
                 max_connections,
                 raise_error_on_failure,
                 multi_thread,
                 is_single_folder,
                 config,
                 io_stats,
+                filename_provider,
+                write_uuid,
             )
         }
         dt => Err(DaftError::TypeError(format!(

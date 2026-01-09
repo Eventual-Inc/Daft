@@ -22,6 +22,7 @@ struct TargetFileSizeWriter {
     results: Vec<RecordBatch>,
     partition_values: Option<RecordBatch>,
     is_closed: bool,
+    partition_idx: usize,
 }
 
 impl TargetFileSizeWriter {
@@ -31,10 +32,12 @@ impl TargetFileSizeWriter {
         >,
         partition_values: Option<RecordBatch>,
         size_calculator: Arc<TargetInMemorySizeBytesCalculator>,
+        partition_idx: usize,
     ) -> DaftResult<Self> {
+        let file_idx = partition_idx << 32;
         let writer: Box<
             dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>,
-        > = writer_factory.create_writer(0, partition_values.as_ref())?;
+        > = writer_factory.create_writer(file_idx, partition_values.as_ref())?;
         let estimate = size_calculator.calculate_target_in_memory_size_bytes();
         Ok(Self {
             current_in_memory_size_estimate: estimate,
@@ -47,6 +50,7 @@ impl TargetFileSizeWriter {
             results: vec![],
             partition_values,
             is_closed: false,
+            partition_idx,
         })
     }
 
@@ -88,9 +92,10 @@ impl TargetFileSizeWriter {
 
         // Create a new writer and reset the current bytes written
         self.current_in_memory_bytes_written = 0;
+        let file_idx = (self.partition_idx << 32) | self.results.len();
         self.current_writer = self
             .writer_factory
-            .create_writer(self.results.len(), self.partition_values.as_ref())?;
+            .create_writer(file_idx, self.partition_values.as_ref())?;
         Ok(())
     }
 }
@@ -207,13 +212,14 @@ impl WriterFactory for TargetFileSizeWriterFactory {
 
     fn create_writer(
         &self,
-        _file_idx: usize,
+        file_idx: usize,
         partition_values: Option<&RecordBatch>,
     ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>> {
         Ok(Box::new(TargetFileSizeWriter::new(
             self.writer_factory.clone(),
             partition_values.cloned(),
             self.size_calculator.clone(),
+            file_idx,
         )?)
             as Box<
                 dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>,
@@ -232,7 +238,7 @@ mod tests {
         let dummy_writer_factory = DummyWriterFactory;
         let size_calculator = Arc::new(TargetInMemorySizeBytesCalculator::new(1, 1.0));
         let mut writer =
-            TargetFileSizeWriter::new(Arc::new(dummy_writer_factory), None, size_calculator)
+            TargetFileSizeWriter::new(Arc::new(dummy_writer_factory), None, size_calculator, 0)
                 .unwrap();
 
         let mp = make_dummy_mp(1);
@@ -246,7 +252,7 @@ mod tests {
         let dummy_writer_factory = DummyWriterFactory;
         let size_calculator = Arc::new(TargetInMemorySizeBytesCalculator::new(3, 1.0));
         let mut writer =
-            TargetFileSizeWriter::new(Arc::new(dummy_writer_factory), None, size_calculator)
+            TargetFileSizeWriter::new(Arc::new(dummy_writer_factory), None, size_calculator, 0)
                 .unwrap();
 
         let mp = make_dummy_mp(2);
@@ -260,7 +266,7 @@ mod tests {
         let dummy_writer_factory = DummyWriterFactory;
         let size_calculator = Arc::new(TargetInMemorySizeBytesCalculator::new(3, 1.0));
         let mut writer =
-            TargetFileSizeWriter::new(Arc::new(dummy_writer_factory), None, size_calculator)
+            TargetFileSizeWriter::new(Arc::new(dummy_writer_factory), None, size_calculator, 0)
                 .unwrap();
 
         let mp = make_dummy_mp(4);
@@ -274,7 +280,7 @@ mod tests {
         let dummy_writer_factory = DummyWriterFactory;
         let size_calculator = Arc::new(TargetInMemorySizeBytesCalculator::new(3, 1.0));
         let mut writer =
-            TargetFileSizeWriter::new(Arc::new(dummy_writer_factory), None, size_calculator)
+            TargetFileSizeWriter::new(Arc::new(dummy_writer_factory), None, size_calculator, 0)
                 .unwrap();
 
         let mp = make_dummy_mp(10);
@@ -288,7 +294,7 @@ mod tests {
         let dummy_writer_factory = DummyWriterFactory;
         let size_calculator = Arc::new(TargetInMemorySizeBytesCalculator::new(3, 1.0));
         let mut writer =
-            TargetFileSizeWriter::new(Arc::new(dummy_writer_factory), None, size_calculator)
+            TargetFileSizeWriter::new(Arc::new(dummy_writer_factory), None, size_calculator, 0)
                 .unwrap();
 
         for _ in 0..10 {

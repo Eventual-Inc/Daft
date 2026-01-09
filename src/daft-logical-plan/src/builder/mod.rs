@@ -29,6 +29,7 @@ use {
     crate::sink_info::{CatalogInfo, IcebergCatalogInfo},
     common_daft_config::PyDaftPlanningConfig,
     common_io_config::python::IOConfig as PyIOConfig,
+    common_py_serde::PyObjectWrapper,
     daft_dsl::python::PyExpr,
     // daft_scan::python::pylib::ScanOperatorHandle,
     daft_schema::python::schema::PySchema,
@@ -698,6 +699,7 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
+    #[cfg(not(feature = "python"))]
     pub fn table_write(
         &self,
         root_dir: &str,
@@ -720,6 +722,42 @@ impl LogicalPlanBuilder {
             partition_cols,
             compression,
             io_config,
+            None,
+        ));
+
+        let logical_plan: LogicalPlan =
+            ops::Sink::try_new(self.plan.clone(), sink_info.into())?.into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
+    #[cfg(feature = "python")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn table_write(
+        &self,
+        root_dir: &str,
+        write_mode: WriteMode,
+        file_format: FileFormat,
+        partition_cols: Option<Vec<ExprRef>>,
+        compression: Option<String>,
+        io_config: Option<IOConfig>,
+        filename_provider: Option<PyObjectWrapper>,
+        write_uuid: Option<String>,
+    ) -> DaftResult<Self> {
+        let expr_resolver = ExprResolver::default();
+
+        let partition_cols = partition_cols
+            .map(|cols| expr_resolver.resolve(cols, self.plan.clone()))
+            .transpose()?;
+
+        let sink_info = SinkInfo::OutputFileInfo(OutputFileInfo::new(
+            root_dir.into(),
+            write_mode,
+            file_format,
+            partition_cols,
+            compression,
+            io_config,
+            filename_provider,
+            write_uuid,
         ));
 
         let logical_plan: LogicalPlan =
@@ -1362,13 +1400,16 @@ impl PyLogicalPlanBuilder {
             .into())
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
         root_dir,
         write_mode,
         file_format,
         partition_cols=None,
         compression=None,
-        io_config=None
+        io_config=None,
+        filename_provider=None,
+        write_uuid=None
     ))]
     pub fn table_write(
         &self,
@@ -1378,6 +1419,8 @@ impl PyLogicalPlanBuilder {
         partition_cols: Option<Vec<PyExpr>>,
         compression: Option<String>,
         io_config: Option<common_io_config::python::IOConfig>,
+        filename_provider: Option<Py<PyAny>>,
+        write_uuid: Option<String>,
     ) -> PyResult<Self> {
         Ok(self
             .builder
@@ -1388,6 +1431,8 @@ impl PyLogicalPlanBuilder {
                 partition_cols.map(pyexprs_to_exprs),
                 compression,
                 io_config.map(|cfg| cfg.config),
+                filename_provider.map(|obj| PyObjectWrapper::from(Arc::new(obj))),
+                write_uuid,
             )?
             .into())
     }

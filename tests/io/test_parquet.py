@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import datetime
 import os
+import re
 import tempfile
 import uuid
 
@@ -14,8 +15,10 @@ import pytest
 import daft
 from daft.datatype import DataType, TimeUnit
 from daft.expressions import col
+from daft.io import FilenameProvider
 from daft.logical.schema import Schema
 from daft.recordbatch import MicroPartition
+from tests.conftest import get_tests_daft_runner_name
 
 from ..integration.io.conftest import minio_create_bucket
 
@@ -468,3 +471,104 @@ def test_write_and_read_empty_parquet(tmp_path_factory):
     df.write_parquet(empty_parquet_files, write_mode="overwrite")
 
     assert daft.read_parquet(empty_parquet_files).to_pydict() == {"a": []}
+
+
+class RecordingBlockFilenameProvider(FilenameProvider):
+    """Simple FilenameProvider that records calls for block-oriented writes.
+
+    The implementation uses a deterministic pattern based only on the indices so
+    that tests can assert on the resulting filenames without depending on
+    Daft's internal UUIDs.
+    """
+
+    def __init__(self) -> None:  # pragma: no cover - exercised via higher-level IO tests
+        self.calls: list[tuple[str, int, int, int, str]] = []
+
+    def get_filename_for_block(
+        self,
+        write_uuid: str,
+        task_index: int,
+        block_index: int,
+        file_idx: int,
+        ext: str,
+    ) -> str:
+        # Record the call so that tests can assert on the arguments.
+        self.calls.append((write_uuid, task_index, block_index, file_idx, ext))
+        # Deterministic pattern that makes it easy to assert on basename.
+        return f"block-{write_uuid}-{task_index}-{block_index}-{file_idx}.{ext}"
+
+    def get_filename_for_row(
+        self,
+        row: dict[str, object],
+        write_uuid: str,
+        task_index: int,
+        block_index: int,
+        row_index: int,
+        ext: str,
+    ) -> str:  # pragma: no cover - not used in these tests
+        raise AssertionError("get_filename_for_row should not be called for block writes")
+
+
+def _extract_basenames(paths: list[str]) -> list[str]:
+    basenames: list[str] = []
+    for path in paths:
+        # Handle file:// prefix
+        if path.startswith("file://"):
+            path = path[len("file://") :]
+        # Handle S3 paths by taking everything after the bucket
+        elif "://" in path:
+            path = path.split("://", 1)[1].split("/", 1)[1]
+        basenames.append(os.path.basename(path))
+    return basenames
+
+
+def _check_filename_provider_results(basenames, prefix, extension, provider):
+    assert basenames
+    # Pattern: <prefix>-<uuid>-<task>-<block>-<file>.<extension>
+    uuid_pattern = r"[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    pattern = re.compile(rf"{prefix}-({uuid_pattern})-\d+-\d+-\d+\.{extension}")
+
+    matches = [pattern.match(name) for name in basenames]
+    assert all(matches), f"Some filenames did not match the pattern: {basenames}"
+
+    # Verify all files share the same write UUID
+    uuids = {m.group(1) for m in matches if m}
+    assert len(uuids) == 1
+
+    # In non-distributed mode, we can also check the provider's internal call record
+    if get_tests_daft_runner_name() != "ray":
+        assert len(provider.calls) == len(basenames)
+        assert {call[0] for call in provider.calls} == uuids
+        assert {call[4] for call in provider.calls} == {extension}
+
+
+def test_filename_provider_parquet_local(tmp_path) -> None:
+    data = {"a": [1, 2, 3]}
+    df = daft.from_pydict(data).repartition(2)
+
+    provider = RecordingBlockFilenameProvider()
+    result_df = df.write_parquet(str(tmp_path), filename_provider=provider)
+    basenames = _extract_basenames(result_df.to_pydict()["path"])
+    _check_filename_provider_results(basenames, "block", "parquet", provider)
+
+
+@pytest.mark.integration()
+def test_filename_provider_parquet_s3(minio_io_config) -> None:
+    bucket_name = "filename-provider-parquet"
+    data = {"a": [1, 2, 3], "b": ["x", "y", "z"]}
+
+    provider = RecordingBlockFilenameProvider()
+
+    with minio_create_bucket(minio_io_config=minio_io_config, bucket_name=bucket_name):
+        result_df = (
+            daft.from_pydict(data)
+            .repartition(2)
+            .write_parquet(
+                f"s3://{bucket_name}/parquet-writes-{uuid.uuid4()!s}",
+                partition_cols=["b"],
+                io_config=minio_io_config,
+                filename_provider=provider,
+            )
+        )
+        basenames = _extract_basenames(result_df.to_pydict()["path"])
+        _check_filename_provider_results(basenames, "block", "parquet", provider)

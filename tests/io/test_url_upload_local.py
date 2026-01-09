@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
 import pytest
 
 import daft
+from daft.functions import to_struct
+from daft.io import FilenameProvider
 
 
 def test_upload_local(tmpdir):
@@ -92,3 +95,114 @@ def test_upload_local_no_write_permissions(tmpdir):
             path = path[len("file://") :]
             with open(path, "rb") as f:
                 assert f.read() == expected_data
+
+
+def test_upload_local_filename_provider_row_from_columns(tmpdir, image_data_folder) -> None:
+    folder = os.path.join(str(tmpdir), "uploads")
+
+    class SourcePathFilenameProvider(FilenameProvider):
+        def __init__(self, file_format: str):
+            self.file_format = file_format
+
+        def get_filename_for_block(
+            self,
+            write_uuid: str,
+            task_index: int,
+            block_index: int,
+            file_idx: int,
+            ext: str,
+        ) -> str:
+            raise NotImplementedError
+
+        def get_filename_for_row(
+            self,
+            row: dict[str, Any],
+            write_uuid: str,
+            task_index: int,
+            block_index: int,
+            row_index: int,
+            ext: str,
+        ) -> str:
+            source_path = row["source_path"]
+            stem = os.path.splitext(os.path.basename(source_path))[0]
+            tag = f"{stem}_converted"
+            return f"{tag}_{write_uuid}_{task_index:06d}_{block_index:06d}_{row_index:06d}.{self.file_format}"
+
+    provider = SourcePathFilenameProvider("jpeg")
+
+    image_paths = sorted(str(p) for p in image_data_folder.iterdir())
+    df = daft.from_pydict({"source_path": image_paths})
+    df = df.with_column("data", df["source_path"].download())
+    df = df.with_column(
+        "dest",
+        df["data"].upload(
+            folder,
+            filename_provider=provider,
+            filename_provider_row=to_struct(source_path=df["source_path"]),
+        ),
+    )
+    result = df.collect().to_pydict()
+    paths = result["dest"]
+    assert len(paths) == len(image_paths)
+    for src, dest in zip(image_paths, paths):
+        assert dest.startswith("file://")
+        local_path = dest[len("file://") :]
+        assert local_path.endswith(".jpeg")
+        assert os.path.dirname(local_path) == folder
+        stem = os.path.splitext(os.path.basename(src))[0]
+        assert os.path.basename(local_path).startswith(f"{stem}_converted_")
+
+
+def test_upload_local_image_jpeg_suffix(tmpdir, image_data: bytes) -> None:
+    folder = os.path.join(str(tmpdir), "uploads")
+    path = os.path.join(folder, "image-0.jpeg")
+
+    df = daft.from_pydict({"data": [image_data], "path": [path]})
+    df = df.with_column("dest", df["data"].upload(df["path"]))
+    result = df.collect().to_pydict()
+
+    assert result["dest"] == [f"file://{path}"]
+    with open(path, "rb") as f:
+        assert f.read() == image_data
+
+
+def test_upload_local_filename_provider_row_specific_paths(tmpdir) -> None:
+    class RecordingRowFilenameProvider(FilenameProvider):
+        def __init__(self) -> None:
+            self.row_calls: list[tuple[dict[str, Any], str, int, int, int, str]] = []
+
+        def get_filename_for_block(
+            self,
+            write_uuid: str,
+            task_index: int,
+            block_index: int,
+            file_idx: int,
+            ext: str,
+        ) -> str:
+            raise AssertionError("get_filename_for_block should not be called for row uploads")
+
+        def get_filename_for_row(
+            self,
+            row: dict[str, Any],
+            write_uuid: str,
+            task_index: int,
+            block_index: int,
+            row_index: int,
+            ext: str,
+        ) -> str:
+            self.row_calls.append((row, write_uuid, task_index, block_index, row_index, ext))
+            return f"upload-{row_index}"
+
+    data_bytes = [b"one", b"two"]
+    paths = [os.path.join(str(tmpdir), f"target-{i}.bin") for i in range(len(data_bytes))]
+
+    df = daft.from_pydict({"data": data_bytes, "path": paths})
+
+    provider = RecordingRowFilenameProvider()
+    df = df.with_column("dest", df["data"].upload(df["path"], filename_provider=provider))
+    result = df.collect().to_pydict()
+
+    returned_paths = result["dest"]
+    assert returned_paths == [f"file://{p}" for p in paths]
+
+    assert provider.row_calls == []

@@ -1949,6 +1949,8 @@ class LogicalPlanBuilder:
         partition_cols: list[PyExpr] | None = None,
         compression: str | None = None,
         io_config: IOConfig | None = None,
+        filename_provider: Any | None = None,
+        write_uuid: str | None = None,
     ) -> LogicalPlanBuilder: ...
     def iceberg_write(
         self,

@@ -22,6 +22,7 @@ struct PartitionedWriter {
     writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
     partition_by: Vec<BoundExpr>,
     is_closed: bool,
+    partition_idx: usize,
 }
 
 impl PartitionedWriter {
@@ -30,6 +31,7 @@ impl PartitionedWriter {
             dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>,
         >,
         partition_by: Vec<BoundExpr>,
+        partition_idx: usize,
     ) -> Self {
         Self {
             per_partition_writers: HashMap::new(),
@@ -37,6 +39,7 @@ impl PartitionedWriter {
             writer_factory,
             partition_by,
             is_closed: false,
+            partition_idx,
         }
     }
 
@@ -92,7 +95,7 @@ impl AsyncFileWriter for PartitionedWriter {
                 RawEntryMut::Vacant(entry) => {
                     let mut writer = self
                         .writer_factory
-                        .create_writer(0, Some(partition_value_row.as_ref()))?;
+                        .create_writer(self.partition_idx, Some(partition_value_row.as_ref()))?;
                     let write_result = writer
                         .write(Arc::new(MicroPartition::new_loaded(
                             table.schema.clone(),
@@ -180,12 +183,13 @@ impl WriterFactory for PartitionedWriterFactory {
 
     fn create_writer(
         &self,
-        _file_idx: usize,
+        file_idx: usize,
         _partition_values: Option<&RecordBatch>,
     ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>>> {
         Ok(Box::new(PartitionedWriter::new(
             self.writer_factory.clone(),
             self.partition_cols.clone(),
+            file_idx,
         ))
             as Box<
                 dyn AsyncFileWriter<Input = Self::Input, Result = Self::Result>,

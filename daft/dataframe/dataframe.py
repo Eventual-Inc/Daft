@@ -54,7 +54,7 @@ if TYPE_CHECKING:
     import ray
     import torch
 
-    from daft.io import DataSink
+    from daft.io import DataSink, FilenameProvider
     from daft.io.catalog import DataCatalogTable
     from daft.io.sink import WriteResultType
     from daft.unity_catalog import UnityCatalogTable
@@ -773,10 +773,11 @@ class DataFrame:
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
+        filename_provider: "FilenameProvider | None" = None,
     ) -> "DataFrame":
         """Writes the DataFrame as parquet files, returning a new DataFrame with paths to the files that were written.
 
-        Files will be written to `<root_dir>/*` with randomly generated UUIDs as the file names.
+        Files will be written to `<root_dir>/*` using a configurable filename pattern.
 
         Args:
             root_dir (str): root file path to write parquet files to.
@@ -813,6 +814,15 @@ class DataFrame:
         if partition_cols is not None:
             cols = column_inputs_to_expressions(tuple(partition_cols))
 
+        # Derive a write UUID and default filename provider.
+        import uuid
+
+        from daft.io.filename_provider import _DefaultFilenameProvider
+
+        write_uuid = uuid.uuid4().hex
+        if filename_provider is None:
+            filename_provider = _DefaultFilenameProvider()
+
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
@@ -820,6 +830,8 @@ class DataFrame:
             file_format=FileFormat.Parquet,
             compression=compression,
             io_config=io_config,
+            filename_provider=filename_provider,
+            write_uuid=write_uuid,
         )
         # Block and write, then retrieve data
         write_df = DataFrame(builder)
@@ -839,10 +851,11 @@ class DataFrame:
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
+        filename_provider: "FilenameProvider | None" = None,
     ) -> "DataFrame":
         """Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written.
 
-        Files will be written to `<root_dir>/*` with randomly generated UUIDs as the file names.
+        Files will be written to `<root_dir>/*` using a configurable filename pattern.
 
         Args:
             root_dir (str): root file path to write parquet files to.
@@ -879,12 +892,23 @@ class DataFrame:
         if partition_cols is not None:
             cols = column_inputs_to_expressions(tuple(partition_cols))
 
+        # Derive a write UUID and default filename provider.
+        import uuid
+
+        from daft.io.filename_provider import _DefaultFilenameProvider
+
+        write_uuid = uuid.uuid4().hex
+        if filename_provider is None:
+            filename_provider = _DefaultFilenameProvider()
+
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
             write_mode=WriteMode.from_str(write_mode),
             file_format=FileFormat.Csv,
             io_config=io_config,
+            filename_provider=filename_provider,
+            write_uuid=write_uuid,
         )
 
         # Block and write, then retrieve data
@@ -905,10 +929,11 @@ class DataFrame:
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
+        filename_provider: "FilenameProvider | None" = None,
     ) -> "DataFrame":
         """Writes the DataFrame as JSON files, returning a new DataFrame with paths to the files that were written.
 
-        Files will be written to `<root_dir>/*` with randomly generated UUIDs as the file names.
+        Files will be written to `<root_dir>/*` using a configurable filename pattern.
 
         Args:
             root_dir (str): root file path to write JSON files to.
@@ -943,12 +968,23 @@ class DataFrame:
         if partition_cols is not None:
             cols = column_inputs_to_expressions(tuple(partition_cols))
 
+        # Derive a write UUID and default filename provider.
+        import uuid
+
+        from daft.io.filename_provider import _DefaultFilenameProvider
+
+        write_uuid = uuid.uuid4().hex
+        if filename_provider is None:
+            filename_provider = _DefaultFilenameProvider()
+
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
             write_mode=WriteMode.from_str(write_mode),
             file_format=FileFormat.Json,
             io_config=io_config,
+            filename_provider=filename_provider,
+            write_uuid=write_uuid,
         )
         # Block and write, then retrieve data
         write_df = DataFrame(builder)

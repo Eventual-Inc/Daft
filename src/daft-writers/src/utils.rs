@@ -1,8 +1,18 @@
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use common_error::{DaftError, DaftResult};
 use daft_io::{SourceType, utils::ObjectPath};
 use daft_recordbatch::RecordBatch;
+#[cfg(feature = "python")]
+use pyo3::{Python, types::PyAnyMethods};
+
+#[cfg(feature = "python")]
+pub type FilenameProvider = Arc<pyo3::Py<pyo3::PyAny>>;
+#[cfg(not(feature = "python"))]
+pub type FilenameProvider = ();
 
 /// The default value used by Hive for null partition values.
 const DEFAULT_PARTITION_VALUE: &str = "__HIVE_DEFAULT_PARTITION__";
@@ -27,6 +37,61 @@ pub(crate) fn build_filename(
             "Unsupported source type: {:?}",
             source_type
         ))),
+    }
+}
+
+/// Helper function to build a filename using a Python-side `FilenameProvider` if
+/// one is provided, otherwise falling back to [`build_filename`].
+#[cfg(feature = "python")]
+pub(crate) fn build_filename_with_provider(
+    source_type: SourceType,
+    root_dir: &str,
+    partition_values: Option<&RecordBatch>,
+    file_idx: usize,
+    ext: &str,
+    filename_provider: Option<Arc<pyo3::Py<pyo3::PyAny>>>,
+    write_uuid: Option<&str>,
+) -> DaftResult<PathBuf> {
+    if let Some(provider) = filename_provider {
+        let write_uuid = write_uuid.ok_or_else(|| {
+            DaftError::InternalError(
+                "Filename provider was supplied without a write_uuid".to_string(),
+            )
+        })?;
+
+        let filename: String = Python::attach(|py| -> pyo3::PyResult<_> {
+            let provider = provider.clone();
+            let provider = provider.bind(py);
+
+            // For native writers we currently expose only index-based metadata to the
+            // FilenameProvider. `task_index` and `block_index` are set to `0` and
+            // `file_idx` respectively.
+            let task_index: i64 = (file_idx as i64) >> 32;
+            let block_index: i64 = (file_idx as i64) & 0xFFFFFFFF;
+            let file_idx_i64: i64 = file_idx as i64;
+
+            provider
+                .call_method(
+                    pyo3::intern!(py, "get_filename_for_block"),
+                    (write_uuid, task_index, block_index, file_idx_i64, ext),
+                    None,
+                )?
+                .extract()
+        })?;
+
+        let partition_path = get_partition_path(partition_values)?;
+        match source_type {
+            SourceType::File => build_local_file_path(root_dir, partition_path, filename),
+            source if source.supports_native_writer() => {
+                build_object_path(root_dir, partition_path, filename)
+            }
+            _ => Err(DaftError::ValueError(format!(
+                "Unsupported source type: {:?}",
+                source_type
+            ))),
+        }
+    } else {
+        build_filename(source_type, root_dir, partition_values, file_idx, ext)
     }
 }
 

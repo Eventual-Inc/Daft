@@ -119,6 +119,7 @@ pub(crate) struct WriteSink {
     writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
     partition_by: Option<Vec<BoundExpr>>,
     file_schema: SchemaRef,
+    partition_idx: Option<usize>,
 }
 
 impl WriteSink {
@@ -129,12 +130,14 @@ impl WriteSink {
         >,
         partition_by: Option<Vec<BoundExpr>>,
         file_schema: SchemaRef,
+        partition_idx: Option<usize>,
     ) -> Self {
         Self {
             write_format,
             writer_factory,
             partition_by,
             file_schema,
+            partition_idx,
         }
     }
 }
@@ -217,7 +220,9 @@ impl BlockingSink for WriteSink {
     }
 
     fn make_state(&self) -> DaftResult<Self::State> {
-        let writer = self.writer_factory.create_writer(0, None)?;
+        let writer = self
+            .writer_factory
+            .create_writer(self.partition_idx.unwrap_or(0), None)?;
         Ok(WriteState::new(writer))
     }
 

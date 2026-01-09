@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import datetime
 import decimal
+import os
+import re
+import uuid
 
 import pyarrow as pa
 import pytest
 
 import daft
 from daft import DataType, TimeUnit
+from daft.io import FilenameProvider
+from tests.conftest import get_tests_daft_runner_name
+
+from ..integration.io.conftest import minio_create_bucket
 
 PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumeric()) >= (11, 0, 0)
 
@@ -108,3 +115,100 @@ def test_write_and_read_empty_csv(tmp_path_factory):
     df.write_csv(empty_csv_files, write_mode="overwrite")
 
     assert daft.read_csv(empty_csv_files).to_pydict() == {"a": []}
+
+
+class RecordingBlockFilenameProvider(FilenameProvider):
+    """FilenameProvider used to test CSV block-oriented writes.
+
+    The implementation mirrors the parquet tests but uses the "csv" extension.
+    """
+
+    def __init__(self) -> None:  # pragma: no cover - exercised via higher-level IO tests
+        self.calls: list[tuple[str, int, int, int, str]] = []
+
+    def get_filename_for_block(
+        self,
+        write_uuid: str,
+        task_index: int,
+        block_index: int,
+        file_idx: int,
+        ext: str,
+    ) -> str:
+        self.calls.append((write_uuid, task_index, block_index, file_idx, ext))
+        return f"csv-{write_uuid}-{task_index}-{block_index}-{file_idx}.{ext}"
+
+    def get_filename_for_row(
+        self,
+        row: dict[str, object],
+        write_uuid: str,
+        task_index: int,
+        block_index: int,
+        row_index: int,
+        ext: str,
+    ) -> str:  # pragma: no cover - not used in these tests
+        raise AssertionError("get_filename_for_row should not be called for block writes")
+
+
+def _extract_basenames(paths: list[str]) -> list[str]:
+    basenames: list[str] = []
+    for path in paths:
+        # Handle file:// prefix
+        if path.startswith("file://"):
+            path = path[len("file://") :]
+        # Handle S3 paths by taking everything after the bucket
+        elif "://" in path:
+            path = path.split("://", 1)[1].split("/", 1)[1]
+        basenames.append(os.path.basename(path))
+    return basenames
+
+
+def _check_filename_provider_results(basenames, prefix, extension, provider):
+    assert basenames
+    # Pattern: <prefix>-<uuid>-<task>-<block>-<file>.<extension>
+    uuid_pattern = r"[0-9a-f]{32}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    pattern = re.compile(rf"{prefix}-({uuid_pattern})-\d+-\d+-\d+\.{extension}")
+
+    matches = [pattern.match(name) for name in basenames]
+    assert all(matches), f"Some filenames did not match the pattern: {basenames}"
+
+    # Verify all files share the same write UUID
+    uuids = {m.group(1) for m in matches if m}
+    assert len(uuids) == 1
+
+    # In non-distributed mode, we can also check the provider's internal call record
+    if get_tests_daft_runner_name() != "ray":
+        assert len(provider.calls) == len(basenames)
+        assert {call[0] for call in provider.calls} == uuids
+        assert {call[4] for call in provider.calls} == {extension}
+
+
+def test_filename_provider_csv_local(tmp_path) -> None:
+    data = {"a": [1, 2, 3], "b": ["x", "y", "z"]}
+    df = daft.from_pydict(data).repartition(2)
+
+    provider = RecordingBlockFilenameProvider()
+    result_df = df.write_csv(str(tmp_path), filename_provider=provider)
+    basenames = _extract_basenames(result_df.to_pydict()["path"])
+    _check_filename_provider_results(basenames, "csv", "csv", provider)
+
+
+@pytest.mark.integration()
+def test_filename_provider_csv_s3(minio_io_config) -> None:
+    bucket_name = "filename-provider-csv"
+    data = {"a": [1, 2, 3], "b": ["x", "y", "z"]}
+
+    provider = RecordingBlockFilenameProvider()
+
+    with minio_create_bucket(minio_io_config=minio_io_config, bucket_name=bucket_name):
+        result_df = (
+            daft.from_pydict(data)
+            .repartition(2)
+            .write_csv(
+                f"s3://{bucket_name}/csv-writes-{uuid.uuid4()!s}",
+                partition_cols=["b"],
+                io_config=minio_io_config,
+                filename_provider=provider,
+            )
+        )
+        basenames = _extract_basenames(result_df.to_pydict()["path"])
+        _check_filename_provider_results(basenames, "csv", "csv", provider)
