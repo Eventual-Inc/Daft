@@ -13,10 +13,7 @@ use tracing::{info_span, instrument};
 
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
-    channel::{
-        OrderingAwareReceiver, Receiver, Sender, create_channel,
-        create_ordering_aware_receiver_channel,
-    },
+    channel::{OrderingAwareReceiver, Receiver, Sender, create_ordering_aware_receiver_channel},
     dispatcher::{DispatchSpawner, DynamicUnorderedDispatcher, RoundRobinDispatcher},
     dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
@@ -335,7 +332,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<tokio::sync::mpsc::Receiver<Arc<MicroPartition>>> {
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
         for child in &self.children {
             let child_result_receiver = child.start(maintain_order, runtime_handle)?;
@@ -347,7 +344,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
             ));
         }
 
-        let (destination_sender, destination_receiver) = create_channel(0);
+        let (destination_sender, destination_receiver) = tokio::sync::mpsc::channel(1);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
 
         let op = self.op.clone();

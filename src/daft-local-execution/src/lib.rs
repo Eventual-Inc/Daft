@@ -120,15 +120,16 @@ impl ExecutionRuntimeContext {
         self.worker_set.abort_all();
         while let Some(result) = self.worker_set.join_next().await {
             match result {
-                Ok(Ok(())) => continue,
+                Ok(Ok(())) => {}
                 Ok(Err(e)) => return Err(e.into()),
                 Err(e) => {
                     // Only suppress errors that are JoinError caused by cancellation
-                    if let DaftError::JoinError(ref join_err) = e {
-                        if join_err.is_cancelled() {
-                            continue;
-                        }
+                    if let DaftError::JoinError(ref join_err) = e
+                        && join_err.is_cancelled()
+                    {
+                        continue;
                     }
+
                     return Err(e.into());
                 }
             }

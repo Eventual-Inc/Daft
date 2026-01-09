@@ -13,7 +13,7 @@ use tracing::{info_span, instrument};
 
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
-    channel::{Receiver, create_channel},
+    channel::Receiver,
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
@@ -256,7 +256,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         &self,
         _maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<tokio::sync::mpsc::Receiver<Arc<MicroPartition>>> {
         let child_results_receiver = self.child.start(true, runtime_handle)?;
         let counting_receiver = InitializingCountingReceiver::new(
             child_results_receiver,
@@ -265,7 +265,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
             runtime_handle.stats_manager(),
         );
 
-        let (destination_sender, destination_receiver) = create_channel(0);
+        let (destination_sender, destination_receiver) = tokio::sync::mpsc::channel(1);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
 
         let op = self.op.clone();

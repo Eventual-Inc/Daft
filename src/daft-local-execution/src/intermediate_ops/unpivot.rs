@@ -93,9 +93,8 @@ impl IntermediateOperator for UnpivotOperator {
         NodeType::Unpivot
     }
 
-    fn make_state(&self) -> Self::State {
-        ()
-    }
+    fn make_state(&self) -> Self::State {}
+
     fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
         Ok(crate::dynamic_batching::StaticBatchingStrategy::new(
             self.morsel_size_requirement().unwrap_or_default(),

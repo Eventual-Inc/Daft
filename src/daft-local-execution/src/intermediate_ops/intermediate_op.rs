@@ -19,7 +19,6 @@ use tracing::info_span;
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
     buffer::RowBasedBuffer,
-    channel::{Receiver, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     runtime_stats::{
@@ -179,6 +178,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn handle_task_completion(
         result: ExecutionTaskResult<Op::State>,
         state_pool: &mut StatePool<Op::State>,
@@ -195,6 +195,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 batch_manager.record_execution_stats(runtime_stats, mp.len(), result.elapsed);
 
                 // Send output
+                println!("IntermediateOp {} sending output: {:#?}", op.name(), mp);
                 if output_sender.send(mp).await.is_err() {
                     return Ok(false);
                 }
@@ -211,6 +212,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 batch_manager.record_execution_stats(runtime_stats, mp.len(), result.elapsed);
 
                 // Send output
+                println!("IntermediateOp {} sending output: {:#?}", op.name(), mp);
                 if output_sender.send(mp).await.is_err() {
                     return Ok(false);
                 }
@@ -256,8 +258,9 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn process_input(
-        receiver: InitializingCountingReceiver,
+        mut receiver: InitializingCountingReceiver,
         output_sender: &CountingSender,
         op: Arc<Op>,
         state_pool: &mut StatePool<Op::State>,
@@ -273,12 +276,12 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         let mut input_closed = false;
 
         // Main processing loop
-        while !input_closed || task_set.len() > 0 {
+        while !input_closed || !task_set.is_empty() {
             tokio::select! {
                 biased;
 
                 // Branch 1: Join completed task (only if tasks exist)
-                Some(join_result) = task_set.join_next(), if task_set.len() > 0 => {
+                Some(join_result) = task_set.join_next(), if task_set.is_empty() => {
                     if !Self::handle_task_completion(
                         join_result??,
                         state_pool,
@@ -309,19 +312,23 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 }
 
                 // Branch 2: Receive input (only if states available and receiver open)
-                Some(morsel) = receiver.recv(), if state_pool.has_available() && !input_closed => {
-                    buffer.push(morsel);
-                    Self::spawn_ready_batches(
-                        &mut buffer,
-                        state_pool,
-                        &mut task_set,
-                        op.clone(),
-                        task_spawner.clone(),
-                    )?;
-                }
-                // Branch 3: Receive input (only if receiver open)
-                None = receiver.recv(), if !input_closed => {
-                    input_closed = true;
+                morsel = receiver.recv(), if state_pool.has_available() && !input_closed => {
+                    match morsel {
+                        Some(morsel) => {
+                            println!("IntermediateOp {} receiving input: {:#?}", op.name(), morsel);
+                            buffer.push(morsel);
+                            Self::spawn_ready_batches(
+                                &mut buffer,
+                                state_pool,
+                                &mut task_set,
+                                op.clone(),
+                                task_spawner.clone(),
+                            )?;
+                        }
+                        None => {
+                            input_closed = true;
+                        }
+                    }
                 }
             }
         }
@@ -352,7 +359,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 if !Self::handle_task_completion(
                     result,
                     state_pool,
-                    &output_sender,
+                    output_sender,
                     &batch_manager,
                     &mut task_set,
                     op.clone(),
@@ -465,7 +472,7 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<tokio::sync::mpsc::Receiver<Arc<MicroPartition>>> {
         // 1. Start children and wrap receivers
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
         for child in &self.children {
@@ -483,7 +490,7 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         let max_concurrency = op.max_concurrency().context(PipelineExecutionSnafu {
             node_name: self.name().to_string(),
         })?;
-        let (destination_sender, destination_receiver) = create_channel(0);
+        let (destination_sender, destination_receiver) = tokio::sync::mpsc::channel(1);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
         let strategy = op.batching_strategy().context(PipelineExecutionSnafu {
             node_name: self.name().to_string(),
