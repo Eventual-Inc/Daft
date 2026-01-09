@@ -5,6 +5,7 @@ use std::{
 
 use arrow_schema::IntervalUnit;
 use common_error::{DaftError, DaftResult};
+#[allow(deprecated, reason = "arrow2 migration")]
 use daft_arrow::datatypes::DataType as ArrowType;
 use serde::{Deserialize, Serialize};
 
@@ -412,7 +413,7 @@ impl DataType {
                 logical_extension.to_arrow2()
             }
             Self::Unknown => Err(DaftError::TypeError(format!(
-                "Can not convert {self:?} into arrow type"
+                "Can not convert {self:?} into arrow2 type"
             ))),
         }
     }
@@ -1056,6 +1057,7 @@ impl DataType {
     }
 }
 
+#[allow(deprecated, reason = "arrow2 migration")]
 #[expect(
     clippy::fallible_impl_from,
     reason = "https://github.com/Eventual-Inc/Daft/issues/3015"
@@ -1210,8 +1212,10 @@ impl TryFrom<&arrow_schema::DataType> for DataType {
 
                 Self::Map { key, value }
             }
-            _ => {
-                return Err(DaftError::ValueError("unsupported type".to_string()));
+            other => {
+                return Err(DaftError::ValueError(format!(
+                    "Unsupported Arrow DataType: {other:?}"
+                )));
             }
         })
     }

@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
+    num::NonZeroUsize,
     sync::{Arc, Mutex, atomic::Ordering},
     time::Duration,
 };
@@ -314,13 +315,19 @@ impl StreamingSink for AsyncUdfSink {
     }
 
     fn name(&self) -> NodeName {
-        let udf_name = if let Some((_, udf_name)) = self.params.udf_properties.name.rsplit_once('.')
-        {
-            udf_name
+        if self.params.udf_properties.builtin_name {
+            let name = self.params.udf_properties.name.clone();
+            name.into()
         } else {
-            self.params.udf_properties.name.as_str()
-        };
-        format!("Async UDF {}", udf_name).into()
+            let udf_name =
+                if let Some((_, udf_name)) = self.params.udf_properties.name.rsplit_once('.') {
+                    udf_name
+                } else {
+                    self.params.udf_properties.name.as_str()
+                };
+
+            format!("UDF {}", udf_name).into()
+        }
     }
 
     fn op_type(&self) -> NodeType {
@@ -329,7 +336,15 @@ impl StreamingSink for AsyncUdfSink {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![
-            format!("Async UDF: {}", self.params.udf_properties.name.as_str()),
+            format!(
+                "{} {}:",
+                if self.params.udf_properties.builtin_name {
+                    "Async Builtin UDF"
+                } else {
+                    "Async UDF"
+                },
+                self.params.udf_properties.name.as_str()
+            ),
             format!("Expr = {}", self.params.expr),
             format!(
                 "Passthrough Columns = [{}]",
@@ -368,11 +383,15 @@ impl StreamingSink for AsyncUdfSink {
         self.params
             .udf_properties
             .batch_size
-            .map(MorselSizeRequirement::Strict)
+            .map(|size| {
+                MorselSizeRequirement::Strict(
+                    NonZeroUsize::new(size).expect("batch size for AsyncUDF sink must be non-zero"),
+                )
+            })
             .or_else(|| {
                 let is_scalar_udf = self.params.udf_properties.is_scalar;
                 if is_scalar_udf {
-                    Some(MorselSizeRequirement::Strict(1))
+                    Some(MorselSizeRequirement::Strict(NonZeroUsize::new(1).unwrap()))
                 } else {
                     None
                 }

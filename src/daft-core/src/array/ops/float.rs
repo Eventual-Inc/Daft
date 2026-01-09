@@ -1,26 +1,28 @@
+use arrow::datatypes::ArrowPrimitiveType;
 use common_error::DaftResult;
 use num_traits::Float;
 
-use super::{DaftIsInf, DaftIsNan, DaftNotNan, as_arrow::AsArrow};
+use super::{DaftIsInf, DaftIsNan, DaftNotNan, full::FullNull};
 use crate::{
     array::DataArray,
-    datatypes::{BooleanArray, BooleanType, DaftFloatType, DaftNumericType, NullType},
+    datatypes::{
+        BooleanArray, BooleanType, DaftFloatType, DaftNumericType, DataType, NullType,
+        NumericNative,
+    },
 };
 
 impl<T> DaftIsNan for DataArray<T>
 where
     T: DaftFloatType,
     <T as DaftNumericType>::Native: Float,
+    <<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native: Float,
 {
     type Output = DaftResult<DataArray<BooleanType>>;
 
     fn is_nan(&self) -> Self::Output {
-        let arrow_array = self.as_arrow2();
-        let result_arrow_array = daft_arrow::array::BooleanArray::from_trusted_len_values_iter(
-            arrow_array.values_iter().map(|v| v.is_nan()),
-        )
-        .with_validity(arrow_array.validity().cloned());
-        Ok(BooleanArray::from((self.name(), result_arrow_array)))
+        let result =
+            BooleanArray::from_values(self.name(), self.values().iter().map(|v| v.is_nan()));
+        result.with_validity(self.validity().cloned())
     }
 }
 
@@ -29,14 +31,11 @@ impl DaftIsNan for DataArray<NullType> {
 
     fn is_nan(&self) -> Self::Output {
         // Entire array is null; since we don't consider nulls to be NaNs, return an all null (invalid) boolean array.
-        Ok(BooleanArray::from((
+        Ok(BooleanArray::full_null(
             self.name(),
-            daft_arrow::array::BooleanArray::from_slice(vec![false; self.len()]).with_validity(
-                daft_arrow::buffer::wrap_null_buffer(Some(
-                    daft_arrow::buffer::NullBuffer::new_null(self.len()),
-                )),
-            ),
-        )))
+            &DataType::Boolean,
+            self.len(),
+        ))
     }
 }
 
@@ -44,16 +43,14 @@ impl<T> DaftIsInf for DataArray<T>
 where
     T: DaftFloatType,
     <T as DaftNumericType>::Native: Float,
+    <<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native: Float,
 {
     type Output = DaftResult<DataArray<BooleanType>>;
 
     fn is_inf(&self) -> Self::Output {
-        let arrow_array = self.as_arrow2();
-        let result_arrow_array = daft_arrow::array::BooleanArray::from_trusted_len_values_iter(
-            arrow_array.values_iter().map(|v| v.is_infinite()),
-        )
-        .with_validity(arrow_array.validity().cloned());
-        Ok(BooleanArray::from((self.name(), result_arrow_array)))
+        let result =
+            BooleanArray::from_values(self.name(), self.values().iter().map(|v| v.is_infinite()));
+        result.with_validity(self.validity().cloned())
     }
 }
 
@@ -61,14 +58,11 @@ impl DaftIsInf for DataArray<NullType> {
     type Output = DaftResult<DataArray<BooleanType>>;
 
     fn is_inf(&self) -> Self::Output {
-        Ok(BooleanArray::from((
+        Ok(BooleanArray::full_null(
             self.name(),
-            daft_arrow::array::BooleanArray::from_slice(vec![false; self.len()]).with_validity(
-                daft_arrow::buffer::wrap_null_buffer(Some(
-                    daft_arrow::buffer::NullBuffer::new_null(self.len()),
-                )),
-            ),
-        )))
+            &DataType::Boolean,
+            self.len(),
+        ))
     }
 }
 
@@ -76,16 +70,14 @@ impl<T> DaftNotNan for DataArray<T>
 where
     T: DaftFloatType,
     <T as DaftNumericType>::Native: Float,
+    <<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native: Float,
 {
     type Output = DaftResult<DataArray<BooleanType>>;
 
     fn not_nan(&self) -> Self::Output {
-        let arrow_array = self.as_arrow2();
-        let result_arrow_array = daft_arrow::array::BooleanArray::from_trusted_len_values_iter(
-            arrow_array.values_iter().map(|v| !v.is_nan()),
-        )
-        .with_validity(arrow_array.validity().cloned());
-        Ok(BooleanArray::from((self.name(), result_arrow_array)))
+        let result =
+            BooleanArray::from_values(self.name(), self.values().iter().map(|v| !v.is_nan()));
+        result.with_validity(self.validity().cloned())
     }
 }
 
@@ -94,13 +86,51 @@ impl DaftNotNan for DataArray<NullType> {
 
     fn not_nan(&self) -> Self::Output {
         // Entire array is null; since we don't consider nulls to be NaNs, return an all null (invalid) boolean array.
-        Ok(BooleanArray::from((
+        Ok(BooleanArray::full_null(
             self.name(),
-            daft_arrow::array::BooleanArray::from_slice(vec![false; self.len()]).with_validity(
-                daft_arrow::buffer::wrap_null_buffer(Some(
-                    daft_arrow::buffer::NullBuffer::new_null(self.len()),
-                )),
-            ),
-        )))
+            &DataType::Boolean,
+            self.len(),
+        ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::datatypes::Float64Array;
+
+    #[test]
+    fn test_is_nan() {
+        let arr = Float64Array::from(("a", vec![1.0, f64::NAN, 3.0, f64::NAN]));
+        let result = arr.is_nan().unwrap();
+
+        assert_eq!(result.len(), 4);
+        assert_eq!(result.get(0), Some(false));
+        assert_eq!(result.get(1), Some(true));
+        assert_eq!(result.get(2), Some(false));
+        assert_eq!(result.get(3), Some(true));
+    }
+
+    #[test]
+    fn test_is_inf() {
+        let arr = Float64Array::from(("a", vec![1.0, f64::INFINITY, f64::NEG_INFINITY, 0.0]));
+        let result = arr.is_inf().unwrap();
+
+        assert_eq!(result.len(), 4);
+        assert_eq!(result.get(0), Some(false));
+        assert_eq!(result.get(1), Some(true));
+        assert_eq!(result.get(2), Some(true));
+        assert_eq!(result.get(3), Some(false));
+    }
+
+    #[test]
+    fn test_not_nan() {
+        let arr = Float64Array::from(("a", vec![1.0, f64::NAN, 3.0]));
+        let result = arr.not_nan().unwrap();
+
+        assert_eq!(result.len(), 3);
+        assert_eq!(result.get(0), Some(true));
+        assert_eq!(result.get(1), Some(false));
+        assert_eq!(result.get(2), Some(true));
     }
 }
