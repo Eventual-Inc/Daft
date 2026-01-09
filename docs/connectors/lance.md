@@ -114,13 +114,69 @@ df = daft.from_pydict({"a": [1, 2, 3, 4]})
 meta = df.write_lance("/tmp/lance/my_table.lance")
 meta.show()  # Contains metadata such as num_fragments / num_deleted_rows / num_small_files / version
 
-# Overwrite write with extra parameters (passed to lance.write_fragments)
+# Overwrite existing table with extra parameters (passed to lance.write_fragments)
 meta2 = df.write_lance("/tmp/lance/my_table.lance", mode="overwrite", max_bytes_per_file=1024)
 meta2.show()
 
 # Append rows (must be compatible with the existing table schema)
 meta3 = df.write_lance("/tmp/lance/my_table.lance", mode="append")
 ```
+
+To access public S3/GCS buckets, configure IO options for authentication and endpoints. For S3-compatible services (e.g. Volcengine TOS), configure IO options for authentication and endpoints:
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+    from daft.io import IOConfig, S3Config
+
+    df = daft.from_pydict({"user_id": [1, 2, 3], "score": [0.5, 0.8, 0.9]})
+    region = "cn-beijing" # Region of your TOS bucket
+
+    io_config = IOConfig(
+        s3=S3Config(
+            endpoint_url=f"https://tos-s3-{region}.ivolces.com",
+            region_name=f"{region}",
+            force_virtual_addressing=True,
+            verify_ssl=True,
+            key_id="your-access-key-id",
+            access_key="your-secret-access-key",
+        )
+    )
+
+    meta = df.write_lance("s3://my-tos-bucket/lance/my_table.lance", io_config=io_config)
+    ```
+
+Note: the `{region}` should match the region of your TOS bucket. E.g. if your bucket is in `cn-beijing`, you should set `region_name="cn-beijing"` and `endpoint_url="https://tos-s3-cn-beijing.ivolces.com"`.
+
+### Writing with a specific schema
+
+You can provide a `pyarrow.Schema` to control the on-disk Lance schema. Daft will align the DataFrame to this schema (column order, types, and nullability) before writing:
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+    import pyarrow as pa
+
+    df = daft.from_pydict(
+        {
+            "id": [1, 2, 3],
+            "score": [0.5, 0.8, 0.9],
+        }
+    )
+
+    target_schema = pa.schema(
+        [
+            pa.field("id", pa.int64(), nullable=False),
+            pa.field("score", pa.float32(), nullable=True),
+        ]
+    )
+
+    meta = df.write_lance("/tmp/lance/typed_table.lance", schema=target_schema)
+    ```
+
+This ensures that the resulting Lance table uses the exact schema you specify, even if the in-memory DataFrame has compatible but different types or column ordering.
 
 !!! note "Write Schema Control"
 
