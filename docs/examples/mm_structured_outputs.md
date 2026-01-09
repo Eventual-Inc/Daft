@@ -15,19 +15,9 @@ Our pipeline will:
 
 Check out the [blog post](https://www.daft.ai/blog/multimodal-structured-outputs-evaluating-vlm-image-understanding-at-scale) where we use the [production-ready version](https://github.com/Eventual-Inc/daft-examples/blob/main/use_cases/image_understanding_eval/eval_image_understanding.py) of this pipeline to evaluate Qwen3-VL-4B on 20k rows across 3 datasets.
 
-## Tutorial vs. Production Pipeline (How this maps)
+## About this Tutorial
 
-This document is the **interactive companion** to the production evaluation pipeline in [daft-examples](https://github.com/Eventual-Inc/daft-examples/tree/main/use_cases/image_understanding_eval/eval_image_understanding.py) and the methodology described in the blog post: [Multimodal Structured Outputs: Evaluating VLM Image Understanding at Scale](https://www.daft.ai/blog/multimodal-structured-outputs-evaluating-vlm-image-understanding-at-scale).
-
-This tutorial keeps `LIMIT` small so you can inspect examples, but the stages are the same:
-
-| Tutorial section | Pipeline function | Purpose |
-|---|---|---|
-| Preprocessing | `preprocess()` | Extract `answer` from Cauldron text format and track config |
-| Structured Outputs (with image) | `run_inference(with_image=True)` | Predict multiple-choice letter with the image attached |
-| Ablation (no image) | `run_inference(with_image=False)` | Predict the same question *without* the image |
-| Quadrant classification | `classify_quadrants()` | Bucket behavior into Both Correct / Image Helped / Image Hurt / Both Incorrect |
-| VLM-as-a-Judge | `run_judge()` | Diagnose failure modes on the "Image Hurt" + "Both Incorrect" subsets |
+This tutorial demonstrates the core evaluation pipeline on a small sample (50 rows) so you can inspect examples and understand the methodology. For a production-ready implementation that scales to millions of rows, see [`eval_image_understanding.py`](https://github.com/Eventual-Inc/daft-examples/blob/main/use_cases/image_understanding_eval/eval_image_understanding.py) in the [daft-examples](https://github.com/Eventual-Inc/daft-examples) repo.
 
 ### Table of Contents
 
@@ -99,9 +89,12 @@ df_raw = daft.read_huggingface("HuggingFaceM4/the_cauldron/ai2d").limit(LIMIT).c
 df_raw.show(3)
 ```
 
-**Expected output:**
+The dataset contains nested structures with columns:
+- `images`: List of image bytes
+- `texts`: List of conversation turns with `user` (question) and `assistant` (answer) fields
+- Additional metadata fields
 
-The dataset contains nested structures with `images` (bytes), `texts` (user/assistant pairs), and metadata. Each row represents a multiple-choice question with an accompanying diagram.
+Each row represents a multiple-choice question with an accompanying science diagram.
 
 ## 3. Preprocessing
 
@@ -114,14 +107,11 @@ We need to:
 from daft import col
 from daft.functions import unnest
 
-# Decode images
 df_img = df_raw.explode(col("images"))
 df_img = df_img.with_column("image", col("images")["bytes"].decode_image())
 
-# Extract text fields (user question, assistant answer)
 df_text = df_img.explode(col("texts")).select(unnest(col("texts")), "image")
 
-# Parse the answer letter from "Answer: C" format
 df_prep = df_text.with_column(
     "answer",
     col("assistant").regexp_replace("Answer: ", "").lstrip().rstrip()
@@ -141,7 +131,6 @@ from daft.functions import prompt
 from pydantic import BaseModel, Field
 import time
 
-# Deterministic inference params (matches the production pipeline defaults)
 PARAMS = {"temperature": 0.0, "max_tokens": 2}
 
 class ChoiceResponse(BaseModel):
@@ -164,10 +153,7 @@ elapsed = time.time() - start
 print(f"Processed {df_results.count_rows()} rows in {elapsed:.1f} seconds")
 ```
 
-Evaluate correctness:
-
 ```python
-# Evaluate correctness
 df_eval = df_results.with_column(
     "is_correct",
     col("result")["choice"].lstrip().rstrip() == col("answer").lstrip().rstrip()
@@ -175,17 +161,13 @@ df_eval = df_results.with_column(
 
 accuracy = df_eval.where(col("is_correct")).count_rows() / df_eval.count_rows()
 print(f"Accuracy (with image): {accuracy:.1%}")
-```
 
-Let's look at some results:
-
-```python
 df_eval.select("user", "image", "answer", col("result")["choice"].alias("predicted"), "is_correct").show(5)
 ```
 
 ## 5. Ablation Study
 
-A simple accuracy score tells us *how often* the model is correct, but not *why*. To understand the contribution of image understanding, we'll conduct an **ablation study**—running the same prompts without images.
+A simple accuracy score tells us *how often* the model is correct, but not *why*. Our [full evaluation](https://www.daft.ai/blog/multimodal-structured-outputs-evaluating-vlm-image-understanding-at-scale) found that ~70% of correct answers on image understanding benchmarks don't actually require the image. To understand the true contribution of image understanding, we conduct an **ablation study**—running the same prompts without images.
 
 This lets us classify each example into four quadrants:
 
@@ -196,10 +178,7 @@ This lets us classify each example into four quadrants:
 | **Image Hurt** | ✗ | ✓ | Visual confusion |
 | **Both Incorrect** | ✗ | ✗ | Hard question or model limitation |
 
-Run the same inference without images:
-
 ```python
-# Run without images
 SYSTEM_PROMPT_NO_IMAGE = "Respond to the multiple choice question with just the letter corresponding to the correct answer."
 
 start = time.time()
@@ -220,12 +199,7 @@ df_ablation = df_eval.with_column(
 elapsed = time.time() - start
 
 print(f"Processed {df_ablation.count_rows()} rows in {elapsed:.1f} seconds")
-```
 
-Compare accuracy:
-
-```python
-# Compare accuracy
 accuracy_no_image = df_ablation.where(col("is_correct_no_image")).count_rows() / df_ablation.count_rows()
 
 print(f"Accuracy with image:    {accuracy:.1%}")
@@ -233,12 +207,9 @@ print(f"Accuracy without image: {accuracy_no_image:.1%}")
 print(f"Delta:                  {accuracy - accuracy_no_image:+.1%}")
 ```
 
-Classify results into quadrants:
-
 ```python
 from daft.functions import when, monotonically_increasing_id
 
-# Classify into quadrants
 df_classified = df_ablation.with_column(
     "id", monotonically_increasing_id()
 ).with_column(
@@ -249,14 +220,12 @@ df_classified = df_ablation.with_column(
     .otherwise("Both Incorrect")
 )
 
-# Show distribution
 df_classified.groupby("quadrant").count().select("quadrant", col("id").alias("count")).show()
 ```
 
 Inspect cases where the image helped:
 
 ```python
-# Inspect cases where the image helped
 df_classified.where(col("quadrant") == "Image Helped").select(
     "user", "image", "answer",
     col("result")["choice"].alias("with_image"),
@@ -264,10 +233,7 @@ df_classified.where(col("quadrant") == "Image Helped").select(
 ).show(3)
 ```
 
-Inspect cases where the image hurt:
-
 ```python
-# Inspect cases where the image hurt
 df_classified.where(col("quadrant") == "Image Hurt").select(
     "user", "image", "answer",
     col("result")["choice"].alias("with_image"),
@@ -275,10 +241,7 @@ df_classified.where(col("quadrant") == "Image Hurt").select(
 ).show(3)
 ```
 
-Show breakdown by quadrant with percentages:
-
 ```python
-# Show breakdown by quadrant with percentages
 total_count = df_classified.count_rows()
 
 df_results = df_classified.groupby("quadrant").count().select(
@@ -301,10 +264,7 @@ We can go beyond pass/fail metrics by using **VLM-as-a-Judge** to explain *why* 
 We'll use a structured output schema so the judge reliably returns fields we can analyze.
 
 ```python
-from daft.functions import prompt, format
-from pydantic import BaseModel, Field
-
-from daft import col
+from daft.functions import format
 
 JUDGE_SYSTEM_PROMPT = """
 You are an impartial judge reviewing the results of a textbook academic questions multiple choice benchmark.
@@ -327,8 +287,6 @@ class JudgeResponse(BaseModel):
     )
 ```
 
-Run judge on failures (matching the production pipeline semantics):
-
 ```python
 judge_template = format(
     """Given the image attached and the multiple choice question of <question>{}</question>,
@@ -346,7 +304,6 @@ df_failures = df_classified.where(
     (col("quadrant") == "Image Hurt") | (col("quadrant") == "Both Incorrect")
 )
 
-# Judge needs more tokens than the multiple-choice inference passes.
 JUDGE_PARAMS = {"temperature": 0.0, "max_tokens": 512}
 
 df_judged = df_failures.with_column(
@@ -364,15 +321,9 @@ df_judged = df_failures.with_column(
 print(f"Judged {df_judged.count_rows()} failure rows")
 ```
 
-### Interpreting Judge Feedback
-
-Use the judge’s `attribution` signal to quickly separate **question issues** (ambiguous prompt/choices) from **image understanding issues** (missed labels, small text, visual ambiguity). For more on these failure modes and what we observed at scale, see the accompanying blog post: [Multimodal Structured Outputs: Evaluating VLM Image Understanding at Scale](https://www.daft.ai/blog/multimodal-structured-outputs-evaluating-vlm-image-understanding-at-scale).
-
-Inspect a few judged failures:
+The judge's `attribution` field helps separate **question issues** (ambiguous prompts) from **image understanding issues** (missed labels, visual ambiguity).
 
 ```python
-from daft.functions import unnest
-
 df_judged.select(
     "quadrant",
     "user",
@@ -384,7 +335,7 @@ df_judged.select(
 ).show(3)
 ```
 
-Sanity-check that we ran every stage:
+Verify the full pipeline ran:
 
 ```python
 print(f"Accuracy (with image):    {accuracy:.1%}")
@@ -398,15 +349,14 @@ print(f"Judge rows: {df_judged.count_rows()}")
 
 ## 7. Scale with Daft Cloud
 
-**Everything above runs locally on 50 rows.**
+This tutorial runs locally on 50 rows. The Cauldron contains **millions of rows across 50 subsets**. To run this evaluation at scale, use [Daft Cloud](https://daft.ai/cloud).
 
-But The Cauldron contains **millions of rows across 50 subsets**. To run this evaluation at scale with strong consistent performance we can scale on [Daft Cloud](https://daft.ai/cloud). The python script version of this tutorial is available in the [daft-examples](https://github.com/Eventual-Inc/daft-examples) repo in the [use_cases/image_understanding_eval](https://github.com/Eventual-Inc/daft-examples/tree/main/use_cases/image_understanding_eval) directory.
+The production-ready script [`eval_image_understanding.py`](https://github.com/Eventual-Inc/daft-examples/blob/main/use_cases/image_understanding_eval/eval_image_understanding.py) includes:
+- Multi-dataset evaluation across all Cauldron subsets
+- Configurable batch processing
+- Result aggregation and export
 
 👉 [**Sign up for early access**](https://daft.ai/cloud) | [**Book a demo**](https://www.daft.ai/demo)
-
-### Scale this pipeline with production configuration
-
-For a production-ready script with full configuration options, check out [`eval_image_understanding.py`](https://github.com/Eventual-Inc/daft-examples/blob/main/use_cases/image_understanding_eval/eval_image_understanding.py) in the [daft-examples](https://github.com/Eventual-Inc/daft-examples) repo.
 
 ## 8. Conclusion
 
