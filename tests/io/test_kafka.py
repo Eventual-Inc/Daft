@@ -61,7 +61,12 @@ def test_read_kafka_accepts_inputs(kwargs: dict) -> None:
             "multiple topics",
         ),
         (
-            {"bootstrap_servers": "localhost:9092", "topics": ["topic-a", "topic-b"], "start": "earliest", "end": {0: 0}},
+            {
+                "bootstrap_servers": "localhost:9092",
+                "topics": ["topic-a", "topic-b"],
+                "start": "earliest",
+                "end": {0: 0},
+            },
             ValueError,
             "multiple topics",
         ),
@@ -101,7 +106,12 @@ def test_read_kafka_accepts_inputs(kwargs: dict) -> None:
             "topic offset map values must be dicts",
         ),
         (
-            {"bootstrap_servers": "localhost:9092", "topics": "topic-a", "start": {"topic-a": {0: 0}, 0: 0}, "end": "latest"},
+            {
+                "bootstrap_servers": "localhost:9092",
+                "topics": "topic-a",
+                "start": {"topic-a": {0: 0}, 0: 0},
+                "end": "latest",
+            },
             TypeError,
             "partition offset maps must be either",
         ),
@@ -131,22 +141,22 @@ def test_read_kafka_rejects_inputs(kwargs: dict, exc: type[Exception], match: st
     [
         (
             {"start": {"topic-a": {0: 0}}, "end": "latest"},
-            "start offsets must be provided for exactly the topics",
+            "offsets must be provided for exactly the topics",
         ),
         (
             {
                 "start": {"topic-a": {0: 0}, "topic-b": {0: 0}, "topic-c": {0: 0}},
                 "end": "latest",
             },
-            "start offsets must be provided for exactly the topics",
+            "offsets must be provided for exactly the topics",
         ),
         (
             {"start": "earliest", "end": {"topic-a": {0: 0}}},
-            "end offsets must be provided for exactly the topics",
+            "offsets must be provided for exactly the topics",
         ),
         (
             {"start": "earliest", "end": {"topic-a": {0: 0}, "topic-b": {0: 0}, "topic-c": {0: 0}}},
-            "end offsets must be provided for exactly the topics",
+            "offsets must be provided for exactly the topics",
         ),
     ],
 )

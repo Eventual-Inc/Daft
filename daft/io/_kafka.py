@@ -83,6 +83,39 @@ def _normalize_bound(
     )
 
 
+def _normalize_topic_partition_offsets(
+    kind: str,
+    offsets_raw: dict[int, int] | dict[str, dict[int, int]] | None,
+    topics: list[str],
+) -> tuple[str, dict[str, dict[int, int]] | None]:
+    if kind == "partition_offsets":
+        if len(topics) != 1:
+            raise ValueError(
+                "{partition: offset} start/end bounds require a single topic; use {topic: {partition: offset}} for multiple topics"
+            )
+        return ("topic_partition_offsets", {topics[0]: cast("dict[int, int]", offsets_raw)})
+    if kind == "topic_partition_offsets":
+        return ("topic_partition_offsets", cast("dict[str, dict[int, int]]", offsets_raw))
+    return (kind, None)
+
+
+def _validate_offsets_cover_topics(
+    offsets_by_topic: dict[str, dict[int, int]] | None,
+    topics: list[str],
+) -> None:
+    if offsets_by_topic is None:
+        return
+    provided = set(offsets_by_topic.keys())
+    expected = set(topics)
+    extra = provided - expected
+    missing = expected - provided
+    if extra or missing:
+        raise ValueError(
+            "offsets must be provided for exactly the topics being read; "
+            f"extra={sorted(extra)}, missing={sorted(missing)}"
+        )
+
+
 @PublicAPI
 def read_kafka(
     bootstrap_servers: str | Sequence[str],
@@ -126,56 +159,12 @@ def read_kafka(
     start_kind, start_timestamp_ms, start_offsets_raw = _normalize_bound(start, allow_none=False)
     end_kind, end_timestamp_ms, end_offsets_raw = _normalize_bound(end, allow_none=False)
 
-    start_topic_partition_offsets: dict[str, dict[int, int]] | None
-    if start_kind == "partition_offsets":
-        if len(topics) != 1:
-            raise ValueError(
-                "{partition: offset} start/end bounds require a single topic; use {topic: {partition: offset}} for multiple topics"
-            )
-        start_kind = "topic_partition_offsets"
-        start_topic_partition_offsets = {topics[0]: cast("dict[int, int]", start_offsets_raw)}
-    elif start_kind == "topic_partition_offsets":
-        start_topic_partition_offsets = cast(
-            "dict[str, dict[int, int]]",
-            start_offsets_raw,
-        )
-    else:
-        start_topic_partition_offsets = None
-
-    end_topic_partition_offsets: dict[str, dict[int, int]] | None
-    if end_kind == "partition_offsets":
-        if len(topics) != 1:
-            raise ValueError(
-                "{partition: offset} start/end bounds require a single topic; use {topic: {partition: offset}} for multiple topics"
-            )
-        end_kind = "topic_partition_offsets"
-        end_topic_partition_offsets = {topics[0]: cast("dict[int, int]", end_offsets_raw)}
-    elif end_kind == "topic_partition_offsets":
-        end_topic_partition_offsets = cast("dict[str, dict[int, int]]", end_offsets_raw)
-    else:
-        end_topic_partition_offsets = None
-
-    if start_topic_partition_offsets is not None:
-        provided = set(start_topic_partition_offsets.keys())
-        expected = set(topics)
-        extra = provided - expected
-        missing = expected - provided
-        if extra or missing:
-            raise ValueError(
-                "start offsets must be provided for exactly the topics being read; "
-                f"extra={sorted(extra)}, missing={sorted(missing)}"
-            )
-
-    if end_topic_partition_offsets is not None:
-        provided = set(end_topic_partition_offsets.keys())
-        expected = set(topics)
-        extra = provided - expected
-        missing = expected - provided
-        if extra or missing:
-            raise ValueError(
-                "end offsets must be provided for exactly the topics being read; "
-                f"extra={sorted(extra)}, missing={sorted(missing)}"
-            )
+    start_kind, start_topic_partition_offsets = _normalize_topic_partition_offsets(
+        start_kind, start_offsets_raw, topics
+    )
+    end_kind, end_topic_partition_offsets = _normalize_topic_partition_offsets(end_kind, end_offsets_raw, topics)
+    _validate_offsets_cover_topics(start_topic_partition_offsets, topics)
+    _validate_offsets_cover_topics(end_topic_partition_offsets, topics)
 
     handle = ScanOperatorHandle.kafka_scan_bounded(
         bootstrap_servers=bootstrap_servers_str,

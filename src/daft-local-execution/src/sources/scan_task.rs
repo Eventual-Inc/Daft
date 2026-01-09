@@ -520,13 +520,6 @@ async fn stream_scan_task(
         let consumer: StreamConsumer =
             cfg.create().map_err(|e| DaftError::External(Box::new(e)))?;
 
-        let mut tpl = TopicPartitionList::new();
-        tpl.add_partition_offset(topic, *partition, Offset::Offset(*start_offset))
-            .map_err(|e| DaftError::External(Box::new(e)))?;
-        consumer
-            .assign(&tpl)
-            .map_err(|e| DaftError::External(Box::new(e)))?;
-
         let (low, high) = consumer
             .fetch_watermarks(
                 topic,
@@ -535,12 +528,20 @@ async fn stream_scan_task(
             )
             .map_err(|e| DaftError::External(Box::new(e)))?;
 
-        let start = (*start_offset).max(low);
-        let end = (*end_offset).min(high);
+        let clamped_start_offset = (*start_offset).max(low);
+        let clamped_end_offset = (*end_offset).min(high);
+
+        let mut topic_partition_list = TopicPartitionList::new();
+        topic_partition_list
+            .add_partition_offset(topic, *partition, Offset::Offset(clamped_start_offset))
+            .map_err(|e| DaftError::External(Box::new(e)))?;
+        consumer
+            .assign(&topic_partition_list)
+            .map_err(|e| DaftError::External(Box::new(e)))?;
 
         let stream: std::pin::Pin<
             Box<dyn futures::Stream<Item = DaftResult<daft_recordbatch::RecordBatch>> + Send>,
-        > = if start >= end {
+        > = if clamped_start_offset >= clamped_end_offset {
             Box::pin(futures::stream::empty::<
                 DaftResult<daft_recordbatch::RecordBatch>,
             >())
@@ -549,7 +550,7 @@ async fn stream_scan_task(
                 .seek(
                     topic,
                     *partition,
-                    Offset::Offset(start),
+                    Offset::Offset(clamped_start_offset),
                     Timeout::After(std::time::Duration::from_millis(timeout_ms)),
                 )
                 .map_err(|e| DaftError::External(Box::new(e)))?;
@@ -605,10 +606,10 @@ async fn stream_scan_task(
                             };
 
                             let offset = msg.offset();
-                            if offset < start {
+                            if offset < clamped_start_offset {
                                 continue;
                             }
-                            if offset >= end {
+                            if offset >= clamped_end_offset {
                                 reached_end = true;
                                 break;
                             }
