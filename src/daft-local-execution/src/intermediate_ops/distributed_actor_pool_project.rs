@@ -1,4 +1,5 @@
 use std::{
+    num::NonZeroUsize,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -214,7 +215,9 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
-        self.batch_size.map(MorselSizeRequirement::Strict)
+        self.batch_size
+            .and_then(NonZeroUsize::new)
+            .map(MorselSizeRequirement::Strict)
     }
     fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
         Ok(crate::dynamic_batching::StaticBatchingStrategy::new(
