@@ -496,14 +496,19 @@ impl IntermediateOperator for UdfOperator {
     }
 
     fn name(&self) -> NodeName {
-        let udf_name = if let Some((_, udf_name)) = self.params.udf_properties.name.rsplit_once('.')
-        {
-            udf_name
+        if self.params.udf_properties.builtin_name {
+            let name = self.params.udf_properties.name.clone();
+            name.into()
         } else {
-            self.params.udf_properties.name.as_str()
-        };
+            let udf_name =
+                if let Some((_, udf_name)) = self.params.udf_properties.name.rsplit_once('.') {
+                    udf_name
+                } else {
+                    self.params.udf_properties.name.as_str()
+                };
 
-        format!("UDF {}", udf_name).into()
+            format!("UDF {}", udf_name).into()
+        }
     }
 
     fn op_type(&self) -> NodeType {
@@ -516,7 +521,15 @@ impl IntermediateOperator for UdfOperator {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![
-            format!("UDF: {}", self.params.udf_properties.name.as_str()),
+            format!(
+                "{} {}:",
+                if self.params.udf_properties.builtin_name {
+                    "Builtin UDF"
+                } else {
+                    "UDF"
+                },
+                self.params.udf_properties.name.as_str()
+            ),
             format!("Expr = {}", self.expr),
             format!(
                 "Passthrough Columns = [{}]",
