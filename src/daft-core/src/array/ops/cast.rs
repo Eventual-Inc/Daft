@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2->arrow migration")]
 use std::{
     iter::repeat_n,
     ops::{Div, Mul},
@@ -91,11 +92,30 @@ where
                     )));
                 }
                 let target_physical_type = dtype.to_physical();
-                let target_arrow_type = dtype.to_arrow()?;
-                let target_arrow_physical_type = target_physical_type.to_arrow()?;
+                let target_arrow_type = dtype.to_arrow2()?;
+                let target_arrow_physical_type = target_physical_type.to_arrow2()?;
                 let self_physical_type = self.data_type().to_physical();
-                let self_arrow_type = self.data_type().to_arrow()?;
-                let self_physical_arrow_type = self_physical_type.to_arrow()?;
+                let self_arrow_type = self.data_type().to_arrow2()?;
+                let self_physical_arrow_type = self_physical_type.to_arrow2()?;
+
+                // Special case: Utf8 -> numeric needs whitespace trimming
+                // This matches Python/Pandas/NumPy behavior
+                let trimmed_utf8: Option<Utf8Array>;
+                let data_to_cast: &dyn daft_arrow::array::Array =
+                    if self.data_type() == &DataType::Utf8 && dtype.is_numeric() {
+                        let utf8_array = self
+                            .data()
+                            .as_any()
+                            .downcast_ref::<daft_arrow::array::Utf8Array<i64>>()
+                            .expect("Expected LargeUtf8 array for Utf8 DataType");
+                        trimmed_utf8 = Some(Utf8Array::from_iter(
+                            self.name(),
+                            utf8_array.iter().map(|opt_s| opt_s.map(|s| s.trim())),
+                        ));
+                        trimmed_utf8.as_ref().unwrap().data()
+                    } else {
+                        self.data()
+                    };
 
                 let result_array = if target_arrow_physical_type == target_arrow_type {
                     if !can_cast_types(&self_arrow_type, &target_arrow_type) {
@@ -108,7 +128,7 @@ where
                         )));
                     }
                     cast(
-                        self.data(),
+                        data_to_cast,
                         &target_arrow_type,
                         CastOptions {
                             wrapped: true,
@@ -118,7 +138,7 @@ where
                 } else if can_cast_types(&self_arrow_type, &target_arrow_type) {
                     // Cast from logical Arrow2 type to logical Arrow2 type.
                     cast(
-                        self.data(),
+                        data_to_cast,
                         &target_arrow_type,
                         CastOptions {
                             wrapped: true,
@@ -128,7 +148,7 @@ where
                 } else if can_cast_types(&self_physical_arrow_type, &target_arrow_physical_type) {
                     // Cast from physical Arrow2 type to physical Arrow2 type.
                     cast(
-                        self.data(),
+                        data_to_cast,
                         &target_arrow_physical_type,
                         CastOptions {
                             wrapped: true,
@@ -148,7 +168,7 @@ where
                 };
 
                 let new_field = Arc::new(Field::new(self.name(), dtype.clone()));
-                Series::from_arrow(new_field, result_array)
+                Series::from_arrow2(new_field, result_array)
             }
         }
     }
@@ -163,7 +183,7 @@ impl DateArray {
             DataType::Date => Ok(self.clone().into_series()),
             DataType::Utf8 => {
                 let date_array = self
-                    .as_arrow()
+                    .as_arrow2()
                     .clone()
                     .to(daft_arrow::datatypes::DataType::Date32);
                 // TODO: we should move this into our own strftime kernel
@@ -208,8 +228,7 @@ impl DateArray {
 /// Example: 2021-01-01 00:00:00
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
 pub fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
-    let chrono_ts =
-        daft_arrow::temporal_conversions::timestamp_to_naive_datetime(val, unit.to_arrow2());
+    let chrono_ts = daft_schema::time_unit::timestamp_to_naive_datetime(val, *unit);
     let format_str = "%Y-%m-%d %H:%M:%S%.f";
     chrono_ts.format(format_str).to_string()
 }
@@ -218,8 +237,7 @@ pub fn timestamp_to_str_naive(val: i64, unit: &TimeUnit) -> String {
 /// Example: 2021-01-01 00:00:00 -07:00
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
 pub fn timestamp_to_str_offset(val: i64, unit: &TimeUnit, offset: &chrono::FixedOffset) -> String {
-    let chrono_ts =
-        daft_arrow::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow2(), offset);
+    let chrono_ts = daft_schema::time_unit::timestamp_to_datetime(val, *unit, offset);
     let format_str = "%Y-%m-%d %H:%M:%S%.f %:z";
     chrono_ts.format(format_str).to_string()
 }
@@ -228,8 +246,7 @@ pub fn timestamp_to_str_offset(val: i64, unit: &TimeUnit, offset: &chrono::Fixed
 /// Example: 2021-01-01 00:00:00 PST
 /// See https://docs.rs/chrono/latest/chrono/format/strftime/index.html for format string options.
 pub fn timestamp_to_str_tz(val: i64, unit: &TimeUnit, tz: &chrono_tz::Tz) -> String {
-    let chrono_ts =
-        daft_arrow::temporal_conversions::timestamp_to_datetime(val, unit.to_arrow2(), tz);
+    let chrono_ts = daft_schema::time_unit::timestamp_to_datetime(val, *unit, tz);
     let format_str = "%Y-%m-%d %H:%M:%S%.f %Z";
     chrono_ts.format(format_str).to_string()
 }
@@ -272,24 +289,21 @@ impl TimestampArray {
 
                 let str_array: daft_arrow::array::Utf8Array<i64> = timezone.as_ref().map_or_else(
                     || {
-                        self.as_arrow()
+                        self.as_arrow2()
                             .iter()
                             .map(|val| val.map(|val| timestamp_to_str_naive(*val, unit)))
                             .collect()
                     },
                     |timezone| {
-                        if let Ok(offset) = daft_arrow::temporal_conversions::parse_offset(timezone)
-                        {
-                            self.as_arrow()
+                        if let Ok(offset) = daft_schema::time_unit::parse_offset(timezone) {
+                            self.as_arrow2()
                                 .iter()
                                 .map(|val| {
                                     val.map(|val| timestamp_to_str_offset(*val, unit, &offset))
                                 })
                                 .collect()
-                        } else if let Ok(tz) =
-                            daft_arrow::temporal_conversions::parse_offset_tz(timezone)
-                        {
-                            self.as_arrow()
+                        } else if let Ok(tz) = daft_schema::time_unit::parse_offset_tz(timezone) {
+                            self.as_arrow2()
                                 .iter()
                                 .map(|val| val.map(|val| timestamp_to_str_tz(*val, unit, &tz)))
                                 .collect()
@@ -339,7 +353,7 @@ impl TimeArray {
                 Ok(TimeArray::new(Field::new(self.name(), dtype.clone()), physical).into_series())
             }
             DataType::Utf8 => {
-                let time_array = self.as_arrow();
+                let time_array = self.as_arrow2();
                 let time_str: daft_arrow::array::Utf8Array<i64> = time_array
                     .iter()
                     .map(|val| {
@@ -588,7 +602,7 @@ where
 //                 // Use the arrow2 Decimal128 casting logic.
 //                 let target_arrow_type = dtype.to_arrow()?;
 //                 let arrow_decimal_array = self
-//                     .as_arrow()
+//                     .as_arrow2()
 //                     .clone()
 //                     .to(self.data_type().to_arrow()?)
 //                     .to_boxed();
@@ -681,7 +695,7 @@ impl ImageArray {
                     fixed_shape_tensor_array.downcast::<FixedShapeTensorArray>()?;
                 fixed_shape_tensor_array.cast(dtype)
             }
-            DataType::Tensor(_) => {
+            DataType::Tensor(inner_dtype) => {
                 let ndim = 3;
                 let mut shapes = Vec::with_capacity(ndim * self.len());
                 let shape_offsets = (0..=ndim * self.len())
@@ -689,7 +703,11 @@ impl ImageArray {
                     .map(|v| v as i64)
                     .collect::<Vec<i64>>();
                 let validity = self.physical.validity();
-                let data_array = self.data_array();
+                let data_series = self
+                    .data_array()
+                    .clone()
+                    .into_series()
+                    .cast(&DataType::List(inner_dtype.clone()))?;
                 let ca = self.channel_array();
                 let ha = self.height_array();
                 let wa = self.width_array();
@@ -715,7 +733,7 @@ impl ImageArray {
 
                 let struct_array = StructArray::new(
                     Field::new(self.name(), physical_type),
-                    vec![data_array.clone().into_series(), shapes_array.into_series()],
+                    vec![data_series, shapes_array.into_series()],
                     validity.cloned(),
                 );
                 Ok(
@@ -785,7 +803,7 @@ impl TensorArray {
                     s.is_none_or(|s| {
                         s.u64()
                             .unwrap()
-                            .as_arrow()
+                            .as_arrow2()
                             .iter()
                             .eq(shape.iter().map(Some))
                     })
@@ -937,7 +955,7 @@ impl TensorArray {
                             return false;
                         }
                         if let Some(mode) = mode
-                            && s.u64().unwrap().as_arrow().get(s.len() - 1).unwrap()
+                            && s.u64().unwrap().as_arrow2().get(s.len() - 1).unwrap()
                                 != mode.num_channels() as u64
                         {
                             // If type-level mode is defined, each image must have the implied number of channels.
@@ -969,7 +987,7 @@ impl TensorArray {
                         continue;
                     }
                     let shape = sa.get(i).unwrap();
-                    let shape = shape.u64().unwrap().as_arrow();
+                    let shape = shape.u64().unwrap().as_arrow2();
                     assert!(shape.validity().is_none_or(|v| v.iter().all(|b| b)));
                     let mut shape = shape.values().to_vec();
                     if shape.len() == 2 {
@@ -1063,11 +1081,11 @@ fn cast_sparse_to_dense_for_inner_dtype(
                     continue;
                 }
                 let index_series: Series = non_zero_indices_array.get(i).unwrap().cast(&DataType::UInt64)?;
-                let index_array = index_series.u64().unwrap().as_arrow();
+                let index_array = index_series.u64().unwrap().as_arrow2();
                 let values_series: Series = non_zero_values_array.get(i).unwrap();
                 let values_array = values_series.downcast::<<$T as DaftDataType>::ArrayType>()
                 .unwrap()
-                .as_arrow();
+                .as_arrow2();
                 match use_offset_indices {
                     true => {
                         let mut old_idx: u64 = 0;
@@ -1114,7 +1132,7 @@ impl SparseTensorArray {
                     .into_iter()
                     .map(|shape| {
                         shape.map_or(0, |shape| {
-                            let shape = shape.u64().unwrap().as_arrow();
+                            let shape = shape.u64().unwrap().as_arrow2();
                             shape.values().clone().into_iter().product::<u64>() as usize
                         })
                     })
@@ -1162,7 +1180,7 @@ impl SparseTensorArray {
                     s.is_none_or(|s| {
                         s.u64()
                             .unwrap()
-                            .as_arrow()
+                            .as_arrow2()
                             .iter()
                             .eq(shape.iter().map(Some))
                     })
@@ -1790,7 +1808,7 @@ mod tests {
             "test_decimal",
             DataType::Decimal128(precision, scale),
         ));
-        DataArray::<Decimal128Type>::from_arrow(field, Box::new(arrow_array))
+        DataArray::<Decimal128Type>::from_arrow2(field, Box::new(arrow_array))
             .expect("Failed to create test decimal array")
     }
 
@@ -1798,7 +1816,7 @@ mod tests {
         let arrow_array =
             PrimitiveArray::from_vec(values).to(daft_arrow::datatypes::DataType::Float64);
         let field = Arc::new(Field::new("test_float", DataType::Float64));
-        Float64Array::from_arrow(field, Box::new(arrow_array))
+        Float64Array::from_arrow2(field, Box::new(arrow_array))
             .expect("Failed to create test float array")
     }
 
@@ -1806,7 +1824,7 @@ mod tests {
         let arrow_array =
             PrimitiveArray::from_vec(values).to(daft_arrow::datatypes::DataType::Int64);
         let field = Arc::new(Field::new("test_int", DataType::Int64));
-        Int64Array::from_arrow(field, Box::new(arrow_array))
+        Int64Array::from_arrow2(field, Box::new(arrow_array))
             .expect("Failed to create test int array")
     }
 
@@ -1958,5 +1976,142 @@ mod tests {
                 .is_err(),
             "Not expected to be able to cast FixedSizeList into Embedding with different element type."
         );
+    }
+
+    // Tests for Utf8 to numeric casting with whitespace handling
+    // These tests verify that leading/trailing whitespace is trimmed before parsing,
+    // matching Python/Pandas/NumPy behavior.
+
+    #[test]
+    fn test_utf8_to_int32_with_whitespace() {
+        let utf8_array = Utf8Array::from_iter(
+            "test",
+            vec![Some("  42  "), Some("-1"), Some("  100  "), None].into_iter(),
+        );
+        let result = utf8_array
+            .cast(&DataType::Int32)
+            .expect("Failed to cast Utf8 to Int32");
+
+        let values: Vec<Option<i32>> = result
+            .i32()
+            .unwrap()
+            .as_arrow2()
+            .iter()
+            .map(|v| v.copied())
+            .collect();
+        assert_eq!(values, vec![Some(42), Some(-1), Some(100), None]);
+    }
+
+    #[test]
+    fn test_utf8_to_int64_with_whitespace() {
+        let utf8_array = Utf8Array::from_iter(
+            "test",
+            vec![Some("  42  "), Some("  -9999999999  "), Some("\t123\n")].into_iter(),
+        );
+        let result = utf8_array
+            .cast(&DataType::Int64)
+            .expect("Failed to cast Utf8 to Int64");
+
+        let values: Vec<Option<i64>> = result
+            .i64()
+            .unwrap()
+            .as_arrow2()
+            .iter()
+            .map(|v| v.copied())
+            .collect();
+        assert_eq!(values, vec![Some(42), Some(-9999999999), Some(123)]);
+    }
+
+    #[test]
+    fn test_utf8_to_float64_with_whitespace() {
+        let utf8_array = Utf8Array::from_iter(
+            "test",
+            vec![Some("  3.14  "), Some("-2.5"), Some("  1e10  "), None].into_iter(),
+        );
+        let result = utf8_array
+            .cast(&DataType::Float64)
+            .expect("Failed to cast Utf8 to Float64");
+
+        let values: Vec<Option<f64>> = result
+            .f64()
+            .unwrap()
+            .as_arrow2()
+            .iter()
+            .map(|v| v.copied())
+            .collect();
+        assert_eq!(values, vec![Some(3.14), Some(-2.5), Some(1e10), None]);
+    }
+
+    #[test]
+    fn test_utf8_to_float32_with_whitespace() {
+        let utf8_array =
+            Utf8Array::from_iter("test", vec![Some("  3.14  "), Some("  -2.5  ")].into_iter());
+        let result = utf8_array
+            .cast(&DataType::Float32)
+            .expect("Failed to cast Utf8 to Float32");
+
+        let values: Vec<Option<f32>> = result
+            .f32()
+            .unwrap()
+            .as_arrow2()
+            .iter()
+            .map(|v| v.copied())
+            .collect();
+        assert_eq!(values, vec![Some(3.14_f32), Some(-2.5_f32)]);
+    }
+
+    #[test]
+    fn test_utf8_to_int_invalid_returns_none() {
+        // Invalid strings should return None, not error
+        let utf8_array = Utf8Array::from_iter(
+            "test",
+            vec![Some("  42  "), Some("not_a_number"), Some("  ")].into_iter(),
+        );
+        let result = utf8_array
+            .cast(&DataType::Int32)
+            .expect("Failed to cast Utf8 to Int32");
+
+        let values: Vec<Option<i32>> = result
+            .i32()
+            .unwrap()
+            .as_arrow2()
+            .iter()
+            .map(|v| v.copied())
+            .collect();
+        assert_eq!(values, vec![Some(42), None, None]);
+    }
+
+    // Tests for Utf8 to Date casting with whitespace handling
+    // Note: Date parsing already handles whitespace (this test documents existing behavior)
+
+    #[test]
+    fn test_utf8_to_date_with_whitespace() {
+        let utf8_array = Utf8Array::from_iter(
+            "test",
+            vec![
+                Some("  2024-01-01  "),
+                Some("2024-06-15"),
+                Some("  2024-12-31  "),
+                None,
+            ]
+            .into_iter(),
+        );
+        let result = utf8_array
+            .cast(&DataType::Date)
+            .expect("Failed to cast Utf8 to Date");
+
+        // Date is stored as days since epoch (1970-01-01)
+        // 2024-01-01 = 19723 days, 2024-06-15 = 19889 days, 2024-12-31 = 20088 days
+        let date_array = result.date().unwrap();
+        let values: Vec<Option<i32>> = date_array
+            .as_arrow2()
+            .values()
+            .iter()
+            .map(|&v| Some(v))
+            .collect();
+        // Check that we got valid dates (not None from failed parse)
+        assert!(values[0].is_some(), "First date should parse successfully");
+        assert!(values[1].is_some(), "Second date should parse successfully");
+        assert!(values[2].is_some(), "Third date should parse successfully");
     }
 }

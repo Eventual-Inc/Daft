@@ -40,7 +40,7 @@ where
     fn build(&mut self) -> DaftResult<Series> {
         let arrow_array = self.arrow2_growable.as_box();
         let field = Arc::new(Field::new(self.name.clone(), self.dtype.clone()));
-        Ok(DataArray::<T>::from_arrow(field, arrow_array)?.into_series())
+        Ok(DataArray::<T>::from_arrow2(field, arrow_array)?.into_series())
     }
 }
 
@@ -50,7 +50,7 @@ pub type ArrowNullGrowable<'a> =
 impl ArrowNullGrowable<'_> {
     pub fn new(name: &str, dtype: &DataType) -> Self {
         let arrow2_growable =
-            daft_arrow::array::growable::GrowableNull::new(dtype.to_arrow().unwrap());
+            daft_arrow::array::growable::GrowableNull::new(dtype.to_arrow2().unwrap());
         Self {
             name: name.to_string(),
             dtype: dtype.clone(),
@@ -74,7 +74,10 @@ macro_rules! impl_arrow_backed_data_array_growable {
                 capacity: usize,
             ) -> Self {
                 let ref_arrays = arrays.to_vec();
-                let ref_arrow_arrays = ref_arrays.iter().map(|&a| a.as_arrow()).collect::<Vec<_>>();
+                let ref_arrow_arrays = ref_arrays
+                    .iter()
+                    .map(|&a| a.as_arrow2())
+                    .collect::<Vec<_>>();
                 let arrow2_growable =
                     <$arrow2_growable_type>::new(ref_arrow_arrays, use_validity, capacity);
                 Self {
@@ -213,6 +216,6 @@ impl Growable for ArrowExtensionGrowable<'_> {
     fn build(&mut self) -> DaftResult<Series> {
         let arr = self.child_growable.as_box();
         let field = Arc::new(Field::new(self.name.clone(), self.dtype.clone()));
-        Ok(ExtensionArray::from_arrow(field, arr)?.into_series())
+        Ok(ExtensionArray::from_arrow2(field, arr)?.into_series())
     }
 }

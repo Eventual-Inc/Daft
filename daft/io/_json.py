@@ -1,7 +1,6 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
-from typing import Optional, Union
 
 from daft import context
 from daft.api_annotations import PublicAPI
@@ -18,34 +17,41 @@ from daft.io.common import get_tabular_files_scan
 
 @PublicAPI
 def read_json(
-    path: Union[str, list[str]],
+    path: str | list[str],
     infer_schema: bool = True,
-    schema: Optional[dict[str, DataType]] = None,
-    io_config: Optional[IOConfig] = None,
-    file_path_column: Optional[str] = None,
+    schema: dict[str, DataType] | None = None,
+    io_config: IOConfig | None = None,
+    file_path_column: str | None = None,
     hive_partitioning: bool = False,
-    _buffer_size: Optional[int] = None,
-    _chunk_size: Optional[int] = None,
+    skip_empty_files: bool = False,
+    _buffer_size: int | None = None,
+    _chunk_size: int | None = None,
 ) -> DataFrame:
     """Creates a DataFrame from line-delimited JSON file(s).
 
     Args:
-        path (str): Path to JSON files (allows for wildcards)
+        path (str): Path to JSON files (allows for wildcards; supports remote URLs to object stores such as ``s3://`` or ``gs://``)
         infer_schema (bool): Whether to infer the schema of the JSON, defaults to True.
         schema (dict[str, DataType]): A schema that is used as the definitive schema for the JSON if infer_schema is False, otherwise it is used as a schema hint that is applied after the schema is inferred.
         io_config (IOConfig): Config to be used with the native downloader
         file_path_column: Include the source path(s) as a column with this name. Defaults to None.
         hive_partitioning: Whether to infer hive_style partitions from file paths and include them as columns in the Dataframe. Defaults to False.
+        skip_empty_files: Whether to skip empty files when reading. Defaults to False.
 
     Returns:
         DataFrame: parsed DataFrame
 
     Examples:
+        Read a JSON file from a local path:
         >>> df = daft.read_json("/path/to/file.json")
         >>> df = daft.read_json("/path/to/directory")
         >>> df = daft.read_json("/path/to/files-*.json")
-        >>> df = daft.read_json("s3://path/to/files-*.json")
 
+        Read a JSON file from a public S3 bucket:
+        >>> from daft.io import S3Config, IOConfig
+        >>> io_config = IOConfig(s3=S3Config(region="us-west-2", anonymous=True))
+        >>> df = daft.read_json("s3://path/to/files-*.json", io_config=io_config)
+        >>> df.show()
     """
     if isinstance(path, list) and len(path) == 0:
         raise ValueError("Cannot read DataFrame from from empty list of JSON filepaths")
@@ -57,7 +63,7 @@ def read_json(
 
     io_config = context.get_context().daft_planning_config.default_io_config if io_config is None else io_config
 
-    json_config = JsonSourceConfig(_buffer_size, _chunk_size)
+    json_config = JsonSourceConfig(buffer_size=_buffer_size, chunk_size=_chunk_size, skip_empty_files=skip_empty_files)
     file_format_config = FileFormatConfig.from_json_config(json_config)
     storage_config = StorageConfig(True, io_config)
 

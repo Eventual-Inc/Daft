@@ -37,6 +37,7 @@ video_metadata_fn = Func._from_func(
     batch_size=None,
     max_retries=None,
     on_error=None,
+    name_override="video_metadata",
 )
 
 
@@ -69,6 +70,7 @@ video_keyframes_fn = Func._from_func(
     batch_size=None,
     max_retries=None,
     on_error=None,
+    name_override="video_keyframes",
 )
 
 

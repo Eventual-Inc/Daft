@@ -133,38 +133,45 @@ pub(crate) fn sql_dtype_to_dtype(dtype: &sqlparser::ast::DataType) -> SQLPlanner
         // ---------------------------------
         // unsigned integer
         // ---------------------------------
-        SQLDataType::UnsignedInt2(_) => use_instead!(dtype, "`smallint unsigned` or `uint16`"),
-        SQLDataType::UnsignedInt4(_) | SQLDataType::UnsignedMediumInt(_) => {
+        SQLDataType::Int2Unsigned(_) => use_instead!(dtype, "`smallint unsigned` or `uint16`"),
+        SQLDataType::Int4Unsigned(_) | SQLDataType::MediumIntUnsigned(_) => {
             use_instead!(dtype, "`int unsigned` or `uint32`")
         }
-        SQLDataType::UnsignedInt8(_) => use_instead!(
+        SQLDataType::Int8Unsigned(_) => use_instead!(
             dtype,
             "`bigint unsigned` or `uint64` for 64-bit unsigned integer, or `unsigned tinyint` for 8-bit unsigned integer"
         ),
-        SQLDataType::UnsignedTinyInt(_) => DataType::UInt8,
-        SQLDataType::UnsignedSmallInt(_) | SQLDataType::UInt16 => DataType::UInt16,
-        SQLDataType::UnsignedInt(_) | SQLDataType::UnsignedInteger(_) | SQLDataType::UInt32 => {
+        SQLDataType::TinyIntUnsigned(_) => DataType::UInt8,
+        SQLDataType::SmallIntUnsigned(_) | SQLDataType::UInt16 => DataType::UInt16,
+        SQLDataType::IntUnsigned(_) | SQLDataType::IntegerUnsigned(_) | SQLDataType::UInt32 => {
             DataType::UInt32
         }
-        SQLDataType::UnsignedBigInt(_) | SQLDataType::UInt64 => DataType::UInt64,
+        SQLDataType::BigIntUnsigned(_) | SQLDataType::UInt64 => DataType::UInt64,
         // ---------------------------------
         // float
         // ---------------------------------
         SQLDataType::Float4 => use_instead!(dtype, "`float32` or `real`"),
         SQLDataType::Float8 => use_instead!(dtype, "`float64` or `double`"),
-        SQLDataType::Double | SQLDataType::DoublePrecision | SQLDataType::Float64 => {
+        SQLDataType::Double(_) | SQLDataType::DoublePrecision | SQLDataType::Float64 => {
             DataType::Float64
         }
-        SQLDataType::Float(n_bytes) => match n_bytes {
-            Some(n) if (1u64..=24u64).contains(n) => DataType::Float32,
-            Some(n) if (25u64..=53u64).contains(n) => DataType::Float64,
-            Some(n) => {
+        SQLDataType::Float(info) => match info {
+            ExactNumberInfo::PrecisionAndScale(p, _) | ExactNumberInfo::Precision(p)
+                if (1u64..=24u64).contains(p) =>
+            {
+                DataType::Float32
+            }
+            ExactNumberInfo::PrecisionAndScale(p, _) | ExactNumberInfo::Precision(p)
+                if (25u64..=53u64).contains(p) =>
+            {
+                DataType::Float64
+            }
+            ExactNumberInfo::PrecisionAndScale(p, _) | ExactNumberInfo::Precision(p) => {
                 unsupported_sql_err!(
-                    "unsupported `float` size (expected a value between 1 and 53, found {})",
-                    n
+                    "unsupported `float` size (expected a value between 1 and 53, found {p})"
                 )
             }
-            None => DataType::Float64,
+            ExactNumberInfo::None => DataType::Float64,
         },
         SQLDataType::Real | SQLDataType::Float32 => DataType::Float32,
 
@@ -184,7 +191,7 @@ pub(crate) fn sql_dtype_to_dtype(dtype: &sqlparser::ast::DataType) -> SQLPlanner
         // temporal
         // ---------------------------------
         SQLDataType::Date => DataType::Date,
-        SQLDataType::Interval => DataType::Interval,
+        SQLDataType::Interval { .. } => DataType::Interval,
         SQLDataType::Time(precision, tz) => match tz {
             TimezoneInfo::None => DataType::Time(timeunit_from_precision(*precision)?),
             _ => unsupported_sql_err!("`time` with timezone is; found tz={}", tz),
@@ -216,6 +223,7 @@ pub(crate) fn sql_dtype_to_dtype(dtype: &sqlparser::ast::DataType) -> SQLPlanner
                         StructField {
                             field_name,
                             field_type,
+                            options: _,
                         },
                     )| {
                         let dtype = sql_dtype_to_dtype(field_type)?;

@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, sync::Arc};
+use std::{collections::VecDeque, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
@@ -15,12 +15,17 @@ pub struct RowBasedBuffer {
     buffer: VecDeque<Arc<MicroPartition>>,
     curr_len: usize,
     lower_bound: usize,
-    upper_bound: usize,
+    upper_bound: NonZeroUsize,
 }
 
 impl RowBasedBuffer {
-    pub fn new(lower_bound: usize, upper_bound: usize) -> Self {
-        assert!(lower_bound <= upper_bound);
+    pub fn new(lower_bound: usize, upper_bound: NonZeroUsize) -> Self {
+        assert!(
+            lower_bound <= upper_bound.get(),
+            "lower_bound ({}) must be <= upper_bound ({}) for a RowBasedBuffer",
+            lower_bound,
+            upper_bound.get()
+        );
         Self {
             buffer: VecDeque::new(),
             curr_len: 0,
@@ -28,22 +33,27 @@ impl RowBasedBuffer {
             upper_bound,
         }
     }
-    pub fn update_bounds(&mut self, lower_bound: usize, upper_bound: usize) {
-        assert!(lower_bound <= upper_bound);
+    pub fn update_bounds(&mut self, lower_bound: usize, upper_bound: NonZeroUsize) {
+        assert!(
+            lower_bound <= upper_bound.get(),
+            "lower_bound ({}) must be <= upper_bound ({}) for a RowBasedBuffer",
+            lower_bound,
+            upper_bound.get()
+        );
         self.lower_bound = lower_bound;
         self.upper_bound = upper_bound;
     }
 
     // Push a morsel to the buffer
-    pub fn push(&mut self, part: &Arc<MicroPartition>) {
+    pub fn push(&mut self, part: Arc<MicroPartition>) {
         self.curr_len += part.len();
-        self.buffer.push_back(part.clone());
+        self.buffer.push_back(part);
     }
 
     fn buffer_state(&self) -> BufferState {
         match (
             self.lower_bound <= self.curr_len,
-            self.curr_len <= self.upper_bound,
+            self.curr_len <= self.upper_bound.get(),
         ) {
             (true, true) => BufferState::WithinRange,
             (true, false) => BufferState::AboveUpperBound,
@@ -52,52 +62,8 @@ impl RowBasedBuffer {
         }
     }
 
-    // Pop enough morsels that reach the threshold
-    // - If the buffer currently has not enough morsels, return None
-    // - If the buffer has exactly enough morsels, return the morsels
-    // - If the buffer has more than enough morsels, return a vec of morsels, each correctly sized to the threshold.
-    //   The remaining morsels will be pushed back to the buffer
-    #[allow(dead_code)]
-    pub fn pop_enough(&mut self) -> DaftResult<Option<Vec<Arc<MicroPartition>>>> {
-        match self.buffer_state() {
-            BufferState::BelowLowerBound => Ok(None),
-            BufferState::WithinRange => {
-                if self.buffer.len() == 1 {
-                    let part = self.buffer.pop_front().unwrap();
-                    self.curr_len = 0;
-                    Ok(Some(vec![part]))
-                } else {
-                    let chunk = MicroPartition::concat(std::mem::take(&mut self.buffer))?;
-                    self.curr_len = 0;
-                    Ok(Some(vec![chunk.into()]))
-                }
-            }
-            BufferState::AboveUpperBound => {
-                let num_ready_chunks = self.curr_len / self.upper_bound;
-                let concated = MicroPartition::concat(std::mem::take(&mut self.buffer))?;
-                let mut start = 0;
-                let mut parts_to_return = Vec::with_capacity(num_ready_chunks);
-                for _ in 0..num_ready_chunks {
-                    let end = start + self.upper_bound;
-                    let part = concated.slice(start, end)?;
-                    parts_to_return.push(part.into());
-                    start = end;
-                }
-                if start < concated.len() {
-                    let part = concated.slice(start, concated.len())?;
-                    self.curr_len = part.len();
-                    self.buffer.push_back(part.into());
-                } else {
-                    self.curr_len = 0;
-                }
-                Ok(Some(parts_to_return))
-            }
-        }
-    }
-
     // Pop all morsels in the buffer regardless of the threshold
     pub fn pop_all(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
-        assert!(self.curr_len < self.upper_bound);
         if self.buffer.is_empty() {
             Ok(None)
         } else {
@@ -128,11 +94,11 @@ impl RowBasedBuffer {
                     // Return one batch of target size, keep rest
                     let concated = MicroPartition::concat(std::mem::take(&mut self.buffer))?;
 
-                    let batch = concated.slice(0, self.upper_bound)?;
+                    let batch = concated.slice(0, self.upper_bound.get())?;
 
                     // Put remainder back if any
-                    if self.upper_bound < concated.len() {
-                        let remainder = concated.slice(self.upper_bound, concated.len())?;
+                    if self.upper_bound.get() < concated.len() {
+                        let remainder = concated.slice(self.upper_bound.get(), concated.len())?;
                         self.curr_len = remainder.len();
                         self.buffer.push_back(remainder.into());
                     } else {
@@ -155,32 +121,31 @@ mod tests {
 
     #[test]
     fn test_buffer_state_transitions() -> DaftResult<()> {
-        let mut buffer = RowBasedBuffer::new(10, 20);
+        let mut buffer = RowBasedBuffer::new(10, NonZeroUsize::new(20).unwrap());
 
         assert_eq!(buffer.buffer_state(), BufferState::BelowLowerBound);
 
         // Add small chunk - should stay below lower bound
-        buffer.push(&make_dummy_mp(5));
+        buffer.push(make_dummy_mp(5).into());
         assert_eq!(buffer.buffer_state(), BufferState::BelowLowerBound);
-        assert!(buffer.pop_enough()?.is_none());
+        assert!(buffer.next_batch_if_ready()?.is_none());
 
         // Add more to get within range
-        buffer.push(&make_dummy_mp(10));
+        buffer.push(make_dummy_mp(10).into());
         assert_eq!(buffer.buffer_state(), BufferState::WithinRange);
 
-        // Pop should return combined chunks
-        let popped = buffer.pop_enough()?.unwrap();
-        assert_eq!(popped.len(), 1);
-        assert_eq!(popped[0].len(), 15);
+        // Should return combined chunks as one batch
+        let popped = buffer.next_batch_if_ready()?.unwrap();
+        assert_eq!(popped.len(), 15);
+        assert_eq!(buffer.buffer_state(), BufferState::BelowLowerBound);
 
         // Add chunks to exceed upper bound
-        buffer.push(&make_dummy_mp(25));
+        buffer.push(make_dummy_mp(25).into());
         assert_eq!(buffer.buffer_state(), BufferState::AboveUpperBound);
 
-        // Should return chunks of upper_bound size
-        let popped = buffer.pop_enough()?.unwrap();
-        assert_eq!(popped.len(), 1);
-        assert_eq!(popped[0].len(), 20);
+        // Should return one batch of upper_bound size
+        let popped = buffer.next_batch_if_ready()?.unwrap();
+        assert_eq!(popped.len(), 20);
 
         // Remainder should be in buffer
         assert_eq!(buffer.curr_len, 5);
@@ -191,14 +156,14 @@ mod tests {
 
     #[test]
     fn test_pop_all() -> DaftResult<()> {
-        let mut buffer = RowBasedBuffer::new(10, 20);
+        let mut buffer = RowBasedBuffer::new(10, NonZeroUsize::new(20).unwrap());
 
         // Empty buffer returns None
         assert!(buffer.pop_all()?.is_none());
 
         // Add some chunks below upper bound
-        buffer.push(&make_dummy_mp(5));
-        buffer.push(&make_dummy_mp(5));
+        buffer.push(make_dummy_mp(5).into());
+        buffer.push(make_dummy_mp(5).into());
 
         // pop_all should return combined chunks
         let popped = buffer.pop_all()?.unwrap();
@@ -206,6 +171,37 @@ mod tests {
         assert!(buffer.buffer.is_empty());
         assert_eq!(buffer.curr_len, 0);
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_single_empty_partition() -> DaftResult<()> {
+        let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(1).unwrap());
+        buffer.push(Arc::new(MicroPartition::empty(None)));
+        assert!(buffer.next_batch_if_ready()?.is_some());
+        assert!(buffer.next_batch_if_ready()?.is_none());
+        assert!(buffer.pop_all()?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_multiple_empty_partitions() -> DaftResult<()> {
+        let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(1).unwrap());
+        buffer.push(Arc::new(MicroPartition::empty(None)));
+        buffer.push(Arc::new(MicroPartition::empty(None)));
+        assert!(buffer.next_batch_if_ready()?.is_some());
+        assert!(buffer.next_batch_if_ready()?.is_none());
+        assert!(buffer.pop_all()?.is_none());
+        Ok(())
+    }
+
+    #[test]
+    fn test_multiple_empty_partitions_pop_all() -> DaftResult<()> {
+        let mut buffer = RowBasedBuffer::new(0, NonZeroUsize::new(1).unwrap());
+        buffer.push(Arc::new(MicroPartition::empty(None)));
+        buffer.push(Arc::new(MicroPartition::empty(None)));
+        assert!(buffer.pop_all()?.is_some());
+        assert!(buffer.pop_all()?.is_none());
         Ok(())
     }
 }

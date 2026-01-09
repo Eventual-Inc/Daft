@@ -21,7 +21,7 @@ impl StructArray {
 
         let mut flat_child =
             MutablePrimitiveArray::<f64>::with_capacity(percentiles.len() * self.len());
-        daft_sketch::from_arrow2(self.to_arrow())?
+        daft_sketch::from_arrow(self.to_arrow()?)?
             .iter()
             .for_each(|sketch| match sketch {
                 None => {
@@ -34,7 +34,7 @@ impl StructArray {
                     .extend_trusted_len(percentiles.iter().map(|&p| sketch.quantile(p).unwrap())),
             });
         let flat_child: PrimitiveArray<f64> = flat_child.into();
-        let flat_child = Float64Array::from_arrow(
+        let flat_child = Float64Array::from_arrow2(
             Arc::new(Field::new(self.name(), DataType::Float64)),
             flat_child.boxed(),
         )?

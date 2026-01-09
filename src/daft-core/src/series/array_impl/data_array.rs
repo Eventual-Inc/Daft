@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use arrow::array::ArrayRef;
 use common_error::DaftResult;
 
 use super::{ArrayWrapper, IntoSeries, Series};
@@ -31,8 +32,12 @@ macro_rules! impl_series_like_for_data_array {
             fn into_series(&self) -> Series {
                 self.0.clone().into_series()
             }
-            fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
+            fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
                 self.0.data().to_boxed()
+            }
+
+            fn to_arrow(&self) -> DaftResult<ArrayRef> {
+                Ok(arrow::array::make_array(self.0.to_data()))
             }
 
             fn as_any(&self) -> &dyn std::any::Any {

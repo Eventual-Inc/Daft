@@ -8,6 +8,7 @@ mod utils;
 use std::{hash::Hash, ops::Sub, sync::Arc};
 
 pub use array_impl::{ArrayWrapper, IntoSeries};
+use arrow::array::ArrayRef;
 use common_display::table_display::{StrValue, make_comfy_table};
 use common_error::DaftResult;
 use daft_arrow::trusted_len::TrustedLen;
@@ -78,7 +79,7 @@ impl Series {
 
         const DEFAULT_SIZE: usize = 20;
         let hashed_series = self.hash_with_validity(None)?;
-        let array = self.to_arrow();
+        let array = self.to_arrow2();
         let comparator = build_is_equal(&*array, &*array, true, false)?;
 
         let mut probe_table =
@@ -87,7 +88,7 @@ impl Series {
                 Default::default(),
             );
 
-        for (idx, hash) in hashed_series.as_arrow().iter().enumerate() {
+        for (idx, hash) in hashed_series.as_arrow2().iter().enumerate() {
             let hash = match hash {
                 Some(&hash) => hash,
                 None => continue,
@@ -111,11 +112,16 @@ impl Series {
 
     /// Exports this Series into an Arrow arrow that is corrected for the Arrow type system.
     /// For example, Daft's TimestampArray is a logical type that is backed by an Int64Array Physical array.
-    /// If we were to call `.as_arrow()` or `.physical`on the TimestampArray, we would get an Int64Array that represented the time units.
+    /// If we were to call `.as_arrow2()` or `.physical`on the TimestampArray, we would get an Int64Array that represented the time units.
     /// However if we want to export our Timestamp array to another arrow system like arrow2 kernels or python, duckdb or more.
     /// We should convert it back to the canonical arrow dtype of Timestamp rather than Int64.
-    /// To get the internal physical type without conversion, see `as_arrow()`.
-    pub fn to_arrow(&self) -> Box<dyn daft_arrow::array::Array> {
+    /// To get the internal physical type without conversion, see `as_arrow2()`.
+    #[deprecated(note = "arrow2 migration")]
+    pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
+        self.inner.to_arrow2()
+    }
+
+    pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
         self.inner.to_arrow()
     }
 
@@ -125,10 +131,15 @@ impl Series {
     ///
     /// This function will check the provided [`Field`] (and all its associated potentially nested fields/dtypes) against
     /// the provided [`daft_arrow::array::Array`] for compatibility, and returns an error if they do not match.
-    pub fn from_arrow(
+    pub fn from_arrow2(
         field: FieldRef,
         arrow_arr: Box<dyn daft_arrow::array::Array>,
     ) -> DaftResult<Self> {
+        with_match_daft_types!(field.dtype, |$T| {
+            Ok(<<$T as DaftDataType>::ArrayType as FromArrow>::from_arrow2(field, arrow_arr)?.into_series())
+        })
+    }
+    pub fn from_arrow(field: FieldRef, arrow_arr: ArrayRef) -> DaftResult<Self> {
         with_match_daft_types!(field.dtype, |$T| {
             Ok(<<$T as DaftDataType>::ArrayType as FromArrow>::from_arrow(field, arrow_arr)?.into_series())
         })

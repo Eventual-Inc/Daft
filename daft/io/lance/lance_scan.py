@@ -3,7 +3,7 @@
 
 import logging
 from collections.abc import Iterator
-from typing import TYPE_CHECKING, Any, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:
     import lance
@@ -18,6 +18,7 @@ from daft.recordbatch import RecordBatch
 
 from ..pushdowns import SupportsPushdownFilters
 from .point_lookup import detect_point_lookup_columns
+from .utils import combine_filters_to_arrow
 
 logger = logging.getLogger(__name__)
 
@@ -25,11 +26,12 @@ logger = logging.getLogger(__name__)
 # TODO support fts and fast_search
 def _lancedb_table_factory_function(
     ds_uri: str,
-    open_kwargs: Optional[dict[Any, Any]] = None,
-    fragment_ids: Optional[list[int]] = None,
-    required_columns: Optional[list[str]] = None,
+    open_kwargs: dict[Any, Any] | None = None,
+    fragment_ids: list[int] | None = None,
+    required_columns: list[str] | None = None,
     filter: Optional["pa.compute.Expression"] = None,
-    limit: Optional[int] = None,
+    limit: int | None = None,
+    include_fragment_id: bool | None = False,
 ) -> Iterator[PyRecordBatch]:
     try:
         import lance
@@ -40,20 +42,59 @@ def _lancedb_table_factory_function(
 
     # Attempt to import lance and reconstruct with best-effort kwargs
     ds = lance.dataset(ds_uri, **(open_kwargs or {}))
+
+    def _iter_batches() -> Iterator[PyRecordBatch]:
+        # Iterate fragments individually; append a fragment_id column only when requested
+        # Handle limit correctly by tracking how many rows we've yielded so far
+        rows_yielded = 0
+        for fragment in fragments:
+            # If we've already yielded enough rows, stop processing
+            if limit is not None and rows_yielded >= limit:
+                break
+
+            # Exclude synthetic fragment_id from required columns passed to Lance
+            cols = [c for c in (required_columns or []) if c != "fragment_id"]
+
+            # Calculate how many rows we can still yield
+            fragment_limit = None
+            if limit is not None:
+                fragment_limit = limit - rows_yielded
+
+            scanner = ds.scanner(fragments=[fragment], columns=cols or None, filter=filter, limit=fragment_limit)
+            for rb in scanner.to_batches():
+                # If we have a limit, we may need to truncate this batch
+                if limit is not None:
+                    remaining_rows = limit - rows_yielded
+                    if remaining_rows <= 0:
+                        break
+                    if len(rb) > remaining_rows:
+                        # Truncate the batch to respect the limit
+                        rb = rb.slice(0, remaining_rows)
+
+                if include_fragment_id:
+                    frag_id_array = pa.array([fragment.fragment_id] * len(rb), type=pa.int64())
+                    new_rb = pa.RecordBatch.from_arrays(
+                        rb.columns + [frag_id_array], names=rb.schema.names + ["fragment_id"]
+                    )
+                    yield RecordBatch.from_arrow_record_batches([new_rb], new_rb.schema)._recordbatch
+                else:
+                    yield RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch
+                rows_yielded += len(rb)
+
     # If fragment_ids is None, let Lance choose fragments via index; omit the fragments parameter.
     if fragment_ids is None:
         scanner = ds.scanner(columns=required_columns, filter=filter, limit=limit)
+        return (RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch for rb in scanner.to_batches())
     else:
-        fragments = [ds.get_fragment(id) for id in fragment_ids]
+        fragments = [ds.get_fragment(id) for id in (fragment_ids or [])]
         if not fragments:
             raise RuntimeError(f"Unable to find lance fragments {fragment_ids}")
-        scanner = ds.scanner(fragments=fragments, columns=required_columns, filter=filter, limit=limit)
-    return (RecordBatch.from_arrow_record_batches([rb], rb.schema)._recordbatch for rb in scanner.to_batches())
+        return _iter_batches()
 
 
 def _lancedb_count_result_function(
     ds_uri: str,
-    open_kwargs: Optional[dict[Any, Any]],
+    open_kwargs: dict[Any, Any] | None,
     required_column: str,
     filter: Optional["pa.compute.Expression"] = None,
 ) -> Iterator[PyRecordBatch]:
@@ -78,13 +119,24 @@ def _lancedb_count_result_function(
 
 
 class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
-    def __init__(self, ds: "lance.LanceDataset", fragment_group_size: Optional[int] = None):
+    def __init__(
+        self,
+        ds: "lance.LanceDataset",
+        fragment_group_size: int | None = None,
+        include_fragment_id: bool | None = False,
+    ):
         self._ds = ds
-        self._pushed_filters: Union[list[PyExpr], None] = None
-        self._remaining_filters: Union[list[PyExpr], None] = None
+        self._pushed_filters: list[PyExpr] | None = None
+        self._remaining_filters: list[PyExpr] | None = None
         self._fragment_group_size = fragment_group_size
+        self._include_fragment_id = include_fragment_id
         self._enable_strict_filter_pushdown = get_context().daft_planning_config.enable_strict_filter_pushdown
-        self._schema = Schema.from_pyarrow_schema(self._ds.schema)
+        base = self._ds.schema
+        if self._include_fragment_id:
+            new_schema = pa.schema([*base, pa.field("fragment_id", pa.int64())], metadata=base.metadata)
+            self._schema = Schema.from_pyarrow_schema(new_schema)
+        else:
+            self._schema = Schema.from_pyarrow_schema(base)
 
     def name(self) -> str:
         return "LanceDBScanOperator"
@@ -102,7 +154,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         return isinstance(self, SupportsPushdownFilters)
 
     def can_absorb_limit(self) -> bool:
-        return True
+        return False
 
     def can_absorb_select(self) -> bool:
         return True
@@ -115,7 +167,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         """Returns the count modes supported by this scan operator."""
         return [CountMode.All]
 
-    def as_pushdown_filter(self) -> Union[SupportsPushdownFilters, None]:
+    def as_pushdown_filter(self) -> SupportsPushdownFilters | None:
         return self
 
     def multiline_display(self) -> list[str]:
@@ -145,7 +197,9 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         return pushed, remaining
 
     def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
-        required_columns: Optional[list[str]]
+        required_columns: list[str] | None
+        if self._include_fragment_id:
+            required_columns = ["fragment_id"]
         if pushdowns.columns is None:
             required_columns = None
         else:
@@ -163,41 +217,41 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             pushdowns.aggregation is not None
             and pushdowns.aggregation_count_mode() is not None
             and pushdowns.aggregation_required_column_names()
+            and pushdowns.limit is None
         ):
-            count_mode = pushdowns.aggregation_count_mode()
-            fields = pushdowns.aggregation_required_column_names()
-
-            if count_mode not in self.supported_count_modes():
+            if pushdowns.aggregation_count_mode() not in self.supported_count_modes():
                 logger.warning(
                     "Count mode %s is not supported for pushdown, falling back to original logic",
-                    count_mode,
+                    pushdowns.aggregation_count_mode(),
                 )
                 yield from self._create_regular_scan_tasks(pushdowns, required_columns)
-                return
-
-            filters = self._combine_filters_to_arrow()
-
-            new_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(fields[0], pa.uint64())]))
-            open_kwargs = getattr(self._ds, "_lance_open_kwargs", None)
-            yield ScanTask.python_factory_func_scan_task(
-                module=_lancedb_count_result_function.__module__,
-                func_name=_lancedb_count_result_function.__name__,
-                func_args=(self._ds.uri, open_kwargs, fields[0], filters),
-                schema=new_schema._schema,
-                num_rows=1,
-                size_bytes=None,
-                pushdowns=pushdowns,
-                stats=None,
-                source_type=self.name(),
-            )
+            else:
+                yield from self._create_count_rows_scan_task(pushdowns)
         # Check if there is a limit pushdown and no filters
         elif pushdowns.limit is not None and self._pushed_filters is None and pushdowns.filters is None:
             yield from self._create_scan_tasks_with_limit_and_no_filters(pushdowns, required_columns)
         else:
             yield from self._create_regular_scan_tasks(pushdowns, required_columns)
 
+    def _create_count_rows_scan_task(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
+        """Create scan task for counting rows."""
+        fields = pushdowns.aggregation_required_column_names()
+        new_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(fields[0], pa.uint64())]))
+        open_kwargs = getattr(self._ds, "_lance_open_kwargs", None)
+        yield ScanTask.python_factory_func_scan_task(
+            module=_lancedb_count_result_function.__module__,
+            func_name=_lancedb_count_result_function.__name__,
+            func_args=(self._ds.uri, open_kwargs, fields[0], self._combine_filters_to_arrow()),
+            schema=new_schema._schema,
+            num_rows=1,
+            size_bytes=None,
+            pushdowns=pushdowns,
+            stats=None,
+            source_type=self.name(),
+        )
+
     def _create_scan_tasks_with_limit_and_no_filters(
-        self, pushdowns: PyPushdowns, required_columns: Optional[list[str]]
+        self, pushdowns: PyPushdowns, required_columns: list[str] | None
     ) -> Iterator[ScanTask]:
         """Create scan tasks optimized for limit pushdown with no filters."""
         assert self._pushed_filters is None, "Expected no filters when creating scan tasks with limit and no filters"
@@ -222,20 +276,35 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 rows_to_scan = min(remaining_limit, effective_rows)
                 remaining_limit -= rows_to_scan
 
+                # Determine schema for this task: include fragment_id only if requested
+                task_schema_pa = self._ds.schema
+                if self._include_fragment_id:
+                    task_schema_pa = pa.schema(
+                        [*task_schema_pa, pa.field("fragment_id", pa.int64())], metadata=task_schema_pa.metadata
+                    )
+                task_schema = Schema.from_pyarrow_schema(task_schema_pa)
                 yield ScanTask.python_factory_func_scan_task(
                     module=_lancedb_table_factory_function.__module__,
                     func_name=_lancedb_table_factory_function.__name__,
-                    func_args=(self._ds.uri, open_kwargs, [fragment.fragment_id], required_columns, None, rows_to_scan),
-                    schema=self.schema()._schema,
+                    func_args=(
+                        self._ds.uri,
+                        open_kwargs,
+                        [fragment.fragment_id],
+                        required_columns,
+                        None,
+                        rows_to_scan,
+                        self._include_fragment_id,
+                    ),
+                    schema=task_schema._schema,
                     num_rows=rows_to_scan,
-                    size_bytes=sum(file.file_size_bytes for file in fragment.metadata.files),
+                    size_bytes=self._estimate_size_bytes(fragment),
                     pushdowns=pushdowns,
                     stats=None,
                     source_type=self.name(),
                 )
 
     def _create_regular_scan_tasks(
-        self, pushdowns: PyPushdowns, required_columns: Optional[list[str]]
+        self, pushdowns: PyPushdowns, required_columns: list[str] | None
     ) -> Iterator[ScanTask]:
         """Create regular scan tasks without count pushdown."""
         open_kwargs = getattr(self._ds, "_lance_open_kwargs", None)
@@ -243,10 +312,10 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         pushed_expr = self._combine_filters_to_arrow()
 
         def _python_factory_func_scan_task(
-            fragment_ids: Optional[list[int]] = None,
+            fragment_ids: list[int] | None = None,
             *,
-            num_rows: Optional[int] = None,
-            size_bytes: Optional[int] = None,
+            num_rows: int | None = None,
+            size_bytes: int | None = None,
         ) -> ScanTask:
             return ScanTask.python_factory_func_scan_task(
                 module=_lancedb_table_factory_function.__module__,
@@ -258,6 +327,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     required_columns,
                     pushed_expr,
                     self._compute_limit_pushdown_with_filter(pushdowns),
+                    self._include_fragment_id,
                 ),
                 schema=self.schema()._schema,
                 num_rows=num_rows,
@@ -281,7 +351,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 yield _python_factory_func_scan_task(
                     [fragment.fragment_id],
                     num_rows=num_rows,
-                    size_bytes=sum(file.file_size_bytes for file in fragment.metadata.files),
+                    size_bytes=self._estimate_size_bytes(fragment),
                 )
         else:
             # Group fragments
@@ -297,7 +367,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
 
                 current_group.append(fragment)
                 group_num_rows += num_rows
-                group_size_bytes += sum(file.file_size_bytes for file in fragment.metadata.files)
+                group_size_bytes += self._estimate_size_bytes(fragment)
                 if len(current_group) >= self._fragment_group_size:
                     fragment_groups.append((current_group, group_num_rows, group_size_bytes))
                     current_group = []
@@ -314,14 +384,9 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 yield _python_factory_func_scan_task(fragment_ids, num_rows=num_rows, size_bytes=size_bytes)
 
     def _combine_filters_to_arrow(self) -> Optional["pa.compute.Expression"]:
-        if self._pushed_filters is not None and len(self._pushed_filters) > 0:
-            combined_filter = self._pushed_filters[0]
-            for filter_expr in self._pushed_filters[1:]:
-                combined_filter = combined_filter & filter_expr
-            return Expression._from_pyexpr(combined_filter).to_arrow_expr()
-        return None
+        return combine_filters_to_arrow(self._pushed_filters)
 
-    def _compute_limit_pushdown_with_filter(self, pushdowns: PyPushdowns) -> Union[int, None]:
+    def _compute_limit_pushdown_with_filter(self, pushdowns: PyPushdowns) -> int | None:
         """Decide whether to push down `limit` when filters are present."""
         if not self._enable_strict_filter_pushdown and pushdowns.filters is not None:
             return None
@@ -378,3 +443,10 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         if point_column_set and point_column_set.issubset(btree_indexed_columns):
             return True
         return False
+
+    @staticmethod
+    def _estimate_size_bytes(fragment: "lance.LanceFragment") -> int:
+        if fragment.metadata is None or fragment.metadata.files is None:
+            return 0
+
+        return sum(file.file_size_bytes for file in fragment.metadata.files if file.file_size_bytes is not None)

@@ -245,7 +245,7 @@ impl CsvSourceConfig {
     /// * `delimiter` - The character delmiting individual cells in the CSV data.
     /// * `has_headers` - Whether the CSV has a header row; if so, it will be skipped during data parsing.
     /// * `buffer_size` - Size of the buffer (in bytes) used by the streaming reader.
-    /// * `chunk_size` - Size of the chunks (in bytes) deserialized in parallel by the streaming reader.
+    /// * `chunk_size` - Size of the chunks (in rows) deserialized in parallel by the streaming reader.
     #[allow(clippy::too_many_arguments)]
     #[new]
     #[pyo3(signature = (
@@ -293,14 +293,20 @@ impl_bincode_py_state_serialization!(CsvSourceConfig);
 pub struct JsonSourceConfig {
     pub buffer_size: Option<usize>,
     pub chunk_size: Option<usize>,
+    pub skip_empty_files: bool,
 }
 
 impl JsonSourceConfig {
     #[must_use]
-    pub fn new_internal(buffer_size: Option<usize>, chunk_size: Option<usize>) -> Self {
+    pub fn new_internal(
+        buffer_size: Option<usize>,
+        chunk_size: Option<usize>,
+        skip_empty_files: bool,
+    ) -> Self {
         Self {
             buffer_size,
             chunk_size,
+            skip_empty_files,
         }
     }
 
@@ -319,7 +325,7 @@ impl JsonSourceConfig {
 
 impl Default for JsonSourceConfig {
     fn default() -> Self {
-        Self::new_internal(None, None)
+        Self::new_internal(None, None, false)
     }
 }
 
@@ -333,9 +339,9 @@ impl JsonSourceConfig {
     /// * `buffer_size` - Size of the buffer (in bytes) used by the streaming reader.
     /// * `chunk_size` - Size of the chunks (in bytes) deserialized in parallel by the streaming reader.
     #[new]
-    #[pyo3(signature = (buffer_size=None, chunk_size=None))]
-    fn new(buffer_size: Option<usize>, chunk_size: Option<usize>) -> Self {
-        Self::new_internal(buffer_size, chunk_size)
+    #[pyo3(signature = (buffer_size=None, chunk_size=None, skip_empty_files=false))]
+    fn new(buffer_size: Option<usize>, chunk_size: Option<usize>, skip_empty_files: bool) -> Self {
+        Self::new_internal(buffer_size, chunk_size, skip_empty_files)
     }
 }
 

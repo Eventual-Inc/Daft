@@ -1,28 +1,36 @@
-use std::{fmt::Display, num::NonZeroUsize, sync::Arc};
+use std::{collections::HashMap, fmt::Display, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
+use common_hashable_float_wrapper::FloatWrapper as HashableF64;
+use common_metrics::MetricsCollector;
 use daft_core::{prelude::*, series::Series};
 use itertools::Itertools;
-use opentelemetry::logs::{AnyValue, LogRecord, Logger, LoggerProvider};
+use opentelemetry::{
+    Key,
+    logs::{AnyValue, LogRecord, Logger, LoggerProvider},
+};
 #[cfg(feature = "python")]
 use pyo3::{PyErr, Python, prelude::*};
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "python")]
+use crate::python_udf::retry_with_backoff;
 use crate::{
     Expr, ExprRef,
     functions::{python::RuntimePyObject, scalar::ScalarFn},
-    operator_metrics::MetricsCollector,
     python_udf::PyScalarFn,
 };
 
 #[allow(clippy::too_many_arguments)]
 pub fn row_wise_udf(
+    func_id: &str,
     name: &str,
     cls: RuntimePyObject,
     method: RuntimePyObject,
+    builtin_name: bool,
     is_async: bool,
     return_dtype: DataType,
-    gpus: usize,
+    gpus: HashableF64<f64>,
     use_process: Option<bool>,
     max_concurrency: Option<NonZeroUsize>,
     max_retries: Option<usize>,
@@ -31,9 +39,11 @@ pub fn row_wise_udf(
     args: Vec<ExprRef>,
 ) -> Expr {
     Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
+        func_id: Arc::from(func_id),
         function_name: Arc::from(name),
         cls,
         method,
+        builtin_name,
         is_async,
         return_dtype,
         original_args,
@@ -48,14 +58,16 @@ pub fn row_wise_udf(
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct RowWisePyFn {
+    pub func_id: Arc<str>,
     pub function_name: Arc<str>,
     pub cls: RuntimePyObject,
     pub method: RuntimePyObject,
+    pub builtin_name: bool,
     pub is_async: bool,
     pub return_dtype: DataType,
     pub original_args: RuntimePyObject,
     pub args: Vec<ExprRef>,
-    pub gpus: usize,
+    pub gpus: HashableF64<f64>,
     pub use_process: Option<bool>,
     pub max_concurrency: Option<NonZeroUsize>,
     pub max_retries: Option<usize>,
@@ -66,7 +78,7 @@ impl Display for RowWisePyFn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let children_str = self.args.iter().map(|expr| expr.to_string()).join(", ");
 
-        write!(f, "{}({})", self.function_name, children_str)
+        write!(f, "{}({})", self.func_id, children_str)
     }
 }
 
@@ -79,14 +91,16 @@ impl RowWisePyFn {
         );
 
         Self {
+            func_id: self.func_id.clone(),
             function_name: self.function_name.clone(),
             cls: self.cls.clone(),
             method: self.method.clone(),
+            builtin_name: self.builtin_name,
             is_async: self.is_async,
             return_dtype: self.return_dtype.clone(),
             original_args: self.original_args.clone(),
             args: children,
-            gpus: self.gpus,
+            gpus: self.gpus.clone(),
             use_process: self.use_process,
             max_concurrency: self.max_concurrency,
             max_retries: self.max_retries,
@@ -156,37 +170,20 @@ impl RowWisePyFn {
         }
 
         let max_retries = self.max_retries.unwrap_or(0);
-
         let name = args[0].name();
 
-        // TODO(cory): consider exposing delay and max_delay to users.
-        let mut delay_ms: u64 = 100; // Start with 100 ms
-        const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
+        let result = crate::python_udf::retry::retry_with_backoff_async(
+            || async { self.call_async_batch_once(args, num_rows, name).await },
+            max_retries,
+        )
+        .await;
 
-        let mut result_series = self
-            .call_async_batch_once(args, num_rows, name, metrics)
-            .await;
-
-        for _attempt in 0..max_retries {
-            if result_series.is_ok() {
-                break;
-            }
-
-            tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
-            delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
-
-            result_series = self
-                .call_async_batch_once(args, num_rows, name, metrics)
-                .await;
+        if let Ok((_, operator_metrics)) = &result {
+            crate::python_udf::collect_operator_metrics(operator_metrics, metrics);
         }
-        let name = args[0].name();
 
-        let result_series = result_series
-            .map_err(DaftError::from)
-            .and_then(|s| Ok(s.cast(&self.return_dtype)?.rename(name)));
-
-        match (result_series, self.on_error) {
-            (Ok(result_series), _) => Ok(result_series),
+        match (result, self.on_error) {
+            (Ok((result_series, _)), _) => Ok(result_series.cast(&self.return_dtype)?.rename(name)),
             (Err(err), OnError::Raise) => Err(err),
             (Err(err), OnError::Log) => {
                 log::warn!("Python UDF error: {}", err);
@@ -214,6 +211,33 @@ impl RowWisePyFn {
                 let num_rows = args.iter().map(Series::len).max().unwrap();
                 Ok(Series::full_null(name, &self.return_dtype, num_rows))
             }
+        }
+    }
+
+    /// Serializes a Python object to a string for logging purposes.
+    ///
+    /// Rules:
+    /// - Fixed-size types (ints, floats, bools) → string representation
+    /// - Strings → whole string value
+    /// - Complex/arbitrary-size types (lists, dicts, numpy arrays, etc.) → placeholder string
+    #[cfg(feature = "python")]
+    fn serialize_pyobject_for_logging(obj: &pyo3::Bound<PyAny>) -> String {
+        // Use Python's str() to stringify the object
+        let str_result = obj
+            .str()
+            .and_then(|value| value.to_str().map(|s| s.to_string()));
+
+        match str_result {
+            Ok(val) => {
+                // Limit string parameters to first 100 characters
+                if val.len() > 100 {
+                    let truncated: String = val.chars().take(100).collect();
+                    format!("{}...", truncated)
+                } else {
+                    val
+                }
+            }
+            Err(_) => "<unable_to_stringify>".to_string(),
         }
     }
 
@@ -293,74 +317,14 @@ impl RowWisePyFn {
         let name = args[0].name();
         let on_error = self.on_error;
         let max_retries = self.max_retries.unwrap_or(0);
-        let delay_ms: u64 = 100; // Start with 100 ms
-        const MAX_DELAY_MS: u64 = 60000; // Max 60 seconds
 
-        fn retry<F: FnMut() -> DaftResult<Literal>>(
-            py: Python,
-            mut func: F,
-            max_retries: usize,
-            on_error: OnError,
-            mut delay_ms: u64,
-        ) -> DaftResult<Literal> {
-            let mut res = Ok(Literal::Null);
-
-            for attempt in 0..=max_retries {
-                match func() {
-                    Ok(result) => {
-                        res = Ok(result);
-                        break;
-                    }
-                    Err(e) => {
-                        if attempt >= max_retries {
-                            match on_error {
-                                OnError::Raise => res = Err(e),
-                                OnError::Log => {
-                                    let lg = common_tracing::GLOBAL_LOGGER_PROVIDER.lock().unwrap();
-                                    if let Some(logger_provider) = lg.as_ref() {
-                                        let logger = logger_provider.logger("python-udf-error");
-                                        let mut log_record = logger.create_log_record();
-
-                                        if let DaftError::PyO3Error(py_err) = &e {
-                                            RowWisePyFn::capture_exception_details(
-                                                py,
-                                                py_err,
-                                                &mut log_record,
-                                            );
-                                        } else {
-                                            log_record.set_body(format!("{e}").into());
-                                        }
-
-                                        logger.emit(log_record);
-                                    }
-
-                                    log::warn!("Python UDF error: {}", e);
-                                    res = Ok(Literal::Null);
-                                }
-                                OnError::Ignore => {
-                                    res = Ok(Literal::Null);
-                                }
-                            }
-                            break;
-                        }
-                        // Update our failure map for next iteration
-                        if attempt < max_retries {
-                            use std::{thread, time::Duration};
-                            py.detach(|| {
-                                thread::sleep(Duration::from_millis(delay_ms));
-                            });
-                            // Exponential backoff: multiply by 2, cap at MAX_DELAY_MS
-                            delay_ms = (delay_ms * 2).min(MAX_DELAY_MS);
-                        }
-                    }
-                }
-            }
-            res
-        }
         let s = Python::attach(|py| {
             let func = py
                 .import(pyo3::intern!(py, "daft.udf.execution"))?
                 .getattr(pyo3::intern!(py, "call_func"))?;
+
+            // Collect argument names (same for all rows)
+            let arg_names: Vec<String> = args.iter().map(|s| s.name().to_string()).collect();
 
             // pre-allocating py_args vector so we're not creating a new vector for each iteration
             let mut py_args = Vec::with_capacity(args.len());
@@ -382,21 +346,77 @@ impl RowWisePyFn {
                                 res.extract()?;
                             let literal =
                                 Literal::from_pyobj(&value_obj, Some(&self.return_dtype))?;
-                            for (key, counter) in operator_metrics.inner {
-                                metrics.inc_counter(
-                                    &key,
-                                    counter.value,
-                                    counter.description.as_deref(),
-                                    Some(counter.attributes),
-                                );
-                            }
-                            Ok(literal)
+                            Ok((literal, operator_metrics))
                         })
                         .map_err(DaftError::from)
                 };
-                let res = retry(py, f, max_retries, on_error, delay_ms);
+                let retry_result = retry_with_backoff(Some(py), f, max_retries);
+
+                if let Ok((_, operator_metrics)) = &retry_result {
+                    crate::python_udf::collect_operator_metrics(operator_metrics, metrics);
+                }
+
+                // Handle on_error logic outside of retry
+                let final_res = match retry_result.map(|(lit, _)| lit) {
+                    Ok(result) => Ok(result),
+                    Err(e) => match on_error {
+                        OnError::Raise => Err(e),
+                        OnError::Log => {
+                            let lg = common_tracing::GLOBAL_LOGGER_PROVIDER.lock().unwrap();
+                            if let Some(logger_provider) = lg.as_ref() {
+                                let logger = logger_provider.logger("python-udf-error");
+                                let mut log_record = logger.create_log_record();
+
+                                if let DaftError::PyO3Error(py_err) = &e {
+                                    Self::capture_exception_details(py, py_err, &mut log_record);
+                                } else {
+                                    log_record.set_body(format!("{e}").into());
+                                }
+
+                                // Add UDF argument names and values to the log record as a Map
+                                // Limit to first 20 args to avoid bloating logs
+                                let mut udf_args_map: HashMap<Key, AnyValue> = HashMap::new();
+                                let total_args = arg_names.len().min(py_args.len());
+                                for (arg_name, py_arg) in
+                                    arg_names.iter().zip(py_args.iter()).take(20)
+                                {
+                                    let serialized_value =
+                                        Self::serialize_pyobject_for_logging(py_arg);
+                                    udf_args_map.insert(
+                                        Key::new(arg_name.clone()),
+                                        AnyValue::String(serialized_value.into()),
+                                    );
+                                }
+                                // Indicate if additional arguments were truncated
+                                if total_args > 20 {
+                                    udf_args_map.insert(
+                                        Key::new("<TRUNCATED_ARGS>".to_string()),
+                                        AnyValue::String(
+                                            format!(
+                                                "{} additional arguments truncated",
+                                                total_args - 20
+                                            )
+                                            .into(),
+                                        ),
+                                    );
+                                }
+                                log_record.add_attribute(
+                                    "udf_args",
+                                    AnyValue::Map(Box::new(udf_args_map)),
+                                );
+
+                                logger.emit(log_record);
+                            }
+
+                            log::warn!("Python UDF error: {}", e);
+                            Ok(Literal::Null)
+                        }
+                        OnError::Ignore => Ok(Literal::Null),
+                    },
+                };
+
                 py_args.clear();
-                res
+                final_res
             });
             series_from_literals_iter(iter, Some(self.return_dtype.clone()))
         })?
@@ -411,8 +431,7 @@ impl RowWisePyFn {
         args: &[Series],
         num_rows: usize,
         name: &str,
-        metrics: &mut dyn MetricsCollector,
-    ) -> DaftResult<Series> {
+    ) -> DaftResult<(Series, common_metrics::python::PyOperatorMetrics)> {
         use common_metrics::python::PyOperatorMetrics;
         use daft_core::python::PySeries;
         use pyo3::prelude::*;
@@ -456,16 +475,8 @@ impl RowWisePyFn {
             Ok(coroutine)
         })
         .await?;
-        for (key, counter) in operator_metrics.inner {
-            metrics.inc_counter(
-                &key,
-                counter.value,
-                counter.description.as_deref(),
-                Some(counter.attributes),
-            );
-        }
 
-        Ok(py_series.series.rename(name))
+        Ok((py_series.series.rename(name), operator_metrics))
     }
 }
 

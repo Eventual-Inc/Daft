@@ -1,3 +1,4 @@
+#![allow(deprecated, reason = "arrow2 migration")]
 use std::{
     collections::{BTreeMap, HashMap},
     sync::Arc,
@@ -1073,10 +1074,8 @@ pub fn read_parquet_statistics(
     }
 
     let path_array: &Utf8Array = uris.downcast()?;
-    use daft_core::array::ops::as_arrow::AsArrow;
-    let values = path_array.as_arrow();
 
-    let handles_iter = values.iter().map(|uri| {
+    let handles_iter = path_array.into_iter().map(|uri| {
         let owned_string = uri.map(std::string::ToString::to_string);
         let owned_client = io_client.clone();
         let io_stats = io_stats.clone();
@@ -1106,7 +1105,7 @@ pub fn read_parquet_statistics(
         runtime_handle.block_on_current_thread(async move { join_all(handles_iter).await });
     let all_tuples = metadata_tuples
         .into_iter()
-        .zip(values.iter())
+        .zip(path_array.into_iter())
         .map(|(t, u)| {
             t.with_context(|_| JoinSnafu {
                 path: u.unwrap().to_string(),

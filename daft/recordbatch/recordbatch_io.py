@@ -4,7 +4,7 @@ import math
 import pathlib
 import random
 import time
-from typing import TYPE_CHECKING, Any, Union
+from typing import TYPE_CHECKING, Any, TypeAlias
 from uuid import uuid4
 
 from daft.context import get_context
@@ -19,7 +19,7 @@ from daft.daft import (
     JsonReadOptions,
     StorageConfig,
 )
-from daft.dependencies import pa, pacsv, pads, pq
+from daft.dependencies import pa, pads
 from daft.expressions import ExpressionsProjection
 from daft.filesystem import (
     _resolve_paths_and_filesystem,
@@ -38,7 +38,7 @@ from daft.sql.sql_connection import SQLConnection
 from .micropartition import MicroPartition
 from .partitioning import PartitionedTable, partition_strings_to_path
 
-FileInput = Union[pathlib.Path, str]
+FileInput: TypeAlias = pathlib.Path | str
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -128,9 +128,9 @@ def read_parquet(
     """
     # TODO: move this logic into Rust
     config = storage_config if storage_config is not None else StorageConfig(True, IOConfig())
-    assert isinstance(
-        file, (str, pathlib.Path)
-    ), "Native downloader only works on string or Path inputs to read_parquet"
+    assert isinstance(file, (str, pathlib.Path)), (
+        "Native downloader only works on string or Path inputs to read_parquet"
+    )
     tbl = MicroPartition.read_parquet(
         str(file),
         columns=read_options.column_names,
@@ -496,7 +496,9 @@ def write_lance(
 
     arrow_table = mp.to_arrow()
 
-    fragments = lance.fragment.write_fragments(arrow_table, base_path, mode, storage_options=storage_options, **kwargs)
+    fragments = lance.fragment.write_fragments(
+        arrow_table, base_path, mode, storage_options=storage_options, **(kwargs or {})
+    )
 
     mp = MicroPartition.from_pydict({"fragments": fragments})
 
@@ -587,44 +589,3 @@ def _write_tabular_arrow_table(
         full_path,
         retry_error=retry_error,
     )
-
-
-def write_empty_tabular(
-    path: str | pathlib.Path,
-    file_format: FileFormat,
-    schema: Schema,
-    compression: str | None = None,
-    io_config: IOConfig | None = None,
-) -> str:
-    table = pa.Table.from_pylist([], schema=schema.to_pyarrow_schema())
-
-    [resolved_path], fs = _resolve_paths_and_filesystem(path, io_config=io_config)
-    is_local_fs = canonicalize_protocol(get_protocol_from_path(path if isinstance(path, str) else str(path))) == "file"
-    if is_local_fs:
-        fs.create_dir(resolved_path, recursive=True)
-
-    basename_template = _generate_basename_template(file_format.ext())
-    file_path = f"{resolved_path}/{basename_template.format(i=0)}"
-
-    def write_table() -> None:
-        if file_format == FileFormat.Parquet:
-            pq.write_table(
-                table,
-                file_path,
-                compression=compression,
-                use_compliant_nested_type=False,
-                filesystem=fs,
-            )
-        elif file_format == FileFormat.Csv:
-            output_file = fs.open_output_stream(file_path)
-            pacsv.write_csv(table, output_file)
-        else:
-            raise ValueError(f"Unsupported file format {file_format}")
-
-    def retry_error(e: Exception) -> bool:
-        ERROR_MSGS = ("curlCode: 28, Timeout was reached",)
-        return isinstance(e, OSError) and any(err_str in str(e) for err_str in ERROR_MSGS)
-
-    _retry_with_backoff(write_table, file_path, retry_error=retry_error)
-
-    return file_path

@@ -523,14 +523,14 @@ async fn read_csv_single_into_stream(
             GetResult::File(file) => {
                 (
                     Box::new(BufReader::new(File::open(file.path).await?)),
-                    // Use user-provided buffer size, falling back to 8 * the user-provided chunk size if that exists, otherwise falling back to 512 KiB as the default.
+                    // Use user-provided buffer size, otherwise falling back to 512 KiB as the default.
                     read_options
                         .as_ref()
-                        .and_then(|opt| opt.buffer_size.or_else(|| opt.chunk_size.map(|cs| 8 * cs)))
+                        .and_then(|opt| opt.buffer_size)
                         .unwrap_or(512 * 1024),
                     read_options
                         .as_ref()
-                        .and_then(|opt| opt.chunk_size.or_else(|| opt.buffer_size.map(|bs| bs / 8)))
+                        .and_then(|opt| opt.chunk_size)
                         .unwrap_or(64 * 1024),
                 )
             }
@@ -538,11 +538,11 @@ async fn read_csv_single_into_stream(
                 Box::new(StreamReader::new(stream)),
                 read_options
                     .as_ref()
-                    .and_then(|opt| opt.buffer_size.or_else(|| opt.chunk_size.map(|cs| 8 * cs)))
+                    .and_then(|opt| opt.buffer_size)
                     .unwrap_or(512 * 1024),
                 read_options
                     .as_ref()
-                    .and_then(|opt| opt.chunk_size.or_else(|| opt.buffer_size.map(|bs| bs / 8)))
+                    .and_then(|opt| opt.chunk_size)
                     .unwrap_or(64 * 1024),
             ),
         };
@@ -608,13 +608,9 @@ where
             // If the record sizes are normally distributed, this should result in ~85% of the records not requiring
             // reallocation during reading.
             let record_buffer_size = (estimated_mean_row_size + estimated_std_row_size).ceil() as usize;
-            // Get chunk size in # of rows, using the estimated mean row size in bytes.
-            let chunk_size_rows = {
-                let estimated_rows_per_desired_chunk = chunk_size / (estimated_mean_row_size.ceil() as usize);
-                // Process at least 8 rows in a chunk, even if the rows are pretty large.
-                // Cap chunk size at the remaining number of rows we need to read before we reach the num_rows limit.
-                estimated_rows_per_desired_chunk.max(8).min(num_rows - total_rows_read)
-            };
+            // Process at least 8 rows in a chunk, even if the rows are pretty large.
+            // Cap chunk size at the remaining number of rows we need to read before we reach the num_rows limit.
+            let chunk_size_rows = chunk_size.max(8).min(num_rows - total_rows_read);
             let mut chunk_buffer = vec![
                 read_async::ByteRecord::with_capacity(record_buffer_size, num_fields);
                 chunk_size_rows
@@ -720,6 +716,7 @@ pub fn fields_to_projection_indices(
 }
 
 #[cfg(test)]
+#[allow(deprecated, reason = "arrow2 migration")]
 mod tests {
     use std::sync::Arc;
 
@@ -795,7 +792,7 @@ mod tests {
         let schema = Schema::try_from(&schema).unwrap().to_arrow2().unwrap();
         assert_eq!(out.schema.to_arrow2().unwrap(), schema);
         let out_columns = (0..out.num_columns())
-            .map(|i| out.get_column(i).to_arrow())
+            .map(|i| out.get_column(i).to_arrow2())
             .collect::<Vec<_>>();
         assert_eq!(out_columns, columns);
     }
@@ -1547,7 +1544,7 @@ mod tests {
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
-            null_column.to_arrow(),
+            null_column.to_arrow2(),
             Box::new(daft_arrow::array::NullArray::new(
                 daft_arrow::datatypes::DataType::Null,
                 6
@@ -1603,7 +1600,7 @@ mod tests {
         assert_eq!(null_column.data_type(), &DataType::Null);
         assert_eq!(null_column.len(), 6);
         assert_eq!(
-            null_column.to_arrow(),
+            null_column.to_arrow2(),
             Box::new(daft_arrow::array::NullArray::new(
                 daft_arrow::datatypes::DataType::Null,
                 6
@@ -1687,7 +1684,7 @@ mod tests {
         // Check that all columns are all null.
         for idx in 0..table.num_columns() {
             let column = table.get_column(idx);
-            assert_eq!(column.to_arrow().null_count(), num_rows);
+            assert_eq!(column.to_arrow2().null_count(), num_rows);
         }
 
         Ok(())
@@ -1757,13 +1754,13 @@ mod tests {
         );
 
         // First 4 cols should have no nulls
-        assert_eq!(table.get_column(0).to_arrow().null_count(), 0);
-        assert_eq!(table.get_column(1).to_arrow().null_count(), 0);
-        assert_eq!(table.get_column(2).to_arrow().null_count(), 0);
-        assert_eq!(table.get_column(3).to_arrow().null_count(), 0);
+        assert_eq!(table.get_column(0).to_arrow2().null_count(), 0);
+        assert_eq!(table.get_column(1).to_arrow2().null_count(), 0);
+        assert_eq!(table.get_column(2).to_arrow2().null_count(), 0);
+        assert_eq!(table.get_column(3).to_arrow2().null_count(), 0);
 
         // Last col should have 3 nulls because of the missing data
-        assert_eq!(table.get_column(4).to_arrow().null_count(), 3);
+        assert_eq!(table.get_column(4).to_arrow2().null_count(), 3);
 
         Ok(())
     }
@@ -1884,7 +1881,7 @@ mod tests {
         assert_eq!(table.len(), 3);
 
         assert_eq!(
-            table.get_column(4).to_arrow(),
+            table.get_column(4).to_arrow2(),
             Box::new(daft_arrow::array::Utf8Array::<i64>::from(vec![
                 None,
                 Some("Seratosa"),

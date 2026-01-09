@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
+import threading
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, TypedDict
 
 import transformers
@@ -13,7 +14,11 @@ else:
     from typing import Unpack
 
 from daft.ai.protocols import TextClassifier, TextClassifierDescriptor
+from daft.ai.typing import ClassifyTextOptions
 from daft.ai.utils import get_gpu_udf_options, get_torch_device
+
+# Global lock to prevent concurrent model loading which can cause meta tensor issues
+_model_loading_lock = threading.Lock()
 
 if TYPE_CHECKING:
     from daft.ai.typing import Label, Options, UDFOptions
@@ -25,15 +30,11 @@ class TransformersTextClassiferResult(TypedDict):
     scores: list[float]  # probability of each label
 
 
-class TransformersTextClassifierOptions(TypedDict, total=False):
-    batch_size: int | None
-
-
 @dataclass
 class TransformersTextClassifierDescriptor(TextClassifierDescriptor):
     provider_name: str
     model_name: str
-    model_options: TransformersTextClassifierOptions
+    classify_options: ClassifyTextOptions = field(default_factory=lambda: ClassifyTextOptions(batch_size=64))
 
     def get_provider(self) -> str:
         return self.provider_name
@@ -42,13 +43,17 @@ class TransformersTextClassifierDescriptor(TextClassifierDescriptor):
         return self.model_name
 
     def get_options(self) -> Options:
-        return self.model_options  # type: ignore
+        return dict(self.classify_options)
 
     def get_udf_options(self) -> UDFOptions:
-        return get_gpu_udf_options()
+        udf_options = get_gpu_udf_options()
+        for key, value in self.classify_options.items():
+            if key in udf_options.__annotations__.keys():
+                setattr(udf_options, key, value)
+        return udf_options
 
     def instantiate(self) -> TextClassifier:
-        return TransformersTextClassifier(self.model_name, **self.model_options)
+        return TransformersTextClassifier(self.model_name, **self.classify_options)
 
 
 class TransformersTextClassifier(TextClassifier):
@@ -60,17 +65,20 @@ class TransformersTextClassifier(TextClassifier):
     """
 
     _model: str
-    _options: TransformersTextClassifierOptions
+    _options: ClassifyTextOptions
     _pipeline: transformers.ZeroShotClassificationPipeline
 
-    def __init__(self, model_name_or_path: str, **options: Unpack[TransformersTextClassifierOptions]):
+    def __init__(self, model_name_or_path: str, **options: Unpack[ClassifyTextOptions]):
         self._model = model_name_or_path
         self._options = options
-        self._pipeline = pipeline(
-            task="zero-shot-classification",
-            model=model_name_or_path,
-            device=get_torch_device(),
-        )
+
+        # Use a lock to prevent concurrent model loading which triggers meta tensor errors
+        with _model_loading_lock:
+            self._pipeline = pipeline(
+                task="zero-shot-classification",
+                model=model_name_or_path,
+                device=get_torch_device(),
+            )
 
     def classify_text(self, text: list[str], labels: Label | list[Label]) -> list[Label]:
         batch_size = self._options.get("batch_size", None)

@@ -30,6 +30,7 @@ from .columnar import (
     columns_min,
     columns_max,
 )
+from .process import run_process
 from .datetime import (
     date,
     day,
@@ -71,6 +72,7 @@ from .image import (
     encode_image,
     decode_image,
     convert_image,
+    image_to_tensor,
     image_attribute,
     image_width,
     image_height,
@@ -301,6 +303,7 @@ __all__ = [
     "image_channel",
     "image_height",
     "image_mode",
+    "image_to_tensor",
     "image_width",
     "is_in",
     "is_inf",
@@ -382,6 +385,7 @@ __all__ = [
     "row_number",
     "rpad",
     "rstrip",
+    "run_process",
     "sec",
     "second",
     "serialize",

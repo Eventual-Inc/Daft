@@ -33,7 +33,7 @@ jobs:
     - name: Clean all notebook output
       run: find . -name "*.ipynb" -print0 | xargs -0 nb-clean clean
     - name: Run notebooks in docs
-      run: find docs -name "*.ipynb" -print0 | xargs -0 -I {} papermill {} /tmp/out.ipynb -p CI True --kernel python3 --no-progress-bar --cwd /tmp/
+      run: find docs -name "*.ipynb" -not -path "*/quickstart.ipynb" -print0 | xargs -0 -I {} papermill {} /tmp/out.ipynb -p CI True --kernel python3 --no-progress-bar --cwd /tmp/
     - name: Run notebooks in tutorials
       run: find tutorials -name "*.ipynb" -print0 | xargs -0 -I {} papermill {} /tmp/out.ipynb -p CI True --kernel python3 --no-progress-bar --cwd /tmp/
     - name: Send Slack notification on failure

@@ -1,6 +1,8 @@
 [dependencies]
+arrow-schema = {workspace = true}
 atoi_simd = "0.16.1"
 daft-arrow = {path = "../daft-arrow"}
+daft-schema = {path = "../daft-schema"}
 chrono = {workspace = true}
 csv-async = "1.2.6"
 fast-float2 = "0.2.3"

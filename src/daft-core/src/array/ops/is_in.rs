@@ -12,12 +12,12 @@ use crate::{
 macro_rules! collect_to_set_and_check_membership {
     ($self:expr, $rhs:expr) => {{
         let set = $rhs
-            .as_arrow()
+            .as_arrow2()
             .iter()
             .filter_map(|item| item)
             .collect::<HashSet<_>>();
         let result = $self
-            .as_arrow()
+            .as_arrow2()
             .iter()
             .map(|option| option.and_then(|value| Some(set.contains(&value))));
         Ok(BooleanArray::from_iter($self.name(), result))
@@ -45,11 +45,11 @@ macro_rules! impl_is_in_floating_array {
 
             fn is_in(&self, rhs: &$arr) -> Self::Output {
                 let set = rhs
-                    .as_arrow()
+                    .as_arrow2()
                     .iter()
                     .filter_map(|item| item.map(|value| FloatWrapper(*value)))
                     .collect::<BTreeSet<FloatWrapper<$T>>>();
-                let result = self.as_arrow().iter().map(|option| {
+                let result = self.as_arrow2().iter().map(|option| {
                     option.and_then(|value| Some(set.contains(&FloatWrapper(*value))))
                 });
                 Ok(BooleanArray::from_iter(self.name(), result))

@@ -1,4 +1,4 @@
-use std::{borrow::Cow, collections::HashMap, fmt::Display, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, fmt::Display, num::NonZeroUsize, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{
@@ -79,9 +79,9 @@ pub type NodeName = Cow<'static, str>;
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum MorselSizeRequirement {
     // Fixed size morsel
-    Strict(usize),
+    Strict(NonZeroUsize),
     // Flexible size morsel, between lower and upper bound
-    Flexible(usize, usize),
+    Flexible(usize, NonZeroUsize),
 }
 
 impl Display for MorselSizeRequirement {
@@ -121,7 +121,7 @@ impl MorselSizeRequirement {
                 Some(Self::Flexible(lower_flexible_size, upper_flexible_size)),
                 Self::Strict(strict_size),
             ) => Self::Flexible(
-                lower_flexible_size.min(strict_size),
+                lower_flexible_size.min(strict_size.get()),
                 strict_size.min(upper_flexible_size),
             ),
             // If the current requirement is flexible and the downstream requirement is flexible, use the intersection of ranges
@@ -130,21 +130,21 @@ impl MorselSizeRequirement {
                 Self::Flexible(lower_other_size, upper_other_size),
             ) => {
                 let lower = lower_flexible_size.max(lower_other_size);
-                let upper = upper_flexible_size.min(upper_other_size);
+                let upper = upper_flexible_size.min(upper_other_size).get();
 
                 // If ranges don't overlap, fall back to downstream requirement
                 if lower > upper {
                     Self::Flexible(lower_other_size, upper_other_size)
                 } else {
-                    Self::Flexible(lower, upper)
+                    Self::Flexible(lower, NonZeroUsize::new(upper).unwrap())
                 }
             }
         }
     }
 
-    pub fn values(&self) -> (usize, usize) {
+    pub fn values(&self) -> (usize, NonZeroUsize) {
         match self {
-            Self::Strict(size) => (*size, *size),
+            Self::Strict(size) => (size.get(), *size),
             Self::Flexible(lower, upper) => (*lower, *upper),
         }
     }
@@ -717,11 +717,12 @@ fn physical_plan_to_pipeline(
         LocalPhysicalPlan::Explode(Explode {
             input,
             to_explode,
+            index_column,
             schema,
             stats_state,
             context,
         }) => {
-            let explode_op = ExplodeOperator::new(to_explode.clone());
+            let explode_op = ExplodeOperator::new(to_explode.clone(), index_column.clone());
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(explode_op),
@@ -1348,13 +1349,15 @@ fn physical_plan_to_pipeline(
         }
         LocalPhysicalPlan::CommitWrite(CommitWrite {
             input,
+            data_schema,
             file_schema,
             file_info,
             stats_state,
             context,
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            let write_sink = CommitWriteSink::new(file_schema.clone(), file_info.clone());
+            let write_sink =
+                CommitWriteSink::new(data_schema.clone(), file_schema.clone(), file_info.clone());
             BlockingSinkNode::new(
                 Arc::new(write_sink),
                 child_node,

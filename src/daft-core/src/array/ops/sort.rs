@@ -1,18 +1,28 @@
+use std::sync::Arc;
+
+use arrow::array::{Array, ArrowPrimitiveType};
 use common_error::DaftResult;
 use daft_arrow::{
     array::ord::{self, DynComparator},
+    // A real tragedy. Arrow-rs has all these functions but uses 32 bit indices instead of 64 bit indices.
+    compute::sort::{SortOptions, sort, sort_to_indices},
     types::Index,
 };
 
-use super::{arrow::sort::primitive::common::multi_column_idx_sort, as_arrow::AsArrow};
+use super::as_arrow::AsArrow;
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
-    array::{DataArray, FixedSizeListArray, ListArray, StructArray},
+    array::{
+        DataArray, FixedSizeListArray, ListArray, StructArray,
+        ops::arrow::sort::primitive::{
+            common::multi_column_idx_sort, indices::indices_sorted_unstable_by, sort::sort_by,
+        },
+    },
     datatypes::{
-        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, Decimal128Array,
-        ExtensionArray, FileArray, FixedSizeBinaryArray, Float32Array, Float64Array, IntervalArray,
-        NullArray, Utf8Array,
+        BinaryArray, BooleanArray, DaftIntegerType, DaftNumericType, DataType, Decimal128Array,
+        ExtensionArray, Field, FileArray, FixedSizeBinaryArray, Float32Array, Float64Array,
+        IntervalArray, NullArray, NumericNative, Utf8Array,
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
             FixedShapeSparseTensorArray, FixedShapeTensorArray, ImageArray, MapArray,
@@ -21,7 +31,7 @@ use crate::{
     },
     file::DaftMediaType,
     kernels::search_sorted::{build_nulls_first_compare_with_nulls, cmp_float},
-    prelude::UInt64Array,
+    prelude::{FromArrow, UInt64Array},
     series::Series,
 };
 
@@ -48,8 +58,8 @@ pub fn build_multi_array_bicompare(
         .zip(nulls_first.iter())
     {
         cmp_list.push(build_nulls_first_compare_with_nulls(
-            l.to_arrow().as_ref(),
-            r.to_arrow().as_ref(),
+            l.to_arrow2().as_ref(),
+            r.to_arrow2().as_ref(),
             *desc,
             *nf,
         )?);
@@ -71,16 +81,19 @@ impl<T> DataArray<T>
 where
     T: DaftIntegerType,
     <T as DaftNumericType>::Native: Ord,
+    <<<T as DaftNumericType>::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native:
+        Ord,
 {
     pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow()?;
 
-        let result = crate::array::ops::arrow::sort::primitive::indices::indices_sorted_unstable_by::<
-            T::Native,
-            _,
-        >(arrow_array, ord::total_cmp, descending, nulls_first);
+        let result =
+            indices_sorted_unstable_by(&arrow_array, |l, r| l.cmp(r), descending, nulls_first);
 
-        Ok(UInt64Array::from((self.name(), Box::new(result))))
+        UInt64Array::from_arrow(
+            Field::new(self.field().name.clone(), DataType::UInt64),
+            Arc::new(result),
+        )
     }
 
     pub fn argsort_multikey(
@@ -89,23 +102,21 @@ where
         descending: &[bool],
         nulls_first: &[bool],
     ) -> DaftResult<UInt64Array> {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow()?;
         let first_desc = *descending.first().unwrap();
         let first_nulls_first = *nulls_first.first().unwrap();
 
         let others_cmp = build_multi_array_compare(others, &descending[1..], &nulls_first[1..])?;
 
-        let values = arrow_array.values().as_slice();
-
         let result = if first_desc {
             multi_column_idx_sort(
-                arrow_array.validity(),
+                arrow_array.nulls(),
                 |a: &u64, b: &u64| {
                     let a = a.to_usize();
                     let b = b.to_usize();
-                    let l = unsafe { values.get_unchecked(a) };
-                    let r = unsafe { values.get_unchecked(b) };
-                    match ord::total_cmp(r, l) {
+                    let l = unsafe { &arrow_array.value_unchecked(a) };
+                    let r = unsafe { &arrow_array.value_unchecked(b) };
+                    match r.cmp(l) {
                         std::cmp::Ordering::Equal => others_cmp(a, b),
                         v => v,
                     }
@@ -116,13 +127,13 @@ where
             )
         } else {
             multi_column_idx_sort(
-                arrow_array.validity(),
+                arrow_array.nulls(),
                 |a: &u64, b: &u64| {
                     let a = a.to_usize();
                     let b = b.to_usize();
-                    let l = unsafe { values.get_unchecked(a) };
-                    let r = unsafe { values.get_unchecked(b) };
-                    match ord::total_cmp(l, r) {
+                    let l = unsafe { &arrow_array.value_unchecked(a) };
+                    let r = unsafe { &arrow_array.value_unchecked(b) };
+                    match l.cmp(r) {
                         std::cmp::Ordering::Equal => others_cmp(a, b),
                         v => v,
                     }
@@ -133,38 +144,37 @@ where
             )
         };
 
-        Ok(UInt64Array::from((self.name(), Box::new(result))))
+        UInt64Array::from_arrow(
+            Field::new(self.field().name.clone(), DataType::UInt64),
+            Arc::new(result),
+        )
     }
 
     pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
-        let options = daft_arrow::compute::sort::SortOptions {
+        let options = SortOptions {
             descending,
             nulls_first,
         };
 
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow()?;
 
-        let result = crate::array::ops::arrow::sort::primitive::sort::sort_by::<T::Native, _>(
-            arrow_array,
-            ord::total_cmp,
-            &options,
-            None,
-        );
+        let result = sort_by(&arrow_array, |l, r| l.cmp(r), &options, None);
 
-        Ok(Self::from((self.name(), Box::new(result))))
+        Self::from_arrow(self.field().clone(), Arc::new(result))
     }
 }
 
 impl Float32Array {
     pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow()?;
 
-        let result = crate::array::ops::arrow::sort::primitive::indices::indices_sorted_unstable_by::<
-            f32,
-            _,
-        >(arrow_array, cmp_float::<f32>, descending, nulls_first);
+        let result =
+            indices_sorted_unstable_by(&arrow_array, cmp_float::<f32>, descending, nulls_first);
 
-        Ok(UInt64Array::from((self.name(), Box::new(result))))
+        UInt64Array::from_arrow(
+            Field::new(self.field().name.clone(), DataType::UInt64),
+            Arc::new(result),
+        )
     }
 
     pub fn argsort_multikey(
@@ -173,22 +183,20 @@ impl Float32Array {
         descending: &[bool],
         nulls_first: &[bool],
     ) -> DaftResult<UInt64Array> {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow()?;
         let first_desc = *descending.first().unwrap();
         let first_nulls_first = *nulls_first.first().unwrap();
 
         let others_cmp = build_multi_array_compare(others, &descending[1..], &nulls_first[1..])?;
 
-        let values = arrow_array.values().as_slice();
-
         let result = if first_desc {
             multi_column_idx_sort(
-                arrow_array.validity(),
+                arrow_array.nulls(),
                 |a: &u64, b: &u64| {
                     let a = a.to_usize();
                     let b = b.to_usize();
-                    let l = unsafe { values.get_unchecked(a) };
-                    let r = unsafe { values.get_unchecked(b) };
+                    let l = unsafe { &arrow_array.value_unchecked(a) };
+                    let r = unsafe { &arrow_array.value_unchecked(b) };
                     match cmp_float::<f32>(r, l) {
                         std::cmp::Ordering::Equal => others_cmp(a, b),
                         v => v,
@@ -200,12 +208,12 @@ impl Float32Array {
             )
         } else {
             multi_column_idx_sort(
-                arrow_array.validity(),
+                arrow_array.nulls(),
                 |a: &u64, b: &u64| {
                     let a = a.to_usize();
                     let b = b.to_usize();
-                    let l = unsafe { values.get_unchecked(a) };
-                    let r = unsafe { values.get_unchecked(b) };
+                    let l = unsafe { &arrow_array.value_unchecked(a) };
+                    let r = unsafe { &arrow_array.value_unchecked(b) };
                     match cmp_float::<f32>(l, r) {
                         std::cmp::Ordering::Equal => others_cmp(a, b),
                         v => v,
@@ -217,38 +225,37 @@ impl Float32Array {
             )
         };
 
-        Ok(UInt64Array::from((self.name(), Box::new(result))))
+        UInt64Array::from_arrow(
+            Field::new(self.field().name.clone(), DataType::UInt64),
+            Arc::new(result),
+        )
     }
 
     pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
-        let options = daft_arrow::compute::sort::SortOptions {
+        let options = SortOptions {
             descending,
             nulls_first,
         };
 
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow()?;
 
-        let result = crate::array::ops::arrow::sort::primitive::sort::sort_by::<f32, _>(
-            arrow_array,
-            cmp_float::<f32>,
-            &options,
-            None,
-        );
+        let result = sort_by(&arrow_array, cmp_float::<f32>, &options, None);
 
-        Ok(Self::from((self.name(), Box::new(result))))
+        Self::from_arrow(self.field().clone(), Arc::new(result))
     }
 }
 
 impl Float64Array {
     pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow()?;
 
-        let result = crate::array::ops::arrow::sort::primitive::indices::indices_sorted_unstable_by::<
-            f64,
-            _,
-        >(arrow_array, cmp_float::<f64>, descending, nulls_first);
+        let result =
+            indices_sorted_unstable_by(&arrow_array, cmp_float::<f64>, descending, nulls_first);
 
-        Ok(UInt64Array::from((self.name(), Box::new(result))))
+        UInt64Array::from_arrow(
+            Field::new(self.field().name.clone(), DataType::UInt64),
+            Arc::new(result),
+        )
     }
 
     pub fn argsort_multikey(
@@ -257,22 +264,20 @@ impl Float64Array {
         descending: &[bool],
         nulls_first: &[bool],
     ) -> DaftResult<UInt64Array> {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow()?;
         let first_desc = *descending.first().unwrap();
         let first_nulls_first = *nulls_first.first().unwrap();
 
         let others_cmp = build_multi_array_compare(others, &descending[1..], &nulls_first[1..])?;
 
-        let values = arrow_array.values().as_slice();
-
         let result = if first_desc {
             multi_column_idx_sort(
-                arrow_array.validity(),
+                arrow_array.nulls(),
                 |a: &u64, b: &u64| {
                     let a = a.to_usize();
                     let b = b.to_usize();
-                    let l = unsafe { values.get_unchecked(a) };
-                    let r = unsafe { values.get_unchecked(b) };
+                    let l = unsafe { &arrow_array.value_unchecked(a) };
+                    let r = unsafe { &arrow_array.value_unchecked(b) };
                     match cmp_float::<f64>(r, l) {
                         std::cmp::Ordering::Equal => others_cmp(a, b),
                         v => v,
@@ -284,12 +289,12 @@ impl Float64Array {
             )
         } else {
             multi_column_idx_sort(
-                arrow_array.validity(),
+                arrow_array.nulls(),
                 |a: &u64, b: &u64| {
                     let a = a.to_usize();
                     let b = b.to_usize();
-                    let l = unsafe { values.get_unchecked(a) };
-                    let r = unsafe { values.get_unchecked(b) };
+                    let l = unsafe { &arrow_array.value_unchecked(a) };
+                    let r = unsafe { &arrow_array.value_unchecked(b) };
                     match cmp_float::<f64>(l, r) {
                         std::cmp::Ordering::Equal => others_cmp(a, b),
                         v => v,
@@ -301,38 +306,37 @@ impl Float64Array {
             )
         };
 
-        Ok(UInt64Array::from((self.name(), Box::new(result))))
+        UInt64Array::from_arrow(
+            Field::new(self.field().name.clone(), DataType::UInt64),
+            Arc::new(result),
+        )
     }
 
     pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
-        let options = daft_arrow::compute::sort::SortOptions {
+        let options = SortOptions {
             descending,
             nulls_first,
         };
 
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow()?;
 
-        let result = crate::array::ops::arrow::sort::primitive::sort::sort_by::<f64, _>(
-            arrow_array,
-            cmp_float::<f64>,
-            &options,
-            None,
-        );
+        let result = sort_by(&arrow_array, cmp_float::<f64>, &options, None);
 
-        Ok(Self::from((self.name(), Box::new(result))))
+        Self::from_arrow(self.field().clone(), Arc::new(result))
     }
 }
 
 impl Decimal128Array {
     pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow()?;
 
-        let result = crate::array::ops::arrow::sort::primitive::indices::indices_sorted_unstable_by::<
-            i128,
-            _,
-        >(arrow_array, ord::total_cmp, descending, nulls_first);
+        let result =
+            indices_sorted_unstable_by(&arrow_array, |l, r| l.cmp(r), descending, nulls_first);
 
-        Ok(UInt64Array::from((self.name(), Box::new(result))))
+        UInt64Array::from_arrow(
+            Field::new(self.field().name.clone(), DataType::UInt64),
+            Arc::new(result),
+        )
     }
 
     pub fn argsort_multikey(
@@ -341,22 +345,20 @@ impl Decimal128Array {
         descending: &[bool],
         nulls_first: &[bool],
     ) -> DaftResult<UInt64Array> {
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow()?;
         let first_desc = *descending.first().unwrap();
         let first_nulls_first = *nulls_first.first().unwrap();
 
         let others_cmp = build_multi_array_compare(others, &descending[1..], &nulls_first[1..])?;
 
-        let values = arrow_array.values().as_slice();
-
         let result = if first_desc {
             multi_column_idx_sort(
-                arrow_array.validity(),
+                arrow_array.nulls(),
                 |a: &u64, b: &u64| {
                     let a = a.to_usize();
                     let b = b.to_usize();
-                    let l = unsafe { values.get_unchecked(a) };
-                    let r = unsafe { values.get_unchecked(b) };
+                    let l = unsafe { &arrow_array.value_unchecked(a) };
+                    let r = unsafe { &arrow_array.value_unchecked(b) };
                     match ord::total_cmp(r, l) {
                         std::cmp::Ordering::Equal => others_cmp(a, b),
                         v => v,
@@ -368,12 +370,12 @@ impl Decimal128Array {
             )
         } else {
             multi_column_idx_sort(
-                arrow_array.validity(),
+                arrow_array.nulls(),
                 |a: &u64, b: &u64| {
                     let a = a.to_usize();
                     let b = b.to_usize();
-                    let l = unsafe { values.get_unchecked(a) };
-                    let r = unsafe { values.get_unchecked(b) };
+                    let l = unsafe { &arrow_array.value_unchecked(a) };
+                    let r = unsafe { &arrow_array.value_unchecked(b) };
                     match ord::total_cmp(l, r) {
                         std::cmp::Ordering::Equal => others_cmp(a, b),
                         v => v,
@@ -385,25 +387,23 @@ impl Decimal128Array {
             )
         };
 
-        Ok(UInt64Array::from((self.name(), Box::new(result))))
+        UInt64Array::from_arrow(
+            Field::new(self.field().name.clone(), DataType::UInt64),
+            Arc::new(result),
+        )
     }
 
     pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
-        let options = daft_arrow::compute::sort::SortOptions {
+        let options = SortOptions {
             descending,
             nulls_first,
         };
 
-        let arrow_array = self.as_arrow();
+        let arrow_array = self.as_arrow()?;
 
-        let result = crate::array::ops::arrow::sort::primitive::sort::sort_by::<i128, _>(
-            arrow_array,
-            ord::total_cmp,
-            &options,
-            None,
-        );
+        let result = sort_by(&arrow_array, |l, r| l.cmp(r), &options, None);
 
-        Self::new(self.field.clone(), Box::new(result))
+        Self::from_arrow(self.field().clone(), Arc::new(result))
     }
 }
 
@@ -423,7 +423,7 @@ impl NullArray {
         let others_cmp = build_multi_array_compare(others, &descending[1..], &nulls_first[1..])?;
 
         let result = multi_column_idx_sort(
-            self.data().validity(),
+            self.to_data().nulls(),
             |a: &u64, b: &u64| {
                 let a = a.to_usize();
                 let b = b.to_usize();
@@ -434,7 +434,10 @@ impl NullArray {
             first_nulls_first,
         );
 
-        Ok(UInt64Array::from((self.name(), Box::new(result))))
+        UInt64Array::from_arrow(
+            Field::new(self.field().name.clone(), DataType::UInt64),
+            Arc::new(result),
+        )
     }
 
     pub fn sort(&self, _descending: bool, _nulls_first: bool) -> DaftResult<Self> {
@@ -444,13 +447,12 @@ impl NullArray {
 
 impl BooleanArray {
     pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
-        let options = daft_arrow::compute::sort::SortOptions {
+        let options = SortOptions {
             descending,
             nulls_first,
         };
 
-        let result =
-            daft_arrow::compute::sort::sort_to_indices::<u64>(self.data(), &options, None)?;
+        let result = sort_to_indices::<u64>(self.data(), &options, None)?;
 
         Ok(UInt64Array::from((self.name(), Box::new(result))))
     }
@@ -461,66 +463,63 @@ impl BooleanArray {
         descending: &[bool],
         nulls_first: &[bool],
     ) -> DaftResult<UInt64Array> {
+        let arrow_array = self.as_arrow()?;
         let first_desc = *descending.first().unwrap();
         let first_nulls_first = *nulls_first.first().unwrap();
 
         let others_cmp = build_multi_array_compare(others, &descending[1..], &nulls_first[1..])?;
 
-        let values = self
-            .data()
-            .as_any()
-            .downcast_ref::<daft_arrow::array::BooleanArray>()
-            .unwrap()
-            .values();
-
         let result = if first_desc {
             multi_column_idx_sort(
-                self.data().validity(),
+                arrow_array.nulls(),
                 |a: &u64, b: &u64| {
                     let a = a.to_usize();
                     let b = b.to_usize();
-                    let l = unsafe { values.get_bit_unchecked(a) };
-                    let r = unsafe { values.get_bit_unchecked(b) };
+                    let l = unsafe { arrow_array.value_unchecked(a) };
+                    let r = unsafe { arrow_array.value_unchecked(b) };
                     match r.cmp(&l) {
                         std::cmp::Ordering::Equal => others_cmp(a, b),
                         v => v,
                     }
                 },
                 &others_cmp,
-                self.len(),
+                arrow_array.len(),
                 first_nulls_first,
             )
         } else {
             multi_column_idx_sort(
-                self.data().validity(),
+                arrow_array.nulls(),
                 |a: &u64, b: &u64| {
                     let a = a.to_usize();
                     let b = b.to_usize();
-                    let l = unsafe { values.get_bit_unchecked(a) };
-                    let r = unsafe { values.get_bit_unchecked(b) };
+                    let l = unsafe { arrow_array.value_unchecked(a) };
+                    let r = unsafe { arrow_array.value_unchecked(b) };
                     match l.cmp(&r) {
                         std::cmp::Ordering::Equal => others_cmp(a, b),
                         v => v,
                     }
                 },
                 &others_cmp,
-                self.len(),
+                arrow_array.len(),
                 first_nulls_first,
             )
         };
 
-        Ok(UInt64Array::from((self.name(), Box::new(result))))
+        UInt64Array::from_arrow(
+            Field::new(self.field().name.clone(), DataType::UInt64),
+            Arc::new(result),
+        )
     }
 
     pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
-        let options = daft_arrow::compute::sort::SortOptions {
+        let options = SortOptions {
             descending,
             nulls_first,
         };
 
         let result = daft_arrow::compute::sort::sort(self.data(), &options, None)?;
 
-        Self::try_from((self.field.clone(), result))
+        Self::new(self.field.clone(), result)
     }
 }
 
@@ -528,13 +527,12 @@ macro_rules! impl_binary_like_sort {
     ($da:ident) => {
         impl $da {
             pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
-                let options = daft_arrow::compute::sort::SortOptions {
+                let options = SortOptions {
                     descending,
                     nulls_first,
                 };
 
-                let result =
-                    daft_arrow::compute::sort::sort_to_indices::<u64>(self.data(), &options, None)?;
+                let result = sort_to_indices::<u64>(self.data(), &options, None)?;
 
                 Ok(UInt64Array::from((self.name(), Box::new(result))))
             }
@@ -551,16 +549,16 @@ macro_rules! impl_binary_like_sort {
                 let others_cmp =
                     build_multi_array_compare(others, &descending[1..], &nulls_first[1..])?;
 
-                let values = self.as_arrow();
+                let arrow_array = self.as_arrow()?;
 
                 let result = if first_desc {
                     multi_column_idx_sort(
-                        self.data().validity(),
+                        self.to_data().nulls(),
                         |a: &u64, b: &u64| {
                             let a = a.to_usize();
                             let b = b.to_usize();
-                            let l = unsafe { values.value_unchecked(a) };
-                            let r = unsafe { values.value_unchecked(b) };
+                            let l = unsafe { &arrow_array.value_unchecked(a) };
+                            let r = unsafe { &arrow_array.value_unchecked(b) };
                             match r.cmp(&l) {
                                 std::cmp::Ordering::Equal => others_cmp(a, b),
                                 v => v,
@@ -572,12 +570,12 @@ macro_rules! impl_binary_like_sort {
                     )
                 } else {
                     multi_column_idx_sort(
-                        self.data().validity(),
+                        self.to_data().nulls(),
                         |a: &u64, b: &u64| {
                             let a = a.to_usize();
                             let b = b.to_usize();
-                            let l = unsafe { values.value_unchecked(a) };
-                            let r = unsafe { values.value_unchecked(b) };
+                            let l = unsafe { &arrow_array.value_unchecked(a) };
+                            let r = unsafe { &arrow_array.value_unchecked(b) };
                             match l.cmp(&r) {
                                 std::cmp::Ordering::Equal => others_cmp(a, b),
                                 v => v,
@@ -589,18 +587,21 @@ macro_rules! impl_binary_like_sort {
                     )
                 };
 
-                Ok(UInt64Array::from((self.name(), Box::new(result))))
+                UInt64Array::from_arrow(
+                    Field::new(self.field().name.clone(), DataType::UInt64),
+                    Arc::new(result),
+                )
             }
 
             pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
-                let options = daft_arrow::compute::sort::SortOptions {
+                let options = SortOptions {
                     descending,
                     nulls_first,
                 };
 
-                let result = daft_arrow::compute::sort::sort(self.data(), &options, None)?;
+                let result = sort(self.data(), &options, None)?;
 
-                $da::try_from((self.field.clone(), result))
+                $da::new(self.field.clone(), result)
             }
         }
     };

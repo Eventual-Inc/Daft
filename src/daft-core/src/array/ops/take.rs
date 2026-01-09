@@ -16,8 +16,8 @@ where
     T: DaftNumericType,
 {
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        let result = daft_arrow::compute::take::take(self.data(), idx.as_arrow())?;
-        Self::try_from((self.field.clone(), result))
+        let result = daft_arrow::compute::take::take(self.data(), idx.as_arrow2())?;
+        Self::new(self.field.clone(), result)
     }
 }
 
@@ -26,8 +26,8 @@ macro_rules! impl_dataarray_take {
     ($ArrayT:ty) => {
         impl $ArrayT {
             pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-                let result = daft_arrow::compute::take::take(self.data(), idx.as_arrow())?;
-                Self::try_from((self.field.clone(), result))
+                let result = daft_arrow::compute::take::take(self.data(), idx.as_arrow2())?;
+                Self::new(self.field.clone(), result)
             }
         }
     };
@@ -153,7 +153,7 @@ impl FixedSizeListArray {
 impl ListArray {
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
         let child_capacity = idx
-            .as_arrow()
+            .as_arrow2()
             .iter()
             .map(|idx| match idx {
                 None => 0,

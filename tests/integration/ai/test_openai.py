@@ -12,8 +12,8 @@ from __future__ import annotations
 import os
 import time
 from collections import defaultdict
-from collections.abc import Mapping
-from typing import Any, Callable
+from collections.abc import Callable, Mapping
+from typing import Any
 
 import pytest
 from pydantic import BaseModel, Field
@@ -422,7 +422,10 @@ def test_prompt_with_image_structured_output(session, use_chat_completions, metr
     import numpy as np
 
     class ImageAnalysis(BaseModel):
-        dominant_color: str = Field(..., description="The dominant color in the image in hex format")
+        # Pattern constrains OpenAI to return a valid hex color with # prefix
+        dominant_color: str = Field(
+            ..., description="The dominant color in the image in hex format", pattern=r"^#[0-9a-fA-F]{6}$"
+        )
         description: str = Field(..., description="Brief description of the image")
 
     # Create a simple test image (a blue square)

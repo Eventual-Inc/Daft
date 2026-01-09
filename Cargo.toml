@@ -178,6 +178,7 @@ members = [
   "src/common/error",
   "src/common/io-config",
   "src/common/macros",
+  "src/common/pattern",
   "src/common/partitioning",
   "src/common/scan-info",
   "src/common/system-info",
@@ -226,6 +227,16 @@ members = [
 ]
 
 [workspace.dependencies]
+ahash = "0.8.12"
+arrow = "57.1.0"
+arrow-array = {version = "57.1.0", features = ["chrono-tz"]}
+arrow-buffer = "57.1.0"
+arrow-csv = "57.1.0"
+arrow-data = "57.1.0"
+arrow-flight = "57.1.0"
+arrow-ipc = "57.1.0"
+arrow-json = "57.1.0"
+arrow-schema = "57.1.0"
 approx = "0.5.1"
 arc-swap = "1.7.1"
 async-compat = "0.2.5"
@@ -236,7 +247,7 @@ async-compression = {version = "0.4.12", features = [
 async-stream = "0.3.6"
 async-trait = "0.1.89"
 base64 = "0.22.1"
-bytes = "1.8.0"
+bytes = "1.11.0"
 chrono = "0.4.38"
 chrono-tz = "0.10.4"
 comfy-table = "7.1.1"
@@ -246,6 +257,7 @@ common-error = {path = "src/common/error", default-features = false}
 common-file-formats = {path = "src/common/file-formats"}
 common-image = {path = "src/common/image", default-features = false}
 common-metrics = {path = "src/common/metrics"}
+common-pattern = {path = "src/common/pattern"}
 common-ndarray = {path = "src/common/ndarray"}
 common-runtime = {path = "src/common/runtime", default-features = false}
 daft-ai = {path = "src/daft-ai"}
@@ -280,7 +292,7 @@ educe = "0.6.0"
 futures = "0.3.30"
 hashbrown = "0.16"
 html-escape = "0.2.13"
-image = {version = "0.25.8", default-features = false}
+image = {version = "0.25.9", default-features = false}
 indexmap = "2.9.0"
 indicatif = "0.18"
 itertools = "0.14"
@@ -296,30 +308,32 @@ numpy = "0.27"
 opentelemetry = {version = "0.31", features = ["trace", "metrics", "logs"]}
 opentelemetry-otlp = {version = "0.31", features = ["grpc-tonic", "logs"]}
 opentelemetry_sdk = {version = "0.31", features = ["logs"]}
-parking_lot = "0.12.3"
+parking_lot = "0.12.5"
+parquet = "57.1.0"
 path_macro = "1.0.0"
 pretty_assertions = "1.4.1"
-proptest = "1.8.0"
+proptest = "1.9.0"
 prost = "0.13.5"
 prost-types = "0.13.5"
 rand = "^0.8"
 rayon = "1.11.0"
-regex = "1.11.2"
+regex = "1.12.2"
 rstest = "0.18.2"
 reqwest = {version = "0.12.19", default-features = false, features = ["json"]}
 serde_json = "1.0.145"
-sha1 = "0.11.0-pre.4"
+sha1 = "0.11.0-rc.3"
 simdutf8 = "0.1.5"
 sketches-ddsketch = {version = "0.2.2", features = ["use_serde"]}
 smallvec = {version = "1.15.1", features = ["serde", "impl_bincode"]}
 snafu = {version = "0.7.4", features = ["futures"]}
-sqlparser = "0.51.0"
+spark-connect = {path = "src/generated/spark-connect", default-features = false}
+sqlparser = "0.59.0"
 sysinfo = "0.35.2"
 tango-bench = "0.6.0"
-test-log = "0.2.18"
-thiserror = "2.0.16"
+test-log = "0.2.19"
+thiserror = "2.0.17"
 tiktoken-rs = "0.7.0"
-tokio = {version = "1.47.1", features = [
+tokio = {version = "1.48.0", features = [
   "net",
   "time",
   "bytes",
@@ -330,15 +344,15 @@ tokio = {version = "1.47.1", features = [
   "rt-multi-thread"
 ]}
 tokio-stream = {version = "0.1.14", features = ["fs", "io-util", "time"]}
-tokio-util = "0.7.16"
-tonic = "0.12.3"
-tonic-build = "0.12.3"
+tokio-util = "0.7.17"
+tonic = "0.14.2"
+tonic-build = "0.14.2"
 tracing = {version = "0.1", features = ["log"]}
-tracing-subscriber = {version = "0.3.20", default-features = false, features = ["std", "fmt", "ansi", "env-filter"]}
+tracing-subscriber = {version = "0.3.22", default-features = false, features = ["std", "fmt", "ansi", "env-filter"]}
 typed-builder = "0.20.0"
-typetag = "0.2.18"
+typetag = "0.2.21"
 url = "2.4.0"
-uuid = {version = "1.18.1", features = ["v4"]}
+uuid = {version = "1.19.0", features = ["v4"]}
 xxhash-rust = {version = "0.8.15", features = ["const_xxh3", "const_xxh64", "const_xxh32", "xxh64", "xxh3", "xxh32"]}
 
 [workspace.dependencies.arrow2]
@@ -351,11 +365,11 @@ features = ["derive", "serde"]
 
 [workspace.dependencies.derive_more]
 features = ["display", "from"]
-version = "2.0.1"
+version = "2.1.0"
 
 [workspace.dependencies.log]
 features = ["std"]
-version = "0.4.28"
+version = "0.4.29"
 
 [workspace.dependencies.parquet-format-safe]
 features = ['async']
@@ -367,7 +381,7 @@ path = "src/parquet2"
 
 [workspace.dependencies.pyo3]
 features = ["extension-module", "multiple-pymethods", "abi3-py310", "indexmap", "chrono", "chrono-tz"]
-version = "0.27.1"
+version = "0.27.2"
 
 [workspace.dependencies.pyo3-async-runtimes]
 features = ["attributes", "tokio-runtime"]
@@ -378,7 +392,7 @@ version = "0.13"
 
 [workspace.dependencies.serde]
 features = ["derive", "rc"]
-version = "1.0.200"
+version = "1.0.228"
 
 [workspace.lints.clippy]
 as_conversions = "allow"

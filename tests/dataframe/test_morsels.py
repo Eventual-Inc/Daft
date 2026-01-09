@@ -32,7 +32,7 @@ def test_batch_size_from_udf_propagated_to_scan(dynamic_batching):
         df.explain(True, file=string_io)
         expected = """
 
-    * UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
+    * UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop:
     |   Expr = py_udf(col(0: a)) as a
     |   Passthrough Columns = []
     |   Properties = { batch_size = 10, concurrency = 1, async = false, scalar = false }
@@ -74,7 +74,7 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
     id_placeholder = m.group(1) if m else ""
     expected = f"""
 
-* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
+* UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop:
 |   Expr = py_udf(col(0: __TruncateRootUDF_0-0-0__)) as data
 |   Passthrough Columns = []
 |   Properties = {{ batch_size = 10, concurrency = 1, async = false, scalar = false }}
@@ -84,7 +84,7 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 * Project: col(0: __TruncateRootUDF_0-0-0__) as __TruncateRootUDF_0-0-0__
 |   Batch Size = Range(0, 10]
 |
-* Project: image_decode(col(0: {id_placeholder}), lit("raise")) as __TruncateRootUDF_0-0-0__, col(1: data)
+* Project: image_decode(col(0: {id_placeholder}), lit("raise"), lit(PyObject(RGB))) as __TruncateRootUDF_0-0-0__, col(1: data)
 |   Batch Size = Range(0, 10]
 |
 * Project: url_download(col(0: data), lit(true), lit("raise"), lit(32), lit(PyObject(IOConfig:
@@ -153,6 +153,15 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |   UnityConfig
 |       endpoint: None
 |       token: None
+|   GravitinoConfig
+|       endpoint: None
+|       metalake_name: None
+|       auth_type:None
+|       username: None
+|       password: None
+|       token: None
+|   HuggingFaceConfig
+|   Anonymous = false
 |   ))) as {id_placeholder}, col(0: data)
 |   Batch Size = Range(0, 10]
 |
@@ -175,7 +184,7 @@ def test_batch_size_from_multiple_udfs_do_not_override_each_other():
     df.explain(True, file=string_io)
     expected = """
 
-* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
+* UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop:
 |   Expr = py_udf(col(0: __TruncateRootUDF_0-0-0__)) as a
 |   Passthrough Columns = []
 |   Properties = { batch_size = 30, concurrency = 1, async = false, scalar = false }
@@ -183,7 +192,7 @@ def test_batch_size_from_multiple_udfs_do_not_override_each_other():
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
 |   Batch Size = 30
 |
-* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
+* UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop:
 |   Expr = py_udf(col(0: __TruncateRootUDF_1-0-0__)) as __TruncateRootUDF_0-0-0__
 |   Passthrough Columns = []
 |   Properties = { batch_size = 20, concurrency = 1, async = false, scalar = false }
@@ -191,7 +200,7 @@ def test_batch_size_from_multiple_udfs_do_not_override_each_other():
 |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
 |   Batch Size = 20
 |
-* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
+* UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop:
 |   Expr = py_udf(col(0: a)) as __TruncateRootUDF_1-0-0__
 |   Passthrough Columns = []
 |   Properties = { batch_size = 10, concurrency = 1, async = false, scalar = false }
@@ -217,7 +226,7 @@ def test_batch_size_from_udf_not_propagated_through_agg():
     df.explain(True, file=string_io)
     expected = """
 
-* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
+* UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop:
 |   Expr = py_udf(col(0: a)) as a
 |   Passthrough Columns = []
 |   Properties = { batch_size = 10, concurrency = 1, async = false, scalar = false }
@@ -250,7 +259,7 @@ def test_batch_size_from_udf_not_propagated_through_join():
     df.explain(True, file=string_io)
     expected = """
 
-* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
+* UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop:
 |   Expr = py_udf(col(0: a)) as a
 |   Passthrough Columns = []
 |   Properties = { batch_size = 10, concurrency = 1, async = false, scalar = false }
@@ -352,7 +361,7 @@ def test_batch_size_from_into_batches_before_udf():
     print(string_io.getvalue())
     expected = """
 
-* UDF: tests.dataframe.test_morsels.make_noop_udf.<locals>.noop
+* UDF tests.dataframe.test_morsels.make_noop_udf.<locals>.noop:
 |   Expr = py_udf(col(0: a)) as a
 |   Passthrough Columns = []
 |   Properties = { batch_size = 10, concurrency = 1, async = false, scalar = false }

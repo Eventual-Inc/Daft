@@ -7,32 +7,6 @@ import pytest
 from daft import col
 from daft.recordbatch import MicroPartition
 
-MODES = ["L", "LA", "RGB", "RGBA"]
-MODE_TO_NP_DTYPE = {
-    "L": np.uint8,
-    "LA": np.uint8,
-    "RGB": np.uint8,
-    "RGBA": np.uint8,
-    "L16": np.uint16,
-    "LA16": np.uint16,
-    "RGB16": np.uint16,
-    "RGBA16": np.uint16,
-    "RGB32F": np.float32,
-    "RGBA32F": np.float32,
-}
-MODE_TO_NUM_CHANNELS = {
-    "L": 1,
-    "LA": 2,
-    "RGB": 3,
-    "RGBA": 4,
-    "L16": 1,
-    "LA16": 2,
-    "RGB16": 3,
-    "RGBA16": 4,
-    "RGB32F": 3,
-    "RGBA32F": 4,
-}
-
 
 def test_image_crop_mixed_shape_same_mode(mixed_shape_data_fixture):
     table = MicroPartition.from_pydict({"images": mixed_shape_data_fixture})

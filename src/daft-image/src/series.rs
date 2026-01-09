@@ -4,21 +4,17 @@ use daft_core::{array::ops::image::image_array_from_img_buffers, prelude::*};
 use daft_schema::image_property::ImageProperty;
 
 use crate::ops::ImageOps;
+
 fn image_decode_impl(
     ba: &BinaryArray,
     raise_error_on_failure: bool,
     mode: Option<ImageMode>,
 ) -> DaftResult<ImageArray> {
-    let arrow_array = ba
-        .data()
-        .as_any()
-        .downcast_ref::<daft_arrow::array::BinaryArray<i64>>()
-        .unwrap();
-    let mut img_bufs = Vec::<Option<CowImage>>::with_capacity(arrow_array.len());
+    let mut img_bufs = Vec::<Option<CowImage>>::with_capacity(ba.len());
     let mut cached_dtype: Option<DataType> = None;
     // Load images from binary buffers.
     // Confirm that all images have the same value dtype.
-    for (index, row) in arrow_array.iter().enumerate() {
+    for (index, row) in ba.into_iter().enumerate() {
         let mut img_buf = match row.map(CowImage::decode).transpose() {
             Ok(val) => val,
             Err(err) => {
@@ -225,6 +221,35 @@ pub fn attribute(s: &Series, attr: ImageProperty) -> DaftResult<Series> {
             "datatype: {} does not support Image attributes. Occurred while processing Series: {}",
             dt,
             s.name()
+        ))),
+    }
+}
+
+/// Converts images in a Series to a tensor series.
+///
+/// # Arguments
+/// * `s` - Input Series containing image data
+///
+/// # Returns
+/// A DaftResult containing a new Series with converted tensors
+pub fn to_tensor(s: &Series) -> DaftResult<Series> {
+    let output_dtype = infer_to_tensor_dtype(s.data_type())?;
+    s.cast(&output_dtype)
+}
+
+pub(crate) fn infer_to_tensor_dtype(dtype: &DataType) -> DaftResult<DataType> {
+    match dtype {
+        DataType::FixedShapeImage(mode, h, w) => {
+            let c = mode.num_channels() as u64;
+            Ok(DataType::FixedShapeTensor(
+                Box::new(mode.get_dtype()),
+                vec![*h as u64, *w as u64, c],
+            ))
+        }
+        DataType::Image(Some(mode)) => Ok(DataType::Tensor(Box::new(mode.get_dtype()))),
+        DataType::Image(None) => Ok(DataType::Tensor(Box::new(DataType::UInt8))),
+        _ => Err(DaftError::ValueError(format!(
+            "datatype: {dtype} does not support Image to_tensor"
         ))),
     }
 }

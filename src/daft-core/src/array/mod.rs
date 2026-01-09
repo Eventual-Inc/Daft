@@ -8,7 +8,11 @@ mod list_array;
 pub mod ops;
 mod serdes;
 mod struct_array;
+pub mod utf8;
+
+use arrow::array::make_array;
 use daft_arrow::{
+    array::to_data,
     buffer::{NullBuffer, wrap_null_buffer},
     compute::cast::utf8_to_large_utf8,
 };
@@ -28,7 +32,7 @@ use crate::datatypes::{DaftArrayType, DaftPhysicalType, DataType, Field};
 #[derive(Debug)]
 pub struct DataArray<T> {
     pub field: Arc<Field>,
-    pub data: Box<dyn daft_arrow::array::Array>,
+    data: Box<dyn daft_arrow::array::Array>,
     validity: Option<daft_arrow::buffer::NullBuffer>,
     marker_: PhantomData<T>,
 }
@@ -56,7 +60,7 @@ impl<T> DataArray<T> {
             physical_field.dtype
         );
 
-        if let Ok(expected_arrow_physical_type) = physical_field.dtype.to_arrow() {
+        if let Ok(expected_arrow_physical_type) = physical_field.dtype.to_arrow2() {
             // since daft's Utf8 always maps to Arrow's LargeUtf8, we need to handle this special case
             // If the expected physical type is LargeUtf8, but the actual Arrow type is Utf8, we need to convert it
             if expected_arrow_physical_type == daft_arrow::datatypes::DataType::LargeUtf8
@@ -77,11 +81,10 @@ impl<T> DataArray<T> {
                 });
             }
             let arrow_data_type = arrow_array.data_type();
-
             assert!(
                 !(&expected_arrow_physical_type != arrow_data_type),
                 "Mismatch between expected and actual Arrow types for DataArray.\n\
-                Field name: {}\n\
+                Field name: '{}'\n\
                 Logical type: {}\n\
                 Physical type: {}\n\
                 Expected Arrow physical type: {:?}\n\
@@ -173,6 +176,14 @@ impl<T> DataArray<T> {
         self.data.as_ref()
     }
 
+    pub fn to_data(&self) -> arrow::array::ArrayData {
+        to_data(self.data())
+    }
+
+    pub fn to_arrow(&self) -> arrow::array::ArrayRef {
+        make_array(self.to_data())
+    }
+
     pub fn name(&self) -> &str {
         self.field.name.as_str()
     }
@@ -186,19 +197,11 @@ impl<T> DataArray<T> {
     }
 }
 
-impl<T> DataArray<T>
-where
-    T: DaftPhysicalType + 'static,
-{
-    pub fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
+    use arrow::array::StringArray;
     use daft_schema::{dtype::DataType, field::Field};
 
     use crate::series::Series;
@@ -206,10 +209,11 @@ mod tests {
     #[test]
     fn from_small_utf8_arrow() {
         let data = vec![Some("hello"), Some("world")];
-        let data = Box::new(daft_arrow::array::Utf8Array::<i32>::from(data.as_slice()));
+        let data = Arc::new(StringArray::from_iter(data.into_iter()));
         let daft_fld = Arc::new(Field::new("test", DataType::Utf8));
 
         let s = Series::from_arrow(daft_fld, data);
-        assert!(s.is_ok())
+        assert!(s.is_ok());
+        assert_eq!(s.unwrap().data_type(), &DataType::Utf8);
     }
 }
