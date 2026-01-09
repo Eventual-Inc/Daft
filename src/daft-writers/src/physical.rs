@@ -82,7 +82,10 @@ impl PhysicalWriterFactory {
     fn select_json_writer_type(file_schema: &SchemaRef) -> DaftResult<WriterType> {
         let native_supported = native_json_writer_supported(file_schema)?;
         if !native_supported {
-            return Err(DaftError::NotImplemented("JSON writes are not supported with extension, timezone with timestamp, binary, or duration data types".to_string()));
+            return Err(DaftError::NotImplemented(
+                "JSON writes are not supported with extension, binary, or duration data types"
+                    .to_string(),
+            ));
         }
         // There is only a native implementation of the JSON writer. PyArrow does not support JSON writes.
         Ok(WriterType::Native)

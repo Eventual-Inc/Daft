@@ -13,7 +13,7 @@ use arrow_array::ArrayRef;
 use common_display::table_display::{StrValue, make_comfy_table};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_compute_runtime;
-use daft_arrow::{array::Array, chunk::Chunk};
+use daft_arrow::array::Array;
 use daft_core::{
     array::ops::{
         DaftApproxCountDistinctAggable, DaftHllSketchAggable, GroupIndices, full::FullNull,
@@ -1545,19 +1545,12 @@ impl RecordBatch {
         )
     }
 
-    #[deprecated(note = "arrow2 migration")]
-    #[allow(deprecated, reason = "arrow2 migration")]
-    pub fn to_chunk(&self) -> Chunk<Box<dyn Array>> {
-        Chunk::new(self.columns.iter().map(|s| s.to_arrow2()).collect())
-    }
-
     pub fn to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
         let mut buffer = Vec::with_capacity(self.size_bytes());
         let arrow_schema = self.schema.to_arrow()?;
-        let mut writer =
-            daft_arrow::ipc::writer::StreamWriter::try_new(&mut buffer, &arrow_schema)?;
+        let mut writer = arrow_ipc::writer::StreamWriter::try_new(&mut buffer, &arrow_schema)?;
 
-        let arrow_batch: daft_arrow::arrow_array::RecordBatch = self.clone().try_into()?;
+        let arrow_batch: arrow_array::RecordBatch = self.clone().try_into()?;
         writer.write(&arrow_batch)?;
 
         writer.finish()?;
@@ -1567,7 +1560,7 @@ impl RecordBatch {
 
     pub fn from_ipc_stream(buffer: &[u8]) -> DaftResult<Self> {
         let mut cursor = Cursor::new(buffer);
-        let reader = daft_arrow::ipc::reader::StreamReader::try_new(&mut cursor, None)?;
+        let reader = arrow_ipc::reader::StreamReader::try_new(&mut cursor, None)?;
 
         let arrow_schema = reader.schema();
         let schema: Arc<Schema> = Arc::new(arrow_schema.as_ref().try_into()?);
