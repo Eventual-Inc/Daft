@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import functools
 import inspect
-import uuid
+import random
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Coroutine, Generator, Iterator
 from dataclasses import dataclass, field
@@ -63,6 +63,8 @@ class Func(Generic[P, T, C]):
     max_retries: int | None
     on_error: str | None
     return_dtype: DataType
+    name_override: str | None = None
+    func_id: str = field(init=False)
     name: str = field(init=False)
 
     @classmethod
@@ -76,6 +78,7 @@ class Func(Generic[P, T, C]):
         batch_size: int | None,
         max_retries: int | None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
+        name_override: str | None = None,
     ) -> Func[P, T, None]:
         # create a class instance with no setup method
         class NoopCls(ClsBase[None]):
@@ -107,6 +110,7 @@ class Func(Generic[P, T, C]):
             max_retries,
             on_error,
             return_dtype,
+            name_override,
         )
 
     @classmethod
@@ -119,6 +123,7 @@ class Func(Generic[P, T, C]):
         max_concurrency: int | None,
         max_retries: int | None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
+        name_override: str | None = None,
     ) -> Func[P, T, C]:
         is_generator = inspect.isgeneratorfunction(method)
         is_async = inspect.iscoroutinefunction(method)
@@ -142,12 +147,13 @@ class Func(Generic[P, T, C]):
             max_retries,
             on_error,
             return_dtype,
+            name_override,
         )
 
     def __post_init__(self) -> None:
         """Post-init checks and setup."""
         functools.update_wrapper(self, self._method)
-        self.name = self._derive_function_name()
+        self.func_id, self.name = self._derive_function_names()
 
         if self.unnest and not self.return_dtype.is_struct():
             raise ValueError(
@@ -160,14 +166,21 @@ class Func(Generic[P, T, C]):
         if self.is_async and self.is_generator:
             raise ValueError("Daft functions do not yet support both async and generator functions.")
 
-    def _derive_function_name(self) -> str:
+    def _derive_function_names(self) -> tuple[str, str]:
         """Compute a unique name for the function using its module and qualified name."""
         module_name = getattr(self, "__module__")
         qual_name: str = getattr(self, "__qualname__")
-        if module_name:
-            return f"{module_name}.{qual_name}-{uuid.uuid4()}"
+
+        if self.name_override:
+            name = self.name_override
         else:
-            return f"{qual_name}-{uuid.uuid4()}"
+            if module_name:
+                name = f"{module_name}.{qual_name}"
+            else:
+                name = f"{qual_name}"
+
+        random_suffix = random.randint(0, 1000000)
+        return (f"{name}-{random_suffix}", name)
 
     @staticmethod
     def _get_return_dtype(
@@ -234,9 +247,11 @@ class Func(Generic[P, T, C]):
 
             expr = Expression._from_pyexpr(
                 row_wise_udf(
+                    self.func_id,
                     self.name,
                     self._cls,
                     method,
+                    self.name_override is not None,
                     self.is_async,
                     DataType.list(self.return_dtype)._dtype,
                     self.gpus,
@@ -251,9 +266,11 @@ class Func(Generic[P, T, C]):
         elif self.is_batch:
             expr = Expression._from_pyexpr(
                 batch_udf(
+                    self.func_id,
                     self.name,
                     self._cls,
                     self._method,
+                    self.name_override is not None,
                     self.is_async,
                     self.return_dtype._dtype,
                     self.gpus,
@@ -269,9 +286,11 @@ class Func(Generic[P, T, C]):
         else:
             expr = Expression._from_pyexpr(
                 row_wise_udf(
+                    self.func_id,
                     self.name,
                     self._cls,
                     self._method,
+                    self.name_override is not None,
                     self.is_async,
                     self.return_dtype._dtype,
                     self.gpus,
@@ -341,6 +360,7 @@ def wrap_cls(
     max_concurrency: int | None,
     max_retries: int | None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
+    name_override: str | None = None,
 ) -> type:
     class Cls(ClsBase[cls]):  # type: ignore[valid-type]
         def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -364,7 +384,9 @@ def wrap_cls(
             if not inspect.isfunction(attr) or isinstance(attr, (classmethod, staticmethod)):
                 raise AttributeError("Can only access methods on a Daft class instance.")
 
-            return Func._from_method(self, attr, gpus, use_process, max_concurrency, max_retries, on_error)
+            return Func._from_method(
+                self, attr, gpus, use_process, max_concurrency, max_retries, on_error, name_override
+            )
 
         def __call__(self, *args: Any, **kwargs: Any) -> Any:
             return self.__getattr__("__call__")(*args, **kwargs)

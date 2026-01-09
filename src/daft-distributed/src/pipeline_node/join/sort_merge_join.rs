@@ -87,15 +87,17 @@ impl SortMergeJoinNode {
 
     fn multiline_display(&self) -> Vec<String> {
         use itertools::Itertools;
-        let mut res = vec!["Sort Merge Join".to_string()];
+        let mut res = vec!["SortMergeJoin".to_string()];
+        res.push(format!("Type: {}", self.join_type));
         res.push(format!(
-            "Left on: {}",
+            "Left: Join key = {}",
             self.left_on.iter().map(|e| e.to_string()).join(", ")
         ));
         res.push(format!(
-            "Right on: {}",
+            "Right: Join key = {}",
             self.right_on.iter().map(|e| e.to_string()).join(", ")
         ));
+        res.push(format!("Num partitions: {}", self.num_partitions));
         res
     }
 

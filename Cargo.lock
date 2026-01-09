@@ -217,6 +217,7 @@ dependencies = [
  "arrow-data",
  "arrow-schema",
  "chrono",
+ "chrono-tz",
  "half",
  "hashbrown 0.16.0",
  "num-complex",
@@ -2536,7 +2537,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
  "arrow-buffer",
- "arrow-ipc",
  "arrow-schema",
  "arrow2",
 ]
@@ -2699,6 +2699,7 @@ dependencies = [
 name = "daft-decoding"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-schema",
  "atoi_simd",
  "chrono",
  "csv-async",
@@ -3173,11 +3174,11 @@ name = "daft-micropartition"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
+ "arrow-ipc",
  "bincode",
  "common-error",
  "common-partitioning",
  "common-runtime",
- "daft-arrow",
  "daft-core",
  "daft-csv",
  "daft-dsl",
@@ -3248,6 +3249,7 @@ name = "daft-recordbatch"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
+ "arrow-ipc",
  "async-recursion",
  "comfy-table 7.1.4",
  "common-arrow-ffi",
@@ -3287,6 +3289,7 @@ dependencies = [
 name = "daft-scan"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-schema",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -3296,7 +3299,6 @@ dependencies = [
  "common-runtime",
  "common-scan-info",
  "ctor",
- "daft-arrow",
  "daft-compression",
  "daft-core",
  "daft-csv",
@@ -3468,6 +3470,7 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow-array",
  "arrow-csv",
+ "arrow-ipc",
  "arrow-json",
  "arrow-schema",
  "async-trait",
@@ -3475,7 +3478,6 @@ dependencies = [
  "common-error",
  "common-file-formats",
  "common-runtime",
- "daft-arrow",
  "daft-core",
  "daft-dsl",
  "daft-io",

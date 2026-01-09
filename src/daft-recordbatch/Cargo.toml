@@ -1,6 +1,7 @@
 [dependencies]
 async-recursion = "1.0.4"
 arrow-array = {workspace = true}
+arrow-ipc = {workspace = true}
 comfy-table = {workspace = true}
 daft-arrow = {path = "../daft-arrow"}
 common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false}

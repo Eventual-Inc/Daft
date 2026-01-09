@@ -252,7 +252,7 @@ where
         m2 += delta * delta2;
         for (i, column) in column_types.iter_mut().enumerate() {
             if let Some(string) = record.get(i) {
-                column.insert(infer(string));
+                column.insert(infer(string).into());
             }
         }
     }
@@ -271,7 +271,7 @@ where
         m2 += delta * delta2;
         for (i, column) in column_types.iter_mut().enumerate() {
             if let Some(string) = record.get(i) {
-                column.insert(infer(string));
+                column.insert(infer(string).into());
             }
         }
     }
