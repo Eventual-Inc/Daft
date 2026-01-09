@@ -13,10 +13,7 @@ use tracing::{info_span, instrument};
 
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
-    channel::{
-        OrderingAwareReceiver, Receiver, Sender, create_channel,
-        create_ordering_aware_receiver_channel,
-    },
+    channel::{Receiver, Sender, create_channel},
     dispatcher::{DispatchSpawner, DynamicUnorderedDispatcher, RoundRobinDispatcher},
     dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
@@ -26,6 +23,7 @@ use crate::{
     },
 };
 
+#[derive(Clone)]
 pub enum StreamingSinkOutput {
     NeedMoreInput(Option<Arc<MicroPartition>>),
     #[allow(dead_code)]
@@ -154,7 +152,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
     async fn run_worker(
         op: Arc<Op>,
         input_receiver: Receiver<Arc<MicroPartition>>,
-        output_sender: Sender<Arc<MicroPartition>>,
+        output_sender: Sender<StreamingSinkOutput>,
         runtime_stats: Arc<dyn RuntimeStats>,
         memory_manager: Arc<MemoryManager>,
         batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
@@ -171,19 +169,16 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                 let elapsed = now.elapsed();
 
                 state = result.0;
-                match result.1 {
+                let operator_result = result.1;
+
+                // Record stats for results that have output
+                match &operator_result {
                     StreamingSinkOutput::NeedMoreInput(mp) => {
                         batch_manager.record_execution_stats(
                             runtime_stats.clone(),
                             mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
                             elapsed,
                         );
-                        if let Some(mp) = mp
-                            && output_sender.send(mp).await.is_err()
-                        {
-                            return Ok(state);
-                        }
-                        break;
                     }
                     StreamingSinkOutput::HasMoreOutput(mp) => {
                         batch_manager.record_execution_stats(
@@ -191,11 +186,6 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                             mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
                             elapsed,
                         );
-                        if let Some(mp) = mp
-                            && output_sender.send(mp).await.is_err()
-                        {
-                            return Ok(state);
-                        }
                     }
                     StreamingSinkOutput::Finished(mp) => {
                         batch_manager.record_execution_stats(
@@ -203,9 +193,23 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                             mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
                             elapsed,
                         );
-                        if let Some(mp) = mp {
-                            let _ = output_sender.send(mp).await;
-                        }
+                    }
+                }
+
+                // Send the full operator result with worker_id
+                let result_to_send = operator_result.clone();
+                if output_sender.send(result_to_send).await.is_err() {
+                    return Ok(state);
+                }
+
+                match operator_result {
+                    StreamingSinkOutput::NeedMoreInput(_) => {
+                        break;
+                    }
+                    StreamingSinkOutput::HasMoreOutput(_) => {
+                        // Continue loop to process more output
+                    }
+                    StreamingSinkOutput::Finished(_) => {
                         return Ok(state);
                     }
                 }
@@ -223,10 +227,22 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
         maintain_order: bool,
         memory_manager: Arc<MemoryManager>,
         batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
-    ) -> OrderingAwareReceiver<Arc<MicroPartition>> {
-        let (output_sender, output_receiver) =
-            create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
-        for (input_receiver, output_sender) in input_receivers.into_iter().zip(output_sender) {
+    ) -> Vec<Receiver<StreamingSinkOutput>> {
+        let (output_senders, output_receivers) = match maintain_order {
+            true => (0..input_receivers.len())
+                .map(|_| create_channel(0))
+                .unzip(),
+            false => {
+                let (output_sender, output_receiver) = create_channel(0);
+                (
+                    vec![output_sender; input_receivers.len()],
+                    vec![output_receiver],
+                )
+            }
+        };
+        for (input_receiver, output_sender) in
+            input_receivers.into_iter().zip(output_senders.into_iter())
+        {
             task_set.spawn(Self::run_worker(
                 op.clone(),
                 input_receiver,
@@ -236,7 +252,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                 batch_manager.clone(),
             ));
         }
-        output_receiver
+        output_receivers
     }
 }
 
@@ -373,7 +389,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         runtime_handle.spawn(
             async move {
                 let mut task_set = TaskSet::new();
-                let mut output_receiver = Self::spawn_workers(
+                let output_receivers = Self::spawn_workers(
                     op.clone(),
                     spawned_dispatch_result.worker_receivers,
                     &mut task_set,
@@ -383,9 +399,55 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                     batch_manager,
                 );
 
-                while let Some(morsel) = output_receiver.recv().await {
-                    if counting_sender.send(morsel).await.is_err() {
-                        return Ok(());
+                // Round-robin logic: receive from workers in order
+                // Each worker has its own receiver in output_receivers
+                let mut active_receivers = output_receivers;
+                let mut curr_receiver_idx = 0;
+
+                while !active_receivers.is_empty() {
+                    // Receive from the current receiver
+                    match active_receivers[curr_receiver_idx].recv().await {
+                        Some(result) => {
+                            match result {
+                                StreamingSinkOutput::NeedMoreInput(mp) => {
+                                    if let Some(mp) = mp
+                                        && counting_sender.send(mp).await.is_err()
+                                    {
+                                        return Ok(());
+                                    }
+                                    // Advance to next receiver
+                                    curr_receiver_idx =
+                                        (curr_receiver_idx + 1) % active_receivers.len();
+                                }
+                                StreamingSinkOutput::HasMoreOutput(mp) => {
+                                    if let Some(mp) = mp
+                                        && counting_sender.send(mp).await.is_err()
+                                    {
+                                        return Ok(());
+                                    }
+                                    // Stay on same receiver to receive more output
+                                }
+                                StreamingSinkOutput::Finished(mp) => {
+                                    if let Some(mp) = mp {
+                                        let _ = counting_sender.send(mp).await;
+                                    }
+                                    // Receiver is finished, remove it
+                                    active_receivers.remove(curr_receiver_idx);
+                                    // Adjust curr_receiver_idx if needed
+                                    if curr_receiver_idx >= active_receivers.len() {
+                                        curr_receiver_idx = 0;
+                                    }
+                                }
+                            }
+                        }
+                        None => {
+                            // Receiver is closed, remove it
+                            active_receivers.remove(curr_receiver_idx);
+                            // Adjust curr_receiver_idx if needed
+                            if curr_receiver_idx >= active_receivers.len() {
+                                curr_receiver_idx = 0;
+                            }
+                        }
                     }
                 }
 
@@ -394,7 +456,6 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                     let state = result??;
                     finished_states.push(state);
                 }
-
                 let compute_runtime = get_compute_runtime();
                 let spawner = ExecutionTaskSpawner::new(
                     compute_runtime,

@@ -74,76 +74,31 @@ impl ScanTaskSource {
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
         let num_parallel_tasks = self.num_parallel_tasks;
-        let io_runtime_clone = io_runtime.clone();
 
         io_runtime.spawn(async move {
-            let (receivers_sender, forwarder_task) = if maintain_order {
-                // Channel for receiving ordered task receivers
-                // Each forward_scan_task_stream task will send its receiver to this channel
-                let (rs, rr) = create_channel::<Receiver<Arc<MicroPartition>>>(num_parallel_tasks * 2);
-
-                // Spawn ordered forwarder task that reads from receivers in order
-                let output_sender_for_forwarder = output_sender.clone();
-                let ft = io_runtime_clone.spawn(async move {
-                    // Read receivers in order and forward their messages
-                    while let Some(message) = rr.recv().await {
-                        while let Some(partition) = message.recv().await {
-                            if output_sender_for_forwarder.send(partition).await.is_err() {
-                                return Ok::<(), DaftError>(());
-                            }
-                        }
-                    }
-                    Ok(())
-                });
-                (Some(rs), Some(ft))
-            } else {
-                (None, None)
-            };
-
             let mut task_set = TaskSet::new();
             // Store pending tasks: (scan_task, delete_map, input_id)
             let mut pending_tasks = VecDeque::new();
             // Track how many scan tasks are pending per input_id
             // When count reaches 0, we send flush for that input_id
             let mut input_id_pending_counts: HashMap<InputId, usize> = HashMap::new();
-            let max_parallel = num_parallel_tasks;
+            // When maintain_order is true, limit parallelism to 1 to preserve order
+            let max_parallel = if maintain_order { 1 } else { num_parallel_tasks };
             let mut receiver_exhausted = false;
 
             while !receiver_exhausted || !pending_tasks.is_empty() || task_set.len() > 0 {
                 // First, try to spawn from pending_tasks if we have capacity
                 while task_set.len() < max_parallel && !pending_tasks.is_empty() {
                     let (scan_task, delete_map, input_id) = pending_tasks.pop_front().unwrap();
-                    if maintain_order {
-                        // Create channel for this task when spawning
-                        let (task_sender, task_receiver) = create_channel::<Arc<MicroPartition>>(1);
-
-                        // Send receiver to ordered forwarder only when spawning (maintains spawn order)
-                        if let Some(ref rs) = receivers_sender && rs.send(task_receiver).await.is_err() {
-                                return Ok(());
-
-                        }
-
-                        task_set.spawn(forward_scan_task_stream(
-                            scan_task,
-                            io_stats.clone(),
-                            delete_map,
-                            maintain_order,
-                            chunk_size,
-                            task_sender,
-                            input_id,
-                        ));
-                    } else {
-                        // All scan tasks share the same output_sender when maintain_order is false
-                        task_set.spawn(forward_scan_task_stream(
-                            scan_task,
-                            io_stats.clone(),
-                            delete_map,
-                            maintain_order,
-                            chunk_size,
-                            output_sender.clone(),
-                            input_id,
-                        ));
-                    }
+                    task_set.spawn(forward_scan_task_stream(
+                        scan_task,
+                        io_stats.clone(),
+                        delete_map,
+                        maintain_order,
+                        chunk_size,
+                        output_sender.clone(),
+                        input_id,
+                    ));
                 }
 
                 tokio::select! {
@@ -171,7 +126,6 @@ impl ScanTaskSource {
                                 *input_id_pending_counts.entry(input_id).or_insert(0) += num_tasks;
 
                                 // All tasks from this batch share the same delete_map and input_id
-                                // Channel will be created when spawning to maintain order
                                 for scan_task in split_tasks {
                                     pending_tasks.push_back((
                                         scan_task,
@@ -182,7 +136,6 @@ impl ScanTaskSource {
                             }
                             None => {
                                 // Channel is closed, no more tasks will arrive
-                                println!("Receiver is exhausted");
                                 receiver_exhausted = true;
                             }
                         }
@@ -216,18 +169,6 @@ impl ScanTaskSource {
             debug_assert!(task_set.len() == 0, "Task set should be empty");
             debug_assert!(receiver_exhausted, "Receiver should be exhausted");
 
-            // Close the receivers channel to signal the forwarder to exit (only if maintain_order is true)
-            if maintain_order {
-                if let Some(rs) = receivers_sender {
-                    drop(rs);
-                }
-
-                // Wait for the forwarder task to finish processing all messages
-                if let Some(ft) = forwarder_task {
-                    ft.await??;
-                }
-            }
-
             Ok(())
         })
     }
@@ -243,7 +184,7 @@ impl Source for ScanTaskSource {
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         // Create output channel for results
-        let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(1);
+        let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(0);
         // Spawn a task that continuously reads from self.receiver and forwards to task_sender
         // Receiver implements Clone, so we can clone it for the spawned task
         let receiver_clone = self.receiver.take().expect("Receiver not found");

@@ -130,4 +130,8 @@ impl BlockingSink for SortSink {
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(SortState::Building(Vec::new()))
     }
+
+    fn max_concurrency(&self) -> usize {
+        1
+    }
 }

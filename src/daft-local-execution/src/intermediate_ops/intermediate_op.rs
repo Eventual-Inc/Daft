@@ -14,10 +14,7 @@ use tracing::{info_span, instrument};
 
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
-    channel::{
-        OrderingAwareReceiver, Receiver, Sender, create_channel,
-        create_ordering_aware_receiver_channel,
-    },
+    channel::{Receiver, Sender, create_channel},
     dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
     dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
@@ -27,6 +24,7 @@ use crate::{
     },
 };
 #[cfg_attr(debug_assertions, derive(Debug))]
+#[derive(Clone)]
 pub enum IntermediateOperatorResult {
     NeedMoreInput(Option<Arc<MicroPartition>>),
     HasMoreOutput(Arc<MicroPartition>),
@@ -130,7 +128,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
     pub async fn run_worker(
         op: Arc<Op>,
         receiver: Receiver<Arc<MicroPartition>>,
-        sender: Sender<Arc<MicroPartition>>,
+        sender: Sender<IntermediateOperatorResult>,
         runtime_stats: Arc<dyn RuntimeStats>,
         memory_manager: Arc<MemoryManager>,
         batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
@@ -147,21 +145,16 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 let elapsed = now.elapsed();
 
                 state = result.0;
-                match result.1 {
+                let operator_result = result.1;
+
+                // Record stats for results that have output
+                match &operator_result {
                     IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
                         batch_manager.record_execution_stats(
                             runtime_stats.clone(),
                             mp.len(),
                             elapsed,
                         );
-
-                        if sender.send(mp).await.is_err() {
-                            return Ok(());
-                        }
-                        break;
-                    }
-                    IntermediateOperatorResult::NeedMoreInput(None) => {
-                        break;
                     }
                     IntermediateOperatorResult::HasMoreOutput(mp) => {
                         batch_manager.record_execution_stats(
@@ -169,10 +162,21 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                             mp.len(),
                             elapsed,
                         );
-                        if sender.send(mp).await.is_err() {
-                            return Ok(());
-                        }
                     }
+                    _ => {}
+                }
+
+                // Send the full operator result with worker_id
+                let result_to_send = operator_result.clone();
+                if sender.send(result_to_send).await.is_err() {
+                    return Ok(());
+                }
+
+                match operator_result {
+                    IntermediateOperatorResult::NeedMoreInput(_) => {
+                        break;
+                    }
+                    IntermediateOperatorResult::HasMoreOutput(_) => {}
                 }
             }
         }
@@ -186,10 +190,23 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         maintain_order: bool,
         memory_manager: Arc<MemoryManager>,
         batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
-    ) -> OrderingAwareReceiver<Arc<MicroPartition>> {
-        let (output_sender, output_receiver) =
-            create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
-        for (input_receiver, output_sender) in input_receivers.into_iter().zip(output_sender) {
+    ) -> Vec<Receiver<IntermediateOperatorResult>> {
+        // Each worker gets its own channel
+        let (output_senders, output_receivers) = match maintain_order {
+            true => (0..input_receivers.len())
+                .map(|_| create_channel(0))
+                .unzip(),
+            false => {
+                let (output_sender, output_receiver) = create_channel(0);
+                (
+                    vec![output_sender; input_receivers.len()],
+                    vec![output_receiver],
+                )
+            }
+        };
+        for (input_receiver, output_sender) in
+            input_receivers.into_iter().zip(output_senders.into_iter())
+        {
             runtime_handle.spawn(
                 Self::run_worker(
                     self.intermediate_op.clone(),
@@ -202,7 +219,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 &self.intermediate_op.name(),
             );
         }
-        output_receiver
+        output_receivers
     }
 }
 
@@ -336,7 +353,7 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
             &self.name(),
         );
 
-        let mut output_receiver = self.spawn_workers(
+        let output_receivers = self.spawn_workers(
             spawned_dispatch_result.worker_receivers,
             runtime_handle,
             maintain_order,
@@ -347,11 +364,49 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         let node_id = self.node_id();
         runtime_handle.spawn(
             async move {
-                while let Some(morsel) = output_receiver.recv().await {
-                    if counting_sender.send(morsel).await.is_err() {
-                        return Ok(());
+                // Round-robin logic: receive from workers in order
+                // Each worker has its own receiver in output_receivers
+                // Map from worker_id to receiver index (they're in order, so index == worker_id)
+                let mut active_receivers = output_receivers;
+                let mut curr_receiver_idx = 0;
+
+                while !active_receivers.is_empty() {
+                    // Receive from the current receiver
+                    match active_receivers[curr_receiver_idx].recv().await {
+                        Some(result) => {
+                            match result {
+                                IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
+                                    if counting_sender.send(mp).await.is_err() {
+                                        return Ok(());
+                                    }
+                                    // Advance to next receiver
+                                    curr_receiver_idx =
+                                        (curr_receiver_idx + 1) % active_receivers.len();
+                                }
+                                IntermediateOperatorResult::NeedMoreInput(None) => {
+                                    // Advance to next receiver
+                                    curr_receiver_idx =
+                                        (curr_receiver_idx + 1) % active_receivers.len();
+                                }
+                                IntermediateOperatorResult::HasMoreOutput(mp) => {
+                                    if counting_sender.send(mp).await.is_err() {
+                                        return Ok(());
+                                    }
+                                    // Stay on same receiver to receive more output
+                                }
+                            }
+                        }
+                        None => {
+                            // Receiver is closed, remove it
+                            active_receivers.remove(curr_receiver_idx);
+                            // Adjust curr_receiver_idx if needed (don't advance if we removed current)
+                            if curr_receiver_idx >= active_receivers.len() {
+                                curr_receiver_idx = 0;
+                            }
+                        }
                     }
                 }
+
                 stats_manager.finalize_node(node_id);
                 Ok(())
             },
