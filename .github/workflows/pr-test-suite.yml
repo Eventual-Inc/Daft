@@ -159,6 +159,10 @@ jobs:
       run: |
         source .venv/bin/activate
         uv pip install pyarrow==${{ matrix.pyarrow-version }}
+  
+    - name: Start tmate session if native
+      if: ${{ matrix.daft-runner == 'native' }}
+      uses: mxschmitt/action-tmate@v3
 
     - name: Build library and Test with pytest
       run: |
