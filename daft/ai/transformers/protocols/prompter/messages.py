@@ -1,9 +1,10 @@
 """Message handling for the Transformers Prompter.
 
-This module is the single place where prompt(messages=...) is handled:
+This module handles prompt(messages=...) processing:
 - Content serialization (str, bytes, File, ndarray → content parts)
-- Chat structure building (content parts → messages list for chat template)
-- Image extraction (for models needing separate image tensors)
+- Building content parts for HF chat template format
+
+Follows the same singledispatch pattern as OpenAI prompter.
 """
 
 from __future__ import annotations
@@ -13,68 +14,45 @@ from functools import singledispatchmethod
 from typing import Any
 
 from daft.ai.provider import ProviderImportError
-from daft.dependencies import np
+from daft.dependencies import np, pil_image
 from daft.file import File
 
 
-class ChatTemplateFormatter:
-    """Formats raw prompt inputs into HF chat template format.
+class TransformersPrompterMessageProcessor:
+    """Formats raw prompt inputs into HF chat template content parts.
 
-    Handles:
-    - Converting raw inputs (str, bytes, File, ndarray) to content parts
-    - Building chat message structure with roles
-    - Extracting images for processors that need them separately
+    Handles converting raw inputs (str, bytes, File, ndarray) to content parts
+    that can be used with processor.apply_chat_template().
+
+    For multimodal models, images are embedded directly in content as PIL Images:
+        {"type": "image", "image": <PIL.Image>}
+
+    This follows the same pattern as OpenAI prompter's message processing.
     """
 
-    def format(
+    def process_messages(
         self,
-        raw_messages: tuple[Any, ...],
+        messages: tuple[Any, ...],
         system_message: str | None = None,
-    ) -> tuple[list[dict[str, Any]], list[Any]]:
-        """Format raw inputs into chat messages + extracted images.
+    ) -> list[dict[str, Any]]:
+        """Process raw messages into HF content parts.
 
         Args:
-            raw_messages: Raw user inputs (strings, bytes, files, images).
-            system_message: Optional system prompt.
+            messages: Raw user inputs (strings, bytes, files, images).
 
         Returns:
-            Tuple of (messages, images) ready for processor.apply_chat_template()
+            List of content parts ready for chat template.
         """
-        messages: list[dict[str, Any]] = []
+        messages_list: list[dict[str, Any]] = []
 
-        if system_message:
-            messages.append({"role": "system", "content": system_message})
+        if system_message is not None:
+            # Use string for system message as some templates don't support list content for system role
+            messages_list.append({"role": "system", "content": system_message})
 
-        content, images = self._build_content(raw_messages)
-        messages.append({"role": "user", "content": content})
+        user_content = [self._process_content_part(msg) for msg in messages]
+        messages_list.append({"role": "user", "content": user_content})
 
-        return messages, images
-
-    def _build_content(self, raw_messages: tuple[Any, ...]) -> tuple[list[dict[str, Any]], list[Any]]:
-        """Convert raw inputs to content parts, extracting images."""
-        content: list[dict[str, Any]] = []
-        images: list[Any] = []
-
-        for msg in raw_messages:
-            part = self._process_content_part(msg)
-            if part["type"] == "image":
-                # Two image representations are supported:
-                # - In-memory image objects (ndarray / PIL): extracted and passed separately
-                # - URL/data-URL references: left inline for processor.apply_chat_template()
-                if "url" in part:
-                    content.append({"type": "image", "url": part["url"]})
-                else:
-                    # Image placeholder for chat template, actual image extracted
-                    content.append({"type": "image"})
-                    images.append(part["image"])
-            else:
-                content.append(part)
-
-        return content, images
-
-    # =========================================================================
-    # Content Part Processing (singledispatch pattern)
-    # =========================================================================
+        return messages_list
 
     @singledispatchmethod
     def _process_content_part(self, msg: Any) -> dict[str, Any]:
@@ -85,13 +63,9 @@ class ChatTemplateFormatter:
     def _process_str(self, msg: str) -> dict[str, Any]:
         """Handle string messages.
 
-        By default, strings are treated as plain text.
-
-        If the string looks like an image URL / data-URL, treat it as an image block
-        (so multimodal HF processors can fetch/parse it via apply_chat_template()).
+        Strings that look like image URLs are treated as image references.
         """
         if self._is_image_url(msg):
-            # HF multimodal chat templates expect {"type": "image", "url": "..."} blocks.
             return {"type": "image", "url": msg}
         return {"type": "text", "text": msg}
 
@@ -129,6 +103,13 @@ class ChatTemplateFormatter:
         @_process_content_part.register(np.ndarray)
         def _process_ndarray(self, msg: np.typing.NDArray[Any]) -> dict[str, Any]:
             """Handle numpy array messages (images)."""
+            return {"type": "image", "image": msg}
+
+    if pil_image.module_available():
+
+        @_process_content_part.register(pil_image.Image)
+        def _process_pil_image(self, msg: pil_image.Image) -> dict[str, Any]:
+            """Handle PIL Image messages."""
             return {"type": "image", "image": msg}
 
     # =========================================================================

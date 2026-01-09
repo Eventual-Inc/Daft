@@ -5,6 +5,8 @@ from __future__ import annotations
 import sys
 from typing import TYPE_CHECKING, Any, Literal, overload
 
+from daft.ai.vllm.protocols import prompter
+
 
 if sys.version_info < (3, 11):
     from typing_extensions import Unpack
@@ -562,9 +564,17 @@ def prompt(
     """
     from daft.ai._expressions import _PrompterExpression
 
-    # Clean the Pydantic model to avoid Colab serialization issues
-    if return_format is not None and IS_COLAB:
-        return_format = clean_pydantic_model(return_format)
+    # Determine return dtype based on return_format
+    if return_format is not None:
+        if IS_COLAB:
+            # Clean the Pydantic model to avoid Colab serialization issues
+            return_format = clean_pydantic_model(return_format)
+        try:
+            return_dtype = DataType.infer_from_type(return_format)
+        except Exception:
+            return_dtype = DataType.string()
+    else:
+        return_dtype = DataType.string()
 
     # Load a PrompterDescriptor from the resolved provider
     # Pass return_format and system_message as explicit named arguments
