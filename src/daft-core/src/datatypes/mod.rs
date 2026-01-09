@@ -489,11 +489,3 @@ impl<T: DaftNumericType> DataArray<T> {
         .expect("Failed to set nulls")
     }
 }
-
-impl<P: AsRef<str>> FromIterator<Option<P>> for Utf8Array {
-    #[inline]
-    fn from_iter<I: IntoIterator<Item = Option<P>>>(iter: I) -> Self {
-        let arrow_arr = daft_arrow::array::Utf8Array::<i64>::from_iter(iter);
-        Self::from(("", Box::new(arrow_arr)))
-    }
-}

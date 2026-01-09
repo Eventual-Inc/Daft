@@ -51,7 +51,6 @@ def test_join_simple(benchmark, num_samples, num_partitions, join_type) -> None:
     )
 
     # Run the benchmark.
-    # Run the benchmark.
     def bench_join() -> DataFrame:
         return left_table.join(right_table, on=["mycol"], how=join_type).collect()
 
@@ -147,7 +146,6 @@ def test_join_withdata(benchmark, num_samples, num_partitions, join_type) -> Non
         .collect()
     )
 
-    # Run the benchmark.
     # Run the benchmark.
     def bench_join() -> DataFrame:
         return left_table.join(right_table, on=["mykey"], how=join_type).collect()
@@ -260,7 +258,6 @@ def test_multicolumn_joins(benchmark, num_columns, num_samples, num_partitions, 
         .collect()
     )
 
-    # Run the benchmark.
     # Run the benchmark.
     def bench_join() -> DataFrame:
         # Use the unique column "nums" plus some redundant columns.

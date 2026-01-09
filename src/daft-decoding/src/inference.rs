@@ -1,5 +1,7 @@
+use std::sync::Arc;
+
+use arrow_schema::{DataType, TimeUnit};
 use chrono::Timelike;
-use daft_arrow::datatypes::{DataType, TimeUnit};
 
 use crate::deserialize::{ALL_NAIVE_DATE_FMTS, ALL_NAIVE_TIMESTAMP_FMTS, ALL_TIMESTAMP_FMTS};
 
@@ -16,7 +18,7 @@ use crate::deserialize::{ALL_NAIVE_DATE_FMTS, ALL_NAIVE_TIMESTAMP_FMTS, ALL_TIME
 /// * other utf8 is mapped to [`DataType::Utf8`]
 /// * invalid utf8 is mapped to [`DataType::Binary`]
 #[must_use]
-pub fn infer(bytes: &[u8]) -> daft_arrow::datatypes::DataType {
+pub fn infer(bytes: &[u8]) -> DataType {
     if is_null(bytes) {
         DataType::Null
     } else if is_boolean(bytes) {
@@ -47,7 +49,7 @@ pub fn infer_string(string: &str) -> DataType {
     } else if let Some(time_unit) = is_naive_datetime(string) {
         DataType::Timestamp(time_unit, None)
     } else {
-        DataType::Utf8
+        DataType::LargeUtf8
     }
 }
 
@@ -100,14 +102,14 @@ fn is_naive_datetime(string: &str) -> Option<TimeUnit> {
     None
 }
 
-fn is_datetime(string: &str) -> Option<(TimeUnit, String)> {
+fn is_datetime(string: &str) -> Option<(TimeUnit, Arc<str>)> {
     for fmt in ALL_TIMESTAMP_FMTS {
         if let Ok(dt) = chrono::DateTime::parse_from_str(string, fmt) {
             let offset = dt.offset().local_minus_utc();
             let hours = offset / 60 / 60;
             let minutes = offset / 60 - hours * 60;
             let time_unit = nanoseconds_to_time_unit(dt.nanosecond());
-            return Some((time_unit, format!("{hours:+03}:{minutes:02}")));
+            return Some((time_unit, format!("{hours:+03}:{minutes:02}").into()));
         }
     }
     None
