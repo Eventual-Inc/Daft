@@ -67,17 +67,19 @@ For S3-compatible services (e.g. Volcengine TOS), configure IO options for authe
     import daft
     from daft.io import IOConfig, S3Config
 
+    region = "cn-beijing" # Region of your TOS bucket
+    bucket_name = "my-tos-bucket" # Name of your TOS bucket
     io_config = IOConfig(
         s3=S3Config(
-            endpoint_url="https://tos-s3-{region}.ivolces.com",
-            region_name="{region}",
+            endpoint_url=f"https://tos-s3-{region}.ivolces.com",
+            region_name=region,
             force_virtual_addressing=True,
             verify_ssl=True,
             key_id="your-access-key-id",
             access_key="your-secret-access-key",
         )
     )
-    df = daft.read_lance("s3://bucket-name/lance-path", io_config=io_config)
+    df = daft.read_lance(f"s3://{bucket_name}/lance-path", io_config=io_config)
     ```
 
 For datasets with many fragments, group fragments to reduce scheduling and metadata overhead:
@@ -122,7 +124,7 @@ meta2.show()
 meta3 = df.write_lance("/tmp/lance/my_table.lance", mode="append")
 ```
 
-To access public S3/GCS buckets, configure IO options for authentication and endpoints. For S3-compatible services (e.g. Volcengine TOS), configure IO options for authentication and endpoints:
+For S3-compatible services (e.g. Volcengine TOS), configure IO options for authentication and endpoints:
 
 === "🐍 Python"
 
@@ -131,12 +133,13 @@ To access public S3/GCS buckets, configure IO options for authentication and end
     from daft.io import IOConfig, S3Config
 
     df = daft.from_pydict({"user_id": [1, 2, 3], "score": [0.5, 0.8, 0.9]})
-    region = "cn-beijing" # Region of your TOS bucket
 
+    region = "cn-beijing" # Region of your TOS bucket
+    bucket_name = "my-tos-bucket" # Name of your TOS bucket
     io_config = IOConfig(
         s3=S3Config(
             endpoint_url=f"https://tos-s3-{region}.ivolces.com",
-            region_name=f"{region}",
+            region_name=region,
             force_virtual_addressing=True,
             verify_ssl=True,
             key_id="your-access-key-id",
@@ -144,10 +147,10 @@ To access public S3/GCS buckets, configure IO options for authentication and end
         )
     )
 
-    meta = df.write_lance("s3://my-tos-bucket/lance/my_table.lance", io_config=io_config)
+    meta = df.write_lance(f"s3://{bucket_name}/lance/my_table.lance", io_config=io_config)
     ```
 
-Note: the `{region}` should match the region of your TOS bucket. E.g. if your bucket is in `cn-beijing`, you should set `region_name="cn-beijing"` and `endpoint_url="https://tos-s3-cn-beijing.ivolces.com"`.
+Note: the `{region}` should match the region of your TOS bucket. e.g. if your bucket is in `cn-beijing`, you should set `region_name="cn-beijing"` and `endpoint_url="https://tos-s3-cn-beijing.ivolces.com"`.
 
 ### Writing with a specific schema
 
