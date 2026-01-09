@@ -21,7 +21,6 @@ use crate::{
     },
     plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
     python::ray::RayTaskResult,
-    scheduling::worker::PyWorkerConfig,
     statistics::StatisticsSubscriber,
 };
 
@@ -157,11 +156,8 @@ struct PyDistributedPhysicalPlanRunner {
 #[pymethods]
 impl PyDistributedPhysicalPlanRunner {
     #[new]
-    #[pyo3(signature = (cluster_config=None))]
-    fn new(cluster_config: Option<Vec<PyWorkerConfig>>) -> PyResult<Self> {
-        let worker_config =
-            cluster_config.map(|configs| configs.into_iter().map(|c| c.into()).collect());
-        let worker_manager = RayWorkerManager::new(worker_config);
+    fn new() -> PyResult<Self> {
+        let worker_manager = RayWorkerManager::new();
         Ok(Self {
             runner: Arc::new(PlanRunner::new(Arc::new(worker_manager))),
         })
@@ -202,7 +198,6 @@ pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<RaySwordfishTask>()?;
     parent.add_class::<RayPartitionRef>()?;
     parent.add_class::<RaySwordfishWorker>()?;
-    parent.add_class::<PyWorkerConfig>()?;
     parent.add_class::<RayTaskResult>()?;
     Ok(())
 }

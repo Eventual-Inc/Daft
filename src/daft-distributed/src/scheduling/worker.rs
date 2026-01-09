@@ -1,7 +1,6 @@
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use common_error::DaftResult;
-use pyo3::prelude::*;
 
 use super::task::{Task, TaskDetails, TaskResultHandle};
 use crate::scheduling::{
@@ -10,99 +9,6 @@ use crate::scheduling::{
 };
 
 pub(crate) type WorkerId = Arc<str>;
-
-#[derive(Debug, Clone)]
-pub struct WorkerConfig {
-    /// Number of worker replicas with this configuration
-    pub num_replicas: usize,
-    /// Number of CPUs per worker
-    pub num_cpus: f64,
-    /// Memory in bytes per worker
-    pub memory_bytes: usize,
-    /// Number of GPUs per worker
-    pub num_gpus: f64,
-}
-
-impl WorkerConfig {
-    /// Creates a new WorkerConfig with validation.
-    pub fn new(num_replicas: usize, num_cpus: f64, memory_bytes: usize, num_gpus: f64) -> Result<Self, String> {
-        if num_replicas == 0 {
-            return Err(format!("num_replicas must be positive, got {}", num_replicas));
-        }
-        if num_cpus <= 0.0 {
-            return Err(format!("num_cpus must be positive, got {}", num_cpus));
-        }
-        if memory_bytes == 0 {
-            return Err(format!("memory_bytes must be positive, got {}", memory_bytes));
-        }
-        if num_gpus < 0.0 {
-            return Err(format!("num_gpus cannot be negative, got {}", num_gpus));
-        }
-
-        Ok(Self {
-            num_replicas,
-            num_cpus,
-            memory_bytes,
-            num_gpus,
-        })
-    }
-}
-
-#[pyclass(module = "daft.daft", name = "WorkerConfig")]
-#[derive(Debug, Clone)]
-pub struct PyWorkerConfig {
-    inner: WorkerConfig,
-}
-
-#[pymethods]
-impl PyWorkerConfig {
-    #[new]
-    #[pyo3(signature = (num_replicas, num_cpus, memory_bytes, num_gpus=0.0))]
-    pub fn new(num_replicas: usize, num_cpus: f64, memory_bytes: usize, num_gpus: f64) -> PyResult<Self> {
-        let inner = WorkerConfig::new(num_replicas, num_cpus, memory_bytes, num_gpus)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
-        Ok(Self { inner })
-    }
-
-    #[getter]
-    fn num_replicas(&self) -> usize {
-        self.inner.num_replicas
-    }
-
-    #[getter]
-    fn num_cpus(&self) -> f64 {
-        self.inner.num_cpus
-    }
-
-    #[getter]
-    fn memory_bytes(&self) -> usize {
-        self.inner.memory_bytes
-    }
-
-    #[getter]
-    fn num_gpus(&self) -> f64 {
-        self.inner.num_gpus
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "WorkerConfig(num_replicas={}, num_cpus={}, memory_bytes={}, num_gpus={})",
-            self.inner.num_replicas, self.inner.num_cpus, self.inner.memory_bytes, self.inner.num_gpus
-        )
-    }
-}
-
-impl From<PyWorkerConfig> for WorkerConfig {
-    fn from(py_config: PyWorkerConfig) -> Self {
-        py_config.inner
-    }
-}
-
-impl From<&PyWorkerConfig> for WorkerConfig {
-    fn from(py_config: &PyWorkerConfig) -> Self {
-        py_config.inner.clone()
-    }
-}
 
 pub(crate) trait Worker: Send + Sync + Debug + 'static {
     type Task: Task;
