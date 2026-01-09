@@ -3,7 +3,7 @@
     reason = "TODO(andrewgazelka/others): This should really be changed in the future"
 )]
 
-use std::{borrow::Cow, sync::Arc};
+use std::borrow::Cow;
 
 use common_error::{DaftError, DaftResult};
 
@@ -19,13 +19,6 @@ impl<T: DaftNumericType> From<(&str, Box<daft_arrow::array::PrimitiveArray<T::Na
     fn from(item: (&str, Box<daft_arrow::array::PrimitiveArray<T::Native>>)) -> Self {
         let (name, array) = item;
         Self::new(Field::new(name, T::get_dtype()).into(), array).unwrap()
-    }
-}
-
-impl From<(&str, Box<daft_arrow::array::NullArray>)> for NullArray {
-    fn from(item: (&str, Box<daft_arrow::array::NullArray>)) -> Self {
-        let (name, array) = item;
-        Self::new(Field::new(name, DataType::Null).into(), array).unwrap()
     }
 }
 
@@ -163,26 +156,6 @@ impl<T: AsRef<str>> From<(&str, &[T])> for DataArray<Utf8Type> {
         let (name, slice) = item;
         let arrow_array = Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(slice));
         Self::new(Field::new(name, DataType::Utf8).into(), arrow_array).unwrap()
-    }
-}
-
-impl From<(&str, &[u8])> for BinaryArray {
-    fn from(item: (&str, &[u8])) -> Self {
-        let (name, slice) = item;
-        let arrow_array = Box::new(daft_arrow::array::BinaryArray::<i64>::from_slice([slice]));
-        Self::new(Field::new(name, DataType::Binary).into(), arrow_array).unwrap()
-    }
-}
-
-impl<T: DaftPhysicalType, F: Into<Arc<Field>>> TryFrom<(F, Box<dyn daft_arrow::array::Array>)>
-    for DataArray<T>
-{
-    type Error = DaftError;
-
-    fn try_from(item: (F, Box<dyn daft_arrow::array::Array>)) -> DaftResult<Self> {
-        let (field, array) = item;
-        let field: Arc<Field> = field.into();
-        Self::new(field, array)
     }
 }
 

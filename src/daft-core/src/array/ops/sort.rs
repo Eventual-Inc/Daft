@@ -519,7 +519,7 @@ impl BooleanArray {
 
         let result = daft_arrow::compute::sort::sort(self.data(), &options, None)?;
 
-        Self::try_from((self.field.clone(), result))
+        Self::new(self.field.clone(), result)
     }
 }
 
@@ -601,7 +601,7 @@ macro_rules! impl_binary_like_sort {
 
                 let result = sort(self.data(), &options, None)?;
 
-                $da::try_from((self.field.clone(), result))
+                $da::new(self.field.clone(), result)
             }
         }
     };
