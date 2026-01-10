@@ -24,56 +24,6 @@ struct RayWorkerManagerState {
     pending_release_blacklist: HashMap<WorkerId, Instant>,
 }
 
-impl RayWorkerManagerState {
-    fn refresh_workers(&mut self) -> DaftResult<()> {
-        let should_refresh = match self.last_refresh {
-            None => true,
-            Some(last_time) => last_time.elapsed() > REFRESH_INTERVAL_SECS,
-        };
-
-        if !should_refresh {
-            return Ok(());
-        }
-        // Exclude pending-release workers for a grace TTL to prevent immediate respawn
-        let ttl_secs: u64 = std::env::var("DAFT_AUTOSCALING_PENDING_RELEASE_EXCLUDE_SECONDS")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(120);
-        self.pending_release_blacklist
-            .retain(|_, ts| ts.elapsed() < Duration::from_secs(ttl_secs));
-
-        let ray_workers = Python::attach(|py| {
-            let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
-
-            let mut existing_worker_ids = self
-                .ray_workers
-                .keys()
-                .map(|id| id.as_ref().to_string())
-                .collect::<Vec<_>>();
-            existing_worker_ids.extend(
-                self.pending_release_blacklist
-                    .keys()
-                    .map(|id| id.as_ref().to_string()),
-            );
-
-            let ray_workers = flotilla_module
-                .call_method1(
-                    pyo3::intern!(py, "start_ray_workers"),
-                    (existing_worker_ids,),
-                )?
-                .extract::<Vec<RaySwordfishWorker>>()?;
-
-            DaftResult::Ok(ray_workers)
-        })?;
-
-        for worker in ray_workers {
-            self.ray_workers.insert(worker.id().clone(), worker);
-        }
-        self.last_refresh = Some(Instant::now());
-        DaftResult::Ok(())
-    }
-}
-
 // Wrapper around the RaySwordfishWorkerManager class in the distributed_swordfish module.
 pub(crate) struct RayWorkerManager {
     state: Arc<Mutex<RayWorkerManagerState>>,
@@ -125,19 +75,93 @@ impl WorkerManager for RayWorkerManager {
     }
 
     fn worker_snapshots(&self) -> DaftResult<Vec<WorkerSnapshot>> {
-        let mut state = self
-            .state
-            .lock()
-            .expect("Failed to lock RayWorkerManagerState");
+        // Phase 1: lock and decide whether to refresh, and prepare data needed for the Python call.
+        let (should_refresh, existing_worker_ids, snapshots_if_skipped) = {
+            let mut state = self
+                .state
+                .lock()
+                .expect("Failed to lock RayWorkerManagerState");
 
-        // Refresh workers if needed (internally rate-limited)
-        state.refresh_workers()?;
+            let should_refresh = match state.last_refresh {
+                None => true,
+                Some(last_time) => last_time.elapsed() > REFRESH_INTERVAL_SECS,
+            };
 
-        Ok(state
-            .ray_workers
-            .values()
-            .map(WorkerSnapshot::from)
-            .collect::<Vec<_>>())
+            if !should_refresh {
+                let snapshots = state
+                    .ray_workers
+                    .values()
+                    .map(WorkerSnapshot::from)
+                    .collect::<Vec<_>>();
+                (false, Vec::new(), Some(snapshots))
+            } else {
+                // Exclude pending-release workers for a grace TTL to prevent immediate respawn.
+                let ttl_secs: u64 =
+                    std::env::var("DAFT_AUTOSCALING_PENDING_RELEASE_EXCLUDE_SECONDS")
+                        .ok()
+                        .and_then(|v| v.parse::<u64>().ok())
+                        .unwrap_or(120);
+                state
+                    .pending_release_blacklist
+                    .retain(|_, ts| ts.elapsed() < Duration::from_secs(ttl_secs));
+
+                let mut existing_worker_ids = state
+                    .ray_workers
+                    .keys()
+                    .map(|id| id.as_ref().to_string())
+                    .collect::<Vec<_>>();
+                existing_worker_ids.extend(
+                    state
+                        .pending_release_blacklist
+                        .keys()
+                        .map(|id| id.as_ref().to_string()),
+                );
+
+                (true, existing_worker_ids, None)
+            }
+        };
+
+        if !should_refresh {
+            // No refresh needed; return snapshots based on the current state.
+            return Ok(
+                snapshots_if_skipped.expect("snapshots must be present when refresh is skipped")
+            );
+        }
+
+        // Phase 2: call into Python without holding the state lock.
+        let ray_workers = Python::attach(|py| {
+            let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
+
+            let ray_workers = flotilla_module
+                .call_method1(
+                    pyo3::intern!(py, "start_ray_workers"),
+                    (existing_worker_ids,),
+                )?
+                .extract::<Vec<RaySwordfishWorker>>()?;
+
+            DaftResult::Ok(ray_workers)
+        })?;
+
+        // Phase 3: merge refreshed workers back into state and materialize snapshots.
+        let snapshots = {
+            let mut state = self
+                .state
+                .lock()
+                .expect("Failed to lock RayWorkerManagerState");
+
+            for worker in ray_workers {
+                state.ray_workers.insert(worker.id().clone(), worker);
+            }
+            state.last_refresh = Some(Instant::now());
+
+            state
+                .ray_workers
+                .values()
+                .map(WorkerSnapshot::from)
+                .collect::<Vec<_>>()
+        };
+
+        Ok(snapshots)
     }
 
     fn mark_task_finished(&self, task_context: TaskContext, worker_id: WorkerId) {

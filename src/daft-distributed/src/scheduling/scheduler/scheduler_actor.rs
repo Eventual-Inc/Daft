@@ -492,6 +492,15 @@ mod tests {
         utils::channel::create_channel,
     };
 
+    fn set_downscale_env_enabled_for_test() {
+        // Safety: this helper is only used in tests to configure a process-wide environment
+        // variable before any scheduler code runs. It does not rely on any unsafe invariants
+        // beyond std::env::set_var itself.
+        unsafe {
+            std::env::set_var("DAFT_AUTOSCALING_DOWNSCALE_ENABLED", "1");
+        }
+    }
+
     struct SchedulerActorTestContext {
         scheduler_handle_ref: Arc<SchedulerHandle<MockTask>>,
         joinset: JoinSet<DaftResult<()>>,
@@ -788,9 +797,7 @@ mod tests {
     #[tokio::test]
     async fn test_scheduler_actor_ratio_downscale_invokes_idle_cleanup() -> DaftResult<()> {
         // Configure downscale to evaluate immediately and keep at least 1 survivor
-        unsafe {
-            std::env::set_var("DAFT_AUTOSCALING_DOWNSCALE_ENABLED", "1");
-        }
+        set_downscale_env_enabled_for_test();
         let test_context = setup_scheduler_actor_test_context(&[
             (Arc::from("w1"), 1),
             (Arc::from("w2"), 1),

@@ -229,7 +229,6 @@ def try_autoscale(bundles: list[dict[str, int]]) -> None:
     from ray.autoscaler.sdk import request_resources
 
     if not bundles:
-        bundles = []
         logger.debug("The number of bundles to scale up is 0.")
 
     request_resources(
