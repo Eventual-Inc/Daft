@@ -97,6 +97,7 @@ def _lancedb_count_result_function(
     open_kwargs: dict[Any, Any] | None,
     required_column: str,
     filter: Optional["pa.compute.Expression"] = None,
+    fragment_ids: list[int] | None = None,
 ) -> Iterator[PyRecordBatch]:
     """Use LanceDB's API to count rows and return a record batch with the count result."""
     try:
@@ -109,7 +110,14 @@ def _lancedb_count_result_function(
     # Attempt to reconstruct with best-effort kwargs
     ds = lance.dataset(ds_uri, **(open_kwargs or {}))
     logger.debug("Using metadata for counting all rows")
-    count = ds.count_rows(filter=filter)
+
+    if fragment_ids is not None:
+        count = 0
+        for fid in fragment_ids:
+            fragment = ds.get_fragment(fid)
+            count += fragment.count_rows(filter=filter)
+    else:
+        count = ds.count_rows(filter=filter)
 
     arrow_schema = pa.schema([pa.field(required_column, pa.uint64())])
     arrow_array = pa.array([count], type=pa.uint64())
@@ -238,17 +246,29 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
         fields = pushdowns.aggregation_required_column_names()
         new_schema = Schema.from_pyarrow_schema(pa.schema([pa.field(fields[0], pa.uint64())]))
         open_kwargs = getattr(self._ds, "_lance_open_kwargs", None)
-        yield ScanTask.python_factory_func_scan_task(
-            module=_lancedb_count_result_function.__module__,
-            func_name=_lancedb_count_result_function.__name__,
-            func_args=(self._ds.uri, open_kwargs, fields[0], self._combine_filters_to_arrow()),
-            schema=new_schema._schema,
-            num_rows=1,
-            size_bytes=None,
-            pushdowns=pushdowns,
-            stats=None,
-            source_type=self.name(),
+
+        fragments = self._ds.get_fragments()
+
+        # Split fragments into chunks
+        chunk_size = (
+            self._fragment_group_size
+            if self._fragment_group_size is not None and self._fragment_group_size > 1
+            else 500
         )
+        for i in range(0, len(fragments), chunk_size):
+            chunk = fragments[i : i + chunk_size]
+            fragment_ids = [f.fragment_id for f in chunk]
+            yield ScanTask.python_factory_func_scan_task(
+                module=_lancedb_count_result_function.__module__,
+                func_name=_lancedb_count_result_function.__name__,
+                func_args=(self._ds.uri, open_kwargs, fields[0], self._combine_filters_to_arrow(), fragment_ids),
+                schema=new_schema._schema,
+                num_rows=1,  # Each task returns 1 row (partial count)
+                size_bytes=None,
+                pushdowns=pushdowns,
+                stats=None,
+                source_type=self.name(),
+            )
 
     def _create_scan_tasks_with_limit_and_no_filters(
         self, pushdowns: PyPushdowns, required_columns: list[str] | None
