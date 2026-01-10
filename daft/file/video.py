@@ -106,13 +106,17 @@ class VideoFile(File):
                 if video is None:
                     raise ValueError("No video stream found")
                 # Seek to start time
-                if start_time > 0:
-                    seek_timestamp = int(start_time * video.time_base)
-                    container.seek(seek_timestamp)
+                if start_time > 0 and video.time_base:
+                    seek_timestamp = int(start_time / float(video.time_base))
+                    container.seek(seek_timestamp, stream=video)
 
                 # skip non keyframes
                 video.codec_context.skip_frame = "NONKEY"
                 for frame in container.decode(video):
+                    # Check start time (seek might land on a keyframe before start_time)
+                    if frame.time and frame.time < start_time:
+                        continue
+
                     # Check end time if specified
                     if end_time is not None:
                         frame_time = frame.time

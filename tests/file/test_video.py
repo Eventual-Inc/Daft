@@ -66,3 +66,45 @@ def test_keyframes(sample_video_path):
 
     values = df.to_pydict()["video"][0]
     assert len(values) == 13
+
+
+def test_keyframes_start_time_beyond_duration_returns_empty(sample_video_path):
+    file = daft.VideoFile(sample_video_path)
+    metadata = file.metadata()
+    duration = metadata["duration"]
+    assert duration is not None
+
+    start_time = duration + 1.0
+    keyframes = list(file.keyframes(start_time=start_time))
+
+    assert len(keyframes) == 0
+
+
+def test_keyframes_start_time_skips_early_frames(sample_video_path):
+    file = daft.VideoFile(sample_video_path)
+    metadata = file.metadata()
+    duration = metadata["duration"]
+    assert duration is not None
+
+    start_time = duration / 2.0
+
+    all_keyframes = list(file.keyframes())
+    later_keyframes = list(file.keyframes(start_time=start_time))
+
+    assert len(later_keyframes) < len(all_keyframes)
+
+
+def test_video_keyframes_start_time_beyond_duration_returns_empty(sample_video_path):
+    file = daft.VideoFile(sample_video_path)
+    metadata = file.metadata()
+    duration = metadata["duration"]
+    assert duration is not None
+
+    start_time = duration + 1.0
+
+    df = daft.from_pydict({"path": [sample_video_path]})
+    df = df.select(daft.functions.video_file(df["path"], verify=True).alias("video"))
+    df = df.select(daft.functions.video_keyframes(df["video"], start_time=start_time).alias("frames"))
+
+    frames = df.to_pydict()["frames"][0]
+    assert frames == []
