@@ -9,10 +9,11 @@ use daft_core::prelude::SchemaRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
+use snafu::ResultExt;
 use tracing::{info_span, instrument};
 
 use crate::{
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu, TaskSet,
     channel::{
         OrderingAwareReceiver, Receiver, Sender, create_channel,
         create_ordering_aware_receiver_channel,
@@ -93,7 +94,7 @@ pub(crate) trait StreamingSink: Send + Sync {
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
         None
     }
-    fn batching_strategy(&self) -> Self::BatchingStrategy;
+    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy>;
     fn dispatch_spawner(
         &self,
         batch_manager: Arc<BatchManager<Self::BatchingStrategy>>,
@@ -353,7 +354,9 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
         let num_workers = op.max_concurrency();
-        let strategy = op.batching_strategy();
+        let strategy = op.batching_strategy().context(PipelineExecutionSnafu {
+            node_name: self.name().to_string(),
+        })?;
         let batch_manager = Arc::new(BatchManager::new(strategy));
         let dispatch_spawner = op.dispatch_spawner(batch_manager.clone(), maintain_order);
         let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
