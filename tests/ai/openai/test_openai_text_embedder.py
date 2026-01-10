@@ -18,6 +18,7 @@ from daft import DataType
 from daft.ai.openai.protocols.text_embedder import (
     OpenAITextEmbedder,
     OpenAITextEmbedderDescriptor,
+    _ModelProfile,
     _models,
     chunk_text,
 )
@@ -94,6 +95,27 @@ def test_instantiate():
     embedder = descriptor.instantiate()
     assert isinstance(embedder, OpenAITextEmbedder)
     assert embedder._model == "text-embedding-3-small"
+
+
+def test_custom_dimensions_respects_model_dtype():
+    """When overriding dimensions, dtype should still use model's default (mock float64 profile)."""
+    fake_profile = _ModelProfile(
+        dimensions=EmbeddingDimensions(size=1536, dtype=DataType.float64()),
+        supports_overriding_dimensions=True,
+    )
+
+    with patch.dict("daft.ai.openai.protocols.text_embedder._models", {"mock-model-f64": fake_profile}):
+        descriptor = OpenAITextEmbedderDescriptor(
+            provider_name="openai",
+            provider_options={"api_key": "test-key"},
+            model_name="mock-model-f64",
+            dimensions=512,
+            embed_options={},
+        )
+
+        dims = descriptor.get_dimensions()
+        assert dims.size == 512
+        assert dims.dtype == DataType.float64()
 
 
 def test_embed_text_single_input(mock_text_embedder, mock_client):
