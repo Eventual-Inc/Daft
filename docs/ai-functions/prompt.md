@@ -68,7 +68,8 @@ df.show()
 
 1. **OpenAI** (Default) - Leverage models from OpenAI or any OpenAI-compatible provider.
 2. **Google** - Take advantage of Google's latests models like *Gemini 3 Pro*.
-3. **vLLM Prefix Caching** (Beta) - Distributed batch inference on vLLM [built by the Daft Cloud team](https://www.daft.ai/blog/cutting-llm-batch-inference-time-in-half-dynamic-prefix-bucketing-at-scale).
+3. **Transformers** - Run local inference with Hugging Face Transformers models, including VLMs and quantized models.
+4. **vLLM Prefix Caching** (Beta) - Distributed batch inference on vLLM [built by the Daft Cloud team](https://www.daft.ai/blog/cutting-llm-batch-inference-time-in-half-dynamic-prefix-bucketing-at-scale).
 
 ## Prompt Basics
 
@@ -592,5 +593,260 @@ df = df.with_column(
         model="google/gemma-3-4b-it",
         extra_body={"structured_outputs": {"regex": r"\w+@\w+\.com\n"}, "stop": ["\n"]},
     )
+)
+```
+
+## Local Inference with Transformers
+
+The `transformers` provider enables local inference using Hugging Face Transformers models. This is ideal for:
+
+- **Privacy-sensitive workloads** where data cannot leave your infrastructure
+- **Cost optimization** by running inference on your own hardware
+- **RL training workflows** that need ground-truth log probabilities from generation
+- **Vision-Language Models (VLMs)** for multimodal understanding
+
+### Quick Start
+
+```python
+import daft
+from daft.functions import prompt
+
+df = daft.from_pydict({
+    "question": [
+        "What is the capital of France?",
+        "What is 2 + 2?",
+    ]
+})
+
+df = df.with_column(
+    "answer",
+    prompt(
+        daft.col("question"),
+        provider="transformers",
+        model="Qwen/Qwen3-0.6B",
+        max_new_tokens=50,
+    ),
+)
+
+df.show()
+```
+
+### Configuration Options
+
+The Transformers provider supports extensive configuration for model loading and generation:
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `model` | `str` | Hugging Face model name or local path (e.g., `"Qwen/Qwen3-0.6B"`) |
+| `max_new_tokens` | `int` | Maximum number of tokens to generate |
+| `temperature` | `float` | Sampling temperature (requires `do_sample=True`) |
+| `top_p` | `float` | Nucleus sampling parameter |
+| `top_k` | `int` | Top-k sampling parameter |
+| `do_sample` | `bool` | Enable sampling (default: `False` for greedy decoding) |
+| `system_message` | `str` | System message prepended to all prompts |
+| `torch_dtype` | `str` | Model dtype: `"float16"`, `"bfloat16"`, or `"float32"` |
+| `device_map` | `str` | Device placement strategy (e.g., `"auto"`) |
+| `trust_remote_code` | `bool` | Trust remote code for custom models (default: `True`) |
+| `quantization_config` | `dict` | BitsAndBytes quantization configuration |
+| `output_mode` | `str` | Output format: `"text"` (default) or `"logprobs"` |
+| `num_logprobs` | `int` | Number of top-k logprobs per token (when `output_mode="logprobs"`) |
+
+### Device Selection
+
+The Transformers provider automatically detects the best available device:
+
+1. **CUDA** - NVIDIA GPUs (preferred)
+2. **MPS** - Apple Silicon GPUs
+3. **CPU** - Fallback when no GPU available
+
+You can also specify `device_map="auto"` to use the `accelerate` library for automatic device placement across multiple GPUs.
+
+### Quantization
+
+For large models, use quantization to reduce memory requirements. The provider supports BitsAndBytes quantization:
+
+```python
+import daft
+from daft.functions import prompt
+
+df = daft.from_pydict({"question": ["Explain quantum computing briefly."]})
+
+df = df.with_column(
+    "answer",
+    prompt(
+        daft.col("question"),
+        provider="transformers",
+        model="meta-llama/Llama-2-7b-chat-hf",
+        max_new_tokens=100,
+        quantization_config={
+            "load_in_4bit": True,
+            "bnb_4bit_compute_dtype": "float16",
+            "bnb_4bit_quant_type": "nf4",
+        },
+    ),
+)
+```
+
+!!! note
+    Quantization with BitsAndBytes requires CUDA. Install with: `pip install bitsandbytes`
+
+### Vision-Language Models (VLMs)
+
+The Transformers provider supports multimodal VLMs like Qwen2-VL for image understanding:
+
+```python
+import daft
+from daft.functions import prompt, decode_image
+
+df = daft.from_pydict({
+    "image_path": ["/path/to/image1.png", "/path/to/image2.jpg"],
+    "question": ["What's in this image?", "Describe this scene."],
+})
+
+# Decode images
+df = df.with_column("image", decode_image(daft.col("image_path").download()))
+
+# Prompt VLM with image and text
+df = df.with_column(
+    "description",
+    prompt(
+        daft.col("image"),
+        daft.col("question"),
+        provider="transformers",
+        model="Qwen/Qwen2-VL-2B-Instruct",
+        max_new_tokens=100,
+    ),
+)
+```
+
+### Log Probabilities for RL Training
+
+For reinforcement learning workflows (RLHF, PPO, etc.), you need the **ground-truth log probabilities** from generation to compute policy gradients. The Transformers provider returns the exact logprobs computed during the generation forward pass:
+
+```python
+import daft
+from daft.functions import prompt
+
+df = daft.from_pydict({
+    "prompt": ["Write a helpful response about Python."]
+})
+
+df = df.with_column(
+    "trajectory",
+    prompt(
+        daft.col("prompt"),
+        provider="transformers",
+        model="Qwen/Qwen3-0.6B",
+        max_new_tokens=50,
+        output_mode="logprobs",  # Enable logprobs output
+        num_logprobs=5,          # Top-5 alternatives per token
+    ),
+)
+
+# Access the trajectory data
+result = df.to_pydict()["trajectory"][0]
+print(result.keys())
+# dict_keys(['text', 'token_ids', 'tokens', 'logprobs', 'top_logprobs'])
+```
+
+The `output_mode="logprobs"` returns a struct with:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `text` | `str` | Generated text |
+| `token_ids` | `list[int]` | Token IDs for the generated sequence |
+| `tokens` | `list[str]` | Decoded tokens |
+| `logprobs` | `list[float]` | Log probability of each generated token (**ground truth from generation**) |
+| `top_logprobs` | `list[list[dict]]` | Top-k alternatives with their logprobs per position |
+
+!!! important
+    The `logprobs` values are the **exact** log probabilities computed during the generation forward pass, not from a separate forward pass. This is critical for RL training where the policy gradient requires the original sampling distribution.
+
+### Example: Batch RL Trajectory Generation
+
+```python
+import daft
+from daft.functions import prompt
+
+# Load your prompts dataset
+df = daft.read_parquet("s3://my-bucket/rl-prompts/*.parquet")
+
+# Generate trajectories with logprobs
+df = df.with_column(
+    "trajectory",
+    prompt(
+        daft.col("prompt"),
+        provider="transformers",
+        model="Qwen/Qwen3-0.6B",
+        max_new_tokens=256,
+        temperature=0.7,
+        do_sample=True,
+        output_mode="logprobs",
+    ),
+)
+
+# Extract logprobs for training
+df = df.with_columns(
+    daft.col("trajectory")["text"].alias("response"),
+    daft.col("trajectory")["token_ids"].alias("token_ids"),
+    daft.col("trajectory")["logprobs"].alias("logprobs"),
+)
+
+# Save trajectories for training
+df.write_parquet("s3://my-bucket/rl-trajectories/")
+```
+
+### Structured Outputs
+
+The Transformers provider supports structured outputs via Pydantic models, though reliability depends on the model's ability to generate valid JSON:
+
+```python
+import daft
+from daft.functions import prompt
+from pydantic import BaseModel, Field
+
+class Sentiment(BaseModel):
+    label: str = Field(description="positive, negative, or neutral")
+    confidence: float = Field(description="confidence score 0-1")
+
+df = daft.from_pydict({
+    "text": ["I love this product!", "This is terrible."]
+})
+
+df = df.with_column(
+    "sentiment",
+    prompt(
+        daft.col("text"),
+        system_message='Analyze sentiment. Return JSON: {"label": "...", "confidence": 0.X}',
+        return_format=Sentiment,
+        provider="transformers",
+        model="Qwen/Qwen3-0.6B",
+        max_new_tokens=50,
+    ),
+)
+```
+
+!!! note
+    Structured output reliability varies by model. Larger instruction-tuned models generally produce more consistent JSON output.
+
+### Performance Tips
+
+1. **Use appropriate dtype**: Set `torch_dtype="float16"` or `"bfloat16"` for faster inference
+2. **Enable quantization**: Use 4-bit or 8-bit quantization for large models
+3. **Batch processing**: Daft automatically batches rows for efficient GPU utilization
+4. **Model caching**: Models are loaded once per worker and reused across batches
+
+```python
+# Optimized configuration for production
+df = df.with_column(
+    "response",
+    prompt(
+        daft.col("text"),
+        provider="transformers",
+        model="Qwen/Qwen3-0.6B",
+        max_new_tokens=100,
+        torch_dtype="float16",  # Use half precision
+        do_sample=False,        # Greedy decoding (faster)
+    ),
 )
 ```

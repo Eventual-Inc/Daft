@@ -5,7 +5,9 @@ from typing import TYPE_CHECKING
 from daft.lazy_import import LazyImport
 
 if TYPE_CHECKING:
+    import accelerate
     import av
+    import bitsandbytes
     import fsspec
     import librosa
     import numpy as np
@@ -24,6 +26,7 @@ if TYPE_CHECKING:
     import tensorflow as tf
     import torch
     import torchvision
+    import transformers
 else:
     av = LazyImport("av")
     flight = LazyImport("pyarrow.flight")
@@ -44,11 +47,16 @@ else:
     tf = LazyImport("tensorflow")
     torch = LazyImport("torch")
     torchvision = LazyImport("torchvision")
+    transformers = LazyImport("transformers")
+    accelerate = LazyImport("accelerate")
+    bitsandbytes = LazyImport("bitsandbytes")
 
 unity_catalog = LazyImport("daft.unity_catalog")
 
 __all__ = [
+    "accelerate",
     "av",
+    "bitsandbytes",
     "flight",
     "fsspec",
     "librosa",
@@ -67,5 +75,6 @@ __all__ = [
     "tf",
     "torch",
     "torchvision",
+    "transformers",
     "unity_catalog",
 ]

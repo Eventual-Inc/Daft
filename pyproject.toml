@@ -53,7 +53,7 @@ ray = [
   'ray[data, client]>=2.0.0,<2.53.0; platform_system != "Windows"',
   'ray[data, client]>=2.10.0,<2.53.0; platform_system == "Windows"'  # ray 2.10 has the pyarrow upper pin removed
 ]
-transformers = ["transformers<4.58.0", "sentence-transformers<5.2.0", "torch<2.10.0", "torchvision<0.25.0", "pillow==11.0.0"]
+transformers = ["transformers<4.58.0", "sentence-transformers<5.2.0", "torch<2.10.0", "torchvision<0.25.0", "pillow==11.0.0", "accelerate<2.0.0"]
 # connectorx 0.4.4 is needed for pgvector support.
 sql = ["connectorx>=0.4.4,<0.5.0", "sqlalchemy<2.1.0", "sqlglot<28.1.0"]
 turbopuffer = ["turbopuffer<1.9.0"]

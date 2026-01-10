@@ -4,7 +4,7 @@ Feature coverage table:
 
 | Feature              | OpenAI | Google | vLLM Prefix Caching | LM Studio | Transformers |
 | ---                  | ---    | ---    | ---                 | ---       | ---          |
-| Prompt               | ✅     | ✅     | ✅                  | ✅        | x            |
+| Prompt               | ✅     | ✅     | ✅                  | ✅        | ✅            |
 | Embedding            | ✅     | x      | x                   | ✅        | ✅           |
 | Classification       | x      | x      | x                   | x         | ✅           |
 | Image Classification | x      | x      | x                   | x         | ✅           |

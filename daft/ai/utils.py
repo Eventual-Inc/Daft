@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import email.utils
+import email
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn, get_type_hints
 
 from daft.ai.typing import UDFOptions
 from daft.daft import get_or_infer_runner_type
@@ -119,3 +119,9 @@ def raise_retry_after_from_response(
         raise RetryAfterError(retry_after=retry_after, original=original) from original
     else:
         raise original
+
+
+def extract_options(options: dict[str, Any], cls: type) -> dict[str, Any]:
+    """Extract keys from options that belong to the given TypedDict."""
+    valid_keys = get_type_hints(cls).keys()
+    return {k: v for k, v in options.items() if k in valid_keys}
