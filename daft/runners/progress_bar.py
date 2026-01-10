@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Any
 
 
@@ -47,6 +48,9 @@ class ProgressBar:
         self.tqdm_mod = get_tqdm(use_ray_tqdm)
 
         self.pbars: dict[int, Any] = dict()
+        self.bar_names: dict[int, str] = dict()
+        self.bar_counts: dict[int, int] = dict()
+        self.bar_totals: dict[int, int] = dict()
         self.disable = (
             disable
             or not bool(int(os.environ.get("RAY_TQDM", "1")))
@@ -54,16 +58,30 @@ class ProgressBar:
         )
 
     def _make_new_bar(self, bar_id: int, bar_name: str) -> None:
+        self.bar_names[bar_id] = bar_name
+        self.bar_counts[bar_id] = 0
+        self.bar_totals[bar_id] = 1
+
+        # 1-based index
+        idx = len(self.pbars) + 1
+        # Format: 🚢[idx] Name
+        desc = f"\U0001f6a2[{idx}] {bar_name}"
+
+        # Custom format to match Native runner style
+        # 🚢[1] Name | [00:00] stats
+        bar_format = "{desc} | [{elapsed}] {postfix}"
+
         if self.use_ray_tqdm:
-            self.pbars[bar_id] = self.tqdm_mod(total=1, desc=bar_name, position=len(self.pbars))
+            self.pbars[bar_id] = self.tqdm_mod(total=1, desc=desc, position=len(self.pbars))
         else:
             self.pbars[bar_id] = self.tqdm_mod(
                 total=1,
-                desc=bar_name,
+                desc=desc,
                 position=len(self.pbars),
                 leave=False,
                 mininterval=1.0,
                 maxinterval=self._maxinterval,
+                bar_format=bar_format,
             )
 
     def make_bar_or_update_total(self, bar_id: int, bar_name: str) -> None:
@@ -82,16 +100,70 @@ class ProgressBar:
         else:
             pb = self.pbars[bar_id]
             pb.total += 1
+            self.bar_totals[bar_id] += 1
 
         if self.use_ray_tqdm and hasattr(pb, "_dump_state"):
             pb._dump_state(True)
         else:
             pb.refresh()
 
-    def update_bar(self, bar_id: int) -> None:
+    def update_bar(self, bar_id: int, message: str | None = None, is_finished: bool = False) -> None:
         if self.disable:
             return
-        self.pbars[bar_id].update(1)
+        pb = self.pbars[bar_id]
+        pb.update(1)
+
+        self.bar_counts[bar_id] += 1
+
+        # Determine if finished
+        # Note: In dynamic execution, total might increase later, but for now this indicates completion of known tasks.
+        if self.bar_counts[bar_id] >= self.bar_totals[bar_id]:
+            is_finished = True
+
+        # Calculate elapsed time manually
+        elapsed_str = "[00:00]"
+        if hasattr(pb, "start_t") and pb.start_t:
+            elapsed = int(time.time() - pb.start_t)
+            if elapsed < 3600:
+                elapsed_str = f"[{elapsed // 60:02}:{elapsed % 60:02}]"
+            else:
+                elapsed_str = f"[{elapsed // 3600:02}:{(elapsed % 3600) // 60:02}:{elapsed % 60:02}]"
+
+        if message:
+            # Reconstruct description
+            bar_name = self.bar_names.get(bar_id, "")
+
+            # Find index (1-based)
+            try:
+                idx = list(self.pbars.keys()).index(bar_id) + 1
+                idx_val = str(idx)
+            except ValueError:
+                idx_val = "?"
+
+            # Icon and Index
+            prefix = f"\U0001f6a2[{idx_val}]"
+
+            # Checkmark
+            status_icon = " ✓" if is_finished else ""
+
+            # Base Description: 🚢[1] ✓ Name
+            desc = f"{prefix}{status_icon} {bar_name}"
+
+            if self.use_ray_tqdm:
+                # For Ray, we inject elapsed and message into description to control order
+                # Format: 🚢[1] ✓ Name | [00:00] stats
+                full_desc = f"{desc} | {elapsed_str} {message}"
+                pb.set_description(full_desc)
+            elif hasattr(pb, "set_postfix_str"):
+                # For local tqdm, we use bar_format="{desc} | [{elapsed}] {postfix}"
+                # So we just update desc and postfix
+                pb.set_description(desc)
+                pb.set_postfix_str(message)
+            else:
+                # Fallback
+                full_desc = f"{desc} | {elapsed_str} {message}"
+                pb.set_description(full_desc)
+
         if self.show_tasks_bar:
             self.pbars[-1].update(1)
 
