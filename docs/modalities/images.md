@@ -109,6 +109,198 @@ Let's turn the bytes into human-readable images using [`decode_image()`][daft.ex
     df_family.show()
     ```
 
+## End-to-End Image Pipeline
+
+This example demonstrates a complete pipeline: `URL -> download -> decode -> resize -> to_tensor -> normalize`.
+
+This is a common preprocessing pipeline for preparing images for Deep Learning models (e.g., PyTorch).
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+    from daft import col, DataType
+    import numpy as np
+
+    # 1. Create a DataFrame with image URLs
+    df = daft.from_pydict({
+        "urls": [
+            "https://live.staticflickr.com/65535/53671838774_03ba68d203_o.jpg",
+            "https://live.staticflickr.com/65535/53671700073_2c9441422e_o.jpg",
+            "https://live.staticflickr.com/65535/53670606332_1ea5f2ce68_o.jpg",
+            "https://live.staticflickr.com/65535/53671838039_b97411a441_o.jpg",
+            "https://live.staticflickr.com/65535/53671698613_0230f8af3c_o.jpg",
+        ],
+    })
+
+    # 2. Define a UDF for normalization (Standard ImageNet normalization)
+    @daft.func(return_dtype=DataType.tensor(DataType.float32()))
+    def normalize_image(img):
+        if img is None:
+            return None
+
+        # Standard ImageNet normalization mean and std
+        mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+        std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+
+        # Convert to float32 and scale to [0, 1]
+        # Input img is [H, W, C]
+        img_float = img.astype(np.float32) / 255.0
+
+        # Normalize
+        # img_float is [H, W, C], mean/std are [3] broadcasting over the last dimension
+        normalized = (img_float - mean) / std
+
+        # Transpose to [C, H, W] for PyTorch models
+        normalized = normalized.transpose(2, 0, 1)
+
+        return normalized
+
+    # 3. Build the pipeline: URL -> download -> decode -> resize -> to_tensor -> normalize
+    df = df.with_column("image", col("urls").download(on_error="null").decode_image().resize(224, 224))
+    df = df.with_column("tensor", col("image").image_to_tensor())
+    df = df.with_column("normalized", normalize_image(col("tensor")))
+
+    df.collect()
+    df.select("urls", "image", "normalized").show()
+    ```
+
+```{title="Output"}
+╭────────────────────────────────┬───────────────────────┬──────────────────────────────╮
+│ urls                           ┆ image                 ┆ normalized                   │
+│ ---                            ┆ ---                   ┆ ---                          │
+│ String                         ┆ Image[RGB; 224 x 224] ┆ Tensor[Float32]              │
+╞════════════════════════════════╪═══════════════════════╪══════════════════════════════╡
+│ https://live.staticflickr.com… ┆ <FixedShapeImage>     ┆ <Tensor shape=(3, 224, 224)> │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ https://live.staticflickr.com… ┆ <FixedShapeImage>     ┆ <Tensor shape=(3, 224, 224)> │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ https://live.staticflickr.com… ┆ <FixedShapeImage>     ┆ <Tensor shape=(3, 224, 224)> │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ https://live.staticflickr.com… ┆ <FixedShapeImage>     ┆ <Tensor shape=(3, 224, 224)> │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ https://live.staticflickr.com… ┆ <FixedShapeImage>     ┆ <Tensor shape=(3, 224, 224)> │
+╰────────────────────────────────┴───────────────────────┴──────────────────────────────╯
+
+(Showing first 5 of 5 rows)
+```
+
+## UDF Best Practices for Images
+
+When processing images with User-Defined Functions (UDFs) in Daft, using libraries like Pillow, OpenCV, or torchvision efficiently is key to performance and robustness.
+
+### 1. Handling `None` Values
+
+Daft data may contain `None` (null) values. Your UDF must handle these gracefully to avoid runtime errors.
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+    from PIL import Image
+    import io
+
+    @daft.func(return_dtype=daft.DataType.python())
+    def process_image(image_bytes):
+        # Always check for None!
+        if image_bytes is None:
+            return None
+
+        try:
+            img = Image.open(io.BytesIO(image_bytes))
+            # ... processing ...
+            return img
+        except Exception:
+            # Decide whether to return None or raise an error
+            return None
+    ```
+
+### 2. Choosing the Right `return_dtype`
+
+The `return_dtype` argument in `@daft.func` or `@daft.udf` is crucial. It tells Daft what kind of data to expect, allowing for optimizations and correct schema inference.
+
+- **`daft.DataType.tensor(dtype)`**: Best for returning numerical data (numpy arrays, torch tensors). This allows Daft to treat the column as a native tensor type, enabling further vectorized operations.
+- **`daft.DataType.python()`**: Use this if you are returning arbitrary Python objects (like `PIL.Image` objects) that don't map neatly to a Daft type. **Note:** Python objects cannot be serialized as efficiently and may block some downstream optimizations.
+
+### 3. Performance: `numpy` / `torch` vs `PIL.Image`
+
+Returning native arrays (NumPy or PyTorch) is generally more performant than returning Python objects like `PIL.Image`, especially when `return_dtype` is set to a Tensor type.
+
+#### Why?
+- **Zero-copy / Low-overhead**: Daft can often manage memory for Arrow/Tensor types more efficiently.
+- **Serialization**: `PIL.Image` objects are pickled/unpickled when moved between processes, which is slow. Tensors have efficient binary representations.
+
+#### Example: Returning a Tensor (Recommended)
+
+=== "🐍 Python"
+
+    ```python
+    import numpy as np
+
+    @daft.func(return_dtype=daft.DataType.tensor(daft.DataType.uint8()))
+    def image_to_numpy(image_bytes):
+        if image_bytes is None:
+            return None
+
+        img = Image.open(io.BytesIO(image_bytes))
+        # Convert to numpy array
+        return np.array(img)
+    ```
+
+#### Example: Using torchvision
+
+When using `torchvision`, operations typically return `torch.Tensor`. You can return these directly if you specify a Tensor return type.
+
+=== "🐍 Python"
+
+    ```python
+    import torch
+    import torchvision.transforms.functional as F
+    import numpy as np
+
+    @daft.func(return_dtype=daft.DataType.tensor(daft.DataType.float32()))
+    def transform_image(image_tensor):
+        if image_tensor is None:
+            return None
+
+        # Assuming input is already a tensor or numpy array
+        if isinstance(image_tensor, np.ndarray):
+            image_tensor = torch.from_numpy(image_tensor)
+
+        # Ensure channel-first format (C, H, W) for torchvision
+        if image_tensor.ndim == 3 and image_tensor.shape[-1] == 3:
+            image_tensor = image_tensor.permute(2, 0, 1)
+
+        # Apply torchvision transforms using F
+        image_tensor = F.resize(image_tensor, [224, 224])
+
+        return image_tensor
+    ```
+
+### 4. Batch Processing with `@daft.func.batch`
+
+For even higher performance, especially with heavy libraries like OpenCV or PyTorch, consider using batched UDFs to process multiple rows at once, reducing Python function call overhead.
+
+=== "🐍 Python"
+
+    ```python
+    @daft.func.batch(return_dtype=daft.DataType.tensor(daft.DataType.uint8()))
+    def batch_process_images(series):
+        # 'series' is a Daft Series object
+        # Convert to list of inputs
+        inputs = series.to_pylist()
+
+        results = []
+        for item in inputs:
+            if item is None:
+                results.append(None)
+                continue
+            # Process item...
+            # results.append(processed_item)
+
+        return results
+    ```
+
 ## Generate Image Embeddings
 
 Image embeddings convert images into numerical vectors that capture semantic meaning. Use them for semantic search, similarity calculations, etc.
