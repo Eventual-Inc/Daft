@@ -13,13 +13,13 @@ from daft.ai.provider import Provider, ProviderImportError
 if TYPE_CHECKING:
     from daft.ai.google.typing import GoogleProviderOptions
     from daft.ai.protocols import PrompterDescriptor, TextEmbedderDescriptor
-    from daft.ai.typing import PromptOptions
+    from daft.ai.typing import EmbedTextOptions, PromptOptions
 
 
 class GoogleProvider(Provider):
     _name: str
     _options: GoogleProviderOptions
-    DEFAULT_TEXT_EMBEDDER = "models/text-embedding-004"
+    DEFAULT_TEXT_EMBEDDER = "gemini-embedding-001"
     DEFAULT_PROMPTER_MODEL = "gemini-2.5-flash"
 
     def __init__(self, name: str | None = None, **options: Unpack[GoogleProviderOptions]):
@@ -41,10 +41,20 @@ class GoogleProvider(Provider):
         return self._name
 
     def get_text_embedder(
-        self, model: str | None = None, dimensions: int | None = None, **options: Any
+        self,
+        model: str | None = None,
+        dimensions: int | None = None,
+        **options: Unpack[EmbedTextOptions],
     ) -> TextEmbedderDescriptor:
-        # TODO: Implement GoogleTextEmbedderDescriptor
-        raise NotImplementedError("Google text embedder not implemented yet")
+        from daft.ai.google.protocols.text_embedder import GoogleTextEmbedderDescriptor
+
+        return GoogleTextEmbedderDescriptor(
+            provider_name=self._name,
+            provider_options=self._options,
+            model_name=(model or self.DEFAULT_TEXT_EMBEDDER),
+            dimensions=dimensions,
+            embed_options=options,
+        )
 
     def get_prompter(
         self,
