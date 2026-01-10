@@ -54,6 +54,7 @@ daft-stats = {path = "src/daft-stats", default-features = false}
 daft-warc = {path = "src/daft-warc", default-features = false}
 daft-writers = {path = "src/daft-writers", default-features = false}
 log = {workspace = true}
+lru = {workspace = true}
 lzma-sys = {version = "*", features = ["static"]}
 pyo3 = {workspace = true, optional = true}
 pyo3-log = {workspace = true, optional = true}
@@ -229,6 +230,7 @@ members = [
 [workspace.dependencies]
 ahash = "0.8.12"
 arrow = "57.1.0"
+lru = "0.16.3"
 arrow-array = {version = "57.1.0", features = ["chrono-tz"]}
 arrow-buffer = "57.1.0"
 arrow-csv = "57.1.0"
