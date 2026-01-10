@@ -85,6 +85,7 @@ dev = [
   "memray==1.19.1; platform_system != \"Windows\"",
   "pytest-codspeed==4.2.0",
   # Testing dependencies
+  "shapely",
   "lxml==6.0.2",
   "dask[dataframe]==2025.11.0",
   "numpy==2.2.0; python_version >= '3.13'",
