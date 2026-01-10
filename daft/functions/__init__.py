@@ -64,7 +64,7 @@ from .datetime import (
 )
 from .embedding import cosine_distance
 
-from .file_ import file, file_size, video_file, audio_file
+from .file_ import file, file_size, video_file, audio_file, guess_mime_type
 
 from .image import (
     resize,
@@ -296,6 +296,7 @@ __all__ = [
     "floor",
     "format",
     "get",
+    "guess_mime_type",
     "hash",
     "hour",
     "ilike",
