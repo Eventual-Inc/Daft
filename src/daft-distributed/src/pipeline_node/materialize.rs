@@ -203,7 +203,7 @@ mod tests {
             .zip(task_sleep_durations)
             .zip(task_ids)
             .map(|((partition, sleep_duration), task_id)| {
-                SubmittableTask::new(
+                SubmittableTask::task_only(
                     MockTaskBuilder::new(partition)
                         .with_task_id(task_id)
                         .with_sleep_duration(sleep_duration)
@@ -246,7 +246,7 @@ mod tests {
         let mut rng = rand::rngs::StdRng::from_entropy();
         let task_iter = (0..num_partitions).map(move |i| {
             let sleep_duration = Duration::from_millis(rng.gen_range(100..300));
-            SubmittableTask::new(
+            SubmittableTask::task_only(
                 MockTaskBuilder::new(partitions[i].clone())
                     .with_task_id(i as u32)
                     .with_sleep_duration(sleep_duration)
@@ -294,7 +294,7 @@ mod tests {
             .map(move |(i, error)| {
                 // Randomly inject errors
                 if error {
-                    SubmittableTask::new(
+                    SubmittableTask::task_only(
                         MockTaskBuilder::new(partitions[i].clone())
                             .with_task_id(i as u32)
                             .with_sleep_duration(Duration::from_millis(task_sleep_ms))
@@ -302,7 +302,7 @@ mod tests {
                             .build(),
                     )
                 } else {
-                    SubmittableTask::new(
+                    SubmittableTask::task_only(
                         MockTaskBuilder::new(partitions[i].clone())
                             .with_task_id(i as u32)
                             .with_sleep_duration(Duration::from_millis(task_sleep_ms))

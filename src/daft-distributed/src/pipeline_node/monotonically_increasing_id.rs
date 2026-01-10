@@ -7,7 +7,7 @@ use daft_schema::schema::SchemaRef;
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        PipelineNodeImpl, SubmittableTaskStream,
+        PipelineNodeImpl, TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext},
 };
@@ -81,7 +81,7 @@ impl PipelineNodeImpl for MonotonicallyIncreasingIdNode {
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
         let column_name = self.column_name.clone();
         let schema = self.config.schema.clone();

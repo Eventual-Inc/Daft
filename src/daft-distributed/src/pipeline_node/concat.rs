@@ -10,7 +10,7 @@ use futures::StreamExt;
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        PipelineNodeImpl, SubmittableTaskStream,
+        PipelineNodeImpl, TaskBuilderStream,
     },
     plan::{PlanConfig, PlanExecutionContext},
 };
@@ -81,9 +81,9 @@ impl PipelineNodeImpl for ConcatNode {
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
         let other_node = self.other.clone().produce_tasks(plan_context);
-        SubmittableTaskStream::new(input_node.chain(other_node).boxed())
+        TaskBuilderStream::new(input_node.chain(other_node).boxed())
     }
 }

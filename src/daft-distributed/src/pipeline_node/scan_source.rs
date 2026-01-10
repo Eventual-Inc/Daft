@@ -10,16 +10,12 @@ use daft_logical_plan::{ClusteringSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
 use super::{
-    NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream,
-    make_empty_scan_task,
+    NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
 };
 use crate::{
     pipeline_node::{DistributedPipelineNode, NodeID},
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
-    scheduling::{
-        scheduler::SubmittableTask,
-        task::{SchedulingStrategy, SwordfishTask, TaskContext},
-    },
+    plan::{PlanConfig, PlanExecutionContext},
+    scheduling::task::SwordfishTaskBuilder,
     utils::channel::{Sender, create_channel},
 };
 
@@ -67,58 +63,49 @@ impl ScanSourceNode {
 
     async fn execution_loop(
         self: Arc<Self>,
-        result_tx: Sender<SubmittableTask<SwordfishTask>>,
-        task_id_counter: TaskIDCounter,
+        result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
         if self.scan_tasks.is_empty() {
-            let empty_scan_task = make_empty_scan_task(
-                TaskContext::from((&self.context, task_id_counter.next())),
+            let transformed_plan = LocalPhysicalPlan::empty_scan(
                 self.config.schema.clone(),
-                &(self.clone() as Arc<dyn PipelineNodeImpl>),
+                LocalNodeContext {
+                    origin_node_id: Some(self.node_id() as usize),
+                    additional: None,
+                },
             );
-            let _ = result_tx.send(SubmittableTask::new(empty_scan_task)).await;
+            let empty_scan_task = SwordfishTaskBuilder::new(transformed_plan, self.as_ref());
+            let _ = result_tx.send(empty_scan_task).await;
             return Ok(());
         }
 
         for scan_task in self.scan_tasks.iter() {
-            let task = self.make_source_tasks(
-                vec![scan_task.clone()].into(),
-                TaskContext::from((&self.context, task_id_counter.next())),
-            )?;
-            if result_tx.send(SubmittableTask::new(task)).await.is_err() {
-                break;
+            let builder = self.make_source_task(scan_task.clone())?;
+            if result_tx.send(builder).await.is_err() {
+                return Ok(());
             }
         }
 
         Ok(())
     }
 
-    fn make_source_tasks(
-        &self,
-        scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
-        task_context: TaskContext,
-    ) -> DaftResult<SwordfishTask> {
-        let node_id = self.node_id();
+    fn make_source_task(
+        self: &Arc<Self>,
+        scan_task: ScanTaskLikeRef,
+    ) -> DaftResult<SwordfishTaskBuilder> {
+        let scan_tasks = Arc::new(vec![scan_task]);
         let physical_scan = LocalPhysicalPlan::physical_scan(
-            scan_tasks.clone(),
+            scan_tasks,
             self.pushdowns.clone(),
             self.config.schema.clone(),
             StatsState::NotMaterialized,
             LocalNodeContext {
-                origin_node_id: Some(node_id as usize),
+                origin_node_id: Some(self.node_id() as usize),
                 additional: None,
             },
         );
 
-        let task = SwordfishTask::new(
-            task_context,
-            physical_scan,
-            self.config.execution_config.clone(),
-            Default::default(),
-            SchedulingStrategy::Spread,
-            self.context.to_hashmap(),
-        );
-        Ok(task)
+        let builder = SwordfishTaskBuilder::new(physical_scan, self.as_ref());
+        Ok(builder)
     }
 }
 
@@ -208,11 +195,11 @@ impl PipelineNodeImpl for ScanSourceNode {
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.execution_loop(result_tx, plan_context.task_id_counter());
+        let execution_loop = self.execution_loop(result_tx);
         plan_context.spawn(execution_loop);
 
-        SubmittableTaskStream::from(result_rx)
+        TaskBuilderStream::from(result_rx)
     }
 }

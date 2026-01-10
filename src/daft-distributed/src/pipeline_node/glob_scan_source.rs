@@ -8,16 +8,12 @@ use daft_logical_plan::{ClusteringSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 
 use super::{
-    DistributedPipelineNode, NodeName, PipelineNodeConfig, PipelineNodeContext,
-    SubmittableTaskStream,
+    DistributedPipelineNode, NodeName, PipelineNodeConfig, PipelineNodeContext, TaskBuilderStream,
 };
 use crate::{
     pipeline_node::{NodeID, PipelineNodeImpl},
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
-    scheduling::{
-        scheduler::SubmittableTask,
-        task::{SchedulingStrategy, SwordfishTask, TaskContext},
-    },
+    plan::{PlanConfig, PlanExecutionContext},
+    scheduling::task::SwordfishTaskBuilder,
     utils::channel::{Sender, create_channel},
 };
 
@@ -66,17 +62,9 @@ impl GlobScanSourceNode {
 
     async fn execution_loop(
         self: Arc<Self>,
-        result_tx: Sender<SubmittableTask<SwordfishTask>>,
-        task_id_counter: TaskIDCounter,
+        result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
-        let task =
-            self.make_glob_scan_task(TaskContext::from((&self.context, task_id_counter.next())))?;
-        let _ = result_tx.send(SubmittableTask::new(task)).await;
-        Ok(())
-    }
-
-    fn make_glob_scan_task(&self, task_context: TaskContext) -> DaftResult<SwordfishTask> {
-        let physical_glob_scan = LocalPhysicalPlan::glob_scan(
+        let glob_scan_plan = LocalPhysicalPlan::glob_scan(
             self.glob_paths.clone(),
             self.pushdowns.clone(),
             self.config.schema.clone(),
@@ -88,15 +76,9 @@ impl GlobScanSourceNode {
             },
         );
 
-        let task = SwordfishTask::new(
-            task_context,
-            physical_glob_scan,
-            self.config.execution_config.clone(),
-            Default::default(),
-            SchedulingStrategy::Spread,
-            self.context.to_hashmap(),
-        );
-        Ok(task)
+        let builder = SwordfishTaskBuilder::new(glob_scan_plan, self.as_ref());
+        let _ = result_tx.send(builder).await;
+        Ok(())
     }
 }
 
@@ -116,11 +98,11 @@ impl PipelineNodeImpl for GlobScanSourceNode {
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.execution_loop(result_tx, plan_context.task_id_counter());
+        let execution_loop = self.execution_loop(result_tx);
         plan_context.spawn(execution_loop);
-        SubmittableTaskStream::from(result_rx)
+        TaskBuilderStream::from(result_rx)
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
