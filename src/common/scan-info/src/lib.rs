@@ -12,6 +12,7 @@ pub mod test;
 
 use std::{fmt::Debug, hash::Hash, sync::Arc};
 
+use common_display::{DisplayAs, DisplayLevel};
 use daft_schema::schema::SchemaRef;
 pub use expr_rewriter::{PredicateGroups, rewrite_predicate_for_partitioning};
 pub use partitioning::{PartitionField, PartitionTransform};
@@ -56,7 +57,38 @@ impl ScanState {
         match self {
             Self::Operator(scan_op) => scan_op.0.multiline_display(),
             Self::Tasks(scan_tasks) => {
-                vec![format!("Num Scan Tasks = {}", scan_tasks.len())]
+                let mut result = vec![format!("Num Scan Tasks = {}", scan_tasks.len())];
+
+                if scan_tasks.is_empty() {
+                    return result;
+                }
+
+                // Display scan tasks similar to ScanTaskSource
+                // Show pushdowns and schema from the first scan task
+                let first_task = scan_tasks.first().unwrap();
+                let pushdowns = first_task.pushdowns();
+                if !pushdowns.is_empty() {
+                    result.push(pushdowns.display_as(DisplayLevel::Compact));
+                }
+
+                let schema = first_task.schema();
+                result.push(format!(
+                    "Schema: {{{}}}",
+                    schema.display_as(DisplayLevel::Compact)
+                ));
+
+                // List scan tasks using compact display (which includes sources/function names)
+                result.push("Scan Tasks: [".to_string());
+                for (i, scan_task) in scan_tasks.iter().enumerate() {
+                    if i < 3 || i >= scan_tasks.len() - 3 {
+                        result.push(scan_task.display_as(DisplayLevel::Compact));
+                    } else if i == 3 {
+                        result.push("...".to_string());
+                    }
+                }
+                result.push("]".to_string());
+
+                result
             }
         }
     }
