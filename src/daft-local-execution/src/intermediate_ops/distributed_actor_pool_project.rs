@@ -7,8 +7,10 @@ use std::{
     vec,
 };
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
+use daft_core::prelude::{Schema, SchemaRef};
+use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 #[cfg(feature = "python")]
 use daft_micropartition::python::PyMicroPartition;
@@ -106,6 +108,9 @@ pub(crate) struct DistributedActorPoolProjectOperator {
     actor_handles: Vec<ActorHandle>,
     batch_size: Option<usize>,
     memory_request: u64,
+    passthrough_columns: Vec<BoundExpr>,
+    required_cols: Option<Vec<usize>>,
+    output_schema: SchemaRef, // FIXME by zhenchao can infer from passthrough_columns and udf_series?
     counter: AtomicUsize,
 }
 
@@ -114,6 +119,9 @@ impl DistributedActorPoolProjectOperator {
         actor_handles: Vec<impl Into<ActorHandle>>,
         batch_size: Option<usize>,
         memory_request: u64,
+        passthrough_columns: Vec<BoundExpr>,
+        required_cols: Option<Vec<usize>>,
+        output_schema: SchemaRef,
     ) -> DaftResult<Self> {
         let actor_handles: Vec<ActorHandle> = actor_handles.into_iter().map(|e| e.into()).collect();
         let (local_actor_handles, remote_actor_handles) =
@@ -134,6 +142,9 @@ impl DistributedActorPoolProjectOperator {
             actor_handles,
             batch_size,
             memory_request,
+            passthrough_columns,
+            required_cols,
+            output_schema,
             counter: AtomicUsize::new(init_counter),
         })
     }
@@ -149,17 +160,80 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         state: Self::State,
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult<Self> {
-        let memory_request = self.memory_request;
         #[cfg(feature = "python")]
         {
+            let memory_request = self.memory_request;
+            let passthrough_columns = self.passthrough_columns.clone();
+            let required_cols = self.required_cols.clone();
+            let output_schema = self.output_schema.clone();
             let fut = task_spawner.spawn_with_memory_request(
                 memory_request,
                 async move {
-                    let res =
-                        state.actor_handle.eval_input(input).await.map(|result| {
-                            IntermediateOperatorResult::NeedMoreInput(Some(result))
-                        })?;
-                    Ok((state, res))
+                    // Prune input if required cols isn't empty
+                    let udf_input = input.clone();
+                    let required_input = if let Some(required_cols) = required_cols {
+                        if required_cols.is_empty() {
+                            udf_input
+                        } else {
+                            let pruned_batches = udf_input
+                                .record_batches()
+                                .iter()
+                                .map(|batch| batch.get_columns(required_cols.as_slice()))
+                                .collect::<Vec<_>>();
+
+                            Arc::new(MicroPartition::new_loaded(
+                                Arc::new(Schema::new(
+                                    required_cols
+                                        .iter()
+                                        .map(|idx| udf_input.schema()[*idx].clone()),
+                                )),
+                                Arc::new(pruned_batches),
+                                None, // FIXME by zhenchao None?
+                            ))
+                        }
+                    } else {
+                        udf_input
+                    };
+
+                    let eval_output = state.actor_handle.eval_input(required_input).await?;
+                    if eval_output.schema().fields().len() != 1 {
+                        return Err(DaftError::InternalError(format!(
+                            "UDF output schema must be a single column, but got {:?}",
+                            eval_output.schema()
+                        )));
+                    }
+
+                    let input_batches = input.record_batches();
+                    let eval_output_batches = eval_output.record_batches();
+                    if input_batches.len() != eval_output_batches.len() {
+                        return Err(DaftError::InternalError(format!(
+                            "The number of rows is mismatch between UDF input {} and output {}",
+                            input_batches.len(),
+                            eval_output_batches.len()
+                        )));
+                    }
+
+                    let mut output_batches = Vec::with_capacity(input_batches.len());
+                    for (irb, orb) in input_batches.iter().zip(eval_output_batches.iter()) {
+                        let passthrough_input =
+                            irb.eval_expression_list(passthrough_columns.as_slice())?;
+
+                        output_batches.push(
+                            passthrough_input
+                                .append_column(output_schema.clone(), orb.get_column(0).clone())?,
+                        );
+                    }
+
+                    Ok((
+                        state,
+                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(
+                            MicroPartition::new_loaded(
+                                output_schema.clone(),
+                                Arc::new(output_batches),
+                                None,
+                            ),
+                        ))),
+                    ))
                 },
                 Span::current(),
             );
