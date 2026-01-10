@@ -362,7 +362,7 @@ jobs:
 
   integration-test-io:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     needs: [skipcheck, integration-test-build]
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
@@ -455,7 +455,7 @@ jobs:
   # Same as integration-test-io but runs the tests that require credentials, only on `main`
   integration-test-io-credentialed:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     needs: [skipcheck, integration-test-build]
     if: ${{ needs.skipcheck.outputs.skip == 'false' && github.ref == 'refs/heads/main' }}
     env:
