@@ -27,6 +27,9 @@ jobs:
         key: ${{ runner.os }}-build
         cache-all-crates: 'true'
 
+    - name: Install Protoc
+      uses: arduino/setup-protoc@v3
+
     - name: Setup Python ${{ matrix.python-version  }} and UV
       uses: astral-sh/setup-uv@v7
       with:
