@@ -15,8 +15,9 @@ def skip_invalid_join_strategies(join_strategy, join_type):
         if join_strategy not in [None, "hash"]:
             pytest.skip("Native executor fails for these tests")
     else:
-        if (join_strategy == "sort_merge") and join_type != "inner":
-            pytest.skip("Sort merge currently only supports inner joins")
+        # Enable sort_merge for semi and anti joins
+        if join_strategy == "sort_merge" and join_type not in ["inner", "semi", "anti"]:
+            pytest.skip("Sort merge currently only supports inner, semi, and anti joins")
         elif join_strategy == "broadcast" and join_type == "outer":
             pytest.skip("Broadcast join does not support outer joins")
 
