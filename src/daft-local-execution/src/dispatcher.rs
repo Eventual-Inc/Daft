@@ -61,7 +61,7 @@ impl<S: BatchingStrategy + 'static> RoundRobinDispatcher<S> {
         };
 
         let (lower, upper) = batch_manager.initial_requirements().values();
-        for receiver in input_receivers {
+        for mut receiver in input_receivers {
             let mut buffer = RowBasedBuffer::new(lower, upper);
 
             while let Some(morsel) = receiver.recv().await {
@@ -142,7 +142,7 @@ impl UnorderedDispatcher {
         morsel_size_lower_bound: usize,
         morsel_size_upper_bound: NonZeroUsize,
     ) -> DaftResult<()> {
-        for receiver in input_receivers {
+        for mut receiver in input_receivers {
             let mut buffer = RowBasedBuffer::new(morsel_size_lower_bound, morsel_size_upper_bound);
 
             while let Some(morsel) = receiver.recv().await {
@@ -213,7 +213,7 @@ impl<S: BatchingStrategy + 'static> DynamicUnorderedDispatcher<S> {
     ) -> DaftResult<()> {
         let (lower, upper) = batch_manager.initial_requirements().values();
 
-        for receiver in input_receivers {
+        for mut receiver in input_receivers {
             let mut buffer = RowBasedBuffer::new(lower, upper);
 
             while let Some(morsel) = receiver.recv().await {
@@ -279,7 +279,7 @@ impl PartitionedDispatcher {
         input_receivers: Vec<InitializingCountingReceiver>,
         partition_by: Vec<BoundExpr>,
     ) -> DaftResult<()> {
-        for receiver in input_receivers {
+        for mut receiver in input_receivers {
             while let Some(morsel) = receiver.recv().await {
                 let partitions = morsel.partition_by_hash(&partition_by, worker_senders.len())?;
                 for (partition, worker_sender) in partitions.into_iter().zip(worker_senders.iter())

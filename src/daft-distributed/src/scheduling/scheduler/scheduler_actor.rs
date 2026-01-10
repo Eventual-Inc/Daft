@@ -7,6 +7,7 @@ use std::{
 };
 
 use common_error::{DaftError, DaftResult};
+use common_runtime::JoinSet;
 use futures::FutureExt;
 use tokio_util::sync::CancellationToken;
 use tracing::instrument;
@@ -20,12 +21,9 @@ use crate::{
         worker::{Worker, WorkerManager},
     },
     statistics::{StatisticsManagerRef, TaskEvent},
-    utils::{
-        channel::{
-            OneshotReceiver, OneshotSender, UnboundedReceiver, UnboundedSender,
-            create_oneshot_channel, create_unbounded_channel,
-        },
-        joinset::JoinSet,
+    utils::channel::{
+        OneshotReceiver, OneshotSender, UnboundedReceiver, UnboundedSender, create_oneshot_channel,
+        create_unbounded_channel,
     },
 };
 

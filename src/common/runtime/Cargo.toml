@@ -7,6 +7,9 @@ pyo3 = {workspace = true, optional = true}
 pyo3-async-runtimes = {workspace = true, optional = true}
 tokio = {workspace = true}
 
+[dev-dependencies]
+rand = {workspace = true}
+
 [features]
 python = [
   "dep:pyo3",

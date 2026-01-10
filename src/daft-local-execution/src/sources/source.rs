@@ -22,7 +22,6 @@ use opentelemetry::{KeyValue, global};
 
 use crate::{
     ExecutionRuntimeContext,
-    channel::{Receiver, create_channel},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     runtime_stats::{Counter, CountingSender, RuntimeStats},
 };
@@ -206,13 +205,13 @@ impl PipelineNode for SourceNode {
         &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<tokio::sync::mpsc::Receiver<Arc<MicroPartition>>> {
         let source = self.source.clone();
         let io_stats = self.runtime_stats.io_stats.clone();
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
 
-        let (destination_sender, destination_receiver) = create_channel(0);
+        let (destination_sender, destination_receiver) = tokio::sync::mpsc::channel(1);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
         let chunk_size = match self.morsel_size_requirement {
             MorselSizeRequirement::Strict(size) => size,

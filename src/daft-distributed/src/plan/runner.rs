@@ -10,6 +10,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_metrics::QueryID;
 use common_partitioning::PartitionRef;
+use common_runtime::{JoinSet, create_join_set};
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use futures::{Stream, StreamExt};
 
@@ -27,7 +28,6 @@ use crate::{
     statistics::{StatisticsManager, StatisticsSubscriber},
     utils::{
         channel::{Sender, create_channel},
-        joinset::{JoinSet, create_join_set},
         runtime::get_or_init_runtime,
     },
 };

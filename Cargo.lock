@@ -1878,6 +1878,7 @@ dependencies = [
  "regex",
  "serde_json",
  "thiserror 2.0.17",
+ "tokio",
 ]
 
 [[package]]
@@ -2020,6 +2021,7 @@ dependencies = [
  "oneshot",
  "pyo3",
  "pyo3-async-runtimes",
+ "rand 0.8.5",
  "tokio",
 ]
 
