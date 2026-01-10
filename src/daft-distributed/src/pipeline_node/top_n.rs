@@ -5,7 +5,7 @@ use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 
-use super::{PipelineNodeImpl, SubmittableTaskStream};
+use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
@@ -109,7 +109,7 @@ impl PipelineNodeImpl for TopNNode {
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
 
         // Pipeline the top-n

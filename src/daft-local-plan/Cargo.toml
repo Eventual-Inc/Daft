@@ -8,6 +8,7 @@ common-treenode = {path = "../common/treenode", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
+daft-scan = {path = "../daft-scan", default-features = false}
 log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}

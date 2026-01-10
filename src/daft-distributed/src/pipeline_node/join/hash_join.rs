@@ -9,13 +9,10 @@ use futures::StreamExt;
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        PipelineNodeImpl, SubmittableTaskStream,
+        PipelineNodeImpl, TaskBuilderStream,
     },
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
-    scheduling::{
-        scheduler::SubmittableTask,
-        task::{SchedulingStrategy, SwordfishTask, TaskContext},
-    },
+    plan::{PlanConfig, PlanExecutionContext},
+    scheduling::task::SwordfishTaskBuilder,
 };
 
 pub(crate) struct HashJoinNode {
@@ -80,45 +77,6 @@ impl HashJoinNode {
     pub fn into_node(self) -> DistributedPipelineNode {
         DistributedPipelineNode::new(Arc::new(self))
     }
-
-    fn build_hash_join_task(
-        &self,
-        left_task: SubmittableTask<SwordfishTask>,
-        right_task: SubmittableTask<SwordfishTask>,
-        task_id_counter: &TaskIDCounter,
-    ) -> SubmittableTask<SwordfishTask> {
-        let left_plan = left_task.task().plan();
-        let right_plan = right_task.task().plan();
-        let plan = LocalPhysicalPlan::hash_join(
-            left_plan,
-            right_plan,
-            self.left_on.clone(),
-            self.right_on.clone(),
-            None,
-            self.null_equals_nulls.clone(),
-            self.join_type,
-            self.config.schema.clone(),
-            StatsState::NotMaterialized,
-            LocalNodeContext {
-                origin_node_id: Some(self.node_id() as usize),
-                additional: None,
-            },
-        );
-
-        let mut psets = left_task.task().psets().clone();
-        psets.extend(right_task.task().psets().clone());
-
-        let config = left_task.task().config().clone();
-
-        left_task.with_new_task(SwordfishTask::new(
-            TaskContext::from((self.context(), task_id_counter.next())),
-            plan,
-            config,
-            psets,
-            SchedulingStrategy::Spread,
-            self.context().to_hashmap(),
-        ))
-    }
 }
 
 impl PipelineNodeImpl for HashJoinNode {
@@ -158,16 +116,36 @@ impl PipelineNodeImpl for HashJoinNode {
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let left_input = self.left.clone().produce_tasks(plan_context);
         let right_input = self.right.clone().produce_tasks(plan_context);
-        let task_id_counter = plan_context.task_id_counter();
 
-        SubmittableTaskStream::new(
+        TaskBuilderStream::new(
             left_input
                 .zip(right_input)
                 .map(move |(left_task, right_task)| {
-                    self.build_hash_join_task(left_task, right_task, &task_id_counter)
+                    SwordfishTaskBuilder::combine_with(
+                        &left_task,
+                        &right_task,
+                        self.as_ref(),
+                        |left_plan, right_plan| {
+                            LocalPhysicalPlan::hash_join(
+                                left_plan,
+                                right_plan,
+                                self.left_on.clone(),
+                                self.right_on.clone(),
+                                None,
+                                self.null_equals_nulls.clone(),
+                                self.join_type,
+                                self.config.schema.clone(),
+                                StatsState::NotMaterialized,
+                                LocalNodeContext {
+                                    origin_node_id: Some(self.node_id() as usize),
+                                    additional: None,
+                                },
+                            )
+                        },
+                    )
                 })
                 .boxed(),
         )

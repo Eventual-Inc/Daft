@@ -3,52 +3,102 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
+use common_runtime::{combine_stream, get_io_runtime};
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
-use daft_micropartition::{MicroPartitionRef, partitioning::PartitionSetRef};
+use daft_micropartition::{MicroPartition, MicroPartitionRef, partitioning::PartitionSetRef};
+use futures::{FutureExt, StreamExt};
 use tracing::instrument;
 
 use super::source::Source;
-use crate::{pipeline::NodeName, sources::source::SourceStream};
+use crate::{
+    channel::{Receiver, Sender, create_channel},
+    pipeline::NodeName,
+    plan_input::InputId,
+    sources::source::SourceStream,
+};
 
 pub struct InMemorySource {
-    data: Option<PartitionSetRef<MicroPartitionRef>>,
-    size_bytes: usize,
+    receiver: Option<Receiver<(InputId, PartitionSetRef<MicroPartitionRef>)>>,
     schema: SchemaRef,
+    size_bytes: usize,
 }
 
 impl InMemorySource {
     pub fn new(
-        data: Option<PartitionSetRef<MicroPartitionRef>>,
+        receiver: Receiver<(InputId, PartitionSetRef<MicroPartitionRef>)>,
         schema: SchemaRef,
         size_bytes: usize,
     ) -> Self {
         Self {
-            data,
-            size_bytes,
+            receiver: Some(receiver),
             schema,
+            size_bytes,
         }
     }
-    pub fn arced(self) -> Arc<dyn Source> {
-        Arc::new(self) as Arc<dyn Source>
+
+    /// Spawns the background task that continuously reads partition sets from receiver and processes them
+    fn spawn_partition_set_processor(
+        &self,
+        receiver: Receiver<(InputId, PartitionSetRef<MicroPartitionRef>)>,
+        output_sender: Sender<Arc<MicroPartition>>,
+        schema: SchemaRef,
+    ) -> common_runtime::RuntimeTask<DaftResult<()>> {
+        let io_runtime = get_io_runtime(true);
+
+        io_runtime.spawn(async move {
+            while let Some((_input_id, partition_set)) = receiver.recv().await {
+                let mut stream = partition_set.to_partition_stream();
+                let mut has_data = false;
+                while let Some(result) = stream.next().await {
+                    has_data = true;
+                    let partition = result?;
+                    if output_sender.send(partition).await.is_err() {
+                        break;
+                    }
+                }
+
+                // If no data for this input_id, send empty micropartition
+                if !has_data {
+                    let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
+                    if output_sender.send(empty).await.is_err() {
+                        break;
+                    }
+                }
+            }
+            Ok(())
+        })
     }
 }
 
 #[async_trait]
 impl Source for InMemorySource {
     #[instrument(name = "InMemorySource::get_data", level = "info", skip_all)]
-    async fn get_data(
-        &self,
+    fn get_data(
+        &mut self,
         _maintain_order: bool,
         _io_stats: IOStatsRef,
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
-        Ok(self
-            .data
-            .as_ref()
-            .unwrap_or_else(|| panic!("No data in InMemorySource"))
-            .clone()
-            .to_partition_stream())
+        // Create output channel for results - note: SourceStream still returns Morsel
+        // We'll convert PipelineMessage to Morsel in the stream
+        let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(0);
+        // Spawn a task that continuously reads from self.receiver
+        // Receiver implements Clone, so we can clone it for the spawned task
+        let receiver_clone = self.receiver.take().expect("Receiver not found");
+
+        // Spawn the partition set processor that continuously reads from receiver
+        let processor_task =
+            self.spawn_partition_set_processor(receiver_clone, output_sender, self.schema.clone());
+
+        // Convert receiver to stream, filtering out flush signals and converting Morsels
+        let result_stream = output_receiver.into_stream();
+
+        // Combine with processor task to handle errors
+        let combined_stream =
+            combine_stream(Box::pin(result_stream.map(Ok)), processor_task.map(|x| x?));
+
+        Ok(Box::pin(combined_stream))
     }
 
     fn name(&self) -> NodeName {
@@ -65,9 +115,5 @@ impl Source for InMemorySource {
         res.push(format!("Schema = {}", self.schema.short_string()));
         res.push(format!("Size bytes = {}", self.size_bytes));
         res
-    }
-
-    fn schema(&self) -> &SchemaRef {
-        &self.schema
     }
 }
