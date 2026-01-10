@@ -413,7 +413,7 @@ impl DaftLogical<bool> for BooleanArray {
                 Field::new(self.name(), DataType::Boolean),
                 Arc::new(arrow::array::BooleanArray::new(
                     BooleanBuffer::new_unset(self.len()),
-                    self.validity().cloned(),
+                    None,
                 )),
             )
         }
@@ -425,7 +425,7 @@ impl DaftLogical<bool> for BooleanArray {
                 Field::new(self.name(), DataType::Boolean),
                 Arc::new(arrow::array::BooleanArray::new(
                     BooleanBuffer::new_set(self.len()),
-                    self.validity().cloned(),
+                    None,
                 )),
             )
         } else {
