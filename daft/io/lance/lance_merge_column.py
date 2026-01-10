@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import warnings
 from typing import TYPE_CHECKING, Any
 
 import daft.pickle
@@ -22,7 +21,6 @@ if TYPE_CHECKING:
 _FRAGMENT_HANDLER_RETURN_DTYPE = DataType.struct({"fragment_meta": DataType.binary(), "schema": DataType.binary()})
 
 
-@daft_cls
 class FragmentHandler:
     def __init__(
         self,
@@ -31,11 +29,6 @@ class FragmentHandler:
         read_columns: list[str] | None,
         reader_schema: pa.Schema | None = None,
     ):
-        warnings.warn(
-            "FragmentHandler is deprecated and will be removed in a future version.",
-            category=DeprecationWarning,
-            stacklevel=2,
-        )
         self.lance_ds = lance_ds
         self.transform = transform
         self.read_columns = read_columns
@@ -62,11 +55,6 @@ def merge_columns_internal(
     daft_remote_args: dict[str, Any] | None = None,
     concurrency: int | None = None,
 ) -> lance.LanceDataset:
-    warnings.warn(
-        "FragmentHandler is deprecated and will be removed in a future version.",
-        category=DeprecationWarning,
-        stacklevel=2,
-    )
     import lance
 
     from daft import from_pylist
@@ -79,11 +67,16 @@ def merge_columns_internal(
     fragment_data = [{"fragment_id": fid} for fid in fragment_ids]
 
     df = from_pylist(fragment_data)
+    # Use fragment count for repartition to ensure each fragment can be processed independently
+    num_partitions = len(fragment_ids)
+    if num_partitions > 1:
+        df = df.repartition(num_partitions)
 
     # Instantiate the Daft class with Lance-specific state and apply the
     # batch method over the fragment_id column.
-    handler = FragmentHandler(lance_ds, transform, read_columns, reader_schema)
-    df = df.with_column("commit_message", handler(df["fragment_id"]))  # type: ignore[arg-type]
+    handler_cls = daft_cls(FragmentHandler, max_concurrency=concurrency)
+    handler = handler_cls(lance_ds, transform, read_columns, reader_schema)
+    df = df.with_column("commit_message", handler(df["fragment_id"]))
 
     commit_messages = df.collect().to_pydict()["commit_message"]
     new_schema = None
