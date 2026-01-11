@@ -99,11 +99,20 @@ pub(crate) trait StreamingSink: Send + Sync {
         batch_manager: Arc<BatchManager<Self::BatchingStrategy>>,
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
-        if maintain_order {
+        let strategy: Arc<dyn DispatchSpawner> = if maintain_order {
             Arc::new(RoundRobinDispatcher::new(batch_manager))
         } else {
             Arc::new(DynamicUnorderedDispatcher::new(batch_manager))
-        }
+        };
+        tracing::debug!(
+            target: "daft.dispatch",
+            strategy = ?strategy,
+            maintain_order,
+            op_name = %self.name().to_string(),
+            runner = "native",
+            morsel_requirement = ?self.morsel_size_requirement()
+        );
+        strategy
     }
 }
 
@@ -236,6 +245,17 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                 batch_manager.clone(),
             ));
         }
+        let strategy = if maintain_order {
+            "RoundRobinReceiver"
+        } else {
+            "OutOfOrderReceiver"
+        };
+        tracing::debug!(
+            target: "daft.dispatch",
+            strategy = %strategy,
+            maintain_order,
+            op_name = %op.name().to_string(),
+        );
         output_receiver
     }
 }

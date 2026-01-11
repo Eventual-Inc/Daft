@@ -94,30 +94,45 @@ impl<W: Worker> Dispatcher<W> {
                 task_results.push(CompletedTask::new(task_result, scheduled_task));
             }
 
-            tracing::info!(target: DISPATCHER_LOG_TARGET, num_tasks = task_results.len(), "Awaited completed tasks");
-            tracing::debug!(target: DISPATCHER_LOG_TARGET, completed_tasks = %format!("{:#?}", task_results));
+            tracing::info!(target: DISPATCHER_LOG_TARGET, num_tasks = task_results.len(), "await_completed_tasks");
+
+            tracing::debug!(target: DISPATCHER_LOG_TARGET, completed_count = task_results.len(), completed_tasks = ?task_results, "completed_tasks_batch");
 
             // Process all completed tasks
             for CompletedTask { task_result, task } in task_results {
-                let (worker_id, task, result_tx, canc) = task.into_inner();
+                let (worker_id, task_obj, result_tx, canc) = task.into_inner();
 
                 // Always mark the task as finished regardless of the result
-                worker_manager.mark_task_finished(task.task_context(), worker_id.clone());
+                worker_manager.mark_task_finished(task_obj.task_context(), worker_id.clone());
                 // Send the event to the statistics manager
-                statistics_manager.handle_event((task.task_context(), &task_result).into())?;
+                statistics_manager.handle_event((task_obj.task_context(), &task_result).into())?;
 
                 match task_result {
                     Ok(task_status) => match task_status {
                         // Task completed successfully, send the result to the result_tx
                         TaskStatus::Success { result, .. } => {
                             if result_tx.send(Ok(Some(result))).is_err() {
-                                tracing::error!(target: DISPATCHER_LOG_TARGET, error = "Failed to send result of task to result_tx", task_context = ?task.task_context());
+                                let task_type = std::any::type_name::<W::Task>();
+                                // standardized error log below via tracing::error!
+                                tracing::error!(target: DISPATCHER_LOG_TARGET,
+                                              error = "Failed to send result of task to result_tx",
+                                              task_id = task_obj.task_context().task_id,
+                                              task_name = %task_obj.task_name(),
+                                              task_type = %task_type,
+                                              task_context = ?task_obj.task_context());
                             }
                         }
                         // Task failed, send the error to the result_tx
                         TaskStatus::Failed { error } => {
                             if result_tx.send(Err(error)).is_err() {
-                                tracing::error!(target: DISPATCHER_LOG_TARGET, error = "Failed to send error of task to result_tx", task_context = ?task.task_context());
+                                let task_type = std::any::type_name::<W::Task>();
+                                // standardized error log below via tracing::error!
+                                tracing::error!(target: DISPATCHER_LOG_TARGET,
+                                              error = "Failed to send error of task to result_tx",
+                                              task_id = task_obj.task_context().task_id,
+                                              task_name = %task_obj.task_name(),
+                                              task_type = %task_type,
+                                              task_context = ?task_obj.task_context());
                             }
                         }
                         // Task cancelled, do nothing
@@ -125,19 +140,28 @@ impl<W: Worker> Dispatcher<W> {
                         // Task worker died, add the task to the failed tasks, and mark the worker as dead
                         TaskStatus::WorkerDied => {
                             worker_manager.mark_worker_died(worker_id);
-                            let schedulable_task = PendingTask::new(task, result_tx, canc);
+                            let schedulable_task =
+                                PendingTask::new(task_obj.clone(), result_tx, canc);
                             failed_tasks.push(schedulable_task);
                         }
                         // Task worker unavailable, add the task to the failed tasks
                         TaskStatus::WorkerUnavailable => {
-                            let schedulable_task = PendingTask::new(task, result_tx, canc);
+                            let schedulable_task =
+                                PendingTask::new(task_obj.clone(), result_tx, canc);
                             failed_tasks.push(schedulable_task);
                         }
                     },
                     // Task failed because of panic in joinset, send the error to the result_tx
                     Err(e) => {
                         if result_tx.send(Err(e)).is_err() {
-                            tracing::error!(target: DISPATCHER_LOG_TARGET, error = "Failed to send error of task to result_tx", task_context = ?task.task_context());
+                            let task_type = std::any::type_name::<W::Task>();
+                            // standardized error log below via tracing::error!
+                            tracing::error!(target: DISPATCHER_LOG_TARGET,
+                                          error = "Failed to send error of task to result_tx",
+                                          task_id = task_obj.task_context().task_id,
+                                          task_name = %task_obj.task_name(),
+                                          task_type = %task_type,
+                                          task_context = ?task_obj.task_context());
                         }
                     }
                 }
@@ -167,7 +191,8 @@ impl<T: Task> std::fmt::Debug for CompletedTask<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "CompletedTask({:?}, {:?})",
+            "CompletedTask(name: {}, ctx: {:?}, res: {:?})",
+            self.task.task().task_name(),
             self.task.task().task_context(),
             self.task_result
         )
@@ -526,7 +551,6 @@ mod tests {
 
         // Verify worker state: Workers 1 and 3 should be dead, worker 2 should be alive
         let worker_snapshots = worker_manager.worker_snapshots()?;
-        println!("worker_snapshots: {:?}", worker_snapshots);
         assert_eq!(
             worker_snapshots.len(),
             1,

@@ -154,7 +154,12 @@ where
             // 2: Dispatch tasks directly to the dispatcher
             if !scheduled_tasks.is_empty() {
                 tracing::info!(target: SCHEDULER_LOG_TARGET, num_tasks = scheduled_tasks.len(), "Scheduling tasks for dispatch");
-                tracing::debug!(target: SCHEDULER_LOG_TARGET, scheduled_tasks = %format!("{:#?}", scheduled_tasks));
+
+                for scheduled_task in &scheduled_tasks {
+                    let task = scheduled_task.task();
+                    let task_type = std::any::type_name::<W::Task>();
+                    tracing::debug!(target: SCHEDULER_LOG_TARGET, task_id = task.task_context().task_id, task_name = %task.task_name(), task_type = %task_type, "dispatch_task");
+                }
 
                 // Report to statistics manager
                 for task in &scheduled_tasks {

@@ -23,7 +23,7 @@ use crate::{
 ///
 /// Implementations must spawn a task on the runtime handle that reads from the
 /// input receivers and distributes morsels to the worker receivers.
-pub(crate) trait DispatchSpawner {
+pub(crate) trait DispatchSpawner: std::fmt::Debug {
     fn spawn_dispatch(
         &self,
         input_receivers: Vec<InitializingCountingReceiver>,
@@ -41,6 +41,12 @@ pub(crate) struct SpawnedDispatchResult {
 /// Used if the operator requires maintaining the order of the input.
 pub(crate) struct RoundRobinDispatcher<S: BatchingStrategy + 'static> {
     batch_manager: Arc<BatchManager<S>>,
+}
+
+impl<S: BatchingStrategy + 'static> std::fmt::Debug for RoundRobinDispatcher<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RoundRobinDispatcher").finish()
+    }
 }
 
 impl<S: BatchingStrategy + 'static> RoundRobinDispatcher<S> {
@@ -112,6 +118,7 @@ impl<S: BatchingStrategy + 'static> DispatchSpawner for RoundRobinDispatcher<S> 
 
 /// A dispatcher that distributes morsels to workers in an unordered fashion.
 /// Used if the operator does not require maintaining the order of the input.
+#[derive(Debug)]
 pub(crate) struct UnorderedDispatcher {
     morsel_size_lower_bound: usize,
     morsel_size_upper_bound: NonZeroUsize,
@@ -201,6 +208,12 @@ pub(crate) struct DynamicUnorderedDispatcher<S: BatchingStrategy + 'static> {
     batch_manager: Arc<BatchManager<S>>,
 }
 
+impl<S: BatchingStrategy + 'static> std::fmt::Debug for DynamicUnorderedDispatcher<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DynamicUnorderedDispatcher").finish()
+    }
+}
+
 impl<S: BatchingStrategy + 'static> DynamicUnorderedDispatcher<S> {
     pub(crate) fn new(batch_manager: Arc<BatchManager<S>>) -> Self {
         Self { batch_manager }
@@ -265,6 +278,7 @@ impl<S: BatchingStrategy + 'static> DispatchSpawner for DynamicUnorderedDispatch
 
 /// A dispatcher that distributes morsels to workers based on a partitioning expression.
 /// Used if the operator requires partitioning the input, i.e. partitioned writes.
+#[derive(Debug)]
 pub(crate) struct PartitionedDispatcher {
     partition_by: Vec<BoundExpr>,
 }

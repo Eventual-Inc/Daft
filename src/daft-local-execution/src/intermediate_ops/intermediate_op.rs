@@ -72,13 +72,36 @@ pub(crate) trait IntermediateOperator: Send + Sync {
         batch_manager: Arc<BatchManager<Self::BatchingStrategy>>,
         maintain_order: bool,
     ) -> Arc<dyn DispatchSpawner> {
-        if maintain_order {
+        let strategy: Arc<dyn DispatchSpawner> = if maintain_order {
             Arc::new(RoundRobinDispatcher::new(batch_manager))
         } else {
             Arc::new(UnorderedDispatcher::new(
                 batch_manager.initial_requirements(),
             ))
-        }
+        };
+        tracing::debug!(
+            target: "daft.dispatch",
+            strategy = ?strategy,
+            maintain_order,
+            op_name = %self.name().to_string(),
+            runner = "native",
+            morsel_requirement = ?self.morsel_size_requirement()
+        );
+        strategy
+    }
+}
+
+// Preview first up to 10 values from a preferred column and compute a simple fingerprint.
+fn compute_preview_and_fp(mp: &MicroPartition) -> String {
+    let tables = mp.record_batches();
+    if let Some(first) = tables.first()
+        && !first.is_empty()
+        && let Ok(first_row_batch) = first.slice(0, 1)
+    {
+        let first_row_str = first_row_batch.to_string();
+        format!("[{}]", first_row_str)
+    } else {
+        String::from("[]")
     }
 }
 
@@ -125,10 +148,10 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
         Box::new(self)
     }
-
     #[instrument(level = "info", skip_all, name = "IntermediateOperator::run_worker")]
     pub async fn run_worker(
         op: Arc<Op>,
+        worker_idx: usize,
         receiver: Receiver<Arc<MicroPartition>>,
         sender: Sender<Arc<MicroPartition>>,
         runtime_stats: Arc<dyn RuntimeStats>,
@@ -141,14 +164,49 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
             ExecutionTaskSpawner::new(compute_runtime, memory_manager, runtime_stats.clone(), span);
         let mut state = op.make_state()?;
         while let Some(morsel) = receiver.recv().await {
+            // Structured log: recv
+            let rows = morsel.len();
+            let bytes = morsel.size_bytes();
+            let columns_count = morsel.column_names().len();
+            if tracing::span_enabled!(tracing::Level::DEBUG) {
+                tracing::debug!(
+                    op_name = %op.name(),
+                    worker_idx,
+                    rows,
+                    bytes,
+                    columns_count,
+                    items_preview = compute_preview_and_fp(&morsel),
+                    "recv"
+                );
+            }
             loop {
                 let now = Instant::now();
                 let result = op.execute(morsel.clone(), state, &task_spawner).await??;
                 let elapsed = now.elapsed();
-
+                let result_kind = match &result.1 {
+                    IntermediateOperatorResult::NeedMoreInput(_) => "need_more_input",
+                    IntermediateOperatorResult::HasMoreOutput(_) => "has_more_output",
+                };
+                tracing::debug!(
+                    op_name = %op.name(),
+                    worker_idx,
+                    elapsed_ms = elapsed.as_millis(),
+                    result_kind = %result_kind,
+                    "execute_end"
+                );
                 state = result.0;
                 match result.1 {
                     IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
+                        if tracing::span_enabled!(tracing::Level::DEBUG) {
+                            tracing::debug!(
+                                op_name = %op.name(),
+                                worker_idx,
+                                rows = mp.len(),
+                                bytes = mp.size_bytes(),
+                                items_preview = compute_preview_and_fp(&mp),
+                                "send"
+                            );
+                        }
                         batch_manager.record_execution_stats(
                             runtime_stats.clone(),
                             mp.len(),
@@ -164,6 +222,16 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                         break;
                     }
                     IntermediateOperatorResult::HasMoreOutput(mp) => {
+                        if tracing::span_enabled!(tracing::Level::DEBUG) {
+                            tracing::debug!(
+                                op_name = %op.name(),
+                                worker_idx,
+                                rows = mp.len(),
+                                bytes = mp.size_bytes(),
+                                items_preview = compute_preview_and_fp(&mp),
+                                "send"
+                            );
+                        }
                         batch_manager.record_execution_stats(
                             runtime_stats.clone(),
                             mp.len(),
@@ -187,12 +255,16 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         memory_manager: Arc<MemoryManager>,
         batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
     ) -> OrderingAwareReceiver<Arc<MicroPartition>> {
+        let num_inputs = input_receivers.len();
         let (output_sender, output_receiver) =
-            create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
-        for (input_receiver, output_sender) in input_receivers.into_iter().zip(output_sender) {
+            create_ordering_aware_receiver_channel(maintain_order, num_inputs);
+        for (worker_idx, (input_receiver, output_sender)) in
+            input_receivers.into_iter().zip(output_sender).enumerate()
+        {
             runtime_handle.spawn(
                 Self::run_worker(
                     self.intermediate_op.clone(),
+                    worker_idx,
                     input_receiver,
                     output_sender,
                     self.runtime_stats.clone(),
@@ -202,6 +274,19 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 &self.intermediate_op.name(),
             );
         }
+        let strategy = if maintain_order {
+            "RoundRobinReceiver"
+        } else {
+            "OutOfOrderReceiver"
+        };
+        tracing::debug!(
+            target: "daft.dispatch",
+            strategy = %strategy,
+            maintain_order,
+            op_name = %self.intermediate_op.name().to_string(),
+            runner = "native",
+            inputs = num_inputs
+        );
         output_receiver
     }
 }
