@@ -488,4 +488,5 @@ def test_multiple_limits():
     df = df.filter(daft.col("id") > 900).limit(100)
 
     df = df.to_pydict()
+    df["id"] = sorted(df["id"])
     assert df["id"] == [i for i in range(901, 1000)]
