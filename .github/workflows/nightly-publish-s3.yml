@@ -25,6 +25,8 @@ env:
 jobs:
   build:
     name: 'Build Daft wheel for ${{ matrix.os }}-${{ matrix.arch }}-lts=${{ matrix.lts }}'
+    permissions:
+      contents: read
     uses: ./.github/workflows/build-wheel.yml
     with:
       os: ${{ matrix.os }}
