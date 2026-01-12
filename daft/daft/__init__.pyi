@@ -2291,6 +2291,12 @@ def io_glob(
     page_size: int | None = None,
     limit: int | None = None,
 ) -> list[dict[str, Any]]: ...
+def io_put(
+    path: str,
+    data: bytes,
+    multithreaded_io: bool | None = None,
+    io_config: IOConfig | None = None,
+) -> None: ...
 
 class SystemInfo:
     """Accessor for system information."""

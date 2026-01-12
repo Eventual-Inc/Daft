@@ -8974,9 +8974,9 @@ dependencies = [
 
 [[package]]
 name = "ve-tos-rust-sdk"
-version = "2.9.6"
+version = "2.9.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e61f185783b4e2b8e90a7948fcdead612178c1a4ff265c173464a7017598e89"
+checksum = "7af40f90801f4b70755fea0d5d1d0483f2676a113bccf9cdd00dfccc07672427"
 dependencies = [
  "arc-swap",
  "async-channel 2.5.0",
