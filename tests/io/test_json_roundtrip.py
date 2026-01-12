@@ -62,6 +62,13 @@ PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumer
             DataType.timestamp(TimeUnit.ms()),
             DataType.timestamp(TimeUnit.s()),
         ),
+        (
+            [datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None],
+            pa.timestamp("us", tz="America/New_York"),
+            DataType.timestamp(TimeUnit.us(), timezone="America/New_York"),
+            # NOTE: Timezone inference uses the offset value, not the timezone string
+            DataType.timestamp(TimeUnit.s(), timezone="-05:00"),
+        ),
         # TODO(desmond): Arrow-rs also currently writes durations in ISO 8601 duration format while our reader expects an i64.
         #                We should make our readers and writers compatible.
         # (
@@ -189,7 +196,7 @@ def test_throws_error_on_duration_and_binary_types(tmp_path):
     # Test that writing duration types throws NotImplementedError
     with pytest.raises(
         daft.exceptions.DaftCoreException,
-        match="Not Yet Implemented: JSON writes are not supported with extension, timezone with timestamp, binary, or duration data types",
+        match="Not Yet Implemented: JSON writes are not supported with extension, binary, or duration data types",
     ):
         before_duration.write_json(str(tmp_path))
 
@@ -201,7 +208,7 @@ def test_throws_error_on_duration_and_binary_types(tmp_path):
 
     with pytest.raises(
         daft.exceptions.DaftCoreException,
-        match="Not Yet Implemented: JSON writes are not supported with extension, timezone with timestamp, binary, or duration data types",
+        match="Not Yet Implemented: JSON writes are not supported with extension, binary, or duration data types",
     ):
         before_binary.write_json(str(tmp_path))
 

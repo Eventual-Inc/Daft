@@ -79,10 +79,11 @@ impl RuntimeStats for ExplodeStats {
 
 pub struct ExplodeOperator {
     to_explode: Arc<Vec<BoundExpr>>,
+    index_column: Option<String>,
 }
 
 impl ExplodeOperator {
-    pub fn new(to_explode: Vec<BoundExpr>) -> Self {
+    pub fn new(to_explode: Vec<BoundExpr>, index_column: Option<String>) -> Self {
         Self {
             to_explode: Arc::new(
                 to_explode
@@ -90,6 +91,7 @@ impl ExplodeOperator {
                     .map(|expr| BoundExpr::new_unchecked(explode(expr.inner().clone())))
                     .collect(),
             ),
+            index_column,
         }
     }
 }
@@ -105,10 +107,11 @@ impl IntermediateOperator for ExplodeOperator {
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult<Self> {
         let to_explode = self.to_explode.clone();
+        let index_column = self.index_column.clone();
         task_spawner
             .spawn(
                 async move {
-                    let out = input.explode(&to_explode)?;
+                    let out = input.explode(&to_explode, index_column.as_deref())?;
                     Ok((
                         state,
                         IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
@@ -120,19 +123,21 @@ impl IntermediateOperator for ExplodeOperator {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        vec![format!(
+        let mut res = vec![format!(
             "Explode: {}",
             self.to_explode.iter().map(|e| e.to_string()).join(", ")
-        )]
+        )];
+        if let Some(ref idx_col) = self.index_column {
+            res.push(format!("Index column = {}", idx_col));
+        }
+        res
     }
 
     fn name(&self) -> NodeName {
         "Explode".into()
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
-        Ok(())
-    }
+    fn make_state(&self) -> Self::State {}
 
     fn op_type(&self) -> NodeType {
         NodeType::Explode

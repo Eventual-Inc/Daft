@@ -1212,8 +1212,10 @@ impl TryFrom<&arrow_schema::DataType> for DataType {
 
                 Self::Map { key, value }
             }
-            _ => {
-                return Err(DaftError::ValueError("unsupported type".to_string()));
+            other => {
+                return Err(DaftError::ValueError(format!(
+                    "Unsupported Arrow DataType: {other:?}"
+                )));
             }
         })
     }

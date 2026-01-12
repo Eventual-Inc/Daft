@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 import pyarrow as pa
 
-import daft
+from daft import DataFrame
 from daft.recordbatch import RecordBatch
 
 ANSI_ESCAPE = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
@@ -58,7 +58,7 @@ def clean_explain_output(output: str) -> str:
     return output.strip()
 
 
-def explain_to_text(df: daft.DataFrame) -> str:
+def explain_to_text(df: DataFrame, only_physical_plan: bool = False) -> str:
     str_io = io.StringIO()
     df.explain(show_all=True, file=str_io)
-    return str_io.getvalue().strip()
+    return str_io.getvalue().split("== Physical Plan ==")[-1] if only_physical_plan else str_io.getvalue().strip()

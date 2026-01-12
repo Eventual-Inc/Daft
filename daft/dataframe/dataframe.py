@@ -20,7 +20,15 @@ from typing import TYPE_CHECKING, Any, Concatenate, Literal, ParamSpec, TypeVar,
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import DistributedPhysicalPlan, FileFormat, IOConfig, JoinStrategy, JoinType, WriteMode
+from daft.daft import (
+    DistributedPhysicalPlan,
+    FileFormat,
+    IOConfig,
+    JoinStrategy,
+    JoinType,
+    PyFormatSinkOption,
+    WriteMode,
+)
 from daft.dataframe.display import MermaidOptions
 from daft.dataframe.preview import Preview, PreviewAlign, PreviewColumn, PreviewFormat, PreviewFormatter
 from daft.datatype import DataType
@@ -37,7 +45,13 @@ from daft.runners.partitioning import (
     PartitionSet,
     PartitionT,
 )
-from daft.utils import ColumnInputType, ManyColumnsInputType, column_inputs_to_expressions, in_notebook
+from daft.utils import (
+    ColumnInputType,
+    ManyColumnsInputType,
+    column_input_to_expression,
+    column_inputs_to_expressions,
+    in_notebook,
+)
 
 if TYPE_CHECKING:
     import dask
@@ -805,7 +819,7 @@ class DataFrame:
 
         cols: list[Expression] | None = None
         if partition_cols is not None:
-            cols = self.__column_input_to_expression(tuple(partition_cols))
+            cols = column_inputs_to_expressions(tuple(partition_cols))
 
         builder = self._builder.write_tabular(
             root_dir=root_dir,
@@ -833,16 +847,24 @@ class DataFrame:
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
+        delimiter: str | None = None,
+        quote: str | None = None,
+        escape: str | None = None,
+        header: bool | None = True,
     ) -> "DataFrame":
-        """Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written.
+        r"""Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written.
 
         Files will be written to `<root_dir>/*` with randomly generated UUIDs as the file names.
 
         Args:
-            root_dir (str): root file path to write parquet files to.
+            root_dir (str): root file path to write CSV files to.
             write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
+            delimiter (Optional[str], optional): Single-character field delimiter (default `,`).
+            quote (Optional[str], optional): Single-character quote used around fields containing delimiters default `"`.
+            escape (Optional[str], optional): Single-character escape for special characters default `\\`.
+            header (Optional[bool], optional): Whether to write a header row with column names, default True.
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -871,13 +893,15 @@ class DataFrame:
 
         cols: list[Expression] | None = None
         if partition_cols is not None:
-            cols = self.__column_input_to_expression(tuple(partition_cols))
+            cols = column_inputs_to_expressions(tuple(partition_cols))
 
+        file_format_option = PyFormatSinkOption.csv(delimiter=delimiter, quote=quote, escape=escape, header=header)
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
             write_mode=WriteMode.from_str(write_mode),
             file_format=FileFormat.Csv,
+            file_format_option=file_format_option,
             io_config=io_config,
         )
 
@@ -935,7 +959,7 @@ class DataFrame:
 
         cols: list[Expression] | None = None
         if partition_cols is not None:
-            cols = self.__column_input_to_expression(tuple(partition_cols))
+            cols = column_inputs_to_expressions(tuple(partition_cols))
 
         builder = self._builder.write_tabular(
             root_dir=root_dir,
@@ -1771,17 +1795,6 @@ class DataFrame:
     # DataFrame operations
     ###
 
-    def __column_input_to_expression(self, columns: Iterable[ColumnInputType]) -> list[Expression]:
-        # TODO(Kevin): remove this method and use _column_inputs_to_expressions
-        result = []
-        for c in columns:
-            if isinstance(c, str):
-                result.append(col(c))
-            else:
-                assert isinstance(c, Expression), f"Expected Expression or str, got {type(c)}"
-                result.append(c)
-        return result
-
     def _wildcard_inputs_to_expressions(self, columns: tuple[ManyColumnsInputType, ...]) -> list[Expression]:
         """Handles wildcard argument column inputs."""
         column_input: Iterable[ColumnInputType] = columns[0] if len(columns) == 1 else columns  # type: ignore
@@ -2070,7 +2083,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 2 of 2 rows)
         """
-        builder = self._builder.distinct(self.__column_input_to_expression(on))
+        builder = self._builder.distinct(column_inputs_to_expressions(on))
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -2567,7 +2580,7 @@ class DataFrame:
         if nulls_first is None:
             nulls_first = desc
 
-        sort_by = self.__column_input_to_expression(by)
+        sort_by = column_inputs_to_expressions(by)
 
         builder = self._builder.sort(sort_by=sort_by, descending=desc, nulls_first=nulls_first)
         return DataFrame(builder)
@@ -2727,7 +2740,7 @@ class DataFrame:
             )
             builder = self._builder.random_shuffle(num)
         else:
-            builder = self._builder.hash_repartition(num, self.__column_input_to_expression(partition_by))
+            builder = self._builder.hash_repartition(num, column_inputs_to_expressions(partition_by))
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -2862,8 +2875,8 @@ class DataFrame:
         elif join_strategy == JoinStrategy.Broadcast and join_type == JoinType.Outer:
             raise ValueError("Broadcast join does not support outer joins")
 
-        left_exprs = self.__column_input_to_expression(tuple(left_on) if isinstance(left_on, list) else (left_on,))
-        right_exprs = self.__column_input_to_expression(tuple(right_on) if isinstance(right_on, list) else (right_on,))
+        left_exprs = column_inputs_to_expressions(tuple(left_on) if isinstance(left_on, list) else (left_on,))
+        right_exprs = column_inputs_to_expressions(tuple(right_on) if isinstance(right_on, list) else (right_on,))
         builder = self._builder.join(
             other._builder,
             left_on=left_exprs,
@@ -2970,9 +2983,9 @@ class DataFrame:
 
         """
         if len(cols) == 0:
-            columns = self.__column_input_to_expression(self.column_names)
+            columns = column_inputs_to_expressions(self.column_names)
         else:
-            columns = self.__column_input_to_expression(cols)
+            columns = column_inputs_to_expressions(cols)
         float_columns = [
             column
             for column in columns
@@ -3028,13 +3041,13 @@ class DataFrame:
 
         """
         if len(cols) == 0:
-            columns = self.__column_input_to_expression(self.column_names)
+            columns = column_inputs_to_expressions(self.column_names)
         else:
-            columns = self.__column_input_to_expression(cols)
+            columns = column_inputs_to_expressions(cols)
         return self.where(~reduce(lambda x, y: x | y, (x.is_null() for x in columns)))
 
     @DataframePublicAPI
-    def explode(self, *columns: ColumnInputType) -> "DataFrame":
+    def explode(self, *columns: ColumnInputType, index_column: ColumnInputType | None = None) -> "DataFrame":
         """Explodes a List column, where every element in each row's List becomes its own row, and all other columns in the DataFrame are duplicated across rows.
 
         If multiple columns are specified, each row must contain the same number of items in each specified column.
@@ -3043,6 +3056,7 @@ class DataFrame:
 
         Args:
             *columns (ColumnInputType): columns to explode
+            index_column (ColumnInputType | None): optional name for an index column that tracks the position of each element within its original list
 
         Returns:
             DataFrame: DataFrame with exploded column
@@ -3126,9 +3140,32 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 5 of 5 rows)
 
+            Example with index_column to track element positions:
+
+            >>> df3 = daft.from_pydict({"a": [[1, 2], [3, 4, 3]]})
+            >>> df3.explode("a", index_column="idx").collect()
+            ╭───────┬────────╮
+            │ a     ┆ idx    │
+            │ ---   ┆ ---    │
+            │ Int64 ┆ UInt64 │
+            ╞═══════╪════════╡
+            │ 1     ┆ 0      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2     ┆ 1      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ 0      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 4     ┆ 1      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ 2      │
+            ╰───────┴────────╯
+            <BLANKLINE>
+            (Showing first 5 of 5 rows)
+
         """
-        parsed_exprs = self.__column_input_to_expression(columns)
-        builder = self._builder.explode(parsed_exprs)
+        parsed_exprs = column_inputs_to_expressions(columns)
+        index_col_name = column_input_to_expression(index_column).name() if index_column is not None else None
+        builder = self._builder.explode(parsed_exprs, index_col_name)
         return DataFrame(builder)
 
     @DataframePublicAPI

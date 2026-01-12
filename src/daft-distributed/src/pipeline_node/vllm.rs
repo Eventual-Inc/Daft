@@ -66,10 +66,9 @@ impl VLLMNode {
         mut input_task_stream: SubmittableTaskStream,
         result_tx: Sender<SubmittableTask<SwordfishTask>>,
     ) -> DaftResult<()> {
+        use common_runtime::JoinSet;
         use daft_dsl::functions::python::RuntimePyObject;
         use pyo3::{PyErr, Python, intern, types::PyAnyMethods};
-
-        use crate::utils::joinset::JoinSet;
 
         let expr = self.expr.inner();
 

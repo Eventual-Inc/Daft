@@ -249,9 +249,11 @@ pub fn udf(
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 pub fn row_wise_udf(
+    func_id: &str,
     name: &str,
     cls: Py<PyAny>,
     method: Py<PyAny>,
+    builtin_name: bool,
     is_async: bool,
     return_dtype: PyDataType,
     gpus: f64,
@@ -284,9 +286,11 @@ pub fn row_wise_udf(
 
     Ok(PyExpr {
         expr: crate::python_udf::row_wise_udf(
+            func_id,
             name,
             cls.into(),
             method.into(),
+            builtin_name,
             is_async,
             return_dtype.into(),
             FloatWrapper(gpus),
@@ -304,9 +308,11 @@ pub fn row_wise_udf(
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 pub fn batch_udf(
+    func_id: &str,
     name: &str,
     cls: Py<PyAny>,
     method: Py<PyAny>,
+    builtin_name: bool,
     is_async: bool,
     return_dtype: PyDataType,
     gpus: f64,
@@ -332,9 +338,11 @@ pub fn batch_udf(
 
     Ok(PyExpr {
         expr: crate::python_udf::batch_udf(
+            func_id,
             name,
             cls.into(),
             method.into(),
+            builtin_name,
             is_async,
             return_dtype.into(),
             FloatWrapper(gpus),
