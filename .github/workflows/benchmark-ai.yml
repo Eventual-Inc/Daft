@@ -32,6 +32,8 @@ on:
         default: "all"
         required: true
 
+permissions: {}
+
 env:
   DAFT_INDEX_URL: ${{ inputs.daft_index_url != '' && inputs.daft_index_url || format('https://d1p3klp2t5517h.cloudfront.net/builds/dev/{0}', github.sha) }}
   AWS_REGION: us-west-2

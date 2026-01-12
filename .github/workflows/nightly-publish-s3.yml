@@ -12,6 +12,8 @@ on:
 
   workflow_dispatch:
 
+permissions: {}
+
 env:
   S3_BUCKET: s3://github-actions-artifacts-bucket/builds/nightly/
   AWS_REGION: us-west-2

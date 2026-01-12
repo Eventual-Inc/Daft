@@ -26,6 +26,8 @@ on:
         default: false
         required: false
 
+permissions: {}
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
 
