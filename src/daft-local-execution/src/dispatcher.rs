@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -65,7 +65,7 @@ impl<S: BatchingStrategy + 'static> RoundRobinDispatcher<S> {
             let mut buffer = RowBasedBuffer::new(lower, upper);
 
             while let Some(morsel) = receiver.recv().await {
-                buffer.push(&morsel);
+                buffer.push(morsel);
 
                 while let Some(batch) = buffer.next_batch_if_ready()? {
                     if send_to_next_worker(batch).await.is_err() {
@@ -114,13 +114,13 @@ impl<S: BatchingStrategy + 'static> DispatchSpawner for RoundRobinDispatcher<S> 
 /// Used if the operator does not require maintaining the order of the input.
 pub(crate) struct UnorderedDispatcher {
     morsel_size_lower_bound: usize,
-    morsel_size_upper_bound: usize,
+    morsel_size_upper_bound: NonZeroUsize,
 }
 
 impl UnorderedDispatcher {
     pub(crate) fn new(morsel_size_requirement: MorselSizeRequirement) -> Self {
         let (lower_bound, upper_bound) = match morsel_size_requirement {
-            MorselSizeRequirement::Strict(size) => (size, size),
+            MorselSizeRequirement::Strict(size) => (size.into(), size),
             MorselSizeRequirement::Flexible(lower, upper) => (lower, upper),
         };
         Self {
@@ -132,7 +132,7 @@ impl UnorderedDispatcher {
     pub(crate) fn unbounded() -> Self {
         Self {
             morsel_size_lower_bound: 0,
-            morsel_size_upper_bound: usize::MAX,
+            morsel_size_upper_bound: NonZeroUsize::MAX,
         }
     }
 
@@ -140,13 +140,13 @@ impl UnorderedDispatcher {
         worker_sender: Sender<Arc<MicroPartition>>,
         input_receivers: Vec<InitializingCountingReceiver>,
         morsel_size_lower_bound: usize,
-        morsel_size_upper_bound: usize,
+        morsel_size_upper_bound: NonZeroUsize,
     ) -> DaftResult<()> {
         for receiver in input_receivers {
             let mut buffer = RowBasedBuffer::new(morsel_size_lower_bound, morsel_size_upper_bound);
 
             while let Some(morsel) = receiver.recv().await {
-                buffer.push(&morsel);
+                buffer.push(morsel);
                 while let Some(batch) = buffer.next_batch_if_ready()? {
                     if worker_sender.send(batch).await.is_err() {
                         return Ok(());
@@ -217,7 +217,7 @@ impl<S: BatchingStrategy + 'static> DynamicUnorderedDispatcher<S> {
             let mut buffer = RowBasedBuffer::new(lower, upper);
 
             while let Some(morsel) = receiver.recv().await {
-                buffer.push(&morsel);
+                buffer.push(morsel);
                 while let Some(batch) = buffer.next_batch_if_ready()? {
                     if worker_sender.send(batch).await.is_err() {
                         return Ok(());

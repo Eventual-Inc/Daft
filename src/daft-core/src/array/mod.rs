@@ -32,7 +32,7 @@ use crate::datatypes::{DaftArrayType, DaftPhysicalType, DataType, Field};
 #[derive(Debug)]
 pub struct DataArray<T> {
     pub field: Arc<Field>,
-    pub data: Box<dyn daft_arrow::array::Array>,
+    data: Box<dyn daft_arrow::array::Array>,
     validity: Option<daft_arrow::buffer::NullBuffer>,
     marker_: PhantomData<T>,
 }
@@ -179,6 +179,7 @@ impl<T> DataArray<T> {
     pub fn to_data(&self) -> arrow::array::ArrayData {
         to_data(self.data())
     }
+
     pub fn to_arrow(&self) -> arrow::array::ArrayRef {
         make_array(self.to_data())
     }

@@ -218,10 +218,15 @@ def embed_image(
 
     udf_options = image_embedder.get_udf_options()
 
-    # Decorate the __call__ method with @daft.method to specify return_dtype
-    _ImageEmbedderExpression.__call__ = method.batch(  # type: ignore[method-assign] # type: ignore[method-assign] # type: ignore[method-assign]
-        method=_ImageEmbedderExpression.__call__,
+    # Choose synchronous or asynchronous call implementation based on the embedder
+    is_async = image_embedder.is_async()
+    call_impl = _ImageEmbedderExpression._call_async if is_async else _ImageEmbedderExpression._call_sync
+
+    # Decorate the selected call method with @daft.method to specify return_dtype
+    _ImageEmbedderExpression.__call__ = method.batch(  # type: ignore[method-assign]
+        method=call_impl,
         return_dtype=image_embedder.get_dimensions().as_dtype(),
+        batch_size=udf_options.batch_size,
     )
 
     wrapped_cls = daft_cls(

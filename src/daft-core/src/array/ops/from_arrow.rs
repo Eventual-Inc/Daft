@@ -32,7 +32,7 @@ impl<T: DaftPhysicalType> FromArrow for DataArray<T> {
         field: FieldRef,
         arrow_arr: Box<dyn daft_arrow::array::Array>,
     ) -> DaftResult<Self> {
-        Self::try_from((field, arrow_arr))
+        Self::new(field, arrow_arr)
     }
 
     fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
