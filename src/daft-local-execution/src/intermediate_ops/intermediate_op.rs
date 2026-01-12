@@ -22,7 +22,7 @@ use crate::{
     buffer::RowBasedBuffer,
     dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
-    runtime_stats::{DefaultRuntimeStats, RuntimeStats},
+    runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub enum IntermediateOperatorResult {
@@ -87,6 +87,16 @@ struct ExecutionTaskResult<S> {
     elapsed: Duration,
 }
 
+struct ExecutionContext<Op: IntermediateOperator> {
+    op: Arc<Op>,
+    task_spawner: ExecutionTaskSpawner,
+    task_set: OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
+    state_pool: HashMap<StateId, Op::State>,
+    output_sender: Sender<Arc<MicroPartition>>,
+    batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
+    runtime_stats: Arc<dyn RuntimeStats>,
+}
+
 // ========== IntermediateNode Implementation ==========
 
 impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
@@ -127,14 +137,14 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
     // ========== Helper Functions ==========
 
     fn spawn_execution_task(
-        task_set: &mut OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
+        ctx: &mut ExecutionContext<Op>,
         input: Arc<MicroPartition>,
         state: Op::State,
         state_id: StateId,
-        op: Arc<Op>,
-        task_spawner: ExecutionTaskSpawner,
     ) {
-        task_set.spawn(async move {
+        let op = ctx.op.clone();
+        let task_spawner = ctx.task_spawner.clone();
+        ctx.task_set.spawn(async move {
             let now = Instant::now();
             let (new_state, result) = op.execute(input, state, &task_spawner).await??;
             let elapsed = now.elapsed();
@@ -148,62 +158,48 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         });
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn handle_task_completion(
         result: ExecutionTaskResult<Op::State>,
-        state_pool: &mut HashMap<StateId, Op::State>,
-        output_sender: &Sender<Arc<MicroPartition>>,
-        batch_manager: &Arc<BatchManager<Op::BatchingStrategy>>,
-        task_set: &mut OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
-        op: Arc<Op>,
-        task_spawner: &ExecutionTaskSpawner,
-        runtime_stats: Arc<dyn RuntimeStats>,
+        ctx: &mut ExecutionContext<Op>,
     ) -> DaftResult<bool> {
         match result.result {
             IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
                 // Record execution stats
-                batch_manager.record_execution_stats(
-                    runtime_stats.as_ref(),
+                ctx.batch_manager.record_execution_stats(
+                    ctx.runtime_stats.as_ref(),
                     mp.len(),
                     result.elapsed,
                 );
 
                 // Send output
-                runtime_stats.add_rows_out(mp.len() as u64);
-                if output_sender.send(mp).await.is_err() {
+                ctx.runtime_stats.add_rows_out(mp.len() as u64);
+                if ctx.output_sender.send(mp).await.is_err() {
                     return Ok(false);
                 }
 
                 // Return state to pool
-                state_pool.insert(result.state_id, result.state);
+                ctx.state_pool.insert(result.state_id, result.state);
             }
             IntermediateOperatorResult::NeedMoreInput(None) => {
                 // No output, just return state to pool
-                state_pool.insert(result.state_id, result.state);
+                ctx.state_pool.insert(result.state_id, result.state);
             }
             IntermediateOperatorResult::HasMoreOutput { input, output } => {
                 // Record execution stats
-                batch_manager.record_execution_stats(
-                    runtime_stats.as_ref(),
+                ctx.batch_manager.record_execution_stats(
+                    ctx.runtime_stats.as_ref(),
                     output.len(),
                     result.elapsed,
                 );
 
                 // Send output
-                runtime_stats.add_rows_out(output.len() as u64);
-                if output_sender.send(output).await.is_err() {
+                ctx.runtime_stats.add_rows_out(output.len() as u64);
+                if ctx.output_sender.send(output).await.is_err() {
                     return Ok(false);
                 }
 
                 // Spawn another execution with same input and state (don't return state)
-                Self::spawn_execution_task(
-                    task_set,
-                    input,
-                    result.state,
-                    result.state_id,
-                    op,
-                    task_spawner.clone(),
-                );
+                Self::spawn_execution_task(ctx, input, result.state, result.state_id);
             }
         }
         Ok(true)
@@ -211,101 +207,67 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
 
     fn spawn_ready_batches(
         buffer: &mut RowBasedBuffer,
-        state_pool: &mut HashMap<StateId, Op::State>,
-        task_set: &mut OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
-        op: Arc<Op>,
-        task_spawner: ExecutionTaskSpawner,
+        ctx: &mut ExecutionContext<Op>,
     ) -> DaftResult<()> {
         // Check buffer for ready batches and spawn tasks while states available
-        while !state_pool.is_empty()
+        while !ctx.state_pool.is_empty()
             && let Some(batch) = buffer.next_batch_if_ready()?
         {
-            let state_id = *state_pool
+            let state_id = *ctx
+                .state_pool
                 .keys()
                 .next()
                 .expect("State pool should have states when has_available() returns true");
-            let state = state_pool
+            let state = ctx
+                .state_pool
                 .remove(&state_id)
                 .expect("State pool should have states when has_available() returns true");
 
-            Self::spawn_execution_task(
-                task_set,
-                batch,
-                state,
-                state_id,
-                op.clone(),
-                task_spawner.clone(),
-            );
+            Self::spawn_execution_task(ctx, batch, state, state_id);
         }
         Ok(())
     }
 
-    #[allow(clippy::too_many_arguments)]
     async fn process_input(
+        node_id: usize,
         mut receiver: Receiver<Arc<MicroPartition>>,
-        output_sender: &Sender<Arc<MicroPartition>>,
-        op: Arc<Op>,
-        state_pool: &mut HashMap<StateId, Op::State>,
-        batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
-        task_spawner: ExecutionTaskSpawner,
-        runtime_stats: Arc<dyn RuntimeStats>,
-        maintain_order: bool,
+        ctx: &mut ExecutionContext<Op>,
+        stats_manager: &RuntimeStatsManagerHandle,
     ) -> DaftResult<bool> {
-        let mut task_set: OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>> =
-            OrderingAwareJoinSet::new(maintain_order);
-        let (lower, upper) = batch_manager.initial_requirements().values();
+        let (lower, upper) = ctx.batch_manager.initial_requirements().values();
         let mut buffer = RowBasedBuffer::new(lower, upper);
         let mut input_closed = false;
-
+        let mut node_initialized = false;
         // Main processing loop
-        while !input_closed || !task_set.is_empty() {
+        while !input_closed || !ctx.task_set.is_empty() {
             tokio::select! {
                 biased;
 
                 // Branch 1: Join completed task (only if tasks exist)
-                Some(join_result) = task_set.join_next(), if !task_set.is_empty() => {
-                    if !Self::handle_task_completion(
-                        join_result??,
-                        state_pool,
-                        output_sender,
-                        &batch_manager,
-                        &mut task_set,
-                        op.clone(),
-                        &task_spawner,
-                        runtime_stats.clone(),
-                    )
-                    .await?
-                    {
+                Some(join_result) = ctx.task_set.join_next(), if !ctx.task_set.is_empty() => {
+                    if !Self::handle_task_completion(join_result??, ctx).await? {
                         return Ok(false);
                     }
 
                     // After completing a task, update bounds and try to spawn more tasks
-                    let new_requirements = batch_manager.calculate_batch_size();
+                    let new_requirements = ctx.batch_manager.calculate_batch_size();
                     let (lower, upper) = new_requirements.values();
                     buffer.update_bounds(lower, upper);
 
-                    Self::spawn_ready_batches(
-                        &mut buffer,
-                        state_pool,
-                        &mut task_set,
-                        op.clone(),
-                        task_spawner.clone(),
-                    )?;
+                    Self::spawn_ready_batches(&mut buffer, ctx)?;
                 }
 
                 // Branch 2: Receive input (only if states available and receiver open)
-                morsel = receiver.recv(), if !state_pool.is_empty() && !input_closed => {
+                morsel = receiver.recv(), if !ctx.state_pool.is_empty() && !input_closed => {
                     match morsel {
                         Some(morsel) => {
-                            runtime_stats.add_rows_in(morsel.len() as u64);
+                            if !node_initialized {
+                                stats_manager.activate_node(node_id);
+                                node_initialized = true;
+                            }
+                            ctx.runtime_stats.add_rows_in(morsel.len() as u64);
                             buffer.push(morsel);
-                            Self::spawn_ready_batches(
-                                &mut buffer,
-                                state_pool,
-                                &mut task_set,
-                                op.clone(),
-                                task_spawner.clone(),
-                            )?;
+                            Self::spawn_ready_batches(&mut buffer, ctx)?;
                         }
                         None => {
                             input_closed = true;
@@ -316,50 +278,33 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         }
 
         // After loop exits, verify invariants
-        debug_assert_eq!(task_set.len(), 0, "TaskSet should be empty after loop");
+        debug_assert_eq!(ctx.task_set.len(), 0, "TaskSet should be empty after loop");
         debug_assert!(input_closed, "Receiver should be closed after loop");
 
         // Handle remaining buffered data
         if let Some(last_batch) = buffer.pop_all()? {
             // Since task_set is empty, all states should be back in the pool
-            let state_id = *state_pool
+            let state_id = *ctx
+                .state_pool
                 .keys()
                 .next()
                 .expect("State pool should have states after all tasks completed");
-            let state = state_pool
+            let state = ctx
+                .state_pool
                 .remove(&state_id)
                 .expect("State pool should have states after all tasks completed");
 
-            Self::spawn_execution_task(
-                &mut task_set,
-                last_batch,
-                state,
-                state_id,
-                op.clone(),
-                task_spawner.clone(),
-            );
+            Self::spawn_execution_task(ctx, last_batch, state, state_id);
 
             // Wait for final task to complete
-            while let Some(join_result) = task_set.join_next().await {
-                let result = join_result??;
-                if !Self::handle_task_completion(
-                    result,
-                    state_pool,
-                    output_sender,
-                    &batch_manager,
-                    &mut task_set,
-                    op.clone(),
-                    &task_spawner,
-                    runtime_stats.clone(),
-                )
-                .await?
-                {
+            while let Some(join_result) = ctx.task_set.join_next().await {
+                if !Self::handle_task_completion(join_result??, ctx).await? {
                     return Ok(false);
                 }
             }
         }
 
-        debug_assert_eq!(task_set.len(), 0, "TaskSet should be empty after loop");
+        debug_assert_eq!(ctx.task_set.len(), 0, "TaskSet should be empty after loop");
 
         Ok(true)
     }
@@ -471,10 +416,6 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
             node_name: self.name().to_string(),
         })?;
         let (destination_sender, destination_receiver) = channel(1);
-        let strategy = op.batching_strategy().context(PipelineExecutionSnafu {
-            node_name: self.name().to_string(),
-        })?;
-        let batch_manager = Arc::new(BatchManager::new(strategy));
 
         // 3. Create task spawner
         let compute_runtime = get_compute_runtime();
@@ -497,20 +438,26 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
                     state_pool.insert(i, op.make_state());
                 }
 
+                // Create batch manager and task set
+                let batch_manager = Arc::new(BatchManager::new(op.batching_strategy().context(
+                    PipelineExecutionSnafu {
+                        node_name: op.name().to_string(),
+                    },
+                )?));
+                let task_set = OrderingAwareJoinSet::new(maintain_order);
+
                 // Process each child receiver sequentially
+                let mut ctx = ExecutionContext {
+                    op,
+                    task_spawner,
+                    task_set,
+                    state_pool,
+                    output_sender: destination_sender,
+                    batch_manager,
+                    runtime_stats,
+                };
                 for receiver in child_result_receivers {
-                    if !Self::process_input(
-                        receiver,
-                        &destination_sender,
-                        op.clone(),
-                        &mut state_pool,
-                        batch_manager.clone(),
-                        task_spawner.clone(),
-                        runtime_stats.clone(),
-                        maintain_order,
-                    )
-                    .await?
-                    {
+                    if !Self::process_input(node_id, receiver, &mut ctx, &stats_manager).await? {
                         break;
                     }
                 }
