@@ -4,7 +4,7 @@ use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_io_runtime;
 use daft_compression::CompressionCodec;
-use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
+use daft_core::{prelude::*, utils::arrow::cast_arrow2_array_for_daft_if_needed};
 use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_io::{GetRange, GetResult, IOClient, IOStatsRef, SourceType, parse_url};
 use daft_recordbatch::RecordBatch;
@@ -623,7 +623,7 @@ fn parse_into_column_array_chunk_stream(
                         .map(|(array, field)| {
                             Series::try_from_field_and_arrow_array(
                                 field.clone(),
-                                cast_array_for_daft_if_needed(array),
+                                cast_arrow2_array_for_daft_if_needed(array),
                             )
                         })
                         .collect::<DaftResult<Vec<_>>>()?;
@@ -645,7 +645,9 @@ mod tests {
     use common_error::DaftResult;
     use daft_core::{
         prelude::*,
-        utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
+        utils::arrow::{
+            cast_arrow2_array_for_daft_if_needed, cast_arrow2_array_from_daft_if_needed,
+        },
     };
     use daft_io::{IOClient, IOConfig};
     use daft_recordbatch::RecordBatch;
@@ -711,7 +713,7 @@ mod tests {
         // Roundtrip columns with Daft for casting.
         let columns = columns
             .into_iter()
-            .map(|c| cast_array_from_daft_if_needed(cast_array_for_daft_if_needed(c)))
+            .map(|c| cast_arrow2_array_from_daft_if_needed(cast_arrow2_array_for_daft_if_needed(c)))
             .collect::<Vec<_>>();
         // Roundtrip schema with Daft for casting.
         let schema = Schema::try_from(&schema).unwrap().to_arrow2().unwrap();

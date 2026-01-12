@@ -718,7 +718,7 @@ pub type ArrowChunkIters = Vec<
             + Sync,
     >,
 >;
-pub type ParquetPyarrowChunk = (daft_arrow::datatypes::SchemaRef, Vec<ArrowChunk>, usize);
+pub type ParquetPyarrowChunk = (arrow_schema::SchemaRef, Vec<ArrowChunk>, usize);
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet_into_pyarrow(
     uri: &str,
@@ -988,7 +988,7 @@ pub async fn read_parquet_schema_and_metadata(
     let metadata = builder.metadata;
     let arrow_schema =
         infer_arrow_schema_from_metadata(&metadata, Some(schema_inference_options.into()))?;
-    let schema = arrow_schema.into();
+    let schema = arrow_schema.try_into()?;
     Ok((schema, metadata))
 }
 
@@ -1146,7 +1146,7 @@ mod tests {
     use std::{path::PathBuf, sync::Arc};
 
     use common_error::DaftResult;
-    use daft_arrow::{datatypes::DataType, io::parquet::read::schema::StringEncoding};
+    use daft_arrow::io::parquet::read::schema::StringEncoding;
     use daft_io::{IOClient, IOConfig};
     use futures::StreamExt;
     use parquet2::{
@@ -1307,9 +1307,13 @@ mod tests {
             None,
         )
         .unwrap();
-        match schema.fields.as_slice() {
-            [field] => assert_eq!(field.data_type, DataType::LargeBinary),
-            _ => panic!("There should only be one field in the schema"),
-        };
+
+        assert_eq!(
+            schema.fields().len(),
+            1,
+            "There should only be one field in the schema"
+        );
+        let field = schema.field(0);
+        assert_eq!(*field.data_type(), arrow_schema::DataType::LargeBinary);
     }
 }

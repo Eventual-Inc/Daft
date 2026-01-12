@@ -11,7 +11,7 @@ use daft_arrow::{
 };
 use daft_core::{
     prelude::{Schema, Series},
-    utils::arrow::cast_array_for_daft_if_needed,
+    utils::arrow::cast_arrow2_array_for_daft_if_needed,
 };
 use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::{Expr, expr::bound_expr::BoundExpr, optimization::get_required_columns};
@@ -912,7 +912,7 @@ where
                 );
                 Series::try_from_field_and_arrow_array(
                     read_daft_fields[i].clone(),
-                    cast_array_for_daft_if_needed(deserialized_col?),
+                    cast_arrow2_array_for_daft_if_needed(deserialized_col?),
                 )
             })
             .collect::<DaftResult<Vec<Series>>>()?;

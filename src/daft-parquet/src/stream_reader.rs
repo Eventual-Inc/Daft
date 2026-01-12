@@ -2,7 +2,7 @@ use std::{cmp::max, collections::HashSet, fs::File, sync::Arc};
 
 use common_error::DaftResult;
 use common_runtime::{RuntimeTask, combine_stream, get_compute_runtime};
-use daft_arrow::{bitmap::Bitmap, io::parquet::read};
+use daft_arrow::{bitmap::Bitmap, datatypes::arrow_field_to_arrow2, io::parquet::read};
 use daft_core::prelude::*;
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use daft_io::{CountingReader, IOStatsRef};
@@ -24,14 +24,14 @@ use crate::{
 };
 
 fn prune_fields_from_schema(
-    schema: daft_arrow::datatypes::Schema,
+    schema: arrow_schema::Schema,
     columns: Option<&[String]>,
-) -> super::Result<daft_arrow::datatypes::Schema> {
+) -> super::Result<arrow_schema::Schema> {
     if let Some(columns) = columns {
         let avail_names = schema
             .fields
             .iter()
-            .map(|f| f.name.as_str())
+            .map(|f| f.name().as_str())
             .collect::<HashSet<_>>();
         let mut names_to_keep = HashSet::new();
         for col_name in columns {
@@ -39,7 +39,14 @@ fn prune_fields_from_schema(
                 names_to_keep.insert(col_name.clone());
             }
         }
-        Ok(schema.filter(|_, field| names_to_keep.contains(&field.name)))
+
+        let arrow_schema::Schema { fields, metadata } = schema;
+        let fields = fields
+            .into_iter()
+            .filter(|f| names_to_keep.contains(f.name().as_str()))
+            .cloned()
+            .collect();
+        Ok(arrow_schema::Schema { fields, metadata })
     } else {
         Ok(schema)
     }
@@ -274,7 +281,8 @@ pub fn local_parquet_read_into_column_iters(
         infer_arrow_schema_from_metadata(&metadata, Some(schema_infer_options.into()))
             .with_context(|_| super::UnableToParseSchemaFromMetadataSnafu { path: uri.clone() })?;
     let schema = prune_fields_from_schema(inferred_schema.into(), columns.as_deref())?;
-    let daft_schema = Schema::from(&schema);
+    let daft_schema = Schema::try_from(&schema)
+        .with_context(|_| super::UnableToConvertSchemaToDaftSnafu { path: uri.clone() })?;
 
     let row_ranges = build_row_ranges(
         num_rows,
@@ -298,7 +306,11 @@ pub fn local_parquet_read_into_column_iters(
         let single_rg_column_iter = read::read_columns_many(
             &mut reader,
             rg_metadata,
-            schema.fields.clone(),
+            schema
+                .fields
+                .iter()
+                .map(|f| arrow_field_to_arrow2(f.as_ref()))
+                .collect(),
             Some(chunk_size),
             Some(rg_range.num_rows),
             None,
@@ -328,7 +340,7 @@ pub fn local_parquet_read_into_arrow(
     chunk_size: Option<usize>,
 ) -> super::Result<(
     Arc<parquet2::metadata::FileMetaData>,
-    daft_arrow::datatypes::Schema,
+    arrow_schema::Schema,
     Vec<ArrowChunk>,
     usize,
 )> {
@@ -368,7 +380,10 @@ pub fn local_parquet_read_into_arrow(
                 path: uri.to_string(),
             })?;
     let schema = prune_fields_from_schema(inferred_schema, columns)?;
-    let daft_schema = Schema::from(&schema);
+    let daft_schema =
+        Schema::try_from(&schema).with_context(|_| super::UnableToConvertSchemaToDaftSnafu {
+            path: uri.to_string(),
+        })?;
     let chunk_size = chunk_size.unwrap_or(PARQUET_MORSEL_SIZE);
     let max_rows = metadata.num_rows.min(num_rows.unwrap_or(metadata.num_rows));
 
@@ -391,7 +406,11 @@ pub fn local_parquet_read_into_arrow(
             let single_rg_column_iter = read::read_columns_many(
                 &mut reader,
                 rg,
-                schema.fields.clone(),
+                schema
+                    .fields
+                    .iter()
+                    .map(|f| arrow_field_to_arrow2(f.as_ref()))
+                    .collect(),
                 Some(chunk_size),
                 Some(rg_range.num_rows),
                 None,
@@ -483,11 +502,12 @@ pub async fn local_parquet_read_async(
 
             let converted_arrays = arrays
                 .into_par_iter()
-                .zip(schema.fields)
-                .map(|(v, f)| {
-                    let f_name = f.name.as_str();
+                .enumerate()
+                .map(|(idx, v)| {
+                    let f = schema.field(idx);
+                    let f_name = f.name().as_str();
                     if v.is_empty() {
-                        Ok(Series::empty(f_name, &f.data_type().into()))
+                        Ok(Series::empty(f_name, &f.data_type().try_into()?))
                     } else {
                         let casted_arrays = v
                             .into_iter()
@@ -612,7 +632,7 @@ pub async fn local_parquet_read_into_arrow_async(
     chunk_size: Option<usize>,
 ) -> super::Result<(
     Arc<parquet2::metadata::FileMetaData>,
-    daft_arrow::datatypes::Schema,
+    arrow_schema::Schema,
     Vec<ArrowChunk>,
     usize,
 )> {

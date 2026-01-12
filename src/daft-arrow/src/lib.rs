@@ -93,84 +93,129 @@ pub mod bitmap {
 }
 
 pub mod datatypes {
-    use std::{collections::HashMap, sync::Arc};
-
     pub use arrow2::datatypes::*;
 
     #[deprecated(note = "use arrow instead of arrow2")]
     #[allow(deprecated, reason = "arrow2 migration")]
-    pub fn arrow2_field_to_arrow(field: Field) -> arrow_schema::Field {
-        use arrow_schema::{Field as ArrowField, UnionFields};
-
-        let dtype = match field.data_type {
-            DataType::Null => arrow_schema::DataType::Null,
-            DataType::Boolean => arrow_schema::DataType::Boolean,
-            DataType::Int8 => arrow_schema::DataType::Int8,
-            DataType::Int16 => arrow_schema::DataType::Int16,
-            DataType::Int32 => arrow_schema::DataType::Int32,
-            DataType::Int64 => arrow_schema::DataType::Int64,
-            DataType::UInt8 => arrow_schema::DataType::UInt8,
-            DataType::UInt16 => arrow_schema::DataType::UInt16,
-            DataType::UInt32 => arrow_schema::DataType::UInt32,
-            DataType::UInt64 => arrow_schema::DataType::UInt64,
-            DataType::Float16 => arrow_schema::DataType::Float16,
-            DataType::Float32 => arrow_schema::DataType::Float32,
-            DataType::Float64 => arrow_schema::DataType::Float64,
-            DataType::Timestamp(unit, tz) => {
-                arrow_schema::DataType::Timestamp(unit.into(), tz.map(Into::into))
-            }
-            DataType::Date32 => arrow_schema::DataType::Date32,
-            DataType::Date64 => arrow_schema::DataType::Date64,
-            DataType::Time32(unit) => arrow_schema::DataType::Time32(unit.into()),
-            DataType::Time64(unit) => arrow_schema::DataType::Time64(unit.into()),
-            DataType::Duration(unit) => arrow_schema::DataType::Duration(unit.into()),
-            DataType::Interval(unit) => arrow_schema::DataType::Interval(unit.into()),
-            DataType::Binary => arrow_schema::DataType::Binary,
-            DataType::FixedSizeBinary(size) => arrow_schema::DataType::FixedSizeBinary(size as _),
-            DataType::LargeBinary => arrow_schema::DataType::LargeBinary,
-            DataType::Utf8 => arrow_schema::DataType::Utf8,
-            DataType::LargeUtf8 => arrow_schema::DataType::LargeUtf8,
-            DataType::List(f) => arrow_schema::DataType::List(Arc::new((*f).into())),
-            DataType::FixedSizeList(f, size) => {
-                arrow_schema::DataType::FixedSizeList(Arc::new((*f).into()), size as _)
-            }
-            DataType::LargeList(f) => arrow_schema::DataType::LargeList(Arc::new((*f).into())),
-            DataType::Struct(f) => {
-                arrow_schema::DataType::Struct(f.into_iter().map(ArrowField::from).collect())
-            }
-            DataType::Union(fields, Some(ids), mode) => {
-                let ids = ids.into_iter().map(|x| x as _);
-                let fields = fields.into_iter().map(ArrowField::from);
-                arrow_schema::DataType::Union(UnionFields::new(ids, fields), mode.into())
-            }
-            DataType::Union(fields, None, mode) => {
-                let ids = 0..fields.len() as i8;
-                let fields = fields.into_iter().map(ArrowField::from);
-                arrow_schema::DataType::Union(UnionFields::new(ids, fields), mode.into())
-            }
-            DataType::Map(f, ordered) => {
-                arrow_schema::DataType::Map(Arc::new((*f).into()), ordered)
-            }
-            DataType::Dictionary(key, value, _) => arrow_schema::DataType::Dictionary(
-                Box::new(DataType::from(key).into()),
-                Box::new((*value).into()),
+    pub fn arrow_datatype_to_arrow2(
+        datatype: &arrow_schema::DataType,
+    ) -> arrow2::datatypes::DataType {
+        match datatype {
+            arrow_schema::DataType::Null => arrow2::datatypes::DataType::Null,
+            arrow_schema::DataType::Boolean => arrow2::datatypes::DataType::Boolean,
+            arrow_schema::DataType::Int8 => arrow2::datatypes::DataType::Int8,
+            arrow_schema::DataType::Int16 => arrow2::datatypes::DataType::Int16,
+            arrow_schema::DataType::Int32 => arrow2::datatypes::DataType::Int32,
+            arrow_schema::DataType::Int64 => arrow2::datatypes::DataType::Int64,
+            arrow_schema::DataType::UInt8 => arrow2::datatypes::DataType::UInt8,
+            arrow_schema::DataType::UInt16 => arrow2::datatypes::DataType::UInt16,
+            arrow_schema::DataType::UInt32 => arrow2::datatypes::DataType::UInt32,
+            arrow_schema::DataType::UInt64 => arrow2::datatypes::DataType::UInt64,
+            arrow_schema::DataType::Float16 => arrow2::datatypes::DataType::Float16,
+            arrow_schema::DataType::Float32 => arrow2::datatypes::DataType::Float32,
+            arrow_schema::DataType::Float64 => arrow2::datatypes::DataType::Float64,
+            arrow_schema::DataType::Timestamp(unit, tz) => arrow2::datatypes::DataType::Timestamp(
+                (*unit).into(),
+                tz.as_ref().map(|x| x.to_string()),
             ),
-            DataType::Decimal(precision, scale) => {
-                arrow_schema::DataType::Decimal128(precision as _, scale as _)
+            arrow_schema::DataType::Date32 => arrow2::datatypes::DataType::Date32,
+            arrow_schema::DataType::Date64 => arrow2::datatypes::DataType::Date64,
+            arrow_schema::DataType::Time32(unit) => {
+                arrow2::datatypes::DataType::Time32((*unit).into())
             }
-            DataType::Decimal256(precision, scale) => {
-                arrow_schema::DataType::Decimal256(precision as _, scale as _)
+            arrow_schema::DataType::Time64(unit) => {
+                arrow2::datatypes::DataType::Time64((*unit).into())
             }
-            DataType::Extension(name, d, metadata) => {
-                let mut metadata_map = HashMap::new();
-                metadata_map.insert("ARROW:extension:name".to_string(), name);
-                if let Some(metadata) = metadata {
-                    metadata_map.insert("ARROW:extension:metadata".to_string(), metadata);
-                }
-                return arrow2_field_to_arrow(Field::new(field.name, *d, true))
-                    .with_metadata(metadata_map);
+            arrow_schema::DataType::Duration(unit) => {
+                arrow2::datatypes::DataType::Duration((*unit).into())
             }
-        };
-        arrow_schema::Field::new(field.name, dtype, true)
+            arrow_schema::DataType::Interval(unit) => {
+                arrow2::datatypes::DataType::Interval((*unit).into())
+            }
+            arrow_schema::DataType::Binary => arrow2::datatypes::DataType::Binary,
+            arrow_schema::DataType::FixedSizeBinary(size) => {
+                arrow2::datatypes::DataType::FixedSizeBinary(*size as _)
+            }
+            arrow_schema::DataType::LargeBinary => arrow2::datatypes::DataType::LargeBinary,
+            arrow_schema::DataType::Utf8 => arrow2::datatypes::DataType::Utf8,
+            arrow_schema::DataType::LargeUtf8 => arrow2::datatypes::DataType::LargeUtf8,
+            arrow_schema::DataType::List(f) => {
+                arrow2::datatypes::DataType::List(Box::new(arrow_field_to_arrow2(f.as_ref())))
+            }
+            arrow_schema::DataType::FixedSizeList(f, size) => {
+                arrow2::datatypes::DataType::FixedSizeList(
+                    Box::new(arrow_field_to_arrow2(f.as_ref())),
+                    *size as _,
+                )
+            }
+            arrow_schema::DataType::LargeList(f) => {
+                arrow2::datatypes::DataType::LargeList(Box::new(arrow_field_to_arrow2(f.as_ref())))
+            }
+            arrow_schema::DataType::Struct(f) => arrow2::datatypes::DataType::Struct(
+                f.into_iter()
+                    .map(|field| arrow_field_to_arrow2(field.as_ref()))
+                    .collect(),
+            ),
+            arrow_schema::DataType::Union(fields, mode) => {
+                let ids = fields.iter().map(|(id, _)| id as _).collect();
+                let fields = fields
+                    .iter()
+                    .map(|(_, field)| arrow_field_to_arrow2(field))
+                    .collect();
+                arrow2::datatypes::DataType::Union(fields, Some(ids), (*mode).into())
+            }
+            arrow_schema::DataType::Map(f, ordered) => arrow2::datatypes::DataType::Map(
+                Box::new(arrow_field_to_arrow2(f.as_ref())),
+                *ordered,
+            ),
+            arrow_schema::DataType::Dictionary(key, value) => {
+                let key_type = match key.as_ref() {
+                    arrow_schema::DataType::Int8 => arrow2::datatypes::IntegerType::Int8,
+                    arrow_schema::DataType::Int16 => arrow2::datatypes::IntegerType::Int16,
+                    arrow_schema::DataType::Int32 => arrow2::datatypes::IntegerType::Int32,
+                    arrow_schema::DataType::Int64 => arrow2::datatypes::IntegerType::Int64,
+                    arrow_schema::DataType::UInt8 => arrow2::datatypes::IntegerType::UInt8,
+                    arrow_schema::DataType::UInt16 => arrow2::datatypes::IntegerType::UInt16,
+                    arrow_schema::DataType::UInt32 => arrow2::datatypes::IntegerType::UInt32,
+                    arrow_schema::DataType::UInt64 => arrow2::datatypes::IntegerType::UInt64,
+                    _ => panic!("Unsupported dictionary key type: {:?}", key.as_ref()),
+                };
+
+                arrow2::datatypes::DataType::Dictionary(
+                    key_type,
+                    Box::new(arrow_datatype_to_arrow2(value.as_ref())),
+                    false,
+                )
+            }
+            arrow_schema::DataType::Decimal128(precision, scale) => {
+                arrow2::datatypes::DataType::Decimal(*precision as _, *scale as _)
+            }
+            arrow_schema::DataType::Decimal256(precision, scale) => {
+                arrow2::datatypes::DataType::Decimal256(*precision as _, *scale as _)
+            }
+            other => panic!("Unsupported arrow datatype: {:?}", other),
+        }
+    }
+
+    #[deprecated(note = "use arrow instead of arrow2")]
+    #[allow(deprecated, reason = "arrow2 migration")]
+    pub fn arrow_field_to_arrow2(field: &arrow_schema::Field) -> arrow2::datatypes::Field {
+        let mut arrow2_dtype = arrow_datatype_to_arrow2(field.data_type());
+
+        if let Some(extension_name) = field.extension_type_name() {
+            let metadata = field.extension_type_metadata().map(|x| x.to_string());
+            arrow2_dtype = arrow2::datatypes::DataType::Extension(
+                extension_name.to_string(),
+                Box::new(arrow2_dtype),
+                metadata,
+            );
+        }
+
+        let metadata = field
+            .metadata()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        arrow2::datatypes::Field::new(field.name(), arrow2_dtype, true).with_metadata(metadata)
     }
 }

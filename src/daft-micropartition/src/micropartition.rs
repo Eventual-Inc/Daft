@@ -645,7 +645,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
             .map(|m| {
                 let schema =
                     infer_arrow_schema_from_metadata(m, Some((*schema_infer_options).into()))?;
-                let daft_schema = Schema::from(schema);
+                let daft_schema = Schema::try_from(schema)?;
                 DaftResult::Ok(Arc::new(daft_schema))
             })
             .collect::<DaftResult<Vec<_>>>()?;
@@ -670,7 +670,7 @@ pub fn read_parquet_into_micropartition<T: AsRef<str>>(
             .map(|m| {
                 let schema =
                     infer_arrow_schema_from_metadata(m, Some((*schema_infer_options).into()))?;
-                let daft_schema = schema.into();
+                let daft_schema = Schema::try_from(schema)?;
                 DaftResult::Ok(Arc::new(daft_schema))
             })
             .collect::<DaftResult<Vec<_>>>()?;

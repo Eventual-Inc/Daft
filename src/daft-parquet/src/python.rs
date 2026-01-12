@@ -1,9 +1,9 @@
 use pyo3::prelude::*;
 
 pub mod pylib {
-    use std::{collections::BTreeMap, sync::Arc};
+    use std::{collections::HashMap, sync::Arc};
 
-    use common_arrow_ffi::{field_to_py, to_py_array};
+    use common_arrow_ffi::{arrow2_to_py_array, field_to_py};
     use daft_core::python::{PySchema, PySeries, PyTimeUnit};
     use daft_dsl::python::PyExpr;
     use daft_io::{IOStatsContext, get_io_client, python::IOConfig};
@@ -67,31 +67,27 @@ pub mod pylib {
     }
     type PyArrowChunks = Vec<Vec<pyo3::Py<pyo3::PyAny>>>;
     type PyArrowFields = Vec<pyo3::Py<pyo3::PyAny>>;
-    type PyArrowParquetType = (
-        PyArrowFields,
-        BTreeMap<String, String>,
-        PyArrowChunks,
-        usize,
-    );
+    type PyArrowParquetType = (PyArrowFields, HashMap<String, String>, PyArrowChunks, usize);
     fn convert_pyarrow_parquet_read_result_into_py(
         py: Python,
-        schema: daft_arrow::datatypes::SchemaRef,
+        schema: arrow_schema::SchemaRef,
         all_arrays: Vec<ArrowChunk>,
         num_rows: usize,
         pyarrow: &Bound<PyModule>,
     ) -> PyResult<PyArrowParquetType> {
         let converted_arrays = all_arrays
             .into_iter()
-            .map(|v| {
+            .zip(schema.fields.iter())
+            .map(|(v, field)| {
                 v.into_iter()
-                    .map(|a| to_py_array(py, a, pyarrow).map(pyo3::Bound::unbind))
+                    .map(|a| arrow2_to_py_array(py, pyarrow, a, field).map(pyo3::Bound::unbind))
                     .collect::<PyResult<Vec<_>>>()
             })
             .collect::<PyResult<Vec<_>>>()?;
         let fields = schema
             .fields
             .iter()
-            .map(|f| field_to_py(py, f, pyarrow))
+            .map(|f| field_to_py(py, f, pyarrow).map(Into::into))
             .collect::<Result<Vec<_>, _>>()?;
         let metadata = &schema.metadata;
         Ok((fields, metadata.clone(), converted_arrays, num_rows))
