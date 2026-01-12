@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from openai import AsyncOpenAI, OpenAIError, RateLimitError
+from openai import OpenAI as OpenAIClient
 from openai._types import Omit, omit
 from openai.types.create_embedding_response import Usage
 
@@ -93,10 +94,32 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
         return dict(self.embed_options)
 
     def get_dimensions(self) -> EmbeddingDimensions:
-        model_profile = _models[self.model_name]
         if self.dimensions is not None:
-            return EmbeddingDimensions(size=self.dimensions, dtype=model_profile.dimensions.dtype)
-        return model_profile.dimensions
+            return EmbeddingDimensions(size=self.dimensions, dtype=_models[self.model_name].dimensions.dtype)
+
+        if self.provider_options.get("base_url") is not None and self.model_name not in _models:
+            try:
+                merged_provider_options: dict[str, Any] = merge_provider_and_api_options(
+                    provider_options=self.provider_options,
+                    api_options=self.embed_options,
+                    provider_option_type=OpenAIProviderOptions,
+                )
+
+                client = OpenAIClient(**merged_provider_options)
+                response = client.embeddings.create(
+                    input="dimension probe",
+                    model=self.model_name,
+                    encoding_format="float",
+                )
+                size = len(response.data[0].embedding)
+                return EmbeddingDimensions(size=size, dtype=DataType.float32())
+            except Exception as ex:
+                raise ValueError(
+                    "Failed to determine embedding dimensions from OpenAI-compatible embedding server. "
+                    "Specify `dimensions=...` or ensure the server supports embeddings.create."
+                ) from ex
+        else:
+            return _models[self.model_name].dimensions
 
     def get_udf_options(self) -> UDFOptions:
         options = super().get_udf_options()
