@@ -95,12 +95,9 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
 
     def get_dimensions(self) -> EmbeddingDimensions:
         if self.dimensions is not None:
-            return EmbeddingDimensions(size=self.dimensions, dtype=DataType.float32())
+            return EmbeddingDimensions(size=self.dimensions, dtype=_models[self.model_name].dimensions.dtype)
 
-        if self.provider_options.get("base_url") is not None:
-            if self.model_name in _models:
-                return _models[self.model_name].dimensions
-
+        if self.provider_options.get("base_url") is not None and self.model_name not in _models:
             try:
                 merged_provider_options: dict[str, Any] = merge_provider_and_api_options(
                     provider_options=self.provider_options,
@@ -121,8 +118,8 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
                     "Failed to determine embedding dimensions from OpenAI-compatible embedding server. "
                     "Specify `dimensions=...` or ensure the server supports embeddings.create."
                 ) from ex
-
-        return _models[self.model_name].dimensions
+        else:
+            return _models[self.model_name].dimensions
 
     def get_udf_options(self) -> UDFOptions:
         options = super().get_udf_options()
@@ -259,8 +256,11 @@ class OpenAITextEmbedder(TextEmbedder):
             return np.array(response.data[0].embedding)
         except Exception as ex:
             if self._zero_on_failure:
-                size = self._dimensions or _models[self._model].dimensions.size
-                return np.zeros(size, dtype=np.float32)
+                model_profile = _models[self._model]
+                dtype = model_profile.dimensions.dtype
+                size = self._dimensions or model_profile.dimensions.size
+                np_dtype = np.float64 if dtype == DataType.float64() else np.float32
+                return np.zeros(size, dtype=np_dtype)
             else:
                 raise ex
 
