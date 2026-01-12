@@ -171,7 +171,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                 match result.1 {
                     StreamingSinkOutput::NeedMoreInput(mp) => {
                         batch_manager.record_execution_stats(
-                            runtime_stats.clone(),
+                            runtime_stats.as_ref(),
                             mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
                             elapsed,
                         );
@@ -184,7 +184,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                     }
                     StreamingSinkOutput::HasMoreOutput(mp) => {
                         batch_manager.record_execution_stats(
-                            runtime_stats.clone(),
+                            runtime_stats.as_ref(),
                             mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
                             elapsed,
                         );
@@ -196,7 +196,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                     }
                     StreamingSinkOutput::Finished(mp) => {
                         batch_manager.record_execution_stats(
-                            runtime_stats.clone(),
+                            runtime_stats.as_ref(),
                             mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
                             elapsed,
                         );

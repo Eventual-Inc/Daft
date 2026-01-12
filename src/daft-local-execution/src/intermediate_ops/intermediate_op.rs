@@ -14,6 +14,7 @@ use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
+use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tracing::info_span;
 
 use crate::{
@@ -21,9 +22,7 @@ use crate::{
     buffer::RowBasedBuffer,
     dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
-    runtime_stats::{
-        CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
-    },
+    runtime_stats::{DefaultRuntimeStats, RuntimeStats},
 };
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub enum IntermediateOperatorResult {
@@ -153,7 +152,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
     async fn handle_task_completion(
         result: ExecutionTaskResult<Op::State>,
         state_pool: &mut HashMap<StateId, Op::State>,
-        output_sender: &CountingSender,
+        output_sender: &Sender<Arc<MicroPartition>>,
         batch_manager: &Arc<BatchManager<Op::BatchingStrategy>>,
         task_set: &mut OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
         op: Arc<Op>,
@@ -163,9 +162,14 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         match result.result {
             IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
                 // Record execution stats
-                batch_manager.record_execution_stats(runtime_stats, mp.len(), result.elapsed);
+                batch_manager.record_execution_stats(
+                    runtime_stats.as_ref(),
+                    mp.len(),
+                    result.elapsed,
+                );
 
                 // Send output
+                runtime_stats.add_rows_out(mp.len() as u64);
                 if output_sender.send(mp).await.is_err() {
                     return Ok(false);
                 }
@@ -179,9 +183,14 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
             }
             IntermediateOperatorResult::HasMoreOutput { input, output } => {
                 // Record execution stats
-                batch_manager.record_execution_stats(runtime_stats, output.len(), result.elapsed);
+                batch_manager.record_execution_stats(
+                    runtime_stats.as_ref(),
+                    output.len(),
+                    result.elapsed,
+                );
 
                 // Send output
+                runtime_stats.add_rows_out(output.len() as u64);
                 if output_sender.send(output).await.is_err() {
                     return Ok(false);
                 }
@@ -233,8 +242,8 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
 
     #[allow(clippy::too_many_arguments)]
     async fn process_input(
-        mut receiver: InitializingCountingReceiver,
-        output_sender: &CountingSender,
+        mut receiver: Receiver<Arc<MicroPartition>>,
+        output_sender: &Sender<Arc<MicroPartition>>,
         op: Arc<Op>,
         state_pool: &mut HashMap<StateId, Op::State>,
         batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
@@ -288,6 +297,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 morsel = receiver.recv(), if !state_pool.is_empty() && !input_closed => {
                     match morsel {
                         Some(morsel) => {
+                            runtime_stats.add_rows_in(morsel.len() as u64);
                             buffer.push(morsel);
                             Self::spawn_ready_batches(
                                 &mut buffer,
@@ -448,26 +458,19 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<tokio::sync::mpsc::Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         // 1. Start children and wrap receivers
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
         for child in &self.children {
             let child_result_receiver = child.start(maintain_order, runtime_handle)?;
-            child_result_receivers.push(InitializingCountingReceiver::new(
-                child_result_receiver,
-                self.node_id(),
-                self.runtime_stats.clone(),
-                runtime_handle.stats_manager(),
-            ));
+            child_result_receivers.push(child_result_receiver);
         }
-
         // 2. Setup
         let op = self.intermediate_op.clone();
         let max_concurrency = op.max_concurrency().context(PipelineExecutionSnafu {
             node_name: self.name().to_string(),
         })?;
-        let (destination_sender, destination_receiver) = tokio::sync::mpsc::channel(1);
-        let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
+        let (destination_sender, destination_receiver) = channel(1);
         let strategy = op.batching_strategy().context(PipelineExecutionSnafu {
             node_name: self.name().to_string(),
         })?;
@@ -498,7 +501,7 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
                 for receiver in child_result_receivers {
                     if !Self::process_input(
                         receiver,
-                        &counting_sender,
+                        &destination_sender,
                         op.clone(),
                         &mut state_pool,
                         batch_manager.clone(),
