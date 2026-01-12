@@ -4,7 +4,8 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from openai import NOT_GIVEN, AsyncOpenAI, OpenAIError, RateLimitError
+from openai import AsyncOpenAI, OpenAIError, RateLimitError
+from openai._types import Omit, omit
 from openai.types.create_embedding_response import Usage
 
 from daft import DataType
@@ -92,9 +93,10 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
         return dict(self.embed_options)
 
     def get_dimensions(self) -> EmbeddingDimensions:
+        model_profile = _models[self.model_name]
         if self.dimensions is not None:
-            return EmbeddingDimensions(size=self.dimensions, dtype=DataType.float32())
-        return _models[self.model_name].dimensions
+            return EmbeddingDimensions(size=self.dimensions, dtype=model_profile.dimensions.dtype)
+        return model_profile.dimensions
 
     def get_udf_options(self) -> UDFOptions:
         options = super().get_udf_options()
@@ -109,7 +111,7 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
             provider_options=self.provider_options,
             model=self.model_name,
             embed_options=self.embed_options,
-            dimensions=self.dimensions,
+            dimensions=self.dimensions if self.embed_options.get("supports_overriding_dimensions", False) else omit,
             provider_name=self.provider_name,
         )
 
@@ -201,11 +203,12 @@ class OpenAITextEmbedder(TextEmbedder):
     async def _embed_text_batch(self, input_batch: list[str]) -> list[Embedding]:
         """Embeds text as a batch call, falling back to _embed_text on rate limit exceptions."""
         try:
+            dimensions: int | Omit = self._dimensions if self._dimensions is not None else omit
             response = await self._client.embeddings.create(
                 input=input_batch,
                 model=self._model,
                 encoding_format="float",
-                dimensions=self._dimensions or NOT_GIVEN,
+                dimensions=dimensions,
             )
             self._record_usage_metrics(response)
             return [np.array(embedding.embedding) for embedding in response.data]
@@ -219,18 +222,22 @@ class OpenAITextEmbedder(TextEmbedder):
     async def _embed_text(self, input_text: str) -> Embedding:
         """Embeds a single text input and possibly returns a zero vector."""
         try:
+            dimensions: int | Omit = self._dimensions if self._dimensions is not None else omit
             response: CreateEmbeddingResponse = await self._client.embeddings.create(
                 input=input_text,
                 model=self._model,
                 encoding_format="float",
-                dimensions=self._dimensions or NOT_GIVEN,
+                dimensions=dimensions,
             )
             self._record_usage_metrics(response)
             return np.array(response.data[0].embedding)
         except Exception as ex:
             if self._zero_on_failure:
-                size = self._dimensions or _models[self._model].dimensions.size
-                return np.zeros(size, dtype=np.float32)
+                model_profile = _models[self._model]
+                dtype = model_profile.dimensions.dtype
+                size = self._dimensions or model_profile.dimensions.size
+                np_dtype = np.float64 if dtype == DataType.float64() else np.float32
+                return np.zeros(size, dtype=np_dtype)
             else:
                 raise ex
 
