@@ -81,6 +81,9 @@ def test_keyframes_start_time_beyond_duration_returns_empty(sample_video_path):
 
 
 def test_keyframes_start_time_skips_early_frames(sample_video_path):
+    import av
+    import numpy as np
+
     file = daft.VideoFile(sample_video_path)
     metadata = file.metadata()
     duration = metadata["duration"]
@@ -88,10 +91,18 @@ def test_keyframes_start_time_skips_early_frames(sample_video_path):
 
     start_time = duration / 2.0
 
-    all_keyframes = list(file.keyframes())
     later_keyframes = list(file.keyframes(start_time=start_time))
 
-    assert len(later_keyframes) < len(all_keyframes)
+    # Verify using lower-level av API to check timestamps and content
+    with av.open(sample_video_path) as container:
+        stream = container.streams.video[0]
+        stream.codec_context.skip_frame = "NONKEY"
+        expected_frames = [f for f in container.decode(stream) if f.time >= start_time]
+
+    assert len(later_keyframes) == len(expected_frames)
+    assert len(later_keyframes) > 0
+
+    np.testing.assert_array_equal(np.array(later_keyframes[0]), np.array(expected_frames[0].to_image()))
 
 
 def test_video_keyframes_start_time_beyond_duration_returns_empty(sample_video_path):

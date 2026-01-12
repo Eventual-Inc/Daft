@@ -119,8 +119,7 @@ class VideoFile(File):
 
                     # Check end time if specified
                     if end_time is not None:
-                        frame_time = frame.time
-                        if frame_time and frame_time > end_time:
+                        if frame.time and frame.time > end_time:
                             break
 
                     yield frame.to_image()
