@@ -1,18 +1,30 @@
 [dependencies]
+common-error = {path = "../common/error"}
+common-io-config = {path = "../common/io-config", optional = true}
 daft-ai = {path = "../daft-ai"}
 daft-catalog = {path = "../daft-catalog"}
 daft-core = {path = "../daft-core", default-features = false}
+daft-io = {path = "../daft-io", default-features = false}
 daft-dsl = {path = "../daft-dsl"}
 daft-logical-plan = {path = "../daft-logical-plan"}
 pyo3 = {workspace = true, optional = true}
+indexmap = {workspace = true}
+common-py-serde = {path = "../common/py-serde", default-features = false}
+serde_json = {workspace = true}
 uuid.workspace = true
 
 [features]
 python = [
   "dep:pyo3",
+  "daft-ai/python",
   "daft-catalog/python",
   "daft-core/python",
-  "daft-logical-plan/python"
+  "daft-io/python",
+  "daft-logical-plan/python",
+  "common-py-serde/python",
+  "daft-dsl/python",
+  "common-io-config",
+  "common-io-config/python"
 ]
 
 [lints]

@@ -10,6 +10,8 @@ common-treenode = {path = "../common/treenode", default-features = false}
 common-metrics = {path = "../common/metrics", default-features = false}
 common-tracing = {path = "../common/tracing", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
+daft-io = {path = "../daft-io", default-features = false}
+daft-schema = {path = "../daft-schema", default-features = false}
 daft-sketch = {path = "../daft-sketch", default-features = false}
 derive_more = {workspace = true}
 indexmap = {workspace = true}
@@ -18,9 +20,13 @@ log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 rand = "0.8.5"
 serde = {workspace = true}
+serde_json = {workspace = true}
 tokio = {workspace = true, optional = true}
 typetag = {workspace = true}
 opentelemetry = {workspace = true}
+lance = {version = "0.28.0", optional = true, default-features = false}
+futures = {version = "0.3", optional = true}
+arrow = {version = "54.2.1", optional = true}
 
 [dev-dependencies]
 rstest = {workspace = true}
@@ -36,7 +42,10 @@ python = [
   "common-treenode/python",
   "common-py-serde/python",
   "common-resource-request/python",
-  "common-metrics/python"
+  "common-metrics/python",
+  "dep:lance",
+  "dep:futures",
+  "dep:arrow"
 ]
 test-utils = []
 

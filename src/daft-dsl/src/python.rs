@@ -779,3 +779,113 @@ impl From<&PyExpr> for crate::ExprRef {
         item.expr.clone()
     }
 }
+
+#[pyfunction(signature = (config, keys, on_error, columns=None))]
+pub fn kv_get_with_config(
+    config: String,
+    keys: PyExpr,
+    on_error: PyExpr,
+    columns: Option<PyExpr>,
+) -> PyResult<PyExpr> {
+    let config: crate::functions::kv::KVConfig = serde_json::from_str(&config)
+        .map_err(|e| PyValueError::new_err(format!("Invalid KVConfig JSON: {}", e)))?;
+
+    Ok(crate::functions::kv::kv_functions::kv_get_with_config(
+        config,
+        keys.into(),
+        on_error.into(),
+        columns.map(|c| c.into()),
+    )
+    .into())
+}
+
+#[pyfunction(signature = (config, keys, batch_size, on_error, columns=None))]
+pub fn kv_batch_get_with_config(
+    config: String,
+    keys: PyExpr,
+    batch_size: PyExpr,
+    on_error: PyExpr,
+    columns: Option<PyExpr>,
+) -> PyResult<PyExpr> {
+    let config: crate::functions::kv::KVConfig = serde_json::from_str(&config)
+        .map_err(|e| PyValueError::new_err(format!("Invalid KVConfig JSON: {}", e)))?;
+
+    Ok(
+        crate::functions::kv::kv_functions::kv_batch_get_with_config(
+            config,
+            keys.into(),
+            batch_size.into(),
+            on_error.into(),
+            columns.map(|c| c.into()),
+        )
+        .into(),
+    )
+}
+
+// KV Store ScalarUDF convenience functions with store name support
+#[pyfunction(signature = (name, keys, on_error, columns=None))]
+pub fn kv_get_with_name(
+    name: PyExpr,
+    keys: PyExpr,
+    on_error: PyExpr,
+    columns: Option<PyExpr>,
+) -> PyResult<PyExpr> {
+    Ok(crate::functions::kv::kv_functions::kv_get_with_name(
+        name.into(),
+        keys.into(),
+        on_error.into(),
+        columns.map(|c| c.into()),
+    )
+    .into())
+}
+
+#[pyfunction(signature = (name, keys, batch_size, on_error, columns=None))]
+pub fn kv_batch_get_with_name(
+    name: PyExpr,
+    keys: PyExpr,
+    batch_size: PyExpr,
+    on_error: PyExpr,
+    columns: Option<PyExpr>,
+) -> PyResult<PyExpr> {
+    // First get the KV store from session using the name
+    // Then extract the config from the KV store
+    // Finally call the actual kv_batch_get_with_name function
+    Ok(crate::functions::kv::kv_functions::kv_batch_get_with_name(
+        name.into(),
+        keys.into(),
+        batch_size.into(),
+        on_error.into(),
+        columns.map(|c| c.into()),
+    )
+    .into())
+}
+
+#[pyfunction]
+pub fn kv_exists_with_name(name: PyExpr, keys: PyExpr) -> PyResult<PyExpr> {
+    // First get the KV store from session using the name
+    // Then extract the config from the KV store
+    // Finally call the actual kv_exists_with_name function
+    Ok(crate::functions::kv::kv_functions::kv_exists_with_name(name.into(), keys.into()).into())
+}
+
+#[pyfunction]
+pub fn kv_exists_with_config(config: String, keys: PyExpr) -> PyResult<PyExpr> {
+    let config: crate::functions::kv::KVConfig = serde_json::from_str(&config).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+            "Failed to deserialize config: {}",
+            e
+        ))
+    })?;
+    Ok(crate::functions::kv::kv_functions::kv_exists_with_config(config, keys.into()).into())
+}
+
+#[pyfunction]
+pub fn kv_put_with_name(name: PyExpr, key: PyExpr, value: PyExpr) -> PyResult<PyExpr> {
+    // First get the KV store from session using the name
+    // Then extract the config from the KV store
+    // Finally call the actual kv_put_with_name function
+    Ok(
+        crate::functions::kv::kv_functions::kv_put_with_name(name.into(), key.into(), value.into())
+            .into(),
+    )
+}

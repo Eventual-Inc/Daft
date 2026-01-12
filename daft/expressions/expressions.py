@@ -2347,6 +2347,15 @@ class Expression:
 
         return map_get(self, key)
 
+    @property
+    def kv(self) -> ExpressionKVNamespace:
+        """Access the KV namespace for KV operations.
+
+        Returns:
+            ExpressionKVNamespace: The KV namespace.
+        """
+        return ExpressionKVNamespace(self)
+
     def slice(self, start: int | Expression, end: int | Expression | None = None) -> Expression:
         """Get a subset of each list or binary value.
 
@@ -2526,6 +2535,41 @@ class Expression:
         from daft.functions import file_size
 
         return file_size(self)
+
+
+class ExpressionKVNamespace:
+    def __init__(self, expr: Expression) -> None:
+        self._expr = expr
+
+    def get(
+        self,
+        store_name: str | Expression,
+        on_error: Literal["raise", "null"] | Expression = "raise",
+        columns: Iterable[str] | Expression | None = None,
+    ) -> Expression:
+        """Retrieves values from a KV store.
+
+        Args:
+            store_name: Name of the KV store (str or Expression)
+            on_error: Behavior when key not found ("raise" or "null")
+            columns: Optional list of columns to retrieve from the value (if it's a struct/json)
+
+        Returns:
+            Expression: The retrieved value
+        """
+        from daft.functions.kv import kv_get_with_name
+
+        if isinstance(on_error, str):
+            on_error = lit(on_error)
+
+        columns_expr: Expression | list[str] | None = None
+        if columns is not None:
+            if isinstance(columns, Expression):
+                columns_expr = columns
+            else:
+                columns_expr = list(columns)
+
+        return kv_get_with_name(store_name, self._expr, columns=columns_expr, on_error=on_error)
 
 
 class WhenExpr(Expression):
