@@ -31,7 +31,7 @@ def test_worker_config_homogeneous():
     with autoscaling_cluster_context(head_resources, worker_node_types):
         # Configure with single worker config (homogeneous)
         worker_config = WorkerConfig(
-            num_workers=2,
+            num_replicas=2,
             num_cpus=4.0,
             memory_bytes=4 * 1024**3,
         )
@@ -59,8 +59,8 @@ def test_worker_config_heterogeneous():
     with autoscaling_cluster_context(head_resources, worker_node_types):
         # Configure with multiple worker configs (heterogeneous)
         worker_configs = [
-            WorkerConfig(num_workers=1, num_cpus=8.0, memory_bytes=8 * 1024**3),
-            WorkerConfig(num_workers=2, num_cpus=4.0, memory_bytes=4 * 1024**3),
+            WorkerConfig(num_replicas=1, num_cpus=8.0, memory_bytes=8 * 1024**3),
+            WorkerConfig(num_replicas=2, num_cpus=4.0, memory_bytes=4 * 1024**3),
         ]
         daft.set_runner_ray(worker_config=worker_configs)
 
@@ -85,7 +85,7 @@ def test_worker_config_with_gpus():
     with autoscaling_cluster_context(head_resources, worker_node_types):
         # Configure with GPU workers
         worker_config = WorkerConfig(
-            num_workers=1,
+            num_replicas=1,
             num_cpus=4.0,
             memory_bytes=4 * 1024**3,
             num_gpus=1.0,
@@ -102,31 +102,31 @@ def test_worker_config_validation():
     """Test WorkerConfig validation."""
     # Valid config
     config = WorkerConfig(
-        num_workers=2,
+        num_replicas=2,
         num_cpus=4.0,
         memory_bytes=8 * 1024**3,
         num_gpus=0.0,
     )
-    assert config.num_workers == 2
+    assert config.num_replicas == 2
     assert config.num_cpus == 4.0
     assert config.memory_bytes == 8 * 1024**3
     assert config.num_gpus == 0.0
 
-    # Invalid num_workers
-    with pytest.raises(ValueError, match="num_workers must be positive"):
-        WorkerConfig(num_workers=0, num_cpus=4.0, memory_bytes=8 * 1024**3)
+    # Invalid num_replicas
+    with pytest.raises(ValueError, match="num_replicas must be positive"):
+        WorkerConfig(num_replicas=0, num_cpus=4.0, memory_bytes=8 * 1024**3)
 
     # Invalid num_cpus
     with pytest.raises(ValueError, match="num_cpus must be positive"):
-        WorkerConfig(num_workers=2, num_cpus=-1.0, memory_bytes=8 * 1024**3)
+        WorkerConfig(num_replicas=2, num_cpus=-1.0, memory_bytes=8 * 1024**3)
 
     # Invalid memory_bytes
     with pytest.raises((ValueError, OverflowError)):
-        WorkerConfig(num_workers=2, num_cpus=4.0, memory_bytes=-1000)
+        WorkerConfig(num_replicas=2, num_cpus=4.0, memory_bytes=-1000)
 
     # Invalid num_gpus
     with pytest.raises(ValueError, match="num_gpus cannot be negative"):
-        WorkerConfig(num_workers=2, num_cpus=4.0, memory_bytes=8 * 1024**3, num_gpus=-1.0)
+        WorkerConfig(num_replicas=2, num_cpus=4.0, memory_bytes=8 * 1024**3, num_gpus=-1.0)
 
 
 def test_backwards_compatibility_no_worker_config():
