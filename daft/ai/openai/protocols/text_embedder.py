@@ -83,7 +83,8 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
             model = _models[self.model_name]
             if self.dimensions is not None:
                 if model.supports_overriding_dimensions:
-                    self.embed_options["supports_overriding_dimensions"] = True
+                    if "supports_overriding_dimensions" not in self.embed_options:
+                        self.embed_options["supports_overriding_dimensions"] = True
                 else:
                     raise ValueError(
                         f"OpenAI embedding model '{self.model_name}' does not support specifying dimensions"
