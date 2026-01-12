@@ -253,11 +253,18 @@ pub async fn stream_csv_local(
 
     // Create CSV buffer pool.
     let record_buffer_size = (estimated_mean_row_size + estimated_std_row_size).ceil() as usize;
-    let chunk_size = read_options
+    let chunk_size_rows = read_options
         .as_ref()
-        .and_then(|opt| opt.chunk_size.or_else(|| opt.buffer_size.map(|bs| bs / 8)))
-        .unwrap_or(DEFAULT_CSV_BUFFER_SIZE);
-    let chunk_size_rows = (chunk_size as f64 / record_buffer_size as f64).ceil() as usize;
+        .and_then(|opt| opt.chunk_size)
+        .or_else(|| {
+            read_options.and_then(|opt| {
+                opt.buffer_size
+                    .map(|bs| (bs as f64 / (8.0 * record_buffer_size as f64)).ceil() as usize)
+            })
+        })
+        .unwrap_or_else(|| {
+            (DEFAULT_CSV_BUFFER_SIZE as f64 / record_buffer_size as f64).ceil() as usize
+        });
     // TODO(desmond): We might consider creating per-process buffer pools and slab pools.
     let buffer_pool = Arc::new(CsvBufferPool::new(
         record_buffer_size,

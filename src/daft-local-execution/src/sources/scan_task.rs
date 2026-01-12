@@ -12,7 +12,7 @@ use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_metrics::ops::NodeType;
 use common_runtime::{combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use common_scan_info::{Pushdowns, ScanTaskLike};
-use daft_core::prelude::{AsArrow, Int64Array, SchemaRef, Utf8Array};
+use daft_core::prelude::{Int64Array, SchemaRef, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{AggExpr, Expr};
 use daft_io::{GetRange, IOStatsRef};
@@ -388,12 +388,17 @@ async fn get_delete_map(
                 let positions = get_column_by_name("pos")?.downcast::<Int64Array>()?;
 
                 for (file, pos) in file_paths
-                    .as_arrow2()
-                    .values_iter()
-                    .zip(positions.as_arrow2().values_iter())
+                    .into_iter()
+                    .zip(positions.into_iter())
+                    .map(|(file, pos)| {
+                        (
+                            file.expect("file should not be null in iceberg delete files"),
+                            *pos.expect("pos should not be null in iceberg delete files"),
+                        )
+                    })
                 {
                     if delete_map.contains_key(file) {
-                        delete_map.get_mut(file).unwrap().push(*pos);
+                        delete_map.get_mut(file).unwrap().push(pos);
                     }
                 }
             }

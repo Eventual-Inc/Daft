@@ -28,6 +28,29 @@ use crate::{
 
 type ColumnWriterFuture = dyn Future<Output = DaftResult<ArrowColumnChunk>> + Send;
 
+/// Helper function to check if we support writing a specific data type to Parquet.
+fn native_parquet_field_supported(field: &arrow_schema::Field) -> bool {
+    // TODO: Include extension info in parquet metadata
+    if field.extension_type_name().is_some() {
+        return false;
+    }
+
+    // TODO: Newer versions of parquet support Duration, but we don't write
+    // the arrow schema metadata to Parquet, so we can't support it yet.
+    // Similarly, we don't support TimestampTz or Extension
+    match field.data_type() {
+        arrow_schema::DataType::Duration(_) => false,
+        arrow_schema::DataType::Timestamp(_, tz) => tz.is_none(),
+        arrow_schema::DataType::List(field)
+        | arrow_schema::DataType::FixedSizeList(field, _)
+        | arrow_schema::DataType::Map(field, _) => native_parquet_field_supported(field.as_ref()),
+        arrow_schema::DataType::Struct(fields) => fields
+            .iter()
+            .all(|field| native_parquet_field_supported(field.as_ref())),
+        _ => true,
+    }
+}
+
 /// Helper function that checks if we support native writes given the file format, root directory, and schema.
 pub(crate) fn native_parquet_writer_supported(
     root_dir: &str,
@@ -38,19 +61,18 @@ pub(crate) fn native_parquet_writer_supported(
         return Ok(false);
     }
 
-    // TODO(desmond): Currently we do not support extension and timestamp types.
-
-    let arrow_schema = match file_schema.to_arrow2() {
-        Ok(schema)
-            if schema
-                .fields
-                .iter()
-                .all(|field| field.data_type().can_convert_to_arrow_rs()) =>
-        {
-            Arc::new(schema.into())
-        }
-        _ => return Ok(false),
+    let Ok(arrow_schema) = file_schema.to_arrow() else {
+        return Ok(false);
     };
+
+    if arrow_schema
+        .fields()
+        .iter()
+        .any(|field| !native_parquet_field_supported(field.as_ref()))
+    {
+        return Ok(false);
+    }
+
     let writer_properties = Arc::new(
         WriterProperties::builder()
             .set_writer_version(WriterVersion::PARQUET_1_0)
@@ -90,7 +112,7 @@ pub(crate) fn create_native_parquet_writer(
             .build(),
     );
 
-    let arrow_schema = Arc::new(schema.to_arrow2()?.into());
+    let arrow_schema = Arc::new(schema.to_arrow()?.into());
 
     let parquet_schema = ArrowSchemaConverter::new()
         .with_coerce_types(writer_properties.coerce_types())
@@ -368,11 +390,11 @@ impl<B: StorageBackend> AsyncFileWriter for ParquetWriter<B> {
 
         // Return a recordbatch containing the filename that we wrote to.
         let field = Field::new(Self::PATH_FIELD_NAME, DataType::Utf8);
-        let filename_series = Series::from_arrow2(
+        let filename_series = Series::from_arrow(
             Arc::new(field.clone()),
-            Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice([&self
-                .filename
-                .to_string_lossy()])),
+            Arc::new(arrow_array::LargeStringArray::from_iter_values(
+                std::iter::once(&self.filename.to_string_lossy()),
+            )),
         )?;
         let record_batch =
             RecordBatch::new_with_size(Schema::new(vec![field]), vec![filename_series], 1)?;

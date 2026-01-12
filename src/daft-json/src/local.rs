@@ -560,7 +560,7 @@ mod tests {
         let result = infer_schema(json.as_bytes(), None, None);
         let expected_schema = ArrowSchema::from(vec![
             ArrowField::new("floats", ArrowDataType::Float64, true),
-            ArrowField::new("utf8", ArrowDataType::Utf8, true),
+            ArrowField::new("utf8", ArrowDataType::LargeUtf8, true),
             ArrowField::new("bools", ArrowDataType::Boolean, true),
         ]);
         assert_eq!(result.unwrap(), expected_schema);

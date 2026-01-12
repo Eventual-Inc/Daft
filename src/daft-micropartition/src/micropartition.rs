@@ -192,12 +192,11 @@ impl MicroPartition {
     pub fn write_to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
         let mut buffer = Vec::with_capacity(self.size_bytes());
         let arrow_schema = self.schema.to_arrow()?;
-        let mut writer =
-            daft_arrow::ipc::writer::StreamWriter::try_new(&mut buffer, &arrow_schema)?;
+        let mut writer = arrow_ipc::writer::StreamWriter::try_new(&mut buffer, &arrow_schema)?;
 
         for table in self.record_batches() {
             // Convert daft RecordBatch to arrow-rs RecordBatch
-            let arrow_batch: daft_arrow::arrow_array::RecordBatch = table.clone().try_into()?;
+            let arrow_batch: arrow_array::RecordBatch = table.clone().try_into()?;
             writer.write(&arrow_batch)?;
         }
 
@@ -208,7 +207,7 @@ impl MicroPartition {
 
     pub fn read_from_ipc_stream(buffer: &[u8]) -> DaftResult<Self> {
         let mut cursor = std::io::Cursor::new(buffer);
-        let reader = daft_arrow::ipc::reader::StreamReader::try_new(&mut cursor, None)?;
+        let reader = arrow_ipc::reader::StreamReader::try_new(&mut cursor, None)?;
 
         let arrow_schema = reader.schema();
         let schema: SchemaRef = Arc::new(arrow_schema.as_ref().try_into()?);

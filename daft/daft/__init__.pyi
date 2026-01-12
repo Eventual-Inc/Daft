@@ -1482,9 +1482,11 @@ def udf(
     ray_options: dict[str, Any] | None = None,
 ) -> PyExpr: ...
 def row_wise_udf(
+    func_id: str,
     name: str,
     cls: ClsBase[Any],
     method: Callable[Concatenate[Any, ...], Any],
+    builtin_name: bool,
     is_async: bool,
     return_dtype: PyDataType,
     gpus: float,
@@ -1496,9 +1498,11 @@ def row_wise_udf(
     expr_args: list[PyExpr],
 ) -> PyExpr: ...
 def batch_udf(
+    func_id: str,
     name: str,
     cls: ClsBase[Any],
     method: Callable[Concatenate[Any, ...], Any],
+    builtin_name: bool,
     is_async: bool,
     return_dtype: PyDataType,
     gpus: float,
@@ -1690,7 +1694,7 @@ class PyRecordBatch:
         right_on: list[PyExpr],
         is_sorted: bool,
     ) -> PyRecordBatch: ...
-    def explode(self, to_explode: list[PyExpr]) -> PyRecordBatch: ...
+    def explode(self, to_explode: list[PyExpr], index_column: str | None = None) -> PyRecordBatch: ...
     def head(self, num: int) -> PyRecordBatch: ...
     def sample_by_fraction(self, fraction: float, with_replacement: bool, seed: int | None) -> PyRecordBatch: ...
     def sample_by_size(self, size: int, with_replacement: bool, seed: int | None) -> PyRecordBatch: ...
@@ -1787,7 +1791,7 @@ class PyMicroPartition:
         right: PyMicroPartition,
         outer_loop_side: JoinSide,
     ) -> PyMicroPartition: ...
-    def explode(self, to_explode: list[PyExpr]) -> PyMicroPartition: ...
+    def explode(self, to_explode: list[PyExpr], index_column: str | None = None) -> PyMicroPartition: ...
     def unpivot(
         self,
         ids: list[PyExpr],
@@ -1863,6 +1867,20 @@ class PyMicroPartitionSet:
     def get_preview_micropartitions(self, num_rows: int) -> list[PyMicroPartition]: ...
     def items(self) -> list[tuple[int, PyMicroPartition]]: ...
 
+class PyFormatSinkOption:
+    @classmethod
+    def csv(
+        cls,
+        delimiter: str | None = None,
+        quote: str | None = None,
+        escape: str | None = None,
+        header: bool | None = None,
+    ) -> PyFormatSinkOption: ...
+    @classmethod
+    def json(cls) -> PyFormatSinkOption: ...
+    @classmethod
+    def parquet(cls) -> PyFormatSinkOption: ...
+
 class LogicalPlanBuilder:
     """A logical plan builder, which simplifies constructing logical plans via a fluent interface.
 
@@ -1895,7 +1913,7 @@ class LogicalPlanBuilder:
     def limit(self, limit: int, eager: bool) -> LogicalPlanBuilder: ...
     def offset(self, offset: int) -> LogicalPlanBuilder: ...
     def shard(self, strategy: str, world_size: int, rank: int) -> LogicalPlanBuilder: ...
-    def explode(self, to_explode: list[PyExpr]) -> LogicalPlanBuilder: ...
+    def explode(self, to_explode: list[PyExpr], index_column: str | None = None) -> LogicalPlanBuilder: ...
     def unpivot(
         self,
         ids: list[PyExpr],
@@ -1946,6 +1964,7 @@ class LogicalPlanBuilder:
         root_dir: str,
         write_mode: WriteMode,
         file_format: FileFormat,
+        file_format_options: PyFormatSinkOption | None = None,
         partition_cols: list[PyExpr] | None = None,
         compression: str | None = None,
         io_config: IOConfig | None = None,
@@ -2250,6 +2269,12 @@ def io_glob(
     page_size: int | None = None,
     limit: int | None = None,
 ) -> list[dict[str, Any]]: ...
+def io_put(
+    path: str,
+    data: bytes,
+    multithreaded_io: bool | None = None,
+    io_config: IOConfig | None = None,
+) -> None: ...
 
 class SystemInfo:
     """Accessor for system information."""

@@ -151,3 +151,41 @@ def test_explode_bad_col_type(make_df):
     df = make_df({"a": [1, 2, 3]})
     with pytest.raises(ValueError, match="Input must be a list"):
         df = df.explode(col("a"))
+
+
+def test_explode_with_index_column(make_df):
+    df = make_df({"a": [[1, 2], [3, 4, 3]]})
+    result = df.explode("a", index_column="idx").to_pydict()
+    assert result == {
+        "a": [1, 2, 3, 4, 3],
+        "idx": [0, 1, 0, 1, 2],
+    }
+
+
+@pytest.mark.parametrize(
+    "data",
+    [
+        pa.array([[1, 2], [3, 4], None, []], type=pa.list_(pa.int64())),
+        pa.array([[1, 2], [3, 4], None, []], type=pa.large_list(pa.int64())),
+    ],
+)
+def test_explode_with_index_column_null_and_empty(make_df, data):
+    df = make_df({"nested": data, "sidecar": ["a", "b", "c", "d"]})
+    result = df.explode(col("nested"), index_column="idx").to_pydict()
+    assert result == {
+        "nested": [1, 2, 3, 4, None, None],
+        "sidecar": ["a", "a", "b", "b", "c", "d"],
+        "idx": [0, 1, 0, 1, None, None],
+    }
+
+
+def test_explode_with_index_column_multiple_cols(make_df):
+    data = pa.array([[1, 2], [3, 4]], type=pa.list_(pa.int64()))
+    df = make_df({"nested": data, "nested2": data, "sidecar": ["a", "b"]})
+    result = df.explode(col("nested"), col("nested2"), index_column="idx").to_pydict()
+    assert result == {
+        "nested": [1, 2, 3, 4],
+        "nested2": [1, 2, 3, 4],
+        "sidecar": ["a", "a", "b", "b"],
+        "idx": [0, 1, 0, 1],
+    }

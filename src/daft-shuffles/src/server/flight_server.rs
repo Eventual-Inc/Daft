@@ -193,8 +193,9 @@ pub fn start_flight_server(
 
         port_tx.send(port).expect("Failed to send port");
 
-        let incoming = tonic::transport::server::TcpIncoming::from_listener(listener, true, None)
-            .expect("Failed to create TCP incoming connection from listener");
+        let incoming = tonic::transport::server::TcpIncoming::from(listener)
+            .with_nodelay(Some(true))
+            .with_keepalive(None);
 
         Server::builder()
             .add_service(FlightServiceServer::new(ShuffleFlightServer::new(

@@ -1,5 +1,5 @@
+use arrow::compute::{bool_and, bool_or};
 use common_error::DaftResult;
-use daft_arrow::array::{Array, BooleanArray};
 
 use crate::{
     array::{
@@ -7,68 +7,23 @@ use crate::{
         ops::{DaftBoolAggable, GroupIndices},
     },
     datatypes::BooleanType,
+    prelude::AsArrow,
 };
 
 impl DaftBoolAggable for DataArray<BooleanType> {
     type Output = DaftResult<Self>;
 
     fn bool_and(&self) -> Self::Output {
-        let array = self.data();
-        let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
-
-        // If array is empty or all null, return null
-        if array.null_count() == array.len() {
-            return Ok(Self::from((
-                self.field.name.as_ref(),
-                Box::new(BooleanArray::from_iter(std::iter::once(None))),
-            )));
-        }
-
-        // Look for first non-null false value
-        let mut result = true;
-        for i in 0..array.len() {
-            if !array.is_null(i) && !array.value(i) {
-                result = false;
-                break;
-            }
-        }
-
-        Ok(Self::from((
-            self.field.name.as_ref(),
-            Box::new(BooleanArray::from_iter(std::iter::once(Some(result)))),
-        )))
+        let value = bool_and(&self.as_arrow()?);
+        Ok(Self::from((self.name(), std::slice::from_ref(&value))))
     }
 
     fn bool_or(&self) -> Self::Output {
-        let array = self.data();
-        let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
-
-        // If array is empty or all null, return null
-        if array.null_count() == array.len() {
-            return Ok(Self::from((
-                self.field.name.as_ref(),
-                Box::new(BooleanArray::from_iter(std::iter::once(None))),
-            )));
-        }
-
-        // Look for first non-null true value
-        let mut result = false;
-        for i in 0..array.len() {
-            if !array.is_null(i) && array.value(i) {
-                result = true;
-                break;
-            }
-        }
-
-        Ok(Self::from((
-            self.field.name.as_ref(),
-            Box::new(BooleanArray::from_iter(std::iter::once(Some(result)))),
-        )))
+        let value = bool_or(&self.as_arrow()?);
+        Ok(Self::from((self.name(), std::slice::from_ref(&value))))
     }
 
     fn grouped_bool_and(&self, groups: &GroupIndices) -> Self::Output {
-        let array = self.data();
-        let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
         let mut results = Vec::with_capacity(groups.len());
 
         for group in groups {
@@ -81,9 +36,9 @@ impl DaftBoolAggable for DataArray<BooleanType> {
             let mut result = true;
 
             for &idx in group {
-                if !array.is_null(idx as usize) {
+                if let Some(value) = self.get(idx as usize) {
                     all_null = false;
-                    if !array.value(idx as usize) {
+                    if !value {
                         result = false;
                         break;
                     }
@@ -93,15 +48,10 @@ impl DaftBoolAggable for DataArray<BooleanType> {
             results.push(if all_null { None } else { Some(result) });
         }
 
-        Ok(Self::from((
-            self.field.name.as_ref(),
-            Box::new(BooleanArray::from_iter(results)),
-        )))
+        Ok(Self::from((self.field.name.as_ref(), results.as_slice())))
     }
 
     fn grouped_bool_or(&self, groups: &GroupIndices) -> Self::Output {
-        let array = self.data();
-        let array = array.as_any().downcast_ref::<BooleanArray>().unwrap();
         let mut results = Vec::with_capacity(groups.len());
 
         for group in groups {
@@ -114,9 +64,9 @@ impl DaftBoolAggable for DataArray<BooleanType> {
             let mut result = false;
 
             for &idx in group {
-                if !array.is_null(idx as usize) {
+                if let Some(value) = self.get(idx as usize) {
                     all_null = false;
-                    if array.value(idx as usize) {
+                    if value {
                         result = true;
                         break;
                     }
@@ -126,9 +76,6 @@ impl DaftBoolAggable for DataArray<BooleanType> {
             results.push(if all_null { None } else { Some(result) });
         }
 
-        Ok(Self::from((
-            self.field.name.as_ref(),
-            Box::new(BooleanArray::from_iter(results)),
-        )))
+        Ok(Self::from((self.field.name.as_ref(), results.as_slice())))
     }
 }
