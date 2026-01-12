@@ -767,7 +767,6 @@ class DataFrame:
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
-        checkpoint_config: dict[str, Any] | None = None,
     ) -> "DataFrame":
         """Writes the DataFrame as parquet files, returning a new DataFrame with paths to the files that were written.
 
@@ -818,12 +817,7 @@ class DataFrame:
         )
         # Block and write, then retrieve data
         write_df = DataFrame(builder)
-
-        from daft.execution.checkpoint import try_apply_filter_and_collect
-        from daft.io._parquet import read_parquet
-
-        write_df = try_apply_filter_and_collect(write_df, root_dir, io_config, checkpoint_config, read_parquet)
-
+        write_df.collect()
         assert write_df._result is not None
 
         # Populate and return a new disconnected DataFrame
@@ -839,7 +833,6 @@ class DataFrame:
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
-        checkpoint_config: dict[str, Any] | None = None,
     ) -> "DataFrame":
         """Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written.
 
@@ -890,12 +883,7 @@ class DataFrame:
 
         # Block and write, then retrieve data
         write_df = DataFrame(builder)
-
-        from daft.execution.checkpoint import try_apply_filter_and_collect
-        from daft.io._csv import read_csv
-
-        write_df = try_apply_filter_and_collect(write_df, root_dir, io_config, checkpoint_config, read_csv)
-
+        write_df.collect()
         assert write_df._result is not None
 
         # Populate and return a new disconnected DataFrame
@@ -911,7 +899,6 @@ class DataFrame:
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
-        checkpoint_config: dict[str, Any] | None = None,
     ) -> "DataFrame":
         """Writes the DataFrame as JSON files, returning a new DataFrame with paths to the files that were written.
 
@@ -959,12 +946,7 @@ class DataFrame:
         )
         # Block and write, then retrieve data
         write_df = DataFrame(builder)
-
-        from daft.execution.checkpoint import try_apply_filter_and_collect
-        from daft.io._json import read_json
-
-        write_df = try_apply_filter_and_collect(write_df, root_dir, io_config, checkpoint_config, read_json)
-
+        write_df.collect()
         assert write_df._result is not None
 
         # Populate and return a new disconnected DataFrame
@@ -1789,19 +1771,6 @@ class DataFrame:
     # DataFrame operations
     ###
 
-    def _insert_filter_after_source(self, predicate: Expression | str) -> "DataFrame":
-        """Insert a Filter directly above the unique Source in the logical plan.
-
-        - If there is not exactly one Source in the tree, this is a no-op.
-        - If `predicate` is a string, it is parsed via the SQL expression parser.
-        """
-        if isinstance(predicate, str):
-            from daft.sql.sql import sql_expr
-
-            predicate = sql_expr(predicate)
-        builder = self._builder.insert_filter_after_source(predicate)
-        return DataFrame(builder)
-
     def __column_input_to_expression(self, columns: Iterable[ColumnInputType]) -> list[Expression]:
         # TODO(Kevin): remove this method and use _column_inputs_to_expressions
         result = []
@@ -2364,6 +2333,59 @@ class DataFrame:
 
             predicate = sql_expr(predicate)
         builder = self._builder.filter(predicate)
+        return DataFrame(builder)
+
+    @DataframePublicAPI
+    def resume(
+        self,
+        path: str | pathlib.Path,
+        on: str | list[str],
+        format: str | FileFormat = FileFormat.Parquet,
+        io_config: IOConfig | None = None,
+        num_buckets: int | None = None,
+        num_cpus: float | None = None,
+        **reader_args: Any,
+    ) -> "DataFrame":
+        if isinstance(on, str):
+            key_column = on
+        else:
+            if len(on) != 1:
+                raise ValueError("resume currently only supports a single key column name")
+            key_column = on[0]
+
+        if not isinstance(key_column, str) or key_column == "":
+            raise ValueError("resume on must be a non-empty column name")
+
+        if isinstance(format, str):
+            fmt = format.strip().lower()
+            if fmt == "parquet":
+                file_format = FileFormat.Parquet
+            elif fmt == "csv":
+                file_format = FileFormat.Csv
+            elif fmt == "json":
+                file_format = FileFormat.Json
+            else:
+                raise ValueError(f"Unsupported resume format: {format}")
+        else:
+            file_format = format
+
+        if file_format not in (FileFormat.Parquet, FileFormat.Csv, FileFormat.Json):
+            raise ValueError(f"Unsupported resume format: {file_format}")
+
+        if key_column not in self.column_names:
+            raise ValueError(f"resume key column not found in schema: {key_column}")
+
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+        builder = self._builder.resume_checkpoint(
+            root_dir=str(path),
+            file_format=file_format,
+            key_column=key_column,
+            io_config=io_config,
+            read_kwargs=(reader_args or None),
+            num_buckets=num_buckets,
+            num_cpus=num_cpus,
+        )
         return DataFrame(builder)
 
     @DataframePublicAPI

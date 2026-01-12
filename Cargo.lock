@@ -3154,6 +3154,7 @@ dependencies = [
  "common-display",
  "common-error",
  "common-file-formats",
+ "common-hashable-float-wrapper",
  "common-io-config",
  "common-partitioning",
  "common-py-serde",

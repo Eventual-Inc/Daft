@@ -405,10 +405,23 @@ class LogicalPlanBuilder:
         builder = self._builder.datasink_write(name, sink)
         return LogicalPlanBuilder(builder)
 
-    def insert_filter_after_source(self, predicate: Expression) -> LogicalPlanBuilder:
-        """Add a Filter(predicate) directly above the unique Source in the logical plan.
-
-        If there is not exactly one Source in the tree, this will raise an error.
-        """
-        builder = self._builder.insert_filter_after_source(predicate._expr)
+    def resume_checkpoint(
+        self,
+        root_dir: str,
+        file_format: FileFormat,
+        key_column: str,
+        io_config: IOConfig | None = None,
+        read_kwargs: dict[str, Any] | None = None,
+        num_buckets: int | None = None,
+        num_cpus: float | None = None,
+    ) -> LogicalPlanBuilder:
+        builder = self._builder.resume_checkpoint(
+            root_dir,
+            file_format,
+            key_column,
+            io_config,
+            read_kwargs,
+            num_buckets,
+            num_cpus,
+        )
         return LogicalPlanBuilder(builder)

@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 import daft
+import warnings
 from daft import col
 from daft.daft import FileFormat
 from tests.conftest import get_tests_daft_runner_name
@@ -26,14 +27,24 @@ def helper_write_dataframe(
     checkpoint_config=None,
     write_mode: str = "append",
 ) -> daft.DataFrame:
-    """Write a DataFrame to a local directory (csv/parquet/json); supports checkpoint_config."""
+    """Write a DataFrame to a local directory (csv/parquet/json)."""
     root_dir.mkdir(parents=True, exist_ok=True)
+    if checkpoint_config is not None:
+        if not isinstance(checkpoint_config, dict) or "key_column" not in checkpoint_config:
+            raise ValueError("checkpoint_config must be a dict with key_column")
+        df = df.resume(
+            root_dir,
+            on=checkpoint_config["key_column"],
+            format=fmt,
+            num_buckets=checkpoint_config.get("num_buckets"),
+            num_cpus=checkpoint_config.get("num_cpus"),
+        )
     if fmt == FileFormat.Csv:
-        return df.write_csv(str(root_dir), write_mode=write_mode, checkpoint_config=checkpoint_config)
+        return df.write_csv(str(root_dir), write_mode=write_mode)
     elif fmt == FileFormat.Parquet:
-        return df.write_parquet(str(root_dir), write_mode=write_mode, checkpoint_config=checkpoint_config)
+        return df.write_parquet(str(root_dir), write_mode=write_mode)
     elif fmt == FileFormat.Json:
-        return df.write_json(str(root_dir), write_mode=write_mode, checkpoint_config=checkpoint_config)
+        return df.write_json(str(root_dir), write_mode=write_mode)
     else:
         raise ValueError(f"Unsupported format: {fmt}")
 
@@ -134,17 +145,20 @@ def test_checkpoint_resume_e2e_with_custom_num_cpus(tmp_path: Path, fmt):
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
 def test_checkpoint_multi_format(tmp_path: Path, input_fmt, output_fmt):
     """Goal: end-to-end cross-format verification (read from fmts x write to fmts)."""
-    ck = {"key_column": "id"}
     df_src = build_df_ids_sequential(200)
 
     input_dir = tmp_path / f"input_{input_fmt.ext()}"
-    helper_write_dataframe(df_src, input_fmt, input_dir, checkpoint_config=ck)
+    helper_write_dataframe(df_src, input_fmt, input_dir)
     df_in = helper_read_dataframe(input_fmt, input_dir)
 
     output_dir = tmp_path / f"output_{input_fmt.ext()}_to_{output_fmt.ext()}"
-    helper_write_dataframe(df_in, output_fmt, output_dir, checkpoint_config=ck)
+    helper_write_dataframe(df_in.limit(50), output_fmt, output_dir)
+    helper_write_dataframe(df_in, output_fmt, output_dir, checkpoint_config={"key_column": "id"})
     df_out = helper_read_dataframe(output_fmt, output_dir)
 
+    metrics = helper_dataframe_metrics(df_out)
+    assert len(metrics["rows"]) == 200
+    assert all(v == 1 for v in metrics["id_counts"].values()), f"id_counts mismatch: {metrics['id_counts']}"
     helper_assert_data_equal(df_in, df_out, key_cols=("id",))
 
 
@@ -178,9 +192,9 @@ def test_checkpoint_from_glob_path(tmp_path: Path):
 
     # Read back and verify 10 unique paths (no duplicates)
     out_df = helper_read_dataframe(FileFormat.Parquet, dest)
-    metrics = helper_dataframe_metrics(out_df)
-    assert len(metrics["rows"]) == 10, f"rows mismatch: {len(metrics['rows'])}"
-    assert all(v == 1 for v in metrics["id_counts"].values()), f"id_counts mismatch: {metrics['id_counts']}"
+    paths = out_df.select("path").to_pydict()["path"]
+    assert len(paths) == 10
+    assert len(set(paths)) == 10
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
@@ -229,7 +243,7 @@ def test_checkpoint_single_source_with_write_op(tmp_path: Path):
 
     df_1 = build_df_ids_sequential(20)
     df_2 = helper_write_dataframe(df_1, FileFormat.Parquet, dest_1, checkpoint_config=ck)
-    helper_write_dataframe(df_2, FileFormat.Parquet, dest_2, checkpoint_config=ck)
+    helper_write_dataframe(df_2, FileFormat.Parquet, dest_2, checkpoint_config={"key_column": "path"})
 
     out_df_1 = helper_read_dataframe(FileFormat.Parquet, dest_1)
     metrics = helper_dataframe_metrics(out_df_1)
@@ -264,207 +278,127 @@ def test_checkpoint_single_source_with_repartition_and_into_batches_op(tmp_path:
     assert all(v == 1 for v in metrics["id_counts"].values()), f"id_counts mismatch: {metrics['id_counts']}"
 
 
-# ========== Tests: Checkpoint Boundaries (multi-source and invalid config) ==========
+# ========== Tests: Resume API ==========
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_checkpoint_multi_source_join(tmp_path: Path):
-    """Goal: verify checkpoint will raise an error for multi-source join scenarios."""
-    dest = tmp_path / "ckpt_join"
-    ck = {"key_column": "id"}
+def test_resume_multiple_calls_chain_semantics(tmp_path: Path):
+    df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
+    ckpt_a = tmp_path / "ckpt_a"
+    ckpt_b = tmp_path / "ckpt_b"
+    ckpt_a.mkdir(parents=True, exist_ok=True)
+    ckpt_b.mkdir(parents=True, exist_ok=True)
 
-    helper_write_dataframe(build_df_ids_sequential(5), FileFormat.Parquet, dest)
+    (ckpt_a / "part-0.csv").write_text("id,val\n1,a\n", encoding="utf-8")
+    (ckpt_b / "part-0.csv").write_text("id,val\n2,b\n", encoding="utf-8")
 
-    left = daft.from_pydict({"id": list(range(10)), "val": [f"v{i}" for i in range(10)]})
-    right = daft.from_pydict({"id": list(range(10)), "rv": [f"v{i}" for i in range(50, 60)]})
-    df = left.join(right, left_on=left["id"], right_on=right["id"], how="inner")
-    df = df.exclude("rv")
-    with pytest.raises(daft.exceptions.DaftCoreException, match="Checkpoint requires single-source logical plan"):
-        helper_write_dataframe(df, FileFormat.Parquet, dest, checkpoint_config=ck)
-
-    df.collect()
-    helper_write_dataframe(df, FileFormat.Parquet, dest, checkpoint_config=ck)
-    out_df = helper_read_dataframe(FileFormat.Parquet, dest)
-    metrics = helper_dataframe_metrics(out_df)
-    assert len(metrics["rows"]) == 10, f"rows mismatch: {len(metrics['rows'])}"
-
-    df_result = build_df_ids_sequential(10)
-    helper_assert_data_equal(out_df, df_result, key_cols=("id",))
+    out = df.resume(ckpt_a, on="id", format="csv").resume(ckpt_b, on="id", format="csv").collect()
+    assert out.select("id").to_pydict()["id"] == [3]
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_checkpoint_multi_source_concat(tmp_path: Path):
-    """Goal: verify checkpoint will raise an error for multi-source concat scenarios."""
-    dest = tmp_path / "ckpt_concat"
-    ck = {"key_column": "id"}
+def test_resume_multiple_calls_distinct_key_columns_are_applied_in_order(tmp_path: Path):
+    df = daft.from_pydict({"id": [1, 2, 3], "path": ["a", "b", "c"]})
+    ckpt_id = tmp_path / "ckpt_id"
+    ckpt_path = tmp_path / "ckpt_path"
+    ckpt_id.mkdir(parents=True, exist_ok=True)
+    ckpt_path.mkdir(parents=True, exist_ok=True)
 
-    helper_write_dataframe(build_df_ids_sequential(5), FileFormat.Parquet, dest, checkpoint_config=ck)
+    (ckpt_id / "part-0.csv").write_text("id\n1\n", encoding="utf-8")
+    (ckpt_path / "part-0.csv").write_text("path\nb\n", encoding="utf-8")
 
-    df1 = daft.from_pydict({"id": list(range(5)), "val": [f"a{i}" for i in range(5)]})
-    df2 = daft.from_pydict({"id": list(range(5)), "val": [f"b{i}" for i in range(5)]})
-    with pytest.raises(daft.exceptions.DaftCoreException, match="Checkpoint requires single-source logical plan"):
-        helper_write_dataframe(df1.concat(df2), FileFormat.Parquet, dest, checkpoint_config=ck)
-
-
-@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_checkpoint_multisource_union(tmp_path: Path):
-    """Goal: verify checkpoint will raise an error for union (set union) scenarios."""
-    dest = tmp_path / "ckpt_union"
-    ck = {"key_column": "id"}
-
-    helper_write_dataframe(build_df_ids_sequential(7), FileFormat.Parquet, dest, checkpoint_config=ck)
-
-    df1 = daft.from_pydict({"id": [0, 1, 2, 3, 4], "val": [f"a{i}" for i in range(5)]})
-    df2 = daft.from_pydict({"id": [3, 4, 5, 6], "val": [f"b{i}" for i in range(4)]})
-    df_union = df1.union(df2)
-
-    with pytest.raises(daft.exceptions.DaftCoreException, match="Checkpoint requires single-source logical plan"):
-        helper_write_dataframe(df_union, FileFormat.Parquet, dest, checkpoint_config=ck)
+    out = df.resume(ckpt_id, on="id", format="csv").resume(ckpt_path, on="path", format="csv").collect()
+    assert out.select("id").to_pydict()["id"] == [3]
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_checkpoint_multisource_intersect(tmp_path: Path):
-    """Goal: verify checkpoint will raise an error for intersect (set intersection) scenarios."""
-    dest = tmp_path / "ckpt_intersect"
-    ck = {"key_column": "id"}
+def test_resume_on_both_join_branches_maps_to_correct_inputs(tmp_path: Path):
+    left = daft.from_pydict({"id": [1, 2, 3], "l": ["l1", "l2", "l3"]})
+    right = daft.from_pydict({"rid": [1, 2, 3], "r": ["r1", "r2", "r3"]})
 
-    helper_write_dataframe(build_df_ids_sequential(5), FileFormat.Parquet, dest, checkpoint_config=ck)
+    ckpt_left = tmp_path / "ckpt_left"
+    ckpt_right = tmp_path / "ckpt_right"
+    ckpt_left.mkdir(parents=True, exist_ok=True)
+    ckpt_right.mkdir(parents=True, exist_ok=True)
 
-    df1 = daft.from_pydict({"id": [1, 2, 3], "b": [4, 5, 6]})
-    df2 = daft.from_pydict({"id": [1, 2, 3], "b": [4, 8, 6]})
-    df_inter = df1.intersect(df2)
+    (ckpt_left / "part-0.csv").write_text("id\n1\n", encoding="utf-8")
+    (ckpt_right / "part-0.csv").write_text("rid\n2\n", encoding="utf-8")
 
-    with pytest.raises(daft.exceptions.DaftCoreException, match="Checkpoint requires single-source logical plan"):
-        helper_write_dataframe(df_inter, FileFormat.Parquet, dest, checkpoint_config=ck)
-
-
-@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_checkpoint_multisource_except_all(tmp_path: Path):
-    """Goal: verify checkpoint will raise an error for except_all (multiset difference) scenarios."""
-    dest = tmp_path / "ckpt_except_all"
-    ck = {"key_column": "id"}
-
-    helper_write_dataframe(build_df_ids_sequential(5), FileFormat.Parquet, dest, checkpoint_config=ck)
-
-    df1 = daft.from_pydict({"id": [1, 1, 2, 2], "b": [4, 4, 6, 6]})
-    df2 = daft.from_pydict({"id": [1, 2, 2], "b": [4, 6, 6]})
-    df_except = df1.except_all(df2)
-
-    with pytest.raises(daft.exceptions.DaftCoreException, match="Checkpoint requires single-source logical plan"):
-        helper_write_dataframe(df_except, FileFormat.Parquet, dest, checkpoint_config=ck)
+    left = left.resume(ckpt_left, on="id", format="csv")
+    right = right.resume(ckpt_right, on="rid", format="csv")
+    out = left.join(right, left_on="id", right_on="rid", how="inner").collect()
+    assert out.select("id").to_pydict()["id"] == [3]
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_checkpoint_empty_dataframe(tmp_path: Path):
-    """Goal: when writing an empty DataFrame with checkpoint, no rows are produced."""
-    dest = tmp_path / "ckpt_empty_df"
-    ck = {"key_column": "id"}
+def test_resume_multiple_calls_are_cumulative(tmp_path: Path):
+    df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
+    ckpt_a = tmp_path / "a"
+    ckpt_b = tmp_path / "b"
+    ckpt_a.mkdir(parents=True, exist_ok=True)
+    ckpt_b.mkdir(parents=True, exist_ok=True)
 
-    df_empty = daft.from_pydict({"id": [], "val": []})
-    helper_write_dataframe(df_empty, FileFormat.Parquet, dest, checkpoint_config=ck)
-    out_df = helper_read_dataframe(FileFormat.Parquet, dest)
-    metrics = helper_dataframe_metrics(out_df)
-    rows = metrics["rows"]
-    assert len(rows) == 0
+    (ckpt_a / "part-0.csv").write_text("id,val\n1,a\n", encoding="utf-8")
+    (ckpt_b / "part-0.csv").write_text("id,val\n2,b\n", encoding="utf-8")
 
-
-@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_checkpoint_empty_checkpoint(tmp_path: Path):
-    """Goal: when writing a dataframe while checkpoint is empty, every rows will be written."""
-    dest = tmp_path / "ckpt_empty_ck"
-    ck = {"key_column": "id"}
-
-    df_empty = daft.from_pydict({"id": [], "val": []})
-    df_100 = build_df_ids_sequential(100)
-    helper_write_dataframe(df_empty, FileFormat.Parquet, dest, checkpoint_config=ck)
-    helper_write_dataframe(df_100, FileFormat.Parquet, dest, checkpoint_config=ck)
-    out_df = helper_read_dataframe(FileFormat.Parquet, dest)
-    metrics = helper_dataframe_metrics(out_df)
-    rows = metrics["rows"]
-    assert len(rows) == 100
+    out = df.resume(ckpt_a, on="id", format="csv").resume(ckpt_b, on="id", format="csv").collect()
+    assert out.select("id").to_pydict()["id"] == [3]
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_checkpoint_unhashable_keys_raises_typeerror_when_init(tmp_path: Path):
-    """Goal: unhashable keys must raise errors when initializing checkpoint actor."""
-    # Destination and config
-    dest = tmp_path / "ckpt_unhashable_keys"
-    fmt = FileFormat.Parquet
-    ck = {"key_column": "key", "num_buckets": 2}
+def test_resume_csv_reader_args_applied(tmp_path: Path):
+    ckpt_dir = tmp_path / "ckpt_csv_custom_delim"
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+    (ckpt_dir / "part-0.csv").write_text("id|val\n1|a\n2|b\n", encoding="utf-8")
 
-    # Seed write: unhashable keys
-    df_seed = daft.from_pydict({"key": [[1], [2], [3]], "val": ["x", "y", "z"]})
-    helper_write_dataframe(df_seed, fmt, dest, checkpoint_config=ck)
+    df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
 
-    # Second write: lead to TypeError when init checkpoint actor
-    df_bad = daft.from_pydict({"key": [[1], [2]], "val": ["p", "q"]})
-    with pytest.raises(Exception):
-        helper_write_dataframe(df_bad, fmt, dest, checkpoint_config=ck)
+    with pytest.raises(RuntimeError) as excinfo:
+        df.resume(ckpt_dir, on="id", format="csv").collect()
+    msg = str(excinfo.value)
+    assert "Unable to read checkpoint" in msg
+    assert "id" in msg
 
-
-@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_checkpoint_unhashable_keys_raises_typeerror_when_filter(tmp_path: Path):
-    """Goal: unhashable keys must raise errors when filtering."""
-    # Destination and config
-    dest = tmp_path / "ckpt_unhashable_keys"
-    fmt = FileFormat.Parquet
-    ck = {"key_column": "key", "num_buckets": 2}
-
-    # Seed write: hashable keys (strings)
-    df_seed = daft.from_pydict({"key": ["a", "b", "c"], "val": ["x", "y", "z"]})
-    helper_write_dataframe(df_seed, fmt, dest, checkpoint_config=ck)
-
-    # Second write: unhashable keys (lists) — lead to TypeError when filter
-    df_bad = daft.from_pydict({"key": [[1], [2]], "val": ["p", "q"]})
-    with pytest.raises(Exception):
-        helper_write_dataframe(df_bad, fmt, dest, checkpoint_config=ck)
+    out = df.resume(ckpt_dir, on="id", format="csv", delimiter="|").collect()
+    assert out.select("id").to_pydict()["id"] == [3]
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_checkpoint_invalid_config_raises(tmp_path: Path):
-    """Goal: invalid checkpoint configuration must raise errors.
+def test_resume_missing_checkpoint_is_noop_and_warns(tmp_path: Path):
+    ckpt_dir = tmp_path / "ckpt_missing"
+    df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
 
-    Scenario: missing key_column/num_buckets.
-    Expected: raise exception on write.
-    """
-    dest = tmp_path / "ckpt_invalid"
-    df = build_df_ids_sequential(10)
-    helper_write_dataframe(df, FileFormat.Parquet, dest, checkpoint_config={"key_column": "id"})
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        out = df.resume(ckpt_dir, on="id", format="parquet").collect()
 
-    # missing key_column
-    with pytest.raises(ValueError, match="checkpoint_config_dict must contain 'key_column' key"):
-        helper_write_dataframe(df, FileFormat.Parquet, dest, checkpoint_config={"num_buckets": 4})
-    # missing key_column
-    with pytest.raises(ValueError, match="checkpoint_config_dict must contain 'key_column' key"):
-        helper_write_dataframe(df, FileFormat.Parquet, dest, checkpoint_config={"num_cpus": 1})
-    # missing key_column with both num_buckets & num_cpus present
-    with pytest.raises(ValueError, match="checkpoint_config_dict must contain 'key_column' key"):
-        helper_write_dataframe(df, FileFormat.Parquet, dest, checkpoint_config={"num_buckets": 4, "num_cpus": 1})
-    # TODO: add test for invalid key_column
-    # invalid key_column
-    # with pytest.raises(Exception):
-    #     helper_write_dataframe(
-    #         df, FileFormat.Parquet, dest, checkpoint_config={"key_column": "not_id"}
-    #     )
-    # invalid string num_cpus
-    with pytest.raises(ValueError, match="'num_cpus' must be numeric"):
-        helper_write_dataframe(
-            df, FileFormat.Parquet, dest, checkpoint_config={"key_column": "id", "num_cpus": "hello"}
-        )
-    # invalid negative num_cpus
-    with pytest.raises(ValueError, match="'num_cpus' must be > 0"):
-        helper_write_dataframe(df, FileFormat.Parquet, dest, checkpoint_config={"key_column": "id", "num_cpus": -1})
-    # invalid num_buckets float not integer
-    with pytest.raises(ValueError, match="'num_buckets' must be a positive integer"):
-        helper_write_dataframe(df, FileFormat.Parquet, dest, checkpoint_config={"key_column": "id", "num_buckets": 4.1})
-    # invalid num_buckets negative
-    with pytest.raises(ValueError, match="'num_buckets' must be a positive integer"):
-        helper_write_dataframe(df, FileFormat.Parquet, dest, checkpoint_config={"key_column": "id", "num_buckets": -1})
-    # invalid checkpoint_config(not dict)
-    with pytest.raises(Exception):
-        helper_write_dataframe(df, FileFormat.Parquet, dest, checkpoint_config=100)
-    # placement group ready timeout
-    with pytest.raises(RuntimeError, match="Checkpoint resource reservation timed out"):
-        helper_write_dataframe(
-            df, FileFormat.Parquet, dest, checkpoint_config={"key_column": "id", "num_buckets": 4, "num_cpus": 10000}
-        )
+    assert out.select("id").to_pydict()["id"] == [1, 2, 3]
+    assert any("Resume checkpoint not found" in str(x.message) for x in w)
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
+def test_resume_multiple_key_columns_raises(tmp_path: Path):
+    df = daft.from_pydict({"id": [1], "val": ["a"]})
+    with pytest.raises(ValueError, match="only supports a single key column"):
+        df.resume(tmp_path / "a", on=["id", "val"]).collect()
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
+def test_resume_invalid_format_string_raises(tmp_path: Path):
+    df = daft.from_pydict({"id": [1], "val": ["a"]})
+    with pytest.raises(ValueError, match="Unsupported resume format"):
+        df.resume(tmp_path / "a", on="id", format="orc").collect()
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
+def test_resume_invalid_num_buckets_raises(tmp_path: Path):
+    df = daft.from_pydict({"id": [1], "val": ["a"]})
+    with pytest.raises(Exception, match="num_buckets"):
+        df.resume(tmp_path / "a", on="id", num_buckets=0).collect()
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
+def test_resume_invalid_num_cpus_raises(tmp_path: Path):
+    df = daft.from_pydict({"id": [1], "val": ["a"]})
+    with pytest.raises(Exception, match="num_cpus"):
+        df.resume(tmp_path / "a", on="id", num_cpus=0).collect()
