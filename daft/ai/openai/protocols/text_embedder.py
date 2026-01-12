@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from openai import NOT_GIVEN, AsyncOpenAI, OpenAIError, RateLimitError
+from openai import AsyncOpenAI, OpenAIError, RateLimitError
 from openai import OpenAI as OpenAIClient
 from openai._types import Omit, omit
 from openai.types.create_embedding_response import Usage
