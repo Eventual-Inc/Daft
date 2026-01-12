@@ -3,14 +3,15 @@ from __future__ import annotations
 import base64
 import dataclasses
 import json
-import random
-import time
+import socket
 import urllib.parse
 import urllib.request
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.error import HTTPError, URLError
+
+from daft.retries import retry_with_backoff
 
 
 def decode_b64url(segment: str) -> bytes:
@@ -90,7 +91,16 @@ def is_expired(exp: int, skew_seconds: int = 300) -> bool:
     return exp_dt - timedelta(seconds=skew_seconds) <= datetime.now(timezone.utc)
 
 
+def _is_retryable_auth_error(e: Exception) -> bool:
+    if isinstance(e, HTTPError):
+        return 500 <= e.code < 600 or e.code == 429
+    return isinstance(e, (URLError, TimeoutError, socket.timeout))
+
+
 def _generate_workspace_token(workspace_url: str, oauth: OAuth2Credentials) -> str:
+    # Generate a workspace level access token using client credentials.
+    # Token lifetime is typically 1 hour (Databricks default).
+    # Databricks doc: https://docs.databricks.com/aws/en/dev-tools/auth/oauth-m2m#generate-a-workspace-level-access-token
     scope = "all-apis"
     token_url = workspace_url.rstrip("/") + "/oidc/v1/token"
     # Build HTTP Basic Auth header
@@ -106,17 +116,23 @@ def _generate_workspace_token(workspace_url: str, oauth: OAuth2Credentials) -> s
     max_retries = 3
     timeout = 10
 
-    for attempt in range(max_retries):
-        request = urllib.request.Request(
-            token_url,
-            data=body,
-            method="POST",
-            headers={
-                "Authorization": f"Basic {auth_header}",
-                "Content-Type": "application/x-www-form-urlencoded",
-            },
-        )
+    request = urllib.request.Request(
+        token_url,
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Basic {auth_header}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+    )
 
+    @retry_with_backoff(
+        max_retries=max_retries,
+        jitter_ms=500,
+        max_backoff_ms=10_000,
+        should_retry=_is_retryable_auth_error,
+    )
+    def _request_token() -> str:
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 response_body = response.read().decode()
@@ -127,45 +143,19 @@ def _generate_workspace_token(workspace_url: str, oauth: OAuth2Credentials) -> s
                 if not token:
                     raise RuntimeError("UnityCatalog token response contains empty or None 'access_token'")
                 return token
-
-        except TimeoutError as e:
-            if attempt == max_retries - 1:
-                raise RuntimeError(
-                    f"UnityCatalog token request to {token_url} timed out after {max_retries} attempts"
-                ) from e
         except HTTPError as e:
-            # Only retry on 5xx server errors
-            if 500 <= e.code < 600:
-                if attempt == max_retries - 1:
-                    error_body = e.read().decode(errors="replace")
-                    raise RuntimeError(
-                        f"UnityCatalog token request to {token_url} failed with HTTP {e.code} after {max_retries} attempts: {error_body}"
-                    ) from e
-            else:
-                # Don't retry on 4xx client errors
-                error_body = e.read().decode(errors="replace")
-                raise RuntimeError(
-                    f"UnityCatalog token request to {token_url} failed with HTTP {e.code}: {error_body}"
-                ) from e
+            error_body = e.read().decode(errors="replace")
+            if 500 <= e.code < 600 or e.code == 429:
+                raise
+            raise RuntimeError(
+                f"UnityCatalog token request to {token_url} failed with HTTP {e.code}: {error_body}"
+            ) from e
 
-        except URLError as e:
-            if attempt == max_retries - 1:
-                raise RuntimeError(
-                    f"UnityCatalog token request to {token_url} failed due to network error after {max_retries} attempts: {e.reason}"
-                ) from e
-
-        # Exponential backoff with jitter
-        if attempt < max_retries - 1:
-            _sleep_with_backoff(attempt)
-
-    # Should never reach here, but included for safety
-    raise RuntimeError(f"UnityCatalog token request to {token_url} failed after {max_retries} attempts")
-
-
-def _sleep_with_backoff(attempt: int) -> None:
-    initial_backoff_ms = 500  # 0.5s
-    max_backoff_ms = 10_000  # 10s cap
-
-    base_ms = min(initial_backoff_ms * (2**attempt), max_backoff_ms)
-    sleep_ms = random.uniform(0.0, base_ms)  # full jitter
-    time.sleep(sleep_ms / 1000.0)
+    try:
+        return _request_token()
+    except Exception as e:
+        if _is_retryable_auth_error(e):
+            raise RuntimeError(
+                f"UnityCatalog token request to {token_url} failed after {max_retries} attempts: {e}"
+            ) from e
+        raise
