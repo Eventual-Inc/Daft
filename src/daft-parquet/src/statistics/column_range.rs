@@ -111,8 +111,8 @@ impl TryFrom<&BinaryStatistics> for Wrap<ColumnRangeStatistics> {
             }
         }
 
-        let lower = BinaryArray::from(("lower", lower.as_slice())).into_series();
-        let upper = BinaryArray::from(("upper", upper.as_slice())).into_series();
+        let lower = BinaryArray::from_values("lower", std::iter::once(lower)).into_series();
+        let upper = BinaryArray::from_values("upper", std::iter::once(upper)).into_series();
 
         Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?.into())
     }
@@ -235,8 +235,8 @@ impl TryFrom<&FixedLenStatistics> for Wrap<ColumnRangeStatistics> {
             .into());
         }
 
-        let lower = BinaryArray::from(("lower", lower.as_slice())).into_series();
-        let upper = BinaryArray::from(("upper", upper.as_slice())).into_series();
+        let lower = BinaryArray::from_values("lower", std::iter::once(lower)).into_series();
+        let upper = BinaryArray::from_values("upper", std::iter::once(upper)).into_series();
 
         Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?.into())
     }

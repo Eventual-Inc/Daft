@@ -195,6 +195,14 @@ impl ObjectSource for GravitinoSource {
         Ok(true)
     }
 
+    async fn create_multipart_writer(
+        self: Arc<Self>,
+        uri: &str,
+    ) -> super::Result<Option<Box<dyn crate::multipart::MultipartWriter>>> {
+        let (source, source_uri) = self.fileset_path_to_source_and_url(uri).await?;
+        source.create_multipart_writer(&source_uri).await
+    }
+
     async fn get(
         &self,
         uri: &str,
