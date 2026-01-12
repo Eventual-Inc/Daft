@@ -34,7 +34,6 @@ use snafu::ResultExt;
 
 use crate::{
     ExecutionRuntimeContext, PipelineCreationSnafu,
-    channel::Receiver,
     intermediate_ops::{
         cross_join::CrossJoinOperator,
         distributed_actor_pool_project::DistributedActorPoolProjectOperator,
@@ -164,7 +163,7 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
         &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>>;
+    ) -> crate::Result<tokio::sync::mpsc::Receiver<Arc<MicroPartition>>>;
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 
