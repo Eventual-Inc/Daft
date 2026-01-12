@@ -1077,10 +1077,6 @@ class Expression:
 
         return string_agg(self)
 
-    def _explode(self) -> Expression:
-        f = native.get_function_from_registry("explode")
-        return Expression._from_pyexpr(f(self._expr))
-
     def apply(self, func: Callable[..., Any], return_dtype: DataTypeLike) -> Expression:
         """Apply a function on each value in a given expression.
 

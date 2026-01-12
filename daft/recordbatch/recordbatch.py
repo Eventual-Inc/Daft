@@ -331,10 +331,10 @@ class RecordBatch:
     def quantiles(self, num: int) -> RecordBatch:
         return RecordBatch._from_pyrecordbatch(self._recordbatch.quantiles(num))
 
-    def explode(self, columns: ExpressionsProjection) -> RecordBatch:
+    def explode(self, columns: ExpressionsProjection, index_column: str | None = None) -> RecordBatch:
         """NOTE: Expressions here must be Explode expressions."""
         to_explode_pyexprs = [e._expr for e in columns]
-        return RecordBatch._from_pyrecordbatch(self._recordbatch.explode(to_explode_pyexprs))
+        return RecordBatch._from_pyrecordbatch(self._recordbatch.explode(to_explode_pyexprs, index_column))
 
     def hash_join(
         self,

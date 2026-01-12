@@ -171,12 +171,12 @@ impl<'py> PyVisitor<'py> {
     fn visit_python_scalar_func(&self, udf: &PyScalarFn) -> PyVisitorResult<'py> {
         match udf {
             PyScalarFn::RowWise(RowWisePyFn {
-                function_name: name,
+                func_id,
                 args: children,
                 ..
             })
             | PyScalarFn::Batch(BatchPyFn {
-                function_name: name,
+                func_id,
                 args: children,
                 ..
             }) => {
@@ -185,7 +185,7 @@ impl<'py> PyVisitor<'py> {
                     .map(|expr| self.to_expr(expr))
                     .collect::<PyResult<Vec<_>>>()?;
 
-                self.visit_function(name, args)
+                self.visit_function(func_id, args)
             }
         }
     }

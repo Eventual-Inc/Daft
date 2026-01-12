@@ -9,7 +9,8 @@ pytest.importorskip("openai")
 from unittest.mock import AsyncMock, Mock, patch
 
 import numpy as np
-from openai import NOT_GIVEN, RateLimitError
+from openai import RateLimitError
+from openai._types import omit
 from openai.types.create_embedding_response import CreateEmbeddingResponse, Usage
 from openai.types.embedding import Embedding as OpenAIEmbedding
 
@@ -135,7 +136,7 @@ def test_embed_text_single_input(mock_text_embedder, mock_client):
         input=["Hello world"],
         model="text-embedding-3-small",
         encoding_format="float",
-        dimensions=NOT_GIVEN,
+        dimensions=omit,
     )
 
 
@@ -163,7 +164,7 @@ def test_embed_text_multiple_inputs(mock_text_embedder, mock_client):
         input=["Hello", "World", "Test"],
         model="text-embedding-3-small",
         encoding_format="float",
-        dimensions=NOT_GIVEN,
+        dimensions=omit,
     )
 
 
@@ -507,3 +508,156 @@ def test_embed_text_batch_rate_limit_fallback(mock_text_embedder, mock_client):
             assert isinstance(embedding, np.ndarray)
             assert embedding.shape == (1536,)
             assert embedding.dtype == np.float32
+
+
+def test_supports_overriding_dimensions_default_false(mock_client):
+    """Test that when supports_overriding_dimensions is False (default), dimensions are NOT included."""
+    descriptor = OpenAITextEmbedderDescriptor(
+        provider_name="openai",
+        provider_options={"api_key": "test-key"},
+        model_name="text-embedding-3-small",
+        dimensions=256,
+        embed_options={},  # supports_overriding_dimensions not set, defaults to False
+    )
+    embedder = descriptor.instantiate()
+    embedder._client = mock_client
+
+    mock_response = Mock(spec=CreateEmbeddingResponse)
+    mock_embedding = Mock(spec=OpenAIEmbedding)
+    mock_embedding.embedding = np.array([0.1, 0.2, 0.3] * 512, dtype=np.float32)  # 1536 dimensions
+    mock_response.data = [mock_embedding]
+    mock_client.embeddings.create.return_value = mock_response
+
+    result = run(embedder.embed_text(["Hello world"]))
+
+    assert len(result) == 1
+    # Verify dimensions were NOT included in the request (should use omit)
+    mock_client.embeddings.create.assert_awaited_once_with(
+        input=["Hello world"],
+        model="text-embedding-3-small",
+        encoding_format="float",
+        dimensions=omit,
+    )
+
+
+def test_supports_overriding_dimensions_explicit_false(mock_client):
+    """Test that when supports_overriding_dimensions is explicitly False, dimensions are NOT included."""
+    descriptor = OpenAITextEmbedderDescriptor(
+        provider_name="openai",
+        provider_options={"api_key": "test-key"},
+        model_name="text-embedding-3-small",
+        dimensions=256,
+        embed_options={"supports_overriding_dimensions": False},
+    )
+    embedder = descriptor.instantiate()
+    embedder._client = mock_client
+
+    mock_response = Mock(spec=CreateEmbeddingResponse)
+    mock_embedding = Mock(spec=OpenAIEmbedding)
+    mock_embedding.embedding = np.array([0.1, 0.2, 0.3] * 512, dtype=np.float32)  # 1536 dimensions
+    mock_response.data = [mock_embedding]
+    mock_client.embeddings.create.return_value = mock_response
+
+    result = run(embedder.embed_text(["Hello world"]))
+
+    assert len(result) == 1
+    # Verify dimensions were NOT included in the request (should use omit)
+    mock_client.embeddings.create.assert_awaited_once_with(
+        input=["Hello world"],
+        model="text-embedding-3-small",
+        encoding_format="float",
+        dimensions=omit,
+    )
+
+
+def test_supports_overriding_dimensions_true(mock_client):
+    """Test that when supports_overriding_dimensions is True, dimensions ARE included."""
+    descriptor = OpenAITextEmbedderDescriptor(
+        provider_name="openai",
+        provider_options={"api_key": "test-key"},
+        model_name="text-embedding-3-small",
+        dimensions=256,
+        embed_options={"supports_overriding_dimensions": True},
+    )
+    embedder = descriptor.instantiate()
+    embedder._client = mock_client
+
+    mock_response = Mock(spec=CreateEmbeddingResponse)
+    mock_embedding = Mock(spec=OpenAIEmbedding)
+    mock_embedding.embedding = np.array([0.1, 0.2, 0.3] * 85, dtype=np.float32)  # 256 dimensions
+    mock_response.data = [mock_embedding]
+    mock_client.embeddings.create.return_value = mock_response
+
+    result = run(embedder.embed_text(["Hello world"]))
+
+    assert len(result) == 1
+    # Verify dimensions WERE included in the request
+    mock_client.embeddings.create.assert_awaited_once_with(
+        input=["Hello world"],
+        model="text-embedding-3-small",
+        encoding_format="float",
+        dimensions=256,
+    )
+
+
+def test_supports_overriding_dimensions_true_batch(mock_client):
+    """Test that supports_overriding_dimensions=True works with _embed_text_batch."""
+    descriptor = OpenAITextEmbedderDescriptor(
+        provider_name="openai",
+        provider_options={"api_key": "test-key"},
+        model_name="text-embedding-3-small",
+        dimensions=256,
+        embed_options={"supports_overriding_dimensions": True},
+    )
+    embedder = descriptor.instantiate()
+    embedder._client = mock_client
+
+    mock_response = Mock(spec=CreateEmbeddingResponse)
+    mock_embeddings = []
+    for i in range(2):
+        mock_embedding = Mock(spec=OpenAIEmbedding)
+        mock_embedding.embedding = np.array([float(i), 0.2, 0.3] * 85, dtype=np.float32)  # 256 dimensions
+        mock_embeddings.append(mock_embedding)
+    mock_response.data = mock_embeddings
+    mock_client.embeddings.create.return_value = mock_response
+
+    result = run(embedder._embed_text_batch(["text1", "text2"]))
+
+    assert len(result) == 2
+    # Verify dimensions WERE included in the batch request
+    mock_client.embeddings.create.assert_awaited_once_with(
+        input=["text1", "text2"],
+        model="text-embedding-3-small",
+        encoding_format="float",
+        dimensions=256,
+    )
+
+
+def test_supports_overriding_dimensions_false_single_method(mock_client):
+    """Test that supports_overriding_dimensions=False works with _embed_text method."""
+    descriptor = OpenAITextEmbedderDescriptor(
+        provider_name="openai",
+        provider_options={"api_key": "test-key"},
+        model_name="text-embedding-3-small",
+        dimensions=256,
+        embed_options={"supports_overriding_dimensions": False},
+    )
+    embedder = descriptor.instantiate()
+    embedder._client = mock_client
+
+    mock_response = Mock(spec=CreateEmbeddingResponse)
+    mock_embedding = Mock(spec=OpenAIEmbedding)
+    mock_embedding.embedding = np.array([0.1, 0.2, 0.3] * 512, dtype=np.float32)  # 1536 dimensions
+    mock_response.data = [mock_embedding]
+    mock_client.embeddings.create.return_value = mock_response
+
+    result = run(embedder._embed_text("Hello world"))
+
+    assert isinstance(result, np.ndarray)
+    # Verify dimensions were NOT included in the single request (should use omit)
+    mock_client.embeddings.create.assert_awaited_once_with(
+        input="Hello world",
+        model="text-embedding-3-small",
+        encoding_format="float",
+        dimensions=omit,
+    )

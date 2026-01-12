@@ -223,7 +223,7 @@ impl PipelineNode for SourceNode {
             async move {
                 let mut has_data = false;
                 let mut source_stream = source
-                    .get_data(maintain_order, io_stats, chunk_size)
+                    .get_data(maintain_order, io_stats, chunk_size.get())
                     .await?;
                 stats_manager.activate_node(node_id);
 
