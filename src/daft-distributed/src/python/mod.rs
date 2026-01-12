@@ -1,6 +1,6 @@
 mod progress_bar;
 pub mod ray;
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, num::NonZeroUsize, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
 use common_display::DisplayLevel;
@@ -21,6 +21,7 @@ use crate::{
     },
     plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
     python::ray::RayTaskResult,
+    scheduling::worker::WorkerConfig,
     statistics::StatisticsSubscriber,
 };
 
@@ -156,8 +157,11 @@ struct PyDistributedPhysicalPlanRunner {
 #[pymethods]
 impl PyDistributedPhysicalPlanRunner {
     #[new]
-    fn new() -> PyResult<Self> {
-        let worker_manager = RayWorkerManager::new();
+    #[pyo3(signature = (cluster_config=None))]
+    fn new(cluster_config: Option<Vec<PyWorkerConfig>>) -> PyResult<Self> {
+        let worker_config =
+            cluster_config.map(|configs| configs.into_iter().map(|c| c.into()).collect());
+        let worker_manager = RayWorkerManager::new(worker_config);
         Ok(Self {
             runner: Arc::new(PlanRunner::new(Arc::new(worker_manager))),
         })
@@ -192,12 +196,92 @@ impl PyDistributedPhysicalPlanRunner {
     }
 }
 
+#[pyclass(module = "daft.daft", name = "WorkerConfig")]
+#[derive(Debug, Clone)]
+pub struct PyWorkerConfig {
+    inner: WorkerConfig,
+}
+
+#[pymethods]
+impl PyWorkerConfig {
+    #[new]
+    #[pyo3(signature = (num_replicas, num_cpus, memory_bytes, num_gpus=0.0))]
+    pub fn new(
+        num_replicas: usize,
+        num_cpus: f64,
+        memory_bytes: usize,
+        num_gpus: f64,
+    ) -> PyResult<Self> {
+        let inner = WorkerConfig::new(
+            NonZeroUsize::new(num_replicas).ok_or_else(|| {
+                pyo3::exceptions::PyValueError::new_err("num_replicas must be positive")
+            })?,
+            num_cpus,
+            NonZeroUsize::new(memory_bytes).ok_or_else(|| {
+                pyo3::exceptions::PyValueError::new_err("memory_bytes must be positive")
+            })?,
+            num_gpus,
+        )?;
+        Ok(Self { inner })
+    }
+
+    #[getter]
+    fn num_replicas(&self) -> usize {
+        self.inner.num_replicas.get()
+    }
+
+    #[getter]
+    fn num_cpus(&self) -> f64 {
+        self.inner.num_cpus
+    }
+
+    #[getter]
+    fn memory_bytes(&self) -> usize {
+        self.inner.memory_bytes.get()
+    }
+
+    #[getter]
+    fn num_gpus(&self) -> f64 {
+        self.inner.num_gpus
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "WorkerConfig(num_replicas={}, num_cpus={}, memory_bytes={}, num_gpus={})",
+            self.inner.num_replicas,
+            self.inner.num_cpus,
+            self.inner.memory_bytes,
+            self.inner.num_gpus
+        )
+    }
+}
+
+impl From<PyWorkerConfig> for WorkerConfig {
+    fn from(py_config: PyWorkerConfig) -> Self {
+        py_config.inner
+    }
+}
+
+impl From<&WorkerConfig> for PyWorkerConfig {
+    fn from(config: &WorkerConfig) -> Self {
+        Self {
+            inner: WorkerConfig {
+                num_replicas: config.num_replicas,
+                num_cpus: config.num_cpus,
+                memory_bytes: config.memory_bytes,
+                num_gpus: config.num_gpus,
+            },
+        }
+    }
+}
+
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyDistributedPhysicalPlan>()?;
     parent.add_class::<PyDistributedPhysicalPlanRunner>()?;
     parent.add_class::<RaySwordfishTask>()?;
     parent.add_class::<RayPartitionRef>()?;
     parent.add_class::<RaySwordfishWorker>()?;
+    parent.add_class::<PyWorkerConfig>()?;
     parent.add_class::<RayTaskResult>()?;
     Ok(())
 }

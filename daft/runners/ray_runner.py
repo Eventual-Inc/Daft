@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     import dask.dataframe
 
     import daft
+    from daft import WorkerConfig
 
 
 logger = logging.getLogger(__name__)
@@ -512,12 +513,13 @@ class RayRunner(Runner[ray.ObjectRef]):
     def __init__(
         self,
         address: str | None,
-        max_task_backlog: int | None,
         force_client_mode: bool = False,
+        cluster_config: WorkerConfig | list[WorkerConfig] | None = None,
     ) -> None:
         super().__init__()
 
         self.ray_address = address
+        self.cluster_config = cluster_config
 
         if ray.is_initialized():
             if address is not None:
@@ -556,7 +558,7 @@ class RayRunner(Runner[ray.ObjectRef]):
             builder._builder, query_id, daft_execution_config
         )
         if self.flotilla_plan_runner is None:
-            self.flotilla_plan_runner = FlotillaRunner()
+            self.flotilla_plan_runner = FlotillaRunner(cluster_config=self.cluster_config)
 
         yield from self.flotilla_plan_runner.stream_plan(
             distributed_plan, self._part_set_cache.get_all_partition_sets()

@@ -18,6 +18,7 @@ from daft.daft import (
     RaySwordfishTask,
     RaySwordfishWorker,
     RayTaskResult,
+    WorkerConfig,
     set_compute_runtime_num_worker_threads,
 )
 from daft.event_loop import set_event_loop
@@ -191,7 +192,7 @@ class RaySwordfishActorHandle:
         ray.kill(self.actor_handle)
 
 
-def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
+def start_ray_workers_from_node_discovery(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
     handles = []
     for node in ray.nodes():
         if (
@@ -216,11 +217,66 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
                 RaySwordfishWorker(
                     node["NodeID"],
                     actor_handle,
-                    int(node["Resources"]["CPU"]),
-                    int(node["Resources"].get("GPU", 0)),
+                    float(node["Resources"]["CPU"]),
+                    float(node["Resources"].get("GPU", 0.0)),
                     int(node["Resources"]["memory"]),
                 )
             )
+
+    return handles
+
+
+def start_ray_workers_from_cluster_config(
+    cluster_config: list[WorkerConfig], existing_worker_ids: list[str]
+) -> list[RaySwordfishWorker]:
+    """Create Ray workers from cluster configuration, only creating missing workers.
+
+    Args:
+        cluster_config: List of WorkerConfig objects specifying worker resources
+        existing_worker_ids: List of existing worker IDs
+
+    Returns:
+        List of newly created RaySwordfishWorker instances
+    """
+    # Calculate how many workers we need for each config
+    existing_worker_set = set(existing_worker_ids)
+    needed_workers_per_config = []
+
+    for config_idx, config in enumerate(cluster_config):
+        # Count how many workers of this type already exist
+        prefix = f"worker-{config_idx}-"
+        existing_count = sum(1 for wid in existing_worker_set if wid.startswith(prefix))
+        needed_count = config.num_replicas - existing_count
+
+        if needed_count > 0:
+            needed_workers_per_config.append((config_idx, config, needed_count, existing_count))
+
+    if not needed_workers_per_config:
+        # All workers already created
+        return []
+
+    # Create only the needed workers
+    handles = []
+    for config_idx, config, needed_count, existing_count in needed_workers_per_config:
+        for replica_idx in range(existing_count, config.num_replicas):
+            worker_id = f"worker-{config_idx}-{replica_idx}"
+
+            actor = RaySwordfishActor.options(  # type: ignore[attr-defined]
+                num_cpus=config.num_cpus,
+                memory=config.memory_bytes,
+                num_gpus=config.num_gpus,
+                scheduling_strategy="SPREAD",
+            ).remote(int(config.num_cpus), int(config.num_gpus))
+
+            actor_handle = RaySwordfishActorHandle(actor)
+            handle = RaySwordfishWorker(
+                worker_id=worker_id,
+                actor_handle=actor_handle,
+                num_cpus=config.num_cpus,
+                num_gpus=config.num_gpus,
+                total_memory_bytes=config.memory_bytes,
+            )
+            handles.append(handle)
 
     return handles
 
@@ -237,10 +293,10 @@ def try_autoscale(bundles: list[dict[str, int]]) -> None:
     num_cpus=0,
 )
 class RemoteFlotillaRunner:
-    def __init__(self) -> None:
+    def __init__(self, cluster_config: list[WorkerConfig] | None = None) -> None:
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
         self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
-        self.plan_runner = DistributedPhysicalPlanRunner()
+        self.plan_runner = DistributedPhysicalPlanRunner(cluster_config=cluster_config)  # type: ignore[call-arg]
         ray._private.worker.blocking_get_inside_async_warned = True
         set_event_loop(asyncio.get_running_loop())
 
@@ -338,7 +394,12 @@ def get_head_node_id() -> str | None:
 class FlotillaRunner:
     """FlotillaRunner is a wrapper around FlotillaRunnerCore that provides a Ray actor interface."""
 
-    def __init__(self) -> None:
+    def __init__(self, cluster_config: WorkerConfig | list[WorkerConfig] | None = None) -> None:
+        # Normalize cluster_config to a list
+        if cluster_config is not None:
+            if not isinstance(cluster_config, list):
+                cluster_config = [cluster_config]
+
         head_node_id = get_head_node_id()
         self.runner = RemoteFlotillaRunner.options(  # type: ignore
             name=get_flotilla_runner_actor_name(),
@@ -352,7 +413,7 @@ class FlotillaRunner:
                 if head_node_id is not None
                 else "DEFAULT"
             ),
-        ).remote()
+        ).remote(cluster_config)
 
     def stream_plan(
         self,

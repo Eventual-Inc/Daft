@@ -9,10 +9,13 @@ use common_resource_request::ResourceRequest;
 use pyo3::prelude::*;
 
 use super::{task::RayTaskResultHandle, worker::RaySwordfishWorker};
-use crate::scheduling::{
-    scheduler::WorkerSnapshot,
-    task::{SwordfishTask, TaskContext, TaskResourceRequest},
-    worker::{Worker, WorkerId, WorkerManager},
+use crate::{
+    python::PyWorkerConfig,
+    scheduling::{
+        scheduler::WorkerSnapshot,
+        task::{SwordfishTask, TaskContext, TaskResourceRequest},
+        worker::{Worker, WorkerConfig, WorkerId, WorkerManager},
+    },
 };
 
 const REFRESH_INTERVAL_SECS: Duration = Duration::from_secs(5);
@@ -21,6 +24,7 @@ struct RayWorkerManagerState {
     ray_workers: HashMap<WorkerId, RaySwordfishWorker>,
     last_refresh: Option<Instant>,
     max_resources_requested: ResourceRequest,
+    worker_config: Option<Vec<WorkerConfig>>,
 }
 
 impl RayWorkerManagerState {
@@ -34,24 +38,61 @@ impl RayWorkerManagerState {
             return Ok(());
         }
 
-        let ray_workers = Python::attach(|py| {
-            let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
+        let ray_workers = match &self.worker_config {
+            None => {
+                // No cluster config: use automatic node discovery
+                Python::attach(|py| {
+                    let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
+                    let existing_worker_ids = self
+                        .ray_workers
+                        .keys()
+                        .map(|id| id.as_ref().to_string())
+                        .collect::<Vec<_>>();
 
-            let existing_worker_ids = self
-                .ray_workers
-                .keys()
-                .map(|id| id.as_ref().to_string())
-                .collect::<Vec<_>>();
+                    let result = flotilla_module
+                        .call_method1(
+                            pyo3::intern!(py, "start_ray_workers_from_node_discovery"),
+                            (existing_worker_ids,),
+                        )?
+                        .extract::<Vec<RaySwordfishWorker>>()?;
+                    DaftResult::Ok(result)
+                })?
+            }
+            Some(configs) => {
+                // Have cluster config: check if we need to create more workers
+                let total_expected_workers: usize =
+                    configs.iter().map(|c| c.num_replicas.get()).sum();
+                let current_worker_count = self.ray_workers.len();
 
-            let ray_workers = flotilla_module
-                .call_method1(
-                    pyo3::intern!(py, "start_ray_workers"),
-                    (existing_worker_ids,),
-                )?
-                .extract::<Vec<RaySwordfishWorker>>()?;
+                if current_worker_count >= total_expected_workers {
+                    // All workers already created
+                    return Ok(());
+                }
 
-            DaftResult::Ok(ray_workers)
-        })?;
+                // Calculate which worker types need more replicas
+                Python::attach(|py| {
+                    let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
+
+                    // Convert worker_config to Python
+                    let py_cluster_configs: Vec<PyWorkerConfig> =
+                        configs.iter().map(|c| c.into()).collect::<Vec<_>>();
+
+                    let existing_worker_ids = self
+                        .ray_workers
+                        .keys()
+                        .map(|id| id.as_ref().to_string())
+                        .collect::<Vec<_>>();
+
+                    let result = flotilla_module
+                        .call_method1(
+                            pyo3::intern!(py, "start_ray_workers_from_cluster_config"),
+                            (py_cluster_configs, existing_worker_ids),
+                        )?
+                        .extract::<Vec<RaySwordfishWorker>>()?;
+                    DaftResult::Ok(result)
+                })?
+            }
+        };
 
         for worker in ray_workers {
             self.ray_workers.insert(worker.id().clone(), worker);
@@ -64,16 +105,20 @@ impl RayWorkerManagerState {
 // Wrapper around the RaySwordfishWorkerManager class in the distributed_swordfish module.
 pub(crate) struct RayWorkerManager {
     state: Arc<Mutex<RayWorkerManagerState>>,
+    can_autoscale: bool,
 }
 
 impl RayWorkerManager {
-    pub fn new() -> Self {
+    pub fn new(worker_config: Option<Vec<crate::scheduling::worker::WorkerConfig>>) -> Self {
+        let can_autoscale = worker_config.is_none();
         Self {
             state: Arc::new(Mutex::new(RayWorkerManagerState {
                 ray_workers: HashMap::new(),
                 last_refresh: None,
                 max_resources_requested: ResourceRequest::default(),
+                worker_config,
             })),
+            can_autoscale,
         }
     }
 }
@@ -158,6 +203,15 @@ impl WorkerManager for RayWorkerManager {
     }
 
     fn try_autoscale(&self, bundles: Vec<TaskResourceRequest>) -> DaftResult<()> {
+        if !self.can_autoscale {
+            return Ok(());
+        }
+
+        let mut state = self
+            .state
+            .lock()
+            .expect("Failed to lock RayWorkerManagerState");
+
         let (requested_num_cpus, requested_num_gpus, requested_memory_bytes) =
             bundles.iter().fold((0.0, 0.0, 0), |acc, bundle| {
                 (
@@ -166,11 +220,6 @@ impl WorkerManager for RayWorkerManager {
                     acc.2 + bundle.resource_request.memory_bytes().unwrap_or(0),
                 )
             });
-
-        let mut state = self
-            .state
-            .lock()
-            .expect("Failed to lock RayWorkerManagerState");
 
         let (cluster_num_cpus, cluster_num_gpus, cluster_memory_bytes) = state
             .ray_workers
