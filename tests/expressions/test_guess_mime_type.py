@@ -82,7 +82,7 @@ def test_guess_mime_type_mp4():
 
 def test_guess_mime_type_mpeg():
     """Test MPEG file detection."""
-    mpeg_data = b"\x00\x00\x01\xBA" + b"\x00" * 12
+    mpeg_data = b"\x00\x00\x01\xba" + b"\x00" * 12
     df = daft.from_pydict({"data": [mpeg_data]})
     result = df.select(guess_mime_type(df["data"])).collect()
     assert result.to_pydict()["data"] == ["video/mpeg"]
@@ -128,9 +128,7 @@ def test_guess_mime_type_multiple_rows():
 def test_guess_mime_type_with_fill_null():
     """Test combining with fill_null for default values."""
     df = daft.from_pydict({"data": [b"\x89PNG\r\n\x1a\n", b"unknown"]})
-    result = df.select(
-        guess_mime_type(df["data"]).fill_null("application/octet-stream").alias("mime")
-    ).collect()
+    result = df.select(guess_mime_type(df["data"]).fill_null("application/octet-stream").alias("mime")).collect()
     assert result.to_pydict()["mime"] == ["image/png", "application/octet-stream"]
 
 
@@ -147,3 +145,10 @@ def test_guess_mime_type_aliasing():
     result = df.select(guess_mime_type(df["data"]).alias("mime_type")).collect()
     assert "mime_type" in result.column_names
     assert result.to_pydict()["mime_type"] == ["image/png"]
+
+
+def test_guess_mime_type_non_binary_input_errors():
+    """Test that a descriptive error is raised if input is not binary."""
+    df = daft.from_pydict({"data": ["not bytes"]})
+    with pytest.raises(daft.exceptions.DaftCoreException, match="guess_mime_type"):
+        df.select(guess_mime_type(df["data"])).collect()

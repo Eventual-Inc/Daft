@@ -292,28 +292,37 @@ impl ScalarUDF for GuessMimeType {
     fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
         let UnaryArg { input } = args.try_into()?;
 
-        let binary = input.binary()?;
-        let mut out = Vec::with_capacity(binary.len());
+        if !matches!(input.data_type(), DataType::Binary) {
+            return Err(DaftError::TypeError(format!(
+                "Unsupported data type for 'guess_mime_type' function: {}. Expected Binary",
+                input.data_type()
+            )));
+        }
 
-        for bytes in binary.into_iter() {
-            let mime = bytes.and_then(|b| {
+        let binary = input.binary()?;
+        let out = binary.into_iter().map(|bytes| {
+            bytes.and_then(|b| {
                 let mut cursor = std::io::Cursor::new(b);
                 crate::guess_mimetype_from_content(&mut cursor)
                     .ok()
                     .flatten()
-            });
-            out.push(mime);
-        }
+            })
+        });
 
-        Ok(daft_core::prelude::Utf8Array::from_iter(
-            input.name(),
-            out.into_iter(),
-        )
-        .into_series())
+        Ok(daft_core::prelude::Utf8Array::from_iter(input.name(), out).into_series())
     }
 
     fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
         let UnaryArg { input } = args.try_into()?;
-        Ok(Field::new(input.to_field(schema)?.name, DataType::Utf8))
+        let input = input.to_field(schema)?;
+
+        if !matches!(input.dtype, DataType::Binary) {
+            return Err(DaftError::TypeError(format!(
+                "Unsupported data type for 'guess_mime_type' function: {}. Expected Binary",
+                input.dtype
+            )));
+        }
+
+        Ok(Field::new(input.name, DataType::Utf8))
     }
 }

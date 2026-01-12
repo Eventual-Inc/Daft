@@ -72,7 +72,7 @@ def file_size(file: Expression) -> Expression:
 
 
 def guess_mime_type(bytes_expr: Expression) -> Expression:
-    """Guess the MIME type of binary data by inspecting magic bytes.
+    r"""Guess the MIME type of binary data by inspecting magic bytes.
 
     Detects common file formats including: PNG, JPEG, GIF, WEBP, PDF, ZIP,
     MP3, WAV, OGG, MP4, MPEG, and HTML. Returns None if the format cannot
@@ -87,8 +87,20 @@ def guess_mime_type(bytes_expr: Expression) -> Expression:
     Example:
         >>> import daft
         >>> from daft.functions import guess_mime_type
-        >>> df = daft.from_pydict({"data": [b"\\x89PNG\\r\\n\\x1a\\n"]})
+        >>> df = daft.from_pydict({"data": [b"\x89PNG\r\n\x1a\n", b"not a known format"]})
         >>> df = df.with_column("mime", guess_mime_type(df["data"]))
-        >>> df.collect()
+        >>> df.select("mime").show()
+        ╭───────────╮
+        │ mime      │
+        │ ---       │
+        │ String    │
+        ╞═══════════╡
+        │ image/png │
+        ├╌╌╌╌╌╌╌╌╌╌╌┤
+        │ None      │
+        ╰───────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+
     """
     return bytes_expr._eval_expressions("guess_mime_type")
