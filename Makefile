@@ -110,7 +110,7 @@ format: check-toolchain .venv  ## Format Python and Rust code
 
 .PHONY: lint
 lint: check-toolchain .venv  ## Lint Python and Rust code
-	source $(VENV_BIN)/activate && pre-commit run ruff --all-files
+	source $(VENV_BIN)/activate && pre-commit run ruff-check --all-files
 	source $(VENV_BIN)/activate && pre-commit run clippy --all-files
 
 .PHONY: precommit
