@@ -1,13 +1,15 @@
 use std::sync::Arc;
 
-use arrow::array::ArrayRef;
+use arrow::{
+    array::{Array, ArrayRef},
+    compute::kernels::concat::concat,
+};
 use common_error::{DaftError, DaftResult};
 use daft_arrow::offset::OffsetsBuffer;
 
 use crate::{
-    array::growable::{Growable, GrowableArray},
     datatypes::{DaftArrayType, DataType, Field},
-    prelude::ListArray,
+    prelude::{FromArrow, ListArray},
     series::Series,
 };
 
@@ -80,27 +82,16 @@ impl FixedSizeListArray {
                 "Need at least 1 FixedSizeListArray to concat".to_string(),
             ));
         }
+        let first_field = arrays[0].field().clone();
 
-        let first_array = arrays.first().unwrap();
-        let mut growable = <Self as GrowableArray>::make_growable(
-            first_array.field.name.as_str(),
-            &first_array.field.dtype,
-            arrays.to_vec(),
-            arrays
-                .iter()
-                .map(|a| a.validity.as_ref().map_or(0usize, |v| v.null_count()))
-                .sum::<usize>()
-                > 0,
-            arrays.iter().map(|a| a.len()).sum(),
-        );
+        let arc_vec = arrays
+            .iter()
+            .map(|arr| arr.to_arrow())
+            .collect::<DaftResult<Vec<ArrayRef>>>()?;
+        let ref_vec: Vec<&dyn Array> = arc_vec.iter().map(|x| x.as_ref()).collect();
 
-        for (i, arr) in arrays.iter().enumerate() {
-            growable.extend(i, 0, arr.len());
-        }
-
-        growable
-            .build()
-            .map(|s| s.downcast::<Self>().unwrap().clone())
+        let res = concat(&ref_vec)?;
+        Self::from_arrow(first_field, res)
     }
 
     pub fn len(&self) -> usize {
