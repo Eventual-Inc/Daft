@@ -36,7 +36,7 @@ pub trait BatchingStrategy: Send + Sync + std::fmt::Debug {
 pub trait BatchingState {
     fn record_execution_stat(
         &mut self,
-        stats: Arc<dyn RuntimeStats>,
+        stats: &dyn RuntimeStats,
         batch_size: usize,
         duration: Duration,
     );
@@ -90,7 +90,7 @@ where
     /// This method is non-blocking and designed to be called frequently by workers.
     pub fn record_execution_stats(
         &self,
-        stats: Arc<dyn RuntimeStats>,
+        stats: &dyn RuntimeStats,
         batch_size: usize,
         duration: Duration,
     ) {
@@ -106,6 +106,7 @@ where
 #[cfg(test)]
 mod tests {
     use std::{
+        num::NonZeroUsize,
         sync::atomic::{AtomicUsize, Ordering},
         time::Duration,
     };
@@ -148,7 +149,7 @@ mod tests {
     impl BatchingState for MockBatchingState {
         fn record_execution_stat(
             &mut self,
-            _stats: Arc<dyn RuntimeStats>,
+            _stats: &dyn RuntimeStats,
             _batch_size: usize,
             _duration: Duration,
         ) {
@@ -195,108 +196,179 @@ mod tests {
             // Return different requirements based on number of measurements recorded
             match state.measurement_count {
                 0 => self.initial_req,
-                1 => MorselSizeRequirement::Flexible(1, 10),
-                2..=5 => MorselSizeRequirement::Flexible(5, 20),
-                _ => MorselSizeRequirement::Flexible(10, 50),
+                1 => MorselSizeRequirement::Flexible(1, NonZeroUsize::new(10).unwrap()),
+                2..=5 => MorselSizeRequirement::Flexible(5, NonZeroUsize::new(20).unwrap()),
+                _ => MorselSizeRequirement::Flexible(10, NonZeroUsize::new(50).unwrap()),
             }
         }
     }
 
     #[test]
     fn test_batch_manager_creation() {
-        let strategy = MockBatchingStrategy::new(MorselSizeRequirement::Flexible(1, 32));
+        let strategy = MockBatchingStrategy::new(MorselSizeRequirement::Flexible(
+            1,
+            NonZeroUsize::new(32).unwrap(),
+        ));
         let manager = BatchManager::new(strategy.clone());
 
         assert_eq!(
             manager.initial_requirements(),
-            MorselSizeRequirement::Flexible(1, 32)
+            MorselSizeRequirement::Flexible(1, NonZeroUsize::new(32).unwrap())
         );
         assert_eq!(strategy.call_count(), 0); // No calculations yet
     }
 
     #[test]
     fn test_batch_manager_calculate_no_measurements() {
-        let strategy = MockBatchingStrategy::new(MorselSizeRequirement::Flexible(2, 64));
+        let strategy = MockBatchingStrategy::new(MorselSizeRequirement::Flexible(
+            2,
+            NonZeroUsize::new(64).unwrap(),
+        ));
         let manager = BatchManager::new(strategy.clone());
 
         let req = manager.calculate_batch_size();
-        assert_eq!(req, MorselSizeRequirement::Flexible(2, 64)); // Should return initial
+        assert_eq!(
+            req,
+            MorselSizeRequirement::Flexible(2, NonZeroUsize::new(64).unwrap())
+        ); // Should return initial
         assert_eq!(strategy.call_count(), 1); // calculate_new_requirements is always called
     }
 
     #[test]
     fn test_batch_manager_record_and_calculate() {
-        let strategy = MockBatchingStrategy::new(MorselSizeRequirement::Flexible(1, 16));
+        let strategy = MockBatchingStrategy::new(MorselSizeRequirement::Flexible(
+            1,
+            NonZeroUsize::new(16).unwrap(),
+        ));
         let manager = BatchManager::new(strategy.clone());
 
         // Record some execution stats
-        manager.record_execution_stats(Arc::new(MockRuntimeStats), 32, Duration::from_millis(100));
+        manager.record_execution_stats(
+            Arc::new(MockRuntimeStats).as_ref(),
+            32,
+            Duration::from_millis(100),
+        );
 
         let req = manager.calculate_batch_size();
-        assert_eq!(req, MorselSizeRequirement::Flexible(1, 10)); // First state transition
+        assert_eq!(
+            req,
+            MorselSizeRequirement::Flexible(1, NonZeroUsize::new(10).unwrap())
+        ); // First state transition
         assert_eq!(strategy.call_count(), 1);
     }
 
     #[test]
     fn test_batch_manager_multiple_measurements() {
-        let strategy = MockBatchingStrategy::new(MorselSizeRequirement::Flexible(1, 8));
+        let strategy = MockBatchingStrategy::new(MorselSizeRequirement::Flexible(
+            1,
+            NonZeroUsize::new(8).unwrap(),
+        ));
         let manager = BatchManager::new(strategy.clone());
 
         // Record multiple stats
-        manager.record_execution_stats(Arc::new(MockRuntimeStats), 10, Duration::from_millis(50));
-        manager.record_execution_stats(Arc::new(MockRuntimeStats), 20, Duration::from_millis(75));
+        manager.record_execution_stats(
+            Arc::new(MockRuntimeStats).as_ref(),
+            10,
+            Duration::from_millis(50),
+        );
+        manager.record_execution_stats(
+            Arc::new(MockRuntimeStats).as_ref(),
+            20,
+            Duration::from_millis(75),
+        );
 
         let req = manager.calculate_batch_size();
-        assert_eq!(req, MorselSizeRequirement::Flexible(5, 20)); // 2 measurements processed
+        assert_eq!(
+            req,
+            MorselSizeRequirement::Flexible(5, NonZeroUsize::new(20).unwrap())
+        ); // 2 measurements processed
         assert_eq!(strategy.call_count(), 1);
     }
 
     #[test]
     fn test_batch_manager_multiple_calculations() {
-        let strategy = MockBatchingStrategy::new(MorselSizeRequirement::Flexible(1, 4));
+        let strategy = MockBatchingStrategy::new(MorselSizeRequirement::Flexible(
+            1,
+            NonZeroUsize::new(4).unwrap(),
+        ));
         let manager = BatchManager::new(strategy.clone());
 
-        manager.record_execution_stats(Arc::new(MockRuntimeStats), 5, Duration::from_millis(25));
+        manager.record_execution_stats(
+            Arc::new(MockRuntimeStats).as_ref(),
+            5,
+            Duration::from_millis(25),
+        );
 
         let req1 = manager.calculate_batch_size();
-        assert_eq!(req1, MorselSizeRequirement::Flexible(1, 10));
+        assert_eq!(
+            req1,
+            MorselSizeRequirement::Flexible(1, NonZeroUsize::new(10).unwrap())
+        );
         assert_eq!(strategy.call_count(), 1);
 
         // Second call should trigger calculation again
         let req2 = manager.calculate_batch_size();
-        assert_eq!(req2, MorselSizeRequirement::Flexible(1, 10)); // Same result since no new measurements
+        assert_eq!(
+            req2,
+            MorselSizeRequirement::Flexible(1, NonZeroUsize::new(10).unwrap())
+        ); // Same result since no new measurements
         assert_eq!(strategy.call_count(), 2); // Called again
     }
 
     #[test]
     fn test_batch_manager_accumulates_measurements() {
-        let strategy = MockBatchingStrategy::new(MorselSizeRequirement::Flexible(2, 8));
+        let strategy = MockBatchingStrategy::new(MorselSizeRequirement::Flexible(
+            2,
+            NonZeroUsize::new(8).unwrap(),
+        ));
         let manager = BatchManager::new(strategy.clone());
 
         // First measurement
-        manager.record_execution_stats(Arc::new(MockRuntimeStats), 10, Duration::from_millis(30));
+        manager.record_execution_stats(
+            Arc::new(MockRuntimeStats).as_ref(),
+            10,
+            Duration::from_millis(30),
+        );
         let req1 = manager.calculate_batch_size();
-        assert_eq!(req1, MorselSizeRequirement::Flexible(1, 10));
+        assert_eq!(
+            req1,
+            MorselSizeRequirement::Flexible(1, NonZeroUsize::new(10).unwrap())
+        );
 
         // More measurements
-        manager.record_execution_stats(Arc::new(MockRuntimeStats), 15, Duration::from_millis(40));
-        manager.record_execution_stats(Arc::new(MockRuntimeStats), 20, Duration::from_millis(60));
+        manager.record_execution_stats(
+            Arc::new(MockRuntimeStats).as_ref(),
+            15,
+            Duration::from_millis(40),
+        );
+        manager.record_execution_stats(
+            Arc::new(MockRuntimeStats).as_ref(),
+            20,
+            Duration::from_millis(60),
+        );
         let req2 = manager.calculate_batch_size();
-        assert_eq!(req2, MorselSizeRequirement::Flexible(5, 20)); // 3 total measurements
+        assert_eq!(
+            req2,
+            MorselSizeRequirement::Flexible(5, NonZeroUsize::new(20).unwrap())
+        ); // 3 total measurements
 
         assert_eq!(strategy.call_count(), 2);
     }
 
     #[test]
     fn test_batch_manager_with_static_strategy() {
-        let static_req = MorselSizeRequirement::Flexible(16, 128);
+        let static_req = MorselSizeRequirement::Flexible(16, NonZeroUsize::new(128).unwrap());
         let strategy = StaticBatchingStrategy::new(static_req);
         let manager = BatchManager::new(strategy);
 
         assert_eq!(manager.initial_requirements(), static_req);
 
         // Even after recording stats, static strategy should return same requirement
-        manager.record_execution_stats(Arc::new(MockRuntimeStats), 64, Duration::from_millis(200));
+        manager.record_execution_stats(
+            Arc::new(MockRuntimeStats).as_ref(),
+            64,
+            Duration::from_millis(200),
+        );
 
         let req = manager.calculate_batch_size();
         assert_eq!(req, static_req);

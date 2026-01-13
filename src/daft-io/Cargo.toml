@@ -2,9 +2,9 @@
 async-recursion = "1.0.4"
 async-stream = {workspace = true}
 async-trait = {workspace = true}
-aws-config = "1.8.1"
+aws-config = "1.8.12"
 aws-credential-types = {version = "1.2.7", features = ["hardcoded-credentials"]}
-aws-sdk-s3 = {version = "1.96.0", features = ["default-https-client", "rt-tokio", "sigv4a"], default-features = false}
+aws-sdk-s3 = {version = "1.119.0", features = ["default-https-client", "rt-tokio", "sigv4a"], default-features = false}
 aws-smithy-http-client = "1.1.2"
 aws-smithy-runtime-api = "1.8.0"
 azure_core = {git = "https://github.com/Eventual-Inc/azure-sdk-for-rust", tag = "patched-azure-identity-2", features = ["enable_reqwest_rustls", "hmac_rust"], default-features = false}
@@ -38,7 +38,7 @@ tokio-stream = {workspace = true}
 tracing = {workspace = true}
 url = {workspace = true}
 uuid = {workspace = true}
-ve-tos-rust-sdk = "2.9.6"
+ve-tos-rust-sdk = "2.9.9"
 
 [dependencies.reqwest]
 default-features = false

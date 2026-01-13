@@ -1,12 +1,9 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::borrow::Cow;
 
 use common_error::{DaftError, DaftResult, ensure};
 use daft_core::{
     array::DataArray,
-    prelude::{
-        AsArrow, BooleanArray, DaftPhysicalType, DataType, Field, FullNull, Schema, Utf8Array,
-    },
+    prelude::{BooleanArray, DaftPhysicalType, DataType, Field, FullNull, Schema, Utf8Array},
     series::Series,
 };
 use daft_dsl::{ExprRef, functions::FunctionArgs};
@@ -38,7 +35,7 @@ pub(crate) fn create_broadcasted_str_iter(arr: &Utf8Array, len: usize) -> Broadc
     if arr.len() == 1 {
         BroadcastedStrIter::Repeat(std::iter::repeat_n(arr.get(0), len))
     } else {
-        BroadcastedStrIter::NonRepeat(arr.as_arrow2().iter())
+        BroadcastedStrIter::NonRepeat(arr.into_iter())
     }
 }
 
@@ -62,13 +59,12 @@ impl Utf8ArrayUtils for Utf8Array {
     where
         ScalarKernel: Fn(&str) -> Cow<'_, str>,
     {
-        let self_arrow = self.as_arrow2();
-        let arrow_result = self_arrow
-            .iter()
+        Ok(self
+            .into_iter()
             .map(|val| Some(operation(val?)))
-            .collect::<daft_arrow::array::Utf8Array<i64>>()
-            .with_validity(self_arrow.validity().cloned());
-        Ok(Self::from((self.name(), Box::new(arrow_result))))
+            .collect::<Self>()
+            .with_validity(self.validity().cloned())?
+            .rename(self.name()))
     }
     fn binary_broadcasted_compare<ScalarKernel>(
         &self,
@@ -94,15 +90,16 @@ impl Utf8ArrayUtils for Utf8Array {
 
         let self_iter = create_broadcasted_str_iter(self, expected_size);
         let other_iter = create_broadcasted_str_iter(other, expected_size);
-        let arrow_result = self_iter
+        let arr = self_iter
             .zip(other_iter)
             .map(|(self_v, other_v)| match (self_v, other_v) {
                 (Some(self_v), Some(other_v)) => operation(self_v, other_v).map(Some),
                 _ => Ok(None),
             })
-            .collect::<DaftResult<daft_arrow::array::BooleanArray>>();
+            .collect::<DaftResult<BooleanArray>>()?;
 
-        let result = BooleanArray::from((self.name(), arrow_result?));
+        let result = arr.rename(self.name());
+
         assert_eq!(result.len(), expected_size);
         Ok(result)
     }

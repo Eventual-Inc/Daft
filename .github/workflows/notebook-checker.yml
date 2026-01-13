@@ -5,6 +5,9 @@ on:
   - cron: 0 20 * * *
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   DAFT_ANALYTICS_ENABLED: '0'
 

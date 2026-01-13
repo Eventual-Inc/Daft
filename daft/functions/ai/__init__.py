@@ -147,6 +147,7 @@ def embed_text(
         gpus=udf_options.num_gpus or 0,
         max_retries=udf_options.max_retries,
         on_error=udf_options.on_error,
+        name_override="embed_text",
     )
 
     expr = wrapped_cls(text_embedder)
@@ -217,10 +218,15 @@ def embed_image(
 
     udf_options = image_embedder.get_udf_options()
 
-    # Decorate the __call__ method with @daft.method to specify return_dtype
-    _ImageEmbedderExpression.__call__ = method.batch(  # type: ignore[method-assign] # type: ignore[method-assign] # type: ignore[method-assign]
-        method=_ImageEmbedderExpression.__call__,
+    # Choose synchronous or asynchronous call implementation based on the embedder
+    is_async = image_embedder.is_async()
+    call_impl = _ImageEmbedderExpression._call_async if is_async else _ImageEmbedderExpression._call_sync
+
+    # Decorate the selected call method with @daft.method to specify return_dtype
+    _ImageEmbedderExpression.__call__ = method.batch(  # type: ignore[method-assign]
+        method=call_impl,
         return_dtype=image_embedder.get_dimensions().as_dtype(),
+        batch_size=udf_options.batch_size,
     )
 
     wrapped_cls = daft_cls(
@@ -229,6 +235,7 @@ def embed_image(
         gpus=udf_options.num_gpus or 0,
         max_retries=udf_options.max_retries,
         on_error=udf_options.on_error,
+        name_override="embed_image",
     )
 
     expr = wrapped_cls(image_embedder)
@@ -312,6 +319,7 @@ def classify_text(
         gpus=udf_options.num_gpus or 0,
         max_retries=udf_options.max_retries,
         on_error=udf_options.on_error,
+        name_override="classify_text",
     )
 
     expr = wrapped_cls(text_classifier, label_list)
@@ -407,6 +415,7 @@ def classify_image(
         gpus=udf_options.num_gpus or 0,
         max_retries=udf_options.max_retries,
         on_error=udf_options.on_error,
+        name_override="classify_image",
     )
     instance = wrapped_cls(image_classifier, label_list)
     return instance(image)
@@ -630,6 +639,7 @@ def prompt(
         max_concurrency=udf_options.concurrency,
         max_retries=udf_options.max_retries,
         on_error=udf_options.on_error,
+        name_override="prompt",
     )
 
     # Instantiate the wrapped class with the prompter descriptor

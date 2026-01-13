@@ -1,7 +1,6 @@
 use std::ops::Rem;
 
 use common_error::{DaftError, DaftResult};
-use daft_arrow::array::DictionaryKey;
 use daft_core::{array::ops::IntoGroups, datatypes::UInt64Array};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use rand::SeedableRng;
@@ -37,7 +36,7 @@ impl RecordBatch {
                 )));
             }
 
-            output_to_input_idx[unsafe { t_idx.as_usize() }].push(s_idx as u64);
+            output_to_input_idx[*t_idx as usize].push(s_idx as u64);
         }
         output_to_input_idx
             .into_iter()

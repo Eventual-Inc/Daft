@@ -1,4 +1,5 @@
 use std::{
+    num::NonZeroUsize,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -188,16 +189,16 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         res
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self) -> Self::State {
         // Check if we need to initialize the filtered actor handles
         #[cfg(feature = "python")]
         {
             let next_actor_handle_idx =
                 self.counter.fetch_add(1, Ordering::SeqCst) % self.actor_handles.len();
             let next_actor_handle = &self.actor_handles[next_actor_handle_idx];
-            Ok(DistributedActorPoolProjectState {
+            DistributedActorPoolProjectState {
                 actor_handle: next_actor_handle.clone(),
-            })
+            }
         }
         #[cfg(not(feature = "python"))]
         {
@@ -214,7 +215,9 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
-        self.batch_size.map(MorselSizeRequirement::Strict)
+        self.batch_size
+            .and_then(NonZeroUsize::new)
+            .map(MorselSizeRequirement::Strict)
     }
     fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
         Ok(crate::dynamic_batching::StaticBatchingStrategy::new(

@@ -1,9 +1,8 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use chrono::Datelike;
 use common_error::{DaftError, DaftResult, ensure};
 use daft_arrow::temporal_conversions;
 use daft_core::{
-    prelude::{AsArrow, DataType, DateArray, Field, Int32Array, Schema, Utf8Array},
+    prelude::{DataType, DateArray, Field, Int32Array, Schema, Utf8Array},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
@@ -58,7 +57,7 @@ pub fn to_date(input: ExprRef, format: ExprRef) -> ExprRef {
 
 fn to_date_impl(arr: &Utf8Array, format: &str) -> DaftResult<DateArray> {
     let len = arr.len();
-    let arr_iter = arr.as_arrow2().iter();
+    let arr_iter = arr.into_iter();
 
     let arrow_result = arr_iter
         .map(|val| match val {

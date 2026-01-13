@@ -77,10 +77,68 @@ mod py {
         Ok(common_io_config::python::S3Config { config: s3_config? })
     }
 
+    #[pyfunction(signature = (
+        path,
+        data,
+        multithreaded_io=None,
+        io_config=None
+    ))]
+    fn io_put(
+        py: Python,
+        path: String,
+        data: &[u8],
+        multithreaded_io: Option<bool>,
+        io_config: Option<common_io_config::python::IOConfig>,
+    ) -> PyResult<()> {
+        let multithreaded_io = multithreaded_io.unwrap_or(true);
+        let io_stats = IOStatsContext::new(format!("io_put for {path}"));
+        let io_stats_handle = io_stats;
+
+        let result: DaftResult<()> = py.detach(|| {
+            let io_client = get_io_client(
+                multithreaded_io,
+                io_config.unwrap_or_default().config.into(),
+            )
+            .map_err(|e| common_error::DaftError::External(e.into()))?;
+
+            // Check if we're already in a runtime context
+            let data_bytes = bytes::Bytes::copy_from_slice(data);
+            match tokio::runtime::Handle::try_current() {
+                Ok(_handle) => {
+                    // We're in an async context, spawn a blocking task
+                    std::thread::spawn(move || {
+                        let rt = tokio::runtime::Runtime::new().unwrap();
+                        rt.block_on(async {
+                            io_client
+                                .single_url_put(&path, data_bytes, Some(io_stats_handle))
+                                .await
+                                .map_err(|e| common_error::DaftError::External(e.into()))
+                        })
+                    })
+                    .join()
+                    .map_err(|_| common_error::DaftError::External("Thread join failed".into()))?
+                }
+                Err(_) => {
+                    // No runtime, create one
+                    let runtime_handle = get_io_runtime(multithreaded_io);
+                    runtime_handle.block_on_current_thread(async {
+                        io_client
+                            .single_url_put(&path, data_bytes, Some(io_stats_handle))
+                            .await
+                            .map_err(|e| common_error::DaftError::External(e.into()))
+                    })
+                }
+            }
+        });
+        result?;
+        Ok(())
+    }
+
     pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
         common_io_config::python::register_modules(parent)?;
         parent.add_function(wrap_pyfunction!(io_glob, parent)?)?;
         parent.add_function(wrap_pyfunction!(s3_config_from_env, parent)?)?;
+        parent.add_function(wrap_pyfunction!(io_put, parent)?)?;
         Ok(())
     }
 }

@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{num::NonZeroUsize, sync::Arc};
 
 use common_io_config::python::IOConfig as PyIOConfig;
 use common_py_serde::impl_bincode_py_state_serialization;
@@ -214,7 +214,12 @@ impl PyDaftExecutionConfig {
         }
 
         if let Some(default_morsel_size) = default_morsel_size {
-            config.default_morsel_size = default_morsel_size;
+            config.default_morsel_size =
+                NonZeroUsize::new(default_morsel_size).ok_or_else(|| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                        "default_morsel_size must be positive and non-zero",
+                    )
+                })?;
         }
         if let Some(shuffle_algorithm) = shuffle_algorithm {
             if !matches!(
@@ -362,7 +367,7 @@ impl PyDaftExecutionConfig {
     }
     #[getter]
     fn default_morsel_size(&self) -> PyResult<usize> {
-        Ok(self.config.default_morsel_size)
+        Ok(self.config.default_morsel_size.get())
     }
     #[getter]
     fn shuffle_algorithm(&self) -> PyResult<&str> {

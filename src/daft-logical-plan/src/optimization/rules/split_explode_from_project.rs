@@ -67,6 +67,7 @@ impl OptimizerRule for SplitExplodeFromProject {
                     Explode::try_new(
                         Project::try_new(projection.input.clone(), new_projection)?.into(),
                         to_explode,
+                        None,
                     )?
                     .into(),
                 ))

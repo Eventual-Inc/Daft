@@ -1,35 +1,36 @@
-use std::{sync::Arc, time::Instant};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
-use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
+use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime};
 use daft_core::prelude::SchemaRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
-use tracing::{info_span, instrument};
+use tokio::sync::mpsc::{Receiver, Sender, channel};
+use tracing::info_span;
 
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
-    channel::{
-        OrderingAwareReceiver, Receiver, Sender, create_channel,
-        create_ordering_aware_receiver_channel,
-    },
-    dispatcher::{DispatchSpawner, RoundRobinDispatcher, UnorderedDispatcher},
+    buffer::RowBasedBuffer,
     dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
-    resource_manager::MemoryManager,
-    runtime_stats::{
-        CountingSender, DefaultRuntimeStats, InitializingCountingReceiver, RuntimeStats,
-    },
+    runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub enum IntermediateOperatorResult {
     NeedMoreInput(Option<Arc<MicroPartition>>),
-    HasMoreOutput(Arc<MicroPartition>),
+    HasMoreOutput {
+        input: Arc<MicroPartition>,
+        output: Arc<MicroPartition>,
+    },
 }
 
 pub(crate) type IntermediateOpExecuteResult<Op> = OperatorOutput<
@@ -50,7 +51,7 @@ pub(crate) trait IntermediateOperator: Send + Sync {
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
-    fn make_state(&self) -> DaftResult<Self::State>;
+    fn make_state(&self) -> Self::State;
     fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
         Arc::new(DefaultRuntimeStats::new(id))
     }
@@ -66,20 +67,6 @@ pub(crate) trait IntermediateOperator: Send + Sync {
     }
 
     fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy>;
-
-    fn dispatch_spawner(
-        &self,
-        batch_manager: Arc<BatchManager<Self::BatchingStrategy>>,
-        maintain_order: bool,
-    ) -> Arc<dyn DispatchSpawner> {
-        if maintain_order {
-            Arc::new(RoundRobinDispatcher::new(batch_manager))
-        } else {
-            Arc::new(UnorderedDispatcher::new(
-                batch_manager.initial_requirements(),
-            ))
-        }
-    }
 }
 
 pub struct IntermediateNode<Op: IntermediateOperator> {
@@ -90,6 +77,27 @@ pub struct IntermediateNode<Op: IntermediateOperator> {
     morsel_size_requirement: MorselSizeRequirement,
     node_info: Arc<NodeInfo>,
 }
+
+type StateId = usize;
+
+struct ExecutionTaskResult<S> {
+    state_id: StateId,
+    state: S,
+    result: IntermediateOperatorResult,
+    elapsed: Duration,
+}
+
+struct ExecutionContext<Op: IntermediateOperator> {
+    op: Arc<Op>,
+    task_spawner: ExecutionTaskSpawner,
+    task_set: OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
+    state_pool: HashMap<StateId, Op::State>,
+    output_sender: Sender<Arc<MicroPartition>>,
+    batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
+    runtime_stats: Arc<dyn RuntimeStats>,
+}
+
+// ========== IntermediateNode Implementation ==========
 
 impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
     pub(crate) fn new(
@@ -126,83 +134,179 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         Box::new(self)
     }
 
-    #[instrument(level = "info", skip_all, name = "IntermediateOperator::run_worker")]
-    pub async fn run_worker(
-        op: Arc<Op>,
-        receiver: Receiver<Arc<MicroPartition>>,
-        sender: Sender<Arc<MicroPartition>>,
-        runtime_stats: Arc<dyn RuntimeStats>,
-        memory_manager: Arc<MemoryManager>,
-        batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
+    // ========== Helper Functions ==========
+
+    fn spawn_execution_task(
+        ctx: &mut ExecutionContext<Op>,
+        input: Arc<MicroPartition>,
+        state: Op::State,
+        state_id: StateId,
+    ) {
+        let op = ctx.op.clone();
+        let task_spawner = ctx.task_spawner.clone();
+        ctx.task_set.spawn(async move {
+            let now = Instant::now();
+            let (new_state, result) = op.execute(input, state, &task_spawner).await??;
+            let elapsed = now.elapsed();
+
+            Ok(ExecutionTaskResult {
+                state_id,
+                state: new_state,
+                result,
+                elapsed,
+            })
+        });
+    }
+
+    async fn handle_task_completion(
+        result: ExecutionTaskResult<Op::State>,
+        ctx: &mut ExecutionContext<Op>,
+    ) -> DaftResult<bool> {
+        match result.result {
+            IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
+                // Record execution stats
+                ctx.batch_manager.record_execution_stats(
+                    ctx.runtime_stats.as_ref(),
+                    mp.len(),
+                    result.elapsed,
+                );
+
+                // Send output
+                ctx.runtime_stats.add_rows_out(mp.len() as u64);
+                if ctx.output_sender.send(mp).await.is_err() {
+                    return Ok(false);
+                }
+
+                // Return state to pool
+                ctx.state_pool.insert(result.state_id, result.state);
+            }
+            IntermediateOperatorResult::NeedMoreInput(None) => {
+                // No output, just return state to pool
+                ctx.state_pool.insert(result.state_id, result.state);
+            }
+            IntermediateOperatorResult::HasMoreOutput { input, output } => {
+                // Record execution stats
+                ctx.batch_manager.record_execution_stats(
+                    ctx.runtime_stats.as_ref(),
+                    output.len(),
+                    result.elapsed,
+                );
+
+                // Send output
+                ctx.runtime_stats.add_rows_out(output.len() as u64);
+                if ctx.output_sender.send(output).await.is_err() {
+                    return Ok(false);
+                }
+
+                // Spawn another execution with same input and state (don't return state)
+                Self::spawn_execution_task(ctx, input, result.state, result.state_id);
+            }
+        }
+        Ok(true)
+    }
+
+    fn spawn_ready_batches(
+        buffer: &mut RowBasedBuffer,
+        ctx: &mut ExecutionContext<Op>,
     ) -> DaftResult<()> {
-        let span = info_span!("IntermediateOp::execute");
-        let compute_runtime = get_compute_runtime();
-        let task_spawner =
-            ExecutionTaskSpawner::new(compute_runtime, memory_manager, runtime_stats.clone(), span);
-        let mut state = op.make_state()?;
-        while let Some(morsel) = receiver.recv().await {
-            loop {
-                let now = Instant::now();
-                let result = op.execute(morsel.clone(), state, &task_spawner).await??;
-                let elapsed = now.elapsed();
+        // Check buffer for ready batches and spawn tasks while states available
+        while !ctx.state_pool.is_empty()
+            && let Some(batch) = buffer.next_batch_if_ready()?
+        {
+            let state_id = *ctx
+                .state_pool
+                .keys()
+                .next()
+                .expect("State pool should have states when has_available() returns true");
+            let state = ctx
+                .state_pool
+                .remove(&state_id)
+                .expect("State pool should have states when has_available() returns true");
 
-                state = result.0;
-                match result.1 {
-                    IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
-                        batch_manager.record_execution_stats(
-                            runtime_stats.clone(),
-                            mp.len(),
-                            elapsed,
-                        );
+            Self::spawn_execution_task(ctx, batch, state, state_id);
+        }
+        Ok(())
+    }
 
-                        if sender.send(mp).await.is_err() {
-                            return Ok(());
+    async fn process_input(
+        node_id: usize,
+        mut receiver: Receiver<Arc<MicroPartition>>,
+        ctx: &mut ExecutionContext<Op>,
+        stats_manager: &RuntimeStatsManagerHandle,
+    ) -> DaftResult<bool> {
+        let (lower, upper) = ctx.batch_manager.initial_requirements().values();
+        let mut buffer = RowBasedBuffer::new(lower, upper);
+        let mut input_closed = false;
+        let mut node_initialized = false;
+        // Main processing loop
+        while !input_closed || !ctx.task_set.is_empty() {
+            tokio::select! {
+                biased;
+
+                // Branch 1: Join completed task (only if tasks exist)
+                Some(join_result) = ctx.task_set.join_next(), if !ctx.task_set.is_empty() => {
+                    if !Self::handle_task_completion(join_result??, ctx).await? {
+                        return Ok(false);
+                    }
+
+                    // After completing a task, update bounds and try to spawn more tasks
+                    let new_requirements = ctx.batch_manager.calculate_batch_size();
+                    let (lower, upper) = new_requirements.values();
+                    buffer.update_bounds(lower, upper);
+
+                    Self::spawn_ready_batches(&mut buffer, ctx)?;
+                }
+
+                // Branch 2: Receive input (only if states available and receiver open)
+                morsel = receiver.recv(), if !ctx.state_pool.is_empty() && !input_closed => {
+                    match morsel {
+                        Some(morsel) => {
+                            if !node_initialized {
+                                stats_manager.activate_node(node_id);
+                                node_initialized = true;
+                            }
+                            ctx.runtime_stats.add_rows_in(morsel.len() as u64);
+                            buffer.push(morsel);
+                            Self::spawn_ready_batches(&mut buffer, ctx)?;
                         }
-                        break;
-                    }
-                    IntermediateOperatorResult::NeedMoreInput(None) => {
-                        break;
-                    }
-                    IntermediateOperatorResult::HasMoreOutput(mp) => {
-                        batch_manager.record_execution_stats(
-                            runtime_stats.clone(),
-                            mp.len(),
-                            elapsed,
-                        );
-                        if sender.send(mp).await.is_err() {
-                            return Ok(());
+                        None => {
+                            input_closed = true;
                         }
                     }
                 }
             }
         }
-        Ok(())
-    }
 
-    pub fn spawn_workers(
-        &self,
-        input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
-        runtime_handle: &mut ExecutionRuntimeContext,
-        maintain_order: bool,
-        memory_manager: Arc<MemoryManager>,
-        batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
-    ) -> OrderingAwareReceiver<Arc<MicroPartition>> {
-        let (output_sender, output_receiver) =
-            create_ordering_aware_receiver_channel(maintain_order, input_receivers.len());
-        for (input_receiver, output_sender) in input_receivers.into_iter().zip(output_sender) {
-            runtime_handle.spawn(
-                Self::run_worker(
-                    self.intermediate_op.clone(),
-                    input_receiver,
-                    output_sender,
-                    self.runtime_stats.clone(),
-                    memory_manager.clone(),
-                    batch_manager.clone(),
-                ),
-                &self.intermediate_op.name(),
-            );
+        // After loop exits, verify invariants
+        debug_assert_eq!(ctx.task_set.len(), 0, "TaskSet should be empty after loop");
+        debug_assert!(input_closed, "Receiver should be closed after loop");
+
+        // Handle remaining buffered data
+        if let Some(last_batch) = buffer.pop_all()? {
+            // Since task_set is empty, all states should be back in the pool
+            let state_id = *ctx
+                .state_pool
+                .keys()
+                .next()
+                .expect("State pool should have states after all tasks completed");
+            let state = ctx
+                .state_pool
+                .remove(&state_id)
+                .expect("State pool should have states after all tasks completed");
+
+            Self::spawn_execution_task(ctx, last_batch, state, state_id);
+
+            // Wait for final task to complete
+            while let Some(join_result) = ctx.task_set.join_next().await {
+                if !Self::handle_task_completion(join_result??, ctx).await? {
+                    return Ok(false);
+                }
+            }
         }
-        output_receiver
+
+        debug_assert_eq!(ctx.task_set.len(), 0, "TaskSet should be empty after loop");
+
+        Ok(true)
     }
 }
 
@@ -300,62 +404,72 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+        // 1. Start children and wrap receivers
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
-
         for child in &self.children {
             let child_result_receiver = child.start(maintain_order, runtime_handle)?;
-            child_result_receivers.push(InitializingCountingReceiver::new(
-                child_result_receiver,
-                self.node_id(),
-                self.runtime_stats.clone(),
-                runtime_handle.stats_manager(),
-            ));
+            child_result_receivers.push(child_result_receiver);
         }
+        // 2. Setup
         let op = self.intermediate_op.clone();
-        let num_workers = op.max_concurrency().context(PipelineExecutionSnafu {
+        let max_concurrency = op.max_concurrency().context(PipelineExecutionSnafu {
             node_name: self.name().to_string(),
         })?;
+        let (destination_sender, destination_receiver) = channel(1);
 
-        let (destination_sender, destination_receiver) = create_channel(0);
-        let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
-        let strategy = op.batching_strategy().context(PipelineExecutionSnafu {
-            node_name: self.name().to_string(),
-        })?;
-        let batch_manager = Arc::new(BatchManager::new(strategy));
-        let dispatch_spawner = self
-            .intermediate_op
-            .dispatch_spawner(batch_manager.clone(), maintain_order);
-        let spawned_dispatch_result = dispatch_spawner.spawn_dispatch(
-            child_result_receivers,
-            num_workers,
-            &mut runtime_handle.handle(),
+        // 3. Create task spawner
+        let compute_runtime = get_compute_runtime();
+        let task_spawner = ExecutionTaskSpawner::new(
+            compute_runtime,
+            runtime_handle.memory_manager(),
+            self.runtime_stats.clone(),
+            info_span!("IntermediateOp::execute"),
         );
+
+        // 4. Spawn process_input task
+        let stats_manager = runtime_handle.stats_manager();
+        let node_id = self.node_id();
+        let runtime_stats = self.runtime_stats.clone();
         runtime_handle.spawn(
-            async move { spawned_dispatch_result.spawned_dispatch_task.await? },
+            async move {
+                // Initialize state pool with max_concurrency states
+                let mut state_pool = HashMap::new();
+                for i in 0..max_concurrency {
+                    state_pool.insert(i, op.make_state());
+                }
+
+                // Create batch manager and task set
+                let batch_manager = Arc::new(BatchManager::new(op.batching_strategy().context(
+                    PipelineExecutionSnafu {
+                        node_name: op.name().to_string(),
+                    },
+                )?));
+                let task_set = OrderingAwareJoinSet::new(maintain_order);
+
+                // Process each child receiver sequentially
+                let mut ctx = ExecutionContext {
+                    op,
+                    task_spawner,
+                    task_set,
+                    state_pool,
+                    output_sender: destination_sender,
+                    batch_manager,
+                    runtime_stats,
+                };
+                for receiver in child_result_receivers {
+                    if !Self::process_input(node_id, receiver, &mut ctx, &stats_manager).await? {
+                        break;
+                    }
+                }
+
+                // Finalize node after processing completes
+                stats_manager.finalize_node(node_id);
+
+                Ok(())
+            },
             &self.name(),
         );
 
-        let mut output_receiver = self.spawn_workers(
-            spawned_dispatch_result.worker_receivers,
-            runtime_handle,
-            maintain_order,
-            runtime_handle.memory_manager(),
-            batch_manager,
-        );
-        let stats_manager = runtime_handle.stats_manager();
-        let node_id = self.node_id();
-        runtime_handle.spawn(
-            async move {
-                while let Some(morsel) = output_receiver.recv().await {
-                    if counting_sender.send(morsel).await.is_err() {
-                        return Ok(());
-                    }
-                }
-                stats_manager.finalize_node(node_id);
-                Ok(())
-            },
-            &op.name(),
-        );
         Ok(destination_receiver)
     }
 

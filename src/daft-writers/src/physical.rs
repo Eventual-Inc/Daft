@@ -4,7 +4,7 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use daft_core::prelude::*;
 use daft_dsl::expr::bound_expr::BoundExpr;
-use daft_logical_plan::OutputFileInfo;
+use daft_logical_plan::{OutputFileInfo, sink_info::FormatSinkOption};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
@@ -82,7 +82,10 @@ impl PhysicalWriterFactory {
     fn select_json_writer_type(file_schema: &SchemaRef) -> DaftResult<WriterType> {
         let native_supported = native_json_writer_supported(file_schema)?;
         if !native_supported {
-            return Err(DaftError::NotImplemented("JSON writes are not supported with extension, timezone with timestamp, binary, or duration data types".to_string()));
+            return Err(DaftError::NotImplemented(
+                "JSON writes are not supported with extension, binary, or duration data types"
+                    .to_string(),
+            ));
         }
         // There is only a native implementation of the JSON writer. PyArrow does not support JSON writes.
         Ok(WriterType::Native)
@@ -118,6 +121,7 @@ impl WriterFactory for PhysicalWriterFactory {
                 self.output_file_info.file_format,
                 partition_values,
                 self.output_file_info.io_config.clone(),
+                self.output_file_info.format_option.clone(),
             ),
             WriterType::Pyarrow => create_pyarrow_file_writer(
                 &self.output_file_info.root_dir,
@@ -126,6 +130,7 @@ impl WriterFactory for PhysicalWriterFactory {
                 self.output_file_info.io_config.as_ref(),
                 self.output_file_info.file_format,
                 partition_values,
+                self.output_file_info.format_option.clone(),
             ),
         }
     }
@@ -138,6 +143,7 @@ pub fn create_pyarrow_file_writer(
     io_config: Option<&daft_io::IOConfig>,
     format: FileFormat,
     partition: Option<&RecordBatch>,
+    format_option: Option<FormatSinkOption>,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
 {
     match format {
@@ -150,9 +156,12 @@ pub fn create_pyarrow_file_writer(
             partition,
         )?)),
         #[cfg(feature = "python")]
-        FileFormat::Csv => Ok(Box::new(crate::pyarrow::PyArrowWriter::new_csv_writer(
-            root_dir, file_idx, io_config, partition,
-        )?)),
+        FileFormat::Csv => {
+            let csv_option = format_option.map(|opt| opt.to_csv()).unwrap_or_default();
+            Ok(Box::new(crate::pyarrow::PyArrowWriter::new_csv_writer(
+                root_dir, file_idx, io_config, partition, csv_option,
+            )?))
+        }
         _ => Err(DaftError::ComputeError(
             "Unsupported file format for physical write".to_string(),
         )),
@@ -166,6 +175,7 @@ fn create_native_writer(
     file_format: FileFormat,
     partition_values: Option<&RecordBatch>,
     io_config: Option<daft_io::IOConfig>,
+    format_option: Option<FormatSinkOption>,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
 {
     match file_format {
@@ -176,7 +186,8 @@ fn create_native_writer(
             create_native_json_writer(root_dir, file_idx, partition_values, io_config)
         }
         FileFormat::Csv => {
-            create_native_csv_writer(root_dir, file_idx, partition_values, io_config)
+            let csv_option = format_option.map(|opt| opt.to_csv()).unwrap_or_default();
+            create_native_csv_writer(root_dir, file_idx, partition_values, io_config, csv_option)
         }
         _ => Err(DaftError::ComputeError(
             "Unsupported file format for native write".to_string(),

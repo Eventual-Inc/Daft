@@ -113,11 +113,11 @@ impl<B: StorageBackend + Send + Sync, W: Send + Sync + 'static> AsyncFileWriter
         self.storage_backend.finalize().await?;
 
         let field = Field::new(RETURN_PATHS_COLUMN_NAME, DataType::Utf8);
-        let filename_series = Series::from_arrow2(
+        let filename_series = Series::from_arrow(
             Arc::new(field.clone()),
-            Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice([&self
-                .filename
-                .to_string_lossy()])),
+            Arc::new(arrow_array::LargeStringArray::from_iter_values(
+                std::iter::once(&self.filename.to_string_lossy()),
+            )),
         )?;
         let record_batch =
             RecordBatch::new_with_size(Schema::new(vec![field]), vec![filename_series], 1)?;

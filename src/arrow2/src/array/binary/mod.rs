@@ -58,6 +58,7 @@ mod data;
 /// * Two consecutives `offsets` casted (`as`) to `usize` are valid slices of `values`.
 /// * `len` is equal to `validity.len()`, when defined.
 #[derive(Clone)]
+#[deprecated(note = "arrow2 migration")]
 pub struct BinaryArray<O: Offset> {
     data_type: DataType,
     offsets: OffsetsBuffer<O>,

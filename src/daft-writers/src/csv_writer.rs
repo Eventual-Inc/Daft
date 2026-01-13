@@ -51,6 +51,7 @@ macro_rules! try_encode_binary_utf8 {
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_io::{IOConfig, SourceType, parse_url, utils::ObjectPath};
+use daft_logical_plan::sink_info::CsvFormatOption;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
@@ -61,26 +62,29 @@ use crate::{
     utils::build_filename,
 };
 
-pub(crate) fn native_csv_writer_supported(file_schema: &SchemaRef) -> DaftResult<bool> {
-    #[allow(deprecated, reason = "arrow2 migration")]
-    let datatypes_convertable = file_schema.to_arrow2()?.fields.iter().all(|field| {
-        field.data_type().can_convert_to_arrow_rs() && !is_nested_type(field.data_type())
-    });
-    Ok(datatypes_convertable)
+/// Returns true if this type is nested (List, FixedSizeList, LargeList, Struct, Union, or Map), or a dictionary of a nested type
+fn native_csv_field_supported(field: &Arc<arrow_schema::Field>) -> bool {
+    if field.extension_type_name().is_some() {
+        return false;
+    }
+
+    !matches!(
+        field.data_type(),
+        arrow_schema::DataType::List(_)
+            | arrow_schema::DataType::FixedSizeList(_, _)
+            | arrow_schema::DataType::LargeList(_)
+            | arrow_schema::DataType::Struct(_)
+            | arrow_schema::DataType::Union(_, _)
+            | arrow_schema::DataType::Map(_, _)
+    )
 }
 
-/// Returns true if this type is nested (List, FixedSizeList, LargeList, Struct, Union, or Map), or a dictionary of a nested type
-pub(crate) fn is_nested_type(dt: &daft_arrow::datatypes::DataType) -> bool {
-    match dt {
-        daft_arrow::datatypes::DataType::Dictionary(_, v, ..) => is_nested_type(v),
-        daft_arrow::datatypes::DataType::List(_)
-        | daft_arrow::datatypes::DataType::FixedSizeList(_, _)
-        | daft_arrow::datatypes::DataType::LargeList(_)
-        | daft_arrow::datatypes::DataType::Struct(_)
-        | daft_arrow::datatypes::DataType::Union(_, _, _)
-        | daft_arrow::datatypes::DataType::Map(_, _) => true,
-        _ => false,
-    }
+pub(crate) fn native_csv_writer_supported(file_schema: &SchemaRef) -> DaftResult<bool> {
+    Ok(file_schema
+        .to_arrow()?
+        .fields
+        .iter()
+        .all(native_csv_field_supported))
 }
 
 pub(crate) fn create_native_csv_writer(
@@ -88,6 +92,7 @@ pub(crate) fn create_native_csv_writer(
     file_idx: usize,
     partition_values: Option<&RecordBatch>,
     io_config: Option<IOConfig>,
+    csv_option: CsvFormatOption,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
 {
     let (source_type, root_dir) = parse_url(root_dir)?;
@@ -105,6 +110,7 @@ pub(crate) fn create_native_csv_writer(
                 filename,
                 partition_values.cloned(),
                 storage_backend,
+                csv_option,
             )))
         }
         SourceType::S3 => {
@@ -117,6 +123,20 @@ pub(crate) fn create_native_csv_writer(
                 filename,
                 partition_values.cloned(),
                 storage_backend,
+                csv_option,
+            )))
+        }
+        SourceType::Gravitino => {
+            let ObjectPath { scheme, .. } = daft_io::utils::parse_object_url(root_dir.as_ref())?;
+            let io_config = io_config.ok_or_else(|| {
+                DaftError::InternalError("IO config is required for Gravitino writes".to_string())
+            })?;
+            let storage_backend = ObjectStorageBackend::new(scheme, io_config);
+            Ok(Box::new(make_csv_writer(
+                filename,
+                partition_values.cloned(),
+                storage_backend,
+                csv_option,
             )))
         }
         _ => Err(DaftError::ValueError(format!(
@@ -130,9 +150,29 @@ fn make_csv_writer<B: StorageBackend + Send + Sync>(
     filename: PathBuf,
     partition_values: Option<RecordBatch>,
     storage_backend: B,
+    csv_option: CsvFormatOption,
 ) -> BatchFileWriter<B, arrow_csv::Writer<B::Writer>> {
-    let builder =
-        Arc::new(|backend: B::Writer| WriterBuilder::new().with_header(true).build(backend));
+    let hdr = csv_option.header.unwrap_or(true);
+    let quote = csv_option.quote;
+    let escape = csv_option.escape;
+    let delimiter = csv_option.delimiter;
+    let builder = Arc::new(move |backend: B::Writer| {
+        let mut builder = WriterBuilder::new().with_header(hdr);
+
+        if let Some(quote) = quote {
+            builder = builder.with_quote(quote);
+        }
+
+        if let Some(escape) = escape {
+            builder = builder.with_escape(escape);
+        }
+
+        if let Some(delimiter) = delimiter {
+            builder = builder.with_delimiter(delimiter);
+        }
+        builder.build(backend)
+    });
+
     let write_fn = Arc::new(
         |writer: &mut arrow_csv::Writer<B::Writer>, batches: &[arrow_array::RecordBatch]| {
             fn transform_batch(batch: ArrowRecordBatch) -> Result<ArrowRecordBatch, ArrowError> {

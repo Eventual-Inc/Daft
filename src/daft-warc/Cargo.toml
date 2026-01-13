@@ -1,5 +1,5 @@
 [dependencies]
-daft-arrow = {path = "../daft-arrow"}
+arrow-array = {workspace = true}
 chrono = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}

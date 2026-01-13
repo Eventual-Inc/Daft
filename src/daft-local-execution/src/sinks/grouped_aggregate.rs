@@ -258,6 +258,15 @@ impl GroupedAggregateSink {
                 input_schema,
                 group_by,
             )?;
+
+        // MapGroups aggregations cannot be decomposed into partial / final stages and
+        // must see the full group in a single pass. Detect this case so that we force
+        // a partition-only strategy and run the original aggregations during the
+        // final aggregation step.
+        let has_map_groups = aggregations
+            .iter()
+            .any(|agg| matches!(agg.as_ref(), daft_dsl::AggExpr::MapGroups { .. }));
+
         let final_group_by = if !partial_agg_exprs.is_empty() {
             group_by
                 .iter()
@@ -270,11 +279,18 @@ impl GroupedAggregateSink {
         } else {
             group_by.to_vec()
         };
-        let strategy = if partial_agg_exprs.is_empty() && !final_agg_exprs.is_empty() {
+
+        let strategy = if has_map_groups {
+            // Always use partition-only for MapGroups so that we only hash-partition
+            // the data by the group keys and then run the original MapGroups
+            // aggregation once per partition in `finalize`.
+            Some(AggStrategy::PartitionOnly)
+        } else if partial_agg_exprs.is_empty() && !final_agg_exprs.is_empty() {
             Some(AggStrategy::PartitionOnly)
         } else {
             None
         };
+
         Ok(Self {
             grouped_aggregate_params: Arc::new(GroupedAggregateParams {
                 original_aggregations: aggregations.to_vec(),

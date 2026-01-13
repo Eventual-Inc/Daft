@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from openai import OpenAI
 
 from daft import DataType
-from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedder
+from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedder, get_input_text_token_limit_for_model
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
 from daft.ai.typing import EmbeddingDimensions, EmbedTextOptions, Options, UDFOptions
 from daft.utils import from_dict
@@ -61,9 +61,18 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
             raise ValueError("Failed to determine embedding dimensions from LM Studio.") from ex
 
     def instantiate(self) -> TextEmbedder:
+        # Get batch_token_limit from embed_options, default to 300_000
+        batch_token_limit = self.embed_options.get("batch_token_limit", 300_000)
+
+        # Get input_text_token_limit from model profile using helper function
+        # This allows LM Studio to use the same model profiles as OpenAI
+        input_text_token_limit = get_input_text_token_limit_for_model(self.model_name)
+
         return OpenAITextEmbedder(
             provider_options=self.provider_options,
             model=self.model_name,
             embed_options=self.embed_options,
             provider_name=self.get_provider(),
+            batch_token_limit=batch_token_limit,
+            input_text_token_limit=input_text_token_limit,
         )

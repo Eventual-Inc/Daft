@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, time::Duration};
+use std::{collections::VecDeque, num::NonZeroUsize, time::Duration};
 
 use crate::{
     dynamic_batching::{BatchingState, BatchingStrategy},
@@ -115,7 +115,7 @@ impl LatencyConstrainedBatchingState {
 impl BatchingState for LatencyConstrainedBatchingState {
     fn record_execution_stat(
         &mut self,
-        _stats: std::sync::Arc<dyn RuntimeStats>,
+        _stats: &dyn RuntimeStats,
         batch_size: usize,
         duration: Duration,
     ) {
@@ -157,7 +157,7 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
         let default_morsel_size = daft_context::get_context()
             .execution_config()
             .default_morsel_size;
-        let upper_bound = default_morsel_size.min(256);
+        let upper_bound = default_morsel_size.min(NonZeroUsize::new(256).unwrap());
         // start with a small initial requirement that matches our search space
         MorselSizeRequirement::Flexible(1, upper_bound)
     }
@@ -269,7 +269,10 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
             state.b_high,
             state.current_batch_size,
         );
-        MorselSizeRequirement::Flexible(self.b_min, state.current_batch_size)
+        MorselSizeRequirement::Flexible(
+            self.b_min,
+            NonZeroUsize::new(state.current_batch_size).unwrap_or(NonZeroUsize::MIN),
+        )
     }
 }
 
@@ -314,7 +317,7 @@ mod tests {
         state.b_high = 200;
 
         // Latency = 150ms, target = 100ms + 10ms = 110ms tolerance
-        state.record_execution_stat(stats(), 100, Duration::from_millis(150));
+        state.record_execution_stat(stats().as_ref(), 100, Duration::from_millis(150));
         let _req = strategy.calculate_new_requirements(&mut state);
 
         // Should contract search space (search_high should be reduced)
@@ -331,7 +334,7 @@ mod tests {
         state.b_high = 100;
 
         // Latency = 50ms, target = 100ms - 10ms = 90ms tolerance
-        state.record_execution_stat(stats(), 50, Duration::from_millis(50));
+        state.record_execution_stat(stats().as_ref(), 50, Duration::from_millis(50));
 
         let _req = strategy.calculate_new_requirements(&mut state);
 
@@ -349,7 +352,7 @@ mod tests {
 
         // Latency = 100ms, exactly at target
 
-        state.record_execution_stat(stats(), 80, Duration::from_millis(100));
+        state.record_execution_stat(stats().as_ref(), 80, Duration::from_millis(100));
 
         let _req = strategy.calculate_new_requirements(&mut state);
 
@@ -371,7 +374,7 @@ mod tests {
         };
 
         let mut state = strategy.make_state();
-        state.record_execution_stat(stats(), 5, Duration::from_millis(50));
+        state.record_execution_stat(stats().as_ref(), 5, Duration::from_millis(50));
 
         let _req = strategy.calculate_new_requirements(&mut state);
 
@@ -396,9 +399,9 @@ mod tests {
         let strategy = create_strategy();
         let mut state = strategy.make_state();
 
-        state.record_execution_stat(stats(), 50, Duration::from_millis(80));
-        state.record_execution_stat(stats(), 60, Duration::from_millis(120));
-        state.record_execution_stat(stats(), 70, Duration::from_millis(100));
+        state.record_execution_stat(stats().as_ref(), 50, Duration::from_millis(80));
+        state.record_execution_stat(stats().as_ref(), 60, Duration::from_millis(120));
+        state.record_execution_stat(stats().as_ref(), 70, Duration::from_millis(100));
 
         let _req = strategy.calculate_new_requirements(&mut state);
 
@@ -414,7 +417,7 @@ mod tests {
         // Simulate multiple iterations with good latency
         for _ in 0..5 {
             state.record_execution_stat(
-                stats(),
+                stats().as_ref(),
                 state.current_batch_size,
                 Duration::from_millis(95),
             );
@@ -432,7 +435,7 @@ mod tests {
         let mut state = strategy.make_state();
         state.b_high = strategy.b_max + 100;
 
-        state.record_execution_stat(stats(), 50, Duration::from_millis(50));
+        state.record_execution_stat(stats().as_ref(), 50, Duration::from_millis(50));
         let _req = strategy.calculate_new_requirements(&mut state);
         assert!(state.b_high <= strategy.b_max);
         assert!(state.current_batch_size <= strategy.b_max);

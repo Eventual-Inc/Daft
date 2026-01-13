@@ -5,7 +5,7 @@ use daft_arrow::array::Array;
 
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
-use crate::{array::DataArray, datatypes::DaftPhysicalType};
+use crate::{array::DataArray, datatypes::DaftPhysicalType, prelude::FromArrow};
 
 macro_rules! impl_variable_length_concat {
     ($fn_name:ident, $arrow_type:ty, $create_fn: ident) => {
@@ -98,7 +98,7 @@ where
             _ => {
                 let cat_array: Box<dyn Array> =
                     daft_arrow::compute::concatenate::concatenate(arrow_arrays.as_slice())?;
-                Self::try_from((field.clone(), cat_array))
+                Self::from_arrow2(field.clone(), cat_array)
             }
         }
     }

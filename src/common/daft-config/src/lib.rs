@@ -1,3 +1,5 @@
+use std::num::NonZeroUsize;
+
 pub use common_io_config::IOConfig;
 use serde::{Deserialize, Serialize};
 
@@ -125,7 +127,7 @@ pub struct DaftExecutionConfig {
     pub partial_aggregation_threshold: usize,
     pub high_cardinality_aggregation_threshold: f64,
     pub read_sql_partition_size_bytes: usize,
-    pub default_morsel_size: usize,
+    pub default_morsel_size: NonZeroUsize,
     pub shuffle_algorithm: String,
     pub pre_shuffle_merge_threshold: usize,
     pub scantask_max_parallel: usize,
@@ -167,7 +169,7 @@ impl Default for DaftExecutionConfig {
             partial_aggregation_threshold: 10000,
             high_cardinality_aggregation_threshold: 0.8,
             read_sql_partition_size_bytes: 512 * 1024 * 1024, // 512MB
-            default_morsel_size: 128 * 1024,
+            default_morsel_size: NonZeroUsize::new(128 * 1024).unwrap(),
             shuffle_algorithm: "auto".to_string(),
             pre_shuffle_merge_threshold: 1024 * 1024 * 1024, // 1GB
             scantask_max_parallel: 8,

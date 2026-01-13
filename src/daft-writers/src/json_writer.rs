@@ -17,14 +17,35 @@ use crate::{
 type JsonFinishFn<B> =
     Arc<dyn Fn(LineDelimitedWriter<<B as StorageBackend>::Writer>) -> DaftResult<()> + Send + Sync>;
 
-/// Helper function that checks if we support native writes given the file format, root directory, and schema.
+fn native_json_field_supported(field: &Arc<arrow_schema::Field>) -> bool {
+    if field.extension_type_name().is_some() {
+        return false;
+    }
+
+    match field.data_type() {
+        arrow_schema::DataType::Duration(_) => false,
+        arrow_schema::DataType::Binary
+        | arrow_schema::DataType::FixedSizeBinary(_)
+        | arrow_schema::DataType::LargeBinary => false,
+        arrow_schema::DataType::List(inner)
+        | arrow_schema::DataType::FixedSizeList(inner, _)
+        | arrow_schema::DataType::LargeList(inner) => native_json_field_supported(inner),
+        arrow_schema::DataType::Struct(fields) => fields.iter().all(native_json_field_supported),
+        arrow_schema::DataType::Union(fields, _) => fields
+            .iter()
+            .all(|(_, field)| native_json_field_supported(field)),
+        arrow_schema::DataType::Map(inner, _) => native_json_field_supported(inner),
+        _ => true,
+    }
+}
+
+/// Helper function that checks if we support native writes given the schema
 pub(crate) fn native_json_writer_supported(file_schema: &SchemaRef) -> DaftResult<bool> {
-    // TODO(desmond): Currently we do not support extension and timestamp types.
-    #[allow(deprecated, reason = "arrow2 migration")]
-    let datatypes_convertable = file_schema.to_arrow2()?.fields.iter().all(|field| {
-        field.data_type().can_convert_to_arrow_rs() && field.data_type().can_convert_to_json()
-    });
-    Ok(datatypes_convertable)
+    Ok(file_schema
+        .to_arrow()?
+        .fields
+        .iter()
+        .all(native_json_field_supported))
 }
 
 pub(crate) fn create_native_json_writer(

@@ -219,10 +219,8 @@ impl IntermediateOperator for InnerHashJoinProbeOperator {
         res
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
-        Ok(InnerHashJoinProbeState::Building(
-            self.probe_state_bridge.clone(),
-        ))
+    fn make_state(&self) -> Self::State {
+        InnerHashJoinProbeState::Building(self.probe_state_bridge.clone())
     }
     fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
         Ok(crate::dynamic_batching::StaticBatchingStrategy::new(

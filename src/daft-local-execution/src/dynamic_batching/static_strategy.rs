@@ -19,7 +19,7 @@ impl StaticBatchingStrategy {
 impl BatchingState for () {
     fn record_execution_stat(
         &mut self,
-        _stats: std::sync::Arc<dyn crate::runtime_stats::RuntimeStats>,
+        _stats: &dyn crate::runtime_stats::RuntimeStats,
         _batch_size: usize,
         _duration: std::time::Duration,
     ) {
@@ -40,11 +40,13 @@ impl BatchingStrategy for StaticBatchingStrategy {
 }
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
+
     use super::*;
 
     #[test]
     fn test_static_strategy_creation() {
-        let req = MorselSizeRequirement::Flexible(1, 32);
+        let req = MorselSizeRequirement::Flexible(1, NonZeroUsize::new(32).unwrap());
         let strategy = StaticBatchingStrategy::new(req);
 
         assert_eq!(strategy.req, req);
@@ -52,7 +54,7 @@ mod tests {
 
     #[test]
     fn test_static_initial_requirements() {
-        let req = MorselSizeRequirement::Flexible(5, 100);
+        let req = MorselSizeRequirement::Flexible(5, NonZeroUsize::new(100).unwrap());
         let strategy = StaticBatchingStrategy::new(req);
 
         assert_eq!(strategy.initial_requirements(), req);
@@ -60,7 +62,7 @@ mod tests {
 
     #[test]
     fn test_static_calculate_requirements_ignores_reports() {
-        let req = MorselSizeRequirement::Flexible(2, 64);
+        let req = MorselSizeRequirement::Flexible(2, NonZeroUsize::new(64).unwrap());
         let strategy = StaticBatchingStrategy::new(req);
         let mut state = strategy.make_state();
 
@@ -75,7 +77,7 @@ mod tests {
 
     #[test]
     fn test_static_consistency_across_calls() {
-        let req = MorselSizeRequirement::Flexible(1, 256);
+        let req = MorselSizeRequirement::Flexible(1, NonZeroUsize::new(256).unwrap());
         let strategy = StaticBatchingStrategy::new(req);
         let mut state = strategy.make_state();
 

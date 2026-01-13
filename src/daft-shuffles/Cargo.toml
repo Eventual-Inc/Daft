@@ -1,10 +1,10 @@
 [dependencies]
+arrow-schema = {workspace = true}
 arrow-flight = {workspace = true}
 arrow-ipc = {workspace = true}
 async-channel = "2.5.0"
 common-error = {path = "../common/error", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
-daft-arrow = {path = "../daft-arrow"}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-io = {path = "../daft-io", default-features = false}

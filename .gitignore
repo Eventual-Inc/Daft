@@ -70,3 +70,4 @@ site
 # AGENT Prompting Templates
 AGENTS.md
 CLAUDE.local.md
+.claude/**/*.md

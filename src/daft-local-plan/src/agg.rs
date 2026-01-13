@@ -282,13 +282,14 @@ pub fn populate_aggregation_stages_bound_with_schema(
                 let result = numerator.div(denom).div(n);
                 final_stage(result);
             }
-            AggExpr::MapGroups { func, inputs } => {
-                // No first stage aggregation for MapGroups, do all the work in the second stage.
-                let map_groups_col = second_stage!(AggExpr::MapGroups {
-                    func: func.clone(),
-                    inputs: inputs.clone()
-                });
-                final_stage(map_groups_col);
+            AggExpr::MapGroups { .. } => {
+                // MapGroups UDFs cannot be decomposed into partial / final stages.
+                // We rely on evaluating the original MapGroups aggregation in a single
+                // pass during grouped aggregation, so we intentionally do not add
+                // any MapGroups expressions to the intermediate aggregation stages
+                // or to the final projection list here. The grouped aggregate sinks
+                // will call `agg()` with the original MapGroups expression when
+                // `partial_agg_exprs` is empty.
             }
             // Only necessary for Flotilla
             AggExpr::ApproxSketch(expr, sketch_type) => {

@@ -4,11 +4,12 @@ use std::{
     task::{Context, Poll},
 };
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 
-pub(crate) type JoinSetId = tokio::task::Id;
-#[derive(Debug)]
-pub(crate) struct JoinSet<T> {
+pub type JoinSetId = tokio::task::Id;
+
+#[derive(Debug, Default)]
+pub struct JoinSet<T> {
     inner: tokio::task::JoinSet<T>,
 }
 
@@ -35,7 +36,7 @@ impl<T: Send + 'static> JoinSet<T> {
         let res = self.inner.join_next().await;
         match res {
             Some(Ok(result)) => Some(Ok(result)),
-            Some(Err(e)) => Some(Err(DaftError::External(e.into()))),
+            Some(Err(e)) => Some(Err(e.into())),
             None => None,
         }
     }
@@ -44,7 +45,7 @@ impl<T: Send + 'static> JoinSet<T> {
         let res = self.inner.poll_join_next(cx);
         match res {
             Poll::Ready(Some(Ok(result))) => Poll::Ready(Some(Ok(result))),
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(DaftError::External(e.into())))),
+            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e.into()))),
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Pending => Poll::Pending,
         }
@@ -54,7 +55,16 @@ impl<T: Send + 'static> JoinSet<T> {
         let res = self.inner.join_next_with_id().await;
         match res {
             Some(Ok((id, result))) => Some((id, Ok(result))),
-            Some(Err(e)) => Some((e.id(), Err(DaftError::External(e.into())))),
+            Some(Err(e)) => Some((e.id(), Err(e.into()))),
+            None => None,
+        }
+    }
+
+    pub fn try_join_next(&mut self) -> Option<DaftResult<T>> {
+        let res = self.inner.try_join_next();
+        match res {
+            Some(Ok(result)) => Some(Ok(result)),
+            Some(Err(e)) => Some(Err(e.into())),
             None => None,
         }
     }
@@ -63,7 +73,7 @@ impl<T: Send + 'static> JoinSet<T> {
         let res = self.inner.try_join_next_with_id();
         match res {
             Some(Ok((id, result))) => Some((id, Ok(result))),
-            Some(Err(e)) => Some((e.id(), Err(DaftError::External(e.into())))),
+            Some(Err(e)) => Some((e.id(), Err(e.into()))),
             None => None,
         }
     }
@@ -75,6 +85,10 @@ impl<T: Send + 'static> JoinSet<T> {
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
+
+    pub fn abort_all(&mut self) {
+        self.inner.abort_all();
+    }
 }
 
 impl<T: Send + 'static> From<tokio::task::JoinSet<T>> for JoinSet<T> {
@@ -83,23 +97,29 @@ impl<T: Send + 'static> From<tokio::task::JoinSet<T>> for JoinSet<T> {
     }
 }
 
-pub(crate) fn create_join_set<T: Send + 'static>() -> JoinSet<T> {
+pub fn create_join_set<T: Send + 'static>() -> JoinSet<T> {
     JoinSet::new()
 }
 
-pub(crate) struct OrderedJoinSet<T> {
+pub struct OrderedJoinSet<T> {
     join_set: JoinSet<T>,
     order: VecDeque<tokio::task::Id>,
     finished: HashMap<tokio::task::Id, DaftResult<T>>,
 }
 
-impl<T: Send + 'static> OrderedJoinSet<T> {
-    pub fn new() -> Self {
+impl<T: Send + 'static> Default for OrderedJoinSet<T> {
+    fn default() -> Self {
         Self {
-            join_set: create_join_set(),
+            join_set: JoinSet::new(),
             order: VecDeque::new(),
             finished: HashMap::new(),
         }
+    }
+}
+
+impl<T: Send + 'static> OrderedJoinSet<T> {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub fn spawn(&mut self, task: impl Future<Output = T> + Send + 'static) {
@@ -133,6 +153,60 @@ impl<T: Send + 'static> OrderedJoinSet<T> {
 
     pub fn num_pending(&self) -> usize {
         self.join_set.len() + self.finished.len()
+    }
+
+    pub fn len(&self) -> usize {
+        self.num_pending()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+/// An ordering-aware join set that can be either ordered or unordered
+pub enum OrderingAwareJoinSet<T> {
+    Ordered(OrderedJoinSet<T>),
+    Unordered(JoinSet<T>),
+}
+
+impl<T: Send + 'static> OrderingAwareJoinSet<T> {
+    pub fn new(maintain_order: bool) -> Self {
+        if maintain_order {
+            Self::Ordered(OrderedJoinSet::new())
+        } else {
+            Self::Unordered(JoinSet::new())
+        }
+    }
+
+    pub fn spawn(&mut self, task: impl Future<Output = T> + Send + 'static) {
+        match self {
+            Self::Ordered(join_set) => join_set.spawn(task),
+            Self::Unordered(join_set) => {
+                join_set.spawn(task);
+            }
+        }
+    }
+
+    pub async fn join_next(&mut self) -> Option<DaftResult<T>> {
+        match self {
+            Self::Ordered(join_set) => join_set.join_next().await,
+            Self::Unordered(join_set) => join_set.join_next().await,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self {
+            Self::Ordered(join_set) => join_set.len(),
+            Self::Unordered(join_set) => join_set.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Self::Ordered(join_set) => join_set.is_empty(),
+            Self::Unordered(join_set) => join_set.is_empty(),
+        }
     }
 }
 
@@ -267,6 +341,57 @@ mod tests {
         // Second task should fail
         assert!(join_set.join_next().await.unwrap().is_err());
         // Third task should succeed
+        assert_eq!(join_set.join_next().await.unwrap().unwrap(), 3);
+        assert!(join_set.join_next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_ordering_aware_joinset_ordered() {
+        let mut join_set = OrderingAwareJoinSet::new(true);
+
+        // Spawn tasks with different delays
+        join_set.spawn(async {
+            sleep(Duration::from_millis(100)).await;
+            1
+        });
+        join_set.spawn(async {
+            sleep(Duration::from_millis(50)).await;
+            2
+        });
+        join_set.spawn(async {
+            sleep(Duration::from_millis(200)).await;
+            3
+        });
+
+        // Results should come back in order
+        assert_eq!(join_set.join_next().await.unwrap().unwrap(), 1);
+        assert_eq!(join_set.join_next().await.unwrap().unwrap(), 2);
+        assert_eq!(join_set.join_next().await.unwrap().unwrap(), 3);
+        assert!(join_set.join_next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_ordering_aware_joinset_unordered() {
+        let mut join_set = OrderingAwareJoinSet::new(false);
+
+        // Spawn tasks with different delays
+        join_set.spawn(async {
+            sleep(Duration::from_millis(100)).await;
+            1
+        });
+        join_set.spawn(async {
+            sleep(Duration::from_millis(50)).await;
+            2
+        });
+        join_set.spawn(async {
+            sleep(Duration::from_millis(200)).await;
+            3
+        });
+
+        // For unordered, results should come back as they complete
+        // Task 2 completes first (50ms), then 1 (100ms), then 3 (200ms)
+        assert_eq!(join_set.join_next().await.unwrap().unwrap(), 2);
+        assert_eq!(join_set.join_next().await.unwrap().unwrap(), 1);
         assert_eq!(join_set.join_next().await.unwrap().unwrap(), 3);
         assert!(join_set.join_next().await.is_none());
     }

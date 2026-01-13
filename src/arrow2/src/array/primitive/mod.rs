@@ -51,6 +51,7 @@ pub use mutable::*;
 ///
 /// ```
 #[derive(Clone)]
+#[deprecated(note = "arrow2 migration")]
 pub struct PrimitiveArray<T: NativeType> {
     data_type: DataType,
     values: Buffer<T>,

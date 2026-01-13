@@ -7,6 +7,9 @@ on:
   #   branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 env:
   DAFT_ANALYTICS_ENABLED: '0'
   TPCH_SCALE_FACTOR: '4'

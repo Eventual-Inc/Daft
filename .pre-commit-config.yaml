@@ -67,13 +67,19 @@ repos:
   rev: v0.14.10
   hooks:
     # Run the linter.
-  - id: ruff
+  - id: ruff-check
     args: [--fix, --exit-non-zero-on-fix, --show-fixes]
     exclude: benchmarking
     # Run the formatter.
   - id: ruff-format
     name: Python code Formatting
     exclude: benchmarking
+
+- repo: https://github.com/astral-sh/uv-pre-commit
+  # uv version.
+  rev: 0.9.22
+  hooks:
+  - id: uv-lock
 
 - repo: local
   hooks:

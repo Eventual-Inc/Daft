@@ -118,6 +118,7 @@ fn build_object_path(
 mod tests {
     use std::sync::Arc;
 
+    use arrow_array::create_array;
     use common_error::{DaftError, DaftResult};
     use daft_core::{
         prelude::{DataType, Field},
@@ -129,25 +130,23 @@ mod tests {
 
     #[test]
     fn test_record_batch_to_partition_string() -> DaftResult<()> {
-        let year_series = Series::from_arrow2(
+        let year_series = Series::from_arrow(
             Arc::new(Field::new("year", DataType::Utf8)),
-            Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(&["2023"])),
+            create_array!(LargeUtf8, ["2023"]),
         )?;
-        let month_series = Series::from_arrow2(
+        let month_series = Series::from_arrow(
             Arc::new(Field::new("month", DataType::Utf8)),
-            Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(&["1"])),
+            create_array!(LargeUtf8, ["1"]),
         )?;
         // Include a column with a null value.
-        let day_series = Series::from_arrow2(
+        let day_series = Series::from_arrow(
             Arc::new(Field::new("day", DataType::Utf8)),
-            Box::new(daft_arrow::array::Utf8Array::<i64>::from([None::<&str>])),
+            create_array!(LargeUtf8, [None::<&str>]),
         )?;
         // Include a column with a name that needs to be URL-encoded.
-        let date_series = Series::from_arrow2(
+        let date_series = Series::from_arrow(
             Arc::new(Field::new("today's date", DataType::Utf8)),
-            Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(&[
-                "2025/04/29",
-            ])),
+            create_array!(LargeUtf8, ["2025/04/29"]),
         )?;
         let batch = RecordBatch::from_nonempty_columns(vec![
             year_series,
@@ -178,15 +177,13 @@ mod tests {
 
     #[test]
     fn test_record_batch_to_partition_string_multi_row_error() -> DaftResult<()> {
-        let year_series = Series::from_arrow2(
+        let year_series = Series::from_arrow(
             Arc::new(Field::new("year", DataType::Utf8)),
-            Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(&[
-                "2023", "2024",
-            ])),
+            create_array!(LargeUtf8, ["2023", "2024"]),
         )?;
-        let month_series = Series::from_arrow2(
+        let month_series = Series::from_arrow(
             Arc::new(Field::new("month", DataType::Utf8)),
-            Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(&["1", "2"])),
+            create_array!(LargeUtf8, ["1", "2"]),
         )?;
         let batch = RecordBatch::from_nonempty_columns(vec![year_series, month_series])?;
 

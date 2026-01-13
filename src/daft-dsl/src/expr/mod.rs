@@ -332,6 +332,60 @@ pub struct ApproxPercentileParams {
     pub force_list_output: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum MapGroupsFn {
+    /// Legacy @daft.udf entry point.
+    Legacy(LegacyPythonUDF),
+    /// New Python scalar UDF (@daft.func / @daft.cls) in batch mode.
+    Python(PyScalarFn),
+}
+
+impl MapGroupsFn {
+    pub fn display(&self, inputs: &[ExprRef]) -> std::result::Result<String, std::fmt::Error> {
+        match self {
+            Self::Legacy(udf) => {
+                let func = FunctionExpr::Python(udf.clone());
+                function_display_without_formatter(&func, inputs)
+            }
+            Self::Python(py_fn) => Ok(py_fn.to_string()),
+        }
+    }
+
+    pub fn semantic_id(&self, inputs: &[ExprRef], schema: &Schema) -> FieldID {
+        match self {
+            Self::Legacy(udf) => {
+                let func = FunctionExpr::Python(udf.clone());
+                function_semantic_id(&func, inputs, schema)
+            }
+            Self::Python(py_fn) => {
+                let inputs = inputs
+                    .iter()
+                    .map(|expr| expr.semantic_id(schema).id.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                FieldID::new(format!("PyScalarFn_{}({inputs})", py_fn.id()))
+            }
+        }
+    }
+
+    pub fn to_field(&self, inputs: &[ExprRef], schema: &Schema) -> DaftResult<Field> {
+        match self {
+            Self::Legacy(udf) => {
+                let func = FunctionExpr::Python(udf.clone());
+                func.to_field(inputs, schema, &func)
+            }
+            Self::Python(py_fn) => py_fn.to_field(schema),
+        }
+    }
+
+    pub fn with_new_children(&self, children: Vec<ExprRef>) -> Self {
+        match self {
+            Self::Legacy(udf) => Self::Legacy(udf.clone()),
+            Self::Python(py_fn) => Self::Python(py_fn.with_new_children(children)),
+        }
+    }
+}
+
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum AggExpr {
     #[display("count({_0}, {_1})")]
@@ -391,9 +445,9 @@ pub enum AggExpr {
     #[display("skew({_0}")]
     Skew(ExprRef),
 
-    #[display("{}", function_display_without_formatter(func, inputs)?)]
+    #[display("{}", func.display(inputs)?)]
     MapGroups {
-        func: FunctionExpr,
+        func: MapGroupsFn,
         inputs: Vec<ExprRef>,
     },
 }
@@ -613,7 +667,7 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_skew()"))
             }
-            Self::MapGroups { func, inputs } => function_semantic_id(func, inputs, schema),
+            Self::MapGroups { func, inputs } => func.semantic_id(inputs, schema),
         }
     }
 
@@ -666,7 +720,7 @@ impl AggExpr {
             Self::Concat(_) => Self::Concat(first_child()),
             Self::Skew(_) => Self::Skew(first_child()),
             Self::MapGroups { func, inputs: _ } => Self::MapGroups {
-                func: func.clone(),
+                func: func.with_new_children(children.clone()),
                 inputs: children,
             },
             Self::ApproxPercentile(ApproxPercentileParams {
@@ -747,7 +801,7 @@ impl AggExpr {
                                 field.dtype, field.name,
                             )));
                         }
-                        DataType::from(&*daft_sketch::ARROW2_DDSKETCH_DTYPE)
+                        DataType::try_from(&*daft_sketch::ARROW_DDSKETCH_DTYPE)?
                     }
                     SketchType::HyperLogLog => daft_core::array::ops::HLL_SKETCH_DTYPE,
                 };
@@ -817,7 +871,7 @@ impl AggExpr {
                 ))
             }
 
-            Self::MapGroups { func, inputs } => func.to_field(inputs.as_slice(), schema, func),
+            Self::MapGroups { func, inputs } => func.to_field(inputs.as_slice(), schema),
         }
     }
 }
@@ -1358,7 +1412,7 @@ impl Expr {
                 FieldID::new(format!("{child_id}.window_function()"))
             }
             Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
-                function_name: name,
+                func_id: id,
                 args: children,
                 ..
             }))) => {
@@ -1366,10 +1420,10 @@ impl Expr {
                     .iter()
                     .map(|expr| expr.semantic_id(schema).id)
                     .join(",");
-                FieldID::new(format!("RowWisePythonUDF_{name}({children_ids})"))
+                FieldID::new(format!("RowWisePythonUDF_{id}({children_ids})"))
             }
             Self::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
-                function_name: name,
+                func_id: id,
                 args: children,
                 ..
             }))) => {
@@ -1377,7 +1431,7 @@ impl Expr {
                     .iter()
                     .map(|expr| expr.semantic_id(schema).id)
                     .join(",");
-                FieldID::new(format!("BatchPythonUDF_{name}({children_ids})"))
+                FieldID::new(format!("BatchPythonUDF_{id}({children_ids})"))
             }
             Self::VLLM(VLLMExpr {
                 model,

@@ -13,6 +13,7 @@ use crate::{
         growable::{Growable, GrowableArray},
     },
     datatypes::{BooleanArray, DaftArrayType, DaftArrowBackedType, DataType},
+    prelude::FromArrow,
 };
 
 impl<T> DataArray<T>
@@ -21,7 +22,7 @@ where
 {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
         let result = daft_arrow::compute::filter::filter(self.data(), mask.as_arrow2())?;
-        Self::try_from((self.field.clone(), result))
+        Self::from_arrow2(self.field.clone(), result)
     }
 }
 

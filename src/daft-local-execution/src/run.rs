@@ -233,7 +233,7 @@ impl NativeExecutor {
                 let memory_manager = get_or_init_memory_manager();
                 let mut runtime_handle =
                     ExecutionRuntimeContext::new(memory_manager.clone(), stats_manager_handle);
-                let receiver = pipeline.start(exec_cfg.maintain_order, &mut runtime_handle)?;
+                let mut receiver = pipeline.start(exec_cfg.maintain_order, &mut runtime_handle)?;
 
                 while let Some(val) = receiver.recv().await {
                     if tx.send(val).await.is_err() {

@@ -4,7 +4,7 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
-use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
+use common_runtime::{JoinSet, get_compute_pool_num_threads, get_compute_runtime};
 use daft_core::prelude::SchemaRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
@@ -12,11 +12,8 @@ use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
 
 use crate::{
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
-    channel::{
-        OrderingAwareReceiver, Receiver, Sender, create_channel,
-        create_ordering_aware_receiver_channel,
-    },
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
+    channel::{OrderingAwareReceiver, Receiver, Sender, create_ordering_aware_receiver_channel},
     dispatcher::{DispatchSpawner, DynamicUnorderedDispatcher, RoundRobinDispatcher},
     dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
@@ -174,7 +171,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                 match result.1 {
                     StreamingSinkOutput::NeedMoreInput(mp) => {
                         batch_manager.record_execution_stats(
-                            runtime_stats.clone(),
+                            runtime_stats.as_ref(),
                             mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
                             elapsed,
                         );
@@ -187,7 +184,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                     }
                     StreamingSinkOutput::HasMoreOutput(mp) => {
                         batch_manager.record_execution_stats(
-                            runtime_stats.clone(),
+                            runtime_stats.as_ref(),
                             mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
                             elapsed,
                         );
@@ -199,7 +196,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
                     }
                     StreamingSinkOutput::Finished(mp) => {
                         batch_manager.record_execution_stats(
-                            runtime_stats.clone(),
+                            runtime_stats.as_ref(),
                             mp.as_ref().map(|mp| mp.len()).unwrap_or(0),
                             elapsed,
                         );
@@ -218,7 +215,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
     fn spawn_workers(
         op: Arc<Op>,
         input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
-        task_set: &mut TaskSet<DaftResult<Op::State>>,
+        task_set: &mut JoinSet<DaftResult<Op::State>>,
         runtime_stats: Arc<dyn RuntimeStats>,
         maintain_order: bool,
         memory_manager: Arc<MemoryManager>,
@@ -335,7 +332,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<tokio::sync::mpsc::Receiver<Arc<MicroPartition>>> {
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
         for child in &self.children {
             let child_result_receiver = child.start(maintain_order, runtime_handle)?;
@@ -347,7 +344,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
             ));
         }
 
-        let (destination_sender, destination_receiver) = create_channel(0);
+        let (destination_sender, destination_receiver) = tokio::sync::mpsc::channel(1);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
 
         let op = self.op.clone();
@@ -371,7 +368,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         let node_id = self.node_id();
         runtime_handle.spawn(
             async move {
-                let mut task_set = TaskSet::new();
+                let mut task_set = JoinSet::new();
                 let mut output_receiver = Self::spawn_workers(
                     op.clone(),
                     spawned_dispatch_result.worker_receivers,

@@ -249,12 +249,14 @@ pub fn udf(
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 pub fn row_wise_udf(
+    func_id: &str,
     name: &str,
     cls: Py<PyAny>,
     method: Py<PyAny>,
+    builtin_name: bool,
     is_async: bool,
     return_dtype: PyDataType,
-    gpus: usize,
+    gpus: f64,
     use_process: Option<bool>,
     max_concurrency: Option<usize>,
     max_retries: Option<usize>,
@@ -284,12 +286,14 @@ pub fn row_wise_udf(
 
     Ok(PyExpr {
         expr: crate::python_udf::row_wise_udf(
+            func_id,
             name,
             cls.into(),
             method.into(),
+            builtin_name,
             is_async,
             return_dtype.into(),
-            gpus,
+            FloatWrapper(gpus),
             use_process,
             max_concurrency,
             max_retries,
@@ -304,12 +308,14 @@ pub fn row_wise_udf(
 #[pyfunction]
 #[allow(clippy::too_many_arguments)]
 pub fn batch_udf(
+    func_id: &str,
     name: &str,
     cls: Py<PyAny>,
     method: Py<PyAny>,
+    builtin_name: bool,
     is_async: bool,
     return_dtype: PyDataType,
-    gpus: usize,
+    gpus: f64,
     use_process: Option<bool>,
     max_concurrency: Option<usize>,
     batch_size: Option<usize>,
@@ -332,12 +338,14 @@ pub fn batch_udf(
 
     Ok(PyExpr {
         expr: crate::python_udf::batch_udf(
+            func_id,
             name,
             cls.into(),
             method.into(),
+            builtin_name,
             is_async,
             return_dtype.into(),
-            gpus,
+            FloatWrapper(gpus),
             use_process,
             max_concurrency,
             batch_size,

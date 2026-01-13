@@ -57,6 +57,13 @@ PYARROW_GE_11_0_0 = tuple(int(s) for s in pa.__version__.split(".") if s.isnumer
             DataType.timestamp(TimeUnit.s()),
         ),
         (
+            [datetime.datetime(1994, 1, 1), datetime.datetime(1995, 1, 1), None],
+            pa.timestamp("us", tz="America/New_York"),
+            DataType.timestamp(TimeUnit.us(), timezone="America/New_York"),
+            # NOTE: Timezone inference uses the offset value, not the timezone string
+            DataType.timestamp(TimeUnit.s(), timezone="-05:00"),
+        ),
+        (
             [datetime.timedelta(days=1), datetime.timedelta(days=2), None],
             pa.duration("ms"),
             DataType.duration(TimeUnit.ms()),
@@ -101,3 +108,51 @@ def test_write_and_read_empty_csv(tmp_path_factory):
     df.write_csv(empty_csv_files, write_mode="overwrite")
 
     assert daft.read_csv(empty_csv_files).to_pydict() == {"a": []}
+
+
+def _read_first_file_text(root: str) -> str:
+    import os
+
+    files = [os.path.join(root, f) for f in os.listdir(root)]
+    files = [f for f in files if os.path.isfile(f)]
+    assert len(files) > 0
+    with open(files[0], encoding="utf-8") as fh:
+        return fh.read()
+
+
+@pytest.mark.parametrize(
+    ["delimiter", "header", "quote", "escape_char", "foo_values", "expected_text"],
+    [
+        ("|", True, None, None, ["a", "b|c", "d"], 'id|foo\n1|a\n2|"b|c"\n3|d\n'),
+        (";", True, None, None, ["a", "b;c", "d"], 'id;foo\n1;a\n2;"b;c"\n3;d\n'),
+        ("\t", True, None, None, ["a", "b\tc", "d"], 'id\tfoo\n1\ta\n2\t"b\tc"\n3\td\n'),
+        (",", False, None, None, ["a", "b|c", "d"], "1,a\n2,b|c\n3,d\n"),
+        (",", True, "'", None, ["a", "b,c", "d"], "id,foo\n1,a\n2,'b,c'\n3,d\n"),
+        (",", True, '"', None, ["a", "b,c", "d"], 'id,foo\n1,a\n2,"b,c"\n3,d\n'),
+        (",", True, "'", "\\", ["a", 'He said "hi,yo"', "d"], "id,foo\n1,a\n2,'He said \"hi,yo\"'\n3,d\n"),
+        (",", True, "'", "\\", ["a", 'Say "hello"', "d"], 'id,foo\n1,a\n2,Say "hello"\n3,d\n'),
+    ],
+)
+def test_write_csv_parametrized(tmp_path, delimiter, header, quote, escape_char, foo_values, expected_text):
+    df = daft.from_pydict({"id": [1, 2, 3], "foo": foo_values})
+
+    write_kwargs = {
+        "write_mode": "overwrite",
+        "delimiter": delimiter,
+        "quote": quote,
+        "escape": escape_char,
+        "header": header,
+    }
+    df.write_csv(str(tmp_path), **write_kwargs)
+    text = _read_first_file_text(str(tmp_path))
+    assert text == expected_text
+
+    if header:
+        read_kwargs = {
+            "delimiter": delimiter,
+            "quote": quote,
+            "escape_char": escape_char,
+            "has_headers": header,
+        }
+        read_back = daft.read_csv(str(tmp_path), **read_kwargs)
+        assert df.to_arrow() == read_back.to_arrow()

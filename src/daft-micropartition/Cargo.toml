@@ -1,8 +1,8 @@
 [dependencies]
 arrow-array = {workspace = true}
+arrow-ipc = {workspace = true}
 bincode = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
-daft-arrow = {path = "../daft-arrow"}
 common-partitioning = {path = "../common/partitioning", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}

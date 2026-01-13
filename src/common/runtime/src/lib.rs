@@ -11,14 +11,14 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use futures::FutureExt;
-use tokio::{
-    runtime::{Handle, RuntimeFlavor},
-    task::JoinSet,
-};
+use tokio::runtime::{Handle, RuntimeFlavor};
+
+pub mod joinset;
 
 #[cfg(feature = "python")]
 pub mod python;
 
+pub use joinset::{JoinSet, JoinSetId, OrderedJoinSet, OrderingAwareJoinSet, create_join_set};
 #[cfg(feature = "python")]
 pub use python::execute_python_coroutine;
 
@@ -55,7 +55,7 @@ pub enum PoolType {
 // A spawned task on a Runtime that can be awaited
 // This is a wrapper around a JoinSet that allows us to cancel the task by dropping it
 pub struct RuntimeTask<T> {
-    joinset: JoinSet<T>,
+    joinset: tokio::task::JoinSet<T>,
 }
 
 impl<T> RuntimeTask<T> {
@@ -64,7 +64,7 @@ impl<T> RuntimeTask<T> {
         F: Future<Output = T> + Send + 'static,
         T: Send + 'static,
     {
-        let mut joinset = JoinSet::new();
+        let mut joinset = tokio::task::JoinSet::new();
         joinset.spawn_on(future, handle);
         Self { joinset }
     }
@@ -179,7 +179,7 @@ impl Runtime {
                 panic!("Cannot spawn blocking task on compute runtime from a non-compute thread");
             }
             PoolType::IO | PoolType::Custom(_) => {
-                let mut join_set = JoinSet::new();
+                let mut join_set = tokio::task::JoinSet::new();
                 join_set.spawn_blocking_on(f, self.runtime.handle());
                 RuntimeTask { joinset: join_set }
             }

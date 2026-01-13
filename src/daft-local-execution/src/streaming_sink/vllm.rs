@@ -1,4 +1,4 @@
-use std::{collections::BinaryHeap, sync::Arc, time::Duration};
+use std::{collections::BinaryHeap, num::NonZeroUsize, sync::Arc, time::Duration};
 
 use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
@@ -459,10 +459,11 @@ impl StreamingSink for VLLMSink {
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
-        self.expr
-            .inner()
-            .batch_size
-            .map(MorselSizeRequirement::Strict)
+        self.expr.inner().batch_size.map(|size| {
+            MorselSizeRequirement::Strict(
+                NonZeroUsize::new(size).expect("batch size for VLLM sink must be non-zero"),
+            )
+        })
     }
     fn batching_strategy(&self) -> Self::BatchingStrategy {
         StaticBatchingStrategy::new(self.morsel_size_requirement().unwrap_or_default())

@@ -1,16 +1,16 @@
-use daft_arrow::{
-    array::{PrimitiveArray, ord::DynComparator},
-    bitmap::Bitmap,
-    types::NativeType,
+use arrow::{
+    array::{PrimitiveArray, types::UInt64Type},
+    buffer::NullBuffer,
 };
+use daft_arrow::array::ord::DynComparator;
 
 pub fn idx_sort<F>(
-    validity: Option<&Bitmap>,
+    validity: Option<&NullBuffer>,
     cmp: F,
     length: usize,
     descending: bool,
     nulls_first: bool,
-) -> PrimitiveArray<u64>
+) -> PrimitiveArray<UInt64Type>
 where
     F: Fn(&u64, &u64) -> std::cmp::Ordering,
 {
@@ -22,17 +22,16 @@ where
     } else {
         indices_slice.sort_unstable_by(|a, b| cmp(b, a));
     }
-    let data_type = u64::PRIMITIVE.into();
-    PrimitiveArray::<u64>::new(data_type, indices.into(), None)
+    PrimitiveArray::<UInt64Type>::new(indices.into(), None)
 }
 
 pub fn multi_column_idx_sort<F>(
-    first_col_validity: Option<&Bitmap>,
+    first_col_validity: Option<&NullBuffer>,
     overall_cmp: F,
     others_cmp: &DynComparator,
     length: usize,
     first_col_nulls_first: bool,
-) -> PrimitiveArray<u64>
+) -> PrimitiveArray<UInt64Type>
 where
     F: Fn(&u64, &u64) -> std::cmp::Ordering,
 {
@@ -50,18 +49,17 @@ where
         postslice_indices.sort_unstable_by(|a, b| others_cmp(*a as usize, *b as usize));
     }
 
-    let data_type = u64::PRIMITIVE.into();
-    PrimitiveArray::<u64>::new(data_type, indices.into(), None)
+    PrimitiveArray::<UInt64Type>::new(indices.into(), None)
 }
 
 fn generate_initial_indices(
-    validity: Option<&Bitmap>,
+    validity: Option<&NullBuffer>,
     length: usize,
     nulls_first: bool,
 ) -> (Vec<u64>, usize, usize) {
     if let Some(validity) = validity {
         // number of null values
-        let n_nulls = validity.unset_bits();
+        let n_nulls = validity.null_count();
         // number of non null values
         let n_valid = length.saturating_sub(n_nulls);
         let mut indices = vec![u64::default(); length];
