@@ -33,6 +33,15 @@ pub trait ImageOps {
         h: u32,
         mode: &ImageMode,
     ) -> DaftResult<FixedShapeImageArray>;
+    fn center_crop(&self, w: u32, h: u32) -> DaftResult<ImageArray>
+    where
+        Self: Sized;
+    fn center_crop_to_fixed_shape_image_array(
+        &self,
+        w: u32,
+        h: u32,
+        mode: &ImageMode,
+    ) -> DaftResult<FixedShapeImageArray>;
     fn to_mode(&self, mode: ImageMode) -> DaftResult<Self>
     where
         Self: Sized;
@@ -74,6 +83,22 @@ impl ImageOps for ImageArray {
     ) -> DaftResult<FixedShapeImageArray> {
         let result = resize_images(self, w, h);
         fixed_image_array_from_img_buffers(self.name(), result.as_slice(), mode, h, w)
+    }
+
+    fn center_crop(&self, w: u32, h: u32) -> DaftResult<ImageArray> {
+        let result = center_crop_images(self, w, h);
+        image_array_from_img_buffers(self.name(), result.into_iter(), self.image_mode())
+    }
+
+    fn center_crop_to_fixed_shape_image_array(
+        &self,
+        _w: u32,
+        _h: u32,
+        _mode: &ImageMode,
+    ) -> DaftResult<FixedShapeImageArray> {
+        Err(DaftError::ValueError(
+             "center_crop_to_fixed_shape_image_array is only supported for FixedShapeImageArray inputs".to_string(),
+         ))
     }
 
     fn to_mode(&self, mode: ImageMode) -> DaftResult<Self> {
@@ -154,6 +179,39 @@ impl ImageOps for FixedShapeImageArray {
     ) -> DaftResult<FixedShapeImageArray> {
         let result = resize_images(self, w, h);
         fixed_image_array_from_img_buffers(self.name(), result.as_slice(), mode, h, w)
+    }
+
+    fn center_crop(&self, w: u32, h: u32) -> DaftResult<ImageArray>
+    where
+        Self: Sized,
+    {
+        let result = center_crop_images(self, w, h);
+        image_array_from_img_buffers(self.name(), result.into_iter(), Some(*self.image_mode()))
+    }
+
+    fn center_crop_to_fixed_shape_image_array(
+        &self,
+        w: u32,
+        h: u32,
+        mode: &ImageMode,
+    ) -> DaftResult<FixedShapeImageArray> {
+        // For fixed shape images, we clamp the output dimensions to the original size
+        // to avoid out-of-bounds accesses while preserving the fixed-shape representation.
+        let (orig_height, orig_width) = match self.data_type() {
+            DataType::FixedShapeImage(_, h0, w0) => (h0, w0),
+            _ => unreachable!("self should always be a FixedShapeImage"),
+        };
+
+        let out_height = h.min(*orig_height);
+        let out_width = w.min(*orig_width);
+        let result = center_crop_images(self, out_width, out_height);
+        fixed_image_array_from_img_buffers(
+            self.name(),
+            result.as_slice(),
+            mode,
+            out_height,
+            out_width,
+        )
     }
 
     fn to_mode(&self, mode: ImageMode) -> DaftResult<Self>
@@ -277,6 +335,26 @@ fn encode_images<Arr: AsImageObj>(
 fn resize_images<Arr: AsImageObj>(images: &Arr, w: u32, h: u32) -> Vec<Option<CowImage<'_>>> {
     ImageBufferIter::new(images)
         .map(|img| img.map(|img| img.resize(w, h)))
+        .collect::<Vec<_>>()
+}
+
+fn center_crop_single(img: CowImage<'_>, w: u32, h: u32) -> CowImage<'_> {
+    let width = img.width();
+    let height = img.height();
+    let cw = w.min(width);
+    let ch = h.min(height);
+    let x = (width - cw) / 2;
+    let y = (height - ch) / 2;
+    let bbox = BBox(x, y, cw, ch);
+    img.crop(&bbox)
+}
+
+fn center_crop_images<Arr>(images: &Arr, w: u32, h: u32) -> Vec<Option<CowImage<'_>>>
+where
+    Arr: AsImageObj,
+{
+    ImageBufferIter::new(images)
+        .map(|img| img.map(|img| center_crop_single(img, w, h)))
         .collect::<Vec<_>>()
 }
 

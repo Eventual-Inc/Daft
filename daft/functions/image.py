@@ -23,6 +23,20 @@ def resize(image: Expression, w: int, h: int) -> Expression:
     return Expression._call_builtin_scalar_fn("image_resize", image, w=w, h=h)
 
 
+def center_crop(image: Expression, w: int, h: int) -> Expression:
+    """Center crop image into the provided width and height.
+
+    Args:
+        image (Image Expression): expression to center crop.
+        w (int): Desired width of the cropped image.
+        h (int): Desired height of the cropped image.
+
+    Returns:
+        Expression (Image Expression): An expression representing an image column of the center-cropped images.
+    """
+    return Expression._call_builtin_scalar_fn("image_center_crop", image, w=w, h=h)
+
+
 def crop(image: Expression, bbox: tuple[int, int, int, int] | Expression) -> Expression:
     """Crops images with the provided bounding box.
 

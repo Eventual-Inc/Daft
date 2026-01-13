@@ -146,6 +146,37 @@ pub fn resize(s: &Series, w: u32, h: u32) -> DaftResult<Series> {
     }
 }
 
+/// Center crops images in a Series to the specified width and height.
+///
+/// The crop is taken around the center of each image. If the requested
+/// width or height exceeds the image dimensions, the crop window is
+/// clamped per-dimension to stay within bounds.
+///
+/// # Arguments
+/// * `s` - Input Series containing image data
+/// * `w` - Target width for the cropped region
+/// * `h` - Target height for the cropped region
+///
+/// # Returns
+/// /// A DaftResult containing a new Series with center-cropped images
+pub fn center_crop(s: &Series, w: u32, h: u32) -> DaftResult<Series> {
+    match s.data_type() {
+        DataType::Image(_) => {
+            let array = s.downcast::<ImageArray>()?;
+            Ok(array.center_crop(w, h)?.into_series())
+        }
+        DataType::FixedShapeImage(mode, ..) => Ok(s
+            .downcast::<FixedShapeImageArray>()?
+            .center_crop_to_fixed_shape_image_array(w, h, mode)?
+            .into_series()),
+        _ => Err(DaftError::ValueError(format!(
+            "datatype: {} does not support Image CenterCrop. Occurred while center cropping Series: {}",
+            s.data_type(),
+            s.name()
+        ))),
+    }
+}
+
 /// Crops images in a Series based on provided bounding boxes.
 ///
 /// # Arguments

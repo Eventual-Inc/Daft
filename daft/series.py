@@ -1133,6 +1133,9 @@ class SeriesImageNamespace(SeriesNamespace):
     def resize(self, w: int, h: int) -> Series:
         return self._eval_expressions("image_resize", w=w, h=h)
 
+    def center_crop(self, w: int, h: int) -> Series:
+        return self._eval_expressions("image_center_crop", w=w, h=h)
+
     def to_mode(self, mode: str | ImageMode) -> Series:
         if isinstance(mode, str):
             mode = ImageMode.from_mode_string(mode.upper())
