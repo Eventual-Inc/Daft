@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use common_error::DaftResult;
+use common_runtime::{RuntimeTask, get_compute_runtime};
 use daft_core::utils::identity_hash_set::IndexHash;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
@@ -70,8 +71,21 @@ impl AsyncFileWriter for PartitionedWriter {
         let (split_tables, partition_values) =
             Self::partition(self.partition_by.as_slice(), input)?;
         let partition_values_hash = partition_values.hash_rows()?;
-        let mut bytes_written = 0;
-        let mut rows_written = 0;
+
+        // Spawn tasks on compute runtime for writing each table
+        let compute_runtime = get_compute_runtime();
+        let mut write_tasks: Vec<(
+            IndexHash,
+            RuntimeTask<
+                DaftResult<(
+                    Box<
+                        dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>,
+                    >,
+                    WriteResult,
+                )>,
+            >,
+        )> = Vec::new();
+
         for (idx, (table, partition_value_hash)) in split_tables
             .into_iter()
             .zip(partition_values_hash.values().iter())
@@ -88,44 +102,54 @@ impl AsyncFileWriter for PartitionedWriter {
                     }
                 },
             );
+
+            let table_data = Arc::new(MicroPartition::new_loaded(
+                table.schema.clone(),
+                vec![table].into(),
+                None,
+            ));
+
             match entry {
-                RawEntryMut::Vacant(entry) => {
+                RawEntryMut::Vacant(_entry) => {
                     let mut writer = self
                         .writer_factory
                         .create_writer(0, Some(partition_value_row.as_ref()))?;
-                    let write_result = writer
-                        .write(Arc::new(MicroPartition::new_loaded(
-                            table.schema.clone(),
-                            vec![table].into(),
-                            None,
-                        )))
-                        .await?;
-                    bytes_written += write_result.bytes_written;
-                    rows_written += write_result.rows_written;
-                    entry.insert_hashed_nocheck(
-                        *partition_value_hash,
-                        IndexHash {
-                            idx: self.saved_partition_values.len() as u64,
-                            hash: *partition_value_hash,
-                        },
-                        writer,
-                    );
+                    let index_hash = IndexHash {
+                        idx: self.saved_partition_values.len() as u64,
+                        hash: *partition_value_hash,
+                    };
                     self.saved_partition_values.push(partition_value_row);
+
+                    // Spawn task on compute runtime for writing
+                    let task = compute_runtime.spawn(async move {
+                        let write_result = writer.write(table_data).await?;
+                        Ok((writer, write_result))
+                    });
+                    write_tasks.push((index_hash, task));
                 }
-                RawEntryMut::Occupied(mut entry) => {
-                    let writer = entry.get_mut();
-                    let write_result = writer
-                        .write(Arc::new(MicroPartition::new_loaded(
-                            table.schema.clone(),
-                            vec![table].into(),
-                            None,
-                        )))
-                        .await?;
-                    bytes_written += write_result.bytes_written;
-                    rows_written += write_result.rows_written;
+                RawEntryMut::Occupied(entry) => {
+                    let (index_hash, mut writer) = entry.remove_entry();
+
+                    // Spawn task on compute runtime for writing
+                    let task = compute_runtime.spawn(async move {
+                        let write_result = writer.write(table_data).await?;
+                        Ok((writer, write_result))
+                    });
+                    write_tasks.push((index_hash, task));
                 }
             }
         }
+
+        // Await all write tasks, put writers back, and aggregate results
+        let mut bytes_written = 0;
+        let mut rows_written = 0;
+        for (index_hash, task) in write_tasks {
+            let (writer, write_result) = task.await??;
+            bytes_written += write_result.bytes_written;
+            rows_written += write_result.rows_written;
+            self.per_partition_writers.insert(index_hash, writer);
+        }
+
         Ok(WriteResult {
             bytes_written,
             rows_written,

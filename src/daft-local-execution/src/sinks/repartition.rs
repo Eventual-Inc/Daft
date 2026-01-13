@@ -12,7 +12,6 @@ use tracing::{Span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-    BlockingSinkStatus,
 };
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
@@ -90,7 +89,7 @@ impl BlockingSink for RepartitionSink {
                         }
                     };
                     state.push(partitioned);
-                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                    Ok(state)
                 },
                 Span::current(),
             )

@@ -1,6 +1,5 @@
 mod buffer;
 mod channel;
-mod dispatcher;
 mod dynamic_batching;
 mod intermediate_ops;
 mod pipeline;
@@ -74,19 +73,6 @@ impl<T> Future for SpawnedTask<T> {
     }
 }
 
-struct RuntimeHandle(tokio::runtime::Handle);
-
-impl RuntimeHandle {
-    fn spawn<F>(&self, future: F) -> SpawnedTask<F::Output>
-    where
-        F: Future + Send + 'static,
-        F::Output: Send + 'static,
-    {
-        let join_handle = self.0.spawn(future);
-        SpawnedTask(join_handle)
-    }
-}
-
 pub(crate) struct ExecutionRuntimeContext {
     worker_set: JoinSet<Result<()>>,
     memory_manager: Arc<MemoryManager>,
@@ -135,10 +121,6 @@ impl ExecutionRuntimeContext {
             }
         }
         Ok(())
-    }
-
-    pub(crate) fn handle(&self) -> RuntimeHandle {
-        RuntimeHandle(tokio::runtime::Handle::current())
     }
 
     #[must_use]
