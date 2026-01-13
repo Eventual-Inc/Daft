@@ -363,7 +363,7 @@ impl MapGroupsFn {
                     .map(|expr| expr.semantic_id(schema).id.to_string())
                     .collect::<Vec<_>>()
                     .join(", ");
-                FieldID::new(format!("PyScalarFn_{}({inputs})", py_fn.name()))
+                FieldID::new(format!("PyScalarFn_{}({inputs})", py_fn.id()))
             }
         }
     }
@@ -801,7 +801,7 @@ impl AggExpr {
                                 field.dtype, field.name,
                             )));
                         }
-                        DataType::from(&*daft_sketch::ARROW2_DDSKETCH_DTYPE)
+                        DataType::try_from(&*daft_sketch::ARROW_DDSKETCH_DTYPE)?
                     }
                     SketchType::HyperLogLog => daft_core::array::ops::HLL_SKETCH_DTYPE,
                 };
@@ -1412,7 +1412,7 @@ impl Expr {
                 FieldID::new(format!("{child_id}.window_function()"))
             }
             Self::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(RowWisePyFn {
-                function_name: name,
+                func_id: id,
                 args: children,
                 ..
             }))) => {
@@ -1420,10 +1420,10 @@ impl Expr {
                     .iter()
                     .map(|expr| expr.semantic_id(schema).id)
                     .join(",");
-                FieldID::new(format!("RowWisePythonUDF_{name}({children_ids})"))
+                FieldID::new(format!("RowWisePythonUDF_{id}({children_ids})"))
             }
             Self::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
-                function_name: name,
+                func_id: id,
                 args: children,
                 ..
             }))) => {
@@ -1431,7 +1431,7 @@ impl Expr {
                     .iter()
                     .map(|expr| expr.semantic_id(schema).id)
                     .join(",");
-                FieldID::new(format!("BatchPythonUDF_{name}({children_ids})"))
+                FieldID::new(format!("BatchPythonUDF_{id}({children_ids})"))
             }
             Self::VLLM(VLLMExpr {
                 model,

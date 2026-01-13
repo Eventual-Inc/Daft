@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_runtime::OrderedJoinSet;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
@@ -17,10 +18,7 @@ use crate::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
     },
-    utils::{
-        channel::{Sender, create_channel},
-        joinset::OrderedJoinSet,
-    },
+    utils::channel::{Sender, create_channel},
 };
 
 #[derive(Clone)]

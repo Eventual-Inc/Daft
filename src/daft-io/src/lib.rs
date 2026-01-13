@@ -469,7 +469,7 @@ impl SourceType {
     /// Whether source support write parquet/json/csv files via native IO,
     /// if the source is object store, it should support multipart part upload currently.
     pub fn supports_native_writer(&self) -> bool {
-        matches!(self, Self::File | Self::S3 | Self::Tos)
+        matches!(self, Self::File | Self::S3 | Self::Tos | Self::Gravitino)
     }
 }
 

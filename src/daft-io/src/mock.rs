@@ -259,7 +259,7 @@ mod tests {
     async fn test_max_retries_exceeded() {
         // With default max retries = 3, total get calls should be 1 (initial) + 3 (retries) = 4
         let data: Vec<u8> = (0..2_000u32).flat_map(|v| v.to_le_bytes()).collect();
-        let data_size = data.len();
+        let _data_size = data.len();
         let chunk_size = 1024;
         let src = Arc::new(MockSource::new(data.clone(), chunk_size, Some(0)));
         let initial = src.get("mock://path", None, None).await.unwrap();

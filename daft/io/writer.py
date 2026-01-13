@@ -183,6 +183,8 @@ class CSVFileWriter(FileWriterBase):
         file_idx: int,
         partition_values: RecordBatch | None = None,
         io_config: IOConfig | None = None,
+        delimiter: str | None = None,
+        include_header: bool | None = True,
     ):
         super().__init__(
             root_dir=root_dir,
@@ -194,13 +196,13 @@ class CSVFileWriter(FileWriterBase):
         self.file_handle = None
         self.current_writer: pacsv.CSVWriter | None = None
         self.is_closed = False
+        self.delimiter = delimiter
+        self.include_header = True if include_header is None else include_header
 
     def _create_writer(self, schema: pa.Schema) -> pacsv.CSVWriter:
         self.file_handle = self.fs.open_output_stream(self.full_path)
-        return pacsv.CSVWriter(
-            self.file_handle,
-            schema,
-        )
+        write_options = pacsv.WriteOptions(delimiter=self.delimiter or ",", include_header=self.include_header)
+        return pacsv.CSVWriter(self.file_handle, schema, write_options=write_options)
 
     def write(self, table: MicroPartition) -> int:
         assert not self.is_closed, "Cannot write to a closed CSVFileWriter"

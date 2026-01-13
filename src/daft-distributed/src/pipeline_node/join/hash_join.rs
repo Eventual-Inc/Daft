@@ -94,15 +94,22 @@ impl PipelineNodeImpl for HashJoinNode {
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         use itertools::Itertools;
-        let mut res = vec!["Hash Join".to_string()];
+        let mut res = vec!["HashJoin".to_string()];
+        res.push(format!("Type: {}", self.join_type));
         res.push(format!(
-            "Left on: {}",
+            "Left: Join key = {}",
             self.left_on.iter().map(|e| e.to_string()).join(", ")
         ));
         res.push(format!(
-            "Right on: {}",
+            "Right: Join key = {}",
             self.right_on.iter().map(|e| e.to_string()).join(", ")
         ));
+        if let Some(null_equals_nulls) = &self.null_equals_nulls {
+            res.push(format!(
+                "Null equals nulls: [{}]",
+                null_equals_nulls.iter().map(|b| b.to_string()).join(", ")
+            ));
+        }
         res
     }
 

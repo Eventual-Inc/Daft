@@ -380,7 +380,7 @@ pub(crate) struct UdfOperator {
     worker_count: AtomicUsize,
     concurrency: usize,
     memory_request: u64,
-    input_schema: SchemaRef,
+    use_process: bool,
 }
 
 impl UdfOperator {
@@ -408,6 +408,22 @@ impl UdfOperator {
 
         let (expr, required_cols) = remap_used_cols(expr);
 
+        // Check if any inputs or the output are Python-dtype columns
+        // Those should by default run on the same thread
+        let fields = input_schema.fields();
+        let is_arrow_dtype = required_cols
+            .iter()
+            .all(|idx| fields[*idx].dtype.is_arrow())
+            && expr
+                .inner()
+                .to_field(input_schema.as_ref())?
+                .dtype
+                .is_arrow();
+
+        let use_process = (udf_properties.is_actor_pool_udf()
+            || udf_properties.use_process.unwrap_or(false))
+            && is_arrow_dtype;
+
         Ok(Self {
             expr,
             params: Arc::new(UdfParams {
@@ -419,7 +435,7 @@ impl UdfOperator {
             worker_count: AtomicUsize::new(0),
             concurrency,
             memory_request,
-            input_schema: input_schema.clone(),
+            use_process,
         })
     }
 
@@ -496,14 +512,19 @@ impl IntermediateOperator for UdfOperator {
     }
 
     fn name(&self) -> NodeName {
-        let udf_name = if let Some((_, udf_name)) = self.params.udf_properties.name.rsplit_once('.')
-        {
-            udf_name
+        if self.params.udf_properties.builtin_name {
+            let name = self.params.udf_properties.name.clone();
+            name.into()
         } else {
-            self.params.udf_properties.name.as_str()
-        };
+            let udf_name =
+                if let Some((_, udf_name)) = self.params.udf_properties.name.rsplit_once('.') {
+                    udf_name
+                } else {
+                    self.params.udf_properties.name.as_str()
+                };
 
-        format!("UDF {}", udf_name).into()
+            format!("UDF {}", udf_name).into()
+        }
     }
 
     fn op_type(&self) -> NodeType {
@@ -516,7 +537,15 @@ impl IntermediateOperator for UdfOperator {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![
-            format!("UDF: {}", self.params.udf_properties.name.as_str()),
+            format!(
+                "{} {}:",
+                if self.params.udf_properties.builtin_name {
+                    "Builtin UDF"
+                } else {
+                    "UDF"
+                },
+                self.params.udf_properties.name.as_str()
+            ),
             format!("Expr = {}", self.expr),
             format!(
                 "Passthrough Columns = [{}]",
@@ -549,50 +578,22 @@ impl IntermediateOperator for UdfOperator {
         res
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self) -> Self::State {
         let worker_count = self.worker_count.fetch_add(1, Ordering::SeqCst);
-
-        // Check if any inputs or the output are Python-dtype columns
-        // Those should by default run on the same thread
-        let fields = self.input_schema.fields();
-        let is_arrow_dtype = self
-            .params
-            .required_cols
-            .iter()
-            .all(|idx| fields[*idx].dtype.is_arrow())
-            && self
-                .expr
-                .inner()
-                .to_field(self.input_schema.as_ref())?
-                .dtype
-                .is_arrow();
-
-        let use_process = self.params.udf_properties.is_actor_pool_udf()
-            || self.params.udf_properties.use_process.unwrap_or(false);
 
         #[cfg(feature = "python")]
         {
-            let udf_handle = if use_process {
-                if is_arrow_dtype {
-                    // Can use process when all types are arrow-serializable
-                    UdfHandle::Process(None)
-                } else {
-                    // Cannot use process with non-arrow types, fall back to thread
-                    log::warn!(
-                        "UDF `{}` requires a non-arrow-serializable input column. The UDF will run on the same thread as the daft process.",
-                        self.params.udf_properties.name
-                    );
-                    UdfHandle::Thread
-                }
+            let udf_handle = if self.use_process {
+                UdfHandle::Process(None)
             } else {
                 UdfHandle::Thread
             };
 
-            Ok(UdfState {
+            UdfState {
                 expr: self.expr.clone(),
                 worker_idx: worker_count,
                 udf_handle,
-            })
+            }
         }
         #[cfg(not(feature = "python"))]
         {
@@ -605,10 +606,11 @@ impl IntermediateOperator for UdfOperator {
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
-        self.params
-            .udf_properties
-            .batch_size
-            .map(MorselSizeRequirement::Strict)
+        self.params.udf_properties.batch_size.map(|size| {
+            MorselSizeRequirement::Strict(
+                NonZeroUsize::new(size).expect("batch size for UDF must be non-zero"),
+            )
+        })
     }
 
     fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
@@ -632,7 +634,7 @@ impl IntermediateOperator for UdfOperator {
                         step_size_alpha: 16, // step size is small as udfs are expensive
                         correction_delta: 4, // similarly the correction delta is small because the step size is small
                         b_min: min_batch_size,
-                        b_max: max_batch_size,
+                        b_max: max_batch_size.get(),
                     }
                     .into()
                 }

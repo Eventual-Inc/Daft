@@ -4,7 +4,9 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from openai import NOT_GIVEN, AsyncOpenAI, OpenAIError, RateLimitError
+from openai import AsyncOpenAI, OpenAIError, RateLimitError
+from openai import OpenAI as OpenAIClient
+from openai._types import Omit, omit
 from openai.types.create_embedding_response import Usage
 
 from daft import DataType
@@ -93,8 +95,31 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
 
     def get_dimensions(self) -> EmbeddingDimensions:
         if self.dimensions is not None:
-            return EmbeddingDimensions(size=self.dimensions, dtype=DataType.float32())
-        return _models[self.model_name].dimensions
+            return EmbeddingDimensions(size=self.dimensions, dtype=_models[self.model_name].dimensions.dtype)
+
+        if self.provider_options.get("base_url") is not None and self.model_name not in _models:
+            try:
+                merged_provider_options: dict[str, Any] = merge_provider_and_api_options(
+                    provider_options=self.provider_options,
+                    api_options=self.embed_options,
+                    provider_option_type=OpenAIProviderOptions,
+                )
+
+                client = OpenAIClient(**merged_provider_options)
+                response = client.embeddings.create(
+                    input="dimension probe",
+                    model=self.model_name,
+                    encoding_format="float",
+                )
+                size = len(response.data[0].embedding)
+                return EmbeddingDimensions(size=size, dtype=DataType.float32())
+            except Exception as ex:
+                raise ValueError(
+                    "Failed to determine embedding dimensions from OpenAI-compatible embedding server. "
+                    "Specify `dimensions=...` or ensure the server supports embeddings.create."
+                ) from ex
+        else:
+            return _models[self.model_name].dimensions
 
     def get_udf_options(self) -> UDFOptions:
         options = super().get_udf_options()
@@ -109,7 +134,7 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
             provider_options=self.provider_options,
             model=self.model_name,
             embed_options=self.embed_options,
-            dimensions=self.dimensions,
+            dimensions=self.dimensions if self.embed_options.get("supports_overriding_dimensions", False) else omit,
             provider_name=self.provider_name,
         )
 
@@ -201,11 +226,12 @@ class OpenAITextEmbedder(TextEmbedder):
     async def _embed_text_batch(self, input_batch: list[str]) -> list[Embedding]:
         """Embeds text as a batch call, falling back to _embed_text on rate limit exceptions."""
         try:
+            dimensions: int | Omit = self._dimensions if self._dimensions is not None else omit
             response = await self._client.embeddings.create(
                 input=input_batch,
                 model=self._model,
                 encoding_format="float",
-                dimensions=self._dimensions or NOT_GIVEN,
+                dimensions=dimensions,
             )
             self._record_usage_metrics(response)
             return [np.array(embedding.embedding) for embedding in response.data]
@@ -219,18 +245,22 @@ class OpenAITextEmbedder(TextEmbedder):
     async def _embed_text(self, input_text: str) -> Embedding:
         """Embeds a single text input and possibly returns a zero vector."""
         try:
+            dimensions: int | Omit = self._dimensions if self._dimensions is not None else omit
             response: CreateEmbeddingResponse = await self._client.embeddings.create(
                 input=input_text,
                 model=self._model,
                 encoding_format="float",
-                dimensions=self._dimensions or NOT_GIVEN,
+                dimensions=dimensions,
             )
             self._record_usage_metrics(response)
             return np.array(response.data[0].embedding)
         except Exception as ex:
             if self._zero_on_failure:
-                size = self._dimensions or _models[self._model].dimensions.size
-                return np.zeros(size, dtype=np.float32)
+                model_profile = _models[self._model]
+                dtype = model_profile.dimensions.dtype
+                size = self._dimensions or model_profile.dimensions.size
+                np_dtype = np.float64 if dtype == DataType.float64() else np.float32
+                return np.zeros(size, dtype=np_dtype)
             else:
                 raise ex
 
