@@ -34,7 +34,7 @@ provider = daft.get_provider("openai")
 
 Daft supports the following [AI Providers](../api/ai.md#providers):
 
-- **[OpenAI](https://platform.openai.com/docs/api-reference/introduction)** - Commercial API for GPT models and other AI capabilities
+- **[OpenAI](https://platform.openai.com/docs/api-reference/introduction)** - API for GPT models and other AI capabilities
 - **[Transformers](https://huggingface.co/docs/transformers/index)** - Hugging Face models for local inference
 - **[Google](https://ai.google.dev/gemini-api/docs)** - Google's Gemini API
 - **[LM Studio](https://lmstudio.ai/)** - Run local models privately on your computer
