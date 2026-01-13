@@ -64,6 +64,21 @@ _models: dict[EmbeddingModel, _ModelProfile] = {
 }
 
 
+def get_input_text_token_limit_for_model(model_name: str) -> int:
+    """Get the input token limit for a model, with fallback to default.
+
+    Args:
+        model_name: The name of the embedding model.
+
+    Returns:
+        The input text token limit for the model. Returns 8192 for unknown/custom models.
+    """
+    if model_name in _models:
+        return _models[model_name].input_text_token_limit
+    else:
+        return 8192  # Default for unknown/custom models
+
+
 @dataclass
 class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
     provider_name: str
@@ -140,12 +155,8 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
         # Get batch_token_limit from embed_options, default to 300_000
         batch_token_limit = self.embed_options.get("batch_token_limit", 300_000)
 
-        # Get input_text_token_limit from model profile, default to 8192
-        if self.model_name in _models:
-            input_text_token_limit = _models[self.model_name].input_text_token_limit
-        else:
-            # For custom models (with base_url), use default
-            input_text_token_limit = 8192
+        # Get input_text_token_limit from model profile using helper function
+        input_text_token_limit = get_input_text_token_limit_for_model(self.model_name)
 
         return OpenAITextEmbedder(
             provider_options=self.provider_options,
@@ -162,8 +173,9 @@ class OpenAITextEmbedder(TextEmbedder):
     """The OpenAI TextEmbedder will batch across rows, and split a large row into a batch request when necessary.
 
     Note:
-        This limits us to 300k tokens per row which is a reasonable start.
-        This implementation also uses len(text)*5 to estimate token count
+        Token limits are configurable via batch_token_limit (provider-level, defaults to 300k)
+        and input_text_token_limit (model-level, defaults to 8,192).
+        This implementation uses len(text) // 3 to estimate token count,
         which is conservative and O(1) rather than being perfect with tiktoken.
     """
 
@@ -225,7 +237,7 @@ class OpenAITextEmbedder(TextEmbedder):
             if input_text_token_count > self._input_text_token_limit:
                 # Must process previous inputs first, if any, to maintain ordered outputs.
                 await flush()
-                # If the current input exceeds the maximum tokens per input (8192),
+                # If the current input exceeds the maximum tokens per input (configurable, default 8192),
                 # then we will split this single input into its own batch request.
                 chunked_batch = chunk_text(input_text, input_text_chars_limit)
                 chunked_result = await self._embed_text_batch(chunked_batch)
