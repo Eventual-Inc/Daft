@@ -3,8 +3,9 @@
     reason = "TODO(andrewgazelka/others): This should really be changed in the future"
 )]
 
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
+use arrow::buffer::NullBuffer;
 use common_error::{DaftError, DaftResult};
 
 use crate::{
@@ -325,5 +326,14 @@ impl ListArray {
             offsets,
             Some(validity),
         ))
+    }
+}
+
+impl BooleanArray {
+    pub fn from_null_buffer(name: &str, buf: &NullBuffer) -> DaftResult<Self> {
+        Self::from_arrow(
+            Field::new(name, DataType::Boolean),
+            Arc::new(arrow::array::BooleanArray::new(buf.inner().clone(), None)),
+        )
     }
 }
