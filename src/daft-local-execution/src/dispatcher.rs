@@ -8,7 +8,6 @@ use crate::{
     RuntimeHandle, SpawnedTask,
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
-    dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::MorselSizeRequirement,
     runtime_stats::InitializingCountingReceiver,
 };
@@ -35,79 +34,6 @@ pub(crate) trait DispatchSpawner {
 pub(crate) struct SpawnedDispatchResult {
     pub(crate) worker_receivers: Vec<Receiver<Arc<MicroPartition>>>,
     pub(crate) spawned_dispatch_task: SpawnedTask<DaftResult<()>>,
-}
-
-/// A dispatcher that distributes morsels to workers in a round-robin fashion.
-/// Used if the operator requires maintaining the order of the input.
-pub(crate) struct RoundRobinDispatcher<S: BatchingStrategy + 'static> {
-    batch_manager: Arc<BatchManager<S>>,
-}
-
-impl<S: BatchingStrategy + 'static> RoundRobinDispatcher<S> {
-    pub(crate) fn new(batch_manager: Arc<BatchManager<S>>) -> Self {
-        Self { batch_manager }
-    }
-
-    async fn dispatch_inner(
-        worker_senders: Vec<Sender<Arc<MicroPartition>>>,
-        input_receivers: Vec<InitializingCountingReceiver>,
-        batch_manager: Arc<BatchManager<S>>,
-    ) -> DaftResult<()> {
-        let mut next_worker_idx = 0;
-        let mut send_to_next_worker = |data: Arc<MicroPartition>| {
-            let next_worker_sender = worker_senders.get(next_worker_idx).unwrap();
-            next_worker_idx = (next_worker_idx + 1) % worker_senders.len();
-            next_worker_sender.send(data)
-        };
-
-        let (lower, upper) = batch_manager.initial_requirements().values();
-        for mut receiver in input_receivers {
-            let mut buffer = RowBasedBuffer::new(lower, upper);
-
-            while let Some(morsel) = receiver.recv().await {
-                buffer.push(morsel);
-
-                while let Some(batch) = buffer.next_batch_if_ready()? {
-                    if send_to_next_worker(batch).await.is_err() {
-                        return Ok(());
-                    }
-                    let new_requirements = batch_manager.calculate_batch_size();
-                    let (lower, upper) = new_requirements.values();
-
-                    buffer.update_bounds(lower, upper);
-                }
-            }
-
-            // Clear all remaining morsels
-            if let Some(last_morsel) = buffer.pop_all()?
-                && send_to_next_worker(last_morsel).await.is_err()
-            {
-                return Ok(());
-            }
-        }
-        Ok(())
-    }
-}
-
-impl<S: BatchingStrategy + 'static> DispatchSpawner for RoundRobinDispatcher<S> {
-    fn spawn_dispatch(
-        &self,
-        input_receivers: Vec<InitializingCountingReceiver>,
-        num_workers: usize,
-        runtime_handle: &mut RuntimeHandle,
-    ) -> SpawnedDispatchResult {
-        let (worker_senders, worker_receivers): (Vec<_>, Vec<_>) =
-            (0..num_workers).map(|_| create_channel(0)).unzip();
-        let batch_manager = self.batch_manager.clone();
-        let task = runtime_handle.spawn(async move {
-            Self::dispatch_inner(worker_senders, input_receivers, batch_manager).await
-        });
-
-        SpawnedDispatchResult {
-            worker_receivers,
-            spawned_dispatch_task: task,
-        }
-    }
 }
 
 /// A dispatcher that distributes morsels to workers in an unordered fashion.
@@ -185,75 +111,6 @@ impl DispatchSpawner for UnorderedDispatcher {
                 morsel_size_upper_bound,
             )
             .await
-        });
-
-        SpawnedDispatchResult {
-            worker_receivers,
-            spawned_dispatch_task: dispatch_task,
-        }
-    }
-}
-
-/// A dispatcher that distributes morsels to workers in an unordered fashion.
-/// Used if the operator does not require maintaining the order of the input.
-/// Same as UnorderedDispatcher but can dynamically adjust the batch size based on the batching strategy
-pub(crate) struct DynamicUnorderedDispatcher<S: BatchingStrategy + 'static> {
-    batch_manager: Arc<BatchManager<S>>,
-}
-
-impl<S: BatchingStrategy + 'static> DynamicUnorderedDispatcher<S> {
-    pub(crate) fn new(batch_manager: Arc<BatchManager<S>>) -> Self {
-        Self { batch_manager }
-    }
-
-    async fn dispatch_inner(
-        worker_sender: Sender<Arc<MicroPartition>>,
-        input_receivers: Vec<InitializingCountingReceiver>,
-        batch_manager: Arc<BatchManager<S>>,
-    ) -> DaftResult<()> {
-        let (lower, upper) = batch_manager.initial_requirements().values();
-
-        for mut receiver in input_receivers {
-            let mut buffer = RowBasedBuffer::new(lower, upper);
-
-            while let Some(morsel) = receiver.recv().await {
-                buffer.push(morsel);
-                while let Some(batch) = buffer.next_batch_if_ready()? {
-                    if worker_sender.send(batch).await.is_err() {
-                        return Ok(());
-                    }
-
-                    let new_requirements = batch_manager.calculate_batch_size();
-                    let (lower, upper) = new_requirements.values();
-
-                    buffer.update_bounds(lower, upper);
-                }
-            }
-
-            // Clear all remaining morsels
-            if let Some(last_morsel) = buffer.pop_all()?
-                && worker_sender.send(last_morsel).await.is_err()
-            {
-                return Ok(());
-            }
-        }
-        Ok(())
-    }
-}
-
-impl<S: BatchingStrategy + 'static> DispatchSpawner for DynamicUnorderedDispatcher<S> {
-    fn spawn_dispatch(
-        &self,
-        receiver: Vec<InitializingCountingReceiver>,
-        num_workers: usize,
-        runtime_handle: &mut RuntimeHandle,
-    ) -> SpawnedDispatchResult {
-        let (worker_sender, worker_receiver) = create_channel(num_workers);
-        let worker_receivers = vec![worker_receiver; num_workers];
-        let batch_manager = self.batch_manager.clone();
-
-        let dispatch_task = runtime_handle.spawn(async move {
-            Self::dispatch_inner(worker_sender, receiver, batch_manager).await
         });
 
         SpawnedDispatchResult {
