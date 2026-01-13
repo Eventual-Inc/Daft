@@ -8,7 +8,7 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
-use common_runtime::{JoinSet, get_compute_pool_num_threads, get_compute_runtime};
+use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime};
 use daft_core::prelude::SchemaRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
@@ -119,7 +119,7 @@ struct ExecutionTaskResult<S> {
 struct ExecutionContext<Op: StreamingSink> {
     op: Arc<Op>,
     task_spawner: ExecutionTaskSpawner,
-    task_set: JoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
+    task_set: OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
     state_pool: HashMap<StateId, Op::State>,
     output_sender: Sender<Arc<MicroPartition>>,
     batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
@@ -490,7 +490,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         let mut ctx = ExecutionContext {
             op: self.op.clone(),
             task_spawner,
-            task_set: JoinSet::new(),
+            task_set: OrderingAwareJoinSet::new(maintain_order),
             state_pool,
             output_sender: destination_sender,
             batch_manager: Arc::new(BatchManager::new(self.op.batching_strategy())),
