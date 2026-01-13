@@ -86,7 +86,13 @@ impl FixedSizeListArray {
 
         let arc_vec = arrays
             .iter()
-            .map(|arr| arr.to_arrow())
+            .map(|arr| {
+                let mut arr = (*arr).clone();
+                // arrow-rs concat does a deep equality on the field names, which arrow2 did not.
+                // so to make sure we can `concat`, we need to rename both the child and the array itself
+                arr.flat_child = arr.flat_child.rename(&first_field.name);
+                arr.rename(&first_field.name).to_arrow()
+            })
             .collect::<DaftResult<Vec<ArrayRef>>>()?;
         let ref_vec: Vec<&dyn Array> = arc_vec.iter().map(|x| x.as_ref()).collect();
 
