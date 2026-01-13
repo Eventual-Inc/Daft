@@ -36,9 +36,6 @@ impl PyRecordBatch {
     }
 
     pub fn eval_expression_list(&self, py: Python, exprs: Vec<PyExpr>) -> PyResult<Self> {
-        if self.record_batch.is_empty() && exprs.iter().all(|e| !daft_dsl::has_agg(&e.expr)) {
-            return Ok(self.clone());
-        }
         let converted_exprs = BoundExpr::bind_all(&exprs, &self.record_batch.schema)?;
         py.detach(|| {
             Ok(self

@@ -1298,11 +1298,21 @@ impl RecordBatch {
         Ok(series)
     }
 
+    /// Helper to derive the result schema from evaluating expressions
+    fn derive_eval_schema(exprs: &[BoundExpr], schema: &Schema) -> DaftResult<SchemaRef> {
+        let fields = exprs
+            .iter()
+            .map(|e| e.inner().to_field(schema))
+            .collect::<DaftResult<Vec<_>>>()?;
+        Ok(Schema::new(fields).into())
+    }
+
     // TODO(universalmind303): since we now have async expressions, the entire evaluation should happen async
     // Refactor all eval_expression's to async and remove the sync version.
     pub fn eval_expression_list(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
         if self.is_empty() && exprs.iter().all(|e| !daft_dsl::has_agg(e.inner())) {
-            return Ok(self.clone());
+            let schema = Self::derive_eval_schema(exprs, &self.schema)?;
+            return Ok(Self::empty(Some(schema)));
         }
         let result_series: Vec<_> = exprs
             .iter()
@@ -1318,7 +1328,8 @@ impl RecordBatch {
         metrics: &mut dyn MetricsCollector,
     ) -> DaftResult<Self> {
         if self.is_empty() && exprs.iter().all(|e| !daft_dsl::has_agg(e.inner())) {
-            return Ok(self.clone());
+            let schema = Self::derive_eval_schema(exprs, &self.schema)?;
+            return Ok(Self::empty(Some(schema)));
         }
         let result_series: Vec<_> = exprs
             .iter()
@@ -1330,7 +1341,8 @@ impl RecordBatch {
 
     pub async fn eval_expression_list_async(&self, exprs: Vec<BoundExpr>) -> DaftResult<Self> {
         if self.is_empty() && exprs.iter().all(|e| !daft_dsl::has_agg(e.inner())) {
-            return Ok(self.clone());
+            let schema = Self::derive_eval_schema(&exprs, &self.schema)?;
+            return Ok(Self::empty(Some(schema)));
         }
         let futs = exprs
             .clone()
@@ -1348,7 +1360,8 @@ impl RecordBatch {
         num_parallel_tasks: usize,
     ) -> DaftResult<Self> {
         if self.is_empty() && exprs.iter().all(|e| !daft_dsl::has_agg(e.inner())) {
-            return Ok(self.clone());
+            let schema = Self::derive_eval_schema(exprs, &self.schema)?;
+            return Ok(Self::empty(Some(schema)));
         }
         // Partition the expressions into compute and non-compute
         let (compute_exprs, non_compute_exprs): (Vec<_>, Vec<_>) = exprs
