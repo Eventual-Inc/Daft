@@ -380,6 +380,15 @@ pub fn build_is_valid(array: &dyn Array) -> IsValid {
     }
 }
 
+pub fn build_is_valid_arrow(array: &dyn arrow::array::Array) -> IsValid {
+    if let Some(validity) = array.nulls() {
+        let validity = validity.clone();
+        Box::new(move |x| validity.is_null(x))
+    } else {
+        Box::new(move |_| true)
+    }
+}
+
 #[allow(clippy::eq_op)]
 #[inline]
 pub fn cmp_float<F: Float>(l: &F, r: &F) -> std::cmp::Ordering {
