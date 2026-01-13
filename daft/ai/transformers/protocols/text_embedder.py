@@ -14,6 +14,7 @@ from sentence_transformers import SentenceTransformer
 from transformers import AutoConfig
 
 from daft import DataType
+from daft.ai.metrics import record_text_embedding_metrics
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
 from daft.ai.typing import EmbeddingDimensions, EmbedTextOptions, Options, UDFOptions
 from daft.ai.utils import get_gpu_udf_options
@@ -57,11 +58,20 @@ class TransformersTextEmbedder(TextEmbedder):
 
     def __init__(self, model_name_or_path: str, **embed_options: Unpack[EmbedTextOptions]):
         # Let SentenceTransformer handle device selection automatically.
+        self._model_name = model_name_or_path
         self.model = SentenceTransformer(model_name_or_path, trust_remote_code=True, backend="torch")
         self.model.eval()
         self.embed_options = embed_options
 
     def embed_text(self, text: list[str]) -> list[Embedding]:
+        # Local embedding still benefits from observability (volume + rough size).
+        input_characters = sum(len(t or "") for t in text)
+        record_text_embedding_metrics(
+            model=self._model_name,
+            provider="transformers",
+            num_texts=len(text),
+            input_characters=input_characters,
+        )
         with torch.inference_mode():
             batch = self.model.encode(text, convert_to_numpy=True)
             return list(batch)

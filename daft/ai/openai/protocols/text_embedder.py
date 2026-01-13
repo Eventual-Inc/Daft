@@ -10,10 +10,10 @@ from openai._types import Omit, omit
 from openai.types.create_embedding_response import Usage
 
 from daft import DataType
-from daft.ai.metrics import record_token_metrics
+from daft.ai.metrics import record_text_embedding_metrics
 from daft.ai.openai.typing import OpenAIProviderOptions
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
-from daft.ai.typing import EmbeddingDimensions, EmbedTextOptions, Options, UDFOptions
+from daft.ai.typing import EmbeddingDimensions, EmbeddingModelProfile, EmbedTextOptions, Options, UDFOptions
 from daft.ai.utils import merge_provider_and_api_options
 from daft.dependencies import np
 
@@ -24,36 +24,22 @@ if TYPE_CHECKING:
     from daft.ai.typing import Embedding
 
 
-@dataclass(frozen=True)
-class _ModelProfile:
-    """Model profiles contain various model-specific metadata.
-
-    Note:
-        This is a bit simpler than OO-inheritance to model the subtle
-        differences between the models. If there is a need for different
-        implementations, then it would make sense to
-    """
-
-    dimensions: EmbeddingDimensions
-    supports_overriding_dimensions: bool
-
-
-_models: dict[EmbeddingModel, _ModelProfile] = {
-    "text-embedding-ada-002": _ModelProfile(
+_models: dict[EmbeddingModel, EmbeddingModelProfile] = {
+    "text-embedding-ada-002": EmbeddingModelProfile(
         dimensions=EmbeddingDimensions(
             size=1536,
             dtype=DataType.float32(),
         ),
         supports_overriding_dimensions=False,
     ),
-    "text-embedding-3-small": _ModelProfile(
+    "text-embedding-3-small": EmbeddingModelProfile(
         dimensions=EmbeddingDimensions(
             size=1536,
             dtype=DataType.float32(),
         ),
         supports_overriding_dimensions=True,
     ),
-    "text-embedding-3-large": _ModelProfile(
+    "text-embedding-3-large": EmbeddingModelProfile(
         dimensions=EmbeddingDimensions(
             size=3072,
             dtype=DataType.float32(),
@@ -278,10 +264,10 @@ class OpenAITextEmbedder(TextEmbedder):
         input_tokens = usage.prompt_tokens
         total_tokens = usage.total_tokens
 
-        record_token_metrics(
-            protocol="embed",
+        record_text_embedding_metrics(
             model=self._model,
             provider=self._provider_name,
+            num_texts=len(getattr(response, "data", []) or []),
             input_tokens=input_tokens,
             total_tokens=total_tokens,
         )
