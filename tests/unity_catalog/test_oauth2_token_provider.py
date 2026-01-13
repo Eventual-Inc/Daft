@@ -37,8 +37,9 @@ def test_get_token_refreshes_when_expired(provider: OAuth2TokenProvider) -> None
             provider.get_token()
 
         with patch("daft.unity_catalog.auth.is_expired", return_value=True):
-            mock_generate.return_value = "token_2"
-            second = provider.get_token()
+            with patch("daft.unity_catalog.auth.jwt_expiration", return_value=9999999999):
+                mock_generate.return_value = "token_2"
+                second = provider.get_token()
 
     assert second == "token_2"
     assert mock_generate.call_count == 2
