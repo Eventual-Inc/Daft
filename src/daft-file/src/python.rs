@@ -72,22 +72,19 @@ impl PyFileReference {
         let url = &self.inner.url;
 
         // Try to parse as URL and extract path component
-        if let Ok(parsed) = url::Url::parse(url) {
-            // For URLs with path segments, get the last segment
-            if let Some(segments) = parsed.path_segments() {
-                if let Some(last) = segments.last() {
-                    if !last.is_empty() {
-                        return Ok(last.to_string());
-                    }
-                }
-            }
+        if let Ok(parsed) = url::Url::parse(url)
+            && let Some(mut segments) = parsed.path_segments()
+            && let Some(last) = segments.next_back()
+            && !last.is_empty()
+        {
+            return Ok(last.to_string());
         }
 
         // Fallback: treat as file path and get basename
-        if let Some(last) = url.rsplit('/').next() {
-            if !last.is_empty() {
-                return Ok(last.to_string());
-            }
+        if let Some(last) = url.rsplit('/').next()
+            && !last.is_empty()
+        {
+            return Ok(last.to_string());
         }
 
         // If all else fails, return the full URL
