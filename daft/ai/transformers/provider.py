@@ -10,13 +10,15 @@ else:
     from typing import Unpack
 
 from daft.ai.provider import Provider, ProviderImportError
+from daft.udf import cls as daft_cls
+from daft.udf import method
 
 if TYPE_CHECKING:
+    from daft import Series
     from daft.ai.protocols import (
         ImageClassifierDescriptor,
         ImageEmbedderDescriptor,
         TextClassifierDescriptor,
-        TextEmbedderDescriptor,
     )
     from daft.ai.typing import (
         ClassifyImageOptions,
@@ -25,6 +27,7 @@ if TYPE_CHECKING:
         EmbedTextOptions,
         Options,
     )
+    from daft.expressions import Expression
 
 
 class TransformersProvider(Provider):
@@ -81,12 +84,14 @@ class TransformersProvider(Provider):
             classify_options=classify_options,
         )
 
-    def get_text_embedder(
+    def create_text_embedder(
         self,
         model: str | None = None,
         dimensions: int | None = None,
         **options: Unpack[EmbedTextOptions],
-    ) -> TextEmbedderDescriptor:
+    ) -> Expression:
+        """Create a TextEmbedder UDF expression for the Transformers provider."""
+        from daft.ai._expressions import _TextEmbedderExpression
         from daft.ai.transformers.protocols.text_embedder import (
             TransformersTextEmbedderDescriptor,
         )
@@ -97,7 +102,28 @@ class TransformersProvider(Provider):
             )
 
         embed_options: EmbedTextOptions = options
-        return TransformersTextEmbedderDescriptor(model or self.DEFAULT_TEXT_EMBEDDER, embed_options=embed_options)
+        descriptor = TransformersTextEmbedderDescriptor(
+            model or self.DEFAULT_TEXT_EMBEDDER, embed_options=embed_options
+        )
+        udf_options = descriptor.get_udf_options()
+        return_dtype = descriptor.get_dimensions().as_dtype()
+
+        @daft_cls(
+            max_concurrency=udf_options.concurrency,
+            gpus=udf_options.num_gpus or 0,
+            max_retries=udf_options.max_retries,
+            on_error=udf_options.on_error,
+            name_override="embed_text",
+        )
+        class TransformersTextEmbedderExpression(_TextEmbedderExpression):
+            @method.batch(
+                return_dtype=return_dtype,
+                batch_size=udf_options.batch_size,
+            )
+            def __call__(self, text_series: Series):
+                return self._call_sync(text_series)
+
+        return TransformersTextEmbedderExpression(descriptor)
 
     def get_image_classifier(
         self,

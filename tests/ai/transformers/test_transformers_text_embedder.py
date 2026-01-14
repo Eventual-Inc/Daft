@@ -15,7 +15,8 @@ from daft.datatype import DataType
 
 def test_sentence_transformers_text_embedder_default():
     provider = TransformersProvider()
-    descriptor = provider.get_text_embedder()
+    expr = provider.create_text_embedder()
+    descriptor = expr._daft_setup_args[0][0]
     assert isinstance(descriptor, TextEmbedderDescriptor)
     assert descriptor.get_provider() == "transformers"
     assert descriptor.get_model() == "sentence-transformers/all-MiniLM-L6-v2"
@@ -37,7 +38,8 @@ def test_sentence_transformers_text_embedder_other(model_name, dimensions, run_m
     mock_options = {"arg1": "val1", "arg2": "val2"}
 
     provider = TransformersProvider()
-    descriptor = provider.get_text_embedder(model_name, **mock_options)
+    expr = provider.create_text_embedder(model_name, **mock_options)
+    descriptor = expr._daft_setup_args[0][0]
     assert isinstance(descriptor, TextEmbedderDescriptor)
     assert descriptor.get_provider() == "transformers"
     assert descriptor.get_model() == model_name
@@ -48,7 +50,8 @@ def test_sentence_transformers_text_embedder_other(model_name, dimensions, run_m
 def test_sentence_transformers_device_selection():
     """Test that the embedder uses SentenceTransformer's automatic device selection."""
     provider = TransformersProvider()
-    descriptor = provider.get_text_embedder("sentence-transformers/all-MiniLM-L6-v2")
+    expr = provider.create_text_embedder("sentence-transformers/all-MiniLM-L6-v2")
+    descriptor = expr._daft_setup_args[0][0]
     embedder = descriptor.instantiate()
 
     if torch.cuda.is_available():

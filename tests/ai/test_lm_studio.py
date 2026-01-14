@@ -63,7 +63,8 @@ def test_lm_studio_text_embedder(model, embedding_dim):
             )
             mock_openai_async.return_value = mock_async_client
 
-            descriptor = LMStudioProvider().get_text_embedder(model=model)
+            expr = LMStudioProvider().create_text_embedder(model=model)
+            descriptor = expr._daft_setup_args[0][0]
             assert isinstance(descriptor, TextEmbedderDescriptor)
             assert descriptor.get_provider() == "lm_studio"
             assert descriptor.get_model() == model

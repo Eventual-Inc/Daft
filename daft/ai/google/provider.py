@@ -12,7 +12,7 @@ from daft.ai.provider import Provider, ProviderImportError
 
 if TYPE_CHECKING:
     from daft.ai.google.typing import GoogleProviderOptions
-    from daft.ai.protocols import PrompterDescriptor, TextEmbedderDescriptor
+    from daft.ai.protocols import PrompterDescriptor
     from daft.ai.typing import PromptOptions
 
 
@@ -40,10 +40,8 @@ class GoogleProvider(Provider):
     def name(self) -> str:
         return self._name
 
-    def get_text_embedder(
-        self, model: str | None = None, dimensions: int | None = None, **options: Any
-    ) -> TextEmbedderDescriptor:
-        # TODO: Implement GoogleTextEmbedderDescriptor
+    def create_text_embedder(self, model: str | None = None, dimensions: int | None = None, **options: Any):
+        """Create a TextEmbedder UDF expression for the Google provider."""
         raise NotImplementedError("Google text embedder not implemented yet")
 
     def get_prompter(
