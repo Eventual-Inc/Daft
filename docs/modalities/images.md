@@ -200,7 +200,7 @@ Daft data may contain `None` (null) values. Your UDF must handle these gracefull
     from PIL import Image
     import io
 
-    @daft.func(return_dtype=daft.DataType.python())
+    @daft.func(return_dtype=daft.DataType.binary())
     def process_image(image_bytes):
         # Always check for None!
         if image_bytes is None:
@@ -209,7 +209,11 @@ Daft data may contain `None` (null) values. Your UDF must handle these gracefull
         try:
             img = Image.open(io.BytesIO(image_bytes))
             # ... processing ...
-            return img
+
+            # Serialize back to bytes for efficiency
+            out = io.BytesIO()
+            img.save(out, format=img.format or "PNG")
+            return out.getvalue()
         except Exception:
             # Decide whether to return None or raise an error
             return None
@@ -220,6 +224,7 @@ Daft data may contain `None` (null) values. Your UDF must handle these gracefull
 The `return_dtype` argument in `@daft.func` or `@daft.udf` is crucial. It tells Daft what kind of data to expect, allowing for optimizations and correct schema inference.
 
 - **`daft.DataType.tensor(dtype)`**: Best for returning numerical data (numpy arrays, torch tensors). This allows Daft to treat the column as a native tensor type, enabling further vectorized operations.
+- **`daft.DataType.binary()`**: Best for returning raw bytes (e.g. encoded PNG/JPEG data). This is often more memory efficient than full bitmaps, and avoids the pickling overhead associated with Python objects.
 - **`daft.DataType.python()`**: Use this if you are returning arbitrary Python objects (like `PIL.Image` objects) that don't map neatly to a Daft type. **Note:** Python objects cannot be serialized as efficiently and may block some downstream optimizations.
 
 ### 3. Performance: `numpy` / `torch` vs `PIL.Image`
@@ -338,7 +343,7 @@ First, make sure to install and import some extra dependencies:
 
 ```bash
 
-%pip install validators matplotlib Pillow torch torchvision
+pip install validators matplotlib Pillow torch torchvision
 
 ```
 
