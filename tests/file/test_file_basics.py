@@ -221,3 +221,60 @@ def test_file_mimetype_with_real_files(tmp_path, file_info):
     file = daft.File(str(temp_file.absolute()))
     mimetype = file.mime_type()
     assert mimetype == expected_mimetype
+
+
+def test_file_path_property(tmp_path: Path):
+    """Test that the path property returns the full file path."""
+    temp_file = tmp_path / "test_file.txt"
+    temp_file.write_text("hello world")
+    file_path = str(temp_file.absolute())
+
+    file = daft.File(file_path)
+    assert file.path == file_path
+
+
+def test_file_name_property_local_path(tmp_path: Path):
+    """Test that the name property returns just the filename for local paths."""
+    temp_file = tmp_path / "test_file.txt"
+    temp_file.write_text("hello world")
+
+    file = daft.File(str(temp_file.absolute()))
+    assert file.name == "test_file.txt"
+
+
+def test_file_name_property_with_subdirs(tmp_path: Path):
+    """Test that the name property returns just the filename even with subdirectories."""
+    subdir = tmp_path / "subdir" / "nested"
+    subdir.mkdir(parents=True)
+    temp_file = subdir / "data.json"
+    temp_file.write_text("{}")
+
+    file = daft.File(str(temp_file.absolute()))
+    assert file.name == "data.json"
+
+
+def test_file_path_and_name_with_url():
+    """Test path and name properties with a URL."""
+    url = "https://raw.githubusercontent.com/Eventual-Inc/Daft/refs/heads/main/README.rst"
+    file = daft.File(url)
+
+    assert file.path == url
+    assert file.name == "README.rst"
+
+
+@pytest.mark.parametrize(
+    "url,expected_name",
+    [
+        ("s3://bucket/path/to/file.csv", "file.csv"),
+        ("s3://bucket/file.parquet", "file.parquet"),
+        ("https://example.com/data.json", "data.json"),
+        ("file:///path/to/document.pdf", "document.pdf"),
+        ("/local/path/image.png", "image.png"),
+        ("simple_file.txt", "simple_file.txt"),
+    ],
+)
+def test_file_name_property_various_formats(url, expected_name):
+    """Test that the name property correctly extracts filenames from various URL/path formats."""
+    file = daft.File(url)
+    assert file.name == expected_name
+    assert file.path == url
