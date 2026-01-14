@@ -26,32 +26,58 @@ def test_openai_provider_upsert():
 
 def test_openai_text_embedder_default():
     provider = OpenAIProvider()
-    descriptor = provider.get_text_embedder()
+    expr = provider.create_text_embedder()
+    descriptor = expr._daft_setup_args[0][0]
 
     assert isinstance(descriptor, OpenAITextEmbedderDescriptor)
     assert descriptor.get_provider() == "openai"
     assert descriptor.get_model() == "text-embedding-3-small"
     assert descriptor.get_dimensions().size == 1536
 
+    # Factory returns a Daft UDF object, not a descriptor.
+    # Calling it with an Expression returns an Expression with the correct return dtype.
+    import daft
+    from daft.expressions import Expression
+
+    call_func = expr.__getattr__("__call__")
+    assert call_func.return_dtype == descriptor.get_dimensions().as_dtype()
+    assert isinstance(expr(daft.col("text")), Expression)
+
 
 def test_openai_text_embedder_overridden_dimensions():
     provider = OpenAIProvider()
-    descriptor = provider.get_text_embedder(dimensions=256)
+    expr = provider.create_text_embedder(dimensions=256)
+    descriptor = expr._daft_setup_args[0][0]
 
     assert isinstance(descriptor, OpenAITextEmbedderDescriptor)
     assert descriptor.get_provider() == "openai"
     assert descriptor.get_model() == "text-embedding-3-small"
     assert descriptor.get_dimensions().size == 256
 
+    import daft
+    from daft.expressions import Expression
+
+    call_func = expr.__getattr__("__call__")
+    assert call_func.return_dtype == descriptor.get_dimensions().as_dtype()
+    assert isinstance(expr(daft.col("text")), Expression)
+
 
 def test_openai_text_embedder_other():
     provider = OpenAIProvider()
-    descriptor = provider.get_text_embedder(model="text-embedding-3-large", api_key="test-key")
+    expr = provider.create_text_embedder(model="text-embedding-3-large", api_key="test-key")
+    descriptor = expr._daft_setup_args[0][0]
 
     assert isinstance(descriptor, OpenAITextEmbedderDescriptor)
     assert descriptor.get_provider() == "openai"
     assert descriptor.get_model() == "text-embedding-3-large"
     assert descriptor.get_dimensions().size == 3072
+
+    import daft
+    from daft.expressions import Expression
+
+    call_func = expr.__getattr__("__call__")
+    assert call_func.return_dtype == descriptor.get_dimensions().as_dtype()
+    assert isinstance(expr(daft.col("text")), Expression)
 
 
 def test_openai_text_embedder_instantiation():
