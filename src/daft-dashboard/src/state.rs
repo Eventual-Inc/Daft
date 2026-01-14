@@ -13,11 +13,12 @@ use serde::Serialize;
 use tokio::sync::{broadcast, watch};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub(crate) enum OperatorStatus {
     Pending,
     Executing,
     Finished,
+    Failed,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -33,20 +34,22 @@ pub(crate) struct OperatorInfo {
     pub status: OperatorStatus,
     pub node_info: NodeInfo,
     pub stats: HashMap<String, Stat>,
+    #[serde(skip)]
+    pub source_stats: HashMap<String, HashMap<String, Stat>>,
 }
 
 pub(crate) type OperatorInfos = HashMap<NodeID, OperatorInfo>;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct PlanInfo {
-    pub plan_start_sec: u64,
-    pub plan_end_sec: u64,
+    pub plan_start_sec: f64,
+    pub plan_end_sec: f64,
     pub optimized_plan: QueryPlan,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ExecInfo {
-    pub exec_start_sec: u64,
+    pub exec_start_sec: f64,
     pub physical_plan: QueryPlan,
     pub operators: OperatorInfos,
     // TODO: Logs
@@ -56,25 +59,25 @@ pub(crate) struct ExecInfo {
 #[serde(tag = "status")]
 pub(crate) enum QueryStatus {
     Pending {
-        start_sec: u64,
+        start_sec: f64,
     },
     Optimizing {
-        plan_start_sec: u64,
+        plan_start_sec: f64,
     },
     Setup,
     Executing {
-        exec_start_sec: u64,
+        exec_start_sec: f64,
     },
     Finalizing,
     Finished {
-        duration_sec: u64,
+        duration_sec: f64,
     },
     Canceled {
-        duration_sec: u64,
+        duration_sec: f64,
         message: Option<String>,
     },
     Failed {
-        duration_sec: u64,
+        duration_sec: f64,
         message: Option<String>,
     },
     /* TODO(void001): Implement dead state */
@@ -84,8 +87,13 @@ pub(crate) enum QueryStatus {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct QuerySummary {
     pub id: QueryID,
-    pub start_sec: u64,
+    pub start_sec: f64,
     pub status: QueryStatus,
+    pub runner: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ray_dashboard_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entrypoint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -94,7 +102,7 @@ pub(crate) struct QuerySummary {
 pub(crate) enum QueryState {
     Pending,
     Optimizing {
-        plan_start_sec: u64,
+        plan_start_sec: f64,
     },
     Setup {
         plan_info: PlanInfo,
@@ -106,26 +114,26 @@ pub(crate) enum QueryState {
     Finalizing {
         plan_info: PlanInfo,
         exec_info: ExecInfo,
-        exec_end_sec: u64,
+        exec_end_sec: f64,
     },
     Finished {
         plan_info: PlanInfo,
         exec_info: ExecInfo,
-        exec_end_sec: u64,
-        end_sec: u64,
+        exec_end_sec: f64,
+        end_sec: f64,
         #[serde(skip_serializing)]
         results: Option<RecordBatch>,
     },
     Canceled {
-        plan_info: PlanInfo,
-        exec_info: ExecInfo,
-        end_sec: u64,
+        plan_info: Option<PlanInfo>,
+        exec_info: Option<ExecInfo>,
+        end_sec: f64,
         message: Option<String>,
     },
     Failed {
-        plan_info: PlanInfo,
-        exec_info: ExecInfo,
-        end_sec: u64,
+        plan_info: Option<PlanInfo>,
+        exec_info: Option<ExecInfo>,
+        end_sec: f64,
         message: Option<String>,
     },
     /* TODO(void001): Implement dead state */
@@ -135,8 +143,11 @@ pub(crate) enum QueryState {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct QueryInfo {
     pub id: QueryID,
-    pub start_sec: u64,
+    pub start_sec: f64,
     pub unoptimized_plan: QueryPlan,
+    pub runner: String,
+    pub ray_dashboard_url: Option<String>,
+    pub entrypoint: Option<String>,
     pub state: QueryState,
 }
 
@@ -180,6 +191,9 @@ impl QueryInfo {
             id: self.id.clone(),
             start_sec: self.start_sec,
             status: self.status(),
+            runner: self.runner.clone(),
+            ray_dashboard_url: self.ray_dashboard_url.clone(),
+            entrypoint: self.entrypoint.clone(),
         }
     }
 }
@@ -231,13 +245,29 @@ impl DashboardState {
     pub fn ping_clients_on_operator_update(&self, query_info: &QueryInfo) {
         let query_id = &query_info.id;
         if let Some(query_client) = self.query_clients.get(query_id) {
-            let QueryState::Executing { exec_info, .. } = &query_info.state else {
-                tracing::error!("Query `{}` is not executing", query_id);
-                panic!("Query `{}` is not executing", query_id);
-            };
-
-            let operator_infos = exec_info.operators.clone();
-            let _ = query_client.1.send(operator_infos);
+            match &query_info.state {
+                QueryState::Executing { exec_info, .. }
+                | QueryState::Finalizing { exec_info, .. }
+                | QueryState::Finished { exec_info, .. }
+                | QueryState::Failed {
+                    exec_info: Some(exec_info),
+                    ..
+                }
+                | QueryState::Canceled {
+                    exec_info: Some(exec_info),
+                    ..
+                } => {
+                    let operator_infos = exec_info.operators.clone();
+                    let _ = query_client.1.send(operator_infos);
+                }
+                _ => {
+                    tracing::warn!(
+                        "Query `{}` is not in an executing state (current: {:?}), skipping operator update",
+                        query_id,
+                        query_info.state
+                    );
+                }
+            }
         }
     }
 }

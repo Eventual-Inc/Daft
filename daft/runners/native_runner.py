@@ -96,12 +96,19 @@ class NativeRunner(Runner[MicroPartition]):
         output_schema = builder.schema()
 
         # Optimize the logical plan.
-        ctx._notify_query_start(query_id, PyQueryMetadata(output_schema._schema, builder.repr_json()))
+        import sys
+
+        entrypoint = "python " + " ".join(sys.argv)
+        ctx._notify_query_start(
+            query_id,
+            PyQueryMetadata(output_schema._schema, builder.repr_json(), "Native (Swordfish)", None, entrypoint),
+        )
         ctx._notify_optimization_start(query_id)
         builder = builder.optimize(ctx.daft_execution_config)
         ctx._notify_optimization_end(query_id, builder.repr_json())
 
         plan = LocalPhysicalPlan.from_logical_plan_builder(builder._builder)
+
         executor = NativeExecutor()
         results_gen = executor.run(
             plan,
@@ -112,8 +119,10 @@ class NativeRunner(Runner[MicroPartition]):
         )
 
         try:
+            total_rows = 0
             for result in results_gen:
                 ctx._notify_result_out(query_id, result.partition())
+                total_rows += len(result.partition())
                 yield result
         except KeyboardInterrupt as e:
             query_result = PyQueryResult(QueryEndState.Canceled, "Query canceled by the user.")

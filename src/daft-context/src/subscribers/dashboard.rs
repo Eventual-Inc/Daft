@@ -1,24 +1,22 @@
-use std::{collections::HashMap, sync::Arc, time::SystemTime};
+use std::{sync::Arc, time::SystemTime};
 
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
-use common_metrics::{NodeID, QueryID, QueryPlan, Stat, Stats};
+use common_metrics::{NodeID, QueryID, QueryPlan, Stat, Stats, StatSnapshot};
 use common_runtime::{RuntimeRef, get_io_runtime};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use daft_recordbatch::RecordBatch;
-#[cfg(feature = "python")]
-use daft_runners::get_or_create_runner;
 use dashmap::DashMap;
 use reqwest::{Client, RequestBuilder};
 
 use crate::subscribers::{QueryMetadata, QueryResult, Subscriber};
 
 /// Get the number of seconds from the current timesince the UNIX epoch
-fn secs_from_epoch() -> u64 {
+fn secs_from_epoch() -> f64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap()
-        .as_secs()
+        .as_secs_f64()
 }
 
 pub struct DashboardSubscriber {
@@ -26,6 +24,7 @@ pub struct DashboardSubscriber {
     client: Client,
     runtime: RuntimeRef,
     preview_rows: DashMap<QueryID, MicroPartitionRef>,
+    execution_ids: DashMap<QueryID, String>,
 }
 
 impl std::fmt::Debug for DashboardSubscriber {
@@ -35,6 +34,7 @@ impl std::fmt::Debug for DashboardSubscriber {
             .field("client", &self.client)
             .field("runtime", &self.runtime.runtime)
             .field("preview_rows", &self.preview_rows)
+            .field("execution_ids", &self.execution_ids)
             .finish()
     }
 }
@@ -44,14 +44,6 @@ impl DashboardSubscriber {
         let Ok(url) = std::env::var("DAFT_DASHBOARD_URL") else {
             return Ok(None);
         };
-
-        // TODO(zhenchao) remove it when we support Ray Runner
-        #[cfg(feature = "python")]
-        if get_or_create_runner()?.is_ray() {
-            return Err(DaftError::not_implemented(
-                "Dashboard isn't currently supported in Ray Runner",
-            ));
-        }
 
         const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
@@ -73,10 +65,12 @@ impl DashboardSubscriber {
                 .map_err(|e| DaftError::External(Box::new(e)))?
         };
 
+        let url_clone = url.clone();
+        let client_clone = client.clone();
         let runtime = get_io_runtime(false);
 
         // Validate that we can connect to the dashboard
-        runtime.block_on_current_thread(async {
+        runtime.block_within_async_context(async move {
             client
                 .get(format!("{}/api/ping", url))
                 .send()
@@ -85,13 +79,14 @@ impl DashboardSubscriber {
                 .error_for_status()
                 .map_err(|e| DaftError::External(Box::new(e)))?;
             Ok::<_, DaftError>(())
-        })?;
+        })??;
 
         Ok(Some(Self {
-            url,
-            client,
+            url: url_clone,
+            client: client_clone,
             runtime,
             preview_rows: DashMap::new(),
+            execution_ids: DashMap::new(),
         }))
     }
 
@@ -111,17 +106,34 @@ const TOTAL_ROWS: usize = 10;
 #[async_trait]
 impl Subscriber for DashboardSubscriber {
     fn on_query_start(&self, query_id: QueryID, metadata: Arc<QueryMetadata>) -> DaftResult<()> {
-        self.runtime.block_on_current_thread(async {
-            Self::handle_request(
-                self.client
-                    .post(format!("{}/engine/query/{}/start", self.url, query_id))
+        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+            return Ok(());
+        }
+        let url = self.url.clone();
+        let client = self.client.clone();
+        let unoptimized_plan = metadata.unoptimized_plan.clone();
+        let runner = Some(metadata.runner.clone());
+        let ray_dashboard_url = metadata.ray_dashboard_url.clone();
+        let entrypoint = metadata.entrypoint.clone();
+        let start_sec = secs_from_epoch();
+        let qid = query_id.clone();
+
+        self.runtime.block_within_async_context(async move {
+            if let Err(e) = Self::handle_request(
+                client
+                    .post(format!("{}/engine/query/{}/start", url, qid))
                     .json(&daft_dashboard::engine::StartQueryArgs {
-                        start_sec: secs_from_epoch(),
-                        unoptimized_plan: metadata.unoptimized_plan.clone(),
+                        start_sec,
+                        unoptimized_plan,
+                        runner,
+                        ray_dashboard_url,
+                        entrypoint,
                     }),
             )
-            .await?;
-            Ok::<_, DaftError>(())
+            .await
+            {
+                log::error!("Failed to notify query start: {}", e);
+            }
         })?;
 
         self.preview_rows.insert(
@@ -154,100 +166,141 @@ impl Subscriber for DashboardSubscriber {
     }
 
     fn on_query_end(&self, query_id: QueryID, end_result: QueryResult) -> DaftResult<()> {
-        let Some((_, results)) = self.preview_rows.remove(&query_id) else {
-            return Err(DaftError::ValueError(format!(
-                "Query `{}` not started or already ended in DashboardSubscriber",
-                query_id
-            )));
+        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+            return Ok(());
+        }
+        let results = self.preview_rows.remove(&query_id);
+        let results_ipc = if let Some((_, results)) = results {
+            debug_assert!(results.len() <= TOTAL_ROWS);
+            let result = results
+                .concat_or_get()?
+                .unwrap_or_else(|| RecordBatch::empty(Some(results.schema())));
+            let results_ipc = result.to_ipc_stream()?;
+            if results_ipc.len() > 1024 * 1024 * 2 {
+                // 2MB, our dashboard cap
+                None
+            } else {
+                Some(results_ipc)
+            }
+        } else {
+            None
         };
-        debug_assert!(results.len() <= TOTAL_ROWS);
 
         let end_sec = secs_from_epoch();
-        let result = results
-            .concat_or_get()?
-            .unwrap_or_else(|| RecordBatch::empty(Some(results.schema())));
-        let results_ipc = result.to_ipc_stream()?;
-        let results_ipc = if results_ipc.len() > 1024 * 1024 * 2 {
-            // 2MB, our dashboard cap
-            None
-        } else {
-            Some(results_ipc)
-        };
+        let url = self.url.clone();
+        let client = self.client.clone();
+        let end_state = end_result.end_state;
+        let error_message = end_result.error_message;
 
-        self.runtime.block_on_current_thread(async {
-            Self::handle_request(
-                self.client
-                    .post(format!("{}/engine/query/{}/end", self.url, query_id))
+        self.runtime.block_within_async_context(async move {
+            if let Err(e) = Self::handle_request(
+                client
+                    .post(format!("{}/engine/query/{}/end", url, query_id))
                     .json(&daft_dashboard::engine::FinalizeArgs {
                         end_sec,
-                        end_state: end_result.end_state,
-                        error_message: end_result.error_message.clone(),
+                        end_state,
+                        error_message,
                         results: results_ipc,
                     }),
             )
-            .await?;
-            Ok::<_, DaftError>(())
-        })
+            .await
+            {
+                log::error!("Failed to notify query end: {}", e);
+            }
+        })?;
+        Ok(())
     }
 
     fn on_optimization_start(&self, query_id: QueryID) -> DaftResult<()> {
-        self.runtime.block_on_current_thread(async {
-            Self::handle_request(
-                self.client
-                    .post(format!("{}/engine/query/{}/plan_start", self.url, query_id))
-                    .json(&daft_dashboard::engine::PlanStartArgs {
-                        plan_start_sec: secs_from_epoch(),
-                    }),
+        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+            return Ok(());
+        }
+        let url = self.url.clone();
+        let client = self.client.clone();
+        let plan_start_sec = secs_from_epoch();
+
+        self.runtime.block_within_async_context(async move {
+            if let Err(e) = Self::handle_request(
+                client
+                    .post(format!("{}/engine/query/{}/plan_start", url, query_id))
+                    .json(&daft_dashboard::engine::PlanStartArgs { plan_start_sec }),
             )
-            .await?;
-            Ok::<_, DaftError>(())
-        })
+            .await
+            {
+                log::error!("Failed to notify optimization start: {}", e);
+            }
+        })?;
+        Ok(())
     }
 
     fn on_optimization_end(&self, query_id: QueryID, optimized_plan: QueryPlan) -> DaftResult<()> {
+        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+            return Ok(());
+        }
+        let url = self.url.clone();
+        let client = self.client.clone();
         let plan_end_sec = secs_from_epoch();
-        self.runtime.block_on_current_thread(async {
-            Self::handle_request(
-                self.client
-                    .post(format!("{}/engine/query/{}/plan_end", self.url, query_id))
+
+        self.runtime.block_within_async_context(async move {
+            if let Err(e) = Self::handle_request(
+                client
+                    .post(format!("{}/engine/query/{}/plan_end", url, query_id))
                     .json(&daft_dashboard::engine::PlanEndArgs {
                         plan_end_sec,
                         optimized_plan,
                     }),
             )
-            .await?;
-            Ok::<_, DaftError>(())
-        })
+            .await
+            {
+                log::error!("Failed to notify optimization end: {}", e);
+            }
+        })?;
+        Ok(())
     }
 
-    fn on_exec_start(&self, query_id: QueryID, physical_plan: QueryPlan) -> DaftResult<()> {
+    fn on_exec_start_with_id(
+        &self,
+        query_id: QueryID,
+        execution_id: &str,
+        physical_plan: QueryPlan,
+    ) -> DaftResult<()> {
+        self.execution_ids
+            .insert(query_id.clone(), execution_id.to_string());
+
+        let url = self.url.clone();
+        let client = self.client.clone();
         let exec_start_sec = secs_from_epoch();
-        self.runtime.block_on_current_thread(async {
-            Self::handle_request(
-                self.client
-                    .post(format!("{}/engine/query/{}/exec/start", self.url, query_id))
+
+        self.runtime.block_within_async_context(async move {
+            if let Err(e) = Self::handle_request(
+                client
+                    .post(format!("{}/engine/query/{}/exec/start", url, query_id))
                     .json(&daft_dashboard::engine::ExecStartArgs {
                         exec_start_sec,
                         physical_plan,
                     }),
             )
-            .await?;
-            Ok::<_, DaftError>(())
-        })
-    }
-
-    async fn on_exec_operator_start(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
-        Self::handle_request(self.client.post(format!(
-            "{}/engine/query/{}/exec/{}/start",
-            self.url, query_id, node_id
-        )))
-        .await?;
+            .await
+            {
+                log::error!("Failed to notify exec start: {}", e);
+            }
+        })?;
         Ok(())
     }
 
-    async fn on_exec_emit_stats(
+    fn on_exec_start(&self, query_id: QueryID, physical_plan: QueryPlan) -> DaftResult<()> {
+        let execution_id = format!("{}-driver", query_id);
+        self.on_exec_start_with_id(query_id, &execution_id, physical_plan)
+    }
+
+    async fn on_exec_operator_start(&self, _query_id: QueryID, _node_id: NodeID) -> DaftResult<()> {
+        Ok(())
+    }
+
+    async fn on_exec_emit_stats_with_id(
         &self,
         query_id: QueryID,
+        execution_id: &str,
         stats: &[(NodeID, Stats)],
     ) -> DaftResult<()> {
         Self::handle_request(
@@ -257,42 +310,61 @@ impl Subscriber for DashboardSubscriber {
                     self.url, query_id
                 ))
                 .json(&daft_dashboard::engine::ExecEmitStatsArgsSend {
+                    source_id: execution_id.to_string(),
                     stats: stats
                         .iter()
-                        .map(|(node_id, stats)| {
+                        .map(|(node_id, snapshot)| {
                             (
                                 *node_id,
-                                stats
+                                snapshot
                                     .iter()
                                     .map(|(name, stat)| (name.to_string(), stat.clone()))
-                                    .collect::<HashMap<String, Stat>>(),
+                                    .collect(),
                             )
                         })
-                        .collect::<Vec<_>>(),
+                        .collect(),
                 }),
         )
         .await?;
         Ok(())
     }
 
-    async fn on_exec_operator_end(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()> {
-        Self::handle_request(self.client.post(format!(
-            "{}/engine/query/{}/exec/{}/end",
-            self.url, query_id, node_id
-        )))
-        .await?;
+    async fn on_exec_emit_stats(
+        &self,
+        query_id: QueryID,
+        stats: &[(NodeID, StatSnapshot)],
+    ) -> DaftResult<()> {
+        let source_id = self
+            .execution_ids
+            .get(&query_id)
+            .map(|id| id.clone())
+            .unwrap_or_else(|| "unknown".to_string());
+
+        self.on_exec_emit_stats_with_id(query_id, &source_id, stats)
+            .await
+    }
+
+    async fn on_exec_operator_end(&self, _query_id: QueryID, _node_id: NodeID) -> DaftResult<()> {
+        Ok(())
+    }
+
+    async fn on_exec_end_with_id(&self, query_id: QueryID, _execution_id: &str) -> DaftResult<()> {
+        self.execution_ids.remove(&query_id);
+
+        let exec_end_sec = secs_from_epoch();
+        let url = self.url.clone();
+        let client = self.client.clone();
+
+        let _ = Self::handle_request(
+            client
+                .post(format!("{}/engine/query/{}/exec/end", url, query_id))
+                .json(&daft_dashboard::engine::ExecEndArgs { exec_end_sec }),
+        )
+        .await;
         Ok(())
     }
 
     async fn on_exec_end(&self, query_id: QueryID) -> DaftResult<()> {
-        let exec_end_sec = secs_from_epoch();
-
-        Self::handle_request(
-            self.client
-                .post(format!("{}/engine/query/{}/exec/end", self.url, query_id))
-                .json(&daft_dashboard::engine::ExecEndArgs { exec_end_sec }),
-        )
-        .await?;
-        Ok(())
+        self.on_exec_end_with_id(query_id, "unknown").await
     }
 }

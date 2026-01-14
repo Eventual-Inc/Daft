@@ -183,6 +183,100 @@ impl DaftContext {
             Ok::<(), DaftError>(())
         })
     }
+
+    pub fn notify_exec_start(&self, query_id: QueryID, physical_plan: String) -> DaftResult<()> {
+        self.with_state(|state| {
+            for subscriber in state.subscribers.values() {
+                subscriber.on_exec_start(query_id.clone(), physical_plan.clone().into())?;
+            }
+            Ok::<(), DaftError>(())
+        })
+    }
+
+    pub fn notify_exec_end(&self, query_id: QueryID) -> DaftResult<()> {
+        let subscribers = self.with_state(|state| {
+            state
+                .subscribers
+                .values()
+                .cloned()
+                .collect::<Vec<Arc<dyn Subscriber>>>()
+        });
+        let rt = common_runtime::get_io_runtime(false);
+        for subscriber in subscribers {
+            let query_id = query_id.clone();
+            let _ = rt.block_within_async_context(async move {
+                if let Err(e) = subscriber.on_exec_end(query_id).await {
+                    log::error!("Failed to notify exec end: {}", e);
+                }
+            });
+        }
+        Ok(())
+    }
+
+    pub fn notify_exec_operator_start(&self, query_id: QueryID, node_id: usize) -> DaftResult<()> {
+        let subscribers = self.with_state(|state| {
+            state
+                .subscribers
+                .values()
+                .cloned()
+                .collect::<Vec<Arc<dyn Subscriber>>>()
+        });
+        let rt = common_runtime::get_io_runtime(false);
+        for subscriber in subscribers {
+            let query_id = query_id.clone();
+            rt.spawn(async move {
+                if let Err(e) = subscriber.on_exec_operator_start(query_id, node_id).await {
+                    log::error!("Failed to notify exec operator start: {}", e);
+                }
+            });
+        }
+        Ok(())
+    }
+
+    pub fn notify_exec_operator_end(&self, query_id: QueryID, node_id: usize) -> DaftResult<()> {
+        let subscribers = self.with_state(|state| {
+            state
+                .subscribers
+                .values()
+                .cloned()
+                .collect::<Vec<Arc<dyn Subscriber>>>()
+        });
+        let rt = common_runtime::get_io_runtime(false);
+        for subscriber in subscribers {
+            let query_id = query_id.clone();
+            rt.spawn(async move {
+                if let Err(e) = subscriber.on_exec_operator_end(query_id, node_id).await {
+                    log::error!("Failed to notify exec operator end: {}", e);
+                }
+            });
+        }
+        Ok(())
+    }
+
+    pub fn notify_exec_emit_stats(
+        &self,
+        query_id: QueryID,
+        stats: Vec<(usize, common_metrics::StatSnapshot)>,
+    ) -> DaftResult<()> {
+        let subscribers = self.with_state(|state| {
+            state
+                .subscribers
+                .values()
+                .cloned()
+                .collect::<Vec<Arc<dyn Subscriber>>>()
+        });
+        let rt = common_runtime::get_io_runtime(false);
+        for subscriber in subscribers {
+            let stats = stats.clone();
+            let query_id = query_id.clone();
+            rt.spawn(async move {
+                if let Err(e) = subscriber.on_exec_emit_stats(query_id, &stats).await {
+                    log::error!("Failed to notify exec emit stats: {}", e);
+                }
+            });
+        }
+        Ok(())
+    }
 }
 
 static DAFT_CONTEXT: OnceLock<DaftContext> = OnceLock::new();

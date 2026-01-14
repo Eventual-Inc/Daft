@@ -182,12 +182,29 @@ impl RuntimeStatsManager {
                     }
 
                     finish_status = &mut finish_rx => {
-                        if let Ok(status) = finish_status && status == QueryEndState::Finished && !active_nodes.is_empty() {
+                        if finish_status == Ok(QueryEndState::Finished) && !active_nodes.is_empty() {
                             log::error!(
                                 "RuntimeStatsManager finished with active nodes {{{}}}",
                                 active_nodes.iter().map(|id: &usize| id.to_string()).join(", ")
                             );
                         }
+
+                        // Emit final stats to all subscribers before finishing
+                        snapshot_container.clear();
+                        for (node_id, runtime_stats) in &node_stats_map {
+                            let event = runtime_stats.flush();
+                            snapshot_container.push((*node_id, event));
+                        }
+                        if !snapshot_container.is_empty() {
+                            for res in future::join_all(subscribers.iter().map(|subscriber| {
+                                subscriber.handle_event(snapshot_container.as_slice())
+                            })).await {
+                                if let Err(e) = res {
+                                    log::error!("Failed to handle final event: {}", e);
+                                }
+                            }
+                        }
+
                         break;
                     }
 
@@ -293,6 +310,69 @@ impl<F: Future> Future for TimedFuture<F> {
             Poll::Pending => Poll::Pending,
             Poll::Ready(output) => Poll::Ready(output),
         }
+    }
+}
+
+/// Sender that wraps an internal sender and counts the number of rows passed through
+pub struct CountingSender {
+    sender: Sender<Arc<MicroPartition>>,
+    rt: Arc<dyn RuntimeStats>,
+}
+
+impl CountingSender {
+    pub(crate) fn new(sender: Sender<Arc<MicroPartition>>, rt: Arc<dyn RuntimeStats>) -> Self {
+        Self { sender, rt }
+    }
+    #[inline]
+    pub(crate) async fn send(&self, v: Arc<MicroPartition>) -> Result<(), SendError> {
+        self.rt.add_rows_out(v.len() as u64);
+        self.sender.send(v).await?;
+        Ok(())
+    }
+}
+
+/// Receiver that wraps an internal received and
+/// - Counts the number of rows passed through
+/// - Activates the associated node on first receive
+pub struct InitializingCountingReceiver {
+    receiver: Receiver<Arc<MicroPartition>>,
+    rt: Arc<dyn RuntimeStats>,
+
+    first_receive: AtomicBool,
+    node_id: usize,
+    stats_manager: RuntimeStatsManagerHandle,
+}
+
+impl InitializingCountingReceiver {
+    pub(crate) fn new(
+        receiver: Receiver<Arc<MicroPartition>>,
+        node_id: usize,
+        rt: Arc<dyn RuntimeStats>,
+        stats_manager: RuntimeStatsManagerHandle,
+    ) -> Self {
+        Self {
+            receiver,
+            node_id,
+            rt,
+            stats_manager,
+            first_receive: AtomicBool::new(true),
+        }
+    }
+    #[inline]
+    pub(crate) async fn recv(&self) -> Option<Arc<MicroPartition>> {
+        let v = self.receiver.recv().await;
+        if let Some(ref v) = v {
+            if self
+                .first_receive
+                .compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
+                self.stats_manager.activate_node(self.node_id);
+            }
+            let len = v.len() as u64;
+            self.rt.add_rows_in(len);
+        }
+        v
     }
 }
 
