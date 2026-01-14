@@ -8,11 +8,9 @@ use daft_arrow::{
 
 use super::{DaftConcatAggable, as_arrow::AsArrow};
 use crate::{
-    array::{
-        DataArray, ListArray,
-        growable::{Growable, make_growable},
-    },
+    array::{DataArray, ListArray},
     prelude::Utf8Type,
+    series::Series,
 };
 
 impl DaftConcatAggable for ListArray {
@@ -37,20 +35,23 @@ impl DaftConcatAggable for ListArray {
             _ => None,
         };
 
-        // Re-grow the child, dropping elements where the parent is null
-        let mut child_growable: Box<dyn Growable> = make_growable(
-            self.flat_child.name(),
-            self.flat_child.data_type(),
-            vec![&self.flat_child],
-            true,
-            self.flat_child.len(), // Conservatively reserve a capacity == full size of the child
-        );
-        for (start_valid, end_valid) in self.validity().unwrap().valid_slices() {
-            let child_start = self.offsets().start_end(start_valid).0;
-            let child_end = self.offsets().start_end(end_valid - 1).1;
-            child_growable.extend(0, child_start, child_end - child_start);
-        }
-        let new_child = child_growable.build()?;
+        // Collect slices of the child array where the parent is valid, then concatenate them
+        let child_slices: Vec<Series> = self
+            .validity()
+            .unwrap()
+            .valid_slices()
+            .map(|(start_valid, end_valid)| {
+                let child_start = self.offsets().start_end(start_valid).0;
+                let child_end = self.offsets().start_end(end_valid - 1).1;
+                self.flat_child.slice(child_start, child_end).unwrap()
+            })
+            .collect();
+
+        let new_child = if child_slices.is_empty() {
+            self.flat_child.slice(0, 0)?
+        } else {
+            Series::concat(&child_slices.iter().collect::<Vec<_>>())?
+        };
         let new_offsets = OffsetsBuffer::<i64>::try_from(vec![0, new_child.len() as i64])?;
 
         Ok(Self::new(
@@ -64,16 +65,11 @@ impl DaftConcatAggable for ListArray {
     fn grouped_concat(&self, groups: &super::GroupIndices) -> Self::Output {
         let all_valid = self.null_count() == 0;
 
-        let mut child_array_growable: Box<dyn Growable> = make_growable(
-            self.flat_child.name(),
-            self.child_data_type(),
-            vec![&self.flat_child],
-            false,
-            self.flat_child.len(),
-        );
-
+        // Collect all child slices for each group
+        let mut all_slices: Vec<Series> = vec![];
         let mut group_lens: Vec<usize> = vec![];
         let mut group_valids: Vec<bool> = vec![];
+
         for group in groups {
             let mut group_valid = false;
             let mut group_len: usize = 0;
@@ -81,7 +77,9 @@ impl DaftConcatAggable for ListArray {
                 if all_valid || self.is_valid(idx.to_usize()) {
                     let (start, end) = self.offsets().start_end(*idx as usize);
                     let len = end - start;
-                    child_array_growable.extend(0, start, len);
+                    if len > 0 {
+                        all_slices.push(self.flat_child.slice(start, end)?);
+                    }
                     group_len += len;
                     group_valid = true;
                 }
@@ -89,6 +87,13 @@ impl DaftConcatAggable for ListArray {
             group_valids.push(group_valid);
             group_lens.push(if group_valid { group_len } else { 0 });
         }
+
+        let new_child = if all_slices.is_empty() {
+            self.flat_child.slice(0, 0)?
+        } else {
+            Series::concat(&all_slices.iter().collect::<Vec<_>>())?
+        };
+
         let new_offsets =
             daft_arrow::offset::Offsets::try_from_lengths(group_lens.iter().copied())?;
         let new_validities = if all_valid {
@@ -99,7 +104,7 @@ impl DaftConcatAggable for ListArray {
 
         Ok(Self::new(
             self.field.clone(),
-            child_array_growable.build()?,
+            new_child,
             new_offsets.into(),
             new_validities,
         ))

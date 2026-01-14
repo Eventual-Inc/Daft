@@ -11,7 +11,7 @@ use daft_logical_plan::{partitioning::HashClusteringConfig, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use itertools::Itertools;
 
-use super::{PipelineNodeImpl, SubmittableTaskStream};
+use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
@@ -394,7 +394,7 @@ impl PipelineNodeImpl for WindowNode {
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let input_node = self.child().clone().produce_tasks(plan_context);
 
         // Pipeline the window op
