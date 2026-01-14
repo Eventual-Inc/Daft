@@ -630,7 +630,7 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest -n auto tests/integration/sql -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "sql_pytest_output.txt"
+        pytest ./tests/integration/sql -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "sql_pytest_output.txt"
         python tools/aggregate_test_durations.py sql_pytest_output.txt
       env:
         DAFT_RUNNER: native
@@ -638,7 +638,7 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest -n auto tests/integration/sql -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "sql_pytest_output.txt"
+        pytest ./tests/integration/sql -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "sql_pytest_output.txt"
         python tools/aggregate_test_durations.py sql_pytest_output.txt
       env:
         DAFT_RUNNER: ray
@@ -751,8 +751,8 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest -n auto tests/integration/unity -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
-        python tools/aggregate_test_durations.py unity_pytest_output.txt
+        pytest ./tests/integration/unity -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
+        python ./tools/aggregate_test_durations.py unity_pytest_output.txt
       env:
         DAFT_RUNNER: native
         UNITY_CATALOG_PORT: 3000
@@ -761,8 +761,8 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest -n auto tests/integration/unity -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
-        python tools/aggregate_test_durations.py unity_pytest_output.txt
+        pytest ./tests/integration/unity -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
+        python ./tools/aggregate_test_durations.py unity_pytest_output.txt
       env:
         DAFT_RUNNER: ray
         UNITY_CATALOG_PORT: 3000
@@ -772,8 +772,8 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest -n auto tests/integration/iceberg -m 'integration' --durations=0 | ./tools/capture-durations.sh "iceberg_pytest_output.txt"
-        python tools/aggregate_test_durations.py iceberg_pytest_output.txt
+        pytest ./tests/integration/iceberg -m 'integration' --durations=0 | ./tools/capture-durations.sh "iceberg_pytest_output.txt"
+        python ./tools/aggregate_test_durations.py iceberg_pytest_output.txt
       env:
         DAFT_RUNNER: native
     - name: Run Iceberg integration tests (ray)
@@ -781,7 +781,7 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest -n auto tests/integration/iceberg -m 'integration' --durations=0 | ./tools/capture-durations.sh "iceberg_pytest_output.txt"
+        pytest ./tests/integration/iceberg -m 'integration' --durations=0 | ./tools/capture-durations.sh "iceberg_pytest_output.txt"
         python tools/aggregate_test_durations.py iceberg_pytest_output.txt
       env:
         DAFT_RUNNER: ray
@@ -791,8 +791,8 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest -n auto tests/integration/delta_lake -m 'integration' --durations=0 | ./tools/capture-durations.sh "delta_lake_pytest_output.txt"
-        python tools/aggregate_test_durations.py delta_lake_pytest_output.txt
+        pytest ./tests/integration/delta_lake -m 'integration' --durations=0 | ./tools/capture-durations.sh "delta_lake_pytest_output.txt"
+        python ./tools/aggregate_test_durations.py delta_lake_pytest_output.txt
       env:
         DAFT_RUNNER: native
     - name: Run Delta Lake integration tests (ray)
@@ -800,8 +800,8 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest -n auto tests/integration/delta_lake -m 'integration' --durations=0 | ./tools/capture-durations.sh "delta_lake_pytest_output.txt"
-        python tools/aggregate_test_durations.py delta_lake_pytest_output.txt
+        pytest ./tests/integration/delta_lake -m 'integration' --durations=0 | ./tools/capture-durations.sh "delta_lake_pytest_output.txt"
+        python ./tools/aggregate_test_durations.py delta_lake_pytest_output.txt
       env:
         DAFT_RUNNER: ray
     # Gravitino tests
@@ -810,8 +810,8 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest -n auto tests/integration/gravitino -m 'integration' --durations=0 | ./tools/capture-durations.sh "gravitino_pytest_output.txt"
-        python tools/aggregate_test_durations.py gravitino_pytest_output.txt
+        pytest ./tests/integration/gravitino -m 'integration' --durations=0 | ./tools/capture-durations.sh "gravitino_pytest_output.txt"
+        python ./tools/aggregate_test_durations.py gravitino_pytest_output.txt
       env:
         DAFT_RUNNER: native
         GRAVITINO_ENDPOINT: http://127.0.0.1:8090
@@ -821,8 +821,8 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest -n auto tests/integration/gravitino -m 'integration' --durations=0 | ./tools/capture-durations.sh "gravitino_pytest_output.txt"
-        python tools/aggregate_test_durations.py gravitino_pytest_output.txt
+        pytest ./tests/integration/gravitino -m 'integration' --durations=0 | ./tools/capture-durations.sh "gravitino_pytest_output.txt"
+        python ./tools/aggregate_test_durations.py gravitino_pytest_output.txt
       env:
         DAFT_RUNNER: ray
         GRAVITINO_ENDPOINT: http://127.0.0.1:8090
