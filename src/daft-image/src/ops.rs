@@ -6,9 +6,8 @@ use common_error::{DaftError, DaftResult};
 use common_image::{BBox, CowImage};
 use daft_core::{
     array::{
-        ops::{
-            from_arrow::FromArrow,
-            image::{AsImageObj, fixed_image_array_from_img_buffers, image_array_from_img_buffers},
+        ops::image::{
+            AsImageObj, fixed_image_array_from_img_buffers, image_array_from_img_buffers,
         },
         prelude::*,
     },

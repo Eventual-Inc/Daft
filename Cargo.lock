@@ -2816,6 +2816,7 @@ dependencies = [
 name = "daft-functions-list"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
  "common-error",
  "daft-arrow",
  "daft-core",
@@ -3219,6 +3220,7 @@ dependencies = [
 name = "daft-recordbatch"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
  "arrow-array",
  "arrow-ipc",
  "async-recursion",
