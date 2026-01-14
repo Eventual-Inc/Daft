@@ -9,7 +9,6 @@ use crate::{
     array::{ListArray, StructArray},
     count_mode::CountMode,
     datatypes::*,
-    prelude::FromArrow,
 };
 
 /// Helper to perform a grouped count on a validity map of type daft_arrow::buffer::NullBuffer

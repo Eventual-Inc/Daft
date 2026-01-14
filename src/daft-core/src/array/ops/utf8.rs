@@ -5,7 +5,7 @@ use common_error::DaftResult;
 
 use crate::{
     datatypes::{DataType, Field},
-    prelude::{AsArrow, BinaryArray, FromArrow, Utf8Array},
+    prelude::{AsArrow, BinaryArray, Utf8Array},
 };
 
 impl Utf8Array {

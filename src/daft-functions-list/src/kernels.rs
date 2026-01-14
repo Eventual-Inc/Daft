@@ -2,16 +2,15 @@
 
 use std::{iter::repeat_n, sync::Arc};
 
+use arrow::array::make_comparator;
 use common_error::DaftResult;
 use daft_arrow::offset::{Offsets, OffsetsBuffer};
 use daft_core::{
     array::{
         FixedSizeListArray, ListArray, StructArray,
         growable::{Growable, make_growable},
-        ops::arrow::comparison::build_is_equal,
     },
     datatypes::{try_mean_aggregation_supertype, try_sum_supertype},
-    kernels::search_sorted::build_is_valid,
     prelude::{
         AsArrow, BooleanArray, CountMode, DataType, Field, Int64Array, MapArray, UInt64Array,
         Utf8Array,
@@ -77,16 +76,11 @@ impl ListArrayExtension for ListArray {
 
         let hashes = self.flat_child.hash(None)?;
 
-        let flat_child = self.flat_child.to_arrow2();
-        let flat_child = &*flat_child;
+        let flat_child = self.flat_child.to_arrow()?;
+        let flat_child = flat_child.as_ref();
 
-        let is_equal = build_is_equal(
-            flat_child, flat_child,
-            false, // this value does not matter; invalid (= nulls) are never included
-            true,  // NaNs are equal so we do not get a bunch of {Nan: 1, Nan: 1, ...}
-        )?;
-
-        let is_valid = build_is_valid(flat_child);
+        let comparator = make_comparator(flat_child, flat_child, Default::default()).unwrap();
+        let is_eq = |i, j| comparator(i, j).is_eq();
 
         let key_type = self.flat_child.data_type().clone();
         let count_type = DataType::UInt64;
@@ -104,7 +98,7 @@ impl ListArrayExtension for ListArray {
 
             for index in range {
                 let index = index as usize;
-                if !is_valid(index) {
+                if !flat_child.is_valid(index) {
                     include_mask.push(false);
                     // skip nulls
                     continue;
@@ -114,7 +108,7 @@ impl ListArrayExtension for ListArray {
 
                 let entry = map
                     .raw_entry_mut_v1()
-                    .from_hash(hash, |other| is_equal(other.index, index));
+                    .from_hash(hash, |other| is_eq(other.index, index));
 
                 match entry {
                     RawEntryMut::Occupied(mut entry) => {
