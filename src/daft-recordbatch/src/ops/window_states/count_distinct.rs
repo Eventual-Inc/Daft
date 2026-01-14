@@ -55,8 +55,7 @@ impl WindowAggStateOps for CountDistinctWindowState {
                 let mut found_match = false;
                 for (existing_hash, count) in &mut self.counts {
                     if existing_hash.hash == hash
-                        && ((self.comparator)(i, existing_hash.idx as usize)
-                            == std::cmp::Ordering::Equal)
+                        && (self.comparator)(i, existing_hash.idx as usize).is_eq()
                     {
                         *count += 1;
                         found_match = true;
@@ -83,9 +82,7 @@ impl WindowAggStateOps for CountDistinctWindowState {
                 let mut keys_to_remove = Vec::new();
 
                 for (k, v) in &mut self.counts {
-                    if k.hash == hash
-                        && ((self.comparator)(i, k.idx as usize) == std::cmp::Ordering::Equal)
-                    {
+                    if k.hash == hash && (self.comparator)(i, k.idx as usize).is_eq() {
                         *v -= 1;
                         if *v == 0 {
                             keys_to_remove.push(IndexHash {

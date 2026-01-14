@@ -11,7 +11,6 @@ use daft_core::{
         growable::{Growable, make_growable},
     },
     datatypes::{try_mean_aggregation_supertype, try_sum_supertype},
-    kernels::search_sorted::build_is_valid_arrow,
     prelude::{
         AsArrow, BooleanArray, CountMode, DataType, Field, Int64Array, MapArray, UInt64Array,
         Utf8Array,
@@ -81,9 +80,7 @@ impl ListArrayExtension for ListArray {
         let flat_child = flat_child.as_ref();
 
         let comparator = make_comparator(flat_child, flat_child, Default::default()).unwrap();
-        let is_eq = |i, j| comparator(i, j) == std::cmp::Ordering::Equal;
-
-        let is_valid = build_is_valid_arrow(flat_child);
+        let is_eq = |i, j| comparator(i, j).is_eq();
 
         let key_type = self.flat_child.data_type().clone();
         let count_type = DataType::UInt64;
@@ -101,7 +98,7 @@ impl ListArrayExtension for ListArray {
 
             for index in range {
                 let index = index as usize;
-                if !is_valid(index) {
+                if !flat_child.is_valid(index) {
                     include_mask.push(false);
                     // skip nulls
                     continue;
