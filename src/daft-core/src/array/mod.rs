@@ -120,10 +120,7 @@ impl<T> DataArray<T> {
                 });
             }
             let arrow_data_type = arrow_array.data_type();
-            if !matches!(
-                arrow_data_type,
-                daft_arrow::datatypes::DataType::Extension(..)
-            ) {
+            if !matches!(physical_field.dtype, DataType::Extension(..)) {
                 assert!(
                     !(&expected_arrow_physical_type != arrow_data_type),
                     "Mismatch between expected and actual Arrow types for DataArray.\n\

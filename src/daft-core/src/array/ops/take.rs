@@ -55,6 +55,7 @@ impl FixedSizeListArray {
             match i {
                 None => {
                     nulls_builder.append_null();
+                    child_indices.extend(std::iter::repeat_n(0, fixed_size));
                 }
                 Some(i) => {
                     let i = i.to_usize();
