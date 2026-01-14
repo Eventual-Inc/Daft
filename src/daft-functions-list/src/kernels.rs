@@ -748,7 +748,7 @@ fn create_iter<'a>(arr: &'a Int64Array, len: usize) -> Box<dyn Iterator<Item = i
 ///
 /// * `flat_child`  - The Series that we're extracting chunks from.
 /// * `field`       - The field of the parent list.
-/// * `nulls`    - The parent list's validity.
+/// * `nulls`    - The parent list's nulls.
 /// * `size`        - The size for each chunk.
 /// * `total_elements_to_skip` - The number of elements in the Series that do not fit cleanly into
 ///   chunks. We take the fast path iff this value is 0.
