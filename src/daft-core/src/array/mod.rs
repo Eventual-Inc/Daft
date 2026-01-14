@@ -129,7 +129,7 @@ impl<T> DataArray<T> {
     pub fn with_nulls_slice(&self, nulls: &[bool]) -> DaftResult<Self> {
         if nulls.len() != self.data.len() {
             return Err(DaftError::ValueError(format!(
-                "validity mask length does not match DataArray length, {} vs {}",
+                "nulls length does not match DataArray length, {} vs {}",
                 nulls.len(),
                 self.data.len()
             )));
