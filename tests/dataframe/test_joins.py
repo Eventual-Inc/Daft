@@ -43,29 +43,6 @@ def get_join_params():
             yield pytest.param(strategy, join_type, id=f"{strategy or 'default'}-{join_type}")
 
 
-def is_valid_join_strategy_combination(join_strategy, join_type):
-    """Check if a join strategy and type combination is valid.
-
-    Used by tests that have complex parametrization where join_type is
-    combined with other parameters (e.g., expected results).
-    """
-    runner = get_tests_daft_runner_name()
-
-    # Native runner only supports None and hash strategies
-    if runner == "native" and join_strategy not in [None, "hash"]:
-        return False
-
-    # Sort-merge only supports inner joins (for now)
-    if join_strategy == "sort_merge" and join_type != "inner":
-        return False
-
-    # Broadcast doesn't support outer joins
-    if join_strategy == "broadcast" and join_type == "outer":
-        return False
-
-    return True
-
-
 def test_invalid_join_strategies(make_df):
     df = make_df(
         {
@@ -113,9 +90,6 @@ def test_rename_join_keys_in_dataframe(make_df):
 @pytest.mark.parametrize("n_partitions", get_n_partitions())
 @pytest.mark.parametrize("join_strategy,join_type", get_join_params())
 def test_joins(join_strategy, join_type, make_df, n_partitions, with_default_morsel_size):
-    if not is_valid_join_strategy_combination(join_strategy, join_type):
-        pytest.skip(f"Invalid combination: {join_strategy} with {join_type}")
-
     df = make_df(
         {
             "A": [1, 2, 3],
@@ -142,9 +116,6 @@ def test_joins(join_strategy, join_type, make_df, n_partitions, with_default_mor
 @pytest.mark.parametrize("n_partitions", get_n_partitions())
 @pytest.mark.parametrize("join_strategy,join_type", get_join_params())
 def test_multicol_joins(join_strategy, join_type, make_df, n_partitions: int, with_default_morsel_size):
-    if not is_valid_join_strategy_combination(join_strategy, join_type):
-        pytest.skip(f"Invalid combination: {join_strategy} with {join_type}")
-
     df = make_df(
         {
             "A": [1, 2, 3],
@@ -172,9 +143,6 @@ def test_multicol_joins(join_strategy, join_type, make_df, n_partitions: int, wi
 @pytest.mark.parametrize("n_partitions", get_n_partitions())
 @pytest.mark.parametrize("join_strategy,join_type", get_join_params())
 def test_dupes_join_key(join_strategy, join_type, make_df, n_partitions: int, with_default_morsel_size):
-    if not is_valid_join_strategy_combination(join_strategy, join_type):
-        pytest.skip(f"Invalid combination: {join_strategy} with {join_type}")
-
     df = make_df(
         {
             "A": [1, 1, 2, 2, 3, 3],
@@ -198,9 +166,6 @@ def test_dupes_join_key(join_strategy, join_type, make_df, n_partitions: int, wi
 @pytest.mark.parametrize("n_partitions", get_n_partitions())
 @pytest.mark.parametrize("join_strategy,join_type", get_join_params())
 def test_multicol_dupes_join_key(join_strategy, join_type, make_df, n_partitions: int, with_default_morsel_size):
-    if not is_valid_join_strategy_combination(join_strategy, join_type):
-        pytest.skip(f"Invalid combination: {join_strategy} with {join_type}")
-
     df = make_df(
         {
             "A": [1, 1, 2, 2, 3, 3],
@@ -226,9 +191,6 @@ def test_multicol_dupes_join_key(join_strategy, join_type, make_df, n_partitions
 @pytest.mark.parametrize("n_partitions", get_n_partitions())
 @pytest.mark.parametrize("join_strategy,join_type", get_join_params())
 def test_joins_all_same_key(join_strategy, join_type, make_df, n_partitions: int, with_default_morsel_size):
-    if not is_valid_join_strategy_combination(join_strategy, join_type):
-        pytest.skip(f"Invalid combination: {join_strategy} with {join_type}")
-
     df = make_df(
         {
             "A": [1] * 4,
@@ -302,9 +264,6 @@ def test_joins_all_same_key(join_strategy, join_type, make_df, n_partitions: int
 def test_joins_no_overlap_disjoint(
     join_strategy, join_type, flip, expected, make_df, n_partitions: int, with_morsel_size
 ):
-    if not is_valid_join_strategy_combination(join_strategy, join_type):
-        pytest.skip(f"Invalid combination: {join_strategy} with {join_type}")
-
     df1 = make_df(
         {
             "A": [1, 2, 3],
@@ -385,9 +344,6 @@ def test_joins_no_overlap_disjoint(
 def test_joins_no_overlap_interleaved(
     join_strategy, join_type, flip, expected, make_df, n_partitions: int, with_morsel_size
 ):
-    if not is_valid_join_strategy_combination(join_strategy, join_type):
-        pytest.skip(f"Invalid combination: {join_strategy} with {join_type}")
-
     df1 = make_df(
         {
             "A": [1, 3, 5],
@@ -420,9 +376,6 @@ def test_joins_no_overlap_interleaved(
 @pytest.mark.parametrize("n_partitions", get_n_partitions())
 @pytest.mark.parametrize("join_strategy,join_type", get_join_params())
 def test_limit_after_join(join_strategy, join_type, make_df, n_partitions: int, with_default_morsel_size):
-    if not is_valid_join_strategy_combination(join_strategy, join_type):
-        pytest.skip(f"Invalid combination: {join_strategy} with {join_type}")
-
     data = {
         "A": [1, 2, 3],
     }
@@ -487,9 +440,6 @@ def test_limit_after_join(join_strategy, join_type, make_df, n_partitions: int, 
     ],
 )
 def test_join_with_null(join_strategy, join_type, expected, make_df, repartition_nparts, with_default_morsel_size):
-    if not is_valid_join_strategy_combination(join_strategy, join_type):
-        pytest.skip(f"Invalid combination: {join_strategy} with {join_type}")
-
     daft_df = make_df(
         {
             "id": [1, None, 3],
@@ -555,9 +505,6 @@ def test_join_with_null(join_strategy, join_type, expected, make_df, repartition
 def test_join_with_null_multikey(
     join_strategy, join_type, expected, make_df, repartition_nparts, with_default_morsel_size
 ):
-    if not is_valid_join_strategy_combination(join_strategy, join_type):
-        pytest.skip(f"Invalid combination: {join_strategy} with {join_type}")
-
     daft_df = make_df(
         {
             "id": [1, None, None],
@@ -640,9 +587,6 @@ def test_join_with_null_multikey(
 def test_join_with_null_asymmetric_multikey(
     join_strategy, join_type, expected, make_df, repartition_nparts, with_morsel_size
 ):
-    if not is_valid_join_strategy_combination(join_strategy, join_type):
-        pytest.skip(f"Invalid combination: {join_strategy} with {join_type}")
-
     daft_df = make_df(
         {
             "left_id": [1, None, None],
@@ -715,9 +659,6 @@ def test_join_with_null_asymmetric_multikey(
     ],
 )
 def test_join_all_null(join_strategy, join_type, expected, make_df, repartition_nparts, with_default_morsel_size):
-    if not is_valid_join_strategy_combination(join_strategy, join_type):
-        pytest.skip(f"Invalid combination: {join_strategy} with {join_type}")
-
     daft_df = make_df(
         {
             "id": [None, None, None],
@@ -764,9 +705,6 @@ def test_join_all_null(join_strategy, join_type, expected, make_df, repartition_
     ],
 )
 def test_join_null_type_column(join_strategy, join_type, expected, make_df, with_default_morsel_size):
-    if not is_valid_join_strategy_combination(join_strategy, join_type):
-        pytest.skip(f"Invalid combination: {join_strategy} with {join_type}")
-
     daft_df = make_df(
         {
             "id": [None, None, None],
@@ -811,9 +749,6 @@ def test_join_null_type_column(join_strategy, join_type, expected, make_df, with
     ],
 )
 def test_join_semi_anti(join_strategy, join_type, expected, make_df, repartition_nparts, with_default_morsel_size):
-    if not is_valid_join_strategy_combination(join_strategy, join_type):
-        pytest.skip(f"Invalid combination: {join_strategy} with {join_type}")
-
     daft_df1 = make_df(
         {
             "id": [1, 2, 3, None],
@@ -866,9 +801,6 @@ def test_join_semi_anti(join_strategy, join_type, expected, make_df, repartition
 def test_join_semi_anti_different_names(
     join_strategy, join_type, expected, make_df, repartition_nparts, with_morsel_size
 ):
-    if not is_valid_join_strategy_combination(join_strategy, join_type):
-        pytest.skip(f"Invalid combination: {join_strategy} with {join_type}")
-
     daft_df1 = make_df(
         {
             "id_left": [1, 2, 3, None],
@@ -1009,9 +941,6 @@ def test_join_true_join_keys(join_type, expected_dtypes, make_df, with_default_m
     ],
 )
 def test_join_with_alias_in_key(join_strategy, join_type, expected, make_df, with_default_morsel_size):
-    if not is_valid_join_strategy_combination(join_strategy, join_type):
-        pytest.skip(f"Invalid combination: {join_strategy} with {join_type}")
-
     daft_df1 = make_df(
         {
             "a": [1, 2, 3],
@@ -1080,9 +1009,6 @@ def test_join_with_alias_in_key(join_strategy, join_type, expected, make_df, wit
     ],
 )
 def test_join_same_name_alias(join_strategy, join_type, expected, make_df, with_default_morsel_size):
-    if not is_valid_join_strategy_combination(join_strategy, join_type):
-        pytest.skip(f"Invalid combination: {join_strategy} with {join_type}")
-
     daft_df1 = make_df(
         {
             "a": [1, 2, 3],
@@ -1151,9 +1077,6 @@ def test_join_same_name_alias(join_strategy, join_type, expected, make_df, with_
     ],
 )
 def test_join_same_name_alias_with_compute(join_strategy, join_type, expected, make_df, with_default_morsel_size):
-    if not is_valid_join_strategy_combination(join_strategy, join_type):
-        pytest.skip(f"Invalid combination: {join_strategy} with {join_type}")
-
     daft_df1 = make_df(
         {
             "a": [0.1, 0.2, 0.3],
