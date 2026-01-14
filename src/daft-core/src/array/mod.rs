@@ -69,22 +69,22 @@ impl<T> DataArray<T> {
                 && arrow_arr.data_type() == &arrow::datatypes::DataType::Utf8
             {
                 let arr = cast(arrow_arr.as_ref(), &arrow::datatypes::DataType::LargeUtf8)?;
-                let validity = arr.nulls().cloned().map(Into::into);
+                let nulls = arr.nulls().cloned().map(Into::into);
 
                 return Ok(Self {
                     field: physical_field,
                     data: arr.into(),
-                    validity,
+                    nulls,
                     marker_: PhantomData,
                 });
             }
         }
 
-        let validity = arrow_arr.nulls().cloned().map(Into::into);
+        let nulls = arrow_arr.nulls().cloned().map(Into::into);
         Ok(Self {
             field: physical_field,
             data: arrow_arr.into(),
-            validity,
+            nulls,
             marker_: PhantomData,
         })
     }
