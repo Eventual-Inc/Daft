@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use common_error::DaftResult;
-use common_runtime::{RuntimeTask, get_compute_runtime};
-use daft_core::utils::identity_hash_set::IndexHash;
+use common_runtime::JoinSet;
+use daft_core::utils::identity_hash_set::{IdentityBuildHasher, IndexHash};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -15,9 +15,11 @@ use crate::{AsyncFileWriter, WriteResult, WriterFactory};
 /// to a separate file. It uses a map to keep track of the writers for each partition.
 struct PartitionedWriter {
     // TODO: Figure out a way to NOT use the IndexHash + RawEntryMut pattern here. Ideally we want to store ScalarValues, aka. single Rows of the partition values as keys for the hashmap.
+    #[allow(clippy::type_complexity)]
     per_partition_writers: HashMap<
         IndexHash,
         Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
+        IdentityBuildHasher,
     >,
     saved_partition_values: Vec<RecordBatch>,
     writer_factory: Arc<dyn WriterFactory<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
@@ -33,7 +35,10 @@ impl PartitionedWriter {
         partition_by: Vec<BoundExpr>,
     ) -> Self {
         Self {
-            per_partition_writers: HashMap::new(),
+            per_partition_writers: HashMap::with_capacity_and_hasher(
+                64,
+                IdentityBuildHasher::default(),
+            ),
             saved_partition_values: vec![],
             writer_factory,
             partition_by,
@@ -73,18 +78,14 @@ impl AsyncFileWriter for PartitionedWriter {
         let partition_values_hash = partition_values.hash_rows()?;
 
         // Spawn tasks on compute runtime for writing each table
-        let compute_runtime = get_compute_runtime();
-        let mut write_tasks: Vec<(
-            IndexHash,
-            RuntimeTask<
-                DaftResult<(
-                    Box<
-                        dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>,
-                    >,
-                    WriteResult,
-                )>,
-            >,
-        )> = Vec::new();
+        let mut joinset: JoinSet<
+            DaftResult<(
+                IndexHash,
+                Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
+                WriteResult,
+                RecordBatch,
+            )>,
+        > = JoinSet::new();
 
         for (idx, (table, partition_value_hash)) in split_tables
             .into_iter()
@@ -118,24 +119,23 @@ impl AsyncFileWriter for PartitionedWriter {
                         idx: self.saved_partition_values.len() as u64,
                         hash: *partition_value_hash,
                     };
-                    self.saved_partition_values.push(partition_value_row);
+                    self.saved_partition_values
+                        .push(partition_value_row.clone());
 
                     // Spawn task on compute runtime for writing
-                    let task = compute_runtime.spawn(async move {
+                    joinset.spawn(async move {
                         let write_result = writer.write(table_data).await?;
-                        Ok((writer, write_result))
+                        Ok((index_hash, writer, write_result, partition_value_row))
                     });
-                    write_tasks.push((index_hash, task));
                 }
                 RawEntryMut::Occupied(entry) => {
                     let (index_hash, mut writer) = entry.remove_entry();
 
                     // Spawn task on compute runtime for writing
-                    let task = compute_runtime.spawn(async move {
+                    joinset.spawn(async move {
                         let write_result = writer.write(table_data).await?;
-                        Ok((writer, write_result))
+                        Ok((index_hash, writer, write_result, partition_value_row))
                     });
-                    write_tasks.push((index_hash, task));
                 }
             }
         }
@@ -143,11 +143,27 @@ impl AsyncFileWriter for PartitionedWriter {
         // Await all write tasks, put writers back, and aggregate results
         let mut bytes_written = 0;
         let mut rows_written = 0;
-        for (index_hash, task) in write_tasks {
-            let (writer, write_result) = task.await??;
+        while let Some(result) = joinset.join_next().await {
+            let (index_hash, writer, write_result, partition_value_row) = result??;
             bytes_written += write_result.bytes_written;
             rows_written += write_result.rows_written;
-            self.per_partition_writers.insert(index_hash, writer);
+            match self
+                .per_partition_writers
+                .raw_entry_mut()
+                .from_hash(index_hash.hash, |other| {
+                    (index_hash.hash == other.hash) && {
+                        let other_table =
+                            self.saved_partition_values.get(other.idx as usize).unwrap();
+                        other_table == &partition_value_row
+                    }
+                }) {
+                RawEntryMut::Vacant(entry) => {
+                    entry.insert_hashed_nocheck(index_hash.hash, index_hash, writer);
+                }
+                RawEntryMut::Occupied(_) => {
+                    unreachable!("Should not have occupied entry here")
+                }
+            }
         }
 
         Ok(WriteResult {
