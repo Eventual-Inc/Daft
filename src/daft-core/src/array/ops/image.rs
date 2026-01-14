@@ -29,10 +29,10 @@ impl AsImageObj for ImageArray {
         }
 
         let da = self.data_array();
-        let ca = self.channel_array();
-        let ha = self.height_array();
-        let wa = self.width_array();
-        let ma = self.mode_array();
+        let ca = self.channels().as_arrow().unwrap();
+        let ha = self.heights().as_arrow().unwrap();
+        let wa = self.widths().as_arrow().unwrap();
+        let ma = self.modes().as_arrow().unwrap();
 
         let offsets = da.offsets();
 

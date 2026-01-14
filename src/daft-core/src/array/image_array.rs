@@ -35,22 +35,6 @@ impl ImageArray {
         array.list().unwrap()
     }
 
-    pub fn channel_array(&self) -> &daft_arrow::array::UInt16Array {
-        self.channels().as_arrow2()
-    }
-
-    pub fn height_array(&self) -> &daft_arrow::array::UInt32Array {
-        self.heights().as_arrow2()
-    }
-
-    pub fn width_array(&self) -> &daft_arrow::array::UInt32Array {
-        self.widths().as_arrow2()
-    }
-
-    pub fn mode_array(&self) -> &daft_arrow::array::UInt8Array {
-        self.modes().as_arrow2()
-    }
-
     pub fn channels(&self) -> &DataArray<UInt16Type> {
         let array = self.physical.children.get(Self::IMAGE_CHANNEL_IDX).unwrap();
         array.u16().unwrap()

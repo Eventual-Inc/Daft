@@ -67,7 +67,7 @@ impl TensorArray {
             && let (Some(data), Some(shape)) =
                 (self.data_array().get(idx), self.shape_array().get(idx))
         {
-            let shape = shape.u64().unwrap().as_arrow2().values().to_vec();
+            let shape = shape.u64().unwrap().values().to_vec();
             Literal::Tensor { data, shape }
         } else {
             Literal::Null
@@ -96,7 +96,7 @@ impl SparseTensorArray {
                 self.shape_array().get(idx),
             )
         {
-            let shape = shape.u64().unwrap().as_arrow2().values().to_vec();
+            let shape = shape.u64().unwrap().values().to_vec();
 
             Literal::SparseTensor {
                 values,

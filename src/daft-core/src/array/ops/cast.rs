@@ -289,23 +289,26 @@ impl TimestampArray {
 
                 let str_array: daft_arrow::array::Utf8Array<i64> = timezone.as_ref().map_or_else(
                     || {
-                        self.as_arrow2()
+                        self.as_arrow()
+                            .unwrap()
                             .iter()
-                            .map(|val| val.map(|val| timestamp_to_str_naive(*val, unit)))
+                            .map(|val| val.map(|val| timestamp_to_str_naive(val, unit)))
                             .collect()
                     },
                     |timezone| {
                         if let Ok(offset) = daft_schema::time_unit::parse_offset(timezone) {
-                            self.as_arrow2()
+                            self.as_arrow()
+                                .unwrap()
                                 .iter()
                                 .map(|val| {
-                                    val.map(|val| timestamp_to_str_offset(*val, unit, &offset))
+                                    val.map(|val| timestamp_to_str_offset(val, unit, &offset))
                                 })
                                 .collect()
                         } else if let Ok(tz) = daft_schema::time_unit::parse_offset_tz(timezone) {
-                            self.as_arrow2()
+                            self.as_arrow()
+                                .unwrap()
                                 .iter()
-                                .map(|val| val.map(|val| timestamp_to_str_tz(*val, unit, &tz)))
+                                .map(|val| val.map(|val| timestamp_to_str_tz(val, unit, &tz)))
                                 .collect()
                         } else {
                             panic!("Unable to parse timezone string {}", timezone)
@@ -353,19 +356,19 @@ impl TimeArray {
                 Ok(TimeArray::new(Field::new(self.name(), dtype.clone()), physical).into_series())
             }
             DataType::Utf8 => {
-                let time_array = self.as_arrow2();
-                let time_str: daft_arrow::array::Utf8Array<i64> = time_array
+                let time_array = self.as_arrow()?;
+                let time_str: Utf8Array = time_array
                     .iter()
                     .map(|val| {
                         val.map(|val| {
                             let DataType::Time(unit) = &self.field.dtype else {
                                 panic!("Wrong dtype for TimeArray: {}", self.field.dtype)
                             };
-                            display_time64(*val, unit)
+                            display_time64(val, unit)
                         })
                     })
                     .collect();
-                Ok(Utf8Array::from((self.name(), Box::new(time_str))).into_series())
+                Ok(time_str.rename(self.name()).into_series())
             }
             dtype if dtype.is_numeric() => self.physical.cast(dtype),
             #[cfg(feature = "python")]
@@ -708,9 +711,9 @@ impl ImageArray {
                     .clone()
                     .into_series()
                     .cast(&DataType::List(inner_dtype.clone()))?;
-                let ca = self.channel_array();
-                let ha = self.height_array();
-                let wa = self.width_array();
+                let ca = self.channels().as_arrow()?;
+                let ha = self.heights().as_arrow()?;
+                let wa = self.widths().as_arrow()?;
                 for i in 0..self.len() {
                     shapes.push(ha.value(i) as u64);
                     shapes.push(wa.value(i) as u64);
@@ -800,13 +803,7 @@ impl TensorArray {
                 let da = self.data_array();
                 let sa = self.shape_array();
                 if !(0..self.len()).map(|i| sa.get(i)).all(|s| {
-                    s.is_none_or(|s| {
-                        s.u64()
-                            .unwrap()
-                            .as_arrow2()
-                            .iter()
-                            .eq(shape.iter().map(Some))
-                    })
+                    s.is_none_or(|s| s.u64().unwrap().into_iter().eq(shape.iter().map(Some)))
                 }) {
                     return Err(DaftError::TypeError(format!(
                         "Can not cast Tensor array to FixedShapeTensor array with type {:?}: Tensor array has shapes different than {:?};",
@@ -955,7 +952,7 @@ impl TensorArray {
                             return false;
                         }
                         if let Some(mode) = mode
-                            && s.u64().unwrap().as_arrow2().get(s.len() - 1).unwrap()
+                            && s.u64().unwrap().get(s.len() - 1).unwrap()
                                 != mode.num_channels() as u64
                         {
                             // If type-level mode is defined, each image must have the implied number of channels.
@@ -987,7 +984,7 @@ impl TensorArray {
                         continue;
                     }
                     let shape = sa.get(i).unwrap();
-                    let shape = shape.u64().unwrap().as_arrow2();
+                    let shape = shape.u64().unwrap();
                     assert!(shape.validity().is_none_or(|v| v.iter().all(|b| b)));
                     let mut shape = shape.values().to_vec();
                     if shape.len() == 2 {
@@ -1081,11 +1078,10 @@ fn cast_sparse_to_dense_for_inner_dtype(
                     continue;
                 }
                 let index_series: Series = non_zero_indices_array.get(i).unwrap().cast(&DataType::UInt64)?;
-                let index_array = index_series.u64().unwrap().as_arrow2();
+                let index_array = index_series.u64().unwrap();
                 let values_series: Series = non_zero_values_array.get(i).unwrap();
                 let values_array = values_series.downcast::<<$T as DaftDataType>::ArrayType>()
-                .unwrap()
-                .as_arrow2();
+                .unwrap();
                 match use_offset_indices {
                     true => {
                         let mut old_idx: u64 = 0;
@@ -1132,7 +1128,7 @@ impl SparseTensorArray {
                     .into_iter()
                     .map(|shape| {
                         shape.map_or(0, |shape| {
-                            let shape = shape.u64().unwrap().as_arrow2();
+                            let shape = shape.u64().unwrap();
                             shape.values().clone().into_iter().product::<u64>() as usize
                         })
                     })
@@ -1177,13 +1173,7 @@ impl SparseTensorArray {
                 let va = self.values_array();
                 let ia = self.indices_array();
                 if !(0..self.len()).map(|i| sa.get(i)).all(|s| {
-                    s.is_none_or(|s| {
-                        s.u64()
-                            .unwrap()
-                            .as_arrow2()
-                            .iter()
-                            .eq(shape.iter().map(Some))
-                    })
+                    s.is_none_or(|s| s.u64().unwrap().into_iter().eq(shape.iter().map(Some)))
                 }) {
                     return Err(DaftError::TypeError(format!(
                         "Can not cast SparseTensor array to FixedShapeSparseTensor array with type {:?}: Tensor array has shapes different than {:?};",
@@ -1995,8 +1985,7 @@ mod tests {
         let values: Vec<Option<i32>> = result
             .i32()
             .unwrap()
-            .as_arrow2()
-            .iter()
+            .into_iter()
             .map(|v| v.copied())
             .collect();
         assert_eq!(values, vec![Some(42), Some(-1), Some(100), None]);
@@ -2015,8 +2004,7 @@ mod tests {
         let values: Vec<Option<i64>> = result
             .i64()
             .unwrap()
-            .as_arrow2()
-            .iter()
+            .into_iter()
             .map(|v| v.copied())
             .collect();
         assert_eq!(values, vec![Some(42), Some(-9999999999), Some(123)]);
@@ -2035,8 +2023,7 @@ mod tests {
         let values: Vec<Option<f64>> = result
             .f64()
             .unwrap()
-            .as_arrow2()
-            .iter()
+            .into_iter()
             .map(|v| v.copied())
             .collect();
         assert_eq!(values, vec![Some(3.14), Some(-2.5), Some(1e10), None]);
@@ -2053,8 +2040,7 @@ mod tests {
         let values: Vec<Option<f32>> = result
             .f32()
             .unwrap()
-            .as_arrow2()
-            .iter()
+            .into_iter()
             .map(|v| v.copied())
             .collect();
         assert_eq!(values, vec![Some(3.14_f32), Some(-2.5_f32)]);
@@ -2074,8 +2060,7 @@ mod tests {
         let values: Vec<Option<i32>> = result
             .i32()
             .unwrap()
-            .as_arrow2()
-            .iter()
+            .into_iter()
             .map(|v| v.copied())
             .collect();
         assert_eq!(values, vec![Some(42), None, None]);
@@ -2102,13 +2087,8 @@ mod tests {
 
         // Date is stored as days since epoch (1970-01-01)
         // 2024-01-01 = 19723 days, 2024-06-15 = 19889 days, 2024-12-31 = 20088 days
-        let date_array = result.date().unwrap();
-        let values: Vec<Option<i32>> = date_array
-            .as_arrow2()
-            .values()
-            .iter()
-            .map(|&v| Some(v))
-            .collect();
+        let date_array = result.date().unwrap().as_arrow().unwrap();
+        let values: Vec<Option<i32>> = date_array.into_iter().collect();
         // Check that we got valid dates (not None from failed parse)
         assert!(values[0].is_some(), "First date should parse successfully");
         assert!(values[1].is_some(), "Second date should parse successfully");

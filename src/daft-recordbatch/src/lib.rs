@@ -9,11 +9,12 @@ use std::{
     sync::Arc,
 };
 
-use arrow_array::ArrayRef;
+use arrow::compute::and;
+use arrow_array::{Array, ArrayRef};
 use common_display::table_display::{StrValue, make_comfy_table};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_compute_runtime;
-use daft_arrow::array::Array;
+use daft_arrow::array::Array as _;
 use daft_core::{
     array::ops::{
         DaftApproxCountDistinctAggable, DaftHllSketchAggable, GroupIndices, full::FullNull,
@@ -493,13 +494,14 @@ impl RecordBatch {
             let num_filtered = mask
                 .validity()
                 .map(|validity| {
-                    daft_arrow::bitmap::and(
-                        &daft_arrow::buffer::from_null_buffer(validity.clone()),
-                        mask.as_bitmap(),
+                    and(
+                        &arrow::array::BooleanArray::new(validity.inner().clone(), None),
+                        &mask.as_arrow().unwrap(),
                     )
-                    .unset_bits()
+                    .unwrap()
+                    .null_count()
                 })
-                .unwrap_or_else(|| mask.as_bitmap().unset_bits());
+                .unwrap_or_else(|| mask.null_count());
             mask.len() - num_filtered
         };
 
