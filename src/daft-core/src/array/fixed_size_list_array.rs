@@ -18,7 +18,7 @@ pub struct FixedSizeListArray {
     pub field: Arc<Field>,
     /// contains all the elements of the nested lists flattened into a single contiguous array.
     pub flat_child: Series,
-    validity: Option<daft_arrow::buffer::NullBuffer>,
+    nulls: Option<daft_arrow::buffer::NullBuffer>,
 }
 
 impl DaftArrayType for FixedSizeListArray {
@@ -31,19 +31,19 @@ impl FixedSizeListArray {
     pub fn new<F: Into<Arc<Field>>>(
         field: F,
         flat_child: Series,
-        validity: Option<daft_arrow::buffer::NullBuffer>,
+        nulls: Option<daft_arrow::buffer::NullBuffer>,
     ) -> Self {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
             DataType::FixedSizeList(child_dtype, size) => {
-                if let Some(validity) = validity.as_ref()
-                    && (validity.len() * size) != flat_child.len()
+                if let Some(nulls) = nulls.as_ref()
+                    && (nulls.len() * size) != flat_child.len()
                 {
                     panic!(
                         "FixedSizeListArray::new received values with len {} but expected it to match len of validity {} * size: {}",
                         flat_child.len(),
-                        validity.len(),
-                        validity.len() * size,
+                        nulls.len(),
+                        nulls.len() * size,
                     )
                 }
                 assert!(
@@ -61,18 +61,18 @@ impl FixedSizeListArray {
         Self {
             field,
             flat_child,
-            validity,
+            nulls,
         }
     }
 
-    pub fn validity(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
-        self.validity.as_ref()
+    pub fn nulls(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
+        self.nulls.as_ref()
     }
 
     pub fn null_count(&self) -> usize {
-        match self.validity() {
+        match self.nulls() {
             None => 0,
-            Some(validity) => validity.null_count(),
+            Some(nulls) => nulls.null_count(),
         }
     }
 
@@ -134,7 +134,7 @@ impl FixedSizeListArray {
         Self::new(
             Field::new(name, self.data_type().clone()),
             self.flat_child.clone(),
-            self.validity.clone(),
+            self.nulls.clone(),
         )
     }
 
@@ -148,7 +148,7 @@ impl FixedSizeListArray {
         Ok(Self::new(
             self.field.clone(),
             self.flat_child.slice(start * size, end * size)?,
-            self.validity
+            self.nulls
                 .as_ref()
                 .map(|v| v.clone().slice(start, end - start)),
         ))
@@ -160,7 +160,7 @@ impl FixedSizeListArray {
         Box::new(daft_arrow::array::FixedSizeListArray::new(
             arrow_dtype,
             self.flat_child.to_arrow2(),
-            daft_arrow::buffer::wrap_null_buffer(self.validity.clone()),
+            daft_arrow::buffer::wrap_null_buffer(self.nulls.clone()),
         ))
     }
 
@@ -168,7 +168,7 @@ impl FixedSizeListArray {
         let field = Arc::new(self.flat_child.field().to_arrow()?);
         let size = self.fixed_element_len() as i32;
         let values = self.flat_child.to_arrow()?;
-        let nulls = self.validity.clone();
+        let nulls = self.nulls.clone();
 
         Ok(Arc::new(arrow::array::FixedSizeListArray::try_new(
             field, size, values, nulls,
@@ -183,11 +183,8 @@ impl FixedSizeListArray {
         }
     }
 
-    pub fn with_validity(
-        &self,
-        validity: Option<daft_arrow::buffer::NullBuffer>,
-    ) -> DaftResult<Self> {
-        if let Some(v) = &validity
+    pub fn with_nulls(&self, nulls: Option<daft_arrow::buffer::NullBuffer>) -> DaftResult<Self> {
+        if let Some(v) = &nulls
             && v.len() != self.len()
         {
             return Err(DaftError::ValueError(format!(
@@ -200,7 +197,7 @@ impl FixedSizeListArray {
         Ok(Self::new(
             self.field.clone(),
             self.flat_child.clone(),
-            validity,
+            nulls,
         ))
     }
 
@@ -231,7 +228,7 @@ impl FixedSizeListArray {
             field,
             self.flat_child.clone(),
             self.generate_offsets(),
-            self.validity.clone(),
+            self.nulls.clone(),
         )
     }
 }
@@ -260,8 +257,8 @@ impl Iterator for FixedSizeListArrayIter<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx < self.array.len() {
-            if let Some(validity) = self.array.validity()
-                && validity.is_null(self.idx)
+            if let Some(nulls) = self.array.nulls()
+                && nulls.is_null(self.idx)
             {
                 self.idx += 1;
                 Some(None)
@@ -306,16 +303,16 @@ mod tests {
     };
 
     /// Helper that returns a FixedSizeListArray, with each list element at len=3
-    fn get_i32_fixed_size_list_array(validity: &[bool]) -> FixedSizeListArray {
+    fn get_i32_fixed_size_list_array(nulls: &[bool]) -> FixedSizeListArray {
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
         let flat_child = Int32Array::from((
             "foo",
-            (0i32..(validity.len() * 3) as i32).collect::<Vec<i32>>(),
+            (0i32..(nulls.len() * 3) as i32).collect::<Vec<i32>>(),
         ));
         FixedSizeListArray::new(
             field,
             flat_child.into_series(),
-            Some(daft_arrow::buffer::NullBuffer::from(validity)),
+            Some(daft_arrow::buffer::NullBuffer::from(nulls)),
         )
     }
 
@@ -335,12 +332,8 @@ mod tests {
             arr.flat_child.i32()?.into_iter().collect::<Vec<_>>()
         );
         assert_eq!(
-            renamed_arr
-                .validity
-                .unwrap()
-                .into_iter()
-                .collect::<Vec<_>>(),
-            arr.validity.unwrap().into_iter().collect::<Vec<_>>()
+            renamed_arr.nulls.unwrap().into_iter().collect::<Vec<_>>(),
+            arr.nulls.unwrap().into_iter().collect::<Vec<_>>()
         );
         Ok(())
     }

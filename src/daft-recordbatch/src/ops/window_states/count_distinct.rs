@@ -21,7 +21,7 @@ pub struct CountDistinctWindowState {
 
 impl CountDistinctWindowState {
     pub fn new(source: &Series, total_length: usize) -> Self {
-        let hashed = source.hash_with_validity(None).unwrap();
+        let hashed = source.hash_with_nulls(None).unwrap();
 
         #[allow(deprecated, reason = "arrow2 migration")]
         let array = source.to_arrow().unwrap();

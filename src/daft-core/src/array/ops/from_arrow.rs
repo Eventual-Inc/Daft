@@ -192,9 +192,9 @@ impl FromArrow for ListArray {
         let offsets: arrow::buffer::Buffer = list_arr.offsets().inner().clone().into_inner();
         let offsets =
             unsafe { daft_arrow::offset::OffsetsBuffer::<i64>::new_unchecked(offsets.into()) };
-        let validity = list_arr.nulls().cloned();
+        let nulls = list_arr.nulls().cloned();
 
-        Ok(Self::new(field, child_series, offsets, validity))
+        Ok(Self::new(field, child_series, offsets, nulls))
     }
 }
 
@@ -372,9 +372,9 @@ impl FromArrow for MapArray {
         let offsets: arrow::buffer::Buffer = arrow_arr.offsets().inner().clone().into_inner();
         let offsets =
             unsafe { daft_arrow::offset::OffsetsBuffer::<i64>::new_unchecked(offsets.into()) };
-        let validity = arrow_arr.nulls().cloned();
+        let nulls = arrow_arr.nulls().cloned();
 
-        let physical = ListArray::new(physical_field, child_series, offsets, validity);
+        let physical = ListArray::new(physical_field, child_series, offsets, nulls);
 
         Ok(Self::new(field, physical))
     }
@@ -636,7 +636,7 @@ mod tests {
 
         assert_eq!(arr.field(), new_arr.field());
         assert_eq!(arr.offsets(), new_arr.offsets());
-        assert_eq!(arr.validity(), new_arr.validity());
+        assert_eq!(arr.nulls(), new_arr.nulls());
         assert_eq!(arr.flat_child, new_arr.flat_child);
 
         Ok(())
@@ -654,7 +654,7 @@ mod tests {
 
         assert_eq!(arr.field(), new_arr.field());
         assert_eq!(arr.offsets(), new_arr.offsets());
-        assert_eq!(arr.validity(), new_arr.validity());
+        assert_eq!(arr.nulls(), new_arr.nulls());
 
         Ok(())
     }
@@ -780,7 +780,7 @@ mod tests {
         let arrow_arr = arr.to_arrow()?;
         let new_arr = StructArray::from_arrow(arr.field().clone(), arrow_arr)?;
         assert_eq!(arr.len(), new_arr.len());
-        assert_eq!(arr.validity(), new_arr.validity());
+        assert_eq!(arr.nulls(), new_arr.nulls());
         assert_eq!(arr.field(), new_arr.field());
         for i in 0..arr.len() {
             let expected = arr.get_lit(i);

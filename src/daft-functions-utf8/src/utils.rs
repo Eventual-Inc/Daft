@@ -63,7 +63,7 @@ impl Utf8ArrayUtils for Utf8Array {
             .into_iter()
             .map(|val| Some(operation(val?)))
             .collect::<Self>()
-            .with_validity(self.validity().cloned())?
+            .with_nulls(self.nulls().cloned())?
             .rename(self.name()))
     }
     fn binary_broadcasted_compare<ScalarKernel>(

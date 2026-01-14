@@ -22,7 +22,7 @@ where
         let iter = values.iter().map(|v| func(*v));
 
         Self::from_values_iter(self.field.clone(), iter)
-            .with_validity(self.validity().cloned().map(Into::into))
+            .with_nulls(self.nulls().cloned().map(Into::into))
     }
 
     // applies a native binary function to two DataArrays, maintaining validity.
@@ -36,18 +36,16 @@ where
     {
         match (self.len(), rhs.len()) {
             (x, y) if x == y => {
-                let lhs_validity = self.validity().map(|v| v.clone().into());
-                let rhs_validity = rhs.validity().map(|v| v.clone().into());
+                let lhs_nulls = self.nulls().map(|v| v.clone().into());
+                let rhs_nulls = rhs.nulls().map(|v| v.clone().into());
 
-                let validity = daft_arrow::buffer::NullBuffer::union(
-                    lhs_validity.as_ref(),
-                    rhs_validity.as_ref(),
-                );
+                let nulls =
+                    daft_arrow::buffer::NullBuffer::union(lhs_nulls.as_ref(), rhs_nulls.as_ref());
                 let values = self.values();
                 let rhs_values = rhs.values();
 
                 let iter = zip(values.iter(), rhs_values.iter()).map(|(a, b)| func(*a, *b));
-                Self::from_values_iter(self.field.clone(), iter).with_validity(validity)
+                Self::from_values_iter(self.field.clone(), iter).with_nulls(nulls)
             }
             (l_size, 1) => {
                 if let Some(value) = rhs.get(0) {
@@ -61,7 +59,7 @@ where
                     let rhs_values = rhs.values();
                     let iter = rhs_values.iter().map(|v| func(value, *v));
                     Self::from_values_iter(self.field.clone(), iter)
-                        .with_validity(rhs.validity().cloned().map(Into::into))
+                        .with_nulls(rhs.nulls().cloned().map(Into::into))
                 } else {
                     Ok(Self::full_null(self.name(), self.data_type(), r_size))
                 }

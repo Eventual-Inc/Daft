@@ -181,6 +181,15 @@ where
         Self::from_arrow(Field::new("", T::get_dtype()), Arc::new(arrow_arr)).unwrap()
     }
 }
+
+impl BooleanArray {
+    pub fn from_iter_values<I: IntoIterator<Item = bool>>(iter: I) -> Self {
+        let buf = arrow::buffer::BooleanBuffer::from_iter(iter);
+        let arrow_arr = arrow::array::BooleanArray::new(buf, None);
+
+        Self::from_arrow(Field::new("", DataType::Boolean), Arc::new(arrow_arr)).unwrap()
+    }
+}
 impl<T> DataArray<T>
 where
     T: DaftNumericType,
@@ -271,7 +280,7 @@ impl PythonArray {
         let len = upper.expect("trusted_len_unzip requires an upper limit");
 
         let mut values = Vec::with_capacity(len);
-        let mut validity = NullBufferBuilder::new(len);
+        let mut nulls = NullBufferBuilder::new(len);
 
         let pynone = Arc::new(Python::attach(|py| py.None()));
         for v in iter {
@@ -284,19 +293,19 @@ impl PythonArray {
 
             if let Some(obj) = v {
                 values.push(obj);
-                validity.append_non_null();
+                nulls.append_non_null();
             } else {
                 values.push(pynone.clone());
-                validity.append_null();
+                nulls.append_null();
             }
         }
 
-        let validity = validity.finish();
+        let nulls = nulls.finish();
 
         Self::new(
             Arc::new(Field::new(name, DataType::Python)),
             values.into(),
-            validity,
+            nulls,
         )
     }
 
@@ -315,7 +324,7 @@ impl PythonArray {
         let len = upper.expect("trusted_len_unzip requires an upper limit");
 
         let mut values = Vec::with_capacity(len);
-        let mut validity = NullBufferBuilder::new(len);
+        let mut nulls_builder = NullBufferBuilder::new(len);
 
         Python::attach(|py| {
             use pyo3::PyErr;
@@ -334,22 +343,22 @@ impl PythonArray {
                     );
 
                     values.push(Arc::new(obj.unbind()));
-                    validity.append_non_null();
+                    nulls_builder.append_non_null();
                 } else {
                     values.push(pynone.clone());
-                    validity.append_null();
+                    nulls_builder.append_null();
                 }
             }
 
             Ok::<_, PyErr>(())
         })?;
 
-        let validity = validity.finish();
+        let nulls = nulls_builder.finish();
 
         Ok(Self::new(
             Arc::new(Field::new(name, DataType::Python)),
             values.into(),
-            validity,
+            nulls,
         ))
     }
 }

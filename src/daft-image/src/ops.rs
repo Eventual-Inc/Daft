@@ -231,7 +231,7 @@ fn encode_images<Arr: AsImageObj>(
     } else {
         // For non-TIFF formats, use a single buffer with manual offset/validity tracking for efficiency
         let mut offsets = OffsetBufferBuilder::<i64>::new(images.len() + 1);
-        let mut validity = BooleanBufferBuilder::new(images.len());
+        let mut null_builder = BooleanBufferBuilder::new(images.len());
         let buf = Vec::new();
         let mut writer: CountingWriter<std::io::BufWriter<_>> =
             std::io::BufWriter::new(std::io::Cursor::new(buf)).into();
@@ -243,10 +243,10 @@ fn encode_images<Arr: AsImageObj>(
                     let current_offset = writer.count();
                     offsets.push_length((current_offset - last_offset) as usize);
                     last_offset = current_offset;
-                    validity.append(true);
+                    null_builder.append(true);
                 } else {
                     offsets.push_length(0);
-                    validity.append(false);
+                    null_builder.append(false);
                 }
                 Ok(())
             })
@@ -264,7 +264,7 @@ fn encode_images<Arr: AsImageObj>(
         let arrow_array = LargeBinaryArray::new(
             offsets.finish(),
             values.into(),
-            Some(validity.finish().into()),
+            Some(null_builder.finish().into()),
         );
         BinaryArray::from_arrow(
             Field::new(images.name(), DataType::Binary),

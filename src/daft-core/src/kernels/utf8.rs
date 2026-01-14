@@ -33,7 +33,7 @@ fn add_scalar_utf8(prefix: &str, arr: &Utf8Array<i64>) -> DaftResult<Utf8Array<i
 pub fn add_utf8_arrays(lhs: &Utf8Array<i64>, rhs: &Utf8Array<i64>) -> DaftResult<Utf8Array<i64>> {
     if rhs.len() == 1 {
         let is_valid = match rhs.validity() {
-            Some(validity) => validity.get_bit(0),
+            Some(nulls) => nulls.get_bit(0),
             None => true,
         };
 
@@ -47,7 +47,7 @@ pub fn add_utf8_arrays(lhs: &Utf8Array<i64>, rhs: &Utf8Array<i64>) -> DaftResult
     }
     if lhs.len() == 1 {
         let is_valid = match lhs.validity() {
-            Some(validity) => validity.get_bit(0),
+            Some(nulls) => nulls.get_bit(0),
             None => true,
         };
 
