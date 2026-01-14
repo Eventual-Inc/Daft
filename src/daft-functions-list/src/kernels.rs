@@ -803,7 +803,7 @@ fn get_chunks_helper(
             inner_list_field.to_list_field(),
             inner_list.into_series(),
             daft_arrow::offset::OffsetsBuffer::try_from(new_offsets)?,
-            nulls.cloned(), // Copy the parent's validity.
+            nulls.cloned(), // Copy the parent's nulls.
         )
         .into_series())
     }
