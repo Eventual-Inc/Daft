@@ -13,7 +13,7 @@ use common_error::{DaftError, DaftResult};
 use daft_arrow::ArrowError;
 use num_traits::{NumCast, ToPrimitive};
 
-use super::{DaftCompare, DaftLogical, as_arrow::AsArrow, from_arrow::FromArrow};
+use super::{DaftCompare, DaftLogical, as_arrow::AsArrow};
 use crate::{
     array::DataArray,
     datatypes::{
