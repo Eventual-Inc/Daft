@@ -28,11 +28,11 @@ impl ScalarUDF for ListMap {
 
         let list_arr = list_arr.list()?;
         let offsets = list_arr.offsets();
-        let validity = list_arr.validity().cloned();
+        let nulls = list_arr.nulls().cloned();
 
         let field = result_arr.field().to_list_field();
 
-        let res = ListArray::new(field, result_arr, offsets.clone(), validity);
+        let res = ListArray::new(field, result_arr, offsets.clone(), nulls);
         Ok(res.into_series())
     }
 

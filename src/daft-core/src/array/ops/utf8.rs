@@ -16,7 +16,7 @@ impl Utf8Array {
     {
         let input = self.as_arrow()?;
         let buffer = input.values();
-        let validity = input.nulls().cloned();
+        let nulls = input.nulls().cloned();
 
         let mut values = Vec::<u8>::new();
         let mut offsets = OffsetBufferBuilder::new(input.len() + 1);
@@ -29,7 +29,7 @@ impl Utf8Array {
             values.extend(bytes);
         }
 
-        let array = LargeBinaryArray::new(offsets.finish(), values.into(), validity);
+        let array = LargeBinaryArray::new(offsets.finish(), values.into(), nulls);
         let array: ArrayRef = Arc::new(array);
 
         let binary_field = Field::new(self.field().name.clone(), DataType::Binary);

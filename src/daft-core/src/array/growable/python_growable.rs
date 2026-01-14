@@ -26,9 +26,9 @@ impl<'a> PythonGrowable<'a> {
         use_validity: bool,
         capacity: usize,
     ) -> Self {
-        let growable_validity = if use_validity || arr_refs.iter().any(|a| a.validity().is_some()) {
+        let growable_validity = if use_validity || arr_refs.iter().any(|a| a.nulls().is_some()) {
             Some(ArrowBitmapGrowable::new(
-                arr_refs.iter().map(|a| a.validity()).collect(),
+                arr_refs.iter().map(|a| a.nulls()).collect(),
                 capacity,
             ))
         } else {

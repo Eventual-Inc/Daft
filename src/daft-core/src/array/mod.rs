@@ -33,7 +33,7 @@ use crate::datatypes::{DaftArrayType, DaftPhysicalType, DataType, Field};
 pub struct DataArray<T> {
     pub field: Arc<Field>,
     data: Box<dyn daft_arrow::array::Array>,
-    validity: Option<daft_arrow::buffer::NullBuffer>,
+    nulls: Option<daft_arrow::buffer::NullBuffer>,
     marker_: PhantomData<T>,
 }
 
@@ -72,11 +72,11 @@ impl<T> DataArray<T> {
                     .unwrap();
 
                 let arr = Box::new(utf8_to_large_utf8(utf8_arr));
-                let validity = arr.validity().cloned().map(Into::into);
+                let nulls = arr.validity().cloned().map(Into::into);
                 return Ok(Self {
                     field: physical_field,
                     data: arr,
-                    validity,
+                    nulls,
                     marker_: PhantomData,
                 });
             }
@@ -101,11 +101,11 @@ impl<T> DataArray<T> {
             );
         }
 
-        let validity = arrow_array.validity().cloned().map(Into::into);
+        let nulls = arrow_array.validity().cloned().map(Into::into);
         Ok(Self {
             field: physical_field,
             data: arrow_array,
-            validity,
+            nulls,
             marker_: PhantomData,
         })
     }
@@ -126,22 +126,22 @@ impl<T> DataArray<T> {
         self.len() == 0
     }
 
-    pub fn with_validity_slice(&self, validity: &[bool]) -> DaftResult<Self> {
-        if validity.len() != self.data.len() {
+    pub fn with_nulls_slice(&self, nulls: &[bool]) -> DaftResult<Self> {
+        if nulls.len() != self.data.len() {
             return Err(DaftError::ValueError(format!(
                 "validity mask length does not match DataArray length, {} vs {}",
-                validity.len(),
+                nulls.len(),
                 self.data.len()
             )));
         }
         let with_bitmap = self
             .data
-            .with_validity(wrap_null_buffer(Some(NullBuffer::from(validity))));
+            .with_validity(wrap_null_buffer(Some(NullBuffer::from(nulls))));
         Self::new(self.field.clone(), with_bitmap)
     }
 
-    pub fn with_validity(&self, validity: Option<NullBuffer>) -> DaftResult<Self> {
-        if let Some(v) = &validity
+    pub fn with_nulls(&self, nulls: Option<NullBuffer>) -> DaftResult<Self> {
+        if let Some(v) = &nulls
             && v.len() != self.data.len()
         {
             return Err(DaftError::ValueError(format!(
@@ -150,12 +150,12 @@ impl<T> DataArray<T> {
                 self.data.len()
             )));
         }
-        let with_bitmap = self.data.with_validity(wrap_null_buffer(validity));
+        let with_bitmap = self.data.with_validity(wrap_null_buffer(nulls));
         Self::new(self.field.clone(), with_bitmap)
     }
 
-    pub fn validity(&self) -> Option<&NullBuffer> {
-        self.validity.as_ref()
+    pub fn nulls(&self) -> Option<&NullBuffer> {
+        self.nulls.as_ref()
     }
 
     pub fn slice(&self, start: usize, end: usize) -> DaftResult<Self> {
