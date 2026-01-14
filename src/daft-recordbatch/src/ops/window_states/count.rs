@@ -5,7 +5,7 @@ use daft_core::{count_mode::CountMode, prelude::*};
 use super::WindowAggStateOps;
 
 pub struct CountWindowState {
-    source_validity: Option<NullBuffer>,
+    source_nulls: Option<NullBuffer>,
     valid_count: usize,
     total_count: usize,
     count_vec: Vec<u64>,
@@ -14,10 +14,10 @@ pub struct CountWindowState {
 
 impl CountWindowState {
     pub fn new(source: &Series, total_length: usize, count_mode: CountMode) -> Self {
-        let source_bitmap = source.validity().cloned();
+        let source_bitmap = source.nulls().cloned();
 
         Self {
-            source_validity: source_bitmap,
+            source_nulls: source_bitmap,
             valid_count: 0,
             total_count: 0,
             count_vec: Vec::with_capacity(total_length),
@@ -36,9 +36,7 @@ impl WindowAggStateOps for CountWindowState {
         self.total_count += end_idx - start_idx;
         if matches!(self.count_mode, CountMode::Valid | CountMode::Null) {
             for i in start_idx..end_idx {
-                if self.source_validity.is_none()
-                    || self.source_validity.as_ref().unwrap().is_valid(i)
-                {
+                if self.source_nulls.is_none() || self.source_nulls.as_ref().unwrap().is_valid(i) {
                     self.valid_count += 1;
                 }
             }
@@ -55,9 +53,7 @@ impl WindowAggStateOps for CountWindowState {
         self.total_count -= end_idx - start_idx;
         if matches!(self.count_mode, CountMode::Valid | CountMode::Null) {
             for i in start_idx..end_idx {
-                if self.source_validity.is_none()
-                    || self.source_validity.as_ref().unwrap().is_valid(i)
-                {
+                if self.source_nulls.is_none() || self.source_nulls.as_ref().unwrap().is_valid(i) {
                     self.valid_count -= 1;
                 }
             }

@@ -20,7 +20,7 @@ pub struct ListArray {
 
     /// Where each row starts and ends. Null rows usually have the same start/end index, but this is not guaranteed.
     offsets: daft_arrow::offset::OffsetsBuffer<i64>,
-    validity: Option<daft_arrow::buffer::NullBuffer>,
+    nulls: Option<daft_arrow::buffer::NullBuffer>,
 }
 
 impl DaftArrayType for ListArray {
@@ -34,13 +34,13 @@ impl ListArray {
         field: F,
         flat_child: Series,
         offsets: daft_arrow::offset::OffsetsBuffer<i64>,
-        validity: Option<daft_arrow::buffer::NullBuffer>,
+        nulls: Option<daft_arrow::buffer::NullBuffer>,
     ) -> Self {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
             DataType::List(child_dtype) => {
-                if let Some(validity) = validity.as_ref()
-                    && validity.len() != offsets.len_proxy()
+                if let Some(nulls) = nulls.as_ref()
+                    && nulls.len() != offsets.len_proxy()
                 {
                     panic!(
                         "ListArray::new validity length does not match computed length from offsets"
@@ -68,7 +68,7 @@ impl ListArray {
             field,
             flat_child,
             offsets,
-            validity,
+            nulls,
         }
     }
 
@@ -76,14 +76,14 @@ impl ListArray {
         &self.offsets
     }
 
-    pub fn validity(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
-        self.validity.as_ref()
+    pub fn nulls(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
+        self.nulls.as_ref()
     }
 
     pub fn null_count(&self) -> usize {
-        match self.validity() {
+        match self.nulls() {
             None => 0,
-            Some(validity) => validity.null_count(),
+            Some(nulls) => nulls.null_count(),
         }
     }
 
@@ -143,7 +143,7 @@ impl ListArray {
             Field::new(name, self.data_type().clone()),
             self.flat_child.clone(),
             self.offsets.clone(),
-            self.validity.clone(),
+            self.nulls.clone(),
         )
     }
 
@@ -156,15 +156,15 @@ impl ListArray {
         let mut new_offsets = self.offsets.clone();
         new_offsets.slice(start, end - start + 1);
 
-        let new_validity = self
-            .validity
+        let new_nulls = self
+            .nulls
             .as_ref()
             .map(|v| v.clone().slice(start, end - start));
         Ok(Self::new(
             self.field.clone(),
             self.flat_child.clone(),
             new_offsets,
-            new_validity,
+            new_nulls,
         ))
     }
     #[deprecated(note = "arrow2 migration")]
@@ -174,7 +174,7 @@ impl ListArray {
             arrow_dtype,
             self.offsets().clone(),
             self.flat_child.to_arrow2(),
-            daft_arrow::buffer::wrap_null_buffer(self.validity.clone()),
+            daft_arrow::buffer::wrap_null_buffer(self.nulls.clone()),
         ))
     }
 
@@ -186,7 +186,7 @@ impl ListArray {
 
         let offsets = arrow::buffer::OffsetBuffer::new(ScalarBuffer::from(arrow_offsets));
         let values = self.flat_child.to_arrow()?;
-        let nulls = self.validity.clone();
+        let nulls = self.nulls.clone();
         Ok(Arc::new(arrow::array::LargeListArray::new(
             Arc::new(field),
             offsets,
@@ -195,11 +195,8 @@ impl ListArray {
         )))
     }
 
-    pub fn with_validity(
-        &self,
-        validity: Option<daft_arrow::buffer::NullBuffer>,
-    ) -> DaftResult<Self> {
-        if let Some(v) = &validity
+    pub fn with_nulls(&self, nulls: Option<daft_arrow::buffer::NullBuffer>) -> DaftResult<Self> {
+        if let Some(v) = &nulls
             && v.len() != self.len()
         {
             return Err(DaftError::ValueError(format!(
@@ -213,7 +210,7 @@ impl ListArray {
             self.field.clone(),
             self.flat_child.clone(),
             self.offsets.clone(),
-            validity,
+            nulls,
         ))
     }
 }
@@ -251,8 +248,8 @@ impl Iterator for ListArrayIter<'_> {
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.idx < self.array.len() {
-            if let Some(validity) = self.array.validity()
-                && validity.is_null(self.idx)
+            if let Some(nulls) = self.array.nulls()
+                && nulls.is_null(self.idx)
             {
                 self.idx += 1;
                 Some(None)

@@ -15,7 +15,7 @@ pub struct StructArray {
 
     /// Column representations
     pub children: Vec<Series>,
-    validity: Option<daft_arrow::buffer::NullBuffer>,
+    nulls: Option<daft_arrow::buffer::NullBuffer>,
     len: usize,
 }
 
@@ -29,7 +29,7 @@ impl StructArray {
     pub fn new<F: Into<Arc<Field>>>(
         field: F,
         children: Vec<Series>,
-        validity: Option<daft_arrow::buffer::NullBuffer>,
+        nulls: Option<daft_arrow::buffer::NullBuffer>,
     ) -> Self {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
@@ -70,20 +70,20 @@ impl StructArray {
                         len
                     );
                 }
-                if let Some(some_validity) = &validity
-                    && some_validity.len() != len
+                if let Some(some_nulls) = &nulls
+                    && some_nulls.len() != len
                 {
                     panic!(
                         "StructArray::new expects validity to have length {} but received: {}",
                         len,
-                        some_validity.len()
+                        some_nulls.len()
                     )
                 }
 
                 Self {
                     field,
                     children,
-                    validity,
+                    nulls,
                     len,
                 }
             }
@@ -94,14 +94,14 @@ impl StructArray {
         }
     }
 
-    pub fn validity(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
-        self.validity.as_ref()
+    pub fn nulls(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
+        self.nulls.as_ref()
     }
 
     pub fn null_count(&self) -> usize {
-        match self.validity() {
+        match self.nulls() {
             None => 0,
-            Some(validity) => validity.null_count(),
+            Some(nulls) => nulls.null_count(),
         }
     }
 
@@ -119,7 +119,7 @@ impl StructArray {
             arrays.to_vec(),
             arrays
                 .iter()
-                .map(|a| a.validity.as_ref().map_or(0usize, |v| v.null_count()))
+                .map(|a| a.nulls.as_ref().map_or(0usize, |v| v.null_count()))
                 .sum::<usize>()
                 > 0,
             arrays.iter().map(|a| a.len()).sum(),
@@ -158,7 +158,7 @@ impl StructArray {
         Self {
             field: Arc::new(Field::new(name, self.data_type().clone())),
             children: self.children.clone(),
-            validity: self.validity.clone(),
+            nulls: self.nulls.clone(),
             len: self.len,
         }
     }
@@ -175,7 +175,7 @@ impl StructArray {
                 .iter()
                 .map(|s| s.slice(start, end))
                 .collect::<DaftResult<Vec<Series>>>()?,
-            self.validity
+            self.nulls
                 .as_ref()
                 .map(|v| v.clone().slice(start, end - start)),
         ))
@@ -186,7 +186,7 @@ impl StructArray {
         Box::new(daft_arrow::array::StructArray::new(
             arrow_dtype,
             self.children.iter().map(|s| s.to_arrow2()).collect(),
-            daft_arrow::buffer::wrap_null_buffer(self.validity.clone()),
+            daft_arrow::buffer::wrap_null_buffer(self.nulls.clone()),
         ))
     }
 
@@ -205,20 +205,17 @@ impl StructArray {
             .map(|s| s.to_arrow())
             .collect::<DaftResult<_>>()?;
 
-        let arrow_validity = self.validity.clone();
+        let nulls = self.nulls.clone();
 
         Ok(Arc::new(arrow::array::StructArray::new(
             fields.clone(),
             children,
-            arrow_validity,
+            nulls,
         )) as _)
     }
 
-    pub fn with_validity(
-        &self,
-        validity: Option<daft_arrow::buffer::NullBuffer>,
-    ) -> DaftResult<Self> {
-        if let Some(v) = &validity
+    pub fn with_nulls(&self, nulls: Option<daft_arrow::buffer::NullBuffer>) -> DaftResult<Self> {
+        if let Some(v) = &nulls
             && v.len() != self.len()
         {
             return Err(DaftError::ValueError(format!(
@@ -228,10 +225,6 @@ impl StructArray {
             )));
         }
 
-        Ok(Self::new(
-            self.field.clone(),
-            self.children.clone(),
-            validity,
-        ))
+        Ok(Self::new(self.field.clone(), self.children.clone(), nulls))
     }
 }

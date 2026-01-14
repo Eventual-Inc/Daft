@@ -485,7 +485,7 @@ impl<T: DaftPrimitiveType> DataArray<T> {
             self.field.clone(),
             ScalarBuffer::from(arrow_buffer).into_iter().map(f),
         )
-        .with_validity(self.validity().cloned())
+        .with_nulls(self.nulls().cloned())
         .expect("Failed to set nulls")
     }
 }

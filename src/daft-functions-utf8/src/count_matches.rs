@@ -123,7 +123,7 @@ fn count_matches_impl(
             Arc::new(Field::new(arr.name(), DataType::UInt64)),
             iter::repeat_n(Some(0), arr.len()),
         )
-        .with_validity(arr.validity().cloned());
+        .with_nulls(arr.nulls().cloned());
     }
 
     let patterns = patterns.into_iter().flatten();

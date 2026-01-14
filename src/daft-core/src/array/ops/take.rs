@@ -114,7 +114,7 @@ impl ListArray {
 }
 impl StructArray {
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        let taken_validity = self.validity().map(|v| {
+        let nulls = self.nulls().map(|v| {
             NullBuffer::from_iter(idx.into_iter().map(|i| match i {
                 None => false,
                 Some(i) => v.is_valid(i.to_usize()),
@@ -126,7 +126,7 @@ impl StructArray {
                 .iter()
                 .map(|c| c.take(idx))
                 .collect::<DaftResult<Vec<_>>>()?,
-            taken_validity,
+            nulls,
         ))
     }
 }

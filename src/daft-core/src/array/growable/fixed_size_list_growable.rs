@@ -33,9 +33,9 @@ impl<'a> FixedSizeListGrowable<'a> {
                     capacity * element_fixed_len,
                 );
                 let growable_validity =
-                    if use_validity || arrays.iter().any(|arr| arr.validity().is_some()) {
+                    if use_validity || arrays.iter().any(|arr| arr.nulls().is_some()) {
                         Some(ArrowBitmapGrowable::new(
-                            arrays.iter().map(|a| a.validity()).collect(),
+                            arrays.iter().map(|a| a.nulls()).collect(),
                             capacity,
                         ))
                     } else {

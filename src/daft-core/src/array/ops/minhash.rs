@@ -96,7 +96,7 @@ impl DaftMinHash for Utf8Array {
         Ok(FixedSizeListArray::new(
             field,
             output_series,
-            self.validity().cloned(),
+            self.nulls().cloned(),
         ))
     }
 }

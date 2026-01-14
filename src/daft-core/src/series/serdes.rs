@@ -169,7 +169,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                     }
                     DataType::Struct(..) => {
                         let mut all_series = map.next_value::<Vec<Option<Series>>>()?;
-                        let validity = all_series
+                        let nulls = all_series
                             .pop()
                             .ok_or_else(|| serde::de::Error::missing_field("validity"))?;
                         let children = all_series
@@ -177,15 +177,15 @@ impl<'d> serde::Deserialize<'d> for Series {
                             .map(|s| s.unwrap())
                             .collect::<Vec<_>>();
 
-                        let validity = validity.map(|v| v.bool().unwrap().values().into());
-                        Ok(StructArray::new(Arc::new(field), children, validity).into_series())
+                        let nulls = nulls.map(|v| v.bool().unwrap().values().into());
+                        Ok(StructArray::new(Arc::new(field), children, nulls).into_series())
                     }
                     DataType::List(..) => {
                         let mut all_series = map.next_value::<Vec<Option<Series>>>()?;
-                        let validity = all_series
+                        let nulls = all_series
                             .pop()
                             .ok_or_else(|| serde::de::Error::missing_field("validity"))?;
-                        let validity = validity.map(|v| v.bool().unwrap().values().into());
+                        let nulls = nulls.map(|v| v.bool().unwrap().values().into());
                         let offsets_series = all_series
                             .pop()
                             .ok_or_else(|| serde::de::Error::missing_field("offsets"))?
@@ -199,11 +199,11 @@ impl<'d> serde::Deserialize<'d> for Series {
                             .pop()
                             .ok_or_else(|| serde::de::Error::missing_field("flat_child"))?
                             .unwrap();
-                        Ok(ListArray::new(field, flat_child, offsets, validity).into_series())
+                        Ok(ListArray::new(field, flat_child, offsets, nulls).into_series())
                     }
                     DataType::FixedSizeList(..) => {
                         let mut all_series = map.next_value::<Vec<Option<Series>>>()?;
-                        let validity = all_series
+                        let nulls = all_series
                             .pop()
                             .ok_or_else(|| serde::de::Error::missing_field("validity"))?;
                         let flat_child = all_series
@@ -211,8 +211,8 @@ impl<'d> serde::Deserialize<'d> for Series {
                             .ok_or_else(|| serde::de::Error::missing_field("flat_child"))?
                             .unwrap();
 
-                        let validity = validity.map(|v| v.bool().unwrap().values().into());
-                        Ok(FixedSizeListArray::new(field, flat_child, validity).into_series())
+                        let nulls = nulls.map(|v| v.bool().unwrap().values().into());
+                        Ok(FixedSizeListArray::new(field, flat_child, nulls).into_series())
                     }
                     DataType::Decimal128(..) => Ok(Decimal128Array::from_iter(
                         Arc::new(field.clone()),

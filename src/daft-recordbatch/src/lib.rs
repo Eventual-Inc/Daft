@@ -492,11 +492,11 @@ impl RecordBatch {
         } else {
             // num_filtered is the number of 'false' or null values in the mask
             let num_filtered = mask
-                .validity()
-                .map(|validity| {
-                    and(
-                        &arrow::array::BooleanArray::new(validity.inner().clone(), None),
-                        &mask.as_arrow().unwrap(),
+                .nulls()
+                .map(|nulls| {
+                    daft_arrow::bitmap::and(
+                        &daft_arrow::buffer::from_null_buffer(nulls.clone()),
+                        mask.as_bitmap(),
                     )
                     .unwrap()
                     .null_count()
@@ -639,7 +639,7 @@ impl RecordBatch {
             AggExpr::ApproxCountDistinct(expr) => {
                 let hashed = self
                     .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                    .hash_with_validity(None)?;
+                    .hash_with_nulls(None)?;
                 let series = groups
                     .map_or_else(
                         || hashed.approx_count_distinct(),
@@ -655,7 +655,7 @@ impl RecordBatch {
                     SketchType::HyperLogLog => {
                         let hashed = self
                             .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                            .hash_with_validity(None)?;
+                            .hash_with_nulls(None)?;
                         let series = groups
                             .map_or_else(
                                 || hashed.hll_sketch(),
