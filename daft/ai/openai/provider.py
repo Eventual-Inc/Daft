@@ -44,7 +44,9 @@ class OpenAIProvider(Provider):
     def name(self) -> str:
         return self._name
 
-    def create_text_embedder(self, model: str | None = None, dimensions: int | None = None, **options: Any) -> Expression:
+    def create_text_embedder(
+        self, model: str | None = None, dimensions: int | None = None, **options: Any
+    ) -> Expression:
         """Create a TextEmbedder UDF expression for the OpenAI provider."""
         from daft.ai._expressions import _TextEmbedderExpression
         from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedderDescriptor
