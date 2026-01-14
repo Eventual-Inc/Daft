@@ -13,7 +13,7 @@ use arrow_array::ArrayRef;
 use common_display::table_display::{StrValue, make_comfy_table};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_compute_runtime;
-use daft_arrow::{array::Array, chunk::Chunk};
+use daft_arrow::array::Array;
 use daft_core::{
     array::ops::{
         DaftApproxCountDistinctAggable, DaftHllSketchAggable, GroupIndices, full::FullNull,
@@ -1298,9 +1298,22 @@ impl RecordBatch {
         Ok(series)
     }
 
+    /// Helper to derive the result schema from evaluating expressions
+    fn derive_eval_schema(exprs: &[BoundExpr], schema: &Schema) -> DaftResult<SchemaRef> {
+        let fields = exprs
+            .iter()
+            .map(|e| e.inner().to_field(schema))
+            .collect::<DaftResult<Vec<_>>>()?;
+        Ok(Schema::new(fields).into())
+    }
+
     // TODO(universalmind303): since we now have async expressions, the entire evaluation should happen async
     // Refactor all eval_expression's to async and remove the sync version.
     pub fn eval_expression_list(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
+        if self.is_empty() && exprs.iter().all(|e| !daft_dsl::has_agg(e.inner())) {
+            let schema = Self::derive_eval_schema(exprs, &self.schema)?;
+            return Ok(Self::empty(Some(schema)));
+        }
         let result_series: Vec<_> = exprs
             .iter()
             .map(|e| self.eval_expression(e))
@@ -1314,6 +1327,10 @@ impl RecordBatch {
         exprs: &[BoundExpr],
         metrics: &mut dyn MetricsCollector,
     ) -> DaftResult<Self> {
+        if self.is_empty() && exprs.iter().all(|e| !daft_dsl::has_agg(e.inner())) {
+            let schema = Self::derive_eval_schema(exprs, &self.schema)?;
+            return Ok(Self::empty(Some(schema)));
+        }
         let result_series: Vec<_> = exprs
             .iter()
             .map(|e| self.eval_expression_with_metrics(e, metrics))
@@ -1323,6 +1340,10 @@ impl RecordBatch {
     }
 
     pub async fn eval_expression_list_async(&self, exprs: Vec<BoundExpr>) -> DaftResult<Self> {
+        if self.is_empty() && exprs.iter().all(|e| !daft_dsl::has_agg(e.inner())) {
+            let schema = Self::derive_eval_schema(&exprs, &self.schema)?;
+            return Ok(Self::empty(Some(schema)));
+        }
         let futs = exprs
             .clone()
             .into_iter()
@@ -1338,6 +1359,10 @@ impl RecordBatch {
         exprs: &[BoundExpr],
         num_parallel_tasks: usize,
     ) -> DaftResult<Self> {
+        if self.is_empty() && exprs.iter().all(|e| !daft_dsl::has_agg(e.inner())) {
+            let schema = Self::derive_eval_schema(exprs, &self.schema)?;
+            return Ok(Self::empty(Some(schema)));
+        }
         // Partition the expressions into compute and non-compute
         let (compute_exprs, non_compute_exprs): (Vec<_>, Vec<_>) = exprs
             .iter()
@@ -1545,19 +1570,12 @@ impl RecordBatch {
         )
     }
 
-    #[deprecated(note = "arrow2 migration")]
-    #[allow(deprecated, reason = "arrow2 migration")]
-    pub fn to_chunk(&self) -> Chunk<Box<dyn Array>> {
-        Chunk::new(self.columns.iter().map(|s| s.to_arrow2()).collect())
-    }
-
     pub fn to_ipc_stream(&self) -> DaftResult<Vec<u8>> {
         let mut buffer = Vec::with_capacity(self.size_bytes());
         let arrow_schema = self.schema.to_arrow()?;
-        let mut writer =
-            daft_arrow::ipc::writer::StreamWriter::try_new(&mut buffer, &arrow_schema)?;
+        let mut writer = arrow_ipc::writer::StreamWriter::try_new(&mut buffer, &arrow_schema)?;
 
-        let arrow_batch: daft_arrow::arrow_array::RecordBatch = self.clone().try_into()?;
+        let arrow_batch: arrow_array::RecordBatch = self.clone().try_into()?;
         writer.write(&arrow_batch)?;
 
         writer.finish()?;
@@ -1567,7 +1585,7 @@ impl RecordBatch {
 
     pub fn from_ipc_stream(buffer: &[u8]) -> DaftResult<Self> {
         let mut cursor = Cursor::new(buffer);
-        let reader = daft_arrow::ipc::reader::StreamReader::try_new(&mut cursor, None)?;
+        let reader = arrow_ipc::reader::StreamReader::try_new(&mut cursor, None)?;
 
         let arrow_schema = reader.schema();
         let schema: Arc<Schema> = Arc::new(arrow_schema.as_ref().try_into()?);

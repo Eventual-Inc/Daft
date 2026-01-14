@@ -1,7 +1,6 @@
 // Re-export arrow2::* modules for centralized access
 pub use arrow_array::{self, temporal_conversions};
 // IPC module that exports arrow-ipc functionality
-pub use arrow_ipc as ipc;
 pub use arrow_schema::{self, ArrowError};
 pub use arrow2::{array, chunk, compute, error, offset, scalar, trusted_len, types};
 

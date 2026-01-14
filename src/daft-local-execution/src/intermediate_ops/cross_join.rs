@@ -117,7 +117,10 @@ impl IntermediateOperator for CrossJoinOperator {
                         IntermediateOperatorResult::NeedMoreInput(Some(output_morsel))
                     } else {
                         // still looping through tables
-                        IntermediateOperatorResult::HasMoreOutput(output_morsel)
+                        IntermediateOperatorResult::HasMoreOutput {
+                            input,
+                            output: output_morsel,
+                        }
                     };
                     Ok((state, result))
                 },
@@ -141,8 +144,8 @@ impl IntermediateOperator for CrossJoinOperator {
         ]
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
-        Ok(CrossJoinState::new(self.state_bridge.clone()))
+    fn make_state(&self) -> Self::State {
+        CrossJoinState::new(self.state_bridge.clone())
     }
     fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
         Ok(crate::dynamic_batching::StaticBatchingStrategy::new(

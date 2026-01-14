@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
+    num::NonZeroUsize,
     sync::{Arc, Mutex, atomic::Ordering},
     time::Duration,
 };
@@ -10,6 +11,7 @@ use common_metrics::{
     CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, operator_metrics::OperatorCounter,
     ops::NodeType,
 };
+use common_runtime::JoinSet;
 use daft_core::{prelude::SchemaRef, series::Series};
 use daft_dsl::{
     expr::bound_expr::BoundExpr, functions::python::UDFProperties,
@@ -27,7 +29,7 @@ use super::base::{
     StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
 use crate::{
-    ExecutionTaskSpawner, TaskSet,
+    ExecutionTaskSpawner,
     intermediate_ops::udf::remap_used_cols,
     pipeline::{MorselSizeRequirement, NodeName},
     runtime_stats::{Counter, RuntimeStats},
@@ -175,7 +177,7 @@ impl AsyncUdfSink {
 
 pub struct AsyncUdfState {
     udf_expr: BoundExpr,
-    task_set: TaskSet<DaftResult<RecordBatch>>,
+    task_set: JoinSet<DaftResult<RecordBatch>>,
     udf_initialized: bool,
 }
 
@@ -314,13 +316,19 @@ impl StreamingSink for AsyncUdfSink {
     }
 
     fn name(&self) -> NodeName {
-        let udf_name = if let Some((_, udf_name)) = self.params.udf_properties.name.rsplit_once('.')
-        {
-            udf_name
+        if self.params.udf_properties.builtin_name {
+            let name = self.params.udf_properties.name.clone();
+            name.into()
         } else {
-            self.params.udf_properties.name.as_str()
-        };
-        format!("Async UDF {}", udf_name).into()
+            let udf_name =
+                if let Some((_, udf_name)) = self.params.udf_properties.name.rsplit_once('.') {
+                    udf_name
+                } else {
+                    self.params.udf_properties.name.as_str()
+                };
+
+            format!("UDF {}", udf_name).into()
+        }
     }
 
     fn op_type(&self) -> NodeType {
@@ -329,7 +337,15 @@ impl StreamingSink for AsyncUdfSink {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![
-            format!("Async UDF: {}", self.params.udf_properties.name.as_str()),
+            format!(
+                "{} {}:",
+                if self.params.udf_properties.builtin_name {
+                    "Async Builtin UDF"
+                } else {
+                    "Async UDF"
+                },
+                self.params.udf_properties.name.as_str()
+            ),
             format!("Expr = {}", self.params.expr),
             format!(
                 "Passthrough Columns = [{}]",
@@ -351,7 +367,7 @@ impl StreamingSink for AsyncUdfSink {
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(AsyncUdfState {
             udf_expr: self.params.expr.clone(),
-            task_set: TaskSet::new(),
+            task_set: JoinSet::new(),
             udf_initialized: false,
         })
     }
@@ -368,11 +384,15 @@ impl StreamingSink for AsyncUdfSink {
         self.params
             .udf_properties
             .batch_size
-            .map(MorselSizeRequirement::Strict)
+            .map(|size| {
+                MorselSizeRequirement::Strict(
+                    NonZeroUsize::new(size).expect("batch size for AsyncUDF sink must be non-zero"),
+                )
+            })
             .or_else(|| {
                 let is_scalar_udf = self.params.udf_properties.is_scalar;
                 if is_scalar_udf {
-                    Some(MorselSizeRequirement::Strict(1))
+                    Some(MorselSizeRequirement::Strict(NonZeroUsize::new(1).unwrap()))
                 } else {
                     None
                 }

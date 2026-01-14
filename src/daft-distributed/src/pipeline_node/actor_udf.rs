@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_py_serde::PyObjectWrapper;
+use common_runtime::JoinSet;
 use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFProperties, python::PyExpr};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
@@ -17,10 +18,7 @@ use crate::{
     pipeline_node::{DistributedPipelineNode, append_plan_to_existing_task},
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::{scheduler::SubmittableTask, task::SwordfishTask},
-    utils::{
-        channel::{Sender, create_channel},
-        joinset::JoinSet,
-    },
+    utils::channel::{Sender, create_channel},
 };
 
 #[derive(Debug)]
