@@ -43,6 +43,38 @@ fn smallest_batch_size(prev: Option<usize>, next: Option<usize>) -> Option<usize
     }
 }
 
+/// Has interesting compute to display within the name / progress bars
+fn has_compute(expr: &BoundExpr) -> bool {
+    match expr.inner().as_ref() {
+        Expr::Column(..) => false,
+        Expr::Literal(..) => false,
+        // Shouldn't be there by this point
+        Expr::Subquery(..) => false,
+        Expr::Exists(..) => false,
+
+        Expr::Function { .. } => true,
+        Expr::ScalarFn(..) => true,
+        Expr::Agg(..) => true,
+        Expr::Over(..) => true,
+        Expr::WindowFunction(..) => true,
+        Expr::IsIn(..) => true,
+        Expr::Between(..) => true,
+        Expr::BinaryOp { .. } => true,
+        // TODO: Some casts could be considered no-ops
+        Expr::Cast(..) => true,
+        Expr::VLLM(..) => true,
+        Expr::Not(..) => true,
+        Expr::IsNull(..) => true,
+        Expr::NotNull(..) => true,
+        Expr::FillNull(..) => true,
+        Expr::IfElse { .. } => true,
+
+        Expr::Alias(expr, ..) => expr.has_compute(),
+        Expr::InSubquery(expr, _) => expr.has_compute(),
+        Expr::List(exprs) => exprs.iter().any(|expr| expr.has_compute()),
+    }
+}
+
 /// Gets the batch size from the first UDF encountered in a given slice of expressions
 pub fn try_get_batch_size(exprs: &[BoundExpr]) -> Option<usize> {
     let mut projection_batch_size = None;
@@ -144,7 +176,19 @@ impl IntermediateOperator for ProjectOperator {
     }
 
     fn name(&self) -> NodeName {
-        "Project".into()
+        let compute_projects = self
+            .projection
+            .iter()
+            .filter(|x| has_compute(x))
+            .collect::<Vec<_>>();
+
+        if compute_projects.is_empty() {
+            "Rename & Reorder".into()
+        } else if compute_projects.len() == 1 {
+            compute_projects[0].inner().name().to_string().into()
+        } else {
+            "Project".into()
+        }
     }
 
     fn op_type(&self) -> NodeType {

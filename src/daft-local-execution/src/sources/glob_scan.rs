@@ -188,7 +188,7 @@ impl Source for GlobScanSource {
     }
 
     fn name(&self) -> NodeName {
-        "GlobScanSource".into()
+        "Glob Scan".into()
     }
 
     fn op_type(&self) -> NodeType {
@@ -197,7 +197,7 @@ impl Source for GlobScanSource {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push("GlobScanSource:".to_string());
+        res.push("Glob Scan:".to_string());
         res.push(format!("Schema = {}", self.schema.short_string()));
         res.push(format!("Glob paths = {:?}", self.glob_paths));
         if let Some(io_config) = &self.io_config {

@@ -133,7 +133,7 @@ impl StreamingSink for SortMergeJoinProbe {
     }
 
     fn name(&self) -> NodeName {
-        "SortMergeJoinProbe".into()
+        "Sort Merge Join Probe".into()
     }
 
     fn op_type(&self) -> NodeType {
@@ -141,7 +141,7 @@ impl StreamingSink for SortMergeJoinProbe {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        vec!["SortMergeJoinProbe".to_string()]
+        vec!["Sort Merge Join Probe".to_string()]
     }
 
     fn max_concurrency(&self) -> usize {
