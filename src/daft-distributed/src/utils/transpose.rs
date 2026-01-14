@@ -62,9 +62,9 @@ fn transpose_materialized_outputs(
         let mut partition_group = vec![];
         for materialized_partition in &materialized_partitions {
             let part = &materialized_partition[idx];
-            if part.num_rows() > 0 {
-                partition_group.push(part.clone());
-            }
+            // Do not filter empty partitions here; higher-level operators (e.g., joins)
+            // may rely on creating tasks even for empty sides to preserve correctness.
+            partition_group.push(part.clone());
         }
         transposed_outputs.push(partition_group);
     }

@@ -185,53 +185,78 @@ impl SortMergeJoinNode {
         let descending = vec![false; self.left_on.len()];
         let nulls_first = vec![false; self.left_on.len()];
 
-        // Sample left side
+        // Create canonical aliases for join keys to ensure consistent column names across left/right sampling and boundary computation
+
+        let alias_names: Vec<String> = (0..self.left_on.len())
+            .map(|i| format!("__daft_join_key_{}", i))
+            .collect();
+
+        // Apply canonical aliases to each join key via Expr.alias to ensure consistent final field names regardless of casts/functions
+        let canonical_left_on: Vec<BoundExpr> = self
+            .left_on
+            .iter()
+            .enumerate()
+            .map(|(i, e)| BoundExpr::new_unchecked(e.inner().alias(alias_names[i].clone())))
+            .collect();
+
+        let canonical_right_on: Vec<BoundExpr> = self
+            .right_on
+            .iter()
+            .enumerate()
+            .map(|(i, e)| BoundExpr::new_unchecked(e.inner().alias(alias_names[i].clone())))
+            .collect();
+
+        // Sample both sides using aliased join keys so sample schemas match for concatenation
         let left_sample_tasks = create_sample_tasks(
             left_materialized.clone(),
             self.left.config().schema.clone(),
-            self.left_on.clone(),
+            canonical_left_on.clone(),
             &(self.clone() as Arc<dyn PipelineNodeImpl>),
             task_id_counter,
             scheduler_handle,
         )?;
 
-        // Sample right side
         let right_sample_tasks = create_sample_tasks(
             right_materialized.clone(),
             self.right.config().schema.clone(),
-            self.right_on.clone(),
+            canonical_right_on.clone(),
             &(self.clone() as Arc<dyn PipelineNodeImpl>),
             task_id_counter,
             scheduler_handle,
         )?;
 
-        // Collect all samples
-        let sampled_outputs = try_join_all(
-            left_sample_tasks
-                .into_iter()
-                .chain(right_sample_tasks.into_iter()),
-        )
-        .await?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
+        // Collect samples from both sides and concatenate (column names/types aligned)
+        let left_sampled_outputs = try_join_all(left_sample_tasks)
+            .await?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        let right_sampled_outputs = try_join_all(right_sample_tasks)
+            .await?
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        let sampled_outputs = left_sampled_outputs
+            .into_iter()
+            .chain(right_sampled_outputs.into_iter())
+            .collect::<Vec<_>>();
 
-        // Compute partition boundaries from combined samples
+        // Compute boundaries using canonical aliased keys
         let boundaries = get_partition_boundaries_from_samples(
             sampled_outputs,
-            &self.left_on,
+            &canonical_left_on,
             descending.clone(),
             nulls_first,
             num_partitions,
         )
         .await?;
 
-        // Range repartition left side
+        // Range repartition left side using canonical aliases
         let left_schema = self.left.config().schema.clone();
         let left_partition_tasks = create_range_repartition_tasks(
             left_materialized,
             left_schema,
-            self.left_on.clone(),
+            canonical_left_on.clone(),
             descending.clone(),
             boundaries.clone(),
             num_partitions,
@@ -240,12 +265,12 @@ impl SortMergeJoinNode {
             scheduler_handle,
         )?;
 
-        // Range repartition right side
+        // Range repartition right side using canonical aliases
         let right_schema = self.right.config().schema.clone();
         let right_partition_tasks = create_range_repartition_tasks(
             right_materialized,
             right_schema,
-            self.right_on.clone(),
+            canonical_right_on,
             descending,
             boundaries,
             num_partitions,
@@ -313,9 +338,21 @@ impl SortMergeJoinNode {
             .try_collect::<Vec<_>>()
             .await?;
 
-        // Handle empty inputs
-        if left_materialized.is_empty() || right_materialized.is_empty() {
+        // Early exit: both sides empty -> nothing to emit
+        if left_materialized.is_empty() && right_materialized.is_empty() {
             return Ok(());
+        }
+
+        // If either side is empty, skip sampling/repartition and emit a single join task directly
+        if left_materialized.is_empty() || right_materialized.is_empty() {
+            return self
+                .create_and_submit_join_task(
+                    left_materialized,
+                    right_materialized,
+                    &task_id_counter,
+                    &result_tx,
+                )
+                .await;
         }
 
         // Special case: if both sides have only 1 partition, just do a direct join

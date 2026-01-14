@@ -120,6 +120,7 @@ impl RecordBatch {
         right: &Self,
         left_on: &[BoundExpr],
         right_on: &[BoundExpr],
+        how: JoinType,
         is_sorted: bool,
     ) -> DaftResult<Self> {
         // sort first and then call join recursively
@@ -153,43 +154,89 @@ impl RecordBatch {
                     .as_slice(),
             )?;
 
-            return left.sort_merge_join(&right, left_on, right_on, true);
+            return left.sort_merge_join(&right, left_on, right_on, how, true);
         }
 
-        let join_schema = infer_join_schema(&self.schema, &right.schema, JoinType::Inner)?;
+        let join_schema = infer_join_schema(&self.schema, &right.schema, how)?;
         let ltable = self.eval_expression_list(left_on)?;
         let rtable = right.eval_expression_list(right_on)?;
 
         let (ltable, rtable) = match_types_for_tables(&ltable, &rtable)?;
-        let (lidx, ridx) = merge_join::merge_inner_join(&ltable, &rtable)?;
 
-        let mut join_series = get_common_join_cols(&self.schema, &right.schema)
-            .map(|name| {
-                let lcol = get_column_by_name(self, name)?;
-                let rcol = get_column_by_name(right, name)?;
+        match how {
+            JoinType::Inner => {
+                let (lidx, ridx) = merge_join::merge_inner_join(&ltable, &rtable)?;
 
-                let mut growable =
-                    make_growable(name, lcol.data_type(), vec![lcol, rcol], false, lcol.len());
+                let mut join_series = get_common_join_cols(&self.schema, &right.schema)
+                    .map(|name| {
+                        let lcol = get_column_by_name(self, name)?;
+                        let rcol = get_column_by_name(right, name)?;
 
-                for (li, ri) in lidx.into_iter().zip(ridx.into_iter()) {
-                    match (li, ri) {
-                        (Some(i), _) => growable.extend(0, *i as usize, 1),
-                        (None, Some(i)) => growable.extend(1, *i as usize, 1),
-                        (None, None) => unreachable!("Join should not have None for both sides"),
-                    }
+                        let mut growable = make_growable(
+                            name,
+                            lcol.data_type(),
+                            vec![lcol, rcol],
+                            false,
+                            lcol.len(),
+                        );
+
+                        for (li, ri) in lidx.into_iter().zip(ridx.into_iter()) {
+                            match (li, ri) {
+                                (Some(i), _) => growable.extend(0, *i as usize, 1),
+                                (None, Some(i)) => growable.extend(1, *i as usize, 1),
+                                (None, None) => {
+                                    unreachable!("Join should not have None for both sides")
+                                }
+                            }
+                        }
+
+                        growable.build()
+                    })
+                    .collect::<DaftResult<Vec<_>>>()?;
+
+                drop(ltable);
+                drop(rtable);
+
+                let num_rows = lidx.len();
+                join_series = add_non_join_key_columns(self, right, lidx, ridx, join_series)?;
+
+                Self::new_with_size(join_schema, join_series, num_rows)
+            }
+            JoinType::Semi => {
+                let lidx = merge_join::merge_semi_join(&ltable, &rtable)?;
+
+                drop(ltable);
+                drop(rtable);
+
+                // For semi join, we only take columns from the left table.
+                let num_rows = lidx.len();
+                let mut join_series = Vec::with_capacity(self.schema.len());
+                for field in self.schema.as_ref() {
+                    join_series.push(get_column_by_name(self, &field.name)?.take(&lidx)?);
                 }
 
-                growable.build()
-            })
-            .collect::<DaftResult<Vec<_>>>()?;
+                Self::new_with_size(join_schema, join_series, num_rows)
+            }
+            JoinType::Anti => {
+                let lidx = merge_join::merge_anti_join(&ltable, &rtable)?;
 
-        drop(ltable);
-        drop(rtable);
+                drop(ltable);
+                drop(rtable);
 
-        let num_rows = lidx.len();
-        join_series = add_non_join_key_columns(self, right, lidx, ridx, join_series)?;
+                // For anti join, we only take columns from the left table.
+                let num_rows = lidx.len();
+                let mut join_series = Vec::with_capacity(self.schema.len());
+                for field in self.schema.as_ref() {
+                    join_series.push(get_column_by_name(self, &field.name)?.take(&lidx)?);
+                }
 
-        Self::new_with_size(join_schema, join_series, num_rows)
+                Self::new_with_size(join_schema, join_series, num_rows)
+            }
+            _ => Err(DaftError::ValueError(format!(
+                "Sort merge join does not support join type: {:?}",
+                how
+            ))),
+        }
     }
 
     pub fn cross_join(&self, right: &Self, outer_loop_side: JoinSide) -> DaftResult<Self> {

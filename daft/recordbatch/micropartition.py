@@ -327,7 +327,7 @@ class MicroPartition:
         how: JoinType = JoinType.Inner,
         is_sorted: bool = False,
     ) -> MicroPartition:
-        if how != JoinType.Inner:
+        if how not in (JoinType.Inner, JoinType.Semi, JoinType.Anti):
             raise NotImplementedError("TODO: [RUST] Implement Other Join types")
         if len(left_on) != len(right_on):
             raise ValueError(
@@ -342,7 +342,7 @@ class MicroPartition:
 
         return MicroPartition._from_pymicropartition(
             self._micropartition.sort_merge_join(
-                right._micropartition, left_on=left_exprs, right_on=right_exprs, is_sorted=is_sorted
+                right._micropartition, left_on=left_exprs, right_on=right_exprs, how=how, is_sorted=is_sorted
             )
         )
 
