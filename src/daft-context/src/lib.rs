@@ -15,8 +15,7 @@ use daft_micropartition::MicroPartitionRef;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
-pub use crate::subscribers::Subscriber;
-use crate::subscribers::{QueryMetadata, QueryResult};
+pub use crate::subscribers::{QueryMetadata, QueryResult, Subscriber};
 
 #[derive(Default)]
 #[cfg_attr(debug_assertions, derive(Debug))]
