@@ -1,11 +1,9 @@
 use std::collections::HashSet;
 
 use common_error::DaftResult;
-use daft_arrow::array::PrimitiveArray;
 
 use crate::{
-    array::ops::{DaftApproxCountDistinctAggable, as_arrow::AsArrow},
-    datatypes::UInt64Array,
+    array::ops::DaftApproxCountDistinctAggable, datatypes::UInt64Array,
     utils::identity_hash_set::IdentityBuildHasher,
 };
 
@@ -24,7 +22,11 @@ impl DaftApproxCountDistinctAggable for UInt64Array {
     }
 
     fn grouped_approx_count_distinct(&self, groups: &super::GroupIndices) -> Self::Output {
-        let arrow_arr = self.as_arrow().expect("Failed to convert array to arrow");
+        let arrow_arr_ref = self.to_arrow();
+        let arrow_arr = arrow_arr_ref
+            .as_any()
+            .downcast_ref::<arrow::array::UInt64Array>()
+            .expect("Failed to downcast to UInt64Array");
 
         let data = arrow_arr.values();
         let count_iter = groups.iter().map(|group| {
@@ -39,8 +41,7 @@ impl DaftApproxCountDistinctAggable for UInt64Array {
             }
             set.len() as u64
         });
-        let data = Box::new(PrimitiveArray::from_trusted_len_values_iter(count_iter));
-        let array = (self.name(), data).into();
-        Ok(array)
+        let array = Self::from_iter_values(count_iter);
+        Ok(array.rename(self.name()))
     }
 }
