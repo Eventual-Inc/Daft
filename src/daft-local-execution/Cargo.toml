@@ -43,7 +43,6 @@ pyo3 = {workspace = true, optional = true}
 pyo3-async-runtimes = {workspace = true, optional = true}
 rand = {workspace = true}
 snafu = {workspace = true}
-smallvec = {workspace = true}
 tokio = {workspace = true, features = ["test-util"]}
 tokio-stream = {workspace = true}
 tokio-util = {workspace = true}

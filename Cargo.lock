@@ -3071,7 +3071,6 @@ dependencies = [
  "pyo3-async-runtimes",
  "rand 0.8.5",
  "serde_json",
- "smallvec",
  "snafu",
  "tokio",
  "tokio-stream",
