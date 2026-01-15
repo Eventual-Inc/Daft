@@ -38,8 +38,7 @@ pub(crate) fn parse_qualified_pattern(pattern: &str) -> QualifiedPattern<'_> {
 
 /// Matches a SQL `LIKE` pattern against a value.
 pub(crate) fn match_pattern(value: &str, pattern: &str) -> bool {
-    like_pattern_to_regex(pattern)
-        .and_then(|re| Regex::new(&re).ok())
+    Regex::new(&like_pattern_to_regex(pattern))
         .map(|re| re.is_match(value))
         .unwrap_or(false)
 }

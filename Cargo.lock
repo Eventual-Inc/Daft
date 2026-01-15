@@ -1959,6 +1959,7 @@ name = "common-pattern"
 version = "0.3.0-dev0"
 dependencies = [
  "regex",
+ "regex-syntax 0.8.8",
 ]
 
 [[package]]
