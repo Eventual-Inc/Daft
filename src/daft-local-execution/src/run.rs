@@ -247,7 +247,7 @@ impl NativeExecutor {
         let stats_manager = RuntimeStatsManager::try_new(handle, &pipeline, subscribers, query_id)?;
 
         // Create channel for enqueue_input messages
-        let (enqueue_input_tx, mut enqueue_input_rx) = create_channel::<EnqueueInputMessage>(0);
+        let (enqueue_input_tx, mut enqueue_input_rx) = create_channel::<EnqueueInputMessage>(1);
 
         let task = async move {
             let stats_manager_handle = stats_manager.handle();

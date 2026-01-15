@@ -375,7 +375,7 @@ fn physical_plan_to_pipeline(
             stats_state,
             context,
         }) => {
-            let (tx, rx) = create_channel::<(InputId, Vec<ScanTaskRef>)>(0);
+            let (tx, rx) = create_channel::<(InputId, Vec<ScanTaskRef>)>(1);
             input_senders.insert(source_id.clone(), InputSender::ScanTasks(tx));
 
             let scan_task_source = ScanTaskSource::new(rx, pushdowns.clone(), schema.clone(), cfg);
@@ -395,7 +395,7 @@ fn physical_plan_to_pipeline(
             stats_state,
             context,
         }) => {
-            let (tx, rx) = create_channel::<(InputId, PartitionSetRef<MicroPartitionRef>)>(0);
+            let (tx, rx) = create_channel::<(InputId, PartitionSetRef<MicroPartitionRef>)>(1);
             input_senders.insert(source_id.clone(), InputSender::InMemory(tx.clone()));
 
             let in_memory_source = InMemorySource::new(rx, schema.clone(), *size_bytes);
@@ -416,7 +416,7 @@ fn physical_plan_to_pipeline(
             io_config,
             context,
         }) => {
-            let (tx, rx) = create_channel::<(InputId, Vec<String>)>(0);
+            let (tx, rx) = create_channel::<(InputId, Vec<String>)>(1);
             input_senders.insert(source_id.clone(), InputSender::GlobPaths(tx));
 
             let glob_scan_source =
