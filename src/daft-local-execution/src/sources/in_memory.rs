@@ -82,7 +82,7 @@ impl Source for InMemorySource {
     ) -> DaftResult<SourceStream<'static>> {
         // Create output channel for results - note: SourceStream still returns Morsel
         // We'll convert PipelineMessage to Morsel in the stream
-        let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(0);
+        let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(1);
         // Spawn a task that continuously reads from self.receiver
         // Receiver implements Clone, so we can clone it for the spawned task
         let receiver_clone = self.receiver.take().expect("Receiver not found");
