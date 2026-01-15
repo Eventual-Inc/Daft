@@ -16,7 +16,6 @@ use tracing::{Span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-    BlockingSinkStatus,
 };
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
@@ -67,7 +66,7 @@ impl BlockingSink for CommitWriteSink {
         _spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         state.append(input.record_batches().iter().cloned());
-        Ok(BlockingSinkStatus::NeedMoreInput(state)).into()
+        Ok(state).into()
     }
 
     #[instrument(skip_all, name = "WriteSink::finalize")]

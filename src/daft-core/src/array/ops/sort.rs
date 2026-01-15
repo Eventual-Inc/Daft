@@ -31,7 +31,7 @@ use crate::{
     },
     file::DaftMediaType,
     kernels::search_sorted::{build_nulls_first_compare_with_nulls, cmp_float},
-    prelude::{FromArrow, UInt64Array},
+    prelude::UInt64Array,
     series::Series,
 };
 

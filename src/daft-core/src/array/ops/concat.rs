@@ -22,7 +22,7 @@ macro_rules! impl_variable_length_concat {
             }
             let mut offsets = daft_arrow::offset::Offsets::<i64>::with_capacity(num_rows);
 
-            let mut validity = if need_validity {
+            let mut nulls = if need_validity {
                 Some(daft_arrow::buffer::NullBufferBuilder::new(num_rows))
             } else {
                 None
@@ -32,7 +32,7 @@ macro_rules! impl_variable_length_concat {
             for arr in arrays {
                 let arr = arr.as_any().downcast_ref::<$arrow_type>().unwrap();
                 offsets.try_extend_from_slice(arr.offsets(), 0, arr.len())?;
-                if let Some(ref mut bitmap) = validity {
+                if let Some(ref mut bitmap) = nulls {
                     if let Some(v) = arr.validity() {
                         for b in v.iter() {
                             // TODO: Replace with .append_buffer in v57.1.0
@@ -52,9 +52,7 @@ macro_rules! impl_variable_length_concat {
                     dtype,
                     offsets.into(),
                     buffer.into(),
-                    daft_arrow::buffer::wrap_null_buffer(
-                        validity.map(|mut v| v.finish()).flatten(),
-                    ),
+                    daft_arrow::buffer::wrap_null_buffer(nulls.map(|mut v| v.finish()).flatten()),
                 )
             }?;
             Ok(Box::new(result_array))
@@ -120,28 +118,28 @@ impl PythonArray {
 
         let field = Arc::new(arrays.first().unwrap().field().clone());
 
-        let validity = if arrays.iter().any(|a| a.validity().is_some()) {
+        let nulls = if arrays.iter().any(|a| a.nulls().is_some()) {
             let total_len = arrays.iter().map(|a| a.len()).sum();
 
-            let mut validity = NullBufferBuilder::new(total_len);
+            let mut null_builder = NullBufferBuilder::new(total_len);
 
             for a in arrays {
-                if let Some(v) = a.validity() {
+                if let Some(v) = a.nulls() {
                     for b in v {
-                        validity.append(b); // TODO: Replace with .append_buffer in v57.1.0
+                        null_builder.append(b); // TODO: Replace with .append_buffer in v57.1.0
                     }
                 } else {
-                    validity.append_n_non_nulls(a.len());
+                    null_builder.append_n_non_nulls(a.len());
                 }
             }
 
-            validity.finish()
+            null_builder.finish()
         } else {
             None
         };
 
         let values = Buffer::from_iter(arrays.iter().flat_map(|a| a.values().iter().cloned()));
 
-        Ok(Self::new(field, values, validity))
+        Ok(Self::new(field, values, nulls))
     }
 }

@@ -163,7 +163,7 @@ jobs:
     - name: Run TPCH integration tests
       run: |
         source activate
-        pytest tests/integration/test_tpch.py --durations=50
+        pytest ./tests/integration/test_tpch.py --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure

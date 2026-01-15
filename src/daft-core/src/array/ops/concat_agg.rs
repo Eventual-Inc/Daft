@@ -28,8 +28,8 @@ impl DaftConcatAggable for ListArray {
 
         // Only the all-null case leads to a null result. If any single element is non-null (e.g. an empty list []),
         // The concat will successfully return a single non-null element.
-        let new_validity = match self.validity() {
-            Some(validity) if validity.null_count() == self.len() => {
+        let new_nulls = match self.nulls() {
+            Some(nulls) if nulls.null_count() == self.len() => {
                 Some(daft_arrow::buffer::NullBuffer::new_null(1))
             }
             _ => None,
@@ -37,7 +37,7 @@ impl DaftConcatAggable for ListArray {
 
         // Collect slices of the child array where the parent is valid, then concatenate them
         let child_slices: Vec<Series> = self
-            .validity()
+            .nulls()
             .unwrap()
             .valid_slices()
             .map(|(start_valid, end_valid)| {
@@ -58,7 +58,7 @@ impl DaftConcatAggable for ListArray {
             self.field.clone(),
             new_child,
             new_offsets,
-            new_validity,
+            new_nulls,
         ))
     }
 
@@ -115,8 +115,8 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
     type Output = DaftResult<Self>;
 
     fn concat(&self) -> Self::Output {
-        let new_validity = match self.validity() {
-            Some(validity) if validity.null_count() == self.len() => {
+        let new_nulls = match self.nulls() {
+            Some(nulls) if nulls.null_count() == self.len() => {
                 Some(daft_arrow::buffer::NullBuffer::new_null(1))
             }
             _ => None,
@@ -128,7 +128,7 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
             arrow_array.data_type().clone(),
             new_offsets,
             arrow_array.values().clone(),
-            daft_arrow::buffer::wrap_null_buffer(new_validity),
+            daft_arrow::buffer::wrap_null_buffer(new_nulls),
         );
 
         let result_box = Box::new(output);
@@ -204,7 +204,7 @@ mod test {
         let concatted = list_array.concat()?;
         assert_eq!(concatted.len(), 1);
         assert_eq!(
-            concatted.validity(),
+            concatted.nulls(),
             Some(&daft_arrow::buffer::NullBuffer::from_iter(repeat_n(
                 false, 1
             )))
@@ -233,7 +233,7 @@ mod test {
         // Expected: [[0, 1, 1, 2, None, None]]
         let concatted = list_array.concat()?;
         assert_eq!(concatted.len(), 1);
-        assert_eq!(concatted.validity(), None);
+        assert_eq!(concatted.nulls(), None);
         let element = concatted.get(0).unwrap();
         assert_eq!(
             element
@@ -282,7 +282,7 @@ mod test {
         // Expected: [[0, 0, 0], [1, None, None], [2, None], None]
         assert_eq!(concatted.len(), 4);
         assert_eq!(
-            concatted.validity(),
+            concatted.nulls(),
             Some(&daft_arrow::buffer::NullBuffer::from(vec![
                 true, true, true, false
             ]))

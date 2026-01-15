@@ -175,6 +175,6 @@ async fn url_download(
         }
     }
     Ok(BinaryArray::try_from((name, data, offsets))?
-        .with_validity_slice(valid.as_slice())
+        .with_nulls_slice(valid.as_slice())
         .unwrap())
 }

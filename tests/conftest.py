@@ -237,3 +237,10 @@ def with_morsel_size(request):
     morsel_size = request.param
     with daft.context.execution_config_ctx(default_morsel_size=morsel_size):
         yield morsel_size
+
+
+@pytest.fixture(scope="function")
+def with_default_morsel_size():
+    """Non-parametrized morsel size fixture for tests that don't need to test morsel size variations."""
+    with daft.context.execution_config_ctx(default_morsel_size=None):
+        yield None
