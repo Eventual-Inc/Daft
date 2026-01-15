@@ -575,7 +575,7 @@ def test_embed_text_batch_rate_limit_fallback(mock_text_embedder, mock_client):
             assert embedding.dtype == np.float32
 
 
-def test_supports_overriding_dimensions_default_false(mock_client):
+def test_supports_overriding_dimensions_default_true(mock_client):
     """Test that when supports_overriding_dimensions is False (default), dimensions are NOT included."""
     descriptor = OpenAITextEmbedderDescriptor(
         provider_name="openai",
@@ -601,7 +601,7 @@ def test_supports_overriding_dimensions_default_false(mock_client):
         input=["Hello world"],
         model="text-embedding-3-small",
         encoding_format="float",
-        dimensions=omit,
+        dimensions=256,
     )
 
 

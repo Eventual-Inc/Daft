@@ -23,7 +23,7 @@ where
     sum_vec: Vec<T::Native>,
     valid_count: usize,
     nan_count: usize,
-    validity: NullBufferBuilder,
+    nulls: NullBufferBuilder,
 }
 
 impl<T> SumWindowState<T>
@@ -51,7 +51,7 @@ where
             sum_vec: Vec::with_capacity(total_length),
             valid_count: 0,
             nan_count: 0,
-            validity: NullBufferBuilder::new(total_length),
+            nulls: NullBufferBuilder::new(total_length),
         }
     }
 }
@@ -113,14 +113,14 @@ where
         } else {
             self.sum_vec.push(self.sum);
         }
-        self.validity.append(self.valid_count > 0);
+        self.nulls.append(self.valid_count > 0);
         Ok(())
     }
 
     fn build(&self) -> DaftResult<Series> {
         DataArray::from((self.source.name(), self.sum_vec.as_ref()))
             .into_series()
-            .with_validity(self.validity.finish_cloned())
+            .with_nulls(self.nulls.finish_cloned())
     }
 }
 

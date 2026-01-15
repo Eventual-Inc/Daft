@@ -12,6 +12,8 @@ on:
 
   workflow_dispatch:
 
+permissions: {}
+
 env:
   S3_BUCKET: s3://github-actions-artifacts-bucket/builds/nightly/
   AWS_REGION: us-west-2
@@ -23,6 +25,8 @@ env:
 jobs:
   build:
     name: 'Build Daft wheel for ${{ matrix.os }}-${{ matrix.arch }}-lts=${{ matrix.lts }}'
+    permissions:
+      contents: read
     uses: ./.github/workflows/build-wheel.yml
     with:
       os: ${{ matrix.os }}
@@ -159,7 +163,7 @@ jobs:
     - name: Run TPCH integration tests
       run: |
         source activate
-        pytest tests/integration/test_tpch.py --durations=50
+        pytest ./tests/integration/test_tpch.py --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure

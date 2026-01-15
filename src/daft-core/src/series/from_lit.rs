@@ -332,13 +332,13 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 })
                 .collect::<DaftResult<_>>()?;
 
-            let validity = daft_arrow::buffer::NullBuffer::from_iter(
+            let nulls = daft_arrow::buffer::NullBuffer::from_iter(
                 values
                     .iter()
                     .map(|(_, v)| v.as_ref().is_ok_and(|v| v != &Literal::Null)),
             );
 
-            StructArray::new(field, children, Some(validity)).into_series()
+            StructArray::new(field, children, Some(nulls)).into_series()
         }
 
         #[cfg(feature = "python")]
@@ -376,9 +376,9 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
             let data_array = ListArray::try_from(("data", data.as_slice()))?.into_series();
             let shape_array = ListArray::from_vec("shape", shapes).into_series();
 
-            let validity = data_array.validity().cloned();
+            let nulls = data_array.nulls().cloned();
             let physical =
-                StructArray::new(field.to_physical(), vec![data_array, shape_array], validity);
+                StructArray::new(field.to_physical(), vec![data_array, shape_array], nulls);
 
             TensorArray::new(field, physical).into_series()
         }
@@ -397,17 +397,17 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
             let indices_array = ListArray::try_from(("indices", indices.as_slice()))?.into_series();
             let shape_array = ListArray::from_vec("shape", shapes).into_series();
 
-            let validity = values_array.validity().cloned();
+            let nulls = values_array.nulls().cloned();
             let physical = StructArray::new(
                 field.to_physical(),
                 vec![values_array, indices_array, shape_array],
-                validity,
+                nulls,
             );
 
             SparseTensorArray::new(field, physical).into_series()
         }
         DataType::Embedding(ref inner_dtype, ref size) => {
-            let (validity, data): (Vec<_>, Vec<_>) = values
+            let (nulls, data): (Vec<_>, Vec<_>) = values
                 .map(|(i, v)| {
                     (
                         v.as_ref().is_ok_and(|v| v != &Literal::Null),
@@ -417,11 +417,11 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 })
                 .unzip();
 
-            let validity = daft_arrow::buffer::NullBuffer::from(validity);
+            let nulls = daft_arrow::buffer::NullBuffer::from(nulls);
 
             let flat_child = Series::concat(&data.iter().collect::<Vec<_>>())?;
 
-            let physical = FixedSizeListArray::new(field.to_physical(), flat_child, Some(validity));
+            let physical = FixedSizeListArray::new(field.to_physical(), flat_child, Some(nulls));
 
             EmbeddingArray::new(field, physical).into_series()
         }

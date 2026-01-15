@@ -42,7 +42,7 @@ impl StructArray {
 
         if percentiles.len() > 1 || force_list_output {
             Ok(
-                FixedSizeListArray::new(output_field, flat_child, self.validity().cloned())
+                FixedSizeListArray::new(output_field, flat_child, self.nulls().cloned())
                     .into_series(),
             )
         } else {

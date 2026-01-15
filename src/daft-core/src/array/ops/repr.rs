@@ -353,10 +353,7 @@ impl ImageArray {
 impl SparseTensorArray {
     pub fn str_value(&self, idx: usize) -> DaftResult<String> {
         // Shapes are always valid, use values array validity
-        let is_valid = self
-            .values_array()
-            .validity()
-            .is_none_or(|v| v.is_valid(idx));
+        let is_valid = self.values_array().nulls().is_none_or(|v| v.is_valid(idx));
         let shape_element = if is_valid {
             self.shape_array().get(idx)
         } else {

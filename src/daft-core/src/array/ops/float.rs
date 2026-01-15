@@ -22,7 +22,7 @@ where
     fn is_nan(&self) -> Self::Output {
         let result =
             BooleanArray::from_values(self.name(), self.values().iter().map(|v| v.is_nan()));
-        result.with_validity(self.validity().cloned())
+        result.with_nulls(self.nulls().cloned())
     }
 }
 
@@ -50,7 +50,7 @@ where
     fn is_inf(&self) -> Self::Output {
         let result =
             BooleanArray::from_values(self.name(), self.values().iter().map(|v| v.is_infinite()));
-        result.with_validity(self.validity().cloned())
+        result.with_nulls(self.nulls().cloned())
     }
 }
 
@@ -77,7 +77,7 @@ where
     fn not_nan(&self) -> Self::Output {
         let result =
             BooleanArray::from_values(self.name(), self.values().iter().map(|v| !v.is_nan()));
-        result.with_validity(self.validity().cloned())
+        result.with_nulls(self.nulls().cloned())
     }
 }
 

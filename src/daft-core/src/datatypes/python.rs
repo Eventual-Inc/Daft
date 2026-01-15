@@ -20,7 +20,7 @@ use crate::{
 pub struct PythonArray {
     field: Arc<Field>,
     values: Buffer<Arc<Py<PyAny>>>,
-    validity: Option<NullBuffer>,
+    nulls: Option<NullBuffer>,
 }
 
 impl IntoSeries for PythonArray {
@@ -38,7 +38,7 @@ impl PythonArray {
     pub fn new(
         field: Arc<Field>,
         values: Buffer<Arc<Py<PyAny>>>,
-        validity: Option<NullBuffer>,
+        nulls: Option<NullBuffer>,
     ) -> Self {
         assert_eq!(
             field.dtype,
@@ -46,7 +46,7 @@ impl PythonArray {
             "Can only construct PythonArray for Python data type, got: {}",
             field.dtype
         );
-        if let Some(v) = &validity {
+        if let Some(v) = &nulls {
             assert_eq!(
                 values.len(),
                 v.len(),
@@ -59,7 +59,7 @@ impl PythonArray {
         debug_assert!(
             values.iter().enumerate().all(|(i, v)| {
                 !(Python::attach(|py| v.is_none(py))
-                    && validity.as_ref().is_none_or(|val| val.is_valid(i)))
+                    && nulls.as_ref().is_none_or(|val| val.is_valid(i)))
             }),
             "None values must have validity set to false"
         );
@@ -67,7 +67,7 @@ impl PythonArray {
         Self {
             field,
             values,
-            validity,
+            nulls,
         }
     }
 
@@ -108,12 +108,12 @@ impl PythonArray {
         self.values.len()
     }
 
-    pub fn with_validity(&self, validity: Option<NullBuffer>) -> DaftResult<Self> {
-        self.clone().set_validity(validity)
+    pub fn with_nulls(&self, nulls: Option<NullBuffer>) -> DaftResult<Self> {
+        self.clone().set_nulls(nulls)
     }
 
-    fn set_validity(mut self, validity: Option<NullBuffer>) -> DaftResult<Self> {
-        if let Some(v) = &validity
+    fn set_nulls(mut self, nulls: Option<NullBuffer>) -> DaftResult<Self> {
+        if let Some(v) = &nulls
             && v.len() != self.len()
         {
             return Err(DaftError::ValueError(format!(
@@ -122,12 +122,12 @@ impl PythonArray {
                 self.len()
             )));
         }
-        self.validity = validity;
+        self.nulls = nulls;
         Ok(self)
     }
 
-    pub fn validity(&self) -> Option<&NullBuffer> {
-        self.validity.as_ref()
+    pub fn nulls(&self) -> Option<&NullBuffer> {
+        self.nulls.as_ref()
     }
 
     pub fn slice(&self, start: usize, end: usize) -> DaftResult<Self> {
@@ -139,8 +139,8 @@ impl PythonArray {
 
         let length = end - start;
         let new_values = self.values.clone().sliced(start, length);
-        let new_validity = self.validity.clone().map(|v| v.slice(start, length));
-        Ok(Self::new(self.field.clone(), new_values, new_validity))
+        let new_nulls = self.nulls.clone().map(|v| v.slice(start, length));
+        Ok(Self::new(self.field.clone(), new_values, new_nulls))
     }
 
     pub fn values(&self) -> &Buffer<Arc<Py<PyAny>>> {
@@ -160,18 +160,18 @@ impl PythonArray {
     }
 
     pub fn null_count(&self) -> usize {
-        self.validity().map_or(0, |v| v.null_count())
+        self.nulls().map_or(0, |v| v.null_count())
     }
 
     pub fn is_valid(&self, idx: usize) -> bool {
-        self.validity().is_none_or(|v| v.is_valid(idx))
+        self.nulls().is_none_or(|v| v.is_valid(idx))
     }
 
     pub fn rename(&self, name: &str) -> Self {
         Self::new(
             Arc::new(self.field.rename(name)),
             self.values.clone(),
-            self.validity.clone(),
+            self.nulls.clone(),
         )
     }
 
@@ -184,7 +184,7 @@ impl PythonArray {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = Option<&Arc<Py<PyAny>>>> {
-        ZipValidity::new(self.values.iter(), self.validity().map(|v| v.iter()))
+        ZipValidity::new(self.values.iter(), self.nulls().map(|v| v.iter()))
     }
 }
 
