@@ -1,4 +1,7 @@
+use std::collections::HashMap;
+
 use common_error::DaftResult;
+use common_metrics::{ROWS_IN_KEY, ROWS_OUT_KEY, Stat};
 use pyo3::{Py, PyAny, PyResult, Python, types::PyAnyMethods};
 
 use crate::{
@@ -17,6 +20,8 @@ impl From<&TaskContext> for BarId {
 
 pub(crate) struct FlotillaProgressBar {
     progress_bar_pyobject: Py<PyAny>,
+    bar_id_to_rows_out: HashMap<BarId, u64>,
+    bar_id_to_rows_in: HashMap<BarId, u64>,
 }
 
 impl FlotillaProgressBar {
@@ -26,6 +31,8 @@ impl FlotillaProgressBar {
         let progress_bar = progress_bar_class.call1((true,))?.extract::<Py<PyAny>>()?;
         Ok(Self {
             progress_bar_pyobject: progress_bar,
+            bar_id_to_rows_out: HashMap::new(),
+            bar_id_to_rows_in: HashMap::new(),
         })
     }
 
@@ -39,12 +46,12 @@ impl FlotillaProgressBar {
         })
     }
 
-    fn update_bar(&self, bar_id: BarId) -> PyResult<()> {
+    fn update_bar(&self, bar_id: BarId, message: Option<String>) -> PyResult<()> {
         Python::attach(|py| {
             let progress_bar = self
                 .progress_bar_pyobject
                 .getattr(py, pyo3::intern!(py, "update_bar"))?;
-            progress_bar.call1(py, (bar_id.0,))?;
+            progress_bar.call1(py, (bar_id.0, message))?;
             Ok(())
         })
     }
@@ -75,15 +82,52 @@ impl StatisticsSubscriber for FlotillaProgressBar {
             }
             // For progress bar we don't care if it is scheduled, for now.
             TaskEvent::Scheduled { .. } => Ok(()),
-            TaskEvent::Completed { context, .. } => {
-                self.update_bar(BarId::from(context))?;
+            TaskEvent::Completed { context, stats } => {
+                let bar_id = BarId::from(context);
+                let last_node_id = context.last_node_id as usize;
+                let mut rows_out = 0;
+                let mut rows_in = 0;
+                for (node_id, snapshot) in stats {
+                    if *node_id != last_node_id {
+                        continue;
+                    }
+                    for (k, v) in snapshot.iter() {
+                        if let Stat::Count(c) = v {
+                            if k == ROWS_OUT_KEY {
+                                rows_out += c;
+                            } else if k == ROWS_IN_KEY {
+                                rows_in += c;
+                            }
+                        }
+                    }
+                }
+
+                let total_rows_out = {
+                    let e = self.bar_id_to_rows_out.entry(bar_id).or_insert(0);
+                    *e += rows_out;
+                    *e
+                };
+                let total_rows_in = {
+                    let e = self.bar_id_to_rows_in.entry(bar_id).or_insert(0);
+                    *e += rows_in;
+                    *e
+                };
+
+                self.update_bar(
+                    bar_id,
+                    Some(format!(
+                        "{} rows out, {} rows in",
+                        Stat::Count(total_rows_out),
+                        Stat::Count(total_rows_in)
+                    )),
+                )?;
                 Ok(())
             }
             // We don't care about failed tasks as they will be retried
             TaskEvent::Failed { .. } => Ok(()),
             // We consider cancelled tasks as finished tasks
             TaskEvent::Cancelled { context } => {
-                self.update_bar(BarId::from(context))?;
+                self.update_bar(BarId::from(context), None)?;
                 Ok(())
             }
         }

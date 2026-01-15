@@ -70,4 +70,8 @@ impl Source for InMemorySource {
     fn schema(&self) -> &SchemaRef {
         &self.schema
     }
+
+    fn should_record_rows_in(&self) -> bool {
+        true
+    }
 }

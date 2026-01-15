@@ -288,7 +288,7 @@ impl<F: Future> Future for TimedFuture<F> {
 /// Sender that wraps an internal sender and counts the number of rows passed through
 pub struct CountingSender {
     sender: tokio::sync::mpsc::Sender<Arc<MicroPartition>>,
-    rt: Arc<dyn RuntimeStats>,
+    pub(crate) rt: Arc<dyn RuntimeStats>,
 }
 
 impl CountingSender {

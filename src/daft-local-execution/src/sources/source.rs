@@ -8,7 +8,7 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
-    CPU_US_KEY, ROWS_OUT_KEY, Stat, StatSnapshot,
+    CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot,
 };
@@ -31,6 +31,7 @@ pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
 pub(crate) struct SourceStats {
     cpu_us: Counter,
     rows_out: Counter,
+    rows_in: Counter,
     io_stats: IOStatsRef,
 
     node_kv: Vec<KeyValue>,
@@ -44,6 +45,7 @@ impl SourceStats {
         Self {
             cpu_us: Counter::new(&meter, "cpu_us".into(), None),
             rows_out: Counter::new(&meter, "rows_out".into(), None),
+            rows_in: Counter::new(&meter, "rows_in".into(), None),
             io_stats: IOStatsRef::default(),
 
             node_kv,
@@ -60,12 +62,13 @@ impl RuntimeStats for SourceStats {
         snapshot![
             CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
             ROWS_OUT_KEY; Stat::Count(self.rows_out.load(ordering)),
+            ROWS_IN_KEY; Stat::Count(self.rows_in.load(ordering)),
             "bytes read"; Stat::Bytes(self.io_stats.load_bytes_read() as u64),
         ]
     }
 
-    fn add_rows_in(&self, _: u64) {
-        unreachable!("Source Nodes shouldn't receive rows")
+    fn add_rows_in(&self, rows: u64) {
+        self.rows_in.add(rows, self.node_kv.as_slice());
     }
 
     fn add_rows_out(&self, rows: u64) {
@@ -92,6 +95,9 @@ pub trait Source: Send + Sync {
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>>;
     fn schema(&self) -> &SchemaRef;
+    fn should_record_rows_in(&self) -> bool {
+        false
+    }
 }
 
 pub(crate) struct SourceNode {
@@ -207,6 +213,7 @@ impl PipelineNode for SourceNode {
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<tokio::sync::mpsc::Receiver<Arc<MicroPartition>>> {
         let source = self.source.clone();
+        let record_rows_in = source.should_record_rows_in();
         let io_stats = self.runtime_stats.io_stats.clone();
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
@@ -228,7 +235,11 @@ impl PipelineNode for SourceNode {
 
                 while let Some(part) = source_stream.next().await {
                     has_data = true;
-                    if counting_sender.send(part?).await.is_err() {
+                    let part = part?;
+                    if record_rows_in {
+                        counting_sender.rt.add_rows_in(part.len() as u64);
+                    }
+                    if counting_sender.send(part).await.is_err() {
                         stats_manager.finalize_node(node_id);
                         return Ok(());
                     }
