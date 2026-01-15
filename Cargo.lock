@@ -3060,7 +3060,6 @@ dependencies = [
  "indexmap 2.13.0",
  "indicatif 0.18.3",
  "itertools 0.14.0",
- "kanal",
  "log",
  "opentelemetry",
  "parking_lot 0.12.5",
@@ -3072,6 +3071,7 @@ dependencies = [
  "smallvec",
  "snafu",
  "tokio",
+ "tokio-stream",
  "tokio-util",
  "tracing",
 ]
@@ -5262,16 +5262,6 @@ dependencies = [
  "serde",
  "serde_json",
  "simple_asn1",
-]
-
-[[package]]
-name = "kanal"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e3953adf0cd667798b396c2fa13552d6d9b3269d7dd1154c4c416442d1ff574"
-dependencies = [
- "futures-core",
- "lock_api",
 ]
 
 [[package]]

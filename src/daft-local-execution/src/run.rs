@@ -211,7 +211,7 @@ impl NativeExecutor {
         let pipeline =
             translate_physical_plan_to_pipeline(local_physical_plan, psets, &exec_cfg, &ctx)?;
 
-        let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
+        let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
         let enable_explain_analyze = self.enable_explain_analyze;
 
         let query_id: common_metrics::QueryID = additional_context
@@ -386,7 +386,7 @@ pub struct ExecutionEngineResult {
 }
 
 impl ExecutionEngineResult {
-    async fn next(&self) -> Option<Arc<MicroPartition>> {
+    async fn next(&mut self) -> Option<Arc<MicroPartition>> {
         self.receiver.recv().await
     }
 
@@ -450,9 +450,9 @@ impl PyExecutionEngineResult {
     fn __anext__<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, pyo3::PyAny>> {
         let result = self.result.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let result = result.lock().await;
+            let mut result = result.lock().await;
             let part = result
-                .as_ref()
+                .as_mut()
                 .expect("ExecutionEngineResult.__anext__() should not be called after finish().")
                 .next()
                 .await;
