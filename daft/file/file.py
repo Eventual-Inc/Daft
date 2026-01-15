@@ -71,6 +71,36 @@ class File:
     def isatty(self) -> bool:
         return False
 
+    @property
+    def path(self) -> str:
+        """The full path or URL of the file.
+
+        Returns:
+            str: The file path or URL.
+
+        Example:
+            >>> import daft
+            >>> f = daft.File("s3://bucket/path/to/data.csv")
+            >>> f.path
+            's3://bucket/path/to/data.csv'
+        """
+        return self._inner.path()
+
+    @property
+    def name(self) -> str:
+        """The filename (basename) extracted from the file path or URL.
+
+        Returns:
+            str: The filename without directory components.
+
+        Example:
+            >>> import daft
+            >>> f = daft.File("s3://bucket/path/to/data.csv")
+            >>> f.name
+            'data.csv'
+        """
+        return self._inner.name()
+
     def size(self) -> int:
         return PyDaftFile._from_file_reference(self._inner).size()
 

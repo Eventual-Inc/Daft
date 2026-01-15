@@ -4,7 +4,7 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
-use common_runtime::{get_compute_pool_num_threads, get_compute_runtime};
+use common_runtime::{JoinSet, get_compute_pool_num_threads, get_compute_runtime};
 use daft_core::prelude::SchemaRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
@@ -12,8 +12,8 @@ use daft_micropartition::MicroPartition;
 use tracing::{info_span, instrument};
 
 use crate::{
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, TaskSet,
-    channel::{Receiver, create_channel},
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
+    channel::Receiver,
     dispatcher::{DispatchSpawner, UnorderedDispatcher},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     resource_manager::MemoryManager,
@@ -156,7 +156,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
     fn spawn_workers(
         op: Arc<Op>,
         input_receivers: Vec<Receiver<Arc<MicroPartition>>>,
-        task_set: &mut TaskSet<DaftResult<Op::State>>,
+        task_set: &mut JoinSet<DaftResult<Op::State>>,
         runtime_stats: Arc<dyn RuntimeStats>,
         memory_manager: Arc<MemoryManager>,
     ) {
@@ -256,7 +256,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         &mut self,
         _maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<tokio::sync::mpsc::Receiver<Arc<MicroPartition>>> {
         let child_results_receiver = self.child.start(true, runtime_handle)?;
         let counting_receiver = InitializingCountingReceiver::new(
             child_results_receiver,
@@ -265,7 +265,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
             runtime_handle.stats_manager(),
         );
 
-        let (destination_sender, destination_receiver) = create_channel(0);
+        let (destination_sender, destination_receiver) = tokio::sync::mpsc::channel(1);
         let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
 
         let op = self.op.clone();
@@ -289,7 +289,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         let node_id = self.node_id();
         runtime_handle.spawn(
             async move {
-                let mut task_set = TaskSet::new();
+                let mut task_set = JoinSet::new();
                 Self::spawn_workers(
                     op.clone(),
                     spawned_dispatch_result.worker_receivers,

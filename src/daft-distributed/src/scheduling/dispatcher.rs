@@ -1,17 +1,14 @@
 use std::{collections::HashMap, sync::Arc};
 
 use common_error::DaftResult;
+use common_runtime::{JoinSet, JoinSetId};
 
 use super::{
     scheduler::{PendingTask, ScheduledTask},
     task::{Task, TaskResultAwaiter, TaskStatus},
     worker::{Worker, WorkerManager},
 };
-use crate::{
-    scheduling::task::TaskResultHandle,
-    statistics::StatisticsManagerRef,
-    utils::joinset::{JoinSet, JoinSetId},
-};
+use crate::{scheduling::task::TaskResultHandle, statistics::StatisticsManagerRef};
 
 const DISPATCHER_LOG_TARGET: &str = "DaftFlotillaDispatcher";
 

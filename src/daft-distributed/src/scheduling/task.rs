@@ -225,14 +225,6 @@ pub(crate) struct SwordfishTask {
 }
 
 impl SwordfishTask {
-    pub fn scan_tasks(&self) -> &HashMap<String, Vec<ScanTaskLikeRef>> {
-        &self.inputs.scan_tasks
-    }
-
-    pub fn glob_paths(&self) -> &HashMap<String, Vec<String>> {
-        &self.inputs.glob_paths
-    }
-
     pub fn plan(&self) -> LocalPhysicalPlanRef {
         self.plan.clone()
     }
@@ -247,6 +239,14 @@ impl SwordfishTask {
 
     pub fn context(&self) -> &HashMap<String, String> {
         &self.context
+    }
+
+    pub fn scan_tasks(&self) -> &HashMap<String, Vec<ScanTaskLikeRef>> {
+        &self.inputs.scan_tasks
+    }
+
+    pub fn glob_paths(&self) -> &HashMap<String, Vec<String>> {
+        &self.inputs.glob_paths
     }
 
     pub fn name(&self) -> String {
@@ -373,18 +373,6 @@ impl SwordfishTaskBuilder {
         self
     }
 
-    /// Set scan tasks (replaces any existing scan tasks).
-    pub fn with_scan_tasks(mut self, scan_tasks: HashMap<String, Vec<ScanTaskLikeRef>>) -> Self {
-        self.scan_tasks = scan_tasks;
-        self
-    }
-
-    /// Set glob paths (replaces any existing glob paths).
-    pub fn with_glob_paths(mut self, glob_paths: HashMap<String, Vec<String>>) -> Self {
-        self.glob_paths = glob_paths;
-        self
-    }
-
     /// Set psets (replaces any existing psets).
     pub fn with_psets(mut self, psets: HashMap<String, Vec<PartitionRef>>) -> Self {
         self.psets = psets;
@@ -394,6 +382,32 @@ impl SwordfishTaskBuilder {
     /// Merge additional psets into existing ones.
     pub fn merge_psets(mut self, psets: HashMap<String, Vec<PartitionRef>>) -> Self {
         self.psets.extend(psets);
+        self
+    }
+
+    /// Set scan_tasks (replaces any existing scan_tasks).
+    pub fn with_scan_tasks(mut self, scan_tasks: HashMap<String, Vec<ScanTaskLikeRef>>) -> Self {
+        self.scan_tasks = scan_tasks;
+        self
+    }
+
+    /// Merge additional scan_tasks into existing ones.
+    #[allow(dead_code)]
+    pub fn merge_scan_tasks(mut self, scan_tasks: HashMap<String, Vec<ScanTaskLikeRef>>) -> Self {
+        self.scan_tasks.extend(scan_tasks);
+        self
+    }
+
+    /// Set glob_paths (replaces any existing glob_paths).
+    pub fn with_glob_paths(mut self, glob_paths: HashMap<String, Vec<String>>) -> Self {
+        self.glob_paths = glob_paths;
+        self
+    }
+
+    /// Merge additional glob_paths into existing ones.
+    #[allow(dead_code)]
+    pub fn merge_glob_paths(mut self, glob_paths: HashMap<String, Vec<String>>) -> Self {
+        self.glob_paths.extend(glob_paths);
         self
     }
 

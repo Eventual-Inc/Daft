@@ -10,7 +10,7 @@ use common_display::{DisplayAs, DisplayLevel, tree::TreeDisplay};
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_metrics::ops::NodeType;
-use common_runtime::{combine_stream, get_compute_pool_num_threads, get_io_runtime};
+use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use common_scan_info::Pushdowns;
 use daft_core::prelude::{Int64Array, SchemaRef, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
@@ -26,7 +26,6 @@ use snafu::ResultExt;
 use tracing::instrument;
 
 use crate::{
-    TaskSet,
     channel::{Receiver, Sender, create_channel},
     pipeline::NodeName,
     plan_input::InputId,
@@ -76,7 +75,7 @@ impl ScanTaskSource {
         let num_parallel_tasks = self.num_parallel_tasks;
 
         io_runtime.spawn(async move {
-            let mut task_set = TaskSet::new();
+            let mut task_set = JoinSet::new();
             // Store pending tasks: (scan_task, delete_map, input_id)
             let mut pending_tasks = VecDeque::new();
             // Track how many scan tasks are pending per input_id
@@ -86,7 +85,7 @@ impl ScanTaskSource {
             let max_parallel = if maintain_order { 1 } else { num_parallel_tasks };
             let mut receiver_exhausted = false;
 
-            while !receiver_exhausted || !pending_tasks.is_empty() || task_set.len() > 0 {
+            while !receiver_exhausted || !pending_tasks.is_empty() || !task_set.is_empty() {
                 // First, try to spawn from pending_tasks if we have capacity
                 while task_set.len() < max_parallel && !pending_tasks.is_empty() {
                     let (scan_task, delete_map, input_id) = pending_tasks.pop_front().unwrap();
@@ -141,7 +140,7 @@ impl ScanTaskSource {
                         }
                     }
                     // Wait for a task to complete
-                    Some(join_result) = task_set.join_next(), if task_set.len() > 0 => {
+                    Some(join_result) = task_set.join_next(), if !task_set.is_empty() => {
                         match join_result {
                             Ok(Ok(completed_input_id)) => {
                                 // task_result is DaftResult<InputId>
@@ -166,7 +165,7 @@ impl ScanTaskSource {
             }
             debug_assert!(pending_tasks.is_empty(), "Pending tasks should be empty");
             debug_assert!(input_id_pending_counts.is_empty(), "Input id pending counts should be empty");
-            debug_assert!(task_set.len() == 0, "Task set should be empty");
+            debug_assert!(task_set.is_empty(), "Task set should be empty");
             debug_assert!(receiver_exhausted, "Receiver should be exhausted");
 
             Ok(())

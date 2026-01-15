@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from openai import AsyncOpenAI, OpenAIError, RateLimitError
+from openai import OpenAI as OpenAIClient
 from openai._types import Omit, omit
 from openai.types.create_embedding_response import Usage
 
@@ -35,6 +36,7 @@ class _ModelProfile:
 
     dimensions: EmbeddingDimensions
     supports_overriding_dimensions: bool
+    input_text_token_limit: int = 8192  # Default per-input token limit
 
 
 _models: dict[EmbeddingModel, _ModelProfile] = {
@@ -62,6 +64,21 @@ _models: dict[EmbeddingModel, _ModelProfile] = {
 }
 
 
+def get_input_text_token_limit_for_model(model_name: str) -> int:
+    """Get the input token limit for a model, with fallback to default.
+
+    Args:
+        model_name: The name of the embedding model.
+
+    Returns:
+        The input text token limit for the model. Returns 8192 for unknown/custom models.
+    """
+    if model_name in _models:
+        return _models[model_name].input_text_token_limit
+    else:
+        return 8192  # Default for unknown/custom models
+
+
 @dataclass
 class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
     provider_name: str
@@ -80,8 +97,14 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
                     f"Unsupported OpenAI embedding model '{self.model_name}', expected one of: {supported_models}"
                 )
             model = _models[self.model_name]
-            if self.dimensions is not None and not model.supports_overriding_dimensions:
-                raise ValueError(f"OpenAI embedding model '{self.model_name}' does not support specifying dimensions")
+            if self.dimensions is not None:
+                if model.supports_overriding_dimensions:
+                    if "supports_overriding_dimensions" not in self.embed_options:
+                        self.embed_options["supports_overriding_dimensions"] = True
+                else:
+                    raise ValueError(
+                        f"OpenAI embedding model '{self.model_name}' does not support specifying dimensions"
+                    )
 
     def get_provider(self) -> str:
         return self.provider_name
@@ -94,8 +117,31 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
 
     def get_dimensions(self) -> EmbeddingDimensions:
         if self.dimensions is not None:
-            return EmbeddingDimensions(size=self.dimensions, dtype=DataType.float32())
-        return _models[self.model_name].dimensions
+            return EmbeddingDimensions(size=self.dimensions, dtype=_models[self.model_name].dimensions.dtype)
+
+        if self.provider_options.get("base_url") is not None and self.model_name not in _models:
+            try:
+                merged_provider_options: dict[str, Any] = merge_provider_and_api_options(
+                    provider_options=self.provider_options,
+                    api_options=self.embed_options,
+                    provider_option_type=OpenAIProviderOptions,
+                )
+
+                client = OpenAIClient(**merged_provider_options)
+                response = client.embeddings.create(
+                    input="dimension probe",
+                    model=self.model_name,
+                    encoding_format="float",
+                )
+                size = len(response.data[0].embedding)
+                return EmbeddingDimensions(size=size, dtype=DataType.float32())
+            except Exception as ex:
+                raise ValueError(
+                    "Failed to determine embedding dimensions from OpenAI-compatible embedding server. "
+                    "Specify `dimensions=...` or ensure the server supports embeddings.create."
+                ) from ex
+        else:
+            return _models[self.model_name].dimensions
 
     def get_udf_options(self) -> UDFOptions:
         options = super().get_udf_options()
@@ -106,12 +152,20 @@ class OpenAITextEmbedderDescriptor(TextEmbedderDescriptor):
         return True
 
     def instantiate(self) -> TextEmbedder:
+        # Get batch_token_limit from embed_options, default to 300_000
+        batch_token_limit = self.embed_options.get("batch_token_limit", 300_000)
+
+        # Get input_text_token_limit from model profile using helper function
+        input_text_token_limit = get_input_text_token_limit_for_model(self.model_name)
+
         return OpenAITextEmbedder(
             provider_options=self.provider_options,
             model=self.model_name,
             embed_options=self.embed_options,
             dimensions=self.dimensions if self.embed_options.get("supports_overriding_dimensions", False) else omit,
             provider_name=self.provider_name,
+            batch_token_limit=batch_token_limit,
+            input_text_token_limit=input_text_token_limit,
         )
 
 
@@ -119,14 +173,17 @@ class OpenAITextEmbedder(TextEmbedder):
     """The OpenAI TextEmbedder will batch across rows, and split a large row into a batch request when necessary.
 
     Note:
-        This limits us to 300k tokens per row which is a reasonable start.
-        This implementation also uses len(text)*5 to estimate token count
+        Token limits are configurable via batch_token_limit (provider-level, defaults to 300k)
+        and input_text_token_limit (model-level, defaults to 8,192).
+        This implementation uses len(text) // 3 to estimate token count,
         which is conservative and O(1) rather than being perfect with tiktoken.
     """
 
     _client: AsyncOpenAI
     _model: str
     _dimensions: int | None
+    _batch_token_limit: int
+    _input_text_token_limit: int
 
     def __init__(
         self,
@@ -136,11 +193,15 @@ class OpenAITextEmbedder(TextEmbedder):
         dimensions: int | None = None,
         zero_on_failure: bool = False,
         provider_name: str = "openai",
+        batch_token_limit: int = 300_000,
+        input_text_token_limit: int = 8192,
     ):
         self._model = model
         self._zero_on_failure = zero_on_failure
         self._dimensions = dimensions
         self._provider_name = provider_name
+        self._batch_token_limit = batch_token_limit
+        self._input_text_token_limit = input_text_token_limit
 
         merged_provider_options: dict[str, Any] = merge_provider_and_api_options(
             provider_options=provider_options,
@@ -155,10 +216,8 @@ class OpenAITextEmbedder(TextEmbedder):
         curr_batch: list[str] = []
         curr_batch_token_count: int = 0
 
-        batch_token_limit = 300_000
         approx_chars_per_token = 3  # round down for conservative estimate of "1 token ≈ 4 characters"
-        input_text_token_limit = 8192
-        input_text_chars_limit = input_text_token_limit * approx_chars_per_token
+        input_text_chars_limit = self._input_text_token_limit * approx_chars_per_token
 
         async def flush() -> None:
             nonlocal curr_batch
@@ -175,10 +234,10 @@ class OpenAITextEmbedder(TextEmbedder):
             if input_text is None:
                 input_text = ""
             input_text_token_count = len(input_text) // approx_chars_per_token
-            if input_text_token_count > input_text_token_limit:
+            if input_text_token_count > self._input_text_token_limit:
                 # Must process previous inputs first, if any, to maintain ordered outputs.
                 await flush()
-                # If the current input exceeds the maximum tokens per input (8192),
+                # If the current input exceeds the maximum tokens per input (configurable, default 8192),
                 # then we will split this single input into its own batch request.
                 chunked_batch = chunk_text(input_text, input_text_chars_limit)
                 chunked_result = await self._embed_text_batch(chunked_batch)
@@ -188,7 +247,7 @@ class OpenAITextEmbedder(TextEmbedder):
                 chunked_vec = np.average(chunked_result, axis=0, weights=chunked_lens)
                 chunked_vec = chunked_vec / np.linalg.norm(chunked_vec)  # normalizes length to 1
                 embeddings.append(chunked_vec)
-            elif input_text_token_count + curr_batch_token_count >= batch_token_limit:
+            elif input_text_token_count + curr_batch_token_count >= self._batch_token_limit:
                 await flush()
                 curr_batch.append(input_text)
                 curr_batch_token_count += input_text_token_count
@@ -232,8 +291,11 @@ class OpenAITextEmbedder(TextEmbedder):
             return np.array(response.data[0].embedding)
         except Exception as ex:
             if self._zero_on_failure:
-                size = self._dimensions or _models[self._model].dimensions.size
-                return np.zeros(size, dtype=np.float32)
+                model_profile = _models[self._model]
+                dtype = model_profile.dimensions.dtype
+                size = self._dimensions or model_profile.dimensions.size
+                np_dtype = np.float64 if dtype == DataType.float64() else np.float32
+                return np.zeros(size, dtype=np_dtype)
             else:
                 raise ex
 

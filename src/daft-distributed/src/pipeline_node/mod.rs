@@ -128,8 +128,9 @@ impl MaterializedOutput {
             .map(|output| output.size_bytes())
             .sum::<usize>();
 
+        let source_id = node_id.to_string();
         let in_memory_scan = LocalPhysicalPlan::in_memory_scan(
-            node_id.to_string(),
+            source_id.clone(),
             schema,
             total_size_bytes,
             StatsState::NotMaterialized,
@@ -143,7 +144,7 @@ impl MaterializedOutput {
             .into_iter()
             .flat_map(|output| output.into_inner().0)
             .collect::<Vec<_>>();
-        let psets = HashMap::from([(node_id.to_string(), partition_refs)]);
+        let psets = HashMap::from([(source_id, partition_refs)]);
 
         (in_memory_scan, psets)
     }

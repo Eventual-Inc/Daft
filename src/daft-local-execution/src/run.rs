@@ -255,7 +255,7 @@ impl NativeExecutor {
                 let memory_manager = get_or_init_memory_manager();
                 let mut runtime_handle =
                     ExecutionRuntimeContext::new(memory_manager.clone(), stats_manager_handle);
-                let receiver = pipeline.start(true, &mut runtime_handle)?;
+                let mut receiver = pipeline.start(true, &mut runtime_handle)?;
 
                 if let Some(message) = enqueue_input_rx.recv().await {
                     for (key, plan_input) in message.plan_inputs_by_key {

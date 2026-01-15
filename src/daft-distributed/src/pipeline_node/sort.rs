@@ -178,8 +178,9 @@ pub(crate) fn create_range_repartition_tasks(
     materialized_outputs
         .into_iter()
         .map(|mo| {
+            let source_id = node_id.to_string();
             let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
-                node_id.to_string(),
+                source_id.clone(),
                 input_schema.clone(),
                 mo.size_bytes(),
                 StatsState::NotMaterialized,
@@ -204,7 +205,7 @@ pub(crate) fn create_range_repartition_tasks(
                     additional: None,
                 },
             );
-            let psets = HashMap::from([(node_id.to_string(), mo.into_inner().0)]);
+            let psets = HashMap::from([(source_id, mo.into_inner().0)]);
             let builder = SwordfishTaskBuilder::new(plan, pipeline_node).with_psets(psets);
             let submittable_task = builder.build(context.query_idx, task_id_counter);
             let submitted_task = submittable_task.submit(scheduler_handle)?;
