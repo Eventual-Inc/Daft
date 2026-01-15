@@ -5,7 +5,7 @@ import inspect
 import random
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Coroutine, Generator, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -74,19 +74,16 @@ class Func(Generic[P, T, C]):
         fn: Callable[P, T],
         return_dtype: DataTypeLike | None,
         unnest: bool,
-        use_process: bool | None,
-        is_batch: bool,
-        batch_size: int | None,
-        max_retries: int | None,
+        gpus: float = 0,
+        use_process: bool | None = None,
+        is_batch: bool = False,
+        batch_size: int | None = None,
+        max_concurrency: int | None = None,
+        max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
         name_override: str | None = None,
         ray_options: dict[str, Any] | None = None,
     ) -> Func[P, T, None]:
-        # create a class instance with no setup method
-        class NoopCls(ClsBase[None]):
-            def _daft_get_instance(self) -> None:
-                return None
-
         # wrap the function in a function that takes in an additional class instance argument
         # since the cls instance is not used in the function, we can just discard it
         @functools.wraps(fn)
@@ -106,9 +103,9 @@ class Func(Generic[P, T, C]):
             is_batch,
             batch_size,
             unnest,
-            0,
+            gpus,
             use_process,
-            None,
+            max_concurrency,
             max_retries,
             on_error,
             return_dtype,
@@ -170,6 +167,36 @@ class Func(Generic[P, T, C]):
 
         if self.is_async and self.is_generator:
             raise ValueError("Daft functions do not yet support both async and generator functions.")
+
+        # Validate GPU resource request: allow fractional values up to 1.0; values > 1.0 must be integers.
+        if self.gpus < 0:
+            raise ValueError(f"num_gpus must be non-negative, got {self.gpus}")
+        if self.gpus > 1 and not float(self.gpus).is_integer():
+            raise ValueError(f"ResourceRequest num_gpus greater than 1 must be an integer, got {self.gpus}")
+
+    def with_ray_options(self, **ray_options: Any) -> Func[P, T, C]:
+        """Create a new Daft function with the specified Ray options.
+
+        Args:
+            **ray_options: Ray options to use for this function.
+
+        Returns:
+            A new Daft function with the specified Ray options.
+        """
+        new_ray_options = self.ray_options.copy() if self.ray_options is not None else {}
+        new_ray_options.update(ray_options)
+        return replace(self, ray_options=new_ray_options)
+
+    def with_concurrency(self, max_concurrency: int) -> Func[P, T, C]:
+        """Create a new Daft function with the specified maximum concurrency.
+
+        Args:
+            max_concurrency: The maximum concurrency to use for this function.
+
+        Returns:
+            A new Daft function with the specified maximum concurrency.
+        """
+        return replace(self, max_concurrency=max_concurrency)
 
     def _derive_function_names(self) -> tuple[str, str]:
         """Compute a unique name for the function using its module and qualified name."""
@@ -362,6 +389,14 @@ class ClsBase(ABC, Generic[C]):
             return await method(local_instance, *args, **kwargs)
 
         return bound_coroutine
+
+
+class NoopCls(ClsBase[None]):
+    def _daft_get_instance(self) -> None:
+        return None
+
+    def __eq__(self, other: Any) -> bool:
+        return isinstance(other, NoopCls)
 
 
 def wrap_cls(

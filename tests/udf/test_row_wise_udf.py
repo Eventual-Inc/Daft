@@ -117,24 +117,21 @@ def test_row_wise_udf_with_ray_options():
 
 
 def test_row_wise_udf_override_concurrency():
-    @daft.func(return_dtype=DataType.int64())
+    @daft.func(return_dtype=DataType.int64(), max_concurrency=10)
     def my_udf(x):
         return x
-
-    # Override concurrency
-    func = my_udf.with_concurrency(10)
 
     df = daft.from_pydict({"x": [1, 2, 3]})
 
     import io
 
     f = io.StringIO()
-    df.select(func(col("x"))).explain(file=f, show_all=True)
+    df.select(my_udf(col("x"))).explain(file=f, show_all=True)
     explanation = f.getvalue()
 
     assert "concurrency = 10" in explanation
 
-    actual = df.select(func(col("x"))).to_pydict()
+    actual = df.select(my_udf(col("x"))).to_pydict()
     expected = {"x": [1, 2, 3]}
     assert actual == expected
 

@@ -25,7 +25,9 @@ class _FuncDecorator:
         *,
         return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
+        gpus: float = 0,
         use_process: bool | None = None,
+        max_concurrency: int | None = None,
         max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
         ray_options: dict[str, Any] | None = None,
@@ -37,7 +39,9 @@ class _FuncDecorator:
         *,
         return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
+        gpus: float = 0,
         use_process: bool | None = None,
+        max_concurrency: int | None = None,
         max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
     ) -> Func[P, T, None]: ...
@@ -48,7 +52,9 @@ class _FuncDecorator:
         *,
         return_dtype: DataTypeLike | None = None,
         unnest: bool = False,
+        gpus: float = 0,
         use_process: bool | None = None,
+        max_concurrency: int | None = None,
         max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
         ray_options: dict[str, Any] | None = None,
@@ -226,9 +232,11 @@ class _FuncDecorator:
                 fn,
                 return_dtype,
                 unnest,
+                gpus,
                 use_process,
                 False,
                 None,
+                max_concurrency=max_concurrency,
                 max_retries=max_retries,
                 on_error=on_error,
                 ray_options=ray_options,
@@ -241,7 +249,9 @@ class _FuncDecorator:
         *,
         return_dtype: DataTypeLike,
         unnest: bool = False,
+        gpus: float = 0,
         use_process: bool | None = None,
+        max_concurrency: int | None = None,
         batch_size: int | None = None,
         max_retries: int | None = None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
@@ -319,7 +329,17 @@ class _FuncDecorator:
 
         def partial_func(fn: Callable[P, T]) -> Func[P, T, None]:
             return Func._from_func(
-                fn, return_dtype, unnest, use_process, True, batch_size, max_retries, on_error, ray_options=ray_options
+                fn,
+                return_dtype,
+                unnest,
+                gpus,
+                use_process,
+                True,
+                batch_size,
+                max_concurrency=max_concurrency,
+                max_retries=max_retries,
+                on_error=on_error,
+                ray_options=ray_options,
             )
 
         return partial_func

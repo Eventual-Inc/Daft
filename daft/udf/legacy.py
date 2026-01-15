@@ -285,6 +285,13 @@ class UDF:
         bound_args = self._bind_args(*args, **kwargs)
         expressions = list(bound_args.expressions().values())
 
+        ray_options = self.ray_options.copy() if self.ray_options is not None else {}
+        if self.resource_request is not None:
+            if self.resource_request.num_cpus is not None:
+                ray_options["num_cpus"] = self.resource_request.num_cpus
+            if self.resource_request.memory_bytes is not None:
+                ray_options["memory"] = self.resource_request.memory_bytes
+
         return Expression.udf(
             name=self.name,
             inner=self.wrapped_inner,
@@ -296,7 +303,7 @@ class UDF:
             batch_size=self.batch_size,
             concurrency=self.concurrency,
             use_process=self.use_process,
-            ray_options=self.ray_options,
+            ray_options=ray_options,
         )
 
     def override_options(

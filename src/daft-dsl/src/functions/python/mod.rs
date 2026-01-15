@@ -188,13 +188,34 @@ pub fn get_resource_request<'a, E: Into<&'a ExprRef>>(
                     Expr::Function {
                         func:
                             FunctionExpr::Python(LegacyPythonUDF {
-                                resource_request, ..
+                                resource_request,
+                                ray_options,
+                                ..
                             }),
                         ..
                     } => {
-                        if let Some(rr) = resource_request {
-                            resource_requests.push(rr.clone());
+                        let mut rr = resource_request.clone().unwrap_or_default();
+                        #[cfg(feature = "python")]
+                        {
+                            let cpus = Python::attach(|py| {
+                                ray_options.as_ref().and_then(|options| {
+                                    options
+                                        .as_ref()
+                                        .bind(py)
+                                        .get_item("num_cpus")
+                                        .ok()
+                                        .and_then(|v| v.extract::<f64>().ok())
+                                })
+                            });
+                            if let Some(cpus) = cpus {
+                                rr = ResourceRequest::try_new_internal(
+                                    Some(cpus),
+                                    rr.num_gpus(),
+                                    rr.memory_bytes(),
+                                )?;
+                            }
                         }
+                        resource_requests.push(rr);
                         Ok(TreeNodeRecursion::Continue)
                     }
                     _ => Ok(TreeNodeRecursion::Continue),
@@ -316,6 +337,7 @@ impl UDFProperties {
                 }
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::RowWise(row_wise_fn))) => {
                     num_udfs += 1;
+                    #[cfg(feature = "python")]
                     let cpus = Python::attach(|py| {
                         row_wise_fn.ray_options.as_ref().and_then(|options| {
                             options
@@ -326,6 +348,9 @@ impl UDFProperties {
                                 .and_then(|v| v.extract::<f64>().ok())
                         })
                     });
+                    #[cfg(not(feature = "python"))]
+                    let cpus = None;
+
                     let resource_request =
                         ResourceRequest::try_new_internal(cpus, Some(row_wise_fn.gpus.0), None)?;
                     udf_properties = Some(Self {
@@ -344,6 +369,7 @@ impl UDFProperties {
                 }
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(batch_fn))) => {
                     num_udfs += 1;
+                    #[cfg(feature = "python")]
                     let cpus = Python::attach(|py| {
                         batch_fn.ray_options.as_ref().and_then(|options| {
                             options
@@ -354,6 +380,9 @@ impl UDFProperties {
                                 .and_then(|v| v.extract::<f64>().ok())
                         })
                     });
+                    #[cfg(not(feature = "python"))]
+                    let cpus = None;
+
                     let resource_request =
                         ResourceRequest::try_new_internal(cpus, Some(batch_fn.gpus.0), None)?;
                     udf_properties = Some(Self {
@@ -427,14 +456,18 @@ impl UDFProperties {
                 // FIXME(zhenchao) Perhaps the layout should be optimized to improve readability
                 let ray_options = Python::attach(|py| -> PyResult<Option<String>> {
                     let bound = ray_options.as_ref().bind(py);
-                    if bound.is_instance_of::<PyDict>() {
-                        let repr = bound.repr()?;
+                    if let Ok(dict) = bound.cast::<PyDict>() {
+                        if dict.is_empty() {
+                            return Ok(None);
+                        }
+                        let repr = dict.repr()?;
                         Ok(Some(format!("ray_options = {}", repr)))
                     } else {
                         Ok(None)
                     }
                 })
-                .unwrap_or(None);
+                .ok()
+                .flatten();
 
                 if let Some(prop) = ray_options {
                     properties.push(prop);
