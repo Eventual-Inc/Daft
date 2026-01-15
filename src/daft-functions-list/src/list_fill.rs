@@ -178,7 +178,7 @@ mod tests {
         assert_eq!(result.len(), expected.len());
         let result_list = result.list()?;
         assert_eq!(result_list.offsets(), expected.offsets());
-        assert_eq!(result_list.validity(), expected.validity());
+        assert_eq!(result_list.nulls(), expected.nulls());
         assert_eq!(
             result_list
                 .flat_child

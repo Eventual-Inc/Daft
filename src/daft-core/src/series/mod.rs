@@ -75,7 +75,7 @@ impl Series {
         }
 
         const DEFAULT_SIZE: usize = 20;
-        let hashed_series = self.hash_with_validity(None)?;
+        let hashed_series = self.hash_with_nulls(None)?;
 
         let mut probe_table =
             IndexMap::<IndexHash, (), IdentityBuildHasher>::with_capacity_and_hasher(
@@ -195,22 +195,19 @@ impl Series {
         )
     }
 
-    pub fn with_validity(
-        &self,
-        validity: Option<daft_arrow::buffer::NullBuffer>,
-    ) -> DaftResult<Self> {
-        self.inner.with_validity(validity)
+    pub fn with_nulls(&self, nulls: Option<daft_arrow::buffer::NullBuffer>) -> DaftResult<Self> {
+        self.inner.with_nulls(nulls)
     }
 
-    pub fn validity(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
-        self.inner.validity()
+    pub fn nulls(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
+        self.inner.nulls()
     }
 
     pub fn is_valid(&self, idx: usize) -> bool {
-        let Some(validity) = self.validity() else {
+        let Some(nulls) = self.nulls() else {
             return true;
         };
-        validity.is_valid(idx)
+        nulls.is_valid(idx)
     }
 
     /// Attempts to downcast the Series to a primitive slice

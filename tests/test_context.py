@@ -65,7 +65,11 @@ print(daft.runners._get_runner().name)
     """
 
     with with_null_env():
-        result = subprocess.run([sys.executable, "-c", explicit_set_runner_script_ray], capture_output=True)
+        result = subprocess.run(
+            [sys.executable, "-c", explicit_set_runner_script_ray],
+            capture_output=True,
+            env={"RAY_DISABLE_DASHBOARD": "1"},
+        )
         assert result.stdout.decode().strip() == "None\nray"
 
 
@@ -74,14 +78,18 @@ def test_implicit_set_runner_ray():
     implicit_set_runner_script_ray = """
 import daft
 import ray
-ray.init()
+ray.init(num_cpus=1, ignore_reinit_error=True, configure_logging=False, log_to_driver=False)
 print(daft.runners._get_runner())
 df = daft.from_pydict({"foo": [1, 2, 3]})
 print(daft.runners._get_runner().name)
     """
 
     with with_null_env():
-        result = subprocess.run([sys.executable, "-c", implicit_set_runner_script_ray], capture_output=True)
+        result = subprocess.run(
+            [sys.executable, "-c", implicit_set_runner_script_ray],
+            capture_output=True,
+            env={"RAY_DISABLE_DASHBOARD": "1"},
+        )
         assert result.stdout.decode().strip() == "None\nray"
 
 
@@ -93,7 +101,11 @@ daft.set_runner_native()
 daft.set_runner_ray()
 """
     with with_null_env():
-        result = subprocess.run([sys.executable, "-c", script], capture_output=True)
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            env={"RAY_DISABLE_DASHBOARD": "1"},
+        )
         assert "DaftError::InternalError Cannot set runner more than once" in result.stderr.decode().strip()
 
 
@@ -112,7 +124,11 @@ daft.set_runner_ray()
 {set_new_runner_command}
 """
     with with_null_env():
-        result = subprocess.run([sys.executable, "-c", script], capture_output=True)
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            capture_output=True,
+            env={"RAY_DISABLE_DASHBOARD": "1"},
+        )
         assert "DaftError::InternalError Cannot set runner more than once" in result.stderr.decode().strip()
 
 
@@ -129,7 +145,7 @@ print(daft.runners._get_runner().name)
         result = subprocess.run(
             [sys.executable, "-c", autodetect_script],
             capture_output=True,
-            env={"DAFT_RUNNER": daft_runner_envvar},
+            env={"DAFT_RUNNER": daft_runner_envvar, "RAY_DISABLE_DASHBOARD": "1"},
         )
         assert result.stdout.decode().strip() == daft_runner_envvar
 
@@ -146,7 +162,7 @@ print(daft.runners._get_runner().name)
         result = subprocess.run(
             [sys.executable, "-c", autodetect_script],
             capture_output=True,
-            env={"RAY_JOB_ID": "dummy"},
+            env={"RAY_JOB_ID": "dummy", "RAY_DISABLE_DASHBOARD": "1"},
         )
         assert result.stdout.decode().strip() == "ray"
 
@@ -185,6 +201,7 @@ daft.set_runner_ray()
         result = subprocess.run(
             [sys.executable, "-c", cannot_set_runner_ray_after_py_script],
             capture_output=True,
+            env={"RAY_DISABLE_DASHBOARD": "1"},
         )
         assert result.stdout.decode().strip() in {"native"}
         assert "DaftError::InternalError Cannot set runner more than once" in result.stderr.decode().strip()
@@ -211,7 +228,7 @@ print(pd["bar"][0])
         result = subprocess.run(
             [sys.executable, "-c", get_or_infer_runner_type_py_script],
             capture_output=True,
-            env={"DAFT_RUNNER": daft_runner_envvar},
+            env={"DAFT_RUNNER": daft_runner_envvar, "RAY_DISABLE_DASHBOARD": "1"},
         )
 
         assert result.stdout.decode().strip() == f"{daft_runner_envvar}\n{daft_runner_envvar}_7"
@@ -263,7 +280,11 @@ print(pd["bar"][0])
     """
 
     with with_null_env():
-        result = subprocess.run([sys.executable, "-c", get_or_infer_runner_type_py_script], capture_output=True)
+        result = subprocess.run(
+            [sys.executable, "-c", get_or_infer_runner_type_py_script],
+            capture_output=True,
+            env={"RAY_DISABLE_DASHBOARD": "1"},
+        )
         assert result.stdout.decode().strip() == "ray\nray_7"
 
 
@@ -281,7 +302,7 @@ print(daft.runners.get_or_infer_runner_type())
         result = subprocess.run(
             [sys.executable, "-c", get_or_infer_runner_type_py_script],
             capture_output=True,
-            env={"DAFT_RUNNER": daft_runner_envvar},
+            env={"DAFT_RUNNER": daft_runner_envvar, "RAY_DISABLE_DASHBOARD": "1"},
         )
         assert result.stdout.decode().strip() == f"{daft_runner_envvar}\nray"
 

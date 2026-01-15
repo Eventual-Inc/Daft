@@ -47,8 +47,8 @@ mod tests {
 
     #[test]
     fn test_sparse_tensor_to_fixed_shape_sparse_tensor_roundtrip() -> DaftResult<()> {
-        let raw_validity = vec![true, false, true];
-        let validity = daft_arrow::buffer::NullBuffer::from(raw_validity.as_slice());
+        let raw_nulls = vec![true, false, true];
+        let nulls = daft_arrow::buffer::NullBuffer::from(raw_nulls.as_slice());
 
         let values_array = ListArray::new(
             Field::new("values", DataType::List(Box::new(DataType::Int64))),
@@ -60,7 +60,7 @@ mod tests {
             ))
             .into_series(),
             daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 2, 3, 4])?,
-            Some(validity.clone()),
+            Some(nulls.clone()),
         )
         .into_series();
 
@@ -74,7 +74,7 @@ mod tests {
             ))
             .into_series(),
             daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 2, 3, 4])?,
-            Some(validity.clone()),
+            Some(nulls.clone()),
         )
         .into_series();
 
@@ -88,7 +88,7 @@ mod tests {
             ))
             .into_series(),
             daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 2, 3])?,
-            Some(validity.clone()),
+            Some(nulls.clone()),
         )
         .into_series();
 
@@ -96,7 +96,7 @@ mod tests {
         let struct_array = StructArray::new(
             Field::new("tensor", dtype.to_physical()),
             vec![values_array, indices_array, shapes_array],
-            Some(validity),
+            Some(nulls),
         );
         let sparse_tensor_array =
             SparseTensorArray::new(Field::new(struct_array.name(), dtype.clone()), struct_array);

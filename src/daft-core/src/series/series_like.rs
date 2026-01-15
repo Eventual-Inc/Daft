@@ -16,9 +16,8 @@ pub trait SeriesLike: Send + Sync + Any + std::fmt::Debug {
     fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array>;
     fn to_arrow(&self) -> DaftResult<ArrayRef>;
     fn as_any(&self) -> &dyn std::any::Any;
-    fn with_validity(&self, validity: Option<daft_arrow::buffer::NullBuffer>)
-    -> DaftResult<Series>;
-    fn validity(&self) -> Option<&daft_arrow::buffer::NullBuffer>;
+    fn with_nulls(&self, nulls: Option<daft_arrow::buffer::NullBuffer>) -> DaftResult<Series>;
+    fn nulls(&self) -> Option<&daft_arrow::buffer::NullBuffer>;
     fn min(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
     fn max(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;
     fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Series>;

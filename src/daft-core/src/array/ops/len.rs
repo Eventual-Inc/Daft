@@ -86,8 +86,8 @@ impl PythonArray {
 }
 
 /// From arrow2 private method (arrow2::compute::aggregate::validity_size)
-fn validity_size(validity: Option<&daft_arrow::buffer::NullBuffer>) -> usize {
-    validity.map(|b| b.buffer().len()).unwrap_or(0)
+fn null_buffer_size(nulls: Option<&daft_arrow::buffer::NullBuffer>) -> usize {
+    nulls.map(|b| b.buffer().len()).unwrap_or(0)
 }
 
 fn offset_size(offsets: &daft_arrow::offset::OffsetsBuffer<i64>) -> usize {
@@ -96,20 +96,20 @@ fn offset_size(offsets: &daft_arrow::offset::OffsetsBuffer<i64>) -> usize {
 
 impl FixedSizeListArray {
     pub fn size_bytes(&self) -> usize {
-        self.flat_child.size_bytes() + validity_size(self.validity())
+        self.flat_child.size_bytes() + null_buffer_size(self.nulls())
     }
 }
 
 impl ListArray {
     pub fn size_bytes(&self) -> usize {
-        self.flat_child.size_bytes() + validity_size(self.validity()) + offset_size(self.offsets())
+        self.flat_child.size_bytes() + null_buffer_size(self.nulls()) + offset_size(self.offsets())
     }
 }
 
 impl StructArray {
     pub fn size_bytes(&self) -> usize {
         let children_size_bytes: usize = self.children.iter().map(|s| s.size_bytes()).sum();
-        children_size_bytes + validity_size(self.validity())
+        children_size_bytes + null_buffer_size(self.nulls())
     }
 }
 
