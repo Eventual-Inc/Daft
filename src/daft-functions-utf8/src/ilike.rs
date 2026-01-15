@@ -1,8 +1,7 @@
-use ahash::AHashMap;
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_core::{
-    prelude::{BooleanArray, DataType, Field, FullNull, Schema, Utf8Array},
-    series::{IntoSeries, Series},
+    prelude::{DataType, Field, Schema},
+    series::Series,
 };
 use daft_dsl::{
     ExprRef,
@@ -10,12 +9,7 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    like::compile_like_regex,
-    utils::{
-        binary_utf8_evaluate, binary_utf8_to_field, create_broadcasted_str_iter, parse_inputs,
-    },
-};
+use crate::utils::{binary_utf8_evaluate, binary_utf8_to_field, utf8_compare_op};
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct ILike;
@@ -27,10 +21,7 @@ impl ScalarUDF for ILike {
     }
     fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         binary_utf8_evaluate(inputs, "pattern", |s, pattern| {
-            s.with_utf8_array(|arr| {
-                pattern
-                    .with_utf8_array(|pattern_arr| Ok(ilike_impl(arr, pattern_arr)?.into_series()))
-            })
+            utf8_compare_op(s, pattern, arrow::compute::kernels::comparison::ilike)
         })
     }
 
@@ -57,53 +48,4 @@ impl ScalarUDF for ILike {
 #[must_use]
 pub fn ilike(input: ExprRef, pattern: ExprRef) -> ExprRef {
     ScalarFn::builtin(ILike {}, vec![input, pattern]).into()
-}
-
-fn ilike_impl(arr: &Utf8Array, pattern: &Utf8Array) -> DaftResult<BooleanArray> {
-    let (is_full_null, expected_size) = parse_inputs(arr, &[pattern])
-        .map_err(|e| DaftError::ValueError(format!("Error in ilike: {e}")))?;
-    if is_full_null {
-        return Ok(BooleanArray::full_null(
-            arr.name(),
-            &DataType::Boolean,
-            expected_size,
-        ));
-    }
-    if expected_size == 0 {
-        return Ok(BooleanArray::empty(arr.name(), &DataType::Boolean));
-    }
-
-    let self_iter = create_broadcasted_str_iter(arr, expected_size);
-
-    let arrow_result = if pattern.len() == 1 {
-        let pat = pattern.get(0).unwrap();
-        let re = compile_like_regex(pat, true)?;
-        self_iter
-            .map(|val| Some(re.is_match(val?)))
-            .collect::<daft_arrow::array::BooleanArray>()
-    } else {
-        let mut cache = AHashMap::new();
-        let pattern_iter = create_broadcasted_str_iter(pattern, expected_size);
-        self_iter
-            .zip(pattern_iter)
-            .map(|(val, pat)| match (val, pat) {
-                (Some(val), Some(pat)) => {
-                    let re = match cache.get(pat) {
-                        Some(re) => re,
-                        None => {
-                            let compiled = compile_like_regex(pat, true)?;
-                            cache.insert(pat.to_string(), compiled);
-                            cache.get(pat).expect("regex inserted above")
-                        }
-                    };
-                    Ok(Some(re.is_match(val)))
-                }
-                _ => Ok(None),
-            })
-            .collect::<DaftResult<daft_arrow::array::BooleanArray>>()?
-    };
-
-    let result = BooleanArray::from((arr.name(), Box::new(arrow_result)));
-    assert_eq!(result.len(), expected_size);
-    Ok(result)
 }
