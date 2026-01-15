@@ -205,13 +205,13 @@ impl PipelineNode for SourceNode {
         &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<tokio::sync::mpsc::Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<crate::channel::Receiver<Arc<MicroPartition>>> {
         let source = self.source.clone();
         let io_stats = self.runtime_stats.io_stats.clone();
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
 
-        let (destination_sender, destination_receiver) = tokio::sync::mpsc::channel(1);
+        let (destination_sender, destination_receiver) = crate::channel::create_channel(1);
         let chunk_size = match self.morsel_size_requirement {
             MorselSizeRequirement::Strict(size) => size,
             MorselSizeRequirement::Flexible(_, upper) => upper,

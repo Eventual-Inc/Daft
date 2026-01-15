@@ -418,7 +418,7 @@ fn flatten_receivers_into_stream(
             .map(Ok);
 
     // Handle the background task completion and forward any errors
-    combine_stream(Box::pin(flattened_receivers), background_task)
+    combine_stream(flattened_receivers, background_task)
 }
 
 async fn forward_scan_task_stream(

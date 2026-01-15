@@ -386,7 +386,7 @@ pub struct ExecutionEngineResult {
 }
 
 impl ExecutionEngineResult {
-    async fn next(&self) -> Option<Arc<MicroPartition>> {
+    async fn next(&mut self) -> Option<Arc<MicroPartition>> {
         self.receiver.recv().await
     }
 
@@ -450,9 +450,9 @@ impl PyExecutionEngineResult {
     fn __anext__<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, pyo3::PyAny>> {
         let result = self.result.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let result = result.lock().await;
+            let mut result = result.lock().await;
             let part = result
-                .as_ref()
+                .as_mut()
                 .expect("ExecutionEngineResult.__anext__() should not be called after finish().")
                 .next()
                 .await;

@@ -14,13 +14,13 @@ use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
-use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tracing::info_span;
 
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorControlFlow, OperatorOutput,
     PipelineExecutionSnafu,
     buffer::RowBasedBuffer,
+    channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
@@ -418,7 +418,7 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         let max_concurrency = op.max_concurrency().context(PipelineExecutionSnafu {
             node_name: self.name().to_string(),
         })?;
-        let (destination_sender, destination_receiver) = channel(1);
+        let (destination_sender, destination_receiver) = create_channel(1);
 
         // 3. Create task spawner
         let compute_runtime = get_compute_runtime();

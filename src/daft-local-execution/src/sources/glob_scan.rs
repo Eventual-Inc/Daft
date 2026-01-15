@@ -182,7 +182,7 @@ impl Source for GlobScanSource {
             })
             .map(|x| x?);
 
-        let receiver_stream = rx.into_stream().boxed();
+        let receiver_stream = rx.into_stream();
         let combined_stream = common_runtime::combine_stream(receiver_stream, task);
         Ok(combined_stream.boxed())
     }
