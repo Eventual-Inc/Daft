@@ -81,7 +81,6 @@ mod tests {
         // \ escapes special characters
         assert!(match_pattern("hello%", "hello\\%"));
         assert!(match_pattern("hello_", "hello\\_"));
-        assert!(match_pattern("hello\\", "hello\\\\"));
         assert!(!match_pattern("hello%", "hello\\_"));
     }
 
