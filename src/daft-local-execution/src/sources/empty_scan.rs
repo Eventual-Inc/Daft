@@ -38,7 +38,7 @@ impl Source for EmptyScanSource {
     }
 
     fn name(&self) -> NodeName {
-        "EmptyScan".into()
+        "Empty Scan".into()
     }
 
     fn op_type(&self) -> NodeType {
@@ -47,7 +47,7 @@ impl Source for EmptyScanSource {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push("EmptyScan:".to_string());
+        res.push("Empty Scan:".to_string());
         res.push(format!("Schema = {}", self.schema.short_string()));
         res
     }

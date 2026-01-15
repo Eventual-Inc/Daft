@@ -85,6 +85,8 @@ impl PythonPrintTarget for IndicatifPrintTarget {
     }
 }
 
+pub const MAX_PIPELINE_NAME_LEN: usize = 22;
+
 #[derive(Debug)]
 struct IndicatifProgressBarManager {
     multi_progress: indicatif::MultiProgress,
@@ -117,18 +119,26 @@ impl IndicatifProgressBarManager {
             total,
         };
 
+        // Determine max name for alignment and minimizing whitespace
+        let max_name_len = (node_info_map
+            .values()
+            .map(|v| v.name.len())
+            .max()
+            .unwrap_or(0))
+        .max(MAX_PIPELINE_NAME_LEN);
+
         // For Swordfish only, so node ids should be consecutive
         for node_id in 0..total {
             let node_info = node_info_map
                 .get(&node_id)
                 .expect("Expected node info for all node ids in range 0..total");
-            manager.make_new_bar(node_info.as_ref());
+            manager.make_new_bar(node_info.as_ref(), max_name_len);
         }
 
         manager
     }
 
-    fn make_new_bar(&mut self, node_info: &NodeInfo) {
+    fn make_new_bar(&mut self, node_info: &NodeInfo, max_name_len: usize) {
         let color = match node_info.node_category {
             NodeCategory::Source => ProgressBarColor::Blue,
             NodeCategory::Intermediate => ProgressBarColor::Magenta,
@@ -148,7 +158,7 @@ impl IndicatifProgressBarManager {
         let formatted_prefix = if node_info.name.len() > MAX_PIPELINE_NAME_LEN {
             format!("{}...", &node_info.name[..MAX_PIPELINE_NAME_LEN - 3])
         } else {
-            format!("{:>1$}", node_info.name, MAX_PIPELINE_NAME_LEN)
+            format!("{:>1$}", node_info.name, max_name_len)
         };
 
         let pb = indicatif::ProgressBar::new_spinner()
@@ -207,8 +217,6 @@ impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
         Ok(())
     }
 }
-
-pub const MAX_PIPELINE_NAME_LEN: usize = 22;
 
 pub fn make_progress_bar_manager(
     node_info_map: &HashMap<NodeID, Arc<NodeInfo>>,
