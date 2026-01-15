@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common_error::DaftResult;
 
 use crate::{
@@ -14,6 +16,6 @@ where
         let array =
             search_sorted::search_sorted(self.data.as_ref(), keys.data.as_ref(), descending)?;
 
-        Ok(DataArray::from((self.name(), Box::new(array))))
+        DataArray::from_arrow(self.field.clone(), Arc::new(array))
     }
 }

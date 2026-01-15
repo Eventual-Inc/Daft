@@ -1,6 +1,10 @@
+use std::sync::Arc;
+
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    array::DataArray, datatypes::UInt64Array, kernels::search_sorted::search_sorted_multi_array,
+    array::DataArray,
+    datatypes::{DataType, Field, UInt64Array},
+    kernels::search_sorted::search_sorted_multi_array,
     series::Series,
 };
 
@@ -51,5 +55,5 @@ unsafe fn multicol_search_sorted(
         &keys_arrow_ref_vec,
         &Vec::from(descending),
     )?;
-    Ok(DataArray::from(("indices", Box::new(indices))))
+    DataArray::from_arrow(Field::new("indices", DataType::UInt64), Arc::new(indices))
 }

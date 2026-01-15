@@ -2,7 +2,7 @@ use std::{cmp::Ordering, iter::zip};
 
 use arrow::{
     array::{Array as ArrowArray, ArrowPrimitiveType, PrimitiveArray as ArrowRsPrimitiveArray},
-    datatypes::ArrowNativeType,
+    datatypes::{ArrowNativeType, UInt64Type},
 };
 use daft_arrow::{
     array::{
@@ -21,7 +21,7 @@ fn search_sorted_primitive_array<T>(
     sorted_array: &ArrowRsPrimitiveArray<T>,
     keys: &ArrowRsPrimitiveArray<T>,
     input_reversed: bool,
-) -> PrimitiveArray<u64>
+) -> ArrowRsPrimitiveArray<UInt64Type>
 where
     T: ArrowPrimitiveType,
     T::Native: ArrowNativeType + PartialOrd,
@@ -84,14 +84,14 @@ where
         last_key = key_val;
     }
 
-    PrimitiveArray::<u64>::new(DataType::UInt64, results.into(), None)
+    ArrowRsPrimitiveArray::<UInt64Type>::new(results.into(), None)
 }
 
 fn search_sorted_utf_array<O: Offset>(
     sorted_array: &Utf8Array<O>,
     keys: &Utf8Array<O>,
     input_reversed: bool,
-) -> PrimitiveArray<u64> {
+) -> ArrowRsPrimitiveArray<UInt64Type> {
     let array_size = sorted_array.len();
     let mut left = 0_usize;
     let mut right = array_size;
@@ -147,14 +147,14 @@ fn search_sorted_utf_array<O: Offset>(
         last_key = key_val;
     }
 
-    PrimitiveArray::<u64>::new(DataType::UInt64, results.into(), None)
+    ArrowRsPrimitiveArray::<UInt64Type>::new(results.into(), None)
 }
 
 fn search_sorted_boolean_array(
     sorted_array: &BooleanArray,
     keys: &BooleanArray,
     input_reversed: bool,
-) -> PrimitiveArray<u64> {
+) -> ArrowRsPrimitiveArray<UInt64Type> {
     let array_size = sorted_array.len();
     let mut left = 0_usize;
     let mut right = array_size;
@@ -222,14 +222,14 @@ fn search_sorted_boolean_array(
         })
         .collect::<Vec<_>>();
 
-    PrimitiveArray::<u64>::new(DataType::UInt64, results.into(), None)
+    ArrowRsPrimitiveArray::<UInt64Type>::new(results.into(), None)
 }
 
 fn search_sorted_binary_array<O: Offset>(
     sorted_array: &BinaryArray<O>,
     keys: &BinaryArray<O>,
     input_reversed: bool,
-) -> PrimitiveArray<u64> {
+) -> ArrowRsPrimitiveArray<UInt64Type> {
     let array_size = sorted_array.len();
     let mut left = 0_usize;
     let mut right = array_size;
@@ -285,14 +285,14 @@ fn search_sorted_binary_array<O: Offset>(
         last_key = key_val;
     }
 
-    PrimitiveArray::<u64>::new(DataType::UInt64, results.into(), None)
+    ArrowRsPrimitiveArray::<UInt64Type>::new(results.into(), None)
 }
 
 fn search_sorted_fixed_size_binary_array(
     sorted_array: &FixedSizeBinaryArray,
     keys: &FixedSizeBinaryArray,
     input_reversed: bool,
-) -> PrimitiveArray<u64> {
+) -> ArrowRsPrimitiveArray<UInt64Type> {
     let array_size = sorted_array.len();
     let mut left = 0_usize;
     let mut right = array_size;
@@ -348,7 +348,7 @@ fn search_sorted_fixed_size_binary_array(
         last_key = key_val;
     }
 
-    PrimitiveArray::<u64>::new(DataType::UInt64, results.into(), None)
+    ArrowRsPrimitiveArray::<UInt64Type>::new(results.into(), None)
 }
 
 macro_rules! with_match_searching_primitive_type {(
@@ -362,7 +362,7 @@ macro_rules! with_match_searching_primitive_type {(
         Int16 => __with_ty__! { Int16Type },
         Int32 => __with_ty__! { Int32Type },
         Int64 => __with_ty__! { Int64Type },
-        // Int128 => __with_ty__! { Int128Type }, // Arrow-rs doesn't have standard Int128Type for primitives
+        Int128 => __with_ty__! { Decimal128Type }, // Decimal128 maps to Int128 at physical level
         // DaysMs => __with_ty__! { days_ms },
         // MonthDayNano => __with_ty__! { months_days_ns },
         UInt8 => __with_ty__! { UInt8Type },
@@ -371,6 +371,7 @@ macro_rules! with_match_searching_primitive_type {(
         UInt64 => __with_ty__! { UInt64Type },
         Float32 => __with_ty__! { Float32Type },
         Float64 => __with_ty__! { Float64Type },
+        Int256 => __with_ty__! { Decimal256Type }, // Decimal256 maps to Int256 at physical level
         _ => return Err(Error::NotYetImplemented(format!(
             "search_sorted not implemented for type {:?}",
             $key_type
@@ -546,7 +547,7 @@ pub fn search_sorted_multi_array(
     sorted_arrays: &Vec<&dyn Arrow2Array>,
     key_arrays: &Vec<&dyn Arrow2Array>,
     input_reversed: &Vec<bool>,
-) -> Result<PrimitiveArray<u64>> {
+) -> Result<ArrowRsPrimitiveArray<UInt64Type>> {
     if sorted_arrays.is_empty() || key_arrays.is_empty() {
         return Err(Error::InvalidArgumentError(
             "Passed in empty number of columns".to_string(),
@@ -608,8 +609,7 @@ pub fn search_sorted_multi_array(
         }
         results.push(left.try_into().unwrap());
     }
-    Ok(PrimitiveArray::<u64>::new(
-        DataType::UInt64,
+    Ok(ArrowRsPrimitiveArray::<UInt64Type>::new(
         results.into(),
         None,
     ))
@@ -619,7 +619,7 @@ pub fn search_sorted(
     sorted_array: &dyn Arrow2Array,
     keys: &dyn Arrow2Array,
     input_reversed: bool,
-) -> Result<PrimitiveArray<u64>> {
+) -> Result<ArrowRsPrimitiveArray<UInt64Type>> {
     if sorted_array.data_type() != keys.data_type() {
         let error_string = format!(
             "sorted array data type does not match keys data type: {:?} vs {:?}",
@@ -628,11 +628,11 @@ pub fn search_sorted(
         );
         return Err(Error::InvalidArgumentError(error_string));
     }
-    Ok(match sorted_array.data_type().to_physical_type() {
+    match sorted_array.data_type().to_physical_type() {
         // Boolean => hash_boolean(array.as_any().downcast_ref().unwrap()),
         PhysicalType::Primitive(primitive) => {
-            with_match_searching_primitive_type!(primitive, |$T| {
-                // Convert arrow2 arrays to arrow-rs arrays
+            Ok(with_match_searching_primitive_type!(primitive, |$T| {
+                // Convert arrow2 arrays to arrow-rs arrays for the primitive function
                 let sorted_array_data = daft_arrow::array::to_data(sorted_array);
                 let keys_data = daft_arrow::array::to_data(keys);
                 let sorted_array_rs = arrow::array::make_array(sorted_array_data);
@@ -643,42 +643,215 @@ pub fn search_sorted(
                     keys_rs.as_any().downcast_ref().unwrap(),
                     input_reversed
                 )
-            })
+            }))
         }
-        PhysicalType::Utf8 => search_sorted_utf_array::<i32>(
+        PhysicalType::Utf8 => Ok(search_sorted_utf_array::<i32>(
             sorted_array.as_any().downcast_ref().unwrap(),
             keys.as_any().downcast_ref().unwrap(),
             input_reversed,
-        ),
-        PhysicalType::LargeUtf8 => search_sorted_utf_array::<i64>(
+        )),
+        PhysicalType::LargeUtf8 => Ok(search_sorted_utf_array::<i64>(
             sorted_array.as_any().downcast_ref().unwrap(),
             keys.as_any().downcast_ref().unwrap(),
             input_reversed,
-        ),
-        PhysicalType::Binary => search_sorted_binary_array::<i32>(
+        )),
+        PhysicalType::Binary => Ok(search_sorted_binary_array::<i32>(
             sorted_array.as_any().downcast_ref().unwrap(),
             keys.as_any().downcast_ref().unwrap(),
             input_reversed,
-        ),
-        PhysicalType::LargeBinary => search_sorted_binary_array::<i64>(
+        )),
+        PhysicalType::LargeBinary => Ok(search_sorted_binary_array::<i64>(
             sorted_array.as_any().downcast_ref().unwrap(),
             keys.as_any().downcast_ref().unwrap(),
             input_reversed,
-        ),
-        PhysicalType::FixedSizeBinary => search_sorted_fixed_size_binary_array(
+        )),
+        PhysicalType::FixedSizeBinary => Ok(search_sorted_fixed_size_binary_array(
             sorted_array.as_any().downcast_ref().unwrap(),
             keys.as_any().downcast_ref().unwrap(),
             input_reversed,
-        ),
-        PhysicalType::Boolean => search_sorted_boolean_array(
+        )),
+        PhysicalType::Boolean => Ok(search_sorted_boolean_array(
             sorted_array.as_any().downcast_ref().unwrap(),
             keys.as_any().downcast_ref().unwrap(),
             input_reversed,
-        ),
-        t => {
-            return Err(Error::NotYetImplemented(format!(
-                "search_sorted not implemented for type {t:?}"
-            )));
-        }
-    })
+        )),
+        t => Err(Error::NotYetImplemented(format!(
+            "search_sorted not implemented for type {t:?}"
+        ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use arrow::{
+        array::{Decimal128Array, Decimal256Array, Float64Array, Int32Array, Int64Array},
+        datatypes::{DECIMAL128_MAX_PRECISION, DECIMAL256_MAX_PRECISION, i256},
+    };
+
+    use super::*;
+
+    #[test]
+    fn test_search_sorted_int32() {
+        // Create arrow-rs sorted array and keys
+        let sorted = Int32Array::from(vec![1, 3, 5, 7, 9]);
+        let keys = Int32Array::from(vec![0, 2, 5, 8, 10]);
+
+        // Convert to arrow2 for the function
+        let sorted_data = sorted.to_data();
+        let keys_data = keys.to_data();
+        let sorted_arrow2 = daft_arrow::array::from_data(&sorted_data);
+        let keys_arrow2 = daft_arrow::array::from_data(&keys_data);
+
+        let result = search_sorted(sorted_arrow2.as_ref(), keys_arrow2.as_ref(), false).unwrap();
+
+        // Note: This implements "right" insertion semantics (insert after equal values)
+        // For sorted = [1, 3, 5, 7, 9]:
+        assert_eq!(result.len(), 5);
+        assert_eq!(result.value(0), 0); // 0 goes before index 0 (before 1)
+        assert_eq!(result.value(1), 1); // 2 goes at index 1 (after 1, before 3)
+        assert_eq!(result.value(2), 3); // 5 goes at index 3 (after 5 at index 2)
+        assert_eq!(result.value(3), 4); // 8 goes at index 4 (after 7, before 9)
+        assert_eq!(result.value(4), 5); // 10 goes at index 5 (after all elements)
+    }
+
+    #[test]
+    fn test_search_sorted_int64() {
+        let sorted = Int64Array::from(vec![10i64, 20, 30, 40, 50]);
+        let keys = Int64Array::from(vec![15i64, 25, 35]);
+
+        let sorted_data = sorted.to_data();
+        let keys_data = keys.to_data();
+        let sorted_arrow2 = daft_arrow::array::from_data(&sorted_data);
+        let keys_arrow2 = daft_arrow::array::from_data(&keys_data);
+
+        let result = search_sorted(sorted_arrow2.as_ref(), keys_arrow2.as_ref(), false).unwrap();
+
+        assert_eq!(result.len(), 3);
+        assert_eq!(result.value(0), 1); // 15 goes at index 1
+        assert_eq!(result.value(1), 2); // 25 goes at index 2
+        assert_eq!(result.value(2), 3); // 35 goes at index 3
+    }
+
+    #[test]
+    fn test_search_sorted_float64() {
+        let sorted = Float64Array::from(vec![1.1, 2.2, 3.3, 4.4, 5.5]);
+        let keys = Float64Array::from(vec![0.5, 2.2, 3.0, 6.0]);
+
+        let sorted_data = sorted.to_data();
+        let keys_data = keys.to_data();
+        let sorted_arrow2 = daft_arrow::array::from_data(&sorted_data);
+        let keys_arrow2 = daft_arrow::array::from_data(&keys_data);
+
+        let result = search_sorted(sorted_arrow2.as_ref(), keys_arrow2.as_ref(), false).unwrap();
+
+        // Right insertion semantics
+        assert_eq!(result.len(), 4);
+        assert_eq!(result.value(0), 0); // 0.5 goes before index 0
+        assert_eq!(result.value(1), 2); // 2.2 goes at index 2 (after 2.2 at index 1)
+        assert_eq!(result.value(2), 2); // 3.0 goes at index 2 (after 2.2, before 3.3)
+        assert_eq!(result.value(3), 5); // 6.0 goes after last element
+    }
+
+    #[test]
+    fn test_search_sorted_decimal128() {
+        // Create Decimal128 arrays representing values like 100.00, 200.00, etc. (scale=2)
+        let sorted = Decimal128Array::from(vec![
+            Some(10000i128), // 100.00
+            Some(20000i128), // 200.00
+            Some(30000i128), // 300.00
+            Some(40000i128), // 400.00
+            Some(50000i128), // 500.00
+        ])
+        .with_precision_and_scale(DECIMAL128_MAX_PRECISION, 2)
+        .unwrap();
+
+        let keys = Decimal128Array::from(vec![
+            Some(5000i128),  // 50.00
+            Some(25000i128), // 250.00
+            Some(30000i128), // 300.00
+            Some(60000i128), // 600.00
+        ])
+        .with_precision_and_scale(DECIMAL128_MAX_PRECISION, 2)
+        .unwrap();
+
+        // Convert to arrow2
+        let sorted_data = sorted.to_data();
+        let keys_data = keys.to_data();
+        let sorted_arrow2 = daft_arrow::array::from_data(&sorted_data);
+        let keys_arrow2 = daft_arrow::array::from_data(&keys_data);
+
+        let result = search_sorted(sorted_arrow2.as_ref(), keys_arrow2.as_ref(), false).unwrap();
+
+        // Right insertion semantics
+        assert_eq!(result.len(), 4);
+        assert_eq!(result.value(0), 0); // 50.00 goes before 100.00
+        assert_eq!(result.value(1), 2); // 250.00 goes between 200.00 and 300.00
+        assert_eq!(result.value(2), 3); // 300.00 goes at index 3 (after 300.00 at index 2)
+        assert_eq!(result.value(3), 5); // 600.00 goes after 500.00
+    }
+
+    #[test]
+    fn test_search_sorted_decimal256() {
+        // Create Decimal256 arrays with i256 values
+        let sorted = Decimal256Array::from(vec![
+            Some(i256::from(1000)),
+            Some(i256::from(2000)),
+            Some(i256::from(3000)),
+            Some(i256::from(4000)),
+        ])
+        .with_precision_and_scale(DECIMAL256_MAX_PRECISION, 0)
+        .unwrap();
+
+        let keys = Decimal256Array::from(vec![
+            Some(i256::from(500)),
+            Some(i256::from(2500)),
+            Some(i256::from(5000)),
+        ])
+        .with_precision_and_scale(DECIMAL256_MAX_PRECISION, 0)
+        .unwrap();
+
+        // Convert to arrow2
+        let sorted_data = sorted.to_data();
+        let keys_data = keys.to_data();
+        let sorted_arrow2 = daft_arrow::array::from_data(&sorted_data);
+        let keys_arrow2 = daft_arrow::array::from_data(&keys_data);
+
+        let result = search_sorted(sorted_arrow2.as_ref(), keys_arrow2.as_ref(), false).unwrap();
+
+        assert_eq!(result.len(), 3);
+        assert_eq!(result.value(0), 0); // 500 goes before 1000
+        assert_eq!(result.value(1), 2); // 2500 goes between 2000 and 3000
+        assert_eq!(result.value(2), 4); // 5000 goes after 4000
+    }
+
+    #[test]
+    fn test_search_sorted_with_nulls() {
+        let sorted = Int32Array::from(vec![Some(1), Some(3), None, Some(7), Some(9)]);
+        let keys = Int32Array::from(vec![Some(2), None, Some(8)]);
+
+        let sorted_data = sorted.to_data();
+        let keys_data = keys.to_data();
+        let sorted_arrow2 = daft_arrow::array::from_data(&sorted_data);
+        let keys_arrow2 = daft_arrow::array::from_data(&keys_data);
+
+        let result = search_sorted(sorted_arrow2.as_ref(), keys_arrow2.as_ref(), false).unwrap();
+
+        assert_eq!(result.len(), 3);
+        // Nulls typically sort to the end in ascending order
+    }
+
+    #[test]
+    fn test_search_sorted_descending() {
+        let sorted = Int32Array::from(vec![9, 7, 5, 3, 1]); // descending
+        let keys = Int32Array::from(vec![8, 5, 2]);
+
+        let sorted_data = sorted.to_data();
+        let keys_data = keys.to_data();
+        let sorted_arrow2 = daft_arrow::array::from_data(&sorted_data);
+        let keys_arrow2 = daft_arrow::array::from_data(&keys_data);
+
+        let result = search_sorted(sorted_arrow2.as_ref(), keys_arrow2.as_ref(), true).unwrap();
+
+        assert_eq!(result.len(), 3);
+    }
 }
