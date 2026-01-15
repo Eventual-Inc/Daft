@@ -175,11 +175,11 @@ impl Source for ScanTaskSource {
         let (senders, receivers) = match maintain_order {
             // If we need to maintain order, we need to create a channel for each scan task
             true => (0..self.scan_tasks.len())
-                .map(|_| create_channel::<Arc<MicroPartition>>(0))
+                .map(|_| create_channel::<Arc<MicroPartition>>(1))
                 .unzip(),
             // If we don't need to maintain order, we can use a single channel for all scan tasks
             false => {
-                let (tx, rx) = create_channel(0);
+                let (tx, rx) = create_channel(1);
                 (vec![tx; self.scan_tasks.len()], vec![rx])
             }
         };

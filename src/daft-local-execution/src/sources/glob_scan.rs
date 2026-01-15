@@ -63,7 +63,7 @@ impl Source for GlobScanSource {
         let limit = self.pushdowns.limit;
 
         // Spawn a task to stream out the record batches from the glob paths
-        let (tx, rx) = create_channel(0);
+        let (tx, rx) = create_channel(1);
         let task = io_runtime
             .spawn(async move {
                 let io_client = io_client.clone();
