@@ -8,7 +8,6 @@ use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-    BlockingSinkStatus,
 };
 use crate::{ExecutionTaskSpawner, pipeline::NodeName, state_bridge::BroadcastStateBridgeRef};
 
@@ -42,7 +41,7 @@ impl BlockingSink for JoinCollectSink {
         spawner: &ExecutionTaskSpawner,
     ) -> BlockingSinkSinkResult<Self> {
         if input.is_empty() {
-            return Ok(BlockingSinkStatus::NeedMoreInput(state)).into();
+            return Ok(state).into();
         }
 
         spawner
@@ -54,7 +53,7 @@ impl BlockingSink for JoinCollectSink {
                         .expect("Collected tables should not be consumed before sink stage is done")
                         .extend(input.record_batches().iter().cloned());
 
-                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                    Ok(state)
                 },
                 info_span!("JoinCollectSink::sink"),
             )
