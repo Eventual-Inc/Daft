@@ -1,23 +1,31 @@
 use std::{cmp::Ordering, iter::zip};
 
+use arrow::{
+    array::{Array as ArrowArray, ArrowPrimitiveType, PrimitiveArray as ArrowRsPrimitiveArray},
+    datatypes::ArrowNativeType,
+};
 use daft_arrow::{
     array::{
-        Array, BinaryArray, BooleanArray, FixedSizeBinaryArray, PrimitiveArray, Utf8Array,
+        Array as Arrow2Array, BinaryArray, BooleanArray, FixedSizeBinaryArray, PrimitiveArray,
+        Utf8Array,
         ord::{DynComparator, build_compare},
     },
     datatypes::{DataType, PhysicalType},
     error::{Error, Result},
-    types::{NativeType, Offset},
+    types::Offset,
 };
 use num_traits::Float;
 
 #[allow(clippy::eq_op)]
-fn search_sorted_primitive_array<T: NativeType + PartialOrd>(
-    sorted_array: &PrimitiveArray<T>,
-    keys: &PrimitiveArray<T>,
+fn search_sorted_primitive_array<T>(
+    sorted_array: &ArrowRsPrimitiveArray<T>,
+    keys: &ArrowRsPrimitiveArray<T>,
     input_reversed: bool,
 ) -> PrimitiveArray<u64>
-where {
+where
+    T: ArrowPrimitiveType,
+    T::Native: ArrowNativeType + PartialOrd,
+{
     let array_size = sorted_array.len();
 
     let mut left = 0_usize;
@@ -26,7 +34,7 @@ where {
     let mut results: Vec<u64> = Vec::with_capacity(array_size);
 
     let mut last_key = keys.iter().next().unwrap_or(None);
-    let less = |l: &T, r: &T| l < r || (r != r && l == l);
+    let less = |l: T::Native, r: T::Native| l < r || (r != r && l == l);
     for key_val in keys {
         let is_last_key_lt = match (last_key, key_val) {
             (None, None) => false,
@@ -58,9 +66,9 @@ where {
                 (None, true) => input_reversed,
                 (Some(key_val), true) => {
                     if !input_reversed {
-                        less(key_val, &mid_val)
+                        less(key_val, mid_val)
                     } else {
-                        less(&mid_val, key_val)
+                        less(mid_val, key_val)
                     }
                 }
                 (Some(_), false) => !input_reversed,
@@ -348,21 +356,21 @@ macro_rules! with_match_searching_primitive_type {(
 ) => ({
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     use daft_arrow::datatypes::PrimitiveType::*;
-    // use daft_arrow::types::{days_ms, months_days_ns};
+    use arrow::datatypes::*;
     match $key_type {
-        Int8 => __with_ty__! { i8 },
-        Int16 => __with_ty__! { i16 },
-        Int32 => __with_ty__! { i32 },
-        Int64 => __with_ty__! { i64 },
-        Int128 => __with_ty__! { i128 },
+        Int8 => __with_ty__! { Int8Type },
+        Int16 => __with_ty__! { Int16Type },
+        Int32 => __with_ty__! { Int32Type },
+        Int64 => __with_ty__! { Int64Type },
+        // Int128 => __with_ty__! { Int128Type }, // Arrow-rs doesn't have standard Int128Type for primitives
         // DaysMs => __with_ty__! { days_ms },
         // MonthDayNano => __with_ty__! { months_days_ns },
-        UInt8 => __with_ty__! { u8 },
-        UInt16 => __with_ty__! { u16 },
-        UInt32 => __with_ty__! { u32 },
-        UInt64 => __with_ty__! { u64 },
-        Float32 => __with_ty__! { f32 },
-        Float64 => __with_ty__! { f64 },
+        UInt8 => __with_ty__! { UInt8Type },
+        UInt16 => __with_ty__! { UInt16Type },
+        UInt32 => __with_ty__! { UInt32Type },
+        UInt64 => __with_ty__! { UInt64Type },
+        Float32 => __with_ty__! { Float32Type },
+        Float64 => __with_ty__! { Float64Type },
         _ => return Err(Error::NotYetImplemented(format!(
             "search_sorted not implemented for type {:?}",
             $key_type
@@ -371,7 +379,7 @@ macro_rules! with_match_searching_primitive_type {(
 })}
 
 type IsValid = Box<dyn Fn(usize) -> bool + Send + Sync>;
-pub fn build_is_valid(array: &dyn Array) -> IsValid {
+pub fn build_is_valid(array: &dyn Arrow2Array) -> IsValid {
     if let Some(nulls) = array.validity() {
         let nulls = nulls.clone();
         Box::new(move |x| unsafe { nulls.get_bit_unchecked(x) })
@@ -391,7 +399,7 @@ pub fn cmp_float<F: Float>(l: &F, r: &F) -> std::cmp::Ordering {
     }
 }
 
-fn compare_f32(left: &dyn Array, right: &dyn Array) -> DynComparator {
+fn compare_f32(left: &dyn Arrow2Array, right: &dyn Arrow2Array) -> DynComparator {
     let left = left
         .as_any()
         .downcast_ref::<PrimitiveArray<f32>>()
@@ -405,7 +413,7 @@ fn compare_f32(left: &dyn Array, right: &dyn Array) -> DynComparator {
     Box::new(move |i, j| cmp_float::<f32>(&left.value(i), &right.value(j)))
 }
 
-fn compare_f64(left: &dyn Array, right: &dyn Array) -> DynComparator {
+fn compare_f64(left: &dyn Arrow2Array, right: &dyn Arrow2Array) -> DynComparator {
     let left = left
         .as_any()
         .downcast_ref::<PrimitiveArray<f64>>()
@@ -419,7 +427,10 @@ fn compare_f64(left: &dyn Array, right: &dyn Array) -> DynComparator {
     Box::new(move |i, j| cmp_float::<f64>(&left.value(i), &right.value(j)))
 }
 
-pub fn build_compare_with_nan(left: &dyn Array, right: &dyn Array) -> Result<DynComparator> {
+pub fn build_compare_with_nan(
+    left: &dyn Arrow2Array,
+    right: &dyn Arrow2Array,
+) -> Result<DynComparator> {
     if (left.data_type() == &DataType::Float32) && (right.data_type() == &DataType::Float32) {
         Ok(compare_f32(left, right))
     } else if (left.data_type() == &DataType::Float64) && (right.data_type() == &DataType::Float64)
@@ -431,8 +442,8 @@ pub fn build_compare_with_nan(left: &dyn Array, right: &dyn Array) -> Result<Dyn
 }
 
 pub fn build_compare_with_nulls(
-    left: &dyn Array,
-    right: &dyn Array,
+    left: &dyn Arrow2Array,
+    right: &dyn Arrow2Array,
     reversed: bool,
 ) -> Result<DynComparator> {
     let comparator = build_compare_with_nan(left, right)?;
@@ -461,8 +472,8 @@ pub fn build_compare_with_nulls(
 }
 
 pub fn build_nulls_first_compare_with_nulls(
-    left: &dyn Array,
-    right: &dyn Array,
+    left: &dyn Arrow2Array,
+    right: &dyn Arrow2Array,
     reversed: bool,
     nulls_first: bool,
 ) -> Result<DynComparator> {
@@ -502,8 +513,8 @@ pub fn build_nulls_first_compare_with_nulls(
 pub type DynPartialComparator = Box<dyn Fn(usize, usize) -> Option<Ordering> + Send + Sync>;
 
 pub fn build_partial_compare_with_nulls(
-    left: &dyn Array,
-    right: &dyn Array,
+    left: &dyn Arrow2Array,
+    right: &dyn Arrow2Array,
     reversed: bool,
 ) -> Result<DynPartialComparator> {
     let comparator = build_compare_with_nan(left, right)?;
@@ -532,8 +543,8 @@ pub fn build_partial_compare_with_nulls(
 }
 
 pub fn search_sorted_multi_array(
-    sorted_arrays: &Vec<&dyn Array>,
-    key_arrays: &Vec<&dyn Array>,
+    sorted_arrays: &Vec<&dyn Arrow2Array>,
+    key_arrays: &Vec<&dyn Arrow2Array>,
     input_reversed: &Vec<bool>,
 ) -> Result<PrimitiveArray<u64>> {
     if sorted_arrays.is_empty() || key_arrays.is_empty() {
@@ -605,8 +616,8 @@ pub fn search_sorted_multi_array(
 }
 
 pub fn search_sorted(
-    sorted_array: &dyn Array,
-    keys: &dyn Array,
+    sorted_array: &dyn Arrow2Array,
+    keys: &dyn Arrow2Array,
     input_reversed: bool,
 ) -> Result<PrimitiveArray<u64>> {
     if sorted_array.data_type() != keys.data_type() {
@@ -621,7 +632,17 @@ pub fn search_sorted(
         // Boolean => hash_boolean(array.as_any().downcast_ref().unwrap()),
         PhysicalType::Primitive(primitive) => {
             with_match_searching_primitive_type!(primitive, |$T| {
-                search_sorted_primitive_array::<$T>(sorted_array.as_any().downcast_ref().unwrap(), keys.as_any().downcast_ref().unwrap(), input_reversed)
+                // Convert arrow2 arrays to arrow-rs arrays
+                let sorted_array_data = daft_arrow::array::to_data(sorted_array);
+                let keys_data = daft_arrow::array::to_data(keys);
+                let sorted_array_rs = arrow::array::make_array(sorted_array_data);
+                let keys_rs = arrow::array::make_array(keys_data);
+
+                search_sorted_primitive_array::<$T>(
+                    sorted_array_rs.as_any().downcast_ref().unwrap(),
+                    keys_rs.as_any().downcast_ref().unwrap(),
+                    input_reversed
+                )
             })
         }
         PhysicalType::Utf8 => search_sorted_utf_array::<i32>(
