@@ -14,12 +14,12 @@ use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
-use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tracing::info_span;
 
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
     buffer::RowBasedBuffer,
+    channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
@@ -461,7 +461,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
             child_result_receivers.push(child_result_receiver);
         }
 
-        let (destination_sender, destination_receiver) = channel(1);
+        let (destination_sender, destination_receiver) = create_channel(1);
 
         // Initialize state pool with max_concurrency states
         let mut state_pool = HashMap::new();

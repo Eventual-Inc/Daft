@@ -14,11 +14,11 @@ use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
-use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tracing::info_span;
 
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
+    channel::{Receiver, Sender, create_channel},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
@@ -287,7 +287,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let child_results_receiver = self.child.start(false, runtime_handle)?;
 
-        let (destination_sender, destination_receiver) = channel(1);
+        let (destination_sender, destination_receiver) = create_channel(1);
 
         let op = self.op.clone();
         let max_concurrency = op.max_concurrency();

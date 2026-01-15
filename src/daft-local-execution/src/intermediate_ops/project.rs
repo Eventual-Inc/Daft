@@ -43,6 +43,38 @@ fn smallest_batch_size(prev: Option<usize>, next: Option<usize>) -> Option<usize
     }
 }
 
+/// Has interesting compute to display within the name / progress bars
+fn is_interesting(expr: &Arc<Expr>) -> bool {
+    match expr.as_ref() {
+        Expr::Column(..) => false,
+        Expr::Literal(..) => false,
+        // Shouldn't be there by this point
+        Expr::Subquery(..) => false,
+        Expr::Exists(..) => false,
+
+        Expr::Function { .. } => true,
+        Expr::ScalarFn(..) => true,
+        Expr::Agg(..) => true,
+        Expr::Over(..) => true,
+        Expr::WindowFunction(..) => true,
+        Expr::IsIn(..) => true,
+        Expr::Between(..) => true,
+        Expr::BinaryOp { .. } => true,
+        // TODO: Some casts could be considered no-ops
+        Expr::Cast(..) => true,
+        Expr::VLLM(..) => true,
+        Expr::Not(..) => true,
+        Expr::IsNull(..) => true,
+        Expr::NotNull(..) => true,
+        Expr::FillNull(..) => true,
+        Expr::IfElse { .. } => true,
+
+        Expr::Alias(expr, ..) => is_interesting(expr),
+        Expr::InSubquery(expr, _) => is_interesting(expr),
+        Expr::List(exprs) => exprs.iter().any(is_interesting),
+    }
+}
+
 /// Gets the batch size from the first UDF encountered in a given slice of expressions
 pub fn try_get_batch_size(exprs: &[BoundExpr]) -> Option<usize> {
     let mut projection_batch_size = None;
@@ -144,7 +176,19 @@ impl IntermediateOperator for ProjectOperator {
     }
 
     fn name(&self) -> NodeName {
-        "Project".into()
+        let compute_expressions = self
+            .projection
+            .iter()
+            .filter(|x| is_interesting(x.inner()))
+            .collect::<Vec<_>>();
+
+        if compute_expressions.is_empty() {
+            "Rename & Reorder".into()
+        } else if compute_expressions.len() == 1 {
+            compute_expressions[0].inner().name().to_string().into()
+        } else {
+            "Project".into()
+        }
     }
 
     fn op_type(&self) -> NodeType {

@@ -229,7 +229,7 @@ impl NativeExecutor {
         let (mut pipeline, input_senders) =
             translate_physical_plan_to_pipeline(local_physical_plan, &exec_cfg, &ctx)?;
 
-        let (tx, rx) = create_channel(0);
+        let (tx, rx) = create_channel(1);
         let enable_explain_analyze = should_enable_explain_analyze();
 
         let query_id: common_metrics::QueryID = additional_context
@@ -247,7 +247,7 @@ impl NativeExecutor {
         let stats_manager = RuntimeStatsManager::try_new(handle, &pipeline, subscribers, query_id)?;
 
         // Create channel for enqueue_input messages
-        let (enqueue_input_tx, enqueue_input_rx) = create_channel::<EnqueueInputMessage>(0);
+        let (enqueue_input_tx, mut enqueue_input_rx) = create_channel::<EnqueueInputMessage>(0);
 
         let task = async move {
             let stats_manager_handle = stats_manager.handle();
@@ -415,7 +415,7 @@ pub struct ExecutionEngineResult {
 }
 
 impl ExecutionEngineResult {
-    async fn next(&self) -> Option<Arc<MicroPartition>> {
+    async fn next(&mut self) -> Option<Arc<MicroPartition>> {
         self.receiver.recv().await
     }
 
@@ -479,9 +479,9 @@ impl PyExecutionEngineResult {
     fn __anext__<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, pyo3::PyAny>> {
         let result = self.result.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let result = result.lock().await;
+            let mut result = result.lock().await;
             let part = result
-                .as_ref()
+                .as_mut()
                 .expect("ExecutionEngineResult.__anext__() should not be called after finish().")
                 .next()
                 .await;

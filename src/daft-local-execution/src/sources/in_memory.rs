@@ -40,7 +40,7 @@ impl InMemorySource {
     /// Spawns the background task that continuously reads partition sets from receiver and processes them
     fn spawn_partition_set_processor(
         &self,
-        receiver: Receiver<(InputId, PartitionSetRef<MicroPartitionRef>)>,
+        mut receiver: Receiver<(InputId, PartitionSetRef<MicroPartitionRef>)>,
         output_sender: Sender<Arc<MicroPartition>>,
         schema: SchemaRef,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
@@ -102,7 +102,7 @@ impl Source for InMemorySource {
     }
 
     fn name(&self) -> NodeName {
-        "InMemorySource".into()
+        "In Memory Scan".into()
     }
 
     fn op_type(&self) -> NodeType {
@@ -111,7 +111,7 @@ impl Source for InMemorySource {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push("InMemorySource:".to_string());
+        res.push("In Memory Scan:".to_string());
         res.push(format!("Schema = {}", self.schema.short_string()));
         res.push(format!("Size bytes = {}", self.size_bytes));
         res

@@ -165,7 +165,7 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
         &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<tokio::sync::mpsc::Receiver<Arc<MicroPartition>>>;
+    ) -> crate::Result<crate::channel::Receiver<Arc<MicroPartition>>>;
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 

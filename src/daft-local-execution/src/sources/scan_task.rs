@@ -64,7 +64,7 @@ impl ScanTaskSource {
     /// Spawns the background task that continuously reads scan tasks from receiver and processes them
     fn spawn_scan_task_processor(
         &self,
-        receiver: Receiver<(InputId, Vec<ScanTaskRef>)>,
+        mut receiver: Receiver<(InputId, Vec<ScanTaskRef>)>,
         output_sender: Sender<Arc<MicroPartition>>,
         io_stats: IOStatsRef,
         chunk_size: usize,
@@ -183,7 +183,7 @@ impl Source for ScanTaskSource {
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         // Create output channel for results
-        let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(0);
+        let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(1);
         // Spawn a task that continuously reads from self.receiver and forwards to task_sender
         // Receiver implements Clone, so we can clone it for the spawned task
         let receiver_clone = self.receiver.take().expect("Receiver not found");
@@ -203,7 +203,7 @@ impl Source for ScanTaskSource {
         let result_stream = output_receiver.into_stream().map(Ok);
 
         // Combine with processor task to handle errors
-        let combined_stream = combine_stream(Box::pin(result_stream), processor_task.map(|x| x?));
+        let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));
 
         Ok(Box::pin(combined_stream))
     }

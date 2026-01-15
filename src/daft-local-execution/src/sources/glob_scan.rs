@@ -48,7 +48,7 @@ impl GlobScanSource {
     /// Spawns the background task that continuously reads glob paths from receiver and processes them
     fn spawn_glob_path_processor(
         &self,
-        receiver: Receiver<(InputId, Vec<String>)>,
+        mut receiver: Receiver<(InputId, Vec<String>)>,
         output_sender: Sender<Arc<MicroPartition>>,
         io_stats: IOStatsRef,
         chunk_size: usize,
