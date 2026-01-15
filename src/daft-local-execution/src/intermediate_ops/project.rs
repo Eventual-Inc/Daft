@@ -176,16 +176,16 @@ impl IntermediateOperator for ProjectOperator {
     }
 
     fn name(&self) -> NodeName {
-        let compute_projects = self
+        let compute_expressions = self
             .projection
             .iter()
             .filter(|x| has_compute(x))
             .collect::<Vec<_>>();
 
-        if compute_projects.is_empty() {
+        if compute_expressions.is_empty() {
             "Rename & Reorder".into()
-        } else if compute_projects.len() == 1 {
-            compute_projects[0].inner().name().to_string().into()
+        } else if compute_expressions.len() == 1 {
+            compute_expressions[0].inner().name().to_string().into()
         } else {
             "Project".into()
         }
