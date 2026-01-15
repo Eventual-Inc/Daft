@@ -11,7 +11,6 @@ use tracing::{Span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-    BlockingSinkStatus,
 };
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
@@ -93,7 +92,7 @@ impl BlockingSink for AggregateSink {
                 async move {
                     let agged = Arc::new(input.agg(&params.sink_agg_exprs, &[])?);
                     state.push(agged);
-                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                    Ok(state)
                 },
                 Span::current(),
             )

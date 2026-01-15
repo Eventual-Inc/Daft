@@ -5,10 +5,7 @@ use std::{
     collections::{HashMap, HashSet},
     future::Future,
     pin::Pin,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::Arc,
     task::{Context, Poll},
     time::{Duration, Instant},
 };
@@ -18,7 +15,6 @@ use common_metrics::{NodeID, QueryID, StatSnapshot, snapshot::StatSnapshotImpl};
 use common_runtime::RuntimeTask;
 use daft_context::Subscriber;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
-use daft_micropartition::MicroPartition;
 use futures::future;
 use itertools::Itertools;
 use progress_bar::{ProgressBar, make_progress_bar_manager};
@@ -206,7 +202,6 @@ impl RuntimeStatsManager {
                             if let Some(progress_bar) = &progress_bar {
                                 progress_bar.handle_event(*node_id, &snapshot);
                             }
-
                             snapshot_container.push((*node_id, snapshot.to_stats()));
                         }
 
@@ -298,74 +293,6 @@ impl<F: Future> Future for TimedFuture<F> {
             Poll::Pending => Poll::Pending,
             Poll::Ready(output) => Poll::Ready(output),
         }
-    }
-}
-
-/// Sender that wraps an internal sender and counts the number of rows passed through
-pub struct CountingSender {
-    sender: tokio::sync::mpsc::Sender<Arc<MicroPartition>>,
-    rt: Arc<dyn RuntimeStats>,
-}
-
-impl CountingSender {
-    pub(crate) fn new(
-        sender: tokio::sync::mpsc::Sender<Arc<MicroPartition>>,
-        rt: Arc<dyn RuntimeStats>,
-    ) -> Self {
-        Self { sender, rt }
-    }
-    #[inline]
-    pub(crate) async fn send(
-        &self,
-        v: Arc<MicroPartition>,
-    ) -> Result<(), tokio::sync::mpsc::error::SendError<Arc<MicroPartition>>> {
-        self.rt.add_rows_out(v.len() as u64);
-        self.sender.send(v).await?;
-        Ok(())
-    }
-}
-
-/// Receiver that wraps an internal received and
-/// - Counts the number of rows passed through
-/// - Activates the associated node on first receive
-pub struct InitializingCountingReceiver {
-    receiver: tokio::sync::mpsc::Receiver<Arc<MicroPartition>>,
-    rt: Arc<dyn RuntimeStats>,
-
-    first_receive: AtomicBool,
-    node_id: usize,
-    stats_manager: RuntimeStatsManagerHandle,
-}
-
-impl InitializingCountingReceiver {
-    pub(crate) fn new(
-        receiver: tokio::sync::mpsc::Receiver<Arc<MicroPartition>>,
-        node_id: usize,
-        rt: Arc<dyn RuntimeStats>,
-        stats_manager: RuntimeStatsManagerHandle,
-    ) -> Self {
-        Self {
-            receiver,
-            node_id,
-            rt,
-            stats_manager,
-            first_receive: AtomicBool::new(true),
-        }
-    }
-    #[inline]
-    pub(crate) async fn recv(&mut self) -> Option<Arc<MicroPartition>> {
-        let v = self.receiver.recv().await;
-        if let Some(ref v) = v {
-            if self
-                .first_receive
-                .compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed)
-                .is_ok()
-            {
-                self.stats_manager.activate_node(self.node_id);
-            }
-            self.rt.add_rows_in(v.len() as u64);
-        }
-        v
     }
 }
 

@@ -7,7 +7,7 @@ use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use opentelemetry::{KeyValue, metrics::Meter};
 
-use super::{DistributedPipelineNode, PipelineNodeImpl, SubmittableTaskStream};
+use super::{DistributedPipelineNode, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext},
@@ -120,7 +120,7 @@ impl PipelineNodeImpl for FilterNode {
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
 
         let predicate = self.predicate.clone();

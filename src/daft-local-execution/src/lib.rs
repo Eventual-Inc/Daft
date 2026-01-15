@@ -1,6 +1,5 @@
 mod buffer;
 mod channel;
-mod dispatcher;
 mod dynamic_batching;
 mod intermediate_ops;
 mod pipeline;
@@ -27,6 +26,23 @@ pub use run::{ExecutionEngineResult, NativeExecutor};
 use runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle, TimedFuture};
 use snafu::{ResultExt, Snafu, futures::TryFutureExt};
 use tracing::Instrument;
+
+/// Control flow indicator for processing loops.
+/// Used to signal whether processing should continue or break out of a loop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OperatorControlFlow {
+    /// Continue processing - caller should proceed with the next iteration
+    Continue,
+    /// Break processing - caller should exit the loop immediately
+    Break,
+}
+
+impl OperatorControlFlow {
+    /// Returns true if processing should continue
+    pub(crate) fn should_continue(&self) -> bool {
+        matches!(self, Self::Continue)
+    }
+}
 
 /// The `OperatorOutput` enum represents the output of an operator.
 /// It can be either `Ready` or `Pending`.
@@ -71,19 +87,6 @@ impl<T> Future for SpawnedTask<T> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         self.project().0.poll(cx).map(|r| r.context(JoinSnafu))
-    }
-}
-
-struct RuntimeHandle(tokio::runtime::Handle);
-
-impl RuntimeHandle {
-    fn spawn<F>(&self, future: F) -> SpawnedTask<F::Output>
-    where
-        F: Future + Send + 'static,
-        F::Output: Send + 'static,
-    {
-        let join_handle = self.0.spawn(future);
-        SpawnedTask(join_handle)
     }
 }
 
@@ -135,10 +138,6 @@ impl ExecutionRuntimeContext {
             }
         }
         Ok(())
-    }
-
-    pub(crate) fn handle(&self) -> RuntimeHandle {
-        RuntimeHandle(tokio::runtime::Handle::current())
     }
 
     #[must_use]

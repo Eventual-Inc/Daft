@@ -13,7 +13,7 @@ use common_error::{DaftError, DaftResult};
 use daft_arrow::ArrowError;
 use num_traits::{NumCast, ToPrimitive};
 
-use super::{DaftCompare, DaftLogical, as_arrow::AsArrow, from_arrow::FromArrow};
+use super::{DaftCompare, DaftLogical, as_arrow::AsArrow};
 use crate::{
     array::DataArray,
     datatypes::{
@@ -89,10 +89,10 @@ impl<T> DaftCompare<&Self> for DataArray<T> {
         }
 
         let eq_arr = self
-            .with_validity(None)?
-            .compare_op(&rhs.with_validity(None)?, cmp::eq)?;
+            .with_nulls(None)?
+            .compare_op(&rhs.with_nulls(None)?, cmp::eq)?;
 
-        match (self.validity(), rhs.validity()) {
+        match (self.nulls(), rhs.nulls()) {
             (Some(l_valid), Some(r_valid)) => {
                 let l_valid = BooleanArray::from_null_buffer("", l_valid)?;
                 let r_valid = BooleanArray::from_null_buffer("", r_valid)?;
@@ -190,9 +190,9 @@ where
         // this is because the type constraints ensure that the scalar is never null
         let eq_arr = self.compare_to_scalar(rhs, cmp::eq)?;
 
-        Ok(if let Some(validity) = eq_arr.validity() {
-            let valid_arr = BooleanArray::from_null_buffer("", validity)?;
-            eq_arr.with_validity(None)?.and(&valid_arr)?
+        Ok(if let Some(nulls) = eq_arr.nulls() {
+            let valid_arr = BooleanArray::from_null_buffer("", nulls)?;
+            eq_arr.with_nulls(None)?.and(&valid_arr)?
         } else {
             eq_arr
         })
@@ -228,7 +228,7 @@ impl DaftLogical<&Self> for BooleanArray {
 
                 let values = l_values.bitand(r_values);
 
-                let validity = match (self.validity(), rhs.validity()) {
+                let nulls = match (self.nulls(), rhs.nulls()) {
                     (None, None) => None,
                     (Some(l_valid), None) => {
                         let l_valid = l_valid.inner();
@@ -264,7 +264,7 @@ impl DaftLogical<&Self> for BooleanArray {
                     Field::new(self.name(), DataType::Boolean),
                     Arc::new(arrow::array::BooleanArray::new(
                         values,
-                        validity.map(Into::into),
+                        nulls.map(Into::into),
                     )),
                 )
             }
@@ -291,7 +291,7 @@ impl DaftLogical<&Self> for BooleanArray {
 
                 let values = l_values.bitor(r_values);
 
-                let validity = match (self.validity(), rhs.validity()) {
+                let nulls = match (self.nulls(), rhs.nulls()) {
                     (None, None) => None,
                     (Some(l_valid), None) => {
                         let l_valid = l_valid.inner();
@@ -319,7 +319,7 @@ impl DaftLogical<&Self> for BooleanArray {
                     Field::new(self.name(), DataType::Boolean),
                     Arc::new(arrow::array::BooleanArray::new(
                         values,
-                        validity.map(Into::into),
+                        nulls.map(Into::into),
                     )),
                 )
             }
@@ -342,11 +342,11 @@ impl DaftLogical<&Self> for BooleanArray {
                 let r_values = rhs_arrow.values();
 
                 let values = l_values.bitxor(r_values);
-                let validity = NullBuffer::union(self.validity(), rhs.validity());
+                let nulls = NullBuffer::union(self.nulls(), rhs.nulls());
 
                 Self::from_arrow(
                     Field::new(self.name(), DataType::Boolean),
-                    Arc::new(arrow::array::BooleanArray::new(values, validity)),
+                    Arc::new(arrow::array::BooleanArray::new(values, nulls)),
                 )
             }
             (l, r) => Err(DaftError::ValueError(format!(
@@ -365,13 +365,13 @@ impl DaftLogical<Option<bool>> for BooleanArray {
             None => {
                 // keep false values, all true values become nulls
                 let false_values = self.as_arrow()?.values().not();
-                let validity = if let Some(original_validity) = self.validity() {
-                    false_values.bitand(original_validity.inner())
+                let nulls = if let Some(original_nulls) = self.nulls() {
+                    false_values.bitand(original_nulls.inner())
                 } else {
                     false_values
                 };
 
-                self.with_validity(Some(validity.into()))
+                self.with_nulls(Some(nulls.into()))
             }
             Some(rhs) => self.and(rhs),
         }
@@ -383,13 +383,13 @@ impl DaftLogical<Option<bool>> for BooleanArray {
                 // keep true values, all false values become nulls
                 let true_arr = self.as_arrow()?;
                 let true_values = true_arr.values();
-                let validity = if let Some(original_validity) = self.validity() {
-                    true_values.bitand(original_validity.inner())
+                let nulls = if let Some(original_nulls) = self.nulls() {
+                    true_values.bitand(original_nulls.inner())
                 } else {
                     true_values.clone()
                 };
 
-                self.with_validity(Some(validity.into()))
+                self.with_nulls(Some(nulls.into()))
             }
             Some(rhs) => self.or(rhs),
         }
@@ -397,7 +397,7 @@ impl DaftLogical<Option<bool>> for BooleanArray {
 
     fn xor(&self, rhs: Option<bool>) -> Self::Output {
         match rhs {
-            None => self.with_validity(Some(NullBuffer::new_null(self.len()))),
+            None => self.with_nulls(Some(NullBuffer::new_null(self.len()))),
             Some(rhs) => self.xor(rhs),
         }
     }
@@ -487,9 +487,9 @@ macro_rules! impl_scalar_compare {
             fn eq_null_safe(&self, rhs: $scalar_type) -> Self::Output {
                 let eq_arr = self.compare_to_scalar(rhs, cmp::eq)?;
 
-                Ok(if let Some(validity) = eq_arr.validity() {
-                    let valid_arr = BooleanArray::from_null_buffer("", validity)?;
-                    eq_arr.with_validity(None)?.and(&valid_arr)?
+                Ok(if let Some(nulls) = eq_arr.nulls() {
+                    let valid_arr = BooleanArray::from_null_buffer("", nulls)?;
+                    eq_arr.with_nulls(None)?.and(&valid_arr)?
                 } else {
                     eq_arr
                 })
@@ -525,7 +525,7 @@ mod tests {
         let result: Vec<_> = array.equal(2)?.into_iter().collect();
         assert_eq!(result[..], [Some(false), Some(true), Some(false)]);
 
-        let array = array.with_validity_slice(&[true, false, true])?;
+        let array = array.with_nulls_slice(&[true, false, true])?;
         let result: Vec<_> = array.equal(2)?.into_iter().collect();
         assert_eq!(result[..], [Some(false), None, Some(false)]);
         Ok(())
@@ -538,7 +538,7 @@ mod tests {
         let result: Vec<_> = array.not_equal(2)?.into_iter().collect();
         assert_eq!(result[..], [Some(true), Some(false), Some(true)]);
 
-        let array = array.with_validity_slice(&[true, false, true])?;
+        let array = array.with_nulls_slice(&[true, false, true])?;
         let result: Vec<_> = array.not_equal(2)?.into_iter().collect();
         assert_eq!(result[..], [Some(true), None, Some(true)]);
         Ok(())
@@ -551,7 +551,7 @@ mod tests {
         let result: Vec<_> = array.lt(2)?.into_iter().collect();
         assert_eq!(result[..], [Some(true), Some(false), Some(false)]);
 
-        let array = array.with_validity_slice(&[true, false, true])?;
+        let array = array.with_nulls_slice(&[true, false, true])?;
         let result: Vec<_> = array.lt(2)?.into_iter().collect();
         assert_eq!(result[..], [Some(true), None, Some(false)]);
         Ok(())
@@ -564,7 +564,7 @@ mod tests {
         let result: Vec<_> = array.lte(2)?.into_iter().collect();
         assert_eq!(result[..], [Some(true), Some(true), Some(false)]);
 
-        let array = array.with_validity_slice(&[true, false, true])?;
+        let array = array.with_nulls_slice(&[true, false, true])?;
         let result: Vec<_> = array.lte(2)?.into_iter().collect();
         assert_eq!(result[..], [Some(true), None, Some(false)]);
         Ok(())
@@ -577,7 +577,7 @@ mod tests {
         let result: Vec<_> = array.gt(2)?.into_iter().collect();
         assert_eq!(result[..], [Some(false), Some(false), Some(true)]);
 
-        let array = array.with_validity_slice(&[true, false, true])?;
+        let array = array.with_nulls_slice(&[true, false, true])?;
         let result: Vec<_> = array.gt(2)?.into_iter().collect();
         assert_eq!(result[..], [Some(false), None, Some(true)]);
         Ok(())
@@ -590,7 +590,7 @@ mod tests {
         let result: Vec<_> = array.gte(2)?.into_iter().collect();
         assert_eq!(result[..], [Some(false), Some(true), Some(true)]);
 
-        let array = array.with_validity_slice(&[true, false, true])?;
+        let array = array.with_nulls_slice(&[true, false, true])?;
         let result: Vec<_> = array.gte(2)?.into_iter().collect();
         assert_eq!(result[..], [Some(false), None, Some(true)]);
         Ok(())
@@ -603,7 +603,7 @@ mod tests {
         let result: Vec<_> = array.equal(&array)?.into_iter().collect();
         assert_eq!(result[..], [Some(true), Some(true), Some(true)]);
 
-        let array = array.with_validity_slice(&[true, false, true])?;
+        let array = array.with_nulls_slice(&[true, false, true])?;
         let result: Vec<_> = array.equal(&array)?.into_iter().collect();
         assert_eq!(result[..], [Some(true), None, Some(true)]);
         Ok(())
@@ -616,7 +616,7 @@ mod tests {
         let result: Vec<_> = array.not_equal(&array)?.into_iter().collect();
         assert_eq!(result[..], [Some(false), Some(false), Some(false)]);
 
-        let array = array.with_validity_slice(&[true, false, true])?;
+        let array = array.with_nulls_slice(&[true, false, true])?;
         let result: Vec<_> = array.not_equal(&array)?.into_iter().collect();
         assert_eq!(result[..], [Some(false), None, Some(false)]);
         Ok(())
@@ -629,11 +629,11 @@ mod tests {
         let result: Vec<_> = lhs.lt(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [Some(false), Some(false), Some(true)]);
 
-        let lhs = lhs.with_validity_slice(&[true, false, true])?;
+        let lhs = lhs.with_nulls_slice(&[true, false, true])?;
         let result: Vec<_> = lhs.lt(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [Some(false), None, Some(true)]);
 
-        let rhs = rhs.with_validity_slice(&[false, true, true])?;
+        let rhs = rhs.with_nulls_slice(&[false, true, true])?;
         let result: Vec<_> = lhs.lt(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [None, None, Some(true)]);
         Ok(())
@@ -646,11 +646,11 @@ mod tests {
         let result: Vec<_> = lhs.lte(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [Some(false), Some(true), Some(true)]);
 
-        let lhs = lhs.with_validity_slice(&[true, false, true])?;
+        let lhs = lhs.with_nulls_slice(&[true, false, true])?;
         let result: Vec<_> = lhs.lte(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [Some(false), None, Some(true)]);
 
-        let rhs = rhs.with_validity_slice(&[false, true, true])?;
+        let rhs = rhs.with_nulls_slice(&[false, true, true])?;
         let result: Vec<_> = lhs.lte(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [None, None, Some(true)]);
         Ok(())
@@ -663,11 +663,11 @@ mod tests {
         let result: Vec<_> = lhs.gt(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [Some(true), Some(false), Some(false)]);
 
-        let lhs = lhs.with_validity_slice(&[true, false, true])?;
+        let lhs = lhs.with_nulls_slice(&[true, false, true])?;
         let result: Vec<_> = lhs.gt(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [Some(true), None, Some(false)]);
 
-        let rhs = rhs.with_validity_slice(&[false, true, true])?;
+        let rhs = rhs.with_nulls_slice(&[false, true, true])?;
         let result: Vec<_> = lhs.gt(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [None, None, Some(false)]);
         Ok(())
@@ -680,11 +680,11 @@ mod tests {
         let result: Vec<_> = lhs.gte(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [Some(true), Some(true), Some(false)]);
 
-        let lhs = lhs.with_validity_slice(&[true, false, true])?;
+        let lhs = lhs.with_nulls_slice(&[true, false, true])?;
         let result: Vec<_> = lhs.gte(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [Some(true), None, Some(false)]);
 
-        let rhs = rhs.with_validity_slice(&[false, true, true])?;
+        let rhs = rhs.with_nulls_slice(&[false, true, true])?;
         let result: Vec<_> = lhs.gte(&rhs)?.into_iter().collect();
         assert_eq!(result[..], [None, None, Some(false)]);
         Ok(())
@@ -693,9 +693,9 @@ mod tests {
     #[test]
     fn eq_null_safe_int64_handles_null_alignment() -> DaftResult<()> {
         let lhs = Int64Array::from(("lhs", vec![1, 2, 3, 4]));
-        let lhs = lhs.with_validity_slice(&[true, false, true, false])?;
+        let lhs = lhs.with_nulls_slice(&[true, false, true, false])?;
         let rhs = Int64Array::from(("rhs", vec![1, 20, 30, 4]));
-        let rhs = rhs.with_validity_slice(&[true, true, false, false])?;
+        let rhs = rhs.with_nulls_slice(&[true, true, false, false])?;
 
         let result: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
         assert_eq!(
@@ -708,9 +708,9 @@ mod tests {
     #[test]
     fn eq_null_safe_int64_broadcast_null_rhs() -> DaftResult<()> {
         let lhs = Int64Array::from(("lhs", vec![1, 2, 3]));
-        let lhs = lhs.with_validity_slice(&[true, false, true])?;
+        let lhs = lhs.with_nulls_slice(&[true, false, true])?;
         let rhs = Int64Array::from(("rhs", vec![0]));
-        let rhs = rhs.with_validity_slice(&[false])?;
+        let rhs = rhs.with_nulls_slice(&[false])?;
 
         let result: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
         assert_eq!(result, vec![Some(false), Some(true), Some(false)]);
@@ -720,9 +720,9 @@ mod tests {
     #[test]
     fn eq_null_safe_int64_broadcast_null_lhs() -> DaftResult<()> {
         let lhs = Int64Array::from(("lhs", vec![0]));
-        let lhs = lhs.with_validity_slice(&[false])?;
+        let lhs = lhs.with_nulls_slice(&[false])?;
         let rhs = Int64Array::from(("rhs", vec![1, 2, 3]));
-        let rhs = rhs.with_validity_slice(&[true, false, true])?;
+        let rhs = rhs.with_nulls_slice(&[true, false, true])?;
 
         let result: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
         assert_eq!(result, vec![Some(false), Some(true), Some(false)]);

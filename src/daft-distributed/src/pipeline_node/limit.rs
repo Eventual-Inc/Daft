@@ -6,18 +6,13 @@ use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
-use super::{
-    DistributedPipelineNode, MaterializedOutput, PipelineNodeImpl, SubmittableTaskStream,
-    make_empty_scan_task, make_new_task_from_materialized_outputs,
-};
+use super::{DistributedPipelineNode, MaterializedOutput, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{
-        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, append_plan_to_existing_task,
-    },
+    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
-        scheduler::{SchedulerHandle, SubmittableTask},
-        task::{SwordfishTask, TaskContext},
+        scheduler::SchedulerHandle,
+        task::{SwordfishTask, SwordfishTaskBuilder},
     },
     utils::channel::{Sender, create_channel},
 };
@@ -115,9 +110,7 @@ impl LimitNode {
         self: &Arc<Self>,
         materialized_output: MaterializedOutput,
         limit_state: &mut LimitState,
-        task_id_counter: &TaskIDCounter,
-    ) -> Vec<SubmittableTask<SwordfishTask>> {
-        let node_id = self.node_id();
+    ) -> Vec<SwordfishTaskBuilder> {
         let mut downstream_tasks = vec![];
         for next_input in materialized_output.split_into_materialized_outputs() {
             let mut num_rows = next_input.num_rows();
@@ -136,51 +129,49 @@ impl LimitNode {
             let task = match num_rows.cmp(&limit_state.remaining_take()) {
                 Ordering::Less | Ordering::Equal => {
                     limit_state.decrement_take(num_rows);
-                    make_new_task_from_materialized_outputs(
-                        TaskContext::from((&self.context, task_id_counter.next())),
-                        vec![next_input],
-                        self.config.schema.clone(),
-                        &(self.clone() as Arc<dyn PipelineNodeImpl>),
-                        move |input| {
-                            if skip_num_rows > 0 {
-                                LocalPhysicalPlan::limit(
-                                    input,
-                                    num_rows as u64,
-                                    Some(skip_num_rows as u64),
-                                    StatsState::NotMaterialized,
-                                    LocalNodeContext {
-                                        origin_node_id: Some(node_id as usize),
-                                        additional: None,
-                                    },
-                                )
-                            } else {
-                                input
-                            }
-                        },
-                        None,
-                    )
+                    let materialized_outputs = vec![next_input];
+                    let (in_memory_scan, psets) =
+                        MaterializedOutput::into_in_memory_scan_with_psets(
+                            materialized_outputs,
+                            self.config.schema.clone(),
+                            self.node_id(),
+                        );
+                    let plan = if skip_num_rows > 0 {
+                        LocalPhysicalPlan::limit(
+                            in_memory_scan,
+                            num_rows as u64,
+                            Some(skip_num_rows as u64),
+                            StatsState::NotMaterialized,
+                            LocalNodeContext {
+                                origin_node_id: Some(self.node_id() as usize),
+                                additional: None,
+                            },
+                        )
+                    } else {
+                        in_memory_scan
+                    };
+                    SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets)
                 }
                 Ordering::Greater => {
                     let remaining = limit_state.remaining_take();
-                    let task = make_new_task_from_materialized_outputs(
-                        TaskContext::from((&self.context, task_id_counter.next())),
-                        vec![next_input],
-                        self.config.schema.clone(),
-                        &(self.clone() as Arc<dyn PipelineNodeImpl>),
-                        move |input| {
-                            LocalPhysicalPlan::limit(
-                                input,
-                                remaining as u64,
-                                Some(skip_num_rows as u64),
-                                StatsState::NotMaterialized,
-                                LocalNodeContext {
-                                    origin_node_id: Some(node_id as usize),
-                                    additional: None,
-                                },
-                            )
+                    let materialized_outputs = vec![next_input];
+                    let (in_memory_scan, psets) =
+                        MaterializedOutput::into_in_memory_scan_with_psets(
+                            materialized_outputs,
+                            self.config.schema.clone(),
+                            self.node_id(),
+                        );
+                    let plan = LocalPhysicalPlan::limit(
+                        in_memory_scan,
+                        remaining as u64,
+                        Some(skip_num_rows as u64),
+                        StatsState::NotMaterialized,
+                        LocalNodeContext {
+                            origin_node_id: Some(self.node_id() as usize),
+                            additional: None,
                         },
-                        None,
                     );
+                    let task = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
                     limit_state.decrement_take(remaining);
                     task
                 }
@@ -195,8 +186,8 @@ impl LimitNode {
 
     async fn limit_execution_loop(
         self: Arc<Self>,
-        mut input: SubmittableTaskStream,
-        result_tx: Sender<SubmittableTask<SwordfishTask>>,
+        mut input: TaskBuilderStream,
+        result_tx: Sender<SwordfishTaskBuilder>,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
         task_id_counter: TaskIDCounter,
     ) -> DaftResult<()> {
@@ -212,24 +203,22 @@ impl LimitNode {
 
             // Submit tasks until we have max_concurrent_tasks or we run out of input
             for _ in 0..max_concurrent_tasks {
-                if let Some(task) = input.next().await {
-                    let task_with_limit = append_plan_to_existing_task(
-                        task,
-                        &(self.clone() as Arc<dyn PipelineNodeImpl>),
-                        &move |input| {
-                            LocalPhysicalPlan::limit(
-                                input,
-                                local_limit_per_task as u64,
-                                Some(0),
-                                StatsState::NotMaterialized,
-                                LocalNodeContext {
-                                    origin_node_id: Some(node_id as usize),
-                                    additional: None,
-                                },
-                            )
-                        },
-                    );
-                    let future = task_with_limit.submit(&scheduler_handle)?;
+                if let Some(builder) = input.next().await {
+                    let builder_with_limit = builder.map_plan(self.as_ref(), move |input| {
+                        LocalPhysicalPlan::limit(
+                            input,
+                            local_limit_per_task as u64,
+                            Some(0),
+                            StatsState::NotMaterialized,
+                            LocalNodeContext {
+                                origin_node_id: Some(node_id as usize),
+                                additional: None,
+                            },
+                        )
+                    });
+                    let submittable =
+                        builder_with_limit.build(self.context.query_idx, &task_id_counter);
+                    let future = submittable.submit(&scheduler_handle)?;
                     local_limits.push_back(future);
                 } else {
                     input_exhausted = true;
@@ -243,21 +232,21 @@ impl LimitNode {
                 if let Some(materialized_output) = maybe_result {
                     total_num_rows += materialized_output.num_rows();
                     // Process the result and get the next tasks
-                    let next_tasks = self.process_materialized_output(
-                        materialized_output,
-                        &mut limit_state,
-                        &task_id_counter,
-                    );
+                    let next_tasks =
+                        self.process_materialized_output(materialized_output, &mut limit_state);
                     if next_tasks.is_empty() {
                         // If all rows need to be skipped, send an empty scan task to allow downstream tasks to
                         // continue running, such as aggregate tasks
-                        let empty_scan_task = SubmittableTask::new(make_empty_scan_task(
-                            TaskContext::from((&self.context, task_id_counter.next())),
+                        let empty_plan = LocalPhysicalPlan::empty_scan(
                             self.config.schema.clone(),
-                            &(self.clone() as Arc<dyn PipelineNodeImpl>),
-                        ));
-
-                        if result_tx.send(empty_scan_task).await.is_err() {
+                            LocalNodeContext {
+                                origin_node_id: Some(self.node_id() as usize),
+                                additional: None,
+                            },
+                        );
+                        let empty_scan_builder =
+                            SwordfishTaskBuilder::new(empty_plan, self.as_ref());
+                        if result_tx.send(empty_scan_builder).await.is_err() {
                             return Ok(());
                         }
                     } else {
@@ -310,7 +299,7 @@ impl PipelineNodeImpl for LimitNode {
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let input_stream = self.child.clone().produce_tasks(plan_context);
         let (result_tx, result_rx) = create_channel(1);
 
@@ -320,7 +309,6 @@ impl PipelineNodeImpl for LimitNode {
             plan_context.scheduler_handle(),
             plan_context.task_id_counter(),
         ));
-
-        SubmittableTaskStream::from(result_rx)
+        TaskBuilderStream::from(result_rx)
     }
 }

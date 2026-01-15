@@ -20,7 +20,7 @@ use opentelemetry::{KeyValue, global};
 use crate::{
     ExecutionRuntimeContext,
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
-    runtime_stats::{CountingSender, RuntimeStats},
+    runtime_stats::RuntimeStats,
 };
 
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
@@ -205,19 +205,19 @@ impl PipelineNode for SourceNode {
         &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<tokio::sync::mpsc::Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<crate::channel::Receiver<Arc<MicroPartition>>> {
         let source = self.source.clone();
         let io_stats = self.runtime_stats.io_stats.clone();
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
 
-        let (destination_sender, destination_receiver) = tokio::sync::mpsc::channel(1);
-        let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
+        let (destination_sender, destination_receiver) = crate::channel::create_channel(1);
         let chunk_size = match self.morsel_size_requirement {
             MorselSizeRequirement::Strict(size) => size,
             MorselSizeRequirement::Flexible(_, upper) => upper,
         };
 
+        let runtime_stats = self.runtime_stats.clone();
         runtime_handle.spawn(
             async move {
                 let mut has_data = false;
@@ -228,7 +228,9 @@ impl PipelineNode for SourceNode {
 
                 while let Some(part) = source_stream.next().await {
                     has_data = true;
-                    if counting_sender.send(part?).await.is_err() {
+                    let part = part?;
+                    runtime_stats.add_rows_out(part.len() as u64);
+                    if destination_sender.send(part).await.is_err() {
                         stats_manager.finalize_node(node_id);
                         return Ok(());
                     }
@@ -236,7 +238,8 @@ impl PipelineNode for SourceNode {
                 if !has_data {
                     stats_manager.activate_node(node_id);
                     let empty = Arc::new(MicroPartition::empty(Some(source.schema().clone())));
-                    let _ = counting_sender.send(empty).await;
+                    let _ = destination_sender.send(empty).await;
+                    runtime_stats.add_rows_out(0);
                 }
 
                 stats_manager.finalize_node(node_id);

@@ -4,7 +4,6 @@ use common_error::DaftResult;
 use common_metrics::{
     CPU_US_KEY, Counter, ROWS_IN_KEY, StatSnapshot, ops::NodeType, snapshot::WriteSnapshot,
 };
-use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
@@ -15,14 +14,8 @@ use tracing::{Span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-    BlockingSinkStatus,
 };
-use crate::{
-    ExecutionTaskSpawner,
-    dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
-    pipeline::{MorselSizeRequirement, NodeName},
-    runtime_stats::RuntimeStats,
-};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
 
 struct WriteStats {
     cpu_us: Counter,
@@ -165,7 +158,7 @@ impl BlockingSink for WriteSink {
                         .expect("WriteStats should be the additional stats builder")
                         .add_write_result(write_result);
 
-                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                    Ok(state)
                 },
                 Span::current(),
             )
@@ -228,19 +221,6 @@ impl BlockingSink for WriteSink {
         Arc::new(WriteStats::new(id))
     }
 
-    fn dispatch_spawner(
-        &self,
-        _morsel_size_requirement: Option<MorselSizeRequirement>,
-    ) -> Arc<dyn DispatchSpawner> {
-        if let Some(partition_by) = &self.partition_by {
-            Arc::new(PartitionedDispatcher::new(partition_by.clone()))
-        } else {
-            // Unnecessary to buffer by morsel size because we are writing.
-            // Writers also have their own internal buffering.
-            Arc::new(UnorderedDispatcher::unbounded())
-        }
-    }
-
     fn multiline_display(&self) -> Vec<String> {
         let mut lines = vec![];
         lines.push(format!("Write: {:?}", self.write_format));
@@ -251,10 +231,6 @@ impl BlockingSink for WriteSink {
     }
 
     fn max_concurrency(&self) -> usize {
-        if self.partition_by.is_some() {
-            get_compute_pool_num_threads()
-        } else {
-            1
-        }
+        1
     }
 }

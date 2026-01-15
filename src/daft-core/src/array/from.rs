@@ -222,7 +222,7 @@ impl TryFrom<(&str, &[Option<&Series>])> for ListArray {
         let lengths = data.iter().map(|s| s.map_or(0, Series::len));
         let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)?.into();
 
-        let validity = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
+        let nulls = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
         let flat_child = Series::concat(&data.iter().flatten().copied().collect::<Vec<_>>())?;
 
@@ -230,7 +230,7 @@ impl TryFrom<(&str, &[Option<&Series>])> for ListArray {
             flat_child.field().to_list_field().rename(name),
             flat_child,
             offsets,
-            Some(validity),
+            Some(nulls),
         ))
     }
 }
@@ -244,7 +244,7 @@ impl TryFrom<(&str, &[Option<Series>])> for ListArray {
         let lengths = data.iter().map(|s| s.as_ref().map_or(0, |s| s.len()));
         let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)?.into();
 
-        let validity = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
+        let nulls = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
         let flat_child = Series::concat(&data.iter().flatten().collect::<Vec<_>>())?;
 
@@ -252,7 +252,7 @@ impl TryFrom<(&str, &[Option<Series>])> for ListArray {
             flat_child.field().to_list_field().rename(name),
             flat_child,
             offsets,
-            Some(validity),
+            Some(nulls),
         ))
     }
 }
@@ -278,13 +278,13 @@ impl ListArray {
             .unwrap()
             .into();
 
-        let validity = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
+        let nulls = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
         Self::new(
             flat_child.field().to_list_field().rename(name),
             flat_child,
             offsets,
-            Some(validity),
+            Some(nulls),
         )
     }
 
@@ -302,13 +302,13 @@ impl ListArray {
             .unwrap()
             .into();
 
-        let validity = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
+        let nulls = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
         Self::new(
             flat_child.field().to_list_field().rename(name),
             flat_child,
             offsets,
-            Some(validity),
+            Some(nulls),
         )
     }
 
@@ -316,7 +316,7 @@ impl ListArray {
         let lengths = data.iter().map(|s| s.as_ref().map_or(0, |s| s.len()));
         let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)?.into();
 
-        let validity = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
+        let nulls = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
         let flat_child = Series::concat(&data.iter().flatten().collect::<Vec<_>>())?;
 
@@ -324,7 +324,7 @@ impl ListArray {
             flat_child.field().to_list_field().rename(name),
             flat_child,
             offsets,
-            Some(validity),
+            Some(nulls),
         ))
     }
 }

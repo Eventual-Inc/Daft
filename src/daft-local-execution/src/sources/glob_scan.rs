@@ -63,7 +63,7 @@ impl Source for GlobScanSource {
         let limit = self.pushdowns.limit;
 
         // Spawn a task to stream out the record batches from the glob paths
-        let (tx, rx) = create_channel(0);
+        let (tx, rx) = create_channel(1);
         let task = io_runtime
             .spawn(async move {
                 let io_client = io_client.clone();
@@ -182,7 +182,7 @@ impl Source for GlobScanSource {
             })
             .map(|x| x?);
 
-        let receiver_stream = rx.into_stream().boxed();
+        let receiver_stream = rx.into_stream();
         let combined_stream = common_runtime::combine_stream(receiver_stream, task);
         Ok(combined_stream.boxed())
     }

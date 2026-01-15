@@ -119,7 +119,7 @@ mod jaq {
             .collect::<DaftResult<Utf8Array>>()?;
 
         // be sure to apply the name and validity of the input
-        values.rename(&name).with_validity(arr.validity().cloned())
+        values.rename(&name).with_nulls(arr.nulls().cloned())
     }
 
     /// We need serde_json to parse, but then convert to a jaq Val to be evaluated.
