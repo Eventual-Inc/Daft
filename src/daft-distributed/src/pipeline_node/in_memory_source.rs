@@ -4,8 +4,11 @@ use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, InMemoryInfo, stats::StatsState};
+use opentelemetry::metrics::Meter;
 
-use super::{PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream};
+use super::{
+    PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream, scan_source::SourceStats,
+};
 use crate::{
     pipeline_node::{DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig},
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
@@ -13,6 +16,7 @@ use crate::{
         scheduler::SubmittableTask,
         task::{SchedulingStrategy, SwordfishTask, TaskContext},
     },
+    statistics::stats::RuntimeStatsRef,
     utils::channel::{Sender, create_channel},
 };
 
@@ -153,5 +157,9 @@ impl PipelineNodeImpl for InMemorySourceNode {
         plan_context.spawn(execution_loop);
 
         SubmittableTaskStream::from(result_rx)
+    }
+
+    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(SourceStats::new(meter, self.node_id()))
     }
 }

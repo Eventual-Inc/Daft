@@ -1,10 +1,9 @@
-use std::{
-    sync::{Arc, atomic::Ordering},
-    time::Duration,
-};
+use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
-use common_metrics::{CPU_US_KEY, ROWS_IN_KEY, Stat, StatSnapshot, ops::NodeType, snapshot};
+use common_metrics::{
+    CPU_US_KEY, Counter, ROWS_IN_KEY, StatSnapshot, ops::NodeType, snapshot::WriteSnapshot,
+};
 use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -22,7 +21,7 @@ use crate::{
     ExecutionTaskSpawner,
     dispatcher::{DispatchSpawner, PartitionedDispatcher, UnorderedDispatcher},
     pipeline::{MorselSizeRequirement, NodeName},
-    runtime_stats::{Counter, RuntimeStats},
+    runtime_stats::RuntimeStats,
 };
 
 struct WriteStats {
@@ -40,10 +39,10 @@ impl WriteStats {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, "cpu_us".into(), None),
-            rows_in: Counter::new(&meter, "rows_in".into(), None),
-            rows_written: Counter::new(&meter, "rows_written".into(), None),
-            bytes_written: Counter::new(&meter, "bytes_written".into(), None),
+            cpu_us: Counter::new(&meter, CPU_US_KEY, None),
+            rows_in: Counter::new(&meter, ROWS_IN_KEY, None),
+            rows_written: Counter::new(&meter, "rows written", None),
+            bytes_written: Counter::new(&meter, "bytes written", None),
 
             node_kv,
         }
@@ -65,12 +64,16 @@ impl RuntimeStats for WriteStats {
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
-        snapshot![
-            CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
-            ROWS_IN_KEY; Stat::Count(self.rows_in.load(ordering)),
-            "rows written"; Stat::Count(self.rows_written.load(ordering)),
-            "bytes written"; Stat::Bytes(self.bytes_written.load(ordering)),
-        ]
+        let cpu_us = self.cpu_us.load(ordering);
+        let rows_in = self.rows_in.load(ordering);
+        let rows_written = self.rows_written.load(ordering);
+        let bytes_written = self.bytes_written.load(ordering);
+        StatSnapshot::Write(WriteSnapshot {
+            cpu_us,
+            rows_in,
+            rows_written,
+            bytes_written,
+        })
     }
 
     fn add_rows_in(&self, rows: u64) {

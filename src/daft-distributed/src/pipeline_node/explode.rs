@@ -1,15 +1,59 @@
 use std::sync::Arc;
 
+use common_metrics::{CPU_US_KEY, Counter, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
+use opentelemetry::{KeyValue, metrics::Meter};
 
 use super::{DistributedPipelineNode, PipelineNodeImpl, SubmittableTaskStream};
 use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext},
+    statistics::{RuntimeStats, stats::RuntimeStatsRef},
 };
+
+pub struct ExplodeStats {
+    cpu_us: Counter,
+    rows_in: Counter,
+    rows_out: Counter,
+    amplification: Gauge,
+    node_kv: Vec<KeyValue>,
+}
+
+impl ExplodeStats {
+    pub fn new(meter: &Meter, node_id: NodeID) -> Self {
+        let node_kv = vec![KeyValue::new("node_id", node_id.to_string())];
+        Self {
+            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
+            amplification: Gauge::new(meter, "amplification", None),
+            node_kv,
+        }
+    }
+}
+
+impl RuntimeStats for ExplodeStats {
+    fn handle_worker_node_stats(&self, snapshot: &StatSnapshot) {
+        let StatSnapshot::Explode(snapshot) = snapshot else {
+            return;
+        };
+        self.cpu_us.add(snapshot.cpu_us, self.node_kv.as_slice());
+        self.rows_in.add(snapshot.rows_in, self.node_kv.as_slice());
+        self.rows_out
+            .add(snapshot.rows_out, self.node_kv.as_slice());
+
+        let amplification = if snapshot.rows_in == 0 {
+            1.0
+        } else {
+            snapshot.rows_out as f64 / snapshot.rows_in as f64
+        };
+        self.amplification
+            .update(amplification, self.node_kv.as_slice());
+    }
+}
 
 pub(crate) struct ExplodeNode {
     config: PipelineNodeConfig,
@@ -78,6 +122,10 @@ impl PipelineNodeImpl for ExplodeNode {
             res.push(format!("Index column = {}", idx_col));
         }
         res
+    }
+
+    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(ExplodeStats::new(meter, self.node_id()))
     }
 
     fn produce_tasks(

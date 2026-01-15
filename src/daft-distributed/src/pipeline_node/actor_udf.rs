@@ -8,16 +8,18 @@ use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
+use opentelemetry::metrics::Meter;
 use pyo3::{Py, PyAny, Python, types::PyAnyMethods};
 
 use super::{
     NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
-    SubmittableTaskStream,
+    SubmittableTaskStream, udf::UdfStats,
 };
 use crate::{
     pipeline_node::{DistributedPipelineNode, append_plan_to_existing_task},
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::{scheduler::SubmittableTask, task::SwordfishTask},
+    statistics::stats::RuntimeStatsRef,
     utils::channel::{Sender, create_channel},
 };
 
@@ -266,6 +268,10 @@ impl PipelineNodeImpl for ActorUDF {
         }
 
         res
+    }
+
+    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(UdfStats::new(meter, self.node_id()))
     }
 
     fn produce_tasks(

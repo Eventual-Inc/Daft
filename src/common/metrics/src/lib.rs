@@ -1,12 +1,15 @@
+pub mod meters;
 pub mod operator_metrics;
 pub mod ops;
 #[cfg(feature = "python")]
 pub mod python;
+pub mod snapshot;
 
 use std::{ops::Index, sync::Arc, time::Duration};
 
 use bincode::{Decode, Encode};
 use indicatif::{HumanBytes, HumanCount, HumanDuration, HumanFloatCount};
+pub use meters::{Counter, Gauge};
 pub use operator_metrics::{
     MetricsCollector, NoopMetricsCollector, OperatorCounter, OperatorMetrics,
 };
@@ -16,11 +19,10 @@ use pyo3::types::PyModule;
 use pyo3::{Bound, PyResult, pyclass};
 use serde::{Deserialize, Serialize};
 use smallvec::SmallVec;
-pub use smallvec::smallvec;
-
-// TODO: Make this global for all plans and executions
+pub use snapshot::StatSnapshot;
 
 /// Unique identifier for a query.
+// TODO: Make this global for all plans and executions
 pub type QueryID = Arc<str>;
 /// String representation of a query plan
 pub type QueryPlan = Arc<str>;
@@ -70,10 +72,10 @@ impl std::fmt::Display for Stat {
 ///
 /// This is intended to be lightweight for execution to generate while still
 /// encoding to the same format as the receivable end.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
-pub struct StatSnapshot(pub SmallVec<[(Arc<str>, Stat); 3]>);
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Stats(pub SmallVec<[(Arc<str>, Stat); 3]>);
 
-impl StatSnapshot {
+impl Stats {
     pub fn names(&self) -> impl Iterator<Item = &str> + '_ {
         self.0.iter().map(|(name, _)| name.as_ref())
     }
@@ -87,28 +89,19 @@ impl StatSnapshot {
     }
 }
 
-impl Index<usize> for StatSnapshot {
+impl Index<usize> for Stats {
     type Output = (Arc<str>, Stat);
     fn index(&self, index: usize) -> &Self::Output {
         &self.0[index]
     }
 }
 
-impl IntoIterator for StatSnapshot {
+impl IntoIterator for Stats {
     type Item = (Arc<str>, Stat);
     type IntoIter = smallvec::IntoIter<[(Arc<str>, Stat); 3]>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
     }
-}
-
-#[macro_export(local_inner_macros)]
-macro_rules! snapshot {
-    ($($name:expr; $value:expr),* $(,)?) => {
-        common_metrics::StatSnapshot(smallvec![
-            $( ($name.into(), $value) ),*
-        ])
-    };
 }
 
 // Common statistic names

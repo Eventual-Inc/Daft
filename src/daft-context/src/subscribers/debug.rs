@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use common_error::DaftResult;
-use common_metrics::{NodeID, QueryID, QueryPlan, StatSnapshot};
+use common_metrics::{NodeID, QueryID, QueryPlan, Stats};
 use daft_micropartition::MicroPartitionRef;
 use dashmap::DashMap;
 
@@ -87,7 +87,7 @@ impl Subscriber for DebugSubscriber {
     async fn on_exec_emit_stats(
         &self,
         query_id: QueryID,
-        stats: &[(NodeID, StatSnapshot)],
+        stats: &[(NodeID, Stats)],
     ) -> DaftResult<()> {
         eprintln!("Emitting execution stats for query `{}`", query_id);
         for node_id in stats {
