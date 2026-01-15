@@ -44,8 +44,8 @@ fn smallest_batch_size(prev: Option<usize>, next: Option<usize>) -> Option<usize
 }
 
 /// Has interesting compute to display within the name / progress bars
-fn has_compute(expr: &BoundExpr) -> bool {
-    match expr.inner().as_ref() {
+fn is_interesting(expr: &Arc<Expr>) -> bool {
+    match expr.as_ref() {
         Expr::Column(..) => false,
         Expr::Literal(..) => false,
         // Shouldn't be there by this point
@@ -69,9 +69,9 @@ fn has_compute(expr: &BoundExpr) -> bool {
         Expr::FillNull(..) => true,
         Expr::IfElse { .. } => true,
 
-        Expr::Alias(expr, ..) => expr.has_compute(),
-        Expr::InSubquery(expr, _) => expr.has_compute(),
-        Expr::List(exprs) => exprs.iter().any(|expr| expr.has_compute()),
+        Expr::Alias(expr, ..) => is_interesting(expr),
+        Expr::InSubquery(expr, _) => is_interesting(expr),
+        Expr::List(exprs) => exprs.iter().any(is_interesting),
     }
 }
 
@@ -179,7 +179,7 @@ impl IntermediateOperator for ProjectOperator {
         let compute_expressions = self
             .projection
             .iter()
-            .filter(|x| has_compute(x))
+            .filter(|x| is_interesting(x.inner()))
             .collect::<Vec<_>>();
 
         if compute_expressions.is_empty() {
