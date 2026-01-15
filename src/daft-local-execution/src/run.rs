@@ -211,7 +211,7 @@ impl NativeExecutor {
         let pipeline =
             translate_physical_plan_to_pipeline(local_physical_plan, psets, &exec_cfg, &ctx)?;
 
-        let (tx, rx) = create_channel(results_buffer_size.unwrap_or(0));
+        let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
         let enable_explain_analyze = self.enable_explain_analyze;
 
         let query_id: common_metrics::QueryID = additional_context
