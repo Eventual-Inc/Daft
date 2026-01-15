@@ -27,6 +27,23 @@ use runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle, TimedFuture};
 use snafu::{ResultExt, Snafu, futures::TryFutureExt};
 use tracing::Instrument;
 
+/// Control flow indicator for processing loops.
+/// Used to signal whether processing should continue or break out of a loop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OperatorControlFlow {
+    /// Continue processing - caller should proceed with the next iteration
+    Continue,
+    /// Break processing - caller should exit the loop immediately
+    Break,
+}
+
+impl OperatorControlFlow {
+    /// Returns true if processing should continue
+    pub(crate) fn should_continue(&self) -> bool {
+        matches!(self, Self::Continue)
+    }
+}
+
 /// The `OperatorOutput` enum represents the output of an operator.
 /// It can be either `Ready` or `Pending`.
 /// If the output is `Ready`, the value is immediately available.
