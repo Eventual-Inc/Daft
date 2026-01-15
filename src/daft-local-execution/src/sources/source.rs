@@ -24,7 +24,7 @@ use snafu::ResultExt;
 use crate::{
     ExecutionRuntimeContext, PipelineExecutionSnafu,
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
-    runtime_stats::{Counter, CountingSender, RuntimeStats},
+    runtime_stats::{Counter, RuntimeStats},
 };
 
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
@@ -211,7 +211,6 @@ impl PipelineNode for SourceNode {
         let node_id = self.node_id();
 
         let (destination_sender, destination_receiver) = tokio::sync::mpsc::channel(1);
-        let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
         let chunk_size = match self.morsel_size_requirement {
             MorselSizeRequirement::Strict(size) => size,
             MorselSizeRequirement::Flexible(_, upper) => upper,
@@ -223,12 +222,15 @@ impl PipelineNode for SourceNode {
             .with_context(|_| PipelineExecutionSnafu {
                 node_name: self.name().to_string(),
             })?;
+        let runtime_stats = self.runtime_stats.clone();
         runtime_handle.spawn(
             async move {
                 stats_manager.activate_node(node_id);
 
                 while let Some(part) = source_stream.next().await {
-                    if counting_sender.send(part?).await.is_err() {
+                    let part = part?;
+                    runtime_stats.add_rows_out(part.len() as u64);
+                    if destination_sender.send(part).await.is_err() {
                         break;
                     }
                 }

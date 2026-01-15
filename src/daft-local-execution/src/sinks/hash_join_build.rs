@@ -15,7 +15,6 @@ use tracing::{info_span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-    BlockingSinkStatus,
 };
 use crate::{
     ExecutionTaskSpawner,
@@ -175,7 +174,7 @@ impl BlockingSink for HashJoinBuildSink {
             .spawn(
                 async move {
                     state.add_tables(&input)?;
-                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                    Ok(state)
                 },
                 info_span!("HashJoinBuildSink::sink"),
             )
@@ -211,9 +210,5 @@ impl BlockingSink for HashJoinBuildSink {
 
     fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
         Arc::new(HashJoinBuildRuntimeStats::new(id))
-    }
-
-    fn morsel_size_requirement(&self) -> Option<crate::pipeline::MorselSizeRequirement> {
-        None
     }
 }
