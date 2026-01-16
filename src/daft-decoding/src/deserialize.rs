@@ -312,9 +312,8 @@ where
                             as i64
                     })
             }),
-            &datatype.to_arrow().unwrap(),
         )
-        .unwrap(),
+        .map_err(|e| DaftError::InternalError(format!("Failed to cast Time array: {}", e)))?,
         Timestamp(time_unit, None) => {
             let mut last_fmt_idx = 0;
             cast(
