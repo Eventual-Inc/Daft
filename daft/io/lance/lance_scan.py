@@ -10,10 +10,10 @@ if TYPE_CHECKING:
 
 from daft.context import get_context
 from daft.daft import CountMode, PyExpr, PyPartitionField, PyPushdowns, PyRecordBatch, ScanTask
+from daft.datatype import _ensure_registered_super_ext_type
 from daft.dependencies import pa
 from daft.expressions import Expression
 from daft.io.scan import ScanOperator
-from daft.datatype import _ensure_registered_super_ext_type
 from daft.logical.schema import Schema
 from daft.recordbatch import RecordBatch
 
