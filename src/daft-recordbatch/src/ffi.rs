@@ -21,6 +21,7 @@ pub fn record_batch_from_arrow(
     let names = schema.field_names().collect::<Vec<_>>();
     let num_batches = batches.len();
     // First extract all the arrays at once while holding the GIL
+    #[allow(deprecated, reason = "arrow2 migration")]
     let mut extracted_arrow_arrays: Vec<(Vec<Box<dyn daft_arrow::array::Array>>, usize)> =
         Vec::with_capacity(num_batches);
 
@@ -75,6 +76,7 @@ pub fn record_batch_to_arrow(
         let s = table.get_column(i);
         #[allow(deprecated, reason = "arrow2 migration")]
         let arrow_array = s.to_arrow2();
+        #[allow(deprecated, reason = "arrow2 migration")]
         let arrow_array = cast_array_from_daft_if_needed(arrow_array.to_boxed());
         let py_array = common_arrow_ffi::to_py_array(py, arrow_array, &pyarrow)?;
         arrays.push(py_array);
