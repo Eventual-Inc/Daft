@@ -98,7 +98,7 @@ impl Subscriber for PySubscriberWrapper {
     async fn on_exec_emit_stats(
         &self,
         query_id: QueryID,
-        stats: &[(NodeID, Stats)],
+        stats: Vec<(NodeID, Stats)>,
     ) -> DaftResult<()> {
         Python::attach(|py| {
             let stats_map = stats

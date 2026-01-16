@@ -320,6 +320,7 @@ async fn exec_emit_stats(
     };
 
     if let Some(exec_info) = exec_info {
+        eprintln!("Adding stats for query {}, source {}: {:?}", query_id, args.source_id, args.stats);
         for (operator_id, stats) in args.stats {
             if let Some(op) = exec_info.operators.get_mut(&operator_id) {
                 // Update source-specific stats
@@ -330,12 +331,11 @@ async fn exec_emit_stats(
                 let is_repartition = op.node_info.node_type.contains("Repartition");
                 let has_workers = op.source_stats.keys().any(|k| k.starts_with("worker-"));
 
-                for (source_id, source_stat) in &op.source_stats {
-                    // Ignore driver stats if worker stats are available to avoid double counting
-                    if has_workers && source_id == "driver" {
-                        continue;
-                    }
+                if is_repartition {
+                    tracing::info!("Processing Repartition Op: {}, source_stats keys: {:?}", operator_id, op.source_stats.keys());
+                }
 
+                for (source_id, source_stat) in &op.source_stats {
                     for (name, stat) in source_stat {
                         let is_rows_out = name == "rows out";
                         let is_rows_in = name == "rows in";
@@ -345,21 +345,75 @@ async fn exec_emit_stats(
                                 Stat::Count(c) => *c,
                                 _ => 0,
                             };
+                            tracing::info!("  Source: {}, Stat: {}, Val: {}", source_id, name, val);
+                            
                             // Handle Repartition Sink/Source stats separation
+                            // In distributed mode, stats from both stages (write/read) are aggregated together.
+                            // We should NOT skip rows_out even if rows_in exists, otherwise we lose the output count.
+                            // The previous logic caused rows_out to be 0 because dashboard.rs aggregates everything into one map.
+                            
+                            if is_rows_in && val == 0 {
+                                tracing::info!("    Skipping rows in because val == 0");
+                                continue;
+                            }
+                            
+                            // For Repartition nodes, we want to avoid double counting rows_out.
+                            // The Driver aggregates stats from both Shuffle Write (Sink) and Shuffle Read (Source).
+                            // Sink: rows_in = N, rows_out = N
+                            // Source: rows_in = 0, rows_out = N
+                            // Total in Driver: rows_in = N, rows_out = 2N
+                            // We want to display N (the Read output).
+                            // So we subtract rows_in from rows_out.
                             if is_rows_out {
-                                let has_rows_in = source_stat
-                                    .get("rows in")
-                                    .and_then(|s| match s {
-                                        Stat::Count(c) => Some(*c > 0),
-                                        _ => None,
-                                    })
-                                    .unwrap_or(false);
-                                if has_rows_in {
+                                // For distributed execution, stats can come from:
+                                // 1. Driver (accumulated stats) - source_id = "unknown" (usually)
+                                // 2. Workers (individual stats) - source_id = "worker-..."
+                                
+                                // We want to avoid double counting if both are present.
+                                // However, currently we might be receiving BOTH or just one depending on config.
+                                
+                                // Repartition Logic:
+                                // If this source has rows_in > 0, it means it's a Sink/Shuffle Write.
+                                // Total rows_out for Sink = N.
+                                // We want to display the Shuffle Read output (which is also N, but rows_in=0).
+                                // If we have mixed stats (Driver accumulated), rows_out = 2N, rows_in = N.
+                                // 2N - N = N. Correct.
+                                
+                                // If we have Worker stats:
+                                // Worker 1 (Write): rows_in = X, rows_out = X.
+                                // Worker 2 (Read): rows_in = 0, rows_out = Y.
+                                // If we just sum them:
+                                // Total rows_in = Sum(X) = N.
+                                // Total rows_out = Sum(X) + Sum(Y) = 2N.
+                                // If we apply (rows_out - rows_in) logic:
+                                // Worker 1: X - X = 0.
+                                // Worker 2: Y - 0 = Y.
+                                // Total = 0 + Sum(Y) = N. Correct.
+                                
+                                let rows_in_val = source_stat.get("rows in").map(|s| match s {
+                                    Stat::Count(c) => *c,
+                                    _ => 0,
+                                }).unwrap_or(0);
+                                
+                                tracing::info!("Repartition logic: rows_in_val={}, stat={:?}", rows_in_val, stat);
+
+                                if rows_in_val > 0 {
+                                    let new_count = if let Stat::Count(c) = stat {
+                                        if *c >= rows_in_val { *c - rows_in_val } else { *c }
+                                    } else {
+                                        0
+                                    };
+                                    
+                                    aggregated_stats
+                                        .entry(name.clone())
+                                        .and_modify(|old| {
+                                            if let Stat::Count(a) = old {
+                                                *a += new_count;
+                                            }
+                                        })
+                                        .or_insert(Stat::Count(new_count));
                                     continue;
                                 }
-                            }
-                            if is_rows_in && val == 0 {
-                                continue;
                             }
                         }
 

@@ -616,11 +616,11 @@ class RayRunner(Runner[ray.ObjectRef]):
                 plan_dict = json.loads(physical_plan_json)
 
                 def notify_end(node: dict[str, Any]) -> None:
-                    if "id" in node:
-                        ctx._notify_exec_operator_end(query_id, node["id"])
                     if "children" in node:
                         for child in node["children"]:
                             notify_end(child)
+                    if "id" in node:
+                        ctx._notify_exec_operator_end(query_id, node["id"])
 
                 notify_end(plan_dict)
             except Exception:

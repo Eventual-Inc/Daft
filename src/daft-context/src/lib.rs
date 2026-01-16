@@ -1,7 +1,7 @@
 pub mod partition_cache;
 #[cfg(feature = "python")]
 pub mod python;
-mod subscribers;
+pub mod subscribers;
 
 use std::{
     collections::HashMap,
@@ -256,7 +256,7 @@ impl DaftContext {
     pub fn notify_exec_emit_stats(
         &self,
         query_id: QueryID,
-        stats: Vec<(usize, common_metrics::StatSnapshot)>,
+        stats: Vec<(usize, common_metrics::Stats)>,
     ) -> DaftResult<()> {
         let subscribers = self.with_state(|state| {
             state
@@ -270,7 +270,7 @@ impl DaftContext {
             let stats = stats.clone();
             let query_id = query_id.clone();
             rt.spawn(async move {
-                if let Err(e) = subscriber.on_exec_emit_stats(query_id, &stats).await {
+                if let Err(e) = subscriber.on_exec_emit_stats(query_id, stats).await {
                     log::error!("Failed to notify exec emit stats: {}", e);
                 }
             });
@@ -312,6 +312,7 @@ pub fn get_context() -> DaftContext {
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::get_context, parent)?)?;
+    parent.add_function(wrap_pyfunction!(python::refresh_dashboard_subscriber, parent)?)?;
     parent.add_class::<python::PyDaftContext>()?;
     parent.add_class::<python::PyQueryMetadata>()?;
     parent.add_class::<python::PyQueryResult>()?;

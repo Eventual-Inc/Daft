@@ -4,7 +4,8 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{QueryID, Stat, StatSnapshot};
+use common_metrics::{QueryID, Stat, Stats};
+use common_metrics::snapshot::StatSnapshotImpl;
 use daft_context::get_context;
 
 use crate::statistics::{StatisticsSubscriber, TaskEvent};
@@ -15,6 +16,7 @@ pub struct DashboardStatisticsSubscriber {
     operator_stats: Mutex<HashMap<usize, HashMap<Arc<str>, Stat>>>,
     // Track which operators have been notified as started
     started_operators: Mutex<HashSet<usize>>,
+    initialized_subscriber: Mutex<bool>,
 }
 
 impl DashboardStatisticsSubscriber {
@@ -23,6 +25,7 @@ impl DashboardStatisticsSubscriber {
             query_id,
             operator_stats: Mutex::new(HashMap::new()),
             started_operators: Mutex::new(HashSet::new()),
+            initialized_subscriber: Mutex::new(false),
         }
     }
 }
@@ -30,6 +33,24 @@ impl DashboardStatisticsSubscriber {
 impl StatisticsSubscriber for DashboardStatisticsSubscriber {
     fn handle_event(&mut self, event: &TaskEvent) -> DaftResult<()> {
         let context = get_context();
+        
+        {
+            let mut init = self.initialized_subscriber.lock().unwrap();
+            if !*init {
+                // Try to attach dashboard subscriber if not present
+                // We use try_new to check env var and connectivity
+                if let Ok(Some(sub)) = daft_context::subscribers::dashboard::DashboardSubscriber::try_new() {
+                    context.attach_subscriber("_dashboard".to_string(), Arc::new(sub));
+                    tracing::info!("DashboardStatisticsSubscriber attached DashboardSubscriber to context");
+                    eprintln!("DashboardStatisticsSubscriber attached DashboardSubscriber to context");
+                } else {
+                    tracing::warn!("DashboardStatisticsSubscriber failed to create DashboardSubscriber or env var not set");
+                    eprintln!("DashboardStatisticsSubscriber failed to create DashboardSubscriber or env var not set");
+                }
+                *init = true;
+            }
+        }
+
         match event {
             TaskEvent::Submitted {
                 context: task_ctx, ..
@@ -47,6 +68,8 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
                 let mut accumulated = self.operator_stats.lock().unwrap();
                 let mut started = self.started_operators.lock().unwrap();
 
+                println!("Dashboard received Completed event with stats: {:?}", stats);
+
                 for (node_id, task_stats) in stats {
                     // Mark operator as started if not already done
                     if !started.contains(node_id) {
@@ -56,12 +79,12 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
 
                     let entry = accumulated.entry(*node_id).or_default();
                     // Merge task_stats into entry
-                    for (key, stat) in task_stats.iter() {
-                        let mapped_key = match key {
+                    for (key, stat) in task_stats.to_stats().0.iter() {
+                        let mapped_key = match key.as_ref() {
                             "rows_in" => "rows in",
                             "rows_out" => "rows out",
                             "cpu_us" => "cpu us",
-                            _ => key,
+                            _ => key.as_ref(),
                         };
                         let arc_key: Arc<str> = Arc::from(mapped_key);
                         match entry.entry(arc_key) {
@@ -82,10 +105,11 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
                 }
 
                 // Emit current total stats to Dashboard
-                let all_stats: Vec<(usize, StatSnapshot)> = accumulated
+                tracing::debug!("Dashboard emitting accumulated stats: {:?}", accumulated);
+                let all_stats: Vec<(usize, Stats)> = accumulated
                     .iter()
                     .map(|(node_id, stats)| {
-                        let snapshot = StatSnapshot(
+                        let snapshot = Stats(
                             stats
                                 .iter()
                                 .map(|(k, v)| (k.clone(), v.clone()))

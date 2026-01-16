@@ -239,7 +239,17 @@ def try_autoscale(bundles: list[dict[str, int]]) -> None:
 class RemoteFlotillaRunner:
     def __init__(self, dashboard_url: str | None = None) -> None:
         if dashboard_url:
+            print(f"Setting DAFT_DASHBOARD_URL to {dashboard_url} and refreshing subscriber")
             os.environ["DAFT_DASHBOARD_URL"] = dashboard_url
+            try:
+                from daft.daft import refresh_dashboard_subscriber
+                refresh_dashboard_subscriber()
+            except ImportError:
+                print("Could not import refresh_dashboard_subscriber")
+                pass
+            except Exception as e:
+                print(f"Error refreshing dashboard subscriber: {e}")
+
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
         self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
         self.plan_runner = DistributedPhysicalPlanRunner()
@@ -282,6 +292,19 @@ class RemoteFlotillaRunner:
             metadata_idx=0,
         )
         return materialized_result
+
+    def refresh_dashboard_config(self, dashboard_url: str | None) -> None:
+        if dashboard_url:
+            print(f"Refreshing dashboard config with URL: {dashboard_url}")
+            os.environ["DAFT_DASHBOARD_URL"] = dashboard_url
+            try:
+                from daft.daft import refresh_dashboard_subscriber
+                refresh_dashboard_subscriber()
+                print("Dashboard subscriber refreshed successfully")
+            except ImportError:
+                print("Could not import refresh_dashboard_subscriber")
+            except Exception as e:
+                print(f"Error refreshing dashboard subscriber: {e}")
 
 
 FLOTILLA_RUNNER_NAMESPACE = "daft"
@@ -357,16 +380,20 @@ class FlotillaRunner:
                 else None
             ),
         ).remote(dashboard_url=dashboard_url)
+        
+        # Always refresh the dashboard config to ensure the actor has the correct URL and subscriber
+        if dashboard_url:
+            self.runner.refresh_dashboard_config.remote(dashboard_url)
 
     def stream_plan(
         self,
         plan: DistributedPhysicalPlan,
-        partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
+        partition_sets: dict[str, PartitionSet[RayMaterializedResult]],
     ) -> Iterator[RayMaterializedResult]:
+        self.runner.run_plan.remote(plan, partition_sets)
         plan_id = plan.idx()
-        ray.get(self.runner.run_plan.remote(plan, partition_sets))
         while True:
-            materialized_result = ray.get(self.runner.get_next_partition.remote(plan_id))
-            if materialized_result is None:
+            result = ray.get(self.runner.get_next_partition.remote(plan_id))
+            if result is None:
                 break
-            yield materialized_result
+            yield result

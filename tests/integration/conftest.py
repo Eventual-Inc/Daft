@@ -1,18 +1,27 @@
 from __future__ import annotations
 
 import pathlib
-import sqlite3
+try:
+    import sqlite3
+except ImportError:
+    sqlite3 = None
 
 import pandas as pd
 import pytest
 
-from benchmarking.tpch import data_generation
+try:
+    from benchmarking.tpch import data_generation
+except ImportError:
+    data_generation = None
+
 from tests.assets import TPCH_DBGEN_DIR, TPCH_QUERIES
 from tests.conftest import assert_df_equals
 
 # Hardcode scale factor to 200M for local testing
 SCALE_FACTOR = 0.2
-
+if data_generation is None:
+        pytest.skip("data_generation module (sqlite3) not available")
+    
 
 @pytest.fixture(scope="session", params=[1, 2])
 def gen_tpch(request):

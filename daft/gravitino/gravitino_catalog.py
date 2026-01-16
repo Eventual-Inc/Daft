@@ -7,7 +7,7 @@ from typing import Any, Literal
 from urllib.parse import urlparse
 
 from daft.dependencies import requests
-from daft.io import AzureConfig, GravitinoConfig, IOConfig, S3Config
+from daft.io import AzureConfig, IOConfig, S3Config
 
 
 @dataclasses.dataclass(frozen=True)

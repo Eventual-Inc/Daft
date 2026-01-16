@@ -2576,6 +2576,7 @@ dependencies = [
  "log",
  "pyo3",
  "reqwest 0.12.28",
+ "uuid 1.19.0",
 ]
 
 [[package]]

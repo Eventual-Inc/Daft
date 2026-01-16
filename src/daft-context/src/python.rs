@@ -99,6 +99,31 @@ impl<'a> From<&'a PyQueryMetadata> for &'a Arc<QueryMetadata> {
     }
 }
 
+#[pyfunction]
+pub fn refresh_dashboard_subscriber() -> PyResult<()> {
+    eprintln!("Refreshing dashboard subscriber...");
+    let ctx = crate::get_context();
+    // Try to create the dashboard subscriber
+    // We assume the env var DAFT_DASHBOARD_URL is set
+    match crate::subscribers::dashboard::DashboardSubscriber::try_new() {
+        Ok(Some(subscriber)) => {
+            eprintln!("Successfully created and attached dashboard subscriber");
+            // Attach it to the context
+            ctx.attach_subscriber("_dashboard".to_string(), Arc::new(subscriber));
+            Ok(())
+        }
+        Ok(None) => {
+             eprintln!("DAFT_DASHBOARD_URL not set, skipping subscriber creation");
+             // Environment variable not set, or failed to create
+             Ok(())
+        }
+        Err(e) => {
+            eprintln!("Failed to create dashboard subscriber: {}", e);
+            Err(pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to create dashboard subscriber: {}", e)))
+        },
+    }
+}
+
 impl From<Arc<QueryResult>> for PyQueryResult {
     fn from(result: Arc<QueryResult>) -> Self {
         Self(result)
@@ -286,7 +311,7 @@ impl PyDaftContext {
         node_id: usize,
         stats: HashMap<String, i64>,
     ) -> PyResult<()> {
-        let stats_map: common_metrics::StatSnapshot = common_metrics::StatSnapshot(
+        let stats_map = common_metrics::Stats(
             stats
                 .into_iter()
                 .map(|(k, v)| (k.into(), common_metrics::Stat::Count(v as u64)))

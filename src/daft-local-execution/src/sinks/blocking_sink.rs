@@ -180,6 +180,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
                                 ctx.stats_manager.activate_node(node_id);
                                 node_initialized = true;
                             }
+                            println!("BlockingSinkNode {}: Added rows in: {}", node_id, morsel.len());
                             ctx.runtime_stats.add_rows_in(morsel.len() as u64);
                             let state_id = *ctx
                                 .state_pool
@@ -355,6 +356,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
                         BlockingSinkFinalizeOutput::HasMoreOutput { states, output } => {
                             for output in output {
                                 ctx.runtime_stats.add_rows_out(output.len() as u64);
+                                println!("BlockingSinkNode {}: Added rows out (HasMore): {}", node_id, output.len());
                                 if ctx.output_sender.send(output).await.is_err() {
                                     break;
                                 }
@@ -364,6 +366,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
                         BlockingSinkFinalizeOutput::Finished(output) => {
                             for output in output {
                                 ctx.runtime_stats.add_rows_out(output.len() as u64);
+                                println!("BlockingSinkNode {}: Added rows out: {}", node_id, output.len());
                                 let _ = ctx.output_sender.send(output).await;
                             }
                             break;

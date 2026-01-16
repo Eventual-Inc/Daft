@@ -87,12 +87,12 @@ impl Subscriber for DebugSubscriber {
     async fn on_exec_emit_stats(
         &self,
         query_id: QueryID,
-        stats: &[(NodeID, Stats)],
+        stats: Vec<(NodeID, Stats)>,
     ) -> DaftResult<()> {
         eprintln!("Emitting execution stats for query `{}`", query_id);
         for node_id in stats {
             eprintln!("  Node `{}`", node_id.0);
-            for (name, stat) in node_id.1.clone() {
+            for (name, stat) in node_id.1 {
                 eprintln!("  - {} = {}", name.as_ref(), stat);
             }
         }

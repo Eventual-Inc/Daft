@@ -5,7 +5,7 @@ use std::{
     collections::{HashMap, HashSet},
     future::Future,
     pin::Pin,
-    sync::Arc,
+    sync::{Arc, atomic::{AtomicBool, Ordering}},
     task::{Context, Poll},
     time::{Duration, Instant},
 };
@@ -15,12 +15,13 @@ use common_metrics::{NodeID, QueryID, StatSnapshot, snapshot::StatSnapshotImpl};
 use common_runtime::RuntimeTask;
 use daft_context::Subscriber;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
+use daft_micropartition::MicroPartition;
 use futures::future;
 use itertools::Itertools;
 use progress_bar::{ProgressBar, make_progress_bar_manager};
 use tokio::{
     runtime::Handle,
-    sync::{mpsc, oneshot},
+    sync::{mpsc::{self, Sender, Receiver, error::SendError}, oneshot},
     time::interval,
 };
 use tracing::{Instrument, instrument::Instrumented};
@@ -169,9 +170,9 @@ impl RuntimeStatsManager {
                                 progress_bar.finalize_node(node_id, &snapshot);
                             }
 
-                            let event = [(node_id, snapshot.to_stats())];
+                            let event = vec![(node_id, snapshot.to_stats())];
                             for res in future::join_all(subscribers.iter().map(|subscriber| async {
-                                subscriber.on_exec_emit_stats(query_id.clone(), &event).await?;
+                                subscriber.on_exec_emit_stats(query_id.clone(), event.clone()).await?;
                                 subscriber.on_exec_operator_end(query_id.clone(), node_id).await
                             })).await {
                                 if let Err(e) = res {
@@ -190,17 +191,17 @@ impl RuntimeStatsManager {
                         }
 
                         // Emit final stats to all subscribers before finishing
-                        snapshot_container.clear();
+                        let mut final_stats = Vec::with_capacity(node_stats_map.len());
                         for (node_id, runtime_stats) in &node_stats_map {
                             let event = runtime_stats.flush();
-                            snapshot_container.push((*node_id, event));
+                            final_stats.push((*node_id, event.to_stats()));
                         }
-                        if !snapshot_container.is_empty() {
+                        if !final_stats.is_empty() {
                             for res in future::join_all(subscribers.iter().map(|subscriber| {
-                                subscriber.handle_event(snapshot_container.as_slice())
+                                subscriber.on_exec_emit_stats(query_id.clone(), final_stats.clone())
                             })).await {
                                 if let Err(e) = res {
-                                    log::error!("Failed to handle final event: {}", e);
+                                    log::error!("Failed to emit final stats: {}", e);
                                 }
                             }
                         }
@@ -223,7 +224,7 @@ impl RuntimeStatsManager {
                         }
 
                         for res in future::join_all(subscribers.iter().map(|subscriber| {
-                            subscriber.on_exec_emit_stats(query_id.clone(), snapshot_container.as_slice())
+                            subscriber.on_exec_emit_stats(query_id.clone(), snapshot_container.clone())
                         })).await {
                             if let Err(e) = res {
                                 log::error!("Failed to handle event: {}", e);
@@ -324,7 +325,7 @@ impl CountingSender {
         Self { sender, rt }
     }
     #[inline]
-    pub(crate) async fn send(&self, v: Arc<MicroPartition>) -> Result<(), SendError> {
+    pub(crate) async fn send(&self, v: Arc<MicroPartition>) -> Result<(), SendError<Arc<MicroPartition>>> {
         self.rt.add_rows_out(v.len() as u64);
         self.sender.send(v).await?;
         Ok(())
@@ -359,7 +360,7 @@ impl InitializingCountingReceiver {
         }
     }
     #[inline]
-    pub(crate) async fn recv(&self) -> Option<Arc<MicroPartition>> {
+    pub(crate) async fn recv(&mut self) -> Option<Arc<MicroPartition>> {
         let v = self.receiver.recv().await;
         if let Some(ref v) = v {
             if self

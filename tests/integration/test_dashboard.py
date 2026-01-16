@@ -7,13 +7,17 @@ import pytest
 
 import daft
 from daft import udf
+from daft.daft import dashboard
 
 
 @pytest.fixture(scope="module")
 def dashboard_url():
-    url = os.environ.get("DAFT_DASHBOARD_URL", "http://127.0.0.1:9000")
+    handle = dashboard.launch(noop_if_initialized=True)
+    port = handle.get_port()
+    url = f"http://127.0.0.1:{port}"
     os.environ["DAFT_DASHBOARD_URL"] = url
-    return url
+    yield url
+    handle.shutdown(noop_if_shutdown=True)
 
 
 @pytest.mark.integration

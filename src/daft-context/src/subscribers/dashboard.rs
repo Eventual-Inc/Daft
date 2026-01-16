@@ -2,12 +2,13 @@ use std::{sync::Arc, time::SystemTime};
 
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
-use common_metrics::{NodeID, QueryID, QueryPlan, Stat, Stats, StatSnapshot};
+use common_metrics::{NodeID, QueryID, QueryPlan, Stats};
 use common_runtime::{RuntimeRef, get_io_runtime};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use daft_recordbatch::RecordBatch;
 use dashmap::DashMap;
 use reqwest::{Client, RequestBuilder};
+use uuid::Uuid;
 
 use crate::subscribers::{QueryMetadata, QueryResult, Subscriber};
 
@@ -25,6 +26,7 @@ pub struct DashboardSubscriber {
     runtime: RuntimeRef,
     preview_rows: DashMap<QueryID, MicroPartitionRef>,
     execution_ids: DashMap<QueryID, String>,
+    worker_id: Option<String>,
 }
 
 impl std::fmt::Debug for DashboardSubscriber {
@@ -35,6 +37,7 @@ impl std::fmt::Debug for DashboardSubscriber {
             .field("runtime", &self.runtime.runtime)
             .field("preview_rows", &self.preview_rows)
             .field("execution_ids", &self.execution_ids)
+            .field("worker_id", &self.worker_id)
             .finish()
     }
 }
@@ -81,12 +84,19 @@ impl DashboardSubscriber {
             Ok::<_, DaftError>(())
         })??;
 
+        let worker_id = if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+            Some(format!("worker-{}", Uuid::new_v4()))
+        } else {
+            None
+        };
+
         Ok(Some(Self {
             url: url_clone,
             client: client_clone,
             runtime,
             preview_rows: DashMap::new(),
             execution_ids: DashMap::new(),
+            worker_id,
         }))
     }
 
@@ -301,7 +311,7 @@ impl Subscriber for DashboardSubscriber {
         &self,
         query_id: QueryID,
         execution_id: &str,
-        stats: &[(NodeID, Stats)],
+        stats: Vec<(NodeID, Stats)>,
     ) -> DaftResult<()> {
         Self::handle_request(
             self.client
@@ -317,6 +327,7 @@ impl Subscriber for DashboardSubscriber {
                             (
                                 *node_id,
                                 snapshot
+                                    .0
                                     .iter()
                                     .map(|(name, stat)| (name.to_string(), stat.clone()))
                                     .collect(),
@@ -332,14 +343,22 @@ impl Subscriber for DashboardSubscriber {
     async fn on_exec_emit_stats(
         &self,
         query_id: QueryID,
-        stats: &[(NodeID, StatSnapshot)],
+        stats: Vec<(NodeID, Stats)>,
     ) -> DaftResult<()> {
-        let source_id = self
-            .execution_ids
-            .get(&query_id)
-            .map(|id| id.clone())
-            .unwrap_or_else(|| "unknown".to_string());
+        if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
+            return Ok(());
+        }
 
+        let source_id = if let Some(worker_id) = &self.worker_id {
+            worker_id.clone()
+        } else {
+            self.execution_ids
+                .get(&query_id)
+                .map(|id| id.clone())
+                .unwrap_or_else(|| "unknown".to_string())
+        };
+
+        eprintln!("Emitting stats for query {} from source {}: {:?}", query_id, source_id, stats);
         self.on_exec_emit_stats_with_id(query_id, &source_id, stats)
             .await
     }
