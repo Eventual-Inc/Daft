@@ -28,9 +28,9 @@ use tracing::instrument;
 use crate::{
     channel::{Receiver, Sender, create_channel},
     pipeline::NodeName,
-    plan_input::InputId,
     sources::source::{Source, SourceStream},
 };
+use daft_local_plan::InputId;
 
 pub struct ScanTaskSource {
     receiver: Option<Receiver<(InputId, Vec<ScanTaskRef>)>>,

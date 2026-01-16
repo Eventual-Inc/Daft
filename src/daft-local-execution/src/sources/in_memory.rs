@@ -6,6 +6,7 @@ use common_metrics::ops::NodeType;
 use common_runtime::{combine_stream, get_io_runtime};
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
+use daft_local_plan::InputId;
 use daft_micropartition::{MicroPartition, MicroPartitionRef, partitioning::PartitionSetRef};
 use futures::{FutureExt, StreamExt};
 use tracing::instrument;
@@ -14,19 +15,18 @@ use super::source::Source;
 use crate::{
     channel::{Receiver, Sender, create_channel},
     pipeline::NodeName,
-    plan_input::InputId,
     sources::source::SourceStream,
 };
 
 pub struct InMemorySource {
-    receiver: Option<Receiver<(InputId, PartitionSetRef<MicroPartitionRef>)>>,
+    receiver: Option<Receiver<(InputId, Vec<MicroPartitionRef>)>>,
     schema: SchemaRef,
     size_bytes: usize,
 }
 
 impl InMemorySource {
     pub fn new(
-        receiver: Receiver<(InputId, PartitionSetRef<MicroPartitionRef>)>,
+        receiver: Receiver<(InputId, Vec<MicroPartitionRef>)>,
         schema: SchemaRef,
         size_bytes: usize,
     ) -> Self {
@@ -40,29 +40,24 @@ impl InMemorySource {
     /// Spawns the background task that continuously reads partition sets from receiver and processes them
     fn spawn_partition_set_processor(
         &self,
-        mut receiver: Receiver<(InputId, PartitionSetRef<MicroPartitionRef>)>,
+        mut receiver: Receiver<(InputId, Vec<MicroPartitionRef>)>,
         output_sender: Sender<Arc<MicroPartition>>,
         schema: SchemaRef,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
 
         io_runtime.spawn(async move {
-            while let Some((_input_id, partition_set)) = receiver.recv().await {
-                let mut stream = partition_set.to_partition_stream();
-                let mut has_data = false;
-                while let Some(result) = stream.next().await {
-                    has_data = true;
-                    let partition = result?;
-                    if output_sender.send(partition).await.is_err() {
-                        break;
-                    }
-                }
-
-                // If no data for this input_id, send empty micropartition
-                if !has_data {
+            while let Some((_input_id, partitions)) = receiver.recv().await {
+                if partitions.is_empty() {
                     let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
                     if output_sender.send(empty).await.is_err() {
                         break;
+                    }
+                } else {
+                    for partition in partitions {
+                        if output_sender.send(partition).await.is_err() {
+                            break;
+                        }
                     }
                 }
             }

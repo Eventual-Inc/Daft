@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from daft.daft import (
     DistributedPhysicalPlan,
     DistributedPhysicalPlanRunner,
+    Inputs,
     LocalPhysicalPlan,
     NativeExecutor,
     PyDaftExecutionConfig,
@@ -68,8 +69,8 @@ class RaySwordfishActor:
         self,
         plan: LocalPhysicalPlan,
         exec_cfg: PyDaftExecutionConfig,
-        psets: dict[str, list[ray.ObjectRef]],
         context: dict[str, str] | None,
+        psets: dict[str, list[ray.ObjectRef]],
         scan_tasks: dict[str, list[ScanTask]] | None = None,
         glob_paths: dict[str, list[str]] | None = None,
     ) -> AsyncGenerator[MicroPartition | SwordfishTaskMetadata, None]:
@@ -81,6 +82,13 @@ class RaySwordfishActor:
             psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
             psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
 
+            # Construct Inputs from psets_mp, scan_tasks, and glob_paths
+            inputs = Inputs.from_dicts(
+                psets_mp if psets_mp else None,
+                scan_tasks,
+                glob_paths,
+            )
+
             metas = []
             ctx = PyDaftContext()
             ctx._daft_execution_config = exec_cfg
@@ -88,10 +96,8 @@ class RaySwordfishActor:
                 plan,
                 ctx,
                 0,
+                inputs,
                 context,
-                scan_tasks,
-                psets_mp,
-                glob_paths,
             )
             async for partition in result_handle:
                 if partition is None:
@@ -193,8 +199,8 @@ class RaySwordfishActorHandle:
         result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(
             task.plan(),
             task.config(),
-            psets,
             task.context(),
+            psets,
             task.scan_tasks(),
             task.glob_paths(),
         )

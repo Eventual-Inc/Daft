@@ -1,26 +1,15 @@
 use common_error::{DaftError, DaftResult};
-use common_scan_info::ScanTaskLikeRef;
+use daft_local_plan::{InputId, PlanInput};
 use daft_micropartition::{MicroPartitionRef, partitioning::PartitionSetRef};
 use daft_scan::ScanTaskRef;
 
 use crate::channel::Sender;
 
-/// Input ID type, matching TaskID from distributed scheduling
-pub type InputId = u32;
-
-/// Enum representing different types of inputs to a plan
-#[derive(Debug, Clone)]
-pub enum PlanInput {
-    ScanTasks(Vec<ScanTaskLikeRef>),
-    InMemoryPartitions(PartitionSetRef<MicroPartitionRef>),
-    GlobPaths(Vec<String>),
-}
-
 /// Enum for input senders of different types
 #[derive(Clone)]
 pub(crate) enum InputSender {
     ScanTasks(Sender<(InputId, Vec<ScanTaskRef>)>),
-    InMemory(Sender<(InputId, PartitionSetRef<MicroPartitionRef>)>),
+    InMemory(Sender<(InputId, Vec<MicroPartitionRef>)>),
     GlobPaths(Sender<(InputId, Vec<String>)>),
 }
 

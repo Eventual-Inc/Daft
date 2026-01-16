@@ -16,6 +16,7 @@ use daft_core::{
 };
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
+    InputId,
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, GlobScan, HashAggregate,
     HashJoin, InMemoryScan, IntoBatches, Limit, LocalNodeContext, LocalPhysicalPlan,
     MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, Sample, Sort,
@@ -40,7 +41,7 @@ use crate::{
         into_batches::IntoBatchesOperator, project::ProjectOperator, udf::UdfOperator,
         unpivot::UnpivotOperator,
     },
-    plan_input::{InputId, InputSender},
+    input_sender::InputSender,
     runtime_stats::RuntimeStats,
     sinks::{
         aggregate::AggregateSink,
@@ -395,7 +396,7 @@ fn physical_plan_to_pipeline(
             stats_state,
             context,
         }) => {
-            let (tx, rx) = create_channel::<(InputId, PartitionSetRef<MicroPartitionRef>)>(1);
+            let (tx, rx) = create_channel::<(InputId, Vec<MicroPartitionRef>)>(1);
             input_senders.insert(source_id.clone(), InputSender::InMemory(tx.clone()));
 
             let in_memory_source = InMemorySource::new(rx, schema.clone(), *size_bytes);

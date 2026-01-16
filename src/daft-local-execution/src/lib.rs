@@ -1,9 +1,9 @@
 mod buffer;
 mod channel;
 mod dynamic_batching;
+mod input_sender;
 mod intermediate_ops;
 mod pipeline;
-mod plan_input;
 mod resource_manager;
 mod run;
 mod runtime_stats;

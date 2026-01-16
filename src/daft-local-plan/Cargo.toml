@@ -8,7 +8,9 @@ common-treenode = {path = "../common/treenode", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
 daft-logical-plan = {path = "../daft-logical-plan", default-features = false}
+daft-micropartition = {path = "../daft-micropartition", default-features = false}
 daft-scan = {path = "../daft-scan", default-features = false}
+derive_more = {workspace = true}
 log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
@@ -26,7 +28,9 @@ python = [
   "common-py-serde/python",
   "daft-core/python",
   "daft-dsl/python",
-  "daft-logical-plan/python"
+  "daft-logical-plan/python",
+  "daft-micropartition/python",
+  "daft-scan/python"
 ]
 
 [lints]

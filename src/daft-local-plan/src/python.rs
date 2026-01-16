@@ -1,9 +1,15 @@
+use std::{collections::HashMap, sync::Arc};
+
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_logical_plan::PyLogicalPlanBuilder;
-use pyo3::prelude::*;
+use daft_micropartition::{partitioning::{MicroPartitionSet, PartitionRef}, python::PyMicroPartition};
+use daft_scan::python::pylib::PyScanTask;
+use pyo3::{intern, prelude::*};
 use serde::{Deserialize, Serialize};
 
-use crate::{InputSpec, LocalPhysicalPlanRef, translate};
+use crate::InputType;
+#[cfg(feature = "python")]
+use crate::{InputSpec, LocalPhysicalPlanRef, PlanInput, translate};
 
 #[pyclass(module = "daft.daft", name = "LocalPhysicalPlan")]
 #[derive(Debug, Serialize, Deserialize)]
@@ -16,87 +22,127 @@ impl PyLocalPhysicalPlan {
     #[staticmethod]
     fn from_logical_plan_builder(
         logical_plan_builder: &PyLogicalPlanBuilder,
-    ) -> PyResult<(Self, Vec<PyInputSpec>)> {
+    ) -> PyResult<(Self, PyInputSpecs)> {
         let logical_plan = logical_plan_builder.builder.build();
         let (physical_plan, input_specs) = translate(&logical_plan)?;
-
-        // Convert HashMap of InputSpecs to a Vec of PyInputSpecs
-        let py_input_specs: Vec<PyInputSpec> = input_specs.values().map(Into::into).collect();
 
         Ok((
             Self {
                 plan: physical_plan,
             },
-            py_input_specs,
+            PyInputSpecs { inner: input_specs },
         ))
     }
 }
 
 impl_bincode_py_state_serialization!(PyLocalPhysicalPlan);
 
-#[pyclass(module = "daft.daft", name = "InputSpec", frozen)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PyInputSpec {
-    #[pyo3(get)]
-    pub source_id: String,
-    #[pyo3(get)]
-    pub input_type: String, // "scan_task", "in_memory", or "glob_paths"
-    // Internal field to store the actual input spec
-    pub(crate) spec: InputSpec,
+#[pyclass(module = "daft.daft", name = "InputSpecs", frozen)]
+#[derive(Debug, Clone)]
+pub struct PyInputSpecs {
+    pub inner: HashMap<String, InputSpec>,
 }
 
 #[pymethods]
-impl PyInputSpec {
-    /// Get scan tasks if this is a scan_task input, otherwise None
-    #[cfg(feature = "python")]
-    fn get_scan_tasks(&self) -> Option<Vec<daft_scan::python::pylib::PyScanTask>> {
-        match &self.spec.input_type {
-            crate::InputType::ScanTask(tasks) => Some(
-                tasks
-                    .iter()
-                    .map(|t| daft_scan::python::pylib::PyScanTask(t.clone()))
-                    .collect(),
-            ),
-            _ => None,
-        }
-    }
+impl PyInputSpecs {
+    /// Convert InputSpecs to Inputs using psets to resolve in_memory inputs.
+    /// Rust will call daft.execution.utils.get_in_memory_partitions directly.
+    fn resolve_inputs(&self, py: Python, psets: &Bound<PyAny>) -> PyResult<Option<PyInputs>> {
+        let mut plan_inputs = HashMap::new();
 
-    /// Get the cache key if this is an in_memory input, otherwise None
-    fn get_cache_key(&self) -> Option<String> {
-        match &self.spec.input_type {
-            crate::InputType::InMemory(info) => Some(info.cache_key.clone()),
-            _ => None,
-        }
-    }
+        for (source_id, input_spec) in &self.inner {
+            let plan_input = match &input_spec.input_type {
+                InputType::ScanTask(tasks) => Some(PlanInput::ScanTasks((**tasks).clone())),
+                InputType::GlobPaths(paths) => Some(PlanInput::GlobPaths((**paths).clone())),
+                InputType::InMemory(info) => {
+                    // Import get_in_memory_partitions function
+                    let utils_module = py.import(intern!(py, "daft.execution.utils"))?;
+                    let get_in_memory_partitions =
+                        utils_module.getattr(intern!(py, "get_in_memory_partitions"))?;
+                    // InMemory case - call daft.execution.utils.get_in_memory_partitions directly
+                    let cache_key = &info.cache_key;
+                    let py_result = get_in_memory_partitions.call1((psets, cache_key))?;
 
-    /// Get glob paths if this is a glob_paths input, otherwise None
-    fn get_glob_paths(&self) -> Option<Vec<String>> {
-        match &self.spec.input_type {
-            crate::InputType::GlobPaths(paths) => Some((**paths).clone()),
-            _ => None,
+                    let py_micropartitions = py_result.extract::<Vec<PyMicroPartition>>()?;
+                    Some(PlanInput::InMemoryPartitions(
+                        py_micropartitions
+                            .into_iter()
+                            .map(|p| {
+                                let partition_ref = p.inner;
+                                (partition_ref as PartitionRef)
+                            })
+                            .collect::<Vec<_>>(),
+                    ))
+                }
+            };
+
+            if let Some(plan_input) = plan_input {
+                plan_inputs.insert(source_id.clone(), plan_input);
+            }
+        }
+
+        if plan_inputs.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(PyInputs { inner: plan_inputs }))
         }
     }
 }
 
-impl From<&InputSpec> for PyInputSpec {
-    fn from(spec: &InputSpec) -> Self {
-        let input_type = match &spec.input_type {
-            crate::InputType::ScanTask(_) => "scan_task".to_string(),
-            crate::InputType::InMemory(_) => "in_memory".to_string(),
-            crate::InputType::GlobPaths(_) => "glob_paths".to_string(),
-        };
-        Self {
-            source_id: spec.source_id.clone(),
-            input_type,
-            spec: spec.clone(),
-        }
-    }
+#[cfg(feature = "python")]
+#[pyclass(module = "daft.daft", name = "Inputs", frozen)]
+#[derive(Debug, Clone)]
+pub struct PyInputs {
+    pub inner: HashMap<String, PlanInput>,
 }
 
-impl_bincode_py_state_serialization!(PyInputSpec);
+// #[cfg(feature = "python")]
+// #[pymethods]
+// impl PyInputs {
+    /// Construct Inputs from psets, scan_tasks, and glob_paths dictionaries.
+    // #[staticmethod]
+    // fn from_dicts(
+    //     psets: Option<HashMap<String, Vec<PyMicroPartition>>>,
+    //     scan_tasks: Option<HashMap<String, Vec<PyScanTask>>>,
+    //     glob_paths: Option<HashMap<String, Vec<String>>>,
+    // ) -> PyResult<Self> {
+    //     use common_scan_info::ScanTaskLikeRef;
+
+    //     let mut plan_inputs = HashMap::new();
+
+    //     // Add in-memory partitions from psets
+    //     if let Some(psets) = psets {
+    //         for (source_id, micropartitions) in psets {
+    //             let micropartition_refs: Vec<_> =
+    //                 micropartitions.into_iter().map(|p| p.into()).collect();
+    //             let partition_set = Arc::new(MicroPartitionSet::from(micropartition_refs));
+    //             plan_inputs.insert(source_id, PlanInput::InMemoryPartitions(partition_set));
+    //         }
+    //     }
+
+    //     // Add scan tasks
+    //     if let Some(scan_tasks) = scan_tasks {
+    //         for (source_id, tasks) in scan_tasks {
+    //             let task_refs: Vec<ScanTaskLikeRef> =
+    //                 tasks.into_iter().map(|task| task.0).collect();
+    //             plan_inputs.insert(source_id, PlanInput::ScanTasks(task_refs));
+    //         }
+    //     }
+
+    //     // Add glob paths
+    //     if let Some(glob_paths) = glob_paths {
+    //         for (source_id, paths) in glob_paths {
+    //             plan_inputs.insert(source_id, PlanInput::GlobPaths(paths));
+    //         }
+    //     }
+
+    //     Ok(Self { inner: plan_inputs })
+    // }
+//}
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyLocalPhysicalPlan>()?;
-    parent.add_class::<PyInputSpec>()?;
+    parent.add_class::<PyInputSpecs>()?;
+    parent.add_class::<PyInputs>()?;
     Ok(())
 }

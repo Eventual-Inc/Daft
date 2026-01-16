@@ -19,9 +19,9 @@ use super::source::Source;
 use crate::{
     channel::{Receiver, Sender, create_channel},
     pipeline::NodeName,
-    plan_input::InputId,
     sources::source::SourceStream,
 };
+use daft_local_plan::InputId;
 
 pub struct GlobScanSource {
     receiver: Option<Receiver<(InputId, Vec<String>)>>,

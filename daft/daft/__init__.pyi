@@ -9,7 +9,7 @@ from daft.io import DataSink
 from daft.io.scan import ScanOperator
 from daft.io.sink import WriteResultType
 from daft.runners.flotilla import RaySwordfishActorHandle
-from daft.runners.partitioning import PartitionCacheEntry, PartitionT
+from daft.runners.partitioning import MaterializedResult, PartitionCacheEntry, PartitionT
 from daft.sql.sql_connection import SQLConnection
 from daft.udf.legacy import UDF, BoundUDFArgs, InitArgsType, UninitializedUdf
 
@@ -2023,28 +2023,6 @@ class DistributedPhysicalPlanRunner:
         self, plan: DistributedPhysicalPlan, psets: dict[str, list[RayPartitionRef]]
     ) -> AsyncIterator[RayPartitionRef]: ...
 
-class LocalPhysicalPlan:
-    @staticmethod
-    def from_logical_plan_builder(builder: LogicalPlanBuilder) -> tuple[LocalPhysicalPlan, list[InputSpec]]: ...
-
-class InputSpec:
-    """Input specification for a physical plan execution."""
-
-    source_id: str
-    input_type: str  # "scan_task", "in_memory", or "glob_paths"
-
-    def get_scan_tasks(self) -> list[ScanTask] | None:
-        """Get scan tasks if this is a scan_task input, otherwise None."""
-        ...
-
-    def get_cache_key(self) -> str | None:
-        """Get the cache key if this is an in_memory input, otherwise None."""
-        ...
-
-    def get_glob_paths(self) -> list[str] | None:
-        """Get glob paths if this is a glob_paths input, otherwise None."""
-        ...
-
 class RayPartitionRef:
     object_ref: ray.ObjectRef
     num_rows: int
@@ -2084,6 +2062,18 @@ class PyExecutionEngineResult:
     async def __anext__(self) -> PyMicroPartition | None: ...
     async def finish(self) -> bytes: ...
 
+class LocalPhysicalPlan:
+    @staticmethod
+    def from_logical_plan_builder(builder: LogicalPlanBuilder) -> tuple[LocalPhysicalPlan, InputSpecs]: ...
+
+class InputSpecs:
+    """InputSpecs for NativeExecutor execution"""
+    def resolve_inputs(self, psets: dict[str, list[MaterializedResult[PartitionT]]]) -> Inputs: ...
+
+class Inputs:
+    """Inputs to NativeExecutor execution"""
+    ...
+
 class NativeExecutor:
     def __init__(self) -> None: ...
     async def run(
@@ -2091,10 +2081,8 @@ class NativeExecutor:
         plan: LocalPhysicalPlan,
         daft_ctx: PyDaftContext,
         input_id: int,
+        inputs: Inputs,
         context: dict[str, str] | None = None,
-        scan_tasks: dict[str, list[ScanTask]] | None = None,
-        in_memory: dict[str, list[PyMicroPartition]] | None = None,
-        glob_paths: dict[str, list[str]] | None = None,
     ) -> PyExecutionEngineResult: ...
     @staticmethod
     def repr_ascii(builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, simple: bool) -> str: ...

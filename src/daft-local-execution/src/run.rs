@@ -13,9 +13,9 @@ use common_metrics::StatSnapshot;
 use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
 use daft_context::{DaftContext, Subscriber};
-use daft_local_plan::{LocalPhysicalPlanRef, translate};
+use daft_local_plan::{translate, InputId, LocalPhysicalPlanRef, PlanInput};
 use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::{MicroPartition, MicroPartitionRef, partitioning::MicroPartitionSet};
+use daft_micropartition::MicroPartition;
 use futures::{FutureExt, Stream, future::BoxFuture};
 use tokio::{runtime::Handle, sync::Mutex};
 use tokio_util::sync::CancellationToken;
@@ -35,7 +35,6 @@ use crate::{
         RelationshipInformation, RuntimeContext, get_pipeline_relationship_mapping,
         translate_physical_plan_to_pipeline, viz_pipeline_ascii, viz_pipeline_mermaid,
     },
-    plan_input::{InputId, PlanInput},
     resource_manager::get_or_init_memory_manager,
     runtime_stats::{QueryEndState, RuntimeStatsManager},
 };
@@ -65,8 +64,8 @@ fn get_global_runtime() -> &'static Handle {
 pub(crate) struct EnqueueInputMessage {
     /// The input_id for this enqueue operation
     input_id: InputId,
-    /// Plan inputs grouped by source_id (key, PlanInput)
-    plan_inputs_by_key: Vec<(String, PlanInput)>,
+    /// Plan inputs grouped by source_id
+    inputs: HashMap<String, PlanInput>,
 }
 
 #[cfg_attr(
@@ -94,57 +93,20 @@ impl PyNativeExecutor {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (local_physical_plan, daft_ctx, input_id, context=None, scan_tasks=None, in_memory=None, glob_paths=None))]
+    #[pyo3(signature = (local_physical_plan, daft_ctx, input_id, inputs, context=None))]
     pub fn run<'py>(
         &self,
         py: Python<'py>,
         local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
         daft_ctx: &PyDaftContext,
         input_id: u32,
+        inputs: daft_local_plan::python::PyInputs,
         context: Option<HashMap<String, String>>,
-        scan_tasks: Option<HashMap<String, Vec<daft_scan::python::pylib::PyScanTask>>>,
-        in_memory: Option<HashMap<String, Vec<PyMicroPartition>>>,
-        glob_paths: Option<HashMap<String, Vec<String>>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let daft_ctx: &DaftContext = daft_ctx.into();
         let plan = local_physical_plan.plan.clone();
         let exec_cfg = daft_ctx.execution_config();
         let subscribers = daft_ctx.subscribers();
-
-        // Prepare plan inputs grouped by source_id
-        let mut plan_inputs_by_key: Vec<(String, PlanInput)> = Vec::new();
-
-        if let Some(tasks_map) = scan_tasks {
-            for (key, tasks) in tasks_map {
-                use common_scan_info::ScanTaskLikeRef;
-
-                let scan_tasks: Vec<ScanTaskLikeRef> = tasks
-                    .into_iter()
-                    .map(|pytask| pytask.0 as Arc<dyn common_scan_info::ScanTaskLike>)
-                    .collect();
-                plan_inputs_by_key.push((key, PlanInput::ScanTasks(scan_tasks)));
-            }
-        }
-
-        if let Some(partitions_map) = in_memory {
-            for (key, partitions) in partitions_map {
-                use daft_micropartition::partitioning::PartitionSetRef;
-
-                let micro_partitions: Vec<MicroPartitionRef> =
-                    partitions.into_iter().map(|pymp| pymp.into()).collect();
-                let partition_set: PartitionSetRef<MicroPartitionRef> =
-                    Arc::new(MicroPartitionSet::from(micro_partitions));
-                plan_inputs_by_key.push((key, PlanInput::InMemoryPartitions(partition_set)));
-            }
-        }
-
-        if let Some(paths_map) = glob_paths {
-            for (key, paths) in paths_map {
-                plan_inputs_by_key.push((key, PlanInput::GlobPaths(paths)));
-            }
-        }
-
         let enqueue_future = {
             self.executor.run(
                 &plan,
@@ -152,7 +114,7 @@ impl PyNativeExecutor {
                 subscribers,
                 context,
                 input_id,
-                plan_inputs_by_key,
+                inputs.inner,
             )?
         };
 
@@ -220,7 +182,7 @@ impl NativeExecutor {
         subscribers: Vec<Arc<dyn Subscriber>>,
         additional_context: Option<HashMap<String, String>>,
         input_id: InputId,
-        plan_inputs_by_key: Vec<(String, PlanInput)>,
+        inputs: HashMap<String, PlanInput>,
     ) -> DaftResult<BoxFuture<'static, ExecutionEngineResult>> {
         // Create new execution
         let cancel = self.cancel.clone();
@@ -258,7 +220,7 @@ impl NativeExecutor {
                 let mut receiver = pipeline.start(true, &mut runtime_handle)?;
 
                 if let Some(message) = enqueue_input_rx.recv().await {
-                    for (key, plan_input) in message.plan_inputs_by_key {
+                    for (key, plan_input) in message.inputs {
                         if let Some(sender) = input_senders.get(&key) {
                             // If send fails (e.g., channel closed), continue with other inputs
                             let _ = sender.send(message.input_id, plan_input).await;
@@ -325,10 +287,7 @@ impl NativeExecutor {
         let handle = RuntimeTask::new(handle, task);
 
         Ok(async move {
-            let enqueue_msg = EnqueueInputMessage {
-                input_id,
-                plan_inputs_by_key,
-            };
+            let enqueue_msg = EnqueueInputMessage { input_id, inputs };
 
             // If send fails (e.g., channel closed due to cancellation), return None
             let _ = enqueue_input_tx.send(enqueue_msg).await;

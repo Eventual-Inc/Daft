@@ -103,10 +103,10 @@ class NativeRunner(Runner[MicroPartition]):
         builder = builder.optimize(ctx.daft_execution_config)
         ctx._notify_optimization_end(query_id, builder.repr_json())
 
-        plan, inputs = LocalPhysicalPlan.from_logical_plan_builder(builder._builder)
+        plan, input_specs = LocalPhysicalPlan.from_logical_plan_builder(builder._builder)
         results_gen = self.native_executor.run(
             plan,
-            inputs,
+            input_specs,
             {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
             ctx,
             {"query_id": query_id},
