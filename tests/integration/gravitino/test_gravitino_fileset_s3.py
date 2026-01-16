@@ -379,3 +379,205 @@ def test_read_existing_s3_fileset(gravitino_sample_dir, gravitino_io_config):
 
     except FileNotFoundError:
         pytest.skip("No files found in GRAVITINO_TEST_DIR - fileset may be empty")
+
+
+@pytest.fixture
+def empty_s3_fileset(
+    local_gravitino_client,
+    gravitino_metalake,
+    s3_bucket,
+):
+    """Creates an empty Gravitino fileset for write tests."""
+    test_subfolder = f"write_test_{uuid.uuid4().hex[:8]}"
+    catalog_name = f"write_cat_{uuid.uuid4().hex[:8]}"
+    schema_name = f"write_schema_{uuid.uuid4().hex[:8]}"
+    fileset_name = f"write_fileset_{uuid.uuid4().hex[:8]}"
+    storage_uri = f"s3a://{s3_bucket}/{test_subfolder}/"
+
+    ensure_metalake(local_gravitino_client, gravitino_metalake)
+    create_catalog(
+        local_gravitino_client,
+        gravitino_metalake,
+        catalog_name,
+        properties={
+            "filesystem-providers": "s3",
+            "s3-endpoint": "http://daft-gravitino-minio:9000",
+            "s3-access-key-id": "minioadmin",
+            "s3-secret-access-key": "minioadmin",
+        },
+    )
+    create_schema(local_gravitino_client, gravitino_metalake, catalog_name, schema_name)
+    create_fileset(
+        local_gravitino_client,
+        gravitino_metalake,
+        catalog_name,
+        schema_name,
+        fileset_name,
+        storage_uri,
+    )
+
+    # Update catalog s3-endpoint to point to localhost for tests running outside Docker
+    update_catalog(
+        local_gravitino_client,
+        gravitino_metalake,
+        catalog_name,
+        updates=[{"@type": "setProperty", "property": "s3-endpoint", "value": "http://127.0.0.1:9001"}],
+    )
+
+    gvfs_root = f"gvfs://fileset/{catalog_name}/{schema_name}/{fileset_name}"
+
+    try:
+        yield {
+            "gvfs_root": gvfs_root,
+            "catalog": catalog_name,
+            "schema": schema_name,
+            "fileset": fileset_name,
+            "bucket": s3_bucket,
+            "test_subfolder": test_subfolder,
+        }
+    finally:
+        delete_fileset(local_gravitino_client, gravitino_metalake, catalog_name, schema_name, fileset_name)
+        delete_schema(local_gravitino_client, gravitino_metalake, catalog_name, schema_name)
+        delete_catalog(local_gravitino_client, gravitino_metalake, catalog_name)
+
+
+@pytest.mark.integration()
+def test_write_parquet_to_gvfs(empty_s3_fileset, gravitino_io_config, gravitino_minio_io_config):
+    """Test writing parquet files to gvfs:// path."""
+    sample_data = {"id": [1, 2, 3], "name": ["Alice", "Bob", "Charlie"], "age": [25, 30, 35]}
+    df = daft.from_pydict(sample_data)
+
+    gvfs_path = f"{empty_s3_fileset['gvfs_root']}/test_data.parquet"
+    df.write_parquet(gvfs_path, io_config=gravitino_io_config)
+
+    # Verify files were written to S3 by checking with s3fs
+    fs = s3fs.S3FileSystem(
+        key=gravitino_minio_io_config.s3.key_id,
+        password=gravitino_minio_io_config.s3.access_key,
+        client_kwargs={"endpoint_url": gravitino_minio_io_config.s3.endpoint_url},
+    )
+
+    # Check that files exist in the expected location
+    written_files = fs.find(f"{empty_s3_fileset['bucket']}/{empty_s3_fileset['test_subfolder']}/test_data.parquet")
+    parquet_files = [f for f in written_files if f.endswith(".parquet")]
+
+    assert len(parquet_files) > 0, (
+        f"No parquet files found in s3://{empty_s3_fileset['bucket']}/{empty_s3_fileset['test_subfolder']}/test_data.parquet"
+    )
+
+    # Verify by reading from underlying S3 path
+    s3_path = f"s3://{empty_s3_fileset['bucket']}/{empty_s3_fileset['test_subfolder']}/test_data.parquet/*.parquet"
+    read_df = daft.read_parquet(s3_path, io_config=gravitino_minio_io_config)
+    result = read_df.sort("id").to_pydict()
+
+    assert result["id"] == sample_data["id"]
+    assert result["name"] == sample_data["name"]
+    assert result["age"] == sample_data["age"]
+
+
+@pytest.mark.integration()
+def test_write_csv_to_gvfs(empty_s3_fileset, gravitino_io_config, gravitino_minio_io_config):
+    """Test writing CSV files to gvfs:// path."""
+    sample_data = {"id": [1, 2, 3], "name": ["Alice", "Bob", "Charlie"], "age": [25, 30, 35]}
+    df = daft.from_pydict(sample_data)
+
+    gvfs_path = f"{empty_s3_fileset['gvfs_root']}/test_data.csv"
+    df.write_csv(gvfs_path, io_config=gravitino_io_config)
+
+    # Verify files were written to S3 by checking with s3fs
+    fs = s3fs.S3FileSystem(
+        key=gravitino_minio_io_config.s3.key_id,
+        password=gravitino_minio_io_config.s3.access_key,
+        client_kwargs={"endpoint_url": gravitino_minio_io_config.s3.endpoint_url},
+    )
+
+    # Check that files exist in the expected location
+    written_files = fs.find(f"{empty_s3_fileset['bucket']}/{empty_s3_fileset['test_subfolder']}/test_data.csv")
+    csv_files = [f for f in written_files if f.endswith(".csv")]
+
+    assert len(csv_files) > 0, (
+        f"No CSV files found in s3://{empty_s3_fileset['bucket']}/{empty_s3_fileset['test_subfolder']}/test_data.csv"
+    )
+
+    # Verify by reading from underlying S3 path
+    s3_path = f"s3://{empty_s3_fileset['bucket']}/{empty_s3_fileset['test_subfolder']}/test_data.csv/*.csv"
+    read_df = daft.read_csv(s3_path, io_config=gravitino_minio_io_config)
+    result = read_df.sort("id").to_pydict()
+
+    assert result["id"] == sample_data["id"]
+    assert result["name"] == sample_data["name"]
+    assert result["age"] == sample_data["age"]
+
+
+@pytest.mark.integration()
+def test_write_json_to_gvfs(empty_s3_fileset, gravitino_io_config, gravitino_minio_io_config):
+    """Test writing JSON files to gvfs:// path."""
+    sample_data = {"id": [1, 2, 3], "name": ["Alice", "Bob", "Charlie"], "age": [25, 30, 35]}
+    df = daft.from_pydict(sample_data)
+
+    gvfs_path = f"{empty_s3_fileset['gvfs_root']}/test_data.json"
+    df.write_json(gvfs_path, io_config=gravitino_io_config)
+
+    # Verify files were written to S3 by checking with s3fs
+    fs = s3fs.S3FileSystem(
+        key=gravitino_minio_io_config.s3.key_id,
+        password=gravitino_minio_io_config.s3.access_key,
+        client_kwargs={"endpoint_url": gravitino_minio_io_config.s3.endpoint_url},
+    )
+
+    # Check that files exist in the expected location
+    written_files = fs.find(f"{empty_s3_fileset['bucket']}/{empty_s3_fileset['test_subfolder']}/test_data.json")
+    json_files = [f for f in written_files if f.endswith(".json")]
+
+    assert len(json_files) > 0, (
+        f"No JSON files found in s3://{empty_s3_fileset['bucket']}/{empty_s3_fileset['test_subfolder']}/test_data.json"
+    )
+
+    # Verify by reading from underlying S3 path
+    s3_path = f"s3://{empty_s3_fileset['bucket']}/{empty_s3_fileset['test_subfolder']}/test_data.json/*.json"
+    read_df = daft.read_json(s3_path, io_config=gravitino_minio_io_config)
+    result = read_df.sort("id").to_pydict()
+
+    assert result["id"] == sample_data["id"]
+    assert result["name"] == sample_data["name"]
+    assert result["age"] == sample_data["age"]
+
+
+@pytest.mark.integration()
+def test_write_and_read_roundtrip_gvfs(empty_s3_fileset, gravitino_io_config):
+    """Test writing to gvfs:// and reading back via gvfs:// for a complete roundtrip."""
+    sample_data = {"id": [1, 2, 3], "value": ["alpha", "beta", "gamma"], "score": [1.1, 2.2, 3.3]}
+    df = daft.from_pydict(sample_data)
+
+    gvfs_path = f"{empty_s3_fileset['gvfs_root']}/roundtrip_test.parquet"
+
+    # Write via gvfs://
+    df.write_parquet(gvfs_path, io_config=gravitino_io_config)
+
+    # Read back via gvfs://
+    read_df = daft.read_parquet(gvfs_path, io_config=gravitino_io_config)
+    result = read_df.sort("id").to_pydict()
+
+    assert result["id"] == sample_data["id"]
+    assert result["value"] == sample_data["value"]
+    assert result["score"] == sample_data["score"]
+
+
+@pytest.mark.integration()
+@pytest.mark.skipif(
+    "GRAVITINO_TEST_FILE" not in os.environ or not os.environ["GRAVITINO_TEST_FILE"].startswith("gvfs://"),
+    reason="Requires GRAVITINO_TEST_FILE environment variable pointing to an existing S3-backed file",
+)
+def test_read_specific_s3_file(gravitino_sample_file, gravitino_io_config):
+    """Test reading a specific file from an S3-backed fileset.
+
+    This test works with any Gravitino deployment that has S3 filesets already configured.
+    Set GRAVITINO_TEST_FILE to point to a specific file in an S3-backed fileset, e.g.:
+    export GRAVITINO_TEST_FILE="gvfs://fileset/my_catalog/my_schema/my_s3_fileset/data.parquet"
+    """
+    # Try to read the specific file
+    df = daft.read_parquet(gravitino_sample_file, io_config=gravitino_io_config)
+    result = df.collect()
+
+    # Should successfully read and have some data
+    assert len(result) > 0

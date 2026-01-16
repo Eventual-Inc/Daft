@@ -63,7 +63,7 @@ impl Source for GlobScanSource {
         let limit = self.pushdowns.limit;
 
         // Spawn a task to stream out the record batches from the glob paths
-        let (tx, rx) = create_channel(0);
+        let (tx, rx) = create_channel(1);
         let task = io_runtime
             .spawn(async move {
                 let io_client = io_client.clone();
@@ -182,13 +182,13 @@ impl Source for GlobScanSource {
             })
             .map(|x| x?);
 
-        let receiver_stream = rx.into_stream().boxed();
+        let receiver_stream = rx.into_stream();
         let combined_stream = common_runtime::combine_stream(receiver_stream, task);
         Ok(combined_stream.boxed())
     }
 
     fn name(&self) -> NodeName {
-        "GlobScanSource".into()
+        "Glob Scan".into()
     }
 
     fn op_type(&self) -> NodeType {
@@ -197,7 +197,7 @@ impl Source for GlobScanSource {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push("GlobScanSource:".to_string());
+        res.push("Glob Scan:".to_string());
         res.push(format!("Schema = {}", self.schema.short_string()));
         res.push(format!("Glob paths = {:?}", self.glob_paths));
         if let Some(io_config) = &self.io_config {

@@ -20,7 +20,15 @@ from typing import TYPE_CHECKING, Any, Concatenate, Literal, ParamSpec, TypeVar,
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import DistributedPhysicalPlan, FileFormat, IOConfig, JoinStrategy, JoinType, WriteMode
+from daft.daft import (
+    DistributedPhysicalPlan,
+    FileFormat,
+    IOConfig,
+    JoinStrategy,
+    JoinType,
+    PyFormatSinkOption,
+    WriteMode,
+)
 from daft.dataframe.display import MermaidOptions
 from daft.dataframe.preview import Preview, PreviewAlign, PreviewColumn, PreviewFormat, PreviewFormatter
 from daft.datatype import DataType
@@ -840,16 +848,24 @@ class DataFrame:
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
+        delimiter: str | None = None,
+        quote: str | None = None,
+        escape: str | None = None,
+        header: bool | None = True,
     ) -> "DataFrame":
-        """Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written.
+        r"""Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written.
 
         Files will be written to `<root_dir>/*` with randomly generated UUIDs as the file names.
 
         Args:
-            root_dir (str): root file path to write parquet files to.
+            root_dir (str): root file path to write CSV files to.
             write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
+            delimiter (Optional[str], optional): Single-character field delimiter (default `,`).
+            quote (Optional[str], optional): Single-character quote used around fields containing delimiters default `"`.
+            escape (Optional[str], optional): Single-character escape for special characters default `\\`.
+            header (Optional[bool], optional): Whether to write a header row with column names, default True.
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -880,11 +896,13 @@ class DataFrame:
         if partition_cols is not None:
             cols = column_inputs_to_expressions(tuple(partition_cols))
 
+        file_format_option = PyFormatSinkOption.csv(delimiter=delimiter, quote=quote, escape=escape, header=header)
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
             write_mode=WriteMode.from_str(write_mode),
             file_format=FileFormat.Csv,
+            file_format_option=file_format_option,
             io_config=io_config,
         )
 

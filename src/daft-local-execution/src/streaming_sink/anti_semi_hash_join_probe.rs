@@ -245,7 +245,11 @@ impl StreamingSink for AntiSemiProbeSink {
     }
 
     fn name(&self) -> NodeName {
-        "AntiSemiHashJoinProbe".into()
+        if self.params.is_semi {
+            "Semi Hash Join Probe".into()
+        } else {
+            "Anti Hash Join Probe".into()
+        }
     }
 
     fn op_type(&self) -> NodeType {
@@ -256,7 +260,7 @@ impl StreamingSink for AntiSemiProbeSink {
         let mut res = vec![];
         if self.params.is_semi {
             res.push(format!(
-                "SemiHashJoinProbe: {}",
+                "Semi Hash Join Probe: {}",
                 self.params
                     .probe_on
                     .iter()
@@ -265,7 +269,7 @@ impl StreamingSink for AntiSemiProbeSink {
             ));
         } else {
             res.push(format!(
-                "AntiHashJoinProbe: {}",
+                "Anti Hash Join Probe: {}",
                 self.params
                     .probe_on
                     .iter()

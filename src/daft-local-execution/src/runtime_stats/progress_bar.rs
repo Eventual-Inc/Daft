@@ -1,25 +1,22 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use async_trait::async_trait;
 use common_error::DaftResult;
 use common_logging::GLOBAL_LOGGER;
 use common_metrics::{
-    CPU_US_KEY, NodeID, StatSnapshot,
+    NodeID, StatSnapshot,
     ops::{NodeCategory, NodeInfo},
+    snapshot::StatSnapshotImpl,
 };
 use indicatif::{ProgressDrawTarget, ProgressStyle};
-use itertools::Itertools;
 use log::Log;
 
-use crate::{PythonPrintTarget, STDOUT, runtime_stats::subscribers::RuntimeStatsSubscriber};
+use crate::{PythonPrintTarget, STDOUT};
 
-/// Convert statistics to a message for progress bars
-fn event_to_message(event: &StatSnapshot) -> String {
-    event
-        .iter()
-        .filter(|(name, _)| *name != CPU_US_KEY)
-        .map(|(name, value)| format!("{} {}", value, name.to_lowercase()))
-        .join(", ")
+pub(crate) trait ProgressBar: Send + Sync {
+    fn initialize_node(&self, node_id: NodeID);
+    fn finalize_node(&self, node_id: NodeID, last_snapshot: &StatSnapshot);
+    fn handle_event(&self, node_id: NodeID, event: &StatSnapshot);
+    fn finish(self: Box<Self>) -> DaftResult<()>;
 }
 
 pub enum ProgressBarColor {
@@ -85,7 +82,8 @@ impl PythonPrintTarget for IndicatifPrintTarget {
     }
 }
 
-#[derive(Debug)]
+pub const MAX_PIPELINE_NAME_LEN: usize = 22;
+
 struct IndicatifProgressBarManager {
     multi_progress: indicatif::MultiProgress,
     pbars: Vec<indicatif::ProgressBar>,
@@ -117,18 +115,26 @@ impl IndicatifProgressBarManager {
             total,
         };
 
+        // Determine max name for alignment and minimizing whitespace
+        let max_name_len = (node_info_map
+            .values()
+            .map(|v| v.name.len())
+            .max()
+            .unwrap_or(0))
+        .max(MAX_PIPELINE_NAME_LEN);
+
         // For Swordfish only, so node ids should be consecutive
         for node_id in 0..total {
             let node_info = node_info_map
                 .get(&node_id)
                 .expect("Expected node info for all node ids in range 0..total");
-            manager.make_new_bar(node_info.as_ref());
+            manager.make_new_bar(node_info.as_ref(), max_name_len);
         }
 
         manager
     }
 
-    fn make_new_bar(&mut self, node_info: &NodeInfo) {
+    fn make_new_bar(&mut self, node_info: &NodeInfo, max_name_len: usize) {
         let color = match node_info.node_category {
             NodeCategory::Source => ProgressBarColor::Blue,
             NodeCategory::Intermediate => ProgressBarColor::Magenta,
@@ -148,7 +154,7 @@ impl IndicatifProgressBarManager {
         let formatted_prefix = if node_info.name.len() > MAX_PIPELINE_NAME_LEN {
             format!("{}...", &node_info.name[..MAX_PIPELINE_NAME_LEN - 3])
         } else {
-            format!("{:>1$}", node_info.name, MAX_PIPELINE_NAME_LEN)
+            format!("{:>1$}", node_info.name, max_name_len)
         };
 
         let pb = indicatif::ProgressBar::new_spinner()
@@ -173,46 +179,33 @@ impl Drop for IndicatifProgressBarManager {
     }
 }
 
-#[async_trait]
-impl RuntimeStatsSubscriber for IndicatifProgressBarManager {
-    #[cfg(test)]
-    #[allow(dead_code)]
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    async fn initialize_node(&self, node_id: NodeID) -> DaftResult<()> {
+impl ProgressBar for IndicatifProgressBarManager {
+    fn initialize_node(&self, node_id: NodeID) {
         let pb = self.pbars.get(node_id).unwrap();
         pb.enable_steady_tick(TICK_INTERVAL);
-        Ok(())
     }
 
-    async fn finalize_node(&self, node_id: NodeID) -> DaftResult<()> {
+    fn finalize_node(&self, node_id: NodeID, last_snapshot: &StatSnapshot) {
         let pb = self.pbars.get(node_id).unwrap();
+        pb.set_message(last_snapshot.to_message());
         pb.finish();
-        Ok(())
     }
 
-    async fn handle_event(&self, events: &[(NodeID, StatSnapshot)]) -> DaftResult<()> {
-        for (node_id, event) in events {
-            let pb = self.pbars.get(*node_id).unwrap();
-            pb.set_message(event_to_message(event));
-        }
-        Ok(())
+    fn handle_event(&self, node_id: NodeID, event: &StatSnapshot) {
+        let pb = self.pbars.get(node_id).unwrap();
+        pb.set_message(event.to_message());
     }
 
-    async fn finish(mut self: Box<Self>) -> DaftResult<()> {
+    fn finish(mut self: Box<Self>) -> DaftResult<()> {
         self.pbars.clear();
         self.multi_progress.clear()?;
         Ok(())
     }
 }
 
-pub const MAX_PIPELINE_NAME_LEN: usize = 22;
-
 pub fn make_progress_bar_manager(
     node_info_map: &HashMap<NodeID, Arc<NodeInfo>>,
-) -> Box<dyn RuntimeStatsSubscriber> {
+) -> Box<dyn ProgressBar> {
     #[cfg(feature = "python")]
     {
         if python::in_notebook() {
@@ -247,7 +240,7 @@ mod python {
         })
     }
 
-    #[derive(Clone, Debug)]
+    #[derive(Clone)]
     pub struct TqdmProgressBarManager {
         inner: Arc<pyo3::Py<pyo3::PyAny>>,
         node_id_to_pb_id: HashMap<usize, usize>,
@@ -294,41 +287,34 @@ mod python {
             })
         }
 
-        fn close_bar(&self, pb_id: usize) -> DaftResult<()> {
+        fn close_bar(&self, pb_id: usize) {
             Python::attach(|py| {
-                self.inner.call_method1(py, "close_bar", (pb_id,))?;
-                DaftResult::Ok(())
-            })
+                // Should never fail, since it's empty anyways
+                self.inner
+                    .call_method1(py, "close_bar", (pb_id,))
+                    .expect("Failed to close bar");
+            });
         }
     }
 
-    #[async_trait]
-    impl RuntimeStatsSubscriber for TqdmProgressBarManager {
-        #[cfg(test)]
-        #[allow(dead_code)]
-        fn as_any(&self) -> &dyn std::any::Any {
-            self
-        }
+    impl ProgressBar for TqdmProgressBarManager {
+        fn initialize_node(&self, _: NodeID) {}
 
-        async fn initialize_node(&self, _: NodeID) -> DaftResult<()> {
-            Ok(())
-        }
-
-        async fn finalize_node(&self, node_id: NodeID) -> DaftResult<()> {
+        fn finalize_node(&self, node_id: NodeID, last_snapshot: &StatSnapshot) {
             let pb_id = self.node_id_to_pb_id.get(&node_id).unwrap();
-            self.close_bar(*pb_id)?;
-            Ok(())
+            self.update_bar(*pb_id, &last_snapshot.to_message())
+                .expect("Failed to update TQDM progress bar");
+
+            self.close_bar(*pb_id);
         }
 
-        async fn handle_event(&self, events: &[(NodeID, StatSnapshot)]) -> DaftResult<()> {
-            for (node_id, event) in events {
-                let pb_id = self.node_id_to_pb_id.get(node_id).unwrap();
-                self.update_bar(*pb_id, &event_to_message(event))?;
-            }
-            Ok(())
+        fn handle_event(&self, node_id: NodeID, event: &StatSnapshot) {
+            let pb_id = self.node_id_to_pb_id.get(&node_id).unwrap();
+            self.update_bar(*pb_id, &event.to_message())
+                .expect("Failed to update TQDM progress bar");
         }
 
-        async fn finish(self: Box<Self>) -> DaftResult<()> {
+        fn finish(self: Box<Self>) -> DaftResult<()> {
             Python::attach(|py| {
                 self.inner.call_method0(py, "close")?;
                 DaftResult::Ok(())

@@ -3,6 +3,8 @@ mod batch;
 mod retry;
 mod row_wise;
 
+use std::sync::Arc;
+
 pub use batch::{BatchPyFn, batch_udf};
 use common_error::DaftResult;
 use daft_core::prelude::*;
@@ -21,12 +23,20 @@ pub enum PyScalarFn {
 }
 
 impl PyScalarFn {
-    pub fn name(&self) -> &str {
+    pub fn id(&self) -> Arc<str> {
         match self {
-            Self::RowWise(RowWisePyFn { function_name, .. })
-            | Self::Batch(BatchPyFn { function_name, .. }) => function_name,
+            Self::RowWise(func) => func.func_id.clone(),
+            Self::Batch(func) => func.func_id.clone(),
         }
     }
+
+    // pub fn name(&self) -> &str {
+    //     match self {
+    //         Self::RowWise(RowWisePyFn { function_name, .. })
+    //         | Self::Batch(BatchPyFn { function_name, .. }) => function_name,
+    //     }
+    // }
+
     pub fn call(&self, args: &[Series], metrics: &mut dyn MetricsCollector) -> DaftResult<Series> {
         match self {
             Self::RowWise(func) => func.call(args, metrics),
@@ -56,13 +66,13 @@ impl PyScalarFn {
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
         match self {
             Self::RowWise(RowWisePyFn {
-                function_name,
+                func_id,
                 args,
                 return_dtype,
                 ..
             })
             | Self::Batch(BatchPyFn {
-                function_name,
+                func_id,
                 args,
                 return_dtype,
                 ..
@@ -70,7 +80,7 @@ impl PyScalarFn {
                 let field_name = if let Some(first_child) = args.first() {
                     first_child.get_name(schema)?
                 } else {
-                    function_name.to_string()
+                    func_id.to_string()
                 };
 
                 Ok(Field::new(field_name, return_dtype.clone()))

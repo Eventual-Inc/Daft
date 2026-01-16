@@ -523,14 +523,14 @@ async fn read_csv_single_into_stream(
             GetResult::File(file) => {
                 (
                     Box::new(BufReader::new(File::open(file.path).await?)),
-                    // Use user-provided buffer size, falling back to 8 * the user-provided chunk size if that exists, otherwise falling back to 512 KiB as the default.
+                    // Use user-provided buffer size, otherwise falling back to 512 KiB as the default.
                     read_options
                         .as_ref()
-                        .and_then(|opt| opt.buffer_size.or_else(|| opt.chunk_size.map(|cs| 8 * cs)))
+                        .and_then(|opt| opt.buffer_size)
                         .unwrap_or(512 * 1024),
                     read_options
                         .as_ref()
-                        .and_then(|opt| opt.chunk_size.or_else(|| opt.buffer_size.map(|bs| bs / 8)))
+                        .and_then(|opt| opt.chunk_size)
                         .unwrap_or(64 * 1024),
                 )
             }
@@ -538,11 +538,11 @@ async fn read_csv_single_into_stream(
                 Box::new(StreamReader::new(stream)),
                 read_options
                     .as_ref()
-                    .and_then(|opt| opt.buffer_size.or_else(|| opt.chunk_size.map(|cs| 8 * cs)))
+                    .and_then(|opt| opt.buffer_size)
                     .unwrap_or(512 * 1024),
                 read_options
                     .as_ref()
-                    .and_then(|opt| opt.chunk_size.or_else(|| opt.buffer_size.map(|bs| bs / 8)))
+                    .and_then(|opt| opt.chunk_size)
                     .unwrap_or(64 * 1024),
             ),
         };
@@ -608,13 +608,9 @@ where
             // If the record sizes are normally distributed, this should result in ~85% of the records not requiring
             // reallocation during reading.
             let record_buffer_size = (estimated_mean_row_size + estimated_std_row_size).ceil() as usize;
-            // Get chunk size in # of rows, using the estimated mean row size in bytes.
-            let chunk_size_rows = {
-                let estimated_rows_per_desired_chunk = chunk_size / (estimated_mean_row_size.ceil() as usize);
-                // Process at least 8 rows in a chunk, even if the rows are pretty large.
-                // Cap chunk size at the remaining number of rows we need to read before we reach the num_rows limit.
-                estimated_rows_per_desired_chunk.max(8).min(num_rows - total_rows_read)
-            };
+            // Process at least 8 rows in a chunk, even if the rows are pretty large.
+            // Cap chunk size at the remaining number of rows we need to read before we reach the num_rows limit.
+            let chunk_size_rows = chunk_size.max(8).min(num_rows - total_rows_read);
             let mut chunk_buffer = vec![
                 read_async::ByteRecord::with_capacity(record_buffer_size, num_fields);
                 chunk_size_rows

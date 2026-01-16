@@ -1,24 +1,63 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_metrics::{CPU_US_KEY, Counter, ROWS_IN_KEY, StatSnapshot};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{OutputFileInfo, SinkInfo, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
+use opentelemetry::{KeyValue, metrics::Meter};
 
-use super::{PipelineNodeImpl, SubmittableTaskStream, make_new_task_from_materialized_outputs};
+use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
+        DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
+        PipelineNodeContext,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
-        scheduler::{SchedulerHandle, SubmittableTask},
-        task::{SwordfishTask, TaskContext},
+        scheduler::SchedulerHandle,
+        task::{SwordfishTask, SwordfishTaskBuilder},
     },
+    statistics::{RuntimeStats, stats::RuntimeStatsRef},
     utils::channel::{Sender, create_channel},
 };
+
+pub struct WriteStats {
+    cpu_us: Counter,
+    rows_in: Counter,
+    rows_written: Counter,
+    bytes_written: Counter,
+    node_kv: Vec<KeyValue>,
+}
+
+impl WriteStats {
+    pub fn new(meter: &Meter, node_id: NodeID) -> Self {
+        let node_kv = vec![KeyValue::new("node_id", node_id.to_string())];
+        Self {
+            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
+            rows_written: Counter::new(meter, "rows written", None),
+            bytes_written: Counter::new(meter, "bytes written", None),
+            node_kv,
+        }
+    }
+}
+
+impl RuntimeStats for WriteStats {
+    fn handle_worker_node_stats(&self, snapshot: &StatSnapshot) {
+        let StatSnapshot::Write(snapshot) = snapshot else {
+            return;
+        };
+        self.cpu_us.add(snapshot.cpu_us, self.node_kv.as_slice());
+        self.rows_in.add(snapshot.rows_in, self.node_kv.as_slice());
+        self.rows_written
+            .add(snapshot.rows_written, self.node_kv.as_slice());
+        self.bytes_written
+            .add(snapshot.bytes_written, self.node_kv.as_slice());
+    }
+}
 
 pub(crate) struct SinkNode {
     config: PipelineNodeConfig,
@@ -124,38 +163,35 @@ impl SinkNode {
 
     async fn finish_writes_and_commit(
         self: Arc<Self>,
-        data_schema: SchemaRef,
         info: OutputFileInfo<BoundExpr>,
-        input: SubmittableTaskStream,
+        input: TaskBuilderStream,
         scheduler: SchedulerHandle<SwordfishTask>,
         task_id_counter: TaskIDCounter,
-        sender: Sender<SubmittableTask<SwordfishTask>>,
+        sender: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
         let file_schema = self.config.schema.clone();
-        let materialized_stream = input.materialize(scheduler);
+        let materialized_stream =
+            input.materialize(scheduler, self.context.query_idx, task_id_counter);
         let materialized = materialized_stream.try_collect::<Vec<_>>().await?;
-        let node_id = self.node_id();
-        let task = make_new_task_from_materialized_outputs(
-            TaskContext::from((&self.context, task_id_counter.next())),
+
+        let (in_memory_source_plan, psets) = MaterializedOutput::into_in_memory_scan_with_psets(
             materialized,
-            self.config.schema.clone(),
-            &(self as Arc<dyn PipelineNodeImpl>),
-            move |input| {
-                LocalPhysicalPlan::commit_write(
-                    input,
-                    data_schema,
-                    file_schema,
-                    info,
-                    StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(node_id as usize),
-                        additional: None,
-                    },
-                )
-            },
-            None,
+            self.data_schema.clone(),
+            self.node_id(),
         );
-        let _ = sender.send(task).await;
+        let plan = LocalPhysicalPlan::commit_write(
+            in_memory_source_plan,
+            self.data_schema.clone(),
+            file_schema,
+            info,
+            StatsState::NotMaterialized,
+            LocalNodeContext {
+                origin_node_id: Some(self.node_id() as usize),
+                additional: None,
+            },
+        );
+        let builder = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+        let _ = sender.send(builder).await;
         Ok(())
     }
 }
@@ -208,10 +244,14 @@ impl PipelineNodeImpl for SinkNode {
         res
     }
 
+    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(WriteStats::new(meter, self.node_id()))
+    }
+
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
 
         let sink_node = self.clone();
@@ -222,21 +262,15 @@ impl PipelineNodeImpl for SinkNode {
         let pipelined_node_with_writes =
             input_node.pipeline_instruction(self.clone(), plan_builder);
         if let SinkInfo::OutputFileInfo(info) = self.sink_info.as_ref() {
-            let sink_node = self.clone();
-            let scheduler = plan_context.scheduler_handle();
-            let task_id_counter = plan_context.task_id_counter();
-            let data_schema = sink_node.data_schema.clone();
             let (sender, receiver) = create_channel(1);
-            plan_context.spawn(Self::finish_writes_and_commit(
-                sink_node,
-                data_schema,
+            plan_context.spawn(self.clone().finish_writes_and_commit(
                 info.clone(),
                 pipelined_node_with_writes,
-                scheduler,
-                task_id_counter,
+                plan_context.scheduler_handle(),
+                plan_context.task_id_counter(),
                 sender,
             ));
-            SubmittableTaskStream::from(receiver)
+            TaskBuilderStream::from(receiver)
         } else {
             pipelined_node_with_writes
         }

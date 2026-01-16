@@ -1,36 +1,24 @@
+use arrow::{array::NullBufferBuilder, buffer::NullBuffer};
 use common_error::DaftResult;
 use daft_arrow::types::Index;
 
-use super::as_arrow::AsArrow;
 use crate::{
     array::{
         growable::{Growable, GrowableArray},
         prelude::*,
     },
-    datatypes::{FileArray, IntervalArray, prelude::*},
+    datatypes::{FileArray, prelude::*},
     file::DaftMediaType,
 };
 
 impl<T> DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPhysicalType,
 {
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        let result = daft_arrow::compute::take::take(self.data(), idx.as_arrow2())?;
-        Self::try_from((self.field.clone(), result))
+        let result = arrow::compute::take(self.to_arrow().as_ref(), idx.to_arrow().as_ref(), None)?;
+        Self::from_arrow(self.field.clone(), result)
     }
-}
-
-// Default implementations of take op for DataArray and LogicalArray.
-macro_rules! impl_dataarray_take {
-    ($ArrayT:ty) => {
-        impl $ArrayT {
-            pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-                let result = daft_arrow::compute::take::take(self.data(), idx.as_arrow2())?;
-                Self::try_from((self.field.clone(), result))
-            }
-        }
-    };
 }
 
 macro_rules! impl_logicalarray_take {
@@ -44,14 +32,6 @@ macro_rules! impl_logicalarray_take {
     };
 }
 
-impl_dataarray_take!(Utf8Array);
-impl_dataarray_take!(BooleanArray);
-impl_dataarray_take!(BinaryArray);
-impl_dataarray_take!(NullArray);
-impl_dataarray_take!(ExtensionArray);
-impl_dataarray_take!(IntervalArray);
-impl_dataarray_take!(Decimal128Array);
-
 impl_logicalarray_take!(DateArray);
 impl_logicalarray_take!(TimeArray);
 impl_logicalarray_take!(DurationArray);
@@ -64,6 +44,92 @@ impl_logicalarray_take!(SparseTensorArray);
 impl_logicalarray_take!(FixedShapeSparseTensorArray);
 impl_logicalarray_take!(FixedShapeTensorArray);
 impl_logicalarray_take!(MapArray);
+
+impl FixedSizeListArray {
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
+        let fixed_size = self.fixed_element_len();
+        let mut child_indices = Vec::with_capacity(idx.len() * fixed_size);
+        let mut nulls_builder = NullBufferBuilder::new(idx.len());
+
+        for i in idx {
+            match i {
+                None => {
+                    nulls_builder.append_null();
+                    child_indices.extend(std::iter::repeat_n(0, fixed_size));
+                }
+                Some(i) => {
+                    let i = i.to_usize();
+                    nulls_builder.append(self.is_valid(i));
+                    let start = i * fixed_size;
+                    child_indices.extend(start..start + fixed_size);
+                }
+            }
+        }
+
+        let child_idx = UInt64Array::from_iter_values(child_indices.into_iter().map(|i| i as u64));
+        let new_child = self.flat_child.take(&child_idx)?;
+
+        Ok(Self::new(
+            self.field.clone(),
+            new_child,
+            nulls_builder.finish(),
+        ))
+    }
+}
+
+impl ListArray {
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
+        let mut new_offsets = Vec::with_capacity(idx.len() + 1);
+        new_offsets.push(0i64);
+
+        let mut child_indices = Vec::new();
+        let mut nulls_builder = NullBufferBuilder::new(idx.len());
+
+        for i in idx {
+            match i {
+                None => {
+                    nulls_builder.append_null();
+                    new_offsets.push(*new_offsets.last().unwrap());
+                }
+                Some(i) => {
+                    let (start, end) = self.offsets().start_end(i.to_usize());
+                    child_indices.extend(start..end);
+                    new_offsets.push(*new_offsets.last().unwrap() + (end - start) as i64);
+                    nulls_builder.append(self.is_valid(i.to_usize()));
+                }
+            }
+        }
+        let nulls = nulls_builder.finish();
+
+        let child_idx = UInt64Array::from_iter_values(child_indices.into_iter().map(|i| i as u64));
+        let new_child = self.flat_child.take(&child_idx)?;
+
+        Ok(Self::new(
+            self.field.clone(),
+            new_child,
+            new_offsets.try_into()?,
+            nulls,
+        ))
+    }
+}
+impl StructArray {
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
+        let nulls = self.nulls().map(|v| {
+            NullBuffer::from_iter(idx.into_iter().map(|i| match i {
+                None => false,
+                Some(i) => v.is_valid(i.to_usize()),
+            }))
+        });
+        Ok(Self::new(
+            self.field.clone(),
+            self.children
+                .iter()
+                .map(|c| c.take(idx))
+                .collect::<DaftResult<Vec<_>>>()?,
+            nulls,
+        ))
+    }
+}
 impl<T> FileArray<T>
 where
     T: DaftMediaType,
@@ -71,31 +137,6 @@ where
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
         let new_array = self.physical.take(idx)?;
         Ok(Self::new(self.field.clone(), new_array))
-    }
-}
-
-impl FixedSizeBinaryArray {
-    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        let mut growable = Self::make_growable(
-            self.name(),
-            self.data_type(),
-            vec![self],
-            idx.data().null_count() > 0,
-            idx.len(),
-        );
-
-        for i in idx {
-            match i {
-                None => {
-                    growable.add_nulls(1);
-                }
-                Some(i) => {
-                    growable.extend(0, i.to_usize(), 1);
-                }
-            }
-        }
-
-        Ok(growable.build()?.downcast::<Self>()?.clone())
     }
 }
 
@@ -122,86 +163,5 @@ impl PythonArray {
         }
 
         Ok(growable.build()?.downcast::<Self>()?.clone())
-    }
-}
-
-impl FixedSizeListArray {
-    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        let mut growable = Self::make_growable(
-            self.name(),
-            self.data_type(),
-            vec![self],
-            idx.data().null_count() > 0,
-            idx.len(),
-        );
-
-        for i in idx {
-            match i {
-                None => {
-                    growable.add_nulls(1);
-                }
-                Some(i) => {
-                    growable.extend(0, i.to_usize(), 1);
-                }
-            }
-        }
-
-        Ok(growable.build()?.downcast::<Self>()?.clone())
-    }
-}
-
-impl ListArray {
-    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        let child_capacity = idx
-            .as_arrow2()
-            .iter()
-            .map(|idx| match idx {
-                None => 0,
-                Some(idx) => {
-                    let (start, end) = self.offsets().start_end(idx.to_usize());
-                    end - start
-                }
-            })
-            .sum();
-        let mut growable = <Self as GrowableArray>::GrowableType::new(
-            self.name(),
-            self.data_type(),
-            vec![self],
-            idx.data().null_count() > 0,
-            idx.len(),
-            child_capacity,
-        );
-
-        for i in idx {
-            match i {
-                None => {
-                    growable.add_nulls(1);
-                }
-                Some(i) => {
-                    growable.extend(0, i.to_usize(), 1);
-                }
-            }
-        }
-
-        Ok(growable.build()?.downcast::<Self>()?.clone())
-    }
-}
-
-impl StructArray {
-    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        let taken_validity = self.validity().map(|v| {
-            daft_arrow::buffer::NullBuffer::from_iter(idx.into_iter().map(|i| match i {
-                None => false,
-                Some(i) => v.is_valid(i.to_usize()),
-            }))
-        });
-        Ok(Self::new(
-            self.field.clone(),
-            self.children
-                .iter()
-                .map(|c| c.take(idx))
-                .collect::<DaftResult<Vec<_>>>()?,
-            taken_validity,
-        ))
     }
 }

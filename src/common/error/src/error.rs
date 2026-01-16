@@ -60,6 +60,8 @@ pub enum DaftError {
     NotImplemented(String),
     #[error("DaftError::CatalogError {0}")]
     CatalogError(String),
+    #[error("DaftError::JoinError {0}")]
+    JoinError(#[from] tokio::task::JoinError),
 }
 
 impl DaftError {

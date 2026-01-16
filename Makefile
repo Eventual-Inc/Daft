@@ -68,7 +68,7 @@ test: .venv build  ## Run tests
 	# You can set additional run parameters through EXTRA_ARGS, such as running a specific test case file or method:
 	# make test EXTRA_ARGS="-v tests/dataframe/test_select.py" # Run a single test file
 	# make test EXTRA_ARGS="-v tests/dataframe/test_select.py::test_select_dataframe" # Run a single test method
-	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest --hypothesis-seed=$(HYPOTHESIS_SEED) --ignore tests/integration $(EXTRA_ARGS)
+	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest -n auto --hypothesis-seed=$(HYPOTHESIS_SEED) --ignore tests/integration $(EXTRA_ARGS)
 
 .PHONY: doctests
 doctests: .venv
@@ -110,7 +110,7 @@ format: check-toolchain .venv  ## Format Python and Rust code
 
 .PHONY: lint
 lint: check-toolchain .venv  ## Lint Python and Rust code
-	source $(VENV_BIN)/activate && pre-commit run ruff --all-files
+	source $(VENV_BIN)/activate && pre-commit run ruff-check --all-files
 	source $(VENV_BIN)/activate && pre-commit run clippy --all-files
 
 .PHONY: precommit

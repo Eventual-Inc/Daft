@@ -9,13 +9,10 @@ use futures::{StreamExt, stream::select};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext,
-        PipelineNodeImpl, SubmittableTaskStream,
+        PipelineNodeImpl, TaskBuilderStream,
     },
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
-    scheduling::{
-        scheduler::SubmittableTask,
-        task::{SchedulingStrategy, SwordfishTask, TaskContext},
-    },
+    plan::{PlanConfig, PlanExecutionContext},
+    scheduling::task::SwordfishTaskBuilder,
     utils::channel::{Sender, create_channel},
 };
 
@@ -64,84 +61,67 @@ impl CrossJoinNode {
 
     async fn execution_loop(
         self: Arc<Self>,
-        left_input: SubmittableTaskStream,
-        right_input: SubmittableTaskStream,
-        task_id_counter: TaskIDCounter,
-        result_tx: Sender<SubmittableTask<SwordfishTask>>,
+        left_input: TaskBuilderStream,
+        right_input: TaskBuilderStream,
+        result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
-        let mut left_tasks = Vec::new();
-        let mut right_tasks = Vec::new();
+        let mut left_builders: Vec<SwordfishTaskBuilder> = Vec::new();
+        let mut right_builders: Vec<SwordfishTaskBuilder> = Vec::new();
 
         let mut combined_stream = select(
-            left_input.map(|task| (true /* is_left */, task)),
-            right_input.map(|task| (false /* !is_left */, task)),
+            left_input.map(|builder| (true /* is_left */, builder)),
+            right_input.map(|builder| (false /* !is_left */, builder)),
         );
 
-        while let Some((is_left, task)) = combined_stream.next().await {
+        while let Some((is_left, builder)) = combined_stream.next().await {
             if is_left {
-                left_tasks.push(task);
-                for right_task in &right_tasks {
-                    self.create_cross_join_task(
-                        left_tasks.last().expect("left_tasks should not be empty"),
-                        right_task,
-                        &task_id_counter,
-                        &result_tx,
-                    )
-                    .await?;
+                // Create cross joins with all existing right builders
+                for right_builder in &right_builders {
+                    let new_builder = SwordfishTaskBuilder::combine_with(
+                        &builder,
+                        right_builder,
+                        self.as_ref(),
+                        |left_plan, right_plan| {
+                            LocalPhysicalPlan::cross_join(
+                                left_plan,
+                                right_plan,
+                                self.config.schema.clone(),
+                                StatsState::NotMaterialized,
+                                LocalNodeContext {
+                                    origin_node_id: Some(self.node_id() as usize),
+                                    additional: None,
+                                },
+                            )
+                        },
+                    );
+                    let _ = result_tx.send(new_builder).await;
                 }
+                left_builders.push(builder);
             } else {
-                right_tasks.push(task);
-                for left_task in &left_tasks {
-                    self.create_cross_join_task(
-                        left_task,
-                        right_tasks.last().expect("right_tasks should not be empty"),
-                        &task_id_counter,
-                        &result_tx,
-                    )
-                    .await?;
+                // Create cross joins with all existing left builders
+                for left_builder in &left_builders {
+                    let new_builder = SwordfishTaskBuilder::combine_with(
+                        left_builder,
+                        &builder,
+                        self.as_ref(),
+                        |left_plan, right_plan| {
+                            LocalPhysicalPlan::cross_join(
+                                left_plan,
+                                right_plan,
+                                self.config.schema.clone(),
+                                StatsState::NotMaterialized,
+                                LocalNodeContext {
+                                    origin_node_id: Some(self.node_id() as usize),
+                                    additional: None,
+                                },
+                            )
+                        },
+                    );
+                    let _ = result_tx.send(new_builder).await;
                 }
+                right_builders.push(builder);
             }
         }
-
-        Ok(())
-    }
-
-    async fn create_cross_join_task(
-        &self,
-        left_task: &SubmittableTask<SwordfishTask>,
-        right_task: &SubmittableTask<SwordfishTask>,
-        task_id_counter: &TaskIDCounter,
-        result_tx: &Sender<SubmittableTask<SwordfishTask>>,
-    ) -> DaftResult<()> {
-        let left_plan = left_task.task().plan();
-        let right_plan = right_task.task().plan();
-        let right_psets = right_task.task().psets().clone();
-        let config = right_task.task().config().clone();
-
-        let cross_join_plan = LocalPhysicalPlan::cross_join(
-            left_plan,
-            right_plan,
-            self.config.schema.clone(),
-            StatsState::NotMaterialized,
-            LocalNodeContext {
-                origin_node_id: Some(self.node_id() as usize),
-                additional: None,
-            },
-        );
-
-        let mut psets = right_psets;
-        psets.extend(left_task.task().psets().clone());
-
-        let new_task = SwordfishTask::new(
-            TaskContext::from((&self.context, task_id_counter.next())),
-            cross_join_plan,
-            config,
-            psets,
-            SchedulingStrategy::Spread,
-            self.context().to_hashmap(),
-        );
-
-        let _ = result_tx.send(SubmittableTask::new(new_task)).await;
 
         Ok(())
     }
@@ -161,28 +141,23 @@ impl PipelineNodeImpl for CrossJoinNode {
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
-        let mut res = vec!["Cross Join".to_string()];
-        res.push(format!("Left side: {}", self.left_node.name()));
-        res.push(format!("Right side: {}", self.right_node.name()));
+        let mut res = vec!["CrossJoin".to_string()];
+        res.push(format!("Left: Node name = {}", self.left_node.name()));
+        res.push(format!("Right: Node name = {}", self.right_node.name()));
         res
     }
 
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let left_input = self.left_node.clone().produce_tasks(plan_context);
         let right_input = self.right_node.clone().produce_tasks(plan_context);
 
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.execution_loop(
-            left_input,
-            right_input,
-            plan_context.task_id_counter(),
-            result_tx,
-        );
+        let execution_loop = self.execution_loop(left_input, right_input, result_tx);
         plan_context.spawn(execution_loop);
 
-        SubmittableTaskStream::from(result_rx)
+        TaskBuilderStream::from(result_rx)
     }
 }

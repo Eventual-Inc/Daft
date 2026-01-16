@@ -2,7 +2,7 @@
 arrow-array = {workspace = true}
 arrow-schema = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
-serde_arrow = {version = "0.12.3", features = ["arrow-54"]}
+serde_arrow = {version = "0.13.7", features = ["arrow-57"]}
 sketches-ddsketch = {workspace = true}
 snafu = {workspace = true}
 

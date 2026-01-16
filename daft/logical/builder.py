@@ -11,6 +11,7 @@ from daft.daft import (
     JoinStrategy,
     JoinType,
     PyDaftExecutionConfig,
+    PyFormatSinkOption,
     ScanOperatorHandle,
     WriteMode,
     logical_plan_table_scan,
@@ -333,12 +334,19 @@ class LogicalPlanBuilder:
         write_mode: WriteMode,
         file_format: FileFormat,
         io_config: IOConfig,
+        file_format_option: PyFormatSinkOption | None = None,
         partition_cols: list[Expression] | None = None,
         compression: str | None = None,
     ) -> LogicalPlanBuilder:
         part_cols_pyexprs = [expr._expr for expr in partition_cols] if partition_cols is not None else None
         builder = self._builder.table_write(
-            str(root_dir), write_mode, file_format, part_cols_pyexprs, compression, io_config
+            str(root_dir),
+            write_mode,
+            file_format,
+            file_format_option,
+            part_cols_pyexprs,
+            compression,
+            io_config,
         )
         return LogicalPlanBuilder(builder)
 

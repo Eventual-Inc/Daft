@@ -25,6 +25,9 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: read
+
 env:
   PYTHON_VERSION: 3.11
   DAFT_ANALYTICS_ENABLED: '0'

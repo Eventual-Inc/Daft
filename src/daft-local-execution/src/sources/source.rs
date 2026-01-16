@@ -1,16 +1,13 @@
-use std::{
-    sync::{Arc, atomic::Ordering},
-    time::Duration,
-};
+use std::sync::{Arc, atomic::Ordering};
 
 use async_trait::async_trait;
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
-    CPU_US_KEY, ROWS_OUT_KEY, Stat, StatSnapshot,
+    CPU_US_KEY, Counter, ROWS_OUT_KEY, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
-    snapshot,
+    snapshot::{SourceSnapshot, StatSnapshotImpl},
 };
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
@@ -22,9 +19,8 @@ use opentelemetry::{KeyValue, global};
 
 use crate::{
     ExecutionRuntimeContext,
-    channel::{Receiver, create_channel},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
-    runtime_stats::{Counter, CountingSender, RuntimeStats},
+    runtime_stats::RuntimeStats,
 };
 
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
@@ -43,8 +39,8 @@ impl SourceStats {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, "cpu_us".into(), None),
-            rows_out: Counter::new(&meter, "rows_out".into(), None),
+            cpu_us: Counter::new(&meter, CPU_US_KEY, None),
+            rows_out: Counter::new(&meter, ROWS_OUT_KEY, None),
             io_stats: IOStatsRef::default(),
 
             node_kv,
@@ -58,11 +54,14 @@ impl RuntimeStats for SourceStats {
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
-        snapshot![
-            CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
-            ROWS_OUT_KEY; Stat::Count(self.rows_out.load(ordering)),
-            "bytes read"; Stat::Bytes(self.io_stats.load_bytes_read() as u64),
-        ]
+        let cpu_us = self.cpu_us.load(ordering);
+        let rows_out = self.rows_out.load(ordering);
+        let bytes_read = self.io_stats.load_bytes_read() as u64;
+        StatSnapshot::Source(SourceSnapshot {
+            cpu_us,
+            rows_out,
+            bytes_read,
+        })
     }
 
     fn add_rows_in(&self, _: u64) {
@@ -159,7 +158,7 @@ impl TreeDisplay for SourceNode {
                     let rt_result = self.runtime_stats.snapshot();
 
                     writeln!(display).unwrap();
-                    for (name, value) in rt_result {
+                    for (name, value) in rt_result.to_stats() {
                         writeln!(display, "{} = {}", name.as_ref().capitalize(), value).unwrap();
                     }
                 }
@@ -206,30 +205,32 @@ impl PipelineNode for SourceNode {
         &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<crate::channel::Receiver<Arc<MicroPartition>>> {
         let source = self.source.clone();
         let io_stats = self.runtime_stats.io_stats.clone();
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
 
-        let (destination_sender, destination_receiver) = create_channel(0);
-        let counting_sender = CountingSender::new(destination_sender, self.runtime_stats.clone());
+        let (destination_sender, destination_receiver) = crate::channel::create_channel(1);
         let chunk_size = match self.morsel_size_requirement {
             MorselSizeRequirement::Strict(size) => size,
             MorselSizeRequirement::Flexible(_, upper) => upper,
         };
 
+        let runtime_stats = self.runtime_stats.clone();
         runtime_handle.spawn(
             async move {
                 let mut has_data = false;
                 let mut source_stream = source
-                    .get_data(maintain_order, io_stats, chunk_size)
+                    .get_data(maintain_order, io_stats, chunk_size.get())
                     .await?;
                 stats_manager.activate_node(node_id);
 
                 while let Some(part) = source_stream.next().await {
                     has_data = true;
-                    if counting_sender.send(part?).await.is_err() {
+                    let part = part?;
+                    runtime_stats.add_rows_out(part.len() as u64);
+                    if destination_sender.send(part).await.is_err() {
                         stats_manager.finalize_node(node_id);
                         return Ok(());
                     }
@@ -237,7 +238,8 @@ impl PipelineNode for SourceNode {
                 if !has_data {
                     stats_manager.activate_node(node_id);
                     let empty = Arc::new(MicroPartition::empty(Some(source.schema().clone())));
-                    let _ = counting_sender.send(empty).await;
+                    let _ = destination_sender.send(empty).await;
+                    runtime_stats.add_rows_out(0);
                 }
 
                 stats_manager.finalize_node(node_id);

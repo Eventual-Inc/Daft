@@ -2,7 +2,6 @@
 arrow-array = {workspace = true}
 arrow-buffer = {workspace = true}
 arrow-schema = {workspace = true}
-arrow-ipc = {workspace = true}
 arrow2 = {workspace = true, features = [
   "arrow",
   "io_parquet",

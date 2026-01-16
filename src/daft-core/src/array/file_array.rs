@@ -93,8 +93,8 @@ where
             Arc::new(Field::new("io_config", DataType::Binary)),
             Arc::new(io_conf_arr.finish()),
         )?;
-        let validity = urls.validity().cloned();
-        let sa = StructArray::new(sa_field, vec![urls, io_config], validity);
+        let nulls = urls.nulls().cloned();
+        let sa = StructArray::new(sa_field, vec![urls, io_config], nulls);
 
         Ok(FileArray::new(
             Field::new(name, DataType::File(T::get_type())),
@@ -114,7 +114,7 @@ where
         let io_conf = BinaryArray::from_iter("io_config", std::iter::repeat_n(io_conf, urls.len()));
 
         let io_conf = io_conf
-            .with_validity(urls.validity().cloned())
+            .with_nulls(urls.nulls().cloned())
             .expect("Failed to set validity");
 
         let sa = StructArray::new(
@@ -123,7 +123,7 @@ where
                 urls.clone().into_series().rename("url"),
                 io_conf.into_series(),
             ],
-            urls.validity().cloned(),
+            urls.nulls().cloned(),
         );
         FileArray::new(Field::new(name, DataType::File(T::get_type())), sa)
     }
