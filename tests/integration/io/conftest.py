@@ -162,12 +162,17 @@ def minio_create_bucket(
 
 @contextlib.contextmanager
 def minio_create_public_bucket(
-    minio_io_config: daft.io.IOConfig, bucket_name: str = "my-minio-public-bucket"
+    minio_io_config: daft.io.IOConfig, bucket_name: str | None = None
 ) -> YieldFixture[list[str]]:
     """Creates a public bucket in MinIO.
 
     Yields the bucket name.
+    If bucket_name is not provided, generates a unique one using UUID.
     """
+    # Generate unique bucket name if not provided to avoid conflicts in parallel test execution
+    if bucket_name is None:
+        bucket_name = f"public-bucket-{uuid.uuid4()}"
+
     # Create authenticated S3 client to set up the bucket.
     import boto3
     from botocore.config import Config
