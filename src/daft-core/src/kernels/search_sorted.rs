@@ -5,14 +5,10 @@ use arrow::{
         Array as ArrowArray, ArrowPrimitiveType, BooleanArray, FixedSizeBinaryArray,
         GenericBinaryArray, GenericStringArray, OffsetSizeTrait, PrimitiveArray, UInt64Builder,
     },
-    datatypes::{ArrowNativeType, UInt64Type, *},
+    datatypes::*,
 };
 use common_error::{DaftError, DaftResult};
-use daft_arrow::{
-    array::ord::{DynComparator, build_compare},
-    datatypes::{DataType as Arrow2DataType, PhysicalType},
-    error::{Error, Result},
-};
+use daft_arrow::array::ord::{DynComparator, build_compare};
 use num_traits::Float;
 
 #[allow(clippy::eq_op)]
@@ -351,32 +347,24 @@ fn search_sorted_fixed_size_binary_array(
     array_builder.finish()
 }
 
-macro_rules! with_match_searching_primitive_type {(
-    $key_type:expr, | $_:tt $T:ident | $($body:tt)*
-) => ({
-    macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
-    use daft_arrow::datatypes::PrimitiveType::*;
-    match $key_type {
-        Int8 => __with_ty__! { Int8Type },
-        Int16 => __with_ty__! { Int16Type },
-        Int32 => __with_ty__! { Int32Type },
-        Int64 => __with_ty__! { Int64Type },
-        Int128 => __with_ty__! { Decimal128Type }, // Decimal128 maps to Int128 at physical level
-        // DaysMs => __with_ty__! { days_ms },
-        // MonthDayNano => __with_ty__! { months_days_ns },
-        UInt8 => __with_ty__! { UInt8Type },
-        UInt16 => __with_ty__! { UInt16Type },
-        UInt32 => __with_ty__! { UInt32Type },
-        UInt64 => __with_ty__! { UInt64Type },
-        Float32 => __with_ty__! { Float32Type },
-        Float64 => __with_ty__! { Float64Type },
-        Int256 => __with_ty__! { Decimal256Type }, // Decimal256 maps to Int256 at physical level
-        _ => return Err(DaftError::ArrowError(Error::NotYetImplemented(format!(
-            "search_sorted not implemented for type {:?}",
-            $key_type
-        ))))
-    }
-})}
+macro_rules! dispatch_primitive_search_sorted {
+    ($array:expr, $keys:expr, $reversed:expr, {
+        $( $data_type:pat => $arrow_type:ty ),+ $(,)?
+    }) => {{
+        match $array.data_type() {
+            $(
+                $data_type => Ok(search_sorted_primitive_array::<$arrow_type>(
+                    $array.as_any().downcast_ref().unwrap(),
+                    $keys.as_any().downcast_ref().unwrap(),
+                    $reversed,
+                )),
+            )+
+            t => Err(DaftError::NotImplemented(format!(
+                "search_sorted not implemented for type {t:?}"
+            ))),
+        }
+    }};
+}
 
 type IsValid = Box<dyn Fn(usize) -> bool + Send + Sync>;
 
@@ -431,15 +419,14 @@ fn compare_f64(left: &dyn ArrowArray, right: &dyn ArrowArray) -> DynComparator {
 pub fn build_compare_with_nan(
     left: &dyn ArrowArray,
     right: &dyn ArrowArray,
-) -> Result<DynComparator> {
-    use arrow::datatypes::DataType as ArrowDataType;
+) -> DaftResult<DynComparator> {
     match (left.data_type(), right.data_type()) {
-        (ArrowDataType::Float32, ArrowDataType::Float32) => Ok(compare_f32(left, right)),
-        (ArrowDataType::Float64, ArrowDataType::Float64) => Ok(compare_f64(left, right)),
+        (DataType::Float32, DataType::Float32) => Ok(compare_f32(left, right)),
+        (DataType::Float64, DataType::Float64) => Ok(compare_f64(left, right)),
         _ => {
             let left2 = daft_arrow::array::from_data(&left.to_data());
             let right2 = daft_arrow::array::from_data(&right.to_data());
-            build_compare(left2.as_ref(), right2.as_ref())
+            build_compare(left2.as_ref(), right2.as_ref()).map_err(DaftError::ArrowError)
         }
     }
 }
@@ -448,7 +435,7 @@ pub fn build_compare_with_nulls(
     left: &dyn ArrowArray,
     right: &dyn ArrowArray,
     reversed: bool,
-) -> Result<DynComparator> {
+) -> DaftResult<DynComparator> {
     let comparator = build_compare_with_nan(left, right)?;
     let left_is_valid = build_is_valid(left);
     let right_is_valid = build_is_valid(right);
@@ -479,7 +466,7 @@ pub fn build_nulls_first_compare_with_nulls(
     right: &dyn ArrowArray,
     reversed: bool,
     nulls_first: bool,
-) -> Result<DynComparator> {
+) -> DaftResult<DynComparator> {
     let comparator = build_compare_with_nan(left, right)?;
     let left_is_valid = build_is_valid(left);
     let right_is_valid = build_is_valid(right);
@@ -519,7 +506,7 @@ pub fn build_partial_compare_with_nulls(
     left: &dyn ArrowArray,
     right: &dyn ArrowArray,
     reversed: bool,
-) -> Result<DynPartialComparator> {
+) -> DaftResult<DynPartialComparator> {
     let comparator = build_compare_with_nan(left, right)?;
     let left_is_valid = build_is_valid(left);
     let right_is_valid = build_is_valid(right);
@@ -549,15 +536,15 @@ pub fn search_sorted_multi_array(
     sorted_arrays: &Vec<&dyn ArrowArray>,
     key_arrays: &Vec<&dyn ArrowArray>,
     input_reversed: &Vec<bool>,
-) -> Result<PrimitiveArray<UInt64Type>> {
+) -> DaftResult<PrimitiveArray<UInt64Type>> {
     if sorted_arrays.is_empty() || key_arrays.is_empty() {
-        return Err(Error::InvalidArgumentError(
+        return Err(DaftError::ValueError(
             "Passed in empty number of columns".to_string(),
         ));
     }
 
     if sorted_arrays.len() != key_arrays.len() {
-        return Err(Error::InvalidArgumentError(
+        return Err(DaftError::ValueError(
             "Mismatch in number of columns".to_string(),
         ));
     }
@@ -565,7 +552,7 @@ pub fn search_sorted_multi_array(
     let sorted_array_size = sorted_arrays[0].len();
     for sorted_arr in sorted_arrays {
         if sorted_arr.len() != sorted_array_size {
-            return Err(Error::InvalidArgumentError(format!(
+            return Err(DaftError::ValueError(format!(
                 "Mismatch in number of rows: {} vs {}",
                 sorted_arr.len(),
                 sorted_array_size
@@ -575,7 +562,7 @@ pub fn search_sorted_multi_array(
     let key_array_size = key_arrays[0].len();
     for key_arr in key_arrays {
         if key_arr.len() != key_array_size {
-            return Err(Error::InvalidArgumentError(format!(
+            return Err(DaftError::ValueError(format!(
                 "Mismatch in number of rows: {} vs {}",
                 key_arr.len(),
                 sorted_array_size
@@ -628,42 +615,66 @@ pub fn search_sorted(
         return Err(DaftError::TypeError(error_string));
     }
 
-    match Arrow2DataType::from(sorted_array.data_type().clone()).to_physical_type() {
-        PhysicalType::Primitive(primitive) => {
-            Ok(with_match_searching_primitive_type!(primitive, |$T| {
-                search_sorted_primitive_array::<$T>(
-                    sorted_array.as_any().downcast_ref().unwrap(),
-                    keys.as_any().downcast_ref().unwrap(),
-                    input_reversed
-                )
-            }))
+    match sorted_array.data_type() {
+        DataType::Int8
+        | DataType::Int16
+        | DataType::Int32
+        | DataType::Date32
+        | DataType::Time32(_)
+        | DataType::Int64
+        | DataType::Date64
+        | DataType::Timestamp(_, _)
+        | DataType::Time64(_)
+        | DataType::Duration(_)
+        | DataType::UInt8
+        | DataType::UInt16
+        | DataType::UInt32
+        | DataType::UInt64
+        | DataType::Float32
+        | DataType::Float64
+        | DataType::Decimal128(_, _)
+        | DataType::Decimal256(_, _) => {
+            dispatch_primitive_search_sorted!(sorted_array, keys, input_reversed, {
+                DataType::Int8 => Int8Type,
+                DataType::Int16 => Int16Type,
+                DataType::Int32 | DataType::Date32 | DataType::Time32(_) => Int32Type,
+                DataType::Int64 | DataType::Date64 | DataType::Timestamp(_, _) | DataType::Time64(_) | DataType::Duration(_) => Int64Type,
+                DataType::UInt8 => UInt8Type,
+                DataType::UInt16 => UInt16Type,
+                DataType::UInt32 => UInt32Type,
+                DataType::UInt64 => UInt64Type,
+                DataType::Float32 => Float32Type,
+                DataType::Float64 => Float64Type,
+                DataType::Decimal128(_, _) => Decimal128Type,
+                DataType::Decimal256(_, _) => Decimal256Type,
+            })
         }
-        PhysicalType::Utf8 => Ok(search_sorted_utf_array::<i32>(
+        DataType::Utf8 => Ok(search_sorted_utf_array::<i32>(
             sorted_array.as_any().downcast_ref().unwrap(),
             keys.as_any().downcast_ref().unwrap(),
             input_reversed,
         )),
-        PhysicalType::LargeUtf8 => Ok(search_sorted_utf_array::<i64>(
+        DataType::LargeUtf8 => Ok(search_sorted_utf_array::<i64>(
             sorted_array.as_any().downcast_ref().unwrap(),
             keys.as_any().downcast_ref().unwrap(),
             input_reversed,
         )),
-        PhysicalType::Binary => Ok(search_sorted_binary_array::<i32>(
+        DataType::Binary => Ok(search_sorted_binary_array::<i32>(
             sorted_array.as_any().downcast_ref().unwrap(),
             keys.as_any().downcast_ref().unwrap(),
             input_reversed,
         )),
-        PhysicalType::LargeBinary => Ok(search_sorted_binary_array::<i64>(
+        DataType::LargeBinary => Ok(search_sorted_binary_array::<i64>(
             sorted_array.as_any().downcast_ref().unwrap(),
             keys.as_any().downcast_ref().unwrap(),
             input_reversed,
         )),
-        PhysicalType::FixedSizeBinary => Ok(search_sorted_fixed_size_binary_array(
+        DataType::FixedSizeBinary(_) => Ok(search_sorted_fixed_size_binary_array(
             sorted_array.as_any().downcast_ref().unwrap(),
             keys.as_any().downcast_ref().unwrap(),
             input_reversed,
         )),
-        PhysicalType::Boolean => Ok(search_sorted_boolean_array(
+        DataType::Boolean => Ok(search_sorted_boolean_array(
             sorted_array.as_any().downcast_ref().unwrap(),
             keys.as_any().downcast_ref().unwrap(),
             input_reversed,
