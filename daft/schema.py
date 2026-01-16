@@ -82,6 +82,8 @@ class Schema:
         Returns:
             Schema: Converted Daft schema
         """
+        # Ensure Daft extension type is registered so PyArrow can deserialize it
+        _ensure_registered_super_ext_type()
         # NOTE: This does not retain schema-level metadata, as Daft Schemas do not have a metadata field.
         fields = []
         for pa_field in pa_schema:
