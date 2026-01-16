@@ -316,10 +316,14 @@ fn grouped_cmp_bool(
         Ok(BooleanArray::from_values(
             data_array.name(),
             groups.iter().map(|g| {
-                g.iter()
+                let reduced_val = g
+                    .iter()
                     .map(|i| data_array.get(*i as usize).unwrap())
-                    .reduce(|l, r| (l | r) ^ val_to_find)
-                    .unwrap()
+                    .find(|v| *v == val_to_find);
+                match reduced_val {
+                    None => !val_to_find,
+                    Some(v) => v,
+                }
             }),
         ))
     }
