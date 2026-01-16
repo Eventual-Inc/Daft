@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
-use daft_core::join::JoinType;
+use daft_core::{join::JoinType, prelude::SchemaRef};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use tracing::Span;
@@ -28,14 +28,24 @@ pub(crate) struct SortMergeJoinProbeState {
 pub struct SortMergeJoinOperator {
     left_on: Vec<BoundExpr>,
     right_on: Vec<BoundExpr>,
+    left_schema: SchemaRef,
+    right_schema: SchemaRef,
     join_type: JoinType,
 }
 
 impl SortMergeJoinOperator {
-    pub fn new(left_on: Vec<BoundExpr>, right_on: Vec<BoundExpr>, join_type: JoinType) -> Self {
+    pub fn new(
+        left_on: Vec<BoundExpr>,
+        right_on: Vec<BoundExpr>,
+        left_schema: SchemaRef,
+        right_schema: SchemaRef,
+        join_type: JoinType,
+    ) -> Self {
         Self {
             left_on,
             right_on,
+            left_schema,
+            right_schema,
             join_type,
         }
     }
@@ -99,13 +109,17 @@ impl JoinOperator for SortMergeJoinOperator {
             .expect("Expect exactly one state for SortMergeJoin");
         let left_on = self.left_on.clone();
         let right_on = self.right_on.clone();
+        let left_schema = self.left_schema.clone();
+        let right_schema = self.right_schema.clone();
         let join_type = self.join_type;
 
         spawner
             .spawn(
                 async move {
-                    let left_mp = MicroPartition::concat(&state.build_contents)?;
-                    let right_mp = MicroPartition::concat(&state.probe_contents)?;
+                    let left_mp =
+                        MicroPartition::concat_or_empty(&state.build_contents, left_schema)?;
+                    let right_mp =
+                        MicroPartition::concat_or_empty(&state.probe_contents, right_schema)?;
 
                     // TODO: Handle pre-sorted?
                     let joined = left_mp

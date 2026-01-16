@@ -1214,8 +1214,13 @@ fn physical_plan_to_pipeline(
             let build_child_node = physical_plan_to_pipeline(left, psets, cfg, ctx)?;
             let probe_child_node = physical_plan_to_pipeline(right, psets, cfg, ctx)?;
 
-            let sort_merge_join_op =
-                SortMergeJoinOperator::new(left_on.clone(), right_on.clone(), *join_type);
+            let sort_merge_join_op = SortMergeJoinOperator::new(
+                left_on.clone(),
+                right_on.clone(),
+                left.schema().clone(),
+                right.schema().clone(),
+                *join_type,
+            );
 
             JoinNode::new(
                 Arc::new(sort_merge_join_op),
