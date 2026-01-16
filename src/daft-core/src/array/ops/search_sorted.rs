@@ -13,8 +13,11 @@ where
     T: DaftArrowBackedType + 'static,
 {
     pub fn search_sorted(&self, keys: &Self, descending: bool) -> DaftResult<UInt64Array> {
-        let array =
-            search_sorted::search_sorted(self.data.as_ref(), keys.data.as_ref(), descending)?;
+        let array = search_sorted::search_sorted(
+            self.to_arrow().as_ref(),
+            keys.to_arrow().as_ref(),
+            descending,
+        )?;
 
         DataArray::from_arrow(self.field.clone(), Arc::new(array))
     }

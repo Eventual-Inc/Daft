@@ -42,18 +42,19 @@ unsafe fn multicol_search_sorted(
     keys: &[Series],
     descending: &[bool],
 ) -> DaftResult<UInt64Array> {
-    #[allow(deprecated, reason = "arrow2 migration")]
-    let data_arrow_vec: Vec<_> = data.iter().map(|s| s.to_arrow2()).collect();
-    #[allow(deprecated, reason = "arrow2 migration")]
-    let keys_arrow_vec: Vec<_> = keys.iter().map(|s| s.to_arrow2()).collect();
+    let data_arrow_rs_vec: Vec<_> = data
+        .iter()
+        .map(|s| s.to_arrow())
+        .collect::<DaftResult<Vec<_>>>()?;
 
-    let data_arrow_ref_vec = data_arrow_vec.iter().map(|s| s.as_ref()).collect();
-    let keys_arrow_ref_vec = keys_arrow_vec.iter().map(|s| s.as_ref()).collect();
+    let keys_arrow_rs_vec: Vec<_> = keys
+        .iter()
+        .map(|s| s.to_arrow())
+        .collect::<DaftResult<Vec<_>>>()?;
 
-    let indices = search_sorted_multi_array(
-        &data_arrow_ref_vec,
-        &keys_arrow_ref_vec,
-        &Vec::from(descending),
-    )?;
+    let data_refs: Vec<_> = data_arrow_rs_vec.iter().map(|a| a.as_ref()).collect();
+    let keys_refs: Vec<_> = keys_arrow_rs_vec.iter().map(|a| a.as_ref()).collect();
+
+    let indices = search_sorted_multi_array(&data_refs, &keys_refs, &Vec::from(descending))?;
     DataArray::from_arrow(Field::new("indices", DataType::UInt64), Arc::new(indices))
 }

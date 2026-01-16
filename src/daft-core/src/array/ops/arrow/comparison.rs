@@ -1,10 +1,10 @@
 #![allow(deprecated, reason = "arrow2->arrow migration")]
-use common_error::DaftResult;
-use daft_arrow::{
-    array::{Array, FixedSizeListArray, ListArray, PrimitiveArray, equal, ord::build_compare},
-    datatypes::DataType,
-    error::Result,
+use arrow::{
+    array::{Array, ArrowPrimitiveType, FixedSizeListArray, LargeListArray, PrimitiveArray},
+    datatypes::{Float32Type, Float64Type},
 };
+use common_error::DaftResult;
+use daft_arrow::array::ord::build_compare;
 use num_traits::Float;
 
 use crate::{
@@ -12,23 +12,27 @@ use crate::{
     series::Series,
 };
 
-fn build_is_equal_float<F: Float + daft_arrow::types::NativeType>(
+fn build_is_equal_float<T>(
     left: &dyn Array,
     right: &dyn Array,
     nan_equal: bool,
-) -> Box<dyn Fn(usize, usize) -> bool + Send + Sync> {
+) -> Box<dyn Fn(usize, usize) -> bool + Send + Sync>
+where
+    T: ArrowPrimitiveType,
+    T::Native: Float,
+{
     let left = left
         .as_any()
-        .downcast_ref::<PrimitiveArray<F>>()
+        .downcast_ref::<PrimitiveArray<T>>()
         .unwrap()
         .clone();
     let right = right
         .as_any()
-        .downcast_ref::<PrimitiveArray<F>>()
+        .downcast_ref::<PrimitiveArray<T>>()
         .unwrap()
         .clone();
     if nan_equal {
-        Box::new(move |i, j| cmp_float::<F>(&left.value(i), &right.value(j)).is_eq())
+        Box::new(move |i, j| cmp_float::<T::Native>(&left.value(i), &right.value(j)).is_eq())
     } else {
         Box::new(move |i, j| left.value(i).eq(&right.value(j)))
     }
@@ -40,16 +44,16 @@ fn build_is_equal_list(
 ) -> Box<dyn Fn(usize, usize) -> bool + Send + Sync> {
     let left = left
         .as_any()
-        .downcast_ref::<ListArray<i64>>()
+        .downcast_ref::<LargeListArray>()
         .unwrap()
         .clone();
     let right = right
         .as_any()
-        .downcast_ref::<ListArray<i64>>()
+        .downcast_ref::<LargeListArray>()
         .unwrap()
         .clone();
 
-    Box::new(move |i, j| equal(left.value(i).as_ref(), right.value(j).as_ref()))
+    Box::new(move |i, j| left.value(i).to_data() == right.value(j).to_data())
 }
 
 fn build_is_equal_fixed_size_list(
@@ -67,20 +71,21 @@ fn build_is_equal_fixed_size_list(
         .unwrap()
         .clone();
 
-    Box::new(move |i, j| equal(left.value(i).as_ref(), right.value(j).as_ref()))
+    Box::new(move |i, j| left.value(i).to_data() == right.value(j).to_data())
 }
 
 fn build_is_equal_with_nan(
     left: &dyn Array,
     right: &dyn Array,
     nan_equal: bool,
-) -> Result<Box<dyn Fn(usize, usize) -> bool + Send + Sync>> {
+) -> DaftResult<Box<dyn Fn(usize, usize) -> bool + Send + Sync>> {
+    use arrow::datatypes::DataType;
     match (left.data_type(), right.data_type()) {
         (DataType::Float32, DataType::Float32) => {
-            Ok(build_is_equal_float::<f32>(left, right, nan_equal))
+            Ok(build_is_equal_float::<Float32Type>(left, right, nan_equal))
         }
         (DataType::Float64, DataType::Float64) => {
-            Ok(build_is_equal_float::<f64>(left, right, nan_equal))
+            Ok(build_is_equal_float::<Float64Type>(left, right, nan_equal))
         }
         (DataType::LargeList(f1), DataType::LargeList(f2)) if *f1 == *f2 => {
             Ok(build_is_equal_list(left, right))
@@ -91,7 +96,9 @@ fn build_is_equal_with_nan(
             Ok(build_is_equal_fixed_size_list(left, right))
         }
         _ => {
-            let comp = build_compare(left, right)?;
+            let left2 = daft_arrow::array::from_data(&left.to_data());
+            let right2 = daft_arrow::array::from_data(&right.to_data());
+            let comp = build_compare(left2.as_ref(), right2.as_ref())?;
             Ok(Box::new(move |i, j| comp(i, j).is_eq()))
         }
     }
@@ -135,8 +142,8 @@ pub fn build_multi_array_is_equal(
 
     for (idx, (l, r)) in left.iter().zip(right.iter()).enumerate() {
         fn_list.push(build_is_equal(
-            l.to_arrow2().as_ref(),
-            r.to_arrow2().as_ref(),
+            l.to_arrow()?.as_ref(),
+            r.to_arrow()?.as_ref(),
             nulls_equal[idx],
             nans_equal[idx],
         )?);

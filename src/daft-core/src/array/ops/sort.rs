@@ -58,8 +58,8 @@ pub fn build_multi_array_bicompare(
         .zip(nulls_first.iter())
     {
         cmp_list.push(build_nulls_first_compare_with_nulls(
-            l.to_arrow2().as_ref(),
-            r.to_arrow2().as_ref(),
+            l.to_arrow()?.as_ref(),
+            r.to_arrow()?.as_ref(),
             *desc,
             *nf,
         )?);
