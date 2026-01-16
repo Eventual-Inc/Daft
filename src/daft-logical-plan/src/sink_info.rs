@@ -367,7 +367,7 @@ impl FormatSinkOption {
     }
     pub fn to_json(self) -> JsonFormatOption {
         match self {
-            Self:: Json(json) => json,
+            Self::Json(json) => json,
             _ => JsonFormatOption::default(),
         }
     }
@@ -405,11 +405,12 @@ impl PyFormatSinkOption {
     }
 
     #[classmethod]
-    pub fn json(_cls: &pyo3::prelude::Bound<pyo3::types::PyType>, ignore_null_fields: Option<bool>) -> Self {
+    pub fn json(
+        _cls: &pyo3::prelude::Bound<pyo3::types::PyType>,
+        ignore_null_fields: Option<bool>,
+    ) -> Self {
         Self {
-            inner: FormatSinkOption::Json(JsonFormatOption {
-                ignore_null_fields,
-            }),
+            inner: FormatSinkOption::Json(JsonFormatOption { ignore_null_fields }),
         }
     }
 

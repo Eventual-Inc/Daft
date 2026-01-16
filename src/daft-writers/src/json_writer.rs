@@ -4,9 +4,9 @@ use arrow_json::{LineDelimitedWriter, WriterBuilder, writer::LineDelimited};
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_io::{IOConfig, SourceType, parse_url, utils::ObjectPath};
+use daft_logical_plan::sink_info::JsonFormatOption;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
-use daft_logical_plan::sink_info::JsonFormatOption;
 
 use crate::{
     AsyncFileWriter,
