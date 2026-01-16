@@ -5,7 +5,7 @@ use std::{
 };
 
 use super::{
-    super::{Error, ProtocolError, ProtocolErrorKind, Result, varint::VarIntReader},
+    super::{varint::VarIntReader, Error, ProtocolError, ProtocolErrorKind, Result},
     TFieldIdentifier, TInputProtocol, TListIdentifier, TMapIdentifier, TMessageIdentifier,
     TMessageType, TSetIdentifier, TStructIdentifier, TType,
 };

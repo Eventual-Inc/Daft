@@ -4,10 +4,10 @@ use std::{
 };
 
 use super::{
-    super::{Result, varint::VarIntWriter},
+    super::{varint::VarIntWriter, Result},
+    compact::{COMPACT_PROTOCOL_ID, COMPACT_VERSION},
     TFieldIdentifier, TListIdentifier, TMapIdentifier, TMessageIdentifier, TOutputProtocol,
     TSetIdentifier, TStructIdentifier, TType,
-    compact::{COMPACT_PROTOCOL_ID, COMPACT_VERSION},
 };
 
 /// Write messages using the Thrift compact protocol.

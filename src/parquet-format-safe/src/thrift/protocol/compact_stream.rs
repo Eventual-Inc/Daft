@@ -6,12 +6,12 @@ use futures::io::{AsyncRead, AsyncReadExt};
 
 use super::{
     super::varint::VarIntAsyncReader,
+    compact::{
+        collection_u8_to_type, u8_to_type, COMPACT_PROTOCOL_ID, COMPACT_VERSION,
+        COMPACT_VERSION_MASK,
+    },
     TFieldIdentifier, TInputStreamProtocol, TListIdentifier, TMapIdentifier, TMessageIdentifier,
     TMessageType, TSetIdentifier, TStructIdentifier, TType,
-    compact::{
-        COMPACT_PROTOCOL_ID, COMPACT_VERSION, COMPACT_VERSION_MASK, collection_u8_to_type,
-        u8_to_type,
-    },
 };
 use crate::thrift::{Error, ProtocolError, ProtocolErrorKind, Result};
 
