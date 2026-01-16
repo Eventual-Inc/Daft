@@ -37,7 +37,7 @@ impl BinaryArrayExtension for BinaryArray {
 
         //
         let mut values = Vec::<u8>::new();
-        let mut offsets = OffsetBufferBuilder::new(input.len() + 1);
+        let mut offsets = OffsetBufferBuilder::new(input.len());
         for span in input.offsets().windows(2) {
             let s = span[0] as usize;
             let e = span[1] as usize;
@@ -80,7 +80,7 @@ impl BinaryArrayExtension for BinaryArray {
         };
         //
         let mut values = Vec::<u8>::new();
-        let mut offsets = OffsetBufferBuilder::new(input.len() + 1);
+        let mut offsets = OffsetBufferBuilder::new(input.len());
         for (i, span) in input.offsets().windows(2).enumerate() {
             let s = span[0] as usize;
             let e = span[1] as usize;
@@ -159,7 +159,7 @@ impl BinaryArrayExtension for BinaryArray {
         //
         let mut values = Vec::<u8>::new();
 
-        let mut offsets = OffsetBufferBuilder::new(input.len() + 1);
+        let mut offsets = OffsetBufferBuilder::new(input.len());
         for (i, span) in input.offsets().windows(2).enumerate() {
             let s = span[0] as usize;
             let e = span[1] as usize;
@@ -199,7 +199,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
         let nulls = input.nulls().cloned();
         //
         let mut values = Vec::<u8>::new();
-        let mut offsets = OffsetBufferBuilder::new(input.len() + 1);
+        let mut offsets = OffsetBufferBuilder::new(input.len());
 
         for i in 0..chunks {
             let s = i * size;
@@ -244,7 +244,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
         //
         let mut values = Vec::<u8>::new();
 
-        let mut offsets = OffsetBufferBuilder::new(input.len() + 1);
+        let mut offsets = OffsetBufferBuilder::new(input.len());
         for i in 0..chunks {
             let s = i * size;
             let e = s + size;
@@ -278,7 +278,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
         let nulls = input.nulls().cloned();
 
         let mut values = Vec::<u8>::new();
-        let mut offsets = OffsetBufferBuilder::new(input.len() + 1);
+        let mut offsets = OffsetBufferBuilder::new(input.len());
 
         for i in 0..chunks {
             let s = i * size;
@@ -323,7 +323,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
         };
 
         let mut values = Vec::<u8>::new();
-        let mut offsets = OffsetBufferBuilder::new(input.len() + 1);
+        let mut offsets = OffsetBufferBuilder::new(input.len());
 
         for i in 0..chunks {
             let s = i * size;
