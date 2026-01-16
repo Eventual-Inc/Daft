@@ -9,7 +9,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayLevel, mermaid::MermaidDisplayOptions};
 use common_error::DaftResult;
-use common_metrics::StatSnapshot;
+use common_metrics::{NodeID, StatSnapshot};
 use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
 use daft_context::{DaftContext, Subscriber};
@@ -366,7 +366,7 @@ fn should_enable_explain_analyze() -> bool {
     }
 }
 
-type ExecutionEngineFinalResult = DaftResult<Vec<(usize, StatSnapshot)>>;
+type ExecutionEngineFinalResult = DaftResult<Vec<(NodeID, StatSnapshot)>>;
 
 pub struct ExecutionEngineResult {
     handle: RuntimeTask<ExecutionEngineFinalResult>,

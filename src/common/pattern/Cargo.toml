@@ -5,6 +5,7 @@ version.workspace = true
 
 [dependencies]
 regex = {workspace = true}
+regex-syntax = {version = "0.8"}
 
 [lints]
 workspace = true

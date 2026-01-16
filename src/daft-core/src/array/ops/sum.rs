@@ -1,5 +1,4 @@
 use common_error::DaftResult;
-use daft_arrow::array::Array;
 
 use super::{DaftSumAggable, as_arrow::AsArrow};
 use crate::{array::ops::GroupIndices, datatypes::*};
@@ -9,8 +8,8 @@ macro_rules! impl_daft_numeric_agg {
             type Output = DaftResult<DataArray<$T>>;
 
             fn sum(&self) -> Self::Output {
-                let primitive_arr = self.as_arrow2();
-                let sum_value = daft_arrow::compute::aggregate::sum_primitive(primitive_arr);
+                let arrow_array = self.as_arrow()?;
+                let sum_value = arrow::compute::sum(&arrow_array);
                 Ok(DataArray::<$T>::from_iter(
                     self.field.clone(),
                     std::iter::once(sum_value),
@@ -18,17 +17,16 @@ macro_rules! impl_daft_numeric_agg {
             }
 
             fn grouped_sum(&self, groups: &GroupIndices) -> Self::Output {
-                let arrow_array = self.as_arrow2();
-                let sum_per_group = if arrow_array.null_count() > 0 {
+                let sum_per_group = if self.null_count() > 0 {
                     DataArray::<$T>::from_iter(
                         self.field.clone(),
                         groups.iter().map(|g| {
                             g.iter().fold(None, |acc, index| {
                                 let idx = *index as usize;
-                                match (acc, arrow_array.is_null(idx)) {
-                                    (acc, true) => acc,
-                                    (None, false) => Some(arrow_array.value(idx)),
-                                    (Some(acc), false) => Some(acc + arrow_array.value(idx)),
+                                match (acc, self.get(idx)) {
+                                    (acc, None) => acc,
+                                    (None, Some(val)) => Some(val),
+                                    (Some(acc), Some(val)) => Some(acc + val),
                                 }
                             })
                         }),
@@ -39,7 +37,7 @@ macro_rules! impl_daft_numeric_agg {
                         groups.iter().map(|g| {
                             g.iter().fold(0 as $AggType, |acc, index| {
                                 let idx = *index as usize;
-                                acc + unsafe { arrow_array.value_unchecked(idx) }
+                                acc + self.get(idx).unwrap()
                             })
                         }),
                     )

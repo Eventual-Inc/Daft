@@ -12,15 +12,15 @@ use crate::{Stat, operator_metrics::OperatorMetrics};
 #[pyclass(eq, eq_int)]
 #[derive(PartialEq, Eq)]
 pub enum StatType {
-    #[pyo3(name = "UPPERCASE")]
+    #[pyo3(name = "COUNT")]
     Count = 0,
-    #[pyo3(name = "UPPERCASE")]
+    #[pyo3(name = "BYTES")]
     Bytes,
-    #[pyo3(name = "UPPERCASE")]
+    #[pyo3(name = "PERCENT")]
     Percent,
-    #[pyo3(name = "UPPERCASE")]
+    #[pyo3(name = "FLOAT")]
     Float,
-    #[pyo3(name = "UPPERCASE")]
+    #[pyo3(name = "DURATION")]
     Duration,
 }
 

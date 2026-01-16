@@ -7,7 +7,10 @@ use std::{
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
-use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
+use common_metrics::{
+    ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot::StatSnapshotImpl,
+};
 use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime};
 use daft_core::prelude::SchemaRef;
 use daft_local_plan::LocalNodeContext;
@@ -29,6 +32,7 @@ use crate::{
 #[derive(Clone)]
 pub enum IntermediateOperatorResult {
     NeedMoreInput(Option<Arc<MicroPartition>>),
+    #[allow(dead_code)]
     HasMoreOutput {
         input: Arc<MicroPartition>,
         output: Arc<MicroPartition>,
@@ -338,7 +342,7 @@ impl<Op: IntermediateOperator + 'static> TreeDisplay for IntermediateNode<Op> {
                 if matches!(level, DisplayLevel::Verbose) {
                     writeln!(display).unwrap();
                     let rt_result = self.runtime_stats.snapshot();
-                    for (name, value) in rt_result {
+                    for (name, value) in rt_result.to_stats() {
                         writeln!(display, "{} = {}", name.as_ref().capitalize(), value).unwrap();
                     }
                 }

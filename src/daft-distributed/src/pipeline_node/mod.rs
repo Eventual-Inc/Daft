@@ -21,6 +21,7 @@ use daft_logical_plan::{partitioning::ClusteringSpecRef, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt, stream::BoxStream};
 use materialize::materialize_all_pipeline_outputs;
+use opentelemetry::metrics::Meter;
 
 use crate::{
     plan::{PlanExecutionContext, QueryIdx, TaskIDCounter},
@@ -29,7 +30,7 @@ use crate::{
         task::{SwordfishTask, SwordfishTaskBuilder},
         worker::WorkerId,
     },
-    statistics::stats::{DefaultRuntimeStats, RuntimeStats},
+    statistics::stats::{DefaultRuntimeStats, RuntimeStatsRef},
     utils::channel::{Receiver, ReceiverStream},
 };
 
@@ -206,11 +207,8 @@ impl PipelineNodeContext {
 pub(crate) trait PipelineNodeImpl: Send + Sync {
     fn context(&self) -> &PipelineNodeContext;
     fn config(&self) -> &PipelineNodeConfig;
-    fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        Arc::new(DefaultRuntimeStats::new(
-            self.node_id(),
-            self.context().query_id.clone(),
-        ))
+    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(DefaultRuntimeStats::new(meter, self.node_id()))
     }
 
     fn children(&self) -> Vec<DistributedPipelineNode>;
@@ -252,8 +250,8 @@ impl DistributedPipelineNode {
     pub fn num_partitions(&self) -> usize {
         self.op.config().clustering_spec.num_partitions()
     }
-    pub fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        self.op.runtime_stats()
+    pub fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        self.op.runtime_stats(meter)
     }
     pub fn produce_tasks(self, plan_context: &mut PlanExecutionContext) -> TaskBuilderStream {
         self.op.produce_tasks(plan_context)

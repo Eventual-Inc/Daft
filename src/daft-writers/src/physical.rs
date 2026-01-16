@@ -183,7 +183,8 @@ fn create_native_writer(
             create_native_parquet_writer(root_dir, schema, file_idx, partition_values, io_config)
         }
         FileFormat::Json => {
-            create_native_json_writer(root_dir, file_idx, partition_values, io_config)
+            let json_option = format_option.map(|opt| opt.to_json()).unwrap_or_default();
+            create_native_json_writer(root_dir, file_idx, partition_values, io_config, json_option)
         }
         FileFormat::Csv => {
             let csv_option = format_option.map(|opt| opt.to_csv()).unwrap_or_default();

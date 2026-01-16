@@ -84,13 +84,12 @@ impl BinaryArray {
         name: &str,
         iter: impl daft_arrow::trusted_len::TrustedLen<Item = Option<S>>,
     ) -> Self {
-        let arrow_array =
-            Box::new(daft_arrow::array::BinaryArray::<i64>::from_trusted_len_iter(iter));
-        Self::new(
-            Field::new(name, crate::datatypes::DataType::Binary).into(),
-            arrow_array,
+        let arrow_array = arrow::array::LargeBinaryArray::from_iter(iter);
+        Self::from_arrow(
+            Field::new(name, crate::datatypes::DataType::Binary),
+            Arc::new(arrow_array),
         )
-        .unwrap()
+        .expect("Failed to create BinaryArray from nullable byte arrays")
     }
 }
 impl FixedSizeBinaryArray {
@@ -99,12 +98,12 @@ impl FixedSizeBinaryArray {
         iter: impl daft_arrow::trusted_len::TrustedLen<Item = Option<S>>,
         size: usize,
     ) -> Self {
-        let arrow_array = Box::new(daft_arrow::array::FixedSizeBinaryArray::from_iter(
-            iter, size,
-        ));
-        Self::new(
-            Field::new(name, crate::datatypes::DataType::FixedSizeBinary(size)).into(),
-            arrow_array,
+        let arrow_array =
+            arrow::array::FixedSizeBinaryArray::try_from_sparse_iter_with_size(iter, size as i32)
+                .expect("Failed to create FixedSizeBinaryArray from nullable byte arrays");
+        Self::from_arrow(
+            Field::new(name, crate::datatypes::DataType::FixedSizeBinary(size)),
+            Arc::new(arrow_array),
         )
         .unwrap()
     }
@@ -221,9 +220,9 @@ impl BinaryArray {
         name: &str,
         iter: impl daft_arrow::trusted_len::TrustedLen<Item = S>,
     ) -> Self {
-        let arrow_array =
-            Box::new(daft_arrow::array::BinaryArray::<i64>::from_trusted_len_values_iter(iter));
-        Self::new(Field::new(name, DataType::Binary).into(), arrow_array).unwrap()
+        let arrow_array = arrow::array::LargeBinaryArray::from_iter_values(iter);
+        Self::from_arrow(Field::new(name, DataType::Binary), Arc::new(arrow_array))
+            .expect("Failed to create BinaryArray from byte arrays")
     }
 }
 
@@ -360,5 +359,14 @@ impl PythonArray {
             values.into(),
             nulls,
         ))
+    }
+}
+
+impl IntervalArray {
+    pub fn from_iter_values<I: IntoIterator<Item = arrow::datatypes::IntervalMonthDayNano>>(
+        iter: I,
+    ) -> Self {
+        let arrow_arr = arrow::array::IntervalMonthDayNanoArray::from_iter_values(iter);
+        Self::from_arrow(Field::new("", DataType::Interval), Arc::new(arrow_arr)).unwrap()
     }
 }

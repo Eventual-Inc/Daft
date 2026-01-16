@@ -1,16 +1,13 @@
-use std::{
-    sync::{Arc, atomic::Ordering},
-    time::Duration,
-};
+use std::sync::{Arc, atomic::Ordering};
 
 use async_trait::async_trait;
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
-    CPU_US_KEY, ROWS_OUT_KEY, Stat, StatSnapshot,
+    CPU_US_KEY, Counter, ROWS_OUT_KEY, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
-    snapshot,
+    snapshot::{SourceSnapshot, StatSnapshotImpl},
 };
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
@@ -24,7 +21,7 @@ use snafu::ResultExt;
 use crate::{
     ExecutionRuntimeContext, PipelineExecutionSnafu,
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
-    runtime_stats::{Counter, RuntimeStats},
+    runtime_stats::RuntimeStats,
 };
 
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
@@ -43,8 +40,8 @@ impl SourceStats {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, "cpu_us".into(), None),
-            rows_out: Counter::new(&meter, "rows_out".into(), None),
+            cpu_us: Counter::new(&meter, CPU_US_KEY, None),
+            rows_out: Counter::new(&meter, ROWS_OUT_KEY, None),
             io_stats: IOStatsRef::default(),
 
             node_kv,
@@ -58,11 +55,14 @@ impl RuntimeStats for SourceStats {
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
-        snapshot![
-            CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
-            ROWS_OUT_KEY; Stat::Count(self.rows_out.load(ordering)),
-            "bytes read"; Stat::Bytes(self.io_stats.load_bytes_read() as u64),
-        ]
+        let cpu_us = self.cpu_us.load(ordering);
+        let rows_out = self.rows_out.load(ordering);
+        let bytes_read = self.io_stats.load_bytes_read() as u64;
+        StatSnapshot::Source(SourceSnapshot {
+            cpu_us,
+            rows_out,
+            bytes_read,
+        })
     }
 
     fn add_rows_in(&self, _: u64) {
@@ -158,7 +158,7 @@ impl TreeDisplay for SourceNode {
                     let rt_result = self.runtime_stats.snapshot();
 
                     writeln!(display).unwrap();
-                    for (name, value) in rt_result {
+                    for (name, value) in rt_result.to_stats() {
                         writeln!(display, "{} = {}", name.as_ref().capitalize(), value).unwrap();
                     }
                 }
