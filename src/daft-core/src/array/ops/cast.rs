@@ -708,14 +708,13 @@ impl ImageArray {
                     .clone()
                     .into_series()
                     .cast(&DataType::List(inner_dtype.clone()))?;
-                let ca = self.channels();
-                let ha = self.heights();
-                let wa = self.widths();
+                let ha = self.heights().values();
+                let wa = self.widths().values();
+                let ca = self.channels().values();
                 for i in 0..self.len() {
-                    // Note: we use get() which returns Option, then unwrap_or(0) for null handling
-                    shapes.push(ha.get(i).unwrap_or(0) as u64);
-                    shapes.push(wa.get(i).unwrap_or(0) as u64);
-                    shapes.push(ca.get(i).unwrap_or(0) as u64);
+                    shapes.push(ha[i] as u64);
+                    shapes.push(wa[i] as u64);
+                    shapes.push(ca[i] as u64);
                 }
                 let shapes_dtype = DataType::List(Box::new(DataType::UInt64));
                 let shape_offsets = daft_arrow::offset::OffsetsBuffer::try_from(shape_offsets)?;

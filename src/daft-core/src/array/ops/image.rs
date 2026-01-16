@@ -45,11 +45,10 @@ impl AsImageObj for ImageArray {
             .unwrap();
         let slice_data = Cow::Borrowed(&values.values().as_slice()[start..end] as &'a [u8]);
 
-        // Safety: idx is already checked for validity above
-        let c = self.channels().get(idx).unwrap();
-        let h = self.heights().get(idx).unwrap();
-        let w = self.widths().get(idx).unwrap();
-        let m: ImageMode = ImageMode::from_u8(self.modes().get(idx).unwrap()).unwrap();
+        let c = self.channels().values()[idx];
+        let h = self.heights().values()[idx];
+        let w = self.widths().values()[idx];
+        let m: ImageMode = ImageMode::from_u8(self.modes().values()[idx]).unwrap();
         assert_eq!(m.num_channels(), c);
         let result = CowImage::from_raw(&m, w, h, slice_data);
 
