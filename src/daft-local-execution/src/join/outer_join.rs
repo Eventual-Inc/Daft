@@ -20,19 +20,22 @@ pub(crate) async fn merge_bitmaps_and_construct_null_table(
     let mut states_iter = states.into_iter();
     let first_state = states_iter
         .next()
-        .expect("at least one state should be present");
+        .expect("At least one state should be present for merge bitmaps and construct null table");
     let first_tables = first_state.probe_state.get_record_batches();
     let first_bitmap = first_state
         .bitmap_builder
-        .expect("bitmap should be set")
+        .expect("Bitmap builder should be set for merge bitmaps and construct null table")
         .build();
 
     let merged_bitmap = {
         let bitmaps = stream::once(async move { first_bitmap })
-            .chain(
-                stream::iter(states_iter)
-                    .map(|s| s.bitmap_builder.expect("bitmap should be set").build()),
-            )
+            .chain(stream::iter(states_iter).map(|s| {
+                s.bitmap_builder
+                    .expect(
+                        "Bitmap builder should be set for merge bitmaps and construct null table",
+                    )
+                    .build()
+            }))
             .collect::<Vec<_>>()
             .await;
 
@@ -41,7 +44,7 @@ pub(crate) async fn merge_bitmaps_and_construct_null_table(
             Some(acc) => Some(acc.merge(&x)),
         })
     }
-    .expect("at least one bitmap should be present");
+    .expect("At least one bitmap should be present for merge bitmaps and construct null table");
 
     let leftovers = merged_bitmap
         .convert_to_boolean_arrays()
@@ -57,7 +60,7 @@ pub(crate) fn probe_outer(
     bitmap_builder: Option<&mut IndexBitmapBuilder>,
     params: &HashJoinParams,
 ) -> DaftResult<Arc<MicroPartition>> {
-    let bitmap_builder = bitmap_builder.expect("bitmap should be set for outer joins");
+    let bitmap_builder = bitmap_builder.expect("Bitmap builder should be set for outer join probe");
     let build_side_tables = probe_state.get_record_batches().iter().collect::<Vec<_>>();
 
     // Compute outer common column schema

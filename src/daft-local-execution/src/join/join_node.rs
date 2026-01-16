@@ -160,7 +160,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
                             }
                             ctx.runtime_stats.add_rows_in(morsel.len() as u64);
                             let state = ctx.build_state.take()
-                                .expect("Build state should be available");
+                                .expect("Build state should be available for build task if ctx.build_state is some");
 
                             Self::spawn_build_task(ctx, morsel, state);
                         }
@@ -180,7 +180,7 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
         let build_state = ctx
             .build_state
             .take()
-            .expect("Build state should be available");
+            .expect("Build state should be available for finalize build");
         let finalized = ctx.op.finalize_build(build_state)?;
         // Send finalized build state to probe side
         let _ = finalized_build_state_sender.send(finalized);

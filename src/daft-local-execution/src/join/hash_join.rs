@@ -131,6 +131,15 @@ impl HashJoinOperator {
             }),
         })
     }
+
+    /// Whether the probe phase needs a bitmap to keep track of matched rows.
+    fn needs_bitmap(&self) -> bool {
+        matches!(self.params.join_type, JoinType::Outer)
+            || (self.params.join_type == JoinType::Right && !self.params.build_on_left)
+            || (self.params.join_type == JoinType::Left && self.params.build_on_left)
+            || (matches!(self.params.join_type, JoinType::Anti | JoinType::Semi)
+                && self.params.build_on_left)
+    }
 }
 
 impl JoinOperator for HashJoinOperator {
@@ -207,7 +216,7 @@ impl JoinOperator for HashJoinOperator {
                         JoinType::Left | JoinType::Right if needs_bitmap => {
                             probe_left_right_with_bitmap(
                                 &input,
-                                state.bitmap_builder.as_mut().expect("bitmap should be set"),
+                                state.bitmap_builder.as_mut().expect("Bitmap builder should be set for left or right joins with bitmap"),
                                 &state.probe_state,
                                 &params,
                             )?
@@ -224,7 +233,7 @@ impl JoinOperator for HashJoinOperator {
                         JoinType::Anti | JoinType::Semi if needs_bitmap => {
                             probe_anti_semi_with_bitmap(
                                 &input,
-                                state.bitmap_builder.as_mut().expect("bitmap should be set"),
+                                state.bitmap_builder.as_mut().expect("Bitmap builder should be set for anti or semi joins with bitmap"),
                                 &state.probe_state,
                                 &params,
                             )?;
@@ -247,10 +256,14 @@ impl JoinOperator for HashJoinOperator {
         states: Vec<Self::ProbeState>,
         spawner: &ExecutionTaskSpawner,
     ) -> ProbeFinalizeResult {
-        let needs_bitmap = self.needs_bitmap();
-        if !needs_bitmap {
-            return Ok(None).into();
-        }
+        debug_assert!(
+            self.needs_bitmap(),
+            "Hash join probe finalize should need a bitmap"
+        );
+        debug_assert!(
+            self.needs_probe_finalization(),
+            "Hash join probe finalize should only be called if the probe phase needs finalization"
+        );
 
         let params = self.params.clone();
         match self.params.join_type {
@@ -263,25 +276,41 @@ impl JoinOperator for HashJoinOperator {
                     Span::current(),
                 )
                 .into(),
-            JoinType::Left => spawner
-                .spawn(
-                    async move {
-                        let output = finalize_left(states, &params).await?;
-                        Ok(output)
-                    },
-                    Span::current(),
-                )
-                .into(),
-            JoinType::Right => spawner
-                .spawn(
-                    async move {
-                        let output = finalize_right(states, &params).await?;
-                        Ok(output)
-                    },
-                    Span::current(),
-                )
-                .into(),
-            JoinType::Anti | JoinType::Semi if self.params.build_on_left => {
+            JoinType::Left => {
+                debug_assert!(
+                    self.params.build_on_left,
+                    "Hash join finalize left should only be called if the build side is the left side"
+                );
+                spawner
+                    .spawn(
+                        async move {
+                            let output = finalize_left(states, &params).await?;
+                            Ok(output)
+                        },
+                        Span::current(),
+                    )
+                    .into()
+            }
+            JoinType::Right => {
+                debug_assert!(
+                    !self.params.build_on_left,
+                    "Hash join finalize right should only be called if the build side is the right side"
+                );
+                spawner
+                    .spawn(
+                        async move {
+                            let output = finalize_right(states, &params).await?;
+                            Ok(output)
+                        },
+                        Span::current(),
+                    )
+                    .into()
+            }
+            JoinType::Anti | JoinType::Semi => {
+                debug_assert!(
+                    self.params.build_on_left,
+                    "Hash join finalize anti or semi should only be called if the build side is the left side"
+                );
                 let is_semi = self.params.join_type == JoinType::Semi;
                 spawner
                     .spawn(
@@ -293,7 +322,9 @@ impl JoinOperator for HashJoinOperator {
                     )
                     .into()
             }
-            _ => Ok(None).into(),
+            _ => unreachable!(
+                "Hash join probe phase should not need finalization for join types other than outer, left, right, anti, semi"
+            ),
         }
     }
 
@@ -335,22 +366,8 @@ impl JoinOperator for HashJoinOperator {
         display
     }
 
+    /// Probe phase for hash joins needs finalization if it needs a bitmap.
     fn needs_probe_finalization(&self) -> bool {
-        matches!(
-            self.params.join_type,
-            JoinType::Outer | JoinType::Left | JoinType::Right
-        ) || (matches!(self.params.join_type, JoinType::Anti | JoinType::Semi)
-            && self.params.build_on_left)
-    }
-}
-
-// Helper methods
-impl HashJoinOperator {
-    fn needs_bitmap(&self) -> bool {
-        matches!(self.params.join_type, JoinType::Outer)
-            || (self.params.join_type == JoinType::Right && !self.params.build_on_left)
-            || (self.params.join_type == JoinType::Left && self.params.build_on_left)
-            || (matches!(self.params.join_type, JoinType::Anti | JoinType::Semi)
-                && self.params.build_on_left)
+        self.needs_bitmap()
     }
 }

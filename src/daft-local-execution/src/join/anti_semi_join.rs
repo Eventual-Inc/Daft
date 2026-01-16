@@ -77,19 +77,20 @@ pub(crate) async fn finalize_anti_semi(
     let mut states_iter = states.into_iter();
     let first_state = states_iter
         .next()
-        .expect("at least one state should be present");
+        .expect("At least one state should be present for anti/semi join finalize");
     let first_tables = first_state.probe_state.get_record_batches();
     let first_bitmap = first_state
         .bitmap_builder
-        .expect("bitmap should be set")
+        .expect("Bitmap builder should be set for anti/semi join finalize")
         .build();
 
     let mut merged_bitmap = {
         let bitmaps = stream::once(async move { first_bitmap })
-            .chain(
-                stream::iter(states_iter)
-                    .map(|s| s.bitmap_builder.expect("bitmap should be set").build()),
-            )
+            .chain(stream::iter(states_iter).map(|s| {
+                s.bitmap_builder
+                    .expect("Bitmap builder should be set for anti/semi join finalize")
+                    .build()
+            }))
             .collect::<Vec<_>>()
             .await;
 
@@ -98,7 +99,7 @@ pub(crate) async fn finalize_anti_semi(
             Some(acc) => Some(acc.merge(&x)),
         })
     }
-    .expect("at least one bitmap should be present");
+    .expect("At least one bitmap should be present for anti/semi join finalize");
 
     // The bitmap marks matched rows as 0, so we need to negate it if we are doing semi join, i.e. the matched rows become 1 so that
     // we can we can keep them in the final result.

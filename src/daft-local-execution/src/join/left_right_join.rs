@@ -1,12 +1,16 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_core::prelude::{Series, UInt64Array};
+use daft_core::prelude::{Schema, Series, UInt64Array};
 use daft_logical_plan::JoinType;
 use daft_micropartition::MicroPartition;
-use daft_recordbatch::{GrowableRecordBatch, ProbeState, get_columns_by_name};
+use daft_recordbatch::{GrowableRecordBatch, ProbeState, RecordBatch, get_columns_by_name};
 
-use crate::join::{hash_join::HashJoinParams, index_bitmap::IndexBitmapBuilder};
+use crate::join::{
+    hash_join::{HashJoinParams, HashJoinProbeState},
+    index_bitmap::IndexBitmapBuilder,
+    outer_join::merge_bitmaps_and_construct_null_table,
+};
 
 pub(crate) fn probe_left_right_with_bitmap(
     input: &Arc<MicroPartition>,
@@ -167,14 +171,9 @@ pub(crate) fn probe_left_right(
 }
 
 pub(crate) async fn finalize_left(
-    states: Vec<crate::join::hash_join::HashJoinProbeState>,
+    states: Vec<HashJoinProbeState>,
     params: &HashJoinParams,
 ) -> DaftResult<Option<Arc<MicroPartition>>> {
-    use daft_core::prelude::Schema;
-    use daft_recordbatch::RecordBatch;
-
-    use crate::join::outer_join::merge_bitmaps_and_construct_null_table;
-
     let build_side_table = merge_bitmaps_and_construct_null_table(states).await?;
 
     // If build_side_table is empty, return empty result with correct schema
@@ -221,14 +220,9 @@ pub(crate) async fn finalize_left(
 }
 
 pub(crate) async fn finalize_right(
-    states: Vec<crate::join::hash_join::HashJoinProbeState>,
+    states: Vec<HashJoinProbeState>,
     params: &HashJoinParams,
 ) -> DaftResult<Option<Arc<MicroPartition>>> {
-    use daft_core::prelude::Schema;
-    use daft_recordbatch::RecordBatch;
-
-    use crate::join::outer_join::merge_bitmaps_and_construct_null_table;
-
     let build_side_table = merge_bitmaps_and_construct_null_table(states).await?;
 
     // If build_side_table is empty, return empty result with correct schema

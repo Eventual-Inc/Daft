@@ -106,7 +106,7 @@ impl JoinOperator for SortMergeJoinOperator {
         let state = states
             .into_iter()
             .next()
-            .expect("Expect exactly one state for SortMergeJoin");
+            .expect("Expect exactly one state for SortMergeJoin probe finalize");
         let left_on = self.left_on.clone();
         let right_on = self.right_on.clone();
         let left_schema = self.left_schema.clone();
