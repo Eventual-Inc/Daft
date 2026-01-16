@@ -82,7 +82,6 @@
     * [AI](api/ai.md)
     * [I/O](api/io.md)
     * [DataFrame](api/dataframe.md)
-    * [Functions](api/functions/)
     * [Datasets](api/datasets.md)
     * [Expressions](api/expressions.md)
     * [Functions](api/functions/)
