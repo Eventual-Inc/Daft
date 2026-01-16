@@ -270,9 +270,11 @@ def test_batch_size_from_udf_not_propagated_through_join():
 |   Stats = { Approx num rows = 5, Approx size bytes = 37 B, Accumulated selectivity = 0.90 }
 |   Batch Size = Range(0, 10]
 |
-* InnerHashJoinProbe:
-|   Probe on: [col(0: b)]
+* HashJoin(Inner):
 |   Build on left: true
+|   Track Indices: true
+|   Key Schema: a#Int64
+|   Null equals Nulls = [false]
 |   Stats = { Approx num rows = 5, Approx size bytes = 37 B, Accumulated selectivity = 0.90 }
 |   Batch Size = Range(0, 10]
 |\
@@ -286,21 +288,15 @@ def test_batch_size_from_udf_not_propagated_through_join():
 | |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
 | |   Batch Size = Range(0, 10]
 |
-* HashJoinBuild:
-|   Track Indices: true
-|   Key Schema: a#Int64
-|   Null equals Nulls = [false]
-|   Stats = { Approx num rows = 5, Approx size bytes = 38 B, Accumulated selectivity = 0.95 }
-|
-* Filter: not(is_null(col(0: a)))
-|   Stats = { Approx num rows = 5, Approx size bytes = 38 B, Accumulated selectivity = 0.95 }
-|   Batch Size = Range(0, 131072]
-|
-* InMemoryScan:
-|   Schema = a#Int64
-|   Size bytes = 40
-|   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
-|   Batch Size = Range(0, 131072]
+| * Filter: not(is_null(col(0: a)))
+| |   Stats = { Approx num rows = 5, Approx size bytes = 38 B, Accumulated selectivity = 0.95 }
+| |   Batch Size = Range(0, 131072]
+| |
+| * InMemoryScan:
+| |   Schema = a#Int64
+| |   Size bytes = 40
+| |   Stats = { Approx num rows = 5, Approx size bytes = 40 B, Accumulated selectivity = 1.00 }
+| |   Batch Size = Range(0, 131072]
 
 """
     assert clean_explain_output(string_io.getvalue().split("== Physical Plan ==")[-1]) == clean_explain_output(expected)
