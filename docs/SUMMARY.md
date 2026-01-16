@@ -12,8 +12,6 @@
         * [Overview](modalities/overview.md)
         * [Text](modalities/text.md)
         * [Images](modalities/images.md)
-        * [Documents](modalities/documents.md)
-        * [Code](modalities/code.md)
         * [Audio](modalities/audio.md)
         * [Videos](modalities/videos.md)
         * [JSON and Nested Data](modalities/json.md)
