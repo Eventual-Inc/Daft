@@ -10,14 +10,14 @@ use crate::{
 };
 pub struct DynBatchingState {
     #[allow(clippy::type_complexity)]
-    record_fn: Box<dyn FnMut(Arc<dyn RuntimeStats>, usize, Duration) + Send + Sync>,
+    record_fn: Box<dyn FnMut(&dyn RuntimeStats, usize, Duration) + Send + Sync>,
     update_fn: Box<dyn FnMut() -> MorselSizeRequirement + Send + Sync>,
 }
 
 impl BatchingState for DynBatchingState {
     fn record_execution_stat(
         &mut self,
-        stats: Arc<dyn RuntimeStats>,
+        stats: &dyn RuntimeStats,
         batch_size: usize,
         duration: Duration,
     ) {
@@ -131,7 +131,7 @@ mod tests {
     impl BatchingState for usize {
         fn record_execution_stat(
             &mut self,
-            _stats: Arc<dyn crate::runtime_stats::RuntimeStats>,
+            _stats: &dyn crate::runtime_stats::RuntimeStats,
             batch_size: usize,
             _duration: std::time::Duration,
         ) {

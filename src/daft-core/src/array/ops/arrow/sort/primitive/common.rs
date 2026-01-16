@@ -5,7 +5,7 @@ use arrow::{
 use daft_arrow::array::ord::DynComparator;
 
 pub fn idx_sort<F>(
-    validity: Option<&NullBuffer>,
+    nulls: Option<&NullBuffer>,
     cmp: F,
     length: usize,
     descending: bool,
@@ -14,7 +14,7 @@ pub fn idx_sort<F>(
 where
     F: Fn(&u64, &u64) -> std::cmp::Ordering,
 {
-    let (mut indices, start_idx, end_idx) = generate_initial_indices(validity, length, nulls_first);
+    let (mut indices, start_idx, end_idx) = generate_initial_indices(nulls, length, nulls_first);
     let indices_slice = &mut indices.as_mut_slice()[start_idx..end_idx];
 
     if !descending {
@@ -26,7 +26,7 @@ where
 }
 
 pub fn multi_column_idx_sort<F>(
-    first_col_validity: Option<&NullBuffer>,
+    first_col_nulls: Option<&NullBuffer>,
     overall_cmp: F,
     others_cmp: &DynComparator,
     length: usize,
@@ -36,7 +36,7 @@ where
     F: Fn(&u64, &u64) -> std::cmp::Ordering,
 {
     let (mut indices, start_idx, end_idx) =
-        generate_initial_indices(first_col_validity, length, first_col_nulls_first);
+        generate_initial_indices(first_col_nulls, length, first_col_nulls_first);
     let indices_slice = &mut indices.as_mut_slice()[start_idx..end_idx];
 
     indices_slice.sort_unstable_by(|a, b| overall_cmp(a, b));
@@ -53,19 +53,19 @@ where
 }
 
 fn generate_initial_indices(
-    validity: Option<&NullBuffer>,
+    nulls: Option<&NullBuffer>,
     length: usize,
     nulls_first: bool,
 ) -> (Vec<u64>, usize, usize) {
-    if let Some(validity) = validity {
+    if let Some(null_buffer) = nulls {
         // number of null values
-        let n_nulls = validity.null_count();
+        let n_nulls = null_buffer.null_count();
         // number of non null values
         let n_valid = length.saturating_sub(n_nulls);
         let mut indices = vec![u64::default(); length];
         let mut nulls = 0;
         let mut valids = 0;
-        validity
+        null_buffer
             .iter()
             .zip(0..length as u64)
             .for_each(|(is_not_null, index)| {

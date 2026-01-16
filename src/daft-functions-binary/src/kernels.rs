@@ -33,7 +33,7 @@ impl BinaryArrayExtension for BinaryArray {
     {
         let input = LargeBinaryArray::from(self.to_data());
         let buffer = input.values();
-        let validity = input.nulls().cloned();
+        let nulls = input.nulls().cloned();
 
         //
         let mut values = Vec::<u8>::new();
@@ -48,7 +48,7 @@ impl BinaryArrayExtension for BinaryArray {
             values.extend(bytes);
         }
         // create daft BinaryArray from the arrow BinaryArray<i64>
-        let array = LargeBinaryArray::new(offsets.finish(), values.into(), validity);
+        let array = LargeBinaryArray::new(offsets.finish(), values.into(), nulls);
         let array: ArrayRef = Arc::new(array);
 
         Self::from_arrow2(self.field.clone(), array.into())
@@ -62,9 +62,9 @@ impl BinaryArrayExtension for BinaryArray {
         let input = LargeBinaryArray::from(self.to_data());
 
         let buffer = input.values();
-        let validity = input.nulls().cloned();
+        let nulls = input.nulls().cloned();
 
-        let mut validity = match validity {
+        let mut nulls = match nulls {
             Some(bitmap) => {
                 let mut builder = BooleanBufferBuilder::new(input.len());
                 for b in &bitmap {
@@ -91,15 +91,12 @@ impl BinaryArrayExtension for BinaryArray {
                 }
                 Err(_) => {
                     offsets.push_length(0);
-                    validity.set_bit(i, false);
+                    nulls.set_bit(i, false);
                 }
             }
         }
-        let array = LargeBinaryArray::new(
-            offsets.finish(),
-            values.into(),
-            Some(validity.finish().into()),
-        );
+        let array =
+            LargeBinaryArray::new(offsets.finish(), values.into(), Some(nulls.finish().into()));
         let array: ArrayRef = Arc::new(array);
 
         Self::from_arrow2(self.field.clone(), array.into())
@@ -113,7 +110,7 @@ impl BinaryArrayExtension for BinaryArray {
         let input = LargeBinaryArray::from(self.to_data());
 
         let buffer = input.values();
-        let validity = input.nulls().cloned();
+        let nulls = input.nulls().cloned();
 
         let mut values = Vec::<u8>::new();
         let mut offsets = OffsetBufferBuilder::new(input.len() + 1);
@@ -126,7 +123,7 @@ impl BinaryArrayExtension for BinaryArray {
             values.extend(bytes);
         }
 
-        let array = LargeStringArray::new(offsets.into(), values.into(), validity);
+        let array = LargeStringArray::new(offsets.into(), values.into(), nulls);
         let array: ArrayRef = Arc::new(array);
 
         Utf8Array::from_arrow2(
@@ -143,9 +140,9 @@ impl BinaryArrayExtension for BinaryArray {
         let input = LargeBinaryArray::from(self.to_data());
 
         let buffer = input.values();
-        let validity = input.nulls().cloned();
+        let nulls = input.nulls().cloned();
 
-        let mut validity = match validity {
+        let mut nulls = match nulls {
             Some(bitmap) => {
                 let mut builder = BooleanBufferBuilder::new(input.len());
                 for b in &bitmap {
@@ -173,15 +170,12 @@ impl BinaryArrayExtension for BinaryArray {
                 }
                 Err(_) => {
                     offsets.push_length(0);
-                    validity.set_bit(i, false);
+                    nulls.set_bit(i, false);
                 }
             }
         }
-        let array = LargeStringArray::new(
-            offsets.into(),
-            values.into(),
-            Some(validity.finish().into()),
-        );
+        let array =
+            LargeStringArray::new(offsets.into(), values.into(), Some(nulls.finish().into()));
         let array: ArrayRef = Arc::new(array);
 
         Utf8Array::from_arrow2(
@@ -202,7 +196,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
 
         let buffer = input.values();
         let chunks = buffer.len() / size;
-        let validity = input.nulls().cloned();
+        let nulls = input.nulls().cloned();
         //
         let mut values = Vec::<u8>::new();
         let mut offsets = OffsetBufferBuilder::new(input.len() + 1);
@@ -216,7 +210,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
             values.extend(bytes);
         }
         //
-        let array = LargeBinaryArray::new(offsets.finish(), values.into(), validity);
+        let array = LargeBinaryArray::new(offsets.finish(), values.into(), nulls);
         let array: ArrayRef = Arc::new(array);
 
         BinaryArray::from_arrow2(self.field.clone(), array.into())
@@ -231,9 +225,9 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
         let size = input.value_length() as usize;
         let buffer = input.values();
         let chunks = buffer.len() / size;
-        let validity = input.nulls().cloned();
+        let nulls = input.nulls().cloned();
 
-        let mut validity = match validity {
+        let mut nulls = match nulls {
             Some(bitmap) => {
                 let mut builder = BooleanBufferBuilder::new(input.len());
                 for b in &bitmap {
@@ -261,15 +255,12 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
                 }
                 Err(_) => {
                     offsets.push_length(0);
-                    validity.set_bit(i, false);
+                    nulls.set_bit(i, false);
                 }
             }
         }
-        let array = LargeBinaryArray::new(
-            offsets.finish(),
-            values.into(),
-            Some(validity.finish().into()),
-        );
+        let array =
+            LargeBinaryArray::new(offsets.finish(), values.into(), Some(nulls.finish().into()));
         let array: ArrayRef = Arc::new(array);
 
         BinaryArray::from_arrow2(self.field.clone(), array.into())
@@ -284,7 +275,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
         let size = input.value_length() as usize;
         let buffer = input.values();
         let chunks = buffer.len() / size;
-        let validity = input.nulls().cloned();
+        let nulls = input.nulls().cloned();
 
         let mut values = Vec::<u8>::new();
         let mut offsets = OffsetBufferBuilder::new(input.len() + 1);
@@ -296,7 +287,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
             offsets.push_length(bytes.len());
             values.extend(bytes);
         }
-        let array = LargeStringArray::new(offsets.into(), values.into(), validity);
+        let array = LargeStringArray::new(offsets.into(), values.into(), nulls);
         let array: ArrayRef = Arc::new(array);
 
         Utf8Array::from_arrow2(
@@ -314,9 +305,9 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
         let size = input.value_length() as usize;
         let buffer = input.values();
         let chunks = buffer.len() / size;
-        let validity = input.nulls().cloned();
+        let nulls = input.nulls().cloned();
 
-        let mut validity = match validity {
+        let mut null_builder = match nulls {
             Some(bitmap) => {
                 let mut builder = BooleanBufferBuilder::new(input.len());
                 for b in &bitmap {
@@ -344,7 +335,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
                 }
                 Err(_) => {
                     offsets.push_length(0);
-                    validity.set_bit(i, false);
+                    null_builder.set_bit(i, false);
                 }
             }
         }
@@ -352,7 +343,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
         let array = LargeStringArray::new(
             offsets.into(),
             values.into(),
-            Some(validity.finish().into()),
+            Some(null_builder.finish().into()),
         );
         let array: ArrayRef = Arc::new(array);
 

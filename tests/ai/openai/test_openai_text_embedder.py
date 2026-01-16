@@ -82,6 +82,68 @@ def test_invalid_model_name():
         )
 
 
+def test_custom_base_url_dimensions_none_probes_for_non_native_model():
+    model = "BAAI/bge-m3"
+    base_url = "http://localhost:1234/v1"
+
+    from openai.types.create_embedding_response import CreateEmbeddingResponse
+    from openai.types.embedding import Embedding as OpenAIEmbedding
+
+    # Patch the module-local import used by OpenAITextEmbedderDescriptor.
+    with patch("daft.ai.openai.protocols.text_embedder.OpenAIClient") as mock_openai_sync_client:
+        mock_sync_client = Mock()
+        mock_sync_client.embeddings = Mock()
+        mock_sync_client.embeddings.create = Mock(
+            return_value=CreateEmbeddingResponse(
+                data=[
+                    OpenAIEmbedding(
+                        embedding=[0.1] * 1024,
+                        index=0,
+                        object="embedding",
+                    )
+                ],
+                model=model,
+                object="list",
+                usage={"prompt_tokens": 0, "total_tokens": 0},
+            )
+        )
+        mock_openai_sync_client.return_value = mock_sync_client
+
+        descriptor = OpenAITextEmbedderDescriptor(
+            provider_name="openai",
+            provider_options={"api_key": "test-key", "base_url": base_url},
+            model_name=model,
+            dimensions=None,
+        )
+
+        assert descriptor.get_dimensions().size == 1024
+
+
+def test_custom_base_url_passes_dimensions_param_through(mock_client):
+    embedder = OpenAITextEmbedder(
+        provider_options={"api_key": "test-key", "base_url": "http://localhost:1234/v1"},
+        model="BAAI/bge-m3",
+        embed_options={},
+        dimensions=1024,
+    )
+    embedder._client = mock_client
+
+    mock_response = Mock(spec=CreateEmbeddingResponse)
+    mock_embedding = Mock(spec=OpenAIEmbedding)
+    mock_embedding.embedding = np.array([0.1] * 1024, dtype=np.float32)
+    mock_response.data = [mock_embedding]
+    mock_client.embeddings.create.return_value = mock_response
+
+    result = run(embedder.embed_text(["hello"]))
+    assert len(result) == 1
+    mock_client.embeddings.create.assert_awaited_once_with(
+        input=["hello"],
+        model="BAAI/bge-m3",
+        encoding_format="float",
+        dimensions=1024,
+    )
+
+
 def test_instantiate():
     """Test to instantiate a proper OpenAITextEmbedder with no mocks."""
     descriptor = OpenAITextEmbedderDescriptor(
@@ -91,6 +153,9 @@ def test_instantiate():
         dimensions=None,
         embed_options={},
     )
+
+    # An OpenAI embedding model's dimensions are known without probing.
+    assert descriptor.get_dimensions().size == 1536
 
     embedder = descriptor.instantiate()
     assert isinstance(embedder, OpenAITextEmbedder)
@@ -510,7 +575,7 @@ def test_embed_text_batch_rate_limit_fallback(mock_text_embedder, mock_client):
             assert embedding.dtype == np.float32
 
 
-def test_supports_overriding_dimensions_default_false(mock_client):
+def test_supports_overriding_dimensions_default_true(mock_client):
     """Test that when supports_overriding_dimensions is False (default), dimensions are NOT included."""
     descriptor = OpenAITextEmbedderDescriptor(
         provider_name="openai",
@@ -536,7 +601,7 @@ def test_supports_overriding_dimensions_default_false(mock_client):
         input=["Hello world"],
         model="text-embedding-3-small",
         encoding_format="float",
-        dimensions=omit,
+        dimensions=256,
     )
 
 

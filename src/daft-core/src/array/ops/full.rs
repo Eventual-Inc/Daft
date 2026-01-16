@@ -78,12 +78,12 @@ where
 
 impl FullNull for FixedSizeListArray {
     fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
-        let validity = daft_arrow::buffer::NullBuffer::from_iter(repeat_n(false, length));
+        let nulls = daft_arrow::buffer::NullBuffer::from_iter(repeat_n(false, length));
 
         match dtype {
             DataType::FixedSizeList(child_dtype, size) => {
                 let flat_child = Series::full_null("item", child_dtype, length * size);
-                Self::new(Field::new(name, dtype.clone()), flat_child, Some(validity))
+                Self::new(Field::new(name, dtype.clone()), flat_child, Some(nulls))
             }
             _ => panic!(
                 "Cannot create FixedSizeListArray::full_null from datatype: {}",
@@ -109,7 +109,7 @@ impl FullNull for FixedSizeListArray {
 
 impl FullNull for ListArray {
     fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
-        let validity = daft_arrow::buffer::NullBuffer::from_iter(repeat_n(false, length));
+        let nulls = daft_arrow::buffer::NullBuffer::from_iter(repeat_n(false, length));
 
         match dtype {
             DataType::List(child_dtype) => {
@@ -118,7 +118,7 @@ impl FullNull for ListArray {
                     Field::new(name, dtype.clone()),
                     empty_flat_child,
                     OffsetsBuffer::try_from(repeat_n(0, length + 1).collect::<Vec<_>>()).unwrap(),
-                    Some(validity),
+                    Some(nulls),
                 )
             }
             _ => panic!(
@@ -142,7 +142,7 @@ impl FullNull for ListArray {
 
 impl FullNull for StructArray {
     fn full_null(name: &str, dtype: &DataType, length: usize) -> Self {
-        let validity = daft_arrow::buffer::NullBuffer::from_iter(repeat_n(false, length));
+        let nulls = daft_arrow::buffer::NullBuffer::from_iter(repeat_n(false, length));
         match dtype {
             DataType::Struct(children) => {
                 let field = Field::new(name, dtype.clone());
@@ -150,7 +150,7 @@ impl FullNull for StructArray {
                     .iter()
                     .map(|f| Series::full_null(f.name.as_str(), &f.dtype, length))
                     .collect::<Vec<_>>();
-                Self::new(field, empty_children, Some(validity))
+                Self::new(field, empty_children, Some(nulls))
             }
             _ => panic!("Cannot create empty StructArray with dtype: {}", dtype),
         }

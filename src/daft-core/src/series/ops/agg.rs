@@ -273,11 +273,11 @@ impl Series {
             Some(groups) => {
                 if self.data_type().is_null() {
                     PrimitiveArray::new_null(daft_arrow::datatypes::DataType::UInt64, groups.len())
-                } else if ignore_nulls && let Some(validity) = self.validity() {
+                } else if ignore_nulls && let Some(nulls) = self.nulls() {
                     PrimitiveArray::from_trusted_len_iter(
                         groups
                             .iter()
-                            .map(|g| g.iter().find(|i| validity.is_valid(**i as usize)).copied()),
+                            .map(|g| g.iter().find(|i| nulls.is_valid(**i as usize)).copied()),
                     )
                 } else {
                     PrimitiveArray::from_trusted_len_iter(groups.iter().map(|g| g.first().copied()))
@@ -286,8 +286,8 @@ impl Series {
             None => {
                 let idx = if self.data_type().is_null() || self.is_empty() {
                     None
-                } else if ignore_nulls && let Some(validity) = self.validity() {
-                    validity.iter().position(|v| v).map(|i| i as u64)
+                } else if ignore_nulls && let Some(nulls) = self.nulls() {
+                    nulls.iter().position(|v| v).map(|i| i as u64)
                 } else {
                     Some(0)
                 };
@@ -428,7 +428,7 @@ impl DaftSetAggable for Series {
             self.name(),
             self.data_type(),
             vec![self],
-            self.validity().is_some(),
+            self.nulls().is_some(),
             series.len(),
         );
 

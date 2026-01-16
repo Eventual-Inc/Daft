@@ -3,14 +3,14 @@ use std::{
     collections::HashMap,
     num::NonZeroUsize,
     sync::{Arc, Mutex, atomic::Ordering},
-    time::Duration,
 };
 
 use common_error::DaftResult;
 use common_metrics::{
-    CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, operator_metrics::OperatorCounter,
-    ops::NodeType,
+    CPU_US_KEY, Counter, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot,
+    operator_metrics::OperatorCounter, ops::NodeType, snapshot::UdfSnapshot,
 };
+use common_runtime::JoinSet;
 use daft_core::{prelude::SchemaRef, series::Series};
 use daft_dsl::{
     expr::bound_expr::BoundExpr, functions::python::UDFProperties,
@@ -20,7 +20,6 @@ use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
 use opentelemetry::{KeyValue, global, metrics::Meter};
-use smallvec::SmallVec;
 use tracing::{Span, instrument};
 
 use super::base::{
@@ -28,10 +27,10 @@ use super::base::{
     StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
 use crate::{
-    ExecutionTaskSpawner, TaskSet,
+    ExecutionTaskSpawner,
     intermediate_ops::udf::remap_used_cols,
     pipeline::{MorselSizeRequirement, NodeName},
-    runtime_stats::{Counter, RuntimeStats},
+    runtime_stats::RuntimeStats,
 };
 
 struct AsyncUdfParams {
@@ -58,23 +57,16 @@ impl RuntimeStats for AsyncUdfRuntimeStats {
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         let counters = self.custom_counters.lock().unwrap();
-        let mut entries = SmallVec::with_capacity(3 + counters.len());
 
-        entries.push((
-            CPU_US_KEY.into(),
-            Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
-        ));
-        entries.push((ROWS_IN_KEY.into(), Stat::Count(self.rows_in.load(ordering))));
-        entries.push((
-            ROWS_OUT_KEY.into(),
-            Stat::Count(self.rows_out.load(ordering)),
-        ));
-
-        for (name, counter) in counters.iter() {
-            entries.push((name.clone().into(), Stat::Count(counter.load(ordering))));
-        }
-
-        StatSnapshot(entries)
+        StatSnapshot::Udf(UdfSnapshot {
+            cpu_us: self.cpu_us.load(ordering),
+            rows_in: self.rows_in.load(ordering),
+            rows_out: self.rows_out.load(ordering),
+            custom_counters: counters
+                .iter()
+                .map(|(name, counter)| (name.clone(), counter.load(ordering)))
+                .collect(),
+        })
     }
 
     fn add_rows_in(&self, rows: u64) {
@@ -96,9 +88,9 @@ impl AsyncUdfRuntimeStats {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, CPU_US_KEY.into(), None),
-            rows_in: Counter::new(&meter, ROWS_IN_KEY.into(), None),
-            rows_out: Counter::new(&meter, ROWS_OUT_KEY.into(), None),
+            cpu_us: Counter::new(&meter, CPU_US_KEY, None),
+            rows_in: Counter::new(&meter, ROWS_IN_KEY, None),
+            rows_out: Counter::new(&meter, ROWS_OUT_KEY, None),
             custom_counters: Mutex::new(HashMap::new()),
             node_kv,
             meter,
@@ -122,11 +114,8 @@ impl AsyncUdfRuntimeStats {
                     existing.add(value, key_values.as_slice());
                 }
                 None => {
-                    let counter = Counter::new(
-                        &self.meter,
-                        name.clone().into(),
-                        description.map(Cow::Owned),
-                    );
+                    let counter =
+                        Counter::new(&self.meter, name.clone(), description.map(Cow::Owned));
                     counter.add(value, key_values.as_slice());
                     counters.insert(name.into(), counter);
                 }
@@ -176,7 +165,7 @@ impl AsyncUdfSink {
 
 pub struct AsyncUdfState {
     udf_expr: BoundExpr,
-    task_set: TaskSet<DaftResult<RecordBatch>>,
+    task_set: JoinSet<DaftResult<RecordBatch>>,
     udf_initialized: bool,
 }
 
@@ -366,7 +355,7 @@ impl StreamingSink for AsyncUdfSink {
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(AsyncUdfState {
             udf_expr: self.params.expr.clone(),
-            task_set: TaskSet::new(),
+            task_set: JoinSet::new(),
             udf_initialized: false,
         })
     }

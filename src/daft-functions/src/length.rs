@@ -22,12 +22,12 @@ impl ScalarUDF for Length {
 
         Ok(match input.data_type() {
             DataType::Utf8 => {
-                let arrow_arr = input.utf8()?.as_arrow2();
+                let arr = input.utf8()?;
 
                 let field = Field::new(input.name(), DataType::UInt64);
                 let output_arr = UInt64Array::from_iter(
                     field,
-                    arrow_arr.iter().map(|val| {
+                    arr.into_iter().map(|val| {
                         let v = val?;
                         Some(v.chars().count() as u64)
                     }),
@@ -36,15 +36,16 @@ impl ScalarUDF for Length {
                 output_arr.into_series()
             }
             DataType::Binary => {
-                let arrow_arr = input.binary()?.as_arrow2();
+                let arr = input.binary()?;
 
-                let length_vec = arrow_arr
+                let length_vec = arr
+                    .as_arrow()?
                     .offsets()
                     .lengths()
                     .map(|l| l as u64)
                     .collect::<Vec<_>>();
                 let length_arr = UInt64Array::from((input.name(), length_vec))
-                    .with_validity(arrow_arr.validity().cloned().map(Into::into))?;
+                    .with_nulls(arr.nulls().cloned().map(Into::into))?;
                 length_arr.into_series()
             }
             DataType::List(_) => {
@@ -56,15 +57,15 @@ impl ScalarUDF for Length {
                     .map(|l| l as u64)
                     .collect::<Vec<_>>();
                 let length_arr = UInt64Array::from((input.name(), length_vec))
-                    .with_validity(list_arr.validity().cloned())?;
+                    .with_nulls(list_arr.nulls().cloned())?;
                 length_arr.into_series()
             }
             DataType::FixedSizeBinary(length) | DataType::FixedSizeList(_, length) => {
-                let validity = input.validity();
+                let nulls = input.nulls();
 
                 let length_arr =
                     UInt64Array::from((input.name(), vec![*length as u64; input.len()]))
-                        .with_validity(validity.cloned())?;
+                        .with_nulls(nulls.cloned())?;
 
                 length_arr.into_series()
             }
