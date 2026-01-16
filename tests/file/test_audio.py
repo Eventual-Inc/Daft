@@ -12,11 +12,6 @@ def sample_audio_path():
     return "tests/assets/sample_audio.mp3"
 
 
-# =============================================================================
-# Audio file tests (require soundfile and librosa)
-# =============================================================================
-
-
 def test_audio_file_standalone(sample_audio_path):
     sf = pytest.importorskip("soundfile")
     import numpy as np
