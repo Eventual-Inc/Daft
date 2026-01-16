@@ -475,6 +475,7 @@ impl_arithmetic_ref_for_series!(Rem, rem);
 
 #[cfg(test)]
 mod tests {
+    use arrow::datatypes::IntervalMonthDayNano;
     use common_error::DaftResult;
     use daft_arrow::types::months_days_ns;
 
@@ -579,14 +580,23 @@ mod tests {
     }
     #[test]
     fn mul_interval_and_int() -> DaftResult<()> {
-        let a = IntervalArray::from((
-            "a",
-            vec![
-                months_days_ns::new(1, 2, 3),
-                months_days_ns::new(4, 5, 6),
-                months_days_ns::new(7, 8, 9),
-            ],
-        ));
+        let a = IntervalArray::from_iter_values(vec![
+            IntervalMonthDayNano {
+                months: 1,
+                days: 2,
+                nanoseconds: 3,
+            },
+            IntervalMonthDayNano {
+                months: 4,
+                days: 5,
+                nanoseconds: 6,
+            },
+            IntervalMonthDayNano {
+                months: 7,
+                days: 8,
+                nanoseconds: 9,
+            },
+        ]);
         let b = Int32Array::from(("b", vec![1, 2, 3]));
         let c = a.into_series() * b.into_series();
         assert_eq!(*c?.data_type(), DataType::Interval);
@@ -594,14 +604,23 @@ mod tests {
     }
     #[test]
     fn mul_interval_and_float() -> DaftResult<()> {
-        let a = IntervalArray::from((
-            "a",
-            vec![
-                months_days_ns::new(1, 2, 3),
-                months_days_ns::new(4, 5, 6),
-                months_days_ns::new(7, 8, 9),
-            ],
-        ));
+        let a = IntervalArray::from_iter_values(vec![
+            IntervalMonthDayNano {
+                months: 1,
+                days: 2,
+                nanoseconds: 3,
+            },
+            IntervalMonthDayNano {
+                months: 4,
+                days: 5,
+                nanoseconds: 6,
+            },
+            IntervalMonthDayNano {
+                months: 7,
+                days: 8,
+                nanoseconds: 9,
+            },
+        ]);
         let b = Float64Array::from(("b", vec![1., 2., 3.]));
         let c = a.into_series() * b.into_series();
         assert!(c.is_err());

@@ -2,7 +2,7 @@
 
 use std::{iter::repeat_n, sync::Arc};
 
-use arrow::array::make_comparator;
+use arrow::array::{BooleanBufferBuilder, make_comparator};
 use common_error::DaftResult;
 use daft_arrow::offset::{Offsets, OffsetsBuffer};
 use daft_core::{
@@ -378,13 +378,13 @@ impl ListArrayExtension for ListArray {
         let offsets = self.offsets();
         let nulls = self.nulls();
 
-        let mut result = Vec::with_capacity(self.len());
+        let mut result = BooleanBufferBuilder::new(self.len());
         let mut result_nulls = Vec::with_capacity(self.len());
 
         for i in 0..self.len() {
             let is_valid = nulls.is_none_or(|v| v.is_valid(i));
             if !is_valid {
-                result.push(false);
+                result.append(false);
                 result_nulls.push(false);
                 continue;
             }
@@ -395,7 +395,7 @@ impl ListArrayExtension for ListArray {
 
             // If slice is empty or all null, return null
             if slice.is_empty() || slice.nulls().is_some_and(|v| v.null_count() == slice.len()) {
-                result.push(false);
+                result.append(false);
                 result_nulls.push(false);
                 continue;
             }
@@ -411,18 +411,17 @@ impl ListArrayExtension for ListArray {
                     break;
                 }
             }
-            result.push(all_true);
+            result.append(all_true);
             result_nulls.push(true);
         }
 
         let null_buffer = daft_arrow::buffer::NullBuffer::from_iter(result_nulls.iter().copied());
-        let values = daft_arrow::bitmap::Bitmap::from_iter(result.iter().copied());
-        let arrow_array = daft_arrow::array::BooleanArray::new(
-            daft_arrow::datatypes::DataType::Boolean,
-            values,
-            daft_arrow::buffer::wrap_null_buffer(Some(null_buffer)),
-        );
-        Ok(BooleanArray::from((self.name(), Box::new(arrow_array))))
+
+        let arrow_array = Arc::new(arrow::array::BooleanArray::new(
+            result.finish(),
+            Some(null_buffer),
+        ));
+        BooleanArray::from_arrow(Field::new(self.name(), DataType::Boolean), arrow_array)
     }
 
     fn list_bool_or(&self) -> DaftResult<BooleanArray> {
