@@ -4,15 +4,16 @@ use common_error::DaftResult;
 use common_partitioning::PartitionRef;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, InMemoryInfo, stats::StatsState};
+use opentelemetry::metrics::Meter;
 
-use super::{PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream};
+use super::{PipelineNodeContext, PipelineNodeImpl, scan_source::SourceStats};
 use crate::{
-    pipeline_node::{DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig},
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
-    scheduling::{
-        scheduler::SubmittableTask,
-        task::{SchedulingStrategy, SwordfishTask, TaskContext},
+    pipeline_node::{
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, TaskBuilderStream,
     },
+    plan::{PlanConfig, PlanExecutionContext},
+    scheduling::task::SwordfishTaskBuilder,
+    statistics::stats::RuntimeStatsRef,
     utils::channel::{Sender, create_channel},
 };
 
@@ -60,45 +61,35 @@ impl InMemorySourceNode {
 
     async fn execution_loop(
         self: Arc<Self>,
-        result_tx: Sender<SubmittableTask<SwordfishTask>>,
-        task_id_counter: TaskIDCounter,
+        result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
         let partition_refs = self.input_psets.get(&self.info.cache_key).expect("InMemorySourceNode::execution_loop: Expected in-memory input is not available in partition set").clone();
 
         for partition_ref in partition_refs {
-            let task = self.make_task_for_partition_refs(
-                vec![partition_ref],
-                TaskContext::from((&self.context, task_id_counter.next())),
-            );
-            if result_tx.send(SubmittableTask::new(task)).await.is_err() {
+            let builder = self.make_in_memory_source_task(partition_ref);
+            if result_tx.send(builder).await.is_err() {
                 break;
             }
         }
+
         Ok(())
     }
 
-    fn make_task_for_partition_refs(
-        &self,
-        partition_refs: Vec<PartitionRef>,
-        task_context: TaskContext,
-    ) -> SwordfishTask {
-        let mut total_size_bytes = 0;
-        let mut total_num_rows = 0;
-        for partition_ref in &partition_refs {
-            total_size_bytes += partition_ref.size_bytes();
-            total_num_rows += partition_ref.num_rows();
-        }
+    fn make_in_memory_source_task(
+        self: &Arc<Self>,
+        partition_ref: PartitionRef,
+    ) -> SwordfishTaskBuilder {
         let info = InMemoryInfo::new(
             self.info.source_schema.clone(),
             self.info.cache_key.clone(),
             None,
             1,
-            total_size_bytes,
-            total_num_rows,
+            partition_ref.size_bytes(),
+            partition_ref.num_rows(),
             None,
             None,
         );
-        let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
+        let in_memory_scan = LocalPhysicalPlan::in_memory_scan(
             info,
             StatsState::NotMaterialized,
             LocalNodeContext {
@@ -106,17 +97,9 @@ impl InMemorySourceNode {
                 additional: None,
             },
         );
-        let psets = HashMap::from([(self.info.cache_key.clone(), partition_refs.clone())]);
-        SwordfishTask::new(
-            task_context,
-            in_memory_source_plan,
-            self.config.execution_config.clone(),
-            psets,
-            // TODO: Replace with WorkerAffinity based on the psets location
-            // Need to get that from `ray.experimental.get_object_locations(object_refs)`
-            SchedulingStrategy::Spread,
-            self.context.to_hashmap(),
-        )
+
+        let psets = HashMap::from([(self.info.cache_key.clone(), vec![partition_ref])]);
+        SwordfishTaskBuilder::new(in_memory_scan, self.as_ref()).with_psets(psets)
     }
 }
 
@@ -147,11 +130,15 @@ impl PipelineNodeImpl for InMemorySourceNode {
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.execution_loop(result_tx, plan_context.task_id_counter());
+        let execution_loop = self.execution_loop(result_tx);
         plan_context.spawn(execution_loop);
 
-        SubmittableTaskStream::from(result_rx)
+        TaskBuilderStream::from(result_rx)
+    }
+
+    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(SourceStats::new(meter, self.node_id()))
     }
 }

@@ -21,15 +21,16 @@ use daft_logical_plan::{InMemoryInfo, partitioning::ClusteringSpecRef, stats::St
 use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt, stream::BoxStream};
 use materialize::materialize_all_pipeline_outputs;
+use opentelemetry::metrics::Meter;
 
 use crate::{
-    plan::{PlanExecutionContext, QueryIdx},
+    plan::{PlanExecutionContext, QueryIdx, TaskIDCounter},
     scheduling::{
-        scheduler::{SchedulerHandle, SubmittableTask},
-        task::{SchedulingStrategy, SwordfishTask, Task, TaskContext},
+        scheduler::SchedulerHandle,
+        task::{SwordfishTask, SwordfishTaskBuilder},
         worker::WorkerId,
     },
-    statistics::stats::{DefaultRuntimeStats, RuntimeStats},
+    statistics::stats::{DefaultRuntimeStats, RuntimeStatsRef},
     utils::channel::{Receiver, ReceiverStream},
 };
 
@@ -117,6 +118,49 @@ impl MaterializedOutput {
             .map(|partition| partition.size_bytes())
             .sum()
     }
+
+    pub fn into_in_memory_scan_with_psets(
+        materialized_outputs: Vec<Self>,
+        schema: SchemaRef,
+        node_id: NodeID,
+    ) -> (LocalPhysicalPlanRef, HashMap<String, Vec<PartitionRef>>) {
+        let total_size_bytes = materialized_outputs
+            .iter()
+            .map(|output| output.size_bytes())
+            .sum::<usize>();
+        let total_num_rows = materialized_outputs
+            .iter()
+            .map(|output| output.num_rows())
+            .sum::<usize>();
+
+        let info = InMemoryInfo::new(
+            schema,
+            node_id.to_string(),
+            None,
+            materialized_outputs.len(),
+            total_size_bytes,
+            total_num_rows,
+            None,
+            None,
+        );
+
+        let in_memory_scan = LocalPhysicalPlan::in_memory_scan(
+            info,
+            StatsState::NotMaterialized,
+            LocalNodeContext {
+                origin_node_id: Some(node_id as usize),
+                additional: None,
+            },
+        );
+
+        let partition_refs = materialized_outputs
+            .into_iter()
+            .flat_map(|output| output.into_inner().0)
+            .collect::<Vec<_>>();
+        let psets = HashMap::from([(node_id.to_string(), partition_refs)]);
+
+        (in_memory_scan, psets)
+    }
 }
 
 #[derive(Clone)]
@@ -175,18 +219,13 @@ impl PipelineNodeContext {
 pub(crate) trait PipelineNodeImpl: Send + Sync {
     fn context(&self) -> &PipelineNodeContext;
     fn config(&self) -> &PipelineNodeConfig;
-    fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        Arc::new(DefaultRuntimeStats::new(
-            self.node_id(),
-            self.context().query_id.clone(),
-        ))
+    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(DefaultRuntimeStats::new(meter, self.node_id()))
     }
 
     fn children(&self) -> Vec<DistributedPipelineNode>;
-    fn produce_tasks(
-        self: Arc<Self>,
-        plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream;
+    fn produce_tasks(self: Arc<Self>, plan_context: &mut PlanExecutionContext)
+    -> TaskBuilderStream;
     fn name(&self) -> NodeName {
         self.context().node_name
     }
@@ -223,10 +262,10 @@ impl DistributedPipelineNode {
     pub fn num_partitions(&self) -> usize {
         self.op.config().clustering_spec.num_partitions()
     }
-    pub fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        self.op.runtime_stats()
+    pub fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        self.op.runtime_stats(meter)
     }
-    pub fn produce_tasks(self, plan_context: &mut PlanExecutionContext) -> SubmittableTaskStream {
+    pub fn produce_tasks(self, plan_context: &mut PlanExecutionContext) -> TaskBuilderStream {
         self.op.produce_tasks(plan_context)
     }
     fn as_tree_display(&self) -> &dyn TreeDisplay {
@@ -307,179 +346,54 @@ pub fn viz_distributed_pipeline_ascii(root: &DistributedPipelineNode, simple: bo
     s
 }
 
-pub(crate) struct SubmittableTaskStream {
-    task_stream: BoxStream<'static, SubmittableTask<SwordfishTask>>,
+pub(crate) struct TaskBuilderStream {
+    task_builder_stream: BoxStream<'static, SwordfishTaskBuilder>,
 }
 
-impl From<Receiver<SubmittableTask<SwordfishTask>>> for SubmittableTaskStream {
-    fn from(receiver: Receiver<SubmittableTask<SwordfishTask>>) -> Self {
-        let task_stream = ReceiverStream::new(receiver).boxed();
-        Self { task_stream }
+impl From<Receiver<SwordfishTaskBuilder>> for TaskBuilderStream {
+    fn from(receiver: Receiver<SwordfishTaskBuilder>) -> Self {
+        let task_builder_stream = ReceiverStream::new(receiver).boxed();
+        Self {
+            task_builder_stream,
+        }
     }
 }
 
-impl SubmittableTaskStream {
-    fn new(task_stream: BoxStream<'static, SubmittableTask<SwordfishTask>>) -> Self {
-        Self { task_stream }
+impl TaskBuilderStream {
+    fn new(task_builder_stream: BoxStream<'static, SwordfishTaskBuilder>) -> Self {
+        Self {
+            task_builder_stream,
+        }
     }
 
     pub fn materialize(
         self,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
+        query_idx: QueryIdx,
+        task_id_counter: TaskIDCounter,
     ) -> impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static {
-        materialize_all_pipeline_outputs(self.task_stream, scheduler_handle, None)
+        let stream = self
+            .task_builder_stream
+            .map(move |builder| builder.build(query_idx, &task_id_counter));
+        materialize_all_pipeline_outputs(stream, scheduler_handle, None)
     }
 
     pub fn pipeline_instruction<F>(self, node: Arc<dyn PipelineNodeImpl>, plan_builder: F) -> Self
     where
         F: Fn(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef + Send + Sync + 'static,
     {
-        let task_stream = self
-            .task_stream
-            .map(move |task| append_plan_to_existing_task(task, &node, &plan_builder))
+        let task_builder_stream = self
+            .task_builder_stream
+            .map(move |builder| builder.map_plan(node.as_ref(), &plan_builder))
             .boxed();
-        Self::new(task_stream)
+        Self::new(task_builder_stream)
     }
 }
 
-impl Stream for SubmittableTaskStream {
-    type Item = SubmittableTask<SwordfishTask>;
+impl Stream for TaskBuilderStream {
+    type Item = SwordfishTaskBuilder;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.task_stream.poll_next_unpin(cx)
+        self.task_builder_stream.poll_next_unpin(cx)
     }
-}
-
-pub(crate) fn make_in_memory_scan_from_materialized_outputs(
-    materialized_outputs: &[MaterializedOutput],
-    schema: SchemaRef,
-    node_id: NodeID,
-) -> LocalPhysicalPlanRef {
-    let num_partitions = materialized_outputs.len();
-    let mut total_size_bytes = 0;
-    let mut total_num_rows = 0;
-
-    for materialized_output in materialized_outputs {
-        total_size_bytes += materialized_output.size_bytes();
-        total_num_rows += materialized_output.num_rows();
-    }
-
-    let info = InMemoryInfo::new(
-        schema,
-        node_id.to_string(),
-        None,
-        num_partitions,
-        total_size_bytes,
-        total_num_rows,
-        None,
-        None,
-    );
-    LocalPhysicalPlan::in_memory_scan(
-        info,
-        StatsState::NotMaterialized,
-        LocalNodeContext {
-            origin_node_id: Some(node_id as usize),
-            additional: None,
-        },
-    )
-}
-
-fn make_new_task_from_materialized_outputs<F>(
-    task_context: TaskContext,
-    materialized_outputs: Vec<MaterializedOutput>,
-    input_schema: SchemaRef,
-    node: &Arc<dyn PipelineNodeImpl>,
-    plan_builder: F,
-    scheduling_strategy: Option<SchedulingStrategy>,
-) -> SubmittableTask<SwordfishTask>
-where
-    F: FnOnce(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef + Send + Sync + 'static,
-{
-    let in_memory_source_plan = make_in_memory_scan_from_materialized_outputs(
-        &materialized_outputs,
-        input_schema,
-        node.node_id(),
-    );
-    let partition_refs = materialized_outputs
-        .into_iter()
-        .flat_map(|output| output.into_inner().0)
-        .collect::<Vec<_>>();
-    let plan = plan_builder(in_memory_source_plan);
-    let psets = HashMap::from([(node.node_id().to_string(), partition_refs)]);
-
-    let task = SwordfishTask::new(
-        task_context,
-        plan,
-        node.config().execution_config.clone(),
-        psets,
-        scheduling_strategy.unwrap_or(SchedulingStrategy::Spread),
-        node.context().to_hashmap(),
-    );
-    SubmittableTask::new(task)
-}
-
-fn make_in_memory_task_from_materialized_outputs(
-    task_context: TaskContext,
-    materialized_outputs: Vec<MaterializedOutput>,
-    input_schema: SchemaRef,
-    node: &Arc<dyn PipelineNodeImpl>,
-    scheduling_strategy: Option<SchedulingStrategy>,
-) -> SubmittableTask<SwordfishTask> {
-    make_new_task_from_materialized_outputs(
-        task_context,
-        materialized_outputs,
-        input_schema,
-        node,
-        |input| input,
-        scheduling_strategy,
-    )
-}
-
-fn make_empty_scan_task(
-    task_context: TaskContext,
-    input_schema: SchemaRef,
-    node: &Arc<dyn PipelineNodeImpl>,
-) -> SwordfishTask {
-    let transformed_plan = LocalPhysicalPlan::empty_scan(
-        input_schema,
-        LocalNodeContext {
-            origin_node_id: Some(node.node_id() as usize),
-            additional: None,
-        },
-    );
-    let psets = HashMap::new();
-    SwordfishTask::new(
-        task_context,
-        transformed_plan,
-        node.config().execution_config.clone(),
-        psets,
-        SchedulingStrategy::Spread,
-        node.context().to_hashmap(),
-    )
-}
-
-fn append_plan_to_existing_task<F>(
-    submittable_task: SubmittableTask<SwordfishTask>,
-    node: &Arc<dyn PipelineNodeImpl>,
-    plan_builder: &F,
-) -> SubmittableTask<SwordfishTask>
-where
-    F: Fn(LocalPhysicalPlanRef) -> LocalPhysicalPlanRef + Send + Sync + 'static,
-{
-    let plan = submittable_task.task().plan();
-    let new_plan = plan_builder(plan);
-    let scheduling_strategy = submittable_task.task().strategy().clone();
-    let psets = submittable_task.task().psets().clone();
-    let config = submittable_task.task().config().clone();
-    let mut task_context = submittable_task.task().task_context();
-    task_context.add_node_id(node.node_id());
-
-    submittable_task.with_new_task(SwordfishTask::new(
-        task_context,
-        new_plan,
-        config,
-        psets,
-        scheduling_strategy,
-        node.context().to_hashmap(),
-    ))
 }

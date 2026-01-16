@@ -72,7 +72,7 @@ fn infer(json: &BorrowedValue) -> Result<DataType> {
 }
 
 fn infer_string(string: &str) -> DataType {
-    daft_decoding::inference::infer_string(string)
+    daft_decoding::inference::infer_string(string).into()
 }
 
 fn infer_object(inner: &Object) -> Result<DataType> {

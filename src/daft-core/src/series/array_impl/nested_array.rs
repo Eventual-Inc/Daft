@@ -42,15 +42,15 @@ macro_rules! impl_series_like_for_nested_arrays {
                 self
             }
 
-            fn with_validity(
+            fn with_nulls(
                 &self,
-                validity: Option<daft_arrow::buffer::NullBuffer>,
+                nulls: Option<daft_arrow::buffer::NullBuffer>,
             ) -> DaftResult<Series> {
-                Ok(self.0.with_validity(validity)?.into_series())
+                Ok(self.0.with_nulls(nulls)?.into_series())
             }
 
-            fn validity(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
-                self.0.validity()
+            fn nulls(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
+                self.0.nulls()
             }
 
             fn min(&self, _groups: Option<&GroupIndices>) -> DaftResult<Series> {

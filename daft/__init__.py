@@ -127,7 +127,7 @@ from daft.io import (
     DataCatalogType,
     IOConfig,
     from_glob_path,
-    _range as range,
+    _range as range,  # type: ignore[no-redef]
     read_lance,
     read_csv,
     read_deltalake,

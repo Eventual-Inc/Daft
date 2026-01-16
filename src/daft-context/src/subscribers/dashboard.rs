@@ -2,10 +2,12 @@ use std::{collections::HashMap, sync::Arc, time::SystemTime};
 
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
-use common_metrics::{NodeID, QueryID, QueryPlan, Stat, StatSnapshot};
+use common_metrics::{NodeID, QueryID, QueryPlan, Stat, Stats};
 use common_runtime::{RuntimeRef, get_io_runtime};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use daft_recordbatch::RecordBatch;
+#[cfg(feature = "python")]
+use daft_runners::get_or_create_runner;
 use dashmap::DashMap;
 use reqwest::{Client, RequestBuilder};
 
@@ -42,6 +44,14 @@ impl DashboardSubscriber {
         let Ok(url) = std::env::var("DAFT_DASHBOARD_URL") else {
             return Ok(None);
         };
+
+        // TODO(zhenchao) remove it when we support Ray Runner
+        #[cfg(feature = "python")]
+        if get_or_create_runner()?.is_ray() {
+            return Err(DaftError::not_implemented(
+                "Dashboard isn't currently supported in Ray Runner",
+            ));
+        }
 
         const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
@@ -238,7 +248,7 @@ impl Subscriber for DashboardSubscriber {
     async fn on_exec_emit_stats(
         &self,
         query_id: QueryID,
-        stats: &[(NodeID, StatSnapshot)],
+        stats: &[(NodeID, Stats)],
     ) -> DaftResult<()> {
         Self::handle_request(
             self.client

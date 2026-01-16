@@ -132,19 +132,14 @@ impl Mul for &Decimal128Array {
 impl Add for &BinaryArray {
     type Output = DaftResult<BinaryArray>;
     fn add(self, rhs: Self) -> Self::Output {
-        let result = Box::new(add_binary_arrays(self.as_arrow2(), rhs.as_arrow2())?);
-        Ok(BinaryArray::from((self.name(), result)))
+        add_binary_arrays(self, rhs)
     }
 }
 
 impl Add for &FixedSizeBinaryArray {
     type Output = DaftResult<FixedSizeBinaryArray>;
     fn add(self, rhs: Self) -> Self::Output {
-        let result = Box::new(add_fixed_size_binary_arrays(
-            self.as_arrow2(),
-            rhs.as_arrow2(),
-        )?);
-        Ok(FixedSizeBinaryArray::from((self.name(), result)))
+        add_fixed_size_binary_arrays(self, rhs)
     }
 }
 
@@ -383,26 +378,26 @@ where
     let lhs_len = lhs.len();
     let rhs_len = rhs.len();
 
-    let (result_child, validity) = match (lhs_len, rhs_len) {
+    let (result_child, nulls) = match (lhs_len, rhs_len) {
         (a, b) if a == b => Ok((
             kernel(lhs_child, rhs_child)?,
-            daft_arrow::buffer::NullBuffer::union(lhs.validity(), rhs.validity()),
+            daft_arrow::buffer::NullBuffer::union(lhs.nulls(), rhs.nulls()),
         )),
         (l, 1) => {
-            let validity = if rhs.is_valid(0) {
-                lhs.validity().cloned()
+            let nulls = if rhs.is_valid(0) {
+                lhs.nulls().cloned()
             } else {
                 Some(daft_arrow::buffer::NullBuffer::new_null(l))
             };
-            Ok((kernel(lhs_child, &rhs_child.repeat(lhs_len)?)?, validity))
+            Ok((kernel(lhs_child, &rhs_child.repeat(lhs_len)?)?, nulls))
         }
         (1, r) => {
-            let validity = if lhs.is_valid(0) {
-                rhs.validity().cloned()
+            let nulls = if lhs.is_valid(0) {
+                rhs.nulls().cloned()
             } else {
                 Some(daft_arrow::buffer::NullBuffer::new_null(r))
             };
-            Ok((kernel(&lhs_child.repeat(lhs_len)?, rhs_child)?, validity))
+            Ok((kernel(&lhs_child.repeat(lhs_len)?, rhs_child)?, nulls))
         }
         (a, b) => Err(DaftError::ValueError(format!(
             "Cannot apply operation on arrays of different lengths: {a} vs {b}"
@@ -416,11 +411,7 @@ where
             lhs.fixed_element_len(),
         ),
     );
-    Ok(FixedSizeListArray::new(
-        result_field,
-        result_child,
-        validity,
-    ))
+    Ok(FixedSizeListArray::new(result_field, result_child, nulls))
 }
 
 impl Add for &FixedSizeListArray {

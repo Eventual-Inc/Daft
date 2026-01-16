@@ -5,10 +5,11 @@
 
 use std::{borrow::Cow, sync::Arc};
 
+use arrow::buffer::NullBuffer;
 use common_error::{DaftError, DaftResult};
 
 use crate::{
-    datatypes::NumericNative,
+    datatypes::{DaftPrimitiveType, NumericNative},
     prelude::*,
     series::{ArrayWrapper, SeriesLike},
 };
@@ -19,13 +20,6 @@ impl<T: DaftNumericType> From<(&str, Box<daft_arrow::array::PrimitiveArray<T::Na
     fn from(item: (&str, Box<daft_arrow::array::PrimitiveArray<T::Native>>)) -> Self {
         let (name, array) = item;
         Self::new(Field::new(name, T::get_dtype()).into(), array).unwrap()
-    }
-}
-
-impl From<(&str, Box<daft_arrow::array::NullArray>)> for NullArray {
-    fn from(item: (&str, Box<daft_arrow::array::NullArray>)) -> Self {
-        let (name, array) = item;
-        Self::new(Field::new(name, DataType::Null).into(), array).unwrap()
     }
 }
 
@@ -75,7 +69,7 @@ where
 
 impl<T> From<(&str, &[T::Native])> for DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
 {
     fn from(item: (&str, &[T::Native])) -> Self {
         let (name, slice) = item;
@@ -88,7 +82,7 @@ where
 
 impl<T> From<(&str, Vec<T::Native>)> for DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPrimitiveType,
 {
     fn from(item: (&str, Vec<T::Native>)) -> Self {
         let (name, v) = item;
@@ -166,26 +160,6 @@ impl<T: AsRef<str>> From<(&str, &[T])> for DataArray<Utf8Type> {
     }
 }
 
-impl From<(&str, &[u8])> for BinaryArray {
-    fn from(item: (&str, &[u8])) -> Self {
-        let (name, slice) = item;
-        let arrow_array = Box::new(daft_arrow::array::BinaryArray::<i64>::from_slice([slice]));
-        Self::new(Field::new(name, DataType::Binary).into(), arrow_array).unwrap()
-    }
-}
-
-impl<T: DaftPhysicalType, F: Into<Arc<Field>>> TryFrom<(F, Box<dyn daft_arrow::array::Array>)>
-    for DataArray<T>
-{
-    type Error = DaftError;
-
-    fn try_from(item: (F, Box<dyn daft_arrow::array::Array>)) -> DaftResult<Self> {
-        let (field, array) = item;
-        let field: Arc<Field> = field.into();
-        Self::new(field, array)
-    }
-}
-
 impl TryFrom<(&str, Vec<u8>, Vec<i64>)> for BinaryArray {
     type Error = DaftError;
 
@@ -248,7 +222,7 @@ impl TryFrom<(&str, &[Option<&Series>])> for ListArray {
         let lengths = data.iter().map(|s| s.map_or(0, Series::len));
         let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)?.into();
 
-        let validity = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
+        let nulls = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
         let flat_child = Series::concat(&data.iter().flatten().copied().collect::<Vec<_>>())?;
 
@@ -256,7 +230,7 @@ impl TryFrom<(&str, &[Option<&Series>])> for ListArray {
             flat_child.field().to_list_field().rename(name),
             flat_child,
             offsets,
-            Some(validity),
+            Some(nulls),
         ))
     }
 }
@@ -270,7 +244,7 @@ impl TryFrom<(&str, &[Option<Series>])> for ListArray {
         let lengths = data.iter().map(|s| s.as_ref().map_or(0, |s| s.len()));
         let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)?.into();
 
-        let validity = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
+        let nulls = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
         let flat_child = Series::concat(&data.iter().flatten().collect::<Vec<_>>())?;
 
@@ -278,7 +252,7 @@ impl TryFrom<(&str, &[Option<Series>])> for ListArray {
             flat_child.field().to_list_field().rename(name),
             flat_child,
             offsets,
-            Some(validity),
+            Some(nulls),
         ))
     }
 }
@@ -304,13 +278,13 @@ impl ListArray {
             .unwrap()
             .into();
 
-        let validity = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
+        let nulls = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
         Self::new(
             flat_child.field().to_list_field().rename(name),
             flat_child,
             offsets,
-            Some(validity),
+            Some(nulls),
         )
     }
 
@@ -328,13 +302,13 @@ impl ListArray {
             .unwrap()
             .into();
 
-        let validity = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
+        let nulls = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
         Self::new(
             flat_child.field().to_list_field().rename(name),
             flat_child,
             offsets,
-            Some(validity),
+            Some(nulls),
         )
     }
 
@@ -342,7 +316,7 @@ impl ListArray {
         let lengths = data.iter().map(|s| s.as_ref().map_or(0, |s| s.len()));
         let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)?.into();
 
-        let validity = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
+        let nulls = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
         let flat_child = Series::concat(&data.iter().flatten().collect::<Vec<_>>())?;
 
@@ -350,7 +324,16 @@ impl ListArray {
             flat_child.field().to_list_field().rename(name),
             flat_child,
             offsets,
-            Some(validity),
+            Some(nulls),
         ))
+    }
+}
+
+impl BooleanArray {
+    pub fn from_null_buffer(name: &str, buf: &NullBuffer) -> DaftResult<Self> {
+        Self::from_arrow(
+            Field::new(name, DataType::Boolean),
+            Arc::new(arrow::array::BooleanArray::new(buf.inner().clone(), None)),
+        )
     }
 }

@@ -1,20 +1,65 @@
 use std::sync::Arc;
 
+use common_metrics::{CPU_US_KEY, Counter, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
+use opentelemetry::{KeyValue, metrics::Meter};
 
-use super::{DistributedPipelineNode, PipelineNodeImpl, SubmittableTaskStream};
+use super::{DistributedPipelineNode, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
     plan::{PlanConfig, PlanExecutionContext},
+    statistics::{RuntimeStats, stats::RuntimeStatsRef},
 };
+
+pub struct ExplodeStats {
+    cpu_us: Counter,
+    rows_in: Counter,
+    rows_out: Counter,
+    amplification: Gauge,
+    node_kv: Vec<KeyValue>,
+}
+
+impl ExplodeStats {
+    pub fn new(meter: &Meter, node_id: NodeID) -> Self {
+        let node_kv = vec![KeyValue::new("node_id", node_id.to_string())];
+        Self {
+            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
+            amplification: Gauge::new(meter, "amplification", None),
+            node_kv,
+        }
+    }
+}
+
+impl RuntimeStats for ExplodeStats {
+    fn handle_worker_node_stats(&self, snapshot: &StatSnapshot) {
+        let StatSnapshot::Explode(snapshot) = snapshot else {
+            return;
+        };
+        self.cpu_us.add(snapshot.cpu_us, self.node_kv.as_slice());
+        self.rows_in.add(snapshot.rows_in, self.node_kv.as_slice());
+        self.rows_out
+            .add(snapshot.rows_out, self.node_kv.as_slice());
+
+        let amplification = if snapshot.rows_in == 0 {
+            1.0
+        } else {
+            snapshot.rows_out as f64 / snapshot.rows_in as f64
+        };
+        self.amplification
+            .update(amplification, self.node_kv.as_slice());
+    }
+}
 
 pub(crate) struct ExplodeNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     to_explode: Vec<BoundExpr>,
+    index_column: Option<String>,
     child: DistributedPipelineNode,
 }
 
@@ -25,6 +70,7 @@ impl ExplodeNode {
         node_id: NodeID,
         plan_config: &PlanConfig,
         to_explode: Vec<BoundExpr>,
+        index_column: Option<String>,
         schema: SchemaRef,
         child: DistributedPipelineNode,
     ) -> Self {
@@ -43,6 +89,7 @@ impl ExplodeNode {
             config,
             context,
             to_explode,
+            index_column,
             child,
         }
     }
@@ -67,24 +114,34 @@ impl PipelineNodeImpl for ExplodeNode {
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
         use itertools::Itertools;
-        vec![format!(
+        let mut res = vec![format!(
             "Explode: {}",
             self.to_explode.iter().map(|e| e.to_string()).join(", ")
-        )]
+        )];
+        if let Some(ref idx_col) = self.index_column {
+            res.push(format!("Index column = {}", idx_col));
+        }
+        res
+    }
+
+    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(ExplodeStats::new(meter, self.node_id()))
     }
 
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
         let to_explode = self.to_explode.clone();
+        let index_column = self.index_column.clone();
         let schema = self.config.schema.clone();
         let node_id = self.node_id();
         input_node.pipeline_instruction(self, move |input| {
             LocalPhysicalPlan::explode(
                 input,
                 to_explode.clone(),
+                index_column.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,
                 LocalNodeContext {

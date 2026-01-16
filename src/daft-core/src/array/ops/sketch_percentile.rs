@@ -21,7 +21,7 @@ impl StructArray {
 
         let mut flat_child =
             MutablePrimitiveArray::<f64>::with_capacity(percentiles.len() * self.len());
-        daft_sketch::from_arrow2(self.to_arrow2())?
+        daft_sketch::from_arrow(self.to_arrow()?)?
             .iter()
             .for_each(|sketch| match sketch {
                 None => {
@@ -42,7 +42,7 @@ impl StructArray {
 
         if percentiles.len() > 1 || force_list_output {
             Ok(
-                FixedSizeListArray::new(output_field, flat_child, self.validity().cloned())
+                FixedSizeListArray::new(output_field, flat_child, self.nulls().cloned())
                     .into_series(),
             )
         } else {

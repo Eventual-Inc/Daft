@@ -35,7 +35,7 @@ class TextEmbedderDescriptor(Descriptor[TextEmbedder]):
 class ImageEmbedder(Protocol):
     """Protocol for image embedding implementations."""
 
-    def embed_image(self, images: list[Image]) -> list[Embedding]:
+    def embed_image(self, images: list[Image]) -> list[Embedding] | Awaitable[list[Embedding]]:
         """Embeds a batch of images into an embedding vector."""
         ...
 
@@ -46,6 +46,10 @@ class ImageEmbedderDescriptor(Descriptor[ImageEmbedder]):
     @abstractmethod
     def get_dimensions(self) -> EmbeddingDimensions:
         """Returns the dimensions of the embeddings produced by the described ImageEmbedder."""
+
+    def is_async(self) -> bool:
+        """Whether the described ImageEmbedder produces awaitable results."""
+        return False
 
 
 @runtime_checkable

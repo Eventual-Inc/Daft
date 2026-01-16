@@ -372,6 +372,8 @@ impl From<arrow_schema::DataType> for DataType {
             DataType::Utf8View => panic!("Utf8View not supported by arrow2"),
             DataType::ListView(_) => panic!("ListView not supported by arrow2"),
             DataType::LargeListView(_) => panic!("LargeListView not supported by arrow2"),
+            DataType::Decimal32(..) => panic!("Decimal32 not supported by arrow2"),
+            DataType::Decimal64(..) => panic!("Decimal64 not supported by arrow2"),
         }
     }
 }

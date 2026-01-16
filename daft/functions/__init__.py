@@ -30,6 +30,7 @@ from .columnar import (
     columns_min,
     columns_max,
 )
+from .process import run_process
 from .datetime import (
     date,
     day,
@@ -63,7 +64,7 @@ from .datetime import (
 )
 from .embedding import cosine_distance
 
-from .file_ import file, file_size, video_file, audio_file
+from .file_ import file, file_size, video_file, audio_file, guess_mime_type
 
 from .image import (
     resize,
@@ -295,6 +296,7 @@ __all__ = [
     "floor",
     "format",
     "get",
+    "guess_mime_type",
     "hash",
     "hour",
     "ilike",
@@ -384,6 +386,7 @@ __all__ = [
     "row_number",
     "rpad",
     "rstrip",
+    "run_process",
     "sec",
     "second",
     "serialize",

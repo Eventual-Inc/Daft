@@ -5,7 +5,7 @@ use std::{
     pin::Pin,
     sync::{
         Arc,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     task::{Context, Poll},
     time::Duration,
@@ -62,6 +62,87 @@ use crate::{
     stream_utils::io_stats_on_bytestream,
     utils::{ObjectPath, parse_object_url},
 };
+
+pub struct TosRetrier<T> {
+    operation: &'static str,
+    uri: String,
+    max_retries: u32,
+    error_handler: Box<dyn Fn(TosError, u32) -> Result<T, Error> + Send + Sync>,
+}
+
+impl<T> TosRetrier<T> {
+    pub fn new(operation: &'static str, uri: impl Into<String>, max_retries: u32) -> Self {
+        let uri = uri.into();
+        Self {
+            operation,
+            uri: uri.clone(),
+            max_retries,
+            error_handler: Box::new({
+                move |err, _attempt| {
+                    Err(Error::Generic {
+                        path: uri.clone(),
+                        source: err,
+                    })
+                }
+            }),
+        }
+    }
+
+    pub fn with_error_handler(
+        mut self,
+        f: impl Fn(TosError, u32) -> Result<T, Error> + Send + Sync + 'static,
+    ) -> Self {
+        self.error_handler = Box::new(f);
+        self
+    }
+
+    pub async fn run<F, Fut>(self, operation: F) -> Result<T, Error>
+    where
+        F: Fn(u32) -> Fut,
+        Fut: Future<Output = Result<T, TosError>>,
+    {
+        let mut last_error: Option<TosError> = None;
+
+        for attempt in 0..=self.max_retries {
+            match operation(attempt).await {
+                Ok(result) => return Ok(result),
+                Err(error) => {
+                    last_error = Some(error.clone());
+                    let (retry_after, need_retry) = TosSource::is_retryable_error(&error);
+                    if need_retry {
+                        if attempt < self.max_retries {
+                            let delay = TosSource::cal_sleep_duration(attempt, retry_after).await;
+                            log::warn!(
+                                "TOS {} operation failed for {} (attempt {}/{}): {}. Retrying in {:?}",
+                                self.operation,
+                                self.uri,
+                                attempt + 1,
+                                self.max_retries + 1,
+                                error,
+                                delay
+                            );
+                            tokio::time::sleep(delay).await;
+                        } else {
+                            return Err(Error::MaxRetriesExceeded {
+                                retries: self.max_retries,
+                                err_msg: last_error.map(|e| e.to_string()).unwrap_or_default(),
+                            }
+                            .into());
+                        }
+                    } else {
+                        return (self.error_handler)(error, attempt);
+                    }
+                }
+            }
+        }
+
+        Err(Error::MaxRetriesExceeded {
+            retries: self.max_retries,
+            err_msg: last_error.map(|e| e.to_string()).unwrap_or_default(),
+        }
+        .into())
+    }
+}
 
 const DELIMITER: &str = "/";
 const DEFAULT_GLOB_FANOUT_LIMIT: usize = 1024;
@@ -132,6 +213,9 @@ pub enum Error {
 
     #[snafu(display("Operation failed after {} retries: {}", retries, err_msg))]
     MaxRetriesExceeded { retries: u32, err_msg: String },
+
+    #[snafu(display("Generic error for {}: {}", path, source))]
+    Generic { path: String, source: TosError },
 }
 
 #[allow(clippy::fallible_impl_from)]
@@ -196,62 +280,6 @@ pub struct TosSource {
 }
 
 impl TosSource {
-    async fn retry_operation<T, F, Fut, E>(
-        &self,
-        operation: F,
-        operation_name: &str,
-        path: &str,
-        max_retries: u32,
-        error_converter: impl Fn(TosError) -> E,
-    ) -> Result<T, E>
-    where
-        F: Fn(u32) -> Fut,
-        Fut: Future<Output = Result<T, TosError>>,
-        E: From<Error>,
-    {
-        let mut last_error = None;
-
-        for attempt in 0..=max_retries {
-            match operation(attempt).await {
-                Ok(result) => return Ok(result),
-                Err(error) => {
-                    last_error = Some(error.clone());
-
-                    let (retry_after, need_retry) = Self::is_retryable_error(&error);
-                    if need_retry {
-                        if attempt < max_retries {
-                            let delay = Self::cal_sleep_duration(attempt, retry_after).await;
-                            log::warn!(
-                                "TOS {} operation failed for {} (attempt {}/{}): {}. Retrying in {:?}",
-                                operation_name,
-                                path,
-                                attempt + 1,
-                                max_retries + 1,
-                                error,
-                                delay
-                            );
-                            tokio::time::sleep(delay).await;
-                        } else {
-                            return Err(Error::MaxRetriesExceeded {
-                                retries: max_retries,
-                                err_msg: last_error.map(|e| e.to_string()).unwrap_or_default(),
-                            }
-                            .into());
-                        }
-                    } else {
-                        return Err(error_converter(error));
-                    }
-                }
-            }
-        }
-
-        Err(Error::MaxRetriesExceeded {
-            retries: max_retries,
-            err_msg: last_error.map(|e| e.to_string()).unwrap_or_default(),
-        }
-        .into())
-    }
-
     async fn cal_sleep_duration(attempt: u32, retry_after: isize) -> Duration {
         let mut delay = BASE_DELAY_MS * 2u64.pow(attempt + 1);
         if delay > MAX_DELAY_MS {
@@ -323,6 +351,9 @@ impl TosSource {
             .request_timeout(config.read_timeout_ms as isize)
             .max_retry_count(0) // disable the retry logical of SDK
             .region(region)
+            .user_agent_product_name("EMR")
+            .user_agent_soft_name("Daft")
+            .user_agent_soft_version(env!("CARGO_PKG_VERSION"))
             .endpoint(endpoint.clone());
 
         if let Some(access_key) = config.access_key.clone() {
@@ -338,7 +369,6 @@ impl TosSource {
         }
 
         let client = builder
-            .max_retry_count(config.max_retries as isize)
             .build()
             .with_context(|_| ClientCreationSnafu { endpoint })?;
 
@@ -397,35 +427,35 @@ impl TosSource {
             range.validate().context(InvalidRangeRequestSnafu)?;
         }
 
-        let response: GetObjectOutput = self
-            .retry_operation(
-                |attempt| {
-                    let bucket = bucket.clone();
-                    let key = key.clone();
-                    let range = range.clone();
-                    let client = &self.client;
-                    let max_retries = self.config.max_retries;
-                    async move {
-                        let mut request = GetObjectInput::new(bucket, key);
-                        if let Some(ref range) = range {
-                            request.set_range(range.to_string());
-                        }
-                        set_retry_header!(request, attempt, max_retries);
-                        client.get_object(&request).await
+        let uri_s = uri.to_string();
+        let response = TosRetrier::new("get_object", uri_s.clone(), self.config.max_retries)
+            .with_error_handler({
+                move |err, _attempt| {
+                    Err(Error::UnableToOpenFile {
+                        path: uri_s.clone(),
+                        source: err,
+                    })
+                }
+            })
+            .run(|attempt| {
+                let bucket = bucket.clone();
+                let key = key.clone();
+                let range = range.clone();
+                let client = &self.client;
+                let max_retries = self.config.max_retries;
+
+                async move {
+                    let mut request = GetObjectInput::new(bucket, key);
+                    if let Some(ref range) = range {
+                        request.set_range(range.to_string());
                     }
-                },
-                "get_object",
-                uri,
-                self.config.max_retries,
-                |err| Error::UnableToOpenFile {
-                    path: uri.to_string(),
-                    source: err,
-                },
-            )
+                    set_retry_header!(request, attempt, max_retries);
+                    client.get_object(&request).await
+                }
+            })
             .await?;
 
         let size = response.content_length() as usize;
-
         struct WrapperStream {
             stream: GetObjectOutput,
             uri: String,
@@ -458,28 +488,30 @@ impl TosSource {
     async fn put_impl(&self, _permit: OwnedSemaphorePermit, uri: &str, data: Bytes) -> Result<()> {
         let (bucket, key) = Self::parse_tos_url(uri, false)?;
 
-        self.retry_operation(
-            |attempt| {
+        let uri_s = uri.to_string();
+        TosRetrier::new("put_object", uri_s.clone(), self.config.max_retries)
+            .with_error_handler({
+                move |err, _attempt| {
+                    Err(Error::UnableToPutFile {
+                        path: uri_s.clone(),
+                        source: err,
+                    })
+                }
+            })
+            .run(|attempt| {
                 let bucket = bucket.clone();
                 let key = key.clone();
                 let data = data.clone();
                 let client = &self.client;
                 let max_retries = self.config.max_retries;
+
                 async move {
                     let mut request = PutObjectFromBufferInput::new_with_content(bucket, key, data);
                     set_retry_header!(request, attempt, max_retries);
                     client.put_object_from_buffer(&request).await
                 }
-            },
-            "put_object",
-            uri,
-            self.config.max_retries,
-            |err| Error::UnableToPutFile {
-                path: uri.to_string(),
-                source: err,
-            },
-        )
-        .await?;
+            })
+            .await?;
 
         Ok(())
     }
@@ -487,28 +519,30 @@ impl TosSource {
     async fn get_size_impl(&self, _permit: OwnedSemaphorePermit, uri: &str) -> Result<usize> {
         let (bucket, key) = Self::parse_tos_url(uri, false)?;
 
-        let response: HeadObjectOutput = self
-            .retry_operation(
-                |attempt| {
+        let uri_s = uri.to_string();
+        let response: HeadObjectOutput =
+            TosRetrier::new("head_object", uri_s.clone(), self.config.max_retries)
+                .with_error_handler({
+                    move |err, _attempt| {
+                        Err(Error::UnableToOpenFile {
+                            path: uri_s.clone(),
+                            source: err,
+                        })
+                    }
+                })
+                .run(|attempt| {
                     let bucket = bucket.clone();
                     let key = key.clone();
                     let client = &self.client;
                     let max_retries = self.config.max_retries;
+
                     async move {
                         let mut request = HeadObjectInput::new(bucket, key);
                         set_retry_header!(request, attempt, max_retries);
                         client.head_object(&request).await
                     }
-                },
-                "head_object",
-                uri,
-                self.config.max_retries,
-                |err| Error::UnableToOpenFile {
-                    path: uri.to_string(),
-                    source: err,
-                },
-            )
-            .await?;
+                })
+                .await?;
 
         Ok(response.content_length() as usize)
     }
@@ -525,69 +559,74 @@ impl TosSource {
         let bucket = bucket.to_string();
         let key = key.to_string();
 
-        let result = self
-            .retry_operation(
-                |attempt| {
-                    let bucket = bucket.clone();
-                    let key = key.clone();
-                    let delimiter = delimiter.clone();
-                    let continuation_token = continuation_token.clone();
-                    let client = &self.client;
-                    let max_retries = self.config.max_retries;
-                    async move {
-                        let mut request = ListObjectsType2Input::new(&bucket);
-                        request.set_prefix(&key);
-                        if let Some(ref delimiter) = delimiter {
-                            request.set_delimiter(delimiter);
-                        }
-                        if let Some(ref continuation_token) = continuation_token {
-                            request.set_continuation_token(continuation_token);
-                        }
-                        if let Some(page_size) = page_size {
-                            request.set_max_keys(page_size as isize);
-                        }
-                        set_retry_header!(request, attempt, max_retries);
-                        client.list_objects_type2(&request).await
-                    }
-                },
-                "list_objects_type2",
-                &format!("tos://{bucket}/{key}"),
-                self.config.max_retries,
-                |err| Error::UnableToListObjects {
-                    path: format!("tos://{bucket}/{key}"),
+        let path_s = format!("tos://{bucket}/{key}");
+        let result = TosRetrier::new(
+            "list_objects_type2",
+            path_s.clone(),
+            self.config.max_retries,
+        )
+        .with_error_handler({
+            move |err, _attempt| {
+                Err(Error::UnableToListObjects {
+                    path: path_s.clone(),
                     source: err,
-                },
-            )
-            .await
-            .map(|r: ListObjectsType2Output| {
-                let dirs = r.common_prefixes();
-                let files = r.contents();
+                })
+            }
+        })
+        .run(|attempt| {
+            let bucket = bucket.clone();
+            let key = key.clone();
+            let delimiter = delimiter.clone();
+            let continuation_token = continuation_token.clone();
+            let client = &self.client;
+            let max_retries = self.config.max_retries;
 
-                let files = dirs
-                    .iter()
-                    .map(|prefix| FileMetadata {
-                        filepath: format!("tos://{}/{}", bucket, prefix.prefix()),
-                        size: None,
-                        filetype: FileType::Directory,
-                    })
-                    .chain(files.iter().map(|f| FileMetadata {
-                        filepath: format!("tos://{}/{}", bucket, f.key()),
-                        size: Some(f.size() as u64),
-                        filetype: FileType::File,
-                    }))
-                    .collect();
-                let continuation_token = (!r.next_continuation_token().is_empty())
-                    .then(|| r.next_continuation_token().to_string());
-
-                LSResult {
-                    files,
-                    continuation_token,
+            async move {
+                let mut request = ListObjectsType2Input::new(&bucket);
+                request.set_prefix(&key);
+                if let Some(ref delimiter) = delimiter {
+                    request.set_delimiter(delimiter);
                 }
-            })?;
+                if let Some(ref continuation_token) = continuation_token {
+                    request.set_continuation_token(continuation_token);
+                }
+                if let Some(page_size) = page_size {
+                    request.set_max_keys(page_size as isize);
+                }
+                set_retry_header!(request, attempt, max_retries);
+                client.list_objects_type2(&request).await
+            }
+        })
+        .await
+        .map(|r: ListObjectsType2Output| {
+            let dirs = r.common_prefixes();
+            let files = r.contents();
+
+            let files = dirs
+                .iter()
+                .map(|prefix| FileMetadata {
+                    filepath: format!("tos://{}/{}", bucket, prefix.prefix()),
+                    size: None,
+                    filetype: FileType::Directory,
+                })
+                .chain(files.iter().map(|f| FileMetadata {
+                    filepath: format!("tos://{}/{}", bucket, f.key()),
+                    size: Some(f.size() as u64),
+                    filetype: FileType::File,
+                }))
+                .collect();
+            let continuation_token = (!r.next_continuation_token().is_empty())
+                .then(|| r.next_continuation_token().to_string());
+
+            LSResult {
+                files,
+                continuation_token,
+            }
+        })?;
         Ok(result)
     }
 
-    pub async fn create_mpu(&self, bucket: &str, key: &str) -> super::Result<String> {
+    pub async fn create_mpu(&self, bucket: &str, key: &str) -> Result<String> {
         let _permit = self
             .connection_pool_sema
             .clone()
@@ -595,27 +634,33 @@ impl TosSource {
             .await
             .context(UnableToGrabSemaphoreSnafu)?;
 
-        let upload_id = self
-            .retry_operation(
-                |attempt| {
-                    let client = &self.client;
-                    let max_retries = self.config.max_retries;
-                    async move {
-                        let mut request = CreateMultipartUploadInput::new(bucket, key);
-                        set_retry_header!(request, attempt, max_retries);
-                        let resp = client.create_multipart_upload(&request).await?;
-                        Ok(resp.upload_id().to_string())
-                    }
-                },
-                "create_multipart_upload",
-                &format!("tos://{bucket}/{key}"),
-                self.config.max_retries,
-                |err| Error::UnableToCreateMultipartUpload {
-                    path: format!("tos://{bucket}/{key}"),
+        let uri = format!("tos://{bucket}/{key}");
+        let upload_id = TosRetrier::new(
+            "create_multipart_upload",
+            uri.clone(),
+            self.config.max_retries,
+        )
+        .with_error_handler({
+            move |err, _attempt| {
+                Err(Error::UnableToCreateMultipartUpload {
+                    path: uri.clone(),
                     source: err,
-                },
-            )
-            .await?;
+                })
+            }
+        })
+        .run(|attempt| {
+            let client = &self.client;
+            let max_retries = self.config.max_retries;
+
+            async move {
+                let mut request = CreateMultipartUploadInput::new(bucket, key);
+                set_retry_header!(request, attempt, max_retries);
+                let resp = client.create_multipart_upload(&request).await?;
+                Ok(resp.upload_id().to_string())
+            }
+        })
+        .await?;
+
         Ok(upload_id)
     }
 
@@ -634,38 +679,40 @@ impl TosSource {
             .await
             .context(UnableToGrabSemaphoreSnafu)?;
 
-        let part = self
-            .retry_operation(
-                |attempt| {
-                    let data = data.clone();
-                    let client = &self.client;
-                    let max_retries = self.config.max_retries;
-                    async move {
-                        let mut request = UploadPartFromBufferInput::new_with_part_number_content(
-                            bucket,
-                            key,
-                            upload_id,
-                            part_number as isize,
-                            data,
-                        );
-                        set_retry_header!(request, attempt, max_retries);
-                        let resp = client.upload_part_from_buffer(&request).await?;
-                        Ok(TosPart {
-                            idx: resp.part_number() as usize,
-                            etag: resp.etag().to_string(),
-                        })
-                    }
-                },
-                "upload_part",
-                &format!("tos://{bucket}/{key}"),
-                self.config.max_retries,
-                |err| Error::UnableToUploadPart {
-                    path: format!("tos://{bucket}/{key}"),
-                    upload_id: upload_id.to_string(),
-                    part_number: part_number as usize,
-                    source: err,
-                },
-            )
+        let path_s = format!("tos://{bucket}/{key}");
+        let part = TosRetrier::new("upload_part", path_s.clone(), self.config.max_retries)
+            .with_error_handler({
+                let upload_id = upload_id.to_string();
+                move |err, _attempt| {
+                    Err(Error::UnableToUploadPart {
+                        path: path_s.clone(),
+                        upload_id: upload_id.clone(),
+                        part_number: part_number as usize,
+                        source: err,
+                    })
+                }
+            })
+            .run(|attempt| {
+                let data = data.clone();
+                let client = &self.client;
+                let max_retries = self.config.max_retries;
+
+                async move {
+                    let mut request = UploadPartFromBufferInput::new_with_part_number_content(
+                        bucket,
+                        key,
+                        upload_id,
+                        part_number as isize,
+                        data,
+                    );
+                    set_retry_header!(request, attempt, max_retries);
+                    let resp = client.upload_part_from_buffer(&request).await?;
+                    Ok(TosPart {
+                        idx: resp.part_number() as usize,
+                        etag: resp.etag().to_string(),
+                    })
+                }
+            })
             .await?;
         Ok(part)
     }
@@ -684,32 +731,48 @@ impl TosSource {
             .await
             .context(UnableToGrabSemaphoreSnafu)?;
 
-        self.retry_operation(
-            |attempt| {
-                let parts = parts.clone();
-                let client = &self.client;
-                let max_retries = self.config.max_retries;
-                async move {
-                    let parts: Vec<UploadedPart> = parts
-                        .iter()
-                        .map(|p| UploadedPart::new(p.idx as isize, &p.etag))
-                        .collect();
-                    let mut request =
-                        CompleteMultipartUploadInput::new_with_parts(bucket, key, upload_id, parts);
-                    set_retry_header!(request, attempt, max_retries);
-                    let _resp = client.complete_multipart_upload(&request).await?;
-                    Ok(())
-                }
-            },
+        let uri = format!("tos://{bucket}/{key}");
+        TosRetrier::new(
             "complete_multipart_upload",
-            &format!("tos://{bucket}/{key}"),
+            uri.clone(),
             self.config.max_retries,
-            |err| Error::UnableToCompleteMultipartUpload {
-                path: format!("tos://{bucket}/{key}"),
-                upload_id: upload_id.to_string(),
-                source: err,
-            },
         )
+        .with_error_handler({
+            let upload_id_s = upload_id.to_string();
+            move |err, attempt| {
+                if err.to_string().contains("NoSuchUpload") && attempt > 0 {
+                    log::warn!(
+                        "Ignore the NoSuchUpload error since the multipart upload might been completed. \
+                        path: {}, upload_id: {}",
+                        uri.clone(),
+                        upload_id_s
+                    );
+                    Ok(())
+                } else {
+                    Err(Error::UnableToCompleteMultipartUpload {
+                        path: uri.clone(),
+                        upload_id: upload_id_s.clone(),
+                        source: err,
+                    })
+                }
+            }
+        })
+        .run(|attempt| {
+            let parts = parts.clone();
+            let client = &self.client;
+            let max_retries = self.config.max_retries;
+            async move {
+                let parts: Vec<UploadedPart> = parts
+                    .iter()
+                    .map(|p| UploadedPart::new(p.idx as isize, &p.etag))
+                    .collect();
+                let mut request =
+                    CompleteMultipartUploadInput::new_with_parts(bucket, key, upload_id, parts);
+                set_retry_header!(request, attempt, max_retries);
+                let _resp = client.complete_multipart_upload(&request).await?;
+                Ok(())
+            }
+        })
         .await?;
         Ok(())
     }
@@ -883,42 +946,46 @@ impl ObjectSource for TosSource {
         }
     }
 
-    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
-        self
-    }
-
     async fn delete(&self, uri: &str, io_stats: Option<IOStatsRef>) -> Result<()> {
+        let _permit = self
+            .connection_pool_sema
+            .clone()
+            .acquire_owned()
+            .await
+            .context(UnableToGrabSemaphoreSnafu)?;
+
         let (bucket, key) = Self::parse_tos_url(uri, false)?;
 
-        // TODO: consider idempotence problem
-        self.retry_operation(
-            |attempt| {
+        let uri_s = uri.to_string();
+        TosRetrier::new("delete_object", uri_s.clone(), self.config.max_retries)
+            .with_error_handler(move |err, _attempt| {
+                Err(Error::UnableToDeleteFile {
+                    path: uri_s.clone(),
+                    source: err.into(),
+                })
+            })
+            .run(|attempt| {
                 let bucket = bucket.clone();
                 let key = key.clone();
                 let client = &self.client;
                 let max_retries = self.config.max_retries;
-
                 async move {
                     let mut request = DeleteObjectInput::new(bucket, key);
                     set_retry_header!(request, attempt, max_retries);
                     client.delete_object(&request).await
                 }
-            },
-            "delete_object",
-            uri,
-            self.config.max_retries,
-            |err| Error::UnableToDeleteFile {
-                path: uri.to_string(),
-                source: err.into(),
-            },
-        )
-        .await?;
+            })
+            .await?;
 
         if let Some(is) = io_stats.as_ref() {
             is.mark_delete_requests(1);
         }
 
         Ok(())
+    }
+
+    fn as_any_arc(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self
     }
 }
 
@@ -928,6 +995,7 @@ pub struct TosMultipartWriter {
     key: Cow<'static, str>,
     upload_id: Cow<'static, str>,
     part_idx: AtomicUsize,
+    closed: AtomicBool,
     client: Arc<TosSource>,
     in_flight_permits: Arc<Semaphore>,
     in_flight_uploads: JoinSet<Result<TosPart>>,
@@ -960,6 +1028,7 @@ impl TosMultipartWriter {
             key: key.into(),
             upload_id: upload_id.into(),
             part_idx: AtomicUsize::new(1),
+            closed: AtomicBool::new(false),
             client,
             in_flight_permits: Arc::new(Semaphore::new(max_concurrent_uploads)),
             in_flight_uploads: JoinSet::new(),
@@ -1001,6 +1070,17 @@ impl MultipartWriter for TosMultipartWriter {
     }
 
     async fn complete(&mut self) -> Result<()> {
+        if self
+            .closed
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return Err(super::Error::Generic {
+                store: SourceType::Tos,
+                source: "TosMultipartWriter is closed".into(),
+            });
+        }
+
         let mut completed_parts = vec![];
         while let Some(upload) = self.in_flight_uploads.join_next().await {
             match upload {
@@ -1012,6 +1092,21 @@ impl MultipartWriter for TosMultipartWriter {
 
         completed_parts.sort_by_key(|part| part.idx);
 
+        if completed_parts.is_empty() {
+            // Upload an empty part to complete the multipart upload.
+            let part = self
+                .client
+                .upload_part(
+                    self.bucket.as_ref(),
+                    self.key.as_ref(),
+                    self.upload_id.as_ref(),
+                    1,
+                    Bytes::new(),
+                )
+                .await?;
+            completed_parts.push(part);
+        }
+
         self.client
             .complete_mpu(
                 self.bucket.as_ref(),
@@ -1020,14 +1115,50 @@ impl MultipartWriter for TosMultipartWriter {
                 completed_parts,
             )
             .await?;
-
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::env;
+
+    use bytes::Bytes;
+    use common_io_config::ObfuscatedString;
+    use rand::{RngCore, thread_rng};
+
     use super::*;
+    use crate::integrations::test_full_get;
+
+    struct ClientGuard {
+        client: Arc<TosSource>,
+        uris: Vec<String>,
+    }
+
+    impl ClientGuard {
+        fn new(client: Arc<TosSource>, uris: Vec<String>) -> Self {
+            Self { client, uris }
+        }
+
+        async fn cleanup(self) {
+            for uri in self.uris.clone() {
+                let _ = self.client.delete(&uri, None).await;
+            }
+        }
+    }
+
+    impl Drop for ClientGuard {
+        fn drop(&mut self) {
+            let client = self.client.clone();
+            let uris = self.uris.clone();
+            // Try the best effort to clean up the object after the test.
+            let _ = Handle::current().spawn(async move {
+                for uri in uris {
+                    let _ = client.delete(&uri, None).await;
+                }
+            });
+        }
+    }
 
     fn setup_test_config() -> TosConfig {
         TosConfig {
@@ -1035,6 +1166,30 @@ mod tests {
             endpoint: Some("https://tos-cn-beijing.volces.com".to_string()),
             anonymous: true,
             ..Default::default()
+        }
+    }
+
+    fn setup_online_test_config() -> Option<(TosConfig, String)> {
+        let bucket = env::var("TOS_TEST_BUCKET").ok();
+        let access_key = env::var("TOS_ACCESS_KEY").ok();
+        let secret_key = env::var("TOS_SECRET_KEY").ok();
+
+        if bucket.is_none() || access_key.is_none() || secret_key.is_none() {
+            None
+        } else {
+            Some((
+                TosConfig {
+                    region: Some(env::var("TOS_REGION").unwrap_or("cn-beijing".to_string())),
+                    endpoint: Some(
+                        env::var("TOS_ENDPOINT")
+                            .unwrap_or("https://tos-cn-beijing.volces.com".to_string()),
+                    ),
+                    access_key,
+                    secret_key: secret_key.map(|s| ObfuscatedString::from(s)),
+                    ..Default::default()
+                },
+                bucket.unwrap(),
+            ))
         }
     }
 
@@ -1080,5 +1235,161 @@ mod tests {
         let url = "tos://";
         let result = TosSource::parse_tos_url(url, true);
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_full_get_from_tos() {
+        let (cfg, bucket) = match setup_online_test_config() {
+            Some(c) => c,
+            None => return,
+        };
+        let uri = format!(
+            "tos://{}/{}/hello.txt",
+            bucket,
+            generate_test_object_prefix()
+        );
+
+        let guard = build_client_guard(&cfg, vec![&uri]).await;
+
+        let data = random_vec(200);
+        guard.client.put(&uri, data.clone(), None).await.unwrap();
+
+        let res = test_full_get(guard.client.clone(), &uri, &data).await;
+
+        guard.cleanup().await;
+        res.unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_full_ls_from_tos() {
+        let (cfg, bucket) = match setup_online_test_config() {
+            Some(c) => c,
+            None => return,
+        };
+        let prefix = format!("tos://{}/{}", bucket, generate_test_object_prefix());
+        let uri1 = format!("{}/hello-1.txt", prefix);
+        let uri2 = format!("{}/hello-2.txt", prefix);
+        let guard = build_client_guard(&cfg, vec![&uri1, &uri2]).await;
+
+        // list empty prefix
+        let res = guard
+            .client
+            .ls(&prefix, true, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(res.files.len(), 0);
+        assert!(res.continuation_token.is_none());
+
+        // create two files
+        let data = random_vec(200);
+        guard.client.put(&uri1, data.clone(), None).await.unwrap();
+        guard.client.put(&uri2, data.clone(), None).await.unwrap();
+
+        // list total files
+        let res = guard
+            .client
+            .ls(&prefix, true, None, None, None)
+            .await
+            .unwrap();
+        assert_eq!(res.files.len(), 2);
+        assert_eq!(res.files[0].filepath, uri1);
+        assert_eq!(res.files[1].filepath, uri2);
+        assert!(res.continuation_token.is_none());
+
+        // list only one file
+        let res = guard
+            .client
+            .ls(&prefix, true, None, Some(1), None)
+            .await
+            .unwrap();
+        assert_eq!(res.files.len(), 1);
+        assert_eq!(res.files[0].filepath, uri1);
+        assert!(res.continuation_token.is_some());
+
+        // list the next file with continuation token
+        let next_token = res.continuation_token.unwrap();
+        let res = guard
+            .client
+            .ls(&prefix, true, Some(next_token.as_str()), Some(1), None)
+            .await
+            .unwrap();
+        assert_eq!(res.files.len(), 1);
+        assert_eq!(res.files[0].filepath, uri2);
+        assert!(res.continuation_token.is_none());
+
+        guard.cleanup().await;
+    }
+
+    #[tokio::test]
+    async fn test_mpu() {
+        let (cfg, bucket) = match setup_online_test_config() {
+            Some(c) => c,
+            None => return,
+        };
+
+        let prefix = format!("tos://{}/{}", bucket, generate_test_object_prefix());
+
+        let uri = format!("{}/hello.txt", prefix);
+        let guard = build_client_guard(&cfg, vec![&uri]).await;
+
+        // complete with empty part
+        let client = guard.client.clone();
+        let mut writer = client.create_multipart_writer(&uri).await.unwrap().unwrap();
+        writer.complete().await.unwrap();
+        let size = guard.client.get_size(&uri, None).await.unwrap();
+        assert_eq!(size, 0);
+
+        // complete with single part
+        let part1 = random_vec(1000);
+        let client = guard.client.clone();
+        let mut writer = client.create_multipart_writer(&uri).await.unwrap().unwrap();
+        writer.put_part(part1.clone()).await.unwrap();
+        writer.complete().await.unwrap();
+
+        let data = guard
+            .client
+            .get(&uri, None, None)
+            .await
+            .unwrap()
+            .bytes()
+            .await
+            .unwrap();
+        assert_eq!(data, part1.clone());
+
+        // complete a completed writer
+        let err = writer.complete().await.unwrap_err();
+        assert!(err.to_string().contains("TosMultipartWriter is closed"));
+
+        // complete with invalid part size
+        let client = guard.client.clone();
+        let mut writer = client.create_multipart_writer(&uri).await.unwrap().unwrap();
+        writer.put_part(part1.clone()).await.unwrap();
+        writer.put_part(random_vec(2000)).await.unwrap();
+        let err = writer.complete().await.unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("Your proposed upload is smaller than the minimum allowed size")
+        );
+
+        guard.cleanup().await
+    }
+
+    fn generate_test_object_prefix() -> String {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        format!("daft-tests/{}/{}", std::process::id(), ts)
+    }
+
+    fn random_vec(n: usize) -> Bytes {
+        let mut buf = vec![0u8; n];
+        thread_rng().fill_bytes(&mut buf);
+        Bytes::from(buf)
+    }
+
+    async fn build_client_guard(cfg: &TosConfig, uris: Vec<&str>) -> ClientGuard {
+        let client = TosSource::get_client(&cfg).await.unwrap();
+        ClientGuard::new(client, uris.iter().map(|s| s.to_string()).collect())
     }
 }

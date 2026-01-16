@@ -463,7 +463,7 @@ pub type ExtensionArray = DataArray<ExtensionType>;
 pub type IntervalArray = DataArray<IntervalType>;
 pub type Decimal128Array = DataArray<Decimal128Type>;
 
-impl<T: DaftNumericType> DataArray<T> {
+impl<T: DaftPrimitiveType> DataArray<T> {
     pub fn as_slice(&self) -> &[T::Native] {
         self.as_arrow2().values().as_slice()
     }
@@ -485,15 +485,7 @@ impl<T: DaftNumericType> DataArray<T> {
             self.field.clone(),
             ScalarBuffer::from(arrow_buffer).into_iter().map(f),
         )
-        .with_validity(self.validity().cloned())
+        .with_nulls(self.nulls().cloned())
         .expect("Failed to set nulls")
-    }
-}
-
-impl<P: AsRef<str>> FromIterator<Option<P>> for Utf8Array {
-    #[inline]
-    fn from_iter<I: IntoIterator<Item = Option<P>>>(iter: I) -> Self {
-        let arrow_arr = daft_arrow::array::Utf8Array::<i64>::from_iter(iter);
-        Self::from(("", Box::new(arrow_arr)))
     }
 }
