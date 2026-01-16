@@ -17,18 +17,20 @@ impl StructArray {
         let output_dtype = DataType::FixedSizeList(Box::new(DataType::Float64), percentiles.len());
         let output_field = Field::new(self.field.name.as_str(), output_dtype);
 
-        let mut flat_child = Vec::with_capacity(percentiles.len() * self.len());
+        let mut array_builder =
+            arrow::array::Float64Builder::with_capacity(percentiles.len() * self.len());
         daft_sketch::from_arrow(self.to_arrow()?)?
             .iter()
             .for_each(|sketch| match sketch {
                 None => {
-                    flat_child.extend(std::iter::repeat_n::<Option<f64>>(None, percentiles.len()));
+                    array_builder
+                        .extend(std::iter::repeat_n::<Option<f64>>(None, percentiles.len()));
                 }
                 Some(sketch) => {
-                    flat_child.extend(percentiles.iter().map(|&p| sketch.quantile(p).unwrap()));
+                    array_builder.extend(percentiles.iter().map(|&p| sketch.quantile(p).unwrap()));
                 }
             });
-        let arrow_array = arrow::array::Float64Array::from_iter(flat_child);
+        let arrow_array = array_builder.finish();
         let flat_child = Float64Array::from_arrow(
             Field::new(self.name(), DataType::Float64),
             Arc::new(arrow_array),
