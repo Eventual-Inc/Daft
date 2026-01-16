@@ -1,90 +1,9 @@
-use std::{
-    borrow::Cow,
-    sync::{
-        Arc,
-        atomic::{AtomicU64, Ordering},
-    },
-    time::Duration,
+use std::sync::{Arc, atomic::Ordering};
+
+use common_metrics::{
+    CPU_US_KEY, Counter, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, snapshot::DefaultSnapshot,
 };
-
-use atomic_float::AtomicF64;
-use common_metrics::{CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, snapshot};
-use opentelemetry::{KeyValue, global, metrics::Meter};
-
-// ----------------------- Wrappers for Runtime Stat Values ----------------------- //
-
-pub struct Counter {
-    value: AtomicU64,
-    otel: opentelemetry::metrics::Counter<u64>,
-}
-
-impl Counter {
-    pub fn new(
-        meter: &Meter,
-        name: Cow<'static, str>,
-        description: Option<Cow<'static, str>>,
-    ) -> Self {
-        let normalized_name = normalize_name(name);
-        let builder = meter.u64_counter(normalized_name);
-        let builder = if let Some(description) = description {
-            builder.with_description(description)
-        } else {
-            builder
-        };
-        Self {
-            value: AtomicU64::new(0),
-            otel: builder.build(),
-        }
-    }
-
-    pub fn add(&self, value: u64, key_values: &[KeyValue]) -> u64 {
-        let prev = self.value.fetch_add(value, Ordering::Relaxed);
-        self.otel.add(value, key_values);
-        prev + value
-    }
-
-    pub fn load(&self, ordering: Ordering) -> u64 {
-        self.value.load(ordering)
-    }
-}
-
-pub struct Gauge {
-    value: AtomicF64,
-    otel: opentelemetry::metrics::Gauge<f64>,
-}
-
-impl Gauge {
-    pub fn new(
-        meter: &Meter,
-        name: Cow<'static, str>,
-        description: Option<Cow<'static, str>>,
-    ) -> Self {
-        let normalized_name = normalize_name(name);
-        let builder = meter.f64_gauge(normalized_name);
-        let builder = if let Some(description) = description {
-            builder.with_description(description)
-        } else {
-            builder
-        };
-        Self {
-            value: AtomicF64::new(f64::NAN),
-            otel: builder.build(),
-        }
-    }
-
-    pub fn update(&self, value: f64, key_values: &[KeyValue]) {
-        self.value.store(value, Ordering::Relaxed);
-        self.otel.record(value, key_values);
-    }
-
-    pub fn load(&self, ordering: Ordering) -> f64 {
-        self.value.load(ordering)
-    }
-}
-
-fn normalize_name(name: Cow<'static, str>) -> String {
-    format!("daft.{}", name.replace(' ', "_").to_lowercase())
-}
+use opentelemetry::{KeyValue, global};
 
 // ----------------------- General Traits for Runtime Stat Collection ----------------------- //
 
@@ -120,9 +39,9 @@ impl DefaultRuntimeStats {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, "cpu_us".into(), None),
-            rows_in: Counter::new(&meter, "rows_in".into(), None),
-            rows_out: Counter::new(&meter, "rows_out".into(), None),
+            cpu_us: Counter::new(&meter, CPU_US_KEY, None),
+            rows_in: Counter::new(&meter, ROWS_IN_KEY, None),
+            rows_out: Counter::new(&meter, ROWS_OUT_KEY, None),
             node_kv,
         }
     }
@@ -134,11 +53,11 @@ impl RuntimeStats for DefaultRuntimeStats {
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
-        snapshot![
-            CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
-            ROWS_IN_KEY; Stat::Count(self.rows_in.load(ordering)),
-            ROWS_OUT_KEY; Stat::Count(self.rows_out.load(ordering)),
-        ]
+        StatSnapshot::Default(DefaultSnapshot {
+            cpu_us: self.cpu_us.load(ordering),
+            rows_in: self.rows_in.load(ordering),
+            rows_out: self.rows_out.load(ordering),
+        })
     }
 
     fn add_rows_in(&self, rows: u64) {

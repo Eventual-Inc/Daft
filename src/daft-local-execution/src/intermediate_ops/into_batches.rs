@@ -53,7 +53,7 @@ impl IntermediateOperator for IntoBatchesOperator {
             .into()
     }
     fn name(&self) -> NodeName {
-        "IntoBatches".into()
+        format!("Into Batches of {}", self.batch_size).into()
     }
     fn op_type(&self) -> NodeType {
         NodeType::IntoBatches

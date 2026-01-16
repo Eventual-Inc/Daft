@@ -1,11 +1,9 @@
-use std::{
-    sync::{Arc, atomic::Ordering},
-    time::Duration,
-};
+use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
 use common_metrics::{
-    CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, ops::NodeType, snapshot,
+    CPU_US_KEY, Counter, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, ops::NodeType,
+    snapshot::FilterSnapshot,
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
@@ -15,11 +13,7 @@ use tracing::{Span, instrument};
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{
-    ExecutionTaskSpawner,
-    pipeline::NodeName,
-    runtime_stats::{Counter, Gauge, RuntimeStats},
-};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
 
 pub struct FilterStats {
     cpu_us: Counter,
@@ -35,10 +29,10 @@ impl FilterStats {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, CPU_US_KEY.into(), None),
-            rows_in: Counter::new(&meter, ROWS_IN_KEY.into(), None),
-            rows_out: Counter::new(&meter, ROWS_OUT_KEY.into(), None),
-            selectivity: Gauge::new(&meter, "selectivity".into(), None),
+            cpu_us: Counter::new(&meter, CPU_US_KEY, None),
+            rows_in: Counter::new(&meter, ROWS_IN_KEY, None),
+            rows_out: Counter::new(&meter, ROWS_OUT_KEY, None),
+            selectivity: Gauge::new(&meter, "selectivity", None),
             node_kv,
         }
     }
@@ -65,12 +59,12 @@ impl RuntimeStats for FilterStats {
         let rows_out = self.rows_out.load(ordering);
         let selectivity = self.selectivity.load(ordering);
 
-        snapshot![
-            CPU_US_KEY; Stat::Duration(Duration::from_micros(cpu_us)),
-            ROWS_IN_KEY; Stat::Count(rows_in),
-            ROWS_OUT_KEY; Stat::Count(rows_out),
-            "selectivity"; Stat::Percent(selectivity),
-        ]
+        StatSnapshot::Filter(FilterSnapshot {
+            cpu_us,
+            rows_in,
+            rows_out,
+            selectivity,
+        })
     }
 
     fn add_rows_in(&self, rows: u64) {

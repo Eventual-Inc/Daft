@@ -7,19 +7,23 @@ use std::{
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
-use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
+use common_metrics::{
+    ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot::StatSnapshotImpl,
+};
 use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime};
 use daft_core::prelude::SchemaRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
-use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tracing::info_span;
 
 use crate::{
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorControlFlow, OperatorOutput,
+    PipelineExecutionSnafu,
     buffer::RowBasedBuffer,
+    channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
@@ -161,7 +165,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
     async fn handle_task_completion(
         result: ExecutionTaskResult<Op::State>,
         ctx: &mut ExecutionContext<Op>,
-    ) -> DaftResult<bool> {
+    ) -> DaftResult<OperatorControlFlow> {
         match result.result {
             IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
                 // Record execution stats
@@ -174,7 +178,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 // Send output
                 ctx.runtime_stats.add_rows_out(mp.len() as u64);
                 if ctx.output_sender.send(mp).await.is_err() {
-                    return Ok(false);
+                    return Ok(OperatorControlFlow::Break);
                 }
 
                 // Return state to pool
@@ -195,14 +199,14 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 // Send output
                 ctx.runtime_stats.add_rows_out(output.len() as u64);
                 if ctx.output_sender.send(output).await.is_err() {
-                    return Ok(false);
+                    return Ok(OperatorControlFlow::Break);
                 }
 
                 // Spawn another execution with same input and state (don't return state)
                 Self::spawn_execution_task(ctx, input, result.state, result.state_id);
             }
         }
-        Ok(true)
+        Ok(OperatorControlFlow::Continue)
     }
 
     fn spawn_ready_batches(
@@ -233,7 +237,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         mut receiver: Receiver<Arc<MicroPartition>>,
         ctx: &mut ExecutionContext<Op>,
         stats_manager: &RuntimeStatsManagerHandle,
-    ) -> DaftResult<bool> {
+    ) -> DaftResult<OperatorControlFlow> {
         let (lower, upper) = ctx.batch_manager.initial_requirements().values();
         let mut buffer = RowBasedBuffer::new(lower, upper);
         let mut input_closed = false;
@@ -245,8 +249,9 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
 
                 // Branch 1: Join completed task (only if tasks exist)
                 Some(join_result) = ctx.task_set.join_next(), if !ctx.task_set.is_empty() => {
-                    if !Self::handle_task_completion(join_result??, ctx).await? {
-                        return Ok(false);
+                    let control = Self::handle_task_completion(join_result??, ctx).await?;
+                    if !control.should_continue() {
+                        return Ok(OperatorControlFlow::Break);
                     }
 
                     // After completing a task, update bounds and try to spawn more tasks
@@ -298,15 +303,16 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
 
             // Wait for final task to complete
             while let Some(join_result) = ctx.task_set.join_next().await {
-                if !Self::handle_task_completion(join_result??, ctx).await? {
-                    return Ok(false);
+                let control = Self::handle_task_completion(join_result??, ctx).await?;
+                if !control.should_continue() {
+                    return Ok(OperatorControlFlow::Break);
                 }
             }
         }
 
         debug_assert_eq!(ctx.task_set.len(), 0, "TaskSet should be empty after loop");
 
-        Ok(true)
+        Ok(OperatorControlFlow::Continue)
     }
 }
 
@@ -334,7 +340,7 @@ impl<Op: IntermediateOperator + 'static> TreeDisplay for IntermediateNode<Op> {
                 if matches!(level, DisplayLevel::Verbose) {
                     writeln!(display).unwrap();
                     let rt_result = self.runtime_stats.snapshot();
-                    for (name, value) in rt_result {
+                    for (name, value) in rt_result.to_stats() {
                         writeln!(display, "{} = {}", name.as_ref().capitalize(), value).unwrap();
                     }
                 }
@@ -415,7 +421,7 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         let max_concurrency = op.max_concurrency().context(PipelineExecutionSnafu {
             node_name: self.name().to_string(),
         })?;
-        let (destination_sender, destination_receiver) = channel(1);
+        let (destination_sender, destination_receiver) = create_channel(1);
 
         // 3. Create task spawner
         let compute_runtime = get_compute_runtime();
@@ -457,7 +463,10 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
                     runtime_stats,
                 };
                 for receiver in child_result_receivers {
-                    if !Self::process_input(node_id, receiver, &mut ctx, &stats_manager).await? {
+                    if !Self::process_input(node_id, receiver, &mut ctx, &stats_manager)
+                        .await?
+                        .should_continue()
+                    {
                         break;
                     }
                 }

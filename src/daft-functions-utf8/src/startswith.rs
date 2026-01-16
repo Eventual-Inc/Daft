@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 use daft_core::{
     prelude::{DataType, Field, Schema},
-    series::{IntoSeries, Series},
+    series::Series,
 };
 use daft_dsl::{
     ExprRef,
@@ -9,7 +9,7 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::utils::{Utf8ArrayUtils, binary_utf8_evaluate, binary_utf8_to_field};
+use crate::utils::{binary_utf8_evaluate, binary_utf8_to_field, utf8_compare_op};
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct StartsWith;
@@ -22,16 +22,7 @@ impl ScalarUDF for StartsWith {
 
     fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         binary_utf8_evaluate(inputs, "pattern", |s, pattern| {
-            s.with_utf8_array(|arr| {
-                pattern.with_utf8_array(|pattern_arr| {
-                    arr.binary_broadcasted_compare(
-                        pattern_arr,
-                        |data: &str, pat: &str| Ok(data.starts_with(pat)),
-                        "startswith",
-                    )
-                    .map(IntoSeries::into_series)
-                })
-            })
+            utf8_compare_op(s, pattern, arrow::compute::kernels::comparison::starts_with)
         })
     }
     fn get_return_field(

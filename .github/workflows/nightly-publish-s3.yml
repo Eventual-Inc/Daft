@@ -163,7 +163,7 @@ jobs:
     - name: Run TPCH integration tests
       run: |
         source activate
-        pytest tests/integration/test_tpch.py --durations=50
+        pytest ./tests/integration/test_tpch.py --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
@@ -285,6 +285,9 @@ jobs:
 
   benchmark-local-tpch:
     needs: [publish]
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/benchmark-local-tpch.yml
     with:
       daft_index_url: https://d1p3klp2t5517h.cloudfront.net/builds/nightly
@@ -316,6 +319,9 @@ jobs:
 
   benchmark-distributed-tpch:
     needs: [publish]
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/benchmark-distributed-tpch.yml
     with:
       daft_index_url: https://d1p3klp2t5517h.cloudfront.net/builds/nightly

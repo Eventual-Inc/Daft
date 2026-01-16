@@ -11,11 +11,10 @@ from ..conftest import minio_create_bucket
 
 @pytest.mark.integration()
 def test_minio_parquet_bulk_readback(minio_io_config):
-    bucket_name = "data-engineering-prod"
-    with minio_create_bucket(minio_io_config, bucket_name=bucket_name) as fs:
+    with minio_create_bucket(minio_io_config) as (fs, bucket_name):
         target_paths = [
-            "s3://data-engineering-prod/Y/part-00000-51723f93-0ba2-42f1-a58f-154f0ed40f28.c000.snappy.parquet",
-            "s3://data-engineering-prod/Z/part-00000-6d5c7cc6-3b4a-443e-a46a-ca9e080bda1b.c000.snappy.parquet",
+            f"s3://{bucket_name}/Y/part-00000-51723f93-0ba2-42f1-a58f-154f0ed40f28.c000.snappy.parquet",
+            f"s3://{bucket_name}/Z/part-00000-6d5c7cc6-3b4a-443e-a46a-ca9e080bda1b.c000.snappy.parquet",
         ]
         data = {"x": [1, 2, 3, 4]}
         pa_table = pa.Table.from_pydict(data)
@@ -30,26 +29,24 @@ def test_minio_parquet_bulk_readback(minio_io_config):
 
 @pytest.mark.integration()
 def test_minio_parquet_read_no_files(minio_io_config):
-    bucket_name = "data-engineering-prod"
-    with minio_create_bucket(minio_io_config, bucket_name=bucket_name) as fs:
-        fs.touch("s3://data-engineering-prod/foo/file.txt")
+    with minio_create_bucket(minio_io_config) as (fs, bucket_name):
+        fs.touch(f"s3://{bucket_name}/foo/file.txt")
 
         with pytest.raises(FileNotFoundError, match="Glob path had no matches:"):
             # Need to have a special character within the test path to trigger the matching logic
             daft.read_parquet(
-                "s3://data-engineering-prod/foo/this-should-not-match-anything-and-this-file-should-not-exist-*.parquet",
+                f"s3://{bucket_name}/foo/this-should-not-match-anything-and-this-file-should-not-exist-*.parquet",
                 io_config=minio_io_config,
             )
 
 
 @pytest.mark.integration()
 def test_minio_parquet_ignore_marker_files(minio_io_config):
-    bucket_name = "data-engineering-prod"
-    with minio_create_bucket(minio_io_config, bucket_name=bucket_name) as fs:
+    with minio_create_bucket(minio_io_config) as (fs, bucket_name):
         target_paths = [
-            "s3://data-engineering-prod/X/no_ext_parquet_metadata",
-            "s3://data-engineering-prod/Y/part-00000-51723f93-0ba2-42f1-a58f-154f0ed40f28.c000.snappy.parquet",
-            "s3://data-engineering-prod/Z/part-00000-6d5c7cc6-3b4a-443e-a46a-ca9e080bda1b.c000.snappy.parquet",
+            f"s3://{bucket_name}/X/no_ext_parquet_metadata",
+            f"s3://{bucket_name}/Y/part-00000-51723f93-0ba2-42f1-a58f-154f0ed40f28.c000.snappy.parquet",
+            f"s3://{bucket_name}/Z/part-00000-6d5c7cc6-3b4a-443e-a46a-ca9e080bda1b.c000.snappy.parquet",
         ]
         data = {"x": [1, 2, 3, 4]}
         pa_table = pa.Table.from_pydict(data)
@@ -67,10 +64,9 @@ def test_minio_parquet_ignore_marker_files(minio_io_config):
 
 
 def test_minio_parquet_overwrite(minio_io_config):
-    bucket_name = "data-engineering-prod"
-    with minio_create_bucket(minio_io_config, bucket_name=bucket_name) as fs:
+    with minio_create_bucket(minio_io_config) as (fs, bucket_name):
         target_paths = [
-            "s3://data-engineering-prod/data/part-00000-51723f93-0ba2-42f1-a58f-154f0ed40f28.c000.snappy.parquet",
+            f"s3://{bucket_name}/data/part-00000-51723f93-0ba2-42f1-a58f-154f0ed40f28.c000.snappy.parquet",
         ]
         data = {"x": [1, 2, 3, 4]}
         pa_table = pa.Table.from_pydict(data)
@@ -79,9 +75,9 @@ def test_minio_parquet_overwrite(minio_io_config):
 
         overwrite_data = {"x": [5, 6, 7, 8]}
         overwrite_df = daft.from_pydict(overwrite_data)
-        overwrite_df.write_parquet("s3://data-engineering-prod/data", io_config=minio_io_config, overwrite=True)
+        overwrite_df.write_parquet(f"s3://{bucket_name}/data", io_config=minio_io_config, overwrite=True)
 
-        read = daft.read_parquet("s3://data-engineering-prod/data/**", io_config=minio_io_config)
+        read = daft.read_parquet(f"s3://{bucket_name}/data/**", io_config=minio_io_config)
         assert read.to_pydict() == overwrite_data
 
 
@@ -89,11 +85,10 @@ def test_minio_parquet_overwrite(minio_io_config):
 def test_minio_parquet_ignore_marker_prefixes(minio_io_config):
     from datetime import datetime
 
-    bucket_name = "data-engineering-prod"
-    with minio_create_bucket(minio_io_config, bucket_name=bucket_name) as fs:
+    with minio_create_bucket(minio_io_config) as (fs, bucket_name):
         target_paths = [
-            "s3://data-engineering-prod/X/part-00000-51723f93-0ba2-42f1-a58f-154f0ed40f28.c000.snappy.parquet",
-            "s3://data-engineering-prod/Y/part-00000-6d5c7cc6-3b4a-443e-a46a-ca9e080bda1b.c000.snappy.parquet",
+            f"s3://{bucket_name}/X/part-00000-51723f93-0ba2-42f1-a58f-154f0ed40f28.c000.snappy.parquet",
+            f"s3://{bucket_name}/Y/part-00000-6d5c7cc6-3b4a-443e-a46a-ca9e080bda1b.c000.snappy.parquet",
         ]
         data = {"x": [1, 2, 3, 4]}
         pa_table = pa.Table.from_pydict(data)
@@ -114,8 +109,7 @@ def test_minio_parquet_read_mismatched_schemas_no_pushdown(minio_io_config):
     # When we read files, we infer schema from the first file
     # Then when we read subsequent files, we want to be able to read the data still but add nulls for columns
     # that don't exist
-    bucket_name = "data-engineering-prod"
-    with minio_create_bucket(minio_io_config, bucket_name=bucket_name) as fs:
+    with minio_create_bucket(minio_io_config) as (fs, bucket_name):
         data_0 = pa.Table.from_pydict({"x": [1, 2, 3, 4]})
         pq.write_table(data_0, f"s3://{bucket_name}/data_0.parquet", filesystem=fs)
         data_1 = pa.Table.from_pydict({"y": [1, 2, 3, 4]})
@@ -133,8 +127,7 @@ def test_minio_parquet_read_mismatched_schemas_with_pushdown(minio_io_config):
     # When we read files, we infer schema from the first file
     # Then when we read subsequent files, we want to be able to read the data still but add nulls for columns
     # that don't exist
-    bucket_name = "data-engineering-prod"
-    with minio_create_bucket(minio_io_config, bucket_name=bucket_name) as fs:
+    with minio_create_bucket(minio_io_config) as (fs, bucket_name):
         data_0 = pa.Table.from_pydict(
             {
                 "x": [1, 2, 3, 4],
@@ -163,8 +156,7 @@ def test_minio_parquet_read_mismatched_schemas_with_pushdown_no_rows_read(minio_
     # When we read files, we infer schema from the first file
     # Then when we read subsequent files, we want to be able to read the data still but add nulls for columns
     # that don't exist
-    bucket_name = "data-engineering-prod"
-    with minio_create_bucket(minio_io_config, bucket_name=bucket_name) as fs:
+    with minio_create_bucket(minio_io_config) as (fs, bucket_name):
         data_0 = pa.Table.from_pydict(
             {
                 "x": [1, 2, 3, 4],

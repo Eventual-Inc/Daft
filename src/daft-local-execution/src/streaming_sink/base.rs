@@ -7,19 +7,22 @@ use std::{
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
-use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
+use common_metrics::{
+    ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot::StatSnapshotImpl,
+};
 use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime};
 use daft_core::prelude::SchemaRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use snafu::ResultExt;
-use tokio::sync::mpsc::{Receiver, Sender, channel};
 use tracing::info_span;
 
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
     buffer::RowBasedBuffer,
+    channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
@@ -381,7 +384,7 @@ impl<Op: StreamingSink + 'static> TreeDisplay for StreamingSinkNode<Op> {
                 writeln!(display, "Batch Size = {}", self.morsel_size_requirement).unwrap();
                 if matches!(level, DisplayLevel::Verbose) {
                     let rt_result = self.runtime_stats.snapshot();
-                    for (name, value) in rt_result {
+                    for (name, value) in rt_result.to_stats() {
                         writeln!(display, "{} = {}", name.as_ref().capitalize(), value).unwrap();
                     }
                 }
@@ -460,7 +463,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
             child_result_receivers.push(child_result_receiver);
         }
 
-        let (destination_sender, destination_receiver) = channel(1);
+        let (destination_sender, destination_receiver) = create_channel(1);
 
         // Initialize state pool with max_concurrency states
         let mut state_pool = HashMap::new();

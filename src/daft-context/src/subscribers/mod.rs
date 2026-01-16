@@ -7,7 +7,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
-use common_metrics::{NodeID, QueryEndState, QueryID, QueryPlan, StatSnapshot};
+use common_metrics::{NodeID, QueryEndState, QueryID, QueryPlan, Stats};
 use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartitionRef;
 
@@ -34,7 +34,7 @@ pub trait Subscriber: Send + Sync + std::fmt::Debug + 'static {
     async fn on_exec_emit_stats(
         &self,
         query_id: QueryID,
-        stats: &[(NodeID, StatSnapshot)],
+        stats: &[(NodeID, Stats)],
     ) -> DaftResult<()>;
     async fn on_exec_operator_end(&self, query_id: QueryID, node_id: NodeID) -> DaftResult<()>;
     async fn on_exec_end(&self, query_id: QueryID) -> DaftResult<()>;

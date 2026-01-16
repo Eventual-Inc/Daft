@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import bisect
 import datetime
 import random
 from decimal import Decimal
@@ -10,6 +11,14 @@ import pytest
 
 from daft import DataType, Window, col
 from tests.conftest import assert_df_equals
+from tests.window.datagen import (
+    generate_date_offsets,
+    generate_int_values,
+    generate_optional_int_values,
+    generate_optional_string_values,
+    generate_sampled_timestamps,
+    generate_timestamps,
+)
 
 
 def test_running_sum(make_df):
@@ -629,18 +638,14 @@ def test_string_min_max(make_df):
 
 def test_min_max_with_none(make_df):
     """Test min and max window functions with None values."""
-    random.seed(42)
-
     data = []
     expected_data = []
 
     for category in ["A", "B"]:
-        values = []
-        for _ in range(1000):
-            if random.random() < 0.3:
-                values.append(None)
-            else:
-                values.append(random.randint(1, 100))
+        category_seed = 42 + abs(hash(category)) % 100
+        values = list(
+            generate_optional_int_values(seed=category_seed, count=1000, none_prob=0.3, min_val=1, max_val=100)
+        )
 
         for ts, value in enumerate(values):
             data.append({"category": category, "ts": ts, "value": value})
@@ -683,7 +688,10 @@ def test_count_modes(make_df):
     expected_data = []
 
     for category in ["A", "B"]:
-        values = [None if random.random() < 0.5 else f"val_{category}_{i}" for i in range(1000)]
+        category_seed = 50 + abs(hash(category)) % 100
+        values = list(
+            generate_optional_string_values(seed=category_seed, count=1000, none_prob=0.5, prefix=f"val_{category}")
+        )
 
         for ts, value in enumerate(values):
             data.append({"category": category, "ts": ts, "text": value})
@@ -725,18 +733,12 @@ def test_count_modes(make_df):
 
 def test_count_count_distinct_with_none(make_df):
     """Test count and count_distinct window functions with None values."""
-    random.seed(51)
-
     data = []
     expected_data = []
 
     for category in ["A", "B"]:
-        values = []
-        for _ in range(1000):
-            if random.random() < 0.3:
-                values.append(None)
-            else:
-                values.append(random.randint(1, 5))
+        category_seed = 51 + abs(hash(category)) % 100
+        values = list(generate_optional_int_values(seed=category_seed, count=1000, none_prob=0.3, min_val=1, max_val=5))
 
         for ts, value in enumerate(values):
             data.append({"category": category, "ts": ts, "value": value})
@@ -826,17 +828,15 @@ def test_sum_avg_with_none(make_df):
 
 def test_range_window(make_df):
     """Test window aggregation with range frame type."""
-    random.seed(50)
-
     data = []
     expected_data = []
 
-    possible_timestamps = random.sample(range(1000), 300)
-    possible_timestamps.sort()
+    possible_timestamps = list(generate_sampled_timestamps(seed=50, sample_count=300, range_max=1000))
 
     for category in ["A", "B"]:
         timestamps = possible_timestamps.copy()
-        values = [random.randint(1, 100) for _ in range(len(timestamps))]
+        category_seed = 50 + abs(hash(category)) % 100
+        values = list(generate_int_values(seed=category_seed, count=len(timestamps), min_val=1, max_val=100))
 
         for i, (ts, value) in enumerate(zip(timestamps, values)):
             data.append({"category": category, "ts": ts, "value": value})
@@ -885,19 +885,17 @@ def test_range_window(make_df):
 
 def test_range_window_desc(make_df):
     """Test window aggregation with range frame type and descending order."""
-    random.seed(53)
-
     data = []
     original_data_order = []
 
-    possible_timestamps = random.sample(range(1000), 300)
-    possible_timestamps.sort()
+    possible_timestamps = list(generate_sampled_timestamps(seed=53, sample_count=300, range_max=1000))
 
     expected_results_map = {}
 
     for category in ["A", "B"]:
         timestamps = possible_timestamps.copy()
-        values = [random.randint(1, 100) for _ in range(len(timestamps))]
+        category_seed = 53 + abs(hash(category)) % 100
+        values = list(generate_int_values(seed=category_seed, count=len(timestamps), min_val=1, max_val=100))
 
         category_data = []
         for ts, value in zip(timestamps, values):
@@ -992,18 +990,17 @@ def calculate_expected_range(data_tuples, range_start_offset, range_end_offset, 
 
 
 def test_range_trailing(make_df):
-    random.seed(60)
     data = []
     original_data_order = []
 
-    possible_timestamps = random.sample(range(1000), 200)
-    possible_timestamps.sort()
+    possible_timestamps = list(generate_sampled_timestamps(seed=60, sample_count=200, range_max=1000))
 
     expected_results_map = {}
 
     for category in ["X", "Y"]:
         timestamps = possible_timestamps.copy()
-        values = [random.randint(1, 100) for _ in range(len(timestamps))]
+        category_seed = 60 + abs(hash(category)) % 100
+        values = list(generate_int_values(seed=category_seed, count=len(timestamps), min_val=1, max_val=100))
 
         category_data_tuples = []
         for ts, value in zip(timestamps, values):
@@ -1387,17 +1384,17 @@ def test_sliding_sum_with_nan_and_none(make_df):
 
 def test_range_window_with_timestamp(make_df):
     """Test window operations with date/timestamp ranges using the API."""
-    random.seed(81)
-
     base_date = datetime.datetime(2023, 1, 1)
 
     data = []
     expected_data = []
 
     for category in ["A", "B"]:
-        dates = sorted([random.randint(0, 1000) for _ in range(700)])
-        values = random.sample(range(1, 1000), 700)
-        dates = [base_date + datetime.timedelta(days=date) for date in dates]
+        category_seed = 81 + abs(hash(category)) % 100
+
+        date_offsets = list(generate_date_offsets(seed=category_seed, count=700, min_offset=0, max_offset=1000))
+        values = list(generate_int_values(seed=category_seed + 1, count=700, min_val=1, max_val=999))
+        dates = [base_date + datetime.timedelta(days=date) for date in date_offsets]
 
         for date, value in zip(dates, values):
             data.append({"category": category, "date": date, "value": value})
@@ -1438,23 +1435,19 @@ def test_range_window_with_timestamp(make_df):
 
 def test_timestamp_mixed_resolution(make_df):
     """Test window operations with timestamps of varying resolutions over a ~10 day period."""
-    random.seed(90)
-
-    base_date = datetime.datetime(2023, 1, 1)
     data = []
 
-    timestamps = [
-        base_date
-        + datetime.timedelta(
-            days=random.random() * 10,
-            hours=random.random() * 24,
-            minutes=random.random() * 60,
-            seconds=random.random() * 60,
-            microseconds=random.random() * 1_000_000,
+    timestamps = list(
+        generate_timestamps(
+            seed=90,
+            count=1000,
+            base_year=2023,
+            base_month=1,
+            base_day=1,
+            day_range=10.0,
         )
-        for _ in range(10000)
-    ]
-    values = [random.randint(1, 100) for _ in range(10000)]
+    )
+    values = list(generate_int_values(seed=91, count=1000, min_val=1, max_val=100))
 
     for ts, value in zip(timestamps, values):
         data.append({"category": "A", "timestamp": ts, "value": value})
@@ -1463,9 +1456,26 @@ def test_timestamp_mixed_resolution(make_df):
 
     time_span = datetime.timedelta(days=1, hours=4, minutes=16, seconds=64, microseconds=128)
 
+    # Create sorted list of (timestamp, value) pairs for efficient window lookup
+    sorted_pairs = sorted(zip(timestamps, values), key=lambda x: x[0])
+    sorted_timestamps = [ts for ts, _ in sorted_pairs]
+    sorted_values = [val for _, val in sorted_pairs]
+
+    # Build expected data using binary search for window bounds
     expected_data = []
-    for i, (ts_i, val_i) in enumerate(zip(timestamps, values)):
-        window_sum = sum(val_j for ts_j, val_j in zip(timestamps, values) if abs(ts_j - ts_i) <= time_span)
+    for ts_i, val_i in zip(timestamps, values):
+        # Find window bounds using binary search
+        lower_bound = ts_i - time_span
+        upper_bound = ts_i + time_span
+
+        # bisect_left finds the leftmost position where we could insert lower_bound
+        # bisect_right finds the rightmost position where we could insert upper_bound
+        left_idx = bisect.bisect_left(sorted_timestamps, lower_bound)
+        right_idx = bisect.bisect_right(sorted_timestamps, upper_bound)
+
+        # Sum values in the window
+        window_sum = sum(sorted_values[left_idx:right_idx])
+
         expected_data.append(
             {
                 "category": "A",

@@ -227,7 +227,6 @@ members = [
 ]
 
 [workspace.dependencies]
-ahash = "0.8.12"
 arrow = "57.1.0"
 arrow-array = {version = "57.1.0", features = ["chrono-tz"]}
 arrow-buffer = "57.1.0"

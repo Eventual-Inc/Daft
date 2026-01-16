@@ -8,6 +8,7 @@ import pytest
 from daft import Window, col
 from daft.functions import dense_rank, rank, row_number
 from tests.conftest import assert_df_equals
+from tests.window.datagen import generate_shuffled_data
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 20, 50, 100])
@@ -38,20 +39,9 @@ def test_order_by_only_row_number(make_df, repartition_nparts, with_morsel_size)
     """Test row_number function with order_by only (no partition_by)."""
     random.seed(42)
 
-    data = []
     n = 1000
     total = n + 1
-
-    xs = list(range(1, n + 1))
-    ys = list(range(1, n + 1))
-    values = list(range(1, n + 1))
-
-    random.shuffle(xs)
-    random.shuffle(ys)
-    random.shuffle(values)
-
-    for x, y, value in zip(xs, ys, values):
-        data.append({"x": x, "y": y, "value": value})
+    data = generate_shuffled_data(n)
 
     df = make_df(data, repartition=repartition_nparts, repartition_columns=["x", "y"])
 

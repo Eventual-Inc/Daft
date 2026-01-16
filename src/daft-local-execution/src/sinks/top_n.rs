@@ -9,7 +9,6 @@ use tracing::{Span, instrument};
 
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-    BlockingSinkStatus,
 };
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
@@ -106,7 +105,7 @@ impl BlockingSink for TopNSink {
 
                     // Append to the collection of existing top N values
                     state.append(Arc::new(top_input_rows));
-                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                    Ok(state)
                 },
                 Span::current(),
             )
