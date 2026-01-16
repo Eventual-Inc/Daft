@@ -39,7 +39,7 @@ pub fn summarize(input: &LogicalPlanBuilder) -> DaftResult<LogicalPlanBuilder> {
         vec![],
     )?;
     // apply explode for all columns
-    input.explode(input.columns(), None)
+    input.explode(input.columns(), false, None)
 }
 
 /// Creates a list constructor for the given items.

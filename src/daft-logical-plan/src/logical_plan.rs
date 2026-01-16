@@ -551,11 +551,17 @@ impl LogicalPlan {
                 }
                 Self::Explode(Explode {
                     to_explode,
+                    ignore_empty,
                     index_column,
                     ..
                 }) => Self::Explode(
-                    Explode::try_new(input.clone(), to_explode.clone(), index_column.clone())
-                        .unwrap(),
+                    Explode::try_new(
+                        input.clone(),
+                        to_explode.clone(),
+                        *ignore_empty,
+                        index_column.clone(),
+                    )
+                    .unwrap(),
                 ),
                 Self::Sort(Sort {
                     sort_by,
