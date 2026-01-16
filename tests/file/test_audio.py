@@ -13,7 +13,6 @@ def sample_audio_path():
 
 
 def test_audio_file_standalone(sample_audio_path):
-    sf = pytest.importorskip("soundfile")
     import numpy as np
 
     file = daft.AudioFile(sample_audio_path)
@@ -24,8 +23,6 @@ def test_audio_file_standalone(sample_audio_path):
 
 
 def test_audio_file_dtype(sample_audio_path):
-    pytest.importorskip("soundfile")
-
     df = daft.from_pydict({"path": [sample_audio_path]})
     df = df.select(daft.functions.audio_file(df["path"]).alias("audio"))
 
@@ -35,8 +32,6 @@ def test_audio_file_dtype(sample_audio_path):
 
 
 def test_audio_file_verify():
-    pytest.importorskip("soundfile")
-
     df = daft.from_pydict({"path": ["tests/assets/sampled-tpch.jsonl"]})
 
     with pytest.raises(ValueError):
@@ -45,8 +40,6 @@ def test_audio_file_verify():
 
 
 def test_audio_file_verify_ok(sample_audio_path):
-    pytest.importorskip("soundfile")
-
     df = daft.from_pydict({"path": [sample_audio_path]})
 
     df = df.select(daft.functions.audio_file(df["path"], verify=True).alias("audio"))
@@ -54,8 +47,6 @@ def test_audio_file_verify_ok(sample_audio_path):
 
 
 def test_get_metadata(sample_audio_path):
-    pytest.importorskip("soundfile")
-
     df = daft.from_pydict({"path": [sample_audio_path]})
     df = df.select(daft.functions.audio_file(df["path"], verify=True).alias("audio"))
     df = df.select(daft.functions.audio_metadata(df["audio"]))
@@ -72,9 +63,9 @@ def test_get_metadata(sample_audio_path):
 # resampling is pretty slow so it's integration test only
 @pytest.mark.integration()
 def test_resample(sample_audio_path):
-    sf = pytest.importorskip("soundfile")
-    librosa = pytest.importorskip("librosa")
     import numpy as np
+    import librosa
+    import soundfile as sf
 
     def manual_resample():
         data, samplerate = sf.read(sample_audio_path)
@@ -106,7 +97,6 @@ def test_resample_without_librosa(tmp_path):
     This specifically tests the case where soundfile is installed but librosa is not,
     which previously caused a confusing 'Need at least 1 series to perform concat' error.
     """
-    sf = pytest.importorskip("soundfile")
     import numpy as np
 
     sample_rate = 44100
@@ -132,8 +122,6 @@ def test_resample_without_librosa(tmp_path):
 
 def test_resample_without_soundfile(tmp_path):
     """Test that resample raises ImportError with helpful message when soundfile is missing."""
-    sf = pytest.importorskip("soundfile")
-    pytest.importorskip("librosa")
     import numpy as np
 
     sample_rate = 44100
@@ -163,7 +151,6 @@ def test_resample_expression_without_librosa(tmp_path):
     not during execution. Previously, users saw the confusing
     'DaftError::ValueError Need at least 1 series to perform concat' error.
     """
-    sf = pytest.importorskip("soundfile")
     import numpy as np
 
     sample_rate = 44100
