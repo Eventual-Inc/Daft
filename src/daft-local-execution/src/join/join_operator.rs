@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use common_runtime::get_compute_pool_num_threads;
@@ -10,7 +12,7 @@ use crate::{
 };
 
 /// Result of probing a single morsel
-pub enum ProbeOutput {
+pub(crate) enum ProbeOutput {
     NeedMoreInput(Option<Arc<MicroPartition>>),
     HasMoreOutput {
         input: Arc<MicroPartition>,
@@ -23,8 +25,6 @@ pub(crate) type FinalizeBuildResult<Op> = DaftResult<<Op as JoinOperator>::Final
 pub(crate) type ProbeResult<Op> =
     OperatorOutput<DaftResult<(<Op as JoinOperator>::ProbeState, ProbeOutput)>>;
 pub(crate) type ProbeFinalizeResult = OperatorOutput<DaftResult<Option<Arc<MicroPartition>>>>;
-
-use std::sync::Arc;
 
 pub(crate) trait JoinOperator: Send + Sync {
     /// State used during the build phase

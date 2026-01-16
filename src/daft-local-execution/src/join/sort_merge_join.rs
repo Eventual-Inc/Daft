@@ -16,7 +16,7 @@ use crate::{
     pipeline::NodeName,
 };
 
-pub struct SortMergeJoinBuildState {
+pub(crate) struct SortMergeJoinBuildState {
     tables: Vec<Arc<MicroPartition>>,
 }
 

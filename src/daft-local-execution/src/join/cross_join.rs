@@ -16,7 +16,7 @@ use crate::{
     pipeline::NodeName,
 };
 
-pub struct CrossJoinBuildState {
+pub(crate) struct CrossJoinBuildState {
     tables: Vec<RecordBatch>,
 }
 

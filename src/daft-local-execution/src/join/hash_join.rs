@@ -83,17 +83,17 @@ impl HashJoinBuildState {
 }
 
 pub(crate) struct HashJoinParams {
-    pub(crate) key_schema: SchemaRef,
-    pub(crate) build_on: Vec<BoundExpr>,
-    pub(crate) probe_on: Vec<BoundExpr>,
-    pub(crate) nulls_equal_aware: Option<Vec<bool>>,
-    pub(crate) track_indices: bool,
-    pub(crate) join_type: JoinType,
-    pub(crate) build_on_left: bool,
-    pub(crate) left_schema: SchemaRef,
-    pub(crate) right_schema: SchemaRef,
-    pub(crate) common_join_cols: IndexSet<String>,
-    pub(crate) output_schema: SchemaRef,
+    pub key_schema: SchemaRef,
+    pub build_on: Vec<BoundExpr>,
+    pub probe_on: Vec<BoundExpr>,
+    pub nulls_equal_aware: Option<Vec<bool>>,
+    pub track_indices: bool,
+    pub join_type: JoinType,
+    pub build_on_left: bool,
+    pub left_schema: SchemaRef,
+    pub right_schema: SchemaRef,
+    pub common_join_cols: IndexSet<String>,
+    pub output_schema: SchemaRef,
 }
 
 pub struct HashJoinOperator {
