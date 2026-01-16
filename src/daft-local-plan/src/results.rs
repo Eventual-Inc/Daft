@@ -4,11 +4,12 @@ use arrow_array::{
     ArrayRef,
     builder::{Float64Builder, LargeStringBuilder, MapBuilder, StructBuilder, UInt64Builder},
 };
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_metrics::{StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl};
 use daft_core::prelude::{DataType, Field, Schema};
 use daft_recordbatch::RecordBatch;
 
+#[derive(Debug, Clone)]
 pub struct ExecutionEngineFinalResult {
     pub nodes: Vec<(Arc<NodeInfo>, StatSnapshot)>,
 }
@@ -27,7 +28,12 @@ impl ExecutionEngineFinalResult {
     pub fn decode(bytes: &[u8]) -> Self {
         let (nodes, _): (Vec<(Arc<NodeInfo>, StatSnapshot)>, usize) =
             bincode::decode_from_slice(bytes, bincode::config::legacy())
-                .expect("Failed to decode ExecutionEngineFinalResult");
+                .map_err(|e| {
+                    DaftError::InternalError(format!(
+                        "Failed to decode ExecutionEngineFinalResult: {e}"
+                    ))
+                })
+                .unwrap();
         Self { nodes }
     }
 
