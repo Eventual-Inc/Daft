@@ -97,6 +97,7 @@
     * [Catalogs & Tables](api/catalogs_tables.md)
     * [Schema](api/schema.md)
     * [Aggregations](api/aggregations.md)
+    * [Series](api/series.md)
     * [Configuration](api/config.md)
     * [Miscellaneous](api/misc.md)
 * SQL Reference
