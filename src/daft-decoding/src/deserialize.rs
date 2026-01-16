@@ -358,9 +358,8 @@ where
                             daft_schema::prelude::TimeUnit::Nanoseconds => dt.timestamp_nanos_opt(),
                         })
                 }),
-                &datatype.to_arrow().unwrap(),
             )
-            .unwrap()
+            .map_err(|e| DaftError::InternalError(format!("Failed to cast Timestamp with timezone array: {}", e)))?
         }
         Decimal128(precision, scale) => {
             deserialize_primitive::<'_, Decimal128Type, _, _>(bytes_iter, |x| {
