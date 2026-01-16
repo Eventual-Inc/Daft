@@ -724,30 +724,41 @@ fn hash_fixed_size_binary(
     seed: Option<&PrimitiveArray<UInt64Type>>,
     hash_function: HashFunctionKind,
 ) -> PrimitiveArray<UInt64Type> {
+    // Create a zero-filled buffer for null values
+    let size = if let ArrowDataType::FixedSizeBinary(s) = array.data_type() {
+        *s as usize
+    } else {
+        unreachable!("FixedSizeBinaryArray must have DataType::FixedSizeBinary(..)")
+    };
+    let zero_buffer = vec![0u8; size];
+
     fn xxhash<F: Fn(&[u8], u64) -> u64>(
         array: &FixedSizeBinaryArray,
         seed: Option<&PrimitiveArray<UInt64Type>>,
+        zero_buffer: &[u8],
         f: F,
     ) -> PrimitiveArray<UInt64Type> {
         let hashes = if let Some(seed) = seed {
             array
                 .iter()
                 .zip(seed.iter())
-                .map(|(v, s)| f(v.unwrap_or(&[]), s.unwrap_or(0)))
+                .map(|(v, s)| f(v.unwrap_or(zero_buffer), s.unwrap_or(0)))
                 .collect::<Vec<_>>()
         } else {
             array
                 .iter()
-                .map(|v| f(v.unwrap_or(&[]), 0))
+                .map(|v| f(v.unwrap_or(zero_buffer), 0))
                 .collect::<Vec<_>>()
         };
         PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
     }
 
     match hash_function {
-        HashFunctionKind::XxHash32 => xxhash(array, seed, |v, s| xxh32(v, s as u32) as u64),
-        HashFunctionKind::XxHash64 => xxhash(array, seed, xxh64),
-        HashFunctionKind::XxHash3_64 => xxhash(array, seed, xxh3_64_with_seed),
+        HashFunctionKind::XxHash32 => {
+            xxhash(array, seed, &zero_buffer, |v, s| xxh32(v, s as u32) as u64)
+        }
+        HashFunctionKind::XxHash64 => xxhash(array, seed, &zero_buffer, xxh64),
+        HashFunctionKind::XxHash3_64 => xxhash(array, seed, &zero_buffer, xxh3_64_with_seed),
         HashFunctionKind::MurmurHash3 => {
             let hashes = if let Some(seed) = seed {
                 array
@@ -757,7 +768,7 @@ fn hash_fixed_size_binary(
                         let seed_val = s.unwrap_or(42);
                         let hasher = MurBuildHasher::new(seed_val as u32);
                         let mut hasher = hasher.build_hasher();
-                        hasher.write(v.unwrap_or(&[]));
+                        hasher.write(v.unwrap_or(&zero_buffer));
                         hasher.finish()
                     })
                     .collect::<Vec<_>>()
@@ -767,7 +778,7 @@ fn hash_fixed_size_binary(
                     .iter()
                     .map(|v| {
                         let mut hasher = hasher.build_hasher();
-                        hasher.write(v.unwrap_or(&[]));
+                        hasher.write(v.unwrap_or(&zero_buffer));
                         hasher.finish()
                     })
                     .collect::<Vec<_>>()
@@ -784,7 +795,7 @@ fn hash_fixed_size_binary(
                         if let Some(seed_val) = s {
                             hasher.write(&seed_val.to_le_bytes());
                         }
-                        hasher.write(v.unwrap_or(&[]));
+                        hasher.write(v.unwrap_or(&zero_buffer));
                         hasher.finish()
                     })
                     .collect::<Vec<_>>()
@@ -793,7 +804,7 @@ fn hash_fixed_size_binary(
                     .iter()
                     .map(|v| {
                         let mut hasher = Sha1Hasher::default();
-                        hasher.write(v.unwrap_or(&[]));
+                        hasher.write(v.unwrap_or(&zero_buffer));
                         hasher.finish()
                     })
                     .collect::<Vec<_>>()
