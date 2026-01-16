@@ -935,6 +935,7 @@ class DataFrame:
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
             ignore_null_fields (Optional[bool], optional): Whether to ignore fields with null values when writing JSON. Defaults to False.
+
         Returns:
             DataFrame: The filenames that were written out as strings.
 
