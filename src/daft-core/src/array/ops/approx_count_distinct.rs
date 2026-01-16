@@ -22,13 +22,7 @@ impl DaftApproxCountDistinctAggable for UInt64Array {
     }
 
     fn grouped_approx_count_distinct(&self, groups: &super::GroupIndices) -> Self::Output {
-        let arrow_arr_ref = self.to_arrow();
-        let arrow_arr = arrow_arr_ref
-            .as_any()
-            .downcast_ref::<arrow::array::UInt64Array>()
-            .expect("Failed to downcast to UInt64Array");
-
-        let data = arrow_arr.values();
+        let data = self.values();
         let count_iter = groups.iter().map(|group| {
             let mut set = HashSet::<_, IdentityBuildHasher>::with_capacity_and_hasher(
                 group.len(),
