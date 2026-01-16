@@ -406,7 +406,7 @@ impl FromArrow for PythonArray {
         assert_eq!(field.dtype, DataType::Python);
 
         let physical_arrow_array =
-            arrow::compute::cast(arrow_arr.as_ref(), &DataType::Binary.to_arrow()?)?;
+            arrow::compute::cast(arrow_arr.as_ref(), &arrow::datatypes::DataType::LargeBinary)?;
 
         let physical_arrow_array = physical_arrow_array
             .as_any()
@@ -445,11 +445,11 @@ macro_rules! impl_logical_from_arrow {
             fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
                 let field: FieldRef = field.into();
                   let target_convert = field.to_physical();
-                  let target_convert_arrow = target_convert.dtype.to_arrow()?;
+                  let target_convert_arrow = target_convert.to_arrow()?;
 
                   let physical_arrow_array = arrow::compute::cast(
                       arrow_arr.as_ref(),
-                      &target_convert_arrow,
+                      target_convert_arrow.data_type(),
                   )?;
 
                   let physical =
@@ -559,9 +559,10 @@ where
     fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
         let field: FieldRef = field.into();
         let target_convert = field.to_physical();
-        let target_convert_arrow = target_convert.dtype.to_arrow()?;
+        let target_convert_fild = target_convert.to_arrow()?;
+        let target_convert_arrow = target_convert_fild.data_type();
 
-        let physical_arrow_array = arrow::compute::cast(arrow_arr.as_ref(), &target_convert_arrow)?;
+        let physical_arrow_array = arrow::compute::cast(arrow_arr.as_ref(), target_convert_arrow)?;
 
         let physical =
                <<FileType<T> as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::from_arrow(

@@ -1,7 +1,4 @@
-use std::{
-    fmt::{Display, Write},
-    sync::Arc,
-};
+use std::fmt::{Display, Write};
 
 use arrow_schema::IntervalUnit;
 use common_error::{DaftError, DaftResult};
@@ -249,76 +246,6 @@ impl DataType {
 
     pub fn new_fixed_size_list(datatype: Self, size: usize) -> Self {
         Self::FixedSizeList(Box::new(datatype), size)
-    }
-
-    pub fn to_arrow(&self) -> DaftResult<arrow_schema::DataType> {
-        let dtype = match self {
-            Self::Null => arrow_schema::DataType::Null,
-            Self::Boolean => arrow_schema::DataType::Boolean,
-            Self::Int8 => arrow_schema::DataType::Int8,
-            Self::Int16 => arrow_schema::DataType::Int16,
-            Self::Int32 => arrow_schema::DataType::Int32,
-            Self::Int64 => arrow_schema::DataType::Int64,
-            Self::UInt8 => arrow_schema::DataType::UInt8,
-            Self::UInt16 => arrow_schema::DataType::UInt16,
-            Self::UInt32 => arrow_schema::DataType::UInt32,
-            Self::UInt64 => arrow_schema::DataType::UInt64,
-            Self::Float32 => arrow_schema::DataType::Float32,
-            Self::Float64 => arrow_schema::DataType::Float64,
-            Self::Timestamp(unit, tz) => {
-                arrow_schema::DataType::Timestamp(unit.to_arrow(), tz.clone().map(Arc::from))
-            }
-            Self::Duration(unit) => arrow_schema::DataType::Duration(unit.to_arrow()),
-            Self::Interval => {
-                arrow_schema::DataType::Interval(arrow_schema::IntervalUnit::MonthDayNano)
-            }
-            Self::Binary => arrow_schema::DataType::LargeBinary,
-            Self::FixedSizeBinary(size) => arrow_schema::DataType::FixedSizeBinary(*size as _),
-            Self::Utf8 => arrow_schema::DataType::LargeUtf8,
-            Self::List(f) => {
-                let inner_field = Field::new("item", f.as_ref().clone());
-                let arrow_field = Arc::new(inner_field.to_arrow()?);
-                arrow_schema::DataType::LargeList(arrow_field)
-            }
-            Self::FixedSizeList(f, size) => {
-                let inner_field = Field::new("item", f.as_ref().clone());
-                arrow_schema::DataType::FixedSizeList(Arc::new(inner_field.to_arrow()?), *size as _)
-            }
-            Self::Struct(fields) => arrow_schema::DataType::Struct(
-                fields
-                    .iter()
-                    .map(|f| f.to_arrow())
-                    .collect::<DaftResult<Vec<_>>>()?
-                    .into(),
-            ),
-            Self::Map { key, value } => {
-                let key_field = Field::new("key", key.as_ref().clone());
-                let value_field = Field::new("value", value.as_ref().clone());
-
-                let struct_type = arrow_schema::DataType::Struct(
-                    vec![
-                        key_field.to_arrow()?.with_nullable(false),
-                        value_field.to_arrow()?,
-                    ]
-                    .into(),
-                );
-                let struct_field = arrow_schema::Field::new("entries", struct_type, false);
-
-                arrow_schema::DataType::Map(Arc::new(struct_field), false)
-            }
-            Self::Decimal128(precision, scale) => {
-                arrow_schema::DataType::Decimal128(*precision as _, *scale as _)
-            }
-            Self::Date => arrow_schema::DataType::Date32,
-            Self::Time(time_unit) => arrow_schema::DataType::Time64(time_unit.to_arrow()),
-
-            _ => {
-                return Err(DaftError::TypeError(format!(
-                    "Can not convert {self:?} into arrow type"
-                )));
-            }
-        };
-        Ok(dtype)
     }
 
     #[deprecated(note = "use `to_arrow` instead")]
@@ -1315,14 +1242,6 @@ mod test {
         key: Box::new(DataType::Int64),
         value: Box::new(DataType::List(Box::new(DataType::Float64)))
     })]
-    fn test_non_extension_type_round_trip(#[case] dtype: DataType) -> DaftResult<()> {
-        let arrow_dtype = dtype.to_arrow()?;
-        let round_trip_dtype = DataType::try_from(&arrow_dtype)?;
-        assert_eq!(dtype, round_trip_dtype);
-        Ok(())
-    }
-
-    #[rstest]
     #[case(DataType::Embedding(Box::new(DataType::Float64), 512))]
     #[case(DataType::Embedding(Box::new(DataType::Float32), 256))]
     #[case(DataType::Image(None))]
@@ -1336,9 +1255,11 @@ mod test {
     #[case(DataType::File(MediaType::Audio))]
     #[case(DataType::Extension("custom".to_string(), Box::new(DataType::Binary), None))]
     #[case(DataType::Extension("custom".to_string(), Box::new(DataType::Int32), Some("meta".to_string())))]
-    // To convert extension types to arrow_rs, you must use `Field::to_arrow`
-    fn test_extension_type_to_arrow_fails(#[case] dtype: DataType) {
-        let result = dtype.to_arrow();
-        assert!(result.is_err());
+    fn test_arrow_round_trip(#[case] dtype: DataType) -> DaftResult<()> {
+        let field = Field::new("", dtype.clone());
+        let arrow_field = field.to_arrow()?;
+        let round_trip_dtype = DataType::try_from(&arrow_field)?;
+        assert_eq!(dtype, round_trip_dtype);
+        Ok(())
     }
 }

@@ -366,11 +366,7 @@ mod test {
         assert_eq!(arrow_arr.len(), 2);
         assert_eq!(
             arrow_arr.data_type(),
-            &arrow::datatypes::DataType::LargeList(Arc::new(arrow::datatypes::Field::new(
-                "item",
-                data.data_type().to_arrow()?,
-                true
-            )))
+            &arrow::datatypes::DataType::LargeList(Arc::new(data.field().to_arrow()?))
         );
 
         Ok(())
@@ -405,14 +401,7 @@ mod test {
         assert_eq!(arrow_arr.value_length() as usize, arr.fixed_element_len());
         assert_eq!(
             arrow_arr.data_type(),
-            &arrow::datatypes::DataType::FixedSizeList(
-                Arc::new(arrow::datatypes::Field::new(
-                    "literal",
-                    data.data_type().to_arrow()?,
-                    true
-                )),
-                1
-            )
+            &arrow::datatypes::DataType::FixedSizeList(Arc::new(data.field().to_arrow()?), 1)
         );
 
         Ok(())

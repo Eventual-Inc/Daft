@@ -90,10 +90,87 @@ impl Field {
                 .with_metadata(self.metadata.as_ref().clone()),
         )
     }
+
     pub fn to_arrow(&self) -> DaftResult<arrow_schema::Field> {
+        fn dtype_to_arrow(dtype: &DataType) -> DaftResult<arrow_schema::DataType> {
+            let dtype = match dtype {
+                DataType::Null => arrow_schema::DataType::Null,
+                DataType::Boolean => arrow_schema::DataType::Boolean,
+                DataType::Int8 => arrow_schema::DataType::Int8,
+                DataType::Int16 => arrow_schema::DataType::Int16,
+                DataType::Int32 => arrow_schema::DataType::Int32,
+                DataType::Int64 => arrow_schema::DataType::Int64,
+                DataType::UInt8 => arrow_schema::DataType::UInt8,
+                DataType::UInt16 => arrow_schema::DataType::UInt16,
+                DataType::UInt32 => arrow_schema::DataType::UInt32,
+                DataType::UInt64 => arrow_schema::DataType::UInt64,
+                DataType::Float32 => arrow_schema::DataType::Float32,
+                DataType::Float64 => arrow_schema::DataType::Float64,
+                DataType::Timestamp(unit, tz) => {
+                    arrow_schema::DataType::Timestamp(unit.to_arrow(), tz.clone().map(Arc::from))
+                }
+                DataType::Duration(unit) => arrow_schema::DataType::Duration(unit.to_arrow()),
+                DataType::Interval => {
+                    arrow_schema::DataType::Interval(arrow_schema::IntervalUnit::MonthDayNano)
+                }
+                DataType::Binary => arrow_schema::DataType::LargeBinary,
+                DataType::FixedSizeBinary(size) => {
+                    arrow_schema::DataType::FixedSizeBinary(*size as _)
+                }
+                DataType::Utf8 => arrow_schema::DataType::LargeUtf8,
+                DataType::List(f) => {
+                    let inner_field = Field::new("item", f.as_ref().clone());
+                    let arrow_field = Arc::new(inner_field.to_arrow()?);
+                    arrow_schema::DataType::LargeList(arrow_field)
+                }
+                DataType::FixedSizeList(f, size) => {
+                    let inner_field = Field::new("item", f.as_ref().clone());
+                    arrow_schema::DataType::FixedSizeList(
+                        Arc::new(inner_field.to_arrow()?),
+                        *size as _,
+                    )
+                }
+                DataType::Struct(fields) => arrow_schema::DataType::Struct(
+                    fields
+                        .iter()
+                        .map(|f| f.to_arrow())
+                        .collect::<DaftResult<Vec<_>>>()?
+                        .into(),
+                ),
+                DataType::Map { key, value } => {
+                    let key_field = Field::new("key", key.as_ref().clone());
+                    let value_field = Field::new("value", value.as_ref().clone());
+
+                    let struct_type = arrow_schema::DataType::Struct(
+                        vec![
+                            key_field.to_arrow()?.with_nullable(false),
+                            value_field.to_arrow()?,
+                        ]
+                        .into(),
+                    );
+                    let struct_field = arrow_schema::Field::new("entries", struct_type, false);
+
+                    arrow_schema::DataType::Map(Arc::new(struct_field), false)
+                }
+                DataType::Decimal128(precision, scale) => {
+                    arrow_schema::DataType::Decimal128(*precision as _, *scale as _)
+                }
+                DataType::Date => arrow_schema::DataType::Date32,
+                DataType::Time(time_unit) => arrow_schema::DataType::Time64(time_unit.to_arrow()),
+
+                _ => {
+                    return Err(DaftError::TypeError(format!(
+                        "Can not convert {dtype:?} into arrow type"
+                    )));
+                }
+            };
+            Ok(dtype)
+        }
+
         let field = match &self.dtype {
             DataType::Extension(name, dtype, metadata) => {
-                let physical = arrow_schema::Field::new(self.name.clone(), dtype.to_arrow()?, true);
+                let physical =
+                    arrow_schema::Field::new(self.name.clone(), dtype_to_arrow(dtype)?, true);
                 let mut metadata_map = HashMap::new();
                 metadata_map.insert(EXTENSION_TYPE_NAME_KEY.to_string(), name.clone());
                 if let Some(metadata) = metadata {
@@ -137,7 +214,7 @@ impl Field {
 
                 physical.to_arrow()?.with_metadata(metadata_map)
             }
-            _ => arrow_schema::Field::new(self.name.clone(), self.dtype.to_arrow()?, true),
+            _ => arrow_schema::Field::new(self.name.clone(), dtype_to_arrow(&self.dtype)?, true),
         };
 
         let meta = field.metadata().clone();
