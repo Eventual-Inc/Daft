@@ -3,29 +3,20 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use common_error::DaftResult;
 use common_logging::GLOBAL_LOGGER;
 use common_metrics::{
-    CPU_US_KEY, NodeID, StatSnapshot,
+    NodeID, StatSnapshot,
     ops::{NodeCategory, NodeInfo},
+    snapshot::StatSnapshotImpl,
 };
 use indicatif::{ProgressDrawTarget, ProgressStyle};
-use itertools::Itertools;
 use log::Log;
 
 use crate::{PythonPrintTarget, STDOUT};
 
 pub(crate) trait ProgressBar: Send + Sync {
     fn initialize_node(&self, node_id: NodeID);
-    fn finalize_node(&self, node_id: NodeID);
-    fn handle_event(&self, events: &[(NodeID, StatSnapshot)]);
+    fn finalize_node(&self, node_id: NodeID, last_snapshot: &StatSnapshot);
+    fn handle_event(&self, node_id: NodeID, event: &StatSnapshot);
     fn finish(self: Box<Self>) -> DaftResult<()>;
-}
-
-/// Convert statistics to a message for progress bars
-fn event_to_message(event: &StatSnapshot) -> String {
-    event
-        .iter()
-        .filter(|(name, _)| *name != CPU_US_KEY)
-        .map(|(name, value)| format!("{} {}", value, name.to_lowercase()))
-        .join(", ")
 }
 
 pub enum ProgressBarColor {
@@ -194,16 +185,15 @@ impl ProgressBar for IndicatifProgressBarManager {
         pb.enable_steady_tick(TICK_INTERVAL);
     }
 
-    fn finalize_node(&self, node_id: NodeID) {
+    fn finalize_node(&self, node_id: NodeID, last_snapshot: &StatSnapshot) {
         let pb = self.pbars.get(node_id).unwrap();
+        pb.set_message(last_snapshot.to_message());
         pb.finish();
     }
 
-    fn handle_event(&self, events: &[(NodeID, StatSnapshot)]) {
-        for (node_id, event) in events {
-            let pb = self.pbars.get(*node_id).unwrap();
-            pb.set_message(event_to_message(event));
-        }
+    fn handle_event(&self, node_id: NodeID, event: &StatSnapshot) {
+        let pb = self.pbars.get(node_id).unwrap();
+        pb.set_message(event.to_message());
     }
 
     fn finish(mut self: Box<Self>) -> DaftResult<()> {
@@ -310,17 +300,18 @@ mod python {
     impl ProgressBar for TqdmProgressBarManager {
         fn initialize_node(&self, _: NodeID) {}
 
-        fn finalize_node(&self, node_id: NodeID) {
+        fn finalize_node(&self, node_id: NodeID, last_snapshot: &StatSnapshot) {
             let pb_id = self.node_id_to_pb_id.get(&node_id).unwrap();
+            self.update_bar(*pb_id, &last_snapshot.to_message())
+                .expect("Failed to update TQDM progress bar");
+
             self.close_bar(*pb_id);
         }
 
-        fn handle_event(&self, events: &[(NodeID, StatSnapshot)]) {
-            for (node_id, event) in events {
-                let pb_id = self.node_id_to_pb_id.get(node_id).unwrap();
-                self.update_bar(*pb_id, &event_to_message(event))
-                    .expect("Failed to update TQDM progress bar");
-            }
+        fn handle_event(&self, node_id: NodeID, event: &StatSnapshot) {
+            let pb_id = self.node_id_to_pb_id.get(&node_id).unwrap();
+            self.update_bar(*pb_id, &event.to_message())
+                .expect("Failed to update TQDM progress bar");
         }
 
         fn finish(self: Box<Self>) -> DaftResult<()> {

@@ -7,7 +7,10 @@ use std::{
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
-use common_metrics::ops::{NodeCategory, NodeInfo};
+use common_metrics::{
+    ops::{NodeCategory, NodeInfo},
+    snapshot::StatSnapshotImpl,
+};
 use common_runtime::{OrderingAwareJoinSet, get_compute_runtime};
 use daft_core::prelude::SchemaRef;
 use daft_local_plan::LocalNodeContext;
@@ -397,7 +400,7 @@ impl<Op: JoinOperator + 'static> TreeDisplay for JoinNode<Op> {
                 writeln!(display, "Batch Size = {}", self.morsel_size_requirement).unwrap();
                 if matches!(level, DisplayLevel::Verbose) {
                     let rt_result = self.runtime_stats.snapshot();
-                    for (name, value) in rt_result {
+                    for (name, value) in rt_result.to_stats() {
                         writeln!(display, "{} = {}", name.as_ref().capitalize(), value).unwrap();
                     }
                 }

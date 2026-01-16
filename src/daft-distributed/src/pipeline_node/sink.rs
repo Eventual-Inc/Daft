@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_metrics::{CPU_US_KEY, Counter, ROWS_IN_KEY, StatSnapshot};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{OutputFileInfo, SinkInfo, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::TryStreamExt;
+use opentelemetry::{KeyValue, metrics::Meter};
 
 use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
@@ -18,8 +20,44 @@ use crate::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
     },
+    statistics::{RuntimeStats, stats::RuntimeStatsRef},
     utils::channel::{Sender, create_channel},
 };
+
+pub struct WriteStats {
+    cpu_us: Counter,
+    rows_in: Counter,
+    rows_written: Counter,
+    bytes_written: Counter,
+    node_kv: Vec<KeyValue>,
+}
+
+impl WriteStats {
+    pub fn new(meter: &Meter, node_id: NodeID) -> Self {
+        let node_kv = vec![KeyValue::new("node_id", node_id.to_string())];
+        Self {
+            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
+            rows_written: Counter::new(meter, "rows written", None),
+            bytes_written: Counter::new(meter, "bytes written", None),
+            node_kv,
+        }
+    }
+}
+
+impl RuntimeStats for WriteStats {
+    fn handle_worker_node_stats(&self, snapshot: &StatSnapshot) {
+        let StatSnapshot::Write(snapshot) = snapshot else {
+            return;
+        };
+        self.cpu_us.add(snapshot.cpu_us, self.node_kv.as_slice());
+        self.rows_in.add(snapshot.rows_in, self.node_kv.as_slice());
+        self.rows_written
+            .add(snapshot.rows_written, self.node_kv.as_slice());
+        self.bytes_written
+            .add(snapshot.bytes_written, self.node_kv.as_slice());
+    }
+}
 
 pub(crate) struct SinkNode {
     config: PipelineNodeConfig,
@@ -204,6 +242,10 @@ impl PipelineNodeImpl for SinkNode {
             self.config.schema.short_string()
         ));
         res
+    }
+
+    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(WriteStats::new(meter, self.node_id()))
     }
 
     fn produce_tasks(
