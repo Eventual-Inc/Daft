@@ -68,7 +68,7 @@ pub fn serialize(input: Series) -> DaftResult<Utf8Array> {
     let name = input.name();
 
     let input = input.to_arrow2();
-    let validity = input.validity().cloned();
+    let nulls = input.validity().cloned();
     // setup outputs
     let mut values = Vec::<u8>::new();
     let mut offsets = Offsets::<i64>::new();
@@ -83,7 +83,7 @@ pub fn serialize(input: Series) -> DaftResult<Utf8Array> {
         ArrowDataType::LargeUtf8,
         offsets.into(),
         values.into(),
-        validity,
+        nulls,
     );
     let array = Box::new(array);
     Ok(Utf8Array::from((name, array)))

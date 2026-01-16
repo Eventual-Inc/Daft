@@ -36,7 +36,7 @@ pub trait BatchingStrategy: Send + Sync + std::fmt::Debug {
 pub trait BatchingState {
     fn record_execution_stat(
         &mut self,
-        stats: Arc<dyn RuntimeStats>,
+        stats: &dyn RuntimeStats,
         batch_size: usize,
         duration: Duration,
     );
@@ -90,7 +90,7 @@ where
     /// This method is non-blocking and designed to be called frequently by workers.
     pub fn record_execution_stats(
         &self,
-        stats: Arc<dyn RuntimeStats>,
+        stats: &dyn RuntimeStats,
         batch_size: usize,
         duration: Duration,
     ) {
@@ -149,7 +149,7 @@ mod tests {
     impl BatchingState for MockBatchingState {
         fn record_execution_stat(
             &mut self,
-            _stats: Arc<dyn RuntimeStats>,
+            _stats: &dyn RuntimeStats,
             _batch_size: usize,
             _duration: Duration,
         ) {
@@ -243,7 +243,11 @@ mod tests {
         let manager = BatchManager::new(strategy.clone());
 
         // Record some execution stats
-        manager.record_execution_stats(Arc::new(MockRuntimeStats), 32, Duration::from_millis(100));
+        manager.record_execution_stats(
+            Arc::new(MockRuntimeStats).as_ref(),
+            32,
+            Duration::from_millis(100),
+        );
 
         let req = manager.calculate_batch_size();
         assert_eq!(
@@ -262,8 +266,16 @@ mod tests {
         let manager = BatchManager::new(strategy.clone());
 
         // Record multiple stats
-        manager.record_execution_stats(Arc::new(MockRuntimeStats), 10, Duration::from_millis(50));
-        manager.record_execution_stats(Arc::new(MockRuntimeStats), 20, Duration::from_millis(75));
+        manager.record_execution_stats(
+            Arc::new(MockRuntimeStats).as_ref(),
+            10,
+            Duration::from_millis(50),
+        );
+        manager.record_execution_stats(
+            Arc::new(MockRuntimeStats).as_ref(),
+            20,
+            Duration::from_millis(75),
+        );
 
         let req = manager.calculate_batch_size();
         assert_eq!(
@@ -281,7 +293,11 @@ mod tests {
         ));
         let manager = BatchManager::new(strategy.clone());
 
-        manager.record_execution_stats(Arc::new(MockRuntimeStats), 5, Duration::from_millis(25));
+        manager.record_execution_stats(
+            Arc::new(MockRuntimeStats).as_ref(),
+            5,
+            Duration::from_millis(25),
+        );
 
         let req1 = manager.calculate_batch_size();
         assert_eq!(
@@ -308,7 +324,11 @@ mod tests {
         let manager = BatchManager::new(strategy.clone());
 
         // First measurement
-        manager.record_execution_stats(Arc::new(MockRuntimeStats), 10, Duration::from_millis(30));
+        manager.record_execution_stats(
+            Arc::new(MockRuntimeStats).as_ref(),
+            10,
+            Duration::from_millis(30),
+        );
         let req1 = manager.calculate_batch_size();
         assert_eq!(
             req1,
@@ -316,8 +336,16 @@ mod tests {
         );
 
         // More measurements
-        manager.record_execution_stats(Arc::new(MockRuntimeStats), 15, Duration::from_millis(40));
-        manager.record_execution_stats(Arc::new(MockRuntimeStats), 20, Duration::from_millis(60));
+        manager.record_execution_stats(
+            Arc::new(MockRuntimeStats).as_ref(),
+            15,
+            Duration::from_millis(40),
+        );
+        manager.record_execution_stats(
+            Arc::new(MockRuntimeStats).as_ref(),
+            20,
+            Duration::from_millis(60),
+        );
         let req2 = manager.calculate_batch_size();
         assert_eq!(
             req2,
@@ -336,7 +364,11 @@ mod tests {
         assert_eq!(manager.initial_requirements(), static_req);
 
         // Even after recording stats, static strategy should return same requirement
-        manager.record_execution_stats(Arc::new(MockRuntimeStats), 64, Duration::from_millis(200));
+        manager.record_execution_stats(
+            Arc::new(MockRuntimeStats).as_ref(),
+            64,
+            Duration::from_millis(200),
+        );
 
         let req = manager.calculate_batch_size();
         assert_eq!(req, static_req);

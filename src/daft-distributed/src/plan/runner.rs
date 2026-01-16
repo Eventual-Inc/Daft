@@ -10,13 +10,14 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_metrics::QueryID;
 use common_partitioning::PartitionRef;
+use common_runtime::{JoinSet, create_join_set};
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use futures::{Stream, StreamExt};
 
 use super::{DistributedPhysicalPlan, PlanResult, QueryIdx};
 use crate::{
     pipeline_node::{
-        DistributedPipelineNode, MaterializedOutput, SubmittableTaskStream,
+        DistributedPipelineNode, MaterializedOutput, TaskBuilderStream,
         logical_plan_to_pipeline_node, materialize::materialize_all_pipeline_outputs,
     },
     scheduling::{
@@ -27,7 +28,6 @@ use crate::{
     statistics::{StatisticsManager, StatisticsSubscriber},
     utils::{
         channel::{Sender, create_channel},
-        joinset::{JoinSet, create_join_set},
         runtime::get_or_init_runtime,
     },
 };
@@ -50,15 +50,17 @@ impl TaskIDCounter {
 }
 
 pub(crate) struct PlanExecutionContext {
+    query_idx: QueryIdx,
     scheduler_handle: SchedulerHandle<SwordfishTask>,
     joinset: JoinSet<DaftResult<()>>,
     task_id_counter: TaskIDCounter,
 }
 
 impl PlanExecutionContext {
-    fn new(scheduler_handle: SchedulerHandle<SwordfishTask>) -> Self {
+    fn new(query_idx: QueryIdx, scheduler_handle: SchedulerHandle<SwordfishTask>) -> Self {
         let joinset = JoinSet::new();
         Self {
+            query_idx,
             scheduler_handle,
             joinset,
             task_id_counter: TaskIDCounter::new(),
@@ -96,12 +98,12 @@ impl PlanConfig {
 }
 
 pub(crate) struct RunningPlan {
-    task_stream: SubmittableTaskStream,
+    task_stream: TaskBuilderStream,
     plan_context: PlanExecutionContext,
 }
 
 impl RunningPlan {
-    fn new(task_stream: SubmittableTaskStream, plan_context: PlanExecutionContext) -> Self {
+    fn new(task_stream: TaskBuilderStream, plan_context: PlanExecutionContext) -> Self {
         Self {
             task_stream,
             plan_context,
@@ -112,8 +114,12 @@ impl RunningPlan {
         self,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
     ) -> impl Stream<Item = DaftResult<MaterializedOutput>> + Send + Unpin + 'static {
+        let task_id_counter = self.plan_context.task_id_counter();
         let joinset = self.plan_context.joinset;
-        materialize_all_pipeline_outputs(self.task_stream, scheduler_handle, Some(joinset))
+        let stream = self
+            .task_stream
+            .map(move |builder| builder.build(self.plan_context.query_idx, &task_id_counter));
+        materialize_all_pipeline_outputs(stream, scheduler_handle, Some(joinset))
     }
 }
 
@@ -130,10 +136,11 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
     async fn execute_plan(
         &self,
         pipeline_node: DistributedPipelineNode,
+        query_idx: QueryIdx,
         scheduler_handle: SchedulerHandle<SwordfishTask>,
         sender: Sender<MaterializedOutput>,
     ) -> DaftResult<()> {
-        let mut plan_context = PlanExecutionContext::new(scheduler_handle.clone());
+        let mut plan_context = PlanExecutionContext::new(query_idx, scheduler_handle.clone());
 
         let running_node = pipeline_node.produce_tasks(&mut plan_context);
         let running_stage = RunningPlan::new(running_node, plan_context);
@@ -183,7 +190,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
             );
 
             joinset.spawn(async move {
-                this.execute_plan(pipeline_node, scheduler_handle, result_sender)
+                this.execute_plan(pipeline_node, query_idx, scheduler_handle, result_sender)
                     .await
             });
             joinset

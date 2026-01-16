@@ -82,9 +82,7 @@ impl BlockingSink for WindowOrderByOnlySink {
             .spawn(
                 async move {
                     state.push(input, &sink_name)?;
-                    Ok(super::blocking_sink::BlockingSinkStatus::NeedMoreInput(
-                        state,
-                    ))
+                    Ok(state)
                 },
                 Span::current(),
             )

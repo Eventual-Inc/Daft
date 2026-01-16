@@ -53,7 +53,7 @@ impl IntermediateOperator for IntoBatchesOperator {
             .into()
     }
     fn name(&self) -> NodeName {
-        "IntoBatches".into()
+        format!("Into Batches of {}", self.batch_size).into()
     }
     fn op_type(&self) -> NodeType {
         NodeType::IntoBatches
@@ -61,9 +61,8 @@ impl IntermediateOperator for IntoBatchesOperator {
     fn multiline_display(&self) -> Vec<String> {
         vec![format!("IntoBatches: {}", self.batch_size)]
     }
-    fn make_state(&self) -> DaftResult<Self::State> {
-        Ok(())
-    }
+    fn make_state(&self) -> Self::State {}
+
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
         match self.strict {
             true => Some(MorselSizeRequirement::Strict(

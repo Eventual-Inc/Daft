@@ -172,7 +172,7 @@ pub(super) fn hash_left_right_join(
         }
 
         (
-            UInt64Array::from(("left_indices", left_idx)).with_validity(l_valid.finish())?,
+            UInt64Array::from(("left_indices", left_idx)).with_nulls(l_valid.finish())?,
             UInt64Array::from(("right_indices", right_idx)),
         )
     };
@@ -360,9 +360,8 @@ pub(super) fn hash_outer_join(
             }
         }
 
-        let larr = UInt64Array::from(("left_indices", left_idx)).with_validity(l_valid.finish())?;
-        let rarr =
-            UInt64Array::from(("right_indices", right_idx)).with_validity(r_valid.finish())?;
+        let larr = UInt64Array::from(("left_indices", left_idx)).with_nulls(l_valid.finish())?;
+        let rarr = UInt64Array::from(("right_indices", right_idx)).with_nulls(r_valid.finish())?;
 
         if probe_left {
             (larr, rarr)

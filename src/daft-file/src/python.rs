@@ -62,6 +62,34 @@ impl PyFileReference {
     fn writable(&self) -> PyResult<bool> {
         Ok(false)
     }
+
+    fn path(&self) -> PyResult<String> {
+        Ok(self.inner.url.clone())
+    }
+
+    fn name(&self) -> PyResult<String> {
+        // Extract the filename from the URL/path
+        let url = &self.inner.url;
+
+        // Try to parse as URL and extract path component
+        if let Ok(parsed) = url::Url::parse(url)
+            && let Some(mut segments) = parsed.path_segments()
+            && let Some(last) = segments.next_back()
+            && !last.is_empty()
+        {
+            return Ok(last.to_string());
+        }
+
+        // Fallback: treat as file path and get basename
+        if let Some(last) = url.rsplit('/').next()
+            && !last.is_empty()
+        {
+            return Ok(last.to_string());
+        }
+
+        // If all else fails, return the full URL
+        Ok(url.clone())
+    }
 }
 
 #[pyclass]

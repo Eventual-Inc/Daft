@@ -52,7 +52,7 @@ impl Source for InMemorySource {
     }
 
     fn name(&self) -> NodeName {
-        "InMemorySource".into()
+        "In Memory Scan".into()
     }
 
     fn op_type(&self) -> NodeType {
@@ -61,7 +61,7 @@ impl Source for InMemorySource {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![];
-        res.push("InMemorySource:".to_string());
+        res.push("In Memory Scan:".to_string());
         res.push(format!("Schema = {}", self.schema.short_string()));
         res.push(format!("Size bytes = {}", self.size_bytes));
         res

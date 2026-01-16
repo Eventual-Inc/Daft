@@ -38,7 +38,7 @@ where
                         (None, None) => Some(*value),
                     });
                 let data_array = Self::from_iter(Arc::new(self.field().clone()), result)
-                    .with_validity(self.validity().cloned())?;
+                    .with_nulls(self.nulls().cloned())?;
                 Ok(data_array)
             }
             // Case where left_bound has the same length as self and right_bound has length 1
@@ -59,7 +59,7 @@ where
                                     None => Some(clamp_max(*value, r)), // If left is null, we can just clamp_max
                                 });
                         let data_array = Self::from_iter(Arc::new(self.field().clone()), result)
-                            .with_validity(self.validity().cloned())?;
+                            .with_nulls(self.nulls().cloned())?;
                         Ok(data_array)
                     }
                     None => {
@@ -72,7 +72,7 @@ where
                             },
                         );
                         let data_array = Self::from_iter(Arc::new(self.field().clone()), result)
-                            .with_validity(self.validity().cloned())?;
+                            .with_nulls(self.nulls().cloned())?;
                         Ok(data_array)
                     }
                 }
@@ -90,7 +90,7 @@ where
                             },
                         );
                         let data_array = Self::from_iter(Arc::new(self.field().clone()), result)
-                            .with_validity(self.validity().cloned())?;
+                            .with_nulls(self.nulls().cloned())?;
                         Ok(data_array)
                     }
                     None => {
@@ -104,7 +104,7 @@ where
                                     None => Some(*value),
                                 });
                         let data_array = Self::from_iter(Arc::new(self.field().clone()), result)
-                            .with_validity(self.validity().cloned())?;
+                            .with_nulls(self.nulls().cloned())?;
                         Ok(data_array)
                     }
                 }

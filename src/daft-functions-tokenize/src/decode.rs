@@ -94,7 +94,7 @@ fn tokenize_decode_array(
             decode_list(&sub_series, &bpe)
         })
         .collect::<DaftResult<Vec<String>>>()?;
-    Utf8Array::from_iter(arr.name(), strs.iter().map(Some)).with_validity(arr.validity().cloned())
+    Utf8Array::from_iter(arr.name(), strs.iter().map(Some)).with_nulls(arr.nulls().cloned())
 }
 
 fn tokenize_decode_series(

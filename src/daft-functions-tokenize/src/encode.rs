@@ -105,7 +105,7 @@ fn tokenize_encode_array(
         Field::new(arr.name(), DataType::List(Box::new(DataType::UInt32))),
         child_series,
         offsets.try_into()?,
-        arr.validity().cloned(),
+        arr.nulls().cloned(),
     ))
 }
 
