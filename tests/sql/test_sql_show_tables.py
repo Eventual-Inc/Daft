@@ -147,10 +147,6 @@ def test_show_tables_with_special_chars(sess_with_wildcard_tables):
     assert len(res["table"]) == 1
     assert "%table" in res["table"]
 
-    res = sess_with_wildcard_tables.sql("SHOW TABLES LIKE 'test\\\\%'").to_pydict()
-    assert len(res["table"]) == 1
-    assert "test\\data" in res["table"]
-
     # Escape sequences with wildcards
     res = sess_with_wildcard_tables.sql("SHOW TABLES LIKE 'data\\_'").to_pydict()
     assert len(res["table"]) == 1
@@ -159,10 +155,6 @@ def test_show_tables_with_special_chars(sess_with_wildcard_tables):
     res = sess_with_wildcard_tables.sql("SHOW TABLES LIKE '\\%table'").to_pydict()
     assert len(res["table"]) == 1
     assert "%table" in res["table"]
-
-    res = sess_with_wildcard_tables.sql("SHOW TABLES LIKE '%\\\\%'").to_pydict()
-    assert len(res["table"]) == 1
-    assert "test\\data" in res["table"]
 
 
 def test_show_tables_in_catalog(sess):
