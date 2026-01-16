@@ -1925,10 +1925,14 @@ dependencies = [
 name = "common-metrics"
 version = "0.3.0-dev0"
 dependencies = [
+ "atomic_float",
  "bincode",
  "common-py-serde",
  "daft-schema",
+ "enum_dispatch",
  "indicatif 0.17.11",
+ "itertools 0.14.0",
+ "opentelemetry",
  "pyo3",
  "serde",
  "smallvec",
@@ -3023,7 +3027,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "arc-swap",
  "async-trait",
- "atomic_float",
  "bincode",
  "capitalize",
  "common-daft-config",
@@ -3068,7 +3071,6 @@ dependencies = [
  "pyo3-async-runtimes",
  "rand 0.8.5",
  "serde_json",
- "smallvec",
  "snafu",
  "tokio",
  "tokio-stream",
@@ -3800,6 +3802,18 @@ version = "4.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ca9601fb2d62598ee17836250842873a413586e5d7ed88b356e38ddbb0ec631"
 dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
+]
+
+[[package]]
+name = "enum_dispatch"
+version = "0.3.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa18ce2bc66555b3218614519ac839ddb759a7d6720732f979ef8d13be147ecd"
+dependencies = [
+ "once_cell",
  "proc-macro2",
  "quote",
  "syn 2.0.114",
