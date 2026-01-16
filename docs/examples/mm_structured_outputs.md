@@ -8,16 +8,16 @@ We'll evaluate [Qwen3-VL](https://github.com/QwenLM/Qwen3-VL)'s image understand
 
 Our pipeline will:
 
-1. Run structured output inference on image+text prompts
-2. Conduct an **ablation study** (with vs. without images) to isolate image understanding
+1. Run structured output inference on multiple choice questions with images and text
+2. Conduct an **ablation study** (with vs. without images) to surface textual bias in image understanding
 3. Classify results into diagnostic quadrants
 4. Use **VLM-as-a-Judge** to explain failures
 
-Check out the [blog post](https://www.daft.ai/blog/multimodal-structured-outputs-evaluating-vlm-image-understanding-at-scale) where we use the [production-ready version](https://github.com/Eventual-Inc/daft-examples/blob/main/use_cases/image_understanding_eval/eval_image_understanding.py) of this pipeline to evaluate Qwen3-VL-4B on 20k rows across 3 datasets.
+Check out the [blog post](https://www.daft.ai/blog/multimodal-structured-outputs-evaluating-vlm-image-understanding-at-scale) where we evaluate Qwen3-VL-4B on 20k rows across 3 datasets.
 
 ## About this Tutorial
 
-This tutorial demonstrates the core evaluation pipeline on a small sample (50 rows) so you can inspect examples and understand the methodology. For a production-ready implementation that scales to millions of rows, see [`eval_image_understanding.py`](https://github.com/Eventual-Inc/daft-examples/blob/main/use_cases/image_understanding_eval/eval_image_understanding.py) in the [daft-examples](https://github.com/Eventual-Inc/daft-examples) repo.
+This tutorial demonstrates the core evaluation pipeline on a small sample (50 rows) so you can inspect examples and understand the methodology. For an end-to-end implementation that scales to millions of rows, see [`eval_image_understanding.py`](https://github.com/Eventual-Inc/daft-examples/blob/main/use_cases/image_understanding_eval/eval_image_understanding.py) in the [daft-examples](https://github.com/Eventual-Inc/daft-examples) repo.
 
 ### Table of Contents
 
@@ -35,7 +35,7 @@ This tutorial demonstrates the core evaluation pipeline on a small sample (50 ro
 First, install the required dependencies:
 
 ```bash
-pip install daft openai numpy pillow python-dotenv pydantic
+pip install daft[openai] python-dotenv
 ```
 
 Next, create a `.env` file in your project directory and add your HuggingFace token:
@@ -369,7 +369,7 @@ In this tutorial, we built a small pipeline to evaluate Qwen3-VL's image underst
 
 ### Next Steps
 
-**Multi-Dataset Evaluation**: The production pipeline supports evaluating across all 50 Cauldron subsets. See [`eval_image_understanding.py`](https://github.com/Eventual-Inc/daft-examples/blob/main/use_cases/image_understanding_eval/eval_image_understanding.py) for the full implementation with dataset iteration, batch processing, and result aggregation.
+**Multi-Dataset Evaluation**: Try the full pipeline from the [daft-examples](https://github.com/Eventual-Inc/daft-examples) repository that supports evaluating across all 50 Cauldron subsets [here](https://github.com/Eventual-Inc/daft-examples/blob/main/use_cases/image_understanding_eval/eval_image_understanding.py).
 
 **Experiment Tracking**: Wire judge feedback into MLflow or W&B to track improvements over time.
 
