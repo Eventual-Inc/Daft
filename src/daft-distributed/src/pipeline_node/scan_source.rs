@@ -3,11 +3,13 @@ use std::sync::Arc;
 use common_display::{DisplayAs, DisplayLevel};
 #[cfg(feature = "python")]
 use common_file_formats::FileFormatConfig;
+use common_metrics::{CPU_US_KEY, Counter, ROWS_OUT_KEY, StatSnapshot};
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, stream};
+use opentelemetry::{KeyValue, metrics::Meter};
 
 use super::{
     NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
@@ -16,7 +18,40 @@ use crate::{
     pipeline_node::{DistributedPipelineNode, NodeID},
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::task::SwordfishTaskBuilder,
+    statistics::{RuntimeStats, stats::RuntimeStatsRef},
 };
+
+pub struct SourceStats {
+    cpu_us: Counter,
+    rows_out: Counter,
+    bytes_read: Counter,
+    node_kv: Vec<KeyValue>,
+}
+
+impl SourceStats {
+    pub fn new(meter: &Meter, node_id: NodeID) -> Self {
+        let node_kv = vec![KeyValue::new("node_id", node_id.to_string())];
+        Self {
+            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
+            bytes_read: Counter::new(meter, "bytes read", None),
+            node_kv,
+        }
+    }
+}
+
+impl RuntimeStats for SourceStats {
+    fn handle_worker_node_stats(&self, snapshot: &StatSnapshot) {
+        let StatSnapshot::Source(snapshot) = snapshot else {
+            return;
+        };
+        self.cpu_us.add(snapshot.cpu_us, self.node_kv.as_slice());
+        self.rows_out
+            .add(snapshot.rows_out, self.node_kv.as_slice());
+        self.bytes_read
+            .add(snapshot.bytes_read, self.node_kv.as_slice());
+    }
+}
 
 pub(crate) struct ScanSourceNode {
     config: PipelineNodeConfig,
@@ -158,6 +193,10 @@ impl PipelineNodeImpl for ScanSourceNode {
         }
         s.push("]".to_string());
         s
+    }
+
+    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(SourceStats::new(meter, self.node_id()))
     }
 
     fn produce_tasks(

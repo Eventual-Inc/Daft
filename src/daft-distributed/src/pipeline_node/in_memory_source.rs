@@ -4,12 +4,16 @@ use common_partitioning::PartitionRef;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, InMemoryInfo, stats::StatsState};
 use futures::{StreamExt, stream};
+use opentelemetry::metrics::Meter;
 
-use super::{PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream};
+use super::{PipelineNodeContext, PipelineNodeImpl, scan_source::SourceStats};
 use crate::{
-    pipeline_node::{DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig},
+    pipeline_node::{
+        DistributedPipelineNode, NodeID, NodeName, PipelineNodeConfig, TaskBuilderStream,
+    },
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::task::SwordfishTaskBuilder,
+    statistics::stats::RuntimeStatsRef,
 };
 
 pub(crate) struct InMemorySourceNode {
@@ -122,5 +126,9 @@ impl PipelineNodeImpl for InMemorySourceNode {
             .map(move |partition_ref| slf.make_in_memory_source_task(partition_ref));
 
         TaskBuilderStream::new(stream::iter(builders_iter).boxed())
+    }
+
+    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(SourceStats::new(meter, self.node_id()))
     }
 }

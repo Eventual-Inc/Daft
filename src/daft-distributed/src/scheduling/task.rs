@@ -409,7 +409,7 @@ impl SwordfishTaskBuilder {
 pub(crate) enum TaskStatus {
     Success {
         result: MaterializedOutput,
-        stats: Vec<(usize, StatSnapshot)>,
+        stats: Vec<(common_metrics::NodeID, StatSnapshot)>,
     },
     Failed {
         error: DaftError,
