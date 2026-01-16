@@ -1,12 +1,10 @@
 use std::{cmp::Ordering, collections::VecDeque, sync::Arc};
 
 use common_error::DaftResult;
-use common_metrics::QueryID;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
-use opentelemetry::{global, metrics::Counter};
 
 use super::{DistributedPipelineNode, MaterializedOutput, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
@@ -15,10 +13,6 @@ use crate::{
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
-    },
-    statistics::{
-        TaskEvent,
-        stats::{DefaultRuntimeStats, RuntimeStats},
     },
     utils::channel::{Sender, create_channel},
 };
@@ -69,46 +63,12 @@ impl LimitState {
     }
 }
 
-pub struct LimitStats {
-    default_stats: DefaultRuntimeStats,
-    /// Number of rows emitted by the LIMIT, assuming no failed tasks.
-    /// TODO: Handle failed tasks by tracking both an active_rows_out and completed_rows_out
-    /// active_rows_out is immediately incremented when we produce the related task and pass it downstream.
-    /// completed_rows_out only increments when the downstream task completes successfully.
-    active_rows_out: Counter<u64>,
-}
-
-impl LimitStats {
-    fn new(node_id: NodeID, query_id: QueryID) -> Self {
-        let meter = global::meter("daft.distributed.node_stats");
-        Self {
-            default_stats: DefaultRuntimeStats::new_impl(&meter, node_id, query_id),
-            active_rows_out: meter
-                .u64_counter("daft.distributed.node_stats.active_rows_out")
-                .build(),
-        }
-    }
-
-    fn add_active_rows_out(&self, rows: u64) {
-        self.active_rows_out
-            .add(rows, self.default_stats.node_kv.as_slice());
-    }
-}
-
-impl RuntimeStats for LimitStats {
-    fn handle_task_event(&self, event: &TaskEvent) -> DaftResult<()> {
-        // We currently don't track completion for active_rows_out, so just pass to default stats
-        self.default_stats.handle_task_event(event)
-    }
-}
-
 pub(crate) struct LimitNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     limit: usize,
     offset: Option<usize>,
     child: DistributedPipelineNode,
-    stats: Arc<LimitStats>,
 }
 
 impl LimitNode {
@@ -139,7 +99,6 @@ impl LimitNode {
             limit,
             offset,
             child,
-            stats: Arc::new(LimitStats::new(node_id, plan_config.query_id.clone())),
         }
     }
 
@@ -170,7 +129,6 @@ impl LimitNode {
             let task = match num_rows.cmp(&limit_state.remaining_take()) {
                 Ordering::Less | Ordering::Equal => {
                     limit_state.decrement_take(num_rows);
-                    self.stats.add_active_rows_out(num_rows as u64);
                     let materialized_outputs = vec![next_input];
                     let (in_memory_scan, psets) =
                         MaterializedOutput::into_in_memory_scan_with_psets(
@@ -215,7 +173,6 @@ impl LimitNode {
                     );
                     let task = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
                     limit_state.decrement_take(remaining);
-                    self.stats.add_active_rows_out(remaining as u64);
                     task
                 }
             };
@@ -337,10 +294,6 @@ impl PipelineNodeImpl for LimitNode {
             Some(o) => vec![format!("Limit: Num Rows = {}, Offset = {}", self.limit, o)],
             None => vec![format!("Limit: {}", self.limit)],
         }
-    }
-
-    fn runtime_stats(&self) -> Arc<dyn RuntimeStats> {
-        self.stats.clone()
     }
 
     fn produce_tasks(

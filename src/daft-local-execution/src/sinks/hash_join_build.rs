@@ -1,10 +1,9 @@
-use std::{
-    sync::{Arc, atomic::Ordering},
-    time::Duration,
-};
+use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
-use common_metrics::{CPU_US_KEY, Stat, StatSnapshot, ops::NodeType, snapshot};
+use common_metrics::{
+    CPU_US_KEY, Counter, ROWS_IN_KEY, StatSnapshot, ops::NodeType, snapshot::HashJoinBuildSnapshot,
+};
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
@@ -17,9 +16,7 @@ use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
 };
 use crate::{
-    ExecutionTaskSpawner,
-    pipeline::NodeName,
-    runtime_stats::{Counter, RuntimeStats},
+    ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats,
     state_bridge::BroadcastStateBridgeRef,
 };
 
@@ -76,13 +73,14 @@ struct HashJoinBuildRuntimeStats {
 
     node_kv: Vec<KeyValue>,
 }
+
 impl HashJoinBuildRuntimeStats {
     pub fn new(id: usize) -> Self {
         let meter = global::meter("daft.local.node_stats");
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
         Self {
-            cpu_us: Counter::new(&meter, "cpu_us".into(), None),
-            rows_in: Counter::new(&meter, "rows_in".into(), None),
+            cpu_us: Counter::new(&meter, CPU_US_KEY, None),
+            rows_in: Counter::new(&meter, ROWS_IN_KEY, None),
             node_kv,
         }
     }
@@ -94,10 +92,12 @@ impl RuntimeStats for HashJoinBuildRuntimeStats {
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
-        snapshot![
-            CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
-            "rows inserted"; Stat::Count(self.rows_in.load(ordering)),
-        ]
+        let cpu_us = self.cpu_us.load(ordering);
+        let rows_inserted = self.rows_in.load(ordering);
+        StatSnapshot::HashJoinBuild(HashJoinBuildSnapshot {
+            cpu_us,
+            rows_inserted,
+        })
     }
 
     fn add_rows_in(&self, rows: u64) {

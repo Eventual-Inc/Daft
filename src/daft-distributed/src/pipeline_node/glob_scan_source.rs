@@ -6,14 +6,17 @@ use common_scan_info::Pushdowns;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
+use opentelemetry::metrics::Meter;
 
 use super::{
-    DistributedPipelineNode, NodeName, PipelineNodeConfig, PipelineNodeContext, TaskBuilderStream,
+    DistributedPipelineNode, NodeName, PipelineNodeConfig, PipelineNodeContext,
+    scan_source::SourceStats,
 };
 use crate::{
-    pipeline_node::{NodeID, PipelineNodeImpl},
+    pipeline_node::{NodeID, PipelineNodeImpl, TaskBuilderStream},
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::task::SwordfishTaskBuilder,
+    statistics::stats::RuntimeStatsRef,
     utils::channel::{Sender, create_channel},
 };
 
@@ -112,5 +115,9 @@ impl PipelineNodeImpl for GlobScanSourceNode {
         ];
         res.extend(self.pushdowns.multiline_display());
         res
+    }
+
+    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(SourceStats::new(meter, self.node_id()))
     }
 }

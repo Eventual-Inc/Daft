@@ -11,7 +11,7 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{NodeID, QueryID, StatSnapshot};
+use common_metrics::{NodeID, QueryID, StatSnapshot, snapshot::StatSnapshotImpl};
 use common_runtime::RuntimeTask;
 use daft_context::Subscriber;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
@@ -24,7 +24,7 @@ use tokio::{
     time::interval,
 };
 use tracing::{Instrument, instrument::Instrumented};
-pub use values::{Counter, DefaultRuntimeStats, Gauge, RuntimeStats};
+pub use values::{DefaultRuntimeStats, RuntimeStats};
 
 use crate::pipeline::PipelineNode;
 
@@ -76,7 +76,7 @@ impl RuntimeStatsManagerHandle {
 pub struct RuntimeStatsManager {
     node_tx: Arc<mpsc::UnboundedSender<(usize, bool)>>,
     finish_tx: oneshot::Sender<QueryEndState>,
-    stats_manager_task: RuntimeTask<Vec<(usize, StatSnapshot)>>,
+    stats_manager_task: RuntimeTask<Vec<(NodeID, StatSnapshot)>>,
 }
 
 impl std::fmt::Debug for RuntimeStatsManager {
@@ -163,14 +163,13 @@ impl RuntimeStatsManager {
                             }
                         } else if !is_initialize && active_nodes.remove(&node_id) {
                             let runtime_stats = &node_stats_map[&node_id];
-                            let event = runtime_stats.flush();
-                            let event = [(node_id, event)];
+                            let snapshot = runtime_stats.flush();
 
                             if let Some(progress_bar) = &progress_bar {
-                                progress_bar.handle_event(&event);
-                                progress_bar.finalize_node(node_id);
+                                progress_bar.finalize_node(node_id, &snapshot);
                             }
 
+                            let event = [(node_id, snapshot.to_stats())];
                             for res in future::join_all(subscribers.iter().map(|subscriber| async {
                                 subscriber.on_exec_emit_stats(query_id.clone(), &event).await?;
                                 subscriber.on_exec_operator_end(query_id.clone(), node_id).await
@@ -199,12 +198,11 @@ impl RuntimeStatsManager {
 
                         for node_id in &active_nodes {
                             let runtime_stats = &node_stats_map[node_id];
-                            let event = runtime_stats.snapshot();
-                            snapshot_container.push((*node_id, event));
-                        }
-
-                        if let Some(progress_bar) = &progress_bar {
-                            progress_bar.handle_event(snapshot_container.as_slice());
+                            let snapshot = runtime_stats.snapshot();
+                            if let Some(progress_bar) = &progress_bar {
+                                progress_bar.handle_event(*node_id, &snapshot);
+                            }
+                            snapshot_container.push((*node_id, snapshot.to_stats()));
                         }
 
                         for res in future::join_all(subscribers.iter().map(|subscriber| {
@@ -252,7 +250,7 @@ impl RuntimeStatsManager {
         RuntimeStatsManagerHandle(self.node_tx.clone())
     }
 
-    pub async fn finish(self, status: QueryEndState) -> Vec<(usize, StatSnapshot)> {
+    pub async fn finish(self, status: QueryEndState) -> Vec<(NodeID, StatSnapshot)> {
         self.finish_tx
             .send(status)
             .expect("The finish_tx channel was closed");
@@ -305,7 +303,7 @@ mod tests {
     use async_trait::async_trait;
     use common_error::DaftResult;
     use common_metrics::{
-        CPU_US_KEY, NodeID, QueryPlan, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot,
+        CPU_US_KEY, NodeID, QueryPlan, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, Stats,
     };
     use daft_context::{QueryMetadata, QueryResult, Subscriber};
     use daft_micropartition::MicroPartitionRef;
@@ -316,7 +314,7 @@ mod tests {
     #[derive(Debug)]
     struct MockState {
         total_calls: AtomicU64,
-        event: Mutex<Option<StatSnapshot>>,
+        event: Mutex<Option<Stats>>,
     }
 
     impl MockState {
@@ -324,7 +322,7 @@ mod tests {
             self.total_calls.load(std::sync::atomic::Ordering::SeqCst)
         }
 
-        fn get_latest_event(&self) -> StatSnapshot {
+        fn get_latest_event(&self) -> Stats {
             self.event.lock().unwrap().clone().expect("No event")
         }
     }
@@ -379,7 +377,7 @@ mod tests {
         async fn on_exec_emit_stats(
             &self,
             _query_id: QueryID,
-            stats: &[(NodeID, StatSnapshot)],
+            stats: &[(NodeID, Stats)],
         ) -> DaftResult<()> {
             self.state
                 .total_calls
@@ -518,7 +516,7 @@ mod tests {
             async fn on_exec_emit_stats(
                 &self,
                 _: QueryID,
-                __: &[(NodeID, StatSnapshot)],
+                __: &[(NodeID, Stats)],
             ) -> DaftResult<()> {
                 Err(common_error::DaftError::InternalError(
                     "Test error".to_string(),
@@ -555,19 +553,27 @@ mod tests {
         let node_stat = Arc::new(DefaultRuntimeStats::new(0));
 
         // Test initial state
-        let stats = node_stat.snapshot();
-        assert_eq!(stats[1], (ROWS_IN_KEY.into(), Stat::Count(0)));
-        assert_eq!(stats[2], (ROWS_OUT_KEY.into(), Stat::Count(0)));
+        let StatSnapshot::Default(stats) = node_stat.snapshot() else {
+            panic!("Expected DefaultSnapshot");
+        };
+        assert_eq!(stats.rows_in, 0);
+        assert_eq!(stats.rows_out, 0);
 
         // Test incremental updates
         node_stat.add_rows_in(100);
         node_stat.add_rows_in(50);
-        let stats = node_stat.snapshot();
-        assert_eq!(stats[1], (ROWS_IN_KEY.into(), Stat::Count(150)));
+        let StatSnapshot::Default(stats) = node_stat.snapshot() else {
+            panic!("Expected DefaultSnapshot");
+        };
+        assert_eq!(stats.rows_in, 150);
+        assert_eq!(stats.rows_out, 0);
 
         node_stat.add_rows_out(75);
-        let stats = node_stat.snapshot();
-        assert_eq!(stats[2], (ROWS_OUT_KEY.into(), Stat::Count(75)));
+        let StatSnapshot::Default(stats) = node_stat.snapshot() else {
+            panic!("Expected DefaultSnapshot");
+        };
+        assert_eq!(stats.rows_in, 150);
+        assert_eq!(stats.rows_out, 75);
     }
 
     #[tokio::test(start_paused = true)]
