@@ -19,18 +19,14 @@ fn is_like_pattern(c: char) -> bool {
 }
 
 fn compile_like_regex(pattern: &str) -> Result<Regex> {
-    let re_pattern = like_pattern_to_regex(pattern).ok_or_else(|| {
-        Error::InvalidArgumentError("Unable to build regex from LIKE pattern".to_string())
-    })?;
+    let re_pattern = like_pattern_to_regex(pattern);
     Regex::new(&re_pattern).map_err(|e| {
         Error::InvalidArgumentError(format!("Unable to build regex from LIKE pattern: {e}"))
     })
 }
 
 fn compile_like_bytes_regex(pattern: &str) -> Result<BytesRegex> {
-    let re_pattern = like_pattern_to_regex(pattern).ok_or_else(|| {
-        Error::InvalidArgumentError("Unable to build regex from LIKE pattern".to_string())
-    })?;
+    let re_pattern = like_pattern_to_regex(pattern);
     BytesRegex::new(&re_pattern).map_err(|e| {
         Error::InvalidArgumentError(format!("Unable to build regex from LIKE pattern: {e}"))
     })

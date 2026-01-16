@@ -1964,6 +1964,7 @@ name = "common-pattern"
 version = "0.3.0-dev0"
 dependencies = [
  "regex",
+ "regex-syntax 0.8.8",
 ]
 
 [[package]]
@@ -2894,13 +2895,11 @@ dependencies = [
 name = "daft-functions-utf8"
 version = "0.3.0-dev0"
 dependencies = [
- "ahash",
  "aho-corasick",
  "arrow",
  "chrono",
  "chrono-tz",
  "common-error",
- "common-pattern",
  "daft-arrow",
  "daft-core",
  "daft-dsl",
