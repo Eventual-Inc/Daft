@@ -90,7 +90,7 @@ class RaySwordfishActor:
                 yield mp
 
             stats = await result_handle.finish()
-            yield SwordfishTaskMetadata(partition_metadatas=metas, stats=stats)
+            yield SwordfishTaskMetadata(partition_metadatas=metas, stats=stats.encode())
 
 
 @ray.remote  # type: ignore[untyped-decorator]

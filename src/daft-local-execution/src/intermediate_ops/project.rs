@@ -3,6 +3,7 @@ use std::{cmp::max, num::NonZeroUsize, sync::Arc, time::Duration};
 use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
 use common_runtime::get_compute_pool_num_threads;
+use daft_core::prelude::SchemaRef;
 use daft_dsl::{
     Expr,
     common_treenode::{self, TreeNode},
@@ -102,17 +103,19 @@ pub fn try_get_batch_size(exprs: &[BoundExpr]) -> Option<usize> {
 
 pub struct ProjectOperator {
     projection: Arc<Vec<BoundExpr>>,
+    input_schema: SchemaRef,
     max_concurrency: usize,
     parallel_exprs: usize,
     batch_size: Option<usize>,
 }
 
 impl ProjectOperator {
-    pub fn new(projection: Vec<BoundExpr>) -> DaftResult<Self> {
+    pub fn new(projection: Vec<BoundExpr>, input_schema: SchemaRef) -> DaftResult<Self> {
         let (max_concurrency, parallel_exprs) = Self::get_optimal_allocation(&projection)?;
         let batch_size = try_get_batch_size(&projection);
         Ok(Self {
             projection: Arc::new(projection),
+            input_schema,
             max_concurrency,
             parallel_exprs,
             batch_size,
@@ -184,8 +187,13 @@ impl IntermediateOperator for ProjectOperator {
 
         if compute_expressions.is_empty() {
             "Rename & Reorder".into()
-        } else if compute_expressions.len() == 1 {
-            compute_expressions[0].inner().name().to_string().into()
+        } else if compute_expressions.len() == 1
+            && let Some(name) = compute_expressions[0]
+                .inner()
+                .display_name(&self.input_schema)
+                .ok()
+        {
+            name.into()
         } else {
             "Project".into()
         }

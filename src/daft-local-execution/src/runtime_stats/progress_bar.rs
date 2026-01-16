@@ -82,7 +82,7 @@ impl PythonPrintTarget for IndicatifPrintTarget {
     }
 }
 
-pub const MAX_PIPELINE_NAME_LEN: usize = 22;
+pub const MAX_PIPELINE_NAME_LEN: usize = 18;
 
 struct IndicatifProgressBarManager {
     multi_progress: indicatif::MultiProgress,
@@ -121,7 +121,7 @@ impl IndicatifProgressBarManager {
             .map(|v| v.name.len())
             .max()
             .unwrap_or(0))
-        .max(MAX_PIPELINE_NAME_LEN);
+        .min(MAX_PIPELINE_NAME_LEN);
 
         // For Swordfish only, so node ids should be consecutive
         for node_id in 0..total {

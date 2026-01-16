@@ -1452,6 +1452,139 @@ impl Expr {
         }
     }
 
+    pub fn display_name(&self, schema: &Schema) -> DaftResult<String> {
+        match self {
+            // Base case - anonymous column reference.
+            // Look up the column name in the provided schema and get its field ID.
+            Self::Column(Column::Unresolved(UnresolvedColumn {
+                name,
+                plan_ref: PlanRef::Alias(alias),
+                ..
+            })) => Ok(format!("{alias}.{name}")),
+
+            Self::Column(Column::Unresolved(UnresolvedColumn {
+                name,
+                plan_ref: PlanRef::Id(id),
+                ..
+            })) => Ok(format!("{id}.{name}")),
+
+            Self::Column(Column::Unresolved(UnresolvedColumn {
+                name,
+                plan_ref: PlanRef::Unqualified,
+                ..
+            })) => Ok(name.to_string()),
+
+            // TODO: If there are multiple bound columns with the same name, include index
+            Self::Column(Column::Bound(BoundColumn {
+                field: Field { name, .. },
+                ..
+            })) => Ok(name.clone()),
+
+            Self::Column(Column::Resolved(ResolvedColumn::Basic(name))) => Ok(name.to_string()),
+            Self::Column(Column::Resolved(ResolvedColumn::JoinSide(name, side))) => {
+                Ok(format!("{side}.{name}"))
+            }
+            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(
+                Field { name, .. },
+                PlanRef::Alias(alias),
+            ))) => Ok(format!("outer.{alias}.{name}")),
+            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(
+                Field { name, .. },
+                PlanRef::Id(id),
+            ))) => Ok(format!("outer.{id}.{name}")),
+            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(
+                Field { name, .. },
+                PlanRef::Unqualified,
+            ))) => Ok(format!("outer.{name}")),
+
+            // Base case - literal.
+            Self::Literal(value) => Ok(format!("{value}")),
+
+            // Recursive cases.
+            Self::Cast(expr, dtype) => {
+                let child_id = expr.display_name(schema)?;
+                Ok(format!("{child_id} to {dtype}"))
+            }
+            Self::Not(expr) => {
+                let child_id = expr.display_name(schema)?;
+                Ok(format!("!{child_id}"))
+            }
+            Self::IsNull(expr) => {
+                let child_id = expr.display_name(schema)?;
+                Ok(format!("{child_id} is NULL"))
+            }
+            Self::NotNull(expr) => {
+                let child_id = expr.display_name(schema)?;
+                Ok(format!("{child_id} is not NULL"))
+            }
+            Self::FillNull(expr, fill_value) => {
+                let child_id = expr.display_name(schema)?;
+                let fill_value_id = fill_value.display_name(schema)?;
+                Ok(format!("{child_id}.fill_null({fill_value_id})"))
+            }
+            Self::IsIn(expr, items) => {
+                let child_id = expr.display_name(schema)?;
+                let items_id = items
+                    .iter()
+                    .map(|item| item.display_name(schema))
+                    .collect::<DaftResult<Vec<String>>>()?;
+
+                Ok(format!("{child_id} in ({})", items_id.join(",")))
+            }
+            Self::List(items) => {
+                let items_id = items
+                    .iter()
+                    .map(|item| item.display_name(schema))
+                    .collect::<DaftResult<Vec<String>>>()?;
+                Ok(format!("[{}]", items_id.join(",")))
+            }
+            Self::Between(expr, lower, upper) => {
+                let child_id = expr.display_name(schema)?;
+                let lower_id = lower.display_name(schema)?;
+                let upper_id = upper.display_name(schema)?;
+                Ok(format!("{lower_id} <= {child_id} <= {upper_id}"))
+            }
+            Self::BinaryOp { op, left, right } => {
+                let left_id = left.display_name(schema)?;
+                let right_id = right.display_name(schema)?;
+                // TODO: check for symmetry here.
+                Ok(format!("({left_id} {op} {right_id})"))
+            }
+            Self::IfElse {
+                if_true,
+                if_false,
+                predicate,
+            } => {
+                let if_true = if_true.display_name(schema)?;
+                let if_false = if_false.display_name(schema)?;
+                let predicate = predicate.display_name(schema)?;
+                Ok(format!("{if_true} if {predicate} else {if_false}"))
+            }
+            // Alias: ID does not change.
+            Self::Alias(expr, name) => Ok(format!("{} as {name}", expr.display_name(schema)?)),
+            Self::Function { func, inputs } => {
+                let func_name = func.fn_name();
+                let input_names = inputs
+                    .iter()
+                    .map(|input| input.display_name(schema))
+                    .collect::<DaftResult<Vec<String>>>()?;
+                Ok(format!("{func_name}({})", input_names.join(", ")))
+            }
+            Self::ScalarFn(ScalarFn::Builtin(sf)) => {
+                let sf_id = sf.name();
+                let input_names = sf
+                    .inputs
+                    .iter()
+                    .map(|input| input.inner().display_name(schema))
+                    .collect::<DaftResult<Vec<String>>>()?;
+                Ok(format!("{sf_id}({})", input_names.join(", ")))
+            }
+            other => Err(DaftError::InternalError(format!(
+                "Expression type {other} is not be displayable"
+            ))),
+        }
+    }
+
     pub fn children(&self) -> Vec<ExprRef> {
         match self {
             // No children.

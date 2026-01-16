@@ -1928,7 +1928,6 @@ dependencies = [
  "atomic_float",
  "bincode",
  "common-py-serde",
- "daft-schema",
  "enum_dispatch",
  "indicatif 0.17.11",
  "itertools 0.14.0",
@@ -3027,7 +3026,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "arc-swap",
  "async-trait",
- "bincode",
  "capitalize",
  "common-daft-config",
  "common-display",
@@ -3082,8 +3080,12 @@ dependencies = [
 name = "daft-local-plan"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
+ "arrow-schema",
+ "bincode",
  "common-error",
  "common-io-config",
+ "common-metrics",
  "common-py-serde",
  "common-resource-request",
  "common-scan-info",
@@ -3093,6 +3095,7 @@ dependencies = [
  "daft-functions",
  "daft-functions-list",
  "daft-logical-plan",
+ "daft-recordbatch",
  "indexmap 2.13.0",
  "log",
  "pyo3",
