@@ -2,13 +2,13 @@ mod buffer;
 mod channel;
 mod dynamic_batching;
 mod intermediate_ops;
+mod join;
 mod pipeline;
 mod resource_manager;
 mod run;
 mod runtime_stats;
 mod sinks;
 mod sources;
-mod state_bridge;
 mod streaming_sink;
 use std::{
     future::Future,

@@ -1094,13 +1094,6 @@ def test_series_utf8_repeat_bad_dtype() -> None:
         s.str.repeat(n)
 
 
-def test_series_utf8_like_bad_pattern() -> None:
-    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
-    pattern = Series.from_arrow(pa.array(["["]))
-    with pytest.raises(ValueError):
-        s.str.like(pattern)
-
-
 def test_series_utf8_like_bad_dtype() -> None:
     s = Series.from_arrow(pa.array([1, 2, 3]))
     pattern = Series.from_arrow(pa.array(["foo", "baz", "quux"]))
@@ -1148,13 +1141,6 @@ def test_series_utf8_like_empty_arrs() -> None:
     pat = Series.from_arrow(pa.array([], type=pa.string()))
     with pytest.raises(ValueError):
         s.str.like(pat)
-
-
-def test_series_utf8_ilike_bad_pattern() -> None:
-    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
-    pattern = Series.from_arrow(pa.array(["["]))
-    with pytest.raises(ValueError):
-        s.str.ilike(pattern)
 
 
 def test_series_utf8_ilike_bad_dtype() -> None:

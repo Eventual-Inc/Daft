@@ -336,7 +336,17 @@ impl Default for CsvFormatOption {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct JsonFormatOption {}
+pub struct JsonFormatOption {
+    pub ignore_null_fields: Option<bool>,
+}
+
+impl Default for JsonFormatOption {
+    fn default() -> Self {
+        Self {
+            ignore_null_fields: Some(false),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ParquetFormatOption {}
@@ -353,6 +363,12 @@ impl FormatSinkOption {
         match self {
             Self::Csv(csv) => csv,
             _ => CsvFormatOption::default(),
+        }
+    }
+    pub fn to_json(self) -> JsonFormatOption {
+        match self {
+            Self::Json(json) => json,
+            _ => JsonFormatOption::default(),
         }
     }
 }
@@ -389,9 +405,12 @@ impl PyFormatSinkOption {
     }
 
     #[classmethod]
-    pub fn json(_cls: &pyo3::prelude::Bound<pyo3::types::PyType>) -> Self {
+    pub fn json(
+        _cls: &pyo3::prelude::Bound<pyo3::types::PyType>,
+        ignore_null_fields: Option<bool>,
+    ) -> Self {
         Self {
-            inner: FormatSinkOption::Json(JsonFormatOption {}),
+            inner: FormatSinkOption::Json(JsonFormatOption { ignore_null_fields }),
         }
     }
 
