@@ -286,10 +286,13 @@ class UDF:
         expressions = list(bound_args.expressions().values())
 
         ray_options = self.ray_options.copy() if self.ray_options is not None else {}
+        # NOTE: We merge num_cpus, num_gpus, and memory_bytes into ray_options here so that the Rust layer
+        # can extract them from ray_options, achieving convergence.
+        # However, we must ensure that these don't conflict with existing keys in ray_options.
         if self.resource_request is not None:
-            if self.resource_request.num_cpus is not None:
+            if self.resource_request.num_cpus is not None and "num_cpus" not in ray_options:
                 ray_options["num_cpus"] = self.resource_request.num_cpus
-            if self.resource_request.memory_bytes is not None:
+            if self.resource_request.memory_bytes is not None and "memory" not in ray_options:
                 ray_options["memory"] = self.resource_request.memory_bytes
 
         return Expression.udf(

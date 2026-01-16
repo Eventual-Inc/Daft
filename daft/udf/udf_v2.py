@@ -272,7 +272,7 @@ class Func(Generic[P, T, C]):
         )
 
         # Extract resource requests from ray_options if present
-        ray_options = self.ray_options.copy() if self.ray_options is not None else None
+        ray_options = self.ray_options.copy() if self.ray_options is not None else {}
 
         # TODO: implement generator UDFs on the engine side
         if self.is_generator:
@@ -296,7 +296,7 @@ class Func(Generic[P, T, C]):
                     self.on_error,
                     (args, kwargs),
                     expr_args,
-                    ray_options,
+                    ray_options if ray_options else None,
                 )
             ).explode()
         elif self.is_batch:
@@ -317,7 +317,7 @@ class Func(Generic[P, T, C]):
                     self.on_error,
                     (args, kwargs),
                     expr_args,
-                    ray_options,
+                    ray_options if ray_options else None,
                 )
             )
         else:
@@ -337,7 +337,7 @@ class Func(Generic[P, T, C]):
                     self.on_error,
                     (args, kwargs),
                     expr_args,
-                    ray_options,
+                    ray_options if ray_options else None,
                 )
             )
 

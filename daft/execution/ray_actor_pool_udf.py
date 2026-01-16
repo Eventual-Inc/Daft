@@ -85,13 +85,23 @@ async def start_udf_actors(
 ) -> list[UDFActorHandle]:
     expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
 
+    # If resources are already in ray_options, we should prioritize them and avoid passing them twice
+    # to avoid "keyword argument repeated" errors.
+    ray_options = (ray_options or {}).copy()
+    if "num_gpus" in ray_options:
+        num_gpus_per_actor = ray_options.pop("num_gpus")
+    if "num_cpus" in ray_options:
+        num_cpus_per_actor = ray_options.pop("num_cpus")
+    if "memory" in ray_options:
+        memory_per_actor = ray_options.pop("memory")
+
     udf_options = validate_and_normalize_ray_options(
         {
             "scheduling_strategy": "SPREAD",
             "num_gpus": num_gpus_per_actor,
             "num_cpus": num_cpus_per_actor,
             "memory": memory_per_actor,
-            **(ray_options or {}),
+            **ray_options,
         }
     )
 
