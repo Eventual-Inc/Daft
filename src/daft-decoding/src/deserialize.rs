@@ -336,9 +336,8 @@ where
                             }
                         })
                 }),
-                &datatype.to_arrow().unwrap(),
             )
-            .unwrap()
+            .map_err(|e| DaftError::InternalError(format!("Failed to cast Timestamp array: {}", e)))?
         }
         Timestamp(time_unit, Some(ref tz)) => {
             let tz = daft_schema::time_unit::parse_offset(tz)?;
