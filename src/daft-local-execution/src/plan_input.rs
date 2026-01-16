@@ -31,7 +31,8 @@ impl InputSender {
                 // Convert ScanTaskLikeRef to ScanTaskRef
                 let tasks: Vec<ScanTaskRef> = tasks
                     .into_iter()
-                    .map(|task| task.as_any_arc().downcast().unwrap())
+                    .map(|task| task.as_any_arc().downcast().map_err(|_| DaftError::ValueError("Failed to downcast ScanTaskLikeRef to ScanTaskRef".to_string())))
+                    .collect::<DaftResult<Vec<_>>>()?;
                     .collect();
                 sender
                     .send((input_id, tasks))
