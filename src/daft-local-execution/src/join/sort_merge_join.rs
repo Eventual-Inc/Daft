@@ -118,7 +118,7 @@ impl JoinOperator for SortMergeJoinOperator {
     }
 
     fn name(&self) -> NodeName {
-        "SortMergeJoin".into()
+        "Sort Merge Join".into()
     }
 
     fn op_type(&self) -> NodeType {
@@ -126,7 +126,7 @@ impl JoinOperator for SortMergeJoinOperator {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        vec!["SortMergeJoin".to_string()]
+        vec!["Sort Merge Join".to_string()]
     }
 
     fn max_probe_concurrency(&self) -> usize {

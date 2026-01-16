@@ -13,15 +13,13 @@ use daft_core::prelude::SchemaRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
-use tokio::sync::{
-    mpsc::{Receiver, Sender, channel},
-    oneshot,
-};
+use tokio::sync::oneshot;
 use tracing::info_span;
 
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorControlFlow,
     buffer::RowBasedBuffer,
+    channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, StaticBatchingStrategy},
     join::join_operator::{JoinOperator, ProbeOutput},
     pipeline::{MorselSizeRequirement, PipelineNode, RuntimeContext},
@@ -475,7 +473,7 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
         let build_child_receiver = self.left.start(false, runtime_handle)?;
         let probe_child_receiver = self.right.start(maintain_order, runtime_handle)?;
 
-        let (destination_sender, destination_receiver) = channel(1);
+        let (destination_sender, destination_receiver) = create_channel(1);
 
         // Create task spawners
         let build_task_spawner = ExecutionTaskSpawner::new(

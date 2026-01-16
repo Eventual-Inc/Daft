@@ -153,7 +153,7 @@ impl JoinOperator for CrossJoinOperator {
     }
 
     fn name(&self) -> NodeName {
-        "CrossJoin".into()
+        "Cross Join".into()
     }
 
     fn op_type(&self) -> NodeType {
@@ -162,7 +162,7 @@ impl JoinOperator for CrossJoinOperator {
 
     fn multiline_display(&self) -> Vec<String> {
         vec![
-            "CrossJoin:".to_string(),
+            "Cross Join".to_string(),
             format!("Stream Side = {:?}", self.stream_side),
         ]
     }
