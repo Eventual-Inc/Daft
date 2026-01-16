@@ -299,9 +299,8 @@ where
                 .map(|x| x.and_utc().timestamp_millis())
         }),
 
-        Time(time_unit) => cast(&deserialize_primitive::<'_, Int64Type, _, _>(
-            bytes_iter,
-            |bytes| {
+        Time(time_unit) => cast(
+            &deserialize_primitive::<'_, Int64Type, _, _>(bytes_iter, |bytes| {
                 let factor: u64 = get_factor_from_timeunit(time_unit).into();
                 to_utf8(bytes)
                     .and_then(|x| x.parse::<chrono::NaiveTime>().ok())
@@ -312,14 +311,13 @@ where
                             + u64::from(x.nanosecond()) / (1_000_000_000 / factor))
                             as i64
                     })
-            },
-        ))
-        .map_err(|e| DaftError::InternalError(format!("Failed to cast Time array: {}", e)))?,
+            }),
+            &datatype.to_arrow()?,
+        )?,
         Timestamp(time_unit, None) => {
             let mut last_fmt_idx = 0;
-            cast(&deserialize_primitive::<'_, Int64Type, _, _>(
-                bytes_iter,
-                |bytes| {
+            cast(
+                &deserialize_primitive::<'_, Int64Type, _, _>(bytes_iter, |bytes| {
                     to_utf8(bytes)
                         .and_then(|s| deserialize_naive_datetime(s, &mut last_fmt_idx))
                         .and_then(|dt| match time_unit {
@@ -336,18 +334,15 @@ where
                                 dt.and_utc().timestamp_nanos_opt()
                             }
                         })
-                },
-            ))
-            .map_err(|e| {
-                DaftError::InternalError(format!("Failed to cast Timestamp array: {}", e))
-            })?
+                }),
+                &datatype.to_arrow()?,
+            )?
         }
         Timestamp(time_unit, Some(ref tz)) => {
             let tz = daft_schema::time_unit::parse_offset(tz)?;
             let mut last_fmt_idx = 0;
-            cast(&deserialize_primitive::<'_, Int64Type, _, _>(
-                bytes_iter,
-                |bytes| {
+            cast(
+                &deserialize_primitive::<'_, Int64Type, _, _>(bytes_iter, |bytes| {
                     to_utf8(bytes)
                         .and_then(|x| deserialize_datetime(x, &tz, &mut last_fmt_idx))
                         .and_then(|dt| match time_unit {
@@ -360,14 +355,9 @@ where
                             }
                             daft_schema::prelude::TimeUnit::Nanoseconds => dt.timestamp_nanos_opt(),
                         })
-                },
-            ))
-            .map_err(|e| {
-                DaftError::InternalError(format!(
-                    "Failed to cast Timestamp with timezone array: {}",
-                    e
-                ))
-            })?
+                }),
+                &datatype.to_arrow()?,
+            )?
         }
         Decimal128(precision, scale) => {
             deserialize_primitive::<'_, Decimal128Type, _, _>(bytes_iter, |x| {
