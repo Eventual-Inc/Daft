@@ -2676,9 +2676,11 @@ dependencies = [
 name = "daft-decoding"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
  "arrow-schema",
  "atoi_simd",
  "chrono",
+ "common-error",
  "csv-async",
  "daft-arrow",
  "daft-schema",

@@ -673,12 +673,12 @@ fn parse_into_column_array_chunk_stream(
                             let deserialized_col = deserialize_column(
                                 record.as_slice(),
                                 *proj_idx,
-                                fields[*proj_idx].data_type().clone(),
+                                fields[*proj_idx].data_type().into(),
                                 0,
                             );
                             Series::try_from_field_and_arrow_array(
                                 read_daft_fields[i].clone(),
-                                cast_array_for_daft_if_needed(deserialized_col?),
+                                cast_array_for_daft_if_needed(deserialized_col?.into()),
                             )
                         })
                         .collect::<DaftResult<Vec<Series>>>()?;
