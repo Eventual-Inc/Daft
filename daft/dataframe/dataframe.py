@@ -842,7 +842,6 @@ class DataFrame:
         write_df = DataFrame(builder)
         write_df.collect()
         assert write_df._result is not None
-        assert write_df._metrics is not None
 
         # Populate and return a new disconnected DataFrame
         result_df = DataFrame(write_df._builder)
@@ -920,7 +919,6 @@ class DataFrame:
         write_df = DataFrame(builder)
         write_df.collect()
         assert write_df._result is not None
-        assert write_df._metrics is not None
 
         # Populate and return a new disconnected DataFrame
         result_df = DataFrame(write_df._builder)
@@ -985,7 +983,6 @@ class DataFrame:
         write_df = DataFrame(builder)
         write_df.collect()
         assert write_df._result is not None
-        assert write_df._metrics is not None
 
         # Populate and return a new disconnected DataFrame
         result_df = DataFrame(write_df._builder)
