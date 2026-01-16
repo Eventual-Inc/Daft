@@ -14,6 +14,7 @@ def sample_audio_path():
 
 def test_audio_file_standalone(sample_audio_path):
     import numpy as np
+    import soundfile as sf
 
     file = daft.AudioFile(sample_audio_path)
     arr = file.to_numpy()
@@ -63,8 +64,8 @@ def test_get_metadata(sample_audio_path):
 # resampling is pretty slow so it's integration test only
 @pytest.mark.integration()
 def test_resample(sample_audio_path):
-    import numpy as np
     import librosa
+    import numpy as np
     import soundfile as sf
 
     def manual_resample():
@@ -98,6 +99,7 @@ def test_resample_without_librosa(tmp_path):
     which previously caused a confusing 'Need at least 1 series to perform concat' error.
     """
     import numpy as np
+    import soundfile as sf
 
     sample_rate = 44100
     duration = 0.1  # 100ms
@@ -123,6 +125,7 @@ def test_resample_without_librosa(tmp_path):
 def test_resample_without_soundfile(tmp_path):
     """Test that resample raises ImportError with helpful message when soundfile is missing."""
     import numpy as np
+    import soundfile as sf
 
     sample_rate = 44100
     duration = 0.1
@@ -152,6 +155,7 @@ def test_resample_expression_without_librosa(tmp_path):
     'DaftError::ValueError Need at least 1 series to perform concat' error.
     """
     import numpy as np
+    import soundfile as sf
 
     sample_rate = 44100
     duration = 0.1
