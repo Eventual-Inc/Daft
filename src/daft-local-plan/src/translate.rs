@@ -71,6 +71,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
             Ok(LocalPhysicalPlan::filter(
                 input,
                 predicate,
+                filter.batch_size,
                 filter.stats_state.clone(),
                 LocalNodeContext::default(),
             ))

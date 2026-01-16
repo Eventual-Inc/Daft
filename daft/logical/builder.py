@@ -414,6 +414,7 @@ class LogicalPlanBuilder:
         read_kwargs: dict[str, Any] | None = None,
         num_buckets: int | None = None,
         num_cpus: float | None = None,
+        batch_size: int | None = None,
     ) -> LogicalPlanBuilder:
         builder = self._builder.resume_checkpoint(
             root_dir,
@@ -423,5 +424,6 @@ class LogicalPlanBuilder:
             read_kwargs,
             num_buckets,
             num_cpus,
+            batch_size,
         )
         return LogicalPlanBuilder(builder)

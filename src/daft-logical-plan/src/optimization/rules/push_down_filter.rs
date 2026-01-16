@@ -70,9 +70,17 @@ impl PushDownFilter {
                     .collect::<Vec<_>>();
                 // Reconjunct predicate expressions.
                 let new_predicate = combine_conjunction(new_predicates).unwrap();
-                let new_filter: Arc<LogicalPlan> =
-                    LogicalPlan::from(Filter::try_new(child_filter.input.clone(), new_predicate)?)
-                        .into();
+                let combined_batch_size = match (filter.batch_size, child_filter.batch_size) {
+                    (Some(a), Some(b)) => Some(a.min(b)),
+                    (Some(a), None) => Some(a),
+                    (None, Some(b)) => Some(b),
+                    (None, None) => None,
+                };
+                let new_filter: Arc<LogicalPlan> = LogicalPlan::from(
+                    Filter::try_new(child_filter.input.clone(), new_predicate)?
+                        .with_batch_size(combined_batch_size),
+                )
+                .into();
                 self.try_optimize_node(new_filter.clone())?
                     .or(Transformed::yes(new_filter))
                     .data
@@ -227,6 +235,7 @@ impl PushDownFilter {
                                 new_source.into(),
                                 combine_conjunction(needing_filter_op).unwrap(),
                             )?
+                            .with_batch_size(filter.batch_size)
                             .into();
                             return Ok(Transformed::yes(filter_op.into()));
                         } else {
@@ -284,7 +293,9 @@ impl PushDownFilter {
                 // Create new Filter with predicates that can be pushed past Projection.
                 let predicates_to_push = combine_conjunction(can_push).unwrap();
                 let push_down_filter: LogicalPlan =
-                    Filter::try_new(child_project.input.clone(), predicates_to_push)?.into();
+                    Filter::try_new(child_project.input.clone(), predicates_to_push)?
+                        .with_batch_size(filter.batch_size)
+                        .into();
                 // Create new Projection.
                 let new_projection: LogicalPlan =
                     Project::try_new(push_down_filter.into(), child_project.projection.clone())?
@@ -298,7 +309,9 @@ impl PushDownFilter {
                     // that couldn't be pushed past the Projection, returning a Filter-Projection-Filter subplan.
                     let post_projection_predicate = combine_conjunction(can_not_push).unwrap();
                     let post_projection_filter: LogicalPlan =
-                        Filter::try_new(new_projection.into(), post_projection_predicate)?.into();
+                        Filter::try_new(new_projection.into(), post_projection_predicate)?
+                            .with_batch_size(filter.batch_size)
+                            .into();
                     post_projection_filter.into()
                 }
             }
@@ -312,9 +325,13 @@ impl PushDownFilter {
             LogicalPlan::Concat(Concat { input, other, .. }) => {
                 // Push filter into each side of the concat.
                 let new_input: LogicalPlan =
-                    Filter::try_new(input.clone(), filter.predicate.clone())?.into();
+                    Filter::try_new(input.clone(), filter.predicate.clone())?
+                        .with_batch_size(filter.batch_size)
+                        .into();
                 let new_other: LogicalPlan =
-                    Filter::try_new(other.clone(), filter.predicate.clone())?.into();
+                    Filter::try_new(other.clone(), filter.predicate.clone())?
+                        .with_batch_size(filter.batch_size)
+                        .into();
                 let new_concat: LogicalPlan =
                     Concat::try_new(new_input.into(), new_other.into())?.into();
                 new_concat.into()
@@ -383,6 +400,7 @@ impl PushDownFilter {
                         |left_pushdowns| {
                             Filter::try_new(left.clone(), left_pushdowns)
                                 .unwrap()
+                                .with_batch_size(filter.batch_size)
                                 .into()
                         },
                     );
@@ -392,6 +410,7 @@ impl PushDownFilter {
                         |right_pushdowns| {
                             Filter::try_new(right.clone(), right_pushdowns)
                                 .unwrap()
+                                .with_batch_size(filter.batch_size)
                                 .into()
                         },
                     );
@@ -405,7 +424,10 @@ impl PushDownFilter {
                     )?));
 
                     if let Some(kept_predicates) = kept_predicates {
-                        Filter::try_new(new_join, kept_predicates).unwrap().into()
+                        Filter::try_new(new_join, kept_predicates)
+                            .unwrap()
+                            .with_batch_size(filter.batch_size)
+                            .into()
                     } else {
                         new_join
                     }
@@ -523,6 +545,79 @@ mod tests {
             // Merged filter should not be pushed into scan.
             scan_plan.filter(merged_filter)?.build()
         };
+        assert_optimized_plan_eq(plan, expected, false)?;
+        Ok(())
+    }
+
+    #[test]
+    fn filter_combine_preserves_batch_size() -> DaftResult<()> {
+        use crate::ops::Filter as FilterOp;
+
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+        let scan_plan =
+            dummy_scan_node_with_pushdowns(scan_op, Pushdowns::default().with_limit(Some(1)))
+                .build();
+
+        let p1 = resolved_col("a").lt(lit(2));
+        let p2 = resolved_col("b").eq(lit("foo"));
+
+        let inner_filter = Arc::new(LogicalPlan::Filter(
+            FilterOp::try_new(scan_plan.clone(), p1.clone())?.with_batch_size(Some(20)),
+        ));
+        let plan = Arc::new(LogicalPlan::Filter(
+            FilterOp::try_new(inner_filter, p2.clone())?.with_batch_size(Some(10)),
+        ));
+
+        let expected_predicate = p2.and(p1);
+        let expected = Arc::new(LogicalPlan::Filter(
+            FilterOp::try_new(scan_plan, expected_predicate)?.with_batch_size(Some(10)),
+        ));
+
+        assert_optimized_plan_eq(plan, expected, false)?;
+        Ok(())
+    }
+
+    #[test]
+    fn filter_split_across_concat_preserves_batch_size() -> DaftResult<()> {
+        use crate::ops::{Concat as ConcatOp, Filter as FilterOp};
+
+        let scan_op = dummy_scan_operator(vec![
+            Field::new("a", DataType::Int64),
+            Field::new("b", DataType::Utf8),
+        ]);
+
+        let left = dummy_scan_node_with_pushdowns(
+            scan_op.clone(),
+            Pushdowns::default().with_limit(Some(1)),
+        )
+        .build();
+        let right =
+            dummy_scan_node_with_pushdowns(scan_op, Pushdowns::default().with_limit(Some(1)))
+                .build();
+
+        let concat = Arc::new(LogicalPlan::Concat(ConcatOp::try_new(
+            left.clone(),
+            right.clone(),
+        )?));
+        let predicate = resolved_col("a").lt(lit(2));
+        let plan = Arc::new(LogicalPlan::Filter(
+            FilterOp::try_new(concat, predicate.clone())?.with_batch_size(Some(10)),
+        ));
+
+        let expected_left = Arc::new(LogicalPlan::Filter(
+            FilterOp::try_new(left, predicate.clone())?.with_batch_size(Some(10)),
+        ));
+        let expected_right = Arc::new(LogicalPlan::Filter(
+            FilterOp::try_new(right, predicate)?.with_batch_size(Some(10)),
+        ));
+        let expected = Arc::new(LogicalPlan::Concat(ConcatOp::try_new(
+            expected_left,
+            expected_right,
+        )?));
+
         assert_optimized_plan_eq(plan, expected, false)?;
         Ok(())
     }

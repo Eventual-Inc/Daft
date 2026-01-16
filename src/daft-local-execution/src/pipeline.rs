@@ -678,11 +678,12 @@ fn physical_plan_to_pipeline(
         LocalPhysicalPlan::Filter(Filter {
             input,
             predicate,
+            batch_size,
             schema,
             stats_state,
             context,
         }) => {
-            let filter_op = FilterOperator::new(predicate.clone());
+            let filter_op = FilterOperator::new(predicate.clone(), *batch_size);
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(filter_op),

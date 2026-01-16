@@ -52,10 +52,10 @@ impl SplitUDFsFromFilters {
             )?)
             .into();
 
-            let new_filter = Arc::new(LogicalPlan::Filter(Filter::try_new(
-                predicate_node,
-                resolved_col(col_name.as_str()),
-            )?));
+            let new_filter = Arc::new(LogicalPlan::Filter(
+                Filter::try_new(predicate_node, resolved_col(col_name.as_str()))?
+                    .with_batch_size(filter.batch_size),
+            ));
 
             let exclude_project = Project::try_new(
                 new_filter,

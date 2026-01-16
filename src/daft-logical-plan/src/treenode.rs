@@ -76,6 +76,7 @@ impl LogicalPlan {
                 input,
                 predicate,
                 stats_state,
+                batch_size,
             }) => f(predicate.clone(), &input.schema())?.update_data(|expr| {
                 Self::Filter(Filter {
                     plan_id: *plan_id,
@@ -83,6 +84,7 @@ impl LogicalPlan {
                     input: input.clone(),
                     predicate: expr,
                     stats_state: stats_state.clone(),
+                    batch_size: *batch_size,
                 })
                 .into()
             }),

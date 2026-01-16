@@ -168,7 +168,10 @@ impl OptimizerRule for UnnestScalarSubquery {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         plan.transform_down(|node| match node.as_ref() {
             LogicalPlan::Filter(Filter {
-                input, predicate, ..
+                input,
+                predicate,
+                batch_size,
+                ..
             }) => {
                 let unnest_result =
                     Self::unnest_subqueries(input.clone(), &split_conjunction(predicate))?;
@@ -182,10 +185,9 @@ impl OptimizerRule for UnnestScalarSubquery {
                 let new_predicate = combine_conjunction(new_predicates)
                     .expect("predicates are guaranteed to exist at this point, so 'conjunct' should never return 'None'");
 
-                let new_filter = Arc::new(LogicalPlan::Filter(Filter::try_new(
-                    new_input,
-                    new_predicate,
-                )?));
+                let new_filter = Arc::new(LogicalPlan::Filter(
+                    Filter::try_new(new_input, new_predicate)?.with_batch_size(*batch_size),
+                ));
 
                 // preserve original schema
                 let new_plan = Arc::new(LogicalPlan::Project(Project::new_from_schema(
@@ -278,7 +280,10 @@ impl OptimizerRule for UnnestPredicateSubquery {
     fn try_optimize(&self, plan: Arc<LogicalPlan>) -> DaftResult<Transformed<Arc<LogicalPlan>>> {
         plan.transform_down(|node| match node.as_ref() {
             LogicalPlan::Filter(Filter {
-                input, predicate, ..
+                input,
+                predicate,
+                batch_size,
+                ..
             }) => {
                 let mut subqueries = HashSet::new();
 
@@ -363,10 +368,9 @@ impl OptimizerRule for UnnestPredicateSubquery {
 
                 let new_plan = if let Some(new_predicate) = combine_conjunction(new_predicates) {
                     // add filter back if there are non-subquery predicates
-                    Arc::new(LogicalPlan::Filter(Filter::try_new(
-                        new_input,
-                        new_predicate,
-                    )?))
+                    Arc::new(LogicalPlan::Filter(
+                        Filter::try_new(new_input, new_predicate)?.with_batch_size(*batch_size),
+                    ))
                 } else {
                     new_input
                 };
@@ -399,7 +403,10 @@ fn pull_up_correlated_cols(
 
     match plan.as_ref() {
         LogicalPlan::Filter(Filter {
-            input, predicate, ..
+            input,
+            predicate,
+            batch_size,
+            ..
         }) => {
             let mut found_correlated_col = false;
 
@@ -452,10 +459,9 @@ fn pull_up_correlated_cols(
             }
 
             if let Some(new_predicate) = combine_conjunction(preds) {
-                let new_plan = Arc::new(LogicalPlan::Filter(Filter::try_new(
-                    input.clone(),
-                    new_predicate,
-                )?));
+                let new_plan = Arc::new(LogicalPlan::Filter(
+                    Filter::try_new(input.clone(), new_predicate)?.with_batch_size(*batch_size),
+                ));
 
                 Ok((new_plan, subquery_on, outer_on))
             } else {

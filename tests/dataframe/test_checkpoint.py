@@ -8,14 +8,15 @@ Notes:
 
 from __future__ import annotations
 
+import io
+import warnings
 from pathlib import Path
 
 import pytest
 
 import daft
-import warnings
 from daft import col
-from daft.daft import FileFormat
+from daft.daft import FileFormat, WriteMode
 from tests.conftest import get_tests_daft_runner_name
 
 
@@ -361,6 +362,54 @@ def test_resume_csv_reader_args_applied(tmp_path: Path):
 
     out = df.resume(ckpt_dir, on="id", format="csv", delimiter="|").collect()
     assert out.select("id").to_pydict()["id"] == [3]
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
+def test_resume_batch_size_visible_in_explain(tmp_path: Path):
+    root_dir = tmp_path / "out"
+    seed_df = daft.from_pydict({"id": [1, 2], "val": ["a", "b"]})
+    seed_df.write_parquet(str(root_dir), write_mode="overwrite")
+
+    df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]}).resume(
+        root_dir,
+        on="id",
+        format="parquet",
+        batch_size=10,
+    )
+
+    buf = io.StringIO()
+    from daft.context import get_context
+
+    io_config = get_context().daft_planning_config.default_io_config
+    write_builder = df._builder.write_tabular(
+        root_dir=root_dir,
+        write_mode=WriteMode.from_str("append"),
+        file_format=FileFormat.Parquet,
+        io_config=io_config,
+    )
+    specs = write_builder._builder.get_resume_checkpoint_specs()
+    assert len(specs) == 1
+    assert specs[0]["batch_size"] == 10
+
+    pred = (col("id") > 0)._expr
+    applied = write_builder._builder.apply_resume_checkpoint_predicates([pred])
+    from daft.logical.builder import LogicalPlanBuilder
+
+    applied_builder = LogicalPlanBuilder(applied)
+    write_df = daft.DataFrame(applied_builder)
+    write_df.explain(show_all=True, file=buf)
+    text = buf.getvalue()
+    print(text)
+    assert "Batch Size = 10" in text, text
+    assert "== Optimized Logical Plan ==" in text
+    assert "== Physical Plan ==" in text
+
+    optimized_section = text.split("== Optimized Logical Plan ==")[1].split("== Physical Plan ==")[0]
+    physical_section = text.split("== Physical Plan ==")[1]
+    assert "ResumeCheckpoint:" not in optimized_section, text
+    assert "ResumeCheckpoint:" not in physical_section, text
+    assert "Batch Size = 10" in optimized_section, text
+    assert "Batch Size = 10" in physical_section, text
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")

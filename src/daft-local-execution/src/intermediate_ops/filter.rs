@@ -17,7 +17,7 @@ use super::intermediate_op::{
 };
 use crate::{
     ExecutionTaskSpawner,
-    pipeline::NodeName,
+    pipeline::{MorselSizeRequirement, NodeName},
     runtime_stats::{Counter, Gauge, RuntimeStats},
 };
 
@@ -90,11 +90,15 @@ impl RuntimeStats for FilterStats {
 
 pub struct FilterOperator {
     predicate: BoundExpr,
+    batch_size: Option<usize>,
 }
 
 impl FilterOperator {
-    pub fn new(predicate: BoundExpr) -> Self {
-        Self { predicate }
+    pub fn new(predicate: BoundExpr, batch_size: Option<usize>) -> Self {
+        Self {
+            predicate,
+            batch_size,
+        }
     }
 }
 
@@ -124,7 +128,11 @@ impl IntermediateOperator for FilterOperator {
     }
 
     fn multiline_display(&self) -> Vec<String> {
-        vec![format!("Filter: {}", self.predicate)]
+        let mut res = vec![format!("Filter: {}", self.predicate)];
+        if let Some(batch_size) = self.batch_size {
+            res.push(format!("Batch Size = {}", batch_size));
+        }
+        res
     }
 
     fn name(&self) -> NodeName {
@@ -142,6 +150,11 @@ impl IntermediateOperator for FilterOperator {
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(())
     }
+
+    fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
+        self.batch_size.map(MorselSizeRequirement::Strict)
+    }
+
     fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
         Ok(crate::dynamic_batching::StaticBatchingStrategy::new(
             self.morsel_size_requirement().unwrap_or_default(),

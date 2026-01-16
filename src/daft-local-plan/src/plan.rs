@@ -278,6 +278,7 @@ impl LocalPhysicalPlan {
     pub fn filter(
         input: LocalPhysicalPlanRef,
         predicate: BoundExpr,
+        batch_size: Option<usize>,
         stats_state: StatsState,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
@@ -285,6 +286,7 @@ impl LocalPhysicalPlan {
         Self::Filter(Filter {
             input,
             predicate,
+            batch_size,
             schema,
             stats_state,
             context,
@@ -1086,10 +1088,14 @@ impl LocalPhysicalPlan {
                     "LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, EmptyScan, and InMemoryScan do not have children"
                 ),
                 Self::Filter(Filter {
-                    predicate, context, ..
+                    predicate,
+                    batch_size,
+                    context,
+                    ..
                 }) => Self::filter(
                     new_child.clone(),
                     predicate.clone(),
+                    *batch_size,
                     StatsState::NotMaterialized,
                     context.clone(),
                 ),
@@ -1735,6 +1741,7 @@ pub struct DistributedActorPoolProject {
 pub struct Filter {
     pub input: LocalPhysicalPlanRef,
     pub predicate: BoundExpr,
+    pub batch_size: Option<usize>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,

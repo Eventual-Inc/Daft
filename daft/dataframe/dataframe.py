@@ -2344,6 +2344,7 @@ class DataFrame:
         io_config: IOConfig | None = None,
         num_buckets: int | None = None,
         num_cpus: float | None = None,
+        batch_size: int | None = None,
         **reader_args: Any,
     ) -> "DataFrame":
         if isinstance(on, str):
@@ -2376,6 +2377,8 @@ class DataFrame:
             raise ValueError(f"resume key column not found in schema: {key_column}")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+        if batch_size is not None and batch_size <= 0:
+            raise ValueError("resume batch_size must be > 0")
 
         builder = self._builder.resume_checkpoint(
             root_dir=str(path),
@@ -2385,6 +2388,7 @@ class DataFrame:
             read_kwargs=(reader_args or None),
             num_buckets=num_buckets,
             num_cpus=num_cpus,
+            batch_size=batch_size,
         )
         return DataFrame(builder)
 

@@ -22,6 +22,7 @@ pub use crate::ops::*;
 use crate::stats::{PlanStats, StatsState};
 
 /// Logical plan for a Daft query.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub enum LogicalPlan {
@@ -217,9 +218,10 @@ impl LogicalPlan {
                     .collect(),
                 None,
             ),
-            Self::ResumeCheckpoint(resume) => {
-                RequiredCols::new(std::iter::once(resume.spec.key_column.clone()).collect(), None)
-            }
+            Self::ResumeCheckpoint(resume) => RequiredCols::new(
+                std::iter::once(resume.spec.key_column.clone()).collect(),
+                None,
+            ),
             Self::Sort(sort) => {
                 let res = sort.sort_by.iter().flat_map(get_required_columns).collect();
                 RequiredCols::new(res, None)
@@ -540,9 +542,15 @@ impl LogicalPlan {
                     UDFProject::try_new(input.clone(), expr.clone(), passthrough_columns.clone())
                         .unwrap(),
                 ),
-                Self::Filter(Filter { predicate, .. }) => {
-                    Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap())
-                }
+                Self::Filter(Filter {
+                    predicate,
+                    batch_size,
+                    ..
+                }) => Self::Filter(
+                    Filter::try_new(input.clone(), predicate.clone())
+                        .unwrap()
+                        .with_batch_size(*batch_size),
+                ),
                 Self::ResumeCheckpoint(ResumeCheckpoint { spec, .. }) => Self::ResumeCheckpoint(
                     ResumeCheckpoint::try_new(input.clone(), spec.clone()).unwrap(),
                 ),

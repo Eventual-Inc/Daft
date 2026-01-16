@@ -4,14 +4,13 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use common_hashable_float_wrapper::FloatWrapper;
 use common_io_config::IOConfig;
+#[cfg(feature = "python")]
+use common_py_serde::PyObjectWrapper;
 use daft_schema::schema::SchemaRef;
 use educe::Educe;
 use serde::{Deserialize, Serialize};
 
 use crate::{LogicalPlan, stats::StatsState};
-
-#[cfg(feature = "python")]
-use common_py_serde::PyObjectWrapper;
 
 #[derive(Educe, Clone, Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
@@ -23,12 +22,14 @@ pub struct ResumeCheckpointSpec {
     pub io_config: Option<IOConfig>,
     pub num_buckets: Option<usize>,
     pub num_cpus: Option<FloatWrapper<f64>>,
+    pub batch_size: Option<usize>,
     #[cfg(feature = "python")]
     pub read_kwargs: PyObjectWrapper,
 }
 
 impl ResumeCheckpointSpec {
     #[cfg(feature = "python")]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         root_dir: String,
         file_format: FileFormat,
@@ -37,6 +38,7 @@ impl ResumeCheckpointSpec {
         read_kwargs: PyObjectWrapper,
         num_buckets: Option<usize>,
         num_cpus: Option<f64>,
+        batch_size: Option<usize>,
     ) -> DaftResult<Self> {
         if root_dir.is_empty() {
             return Err(DaftError::ValueError(
@@ -56,6 +58,11 @@ impl ResumeCheckpointSpec {
         if matches!(num_cpus, Some(v) if v <= 0.0) {
             return Err(DaftError::ValueError(
                 "resume checkpoint num_cpus must be > 0".to_string(),
+            ));
+        }
+        if matches!(batch_size, Some(0)) {
+            return Err(DaftError::ValueError(
+                "resume checkpoint batch_size must be > 0".to_string(),
             ));
         }
         Ok(Self {
@@ -66,10 +73,12 @@ impl ResumeCheckpointSpec {
             read_kwargs,
             num_buckets,
             num_cpus: num_cpus.map(FloatWrapper),
+            batch_size,
         })
     }
 
     #[cfg(not(feature = "python"))]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         root_dir: String,
         file_format: FileFormat,
@@ -77,6 +86,7 @@ impl ResumeCheckpointSpec {
         io_config: Option<IOConfig>,
         num_buckets: Option<usize>,
         num_cpus: Option<f64>,
+        batch_size: Option<usize>,
     ) -> DaftResult<Self> {
         if root_dir.is_empty() {
             return Err(DaftError::ValueError(
@@ -98,6 +108,11 @@ impl ResumeCheckpointSpec {
                 "resume checkpoint num_cpus must be > 0".to_string(),
             ));
         }
+        if matches!(batch_size, Some(0)) {
+            return Err(DaftError::ValueError(
+                "resume checkpoint batch_size must be > 0".to_string(),
+            ));
+        }
         Ok(Self {
             root_dir,
             file_format,
@@ -105,6 +120,7 @@ impl ResumeCheckpointSpec {
             io_config,
             num_buckets,
             num_cpus: num_cpus.map(FloatWrapper),
+            batch_size,
         })
     }
 }
@@ -163,6 +179,9 @@ impl ResumeCheckpoint {
         if let Some(io_config) = &self.spec.io_config {
             res.push(format!("IOConfig = {}", io_config));
         }
+        if let Some(batch_size) = self.spec.batch_size {
+            res.push(format!("Batch Size = {}", batch_size));
+        }
         if let StatsState::Materialized(stats) = &self.stats_state {
             res.push(format!("Stats = {}", stats));
         }
@@ -179,11 +198,10 @@ mod tests {
     };
 
     use common_file_formats::FileFormat;
-
-    use super::ResumeCheckpointSpec;
-
     #[cfg(feature = "python")]
     use pyo3::types::PyDictMethods;
+
+    use super::ResumeCheckpointSpec;
 
     #[cfg(not(feature = "python"))]
     #[test]
@@ -195,6 +213,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .unwrap();
 
@@ -202,6 +221,7 @@ mod tests {
             "root2".to_string(),
             FileFormat::Csv,
             "id".to_string(),
+            None,
             None,
             None,
             None,
@@ -246,6 +266,7 @@ mod tests {
                 kwargs_a,
                 None,
                 None,
+                None,
             )
             .unwrap();
 
@@ -257,6 +278,7 @@ mod tests {
                 kwargs_b,
                 None,
                 None,
+                None,
             )
             .unwrap();
 
@@ -266,6 +288,7 @@ mod tests {
                 "id".to_string(),
                 None,
                 kwargs_c,
+                None,
                 None,
                 None,
             )
@@ -287,5 +310,100 @@ mod tests {
             spec_c.hash(&mut h2);
             assert_ne!(h1.finish(), h2.finish());
         });
+    }
+
+    #[test]
+    fn resume_checkpoint_batch_size_applied_to_filter() -> common_error::DaftResult<()> {
+        use daft_core::prelude::{DataType, Field};
+        use daft_dsl::{lit, resolved_col};
+
+        use crate::{
+            LogicalPlan,
+            test::{dummy_scan_node, dummy_scan_operator},
+        };
+
+        let scan_builder =
+            dummy_scan_node(dummy_scan_operator(vec![Field::new("a", DataType::Int64)]));
+
+        #[cfg(feature = "python")]
+        let builder_with_resume = pyo3::Python::with_gil(|py| -> common_error::DaftResult<_> {
+            let kwargs = common_py_serde::PyObjectWrapper(Arc::new(py.None()));
+            let spec = ResumeCheckpointSpec::new(
+                "root".to_string(),
+                FileFormat::Csv,
+                "a".to_string(),
+                None,
+                kwargs,
+                None,
+                None,
+                Some(10),
+            )?;
+            scan_builder.resume_checkpoint(spec)
+        })?;
+
+        #[cfg(not(feature = "python"))]
+        let builder_with_resume = {
+            let spec = ResumeCheckpointSpec::new(
+                "root".to_string(),
+                FileFormat::Csv,
+                "a".to_string(),
+                None,
+                None,
+                None,
+                Some(10),
+            )?;
+            scan_builder.resume_checkpoint(spec)?
+        };
+
+        let predicate = resolved_col("a").lt(lit(2));
+        let applied =
+            builder_with_resume.apply_resume_checkpoint_predicates(vec![Some(predicate)])?;
+        let plan = applied.build();
+
+        match plan.as_ref() {
+            LogicalPlan::Filter(filter) => {
+                assert_eq!(filter.batch_size, Some(10));
+                Ok(())
+            }
+            other => Err(common_error::DaftError::InternalError(format!(
+                "Expected Filter after applying resume predicates, got {other:?}"
+            ))),
+        }
+    }
+
+    #[cfg(not(feature = "python"))]
+    #[test]
+    fn resume_checkpoint_multiline_display_includes_batch_size() -> common_error::DaftResult<()> {
+        use daft_core::prelude::{DataType, Field};
+
+        use crate::{
+            LogicalPlan,
+            test::{dummy_scan_node, dummy_scan_operator},
+        };
+
+        let scan_builder =
+            dummy_scan_node(dummy_scan_operator(vec![Field::new("a", DataType::Int64)]));
+
+        let spec = ResumeCheckpointSpec::new(
+            "root".to_string(),
+            FileFormat::Parquet,
+            "a".to_string(),
+            None,
+            None,
+            None,
+            Some(10),
+        )?;
+
+        let plan = scan_builder.resume_checkpoint(spec)?.build();
+        match plan.as_ref() {
+            LogicalPlan::ResumeCheckpoint(op) => {
+                let lines = op.multiline_display();
+                assert!(lines.iter().any(|l| l == "Batch Size = 10"));
+                Ok(())
+            }
+            other => Err(common_error::DaftError::InternalError(format!(
+                "Expected ResumeCheckpoint, got {other:?}"
+            ))),
+        }
     }
 }
