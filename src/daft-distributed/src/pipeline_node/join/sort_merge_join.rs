@@ -122,10 +122,6 @@ impl SortMergeJoinNode {
                 self.right.node_id(),
             );
 
-        // Merge left and right psets
-        let mut psets = left_psets;
-        psets.extend(right_psets);
-
         // Build the join plan
         let plan = LocalPhysicalPlan::sort_merge_join(
             left_in_memory_source_plan,
@@ -142,8 +138,9 @@ impl SortMergeJoinNode {
         );
 
         // Create the task
-        let builder =
-            SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);
+        let builder = SwordfishTaskBuilder::new(plan, self.as_ref())
+            .with_psets(self.left.node_id(), left_psets)
+            .with_psets(self.right.node_id(), right_psets);
 
         result_tx.send(builder).await.ok();
         Ok(())
