@@ -99,7 +99,7 @@ impl PyNativeExecutor {
         py: Python<'py>,
         local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
         daft_ctx: &PyDaftContext,
-        input_id: u32,
+        input_id: InputId,
         inputs: daft_local_plan::python::PyResolvedInputs,
         context: Option<HashMap<String, String>>,
     ) -> PyResult<Bound<'py, PyAny>> {
@@ -184,7 +184,6 @@ impl NativeExecutor {
         input_id: InputId,
         inputs: HashMap<SourceId, ResolvedInput>,
     ) -> DaftResult<BoxFuture<'static, ExecutionEngineResult>> {
-        // Create new execution
         let cancel = self.cancel.clone();
         let additional_context = additional_context.unwrap_or_default();
         let ctx = RuntimeContext::new_with_context(additional_context.clone());
@@ -208,7 +207,6 @@ impl NativeExecutor {
         let handle = get_global_runtime();
         let stats_manager = RuntimeStatsManager::try_new(handle, &pipeline, subscribers, query_id)?;
 
-        // Create channel for enqueue_input messages
         let (enqueue_input_tx, mut enqueue_input_rx) = create_channel::<EnqueueInputMessage>(1);
 
         let task = async move {
@@ -222,7 +220,6 @@ impl NativeExecutor {
                 if let Some(message) = enqueue_input_rx.recv().await {
                     for (key, plan_input) in message.inputs {
                         if let Some(sender) = input_senders.get(&key) {
-                            // If send fails (e.g., channel closed), continue with other inputs
                             let _ = sender.send(message.input_id, plan_input).await;
                         }
                     }
@@ -289,7 +286,6 @@ impl NativeExecutor {
         Ok(async move {
             let enqueue_msg = EnqueueInputMessage { input_id, inputs };
 
-            // If send fails (e.g., channel closed due to cancellation), return None
             let _ = enqueue_input_tx.send(enqueue_msg).await;
             ExecutionEngineResult {
                 handle,

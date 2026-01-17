@@ -50,32 +50,25 @@ impl PyUnresolvedInputs {
 
         for (source_id, unresolved_input) in &self.inner {
             let plan_input = match &unresolved_input {
-                UnresolvedInput::ScanTask(tasks) => {
-                    Some(ResolvedInput::ScanTasks((**tasks).clone()))
-                }
-                UnresolvedInput::GlobPaths(paths) => {
-                    Some(ResolvedInput::GlobPaths((**paths).clone()))
-                }
+                UnresolvedInput::ScanTask(tasks) => ResolvedInput::ScanTasks((**tasks).clone()),
+                UnresolvedInput::GlobPaths(paths) => ResolvedInput::GlobPaths((**paths).clone()),
                 UnresolvedInput::InMemory { cache_key } => {
                     let partitions = psets.get(cache_key).ok_or(DaftError::ValueError(format!(
                         "Cache key {} not found in psets",
                         cache_key
                     )))?;
-                    Some(ResolvedInput::InMemoryPartitions(
+                    ResolvedInput::InMemoryPartitions(
                         partitions
                             .iter()
                             .map(|p| p.inner.clone())
                             .collect::<Vec<_>>(),
-                    ))
+                    )
                 }
             };
 
-            if let Some(plan_input) = plan_input {
-                plan_inputs.insert(*source_id, plan_input);
-            }
+            plan_inputs.insert(*source_id, plan_input);
         }
 
-        // Always return a PyResolvedInputs, even if empty (for empty scan tasks like limit(0))
         Ok(PyResolvedInputs { inner: plan_inputs })
     }
 }

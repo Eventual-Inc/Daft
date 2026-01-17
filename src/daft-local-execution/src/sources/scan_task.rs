@@ -47,7 +47,6 @@ impl ScanTaskSource {
         cfg: &DaftExecutionConfig,
     ) -> Self {
         let num_cpus = get_compute_pool_num_threads();
-        // Use scantask_max_parallel from config if set (non-zero), otherwise use num_cpus
         let num_parallel_tasks = if cfg.scantask_max_parallel > 0 {
             cfg.scantask_max_parallel
         } else {
@@ -61,7 +60,6 @@ impl ScanTaskSource {
         }
     }
 
-    /// Spawns the background task that continuously reads scan tasks from receiver and processes them
     fn spawn_scan_task_processor(
         &self,
         mut receiver: Receiver<(InputId, Vec<ScanTaskRef>)>,
@@ -182,27 +180,18 @@ impl Source for ScanTaskSource {
         io_stats: IOStatsRef,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
-        // Create output channel for results
         let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(1);
-        // Spawn a task that continuously reads from self.receiver and forwards to task_sender
-        // Receiver implements Clone, so we can clone it for the spawned task
-        let receiver_clone = self.receiver.take().expect("Receiver not found");
+        let input_receiver = self.receiver.take().expect("Receiver not found");
 
-        // Spawn the scan task processor that continuously reads from task_receiver
-        // Delete maps will be computed per batch in the processor
         let processor_task = self.spawn_scan_task_processor(
-            receiver_clone,
+            input_receiver,
             output_sender,
             io_stats,
             chunk_size,
             self.schema.clone(),
             maintain_order,
         );
-
-        // Convert receiver to stream
         let result_stream = output_receiver.into_stream().map(Ok);
-
-        // Combine with processor task to handle errors
         let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));
 
         Ok(Box::pin(combined_stream))

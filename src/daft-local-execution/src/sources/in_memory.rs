@@ -37,7 +37,6 @@ impl InMemorySource {
         }
     }
 
-    /// Spawns the background task that continuously reads partition sets from receiver and processes them
     fn spawn_partition_set_processor(
         &self,
         mut receiver: Receiver<(InputId, Vec<MicroPartitionRef>)>,
@@ -75,21 +74,13 @@ impl Source for InMemorySource {
         _io_stats: IOStatsRef,
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
-        // Create output channel for results - note: SourceStream still returns Morsel
-        // We'll convert PipelineMessage to Morsel in the stream
         let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(1);
-        // Spawn a task that continuously reads from self.receiver
-        // Receiver implements Clone, so we can clone it for the spawned task
-        let receiver_clone = self.receiver.take().expect("Receiver not found");
+        let input_receiver = self.receiver.take().expect("Receiver not found");
 
-        // Spawn the partition set processor that continuously reads from receiver
         let processor_task =
-            self.spawn_partition_set_processor(receiver_clone, output_sender, self.schema.clone());
+            self.spawn_partition_set_processor(input_receiver, output_sender, self.schema.clone());
 
-        // Convert receiver to stream, filtering out flush signals and converting Morsels
         let result_stream = output_receiver.into_stream();
-
-        // Combine with processor task to handle errors
         let combined_stream =
             combine_stream(Box::pin(result_stream.map(Ok)), processor_task.map(|x| x?));
 
