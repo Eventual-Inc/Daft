@@ -155,7 +155,7 @@ fn search_sorted_boolean_array(
     let mut left = 0_usize;
     let mut right = array_size;
 
-    // For boolean arrays, we know there can only be three possible values: true, false, and null.s
+    // For boolean arrays, we know there can only be three possible values: true, false, and null
     // We can pre-compute the results for these three values and then reuse them to compute the results for the keys.
     let pre_computed_keys = &[Some(true), Some(false), None];
     let mut pre_computed_results: [u64; 3] = [0, 0, 0];
@@ -397,7 +397,7 @@ pub fn build_partial_compare_with_nulls(
     right: &dyn ArrowArray,
     reversed: bool,
 ) -> DaftResult<DynPartialComparator> {
-    let comparator = make_comparator(left, right, SortOptions::new(reversed, false))?;
+    let comparator = make_comparator(left, right, SortOptions::new(false, false))?;
     let left_is_valid = build_is_valid(left);
     let right_is_valid = build_is_valid(right);
 
