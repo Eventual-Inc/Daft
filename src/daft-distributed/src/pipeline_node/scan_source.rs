@@ -96,9 +96,8 @@ impl ScanSourceNode {
     }
 
     fn make_source_task(self: &Arc<Self>, scan_task: ScanTaskLikeRef) -> SwordfishTaskBuilder {
-        let source_id = self.node_id().to_string();
         let physical_scan = LocalPhysicalPlan::physical_scan(
-            source_id.clone(),
+            self.node_id(),
             self.pushdowns.clone(),
             self.config.schema.clone(),
             StatsState::NotMaterialized,
@@ -108,9 +107,8 @@ impl ScanSourceNode {
             },
         );
 
-        use std::collections::HashMap;
         SwordfishTaskBuilder::new(physical_scan, self.as_ref())
-            .with_scan_tasks(HashMap::from([(source_id, vec![scan_task])]))
+            .with_scan_tasks(self.node_id(), vec![scan_task])
     }
 }
 

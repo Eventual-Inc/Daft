@@ -6,11 +6,8 @@ pub mod python;
 mod translate;
 use std::{collections::HashMap, sync::Arc};
 
-use common_io_config::IOConfig;
-use common_scan_info::{Pushdowns, ScanTaskLikeRef};
-use daft_core::prelude::SchemaRef;
-use daft_logical_plan::InMemoryInfo;
-use daft_micropartition::{partitioning::{Partition, PartitionRef, PartitionSetRef}, MicroPartitionRef};
+use common_scan_info::ScanTaskLikeRef;
+use daft_micropartition::MicroPartitionRef;
 #[cfg(feature = "python")]
 pub use plan::{CatalogWrite, DataSink, DistributedActorPoolProject, LanceWrite};
 pub use plan::{
@@ -22,35 +19,36 @@ pub use plan::{
     WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 #[cfg(feature = "python")]
-#[cfg(feature = "python")]
-pub use python::{PyInputSpecs, PyLocalPhysicalPlan, register_modules};
+pub use python::{PyLocalPhysicalPlan, register_modules};
 use serde::{Deserialize, Serialize};
 pub use translate::translate;
 
-/// Type of input expected by a source, containing the actual input data
+pub type InputId = u32;
+pub type SourceId = u32;
+
+#[derive(Default)]
+pub(crate) struct SourceIdCounter {
+    counter: SourceId,
+}
+
+impl SourceIdCounter {
+    pub fn next(&mut self) -> SourceId {
+        self.counter += 1;
+        self.counter
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum InputType {
+pub enum UnresolvedInput {
     ScanTask(Arc<Vec<ScanTaskLikeRef>>),
-    InMemory(InMemoryInfo),
+    InMemory { cache_key: String },
     GlobPaths(Arc<Vec<String>>),
 }
 
-/// Specification for an input source in the plan
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InputSpec {
-    pub source_id: String,
-    pub input_type: InputType,
-    pub schema: SchemaRef,
-    pub pushdowns: Option<Pushdowns>,
-    pub io_config: Option<IOConfig>,
-}
-
-pub type InputId = u32;
-
 #[derive(Debug, Clone)]
-pub enum PlanInput {
+pub enum ResolvedInput {
     ScanTasks(Vec<ScanTaskLikeRef>),
-    InMemoryPartitions(Vec<PartitionRef>),
+    InMemoryPartitions(Vec<MicroPartitionRef>),
     GlobPaths(Vec<String>),
 }
 
@@ -58,5 +56,5 @@ pub enum PlanInput {
 #[derive(Debug, Clone)]
 pub struct TranslationResult {
     pub plan: LocalPhysicalPlanRef,
-    pub input_specs: HashMap<String, InputSpec>,
+    pub unresolved_inputs: HashMap<String, UnresolvedInput>,
 }

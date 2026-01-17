@@ -13,7 +13,7 @@ use common_metrics::{NodeID, StatSnapshot};
 use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
 use daft_context::{DaftContext, Subscriber};
-use daft_local_plan::{translate, InputId, LocalPhysicalPlanRef, PlanInput};
+use daft_local_plan::{InputId, LocalPhysicalPlanRef, ResolvedInput, SourceId, translate};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
 use futures::{FutureExt, Stream, future::BoxFuture};
@@ -65,7 +65,7 @@ pub(crate) struct EnqueueInputMessage {
     /// The input_id for this enqueue operation
     input_id: InputId,
     /// Plan inputs grouped by source_id
-    inputs: HashMap<String, PlanInput>,
+    inputs: HashMap<SourceId, ResolvedInput>,
 }
 
 #[cfg_attr(
@@ -100,7 +100,7 @@ impl PyNativeExecutor {
         local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
         daft_ctx: &PyDaftContext,
         input_id: u32,
-        inputs: daft_local_plan::python::PyInputs,
+        inputs: daft_local_plan::python::PyResolvedInputs,
         context: Option<HashMap<String, String>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let daft_ctx: &DaftContext = daft_ctx.into();
@@ -182,7 +182,7 @@ impl NativeExecutor {
         subscribers: Vec<Arc<dyn Subscriber>>,
         additional_context: Option<HashMap<String, String>>,
         input_id: InputId,
-        inputs: HashMap<String, PlanInput>,
+        inputs: HashMap<SourceId, ResolvedInput>,
     ) -> DaftResult<BoxFuture<'static, ExecutionEngineResult>> {
         // Create new execution
         let cancel = self.cancel.clone();

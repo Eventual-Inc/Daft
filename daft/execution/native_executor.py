@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from daft.daft import (
-    InputSpecs,
     LocalPhysicalPlan,
     PyDaftExecutionConfig,
     PyMicroPartition,
+    UnresolvedInputs,
 )
 from daft.daft import (
     NativeExecutor as _NativeExecutor,
@@ -22,8 +22,6 @@ if TYPE_CHECKING:
     from daft.logical.builder import LogicalPlanBuilder
     from daft.runners.partitioning import (
         LocalMaterializedResult,
-        MaterializedResult,
-        PartitionT,
     )
 
 
@@ -34,13 +32,16 @@ class NativeExecutor:
     def run(
         self,
         local_physical_plan: LocalPhysicalPlan,
-        input_specs: InputSpecs,
-        psets: dict[str, list[MaterializedResult[PartitionT]]],
+        inputs: UnresolvedInputs,
+        psets: dict[str, list[PyMicroPartition]],
         ctx: DaftContext,
         context: dict[str, str] | None,
     ) -> Iterator[LocalMaterializedResult]:
-        from daft.runners.partitioning import LocalMaterializedResult
-        resolved_inputs = input_specs.resolve_inputs(psets)
+        from daft.runners.partitioning import (
+            LocalMaterializedResult,
+        )
+
+        resolved_inputs = inputs.resolve(psets)
 
         async def stream_results() -> AsyncGenerator[PyMicroPartition | None, None]:
             result_handle = await self._executor.run(
@@ -63,9 +64,7 @@ class NativeExecutor:
                 part = event_loop.run(async_exec.__anext__())
                 if part is None:
                     break
-                yield LocalMaterializedResult(
-                    MicroPartition._from_pymicropartition(part)
-                )
+                yield LocalMaterializedResult(MicroPartition._from_pymicropartition(part))
         finally:
             event_loop.run(async_exec.aclose())
 
@@ -78,12 +77,8 @@ class NativeExecutor:
     ) -> str:
         """Pretty prints the current underlying logical plan."""
         if format == "ascii":
-            return _NativeExecutor.repr_ascii(
-                builder._builder, daft_execution_config, simple
-            )
+            return _NativeExecutor.repr_ascii(builder._builder, daft_execution_config, simple)
         elif format == "mermaid":
-            return _NativeExecutor.repr_mermaid(
-                builder._builder, daft_execution_config, MermaidOptions(simple)
-            )
+            return _NativeExecutor.repr_mermaid(builder._builder, daft_execution_config, MermaidOptions(simple))
         else:
             raise ValueError(f"Unknown format: {format}")

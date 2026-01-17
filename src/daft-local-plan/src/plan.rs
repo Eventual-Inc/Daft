@@ -27,6 +27,8 @@ use daft_logical_plan::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::SourceId;
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct LocalNodeContext {
     pub origin_node_id: Option<usize>,
@@ -206,7 +208,7 @@ impl LocalPhysicalPlan {
     }
 
     pub fn physical_scan(
-        source_id: String,
+        source_id: SourceId,
         pushdowns: Pushdowns,
         schema: SchemaRef,
         stats_state: StatsState,
@@ -223,7 +225,7 @@ impl LocalPhysicalPlan {
     }
 
     pub fn in_memory_scan(
-        source_id: String,
+        source_id: SourceId,
         schema: SchemaRef,
         size_bytes: usize,
         stats_state: StatsState,
@@ -240,7 +242,7 @@ impl LocalPhysicalPlan {
     }
 
     pub fn glob_scan(
-        source_id: String,
+        source_id: SourceId,
         pushdowns: Pushdowns,
         schema: SchemaRef,
         stats_state: StatsState,
@@ -1662,7 +1664,7 @@ impl DynTreeNode for LocalPhysicalPlan {
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PhysicalScan {
-    pub source_id: String,
+    pub source_id: SourceId,
     pub pushdowns: Pushdowns,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
@@ -1672,7 +1674,7 @@ pub struct PhysicalScan {
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct InMemoryScan {
-    pub source_id: String,
+    pub source_id: SourceId,
     pub schema: SchemaRef,
     pub size_bytes: usize,
     pub stats_state: StatsState,
@@ -1682,7 +1684,7 @@ pub struct InMemoryScan {
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct GlobScan {
-    pub source_id: String,
+    pub source_id: SourceId,
     pub pushdowns: Pushdowns,
     pub schema: SchemaRef,
     pub stats_state: StatsState,

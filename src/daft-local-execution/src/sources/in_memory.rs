@@ -7,7 +7,7 @@ use common_runtime::{combine_stream, get_io_runtime};
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
 use daft_local_plan::InputId;
-use daft_micropartition::{MicroPartition, MicroPartitionRef, partitioning::PartitionSetRef};
+use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use futures::{FutureExt, StreamExt};
 use tracing::instrument;
 

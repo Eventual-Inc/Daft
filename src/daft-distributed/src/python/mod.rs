@@ -10,7 +10,7 @@ use daft_logical_plan::PyLogicalPlanBuilder;
 use futures::StreamExt;
 use progress_bar::FlotillaProgressBar;
 use pyo3::prelude::*;
-use ray::{RayPartitionRef, RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
+use ray::{RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
@@ -20,7 +20,7 @@ use crate::{
         viz_distributed_pipeline_mermaid,
     },
     plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
-    python::ray::RayTaskResult,
+    python::ray::{RayPartitionRef, RayTaskResult},
     statistics::StatisticsSubscriber,
 };
 

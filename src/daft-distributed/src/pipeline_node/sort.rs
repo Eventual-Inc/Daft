@@ -1,4 +1,4 @@
-use std::{collections::HashMap, future, sync::Arc};
+use std::{future, sync::Arc};
 
 use common_error::DaftResult;
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -46,12 +46,13 @@ pub(crate) async fn get_partition_boundaries_from_samples(
         .into_iter()
         .flat_map(|mo| mo.into_inner().0)
         .map(|pr| {
-            let ray_partition_ref = pr
-                .as_any()
-                .downcast_ref::<crate::python::ray::RayPartitionRef>()
-                .ok_or(common_error::DaftError::InternalError(
+            use crate::python::ray::RayPartitionRef;
+
+            let ray_partition_ref = pr.as_any().downcast_ref::<RayPartitionRef>().ok_or(
+                common_error::DaftError::InternalError(
                     "Failed to downcast partition ref".to_string(),
-                ))?;
+                ),
+            )?;
             Ok(ray_partition_ref.clone())
         })
         .collect::<DaftResult<Vec<_>>>()?;
@@ -151,7 +152,8 @@ pub(crate) fn create_sample_tasks(
                     additional: None,
                 },
             );
-            let builder = SwordfishTaskBuilder::new(plan, pipeline_node).with_psets(psets);
+            let builder = SwordfishTaskBuilder::new(plan, pipeline_node)
+                .with_psets(pipeline_node.node_id(), psets);
             let submittable_task = builder.build(context.query_idx, task_id_counter);
             let submitted_task = submittable_task.submit(scheduler_handle)?;
             Ok(submitted_task)
@@ -178,9 +180,8 @@ pub(crate) fn create_range_repartition_tasks(
     materialized_outputs
         .into_iter()
         .map(|mo| {
-            let source_id = node_id.to_string();
             let in_memory_source_plan = LocalPhysicalPlan::in_memory_scan(
-                source_id.clone(),
+                node_id,
                 input_schema.clone(),
                 mo.size_bytes(),
                 StatsState::NotMaterialized,
@@ -205,8 +206,8 @@ pub(crate) fn create_range_repartition_tasks(
                     additional: None,
                 },
             );
-            let psets = HashMap::from([(source_id, mo.into_inner().0)]);
-            let builder = SwordfishTaskBuilder::new(plan, pipeline_node).with_psets(psets);
+            let builder = SwordfishTaskBuilder::new(plan, pipeline_node)
+                .with_psets(node_id, mo.into_inner().0);
             let submittable_task = builder.build(context.query_idx, task_id_counter);
             let submitted_task = submittable_task.submit(scheduler_handle)?;
             Ok(submitted_task)
@@ -301,7 +302,8 @@ impl SortNode {
                     additional: None,
                 },
             );
-            let task = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+            let task =
+                SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);
             let _ = result_tx.send(task).await;
             return Ok(());
         }
@@ -372,7 +374,8 @@ impl SortNode {
                     additional: None,
                 },
             );
-            let task = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+            let task =
+                SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);
             let _ = result_tx.send(task).await;
         }
         Ok(())

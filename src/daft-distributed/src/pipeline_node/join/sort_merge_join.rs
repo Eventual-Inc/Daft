@@ -142,7 +142,8 @@ impl SortMergeJoinNode {
         );
 
         // Create the task
-        let builder = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+        let builder =
+            SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);
 
         result_tx.send(builder).await.ok();
         Ok(())

@@ -16,12 +16,12 @@ use daft_core::{
 };
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
-    InputId,
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, GlobScan, HashAggregate,
-    HashJoin, InMemoryScan, IntoBatches, Limit, LocalNodeContext, LocalPhysicalPlan,
+    HashJoin, InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext, LocalPhysicalPlan,
     MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, Sample, Sort,
-    SortMergeJoin, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
-    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
+    SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject,
+    WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
+    WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
@@ -33,13 +33,13 @@ use snafu::ResultExt;
 use crate::{
     ExecutionRuntimeContext, PipelineCreationSnafu,
     channel::create_channel,
+    input_sender::InputSender,
     intermediate_ops::{
         distributed_actor_pool_project::DistributedActorPoolProjectOperator,
         explode::ExplodeOperator, filter::FilterOperator, intermediate_op::IntermediateNode,
         into_batches::IntoBatchesOperator, project::ProjectOperator, udf::UdfOperator,
         unpivot::UnpivotOperator,
     },
-    input_sender::InputSender,
     join::{CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator},
     runtime_stats::RuntimeStats,
     sinks::{
@@ -328,7 +328,7 @@ pub fn translate_physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     cfg: &Arc<DaftExecutionConfig>,
     ctx: &RuntimeContext,
-) -> crate::Result<(Box<dyn PipelineNode>, HashMap<String, InputSender>)> {
+) -> crate::Result<(Box<dyn PipelineNode>, HashMap<SourceId, InputSender>)> {
     let mut input_senders = HashMap::new();
     let mut pipeline_node = physical_plan_to_pipeline(physical_plan, cfg, ctx, &mut input_senders)?;
     pipeline_node.propagate_morsel_size_requirement(
@@ -342,7 +342,7 @@ fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     cfg: &Arc<DaftExecutionConfig>,
     ctx: &RuntimeContext,
-    input_senders: &mut HashMap<String, InputSender>,
+    input_senders: &mut HashMap<SourceId, InputSender>,
 ) -> crate::Result<Box<dyn PipelineNode>> {
     let pipeline_node: Box<dyn PipelineNode> = match physical_plan {
         LocalPhysicalPlan::PlaceholderScan(_) => {
@@ -371,7 +371,7 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let (tx, rx) = create_channel::<(InputId, Vec<ScanTaskRef>)>(1);
-            input_senders.insert(source_id.clone(), InputSender::ScanTasks(tx));
+            input_senders.insert(*source_id, InputSender::ScanTasks(tx));
 
             let scan_task_source = ScanTaskSource::new(rx, pushdowns.clone(), schema.clone(), cfg);
             SourceNode::new(
@@ -391,7 +391,7 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let (tx, rx) = create_channel::<(InputId, Vec<MicroPartitionRef>)>(1);
-            input_senders.insert(source_id.clone(), InputSender::InMemory(tx.clone()));
+            input_senders.insert(*source_id, InputSender::InMemory(tx));
 
             let in_memory_source = InMemorySource::new(rx, schema.clone(), *size_bytes);
             SourceNode::new(
@@ -412,7 +412,7 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let (tx, rx) = create_channel::<(InputId, Vec<String>)>(1);
-            input_senders.insert(source_id.clone(), InputSender::GlobPaths(tx));
+            input_senders.insert(*source_id, InputSender::GlobPaths(tx));
 
             let glob_scan_source =
                 GlobScanSource::new(rx, pushdowns.clone(), schema.clone(), io_config.clone());
@@ -1143,7 +1143,7 @@ fn physical_plan_to_pipeline(
                     build_on_left,
                     left_schema.clone(),
                     right_schema.clone(),
-                    common_join_cols.clone(),
+                    common_join_cols,
                     schema.clone(),
                 )?;
                 let build_child_node = physical_plan_to_pipeline(build_child, cfg, ctx, input_senders)?;
@@ -1226,7 +1226,6 @@ fn physical_plan_to_pipeline(
             stats_state,
             context,
         }) => {
-            let left_schema = left.schema().clone();
             let left_node = physical_plan_to_pipeline(left, cfg, ctx, input_senders)?;
             let right_node = physical_plan_to_pipeline(right, cfg, ctx, input_senders)?;
 

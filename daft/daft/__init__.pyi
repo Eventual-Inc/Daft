@@ -9,7 +9,7 @@ from daft.io import DataSink
 from daft.io.scan import ScanOperator
 from daft.io.sink import WriteResultType
 from daft.runners.flotilla import RaySwordfishActorHandle
-from daft.runners.partitioning import MaterializedResult, PartitionCacheEntry, PartitionT
+from daft.runners.partitioning import PartitionCacheEntry, PartitionT
 from daft.sql.sql_connection import SQLConnection
 from daft.udf.legacy import UDF, BoundUDFArgs, InitArgsType, UninitializedUdf
 
@@ -2033,9 +2033,8 @@ class RayPartitionRef:
 class RaySwordfishTask:
     def name(self) -> str: ...
     def plan(self) -> LocalPhysicalPlan: ...
+    def inputs(self) -> UnresolvedInputs: ...
     def psets(self) -> dict[str, list[RayPartitionRef]]: ...
-    def glob_paths(self) -> dict[str, list[str]]: ...
-    def scan_tasks(self) -> dict[str, list[ScanTask]]: ...
     def config(self) -> PyDaftExecutionConfig: ...
     def context(self) -> dict[str, str]: ...
 
@@ -2064,14 +2063,15 @@ class PyExecutionEngineResult:
 
 class LocalPhysicalPlan:
     @staticmethod
-    def from_logical_plan_builder(builder: LogicalPlanBuilder) -> tuple[LocalPhysicalPlan, InputSpecs]: ...
+    def from_logical_plan_builder(builder: LogicalPlanBuilder) -> tuple[LocalPhysicalPlan, UnresolvedInputs]: ...
 
-class InputSpecs:
-    """InputSpecs for NativeExecutor execution"""
-    def resolve_inputs(self, psets: dict[str, list[MaterializedResult[PartitionT]]]) -> Inputs: ...
+class UnresolvedInputs:
+    """UnresolvedInputs for NativeExecutor execution."""
+    def resolve(self, psets: dict[str, list[PyMicroPartition]]) -> ResolvedInputs: ...
 
-class Inputs:
-    """Inputs to NativeExecutor execution"""
+class ResolvedInputs:
+    """ResolvedInputs to NativeExecutor execution."""
+
     ...
 
 class NativeExecutor:
@@ -2081,7 +2081,7 @@ class NativeExecutor:
         plan: LocalPhysicalPlan,
         daft_ctx: PyDaftContext,
         input_id: int,
-        inputs: Inputs,
+        inputs: ResolvedInputs,
         context: dict[str, str] | None = None,
     ) -> PyExecutionEngineResult: ...
     @staticmethod

@@ -3,8 +3,7 @@ use std::{any::Any, collections::HashMap, future::Future, sync::Arc};
 use common_daft_config::PyDaftExecutionConfig;
 use common_metrics::{NodeID, StatSnapshot};
 use common_partitioning::{Partition, PartitionRef};
-use daft_local_plan::PyLocalPhysicalPlan;
-use daft_scan::python::pylib::PyScanTask;
+use daft_local_plan::{PyLocalPhysicalPlan, SourceId, python::PyUnresolvedInputs};
 use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 
 use crate::{
@@ -197,14 +196,19 @@ impl RaySwordfishTask {
         Ok(PyLocalPhysicalPlan { plan })
     }
 
-    fn psets(&self) -> PyResult<HashMap<String, Vec<RayPartitionRef>>> {
+    fn inputs(&self) -> PyResult<PyUnresolvedInputs> {
+        let inputs = self.task.inputs().clone();
+        Ok(PyUnresolvedInputs { inner: inputs })
+    }
+
+    fn psets(&self) -> PyResult<HashMap<SourceId, Vec<RayPartitionRef>>> {
         let psets = self
             .task
             .psets()
             .iter()
             .map(|(k, v)| {
                 (
-                    k.clone(),
+                    *k,
                     v.iter()
                         .map(|v| {
                             let v = v
@@ -231,26 +235,7 @@ impl RaySwordfishTask {
 
     /// Get the last_node_id from the task context, which is used as the source_id
     fn last_node_id(&self) -> u32 {
-        use crate::scheduling::task::Task;
         self.task.task_context().last_node_id
-    }
-
-    fn scan_tasks(&self) -> PyResult<HashMap<String, Vec<PyScanTask>>> {
-        let scan_tasks_map = self.task.scan_tasks();
-        // Convert HashMap<String, Vec<ScanTaskLikeRef>> to HashMap<String, Vec<PyScanTask>>
-        let py_scan_tasks_map: HashMap<String, Vec<PyScanTask>> = scan_tasks_map
-            .iter()
-            .map(|(source_id, scan_tasks)| {
-                let py_scan_tasks: Vec<PyScanTask> =
-                    scan_tasks.iter().map(|st| PyScanTask(st.clone())).collect();
-                (source_id.clone(), py_scan_tasks)
-            })
-            .collect();
-        Ok(py_scan_tasks_map)
-    }
-
-    fn glob_paths(&self) -> PyResult<HashMap<String, Vec<String>>> {
-        Ok(self.task.glob_paths().clone())
     }
 
     fn task_id(&self) -> u32 {

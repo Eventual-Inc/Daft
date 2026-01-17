@@ -1957,6 +1957,7 @@ dependencies = [
  "futures",
  "pyo3",
  "serde",
+ "typetag",
 ]
 
 [[package]]

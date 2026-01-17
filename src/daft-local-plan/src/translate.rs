@@ -14,39 +14,31 @@ use daft_dsl::{
 use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo, stats::StatsState};
 
 use super::plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
-use crate::{InputSpec, InputType};
+use crate::{SourceId, SourceIdCounter, UnresolvedInput};
 
 /// Translate a logical plan into a physical plan and extract input specifications.
-/// Returns the physical plan and a map of source_id -> InputSpec.
+/// Returns the physical plan and a map of source_id -> UnresolvedInput.
 pub fn translate(
     plan: &LogicalPlanRef,
-) -> DaftResult<(LocalPhysicalPlanRef, HashMap<String, InputSpec>)> {
-    let mut source_counter = 0;
+) -> DaftResult<(LocalPhysicalPlanRef, HashMap<SourceId, UnresolvedInput>)> {
+    let mut source_counter = SourceIdCounter::default();
     translate_helper(plan, &mut source_counter)
 }
 
 fn translate_helper(
     plan: &LogicalPlanRef,
-    source_counter: &mut usize,
-) -> DaftResult<(LocalPhysicalPlanRef, HashMap<String, InputSpec>)> {
+    source_counter: &mut SourceIdCounter,
+) -> DaftResult<(LocalPhysicalPlanRef, HashMap<SourceId, UnresolvedInput>)> {
     match plan.as_ref() {
         LogicalPlan::Source(source) => {
-            let mut inputs = HashMap::new();
+            let mut unresolved_inputs = HashMap::new();
             let physical_plan = match source.source_info.as_ref() {
                 SourceInfo::InMemory(info) => {
-                    // Create an in-memory scan
-                    let source_id = format!("source_{}", *source_counter);
-                    *source_counter += 1;
-
-                    // Create InputSpec for in-memory data
-                    let input_spec = InputSpec {
-                        source_id: source_id.clone(),
-                        input_type: InputType::InMemory(info.clone()),
-                        schema: source.output_schema.clone(),
-                        pushdowns: None,
-                        io_config: None,
+                    let source_id = source_counter.next();
+                    let unresolved_input = UnresolvedInput::InMemory {
+                        cache_key: info.cache_key.clone(),
                     };
-                    inputs.insert(source_id.clone(), input_spec);
+                    unresolved_inputs.insert(source_id, unresolved_input);
 
                     LocalPhysicalPlan::in_memory_scan(
                         source_id,
@@ -65,18 +57,11 @@ fn translate_helper(
                         ScanState::Tasks(scan_tasks) => scan_tasks.clone(),
                     };
                     // Create a physical scan
-                    let source_id = format!("source_{}", *source_counter);
-                    *source_counter += 1;
+                    let source_id = source_counter.next();
 
                     // Create InputSpec for scan tasks
-                    let input_spec = InputSpec {
-                        source_id: source_id.clone(),
-                        input_type: InputType::ScanTask(scan_tasks),
-                        schema: source.output_schema.clone(),
-                        pushdowns: Some(info.pushdowns.clone()),
-                        io_config: None,
-                    };
-                    inputs.insert(source_id.clone(), input_spec);
+                    let unresolved_input = UnresolvedInput::ScanTask(scan_tasks);
+                    unresolved_inputs.insert(source_id, unresolved_input);
 
                     LocalPhysicalPlan::physical_scan(
                         source_id,
@@ -88,18 +73,11 @@ fn translate_helper(
                 }
                 SourceInfo::GlobScan(info) => {
                     // Create a glob scan
-                    let source_id = format!("source_{}", *source_counter);
-                    *source_counter += 1;
+                    let source_id = source_counter.next();
 
                     // Create InputSpec for glob paths
-                    let input_spec = InputSpec {
-                        source_id: source_id.clone(),
-                        input_type: InputType::GlobPaths(info.glob_paths.clone()),
-                        schema: source.output_schema.clone(),
-                        pushdowns: Some(info.pushdowns.clone()),
-                        io_config: info.io_config.clone().map(|c| *c),
-                    };
-                    inputs.insert(source_id.clone(), input_spec);
+                    let unresolved_input = UnresolvedInput::GlobPaths(info.glob_paths.clone());
+                    unresolved_inputs.insert(source_id, unresolved_input);
 
                     LocalPhysicalPlan::glob_scan(
                         source_id,
@@ -119,7 +97,7 @@ fn translate_helper(
                     )
                 }
             };
-            Ok((physical_plan, inputs))
+            Ok((physical_plan, unresolved_inputs))
         }
         LogicalPlan::Shard(_) => Err(DaftError::InternalError(
             "Sharding should have been folded into a source".to_string(),
