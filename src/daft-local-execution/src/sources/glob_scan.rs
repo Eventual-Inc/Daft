@@ -8,6 +8,7 @@ use common_runtime::{combine_stream, get_io_runtime};
 use common_scan_info::Pushdowns;
 use daft_core::prelude::*;
 use daft_io::{IOStatsRef, get_io_client};
+use daft_local_plan::InputId;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use futures::{FutureExt, StreamExt, TryStreamExt};
@@ -21,7 +22,6 @@ use crate::{
     pipeline::NodeName,
     sources::source::SourceStream,
 };
-use daft_local_plan::InputId;
 
 pub struct GlobScanSource {
     receiver: Option<Receiver<(InputId, Vec<String>)>>,

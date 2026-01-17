@@ -17,6 +17,7 @@ use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{AggExpr, Expr};
 use daft_io::{GetRange, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
+use daft_local_plan::InputId;
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::{ParquetSchemaInferenceOptions, read_parquet_bulk_async};
 use daft_scan::{ChunkSpec, ScanTask, ScanTaskRef};
@@ -30,7 +31,6 @@ use crate::{
     pipeline::NodeName,
     sources::source::{Source, SourceStream},
 };
-use daft_local_plan::InputId;
 
 pub struct ScanTaskSource {
     receiver: Option<Receiver<(InputId, Vec<ScanTaskRef>)>>,
