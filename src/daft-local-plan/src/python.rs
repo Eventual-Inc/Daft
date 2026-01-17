@@ -45,10 +45,7 @@ pub struct PyUnresolvedInputs {
 
 #[pymethods]
 impl PyUnresolvedInputs {
-    fn resolve(
-        &self,
-        psets: HashMap<String, Vec<PyMicroPartition>>,
-    ) -> PyResult<Option<PyResolvedInputs>> {
+    fn resolve(&self, psets: HashMap<String, Vec<PyMicroPartition>>) -> PyResult<PyResolvedInputs> {
         let mut plan_inputs = HashMap::new();
 
         for (source_id, unresolved_input) in &self.inner {
@@ -78,11 +75,8 @@ impl PyUnresolvedInputs {
             }
         }
 
-        if plan_inputs.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(PyResolvedInputs { inner: plan_inputs }))
-        }
+        // Always return a PyResolvedInputs, even if empty (for empty scan tasks like limit(0))
+        Ok(PyResolvedInputs { inner: plan_inputs })
     }
 }
 
