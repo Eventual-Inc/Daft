@@ -4,11 +4,12 @@ use arrow::{
     array::{
         Array as ArrowArray, ArrowPrimitiveType, BooleanArray, FixedSizeBinaryArray,
         GenericBinaryArray, GenericStringArray, OffsetSizeTrait, PrimitiveArray, UInt64Builder,
+        make_comparator,
     },
+    compute::SortOptions,
     datatypes::*,
 };
 use common_error::{DaftError, DaftResult};
-use daft_arrow::array::ord::{DynComparator, build_compare};
 use num_traits::Float;
 
 #[allow(clippy::eq_op)]
@@ -388,117 +389,6 @@ pub fn cmp_float<F: Float>(l: &F, r: &F) -> std::cmp::Ordering {
     }
 }
 
-fn compare_f32(left: &dyn ArrowArray, right: &dyn ArrowArray) -> DynComparator {
-    let left = left
-        .as_any()
-        .downcast_ref::<PrimitiveArray<Float32Type>>()
-        .unwrap()
-        .clone();
-    let right = right
-        .as_any()
-        .downcast_ref::<PrimitiveArray<Float32Type>>()
-        .unwrap()
-        .clone();
-    Box::new(move |i, j| cmp_float::<f32>(&left.value(i), &right.value(j)))
-}
-
-fn compare_f64(left: &dyn ArrowArray, right: &dyn ArrowArray) -> DynComparator {
-    let left = left
-        .as_any()
-        .downcast_ref::<PrimitiveArray<Float64Type>>()
-        .unwrap()
-        .clone();
-    let right = right
-        .as_any()
-        .downcast_ref::<PrimitiveArray<Float64Type>>()
-        .unwrap()
-        .clone();
-    Box::new(move |i, j| cmp_float::<f64>(&left.value(i), &right.value(j)))
-}
-
-pub fn build_compare_with_nan(
-    left: &dyn ArrowArray,
-    right: &dyn ArrowArray,
-) -> DaftResult<DynComparator> {
-    match (left.data_type(), right.data_type()) {
-        (DataType::Float32, DataType::Float32) => Ok(compare_f32(left, right)),
-        (DataType::Float64, DataType::Float64) => Ok(compare_f64(left, right)),
-        _ => {
-            let left2 = daft_arrow::array::from_data(&left.to_data());
-            let right2 = daft_arrow::array::from_data(&right.to_data());
-            build_compare(left2.as_ref(), right2.as_ref()).map_err(DaftError::ArrowError)
-        }
-    }
-}
-
-pub fn build_compare_with_nulls(
-    left: &dyn ArrowArray,
-    right: &dyn ArrowArray,
-    reversed: bool,
-) -> DaftResult<DynComparator> {
-    let comparator = build_compare_with_nan(left, right)?;
-    let left_is_valid = build_is_valid(left);
-    let right_is_valid = build_is_valid(right);
-
-    if reversed {
-        Ok(Box::new(move |i: usize, j: usize| {
-            match (left_is_valid(i), right_is_valid(j)) {
-                (true, true) => comparator(i, j).reverse(),
-                (false, true) => Ordering::Less,
-                (false, false) => Ordering::Equal,
-                (true, false) => Ordering::Greater,
-            }
-        }))
-    } else {
-        Ok(Box::new(move |i: usize, j: usize| {
-            match (left_is_valid(i), right_is_valid(j)) {
-                (true, true) => comparator(i, j),
-                (false, true) => Ordering::Greater,
-                (false, false) => Ordering::Equal,
-                (true, false) => Ordering::Less,
-            }
-        }))
-    }
-}
-
-pub fn build_nulls_first_compare_with_nulls(
-    left: &dyn ArrowArray,
-    right: &dyn ArrowArray,
-    reversed: bool,
-    nulls_first: bool,
-) -> DaftResult<DynComparator> {
-    let comparator = build_compare_with_nan(left, right)?;
-    let left_is_valid = build_is_valid(left);
-    let right_is_valid = build_is_valid(right);
-
-    // Determine null ordering based on nulls_first parameter only
-    // If nulls_first = true, nulls should always come before valid values, regardless of reversed
-    let (null_vs_valid, valid_vs_null) = match nulls_first {
-        true => (Ordering::Less, Ordering::Greater), // nulls first, regardless of sort direction
-        false => (Ordering::Greater, Ordering::Less), // nulls last, regardless of sort direction
-    };
-
-    if reversed {
-        Ok(Box::new(move |i: usize, j: usize| {
-            match (left_is_valid(i), right_is_valid(j)) {
-                (true, true) => comparator(i, j).reverse(),
-                (false, true) => null_vs_valid,
-                (false, false) => Ordering::Equal,
-                (true, false) => valid_vs_null,
-            }
-        }))
-    } else {
-        Ok(Box::new(move |i: usize, j: usize| {
-            match (left_is_valid(i), right_is_valid(j)) {
-                (true, true) => comparator(i, j),
-                (false, true) => null_vs_valid,
-                (false, false) => Ordering::Equal,
-                (true, false) => valid_vs_null,
-            }
-        }))
-    }
-}
-
 /// Compare the values at two arbitrary indices in two arrays.
 pub type DynPartialComparator = Box<dyn Fn(usize, usize) -> Option<Ordering> + Send + Sync>;
 
@@ -507,7 +397,7 @@ pub fn build_partial_compare_with_nulls(
     right: &dyn ArrowArray,
     reversed: bool,
 ) -> DaftResult<DynPartialComparator> {
-    let comparator = build_compare_with_nan(left, right)?;
+    let comparator = make_comparator(left, right, SortOptions::new(reversed, false))?;
     let left_is_valid = build_is_valid(left);
     let right_is_valid = build_is_valid(right);
 
@@ -571,7 +461,11 @@ pub fn search_sorted_multi_array(
     }
     let mut cmp_list = Vec::with_capacity(sorted_arrays.len());
     for ((sorted_arr, key_arr), reversed) in zip(sorted_arrays, key_arrays).zip(input_reversed) {
-        cmp_list.push(build_compare_with_nulls(*sorted_arr, *key_arr, *reversed)?);
+        cmp_list.push(make_comparator(
+            *sorted_arr,
+            *key_arr,
+            SortOptions::new(*reversed, false),
+        )?);
     }
 
     let combined_comparator = |a_idx: usize, b_idx: usize| -> Ordering {

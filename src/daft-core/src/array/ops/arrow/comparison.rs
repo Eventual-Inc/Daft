@@ -1,10 +1,13 @@
 #![allow(deprecated, reason = "arrow2->arrow migration")]
 use arrow::{
-    array::{Array, ArrowPrimitiveType, FixedSizeListArray, LargeListArray, PrimitiveArray},
+    array::{
+        Array, ArrowPrimitiveType, FixedSizeListArray, LargeListArray, PrimitiveArray,
+        make_comparator,
+    },
+    compute::SortOptions,
     datatypes::{Float32Type, Float64Type},
 };
 use common_error::DaftResult;
-use daft_arrow::array::ord::build_compare;
 use num_traits::Float;
 
 use crate::{
@@ -96,9 +99,7 @@ fn build_is_equal_with_nan(
             Ok(build_is_equal_fixed_size_list(left, right))
         }
         _ => {
-            let left2 = daft_arrow::array::from_data(&left.to_data());
-            let right2 = daft_arrow::array::from_data(&right.to_data());
-            let comp = build_compare(left2.as_ref(), right2.as_ref())?;
+            let comp = make_comparator(left, right, SortOptions::new(false, false))?;
             Ok(Box::new(move |i, j| comp(i, j).is_eq()))
         }
     }
