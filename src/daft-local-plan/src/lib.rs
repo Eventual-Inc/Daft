@@ -52,7 +52,7 @@ pub enum ResolvedInput {
     GlobPaths(Vec<String>),
 }
 
-/// Result of translating a logical plan, containing both the physical plan and input specifications
+/// Result of translating a logical plan, containing both the physical plan and unresolved inputs
 #[derive(Debug, Clone)]
 pub struct TranslationResult {
     pub plan: LocalPhysicalPlanRef,

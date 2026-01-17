@@ -103,70 +103,72 @@ fn translate_helper(
             "Sharding should have been folded into a source".to_string(),
         )),
         LogicalPlan::Filter(filter) => {
-            let (input, inputs) = translate_helper(&filter.input, source_counter)?;
-            let predicate = BoundExpr::try_new(filter.predicate.clone(), input.schema())?;
+            let (input_plan, unresolved_inputs) = translate_helper(&filter.input, source_counter)?;
+            let predicate = BoundExpr::try_new(filter.predicate.clone(), input_plan.schema())?;
             Ok((
                 LocalPhysicalPlan::filter(
-                    input,
+                    input_plan,
                     predicate,
                     filter.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                inputs,
+                unresolved_inputs,
             ))
         }
         LogicalPlan::IntoBatches(into_batches) => {
-            let (input, inputs) = translate_helper(&into_batches.input, source_counter)?;
+            let (input_plan, unresolved_inputs) =
+                translate_helper(&into_batches.input, source_counter)?;
             Ok((
                 LocalPhysicalPlan::into_batches(
-                    input,
+                    input_plan,
                     into_batches.batch_size,
                     false,
                     into_batches.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                inputs,
+                unresolved_inputs,
             ))
         }
         LogicalPlan::Limit(limit) => {
-            let (input, inputs) = translate_helper(&limit.input, source_counter)?;
+            let (input_plan, unresolved_inputs) = translate_helper(&limit.input, source_counter)?;
             Ok((
                 LocalPhysicalPlan::limit(
-                    input,
+                    input_plan,
                     limit.limit,
                     limit.offset,
                     limit.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                inputs,
+                unresolved_inputs,
             ))
         }
         LogicalPlan::Project(project) => {
-            let (input, inputs) = translate_helper(&project.input, source_counter)?;
+            let (input_plan, unresolved_inputs) = translate_helper(&project.input, source_counter)?;
 
-            let projection = BoundExpr::bind_all(&project.projection, input.schema())?;
+            let projection = BoundExpr::bind_all(&project.projection, input_plan.schema())?;
 
             Ok((
                 LocalPhysicalPlan::project(
-                    input,
+                    input_plan,
                     projection,
                     project.projected_schema.clone(),
                     project.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                inputs,
+                unresolved_inputs,
             ))
         }
         LogicalPlan::UDFProject(udf_project) => {
-            let (input, inputs) = translate_helper(&udf_project.input, source_counter)?;
+            let (input_plan, unresolved_inputs) =
+                translate_helper(&udf_project.input, source_counter)?;
 
             let passthrough_columns =
-                BoundExpr::bind_all(&udf_project.passthrough_columns, input.schema())?;
-            let expr = BoundExpr::try_new(udf_project.expr.clone(), input.schema())?;
+                BoundExpr::bind_all(&udf_project.passthrough_columns, input_plan.schema())?;
+            let expr = BoundExpr::try_new(udf_project.expr.clone(), input_plan.schema())?;
 
             Ok((
                 LocalPhysicalPlan::udf_project(
-                    input,
+                    input_plan,
                     expr,
                     udf_project.udf_properties.clone(),
                     passthrough_columns,
@@ -174,11 +176,11 @@ fn translate_helper(
                     udf_project.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                inputs,
+                unresolved_inputs,
             ))
         }
         LogicalPlan::Sample(sample) => {
-            let (input, inputs) = translate_helper(&sample.input, source_counter)?;
+            let (input_plan, unresolved_inputs) = translate_helper(&sample.input, source_counter)?;
             let sampling_method = if let Some(fraction) = sample.fraction {
                 SamplingMethod::Fraction(fraction)
             } else if let Some(size) = sample.size {
@@ -190,65 +192,66 @@ fn translate_helper(
             };
             Ok((
                 LocalPhysicalPlan::sample(
-                    input,
+                    input_plan,
                     sampling_method,
                     sample.with_replacement,
                     sample.seed,
                     sample.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                inputs,
+                unresolved_inputs,
             ))
         }
         LogicalPlan::Aggregate(aggregate) => {
-            let (input, inputs) = translate_helper(&aggregate.input, source_counter)?;
+            let (input_plan, unresolved_inputs) =
+                translate_helper(&aggregate.input, source_counter)?;
 
             let aggregations = aggregate
                 .aggregations
                 .iter()
                 .map(|expr| {
                     let agg_expr = extract_agg_expr(expr)?;
-                    BoundAggExpr::try_new(agg_expr, input.schema())
+                    BoundAggExpr::try_new(agg_expr, input_plan.schema())
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
 
-            let groupby = BoundExpr::bind_all(&aggregate.groupby, input.schema())?;
+            let groupby = BoundExpr::bind_all(&aggregate.groupby, input_plan.schema())?;
 
             if aggregate.groupby.is_empty() {
                 Ok((
                     LocalPhysicalPlan::ungrouped_aggregate(
-                        input,
+                        input_plan,
                         aggregations,
                         aggregate.output_schema.clone(),
                         aggregate.stats_state.clone(),
                         LocalNodeContext::default(),
                     ),
-                    inputs,
+                    unresolved_inputs,
                 ))
             } else {
                 Ok((
                     LocalPhysicalPlan::hash_aggregate(
-                        input,
+                        input_plan,
                         aggregations,
                         groupby,
                         aggregate.output_schema.clone(),
                         aggregate.stats_state.clone(),
                         LocalNodeContext::default(),
                     ),
-                    inputs,
+                    unresolved_inputs,
                 ))
             }
         }
         LogicalPlan::Window(window) => {
-            let (input, inputs) = translate_helper(&window.input, source_counter)?;
+            let (input_plan, unresolved_inputs) = translate_helper(&window.input, source_counter)?;
 
             let window_functions =
-                BoundWindowExpr::bind_all(&window.window_functions, input.schema())?;
+                BoundWindowExpr::bind_all(&window.window_functions, input_plan.schema())?;
 
             let partition_by =
-                BoundExpr::bind_all(&window.window_spec.partition_by, input.schema())?;
+                BoundExpr::bind_all(&window.window_spec.partition_by, input_plan.schema())?;
 
-            let order_by = BoundExpr::bind_all(&window.window_spec.order_by, input.schema())?;
+            let order_by = BoundExpr::bind_all(&window.window_spec.order_by, input_plan.schema())?;
 
             let plan = match (
                 !partition_by.is_empty(),
@@ -258,7 +261,7 @@ fn translate_helper(
                 (true, false, false) => {
                     let aggregations = window_to_agg_exprs(window_functions)?;
                     LocalPhysicalPlan::window_partition_only(
-                        input,
+                        input_plan,
                         partition_by,
                         window.schema.clone(),
                         window.stats_state.clone(),
@@ -268,7 +271,7 @@ fn translate_helper(
                     )
                 }
                 (true, true, false) => LocalPhysicalPlan::window_partition_and_order_by(
-                    input,
+                    input_plan,
                     partition_by,
                     order_by,
                     window.window_spec.descending.clone(),
@@ -282,7 +285,7 @@ fn translate_helper(
                 (true, true, true) => {
                     let aggregations = window_to_agg_exprs(window_functions)?;
                     LocalPhysicalPlan::window_partition_and_dynamic_frame(
-                        input,
+                        input_plan,
                         partition_by,
                         order_by,
                         window.window_spec.descending.clone(),
@@ -297,7 +300,7 @@ fn translate_helper(
                     )
                 }
                 (false, true, false) => LocalPhysicalPlan::window_order_by_only(
-                    input,
+                    input_plan,
                     order_by,
                     window.window_spec.descending.clone(),
                     window.window_spec.nulls_first.clone(),
@@ -318,17 +321,17 @@ fn translate_helper(
                     ));
                 }
             };
-            Ok((plan, inputs))
+            Ok((plan, unresolved_inputs))
         }
         LogicalPlan::Unpivot(unpivot) => {
-            let (input, inputs) = translate_helper(&unpivot.input, source_counter)?;
+            let (input_plan, unresolved_inputs) = translate_helper(&unpivot.input, source_counter)?;
 
-            let ids = BoundExpr::bind_all(&unpivot.ids, input.schema())?;
-            let values = BoundExpr::bind_all(&unpivot.values, input.schema())?;
+            let ids = BoundExpr::bind_all(&unpivot.ids, input_plan.schema())?;
+            let values = BoundExpr::bind_all(&unpivot.values, input_plan.schema())?;
 
             Ok((
                 LocalPhysicalPlan::unpivot(
-                    input,
+                    input_plan,
                     ids,
                     values,
                     unpivot.variable_name.clone(),
@@ -337,20 +340,21 @@ fn translate_helper(
                     unpivot.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                inputs,
+                unresolved_inputs,
             ))
         }
         LogicalPlan::Pivot(pivot) => {
-            let (input, inputs) = translate_helper(&pivot.input, source_counter)?;
+            let (input_plan, unresolved_inputs) = translate_helper(&pivot.input, source_counter)?;
 
-            let group_by = BoundExpr::bind_all(&pivot.group_by, input.schema())?;
-            let pivot_column = BoundExpr::try_new(pivot.pivot_column.clone(), input.schema())?;
-            let value_column = BoundExpr::try_new(pivot.value_column.clone(), input.schema())?;
-            let aggregation = BoundAggExpr::try_new(pivot.aggregation.clone(), input.schema())?;
+            let group_by = BoundExpr::bind_all(&pivot.group_by, input_plan.schema())?;
+            let pivot_column = BoundExpr::try_new(pivot.pivot_column.clone(), input_plan.schema())?;
+            let value_column = BoundExpr::try_new(pivot.value_column.clone(), input_plan.schema())?;
+            let aggregation =
+                BoundAggExpr::try_new(pivot.aggregation.clone(), input_plan.schema())?;
 
             Ok((
                 LocalPhysicalPlan::pivot(
-                    input,
+                    input_plan,
                     group_by,
                     pivot_column,
                     value_column,
@@ -361,34 +365,34 @@ fn translate_helper(
                     pivot.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                inputs,
+                unresolved_inputs,
             ))
         }
         LogicalPlan::Sort(sort) => {
-            let (input, inputs) = translate_helper(&sort.input, source_counter)?;
+            let (input_plan, unresolved_inputs) = translate_helper(&sort.input, source_counter)?;
 
-            let sort_by = BoundExpr::bind_all(&sort.sort_by, input.schema())?;
+            let sort_by = BoundExpr::bind_all(&sort.sort_by, input_plan.schema())?;
 
             Ok((
                 LocalPhysicalPlan::sort(
-                    input,
+                    input_plan,
                     sort_by,
                     sort.descending.clone(),
                     sort.nulls_first.clone(),
                     sort.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                inputs,
+                unresolved_inputs,
             ))
         }
         LogicalPlan::TopN(top_n) => {
-            let (input, inputs) = translate_helper(&top_n.input, source_counter)?;
+            let (input_plan, unresolved_inputs) = translate_helper(&top_n.input, source_counter)?;
 
-            let sort_by = BoundExpr::bind_all(&top_n.sort_by, input.schema())?;
+            let sort_by = BoundExpr::bind_all(&top_n.sort_by, input_plan.schema())?;
 
             Ok((
                 LocalPhysicalPlan::top_n(
-                    input,
+                    input_plan,
                     sort_by,
                     top_n.descending.clone(),
                     top_n.nulls_first.clone(),
@@ -397,7 +401,7 @@ fn translate_helper(
                     top_n.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                inputs,
+                unresolved_inputs,
             ))
         }
         LogicalPlan::Join(join) => {
@@ -416,11 +420,13 @@ fn translate_helper(
                     _ => {}
                 }
             }
-            let (left, mut left_inputs) = translate_helper(&join.left, source_counter)?;
-            let (right, right_inputs) = translate_helper(&join.right, source_counter)?;
+            let (left_plan, mut left_unresolved_inputs) =
+                translate_helper(&join.left, source_counter)?;
+            let (right_plan, right_unresolved_inputs) =
+                translate_helper(&join.right, source_counter)?;
 
             // Merge inputs from both sides
-            left_inputs.extend(right_inputs);
+            left_unresolved_inputs.extend(right_unresolved_inputs);
 
             let (remaining_on, left_on, right_on, null_equals_nulls) = join.on.split_eq_preds();
 
@@ -434,22 +440,22 @@ fn translate_helper(
             if left_on.is_empty() && right_on.is_empty() && join.join_type == JoinType::Inner {
                 Ok((
                     LocalPhysicalPlan::cross_join(
-                        left,
-                        right,
+                        left_plan,
+                        right_plan,
                         join.output_schema.clone(),
                         join.stats_state.clone(),
                         LocalNodeContext::default(),
                     ),
-                    left_inputs,
+                    left_unresolved_inputs,
                 ))
             } else {
-                let left_on = BoundExpr::bind_all(&left_on, left.schema())?;
-                let right_on = BoundExpr::bind_all(&right_on, right.schema())?;
+                let left_on = BoundExpr::bind_all(&left_on, left_plan.schema())?;
+                let right_on = BoundExpr::bind_all(&right_on, right_plan.schema())?;
 
                 Ok((
                     LocalPhysicalPlan::hash_join(
-                        left,
-                        right,
+                        left_plan,
+                        right_plan,
                         left_on,
                         right_on,
                         None,
@@ -459,13 +465,14 @@ fn translate_helper(
                         join.stats_state.clone(),
                         LocalNodeContext::default(),
                     ),
-                    left_inputs,
+                    left_unresolved_inputs,
                 ))
             }
         }
         LogicalPlan::Distinct(distinct) => {
             let schema = distinct.input.schema();
-            let (input, inputs) = translate_helper(&distinct.input, source_counter)?;
+            let (input_plan, unresolved_inputs) =
+                translate_helper(&distinct.input, source_counter)?;
 
             let columns = distinct
                 .columns
@@ -475,30 +482,32 @@ fn translate_helper(
 
             Ok((
                 LocalPhysicalPlan::dedup(
-                    input,
+                    input_plan,
                     columns,
                     schema,
                     distinct.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                inputs,
+                unresolved_inputs,
             ))
         }
         LogicalPlan::Concat(concat) => {
-            let (input, mut inputs) = translate_helper(&concat.input, source_counter)?;
-            let (other, other_inputs) = translate_helper(&concat.other, source_counter)?;
+            let (input_plan, mut unresolved_inputs) =
+                translate_helper(&concat.input, source_counter)?;
+            let (other_plan, other_unresolved_inputs) =
+                translate_helper(&concat.other, source_counter)?;
 
             // Merge inputs from both sides
-            inputs.extend(other_inputs);
+            unresolved_inputs.extend(other_unresolved_inputs);
 
             Ok((
                 LocalPhysicalPlan::concat(
-                    input,
-                    other,
+                    input_plan,
+                    other_plan,
                     concat.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                inputs,
+                unresolved_inputs,
             ))
         }
         LogicalPlan::Repartition(repartition) => {
@@ -508,29 +517,29 @@ fn translate_helper(
             translate_helper(&repartition.input, source_counter)
         }
         LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => {
-            let (input, inputs) =
+            let (input_plan, unresolved_inputs) =
                 translate_helper(&monotonically_increasing_id.input, source_counter)?;
             Ok((
                 LocalPhysicalPlan::monotonically_increasing_id(
-                    input,
+                    input_plan,
                     monotonically_increasing_id.column_name.clone(),
                     monotonically_increasing_id.starting_offset,
                     monotonically_increasing_id.schema.clone(),
                     monotonically_increasing_id.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                inputs,
+                unresolved_inputs,
             ))
         }
         LogicalPlan::Sink(sink) => {
             use daft_logical_plan::SinkInfo;
-            let (input, inputs) = translate_helper(&sink.input, source_counter)?;
-            let data_schema = input.schema().clone();
+            let (input_plan, unresolved_inputs) = translate_helper(&sink.input, source_counter)?;
+            let data_schema = input_plan.schema().clone();
             let plan = match sink.sink_info.as_ref() {
                 SinkInfo::OutputFileInfo(info) => {
                     let bound_info = info.clone().bind(&data_schema)?;
                     let physical_write = LocalPhysicalPlan::physical_write(
-                        input,
+                        input_plan,
                         data_schema.clone(),
                         sink.schema.clone(),
                         bound_info.clone(),
@@ -552,7 +561,7 @@ fn translate_helper(
                     daft_logical_plan::CatalogType::DeltaLake(..)
                     | daft_logical_plan::CatalogType::Iceberg(..) => {
                         LocalPhysicalPlan::catalog_write(
-                            input,
+                            input_plan,
                             info.catalog.clone().bind(&data_schema)?,
                             data_schema,
                             sink.schema.clone(),
@@ -561,7 +570,7 @@ fn translate_helper(
                         )
                     }
                     daft_logical_plan::CatalogType::Lance(info) => LocalPhysicalPlan::lance_write(
-                        input,
+                        input_plan,
                         info.clone(),
                         data_schema,
                         sink.schema.clone(),
@@ -571,38 +580,39 @@ fn translate_helper(
                 },
                 #[cfg(feature = "python")]
                 SinkInfo::DataSinkInfo(data_sink_info) => LocalPhysicalPlan::data_sink(
-                    input,
+                    input_plan,
                     data_sink_info.clone(),
                     sink.schema.clone(),
                     sink.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
             };
-            Ok((plan, inputs))
+            Ok((plan, unresolved_inputs))
         }
         LogicalPlan::Explode(explode) => {
-            let (input, inputs) = translate_helper(&explode.input, source_counter)?;
+            let (input_plan, unresolved_inputs) = translate_helper(&explode.input, source_counter)?;
 
-            let to_explode = BoundExpr::bind_all(&explode.to_explode, input.schema())?;
+            let to_explode = BoundExpr::bind_all(&explode.to_explode, input_plan.schema())?;
 
             Ok((
                 LocalPhysicalPlan::explode(
-                    input,
+                    input_plan,
                     to_explode,
                     explode.index_column.clone(),
                     explode.exploded_schema.clone(),
                     explode.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                inputs,
+                unresolved_inputs,
             ))
         }
         LogicalPlan::VLLMProject(vllm_project) => {
-            let (input, inputs) = translate_helper(&vllm_project.input, source_counter)?;
-            let expr = BoundVLLMExpr::try_new(vllm_project.expr.clone(), input.schema())?;
+            let (input_plan, unresolved_inputs) =
+                translate_helper(&vllm_project.input, source_counter)?;
+            let expr = BoundVLLMExpr::try_new(vllm_project.expr.clone(), input_plan.schema())?;
             Ok((
                 LocalPhysicalPlan::vllm_project(
-                    input,
+                    input_plan,
                     expr,
                     None,
                     vllm_project.output_column_name.clone(),
@@ -610,7 +620,7 @@ fn translate_helper(
                     vllm_project.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                inputs,
+                unresolved_inputs,
             ))
         }
         LogicalPlan::Intersect(_)

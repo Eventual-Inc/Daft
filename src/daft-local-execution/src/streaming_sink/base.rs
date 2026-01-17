@@ -28,7 +28,6 @@ use crate::{
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
 
-#[derive(Clone)]
 pub enum StreamingSinkOutput {
     NeedMoreInput(Option<Arc<MicroPartition>>),
     #[allow(dead_code)]
