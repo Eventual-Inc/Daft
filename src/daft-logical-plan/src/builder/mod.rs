@@ -1149,12 +1149,12 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.shard(strategy, world_size, rank)?.into())
     }
 
-    #[pyo3(signature = (to_explode, ignore_empty=false, index_column=None))]
+    #[pyo3(signature = (to_explode, index_column=None, ignore_empty=false))]
     pub fn explode(
         &self,
         to_explode: Vec<PyExpr>,
-        ignore_empty: bool,
         index_column: Option<String>,
+        ignore_empty: bool,
     ) -> PyResult<Self> {
         Ok(self
             .builder

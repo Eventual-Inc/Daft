@@ -3048,7 +3048,7 @@ class DataFrame:
 
     @DataframePublicAPI
     def explode(
-        self, *columns: ColumnInputType, ignore_empty: bool = False, index_column: ColumnInputType | None = None
+        self, *columns: ColumnInputType, index_column: ColumnInputType | None = None, ignore_empty: bool = False
     ) -> "DataFrame":
         """Explodes a List column, where every element in each row's List becomes its own row, and all other columns in the DataFrame are duplicated across rows.
 
@@ -3059,8 +3059,8 @@ class DataFrame:
 
         Args:
             *columns (ColumnInputType): columns to explode
-            ignore_empty (bool): whether to drop empty lists or None values. Defaults to False.
             index_column (ColumnInputType | None): optional name for an index column that tracks the position of each element within its original list
+            ignore_empty (bool): whether to drop empty lists or None values. Defaults to False.
 
         Returns:
             DataFrame: DataFrame with exploded column
