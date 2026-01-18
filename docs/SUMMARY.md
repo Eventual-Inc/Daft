@@ -89,7 +89,8 @@
     * [Functions](api/functions/)
     * [User-Defined Functions](api/udf.md)
     * Data Types
-        * [DataType](api/datatypes/index.md)
+        * [DataType](api/datatypes/all_datatypes.md)
+        * [daft.File Types](api/datatypes/daft_file_types.md)
         * [Type Conversions](api/datatypes/type_conversions.md)
         * [Casting](api/datatypes/casting.md)
     * [Window](api/window.md)
