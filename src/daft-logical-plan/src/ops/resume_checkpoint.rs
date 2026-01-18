@@ -16,7 +16,7 @@ use crate::{LogicalPlan, stats::StatsState};
 #[cfg_attr(debug_assertions, derive(Debug))]
 #[educe(PartialEq, Eq, Hash)]
 pub struct ResumeCheckpointSpec {
-    pub root_dir: String,
+    pub root_dir: Vec<String>,
     pub file_format: FileFormat,
     pub key_column: String,
     pub io_config: Option<IOConfig>,
@@ -31,7 +31,7 @@ impl ResumeCheckpointSpec {
     #[cfg(feature = "python")]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        root_dir: String,
+        root_dir: Vec<String>,
         file_format: FileFormat,
         key_column: String,
         io_config: Option<IOConfig>,
@@ -40,9 +40,10 @@ impl ResumeCheckpointSpec {
         num_cpus: Option<f64>,
         batch_size: Option<usize>,
     ) -> DaftResult<Self> {
-        if root_dir.is_empty() {
+        if root_dir.is_empty() || root_dir.iter().any(|p| p.is_empty()) {
             return Err(DaftError::ValueError(
-                "resume checkpoint root_dir must be non-empty".to_string(),
+                "resume checkpoint root_dir must be a non-empty list of non-empty paths"
+                    .to_string(),
             ));
         }
         if key_column.is_empty() {
@@ -80,7 +81,7 @@ impl ResumeCheckpointSpec {
     #[cfg(not(feature = "python"))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        root_dir: String,
+        root_dir: Vec<String>,
         file_format: FileFormat,
         key_column: String,
         io_config: Option<IOConfig>,
@@ -88,9 +89,10 @@ impl ResumeCheckpointSpec {
         num_cpus: Option<f64>,
         batch_size: Option<usize>,
     ) -> DaftResult<Self> {
-        if root_dir.is_empty() {
+        if root_dir.is_empty() || root_dir.iter().any(|p| p.is_empty()) {
             return Err(DaftError::ValueError(
-                "resume checkpoint root_dir must be non-empty".to_string(),
+                "resume checkpoint root_dir must be a non-empty list of non-empty paths"
+                    .to_string(),
             ));
         }
         if key_column.is_empty() {
@@ -172,9 +174,14 @@ impl ResumeCheckpoint {
     }
 
     pub fn multiline_display(&self) -> Vec<String> {
+        let path_display = if self.spec.root_dir.len() == 1 {
+            self.spec.root_dir[0].as_str().to_string()
+        } else {
+            format!("{:?}", self.spec.root_dir)
+        };
         let mut res = vec![format!(
             "ResumeCheckpoint: path = {}, format = {:?}, on = {}",
-            self.spec.root_dir, self.spec.file_format, self.spec.key_column
+            path_display, self.spec.file_format, self.spec.key_column
         )];
         if let Some(io_config) = &self.spec.io_config {
             res.push(format!("IOConfig = {}", io_config));
@@ -207,7 +214,7 @@ mod tests {
     #[test]
     fn test_resume_checkpoint_spec_eq_hash() {
         let spec_a = ResumeCheckpointSpec::new(
-            "root".to_string(),
+            vec!["root".to_string()],
             FileFormat::Csv,
             "id".to_string(),
             None,
@@ -218,7 +225,7 @@ mod tests {
         .unwrap();
 
         let spec_b = ResumeCheckpointSpec::new(
-            "root2".to_string(),
+            vec!["root2".to_string()],
             FileFormat::Csv,
             "id".to_string(),
             None,
@@ -259,7 +266,7 @@ mod tests {
             };
 
             let spec_a = ResumeCheckpointSpec::new(
-                "root".to_string(),
+                vec!["root".to_string()],
                 FileFormat::Csv,
                 "id".to_string(),
                 None,
@@ -271,7 +278,7 @@ mod tests {
             .unwrap();
 
             let spec_b = ResumeCheckpointSpec::new(
-                "root".to_string(),
+                vec!["root".to_string()],
                 FileFormat::Csv,
                 "id".to_string(),
                 None,
@@ -283,7 +290,7 @@ mod tests {
             .unwrap();
 
             let spec_c = ResumeCheckpointSpec::new(
-                "root".to_string(),
+                vec!["root".to_string()],
                 FileFormat::Csv,
                 "id".to_string(),
                 None,
@@ -329,7 +336,7 @@ mod tests {
         let builder_with_resume = pyo3::Python::with_gil(|py| -> common_error::DaftResult<_> {
             let kwargs = common_py_serde::PyObjectWrapper(Arc::new(py.None()));
             let spec = ResumeCheckpointSpec::new(
-                "root".to_string(),
+                vec!["root".to_string()],
                 FileFormat::Csv,
                 "a".to_string(),
                 None,
@@ -344,7 +351,7 @@ mod tests {
         #[cfg(not(feature = "python"))]
         let builder_with_resume = {
             let spec = ResumeCheckpointSpec::new(
-                "root".to_string(),
+                vec!["root".to_string()],
                 FileFormat::Csv,
                 "a".to_string(),
                 None,
@@ -385,7 +392,7 @@ mod tests {
             dummy_scan_node(dummy_scan_operator(vec![Field::new("a", DataType::Int64)]));
 
         let spec = ResumeCheckpointSpec::new(
-            "root".to_string(),
+            vec!["root".to_string()],
             FileFormat::Parquet,
             "a".to_string(),
             None,

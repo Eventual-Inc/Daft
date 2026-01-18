@@ -407,7 +407,7 @@ class LogicalPlanBuilder:
 
     def resume_checkpoint(
         self,
-        root_dir: str,
+        root_dir: str | list[str],
         file_format: FileFormat,
         key_column: str,
         io_config: IOConfig | None = None,

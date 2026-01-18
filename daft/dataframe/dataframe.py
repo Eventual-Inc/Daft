@@ -2338,7 +2338,7 @@ class DataFrame:
     @DataframePublicAPI
     def resume(
         self,
-        path: str | pathlib.Path,
+        path: str | pathlib.Path | list[str | pathlib.Path],
         on: str | list[str],
         format: str | FileFormat = FileFormat.Parquet,
         io_config: IOConfig | None = None,
@@ -2380,8 +2380,18 @@ class DataFrame:
         if batch_size is not None and batch_size <= 0:
             raise ValueError("resume batch_size must be > 0")
 
+        root_dir: str | list[str]
+        if isinstance(path, list):
+            root_dir = [str(p) for p in path]
+            if len(root_dir) == 0:
+                raise ValueError("resume path list must be non-empty")
+            if any(p == "" for p in root_dir):
+                raise ValueError("resume path list must contain only non-empty paths")
+        else:
+            root_dir = str(path)
+
         builder = self._builder.resume_checkpoint(
-            root_dir=str(path),
+            root_dir=root_dir,
             file_format=file_format,
             key_column=key_column,
             io_config=io_config,

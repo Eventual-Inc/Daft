@@ -347,6 +347,21 @@ def test_resume_multiple_calls_are_cumulative(tmp_path: Path):
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
+def test_resume_multiple_paths_single_call(tmp_path: Path):
+    df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
+    ckpt_a = tmp_path / "ckpt_a_multi"
+    ckpt_b = tmp_path / "ckpt_b_multi"
+    ckpt_a.mkdir(parents=True, exist_ok=True)
+    ckpt_b.mkdir(parents=True, exist_ok=True)
+
+    (ckpt_a / "part-0.csv").write_text("id\n1\n", encoding="utf-8")
+    (ckpt_b / "part-0.csv").write_text("id\n2\n", encoding="utf-8")
+
+    out = df.resume([ckpt_a, ckpt_b], on="id", format="csv").collect()
+    assert out.select("id").to_pydict()["id"] == [3]
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
 def test_resume_csv_reader_args_applied(tmp_path: Path):
     ckpt_dir = tmp_path / "ckpt_csv_custom_delim"
     ckpt_dir.mkdir(parents=True, exist_ok=True)

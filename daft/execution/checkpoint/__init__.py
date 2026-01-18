@@ -85,7 +85,7 @@ def _split_partitions_evenly(total: int, buckets: int) -> tuple[int, int]:
 
 
 def _prepare_checkpoint_filter(
-    root_dir: str | pathlib.Path,
+    root_dir: str | pathlib.Path | list[str | pathlib.Path],
     io_config: IOConfig | None,
     key_column: str,
     num_buckets: int,
@@ -108,21 +108,25 @@ def _prepare_checkpoint_filter(
     if get_or_create_runner().name != "ray":
         raise RuntimeError("Checkpointing is only supported on Ray runner")
 
-    # Read existing keys dataframe and extract partitions
+    root_dirs = root_dir if isinstance(root_dir, list) else [root_dir]
+    root_dirs_str = [str(p) for p in root_dirs]
+
     df_keys = None
     try:
-        df_keys = read_fn(path=str(root_dir), io_config=io_config, **(read_kwargs or {}))
+        df_keys = read_fn(path=root_dirs_str, io_config=io_config, **(read_kwargs or {}))
         if key_column:
             df_keys = df_keys.select(key_column)
         partition_list = list(df_keys.iter_partitions())
     except FileNotFoundError as e:
-        warnings.warn(f"Resume checkpoint not found at {root_dir}: {e}")
+        warnings.warn(f"Resume checkpoint not found at {root_dirs_str}: {e}")
         return [], None, None
     except Exception as e:
-        raise RuntimeError(f"Unable to read checkpoint at {root_dir}: {e}") from e
+        raise RuntimeError(f"Unable to read checkpoint at {root_dirs_str}: {e}") from e
+    finally:
+        del df_keys
 
     if not partition_list:
-        warnings.warn(f"Resume checkpoint has no existing data at {root_dir}.")
+        warnings.warn(f"Resume checkpoint has no existing data at {root_dirs_str}.")
         return [], None, None
 
     if len(partition_list) < num_buckets:
@@ -177,8 +181,6 @@ def _prepare_checkpoint_filter(
     except Exception:
         _cleanup_checkpoint_resources(actor_handles, pg)
         raise
-    del df_keys
-
     checkpoint_filter = CheckpointFilter(num_buckets=num_buckets, actor_handles=actor_handles)
     checkpoint_filter_callable = checkpoint_filter(col(key_column))  # type: ignore
     return actor_handles, pg, checkpoint_filter_callable  # type: ignore

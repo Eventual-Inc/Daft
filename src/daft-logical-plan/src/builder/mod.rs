@@ -1247,7 +1247,7 @@ impl PyLogicalPlanBuilder {
     pub fn resume_checkpoint(
         &self,
         py: Python,
-        root_dir: String,
+        root_dir: pyo3::Py<pyo3::PyAny>,
         file_format: common_file_formats::FileFormat,
         key_column: String,
         io_config: Option<common_io_config::python::IOConfig>,
@@ -1256,10 +1256,15 @@ impl PyLogicalPlanBuilder {
         num_cpus: Option<f64>,
         batch_size: Option<usize>,
     ) -> PyResult<Self> {
+        let root_dirs: Vec<String> = if let Ok(s) = root_dir.extract::<String>(py) {
+            vec![s]
+        } else {
+            root_dir.extract::<Vec<String>>(py)?
+        };
         let read_kwargs =
             common_py_serde::PyObjectWrapper(Arc::new(read_kwargs.unwrap_or_else(|| py.None())));
         let spec = ops::ResumeCheckpointSpec::new(
-            root_dir,
+            root_dirs,
             file_format,
             key_column,
             io_config.map(|cfg| cfg.config),
