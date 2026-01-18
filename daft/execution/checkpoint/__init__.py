@@ -102,7 +102,7 @@ def _prepare_checkpoint_filter(
             - checkpoint_filter_callable: Daft Expression used to filter input
 
     Notes:
-        - If checkpoint path is missing or empty, emits a warning and no-ops.
+        - Raises RuntimeError if the checkpoint path cannot be read.
         - Raises RuntimeError if runner is not Ray.
     """
     if get_or_create_runner().name != "ray":
@@ -118,8 +118,7 @@ def _prepare_checkpoint_filter(
             df_keys = df_keys.select(key_column)
         partition_list = list(df_keys.iter_partitions())
     except FileNotFoundError as e:
-        warnings.warn(f"Resume checkpoint not found at {root_dirs_str}: {e}")
-        return [], None, None
+        raise RuntimeError(f"Resume checkpoint not found at {root_dirs_str}: {e}") from e
     except Exception as e:
         raise RuntimeError(f"Unable to read checkpoint at {root_dirs_str}: {e}") from e
     finally:

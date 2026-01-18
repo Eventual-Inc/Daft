@@ -9,7 +9,6 @@ Notes:
 from __future__ import annotations
 
 import io
-import warnings
 from pathlib import Path
 
 import pytest
@@ -30,7 +29,10 @@ def helper_write_dataframe(
 ) -> daft.DataFrame:
     """Write a DataFrame to a local directory (csv/parquet/json)."""
     root_dir.mkdir(parents=True, exist_ok=True)
-    if checkpoint_config is not None:
+
+    has_existing_data = any(root_dir.rglob(f"*.{fmt.ext()}"))
+
+    if checkpoint_config is not None and has_existing_data:
         if not isinstance(checkpoint_config, dict) or "key_column" not in checkpoint_config:
             raise ValueError("checkpoint_config must be a dict with key_column")
         df = df.resume(
@@ -428,16 +430,12 @@ def test_resume_batch_size_visible_in_explain(tmp_path: Path):
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_resume_missing_checkpoint_is_noop_and_warns(tmp_path: Path):
+def test_resume_missing_checkpoint_raises(tmp_path: Path):
     ckpt_dir = tmp_path / "ckpt_missing"
     df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
 
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        out = df.resume(ckpt_dir, on="id", format="parquet").collect()
-
-    assert out.select("id").to_pydict()["id"] == [1, 2, 3]
-    assert any("Resume checkpoint not found" in str(x.message) for x in w)
+    with pytest.raises(RuntimeError, match="Resume checkpoint not found"):
+        df.resume(ckpt_dir, on="id", format="parquet").collect()
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
