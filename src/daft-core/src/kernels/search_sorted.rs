@@ -2,8 +2,7 @@ use std::{cmp::Ordering, iter::zip};
 
 use arrow::{
     array::{
-        Array, ArrowPrimitiveType, BooleanArray, FixedSizeBinaryArray, GenericBinaryArray,
-        GenericStringArray, OffsetSizeTrait, PrimitiveArray, UInt64Builder, make_comparator,
+        Array, ArrowPrimitiveType, BooleanArray, PrimitiveArray, UInt64Builder, make_comparator,
     },
     compute::SortOptions,
     datatypes::*,
@@ -82,67 +81,60 @@ where
     array_builder.finish()
 }
 
-fn search_sorted_utf_array<O: OffsetSizeTrait>(
-    sorted_array: &GenericStringArray<O>,
-    keys: &GenericStringArray<O>,
+/// Generic search_sorted implementation using arrow-rs dyn comparator.
+/// Used for string and binary types where comparison cost dominates dispatch overhead.
+fn search_sorted_generic(
+    sorted_array: &dyn Array,
+    keys: &dyn Array,
     input_reversed: bool,
-) -> PrimitiveArray<UInt64Type> {
+) -> DaftResult<PrimitiveArray<UInt64Type>> {
     let array_size = sorted_array.len();
+    let key_size = keys.len();
+
+    // Create comparators for comparing keys with sorted array and keys with each other.
+    // The second comparator is used to optimize the search range based on previous key.
+    let comparator = make_comparator(
+        sorted_array,
+        keys,
+        SortOptions::new(input_reversed, input_reversed),
+    )?;
+
+    let key_to_key_comparator =
+        make_comparator(keys, keys, SortOptions::new(input_reversed, input_reversed))?;
+
+    let mut array_builder = UInt64Builder::with_capacity(key_size);
     let mut left = 0_usize;
     let mut right = array_size;
 
-    let mut array_builder = UInt64Builder::with_capacity(array_size);
-    let mut last_key = keys.iter().next().unwrap_or(None);
-    for key_val in keys {
-        let is_last_key_lt = match (last_key, key_val) {
-            (None, None) => false,
-            (None, Some(_)) => input_reversed,
-            (Some(last_key), Some(key_val)) => {
-                if !input_reversed {
-                    last_key.lt(key_val)
-                } else {
-                    last_key.gt(key_val)
-                }
-            }
-            (Some(_), None) => !input_reversed,
-        };
-        if is_last_key_lt {
-            right = array_size;
-        } else {
-            left = 0;
-            right = if right < array_size {
-                right + 1
+    for key_idx in 0..key_size {
+        // Optimize search range based on previous key. If the previous key is less than the current key,
+        // we only need to search in the right half of the sorted array. Otherwise, we only need to search in the left half.
+        if key_idx > 0 {
+            let is_last_key_lt = key_to_key_comparator(key_idx - 1, key_idx).is_lt();
+            if is_last_key_lt {
+                right = array_size;
             } else {
-                array_size
-            };
+                left = 0;
+                right = if right < array_size {
+                    right + 1
+                } else {
+                    array_size
+                };
+            }
         }
+
         while left < right {
             let mid_idx = left + ((right - left) >> 1);
-            let mid_val = unsafe { sorted_array.value_unchecked(mid_idx) };
-            let is_key_val_lt = match (key_val, sorted_array.is_valid(mid_idx)) {
-                (None, false) => false,
-                (None, true) => input_reversed,
-                (Some(key_val), true) => {
-                    if !input_reversed {
-                        key_val.lt(mid_val)
-                    } else {
-                        mid_val.lt(key_val)
-                    }
-                }
-                (Some(_), false) => !input_reversed,
-            };
-
-            if is_key_val_lt {
-                right = mid_idx;
-            } else {
+            if comparator(mid_idx, key_idx).is_le() {
                 left = mid_idx + 1;
+            } else {
+                right = mid_idx;
             }
         }
         array_builder.append_value(left.try_into().unwrap());
-        last_key = key_val;
     }
 
-    array_builder.finish()
+    Ok(array_builder.finish())
 }
 
 fn search_sorted_boolean_array(
@@ -221,132 +213,6 @@ fn search_sorted_boolean_array(
     array_builder.finish()
 }
 
-fn search_sorted_binary_array<O: OffsetSizeTrait>(
-    sorted_array: &GenericBinaryArray<O>,
-    keys: &GenericBinaryArray<O>,
-    input_reversed: bool,
-) -> PrimitiveArray<UInt64Type> {
-    let array_size = sorted_array.len();
-    let mut left = 0_usize;
-    let mut right = array_size;
-
-    let mut array_builder = UInt64Builder::with_capacity(array_size);
-    let mut last_key = keys.iter().next().unwrap_or(None);
-    for key_val in keys {
-        let is_last_key_lt = match (last_key, key_val) {
-            (None, None) => false,
-            (None, Some(_)) => input_reversed,
-            (Some(last_key), Some(key_val)) => {
-                if !input_reversed {
-                    last_key.lt(key_val)
-                } else {
-                    last_key.gt(key_val)
-                }
-            }
-            (Some(_), None) => !input_reversed,
-        };
-        if is_last_key_lt {
-            right = array_size;
-        } else {
-            left = 0;
-            right = if right < array_size {
-                right + 1
-            } else {
-                array_size
-            };
-        }
-        while left < right {
-            let mid_idx = left + ((right - left) >> 1);
-            let mid_val = unsafe { sorted_array.value_unchecked(mid_idx) };
-            let is_key_val_lt = match (key_val, sorted_array.is_valid(mid_idx)) {
-                (None, false) => false,
-                (None, true) => input_reversed,
-                (Some(key_val), true) => {
-                    if !input_reversed {
-                        key_val.lt(mid_val)
-                    } else {
-                        mid_val.lt(key_val)
-                    }
-                }
-                (Some(_), false) => !input_reversed,
-            };
-
-            if is_key_val_lt {
-                right = mid_idx;
-            } else {
-                left = mid_idx + 1;
-            }
-        }
-        array_builder.append_value(left.try_into().unwrap());
-        last_key = key_val;
-    }
-
-    array_builder.finish()
-}
-
-fn search_sorted_fixed_size_binary_array(
-    sorted_array: &FixedSizeBinaryArray,
-    keys: &FixedSizeBinaryArray,
-    input_reversed: bool,
-) -> PrimitiveArray<UInt64Type> {
-    let array_size = sorted_array.len();
-    let mut left = 0_usize;
-    let mut right = array_size;
-
-    let mut array_builder = UInt64Builder::with_capacity(array_size);
-    let mut last_key = keys.iter().next().unwrap_or(None);
-    for key_val in keys {
-        let is_last_key_lt = match (last_key, key_val) {
-            (None, None) => false,
-            (None, Some(_)) => input_reversed,
-            (Some(last_key), Some(key_val)) => {
-                if !input_reversed {
-                    last_key.lt(key_val)
-                } else {
-                    last_key.gt(key_val)
-                }
-            }
-            (Some(_), None) => !input_reversed,
-        };
-        if is_last_key_lt {
-            right = array_size;
-        } else {
-            left = 0;
-            right = if right < array_size {
-                right + 1
-            } else {
-                array_size
-            };
-        }
-        while left < right {
-            let mid_idx = left + ((right - left) >> 1);
-            let mid_val = unsafe { sorted_array.value_unchecked(mid_idx) };
-            let is_key_val_lt = match (key_val, sorted_array.is_valid(mid_idx)) {
-                (None, false) => false,
-                (None, true) => input_reversed,
-                (Some(key_val), true) => {
-                    if !input_reversed {
-                        key_val.lt(mid_val)
-                    } else {
-                        mid_val.lt(key_val)
-                    }
-                }
-                (Some(_), false) => !input_reversed,
-            };
-
-            if is_key_val_lt {
-                right = mid_idx;
-            } else {
-                left = mid_idx + 1;
-            }
-        }
-        array_builder.append_value(left.try_into().unwrap());
-        last_key = key_val;
-    }
-
-    array_builder.finish()
-}
-
 macro_rules! dispatch_primitive_search_sorted {
     ($array:expr, $keys:expr, $reversed:expr, {
         $( $data_type:pat => $arrow_type:ty ),+ $(,)?
@@ -364,17 +230,6 @@ macro_rules! dispatch_primitive_search_sorted {
             ))),
         }
     }};
-}
-
-type IsValid = Box<dyn Fn(usize) -> bool + Send + Sync>;
-
-pub fn build_is_valid(array: &dyn Array) -> IsValid {
-    if let Some(nulls) = array.nulls() {
-        let nulls = nulls.clone();
-        Box::new(move |x| !nulls.is_null(x)) // Return true if valid (not null)
-    } else {
-        Box::new(move |_| true)
-    }
 }
 
 #[allow(clippy::eq_op)]
@@ -404,11 +259,11 @@ pub fn build_partial_compare_with_nulls(
             /*descending=*/ reversed, /*nulls_first=*/ reversed,
         ),
     )?;
-    let left_is_valid = build_is_valid(left);
-    let right_is_valid = build_is_valid(right);
 
+    let left_data = left.to_data();
+    let right_data = right.to_data();
     Ok(Box::new(move |i: usize, j: usize| {
-        match (left_is_valid(i), right_is_valid(j)) {
+        match (left_data.is_valid(i), right_data.is_valid(j)) {
             (true, true) => Some(comparator(i, j)),
             (false, true) => Some(Ordering::Greater),
             (true, false) => Some(Ordering::Less),
@@ -538,31 +393,11 @@ pub fn search_sorted(
                 DataType::Decimal256(_, _) => Decimal256Type,
             })
         }
-        DataType::Utf8 => Ok(search_sorted_utf_array::<i32>(
-            sorted_array.as_any().downcast_ref().unwrap(),
-            keys.as_any().downcast_ref().unwrap(),
-            input_reversed,
-        )),
-        DataType::LargeUtf8 => Ok(search_sorted_utf_array::<i64>(
-            sorted_array.as_any().downcast_ref().unwrap(),
-            keys.as_any().downcast_ref().unwrap(),
-            input_reversed,
-        )),
-        DataType::Binary => Ok(search_sorted_binary_array::<i32>(
-            sorted_array.as_any().downcast_ref().unwrap(),
-            keys.as_any().downcast_ref().unwrap(),
-            input_reversed,
-        )),
-        DataType::LargeBinary => Ok(search_sorted_binary_array::<i64>(
-            sorted_array.as_any().downcast_ref().unwrap(),
-            keys.as_any().downcast_ref().unwrap(),
-            input_reversed,
-        )),
-        DataType::FixedSizeBinary(_) => Ok(search_sorted_fixed_size_binary_array(
-            sorted_array.as_any().downcast_ref().unwrap(),
-            keys.as_any().downcast_ref().unwrap(),
-            input_reversed,
-        )),
+        DataType::Utf8
+        | DataType::LargeUtf8
+        | DataType::Binary
+        | DataType::LargeBinary
+        | DataType::FixedSizeBinary(_) => search_sorted_generic(sorted_array, keys, input_reversed),
         DataType::Boolean => Ok(search_sorted_boolean_array(
             sorted_array.as_any().downcast_ref().unwrap(),
             keys.as_any().downcast_ref().unwrap(),
