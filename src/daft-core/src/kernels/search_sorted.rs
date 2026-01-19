@@ -2,9 +2,8 @@ use std::{cmp::Ordering, iter::zip};
 
 use arrow::{
     array::{
-        Array as ArrowArray, ArrowPrimitiveType, BooleanArray, FixedSizeBinaryArray,
-        GenericBinaryArray, GenericStringArray, OffsetSizeTrait, PrimitiveArray, UInt64Builder,
-        make_comparator,
+        Array, ArrowPrimitiveType, BooleanArray, FixedSizeBinaryArray, GenericBinaryArray,
+        GenericStringArray, OffsetSizeTrait, PrimitiveArray, UInt64Builder, make_comparator,
     },
     compute::SortOptions,
     datatypes::*,
@@ -369,7 +368,7 @@ macro_rules! dispatch_primitive_search_sorted {
 
 type IsValid = Box<dyn Fn(usize) -> bool + Send + Sync>;
 
-pub fn build_is_valid(array: &dyn ArrowArray) -> IsValid {
+pub fn build_is_valid(array: &dyn Array) -> IsValid {
     if let Some(nulls) = array.nulls() {
         let nulls = nulls.clone();
         Box::new(move |x| !nulls.is_null(x)) // Return true if valid (not null)
@@ -393,38 +392,34 @@ pub fn cmp_float<F: Float>(l: &F, r: &F) -> std::cmp::Ordering {
 pub type DynPartialComparator = Box<dyn Fn(usize, usize) -> Option<Ordering> + Send + Sync>;
 
 pub fn build_partial_compare_with_nulls(
-    left: &dyn ArrowArray,
-    right: &dyn ArrowArray,
+    left: &dyn Array,
+    right: &dyn Array,
     reversed: bool,
 ) -> DaftResult<DynPartialComparator> {
-    let comparator = make_comparator(left, right, SortOptions::new(false, false))?;
+    // `reversed` is ambiguous, but based on historical behaviour, the default is to sort in ascending order and nulls last.
+    let comparator = make_comparator(
+        left,
+        right,
+        SortOptions::new(
+            /*descending=*/ reversed, /*nulls_first=*/ reversed,
+        ),
+    )?;
     let left_is_valid = build_is_valid(left);
     let right_is_valid = build_is_valid(right);
 
-    if reversed {
-        Ok(Box::new(move |i: usize, j: usize| {
-            match (left_is_valid(i), right_is_valid(j)) {
-                (true, true) => Some(comparator(i, j).reverse()),
-                (false, true) => Some(Ordering::Less),
-                (true, false) => Some(Ordering::Greater),
-                (false, false) => None,
-            }
-        }))
-    } else {
-        Ok(Box::new(move |i: usize, j: usize| {
-            match (left_is_valid(i), right_is_valid(j)) {
-                (true, true) => Some(comparator(i, j)),
-                (false, true) => Some(Ordering::Greater),
-                (true, false) => Some(Ordering::Less),
-                (false, false) => None,
-            }
-        }))
-    }
+    Ok(Box::new(move |i: usize, j: usize| {
+        match (left_is_valid(i), right_is_valid(j)) {
+            (true, true) => Some(comparator(i, j)),
+            (false, true) => Some(Ordering::Greater),
+            (true, false) => Some(Ordering::Less),
+            (false, false) => None,
+        }
+    }))
 }
 
 pub fn search_sorted_multi_array(
-    sorted_arrays: &Vec<&dyn ArrowArray>,
-    key_arrays: &Vec<&dyn ArrowArray>,
+    sorted_arrays: &Vec<&dyn Array>,
+    key_arrays: &Vec<&dyn Array>,
     input_reversed: &Vec<bool>,
 ) -> DaftResult<PrimitiveArray<UInt64Type>> {
     if sorted_arrays.is_empty() || key_arrays.is_empty() {
@@ -464,7 +459,7 @@ pub fn search_sorted_multi_array(
         cmp_list.push(make_comparator(
             *sorted_arr,
             *key_arr,
-            SortOptions::new(*reversed, false),
+            SortOptions::new(*reversed, *reversed),
         )?);
     }
 
@@ -496,8 +491,8 @@ pub fn search_sorted_multi_array(
 }
 
 pub fn search_sorted(
-    sorted_array: &dyn ArrowArray,
-    keys: &dyn ArrowArray,
+    sorted_array: &dyn Array,
+    keys: &dyn Array,
     input_reversed: bool,
 ) -> DaftResult<PrimitiveArray<UInt64Type>> {
     if sorted_array.data_type() != keys.data_type() {
