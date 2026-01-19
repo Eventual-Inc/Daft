@@ -106,6 +106,8 @@ pub(crate) enum QueryState {
     },
     Setup {
         plan_info: PlanInfo,
+        #[serde(skip)]
+        pending_source_stats: HashMap<String, HashMap<NodeID, HashMap<String, Stat>>>,
     },
     Executing {
         plan_info: PlanInfo,

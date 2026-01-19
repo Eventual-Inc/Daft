@@ -45,13 +45,13 @@ pub trait Subscriber: Send + Sync + std::fmt::Debug + 'static {
     async fn on_exec_emit_stats(
         &self,
         query_id: QueryID,
-        stats: Vec<(NodeID, Stats)>,
+        stats: Arc<Vec<(NodeID, Stats)>>,
     ) -> DaftResult<()>;
     async fn on_exec_emit_stats_with_id(
         &self,
         query_id: QueryID,
         _execution_id: &str,
-        stats: Vec<(NodeID, Stats)>,
+        stats: Arc<Vec<(NodeID, Stats)>>,
     ) -> DaftResult<()> {
         self.on_exec_emit_stats(query_id, stats).await
     }

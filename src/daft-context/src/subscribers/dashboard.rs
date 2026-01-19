@@ -311,7 +311,7 @@ impl Subscriber for DashboardSubscriber {
         &self,
         query_id: QueryID,
         execution_id: &str,
-        stats: Vec<(NodeID, Stats)>,
+        stats: Arc<Vec<(NodeID, Stats)>>,
     ) -> DaftResult<()> {
         Self::handle_request(
             self.client
@@ -343,7 +343,7 @@ impl Subscriber for DashboardSubscriber {
     async fn on_exec_emit_stats(
         &self,
         query_id: QueryID,
-        stats: Vec<(NodeID, Stats)>,
+        stats: Arc<Vec<(NodeID, Stats)>>,
     ) -> DaftResult<()> {
         if std::env::var("DAFT_FLOTILLA_WORKER").is_ok() {
             return Ok(());
@@ -357,8 +357,6 @@ impl Subscriber for DashboardSubscriber {
                 .map(|id| id.clone())
                 .unwrap_or_else(|| "unknown".to_string())
         };
-
-        eprintln!("Emitting stats for query {} from source {}: {:?}", query_id, source_id, stats);
         self.on_exec_emit_stats_with_id(query_id, &source_id, stats)
             .await
     }

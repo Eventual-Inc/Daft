@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pathlib
+
 try:
     import sqlite3
 except ImportError:
@@ -20,8 +21,8 @@ from tests.conftest import assert_df_equals
 # Hardcode scale factor to 200M for local testing
 SCALE_FACTOR = 0.2
 if data_generation is None:
-        pytest.skip("data_generation module (sqlite3) not available")
-    
+    pytest.skip("data_generation module (sqlite3) not available")
+
 
 @pytest.fixture(scope="session", params=[1, 2])
 def gen_tpch(request):

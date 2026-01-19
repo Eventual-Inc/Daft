@@ -1,6 +1,11 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
 
-use pyo3::{PyErr, PyResult, exceptions, pyclass, pyfunction, pymethods};
+use pyo3::{
+    PyErr, PyResult, Python, exceptions, pyclass, pyfunction, pymethods, types::PyAnyMethods,
+};
 use tokio::{
     runtime::{Builder, Runtime},
     sync::oneshot,
@@ -83,6 +88,17 @@ pub fn launch(noop_if_initialized: bool) -> PyResult<ConnectionHandle> {
         }
     }
 
+    let dashboard_url = std::env::var("DAFT_DASHBOARD_URL").map_err(|_| {
+        PyErr::new::<exceptions::PyRuntimeError, _>(
+            "DAFT_DASHBOARD_URL must be set before launching the dashboard",
+        )
+    })?;
+    if dashboard_url.trim().is_empty() {
+        return Err(PyErr::new::<exceptions::PyRuntimeError, _>(
+            "DAFT_DASHBOARD_URL must be set before launching the dashboard",
+        ));
+    }
+
     let port = super::DEFAULT_SERVER_PORT;
     let (send, recv) = oneshot::channel::<()>();
 
@@ -105,5 +121,18 @@ pub fn launch(noop_if_initialized: bool) -> PyResult<ConnectionHandle> {
     });
 
     DASHBOARD_ENABLED.store(true, Ordering::SeqCst);
+    Python::attach(|py| {
+        if let Ok(daft) = py.import(pyo3::intern!(py, "daft.daft"))
+            && let Ok(func) = daft.getattr(pyo3::intern!(py, "refresh_dashboard_subscriber"))
+        {
+            for _ in 0..50 {
+                if func.call0().is_ok() {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        }
+        Ok::<(), PyErr>(())
+    })?;
     Ok(handle)
 }

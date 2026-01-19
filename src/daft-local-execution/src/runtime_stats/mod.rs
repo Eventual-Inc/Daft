@@ -5,7 +5,7 @@ use std::{
     collections::{HashMap, HashSet},
     future::Future,
     pin::Pin,
-    sync::{Arc, atomic::{AtomicBool, Ordering}},
+    sync::Arc,
     task::{Context, Poll},
     time::{Duration, Instant},
 };
@@ -15,13 +15,12 @@ use common_metrics::{NodeID, QueryID, StatSnapshot, snapshot::StatSnapshotImpl};
 use common_runtime::RuntimeTask;
 use daft_context::Subscriber;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
-use daft_micropartition::MicroPartition;
 use futures::future;
 use itertools::Itertools;
 use progress_bar::{ProgressBar, make_progress_bar_manager};
 use tokio::{
     runtime::Handle,
-    sync::{mpsc::{self, Sender, Receiver, error::SendError}, oneshot},
+    sync::{mpsc, oneshot},
     time::interval,
 };
 use tracing::{Instrument, instrument::Instrumented};
@@ -170,7 +169,7 @@ impl RuntimeStatsManager {
                                 progress_bar.finalize_node(node_id, &snapshot);
                             }
 
-                            let event = vec![(node_id, snapshot.to_stats())];
+                            let event = std::sync::Arc::new(vec![(node_id, snapshot.to_stats())]);
                             for res in future::join_all(subscribers.iter().map(|subscriber| async {
                                 subscriber.on_exec_emit_stats(query_id.clone(), event.clone()).await?;
                                 subscriber.on_exec_operator_end(query_id.clone(), node_id).await
@@ -197,6 +196,7 @@ impl RuntimeStatsManager {
                             final_stats.push((*node_id, event.to_stats()));
                         }
                         if !final_stats.is_empty() {
+                            let final_stats = std::sync::Arc::new(final_stats);
                             for res in future::join_all(subscribers.iter().map(|subscriber| {
                                 subscriber.on_exec_emit_stats(query_id.clone(), final_stats.clone())
                             })).await {
@@ -223,6 +223,7 @@ impl RuntimeStatsManager {
                             snapshot_container.push((*node_id, snapshot.to_stats()));
                         }
 
+                        let snapshot_container = std::sync::Arc::new(std::mem::take(&mut snapshot_container));
                         for res in future::join_all(subscribers.iter().map(|subscriber| {
                             subscriber.on_exec_emit_stats(query_id.clone(), snapshot_container.clone())
                         })).await {
@@ -230,7 +231,6 @@ impl RuntimeStatsManager {
                                 log::error!("Failed to handle event: {}", e);
                             }
                         }
-                        snapshot_container.clear();
                     }
                 }
             }
@@ -311,69 +311,6 @@ impl<F: Future> Future for TimedFuture<F> {
             Poll::Pending => Poll::Pending,
             Poll::Ready(output) => Poll::Ready(output),
         }
-    }
-}
-
-/// Sender that wraps an internal sender and counts the number of rows passed through
-pub struct CountingSender {
-    sender: Sender<Arc<MicroPartition>>,
-    rt: Arc<dyn RuntimeStats>,
-}
-
-impl CountingSender {
-    pub(crate) fn new(sender: Sender<Arc<MicroPartition>>, rt: Arc<dyn RuntimeStats>) -> Self {
-        Self { sender, rt }
-    }
-    #[inline]
-    pub(crate) async fn send(&self, v: Arc<MicroPartition>) -> Result<(), SendError<Arc<MicroPartition>>> {
-        self.rt.add_rows_out(v.len() as u64);
-        self.sender.send(v).await?;
-        Ok(())
-    }
-}
-
-/// Receiver that wraps an internal received and
-/// - Counts the number of rows passed through
-/// - Activates the associated node on first receive
-pub struct InitializingCountingReceiver {
-    receiver: Receiver<Arc<MicroPartition>>,
-    rt: Arc<dyn RuntimeStats>,
-
-    first_receive: AtomicBool,
-    node_id: usize,
-    stats_manager: RuntimeStatsManagerHandle,
-}
-
-impl InitializingCountingReceiver {
-    pub(crate) fn new(
-        receiver: Receiver<Arc<MicroPartition>>,
-        node_id: usize,
-        rt: Arc<dyn RuntimeStats>,
-        stats_manager: RuntimeStatsManagerHandle,
-    ) -> Self {
-        Self {
-            receiver,
-            node_id,
-            rt,
-            stats_manager,
-            first_receive: AtomicBool::new(true),
-        }
-    }
-    #[inline]
-    pub(crate) async fn recv(&mut self) -> Option<Arc<MicroPartition>> {
-        let v = self.receiver.recv().await;
-        if let Some(ref v) = v {
-            if self
-                .first_receive
-                .compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed)
-                .is_ok()
-            {
-                self.stats_manager.activate_node(self.node_id);
-            }
-            let len = v.len() as u64;
-            self.rt.add_rows_in(len);
-        }
-        v
     }
 }
 
@@ -458,12 +395,12 @@ mod tests {
         async fn on_exec_emit_stats(
             &self,
             _query_id: QueryID,
-            stats: &[(NodeID, Stats)],
+            stats: std::sync::Arc<Vec<(NodeID, Stats)>>,
         ) -> DaftResult<()> {
             self.state
                 .total_calls
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            for (_, snapshot) in stats {
+            for (_, snapshot) in stats.iter() {
                 *self.state.event.lock().unwrap() = Some(snapshot.clone());
             }
             Ok(())
@@ -597,7 +534,7 @@ mod tests {
             async fn on_exec_emit_stats(
                 &self,
                 _: QueryID,
-                __: &[(NodeID, Stats)],
+                __: std::sync::Arc<Vec<(NodeID, Stats)>>,
             ) -> DaftResult<()> {
                 Err(common_error::DaftError::InternalError(
                     "Test error".to_string(),

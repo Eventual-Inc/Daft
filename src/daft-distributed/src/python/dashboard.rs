@@ -4,17 +4,14 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{QueryID, Stat, Stats};
-use common_metrics::snapshot::StatSnapshotImpl;
+use common_metrics::{QueryID, Stat, Stats, snapshot::StatSnapshotImpl};
 use daft_context::get_context;
 
 use crate::statistics::{StatisticsSubscriber, TaskEvent};
 
 pub struct DashboardStatisticsSubscriber {
     query_id: QueryID,
-    // Accumulate stats per operator across tasks: NodeID -> {StatName -> Stat}
     operator_stats: Mutex<HashMap<usize, HashMap<Arc<str>, Stat>>>,
-    // Track which operators have been notified as started
     started_operators: Mutex<HashSet<usize>>,
     initialized_subscriber: Mutex<bool>,
 }
@@ -33,21 +30,20 @@ impl DashboardStatisticsSubscriber {
 impl StatisticsSubscriber for DashboardStatisticsSubscriber {
     fn handle_event(&mut self, event: &TaskEvent) -> DaftResult<()> {
         let context = get_context();
-        
+
         {
             let mut init = self.initialized_subscriber.lock().unwrap();
             if !*init {
-                // Try to attach dashboard subscriber if not present
-                // We use try_new to check env var and connectivity
-                if let Ok(Some(sub)) = daft_context::subscribers::dashboard::DashboardSubscriber::try_new() {
-                    context.attach_subscriber("_dashboard".to_string(), Arc::new(sub));
-                    tracing::info!("DashboardStatisticsSubscriber attached DashboardSubscriber to context");
-                    eprintln!("DashboardStatisticsSubscriber attached DashboardSubscriber to context");
-                } else {
-                    tracing::warn!("DashboardStatisticsSubscriber failed to create DashboardSubscriber or env var not set");
-                    eprintln!("DashboardStatisticsSubscriber failed to create DashboardSubscriber or env var not set");
+                match daft_context::subscribers::dashboard::DashboardSubscriber::try_new() {
+                    Ok(Some(sub)) => {
+                        context.attach_subscriber("_dashboard".to_string(), Arc::new(sub));
+                        *init = true;
+                    }
+                    Ok(None) => {
+                        *init = true;
+                    }
+                    Err(_) => {}
                 }
-                *init = true;
             }
         }
 
@@ -68,18 +64,16 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
                 let mut accumulated = self.operator_stats.lock().unwrap();
                 let mut started = self.started_operators.lock().unwrap();
 
-                println!("Dashboard received Completed event with stats: {:?}", stats);
-
                 for (node_id, task_stats) in stats {
-                    // Mark operator as started if not already done
-                    if !started.contains(node_id) {
-                        context.notify_exec_operator_start(self.query_id.clone(), *node_id)?;
-                        started.insert(*node_id);
+                    let node_id = *node_id;
+                    if !started.contains(&node_id) {
+                        context.notify_exec_operator_start(self.query_id.clone(), node_id)?;
+                        started.insert(node_id);
                     }
 
-                    let entry = accumulated.entry(*node_id).or_default();
-                    // Merge task_stats into entry
-                    for (key, stat) in task_stats.to_stats().0.iter() {
+                    let entry = accumulated.entry(node_id).or_default();
+                    let task_stats = task_stats.to_stats();
+                    for (key, stat) in &task_stats.0 {
                         let mapped_key = match key.as_ref() {
                             "rows_in" => "rows in",
                             "rows_out" => "rows out",
@@ -103,9 +97,6 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
                         }
                     }
                 }
-
-                // Emit current total stats to Dashboard
-                tracing::debug!("Dashboard emitting accumulated stats: {:?}", accumulated);
                 let all_stats: Vec<(usize, Stats)> = accumulated
                     .iter()
                     .map(|(node_id, stats)| {

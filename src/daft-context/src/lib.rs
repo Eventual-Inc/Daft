@@ -222,9 +222,10 @@ impl DaftContext {
                 .collect::<Vec<Arc<dyn Subscriber>>>()
         });
         let rt = common_runtime::get_io_runtime(false);
+        let handle = rt.runtime.handle().clone();
         for subscriber in subscribers {
             let query_id = query_id.clone();
-            rt.spawn(async move {
+            handle.spawn(async move {
                 if let Err(e) = subscriber.on_exec_operator_start(query_id, node_id).await {
                     log::error!("Failed to notify exec operator start: {}", e);
                 }
@@ -242,9 +243,10 @@ impl DaftContext {
                 .collect::<Vec<Arc<dyn Subscriber>>>()
         });
         let rt = common_runtime::get_io_runtime(false);
+        let handle = rt.runtime.handle().clone();
         for subscriber in subscribers {
             let query_id = query_id.clone();
-            rt.spawn(async move {
+            handle.spawn(async move {
                 if let Err(e) = subscriber.on_exec_operator_end(query_id, node_id).await {
                     log::error!("Failed to notify exec operator end: {}", e);
                 }
@@ -266,10 +268,12 @@ impl DaftContext {
                 .collect::<Vec<Arc<dyn Subscriber>>>()
         });
         let rt = common_runtime::get_io_runtime(false);
+        let handle = rt.runtime.handle().clone();
+        let stats = Arc::new(stats);
         for subscriber in subscribers {
             let stats = stats.clone();
             let query_id = query_id.clone();
-            rt.spawn(async move {
+            handle.spawn(async move {
                 if let Err(e) = subscriber.on_exec_emit_stats(query_id, stats).await {
                     log::error!("Failed to notify exec emit stats: {}", e);
                 }
@@ -312,7 +316,10 @@ pub fn get_context() -> DaftContext {
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(python::get_context, parent)?)?;
-    parent.add_function(wrap_pyfunction!(python::refresh_dashboard_subscriber, parent)?)?;
+    parent.add_function(wrap_pyfunction!(
+        python::refresh_dashboard_subscriber,
+        parent
+    )?)?;
     parent.add_class::<python::PyDaftContext>()?;
     parent.add_class::<python::PyQueryMetadata>()?;
     parent.add_class::<python::PyQueryResult>()?;

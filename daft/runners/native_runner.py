@@ -101,7 +101,13 @@ class NativeRunner(Runner[MicroPartition]):
         entrypoint = "python " + " ".join(sys.argv)
         ctx._notify_query_start(
             query_id,
-            PyQueryMetadata(output_schema._schema, builder.repr_json(), "Native (Swordfish)", ray_dashboard_url=None, entrypoint=entrypoint),
+            PyQueryMetadata(
+                output_schema._schema,
+                builder.repr_json(),
+                "Native (Swordfish)",
+                ray_dashboard_url=None,
+                entrypoint=entrypoint,
+            ),
         )
         ctx._notify_optimization_start(query_id)
         builder = builder.optimize(ctx.daft_execution_config)
