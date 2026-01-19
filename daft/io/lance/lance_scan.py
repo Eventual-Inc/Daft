@@ -34,6 +34,13 @@ def _lancedb_table_factory_function(
     include_fragment_id: bool | None = False,
     nearest: dict[str, Any] | None = None,
 ) -> Iterator[PyRecordBatch]:
+    if fragment_ids is not None and nearest is not None:
+        raise ValueError(
+            "fragment_ids and nearest options are mutually exclusive. "
+            "Per-fragment scans do not support vector search as it would break global top-K semantics. "
+            "Use nearest with fragment_ids=None for index-driven global vector search."
+        )
+
     try:
         import lance
     except ImportError as e:
@@ -199,8 +206,6 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
 
     def to_scan_tasks(self, pushdowns: PyPushdowns) -> Iterator[ScanTask]:
         required_columns: list[str] | None
-        if self._include_fragment_id:
-            required_columns = ["fragment_id"]
         if pushdowns.columns is None:
             required_columns = None
         else:
@@ -212,6 +217,8 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     else pushdowns.columns + filter_required_column_names
                 )
             )
+            if self._include_fragment_id:
+                required_columns.append("fragment_id")
 
         nearest_option = self._nearest_default_option()
 
