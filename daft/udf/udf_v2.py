@@ -25,6 +25,8 @@ from daft.daft import batch_udf, row_wise_udf
 from daft.datatype import DataType, DataTypeLike
 from daft.expressions.expressions import Expression
 
+from .utils import is_complex_ray_options
+
 # TODO(cory): use a dataclass to hold all of these attributes
 RETURN_DTYPE_ATTR = "_daft_return_dtype"
 UNNEST_ATTR = "_daft_unnest"
@@ -168,6 +170,9 @@ class Func(Generic[P, T, C]):
         if self.is_async and self.is_generator:
             raise ValueError("Daft functions do not yet support both async and generator functions.")
 
+        if self.max_concurrency is not None and self.max_concurrency == 0:
+            raise ValueError("max_concurrency for udf must be non-zero")
+
         # Validate GPU resource request: allow fractional values up to 1.0; values > 1.0 must be integers.
         if self.gpus < 0:
             raise ValueError(f"num_gpus must be non-negative, got {self.gpus}")
@@ -274,6 +279,8 @@ class Func(Generic[P, T, C]):
         # Extract resource requests from ray_options if present
         ray_options = self.ray_options.copy() if self.ray_options is not None else {}
 
+        max_concurrency = self.max_concurrency or (1 if is_complex_ray_options(ray_options) else None)
+
         # TODO: implement generator UDFs on the engine side
         if self.is_generator:
 
@@ -291,7 +298,7 @@ class Func(Generic[P, T, C]):
                     DataType.list(self.return_dtype)._dtype,
                     self.gpus,
                     self.use_process,
-                    self.max_concurrency,
+                    max_concurrency,
                     self.max_retries,
                     self.on_error,
                     (args, kwargs),
@@ -311,7 +318,7 @@ class Func(Generic[P, T, C]):
                     self.return_dtype._dtype,
                     self.gpus,
                     self.use_process,
-                    self.max_concurrency,
+                    max_concurrency,
                     self.batch_size,
                     self.max_retries,
                     self.on_error,
@@ -332,7 +339,7 @@ class Func(Generic[P, T, C]):
                     self.return_dtype._dtype,
                     self.gpus,
                     self.use_process,
-                    self.max_concurrency,
+                    max_concurrency,
                     self.max_retries,
                     self.on_error,
                     (args, kwargs),
