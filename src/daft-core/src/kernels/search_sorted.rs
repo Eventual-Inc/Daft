@@ -544,4 +544,145 @@ mod tests {
 
         assert_eq!(result.len(), 3);
     }
+
+    #[test]
+    fn test_search_sorted_boolean() {
+        use arrow::array::BooleanArray;
+
+        // Boolean values sorted: [false, false, true, true]
+        let sorted = BooleanArray::from(vec![false, false, true, true]);
+        let keys = BooleanArray::from(vec![false, true]);
+
+        let result = search_sorted(&sorted, &keys, false).unwrap();
+
+        // Right insertion semantics
+        assert_eq!(result.len(), 2);
+        assert_eq!(result.value(0), 2); // false goes at index 2 (after both falses)
+        assert_eq!(result.value(1), 4); // true goes at index 4 (after both trues)
+    }
+
+    #[test]
+    fn test_search_sorted_boolean_with_nulls() {
+        use arrow::array::BooleanArray;
+
+        // Sorted: [false, true, null]
+        let sorted = BooleanArray::from(vec![Some(false), Some(true), None]);
+        let keys = BooleanArray::from(vec![Some(false), None, Some(true)]);
+
+        let result = search_sorted(&sorted, &keys, false).unwrap();
+
+        assert_eq!(result.len(), 3);
+        assert_eq!(result.value(0), 1); // false goes at index 1 (after false at index 0)
+        assert_eq!(result.value(1), 3); // null goes at index 3 (after all elements, nulls last)
+        assert_eq!(result.value(2), 2); // true goes at index 2 (after true at index 1)
+    }
+
+    #[test]
+    fn test_search_sorted_string() {
+        use arrow::array::StringArray;
+
+        let sorted = StringArray::from(vec!["apple", "banana", "cherry", "date", "fig"]);
+        let keys = StringArray::from(vec!["avocado", "banana", "elderberry"]);
+
+        let result = search_sorted(&sorted, &keys, false).unwrap();
+
+        // Right insertion semantics
+        assert_eq!(result.len(), 3);
+        assert_eq!(result.value(0), 1); // "avocado" goes at index 1 (after "apple")
+        assert_eq!(result.value(1), 2); // "banana" goes at index 2 (after "banana" at index 1)
+        assert_eq!(result.value(2), 4); // "elderberry" goes at index 4 (after "date")
+    }
+
+    #[test]
+    fn test_search_sorted_large_string() {
+        use arrow::array::LargeStringArray;
+
+        let sorted = LargeStringArray::from(vec!["alpha", "beta", "gamma", "delta"]);
+        let keys = LargeStringArray::from(vec!["beta", "epsilon"]);
+
+        let result = search_sorted(&sorted, &keys, false).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result.value(0), 2); // "beta" goes at index 2
+        assert_eq!(result.value(1), 4); // "epsilon" goes at index 4 (after all)
+    }
+
+    #[test]
+    fn test_search_sorted_string_with_nulls() {
+        use arrow::array::StringArray;
+
+        let sorted = StringArray::from(vec![Some("apple"), Some("cherry"), None]);
+        let keys = StringArray::from(vec![Some("banana"), None]);
+
+        let result = search_sorted(&sorted, &keys, false).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result.value(0), 1); // "banana" goes at index 1 (between "apple" and "cherry")
+        assert_eq!(result.value(1), 3); // null goes at index 3 (after all elements)
+    }
+
+    #[test]
+    fn test_search_sorted_binary() {
+        use arrow::array::BinaryArray;
+
+        let sorted = BinaryArray::from_vec(vec![
+            b"apple".as_ref(),
+            b"banana".as_ref(),
+            b"cherry".as_ref(),
+        ]);
+        let keys = BinaryArray::from_vec(vec![b"avocado".as_ref(), b"cherry".as_ref()]);
+
+        let result = search_sorted(&sorted, &keys, false).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result.value(0), 1); // b"avocado" goes at index 1
+        assert_eq!(result.value(1), 3); // b"cherry" goes at index 3 (after "cherry" at index 2)
+    }
+
+    #[test]
+    fn test_search_sorted_large_binary() {
+        use arrow::array::LargeBinaryArray;
+
+        let sorted = LargeBinaryArray::from_vec(vec![
+            b"\x00\x01".as_ref(),
+            b"\x00\x02".as_ref(),
+            b"\x00\x03".as_ref(),
+        ]);
+        let keys = LargeBinaryArray::from_vec(vec![b"\x00\x01".as_ref(), b"\x00\x04".as_ref()]);
+
+        let result = search_sorted(&sorted, &keys, false).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result.value(0), 1); // \x00\x01 goes at index 1
+        assert_eq!(result.value(1), 3); // \x00\x04 goes at index 3 (after all)
+    }
+
+    #[test]
+    fn test_search_sorted_fixed_size_binary() {
+        use arrow::array::FixedSizeBinaryArray;
+
+        // Create fixed-size binary arrays (size = 3 bytes)
+        let sorted = FixedSizeBinaryArray::try_from_sparse_iter_with_size(
+            vec![
+                Some([1u8, 2, 3].as_ref()),
+                Some([4u8, 5, 6].as_ref()),
+                Some([7u8, 8, 9].as_ref()),
+            ]
+            .into_iter(),
+            3,
+        )
+        .unwrap();
+
+        let keys = FixedSizeBinaryArray::try_from_sparse_iter_with_size(
+            vec![Some([3u8, 4, 5].as_ref()), Some([7u8, 8, 9].as_ref())].into_iter(),
+            3,
+        )
+        .unwrap();
+
+        let result = search_sorted(&sorted, &keys, false).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result.value(0), 1); // [3,4,5] goes at index 1 (between [1,2,3] and [4,5,6])
+        assert_eq!(result.value(1), 3); // [7,8,9] goes at index 3 (after [7,8,9] at index 2)
+    }
 }
