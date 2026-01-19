@@ -37,7 +37,7 @@ where
 {
     let keep_bitmap = match mask.as_arrow2().validity() {
         None => Cow::Borrowed(mask.as_arrow2().values()),
-        Some(validity) => Cow::Owned(mask.as_arrow2().values() & validity),
+        Some(nulls) => Cow::Owned(mask.as_arrow2().values() & nulls),
     };
 
     let num_invalid = keep_bitmap.as_ref().unset_bits();

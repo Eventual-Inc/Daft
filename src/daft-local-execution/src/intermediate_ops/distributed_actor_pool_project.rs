@@ -189,16 +189,16 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         res
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self) -> Self::State {
         // Check if we need to initialize the filtered actor handles
         #[cfg(feature = "python")]
         {
             let next_actor_handle_idx =
                 self.counter.fetch_add(1, Ordering::SeqCst) % self.actor_handles.len();
             let next_actor_handle = &self.actor_handles[next_actor_handle_idx];
-            Ok(DistributedActorPoolProjectState {
+            DistributedActorPoolProjectState {
                 actor_handle: next_actor_handle.clone(),
-            })
+            }
         }
         #[cfg(not(feature = "python"))]
         {

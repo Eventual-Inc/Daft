@@ -153,7 +153,7 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
         let inner_field = Field::new("item", inner_dtype.clone()).to_arrow()?;
         let size = self.physical.fixed_element_len() as i32;
         let values = self.physical.flat_child.to_arrow()?;
-        let nulls = self.physical.validity().cloned();
+        let nulls = self.physical.nulls().cloned();
 
         Ok(Arc::new(arrow::array::FixedSizeListArray::try_new(
             Arc::new(inner_field),
@@ -203,13 +203,13 @@ impl MapArray {
                 .iter()
                 .map(|s| s.to_arrow2())
                 .collect(),
-            daft_arrow::buffer::wrap_null_buffer(inner_struct_array.validity().cloned()),
+            daft_arrow::buffer::wrap_null_buffer(inner_struct_array.nulls().cloned()),
         ));
         Box::new(daft_arrow::array::MapArray::new(
             arrow_dtype,
             self.physical.offsets().try_into().unwrap(),
             arrow_field,
-            daft_arrow::buffer::wrap_null_buffer(self.physical.validity().cloned()),
+            daft_arrow::buffer::wrap_null_buffer(self.physical.nulls().cloned()),
         ))
     }
 
@@ -241,7 +241,7 @@ impl MapArray {
         let struct_array = arrow::array::StructArray::try_new(
             inner_struct_fields.clone(),
             struct_arrays,
-            inner_struct_array.validity().cloned(),
+            inner_struct_array.nulls().cloned(),
         )?;
 
         let offsets_buffer =
@@ -254,7 +254,7 @@ impl MapArray {
             Arc::new(arrow_field),
             offsets,
             struct_array,
-            self.physical.validity().cloned(),
+            self.physical.nulls().cloned(),
             false,
         )?))
     }

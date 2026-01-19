@@ -521,7 +521,7 @@ class _MethodDecorator:
         return partial_method if method is None else partial_method(method)
 
 
-method = _MethodDecorator()
+method: _MethodDecorator = _MethodDecorator()
 
 
 __all__ = ["UDF", "metrics", "udf"]

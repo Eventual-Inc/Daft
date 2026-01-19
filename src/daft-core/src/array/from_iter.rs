@@ -84,13 +84,12 @@ impl BinaryArray {
         name: &str,
         iter: impl daft_arrow::trusted_len::TrustedLen<Item = Option<S>>,
     ) -> Self {
-        let arrow_array =
-            Box::new(daft_arrow::array::BinaryArray::<i64>::from_trusted_len_iter(iter));
-        Self::new(
-            Field::new(name, crate::datatypes::DataType::Binary).into(),
-            arrow_array,
+        let arrow_array = arrow::array::LargeBinaryArray::from_iter(iter);
+        Self::from_arrow(
+            Field::new(name, crate::datatypes::DataType::Binary),
+            Arc::new(arrow_array),
         )
-        .unwrap()
+        .expect("Failed to create BinaryArray from nullable byte arrays")
     }
 }
 impl FixedSizeBinaryArray {
@@ -99,12 +98,12 @@ impl FixedSizeBinaryArray {
         iter: impl daft_arrow::trusted_len::TrustedLen<Item = Option<S>>,
         size: usize,
     ) -> Self {
-        let arrow_array = Box::new(daft_arrow::array::FixedSizeBinaryArray::from_iter(
-            iter, size,
-        ));
-        Self::new(
-            Field::new(name, crate::datatypes::DataType::FixedSizeBinary(size)).into(),
-            arrow_array,
+        let arrow_array =
+            arrow::array::FixedSizeBinaryArray::try_from_sparse_iter_with_size(iter, size as i32)
+                .expect("Failed to create FixedSizeBinaryArray from nullable byte arrays");
+        Self::from_arrow(
+            Field::new(name, crate::datatypes::DataType::FixedSizeBinary(size)),
+            Arc::new(arrow_array),
         )
         .unwrap()
     }
@@ -181,6 +180,15 @@ where
         Self::from_arrow(Field::new("", T::get_dtype()), Arc::new(arrow_arr)).unwrap()
     }
 }
+
+impl BooleanArray {
+    pub fn from_iter_values<I: IntoIterator<Item = bool>>(iter: I) -> Self {
+        let buf = arrow::buffer::BooleanBuffer::from_iter(iter);
+        let arrow_arr = arrow::array::BooleanArray::new(buf, None);
+
+        Self::from_arrow(Field::new("", DataType::Boolean), Arc::new(arrow_arr)).unwrap()
+    }
+}
 impl<T> DataArray<T>
 where
     T: DaftNumericType,
@@ -212,9 +220,9 @@ impl BinaryArray {
         name: &str,
         iter: impl daft_arrow::trusted_len::TrustedLen<Item = S>,
     ) -> Self {
-        let arrow_array =
-            Box::new(daft_arrow::array::BinaryArray::<i64>::from_trusted_len_values_iter(iter));
-        Self::new(Field::new(name, DataType::Binary).into(), arrow_array).unwrap()
+        let arrow_array = arrow::array::LargeBinaryArray::from_iter_values(iter);
+        Self::from_arrow(Field::new(name, DataType::Binary), Arc::new(arrow_array))
+            .expect("Failed to create BinaryArray from byte arrays")
     }
 }
 
@@ -271,7 +279,7 @@ impl PythonArray {
         let len = upper.expect("trusted_len_unzip requires an upper limit");
 
         let mut values = Vec::with_capacity(len);
-        let mut validity = NullBufferBuilder::new(len);
+        let mut nulls = NullBufferBuilder::new(len);
 
         let pynone = Arc::new(Python::attach(|py| py.None()));
         for v in iter {
@@ -284,19 +292,19 @@ impl PythonArray {
 
             if let Some(obj) = v {
                 values.push(obj);
-                validity.append_non_null();
+                nulls.append_non_null();
             } else {
                 values.push(pynone.clone());
-                validity.append_null();
+                nulls.append_null();
             }
         }
 
-        let validity = validity.finish();
+        let nulls = nulls.finish();
 
         Self::new(
             Arc::new(Field::new(name, DataType::Python)),
             values.into(),
-            validity,
+            nulls,
         )
     }
 
@@ -315,7 +323,7 @@ impl PythonArray {
         let len = upper.expect("trusted_len_unzip requires an upper limit");
 
         let mut values = Vec::with_capacity(len);
-        let mut validity = NullBufferBuilder::new(len);
+        let mut nulls_builder = NullBufferBuilder::new(len);
 
         Python::attach(|py| {
             use pyo3::PyErr;
@@ -334,22 +342,31 @@ impl PythonArray {
                     );
 
                     values.push(Arc::new(obj.unbind()));
-                    validity.append_non_null();
+                    nulls_builder.append_non_null();
                 } else {
                     values.push(pynone.clone());
-                    validity.append_null();
+                    nulls_builder.append_null();
                 }
             }
 
             Ok::<_, PyErr>(())
         })?;
 
-        let validity = validity.finish();
+        let nulls = nulls_builder.finish();
 
         Ok(Self::new(
             Arc::new(Field::new(name, DataType::Python)),
             values.into(),
-            validity,
+            nulls,
         ))
+    }
+}
+
+impl IntervalArray {
+    pub fn from_iter_values<I: IntoIterator<Item = arrow::datatypes::IntervalMonthDayNano>>(
+        iter: I,
+    ) -> Self {
+        let arrow_arr = arrow::array::IntervalMonthDayNanoArray::from_iter_values(iter);
+        Self::from_arrow(Field::new("", DataType::Interval), Arc::new(arrow_arr)).unwrap()
     }
 }

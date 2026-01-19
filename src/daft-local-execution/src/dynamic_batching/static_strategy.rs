@@ -19,7 +19,7 @@ impl StaticBatchingStrategy {
 impl BatchingState for () {
     fn record_execution_stat(
         &mut self,
-        _stats: std::sync::Arc<dyn crate::runtime_stats::RuntimeStats>,
+        _stats: &dyn crate::runtime_stats::RuntimeStats,
         _batch_size: usize,
         _duration: std::time::Duration,
     ) {

@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc, time::SystemTime};
 
 use async_trait::async_trait;
 use common_error::{DaftError, DaftResult};
-use common_metrics::{NodeID, QueryID, QueryPlan, Stat, StatSnapshot};
+use common_metrics::{NodeID, QueryID, QueryPlan, Stat, Stats};
 use common_runtime::{RuntimeRef, get_io_runtime};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use daft_recordbatch::RecordBatch;
@@ -248,7 +248,7 @@ impl Subscriber for DashboardSubscriber {
     async fn on_exec_emit_stats(
         &self,
         query_id: QueryID,
-        stats: &[(NodeID, StatSnapshot)],
+        stats: &[(NodeID, Stats)],
     ) -> DaftResult<()> {
         Self::handle_request(
             self.client

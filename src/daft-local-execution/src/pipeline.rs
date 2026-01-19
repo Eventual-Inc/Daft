@@ -34,15 +34,13 @@ use snafu::ResultExt;
 
 use crate::{
     ExecutionRuntimeContext, PipelineCreationSnafu,
-    channel::Receiver,
     intermediate_ops::{
-        cross_join::CrossJoinOperator,
         distributed_actor_pool_project::DistributedActorPoolProjectOperator,
-        explode::ExplodeOperator, filter::FilterOperator,
-        inner_hash_join_probe::InnerHashJoinProbeOperator, intermediate_op::IntermediateNode,
+        explode::ExplodeOperator, filter::FilterOperator, intermediate_op::IntermediateNode,
         into_batches::IntoBatchesOperator, project::ProjectOperator, udf::UdfOperator,
         unpivot::UnpivotOperator,
     },
+    join::{CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator},
     runtime_stats::RuntimeStats,
     sinks::{
         aggregate::AggregateSink,
@@ -50,9 +48,7 @@ use crate::{
         commit_write::CommitWriteSink,
         dedup::DedupSink,
         grouped_aggregate::GroupedAggregateSink,
-        hash_join_build::HashJoinBuildSink,
         into_partitions::IntoPartitionsSink,
-        join_collect::JoinCollectSink,
         pivot::PivotSink,
         repartition::RepartitionSink,
         sort::SortSink,
@@ -64,13 +60,10 @@ use crate::{
         write::{WriteFormat, WriteSink},
     },
     sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource, source::SourceNode},
-    state_bridge::BroadcastStateBridge,
     streaming_sink::{
-        anti_semi_hash_join_probe::AntiSemiProbeSink, async_udf::AsyncUdfSink,
-        base::StreamingSinkNode, concat::ConcatSink, limit::LimitSink,
-        monotonically_increasing_id::MonotonicallyIncreasingIdSink,
-        outer_hash_join_probe::OuterHashJoinProbeSink, sample::SampleSink,
-        sort_merge_join_probe::SortMergeJoinProbe, vllm::VLLMSink,
+        async_udf::AsyncUdfSink, base::StreamingSinkNode, concat::ConcatSink, limit::LimitSink,
+        monotonically_increasing_id::MonotonicallyIncreasingIdSink, sample::SampleSink,
+        vllm::VLLMSink,
     },
 };
 
@@ -164,7 +157,7 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
         &self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>>;
+    ) -> crate::Result<crate::channel::Receiver<Arc<MicroPartition>>>;
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 
@@ -1118,87 +1111,39 @@ fn physical_plan_to_pipeline(
                 }
                 let key_schema = Arc::new(Schema::new(build_key_fields));
 
-                // we should move to a builder pattern
-                let probe_state_bridge = BroadcastStateBridge::new();
                 let track_indices = if matches!(join_type, JoinType::Anti | JoinType::Semi) {
                     build_on_left
                 } else {
                     true
                 };
-                let build_sink = HashJoinBuildSink::new(
+
+                let hash_join_op = HashJoinOperator::new(
                     key_schema,
                     build_on.clone(),
+                    probe_on.clone(),
                     null_equals_null.clone(),
                     track_indices,
-                    probe_state_bridge.clone(),
+                    *join_type,
+                    build_on_left,
+                    left_schema.clone(),
+                    right_schema.clone(),
+                    common_join_cols,
+                    schema.clone(),
                 )?;
-                let build_child_node = physical_plan_to_pipeline(build_child, psets, cfg, ctx)?;
-                let build_node = BlockingSinkNode::new(
-                    Arc::new(build_sink),
-                    build_child_node,
-                    build_child.get_stats_state().clone(),
-                    ctx,
-                    build_child.schema().clone(),
-                    context,
-                )
-                .boxed();
 
+                let build_child_node = physical_plan_to_pipeline(build_child, psets, cfg, ctx)?;
                 let probe_child_node = physical_plan_to_pipeline(probe_child, psets, cfg, ctx)?;
 
-                match join_type {
-                    JoinType::Anti | JoinType::Semi => Ok(StreamingSinkNode::new(
-                        Arc::new(AntiSemiProbeSink::new(
-                            probe_on.clone(),
-                            join_type,
-                            schema,
-                            probe_state_bridge,
-                            build_on_left,
-                        )),
-                        vec![build_node, probe_child_node],
-                        stats_state.clone(),
-                        ctx,
-                        schema.clone(),
-                        context,
-                    )
-                    .boxed()),
-                    JoinType::Inner => Ok(IntermediateNode::new(
-                        Arc::new(InnerHashJoinProbeOperator::new(
-                            probe_on.clone(),
-                            left_schema,
-                            right_schema,
-                            build_on_left,
-                            common_join_cols,
-                            schema,
-                            probe_state_bridge,
-                        )),
-                        vec![build_node, probe_child_node],
-                        stats_state.clone(),
-                        ctx,
-                        schema.clone(),
-                        context,
-                    )
-                    .boxed()),
-                    JoinType::Left | JoinType::Right | JoinType::Outer => {
-                        Ok(StreamingSinkNode::new(
-                            Arc::new(OuterHashJoinProbeSink::new(
-                                probe_on.clone(),
-                                left_schema,
-                                right_schema,
-                                *join_type,
-                                build_on_left,
-                                common_join_cols,
-                                schema,
-                                probe_state_bridge,
-                            )?),
-                            vec![build_node, probe_child_node],
-                            stats_state.clone(),
-                            ctx,
-                            schema.clone(),
-                            context,
-                        )
-                        .boxed())
-                    }
-                }
+                Ok(JoinNode::new(
+                    Arc::new(hash_join_op),
+                    build_child_node,
+                    probe_child_node,
+                    stats_state.clone(),
+                    ctx,
+                    schema.clone(),
+                    context,
+                )
+                .boxed())
             }()
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
@@ -1235,32 +1180,20 @@ fn physical_plan_to_pipeline(
                 JoinSide::Right
             };
 
-            let (stream_child, collect_child) = match stream_side {
-                JoinSide::Left => (left, right),
-                JoinSide::Right => (right, left),
+            let (build_child, probe_child) = match stream_side {
+                JoinSide::Left => (right, left),
+                JoinSide::Right => (left, right),
             };
 
-            let stream_child_node = physical_plan_to_pipeline(stream_child, psets, cfg, ctx)?;
-            let collect_child_node = physical_plan_to_pipeline(collect_child, psets, cfg, ctx)?;
+            let build_child_node = physical_plan_to_pipeline(build_child, psets, cfg, ctx)?;
+            let probe_child_node = physical_plan_to_pipeline(probe_child, psets, cfg, ctx)?;
 
-            let state_bridge = BroadcastStateBridge::new();
-            let collect_node = BlockingSinkNode::new(
-                Arc::new(JoinCollectSink::new(state_bridge.clone())),
-                collect_child_node,
-                collect_child.get_stats_state().clone(),
-                ctx,
-                collect_child.schema().clone(),
-                context,
-            )
-            .boxed();
+            let cross_join_op = CrossJoinOperator::new(schema.clone(), stream_side);
 
-            IntermediateNode::new(
-                Arc::new(CrossJoinOperator::new(
-                    schema.clone(),
-                    stream_side,
-                    state_bridge,
-                )),
-                vec![collect_node, stream_child_node],
+            JoinNode::new(
+                Arc::new(cross_join_op),
+                build_child_node,
+                probe_child_node,
                 stats_state.clone(),
                 ctx,
                 schema.clone(),
@@ -1278,30 +1211,21 @@ fn physical_plan_to_pipeline(
             stats_state,
             context,
         }) => {
-            let left_schema = left.schema().clone();
-            let left_node = physical_plan_to_pipeline(left, psets, cfg, ctx)?;
-            let right_node = physical_plan_to_pipeline(right, psets, cfg, ctx)?;
+            let build_child_node = physical_plan_to_pipeline(left, psets, cfg, ctx)?;
+            let probe_child_node = physical_plan_to_pipeline(right, psets, cfg, ctx)?;
 
-            let state_bridge = BroadcastStateBridge::new();
-            let collect_node = BlockingSinkNode::new(
-                Arc::new(JoinCollectSink::new(state_bridge.clone())),
-                left_node,
-                left.get_stats_state().clone(),
-                ctx,
+            let sort_merge_join_op = SortMergeJoinOperator::new(
+                left_on.clone(),
+                right_on.clone(),
                 left.schema().clone(),
-                context,
-            )
-            .boxed();
+                right.schema().clone(),
+                *join_type,
+            );
 
-            StreamingSinkNode::new(
-                Arc::new(SortMergeJoinProbe::new(
-                    left_on.clone(),
-                    right_on.clone(),
-                    left_schema,
-                    *join_type,
-                    state_bridge,
-                )),
-                vec![collect_node, right_node],
+            JoinNode::new(
+                Arc::new(sort_merge_join_op),
+                build_child_node,
+                probe_child_node,
                 stats_state.clone(),
                 ctx,
                 schema.clone(),

@@ -71,6 +71,36 @@ class File:
     def isatty(self) -> bool:
         return False
 
+    @property
+    def path(self) -> str:
+        """The full path or URL of the file.
+
+        Returns:
+            str: The file path or URL.
+
+        Example:
+            >>> import daft
+            >>> f = daft.File("s3://bucket/path/to/data.csv")
+            >>> f.path
+            's3://bucket/path/to/data.csv'
+        """
+        return self._inner.path()
+
+    @property
+    def name(self) -> str:
+        """The filename (basename) extracted from the file path or URL.
+
+        Returns:
+            str: The filename without directory components.
+
+        Example:
+            >>> import daft
+            >>> f = daft.File("s3://bucket/path/to/data.csv")
+            >>> f.name
+            'data.csv'
+        """
+        return self._inner.name()
+
     def size(self) -> int:
         return PyDaftFile._from_file_reference(self._inner).size()
 
@@ -92,11 +122,6 @@ class File:
         The temporary file will be automatically deleted when the returned context manager is closed.
 
         It's important to note that `to_tempfile` closes the original file object, so it CANNOT be used after calling this method.
-
-        Example:
-            >>> with file.to_tempfile() as temp_path:
-            >>> # Do something with the temporary file
-            >>>     pass
         """
         with self.open() as f:
             temp_file = tempfile.NamedTemporaryFile(
@@ -147,7 +172,10 @@ class File:
     def as_audio(self) -> AudioFile:
         """Convert to AudioFile if this file contains audio data."""
         if not sf.module_available():
-            raise ImportError("The 'sf' module is required to convert files to audio.")
+            raise ImportError(
+                "The 'soundfile' module is required to convert files to audio. "
+                "Please install it with: pip install 'daft[audio]'"
+            )
         # this is purposely inside the function, and after the `sf` check
         # because using AudioFile means that the user has `sf` installed
         from daft.file.audio import AudioFile

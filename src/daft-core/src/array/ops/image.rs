@@ -29,10 +29,6 @@ impl AsImageObj for ImageArray {
         }
 
         let da = self.data_array();
-        let ca = self.channel_array();
-        let ha = self.height_array();
-        let wa = self.width_array();
-        let ma = self.mode_array();
 
         let offsets = da.offsets();
 
@@ -49,10 +45,10 @@ impl AsImageObj for ImageArray {
             .unwrap();
         let slice_data = Cow::Borrowed(&values.values().as_slice()[start..end] as &'a [u8]);
 
-        let c = ca.value(idx);
-        let h = ha.value(idx);
-        let w = wa.value(idx);
-        let m: ImageMode = ImageMode::from_u8(ma.value(idx)).unwrap();
+        let c = self.channels().values()[idx];
+        let h = self.heights().values()[idx];
+        let w = self.widths().values()[idx];
+        let m: ImageMode = ImageMode::from_u8(self.modes().values()[idx]).unwrap();
         assert_eq!(m.num_channels(), c);
         let result = CowImage::from_raw(&m, w, h, slice_data);
 
@@ -121,10 +117,10 @@ where
     let mut widths = Vec::with_capacity(inputs.len());
     let mut offsets = Vec::with_capacity(inputs.len() + 1);
     offsets.push(0i64);
-    let mut validity = daft_arrow::buffer::NullBufferBuilder::new(inputs.len());
+    let mut null_builder = daft_arrow::buffer::NullBufferBuilder::new(inputs.len());
 
     for ib in inputs {
-        validity.append(ib.is_some());
+        null_builder.append(ib.is_some());
         match ib {
             Some(ib) => {
                 assert!(matches!(&ib, L(..) | LA(..) | RGB(..) | RGBA(..)));
@@ -150,7 +146,7 @@ where
         }
     }
 
-    let validity = validity.finish();
+    let nulls = null_builder.finish();
     ImageArray::from_vecs(
         name,
         DataType::Image(image_mode),
@@ -161,7 +157,7 @@ where
             heights,
             widths,
             modes,
-            validity,
+            nulls,
         },
     )
 }
@@ -182,11 +178,11 @@ pub fn fixed_image_array_from_img_buffers(
 
     let num_channels = image_mode.num_channels();
     let mut data_ref = Vec::with_capacity(inputs.len());
-    let mut validity = daft_arrow::buffer::NullBufferBuilder::new(inputs.len());
+    let mut null_builder = daft_arrow::buffer::NullBufferBuilder::new(inputs.len());
     let list_size = (height * width * u32::from(num_channels)) as usize;
     let null_list = vec![0u8; list_size];
     for ib in inputs {
-        validity.append(ib.is_some());
+        null_builder.append(ib.is_some());
         let buffer = match ib {
             Some(ib) => ib.as_u8_slice(),
             None => null_list.as_slice(),
@@ -194,7 +190,7 @@ pub fn fixed_image_array_from_img_buffers(
         data_ref.push(buffer);
     }
     let data = data_ref.concat();
-    let validity = validity.finish();
+    let nulls = null_builder.finish();
 
     let arrow_dtype = daft_arrow::datatypes::DataType::FixedSizeList(
         Box::new(daft_arrow::datatypes::Field::new(
@@ -207,7 +203,7 @@ pub fn fixed_image_array_from_img_buffers(
     let arrow_array = Box::new(daft_arrow::array::FixedSizeListArray::new(
         arrow_dtype.clone(),
         Box::new(daft_arrow::array::PrimitiveArray::from_vec(data)),
-        daft_arrow::buffer::wrap_null_buffer(validity),
+        daft_arrow::buffer::wrap_null_buffer(nulls),
     ));
     let physical_array = FixedSizeListArray::from_arrow2(
         Arc::new(Field::new(name, (&arrow_dtype).into())),

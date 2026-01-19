@@ -12,8 +12,8 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use common_metrics::{
-    CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, operator_metrics::OperatorCounter,
-    ops::NodeType,
+    CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, meters::Counter,
+    operator_metrics::OperatorCounter, ops::NodeType, snapshot::UdfSnapshot,
 };
 use common_resource_request::ResourceRequest;
 use common_runtime::get_compute_pool_num_threads;
@@ -33,7 +33,6 @@ use itertools::Itertools;
 use opentelemetry::{KeyValue, global, metrics::Meter};
 #[cfg(feature = "python")]
 use pyo3::{Py, prelude::*};
-use smallvec::SmallVec;
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{
@@ -45,7 +44,7 @@ use crate::{
         DynBatchingStrategy, LatencyConstrainedBatchingStrategy, StaticBatchingStrategy,
     },
     pipeline::{MorselSizeRequirement, NodeName},
-    runtime_stats::{Counter, RuntimeStats},
+    runtime_stats::RuntimeStats,
 };
 
 /// Given an expression, extract the indexes of used columns and remap them to
@@ -107,23 +106,21 @@ impl RuntimeStats for UdfRuntimeStats {
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         let counters = self.custom_counters.lock().unwrap();
-        let mut entries = SmallVec::with_capacity(3 + counters.len());
 
-        entries.push((
-            CPU_US_KEY.into(),
-            Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
-        ));
-        entries.push((ROWS_IN_KEY.into(), Stat::Count(self.rows_in.load(ordering))));
-        entries.push((
-            ROWS_OUT_KEY.into(),
-            Stat::Count(self.rows_out.load(ordering)),
-        ));
+        let rows_in = self.rows_in.load(ordering);
+        let rows_out = self.rows_out.load(ordering);
+        let cpu_us = self.cpu_us.load(ordering);
+        let custom_counters = counters
+            .iter()
+            .map(|(name, counter)| (name.clone(), counter.load(ordering)))
+            .collect();
 
-        for (name, counter) in counters.iter() {
-            entries.push((name.clone().into(), Stat::Count(counter.load(ordering))));
-        }
-
-        StatSnapshot(entries)
+        StatSnapshot::Udf(UdfSnapshot {
+            cpu_us,
+            rows_in,
+            rows_out,
+            custom_counters,
+        })
     }
 
     fn add_rows_in(&self, rows: u64) {
@@ -145,9 +142,9 @@ impl UdfRuntimeStats {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, CPU_US_KEY.into(), None),
-            rows_in: Counter::new(&meter, ROWS_IN_KEY.into(), None),
-            rows_out: Counter::new(&meter, ROWS_OUT_KEY.into(), None),
+            cpu_us: Counter::new(&meter, CPU_US_KEY, None),
+            rows_in: Counter::new(&meter, ROWS_IN_KEY, None),
+            rows_out: Counter::new(&meter, ROWS_OUT_KEY, None),
             custom_counters: Mutex::new(HashMap::new()),
             node_kv,
             meter,
@@ -171,11 +168,8 @@ impl UdfRuntimeStats {
                     existing.add(value, key_values.as_slice());
                 }
                 None => {
-                    let counter = Counter::new(
-                        &self.meter,
-                        name.clone().into(),
-                        description.map(Cow::Owned),
-                    );
+                    let counter =
+                        Counter::new(&self.meter, name.clone(), description.map(Cow::Owned));
                     counter.add(value, key_values.as_slice());
                     counters.insert(name.into(), counter);
                 }
@@ -380,7 +374,7 @@ pub(crate) struct UdfOperator {
     worker_count: AtomicUsize,
     concurrency: usize,
     memory_request: u64,
-    input_schema: SchemaRef,
+    use_process: bool,
 }
 
 impl UdfOperator {
@@ -408,6 +402,22 @@ impl UdfOperator {
 
         let (expr, required_cols) = remap_used_cols(expr);
 
+        // Check if any inputs or the output are Python-dtype columns
+        // Those should by default run on the same thread
+        let fields = input_schema.fields();
+        let is_arrow_dtype = required_cols
+            .iter()
+            .all(|idx| fields[*idx].dtype.is_arrow())
+            && expr
+                .inner()
+                .to_field(input_schema.as_ref())?
+                .dtype
+                .is_arrow();
+
+        let use_process = (udf_properties.is_actor_pool_udf()
+            || udf_properties.use_process.unwrap_or(false))
+            && is_arrow_dtype;
+
         Ok(Self {
             expr,
             params: Arc::new(UdfParams {
@@ -419,7 +429,7 @@ impl UdfOperator {
             worker_count: AtomicUsize::new(0),
             concurrency,
             memory_request,
-            input_schema: input_schema.clone(),
+            use_process,
         })
     }
 
@@ -562,50 +572,22 @@ impl IntermediateOperator for UdfOperator {
         res
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
+    fn make_state(&self) -> Self::State {
         let worker_count = self.worker_count.fetch_add(1, Ordering::SeqCst);
-
-        // Check if any inputs or the output are Python-dtype columns
-        // Those should by default run on the same thread
-        let fields = self.input_schema.fields();
-        let is_arrow_dtype = self
-            .params
-            .required_cols
-            .iter()
-            .all(|idx| fields[*idx].dtype.is_arrow())
-            && self
-                .expr
-                .inner()
-                .to_field(self.input_schema.as_ref())?
-                .dtype
-                .is_arrow();
-
-        let use_process = self.params.udf_properties.is_actor_pool_udf()
-            || self.params.udf_properties.use_process.unwrap_or(false);
 
         #[cfg(feature = "python")]
         {
-            let udf_handle = if use_process {
-                if is_arrow_dtype {
-                    // Can use process when all types are arrow-serializable
-                    UdfHandle::Process(None)
-                } else {
-                    // Cannot use process with non-arrow types, fall back to thread
-                    log::warn!(
-                        "UDF `{}` requires a non-arrow-serializable input column. The UDF will run on the same thread as the daft process.",
-                        self.params.udf_properties.name
-                    );
-                    UdfHandle::Thread
-                }
+            let udf_handle = if self.use_process {
+                UdfHandle::Process(None)
             } else {
                 UdfHandle::Thread
             };
 
-            Ok(UdfState {
+            UdfState {
                 expr: self.expr.clone(),
                 worker_idx: worker_count,
                 udf_handle,
-            })
+            }
         }
         #[cfg(not(feature = "python"))]
         {

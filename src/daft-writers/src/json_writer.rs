@@ -4,6 +4,7 @@ use arrow_json::{LineDelimitedWriter, WriterBuilder, writer::LineDelimited};
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_io::{IOConfig, SourceType, parse_url, utils::ObjectPath};
+use daft_logical_plan::sink_info::JsonFormatOption;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
@@ -53,6 +54,7 @@ pub(crate) fn create_native_json_writer(
     file_idx: usize,
     partition_values: Option<&RecordBatch>,
     io_config: Option<IOConfig>,
+    json_option: JsonFormatOption,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
 {
     // Parse the root directory and add partition values if present.
@@ -71,6 +73,7 @@ pub(crate) fn create_native_json_writer(
                 filename,
                 partition_values.cloned(),
                 storage_backend,
+                json_option,
             )))
         }
         source if source.supports_native_writer() => {
@@ -83,6 +86,7 @@ pub(crate) fn create_native_json_writer(
                 filename,
                 partition_values.cloned(),
                 storage_backend,
+                json_option,
             )))
         }
         _ => Err(DaftError::ValueError(format!(
@@ -96,11 +100,17 @@ fn make_json_writer<B: StorageBackend + Send + Sync>(
     filename: PathBuf,
     partition_values: Option<RecordBatch>,
     storage_backend: B,
+    json_option: JsonFormatOption,
 ) -> BatchFileWriter<B, LineDelimitedWriter<B::Writer>> {
-    let builder = Arc::new(|backend: B::Writer| {
-        WriterBuilder::new()
-            .with_explicit_nulls(true)
-            .build::<_, LineDelimited>(backend)
+    let ignore_null_fields = json_option.ignore_null_fields;
+    let builder = Arc::new(move |backend: B::Writer| {
+        let mut builder = WriterBuilder::new();
+
+        if let Some(ignore_null_fields) = ignore_null_fields {
+            builder = builder.with_explicit_nulls(!ignore_null_fields);
+        }
+
+        builder.build::<_, LineDelimited>(backend)
     });
     let write_fn = Arc::new(
         |writer: &mut LineDelimitedWriter<B::Writer>, batches: &[arrow_array::RecordBatch]| {

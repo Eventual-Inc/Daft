@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 use daft_core::{
     prelude::{DataType, Field, Schema},
-    series::{IntoSeries, Series},
+    series::Series,
 };
 use daft_dsl::{
     ExprRef,
@@ -9,7 +9,7 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::utils::{Utf8ArrayUtils, binary_utf8_evaluate, binary_utf8_to_field};
+use crate::utils::{binary_utf8_evaluate, binary_utf8_to_field, utf8_compare_op};
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Contains;
@@ -17,7 +17,9 @@ pub struct Contains;
 #[typetag::serde]
 impl ScalarUDF for Contains {
     fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        binary_utf8_evaluate(inputs, "pattern", contains_impl)
+        binary_utf8_evaluate(inputs, "pattern", |s, pattern| {
+            utf8_compare_op(s, pattern, arrow::compute::kernels::comparison::contains)
+        })
     }
 
     fn get_return_field(
@@ -50,17 +52,4 @@ impl ScalarUDF for Contains {
 
 pub fn contains(input: ExprRef, pattern: ExprRef) -> ExprRef {
     ScalarFn::builtin(Contains, vec![input, pattern]).into()
-}
-
-fn contains_impl(s: &Series, pattern: &Series) -> DaftResult<Series> {
-    s.with_utf8_array(|arr| {
-        pattern.with_utf8_array(|pattern| {
-            arr.binary_broadcasted_compare(
-                pattern,
-                |data: &str, pat: &str| Ok(data.contains(pat)),
-                "contains",
-            )
-            .map(IntoSeries::into_series)
-        })
-    })
 }
