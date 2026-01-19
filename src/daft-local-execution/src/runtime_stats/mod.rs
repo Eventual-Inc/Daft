@@ -169,9 +169,9 @@ impl RuntimeStatsManager {
                                 progress_bar.finalize_node(node_id, &snapshot);
                             }
 
-                            let event = [(node_id, snapshot.to_stats())];
+                            let event = std::sync::Arc::new(vec![(node_id, snapshot.to_stats())]);
                             for res in future::join_all(subscribers.iter().map(|subscriber| async {
-                                subscriber.on_exec_emit_stats(query_id.clone(), &event).await?;
+                                subscriber.on_exec_emit_stats(query_id.clone(), event.clone()).await?;
                                 subscriber.on_exec_operator_end(query_id.clone(), node_id).await
                             })).await {
                                 if let Err(e) = res {
@@ -182,12 +182,30 @@ impl RuntimeStatsManager {
                     }
 
                     finish_status = &mut finish_rx => {
-                        if let Ok(status) = finish_status && status == QueryEndState::Finished && !active_nodes.is_empty() {
+                        if finish_status == Ok(QueryEndState::Finished) && !active_nodes.is_empty() {
                             log::error!(
                                 "RuntimeStatsManager finished with active nodes {{{}}}",
                                 active_nodes.iter().map(|id: &usize| id.to_string()).join(", ")
                             );
                         }
+
+                        // Emit final stats to all subscribers before finishing
+                        let mut final_stats = Vec::with_capacity(node_stats_map.len());
+                        for (node_id, runtime_stats) in &node_stats_map {
+                            let event = runtime_stats.flush();
+                            final_stats.push((*node_id, event.to_stats()));
+                        }
+                        if !final_stats.is_empty() {
+                            let final_stats = std::sync::Arc::new(final_stats);
+                            for res in future::join_all(subscribers.iter().map(|subscriber| {
+                                subscriber.on_exec_emit_stats(query_id.clone(), final_stats.clone())
+                            })).await {
+                                if let Err(e) = res {
+                                    log::error!("Failed to emit final stats: {}", e);
+                                }
+                            }
+                        }
+
                         break;
                     }
 
@@ -205,14 +223,14 @@ impl RuntimeStatsManager {
                             snapshot_container.push((*node_id, snapshot.to_stats()));
                         }
 
+                        let snapshot_container = std::sync::Arc::new(std::mem::take(&mut snapshot_container));
                         for res in future::join_all(subscribers.iter().map(|subscriber| {
-                            subscriber.on_exec_emit_stats(query_id.clone(), snapshot_container.as_slice())
+                            subscriber.on_exec_emit_stats(query_id.clone(), snapshot_container.clone())
                         })).await {
                             if let Err(e) = res {
                                 log::error!("Failed to handle event: {}", e);
                             }
                         }
-                        snapshot_container.clear();
                     }
                 }
             }
@@ -377,12 +395,12 @@ mod tests {
         async fn on_exec_emit_stats(
             &self,
             _query_id: QueryID,
-            stats: &[(NodeID, Stats)],
+            stats: std::sync::Arc<Vec<(NodeID, Stats)>>,
         ) -> DaftResult<()> {
             self.state
                 .total_calls
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            for (_, snapshot) in stats {
+            for (_, snapshot) in stats.iter() {
                 *self.state.event.lock().unwrap() = Some(snapshot.clone());
             }
             Ok(())
@@ -516,7 +534,7 @@ mod tests {
             async fn on_exec_emit_stats(
                 &self,
                 _: QueryID,
-                __: &[(NodeID, Stats)],
+                __: std::sync::Arc<Vec<(NodeID, Stats)>>,
             ) -> DaftResult<()> {
                 Err(common_error::DaftError::InternalError(
                     "Test error".to_string(),
