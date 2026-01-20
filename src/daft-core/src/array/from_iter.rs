@@ -361,3 +361,12 @@ impl PythonArray {
         ))
     }
 }
+
+impl IntervalArray {
+    pub fn from_iter_values<I: IntoIterator<Item = arrow::datatypes::IntervalMonthDayNano>>(
+        iter: I,
+    ) -> Self {
+        let arrow_arr = arrow::array::IntervalMonthDayNanoArray::from_iter_values(iter);
+        Self::from_arrow(Field::new("", DataType::Interval), Arc::new(arrow_arr)).unwrap()
+    }
+}

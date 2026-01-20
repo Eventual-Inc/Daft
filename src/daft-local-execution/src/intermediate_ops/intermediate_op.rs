@@ -31,6 +31,7 @@ use crate::{
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub enum IntermediateOperatorResult {
     NeedMoreInput(Option<Arc<MicroPartition>>),
+    #[allow(dead_code)]
     HasMoreOutput {
         input: Arc<MicroPartition>,
         output: Arc<MicroPartition>,

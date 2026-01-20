@@ -109,17 +109,6 @@ impl From<(&str, &[Option<bool>])> for BooleanArray {
     }
 }
 
-impl From<(&str, daft_arrow::array::BooleanArray)> for BooleanArray {
-    fn from(item: (&str, daft_arrow::array::BooleanArray)) -> Self {
-        let (name, arrow_array) = item;
-        Self::new(
-            Field::new(name, DataType::Boolean).into(),
-            Box::new(arrow_array),
-        )
-        .unwrap()
-    }
-}
-
 impl From<(&str, daft_arrow::bitmap::Bitmap)> for BooleanArray {
     fn from(item: (&str, daft_arrow::bitmap::Bitmap)) -> Self {
         let (name, bitmap) = item;
@@ -132,23 +121,6 @@ impl From<(&str, daft_arrow::bitmap::Bitmap)> for BooleanArray {
             )),
         )
         .unwrap()
-    }
-}
-
-impl From<(&str, Box<daft_arrow::array::BooleanArray>)> for BooleanArray {
-    fn from(item: (&str, Box<daft_arrow::array::BooleanArray>)) -> Self {
-        let (name, arrow_array) = item;
-        Self::new(Field::new(name, DataType::Boolean).into(), arrow_array).unwrap()
-    }
-}
-
-impl From<(&str, Vec<daft_arrow::types::months_days_ns>)> for IntervalArray {
-    fn from(item: (&str, Vec<daft_arrow::types::months_days_ns>)) -> Self {
-        let (name, vec) = item;
-        let arrow_array = Box::new(daft_arrow::array::PrimitiveArray::<
-            daft_arrow::types::months_days_ns,
-        >::from_vec(vec));
-        Self::new(Field::new(name, DataType::Interval).into(), arrow_array).unwrap()
     }
 }
 

@@ -2,6 +2,10 @@
 
 <div class="grid cards" markdown>
 
+- [Multimodal Structured Outputs: Evaluating Image Understanding](mm_structured_outputs.md)
+
+    Leverage image ablation to analyze textual bias in image understanding datasets.
+
 - [Voice AI Analytics with Faster-Whisper and embed_text](voice-ai-analytics.md)
 
     Transcribe audio files into segments with timestamps and embed content.

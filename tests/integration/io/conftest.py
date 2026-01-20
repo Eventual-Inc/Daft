@@ -129,13 +129,18 @@ def bigtable_emulator_config() -> dict[str, str]:
 
 @contextlib.contextmanager
 def minio_create_bucket(
-    minio_io_config: daft.io.IOConfig, bucket_name: str = "my-minio-bucket"
-) -> YieldFixture[list[str]]:
+    minio_io_config: daft.io.IOConfig, bucket_name: str | None = None
+) -> YieldFixture[tuple[list[str], str]]:
     """Creates a bucket in MinIO.
 
-    Yields a s3fs FileSystem
+    Yields a tuple of (s3fs FileSystem, bucket_name).
+    If bucket_name is not provided, generates a unique one using UUID.
     """
     import s3fs
+
+    # Generate unique bucket name if not provided to avoid conflicts in parallel test execution
+    if bucket_name is None:
+        bucket_name = f"bucket-{uuid.uuid4()}"
 
     fs = s3fs.S3FileSystem(
         key=minio_io_config.s3.key_id,
@@ -146,19 +151,28 @@ def minio_create_bucket(
         fs.rm(bucket_name, recursive=True)
     fs.mkdir(bucket_name)
     try:
-        yield fs
+        yield fs, bucket_name
     finally:
-        fs.rm(bucket_name, recursive=True)
+        try:
+            fs.rm(bucket_name, recursive=True)
+        except FileNotFoundError:
+            # Bucket may have already been deleted, which is fine
+            pass
 
 
 @contextlib.contextmanager
 def minio_create_public_bucket(
-    minio_io_config: daft.io.IOConfig, bucket_name: str = "my-minio-public-bucket"
+    minio_io_config: daft.io.IOConfig, bucket_name: str | None = None
 ) -> YieldFixture[list[str]]:
     """Creates a public bucket in MinIO.
 
     Yields the bucket name.
+    If bucket_name is not provided, generates a unique one using UUID.
     """
+    # Generate unique bucket name if not provided to avoid conflicts in parallel test execution
+    if bucket_name is None:
+        bucket_name = f"public-bucket-{uuid.uuid4()}"
+
     # Create authenticated S3 client to set up the bucket.
     import boto3
     from botocore.config import Config
@@ -215,13 +229,13 @@ def mount_data_minio(
 
     Yields a list of S3 URLs
     """
-    with minio_create_bucket(minio_io_config=minio_io_config, bucket_name=bucket_name) as fs:
+    with minio_create_bucket(minio_io_config=minio_io_config, bucket_name=bucket_name) as (fs, actual_bucket_name):
         urls = []
         for p in folder.glob("**/*"):
             if not p.is_file():
                 continue
             key = str(p.relative_to(folder))
-            url = f"s3://{bucket_name}/{key}"
+            url = f"s3://{actual_bucket_name}/{key}"
             fs.write_bytes(url, p.read_bytes())
             urls.append(url)
 

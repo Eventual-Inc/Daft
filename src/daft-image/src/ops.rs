@@ -230,7 +230,7 @@ fn encode_images<Arr: AsImageObj>(
         Ok(BinaryArray::from_iter(images.name(), values.into_iter()))
     } else {
         // For non-TIFF formats, use a single buffer with manual offset/validity tracking for efficiency
-        let mut offsets = OffsetBufferBuilder::<i64>::new(images.len() + 1);
+        let mut offsets = OffsetBufferBuilder::<i64>::new(images.len());
         let mut null_builder = BooleanBufferBuilder::new(images.len());
         let buf = Vec::new();
         let mut writer: CountingWriter<std::io::BufWriter<_>> =

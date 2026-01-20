@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 use daft_core::{
     prelude::{DataType, Field, Schema},
-    series::{IntoSeries, Series},
+    series::Series,
 };
 use daft_dsl::{
     ExprRef,
@@ -9,7 +9,7 @@ use daft_dsl::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::utils::{Utf8ArrayUtils, binary_utf8_evaluate, binary_utf8_to_field};
+use crate::utils::{binary_utf8_evaluate, binary_utf8_to_field, utf8_compare_op};
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct EndsWith;
@@ -21,7 +21,9 @@ impl ScalarUDF for EndsWith {
     }
 
     fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
-        binary_utf8_evaluate(inputs, "pattern", endswith_impl)
+        binary_utf8_evaluate(inputs, "pattern", |s, pattern| {
+            utf8_compare_op(s, pattern, arrow::compute::kernels::comparison::ends_with)
+        })
     }
     fn get_return_field(
         &self,
@@ -44,53 +46,4 @@ impl ScalarUDF for EndsWith {
 
 pub fn endswith(input: ExprRef, pattern: ExprRef) -> ExprRef {
     ScalarFn::builtin(EndsWith, vec![input, pattern]).into()
-}
-
-fn endswith_impl(s: &Series, pattern: &Series) -> DaftResult<Series> {
-    s.with_utf8_array(|arr| {
-        pattern.with_utf8_array(|pattern_arr| {
-            arr.binary_broadcasted_compare(
-                pattern_arr,
-                |data: &str, pat: &str| Ok(data.ends_with(pat)),
-                "endswith",
-            )
-            .map(IntoSeries::into_series)
-        })
-    })
-}
-
-#[cfg(test)]
-mod tests {
-    use common_error::DaftResult;
-    use daft_core::{prelude::Utf8Array, series::IntoSeries};
-
-    #[test]
-    fn check_endswith_utf_arrays_broadcast() -> DaftResult<()> {
-        let data = Utf8Array::from_values("data", ["x_foo", "y_foo", "z_bar"].iter()).into_series();
-        let pattern = Utf8Array::from_values("pattern", ["foo"].iter()).into_series();
-        let result = super::endswith_impl(&data, &pattern)?;
-        let result = result.bool()?;
-
-        assert_eq!(result.len(), 3);
-        assert!(result.get(0).unwrap());
-        assert!(result.get(1).unwrap());
-        assert!(!result.get(2).unwrap());
-        Ok(())
-    }
-
-    #[test]
-    fn check_endswith_utf_arrays() -> DaftResult<()> {
-        let data = Utf8Array::from_values("data", ["x_foo", "y_foo", "z_bar"].iter()).into_series();
-        let pattern =
-            Utf8Array::from_values("pattern", ["foo", "wrong", "bar"].iter()).into_series();
-        let result = super::endswith_impl(&data, &pattern)?;
-
-        let result = result.bool()?;
-
-        assert_eq!(result.len(), 3);
-        assert!(result.get(0).unwrap());
-        assert!(!result.get(1).unwrap());
-        assert!(result.get(2).unwrap());
-        Ok(())
-    }
 }
