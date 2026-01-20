@@ -71,3 +71,7 @@ These configurations are most often used as inputs to Daft when reading I/O func
 ::: daft.io.HuggingFaceConfig
     options:
         filters: ["!^_"]
+
+::: daft.io.TosConfig
+    options:
+        filters: ["!^_"]
