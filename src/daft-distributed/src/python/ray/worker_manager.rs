@@ -290,6 +290,17 @@ impl WorkerManager for RayWorkerManager {
 
         let now = Instant::now();
 
+        // Determine the Ray head node id so we can avoid retiring its worker.
+        // Head node cannot be released by Ray autoscaler, and we should always
+        // keep its SwordfishActor alive even if idle.
+        let head_node_id: Option<String> = Python::attach(|py| {
+            let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
+            let head_id_obj =
+                flotilla_module.call_method0(pyo3::intern!(py, "get_head_node_id"))?;
+            let head_id = head_id_obj.extract::<Option<String>>()?;
+            DaftResult::Ok(head_id)
+        })?;
+
         let (workers_to_release, survivors_after, blacklisted_after) = {
             let mut state = self
                 .state
@@ -300,6 +311,12 @@ impl WorkerManager for RayWorkerManager {
                 .ray_workers
                 .iter()
                 .filter_map(|(wid, w)| {
+                    // Skip the head node entirely from retirement consideration.
+                    if let Some(ref head_id) = head_node_id
+                        && wid.as_ref() == head_id
+                    {
+                        return None;
+                    }
                     if w.is_idle() {
                         let idle_for = w.idle_duration(now);
                         if let Some(threshold) = idle_secs_threshold {
