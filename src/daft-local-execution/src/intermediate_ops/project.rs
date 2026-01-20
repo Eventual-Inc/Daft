@@ -216,7 +216,10 @@ impl IntermediateOperator for ProjectOperator {
 
     fn make_state(&self) -> Self::State {}
 
-    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
+    fn batching_strategy(
+        &self,
+        morsel_size_requirement: MorselSizeRequirement,
+    ) -> DaftResult<Self::BatchingStrategy> {
         let cfg = daft_context::get_context().execution_config();
 
         Ok(if cfg.enable_dynamic_batching {
@@ -244,7 +247,7 @@ impl IntermediateOperator for ProjectOperator {
                 _ => unreachable!("should already be checked in the ctx"),
             }
         } else {
-            StaticBatchingStrategy::new(self.morsel_size_requirement().unwrap_or_default()).into()
+            StaticBatchingStrategy::new(morsel_size_requirement).into()
         })
     }
 }

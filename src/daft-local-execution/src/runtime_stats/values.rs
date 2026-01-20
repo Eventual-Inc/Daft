@@ -8,6 +8,7 @@ use opentelemetry::{KeyValue, global};
 // ----------------------- General Traits for Runtime Stat Collection ----------------------- //
 
 pub trait RuntimeStats: Send + Sync + std::any::Any {
+    fn as_any(&self) -> &dyn std::any::Any;
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync>;
     /// Create a snapshot of the current statistics.
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot;
@@ -48,6 +49,9 @@ impl DefaultRuntimeStats {
 }
 
 impl RuntimeStats for DefaultRuntimeStats {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
         self
     }
