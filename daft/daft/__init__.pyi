@@ -240,6 +240,20 @@ class FileFormat(Enum):
 
     def ext(self) -> str: ...
 
+class WorkerConfig:
+    num_replicas: int
+    num_cpus: float
+    memory_bytes: int
+    num_gpus: float
+
+    def __init__(
+        self,
+        num_replicas: int,
+        num_cpus: float,
+        memory_bytes: int,
+        num_gpus: float = 0.0,
+    ): ...
+
 class WriteMode(Enum):
     """Mode for writing data to a file."""
 
@@ -2054,8 +2068,8 @@ class RaySwordfishWorker:
         self,
         worker_id: str,
         actor_handle: RaySwordfishActorHandle,
-        num_cpus: int,
-        num_gpus: int,
+        num_cpus: float,
+        num_gpus: float,
         total_memory_bytes: int,
     ) -> None: ...
 
@@ -2248,8 +2262,8 @@ class PyDaftContext:
 def set_runner_ray(
     address: str | None = None,
     noop_if_initialized: bool = False,
-    max_task_backlog: int | None = None,
     force_client_mode: bool = False,
+    cluster_config: WorkerConfig | list[WorkerConfig] | None = None,
 ) -> Runner[PartitionT]: ...
 def set_runner_native(num_threads: int | None = None) -> Runner[PartitionT]: ...
 def get_or_create_runner() -> Runner[PartitionT]: ...

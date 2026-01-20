@@ -70,6 +70,56 @@ If you already have your own Ray cluster running remotely, you can connect Daft 
 
 For more information about the `address` keyword argument, please see the [Ray documentation on initialization](https://docs.ray.io/en/latest/ray-core/api/doc/ray.init.html).
 
+### Configuring Worker Resources
+
+By default, Daft automatically discovers available Ray nodes and their resources. However, you can explicitly configure worker resources using the `cluster_config` parameter for deterministic resource allocation.
+
+#### Homogeneous Workers
+
+Create workers with identical resource specifications:
+
+```python
+import daft
+from daft import WorkerConfig
+
+# Configure 4 workers, each with 8 CPUs and 32 GB memory
+daft.set_runner_ray(
+    cluster_config=WorkerConfig(
+        num_replicas=4,
+        num_cpus=8.0,
+        memory_bytes=32 * 1024**3,  # 32 GB
+    )
+)
+```
+
+#### Heterogeneous Workers
+
+Create workers with different resource specifications for mixed workloads:
+
+```python
+import daft
+from daft import WorkerConfig
+
+# Configure GPU workers for ML tasks and CPU workers for data processing
+daft.set_runner_ray(
+    cluster_config=[
+        # 2 GPU workers with high CPU and memory
+        WorkerConfig(
+            num_replicas=2,
+            num_cpus=16.0,
+            memory_bytes=64 * 1024**3,  # 64 GB
+            num_gpus=1.0
+        ),
+        # 4 CPU-only workers
+        WorkerConfig(
+            num_replicas=4,
+            num_cpus=8.0,
+            memory_bytes=32 * 1024**3,  # 32 GB
+        ),
+    ]
+)
+```
+
 ### Using Ray Client
 
 The Ray client is a quick way to get started with running tasks and retrieving their results on Ray using Python.

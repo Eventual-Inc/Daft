@@ -1,6 +1,6 @@
-use std::{collections::HashMap, fmt::Debug, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, num::NonZeroUsize, sync::Arc};
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 
 use super::task::{Task, TaskDetails, TaskResultHandle};
 use crate::scheduling::{
@@ -9,6 +9,48 @@ use crate::scheduling::{
 };
 
 pub(crate) type WorkerId = Arc<str>;
+
+#[derive(Debug, Clone)]
+pub struct WorkerConfig {
+    /// Number of worker replicas with this configuration
+    pub num_replicas: NonZeroUsize,
+    /// Number of CPUs per worker
+    pub num_cpus: f64,
+    /// Memory in bytes per worker
+    pub memory_bytes: NonZeroUsize,
+    /// Number of GPUs per worker
+    pub num_gpus: f64,
+}
+
+impl WorkerConfig {
+    /// Creates a new WorkerConfig with validation.
+    pub fn new(
+        num_replicas: NonZeroUsize,
+        num_cpus: f64,
+        memory_bytes: NonZeroUsize,
+        num_gpus: f64,
+    ) -> DaftResult<Self> {
+        if num_cpus <= 0.0 {
+            return Err(DaftError::ValueError(format!(
+                "num_cpus must be positive, got {}",
+                num_cpus
+            )));
+        }
+        if num_gpus < 0.0 {
+            return Err(DaftError::ValueError(format!(
+                "num_gpus cannot be negative, got {}",
+                num_gpus
+            )));
+        }
+
+        Ok(Self {
+            num_replicas,
+            num_cpus,
+            memory_bytes,
+            num_gpus,
+        })
+    }
+}
 
 pub(crate) trait Worker: Send + Sync + Debug + 'static {
     type Task: Task;
