@@ -876,10 +876,35 @@ class DataFrame:
         Note:
             This call is **blocking** and will execute the DataFrame when called
 
+            **Timezone handling**: For timezone-aware timestamp columns, the timestamps are converted
+            to the target timezone before formatting. For example, a timestamp stored as UTC but with
+            timezone "America/New_York" will be formatted in Eastern Time, not UTC. If the timezone
+            string is invalid, an error will be raised.
+
         Examples:
+            Basic usage:
+
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
             >>> df.write_csv("output_dir", write_mode="overwrite")  # doctest: +SKIP
+
+            Custom date format (e.g., DD/MM/YYYY):
+
+            >>> import datetime
+            >>> df = daft.from_pydict({"date": [datetime.date(2024, 1, 15)]})
+            >>> df.write_csv("output_dir", date_format="%d/%m/%Y")  # doctest: +SKIP
+            # Output: 15/01/2024
+
+            Custom timestamp format:
+
+            >>> df = daft.from_pydict({"ts": [datetime.datetime(2024, 1, 15, 10, 30, 45)]})
+            >>> df.write_csv("output_dir", timestamp_format="%Y-%m-%d %H:%M:%S")  # doctest: +SKIP
+            # Output: 2024-01-15 10:30:45
+
+            ISO 8601 / RFC 3339 timestamp format:
+
+            >>> df.write_csv("output_dir", timestamp_format="%+")  # doctest: +SKIP
+            # Output: 2024-01-15T10:30:45+00:00
 
         Tip:
             See also [`df.write_parquet()`][daft.DataFrame.write_parquet] and [`df.write_json()`][daft.DataFrame.write_json]
