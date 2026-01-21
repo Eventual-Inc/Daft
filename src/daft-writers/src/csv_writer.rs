@@ -12,6 +12,7 @@ use arrow_schema::{
     ArrowError, DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema, TimeUnit,
 };
 use chrono::{DateTime, NaiveDate};
+use chrono_tz::Tz;
 
 macro_rules! cast_duration_to_int64 {
     ($arr:expr, $pt:ty) => {{
@@ -251,15 +252,21 @@ fn make_csv_writer<B: StorageBackend + Send + Sync>(
                                 new_cols.push(batch.column(i).clone());
                             }
                         }
-                        ArrowDataType::Timestamp(_time_unit, _) => {
+                        ArrowDataType::Timestamp(_time_unit, tz_opt) => {
                             if let Some(fmt) = timestamp_fmt {
                                 let arr = batch.column(i);
                                 let mut builder = LargeStringBuilder::with_capacity(arr.len(), 0);
+
+                                // Parse timezone if present
+                                let parsed_tz: Option<Tz> =
+                                    tz_opt.as_ref().and_then(|tz_str| tz_str.parse::<Tz>().ok());
+
                                 for idx in 0..arr.len() {
                                     if arr.is_null(idx) {
                                         builder.append_null();
                                     } else {
-                                        let timestamp_value = match arr.data_type() {
+                                        // Get UTC timestamp
+                                        let utc_dt = match arr.data_type() {
                                             ArrowDataType::Timestamp(TimeUnit::Second, _) => {
                                                 let ts_arr = arr.as_primitive::<arrow_array::types::TimestampSecondType>();
                                                 DateTime::from_timestamp(ts_arr.value(idx), 0)
@@ -280,12 +287,22 @@ fn make_csv_writer<B: StorageBackend + Send + Sync>(
                                             }
                                             _ => unreachable!(),
                                         };
-                                        let dt = timestamp_value.ok_or_else(|| {
+
+                                        let utc_dt = utc_dt.ok_or_else(|| {
                                             ArrowError::ComputeError(
                                                 "Invalid timestamp".to_string(),
                                             )
                                         })?;
-                                        builder.append_value(dt.format(fmt).to_string());
+
+                                        // Convert to target timezone if specified
+                                        let formatted = if let Some(tz) = parsed_tz {
+                                            let tz_dt = utc_dt.with_timezone(&tz);
+                                            tz_dt.format(fmt).to_string()
+                                        } else {
+                                            utc_dt.format(fmt).to_string()
+                                        };
+
+                                        builder.append_value(formatted);
                                     }
                                 }
                                 new_cols.push(Arc::new(builder.finish()) as ArrayRef);

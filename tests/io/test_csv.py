@@ -258,3 +258,35 @@ def test_write_csv_iso8601_timestamp_format(tmp_path):
     # The format should be like "2024-01-15T10:30:45+00:00"
     assert "2024-01-15T10:30:45" in text
     assert "2024-12-31T23:59:59" in text
+
+
+@pytest.mark.skipif(
+    not PYARROW_GE_11_0_0,
+    reason="PyArrow writing to CSV does not have good coverage for all types for versions <11.0.0",
+)
+def test_write_csv_timezone_aware_timestamp(tmp_path):
+    """Test that timezone-aware timestamps are formatted in their timezone."""
+    # Create timezone-aware timestamps
+    df = daft.from_arrow(
+        pa.table(
+            {
+                "id": [1, 2, 3],
+                "timestamp": pa.array(
+                    [
+                        datetime.datetime(1994, 1, 1, tzinfo=datetime.timezone.utc),
+                        datetime.datetime(1995, 1, 1, tzinfo=datetime.timezone.utc),
+                        None,
+                    ],
+                    type=pa.timestamp("us", tz="America/New_York"),
+                ),
+            }
+        )
+    )
+
+    # Write with custom format
+    df.write_csv(str(tmp_path), write_mode="overwrite", timestamp_format="%Y-%m-%d %H:%M:%S %Z")
+    text = _read_first_file_text(str(tmp_path))
+
+    # Timestamps should be formatted in New York time, not UTC
+    # 1994-01-01 00:00:00 UTC = 1993-12-31 19:00:00 EST
+    assert "1993-12-31 19:00:00" in text or "EST" in text or "EDT" in text
