@@ -156,3 +156,105 @@ def test_write_csv_parametrized(tmp_path, delimiter, header, quote, escape_char,
         }
         read_back = daft.read_csv(str(tmp_path), **read_kwargs)
         assert df.to_arrow() == read_back.to_arrow()
+
+
+@pytest.mark.skipif(
+    not PYARROW_GE_11_0_0,
+    reason="PyArrow writing to CSV does not have good coverage for all types for versions <11.0.0",
+)
+def test_write_csv_custom_date_format(tmp_path):
+    """Test custom date formatting when writing CSV files."""
+    dates = [datetime.date(2024, 1, 15), datetime.date(2024, 12, 31), None]
+    df = daft.from_pydict({"id": [1, 2, 3], "date": dates})
+
+    # Test with custom date format dd/MM/yyyy
+    df.write_csv(str(tmp_path), write_mode="overwrite", date_format="%d/%m/%Y")
+    text = _read_first_file_text(str(tmp_path))
+
+    # Check that dates are formatted correctly
+    assert "15/01/2024" in text
+    assert "31/12/2024" in text
+    # Check header is present
+    assert "id,date" in text
+
+
+@pytest.mark.skipif(
+    not PYARROW_GE_11_0_0,
+    reason="PyArrow writing to CSV does not have good coverage for all types for versions <11.0.0",
+)
+def test_write_csv_custom_timestamp_format(tmp_path):
+    """Test custom timestamp formatting when writing CSV files."""
+    timestamps = [
+        datetime.datetime(2024, 1, 15, 10, 30, 45),
+        datetime.datetime(2024, 12, 31, 23, 59, 59),
+        None,
+    ]
+    df = daft.from_pydict({"id": [1, 2, 3], "timestamp": timestamps})
+
+    # Test with custom timestamp format
+    df.write_csv(str(tmp_path), write_mode="overwrite", timestamp_format="%Y-%m-%d %H:%M:%S")
+    text = _read_first_file_text(str(tmp_path))
+
+    # Check that timestamps are formatted correctly
+    assert "2024-01-15 10:30:45" in text
+    assert "2024-12-31 23:59:59" in text
+    # Check header is present
+    assert "id,timestamp" in text
+
+
+@pytest.mark.skipif(
+    not PYARROW_GE_11_0_0,
+    reason="PyArrow writing to CSV does not have good coverage for all types for versions <11.0.0",
+)
+def test_write_csv_custom_date_and_timestamp_format(tmp_path):
+    """Test both custom date and timestamp formatting when writing CSV files."""
+    dates = [datetime.date(2024, 1, 15), datetime.date(2024, 12, 31), None]
+    timestamps = [
+        datetime.datetime(2024, 1, 15, 10, 30, 45),
+        datetime.datetime(2024, 12, 31, 23, 59, 59),
+        None,
+    ]
+    df = daft.from_pydict({"id": [1, 2, 3], "date": dates, "timestamp": timestamps})
+
+    # Test with both custom formats
+    df.write_csv(
+        str(tmp_path),
+        write_mode="overwrite",
+        date_format="%d/%m/%Y",
+        timestamp_format="%Y-%m-%d %H:%M:%S",
+    )
+    text = _read_first_file_text(str(tmp_path))
+
+    # Check that dates are formatted correctly
+    assert "15/01/2024" in text
+    assert "31/12/2024" in text
+
+    # Check that timestamps are formatted correctly
+    assert "2024-01-15 10:30:45" in text
+    assert "2024-12-31 23:59:59" in text
+
+    # Check header is present
+    assert "id,date,timestamp" in text
+
+
+@pytest.mark.skipif(
+    not PYARROW_GE_11_0_0,
+    reason="PyArrow writing to CSV does not have good coverage for all types for versions <11.0.0",
+)
+def test_write_csv_iso8601_timestamp_format(tmp_path):
+    """Test ISO 8601 / RFC 3339 timestamp formatting."""
+    timestamps = [
+        datetime.datetime(2024, 1, 15, 10, 30, 45),
+        datetime.datetime(2024, 12, 31, 23, 59, 59),
+        None,
+    ]
+    df = daft.from_pydict({"id": [1, 2, 3], "timestamp": timestamps})
+
+    # Test with ISO 8601 format (%+)
+    df.write_csv(str(tmp_path), write_mode="overwrite", timestamp_format="%+")
+    text = _read_first_file_text(str(tmp_path))
+
+    # Check that timestamps are formatted in ISO 8601 format
+    # The format should be like "2024-01-15T10:30:45+00:00"
+    assert "2024-01-15T10:30:45" in text
+    assert "2024-12-31T23:59:59" in text

@@ -851,6 +851,8 @@ class DataFrame:
         quote: str | None = None,
         escape: str | None = None,
         header: bool | None = True,
+        date_format: str | None = None,
+        timestamp_format: str | None = None,
     ) -> "DataFrame":
         r"""Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written.
 
@@ -865,6 +867,8 @@ class DataFrame:
             quote (Optional[str], optional): Single-character quote used around fields containing delimiters default `"`.
             escape (Optional[str], optional): Single-character escape for special characters default `\\`.
             header (Optional[bool], optional): Whether to write a header row with column names, default True.
+            date_format (Optional[str], optional): Format string for date columns. Uses chrono strftime format (e.g., "%Y-%m-%d", "%d/%m/%Y"). Defaults to None (ISO 8601 format).
+            timestamp_format (Optional[str], optional): Format string for timestamp columns. Uses chrono strftime format (e.g., "%Y-%m-%d %H:%M:%S", "%+"). Defaults to None (ISO 8601 format).
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -895,7 +899,14 @@ class DataFrame:
         if partition_cols is not None:
             cols = column_inputs_to_expressions(tuple(partition_cols))
 
-        file_format_option = PyFormatSinkOption.csv(delimiter=delimiter, quote=quote, escape=escape, header=header)
+        file_format_option = PyFormatSinkOption.csv(
+            delimiter=delimiter,
+            quote=quote,
+            escape=escape,
+            header=header,
+            date_format=date_format,
+            timestamp_format=timestamp_format,
+        )
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,

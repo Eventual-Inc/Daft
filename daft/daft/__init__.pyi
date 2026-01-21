@@ -1875,6 +1875,8 @@ class PyFormatSinkOption:
         quote: str | None = None,
         escape: str | None = None,
         header: bool | None = None,
+        date_format: str | None = None,
+        timestamp_format: str | None = None,
     ) -> PyFormatSinkOption: ...
     @classmethod
     def json(cls, ignore_null_fields: bool | None = None) -> PyFormatSinkOption: ...

@@ -4,11 +4,14 @@ use arrow_array::{
     Array, ArrayRef, BinaryArray, FixedSizeBinaryArray, LargeBinaryArray,
     RecordBatch as ArrowRecordBatch, RecordBatchWriter,
     builder::{Int64Builder, LargeStringBuilder},
+    cast::AsArray,
+    types::{Date32Type, Date64Type},
 };
 use arrow_csv::WriterBuilder;
 use arrow_schema::{
     ArrowError, DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema, TimeUnit,
 };
+use chrono::{DateTime, NaiveDate};
 
 macro_rules! cast_duration_to_int64 {
     ($arr:expr, $pt:ty) => {{
@@ -156,6 +159,8 @@ fn make_csv_writer<B: StorageBackend + Send + Sync>(
     let quote = csv_option.quote;
     let escape = csv_option.escape;
     let delimiter = csv_option.delimiter;
+    let date_format = csv_option.date_format.clone();
+    let timestamp_format = csv_option.timestamp_format;
     let builder = Arc::new(move |backend: B::Writer| {
         let mut builder = WriterBuilder::new().with_header(hdr);
 
@@ -174,14 +179,126 @@ fn make_csv_writer<B: StorageBackend + Send + Sync>(
     });
 
     let write_fn = Arc::new(
-        |writer: &mut arrow_csv::Writer<B::Writer>, batches: &[arrow_array::RecordBatch]| {
-            fn transform_batch(batch: ArrowRecordBatch) -> Result<ArrowRecordBatch, ArrowError> {
+        move |writer: &mut arrow_csv::Writer<B::Writer>, batches: &[arrow_array::RecordBatch]| {
+            let date_fmt = date_format.clone();
+            let timestamp_fmt = timestamp_format.clone();
+
+            fn transform_batch(
+                batch: ArrowRecordBatch,
+                date_fmt: Option<&String>,
+                timestamp_fmt: Option<&String>,
+            ) -> Result<ArrowRecordBatch, ArrowError> {
                 let schema = batch.schema();
                 let mut new_fields: Vec<ArrowField> = Vec::with_capacity(schema.fields().len());
                 let mut new_cols: Vec<ArrayRef> = Vec::with_capacity(batch.num_columns());
                 for (i, field_arc) in schema.fields().iter().enumerate() {
                     let field = field_arc.as_ref();
                     match field.data_type() {
+                        ArrowDataType::Date32 => {
+                            if let Some(fmt) = date_fmt {
+                                let arr = batch.column(i).as_primitive::<Date32Type>();
+                                let mut builder = LargeStringBuilder::with_capacity(arr.len(), 0);
+                                for idx in 0..arr.len() {
+                                    if arr.is_null(idx) {
+                                        builder.append_null();
+                                    } else {
+                                        let days = arr.value(idx);
+                                        let date = NaiveDate::from_ymd_opt(1970, 1, 1)
+                                            .unwrap()
+                                            .checked_add_signed(chrono::Duration::days(days as i64))
+                                            .ok_or_else(|| {
+                                                ArrowError::ComputeError("Invalid date".to_string())
+                                            })?;
+                                        builder.append_value(date.format(fmt).to_string());
+                                    }
+                                }
+                                new_cols.push(Arc::new(builder.finish()) as ArrayRef);
+                                new_fields.push(ArrowField::new(
+                                    field.name(),
+                                    ArrowDataType::LargeUtf8,
+                                    field.is_nullable(),
+                                ));
+                            } else {
+                                new_fields.push(field.clone());
+                                new_cols.push(batch.column(i).clone());
+                            }
+                        }
+                        ArrowDataType::Date64 => {
+                            if let Some(fmt) = date_fmt {
+                                let arr = batch.column(i).as_primitive::<Date64Type>();
+                                let mut builder = LargeStringBuilder::with_capacity(arr.len(), 0);
+                                for idx in 0..arr.len() {
+                                    if arr.is_null(idx) {
+                                        builder.append_null();
+                                    } else {
+                                        let ms = arr.value(idx);
+                                        let date = DateTime::from_timestamp_millis(ms)
+                                            .ok_or_else(|| {
+                                                ArrowError::ComputeError("Invalid date".to_string())
+                                            })?
+                                            .date_naive();
+                                        builder.append_value(date.format(fmt).to_string());
+                                    }
+                                }
+                                new_cols.push(Arc::new(builder.finish()) as ArrayRef);
+                                new_fields.push(ArrowField::new(
+                                    field.name(),
+                                    ArrowDataType::LargeUtf8,
+                                    field.is_nullable(),
+                                ));
+                            } else {
+                                new_fields.push(field.clone());
+                                new_cols.push(batch.column(i).clone());
+                            }
+                        }
+                        ArrowDataType::Timestamp(_time_unit, _) => {
+                            if let Some(fmt) = timestamp_fmt {
+                                let arr = batch.column(i);
+                                let mut builder = LargeStringBuilder::with_capacity(arr.len(), 0);
+                                for idx in 0..arr.len() {
+                                    if arr.is_null(idx) {
+                                        builder.append_null();
+                                    } else {
+                                        let timestamp_value = match arr.data_type() {
+                                            ArrowDataType::Timestamp(TimeUnit::Second, _) => {
+                                                let ts_arr = arr.as_primitive::<arrow_array::types::TimestampSecondType>();
+                                                DateTime::from_timestamp(ts_arr.value(idx), 0)
+                                            }
+                                            ArrowDataType::Timestamp(TimeUnit::Millisecond, _) => {
+                                                let ts_arr = arr.as_primitive::<arrow_array::types::TimestampMillisecondType>();
+                                                DateTime::from_timestamp_millis(ts_arr.value(idx))
+                                            }
+                                            ArrowDataType::Timestamp(TimeUnit::Microsecond, _) => {
+                                                let ts_arr = arr.as_primitive::<arrow_array::types::TimestampMicrosecondType>();
+                                                DateTime::from_timestamp_micros(ts_arr.value(idx))
+                                            }
+                                            ArrowDataType::Timestamp(TimeUnit::Nanosecond, _) => {
+                                                let ts_arr = arr.as_primitive::<arrow_array::types::TimestampNanosecondType>();
+                                                Some(DateTime::from_timestamp_nanos(
+                                                    ts_arr.value(idx),
+                                                ))
+                                            }
+                                            _ => unreachable!(),
+                                        };
+                                        let dt = timestamp_value.ok_or_else(|| {
+                                            ArrowError::ComputeError(
+                                                "Invalid timestamp".to_string(),
+                                            )
+                                        })?;
+                                        builder.append_value(dt.format(fmt).to_string());
+                                    }
+                                }
+                                new_cols.push(Arc::new(builder.finish()) as ArrayRef);
+                                new_fields.push(ArrowField::new(
+                                    field.name(),
+                                    ArrowDataType::LargeUtf8,
+                                    field.is_nullable(),
+                                ));
+                            } else {
+                                new_fields.push(field.clone());
+                                new_cols.push(batch.column(i).clone());
+                            }
+                        }
                         ArrowDataType::Duration(_) => {
                             let arr = batch.column(i);
                             let col = match arr.data_type() {
@@ -251,7 +368,7 @@ fn make_csv_writer<B: StorageBackend + Send + Sync>(
             }
 
             for rb in batches {
-                let rb2 = transform_batch(rb.clone())
+                let rb2 = transform_batch(rb.clone(), date_fmt.as_ref(), timestamp_fmt.as_ref())
                     .map_err(|e| DaftError::ComputeError(e.to_string()))?;
                 writer.write(&rb2)?;
             }
