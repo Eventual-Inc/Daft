@@ -38,8 +38,8 @@ use sqlparser::{
 };
 
 use crate::{
-    column_not_found_err, error::*, invalid_operation_err, schema::sql_dtype_to_dtype,
-    statement::Statement, table_not_found_err, unsupported_sql_err,
+    column_not_found_err, error::*, expr_name::normalized_sql_expr_name, invalid_operation_err,
+    schema::sql_dtype_to_dtype, statement::Statement, table_not_found_err, unsupported_sql_err,
 };
 
 /// Bindings are used to lookup in-scope tables, views, and columns (targets T).
@@ -1192,7 +1192,11 @@ impl SQLPlanner<'_> {
                 self.bound_columns.insert(alias.clone(), expr.clone());
                 Ok(vec![expr.alias(alias)])
             }
-            SelectItem::UnnamedExpr(expr) => self.plan_expr(expr).map(|e| vec![e]),
+            SelectItem::UnnamedExpr(expr) => {
+                let name = normalized_sql_expr_name(expr);
+                let expr = self.plan_expr(expr)?;
+                Ok(vec![expr.alias(name)])
+            }
 
             SelectItem::Wildcard(wildcard_opts) => {
                 check_wildcard_options(wildcard_opts)?;
