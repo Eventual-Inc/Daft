@@ -290,3 +290,31 @@ def test_write_csv_timezone_aware_timestamp(tmp_path):
     # Timestamps should be formatted in New York time, not UTC
     # 1994-01-01 00:00:00 UTC = 1993-12-31 19:00:00 EST
     assert "1993-12-31 19:00:00" in text or "EST" in text or "EDT" in text
+
+
+@pytest.mark.skipif(
+    not PYARROW_GE_11_0_0,
+    reason="PyArrow writing to CSV does not have good coverage for all types for versions <11.0.0",
+)
+def test_write_csv_invalid_timezone_raises_error(tmp_path):
+    """Test that invalid timezone strings raise an error instead of silently using UTC."""
+    # Create timestamps with an invalid timezone string
+    df = daft.from_arrow(
+        pa.table(
+            {
+                "id": [1, 2, 3],
+                "timestamp": pa.array(
+                    [
+                        datetime.datetime(1994, 1, 1, tzinfo=datetime.timezone.utc),
+                        datetime.datetime(1995, 1, 1, tzinfo=datetime.timezone.utc),
+                        None,
+                    ],
+                    type=pa.timestamp("us", tz="America/New_Yrok"),  # Typo: should be New_York
+                ),
+            }
+        )
+    )
+
+    # Should raise an error about invalid timezone
+    with pytest.raises(Exception, match="Invalid timezone"):
+        df.write_csv(str(tmp_path), write_mode="overwrite", timestamp_format="%Y-%m-%d %H:%M:%S")

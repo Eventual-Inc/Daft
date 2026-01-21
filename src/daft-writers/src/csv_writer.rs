@@ -257,9 +257,17 @@ fn make_csv_writer<B: StorageBackend + Send + Sync>(
                                 let arr = batch.column(i);
                                 let mut builder = LargeStringBuilder::with_capacity(arr.len(), 0);
 
-                                // Parse timezone if present
-                                let parsed_tz: Option<Tz> =
-                                    tz_opt.as_ref().and_then(|tz_str| tz_str.parse::<Tz>().ok());
+                                // Parse timezone if present - return error if parsing fails
+                                let parsed_tz: Option<Tz> = if let Some(tz_str) = tz_opt.as_ref() {
+                                    Some(tz_str.parse::<Tz>().map_err(|_| {
+                                        ArrowError::ComputeError(format!(
+                                            "Invalid timezone: {}",
+                                            tz_str
+                                        ))
+                                    })?)
+                                } else {
+                                    None
+                                };
 
                                 for idx in 0..arr.len() {
                                     if arr.is_null(idx) {
