@@ -5,7 +5,7 @@ use arrow_array::{
     RecordBatch as ArrowRecordBatch, RecordBatchWriter,
     builder::{Int64Builder, LargeStringBuilder},
     cast::AsArray,
-    types::{Date32Type, Date64Type},
+    types::Date32Type,
 };
 use arrow_csv::WriterBuilder;
 use arrow_schema::{
@@ -251,34 +251,8 @@ fn make_csv_writer<B: StorageBackend + Send + Sync>(
                                 new_cols.push(batch.column(i).clone());
                             }
                         }
-                        ArrowDataType::Date64 => {
-                            if let Some(fmt) = date_fmt {
-                                let arr = batch.column(i).as_primitive::<Date64Type>();
-                                let mut builder = LargeStringBuilder::with_capacity(arr.len(), 0);
-                                for idx in 0..arr.len() {
-                                    if arr.is_null(idx) {
-                                        builder.append_null();
-                                    } else {
-                                        let ms = arr.value(idx);
-                                        let date = DateTime::from_timestamp_millis(ms)
-                                            .ok_or_else(|| {
-                                                ArrowError::ComputeError("Invalid date".to_string())
-                                            })?
-                                            .date_naive();
-                                        builder.append_value(safe_date_format(&date, fmt)?);
-                                    }
-                                }
-                                new_cols.push(Arc::new(builder.finish()) as ArrayRef);
-                                new_fields.push(ArrowField::new(
-                                    field.name(),
-                                    ArrowDataType::LargeUtf8,
-                                    field.is_nullable(),
-                                ));
-                            } else {
-                                new_fields.push(field.clone());
-                                new_cols.push(batch.column(i).clone());
-                            }
-                        }
+                        // Note: Date64 is not handled here because Daft converts Date64 to
+                        // Timestamp[ms] upon ingestion. Any Date64 data will arrive as Timestamp.
                         ArrowDataType::Timestamp(_time_unit, tz_opt) => {
                             if let Some(fmt) = timestamp_fmt {
                                 let arr = batch.column(i);
