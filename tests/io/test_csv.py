@@ -318,3 +318,87 @@ def test_write_csv_invalid_timezone_raises_error(tmp_path):
     # Should raise an error about invalid timezone
     with pytest.raises(Exception, match="Invalid timezone"):
         df.write_csv(str(tmp_path), write_mode="overwrite", timestamp_format="%Y-%m-%d %H:%M:%S")
+
+
+@pytest.mark.skipif(
+    not PYARROW_GE_11_0_0,
+    reason="PyArrow writing to CSV does not have good coverage for all types for versions <11.0.0",
+)
+def test_write_csv_date64_with_timestamp_format(tmp_path):
+    """Test that Date64 (which Daft converts to Timestamp[ms]) uses timestamp_format."""
+    # Date64 is converted to Timestamp[ms] internally by Daft
+    df = daft.from_arrow(
+        pa.table(
+            {
+                "id": [1, 2, 3],
+                "date": pa.array(
+                    [
+                        datetime.date(2024, 1, 15),
+                        datetime.date(2024, 12, 31),
+                        None,
+                    ],
+                    type=pa.date64(),
+                ),
+            }
+        )
+    )
+
+    # Since Date64 becomes Timestamp[ms], we need to use timestamp_format
+    df.write_csv(str(tmp_path), write_mode="overwrite", timestamp_format="%d/%m/%Y")
+    text = _read_first_file_text(str(tmp_path))
+
+    assert "15/01/2024" in text
+    assert "31/12/2024" in text
+    assert "id,date" in text
+
+
+@pytest.mark.skipif(
+    not PYARROW_GE_11_0_0,
+    reason="PyArrow writing to CSV does not have good coverage for all types for versions <11.0.0",
+)
+@pytest.mark.parametrize("time_unit", ["s", "ms", "us", "ns"])
+def test_write_csv_timestamp_all_time_units(tmp_path, time_unit):
+    """Test timestamp formatting works for all time units (second, millisecond, microsecond, nanosecond)."""
+    df = daft.from_arrow(
+        pa.table(
+            {
+                "id": [1, 2],
+                "timestamp": pa.array(
+                    [
+                        datetime.datetime(2024, 1, 15, 10, 30, 45),
+                        datetime.datetime(2024, 12, 31, 23, 59, 59),
+                    ],
+                    type=pa.timestamp(time_unit),
+                ),
+            }
+        )
+    )
+
+    df.write_csv(str(tmp_path), write_mode="overwrite", timestamp_format="%Y-%m-%d %H:%M:%S")
+    text = _read_first_file_text(str(tmp_path))
+
+    assert "2024-01-15 10:30:45" in text
+    assert "2024-12-31 23:59:59" in text
+
+
+@pytest.mark.skipif(
+    not PYARROW_GE_11_0_0,
+    reason="PyArrow writing to CSV does not have good coverage for all types for versions <11.0.0",
+)
+def test_write_csv_no_custom_format_preserves_default(tmp_path):
+    """Test that not providing custom formats preserves default Arrow CSV behavior."""
+    dates = [datetime.date(2024, 1, 15), datetime.date(2024, 12, 31)]
+    timestamps = [
+        datetime.datetime(2024, 1, 15, 10, 30, 45),
+        datetime.datetime(2024, 12, 31, 23, 59, 59),
+    ]
+    df = daft.from_pydict({"id": [1, 2], "date": dates, "timestamp": timestamps})
+
+    # Write without custom formats - should use Arrow's default formatting
+    df.write_csv(str(tmp_path), write_mode="overwrite")
+    text = _read_first_file_text(str(tmp_path))
+
+    # Default format should still contain the date/timestamp data
+    assert "2024-01-15" in text
+    assert "2024-12-31" in text
+    assert "id,date,timestamp" in text
