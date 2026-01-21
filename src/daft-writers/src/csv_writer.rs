@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{fmt::Write, path::PathBuf, sync::Arc};
 
 use arrow_array::{
     Array, ArrayRef, BinaryArray, FixedSizeBinaryArray, LargeBinaryArray,
@@ -11,7 +11,7 @@ use arrow_csv::WriterBuilder;
 use arrow_schema::{
     ArrowError, DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema, TimeUnit,
 };
-use chrono::{DateTime, NaiveDate};
+use chrono::{DateTime, NaiveDate, format::StrftimeItems};
 use chrono_tz::Tz;
 
 macro_rules! cast_duration_to_int64 {
@@ -50,6 +50,33 @@ macro_rules! try_encode_binary_utf8 {
         }
         Arc::new(builder.finish()) as ArrayRef
     }};
+}
+
+/// Safely format a NaiveDate using strftime
+fn safe_date_format(date: &NaiveDate, format: &str) -> Result<String, ArrowError> {
+    let items = StrftimeItems::new(format);
+    let delayed = date.format_with_items(items);
+    let mut result = String::new();
+    write!(result, "{}", delayed)
+        .map_err(|_| ArrowError::ComputeError(format!("Invalid date format string: {}", format)))?;
+    Ok(result)
+}
+
+/// Safely format a DateTime using strftime
+fn safe_datetime_format<Tz: chrono::TimeZone>(
+    dt: &DateTime<Tz>,
+    format: &str,
+) -> Result<String, ArrowError>
+where
+    Tz::Offset: std::fmt::Display,
+{
+    let items = StrftimeItems::new(format);
+    let delayed = dt.format_with_items(items);
+    let mut result = String::new();
+    write!(result, "{}", delayed).map_err(|_| {
+        ArrowError::ComputeError(format!("Invalid timestamp format string: {}", format))
+    })?;
+    Ok(result)
 }
 
 use common_error::{DaftError, DaftResult};
@@ -210,7 +237,7 @@ fn make_csv_writer<B: StorageBackend + Send + Sync>(
                                             .ok_or_else(|| {
                                                 ArrowError::ComputeError("Invalid date".to_string())
                                             })?;
-                                        builder.append_value(date.format(fmt).to_string());
+                                        builder.append_value(safe_date_format(&date, fmt)?);
                                     }
                                 }
                                 new_cols.push(Arc::new(builder.finish()) as ArrayRef);
@@ -238,7 +265,7 @@ fn make_csv_writer<B: StorageBackend + Send + Sync>(
                                                 ArrowError::ComputeError("Invalid date".to_string())
                                             })?
                                             .date_naive();
-                                        builder.append_value(date.format(fmt).to_string());
+                                        builder.append_value(safe_date_format(&date, fmt)?);
                                     }
                                 }
                                 new_cols.push(Arc::new(builder.finish()) as ArrayRef);
@@ -305,9 +332,9 @@ fn make_csv_writer<B: StorageBackend + Send + Sync>(
                                         // Convert to target timezone if specified
                                         let formatted = if let Some(tz) = parsed_tz {
                                             let tz_dt = utc_dt.with_timezone(&tz);
-                                            tz_dt.format(fmt).to_string()
+                                            safe_datetime_format(&tz_dt, fmt)?
                                         } else {
-                                            utc_dt.format(fmt).to_string()
+                                            safe_datetime_format(&utc_dt, fmt)?
                                         };
 
                                         builder.append_value(formatted);

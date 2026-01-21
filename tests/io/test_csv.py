@@ -402,3 +402,27 @@ def test_write_csv_no_custom_format_preserves_default(tmp_path):
     assert "2024-01-15" in text
     assert "2024-12-31" in text
     assert "id,date,timestamp" in text
+
+
+def test_write_csv_invalid_date_format_raises_error(tmp_path):
+    """Test that invalid date format strings raise a clear error."""
+    dates = [datetime.date(2024, 1, 15)]
+    df = daft.from_pydict({"date": dates})
+
+    with pytest.raises(Exception) as exc_info:
+        df.write_csv(str(tmp_path), date_format="%Q")
+
+    # Check that the error message is clear about the invalid format
+    assert "Invalid date format string" in str(exc_info.value)
+
+
+def test_write_csv_invalid_timestamp_format_raises_error(tmp_path):
+    """Test that invalid timestamp format strings raise a clear error."""
+    timestamps = [datetime.datetime(2024, 1, 15, 10, 30, 45)]
+    df = daft.from_pydict({"timestamp": timestamps})
+
+    with pytest.raises(Exception) as exc_info:
+        df.write_csv(str(tmp_path), timestamp_format="%Q")
+
+    # Check that the error message is clear about the invalid format
+    assert "Invalid timestamp format string" in str(exc_info.value)
