@@ -426,3 +426,60 @@ def test_write_csv_invalid_timestamp_format_raises_error(tmp_path):
 
     # Check that the error message is clear about the invalid format
     assert "Invalid timestamp format string" in str(exc_info.value)
+
+
+@pytest.mark.skipif(
+    not PYARROW_GE_11_0_0,
+    reason="PyArrow writing to CSV does not have good coverage for all types for versions <11.0.0",
+)
+def test_pyarrow_csv_writer_custom_formats(tmp_path):
+    """Test that the Python CSVFileWriter correctly applies custom date/timestamp formats.
+
+    This tests the PyArrow fallback path to ensure custom formatting is preserved
+    when the native CSV writer cannot be used.
+    """
+    from daft.io.writer import CSVFileWriter
+    from daft.recordbatch.micropartition import MicroPartition
+
+    # Create a MicroPartition with date and timestamp columns
+    table = pa.table(
+        {
+            "id": [1, 2, 3],
+            "date": pa.array(
+                [datetime.date(2024, 1, 15), datetime.date(2024, 12, 31), None],
+                type=pa.date32(),
+            ),
+            "timestamp": pa.array(
+                [
+                    datetime.datetime(2024, 1, 15, 10, 30, 45),
+                    datetime.datetime(2024, 12, 31, 23, 59, 59),
+                    None,
+                ],
+                type=pa.timestamp("us"),
+            ),
+        }
+    )
+    mp = MicroPartition.from_arrow(table)
+
+    # Create a CSVFileWriter with custom formats
+    writer = CSVFileWriter(
+        root_dir=str(tmp_path),
+        file_idx=0,
+        date_format="%d/%m/%Y",
+        timestamp_format="%Y-%m-%d %H:%M:%S",
+    )
+
+    # Write the data
+    writer.write(mp)
+    writer.close()
+
+    # Read the output and verify formatting
+    text = _read_first_file_text(str(tmp_path))
+
+    # Check date formatting (DD/MM/YYYY)
+    assert "15/01/2024" in text
+    assert "31/12/2024" in text
+
+    # Check timestamp formatting (YYYY-MM-DD HH:MM:SS)
+    assert "2024-01-15 10:30:45" in text
+    assert "2024-12-31 23:59:59" in text
