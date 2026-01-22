@@ -65,7 +65,7 @@ This works well for URLs which are HTTP paths to non-HTML files (e.g. jpeg), loc
 
 ## The [`daft.File`](../api/datatypes/file_types.md) Datatype
 
-[`daft.File`](../api/datatypes/file_types.md) is particularly useful for working with large files that don't fit in memory or when you only need to access specific portions of a file. This is a common use case when working with audio or video data where loading the entire object is prohibitive. The `daft.File` Type is subclassed by the [`daft.AudioFile`](../api/datatypes/audio_file_types.md) and [`daft.VideoFile`](../api/datatypes/video_file_types.md) types which streamline common operations. It provides a [pythonic file-like interface](https://docs.python.org/3/library/functions.html#open) with random access capabilities:
+[`daft.File`](../api/datatypes/file_types.md) is particularly useful for working with large files that don't fit in memory or when you only need to access specific portions of a file. This is a common use case when working with audio or video data where loading the entire object is prohibitive. The `daft.File` Type is subclassed by the [`daft.AudioFile`](../api/datatypes/file_types.md) and [`daft.VideoFile`](../api/datatypes/file_types.md) types which streamline common operations. It provides a [pythonic file-like interface](https://docs.python.org/3/library/functions.html#open) with random access capabilities:
 
 === "🐍 Python"
     ``` python
