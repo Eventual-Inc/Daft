@@ -249,7 +249,7 @@ def test_series_if_else_fixed_size_list(if_true, if_false, expected) -> None:
                 [[("a", 8), ("b", 9)], [("c", 10)], None, [("a", 12), ("b", 13)]],
                 type=pa.map_(pa.string(), pa.int64()),
             ),
-            [[("a", 1), ("b", 2)], [("c", 10)], None, [("a", 5), ("c", 7)]],
+            [{"a": 1, "b": 2}, {"c": 10}, None, {"a": 5, "c": 7}],
         ),
         # Same length, different super-castable data type
         (
@@ -261,7 +261,7 @@ def test_series_if_else_fixed_size_list(if_true, if_false, expected) -> None:
                 [[("a", 8), ("b", 9)], [("c", 10)], None, [("a", 12), ("b", 13)]],
                 type=pa.map_(pa.string(), pa.int64()),
             ),
-            [[("a", 1), ("b", 2)], [("c", 10)], None, [("a", 5), ("c", 7)]],
+            [{"a": 1, "b": 2}, {"c": 10}, None, {"a": 5, "c": 7}],
         ),
         # Broadcast left
         (
@@ -270,7 +270,7 @@ def test_series_if_else_fixed_size_list(if_true, if_false, expected) -> None:
                 [[("a", 8), ("b", 9)], [("c", 10)], None, [("a", 12), ("b", 13)]],
                 type=pa.map_(pa.string(), pa.int64()),
             ),
-            [[("a", 1), ("b", 2)], [("c", 10)], None, [("a", 1), ("b", 2)]],
+            [{"a": 1, "b": 2}, {"c": 10}, None, {"a": 1, "b": 2}],
         ),
         # Broadcast right
         (
@@ -279,13 +279,13 @@ def test_series_if_else_fixed_size_list(if_true, if_false, expected) -> None:
                 type=pa.map_(pa.string(), pa.int64()),
             ),
             pa.array([[("a", 8), ("b", 9)]], type=pa.map_(pa.string(), pa.int64())),
-            [[("a", 1), ("b", 2)], [("a", 8), ("b", 9)], None, [("a", 5), ("c", 7)]],
+            [{"a": 1, "b": 2}, {"a": 8, "b": 9}, None, {"a": 5, "c": 7}],
         ),
         # Broadcast both
         (
             pa.array([[("a", 1), ("b", 2)]], type=pa.map_(pa.string(), pa.int64())),
             pa.array([[("a", 8), ("b", 9)]], type=pa.map_(pa.string(), pa.int64())),
-            [[("a", 1), ("b", 2)], [("a", 8), ("b", 9)], None, [("a", 1), ("b", 2)]],
+            [{"a": 1, "b": 2}, {"a": 8, "b": 9}, None, {"a": 1, "b": 2}],
         ),
     ],
 )
