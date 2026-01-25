@@ -57,9 +57,19 @@ pub fn build_multi_array_bicompare(
         .zip(descending.iter())
         .zip(nulls_first.iter())
     {
+        // Use the Arrow-rs export path to obtain canonical Arrow arrays,
+        // then bridge them into the legacy arrow2-based comparator builder.
+        let l_arrow = l.to_arrow()?;
+        let r_arrow = r.to_arrow()?;
+
+        #[allow(deprecated, reason = "arrow2 migration")]
+        let l_arrow2: Box<dyn daft_arrow::array::Array> = Box::from(l_arrow.as_ref() as &dyn Array);
+        #[allow(deprecated, reason = "arrow2 migration")]
+        let r_arrow2: Box<dyn daft_arrow::array::Array> = Box::from(r_arrow.as_ref() as &dyn Array);
+
         cmp_list.push(build_nulls_first_compare_with_nulls(
-            l.to_arrow2().as_ref(),
-            r.to_arrow2().as_ref(),
+            l_arrow2.as_ref(),
+            r_arrow2.as_ref(),
             *desc,
             *nf,
         )?);
