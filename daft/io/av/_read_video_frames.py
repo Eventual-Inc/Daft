@@ -156,7 +156,7 @@ class _VideoFramesSourceTask(DataSourceTask):
 
             next_sample_time: float | None = 0.0 if sample_interval is not None else None
             # Small tolerance for floating point comparisons
-            epsilon: float = 1e-6 if sample_interval is None else max(1e-9, sample_interval * 1e-6)
+            epsilon: float = 1e-9 if sample_interval is None else max(1e-9, sample_interval * 1e-6)
 
             frame_index: int = 0
             frame: VideoFrame
