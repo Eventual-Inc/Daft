@@ -1515,6 +1515,7 @@ dev = [
     { name = "ipdb" },
     { name = "jax" },
     { name = "jaxtyping" },
+    { name = "kafka-python" },
     { name = "librosa" },
     { name = "lxml" },
     { name = "maturin" },
@@ -1662,6 +1663,7 @@ dev = [
     { name = "ipdb", specifier = "==0.13.13" },
     { name = "jax", specifier = "==0.6.2" },
     { name = "jaxtyping", specifier = "==0.3.3" },
+    { name = "kafka-python", specifier = "==2.0.2" },
     { name = "librosa", specifier = "==0.11.0" },
     { name = "lxml", specifier = "==6.0.2" },
     { name = "maturin", specifier = "==1.10.2" },
@@ -3388,6 +3390,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/30/ce/0bd5290ca4978777154e2683413dca761781aacf57f7dc0146f5210df8b1/jupytext-1.17.2.tar.gz", hash = "sha256:772d92898ac1f2ded69106f897b34af48ce4a85c985fa043a378ff5a65455f02", size = 3748577, upload-time = "2025-06-01T21:31:48.231Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ed/f1/82ea8e783433707cafd9790099a2d19f113c22f32a31c8bb5abdc7a61dbb/jupytext-1.17.2-py3-none-any.whl", hash = "sha256:4f85dc43bb6a24b75491c5c434001ad5ef563932f68f15dd3e1c8ce12a4a426b", size = 164401, upload-time = "2025-06-01T21:31:46.319Z" },
+]
+
+[[package]]
+name = "kafka-python"
+version = "2.0.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/07/4c/2595fb5733c3ac01aef3dacce17ff07f7f3336d9f96548bcf723b9073e5c/kafka-python-2.0.2.tar.gz", hash = "sha256:04dfe7fea2b63726cd6f3e79a2d86e709d608d74406638c5da33a01d45a9d7e3", size = 265053, upload-time = "2020-09-30T07:24:03.287Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/75/68/dcb0db055309f680ab2931a3eeb22d865604b638acf8c914bedf4c1a0c8c/kafka_python-2.0.2-py2.py3-none-any.whl", hash = "sha256:2d92418c7cb1c298fa6c7f0fb3519b520d0d7526ac6cb7ae2a4fc65a51a94b6e", size = 246508, upload-time = "2020-09-30T07:24:01.49Z" },
 ]
 
 [[package]]
