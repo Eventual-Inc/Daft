@@ -24,7 +24,8 @@ _FRAGMENT_UPDATE_HANDLER_RETURN_DTYPE = DataType.struct(
 class GroupFragmentUpdateUDF:
     def __init__(
         self,
-        lance_ds: lance.LanceDataset,
+        ds_uri: str,
+        open_kwargs: dict[str, Any] | None = None,
         left_on: str = "_rowid",
         right_on: str | None = None,
         read_columns: list[str] | None = None,
@@ -33,13 +34,16 @@ class GroupFragmentUpdateUDF:
         """Per-group update handler that invokes Lance fragment.update_columns.
 
         Args:
-            lance_ds: Target Lance dataset.
+            ds_uri: URI of the Lance dataset.
+            open_kwargs: Keyword arguments to open the Lance dataset.
             left_on: Key column on the Lance fragment (default "_rowid").
             right_on: Key column name present in the provided reader data (defaults to left_on).
             read_columns: Names for columns provided to the handler (must include right_on).
             batch_size: Optional batch size when building RecordBatchReader from the provided data.
         """
-        self.lance_ds = lance_ds
+        import lance
+
+        self.lance_ds = lance.dataset(ds_uri, **(open_kwargs or {}))
         self.left_on = left_on
         self.right_on = right_on or left_on
         self.read_columns = read_columns or []
@@ -103,7 +107,7 @@ def update_columns_from_df(
     uri: str | pathlib.Path,
     *,
     read_columns: list[str] | None = None,
-    storage_options: dict[str, Any] | None = None,
+    open_kwargs: dict[str, Any] | None = None,
     daft_remote_args: dict[str, Any] | None = None,
     concurrency: int | None = None,
     left_on: str | None = "_rowid",
@@ -187,8 +191,12 @@ def update_columns_from_df(
                     f"update_columns_from_df only updates existing columns."
                 )
 
+    # Ensure we open the same version of the dataset on workers, unless overridden by open_kwargs
+    udf_open_kwargs = {"version": lance_ds.version, **(open_kwargs or {})}
+
     handler_udf = GroupFragmentUpdateUDF.with_init_args(  # type: ignore[attr-defined]
-        lance_ds,
+        str(uri),
+        udf_open_kwargs,
         effective_left_on,
         join_key,
         read_columns,
@@ -227,9 +235,11 @@ def update_columns_from_df(
         fields_modified=sorted(all_fields_modified),
     )
 
+    commit_storage_options = (open_kwargs or {}).get("storage_options")
+
     return lance_ds.commit(
         uri,
         op,
         read_version=lance_ds.version,
-        storage_options=storage_options,
+        storage_options=commit_storage_options,
     )

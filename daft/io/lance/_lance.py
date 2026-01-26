@@ -355,6 +355,7 @@ def update_columns(
     *,
     read_columns: list[str] | None = None,
     storage_options: dict[str, Any] | None = None,
+    open_kwargs: dict[str, Any] | None = None,
     daft_remote_args: dict[str, Any] | None = None,
     concurrency: int | None = None,
     version: int | str | None = None,
@@ -398,12 +399,19 @@ def update_columns(
     # Import here to avoid circular imports
     from daft.io.lance.lance_update_column import update_columns_from_df
 
+    # Prepare open_kwargs by merging explicit arguments with storage_options
+    # storage_options handles authentication/S3 config, while open_kwargs can handle other dataset options
+    effective_open_kwargs = open_kwargs or {}
+    if "storage_options" not in effective_open_kwargs and storage_options:
+        effective_open_kwargs = effective_open_kwargs.copy()
+        effective_open_kwargs["storage_options"] = storage_options
+
     update_columns_from_df(
         df=df,
         lance_ds=lance_ds,
         uri=uri,
         read_columns=read_columns,
-        storage_options=storage_options,
+        open_kwargs=effective_open_kwargs,
         daft_remote_args=daft_remote_args,
         concurrency=concurrency,
         left_on=effective_left_on,
