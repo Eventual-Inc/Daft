@@ -1399,6 +1399,7 @@ all = [
     { name = "pyiceberg" },
     { name = "pylance" },
     { name = "ray", extra = ["client", "data"] },
+    { name = "requests" },
     { name = "sentence-transformers" },
     { name = "sqlalchemy" },
     { name = "sqlglot" },
@@ -1427,6 +1428,9 @@ google = [
     { name = "numpy", version = "1.26.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.13'" },
     { name = "numpy", version = "2.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
     { name = "pillow" },
+]
+gravitino = [
+    { name = "requests" },
 ]
 hudi = [
     { name = "pyarrow" },
@@ -1594,7 +1598,7 @@ requires-dist = [
     { name = "clickhouse-connect", marker = "extra == 'clickhouse'", specifier = "<0.11.0" },
     { name = "connectorx", marker = "extra == 'postgres'", specifier = ">=0.4.4,<0.5.0" },
     { name = "connectorx", marker = "extra == 'sql'", specifier = ">=0.4.4,<0.5.0" },
-    { name = "daft", extras = ["aws", "azure", "clickhouse", "deltalake", "gcp", "google", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "postgres", "ray", "sentence-transformers", "sql", "transformers", "turbopuffer", "unity", "video"], marker = "extra == 'all'" },
+    { name = "daft", extras = ["aws", "azure", "clickhouse", "deltalake", "gcp", "google", "gravitino", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "postgres", "ray", "sentence-transformers", "sql", "transformers", "turbopuffer", "unity", "video"], marker = "extra == 'all'" },
     { name = "datasets", marker = "extra == 'huggingface'", specifier = "<4.5.0" },
     { name = "deltalake", marker = "extra == 'deltalake'", specifier = "<1.3.0" },
     { name = "deltalake", marker = "extra == 'unity'", specifier = "<1.3.0" },
@@ -1620,6 +1624,7 @@ requires-dist = [
     { name = "pylance", marker = "extra == 'lance'", specifier = "<0.40.0" },
     { name = "ray", extras = ["data", "client"], marker = "sys_platform == 'win32' and extra == 'ray'", specifier = ">=2.10.0,<2.53.0" },
     { name = "ray", extras = ["data", "client"], marker = "sys_platform != 'win32' and extra == 'ray'", specifier = ">=2.0.0,<2.53.0" },
+    { name = "requests", marker = "extra == 'gravitino'", specifier = ">=2.28.0,<3.0.0" },
     { name = "sentence-transformers", marker = "extra == 'transformers'", specifier = "<5.2.0" },
     { name = "soundfile", marker = "extra == 'audio'", specifier = ">=0.13.0,<0.14.0" },
     { name = "sqlalchemy", marker = "extra == 'sql'", specifier = "<2.1.0" },
@@ -1633,7 +1638,7 @@ requires-dist = [
     { name = "typing-extensions", marker = "python_full_version < '3.11'", specifier = ">=4.0.0" },
     { name = "unitycatalog", marker = "extra == 'unity'", specifier = "<0.2.0" },
 ]
-provides-extras = ["all", "audio", "aws", "azure", "clickhouse", "deltalake", "gcp", "google", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "postgres", "ray", "sql", "transformers", "turbopuffer", "unity", "video", "viz"]
+provides-extras = ["all", "audio", "aws", "azure", "clickhouse", "deltalake", "gcp", "google", "gravitino", "hudi", "huggingface", "iceberg", "lance", "numpy", "openai", "pandas", "postgres", "ray", "sql", "transformers", "turbopuffer", "unity", "video", "viz"]
 
 [package.metadata.requires-dev]
 dev = [
