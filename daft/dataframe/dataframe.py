@@ -779,6 +779,7 @@ class DataFrame:
         root_dir: str | pathlib.Path,
         compression: str = "snappy",
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
+        write_success_file: bool = False,
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
     ) -> "DataFrame":
@@ -825,6 +826,7 @@ class DataFrame:
             root_dir=root_dir,
             partition_cols=cols,
             write_mode=WriteMode.from_str(write_mode),
+            write_success_file=write_success_file,
             file_format=FileFormat.Parquet,
             compression=compression,
             io_config=io_config,
