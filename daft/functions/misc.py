@@ -67,9 +67,9 @@ def uuid() -> Expression:
         >>> from daft.functions import uuid
         >>> df = daft.from_pydict({"foo": [1, 2, 3]})
         >>> df = df.with_column("u1", uuid()).with_column("u2", uuid())
-        >>> df.schema()["u1"] == daft.DataType.string()
+        >>> df.schema()["u1"].dtype == daft.DataType.string()
         True
-        >>> df.schema()["u2"] == daft.DataType.string()
+        >>> df.schema()["u2"].dtype == daft.DataType.string()
         True
     """
     return Expression._call_builtin_scalar_fn("uuid")
