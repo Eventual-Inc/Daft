@@ -6,7 +6,10 @@ from daft.datatype import DataType
 from daft.series import Series
 from daft.runners import get_or_create_runner
 from daft.expressions import col
+import logging
 import warnings
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from daft.expressions import Expression
@@ -19,7 +22,7 @@ if TYPE_CHECKING:
     import numpy as np
     import ray
 
-PLACEMENT_GROUP_READY_TIMEOUT_SECONDS = 10
+RAY_RESOURCE_READY_TIMEOUT_SECONDS = 10
 
 
 class CheckpointActor:
@@ -40,32 +43,40 @@ class CheckpointActor:
 # TODO: support native mode in future if needed
 @cls(max_concurrency=1)
 class CheckpointFilter:
-    def __init__(self, num_buckets: int, actor_handles: list[ray.ActorHandle] | None = None):
-        self.actors = []
-        if actor_handles is None:
-            self._enabled = False
-        else:
-            self._enabled = True
-            self.actor_handles = actor_handles
-            for idx in range(num_buckets):
-                try:
-                    actor = actor_handles[idx]
-                    self.actors.append(actor)
-                except ValueError as e:
-                    raise RuntimeError(
-                        f"CheckpointActor_{idx} not found. Please create actors before initializing CheckpointManager."
-                    ) from e
+    def __init__(self, num_buckets: int, actor_handles: list[ActorHandle]):
+        if not actor_handles:
+            raise Exception(
+                "CheckpointFilter disabled because no actor_handles are provided",
+            )
+
+        self._actors: list[ActorHandle] = []
+
+        logger.info(
+            "Start Initializing CheckpointFilter num_actors=%d",
+            len(actor_handles),
+        )
+
+        for idx in range(num_buckets):
+            try:
+                actor = actor_handles[idx]
+                self._actors.append(actor)
+            except Exception as e:
+                raise RuntimeError(
+                    f"CheckpointActor_{idx} not found. Please create actors before initializing CheckpointManager."
+                ) from e
+
+        logger.info(
+            "Initialized CheckpointFilter num_actors=%d",
+            len(self._actors),
+        )
 
     @method.batch(return_dtype=DataType.bool())
     def __call__(self, input: Series) -> Series:
         import numpy as np
         import ray
 
-        if not self._enabled:
-            return Series.from_numpy(np.full(len(input), True, dtype=bool))
-
         input_keys = input.to_pylist()
-        filter_futures = [actor.filter.remote(input_keys) for actor in self.actors]
+        filter_futures = [actor.filter.remote(input_keys) for actor in self._actors]
 
         try:
             filter_results = ray.get(filter_futures, timeout=300)
@@ -111,7 +122,16 @@ def _prepare_checkpoint_filter(
     root_dirs = root_dir if isinstance(root_dir, list) else [root_dir]
     root_dirs_str = [str(p) for p in root_dirs]
 
+    logger.info(
+        "Preparing checkpoint filter root_dirs=%s key_column=%s num_buckets=%s num_cpus=%s",
+        root_dirs_str,
+        key_column,
+        num_buckets,
+        num_cpus,
+    )
+
     df_keys = None
+    partition_list: list[Any] = []
     try:
         df_keys = read_fn(path=root_dirs_str, io_config=io_config, **(read_kwargs or {}))
         if key_column:
@@ -142,7 +162,8 @@ def _prepare_checkpoint_filter(
     pg = placement_group([{"CPU": num_cpus} for _ in range(num_buckets)], strategy="SPREAD")
     try:
         # Wait for placement group to be ready with a timeout (seconds)
-        ray.get(pg.ready(), timeout=PLACEMENT_GROUP_READY_TIMEOUT_SECONDS)
+        ray.get(pg.ready(), timeout=RAY_RESOURCE_READY_TIMEOUT_SECONDS)
+        logger.info("Checkpoint placement group ready")
     except GetTimeoutError as timeout_err:
         # Best effort cleanup to avoid leaking PG
         try:
@@ -176,10 +197,14 @@ def _prepare_checkpoint_filter(
             actor_handles.append(actor)
             start = end
 
-        ray.get([actor.__ray_ready__.remote() for actor in actor_handles])
-    except Exception:
+        ray.get(
+            [actor.__ray_ready__.remote() for actor in actor_handles],
+            timeout=RAY_RESOURCE_READY_TIMEOUT_SECONDS,
+        )
+        logger.info("Checkpoint actors ready num_actors=%d", len(actor_handles))
+    except Exception as e:
         _cleanup_checkpoint_resources(actor_handles, pg)
-        raise
+        raise RuntimeError(f"Failed to create all checkpoint actors: {e}") from e
     checkpoint_filter = CheckpointFilter(num_buckets=num_buckets, actor_handles=actor_handles)
     checkpoint_filter_callable = checkpoint_filter(col(key_column))  # type: ignore
     return actor_handles, pg, checkpoint_filter_callable  # type: ignore
