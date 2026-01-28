@@ -95,6 +95,7 @@ from .list import (
     list_map,
     explode,
     list_append,
+    list_contains,
     to_list,
 )
 from .llm import llm_generate
@@ -322,6 +323,7 @@ __all__ = [
     "list_append",
     "list_bool_and",
     "list_bool_or",
+    "list_contains",
     "list_count",
     "list_distinct",
     "list_join",

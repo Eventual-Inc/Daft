@@ -32,6 +32,7 @@ pub trait ListArrayExtension: Sized {
     fn list_sort(&self, desc: &BooleanArray, nulls_first: &BooleanArray) -> DaftResult<Self>;
     fn list_bool_and(&self) -> DaftResult<BooleanArray>;
     fn list_bool_or(&self) -> DaftResult<BooleanArray>;
+    fn list_contains(&self, item: &Series) -> DaftResult<BooleanArray>;
 }
 
 pub trait ListArrayAggExtension: Sized {
@@ -472,6 +473,80 @@ impl ListArrayExtension for ListArray {
             .rename(self.name())
             .with_nulls(Some(null_buffer))
     }
+
+    fn list_contains(&self, item: &Series) -> DaftResult<BooleanArray> {
+        let list_nulls = self.nulls();
+        let mut result = Vec::with_capacity(self.len());
+        let mut result_nulls = Vec::with_capacity(self.len());
+
+        if self.flat_child.data_type() == &DataType::Null {
+            for list_idx in 0..self.len() {
+                let valid = list_nulls.is_none_or(|nulls| nulls.is_valid(list_idx))
+                    && item.is_valid(list_idx);
+                result.push(false);
+                result_nulls.push(valid);
+            }
+
+            let values = daft_arrow::bitmap::Bitmap::from_iter(result.iter().copied());
+            let null_buffer =
+                daft_arrow::buffer::NullBuffer::from_iter(result_nulls.iter().copied());
+
+            return BooleanArray::from_iter_values(values)
+                .rename(self.name())
+                .with_nulls(Some(null_buffer));
+        }
+
+        let item = item.cast(self.flat_child.data_type())?;
+        let item_hashes = item.hash(None)?;
+        let child_hashes = self.flat_child.hash(None)?;
+
+        let child_arrow = self.flat_child.to_arrow()?;
+        let item_arrow = item.to_arrow()?;
+        let comparator = make_comparator(
+            child_arrow.as_ref(),
+            item_arrow.as_ref(),
+            Default::default(),
+        )
+        .unwrap();
+
+        for (list_idx, range) in self.offsets().ranges().enumerate() {
+            if list_nulls.is_some_and(|nulls| nulls.is_null(list_idx)) {
+                result.push(false);
+                result_nulls.push(false);
+                continue;
+            }
+
+            if !item.is_valid(list_idx) {
+                result.push(false);
+                result_nulls.push(false);
+                continue;
+            }
+
+            let item_hash = item_hashes.get(list_idx).unwrap();
+            let mut found = false;
+            for elem_idx in range {
+                let elem_idx = elem_idx as usize;
+                if child_arrow.is_null(elem_idx) {
+                    continue;
+                }
+                let elem_hash = child_hashes.get(elem_idx).unwrap();
+                if elem_hash == item_hash && comparator(elem_idx, list_idx).is_eq() {
+                    found = true;
+                    break;
+                }
+            }
+
+            result.push(found);
+            result_nulls.push(true);
+        }
+
+        let values = daft_arrow::bitmap::Bitmap::from_iter(result.iter().copied());
+        let null_buffer = daft_arrow::buffer::NullBuffer::from_iter(result_nulls.iter().copied());
+
+        BooleanArray::from_iter_values(values)
+            .rename(self.name())
+            .with_nulls(Some(null_buffer))
+    }
 }
 
 impl ListArrayExtension for FixedSizeListArray {
@@ -481,6 +556,10 @@ impl ListArrayExtension for FixedSizeListArray {
 
     fn list_bool_or(&self) -> DaftResult<BooleanArray> {
         self.to_list().list_bool_or()
+    }
+
+    fn list_contains(&self, item: &Series) -> DaftResult<BooleanArray> {
+        self.to_list().list_contains(item)
     }
 
     fn value_counts(&self) -> DaftResult<MapArray> {
