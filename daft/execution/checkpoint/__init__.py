@@ -22,7 +22,8 @@ if TYPE_CHECKING:
     import numpy as np
     import ray
 
-RAY_RESOURCE_READY_TIMEOUT_SECONDS = 10
+PLACEMENT_GROUP_READY_TIMEOUT_SECONDS = 10
+ACTOR_READY_TIMEOUT_SECONDS = 7200
 
 
 class CheckpointActor:
@@ -162,7 +163,7 @@ def _prepare_checkpoint_filter(
     pg = placement_group([{"CPU": num_cpus} for _ in range(num_buckets)], strategy="SPREAD")
     try:
         # Wait for placement group to be ready with a timeout (seconds)
-        ray.get(pg.ready(), timeout=RAY_RESOURCE_READY_TIMEOUT_SECONDS)
+        ray.get(pg.ready(), timeout=PLACEMENT_GROUP_READY_TIMEOUT_SECONDS)
         logger.info("Checkpoint placement group ready")
     except GetTimeoutError as timeout_err:
         # Best effort cleanup to avoid leaking PG
@@ -199,7 +200,7 @@ def _prepare_checkpoint_filter(
 
         ray.get(
             [actor.__ray_ready__.remote() for actor in actor_handles],
-            timeout=RAY_RESOURCE_READY_TIMEOUT_SECONDS,
+            timeout=ACTOR_READY_TIMEOUT_SECONDS,
         )
         logger.info("Checkpoint actors ready num_actors=%d", len(actor_handles))
     except Exception as e:
