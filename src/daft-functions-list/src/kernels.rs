@@ -250,35 +250,36 @@ impl ListArrayExtension for ListArray {
     fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array> {
         assert_eq!(self.child_data_type(), &DataType::Utf8,);
 
-        let delimiter_arrow = delimiter.as_arrow()?;
-        let delimiter_iter: Box<dyn Iterator<Item = Option<&str>>> = if delimiter.len() == 1 {
-            Box::new(repeat_n(delimiter.get(0), self.len()))
+        let result: Utf8Array = if delimiter.len() == 1 {
+            let delim = delimiter.get(0).unwrap_or("");
+            (0..self.len())
+                .map(|i| {
+                    self.get(i).and_then(|series| {
+                        let utf8 = series.utf8().expect("child type is Utf8");
+                        let arrow_arr = utf8.as_arrow().expect("Utf8Array to arrow conversion");
+                        join_arrow_list_of_utf8s(Some(&arrow_arr), delim)
+                    })
+                })
+                .collect()
         } else {
             assert_eq!(delimiter.len(), self.len());
-
-            Box::new(delimiter_arrow.iter())
+            (0..self.len())
+                .zip(delimiter.into_iter())
+                .map(|(i, delim)| {
+                    self.get(i).and_then(|series| {
+                        let utf8 = series.utf8().expect("child type is Utf8");
+                        let arrow_arr = utf8.as_arrow().expect("Utf8Array to arrow conversion");
+                        join_arrow_list_of_utf8s(Some(&arrow_arr), delim.unwrap_or(""))
+                    })
+                })
+                .collect()
         };
 
-        let mut results = Vec::with_capacity(self.len());
-        for (i, delim) in delimiter_iter.enumerate() {
-            let list_element = self.get(i);
-            let result = match list_element {
-                Some(series) => {
-                    let utf8 = series.utf8()?;
-                    let arrow_arr = utf8.as_arrow()?;
-                    join_arrow_list_of_utf8s(Some(&arrow_arr), delim.unwrap_or(""))
-                }
-                None => None,
-            };
-            results.push(result);
-        }
-
-        let result_array: Utf8Array = results.into_iter().collect();
-        Ok(result_array.rename(self.name()))
+        Ok(result.rename(self.name()))
     }
 
     fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series> {
-        let idx_iter = create_iter(idx, self.len())?;
+        let idx_iter = create_iter(idx, self.len());
         get_children_helper(self, idx_iter, default)
     }
 
@@ -544,34 +545,36 @@ impl ListArrayExtension for FixedSizeListArray {
     fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array> {
         assert_eq!(self.child_data_type(), &DataType::Utf8,);
 
-        let delimiter_arrow = delimiter.as_arrow()?;
-        let delimiter_iter: Box<dyn Iterator<Item = Option<&str>>> = if delimiter.len() == 1 {
-            Box::new(repeat_n(delimiter.get(0), self.len()))
+        let result: Utf8Array = if delimiter.len() == 1 {
+            let delim = delimiter.get(0).unwrap_or("");
+            (0..self.len())
+                .map(|i| {
+                    self.get(i).and_then(|series| {
+                        let utf8 = series.utf8().expect("child type is Utf8");
+                        let arrow_arr = utf8.as_arrow().expect("Utf8Array to arrow conversion");
+                        join_arrow_list_of_utf8s(Some(&arrow_arr), delim)
+                    })
+                })
+                .collect()
         } else {
             assert_eq!(delimiter.len(), self.len());
-            Box::new(delimiter_arrow.iter())
+            (0..self.len())
+                .zip(delimiter.into_iter())
+                .map(|(i, delim)| {
+                    self.get(i).and_then(|series| {
+                        let utf8 = series.utf8().expect("child type is Utf8");
+                        let arrow_arr = utf8.as_arrow().expect("Utf8Array to arrow conversion");
+                        join_arrow_list_of_utf8s(Some(&arrow_arr), delim.unwrap_or(""))
+                    })
+                })
+                .collect()
         };
 
-        let mut results = Vec::with_capacity(self.len());
-        for (i, delim) in delimiter_iter.enumerate() {
-            let list_element = self.get(i);
-            let result = match list_element {
-                Some(series) => {
-                    let utf8 = series.utf8()?;
-                    let arrow_arr = utf8.as_arrow()?;
-                    join_arrow_list_of_utf8s(Some(&arrow_arr), delim.unwrap_or(""))
-                }
-                None => None,
-            };
-            results.push(result);
-        }
-
-        let result_array: Utf8Array = results.into_iter().collect();
-        Ok(result_array.rename(self.name()))
+        Ok(result.rename(self.name()))
     }
 
     fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series> {
-        let idx_iter = create_iter(idx, self.len())?;
+        let idx_iter = create_iter(idx, self.len());
 
         assert!(
             default.len() == 1,
@@ -701,11 +704,9 @@ fn join_arrow_list_of_utf8s(
 ) -> Option<String> {
     list_element
         .map(|list_element| {
-            list_element
-                .iter()
-                .fold(String::new(), |acc, str_item| {
-                    acc + str_item.unwrap_or("") + delimiter_str
-                })
+            list_element.iter().fold(String::new(), |acc, str_item| {
+                acc + str_item.unwrap_or("") + delimiter_str
+            })
             // Remove trailing `delimiter_str`
         })
         .map(|result| {
@@ -721,15 +722,12 @@ fn join_arrow_list_of_utf8s(
 /// Given an i64 array that may have either 1 or `self.len()` elements, create an iterator with
 /// `self.len()` elements. If there was originally 1 element, we repeat this element `self.len()`
 /// times, otherwise we simply take the original array.
-fn create_iter(arr: &Int64Array, len: usize) -> DaftResult<Box<dyn Iterator<Item = i64>>> {
+fn create_iter(arr: &Int64Array, len: usize) -> Box<dyn Iterator<Item = i64> + '_> {
     match arr.len() {
-        1 => Ok(Box::new(repeat_n(arr.get(0).unwrap(), len))),
+        1 => Box::new(repeat_n(arr.get(0).unwrap(), len)),
         arr_len => {
             assert_eq!(arr_len, len);
-            let arrow_arr = arr.as_arrow()?;
-            // Collect into a Vec to avoid lifetime issues with the borrowed iterator
-            let values: Vec<i64> = arrow_arr.iter().map(|x| x.unwrap()).collect();
-            Ok(Box::new(values.into_iter()))
+            Box::new(arr.into_iter().map(|x| *x.unwrap()))
         }
     }
 }
@@ -910,7 +908,7 @@ fn get_children_helper(
 }
 
 fn general_list_fill_helper(element: &Series, num_array: &Int64Array) -> DaftResult<Vec<Series>> {
-    let num_iter = create_iter(num_array, element.len())?;
+    let num_iter = create_iter(num_array, element.len());
     let mut result = Vec::with_capacity(element.len());
     let element_data = element.as_physical()?;
     for (row_index, num) in num_iter.enumerate() {
