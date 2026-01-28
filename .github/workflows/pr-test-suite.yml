@@ -188,7 +188,7 @@ jobs:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
 
     - name: Upload coverage report
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: coverage-reports-unit-tests-${{ join(matrix.*, '-') }}
         path: ./report-output
@@ -273,7 +273,7 @@ jobs:
         source .venv/bin/activate
         maturin build --release --compatibility linux --out dist
     - name: Upload wheels
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: wheels-${{ matrix.python-version }}
         path: dist
@@ -291,7 +291,7 @@ jobs:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v7
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -317,7 +317,7 @@ jobs:
           uv sync --no-install-project --all-extras --all-groups
           uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
-    - uses: actions/cache@v4
+    - uses: actions/cache@v5
       env:
         cache-name: cache-tpch-data
       with:
@@ -389,7 +389,7 @@ jobs:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v7
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -420,7 +420,7 @@ jobs:
         mkdir -p /tmp/daft-integration-testing/nginx
         chmod +rw /tmp/daft-integration-testing/nginx
     - name: Spin up IO services
-      uses: isbang/compose-action@v2.4.1
+      uses: isbang/compose-action@v2.4.3
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes
@@ -487,7 +487,7 @@ jobs:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v7
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -532,7 +532,7 @@ jobs:
         # workload_identity_provider: ${{ secrets.ACTIONS_GCP_WORKLOAD_IDENTITY_PROVIDER }}
         # service_account: ${{ secrets.ACTIONS_GCP_SERVICE_ACCOUNT }}
     - name: Spin up IO services
-      uses: isbang/compose-action@v2.4.1
+      uses: isbang/compose-action@v2.4.3
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes
@@ -588,7 +588,7 @@ jobs:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v7
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -699,7 +699,7 @@ jobs:
       working-directory: ./unitycatalog
       run: bin/start-uc-server -p 3000 &
     - name: Download built wheels
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v7
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -888,7 +888,7 @@ jobs:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v7
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -960,7 +960,7 @@ jobs:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v7
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -1027,7 +1027,7 @@ jobs:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v7
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -1149,7 +1149,7 @@ jobs:
         maturin develop --uv --profile dev-bench
       env:
         DAFT_DASHBOARD_SKIP_BUILD: true
-    - uses: actions/cache@v4
+    - uses: actions/cache@v5
       env:
         cache-name: cache-tpch-data
       with:
@@ -1218,7 +1218,7 @@ jobs:
     - name: Generate code coverage
       run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --lcov --output-path ./report-output/lcov.info
     - name: Upload coverage report
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: coverage-reports-rust-tests-${{ runner.os }}
         path: ./report-output
@@ -1326,7 +1326,7 @@ jobs:
     - rust-tests-platform
     steps:
     - uses: actions/checkout@v6
-    - uses: actions/download-artifact@v6
+    - uses: actions/download-artifact@v7
       with:
         pattern: coverage-reports*
         merge-multiple: true
@@ -1484,7 +1484,7 @@ jobs:
         prefix-key: ${{ runner.os }}-build
         cache-all-crates: 'true'
 
-    - uses: actions/cache@v4
+    - uses: actions/cache@v5
       id: pre-commit-cache
       with:
         path: ~/.cache/pre-commit/
