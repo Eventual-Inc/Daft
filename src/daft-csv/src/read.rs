@@ -13,7 +13,7 @@ use daft_arrow::{
     },
 };
 use daft_compression::CompressionCodec;
-use daft_core::{prelude::*, utils::arrow::cast_array_for_daft_if_needed};
+use daft_core::{prelude::*, utils::arrow::cast_arrow2_array_for_daft_if_needed};
 use daft_decoding::deserialize::deserialize_column;
 use daft_dsl::{expr::bound_expr::BoundExpr, optimization::get_required_columns};
 use daft_io::{GetResult, IOClient, IOStatsRef, SourceType, parse_url};
@@ -678,7 +678,7 @@ fn parse_into_column_array_chunk_stream(
                             );
                             Series::try_from_field_and_arrow_array(
                                 read_daft_fields[i].clone(),
-                                cast_array_for_daft_if_needed(deserialized_col?),
+                                cast_arrow2_array_for_daft_if_needed(deserialized_col?),
                             )
                         })
                         .collect::<DaftResult<Vec<Series>>>()?;
@@ -727,7 +727,9 @@ mod tests {
     };
     use daft_core::{
         prelude::*,
-        utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
+        utils::arrow::{
+            cast_arrow2_array_for_daft_if_needed, cast_arrow2_array_from_daft_if_needed,
+        },
     };
     use daft_io::{IOClient, IOConfig};
     use daft_recordbatch::RecordBatch;
@@ -785,7 +787,7 @@ mod tests {
             .into_arrays()
             .into_iter()
             // Roundtrip with Daft for casting.
-            .map(|c| cast_array_from_daft_if_needed(cast_array_for_daft_if_needed(c)))
+            .map(|c| cast_arrow2_array_from_daft_if_needed(cast_arrow2_array_for_daft_if_needed(c)))
             .collect::<Vec<_>>();
         let schema: daft_arrow::datatypes::Schema = fields.into();
         // Roundtrip with Daft for casting.
