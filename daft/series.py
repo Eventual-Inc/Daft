@@ -936,6 +936,27 @@ class SeriesStringNamespace(SeriesNamespace):
     def capitalize(self) -> Series:
         return self._eval_expressions("capitalize")
 
+    def to_camel_case(self) -> Series:
+        return self._eval_expressions("to_camel_case")
+
+    def to_upper_camel_case(self) -> Series:
+        return self._eval_expressions("to_upper_camel_case")
+
+    def to_snake_case(self) -> Series:
+        return self._eval_expressions("to_snake_case")
+
+    def to_upper_snake_case(self) -> Series:
+        return self._eval_expressions("to_upper_snake_case")
+
+    def to_kebab_case(self) -> Series:
+        return self._eval_expressions("to_kebab_case")
+
+    def to_upper_kebab_case(self) -> Series:
+        return self._eval_expressions("to_upper_kebab_case")
+
+    def to_title_case(self) -> Series:
+        return self._eval_expressions("to_title_case")
+
     def left(self, nchars: Series) -> Series:
         return self._eval_expressions("left", nchars)
 
