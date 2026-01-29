@@ -80,11 +80,18 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
         # This allows LM Studio to use the same model profiles as OpenAI
         input_text_token_limit = get_input_text_token_limit_for_model(self.model_name)
 
+        # Determine if dimensions should be included in the request
+        dimensions = (
+            self.dimensions
+            if (self.dimensions is not None and self.embed_options.get("supports_overriding_dimensions", False))
+            else omit
+        )
+
         return OpenAITextEmbedder(
             provider_options=self.provider_options,
             model=self.model_name,
             embed_options=self.embed_options,
-            dimensions=self.dimensions if self.embed_options.get("supports_overriding_dimensions", False) else omit,
+            dimensions=dimensions,
             provider_name=self.get_provider(),
             batch_token_limit=batch_token_limit,
             input_text_token_limit=input_text_token_limit,
