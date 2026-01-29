@@ -58,7 +58,7 @@ pub(crate) trait VectorMetric {
     fn metric<T: NumericNative>(a: &[T], b: &[T]) -> Option<f64>;
 }
 
-fn compute_metric<T, M>(source: &FixedSizeListArray, query: &Series) -> DaftResult<Vec<Option<f64>>>
+fn compute_metric<T, M>(source: &FixedSizeListArray, query: &Series) -> DaftResult<Float64Array>
 where
     T: NumericNative,
     M: VectorMetric,
@@ -77,7 +77,8 @@ where
                 let list_slice = list_opt.as_ref()?.try_as_slice::<T>().ok()?;
                 M::metric(list_slice, query)
             })
-            .collect::<Vec<_>>())
+            .collect::<Float64Array>()
+            .rename(source.name()))
     } else {
         if query.len() != source.len() {
             return Err(DaftError::ValueError(format!(
@@ -98,7 +99,8 @@ where
                 let query_slice = query_opt.as_ref()?.try_as_slice::<T>().ok()?;
                 M::metric(list_slice, query_slice)
             })
-            .collect::<Vec<_>>())
+            .collect::<Float64Array>()
+            .rename(source.name()))
     }
 }
 
@@ -106,7 +108,7 @@ pub(crate) fn compute_vector_metric<M: VectorMetric>(
     function_name: &str,
     source: &Series,
     query: &Series,
-) -> DaftResult<Vec<Option<f64>>> {
+) -> DaftResult<Float64Array> {
     match (source.data_type(), query.data_type()) {
         (
             DataType::FixedSizeList(source_dtype, source_size)

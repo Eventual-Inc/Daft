@@ -48,12 +48,7 @@ impl ScalarUDF for CosineSimilarityFunction {
             input: source,
             query,
         } = inputs.try_into()?;
-        let source_name = source.name();
-
-        let res = compute_vector_metric::<CosineSimilarityMetric>(self.name(), &source, &query)?;
-
-        let output =
-            Float64Array::from_iter(Field::new(source_name, DataType::Float64), res.into_iter());
+        let output = compute_vector_metric::<CosineSimilarityMetric>(self.name(), &source, &query)?;
 
         Ok(output.into_series())
     }

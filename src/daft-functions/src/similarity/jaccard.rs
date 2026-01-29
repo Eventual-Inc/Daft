@@ -49,12 +49,8 @@ impl ScalarUDF for JaccardSimilarityFunction {
             input: source,
             query,
         } = inputs.try_into()?;
-        let source_name = source.name();
-
-        let res = compute_vector_metric::<JaccardSimilarityMetric>(self.name(), &source, &query)?;
-
         let output =
-            Float64Array::from_iter(Field::new(source_name, DataType::Float64), res.into_iter());
+            compute_vector_metric::<JaccardSimilarityMetric>(self.name(), &source, &query)?;
 
         Ok(output.into_series())
     }
