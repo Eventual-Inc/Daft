@@ -625,9 +625,11 @@ fn replace_column_with_semantic_id_aggexpr(
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Set, |_| e)
         }
-        AggExpr::Concat(ref child) => {
-            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
-                .map_yes_no(AggExpr::Concat, |_| e)
+        AggExpr::Concat(ref child, ref delimiter) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema).map_yes_no(
+                |transformed_child| AggExpr::Concat(transformed_child, delimiter.clone()),
+                |_| AggExpr::Concat(child.clone(), delimiter.clone()),
+            )
         }
         AggExpr::Skew(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
