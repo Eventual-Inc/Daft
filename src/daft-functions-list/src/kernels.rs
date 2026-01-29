@@ -2,7 +2,7 @@
 
 use std::{iter::repeat_n, sync::Arc};
 
-use arrow::array::{BooleanBufferBuilder, make_comparator};
+use arrow::array::{BooleanBufferBuilder, BooleanBuilder, make_comparator};
 use common_error::DaftResult;
 use daft_arrow::offset::{Offsets, OffsetsBuffer};
 use daft_core::{
@@ -476,24 +476,22 @@ impl ListArrayExtension for ListArray {
 
     fn list_contains(&self, item: &Series) -> DaftResult<BooleanArray> {
         let list_nulls = self.nulls();
-        let mut result = Vec::with_capacity(self.len());
-        let mut result_nulls = Vec::with_capacity(self.len());
+        let mut builder = BooleanBuilder::new();
+        let field = Field::new(self.name(), DataType::Boolean);
 
         if self.flat_child.data_type() == &DataType::Null {
             for list_idx in 0..self.len() {
                 let valid = list_nulls.is_none_or(|nulls| nulls.is_valid(list_idx))
                     && item.is_valid(list_idx);
-                result.push(false);
-                result_nulls.push(valid);
+                if valid {
+                    builder.append_value(false);
+                } else {
+                    builder.append_null();
+                }
             }
 
-            let values = daft_arrow::bitmap::Bitmap::from_iter(result.iter().copied());
-            let null_buffer =
-                daft_arrow::buffer::NullBuffer::from_iter(result_nulls.iter().copied());
-
-            return BooleanArray::from_iter_values(values)
-                .rename(self.name())
-                .with_nulls(Some(null_buffer));
+            let arrow_array = Arc::new(builder.finish());
+            return BooleanArray::from_arrow(field, arrow_array);
         }
 
         let item = item.cast(self.flat_child.data_type())?;
@@ -511,14 +509,12 @@ impl ListArrayExtension for ListArray {
 
         for (list_idx, range) in self.offsets().ranges().enumerate() {
             if list_nulls.is_some_and(|nulls| nulls.is_null(list_idx)) {
-                result.push(false);
-                result_nulls.push(false);
+                builder.append_null();
                 continue;
             }
 
             if !item.is_valid(list_idx) {
-                result.push(false);
-                result_nulls.push(false);
+                builder.append_null();
                 continue;
             }
 
@@ -536,16 +532,11 @@ impl ListArrayExtension for ListArray {
                 }
             }
 
-            result.push(found);
-            result_nulls.push(true);
+            builder.append_value(found);
         }
 
-        let values = daft_arrow::bitmap::Bitmap::from_iter(result.iter().copied());
-        let null_buffer = daft_arrow::buffer::NullBuffer::from_iter(result_nulls.iter().copied());
-
-        BooleanArray::from_iter_values(values)
-            .rename(self.name())
-            .with_nulls(Some(null_buffer))
+        let arrow_array = Arc::new(builder.finish());
+        BooleanArray::from_arrow(field, arrow_array)
     }
 }
 
