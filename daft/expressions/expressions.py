@@ -1424,6 +1424,56 @@ class Expression:
 
         return cosine_distance(self, other)
 
+    def euclidean_distance(self, other: Expression) -> Expression:
+        """Compute the Euclidean distance between two embeddings.
+
+        Tip: See Also
+            [`daft.functions.euclidean_distance`](https://docs.daft.ai/en/stable/api/functions/euclidean_distance/)
+        """
+        from daft.functions import euclidean_distance
+
+        return euclidean_distance(self, other)
+
+    def dot_product(self, other: Expression) -> Expression:
+        """Compute the dot product between two embeddings.
+
+        Tip: See Also
+            [`daft.functions.dot_product`](https://docs.daft.ai/en/stable/api/functions/dot_product/)
+        """
+        from daft.functions import dot_product
+
+        return dot_product(self, other)
+
+    def cosine_similarity(self, other: Expression) -> Expression:
+        """Compute the cosine similarity between two embeddings.
+
+        Tip: See Also
+            [`daft.functions.cosine_similarity`](https://docs.daft.ai/en/stable/api/functions/cosine_similarity/)
+        """
+        from daft.functions import cosine_similarity
+
+        return cosine_similarity(self, other)
+
+    def pearson_correlation(self, other: Expression) -> Expression:
+        """Compute the Pearson correlation between two embeddings.
+
+        Tip: See Also
+            [`daft.functions.pearson_correlation`](https://docs.daft.ai/en/stable/api/functions/pearson_correlation/)
+        """
+        from daft.functions import pearson_correlation
+
+        return pearson_correlation(self, other)
+
+    def jaccard_similarity(self, other: Expression) -> Expression:
+        """Compute the Jaccard similarity between two embeddings.
+
+        Tip: See Also
+            [`daft.functions.jaccard_similarity`](https://docs.daft.ai/en/stable/api/functions/jaccard_similarity/)
+        """
+        from daft.functions import jaccard_similarity
+
+        return jaccard_similarity(self, other)
+
     def length(self) -> Expression:
         """Retrieves the length of the given expression.
 
