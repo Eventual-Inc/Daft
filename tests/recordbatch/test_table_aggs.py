@@ -1080,10 +1080,24 @@ def test_agg_concat_on_string() -> None:
     assert res["a"] == ["the quick brown fox"]
 
 
+def test_agg_concat_on_string_with_delimiter() -> None:
+    df3 = from_pydict({"a": ["the", "quick", "brown", "fox"]})
+    res = df3.agg(col("a").string_agg(delimiter=" ")).to_pydict()
+    assert res["a"] == ["the quick brown fox"]
+
+
 def test_agg_concat_on_string_groupby() -> None:
     df3 = from_pydict({"a": ["the", " quick", " brown", " fox"], "b": [1, 2, 1, 2]})
     res = df3.groupby("b").string_agg("a").to_pydict()
     expected = ["the brown", " quick fox"]
+    for txt in expected:
+        assert txt in res["a"]
+
+
+def test_agg_concat_on_string_groupby_with_delimiter() -> None:
+    df3 = from_pydict({"a": ["the", "quick", "brown", "fox"], "b": [1, 1, 2, 2]})
+    res = df3.groupby("b").string_agg("a", delimiter="|").to_pydict()
+    expected = ["the|quick", "brown|fox"]
     for txt in expected:
         assert txt in res["a"]
 
