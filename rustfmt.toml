@@ -1,3 +1,4 @@
+unstable_features = true
 group_imports = "StdExternalCrate"
-ignore = ["src/arrow2", "src/parquet2"]
+ignore = ["src/arrow2", "src/parquet2", "src/parquet-format-safe"]
 imports_granularity = "Crate"
