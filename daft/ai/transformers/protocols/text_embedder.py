@@ -25,7 +25,19 @@ if TYPE_CHECKING:
 @dataclass
 class TransformersTextEmbedderDescriptor(TextEmbedderDescriptor):
     model: str
+    dimensions: int | None = None
     embed_options: EmbedTextOptions = field(default_factory=lambda: EmbedTextOptions(batch_size=64))
+
+    def __post_init__(self) -> None:
+        if self.dimensions is None:
+            return
+        if self.dimensions <= 0:
+            raise ValueError("Embedding dimensions must be a positive integer.")
+        dimensions = AutoConfig.from_pretrained(self.model, trust_remote_code=True).hidden_size
+        if self.dimensions > dimensions:
+            raise ValueError(
+                f"Requested dimensions ({self.dimensions}) exceeds model output size ({dimensions}) for '{self.model}'."
+            )
 
     def get_provider(self) -> str:
         return "transformers"
@@ -37,6 +49,8 @@ class TransformersTextEmbedderDescriptor(TextEmbedderDescriptor):
         return dict(self.embed_options)
 
     def get_dimensions(self) -> EmbeddingDimensions:
+        if self.dimensions is not None:
+            return EmbeddingDimensions(size=self.dimensions, dtype=DataType.float32())
         dimensions = AutoConfig.from_pretrained(self.model, trust_remote_code=True).hidden_size
         return EmbeddingDimensions(size=dimensions, dtype=DataType.float32())
 
@@ -48,20 +62,26 @@ class TransformersTextEmbedderDescriptor(TextEmbedderDescriptor):
         return udf_options
 
     def instantiate(self) -> TextEmbedder:
-        return TransformersTextEmbedder(self.model, **self.embed_options)
+        return TransformersTextEmbedder(self.model, dimensions=self.dimensions, **self.embed_options)
 
 
 class TransformersTextEmbedder(TextEmbedder):
     model: SentenceTransformer
     embed_options: EmbedTextOptions
 
-    def __init__(self, model_name_or_path: str, **embed_options: Unpack[EmbedTextOptions]):
+    def __init__(
+        self,
+        model_name_or_path: str,
+        dimensions: int | None = None,
+        **embed_options: Unpack[EmbedTextOptions],
+    ):
         # Let SentenceTransformer handle device selection automatically.
         self.model = SentenceTransformer(model_name_or_path, trust_remote_code=True, backend="torch")
         self.model.eval()
         self.embed_options = embed_options
+        self.dimensions = dimensions
 
     def embed_text(self, text: list[str]) -> list[Embedding]:
         with torch.inference_mode():
-            batch = self.model.encode(text, convert_to_numpy=True)
+            batch = self.model.encode(text, convert_to_numpy=True, truncate_dim=self.dimensions)
             return list(batch)

@@ -4,9 +4,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from openai import OpenAI
+from openai._types import omit
 
 from daft import DataType
-from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedder, get_input_text_token_limit_for_model
+from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedder, _models, get_input_text_token_limit_for_model
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
 from daft.ai.typing import EmbeddingDimensions, EmbedTextOptions, Options, UDFOptions
 from daft.utils import from_dict
@@ -26,9 +27,18 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
     provider_name: str
     provider_options: OpenAIProviderOptions
     model_name: str
+    dimensions: int | None = None
     embed_options: EmbedTextOptions = field(
         default_factory=lambda: EmbedTextOptions(batch_size=64, max_retries=3, on_error="raise")
     )
+
+    def __post_init__(self) -> None:
+        if self.dimensions is None:
+            return
+        if self.model_name in _models and not _models[self.model_name].supports_overriding_dimensions:
+            raise ValueError(f"Embedding model '{self.model_name}' does not support specifying dimensions")
+        if "supports_overriding_dimensions" not in self.embed_options:
+            self.embed_options["supports_overriding_dimensions"] = True
 
     def get_provider(self) -> str:
         return "lm_studio"
@@ -48,6 +58,8 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
         return True
 
     def get_dimensions(self) -> EmbeddingDimensions:
+        if self.dimensions is not None:
+            return EmbeddingDimensions(size=self.dimensions, dtype=DataType.float32())
         try:
             client = OpenAI(**self.provider_options)
             response = client.embeddings.create(
@@ -72,6 +84,7 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
             provider_options=self.provider_options,
             model=self.model_name,
             embed_options=self.embed_options,
+            dimensions=self.dimensions if self.embed_options.get("supports_overriding_dimensions", False) else omit,
             provider_name=self.get_provider(),
             batch_token_limit=batch_token_limit,
             input_text_token_limit=input_text_token_limit,
