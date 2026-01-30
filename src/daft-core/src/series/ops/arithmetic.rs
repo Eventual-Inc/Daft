@@ -477,7 +477,6 @@ impl_arithmetic_ref_for_series!(Rem, rem);
 mod tests {
     use arrow::datatypes::IntervalMonthDayNano;
     use common_error::DaftResult;
-    use daft_arrow::types::months_days_ns;
 
     use crate::{
         array::ops::full::FullNull,

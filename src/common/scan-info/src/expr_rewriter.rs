@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use common_error::DaftResult;
 use daft_algebra::boolean::split_conjunction;
+use daft_core::prelude::Operator;
 use daft_dsl::{
-    Column, Expr, ExprRef, Operator, ResolvedColumn,
+    Column, Expr, ExprRef, ResolvedColumn,
     common_treenode::{Transformed, TreeNode, TreeNodeRecursion},
     functions::{FunctionExpr, partitioning},
     null_lit, resolved_col,
