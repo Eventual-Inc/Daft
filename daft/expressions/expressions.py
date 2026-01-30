@@ -2063,6 +2063,16 @@ class Expression:
 
         return resize(self, w, h)
 
+    def center_crop(self, w: int, h: int) -> Expression:
+        """Center crop image into the provided width and height.
+
+        Tip: See Also
+            [`daft.functions.center_crop`](https://docs.daft.ai/en/stable/api/functions/center_crop/)
+        """
+        from daft.functions import center_crop
+
+        return center_crop(self, w, h)
+
     def crop(self, bbox: tuple[int, int, int, int] | Expression) -> Expression:
         """Crops images with the provided bounding box.
 
