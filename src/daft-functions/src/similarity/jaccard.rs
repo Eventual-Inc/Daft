@@ -5,44 +5,52 @@ use serde::{Deserialize, Serialize};
 
 use crate::vector_utils::{Args, VectorMetric, compute_vector_metric, validate_vector_inputs};
 
-fn cosine_distance_metric<T: NumericNative>(a: &[T], b: &[T]) -> Option<f64> {
-    let mut xy = 0.0;
-    let mut x_sq = 0.0;
-    let mut y_sq = 0.0;
+fn jaccard_similarity_metric<T: NumericNative>(a: &[T], b: &[T]) -> Option<f64> {
+    let mut intersection = 0.0;
+    let mut union = 0.0;
 
     for (x, y) in a.iter().zip(b) {
-        let x = x.to_f64()?;
-        let y = y.to_f64()?;
-        xy += x * y;
-        x_sq += x * x;
-        y_sq += y * y;
+        let x_nonzero = !x.is_zero();
+        let y_nonzero = !y.is_zero();
+        if x_nonzero || y_nonzero {
+            union += 1.0;
+            if x_nonzero && y_nonzero {
+                intersection += 1.0;
+            }
+        }
     }
 
-    Some(1.0 - xy / (x_sq.sqrt() * y_sq.sqrt()))
+    if union == 0.0 {
+        return Some(1.0);
+    }
+
+    Some(intersection / union)
 }
 
-struct CosineDistanceMetric;
+struct JaccardSimilarityMetric;
 
-impl VectorMetric for CosineDistanceMetric {
+impl VectorMetric for JaccardSimilarityMetric {
     fn metric<T: NumericNative>(a: &[T], b: &[T]) -> Option<f64> {
-        cosine_distance_metric(a, b)
+        jaccard_similarity_metric(a, b)
     }
 }
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct CosineDistanceFunction;
+pub struct JaccardSimilarityFunction;
 
 #[typetag::serde]
-impl ScalarUDF for CosineDistanceFunction {
+impl ScalarUDF for JaccardSimilarityFunction {
     fn name(&self) -> &'static str {
-        "cosine_distance"
+        "jaccard_similarity"
     }
+
     fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let Args {
             input: source,
             query,
         } = inputs.try_into()?;
-        let output = compute_vector_metric::<CosineDistanceMetric>(self.name(), &source, &query)?;
+        let output =
+            compute_vector_metric::<JaccardSimilarityMetric>(self.name(), &source, &query)?;
 
         Ok(output.into_series())
     }
@@ -64,6 +72,6 @@ impl ScalarUDF for CosineDistanceFunction {
 }
 
 #[must_use]
-pub fn cosine_distance(a: ExprRef, b: ExprRef) -> ExprRef {
-    ScalarFn::builtin(CosineDistanceFunction {}, vec![a, b]).into()
+pub fn jaccard_similarity(a: ExprRef, b: ExprRef) -> ExprRef {
+    ScalarFn::builtin(JaccardSimilarityFunction {}, vec![a, b]).into()
 }
