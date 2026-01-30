@@ -30,6 +30,7 @@ To set up your development environment:
 9. `make precommit`: run all pre-commit hooks, must install pre-commit first(pip install pre-commit)
 10. `make build-release`: perform a full release build of Daft
 11. `make build-whl`: recompile your code after modifying any Rust code in `src/` for development, only generate `whl` file without installation
+12. `make clean`: clean all build artifacts, including the python virtual environment. You can skip cleaning the virtual environment by setting `SKIP_VENV=true`
 
 ### Note about Developing `daft-dashboard`
 
