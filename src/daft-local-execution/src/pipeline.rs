@@ -971,6 +971,27 @@ fn physical_plan_to_pipeline(
             )
             .boxed()
         }
+        LocalPhysicalPlan::Uuid(uuid) => {
+            let daft_local_plan::Uuid {
+                input,
+                column_name,
+                schema,
+                stats_state,
+                context,
+            } = uuid;
+            let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
+            let uuid_sink =
+                crate::streaming_sink::uuid::UuidSink::new(column_name.clone(), schema.clone());
+            StreamingSinkNode::new(
+                Arc::new(uuid_sink),
+                vec![child_node],
+                stats_state.clone(),
+                ctx,
+                schema.clone(),
+                context,
+            )
+            .boxed()
+        }
         LocalPhysicalPlan::HashJoin(HashJoin {
             left,
             right,

@@ -203,7 +203,15 @@ impl Project {
                             expr.children()
                         } else {
                             // If previously seen, cache the expression (if it involves computation)
-                            if optimization::requires_computation(expr) {
+                            if optimization::requires_computation(expr)
+                                && !expr.exists(|e| {
+                                    matches!(
+                                        e.as_ref(),
+                                        Expr::ScalarFn(ScalarFn::Builtin(func))
+                                            if func.name() == "uuid"
+                                    )
+                                })
+                            {
                                 subexpressions_to_cache.insert(expr_id, expr.clone());
                             }
                             // Stop recursing if previously seen;

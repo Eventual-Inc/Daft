@@ -55,6 +55,7 @@ impl PushDownShard {
                     | LogicalPlan::Sink(_)
                     | LogicalPlan::Sample(_)
                     | LogicalPlan::MonotonicallyIncreasingId(_)
+                    | LogicalPlan::Uuid(_)
                     | LogicalPlan::Window(_)
                     | LogicalPlan::TopN(_)
                     | LogicalPlan::VLLMProject(..) => {

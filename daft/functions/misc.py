@@ -49,6 +49,32 @@ def monotonically_increasing_id() -> Expression:
     return Expression._from_pyexpr(f())
 
 
+def uuid() -> Expression:
+    """Generates a column of UUID strings.
+
+    Each call to `uuid()` generates a fresh UUID per row. Multiple calls in the same query
+    (e.g. two separate columns) are independent and will produce different values.
+
+    Returns:
+        Expression (String Expression): An expression that generates UUID strings.
+
+    Note:
+        This function is only allowed in projections (e.g. `select`, `with_column`, `with_columns`).
+        Using it directly inside filters, joins, or aggregations will raise an error.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import uuid
+        >>> df = daft.from_pydict({"foo": [1, 2, 3]})
+        >>> df = df.with_column("u1", uuid()).with_column("u2", uuid())
+        >>> df.schema()["u1"].dtype == daft.DataType.string()
+        True
+        >>> df.schema()["u2"].dtype == daft.DataType.string()
+        True
+    """
+    return Expression._call_builtin_scalar_fn("uuid")
+
+
 def eq_null_safe(left: Expression, right: Expression) -> Expression:
     """Performs a null-safe equality comparison between two expressions.
 

@@ -11,7 +11,7 @@ pub use plan::{
     HashJoin, InMemoryScan, IntoBatches, IntoPartitions, Limit, LocalNodeContext,
     LocalPhysicalPlan, LocalPhysicalPlanRef, MonotonicallyIncreasingId, PhysicalScan,
     PhysicalWrite, Pivot, Project, Repartition, Sample, SamplingMethod, Sort, SortMergeJoin, TopN,
-    UDFProject, UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
+    UDFProject, UnGroupedAggregate, Unpivot, Uuid, VLLMProject, WindowOrderByOnly,
     WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
 };
 #[cfg(feature = "python")]

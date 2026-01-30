@@ -90,6 +90,9 @@ pub(crate) fn to_json_value(node: &LogicalPlan) -> serde_json::Value {
         LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => json!({
             "column_name": vec![resolved_col(monotonically_increasing_id.column_name.clone()).to_string()]
         }),
+        LogicalPlan::Uuid(uuid) => json!({
+            "column_name": vec![resolved_col(uuid.column_name.clone()).to_string()]
+        }),
         LogicalPlan::SubqueryAlias(subquery_alias) => json!({
             "name": subquery_alias.name,
         }),

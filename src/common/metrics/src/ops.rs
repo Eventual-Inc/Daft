@@ -55,6 +55,7 @@ pub enum NodeType {
     Concat,
     Limit,
     MonotonicallyIncreasingId,
+    Uuid,
     OuterHashJoinProbe,
     SortMergeJoinProbe,
 }
