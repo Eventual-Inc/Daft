@@ -57,20 +57,24 @@ class PreviewOptions:
 
     """
 
-    _options: dict[str, object]  # normalized options
+    _DEFAULTS = {
+        "verbose": False,
+        "null": "None",
+        "max_width": 30,
+        "align": "left",
+        "columns": None,
+    }
 
     def __init__(self, **options: Any) -> None:
-        self._options = {
-            "verbose": options.get("verbose", False),
-            "null": options.get("null", "None"),
-            "max_width": options.get("max_width", 30),
-            "align": options.get("align", "left"),
-            "columns": options.get("columns"),
-        }
+        self._options = {**self._DEFAULTS, **options}
 
     def __repr__(self) -> str:
         """For debugging."""
         return self.serialize()
+
+    def is_default(self) -> bool:
+        """Return True if options match the default preview options."""
+        return self._options == self._DEFAULTS
 
     def serialize(self) -> str:
         """This lowers the burden to interop with the rust formatter."""
@@ -130,19 +134,18 @@ class PreviewFormatter:
             return self._schema._truncated_table_html()
 
     def _to_text(self) -> str:
-        # give an error to hopefully avoid bug reports until we implement this
-        if self._format == "html" and self._options:
-            raise ValueError("Formatting options with HTML are not currently supported.")
-
-        if self._preview.partition is not None:
-            if self._format:
-                return self._preview.partition.to_record_batch()._recordbatch.preview(
-                    self._format, self._options.serialize()
-                )
-            else:
-                return self._preview.partition.to_record_batch()._recordbatch.__repr__()
-        else:
+        partition = self._preview.partition
+        if partition is None:
             return self._schema._truncated_table_string()
+
+        record_batch = partition.to_record_batch()._recordbatch
+        if self._format or not self._options.is_default():
+            # give an error to hopefully avoid bug reports until we implement this
+            if self._format == "html":
+                raise ValueError("Formatting options with HTML are not currently supported.")
+            return record_batch.preview(self._format, self._options.serialize())
+
+        return repr(record_batch)
 
     def _generate_interactive_html(self) -> str:
         """Generate interactive HTML for the current PreviewFormatter's RecordBatch using the dashboard server."""

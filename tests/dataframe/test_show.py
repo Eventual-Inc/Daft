@@ -183,6 +183,22 @@ def test_show_with_wide_columns():
  This is a very long text that exceeds the default max_width.   Another extremely long piece of text that also exceeds the default max_width. """[1:]
 
 
+def test_show_default_respects_options():
+    df = daft.from_pydict(
+        {
+            "strings": ["this is a really long string that should not be be truncated"],
+        }
+    )
+
+    out = show(df, format=None, max_width=1000)
+    assert out == """
+╭──────────────────────────────────────────────────────────────╮
+│ strings                                                      │
+╞══════════════════════════════════════════════════════════════╡
+│ this is a really long string that should not be be truncated │
+╰──────────────────────────────────────────────────────────────╯"""[1:]
+
+
 def test_show_with_many_columns():
     df = daft.from_pylist(
         [
