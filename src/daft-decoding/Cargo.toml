@@ -1,6 +1,8 @@
 [dependencies]
+arrow = {workspace = true}
 arrow-schema = {workspace = true}
 atoi_simd = "0.16.1"
+common-error = {workspace = true}
 daft-arrow = {path = "../daft-arrow"}
 daft-schema = {path = "../daft-schema"}
 chrono = {workspace = true}

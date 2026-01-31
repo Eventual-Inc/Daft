@@ -291,6 +291,7 @@ pub async fn stream_csv_local(
 }
 
 /// Helper function that reads up to 1 MiB of the CSV file to estimate stats and/or infer the schema of the file.
+#[allow(deprecated, reason = "arrow2 migration")]
 async fn get_schema_and_estimators(
     uri: &str,
     convert_options: &CsvConvertOptions,
@@ -308,12 +309,24 @@ async fn get_schema_and_estimators(
     )
     .await?;
 
-    #[allow(deprecated, reason = "arrow2 migration")]
-    let mut schema = if let Some(schema) = convert_options.schema.clone() {
-        schema.to_arrow2()?
-    } else {
-        inferred_schema.to_arrow2()?
-    };
+    let mut schema: daft_arrow::datatypes::Schema =
+        if let Some(schema) = convert_options.schema.clone() {
+            schema
+                .to_arrow()?
+                .fields()
+                .into_iter()
+                .map(daft_arrow::datatypes::Field::from)
+                .collect::<Vec<_>>()
+                .into()
+        } else {
+            inferred_schema
+                .to_arrow()?
+                .fields()
+                .into_iter()
+                .map(daft_arrow::datatypes::Field::from)
+                .collect::<Vec<_>>()
+                .into()
+        };
     // Rename fields, if necessary.
     if let Some(column_names) = convert_options.column_names.clone() {
         schema = schema
@@ -321,7 +334,8 @@ async fn get_schema_and_estimators(
             .into_iter()
             .zip(column_names.iter())
             .map(|(field, name)| {
-                Field::new(name, field.data_type, field.is_nullable).with_metadata(field.metadata)
+                Field::new(name, field.data_type().clone().into(), field.is_nullable)
+                    .with_metadata(field.metadata)
             })
             .collect::<Vec<_>>()
             .into();
@@ -907,12 +921,12 @@ where
                 let deserialized_col = deserialize_column(
                     &csv_buffer.buffer[0..rows_read],
                     *proj_idx,
-                    fields[*proj_idx].data_type().clone(),
+                    fields[*proj_idx].data_type().into(),
                     0,
                 );
                 Series::try_from_field_and_arrow_array(
                     read_daft_fields[i].clone(),
-                    cast_array_for_daft_if_needed(deserialized_col?),
+                    cast_array_for_daft_if_needed(deserialized_col?.into()),
                 )
             })
             .collect::<DaftResult<Vec<Series>>>()?;

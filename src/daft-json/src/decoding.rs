@@ -273,7 +273,7 @@ fn deserialize_date_into<'a, A: Borrow<BorrowedValue<'a>>>(
         BorrowedValue::Static(StaticNode::U64(i)) => i32::try_from(*i).ok(),
         BorrowedValue::String(v) => match dtype {
             DataType::Time32(tu) => {
-                let factor = get_factor_from_timeunit(tu);
+                let factor = get_factor_from_timeunit((&tu).into());
                 v.parse::<chrono::NaiveTime>().ok().map(|x| {
                     (x.hour() * 3_600 * factor
                         + x.minute() * 60 * factor
@@ -304,7 +304,7 @@ fn deserialize_datetime_into<'a, A: Borrow<BorrowedValue<'a>>>(
         BorrowedValue::Static(StaticNode::U64(i)) => i64::try_from(*i).ok(),
         BorrowedValue::String(v) => match dtype {
             DataType::Time64(tu) => {
-                let factor = get_factor_from_timeunit(tu) as u64;
+                let factor = get_factor_from_timeunit((&tu).into()) as u64;
                 v.parse::<chrono::NaiveTime>().ok().map(|x| {
                     (x.hour() as u64 * 3_600 * factor
                         + x.minute() as u64 * 60 * factor
