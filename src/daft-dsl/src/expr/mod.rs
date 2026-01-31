@@ -218,6 +218,7 @@ impl std::fmt::Display for Column {
 pub type ExprRef = Arc<Expr>;
 
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[allow(clippy::large_enum_variant)]
 pub enum Expr {
     #[display("{_0}")]
     Column(Column),
@@ -453,6 +454,7 @@ pub enum AggExpr {
 }
 
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[allow(clippy::large_enum_variant)]
 pub enum WindowExpr {
     #[display("agg({_0})")]
     Agg(AggExpr),

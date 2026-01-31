@@ -1496,6 +1496,7 @@ def row_wise_udf(
     on_error: str | None,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
+    ray_options: dict[str, Any] | None = None,
 ) -> PyExpr: ...
 def batch_udf(
     func_id: str,
@@ -1513,6 +1514,7 @@ def batch_udf(
     on_error: str | None,
     original_args: tuple[tuple[Any, ...], dict[str, Any]],
     expr_args: list[PyExpr],
+    ray_options: dict[str, Any] | None = None,
 ) -> PyExpr: ...
 def initialize_udfs(expression: PyExpr) -> PyExpr: ...
 def resolve_expr(expr: PyExpr, schema: PySchema) -> tuple[PyExpr, PyField]: ...
