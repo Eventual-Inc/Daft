@@ -1,6 +1,7 @@
 use std::{fmt::Display, str::FromStr};
 
 use arrow_schema::TimeUnit as ArrowTimeUnit;
+use chrono::LocalResult;
 use common_error::DaftError;
 use daft_arrow::{datatypes::TimeUnit as Arrow2TimeUnit, error::Error};
 use serde::{Deserialize, Serialize};
@@ -145,6 +146,24 @@ pub fn timestamp_to_datetime<T: chrono::TimeZone>(
     timezone.from_utc_datetime(&timestamp_to_naive_datetime(timestamp, time_unit))
 }
 
+/// Converts a [`chrono::DateTime`] into a timestamp in `time_unit`.
+#[inline]
+pub fn datetime_to_timestamp<T: chrono::TimeZone>(
+    datetime: chrono::DateTime<T>,
+    time_unit: TimeUnit,
+) -> Result<i64, DaftError> {
+    match time_unit {
+        TimeUnit::Seconds => Ok(datetime.timestamp()),
+        TimeUnit::Milliseconds => Ok(datetime.timestamp_millis()),
+        TimeUnit::Microseconds => Ok(datetime.timestamp_micros()),
+        TimeUnit::Nanoseconds => datetime.timestamp_nanos_opt().ok_or_else(|| {
+            DaftError::ValueError(
+                "Error converting timestamp to nanoseconds; datetime out of bounds".to_string(),
+            )
+        }),
+    }
+}
+
 /// Parses an offset of the form `"+WX:YZ"` or `"UTC"` into [`FixedOffset`].
 /// # Errors
 /// If the offset is not in any of the allowed forms.
@@ -180,6 +199,80 @@ pub fn parse_offset_tz(timezone: &str) -> Result<chrono_tz::Tz, Error> {
     timezone.parse::<chrono_tz::Tz>().map_err(|_| {
         Error::InvalidArgumentError(format!("timezone \"{timezone}\" cannot be parsed"))
     })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParsedTimezone {
+    Fixed(chrono::FixedOffset),
+    Tz(chrono_tz::Tz),
+}
+
+impl Display for ParsedTimezone {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Fixed(offset) => write!(f, "{offset}"),
+            Self::Tz(tz) => write!(f, "{tz}"),
+        }
+    }
+}
+
+pub fn parse_timezone(tz: &str) -> Result<ParsedTimezone, Error> {
+    if let Ok(offset) = parse_offset(tz) {
+        Ok(ParsedTimezone::Fixed(offset))
+    } else if let Ok(tz) = parse_offset_tz(tz) {
+        Ok(ParsedTimezone::Tz(tz))
+    } else {
+        Err(Error::InvalidArgumentError(format!(
+            "Cannot parse timezone: {tz}"
+        )))
+    }
+}
+
+pub fn resolve_local_datetime<T: chrono::TimeZone>(
+    tz: &T,
+    naive: chrono::NaiveDateTime,
+    timeunit: TimeUnit,
+    tz_name: &str,
+) -> Result<i64, DaftError> {
+    let datetime = match tz.from_local_datetime(&naive) {
+        LocalResult::Single(dt) => dt,
+        LocalResult::Ambiguous(_, _) => {
+            return Err(DaftError::ValueError(format!(
+                "Ambiguous local datetime {naive} in timezone {tz_name}"
+            )));
+        }
+        LocalResult::None => {
+            return Err(DaftError::ValueError(format!(
+                "Nonexistent local datetime {naive} in timezone {tz_name}"
+            )));
+        }
+    };
+    datetime_to_timestamp(datetime, timeunit)
+}
+
+pub fn local_naive_to_timestamp(
+    naive: chrono::NaiveDateTime,
+    timeunit: TimeUnit,
+    tz: &ParsedTimezone,
+    tz_name: &str,
+) -> Result<i64, DaftError> {
+    match tz {
+        ParsedTimezone::Fixed(offset) => resolve_local_datetime(offset, naive, timeunit, tz_name),
+        ParsedTimezone::Tz(tz) => resolve_local_datetime(tz, naive, timeunit, tz_name),
+    }
+}
+
+pub fn timestamp_to_local_naive(
+    timestamp: i64,
+    timeunit: TimeUnit,
+    tz: &ParsedTimezone,
+) -> chrono::NaiveDateTime {
+    match tz {
+        ParsedTimezone::Fixed(offset) => {
+            timestamp_to_datetime(timestamp, timeunit, offset).naive_local()
+        }
+        ParsedTimezone::Tz(tz) => timestamp_to_datetime(timestamp, timeunit, tz).naive_local(),
+    }
 }
 
 #[cfg(test)]
