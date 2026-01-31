@@ -7,6 +7,7 @@ use common_error::DaftResult;
 use common_scan_info::{PredicateGroups, ScanState, rewrite_predicate_for_partitioning};
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_algebra::boolean::{combine_conjunction, split_conjunction, to_cnf};
+use daft_core::join::JoinType;
 use daft_dsl::{
     ExprRef,
     optimization::{get_required_columns, replace_columns_with_expressions},
@@ -342,14 +343,38 @@ impl PushDownFilter {
                 for predicate in split_conjunction(&to_cnf(filter.predicate.clone())) {
                     let pred_cols = HashSet::<_>::from_iter(get_required_columns(&predicate));
 
+                    // Extract join key column names for anti/semi join handling
+                    let join_key_cols: HashSet<String> = if matches!(join_type, JoinType::Anti | JoinType::Semi) {
+                        let (_, left_keys, right_keys, _) = on.split_eq_preds();
+                        left_keys
+                            .iter()
+                            .chain(right_keys.iter())
+                            .filter_map(|e| e.input_mapping())
+                            .collect()
+                    } else {
+                        HashSet::new()
+                    };
+
                     match (
                         pred_cols.is_subset(&left_cols),
                         pred_cols.is_subset(&right_cols),
                     ) {
                         (true, true) => {
-                            // predicate only depends on common join keys, so we can push it down to both sides
-                            left_pushdowns.push(predicate.clone());
-                            right_pushdowns.push(predicate);
+                            // predicate columns exist in both left and right input schemas
+                            if matches!(join_type, JoinType::Anti | JoinType::Semi)
+                                && !pred_cols.iter().all(|c| join_key_cols.contains(c))
+                            {
+                                // For anti/semi joins, if the predicate column is NOT a join key,
+                                // only push to the left side. The output only contains left columns,
+                                // so filtering the right side on a non-join-key column would
+                                // incorrectly change the join semantics.
+                                // (Issue #6086)
+                                left_pushdowns.push(predicate);
+                            } else {
+                                // For join key columns or other join types, push to both sides
+                                left_pushdowns.push(predicate.clone());
+                                right_pushdowns.push(predicate);
+                            }
                         }
                         (false, false) => {
                             // predicate depends on unique columns on both left and right sides, so we can't push it down
@@ -1160,5 +1185,62 @@ mod tests {
     #[test]
     fn filter_pushdown_strict_mode_false() -> DaftResult<()> {
         filter_pushdown_strict_mode_scenario(false)
+    }
+
+    /// Tests that Filter on a column that exists in both left and right input schemas
+    /// is NOT pushed to the right side for anti/semi joins.
+    /// This addresses GitHub issue #6086.
+    #[rstest]
+    fn filter_not_pushed_to_right_for_anti_semi_join_with_common_column(
+        #[values(JoinType::Anti, JoinType::Semi)] how: JoinType,
+    ) -> DaftResult<()> {
+        // Left has columns: id, foo
+        let left_scan_op = dummy_scan_operator(vec![
+            Field::new("id", DataType::Int64),
+            Field::new("foo", DataType::Int64),
+        ]);
+        // Right has columns: left_id, foo (foo exists in both!)
+        let right_scan_op = dummy_scan_operator(vec![
+            Field::new("left_id", DataType::Int64),
+            Field::new("foo", DataType::Int64),
+        ]);
+        let left_scan_plan = dummy_scan_node(left_scan_op.clone());
+        let right_scan_plan = dummy_scan_node(right_scan_op.clone());
+
+        // Filter on foo (which exists in both input schemas)
+        let pred = resolved_col("foo").eq(lit(0));
+
+        // Plan: Filter(Join(left, right))
+        let plan = left_scan_plan
+            .join(
+                &right_scan_plan,
+                Some(unresolved_col("id").eq(unresolved_col("left_id"))),
+                vec![],
+                how,
+                None,
+                Default::default(),
+            )?
+            .filter(pred.clone())?
+            .build();
+
+        // Expected: Filter should only be pushed to left side, NOT to right side
+        // This is because anti/semi join output only contains left columns,
+        // so filtering the right side would incorrectly change the join semantics.
+        let expected = dummy_scan_node_with_pushdowns(
+            left_scan_op,
+            Pushdowns::default().with_filters(Some(pred)),
+        )
+        .join(
+            &right_scan_plan,
+            Some(unresolved_col("id").eq(unresolved_col("left_id"))),
+            vec![],
+            how,
+            None,
+            Default::default(),
+        )?
+        .build();
+
+        assert_optimized_plan_eq(plan, expected, false)?;
+        Ok(())
     }
 }
