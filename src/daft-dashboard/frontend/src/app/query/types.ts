@@ -4,7 +4,7 @@ export type PlanInfo = {
   optimized_plan: string;
 };
 
-export type OperatorStatus = "Pending" | "Executing" | "Finished";
+export type OperatorStatus = "Pending" | "Executing" | "Finished" | "Failed";
 
 export type NodeInfo = {
   name: string;
@@ -97,5 +97,8 @@ export type QueryInfo = {
   id: string;
   start_sec: number;
   unoptimized_plan: string;
+  runner: string;
+  ray_dashboard_url?: string;
+  entrypoint?: string;
   state: QueryState;
 };

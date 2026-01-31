@@ -15,7 +15,8 @@ log = {workspace = true}
 # For debug subscriber
 dashmap = {workspace = true}
 # Client for submitting to dashboard server
-reqwest = {workspace = true, default-features = false}
+reqwest = {workspace = true, default_features = false}
+uuid = {workspace = true, features = ["v4"]}
 
 [features]
 python = [

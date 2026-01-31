@@ -22,6 +22,7 @@ import { AnimatedFish, Naruto } from "@/components/icons";
 
 interface StatusBadgeProps {
   state: QueryStatus;
+  showDuration?: boolean;
 }
 
 const StatusBadgeInner = ({
@@ -44,7 +45,7 @@ const StatusBadgeInner = ({
       <span className={`${main.className} ${textColor} font-bold text-sm`}>
         {label}
       </span>
-      <span className={`${main.className} font-semibold text-sm`}>{text}</span>
+      {text && <span className={`${main.className} font-semibold text-sm`}>{text}</span>}
     </div>
   );
 
@@ -77,7 +78,7 @@ const Pending = () => (
   />
 );
 
-const Planning = ({ state }: { state: PlanningStatus }) => {
+const Planning = ({ state, showDuration }: { state: PlanningStatus, showDuration: boolean }) => {
   const [currentTime, setCurrentTime] = useState(() => Date.now());
 
   useEffect(() => {
@@ -95,7 +96,7 @@ const Planning = ({ state }: { state: PlanningStatus }) => {
         <LoaderCircle size={16} strokeWidth={3} className="text-orange-500" />
       }
       label="Optimizing"
-      text={` for ${toHumanReadableDuration(duration)}`}
+      text={showDuration ? ` for ${toHumanReadableDuration(duration)}` : undefined}
       textColor="text-orange-500"
     />
   );
@@ -111,7 +112,7 @@ const Setup = () => (
   />
 );
 
-const Running = ({ state }: { state: ExecutingStatus }) => {
+const Running = ({ state, showDuration }: { state: ExecutingStatus, showDuration: boolean }) => {
   const [currentTime, setCurrentTime] = useState(() => Date.now());
 
   useEffect(() => {
@@ -127,7 +128,7 @@ const Running = ({ state }: { state: ExecutingStatus }) => {
     <StatusBadgeInner
       icon={<AnimatedFish />}
       label="Running"
-      text={` for ${toHumanReadableDuration(duration)}`}
+      text={showDuration ? ` for ${toHumanReadableDuration(duration)}` : undefined}
       textColor="text-(--daft-accent)"
     />
   );
@@ -141,11 +142,11 @@ const Finalizing = () => (
   />
 );
 
-const Finished = ({ state }: { state: FinishedStatus }) => (
+const Finished = ({ state, showDuration }: { state: FinishedStatus, showDuration: boolean }) => (
   <StatusBadgeInner
     icon={<Naruto />}
     label="Finished"
-    text={`in ${toHumanReadableDuration(state.duration_sec)}`}
+    text={showDuration ? `in ${toHumanReadableDuration(state.duration_sec)}` : undefined}
     textColor="text-green-500"
   />
 );
@@ -184,20 +185,47 @@ const Unknown = () => (
   />
 );
 
-export default function Status({ state }: StatusBadgeProps) {
+export function Duration({ state }: { state: QueryStatus }) {
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+
+  useEffect(() => {
+    // Only set interval if state is running
+    if (state.status === "Optimizing" || state.status === "Executing") {
+      const interval = setInterval(() => {
+        setCurrentTime(Date.now());
+      }, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [state.status]);
+
+  if (state.status === "Finished") {
+    return <>{toHumanReadableDuration(state.duration_sec)}</>;
+  }
+  if (state.status === "Optimizing") {
+    const duration = Math.round(currentTime / 1000 - state.plan_start_sec);
+    return <>{toHumanReadableDuration(duration)}</>;
+  }
+  if (state.status === "Executing") {
+    const duration = Math.round(currentTime / 1000 - state.exec_start_sec);
+    return <>{toHumanReadableDuration(duration)}</>;
+  }
+  return <>-</>;
+}
+
+export default function Status({ state, showDuration = true }: StatusBadgeProps) {
   switch (state.status) {
     case "Pending":
       return <Pending />;
     case "Optimizing":
-      return <Planning state={state} />;
+      return <Planning state={state} showDuration={showDuration} />;
     case "Setup":
       return <Setup />;
     case "Executing":
-      return <Running state={state} />;
+      return <Running state={state} showDuration={showDuration} />;
     case "Finalizing":
       return <Finalizing />;
     case "Finished":
-      return <Finished state={state} />;
+      return <Finished state={state} showDuration={showDuration} />;
     case "Failed":
       return <Failed state={state} />;
     case "Canceled":

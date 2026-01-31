@@ -5,7 +5,10 @@ import logging
 import math
 import os
 import shlex
-import sqlite3
+try:
+    import sqlite3
+except ImportError:
+    sqlite3 = None
 import subprocess
 from glob import glob
 

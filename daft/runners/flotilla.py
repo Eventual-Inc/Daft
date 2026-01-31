@@ -237,7 +237,18 @@ def try_autoscale(bundles: list[dict[str, int]]) -> None:
     num_cpus=0,
 )
 class RemoteFlotillaRunner:
-    def __init__(self) -> None:
+    def __init__(self, dashboard_url: str | None = None) -> None:
+        if dashboard_url:
+            os.environ["DAFT_DASHBOARD_URL"] = dashboard_url
+            try:
+                from daft.daft import refresh_dashboard_subscriber
+
+                refresh_dashboard_subscriber()
+            except ImportError:
+                pass
+            except Exception:
+                pass
+
         self.curr_plans: dict[str, DistributedPhysicalPlan] = {}
         self.curr_result_gens: dict[str, AsyncIterator[RayPartitionRef]] = {}
         self.plan_runner = DistributedPhysicalPlanRunner()
@@ -340,29 +351,31 @@ class FlotillaRunner:
 
     def __init__(self) -> None:
         head_node_id = get_head_node_id()
+        dashboard_url = os.environ.get("DAFT_DASHBOARD_URL")
         self.runner = RemoteFlotillaRunner.options(  # type: ignore
             name=get_flotilla_runner_actor_name(),
             namespace=FLOTILLA_RUNNER_NAMESPACE,
             get_if_exists=True,
+            runtime_env={"env_vars": {"DAFT_DASHBOARD_URL": dashboard_url}} if dashboard_url else None,
             scheduling_strategy=(
                 ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=head_node_id,
                     soft=False,
                 )
-                if head_node_id is not None
-                else "DEFAULT"
+                if head_node_id
+                else None
             ),
-        ).remote()
+        ).remote(dashboard_url=dashboard_url)
 
     def stream_plan(
         self,
         plan: DistributedPhysicalPlan,
-        partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
+        partition_sets: dict[str, PartitionSet[RayMaterializedResult]],
     ) -> Iterator[RayMaterializedResult]:
+        self.runner.run_plan.remote(plan, partition_sets)
         plan_id = plan.idx()
-        ray.get(self.runner.run_plan.remote(plan, partition_sets))
         while True:
-            materialized_result = ray.get(self.runner.get_next_partition.remote(plan_id))
-            if materialized_result is None:
+            result = ray.get(self.runner.get_next_partition.remote(plan_id))
+            if result is None:
                 break
-            yield materialized_result
+            yield result

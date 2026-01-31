@@ -350,4 +350,6 @@ daft.range(start=0, end=1024, partitions=10).collect()
             capture_output=True,
             env={"DAFT_RUNNER": "ray", "DAFT_DASHBOARD_URL": "http://localhost:3238"},
         )
-        assert "Dashboard isn't currently supported in Ray Runner" in result.stderr.decode()
+        # Dashboard is now supported in Ray Runner, so we shouldn't see the "not supported" message.
+        # Instead, it might fail to connect if no dashboard is running, which is fine for this test.
+        assert "Dashboard isn't currently supported in Ray Runner" not in result.stderr.decode()
