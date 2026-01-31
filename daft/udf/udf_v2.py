@@ -230,6 +230,11 @@ class Func(Generic[P, T, C]):
             bound_method = self._cls._daft_bind_method(self._method)
             return bound_method(*args, **kwargs)
 
+        # When building expression-based UDFs, we must avoid incorrectly sharing call-site state across multiple uses of the same function.
+        call_seq = getattr(self, "_daft_call_seq", 0)
+        setattr(self, "_daft_call_seq", call_seq + 1)
+        call_id = f"{self.func_id}-{call_seq}"
+
         check_serializable(
             self._method,
             "Daft functions must be serializable. If your function accesses a non-serializable global or nonlocal variable to avoid reinitialization, use `@daft.cls` with a setup method instead.",
@@ -247,7 +252,7 @@ class Func(Generic[P, T, C]):
 
             expr = Expression._from_pyexpr(
                 row_wise_udf(
-                    self.func_id,
+                    call_id,
                     self.name,
                     self._cls,
                     method,
@@ -266,7 +271,7 @@ class Func(Generic[P, T, C]):
         elif self.is_batch:
             expr = Expression._from_pyexpr(
                 batch_udf(
-                    self.func_id,
+                    call_id,
                     self.name,
                     self._cls,
                     self._method,
@@ -286,7 +291,7 @@ class Func(Generic[P, T, C]):
         else:
             expr = Expression._from_pyexpr(
                 row_wise_udf(
-                    self.func_id,
+                    call_id,
                     self.name,
                     self._cls,
                     self._method,
