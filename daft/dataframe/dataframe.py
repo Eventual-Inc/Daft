@@ -3051,16 +3051,20 @@ class DataFrame:
         return self.where(~reduce(lambda x, y: x | y, (x.is_null() for x in columns)))
 
     @DataframePublicAPI
-    def explode(self, *columns: ColumnInputType, index_column: ColumnInputType | None = None) -> "DataFrame":
+    def explode(
+        self, *columns: ColumnInputType, index_column: ColumnInputType | None = None, ignore_empty: bool = False
+    ) -> "DataFrame":
         """Explodes a List column, where every element in each row's List becomes its own row, and all other columns in the DataFrame are duplicated across rows.
 
         If multiple columns are specified, each row must contain the same number of items in each specified column.
 
-        Exploding Null values or empty lists will create a single Null entry (see example below).
+        By default, exploding Null values or empty lists will create a single Null entry (see example below).
+        Set ``ignore_empty=True`` to drop these rows instead.
 
         Args:
             *columns (ColumnInputType): columns to explode
             index_column (ColumnInputType | None): optional name for an index column that tracks the position of each element within its original list
+            ignore_empty (bool): whether to drop empty lists or None values. Defaults to False.
 
         Returns:
             DataFrame: DataFrame with exploded column
@@ -3144,6 +3148,23 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 5 of 5 rows)
 
+            Example with ignore_empty=True:
+
+            >>> df2.explode(df2["values"], df2["labels"], ignore_empty=True).collect()
+            ╭───────┬────────┬────────╮
+            │ id    ┆ values ┆ labels │
+            │ ---   ┆ ---    ┆ ---    │
+            │ Int64 ┆ Int64  ┆ String │
+            ╞═══════╪════════╪════════╡
+            │ 1     ┆ 1      ┆ a      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 1     ┆ 2      ┆ b      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 4     ┆ 3      ┆ c      │
+            ╰───────┴────────┴────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
             Example with index_column to track element positions:
 
             >>> df3 = daft.from_pydict({"a": [[1, 2], [3, 4, 3]]})
@@ -3169,7 +3190,7 @@ class DataFrame:
         """
         parsed_exprs = column_inputs_to_expressions(columns)
         index_col_name = column_input_to_expression(index_column).name() if index_column is not None else None
-        builder = self._builder.explode(parsed_exprs, index_col_name)
+        builder = self._builder.explode(parsed_exprs, ignore_empty=ignore_empty, index_column=index_col_name)
         return DataFrame(builder)
 
     @DataframePublicAPI

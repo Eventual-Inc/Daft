@@ -1404,15 +1404,18 @@ class Expression:
 
         return parse_url(self)
 
-    def explode(self) -> Expression:
+    def explode(self, ignore_empty: bool = False) -> Expression:
         """Explode a list expression.
+
+        Args:
+           ignore_empty: whether to drop empty lists or None values. Defaults to False.
 
         Tip: See Also
             [`daft.functions.explode`](https://docs.daft.ai/en/stable/api/functions/explode/)
         """
         from daft.functions import explode
 
-        return explode(self)
+        return explode(self, ignore_empty=ignore_empty)
 
     def cosine_distance(self, other: Expression) -> Expression:
         """Compute the cosine distance between two embeddings.

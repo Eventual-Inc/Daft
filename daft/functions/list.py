@@ -335,7 +335,7 @@ def list_map(list_expr: Expression, mapper: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("list_map", list_expr, mapper)
 
 
-def explode(list_expr: Expression) -> Expression:
+def explode(list_expr: Expression, ignore_empty: bool = False) -> Expression:
     """Explode a list expression.
 
     A row is created for each item in the lists, and the other non-exploded output columns are broadcasted to match.
@@ -348,6 +348,7 @@ def explode(list_expr: Expression) -> Expression:
 
     Args:
         list_expr (List Expression): expression to explode.
+        ignore_empty: whether to drop empty lists or None values. Defaults to False.
 
     Returns:
         Expression: Expression representing the exploded list.
@@ -424,7 +425,9 @@ def explode(list_expr: Expression) -> Expression:
         >>> #             .alias("split_on_a")
         >>> # ).show()
     """
-    return Expression._call_builtin_scalar_fn("explode", list_expr)
+    from daft.expressions import lit
+
+    return Expression._call_builtin_scalar_fn("explode", list_expr, lit(ignore_empty))
 
 
 def list_append(list_expr: Expression, other: Expression) -> Expression:

@@ -243,6 +243,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     self.get_next_pipeline_node_id(),
                     &self.plan_config,
                     to_explode,
+                    explode.ignore_empty,
                     explode.index_column.clone(),
                     node.schema(),
                     self.curr_node.pop().unwrap(),
