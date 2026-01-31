@@ -83,10 +83,9 @@ pub fn merge_inner_join(
     // Construct comparator over all join keys.
     let mut cmp_list = Vec::with_capacity(left.num_columns());
     for (left_series, right_series) in left.columns.iter().zip(right.columns.iter()) {
-        #[allow(deprecated, reason = "arrow2 migration")]
         cmp_list.push(build_partial_compare_with_nulls(
-            left_series.to_arrow2().as_ref(),
-            right_series.to_arrow2().as_ref(),
+            left_series.to_arrow()?.as_ref(),
+            right_series.to_arrow()?.as_ref(),
             false,
         )?);
     }
