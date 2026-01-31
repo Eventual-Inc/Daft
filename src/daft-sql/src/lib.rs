@@ -2,6 +2,7 @@ pub mod error;
 pub mod functions;
 
 mod exec;
+mod expr_name;
 mod modules;
 mod planner;
 mod schema;
