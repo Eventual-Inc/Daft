@@ -1,5 +1,6 @@
 mod buffer;
 mod channel;
+mod concat;
 mod dynamic_batching;
 mod intermediate_ops;
 mod join;
