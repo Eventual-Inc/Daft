@@ -27,13 +27,13 @@ import {
 import LoadingPage from "@/components/loading";
 
 import { QuerySummary, useQueries } from "@/hooks/use-queries";
-import { toHumanReadableDate } from "@/lib/utils";
-import Status from "./status";
+import { toHumanReadableDate, getEngineName } from "@/lib/utils";
+import Status, { Duration } from "./status";
 import Link from "next/link";
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
-import { ClipboardIcon, Database } from "lucide-react";
+import { ClipboardIcon, Database, ExternalLinkIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 import { dashboardUrl } from "@/components/server-provider";
 import { TooltipArrow } from "@radix-ui/react-tooltip";
 
@@ -42,7 +42,7 @@ const STATUS: string = "state";
 // Define status priority for sorting (lower number = higher priority)
 const statusPriority: Record<string, number> = {
   Pending: 1,
-  Planning: 2,
+  Optimizing: 2,
   Setup: 3,
   Executing: 4,
   Finalizing: 5,
@@ -63,18 +63,87 @@ const columnHelper = createColumnHelper<QuerySummary>();
 const columns = [
   columnHelper.accessor("id", {
     header: "Name",
-    cell: info => info.getValue(),
+    cell: info => {
+      const id = info.getValue();
+      return (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="max-w-[150px] truncate">{id}</div>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{id}</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+    },
     sortingFn: "alphanumeric",
   }),
   columnHelper.accessor("status", {
     header: "Status",
-    cell: info => <Status state={info.getValue()} />,
+    cell: info => <Status state={info.getValue()} showDuration={false} />,
     sortingFn: statusSortingFn,
+  }),
+  columnHelper.display({
+    id: "duration",
+    header: "Duration",
+    cell: info => <Duration state={info.row.original.status} />,
+  }),
+  columnHelper.accessor("entrypoint", {
+    header: "Entrypoint",
+    cell: info => {
+      const entry = info.getValue();
+      if (!entry) return "-";
+      return (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="max-w-[200px] truncate">{entry}</div>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-none text-sm">
+                  <p className="break-all font-mono">{entry}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          );
+    },
+    sortingFn: "alphanumeric",
   }),
   columnHelper.accessor("start_sec", {
     header: "Start Time",
     cell: info => toHumanReadableDate(info.getValue()),
     sortingFn: "basic",
+  }),
+  columnHelper.accessor("runner", {
+    header: "Engine",
+    cell: info => getEngineName(info.getValue()),
+    sortingFn: "alphanumeric",
+  }),
+  // @ts-ignore
+  columnHelper.accessor("ray_dashboard_url", {
+    header: "Ray UI",
+    cell: info => {
+      let url = info.getValue();
+      if (url) {
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+          url = "http://" + url;
+        }
+        return (
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-blue-500 hover:underline"
+            onClick={(e) => e.stopPropagation()}
+          >
+            Open Ray UI <ExternalLinkIcon className="h-4 w-4" />
+          </a>
+        );
+      }
+      return null;
+    },
+    enableSorting: false,
   })
 ];
 
@@ -184,6 +253,7 @@ export default function QueryList() {
     columns,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
+    columnResizeMode: "onChange",
     initialState: {
       sorting: [
         { id: "status", desc: false },
@@ -193,7 +263,7 @@ export default function QueryList() {
   });
 
   const spacing = (obj: any) =>
-    `px-[20px] ${obj.column.columnDef.accessorKey === STATUS ? "w-[60%]" : undefined}`;
+    `px-[20px]`;
 
   const handleRowClick = (queryId: string) => {
     router.push(`/query?id=${queryId}`);
@@ -208,23 +278,31 @@ export default function QueryList() {
   }
 
   return (
-    <div className="space-y-4 max-w-6xl mx-auto">
+    <div className="space-y-4 max-w-full px-6 mx-auto">
       <Header />
 
-      <div className="border">
+      <div className="border rounded-md overflow-hidden">
         <Table>
-          <TableHeader>
+          <TableHeader className="bg-white">
             {table.getHeaderGroups().map(headerGroup => (
-              <TableRow key={headerGroup.id} className="">
-                {headerGroup.headers.map(header => (
+              <TableRow key={headerGroup.id} className="hover:bg-transparent border-b border-zinc-200">
+                {headerGroup.headers.map((header, index) => (
                   <TableHead
                     key={header.id}
-                    className={`text-xs font-mono ${spacing(header)}`}
+                    className={`relative text-xs font-mono font-bold text-black ${spacing(header)} ${index !== headerGroup.headers.length - 1 ? "border-r border-zinc-200" : ""}`}
+                    style={{ width: header.getSize() }}
                   >
                     {flexRender(
                       header.column.columnDef.header,
                       header.getContext()
                     )}
+                    <div
+                      onMouseDown={header.getResizeHandler()}
+                      onTouchStart={header.getResizeHandler()}
+                      className={`absolute right-0 top-0 h-full w-1 cursor-col-resize touch-none select-none bg-border/50 hover:bg-primary/50 ${
+                        header.column.getIsResizing() ? "bg-primary" : ""
+                      }`}
+                    />
                   </TableHead>
                 ))}
               </TableRow>
@@ -238,17 +316,16 @@ export default function QueryList() {
                   className="hover:bg-zinc-800 transition-colors duration-50 cursor-pointer"
                   onClick={() => handleRowClick(row.original.id)}
                 >
-                  {row.getAllCells().map(cell => (
+                  {row.getAllCells().map((cell, index) => (
                     <TableCell
                       key={cell.id}
-                      className={`py-[15px] ${spacing(cell)}`}
+                      className={`py-[15px] ${spacing(cell)} ${index !== row.getAllCells().length - 1 ? "border-r border-zinc-800" : ""}`}
+                      style={{ width: cell.column.getSize() }}
                     >
-                      <div className="truncate">
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext()
-                        )}
-                      </div>
+                      {flexRender(
+                        cell.column.columnDef.cell,
+                        cell.getContext()
+                      )}
                     </TableCell>
                   ))}
                 </TableRow>
