@@ -415,8 +415,7 @@ impl WarcRecordBatchIterator {
                         }
                     }
                 }
-                Err(e) => {
-                    eprintln!("Error reading line: {}", e);
+                Err(_e) => {
                     break;
                 }
             }
@@ -612,8 +611,7 @@ pub async fn stream_warc(
             })
             .boxed();
         while let Some(batch) = limited_stream.next().await {
-            if let Err(e) = tx.send(batch).await {
-                eprintln!("Error sending batch to channel: {}", e);
+            if let Err(_e) = tx.send(batch).await {
                 break;
             }
         }

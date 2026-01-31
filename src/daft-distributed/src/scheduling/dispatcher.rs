@@ -523,7 +523,6 @@ mod tests {
 
         // Verify worker state: Workers 1 and 3 should be dead, worker 2 should be alive
         let worker_snapshots = worker_manager.worker_snapshots()?;
-        println!("worker_snapshots: {:?}", worker_snapshots);
         assert_eq!(
             worker_snapshots.len(),
             1,
