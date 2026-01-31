@@ -23,6 +23,11 @@ pub(crate) fn to_json_value(node: &LogicalPlan) -> serde_json::Value {
         LogicalPlan::Filter(filter) => json!({
             "predicate": vec![&filter.predicate.to_string()],
         }),
+        LogicalPlan::ResumeCheckpoint(resume) => json!({
+            "root_dir": resume.spec.root_dir,
+            "file_format": resume.spec.file_format,
+            "key_column": resume.spec.key_column,
+        }),
         LogicalPlan::IntoBatches(into_batches) => json!({
             "batch_size": into_batches.batch_size,
         }),

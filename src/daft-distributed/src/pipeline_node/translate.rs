@@ -209,6 +209,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                 )
                 .into_node()
             }
+            LogicalPlan::ResumeCheckpoint(_) => self.curr_node.pop().unwrap(),
             LogicalPlan::IntoBatches(into_batches) => IntoBatchesNode::new(
                 self.get_next_pipeline_node_id(),
                 &self.plan_config,

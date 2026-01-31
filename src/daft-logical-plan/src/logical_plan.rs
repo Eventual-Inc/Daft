@@ -34,6 +34,7 @@ pub enum LogicalPlan {
     Project(Project),
     UDFProject(UDFProject),
     Filter(Filter),
+    ResumeCheckpoint(ResumeCheckpoint),
     IntoBatches(IntoBatches),
     Limit(Limit),
     Offset(Offset),
@@ -153,6 +154,7 @@ impl LogicalPlan {
                 projected_schema, ..
             }) => projected_schema.clone(),
             Self::Filter(Filter { input, .. }) => input.schema(),
+            Self::ResumeCheckpoint(ResumeCheckpoint { input, .. }) => input.schema(),
             Self::IntoBatches(IntoBatches { input, .. }) => input.schema(),
             Self::Limit(Limit { input, .. }) => input.schema(),
             Self::Offset(Offset { input, .. }) => input.schema(),
@@ -219,6 +221,9 @@ impl LogicalPlan {
                     .collect(),
                 None,
             ),
+            Self::ResumeCheckpoint(resume) => {
+                RequiredCols::new(std::iter::once(resume.spec.key_column.clone()).collect(), None)
+            }
             Self::Sort(sort) => {
                 let res = sort.sort_by.iter().flat_map(get_required_columns).collect();
                 RequiredCols::new(res, None)
@@ -348,6 +353,7 @@ impl LogicalPlan {
             Self::Project(..) => "Project",
             Self::UDFProject(..) => "UDFProject",
             Self::Filter(..) => "Filter",
+            Self::ResumeCheckpoint(..) => "ResumeCheckpoint",
             Self::IntoBatches(..) => "IntoBatches",
             Self::Limit(..) => "Limit",
             Self::Offset(..) => "Offset",
@@ -379,6 +385,7 @@ impl LogicalPlan {
             | Self::Project(Project { stats_state, .. })
             | Self::UDFProject(UDFProject { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
+            | Self::ResumeCheckpoint(ResumeCheckpoint { stats_state, .. })
             | Self::IntoBatches(IntoBatches { stats_state, .. })
             | Self::Limit(Limit { stats_state, .. })
             | Self::Offset(Offset { stats_state, .. })
@@ -414,11 +421,12 @@ impl LogicalPlan {
     // useful if stats become stale during query planning.
     pub fn with_materialized_stats(self, cfg: &DaftExecutionConfig) -> Self {
         match self {
-            Self::Source(plan) => Self::Source(plan.with_materialized_stats(cfg)),
+            Self::Source(source) => Self::Source(source.with_materialized_stats(cfg)),
             Self::Shard(plan) => Self::Shard(plan.with_materialized_stats()),
             Self::Project(plan) => Self::Project(plan.with_materialized_stats()),
             Self::UDFProject(plan) => Self::UDFProject(plan.with_materialized_stats()),
             Self::Filter(plan) => Self::Filter(plan.with_materialized_stats()),
+            Self::ResumeCheckpoint(plan) => Self::ResumeCheckpoint(plan.with_materialized_stats()),
             Self::IntoBatches(plan) => Self::IntoBatches(plan.with_materialized_stats()),
             Self::Limit(plan) => Self::Limit(plan.with_materialized_stats()),
             Self::Offset(plan) => Self::Offset(plan.with_materialized_stats()),
@@ -455,6 +463,7 @@ impl LogicalPlan {
             Self::Project(projection) => projection.multiline_display(),
             Self::UDFProject(projection) => projection.multiline_display(),
             Self::Filter(filter) => filter.multiline_display(),
+            Self::ResumeCheckpoint(resume) => resume.multiline_display(),
             Self::IntoBatches(into_batches) => into_batches.multiline_display(),
             Self::Limit(limit) => limit.multiline_display(),
             Self::Offset(offset) => offset.multiline_display(),
@@ -488,6 +497,7 @@ impl LogicalPlan {
             Self::Project(Project { input, .. }) => vec![input],
             Self::UDFProject(UDFProject { input, .. }) => vec![input],
             Self::Filter(Filter { input, .. }) => vec![input],
+            Self::ResumeCheckpoint(ResumeCheckpoint { input, .. }) => vec![input],
             Self::IntoBatches(IntoBatches { input, .. }) => vec![input],
             Self::Limit(Limit { input, .. }) => vec![input],
             Self::Offset(Offset { input, .. }) => vec![input],
@@ -537,6 +547,9 @@ impl LogicalPlan {
                 Self::Filter(Filter { predicate, .. }) => {
                     Self::Filter(Filter::try_new(input.clone(), predicate.clone()).unwrap())
                 }
+                Self::ResumeCheckpoint(ResumeCheckpoint { spec, .. }) => Self::ResumeCheckpoint(
+                    ResumeCheckpoint::try_new(input.clone(), spec.clone()).unwrap(),
+                ),
                 Self::IntoBatches(IntoBatches { batch_size, .. }) => {
                     Self::IntoBatches(IntoBatches::new(input.clone(), *batch_size))
                 }
@@ -874,6 +887,7 @@ impl LogicalPlan {
             | Self::Project(Project { plan_id, .. })
             | Self::UDFProject(UDFProject { plan_id, .. })
             | Self::Filter(Filter { plan_id, .. })
+            | Self::ResumeCheckpoint(ResumeCheckpoint { plan_id, .. })
             | Self::IntoBatches(IntoBatches { plan_id, .. })
             | Self::Limit(Limit { plan_id, .. })
             | Self::Offset(Offset { plan_id, .. })
@@ -905,6 +919,7 @@ impl LogicalPlan {
             | Self::Project(Project { node_id, .. })
             | Self::UDFProject(UDFProject { node_id, .. })
             | Self::Filter(Filter { node_id, .. })
+            | Self::ResumeCheckpoint(ResumeCheckpoint { node_id, .. })
             | Self::IntoBatches(IntoBatches { node_id, .. })
             | Self::Limit(Limit { node_id, .. })
             | Self::Offset(Offset { node_id, .. })
@@ -937,6 +952,7 @@ impl LogicalPlan {
             Self::Project(project) => Self::Project(project.with_plan_id(plan_id)),
             Self::UDFProject(project) => Self::UDFProject(project.with_plan_id(plan_id)),
             Self::Filter(filter) => Self::Filter(filter.with_plan_id(plan_id)),
+            Self::ResumeCheckpoint(resume) => Self::ResumeCheckpoint(resume.with_plan_id(plan_id)),
             Self::IntoBatches(into_batches) => {
                 Self::IntoBatches(into_batches.with_plan_id(plan_id))
             }
@@ -975,6 +991,7 @@ impl LogicalPlan {
             Self::Project(project) => Self::Project(project.with_node_id(node_id)),
             Self::UDFProject(project) => Self::UDFProject(project.with_node_id(node_id)),
             Self::Filter(filter) => Self::Filter(filter.with_node_id(node_id)),
+            Self::ResumeCheckpoint(resume) => Self::ResumeCheckpoint(resume.with_node_id(node_id)),
             Self::IntoBatches(into_batches) => {
                 Self::IntoBatches(into_batches.with_node_id(node_id))
             }
@@ -1091,6 +1108,7 @@ impl_from_data_struct_for_logical_plan!(Source);
 impl_from_data_struct_for_logical_plan!(Shard);
 impl_from_data_struct_for_logical_plan!(Project);
 impl_from_data_struct_for_logical_plan!(Filter);
+impl_from_data_struct_for_logical_plan!(ResumeCheckpoint);
 impl_from_data_struct_for_logical_plan!(IntoBatches);
 impl_from_data_struct_for_logical_plan!(Limit);
 impl_from_data_struct_for_logical_plan!(Offset);

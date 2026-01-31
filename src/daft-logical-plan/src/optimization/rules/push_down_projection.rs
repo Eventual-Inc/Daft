@@ -496,6 +496,7 @@ impl PushDownProjection {
             LogicalPlan::Sink(_) => {
                 panic!("Bad projection due to upstream sink node: {:?}", projection)
             }
+            LogicalPlan::ResumeCheckpoint(..) => Ok(Transformed::no(plan)),
             LogicalPlan::VLLMProject(..) => Ok(Transformed::no(plan)),
             LogicalPlan::SubqueryAlias(_) => unreachable!("Alias should have been optimized away"),
         }

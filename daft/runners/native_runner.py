@@ -93,6 +93,8 @@ class NativeRunner(Runner[MicroPartition]):
         # NOTE: Freeze and use this same execution config for the entire execution
         ctx = get_context()
         query_id = str(uuid.uuid4())
+        if builder._builder.get_resume_checkpoint_specs():
+            raise RuntimeError("DataFrame.resume() is only supported on Ray runner")
         output_schema = builder.schema()
 
         # Optimize the logical plan.

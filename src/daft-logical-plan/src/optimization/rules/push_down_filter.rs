@@ -430,6 +430,7 @@ impl PushDownFilter {
             | LogicalPlan::SubqueryAlias(..)
             | LogicalPlan::Window(..)
             | LogicalPlan::Distinct(..)
+            | LogicalPlan::ResumeCheckpoint(..)
             | LogicalPlan::VLLMProject(..) => {
                 return Ok(Transformed::no(plan));
             }

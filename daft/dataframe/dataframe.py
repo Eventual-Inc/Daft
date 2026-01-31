@@ -2353,6 +2353,59 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
+    def resume(
+        self,
+        path: str | pathlib.Path,
+        on: str | list[str],
+        format: str | FileFormat = FileFormat.Parquet,
+        io_config: IOConfig | None = None,
+        num_buckets: int | None = None,
+        num_cpus: float | None = None,
+        **reader_args: Any,
+    ) -> "DataFrame":
+        if isinstance(on, str):
+            key_column = on
+        else:
+            if len(on) != 1:
+                raise ValueError("resume currently only supports a single key column name")
+            key_column = on[0]
+
+        if not isinstance(key_column, str) or key_column == "":
+            raise ValueError("resume on must be a non-empty column name")
+
+        if isinstance(format, str):
+            fmt = format.strip().lower()
+            if fmt == "parquet":
+                file_format = FileFormat.Parquet
+            elif fmt == "csv":
+                file_format = FileFormat.Csv
+            elif fmt == "json":
+                file_format = FileFormat.Json
+            else:
+                raise ValueError(f"Unsupported resume format: {format}")
+        else:
+            file_format = format
+
+        if file_format not in (FileFormat.Parquet, FileFormat.Csv, FileFormat.Json):
+            raise ValueError(f"Unsupported resume format: {file_format}")
+
+        if key_column not in self.column_names:
+            raise ValueError(f"resume key column not found in schema: {key_column}")
+
+        io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
+
+        builder = self._builder.resume_checkpoint(
+            root_dir=str(path),
+            file_format=file_format,
+            key_column=key_column,
+            io_config=io_config,
+            read_kwargs=(reader_args or None),
+            num_buckets=num_buckets,
+            num_cpus=num_cpus,
+        )
+        return DataFrame(builder)
+
+    @DataframePublicAPI
     def with_column(
         self,
         column_name: str,

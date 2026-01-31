@@ -3,6 +3,7 @@ common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-file-formats = {path = "../common/file-formats", default-features = false}
+common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper", default-features = false}
 common-io-config = {path = "../common/io-config", default-features = false}
 common-partitioning = {path = "../common/partitioning", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
@@ -48,6 +49,7 @@ python = [
   "common-file-formats/python",
   "common-io-config/python",
   "common-daft-config/python",
+  "common-py-serde/python",
   "common-resource-request/python",
   "common-partitioning/python",
   "common-scan-info/python",
