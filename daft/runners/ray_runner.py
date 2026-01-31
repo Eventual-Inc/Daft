@@ -513,7 +513,12 @@ def _maybe_apply_resume_checkpoint(builder: LogicalPlanBuilder) -> tuple[Logical
     specs = builder._builder.get_resume_checkpoint_specs()
     if not specs:
         return builder, None
-    from daft.execution.checkpoint import _cleanup_checkpoint_resources, _prepare_checkpoint_filter
+    from daft.execution.checkpoint import (
+        _cleanup_checkpoint_resources,
+        _prepare_checkpoint_filter,
+        create_checkpoint_filter_udf,
+    )
+    from daft.expressions import col
 
     cleanup_items: list[tuple[list[Any], Any | None]] = []
     predicates: list[Expression | None] = []
@@ -548,7 +553,7 @@ def _maybe_apply_resume_checkpoint(builder: LogicalPlanBuilder) -> tuple[Logical
             else:
                 raise ValueError(f"Unsupported resume file format: {file_format}")
 
-            actor_handles, placement_group, checkpoint_filter_expr = _prepare_checkpoint_filter(
+            actor_handles, placement_group = _prepare_checkpoint_filter(
                 root_dir=root_dir,
                 io_config=io_config,
                 key_column=key_column,
@@ -557,6 +562,10 @@ def _maybe_apply_resume_checkpoint(builder: LogicalPlanBuilder) -> tuple[Logical
                 read_fn=read_fn,
                 read_kwargs=read_kwargs,
             )
+
+            checkpoint_filter_expr = create_checkpoint_filter_udf(
+                4 if num_buckets is None else num_buckets, actor_handles
+            )(col(key_column))
             cleanup_items.append((actor_handles, placement_group))
             predicates.append(checkpoint_filter_expr)
 

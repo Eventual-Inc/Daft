@@ -34,69 +34,97 @@ class CheckpointActor:
     def add_keys(self, input_keys: list[Any]) -> None:
         self.key_set.update(input_keys)
 
-    def filter(self, input_keys: list[Any]) -> "np.ndarray":  # noqa: UP037
+    def filter(self, input_keys: "np.ndarray") -> "np.ndarray":  # noqa: UP037
         import numpy as np
 
-        return np.array([input_key not in self.key_set for input_key in input_keys], dtype=bool)
+        # Convert numpy array to list for efficient set lookup
+        # This avoids iterating over numpy array elements which can be slower due to unboxing overhead
+        input_list = input_keys.tolist()
+        bool_result = np.array([input_key not in self.key_set for input_key in input_list], dtype=bool)
+
+        # Pack boolean array into bits (uint8) to reduce serialization overhead by 8x
+        # This allows efficient bitwise operations on the driver side
+        return np.packbits(bool_result)
 
 
 # TODO: support native mode in future if needed
-@cls(max_concurrency=1)
-class CheckpointFilter:
-    def __init__(self, num_buckets: int, actors_by_bucket: dict[int, ray.ActorHandle] | None = None):
-        self.num_buckets = num_buckets
-        self.actors_by_bucket: dict[int, ray.ActorHandle] = {}
-        if actors_by_bucket is None:
-            self._enabled = False
-        else:
-            self._enabled = True
-            for idx in range(num_buckets):
-                try:
-                    self.actors_by_bucket[idx] = actors_by_bucket[idx]
-                except KeyError as e:
-                    raise RuntimeError(
-                        f"CheckpointActor_{idx} not found. Please create actors before initializing CheckpointManager."
-                    ) from e
-
-    @method.batch(return_dtype=DataType.bool())
-    def __call__(self, input: Series) -> Series:
+def create_checkpoint_filter_udf(
+    num_buckets: int,
+    actor_handles: list[ActorHandle] | None,
+) -> Callable[[Expression], Expression]:
+    @func.batch(return_dtype=DataType.bool())
+    def checkpoint_filter(input: Series) -> Series:
         import numpy as np
         import ray
+        import os
 
-        if not self._enabled:
+        if actor_handles is None:
             return Series.from_numpy(np.full(len(input), True, dtype=bool))
 
         num_rows = len(input)
+        # Log batch size occasionally (approx 1% of calls) to avoid log spam
+        if num_rows > 0 and np.random.random() < 0.01:
+            print(f"[PID={os.getpid()}] CheckpointFilter Batch Size: {num_rows}")
+
         if num_rows == 0:
             return Series.from_numpy(np.empty(0, dtype=bool))
+
+        # Convert Input to NumPy (Zero Copy if possible)
+        input_np = input.to_arrow().to_numpy(zero_copy_only=False)
+
+        # Compute Hash and Buckets
         hash_arr = input.hash().to_arrow()
         hash_np = hash_arr.to_numpy(zero_copy_only=False).astype(np.uint64, copy=False)
-        bucket_ids = (hash_np % np.uint64(self.num_buckets)).astype(np.int64, copy=False)
+        bucket_ids = (hash_np % np.uint64(num_buckets)).astype(np.int64, copy=False)
 
-        futures = []
-        row_indices_list: list[np.ndarray] = []
+        # Group by Bucket
         row_order = np.argsort(bucket_ids, kind="stable")
         bucket_sorted = bucket_ids[row_order]
         run_starts = np.flatnonzero(np.r_[True, bucket_sorted[1:] != bucket_sorted[:-1]])
         run_ends = np.r_[run_starts[1:], len(bucket_sorted)]
         buckets_present = bucket_sorted[run_starts]
 
-        # row_indices 是 input 里的行号（0-based），表示哪些 key 属于这个 bucket
+        futures = []
+        row_indices_list: list[np.ndarray] = []
+
+        # Dispatch to Actors
         for bucket, start, end in zip(buckets_present, run_starts, run_ends):
-            actor = self.actors_by_bucket[int(bucket)]
+            actor = actor_handles[int(bucket)]
             row_indices = row_order[int(start) : int(end)]
-            keys_subset = input.take(Series.from_numpy(row_indices, name="idx")).to_pylist()  # TODO:耗时多
-            futures.append(actor.filter.remote(keys_subset))  # TODO：耗时多
+
+            # Direct numpy slice (fast)
+            keys_subset = input_np[row_indices]
+
+            futures.append(actor.filter.remote(keys_subset))
             row_indices_list.append(row_indices)
+
         try:
-            results = ray.get(futures, timeout=300)  # TODO：耗时多
+            # Results are list of PACKED uint8 arrays
+            packed_results = ray.get(futures, timeout=300)
         except Exception as e:
             raise RuntimeError(f"CheckpointActor filter failed: {e}") from e
+        finally:
+            # Explicitly release memory for large intermediate arrays
+            del futures
+            del input_np
+            del hash_arr
+            del hash_np
+            del bucket_ids
+            del row_order
+            del bucket_sorted
 
+        # Reconstruct Result
         final_result = np.full(num_rows, True, dtype=bool)
-        for row_indices, subset_mask in zip(row_indices_list, results):
+
+        for row_indices, packed_subset in zip(row_indices_list, packed_results):
+            # Unpack bits for this subset
+            subset_len = len(row_indices)
+            subset_mask = np.unpackbits(packed_subset)[:subset_len].astype(bool)
             final_result[row_indices] = subset_mask
+
         return Series.from_numpy(final_result)
+
+    return checkpoint_filter
 
 
 def _split_partitions_evenly(total: int, buckets: int) -> tuple[int, int]:
@@ -114,17 +142,16 @@ def _prepare_checkpoint_filter(
     num_cpus: float,
     read_fn: Callable[..., DataFrame],
     read_kwargs: dict[str, Any] | None = None,
-) -> tuple[list[ActorHandle], PlacementGroup | None, Expression | None]:
+) -> tuple[list[ActorHandle], PlacementGroup | None]:
     """Build and return checkpoint resources.
 
     Returns:
-        tuple[list[ActorHandle], PlacementGroup | None, Expression | None]:
+        tuple[list[ActorHandle], PlacementGroup | None]:
             - actor_handles: created Ray actors for checkpoint filtering
             - placement_group: PG used to reserve/spread actor resources
-            - checkpoint_filter_callable: Daft Expression used to filter input
 
     Notes:
-        - Raises RuntimeError if the checkpoint path cannot be read.
+        - If no existing partitions are found at `root_dir`, returns ([], None).
         - Raises RuntimeError if runner is not Ray.
     """
     if get_or_create_runner().name != "ray":
@@ -153,7 +180,7 @@ def _prepare_checkpoint_filter(
         raise RuntimeError(f"Unable to read checkpoint at {root_dirs_str}: {e}") from e
 
     if df_keys is None:
-        return [], None, None
+        return [], None
 
     # Create placement group and actors
     import ray
@@ -235,16 +262,14 @@ def _prepare_checkpoint_filter(
 
             return Series.from_arrow(pa.nulls(num_rows))
 
-        df_keys.select(ingest_keys(col(key_column))).collect()
+        df_keys.into_batches(100000).select(ingest_keys(col(key_column))).collect()
     except Exception as e:
         _cleanup_checkpoint_resources(actor_handles, pg)
         raise RuntimeError(f"Failed to create all checkpoint actors: {e}") from e
     finally:
         del df_keys
 
-    checkpoint_filter = CheckpointFilter(num_buckets=num_buckets, actors_by_bucket=actors_by_bucket)
-    checkpoint_filter_callable = checkpoint_filter(col(key_column))  # type: ignore
-    return actor_handles, pg, checkpoint_filter_callable  # type: ignore
+    return actor_handles, pg
 
 
 def _cleanup_checkpoint_resources(actor_handles: list[ActorHandle] | None, pg: PlacementGroup | None) -> None:
