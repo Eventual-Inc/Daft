@@ -1170,7 +1170,10 @@ class Expression:
         return fill_null(self, fill_value)
 
     def is_in(self, other: Any) -> Expression:
-        """Checks if values in the Expression are in the provided list.
+        """Checks if values in the Expression are in the provided iterable.
+
+        Args:
+            other: An iterable (list, set, tuple, etc.), Expression, or array-like object containing the values to check against
 
         Tip: See Also
             [`daft.functions.is_in`](https://docs.daft.ai/en/stable/api/functions/is_in/)

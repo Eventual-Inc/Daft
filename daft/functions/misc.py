@@ -227,10 +227,14 @@ def fill_null(expr: Expression, fill_value: Expression) -> Expression:
 
 
 def is_in(expr: Expression, other: Any) -> Expression:
-    """Checks if values in the Expression are in the provided list.
+    """Checks if values in the Expression are in the provided iterable.
+
+    Args:
+        expr: The expression to check
+        other: An iterable (list, set, tuple, etc.), Expression, or array-like object containing the values to check against
 
     Returns:
-        Expression (Boolean Expression): expression indicating whether values are in the provided list
+        Expression (Boolean Expression): expression indicating whether values are in the provided iterable
 
     Examples:
         >>> import daft
@@ -254,6 +258,18 @@ def is_in(expr: Expression, other: Any) -> Expression:
         (Showing first 3 of 3 rows)
 
     """
+    from collections.abc import Iterable
+
+    # Convert sets, tuples, and other non-string iterables to lists
+    # We exclude strings because they are iterable but should not be treated as a list of characters
+    if isinstance(other, (set, tuple, frozenset)):
+        other = list(other)
+    elif isinstance(other, Iterable) and not isinstance(other, (str, bytes, Expression)):
+        # For other iterables that are not lists, convert to list
+        # This handles generators, ranges, dict_keys, etc.
+        if not isinstance(other, list):
+            other = list(other)
+
     if isinstance(other, list):
         other = [Expression._to_expression(item) for item in other]
     elif not isinstance(other, Expression):

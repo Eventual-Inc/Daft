@@ -150,3 +150,41 @@ def test_table_expr_is_in_items_invalid_input() -> None:
 
     with pytest.raises(ValueError, match="Creating a Series from data of type"):
         daft_recordbatch.eval_expression_list([col("input").is_in(1)])
+
+
+@pytest.mark.parametrize(
+    "items_iterable,expected",
+    [
+        pytest.param({1, 2}, [True, True, False, False], id="set"),
+        pytest.param((1, 2), [True, True, False, False], id="tuple"),
+        pytest.param(frozenset([1, 2]), [True, True, False, False], id="frozenset"),
+        pytest.param(range(1, 3), [True, True, False, False], id="range"),
+        pytest.param((x for x in [1, 2]), [True, True, False, False], id="generator"),
+        pytest.param({1: "a", 2: "b"}.keys(), [True, True, False, False], id="dict_keys"),
+    ],
+)
+def test_table_expr_is_in_with_iterables(items_iterable, expected) -> None:
+    """Test that is_in accepts various iterable types, not just lists."""
+    daft_recordbatch = MicroPartition.from_pydict({"input": [1, 2, 3, 4]})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").is_in(items_iterable)])
+    pydict = daft_recordbatch.to_pydict()
+
+    assert pydict["input"] == expected
+
+
+def test_table_expr_is_in_with_empty_set() -> None:
+    """Test that is_in with an empty set returns all False."""
+    daft_recordbatch = MicroPartition.from_pydict({"input": [1, 2, 3, 4]})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").is_in(set())])
+    pydict = daft_recordbatch.to_pydict()
+
+    assert pydict["input"] == [False, False, False, False]
+
+
+def test_table_expr_is_in_with_string_items() -> None:
+    """Test that is_in with a set of strings works correctly."""
+    daft_recordbatch = MicroPartition.from_pydict({"input": ["a", "b", "c", "d"]})
+    daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").is_in({"a", "b"})])
+    pydict = daft_recordbatch.to_pydict()
+
+    assert pydict["input"] == [True, True, False, False]
