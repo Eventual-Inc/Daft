@@ -3,13 +3,13 @@ use std::{any::Any, collections::HashMap, future::Future, sync::Arc};
 use common_daft_config::PyDaftExecutionConfig;
 use common_metrics::{NodeID, StatSnapshot};
 use common_partitioning::{Partition, PartitionRef};
-use daft_local_plan::PyLocalPhysicalPlan;
+use daft_local_plan::{PyLocalPhysicalPlan, SourceId, python::PyUnresolvedInputs};
 use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 
 use crate::{
     pipeline_node::MaterializedOutput,
     scheduling::{
-        task::{SwordfishTask, TaskContext, TaskResultHandle, TaskStatus},
+        task::{SwordfishTask, Task, TaskContext, TaskResultHandle, TaskStatus},
         worker::WorkerId,
     },
 };
@@ -17,7 +17,7 @@ use crate::{
 #[pyclass(module = "daft.daft", name = "RayTaskResult")]
 #[derive(Clone)]
 pub(crate) enum RayTaskResult {
-    Success(Vec<RayPartitionRef>, Vec<u8>),
+    Success(Vec<RayPartitionRef>, Option<Vec<u8>>),
     WorkerDied(),
     WorkerUnavailable(),
 }
@@ -25,7 +25,7 @@ pub(crate) enum RayTaskResult {
 #[pymethods]
 impl RayTaskResult {
     #[staticmethod]
-    fn success(ray_part_refs: Vec<RayPartitionRef>, stats_serialized: Vec<u8>) -> Self {
+    fn success(ray_part_refs: Vec<RayPartitionRef>, stats_serialized: Option<Vec<u8>>) -> Self {
         Self::Success(ray_part_refs, stats_serialized)
     }
 
@@ -87,10 +87,13 @@ impl TaskResultHandle for RayTaskResultHandle {
 
             match ray_task_result {
                 Ok(RayTaskResult::Success(ray_part_refs, stats_serialized)) => {
-                    let stats: Vec<(NodeID, StatSnapshot)> =
-                        bincode::decode_from_slice(&stats_serialized, bincode::config::legacy())
-                            .expect("Failed to deserialize stats")
-                            .0;
+                    let stats: Vec<(NodeID, StatSnapshot)> = stats_serialized
+                        .map(|stats_serialized| {
+                            bincode::decode_from_slice(&stats_serialized, bincode::config::legacy())
+                                .expect("Failed to deserialize stats")
+                                .0
+                        })
+                        .unwrap_or_default();
                     let materialized_output = MaterializedOutput::new(
                         ray_part_refs
                             .into_iter()
@@ -193,14 +196,19 @@ impl RaySwordfishTask {
         Ok(PyLocalPhysicalPlan { plan })
     }
 
-    fn psets(&self) -> PyResult<HashMap<String, Vec<RayPartitionRef>>> {
+    fn inputs(&self) -> PyResult<PyUnresolvedInputs> {
+        let inputs = self.task.inputs().clone();
+        Ok(PyUnresolvedInputs { inner: inputs })
+    }
+
+    fn psets(&self) -> PyResult<HashMap<SourceId, Vec<RayPartitionRef>>> {
         let psets = self
             .task
             .psets()
             .iter()
             .map(|(k, v)| {
                 (
-                    k.clone(),
+                    *k,
                     v.iter()
                         .map(|v| {
                             let v = v
@@ -223,5 +231,14 @@ impl RaySwordfishTask {
     fn config(&self) -> PyResult<PyDaftExecutionConfig> {
         let config = self.task.config().clone();
         Ok(PyDaftExecutionConfig { config })
+    }
+
+    /// Get the last_node_id from the task context, which is used as the source_id
+    fn last_node_id(&self) -> u32 {
+        self.task.task_context().last_node_id
+    }
+
+    fn task_id(&self) -> u32 {
+        self.task.task_context().task_id
     }
 }

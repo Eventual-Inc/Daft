@@ -453,12 +453,12 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
     }
 
     fn start(
-        &self,
+        &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
-        for child in &self.children {
+        for child in &mut self.children {
             let child_result_receiver = child.start(maintain_order, runtime_handle)?;
             child_result_receivers.push(child_result_receiver);
         }

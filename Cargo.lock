@@ -3092,6 +3092,7 @@ dependencies = [
  "daft-functions",
  "daft-functions-list",
  "daft-logical-plan",
+ "daft-micropartition",
  "indexmap 2.13.0",
  "log",
  "pyo3",

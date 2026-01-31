@@ -18,6 +18,7 @@ from daft.daft import (
     RaySwordfishTask,
     RaySwordfishWorker,
     RayTaskResult,
+    UnresolvedInputs,
     set_compute_runtime_num_worker_threads,
 )
 from daft.event_loop import set_event_loop
@@ -61,13 +62,15 @@ class RaySwordfishActor:
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
         set_compute_runtime_num_worker_threads(num_cpus)
         set_event_loop(asyncio.get_running_loop())
+        self.native_executor = NativeExecutor()
 
     async def run_plan(
         self,
         plan: LocalPhysicalPlan,
         exec_cfg: PyDaftExecutionConfig,
-        psets: dict[str, list[ray.ObjectRef]],
         context: dict[str, str] | None,
+        psets: dict[int, list[ray.ObjectRef]],
+        inputs: UnresolvedInputs,
     ) -> AsyncGenerator[MicroPartition | SwordfishTaskMetadata, None]:
         """Run a plan on swordfish and yield partitions."""
         # We import PyDaftContext inside the function because PyDaftContext is not serializable.
@@ -75,13 +78,19 @@ class RaySwordfishActor:
 
         with profile():
             psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
-            psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
+            psets_mp = {str(k): [v._micropartition for v in v] for k, v in psets.items()}
+            resolved_inputs = inputs.resolve(psets_mp)
 
-            metas = []
-            native_executor = NativeExecutor()
             ctx = PyDaftContext()
             ctx._daft_execution_config = exec_cfg
-            result_handle = native_executor.run(plan, psets_mp, ctx, None, context)
+            result_handle = await self.native_executor.run(
+                plan,
+                ctx,
+                0,
+                resolved_inputs,
+                context,
+            )
+            metas = []
             async for partition in result_handle:
                 if partition is None:
                     break
@@ -105,7 +114,11 @@ def get_boundaries_remote(
 
     mp = MicroPartition.concat(list(samples))
     nulls_first = nulls_first if nulls_first is not None else descending
-    merged_sorted = mp.sort(sort_by_exprs.to_column_expressions(), descending=descending, nulls_first=nulls_first)
+    merged_sorted = mp.sort(
+        sort_by_exprs.to_column_expressions(),
+        descending=descending,
+        nulls_first=nulls_first,
+    )
 
     result = merged_sorted.quantiles(num_quantiles)
     return result._micropartition
@@ -178,9 +191,14 @@ class RaySwordfishActorHandle:
         self.actor_handle = actor_handle
 
     def submit_task(self, task: RaySwordfishTask) -> RaySwordfishTaskHandle:
+        inputs = task.inputs()
         psets = {k: [v.object_ref for v in v] for k, v in task.psets().items()}
         result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(
-            task.plan(), task.config(), psets, task.context()
+            task.plan(),
+            task.config(),
+            task.context(),
+            psets,
+            inputs,
         )
         return RaySwordfishTaskHandle(
             result_handle,

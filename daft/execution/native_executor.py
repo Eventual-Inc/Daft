@@ -6,6 +6,7 @@ from daft.daft import (
     LocalPhysicalPlan,
     PyDaftExecutionConfig,
     PyMicroPartition,
+    UnresolvedInputs,
 )
 from daft.daft import (
     NativeExecutor as _NativeExecutor,
@@ -21,8 +22,6 @@ if TYPE_CHECKING:
     from daft.logical.builder import LogicalPlanBuilder
     from daft.runners.partitioning import (
         LocalMaterializedResult,
-        MaterializedResult,
-        PartitionT,
     )
 
 
@@ -33,25 +32,25 @@ class NativeExecutor:
     def run(
         self,
         local_physical_plan: LocalPhysicalPlan,
-        psets: dict[str, list[MaterializedResult[PartitionT]]],
+        inputs: UnresolvedInputs,
+        psets: dict[str, list[PyMicroPartition]],
         ctx: DaftContext,
-        results_buffer_size: int | None,
         context: dict[str, str] | None,
     ) -> Iterator[LocalMaterializedResult]:
-        from daft.runners.partitioning import LocalMaterializedResult
-
-        psets_mp = {
-            part_id: [part.micropartition()._micropartition for part in parts] for part_id, parts in psets.items()
-        }
-        result_handle = self._executor.run(
-            local_physical_plan,
-            psets_mp,
-            ctx._ctx,
-            results_buffer_size,
-            context,
+        from daft.runners.partitioning import (
+            LocalMaterializedResult,
         )
 
+        resolved_inputs = inputs.resolve(psets)
+
         async def stream_results() -> AsyncGenerator[PyMicroPartition | None, None]:
+            result_handle = await self._executor.run(
+                local_physical_plan,
+                ctx._ctx,
+                0,
+                resolved_inputs,
+                context,
+            )
             try:
                 async for batch in result_handle:
                     yield batch

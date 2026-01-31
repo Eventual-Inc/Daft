@@ -2023,10 +2023,6 @@ class DistributedPhysicalPlanRunner:
         self, plan: DistributedPhysicalPlan, psets: dict[str, list[RayPartitionRef]]
     ) -> AsyncIterator[RayPartitionRef]: ...
 
-class LocalPhysicalPlan:
-    @staticmethod
-    def from_logical_plan_builder(builder: LogicalPlanBuilder) -> LocalPhysicalPlan: ...
-
 class RayPartitionRef:
     object_ref: ray.ObjectRef
     num_rows: int
@@ -2037,6 +2033,7 @@ class RayPartitionRef:
 class RaySwordfishTask:
     def name(self) -> str: ...
     def plan(self) -> LocalPhysicalPlan: ...
+    def inputs(self) -> UnresolvedInputs: ...
     def psets(self) -> dict[str, list[RayPartitionRef]]: ...
     def config(self) -> PyDaftExecutionConfig: ...
     def context(self) -> dict[str, str]: ...
@@ -2064,14 +2061,27 @@ class PyExecutionEngineResult:
     async def __anext__(self) -> PyMicroPartition | None: ...
     async def finish(self) -> bytes: ...
 
+class LocalPhysicalPlan:
+    @staticmethod
+    def from_logical_plan_builder(builder: LogicalPlanBuilder) -> tuple[LocalPhysicalPlan, UnresolvedInputs]: ...
+
+class UnresolvedInputs:
+    """UnresolvedInputs for NativeExecutor execution."""
+    def resolve(self, psets: dict[str, list[PyMicroPartition]]) -> ResolvedInputs: ...
+
+class ResolvedInputs:
+    """ResolvedInputs to NativeExecutor execution."""
+
+    ...
+
 class NativeExecutor:
     def __init__(self) -> None: ...
-    def run(
+    async def run(
         self,
         plan: LocalPhysicalPlan,
-        psets: dict[str, list[PyMicroPartition]],
         daft_ctx: PyDaftContext,
-        results_buffer_size: int | None = None,
+        input_id: int,
+        inputs: ResolvedInputs,
         context: dict[str, str] | None = None,
     ) -> PyExecutionEngineResult: ...
     @staticmethod

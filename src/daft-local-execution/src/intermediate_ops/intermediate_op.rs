@@ -29,6 +29,7 @@ use crate::{
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
 #[cfg_attr(debug_assertions, derive(Debug))]
+#[derive(Clone)]
 pub enum IntermediateOperatorResult {
     NeedMoreInput(Option<Arc<MicroPartition>>),
     #[allow(dead_code)]
@@ -407,13 +408,13 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
     }
 
     fn start(
-        &self,
+        &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         // 1. Start children and wrap receivers
         let mut child_result_receivers = Vec::with_capacity(self.children.len());
-        for child in &self.children {
+        for child in &mut self.children {
             let child_result_receiver = child.start(maintain_order, runtime_handle)?;
             child_result_receivers.push(child_result_receiver);
         }
