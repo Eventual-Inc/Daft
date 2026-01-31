@@ -396,6 +396,69 @@ def capitalize(expr: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("capitalize", expr)
 
 
+def to_camel_case(expr: Expression) -> Expression:
+    """Convert a string to lower camel case.
+
+    Returns:
+        Expression: a String expression converted to lower camel case
+    """
+    return Expression._call_builtin_scalar_fn("to_camel_case", expr)
+
+
+def to_upper_camel_case(expr: Expression) -> Expression:
+    """Convert a string to upper camel case.
+
+    Returns:
+        Expression: a String expression converted to upper camel case
+    """
+    return Expression._call_builtin_scalar_fn("to_upper_camel_case", expr)
+
+
+def to_snake_case(expr: Expression) -> Expression:
+    """Convert a string to snake case.
+
+    Returns:
+        Expression: a String expression converted to snake case
+    """
+    return Expression._call_builtin_scalar_fn("to_snake_case", expr)
+
+
+def to_upper_snake_case(expr: Expression) -> Expression:
+    """Convert a string to upper snake case.
+
+    Returns:
+        Expression: a String expression converted to upper snake case
+    """
+    return Expression._call_builtin_scalar_fn("to_upper_snake_case", expr)
+
+
+def to_kebab_case(expr: Expression) -> Expression:
+    """Convert a string to kebab case.
+
+    Returns:
+        Expression: a String expression converted to kebab case
+    """
+    return Expression._call_builtin_scalar_fn("to_kebab_case", expr)
+
+
+def to_upper_kebab_case(expr: Expression) -> Expression:
+    """Convert a string to upper kebab case.
+
+    Returns:
+        Expression: a String expression converted to upper kebab case
+    """
+    return Expression._call_builtin_scalar_fn("to_upper_kebab_case", expr)
+
+
+def to_title_case(expr: Expression) -> Expression:
+    """Convert a string to title case.
+
+    Returns:
+        Expression: a String expression converted to title case
+    """
+    return Expression._call_builtin_scalar_fn("to_title_case", expr)
+
+
 def left(expr: Expression, nchars: int | Expression) -> Expression:
     """Gets the n (from nchars) left-most characters of each string.
 
