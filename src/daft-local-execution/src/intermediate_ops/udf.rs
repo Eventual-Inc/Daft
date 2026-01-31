@@ -100,6 +100,9 @@ struct UdfRuntimeStats {
 }
 
 impl RuntimeStats for UdfRuntimeStats {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
         self
     }
@@ -607,7 +610,10 @@ impl IntermediateOperator for UdfOperator {
         })
     }
 
-    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
+    fn batching_strategy(
+        &self,
+        morsel_size_requirement: MorselSizeRequirement,
+    ) -> DaftResult<Self::BatchingStrategy> {
         let cfg = daft_context::get_context().execution_config();
 
         Ok(if cfg.enable_dynamic_batching {
@@ -635,7 +641,7 @@ impl IntermediateOperator for UdfOperator {
                 _ => unreachable!("should already be checked in the ctx"),
             }
         } else {
-            StaticBatchingStrategy::new(self.morsel_size_requirement().unwrap_or_default()).into()
+            StaticBatchingStrategy::new(morsel_size_requirement).into()
         })
     }
 }
