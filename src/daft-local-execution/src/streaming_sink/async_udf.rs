@@ -13,7 +13,8 @@ use common_metrics::{
 use common_runtime::JoinSet;
 use daft_core::{prelude::SchemaRef, series::Series};
 use daft_dsl::{
-    expr::bound_expr::BoundExpr, functions::python::UDFProperties,
+    expr::bound_expr::{BoundExpr, remap_used_cols},
+    functions::python::UDFProperties,
     operator_metrics::OperatorMetrics,
 };
 use daft_micropartition::MicroPartition;
@@ -28,7 +29,6 @@ use super::base::{
 };
 use crate::{
     ExecutionTaskSpawner,
-    intermediate_ops::udf::remap_used_cols,
     pipeline::{MorselSizeRequirement, NodeName},
     runtime_stats::RuntimeStats,
 };
