@@ -29,6 +29,7 @@ pub trait SeriesListExtension: Sized {
     fn list_fill(&self, num: &Int64Array) -> DaftResult<Self>;
     fn list_distinct(&self) -> DaftResult<Self>;
     fn list_append(&self, other: &Self) -> DaftResult<Self>;
+    fn list_contains(&self, item: &Self) -> DaftResult<Self>;
 }
 
 impl SeriesListExtension for Series {
@@ -361,5 +362,17 @@ impl SeriesListExtension for Series {
         );
 
         Ok(list_array.into_series())
+    }
+
+    fn list_contains(&self, item: &Self) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::List(_) => Ok(self.list()?.list_contains(item)?.into_series()),
+            DataType::FixedSizeList(..) => {
+                Ok(self.fixed_size_list()?.list_contains(item)?.into_series())
+            }
+            dt => Err(DaftError::TypeError(format!(
+                "List contains not implemented for {dt}"
+            ))),
+        }
     }
 }
