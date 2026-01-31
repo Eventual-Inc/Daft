@@ -9,6 +9,7 @@ pub mod file;
 pub mod join;
 pub mod kernels;
 pub mod lit;
+pub mod operator;
 #[cfg(feature = "python")]
 pub mod python;
 pub mod series;

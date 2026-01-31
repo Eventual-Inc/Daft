@@ -3,8 +3,11 @@ use std::{collections::HashSet, sync::Arc};
 use common_error::{DaftError, DaftResult};
 use common_treenode::{DynTreeNode, Transformed, TreeNode};
 use daft_algebra::boolean::{combine_conjunction, split_conjunction};
-use daft_core::{join::JoinType, prelude::SchemaRef};
-use daft_dsl::{Column, Expr, ExprRef, Operator, ResolvedColumn, Subquery, resolved_col};
+use daft_core::{
+    join::JoinType,
+    prelude::{Operator, SchemaRef},
+};
+use daft_dsl::{Column, Expr, ExprRef, ResolvedColumn, Subquery, resolved_col};
 use itertools::multiunzip;
 use uuid::Uuid;
 

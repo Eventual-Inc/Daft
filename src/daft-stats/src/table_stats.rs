@@ -134,7 +134,7 @@ impl TableStatistics {
             Expr::BinaryOp { op, left, right } => {
                 let lhs = self.eval_expression(&BoundExpr::new_unchecked(left.clone()))?;
                 let rhs = self.eval_expression(&BoundExpr::new_unchecked(right.clone()))?;
-                use daft_dsl::Operator::{And, Eq, Gt, GtEq, Lt, LtEq, Minus, NotEq, Or, Plus};
+                use daft_core::prelude::Operator::*;
                 match op {
                     Lt => lhs.lt(&rhs),
                     LtEq => lhs.lte(&rhs),

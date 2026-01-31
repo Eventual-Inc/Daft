@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 use common_treenode::Transformed;
-use daft_core::lit::Literal;
-use daft_dsl::{Expr, ExprRef, Operator};
+use daft_core::{lit::Literal, prelude::Operator};
+use daft_dsl::{Expr, ExprRef};
 use daft_schema::schema::SchemaRef;
 
 static POWS_OF_TEN: [i128; 38] = [
@@ -120,7 +120,8 @@ mod tests {
 
     use common_error::DaftResult;
     use common_treenode::Transformed;
-    use daft_dsl::{Column, Expr, ExprRef, Operator, ResolvedColumn, lit};
+    use daft_core::prelude::Operator;
+    use daft_dsl::{Column, Expr, ExprRef, ResolvedColumn, lit};
     use daft_schema::schema::Schema;
 
     use crate::simplify::numeric::simplify_numeric_expr;

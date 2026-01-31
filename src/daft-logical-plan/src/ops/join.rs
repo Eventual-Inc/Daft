@@ -8,8 +8,7 @@ use common_treenode::{Transformed, TreeNode, TreeNodeRecursion};
 use daft_algebra::boolean::{combine_conjunction, split_conjunction};
 use daft_core::{join::JoinSide, prelude::*};
 use daft_dsl::{
-    Column, Expr, ExprRef, Operator, ResolvedColumn, join::infer_join_schema, resolved_col,
-    right_col,
+    Column, Expr, ExprRef, ResolvedColumn, join::infer_join_schema, resolved_col, right_col,
 };
 use indexmap::IndexSet;
 #[cfg(feature = "python")]

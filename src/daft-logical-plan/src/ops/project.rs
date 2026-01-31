@@ -648,7 +648,7 @@ fn replace_column_with_semantic_id_aggexpr(
 mod tests {
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::{Operator, binary_op, lit, resolved_col};
+    use daft_dsl::{binary_op, lit, resolved_col};
 
     use crate::{
         LogicalPlan,

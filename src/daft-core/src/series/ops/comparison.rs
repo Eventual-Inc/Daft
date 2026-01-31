@@ -43,6 +43,27 @@ macro_rules! impl_compare_method {
                         .expect("We expected a Boolean Series from this Python Comparison");
                     Ok(bool_array.clone())
                 }
+                DataType::List(_) => {
+                    let lhs = lhs.cast(&comparison_type)?;
+                    let rhs = rhs.cast(&comparison_type)?;
+                    let lhs = lhs.list()?;
+                    let rhs = rhs.list()?;
+                    lhs.$fname(rhs)
+                }
+                DataType::FixedSizeList(_, _) => {
+                    let lhs = lhs.cast(&comparison_type)?;
+                    let rhs = rhs.cast(&comparison_type)?;
+                    let lhs = lhs.fixed_size_list()?;
+                    let rhs = rhs.fixed_size_list()?;
+                    lhs.$fname(rhs)
+                }
+                DataType::Struct(_) => {
+                    let lhs = lhs.cast(&comparison_type)?;
+                    let rhs = rhs.cast(&comparison_type)?;
+                    let lhs = lhs.struct_()?;
+                    let rhs = rhs.struct_()?;
+                    lhs.$fname(rhs)
+                }
                 _ => with_match_comparable_daft_types!(comparison_type, |$T| {
                     cast_downcast_op!(
                         lhs,
