@@ -149,6 +149,21 @@ def stddev(expr: Expression) -> Expression:
     return Expression._from_pyexpr(expr._expr.stddev())
 
 
+def var(expr: Expression, ddof: int = 1) -> Expression:
+    """Calculates the variance of the values in the expression.
+
+    Args:
+        expr: The input expression to calculate variance for.
+        ddof: Delta degrees of freedom. The divisor used in calculations
+            is N - ddof, where N is the number of non-null elements.
+            Defaults to 1 (sample variance).
+
+    Returns:
+        Expression representing the variance.
+    """
+    return Expression._from_pyexpr(expr._expr.var(ddof))
+
+
 def min(expr: Expression) -> Expression:
     """Calculates the minimum of the values in the expression."""
     return Expression._from_pyexpr(expr._expr.min())

@@ -4,7 +4,7 @@ use daft_dsl::{
     AggExpr, ApproxPercentileParams, ExprRef, SketchType, bound_col,
     expr::bound_expr::{BoundAggExpr, BoundExpr},
     functions::agg::merge_mean,
-    lit,
+    lit, null_lit,
 };
 use daft_functions::numeric::sqrt;
 use daft_functions_list::{count_distinct, distinct};
@@ -187,6 +187,40 @@ pub fn populate_aggregation_stages_bound_with_schema(
                 let right = global_sum_col.div(global_count_col);
                 let right = right.clone().mul(right);
                 let result = sqrt::sqrt(left.sub(right));
+
+                final_stage(result);
+            }
+            AggExpr::Var(expr, ddof) => {
+                // The variance calculation we're performing here is:
+                // var(X, ddof) = (E(X^2) - E(X)^2) * n / (n - ddof)
+                // where X is the sub_expr.
+                //
+                // First stage, we compute `sum(X^2)`, `sum(X)` and `count(X)`.
+                // Second stage, we get global versions: `global_sqsum`, `global_sum`, `global_count`.
+                // In the final projection, we compute:
+                // ((global_sqsum / global_count) - (global_sum / global_count) ^ 2) * global_count / (global_count - ddof)
+
+                let expr = expr.clone().cast(&DataType::Float64);
+
+                let sum_col = first_stage!(AggExpr::Sum(expr.clone()));
+                let sq_sum_col = first_stage!(AggExpr::Sum(expr.clone().mul(expr.clone())));
+                let count_col = first_stage!(AggExpr::Count(expr, CountMode::Valid));
+
+                let global_sum_col = second_stage!(AggExpr::Sum(sum_col));
+                let global_sq_sum_col = second_stage!(AggExpr::Sum(sq_sum_col));
+                let global_count_col = second_stage!(AggExpr::Sum(count_col));
+
+                // Population variance = (sqsum/n - (sum/n)^2)
+                let n = global_count_col.clone().cast(&DataType::Float64);
+                let sq_mean = global_sq_sum_col.div(n.clone());
+                let mean = global_sum_col.clone().div(n.clone());
+                let mean_sq = mean.clone().mul(mean);
+                let pop_var = sq_mean.sub(mean_sq);
+
+                // Adjust for ddof: sample_var = pop_var * n / (n - ddof)
+                let ddof_expr = lit(*ddof as f64);
+                let adjusted = pop_var.mul(n.clone()).div(n.clone().sub(ddof_expr.clone()));
+                let result = n.clone().lt_eq(ddof_expr).if_else(null_lit(), adjusted);
 
                 final_stage(result);
             }

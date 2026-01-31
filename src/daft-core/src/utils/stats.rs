@@ -81,6 +81,21 @@ pub fn calculate_stddev(stats: Stats, values: impl Iterator<Item = f64>) -> Opti
     })
 }
 
+pub fn calculate_variance(
+    stats: Stats,
+    values: impl Iterator<Item = f64>,
+    ddof: usize,
+) -> Option<f64> {
+    stats.mean.and_then(|mean| {
+        let n = stats.count as usize;
+        if n <= ddof {
+            return None; // Not enough data points for the requested ddof
+        }
+        let sum_of_squares = values.map(|value| (value - mean).powi(2)).sum::<f64>();
+        Some(sum_of_squares / (n - ddof) as f64)
+    })
+}
+
 pub fn calculate_skew(stats: Stats, values: impl Iterator<Item = f64>) -> Option<f64> {
     let count = stats.count;
     stats.mean.map(|mean| {

@@ -13,7 +13,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 
 pub use agg_ops::{
     try_mean_aggregation_supertype, try_product_supertype, try_skew_aggregation_supertype,
-    try_stddev_aggregation_supertype, try_sum_supertype,
+    try_stddev_aggregation_supertype, try_sum_supertype, try_variance_aggregation_supertype,
 };
 use daft_arrow::{
     compute::comparison::Simd8,

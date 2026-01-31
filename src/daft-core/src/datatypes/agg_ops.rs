@@ -78,6 +78,19 @@ pub fn try_stddev_aggregation_supertype(dtype: &DataType) -> DaftResult<DataType
     }
 }
 
+/// Get the data type that the variance of a column of the given data type should be casted to.
+pub fn try_variance_aggregation_supertype(dtype: &DataType) -> DaftResult<DataType> {
+    match dtype {
+        d if d.is_numeric() => Ok(DataType::Float64),
+        DataType::Decimal128(..) => Ok(DataType::Float64),
+        DataType::Null => Ok(DataType::Float64),
+        _ => Err(DaftError::TypeError(format!(
+            "Variance is not supported for: {}",
+            dtype
+        ))),
+    }
+}
+
 /// Get the data type that the skew of a column of the given data type should be casted to.
 pub fn try_skew_aggregation_supertype(dtype: &DataType) -> DaftResult<DataType> {
     match dtype {
