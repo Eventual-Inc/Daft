@@ -4249,7 +4249,7 @@ class DataFrame:
         Args:
             n: number of rows to show. Defaults to 8.
             format (PreviewFormat): the box-drawing format e.g. "fancy" or "markdown".
-            verbose (bool): verbose will print header info
+            verbose (bool): if True, headers include the column's data type.
             max_width (int): global max column width
             align (PreviewAlign): global column align
             columns (list[PreviewColumn]): column overrides
