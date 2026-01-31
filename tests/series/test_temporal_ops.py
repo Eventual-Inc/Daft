@@ -543,43 +543,50 @@ def test_series_timestamp_to_string():
     assert expected_series.to_pylist() == date_as_string.to_pylist()
 
 
-def test_series_convert_time_zone_from_aware() -> None:
+def test_series_convert_aware_tz() -> None:
     input_series = Series.from_pylist([datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)])
     converted = input_series.dt.convert_time_zone("+02:00")
     expected = [datetime(2024, 1, 1, 2, 0, 0, tzinfo=timezone(timedelta(hours=2)))]
     assert converted.to_pylist() == expected
 
 
-def test_series_convert_time_zone_from_naive() -> None:
+def test_series_convert_tz_from_aware_ignores_from_tz() -> None:
+    input_series = Series.from_pylist([datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)])
+    # from_timezone should be ignored
+    converted = input_series.dt.convert_time_zone("+02:00", from_timezone="America/Los_Angeles")
+    expected = [datetime(2024, 1, 1, 2, 0, 0, tzinfo=timezone(timedelta(hours=2)))]
+    assert converted.to_pylist() == expected
+
+
+def test_series_convert_tz_from_naive() -> None:
     input_series = Series.from_pylist([datetime(2024, 1, 1, 0, 0, 0)])
     converted = input_series.dt.convert_time_zone("UTC", from_timezone="+02:00")
     expected = [datetime(2023, 12, 31, 22, 0, 0, tzinfo=timezone.utc)]
     assert converted.to_pylist() == expected
 
 
-def test_series_convert_time_zone_requires_from_timezone_for_naive() -> None:
+def test_series_convert_naive_tz_requires_from_tz() -> None:
     input_series = Series.from_pylist([datetime(2024, 1, 1, 0, 0, 0)])
     with pytest.raises(Exception, match="from_timezone must be provided"):
         input_series.dt.convert_time_zone("UTC")
 
 
-def test_series_replace_time_zone_from_aware() -> None:
+def test_series_replace_aware_tz() -> None:
     input_series = Series.from_pylist([datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)])
     replaced = input_series.dt.replace_time_zone("+02:00")
     expected = [datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone(timedelta(hours=2)))]
     assert replaced.to_pylist() == expected
 
 
-def test_series_replace_time_zone_from_naive() -> None:
+def test_series_replace_naive_tz() -> None:
     input_series = Series.from_pylist([datetime(2024, 1, 1, 0, 0, 0)])
     replaced = input_series.dt.replace_time_zone("+02:00")
     expected = [datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone(timedelta(hours=2)))]
     assert replaced.to_pylist() == expected
 
 
-def test_series_convert_time_zone_from_aware_ignores_from_timezone() -> None:
+def test_series_replace_default_tz() -> None:
     input_series = Series.from_pylist([datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)])
-    # from_timezone should be ignored
-    converted = input_series.dt.convert_time_zone("+02:00", from_timezone="America/Los_Angeles")
-    expected = [datetime(2024, 1, 1, 2, 0, 0, tzinfo=timezone(timedelta(hours=2)))]
-    assert converted.to_pylist() == expected
+    replaced = input_series.dt.replace_time_zone()
+    expected = [datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)]
+    assert replaced.to_pylist() == expected

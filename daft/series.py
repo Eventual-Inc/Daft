@@ -1064,7 +1064,7 @@ class SeriesDateNamespace(SeriesNamespace):
     def convert_time_zone(self, to_timezone: str, from_timezone: str | None = None) -> Series:
         return self._eval_expressions("convert_time_zone", to_timezone, from_timezone)
 
-    def replace_time_zone(self, timezone: str | None) -> Series:
+    def replace_time_zone(self, timezone: str | None = None) -> Series:
         return self._eval_expressions("replace_time_zone", timezone)
 
     def total_seconds(self) -> Series:
