@@ -12,7 +12,6 @@ use common_metrics::{
     snapshot::StatSnapshotImpl,
 };
 use common_runtime::{OrderingAwareJoinSet, get_compute_runtime};
-use daft_core::prelude::SchemaRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
@@ -78,17 +77,10 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
         right: Box<dyn PipelineNode>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
-        output_schema: SchemaRef,
         context: &LocalNodeContext,
     ) -> Self {
         let name: Arc<str> = op.name().into();
-        let node_info = ctx.next_node_info(
-            name,
-            op.op_type(),
-            NodeCategory::Intermediate,
-            output_schema,
-            context,
-        );
+        let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::Intermediate, context);
         let runtime_stats = op.make_runtime_stats(node_info.id);
 
         let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();

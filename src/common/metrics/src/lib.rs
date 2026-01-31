@@ -7,7 +7,6 @@ pub mod snapshot;
 
 use std::{ops::Index, sync::Arc, time::Duration};
 
-use bincode::{Decode, Encode};
 use indicatif::{HumanBytes, HumanCount, HumanDuration, HumanFloatCount};
 pub use meters::{Counter, Gauge};
 pub use operator_metrics::{
@@ -38,7 +37,7 @@ pub enum QueryEndState {
     Dead,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", content = "value")]
 pub enum Stat {
     // Integer Representations
@@ -49,6 +48,18 @@ pub enum Stat {
     Float(f64),
     // Base Types
     Duration(Duration),
+}
+
+impl Stat {
+    pub fn into_f64_and_unit(self) -> (f64, Option<&'static str>) {
+        match self {
+            Self::Count(value) => (value as f64, None),
+            Self::Bytes(value) => (value as f64, Some("bytes")),
+            Self::Percent(value) => (value, Some("%")),
+            Self::Float(value) => (value, None),
+            Self::Duration(value) => (value.as_micros() as f64, Some("µs")),
+        }
+    }
 }
 
 impl std::fmt::Display for Stat {

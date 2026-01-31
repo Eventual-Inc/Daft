@@ -6,8 +6,9 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{QueryID, StatSnapshot};
+use common_metrics::QueryID;
 use common_treenode::{TreeNode, TreeNodeRecursion};
+use daft_local_plan::ExecutionEngineFinalResult;
 use opentelemetry::{InstrumentationScope, KeyValue, global};
 pub use stats::RuntimeStats;
 
@@ -32,7 +33,7 @@ pub(crate) enum TaskEvent {
     },
     Completed {
         context: TaskContext,
-        stats: Vec<(common_metrics::NodeID, StatSnapshot)>,
+        stats: ExecutionEngineFinalResult,
     },
     Failed {
         context: TaskContext,

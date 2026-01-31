@@ -2,7 +2,8 @@ pub mod agg;
 #[allow(unused)]
 mod plan;
 #[cfg(feature = "python")]
-mod python;
+pub mod python;
+mod results;
 mod translate;
 #[cfg(feature = "python")]
 pub use plan::{CatalogWrite, DataSink, DistributedActorPoolProject, LanceWrite};
@@ -16,4 +17,5 @@ pub use plan::{
 };
 #[cfg(feature = "python")]
 pub use python::{PyLocalPhysicalPlan, register_modules};
+pub use results::ExecutionEngineFinalResult;
 pub use translate::translate;

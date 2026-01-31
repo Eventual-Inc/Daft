@@ -16,7 +16,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
     from daft.logical.builder import LogicalPlanBuilder
-    from daft.recordbatch import MicroPartition
+    from daft.recordbatch import MicroPartition, RecordBatch
     from daft.runners.runner_io import RunnerIO
 
 LOCAL_PARTITION_SET_CACHE = PartitionSetCache()
@@ -41,7 +41,7 @@ class Runner(Generic[PartitionT]):
     def runner_io(self) -> RunnerIO: ...
 
     @abstractmethod
-    def run(self, builder: LogicalPlanBuilder) -> PartitionCacheEntry: ...
+    def run(self, builder: LogicalPlanBuilder) -> tuple[PartitionCacheEntry, RecordBatch | None]: ...
 
     @abstractmethod
     def run_iter(

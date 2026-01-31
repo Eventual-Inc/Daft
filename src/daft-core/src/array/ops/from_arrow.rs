@@ -371,7 +371,8 @@ impl FromArrow for MapArray {
 
         let offsets: arrow::buffer::Buffer = arrow_arr.offsets().inner().clone().into_inner();
         let offsets =
-            unsafe { daft_arrow::offset::OffsetsBuffer::<i64>::new_unchecked(offsets.into()) };
+            unsafe { daft_arrow::offset::OffsetsBuffer::<i32>::new_unchecked(offsets.into()) };
+        let offsets: daft_arrow::offset::OffsetsBuffer<i64> = (&offsets).into();
         let nulls = arrow_arr.nulls().cloned();
 
         let physical = ListArray::new(physical_field, child_series, offsets, nulls);

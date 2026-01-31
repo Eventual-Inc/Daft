@@ -2,10 +2,9 @@ use std::{cmp::Ordering, collections::HashMap, fmt::Debug, future::Future, sync:
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftError;
-use common_metrics::StatSnapshot;
 use common_partitioning::PartitionRef;
 use common_resource_request::ResourceRequest;
-use daft_local_plan::LocalPhysicalPlanRef;
+use daft_local_plan::{ExecutionEngineFinalResult, LocalPhysicalPlanRef};
 use tokio_util::sync::CancellationToken;
 
 use super::worker::WorkerId;
@@ -409,7 +408,7 @@ impl SwordfishTaskBuilder {
 pub(crate) enum TaskStatus {
     Success {
         result: MaterializedOutput,
-        stats: Vec<(common_metrics::NodeID, StatSnapshot)>,
+        stats: ExecutionEngineFinalResult,
     },
     Failed {
         error: DaftError,
@@ -677,7 +676,7 @@ pub(super) mod tests {
                 }
                 TaskStatus::Success {
                     result: task.task_result,
-                    stats: vec![],
+                    stats: ExecutionEngineFinalResult::new(vec![]),
                 }
             }
         }

@@ -578,9 +578,9 @@ class RayRunner(Runner[ray.ObjectRef]):
 
         return pset_entry
 
-    def run(self, builder: LogicalPlanBuilder) -> PartitionCacheEntry:
+    def run(self, builder: LogicalPlanBuilder) -> tuple[PartitionCacheEntry, RecordBatch | None]:
         results_iter = self.run_iter(builder)
-        return self._collect_into_cache(results_iter)
+        return self._collect_into_cache(results_iter), None
 
     def put_partition_set_into_cache(self, pset: PartitionSet[ray.ObjectRef]) -> PartitionCacheEntry:
         if isinstance(pset, LocalPartitionSet):
