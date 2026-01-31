@@ -1963,6 +1963,7 @@ class LogicalPlanBuilder:
         self,
         root_dir: str,
         write_mode: WriteMode,
+        write_success_file: bool,
         file_format: FileFormat,
         file_format_options: PyFormatSinkOption | None = None,
         partition_cols: list[PyExpr] | None = None,
