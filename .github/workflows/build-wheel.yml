@@ -187,7 +187,7 @@ jobs:
         retry_wait_seconds: 10
         command: |
           source venv/bin/activate
-          pip install ray pytest pandas pytz numpy dist/*.whl --force-reinstall
+          pip install ray pytest pandas pytz numpy pyarrow dist/*.whl --force-reinstall
           rm -rf daft
     - name: Run dataframe tests
       run: |
