@@ -100,6 +100,7 @@ from .list import (
 from .llm import llm_generate
 from .misc import (
     monotonically_increasing_id,
+    uuid,
     eq_null_safe,
     cast,
     is_null,
@@ -431,6 +432,7 @@ __all__ = [
     "unnest",
     "upload",
     "upper",
+    "uuid",
     "value_counts",
     "video_file",
     "video_keyframes",
