@@ -394,7 +394,7 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use common_error::DaftResult;
-    use common_scan_info::Pushdowns;
+    use common_scan_info::{PhysicalScanInfo, Pushdowns};
     use common_treenode::{Transformed, TreeNode};
     use daft_core::prelude::*;
     use daft_dsl::{
@@ -406,7 +406,9 @@ mod tests {
     use super::{Optimizer, OptimizerBuilder, OptimizerConfig, RuleBatch, RuleExecutionStrategy};
     use crate::{
         LogicalPlan,
-        ops::{Filter, Project, UDFProject},
+        builder::LogicalPlanBuilder,
+        ops::{Filter, Project, Source, UDFProject},
+        source_info::SourceInfo,
         optimization::rules::{EnrichWithStats, MaterializeScans, OptimizerRule},
         test::{
             dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator,
@@ -848,16 +850,24 @@ mod tests {
             .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
             .build();
 
-        let expected = dummy_scan_node_with_pushdowns(
-            scan_op,
-            Pushdowns::default()
-                .with_aggregation(Some(Arc::new(Expr::Agg(AggExpr::Count(
-                    resolved_col("a"),
-                    CountMode::All,
-                )))))
-                .with_columns(Some(Arc::new(vec!["a".to_string()]))),
+        let pushdowns = Pushdowns::default()
+            .with_aggregation(Some(Arc::new(Expr::Agg(AggExpr::Count(
+                resolved_col("a"),
+                CountMode::All,
+            )))))
+            .with_columns(Some(Arc::new(vec!["a".to_string()])));
+        let schema = Arc::new(Schema::new(vec![Field::new("count(1)", DataType::UInt64)]));
+        let source_info = SourceInfo::Physical(PhysicalScanInfo::new(
+            scan_op.clone(),
+            scan_op.0.schema(),
+            vec![],
+            pushdowns,
+        ));
+        let expected = LogicalPlanBuilder::new(
+            LogicalPlan::Source(Source::new(schema, source_info.into())).into(),
+            None,
         )
-        .aggregate(vec![unresolved_col("a").sum()], vec![])?
+        .aggregate(vec![unresolved_col("count(1)").sum().alias("count(1)")], vec![])?
         .build();
 
         let scan_materializer_and_stats_enricher = get_scan_materializer_and_stats_enricher();

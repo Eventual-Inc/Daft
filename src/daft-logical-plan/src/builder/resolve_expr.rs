@@ -94,9 +94,9 @@ fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRe
 
     if let Some(expansion) = wildcard_expansion {
         let (inner, alias) = expr.unwrap_alias();
-        let is_default_alias = alias.as_ref().map_or(false, |a| {
-            inner.to_sql().as_deref() == Some(a)
-        });
+        let is_default_alias = alias
+            .as_ref()
+            .is_some_and(|a| inner.to_sql().as_deref() == Some(a));
 
         expansion
             .into_iter()

@@ -1,6 +1,8 @@
-import pytest
+from __future__ import annotations
+
 import daft
 from daft import col, lit
+
 
 def test_agg_default_naming():
     df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
@@ -35,6 +37,7 @@ def test_agg_default_naming():
     assert df_bool.select(col("c").bool_and()).column_names == ["bool_and(c)"]
     assert df_bool.select(col("c").bool_or()).column_names == ["bool_or(c)"]
 
+
 def test_agg_default_naming_groupby():
     df = daft.from_pydict({"g": ["x", "x", "y"], "a": [1, 2, 3]})
 
@@ -49,6 +52,7 @@ def test_agg_default_naming_groupby():
     expected_columns = {"g", "sum(a)", "avg(a)", "min(a)", "max(a)", "count(a)"}
     assert set(agg_df.column_names) == expected_columns
 
+
 def test_agg_explicit_alias():
     df = daft.from_pydict({"a": [1, 2, 3]})
 
@@ -60,6 +64,7 @@ def test_agg_explicit_alias():
 
     # Explicit alias on input, then alias on aggregation
     assert df.select(col("a").alias("my_col").sum().alias("final_sum")).column_names == ["final_sum"]
+
 
 def test_agg_complex_expressions():
     df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
@@ -77,6 +82,7 @@ def test_agg_complex_expressions():
     assert df_bool.select((~col("c")).count()).column_names == ["count(NOT (c))"]
     assert df_bool.select(col("c").is_null().count()).column_names == ["count((c) IS NULL)"]
     assert df_bool.select(col("c").not_null().count()).column_names == ["count((c) IS NOT NULL)"]
+
 
 def test_to_sql_supported_expressions_naming():
     """Test that all expressions supported by to_sql() produce correct names when aggregated."""
@@ -124,7 +130,7 @@ def test_to_sql_supported_expressions_naming():
     assert df.select((col("a") << 1).sum()).column_names == ["sum(a << 1)"]
     assert df.select((col("a") >> 1).sum()).column_names == ["sum(a >> 1)"]
     # Python ^ is Xor.
-    assert df.select((col("a") ^ col("b")).sum()).column_names == ["sum(a # b)"] # Postgres uses # for XOR
+    assert df.select((col("a") ^ col("b")).sum()).column_names == ["sum(a # b)"]  # Postgres uses # for XOR
 
     # Not
     assert df.select((~col("c")).bool_and()).column_names == ["bool_and(NOT (c))"]
@@ -132,4 +138,3 @@ def test_to_sql_supported_expressions_naming():
     # IsNull / NotNull
     assert df.select(col("a").is_null().bool_and()).column_names == ["bool_and((a) IS NULL)"]
     assert df.select(col("a").not_null().bool_and()).column_names == ["bool_and((a) IS NOT NULL)"]
-

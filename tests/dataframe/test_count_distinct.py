@@ -17,6 +17,7 @@ def test_count_distinct(data_and_expected, partition_size):
     df = df.agg(col("a").count_distinct()).collect()
 
     import pandas as pd
+
     pd.testing.assert_series_equal(
         pd.Series(df.to_pydict()["count(distinct a)"]),
         pd.Series(expected),

@@ -175,11 +175,11 @@ mod tests {
                 vec![],
             )?
             .select(vec![
-                unresolved_col(a_sum_id.clone()).alias("a"),
+                unresolved_col(a_sum_id.clone()).alias("sum(a)"),
                 unresolved_col(a_sum_id)
                     .add(unresolved_col(b_sum_id))
                     .alias("a_plus_b"),
-                unresolved_col(b_mean_id.clone()).alias("b"),
+                unresolved_col(b_mean_id.clone()).alias("avg(b)"),
                 unresolved_col(b_mean_id).alias("c"),
             ])?
             .build();
@@ -228,11 +228,11 @@ mod tests {
             )?
             .select(vec![
                 unresolved_col("groupby_key"),
-                unresolved_col(a_sum_id.clone()).alias("a"),
+                unresolved_col(a_sum_id.clone()).alias("sum(a)"),
                 unresolved_col(a_sum_id)
                     .add(unresolved_col(b_sum_id))
                     .alias("a_plus_b"),
-                unresolved_col(b_mean_id.clone()).alias("b"),
+                unresolved_col(b_mean_id.clone()).alias("avg(b)"),
                 unresolved_col(b_mean_id).alias("c"),
             ])?
             .build();

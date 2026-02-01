@@ -1001,6 +1001,7 @@ impl TryFrom<ExprRef> for WindowExpr {
     type Error = DaftError;
 
     fn try_from(expr: ExprRef) -> Result<Self, Self::Error> {
+        let (expr, _) = expr.unwrap_alias();
         match expr.as_ref() {
             Expr::Agg(agg_expr) => Ok(Self::Agg(agg_expr.clone())),
             Expr::WindowFunction(window_expr) => Ok(window_expr.clone()),
@@ -1072,22 +1073,22 @@ impl Expr {
     }
 
     pub fn count(self: ExprRef, mode: CountMode) -> ExprRef {
-        let expr: ExprRef = Self::Agg(AggExpr::Count(self.clone(), mode)).into();
+        let expr: ExprRef = Self::Agg(AggExpr::Count(self, mode)).into();
         expr.apply_default_alias()
     }
 
     pub fn count_distinct(self: ExprRef) -> ExprRef {
-        let expr: ExprRef = Self::Agg(AggExpr::CountDistinct(self.clone())).into();
+        let expr: ExprRef = Self::Agg(AggExpr::CountDistinct(self)).into();
         expr.apply_default_alias()
     }
 
     pub fn sum(self: ExprRef) -> ExprRef {
-        let expr: ExprRef = Self::Agg(AggExpr::Sum(self.clone())).into();
+        let expr: ExprRef = Self::Agg(AggExpr::Sum(self)).into();
         expr.apply_default_alias()
     }
 
     pub fn product(self: ExprRef) -> ExprRef {
-        let expr: ExprRef = Self::Agg(AggExpr::Product(self.clone())).into();
+        let expr: ExprRef = Self::Agg(AggExpr::Product(self)).into();
         expr.apply_default_alias()
     }
 
@@ -1124,32 +1125,32 @@ impl Expr {
     }
 
     pub fn mean(self: ExprRef) -> ExprRef {
-        let expr: ExprRef = Self::Agg(AggExpr::Mean(self.clone())).into();
+        let expr: ExprRef = Self::Agg(AggExpr::Mean(self)).into();
         expr.apply_default_alias()
     }
 
     pub fn stddev(self: ExprRef) -> ExprRef {
-        let expr: ExprRef = Self::Agg(AggExpr::Stddev(self.clone())).into();
+        let expr: ExprRef = Self::Agg(AggExpr::Stddev(self)).into();
         expr.apply_default_alias()
     }
 
     pub fn min(self: ExprRef) -> ExprRef {
-        let expr: ExprRef = Self::Agg(AggExpr::Min(self.clone())).into();
+        let expr: ExprRef = Self::Agg(AggExpr::Min(self)).into();
         expr.apply_default_alias()
     }
 
     pub fn max(self: ExprRef) -> ExprRef {
-        let expr: ExprRef = Self::Agg(AggExpr::Max(self.clone())).into();
+        let expr: ExprRef = Self::Agg(AggExpr::Max(self)).into();
         expr.apply_default_alias()
     }
 
     pub fn bool_and(self: ExprRef) -> ExprRef {
-        let expr: ExprRef = Self::Agg(AggExpr::BoolAnd(self.clone())).into();
+        let expr: ExprRef = Self::Agg(AggExpr::BoolAnd(self)).into();
         expr.apply_default_alias()
     }
 
     pub fn bool_or(self: ExprRef) -> ExprRef {
-        let expr: ExprRef = Self::Agg(AggExpr::BoolOr(self.clone())).into();
+        let expr: ExprRef = Self::Agg(AggExpr::BoolOr(self)).into();
         expr.apply_default_alias()
     }
 
@@ -1952,7 +1953,11 @@ impl Expr {
     }
 
     fn to_sql_inner(&self, use_alias: bool) -> Option<String> {
-        fn to_sql_recursive<W: Write>(expr: &Expr, buffer: &mut W, use_alias: bool) -> io::Result<()> {
+        fn to_sql_recursive<W: Write>(
+            expr: &Expr,
+            buffer: &mut W,
+            use_alias: bool,
+        ) -> io::Result<()> {
             match expr {
                 Expr::Column(Column::Resolved(ResolvedColumn::Basic(name)))
                 | Expr::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => {
@@ -2500,9 +2505,10 @@ fn try_compute_is_in_type(exprs: &[ExprRef], schema: &Schema) -> DaftResult<Opti
 
 #[cfg(test)]
 mod tests {
+    use daft_core::prelude::*;
+
     use super::*;
     use crate::{lit, resolved_col};
-    use daft_core::prelude::*;
 
     #[test]
     fn check_comparison_type() -> DaftResult<()> {
