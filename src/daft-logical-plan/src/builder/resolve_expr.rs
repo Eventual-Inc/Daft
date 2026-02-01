@@ -93,10 +93,15 @@ fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRe
     })?;
 
     if let Some(expansion) = wildcard_expansion {
+        let (inner, alias) = expr.unwrap_alias();
+        let is_default_alias = alias.as_ref().map_or(false, |a| {
+            inner.to_sql().as_deref() == Some(a)
+        });
+
         expansion
             .into_iter()
             .map(|new_name| {
-                Ok(expr
+                let new_expr = inner
                     .clone()
                     .transform(|e| match e.as_ref() {
                         Expr::Column(Column::Unresolved(UnresolvedColumn {
@@ -118,7 +123,15 @@ fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRe
                         )),
                         _ => Ok(Transformed::no(e)),
                     })?
-                    .data)
+                    .data;
+
+                if is_default_alias {
+                    Ok(new_expr.apply_default_alias())
+                } else if let Some(a) = alias.clone() {
+                    Ok(new_expr.alias(a))
+                } else {
+                    Ok(new_expr)
+                }
             })
             .collect()
     } else {

@@ -3,8 +3,6 @@ pub mod bound_expr;
 pub mod window;
 
 mod display;
-#[cfg(test)]
-mod tests;
 
 use std::{
     any::Any,
@@ -1074,19 +1072,23 @@ impl Expr {
     }
 
     pub fn count(self: ExprRef, mode: CountMode) -> ExprRef {
-        Self::Agg(AggExpr::Count(self, mode)).into()
+        let expr: ExprRef = Self::Agg(AggExpr::Count(self.clone(), mode)).into();
+        expr.apply_default_alias()
     }
 
     pub fn count_distinct(self: ExprRef) -> ExprRef {
-        Self::Agg(AggExpr::CountDistinct(self)).into()
+        let expr: ExprRef = Self::Agg(AggExpr::CountDistinct(self.clone())).into();
+        expr.apply_default_alias()
     }
 
     pub fn sum(self: ExprRef) -> ExprRef {
-        Self::Agg(AggExpr::Sum(self)).into()
+        let expr: ExprRef = Self::Agg(AggExpr::Sum(self.clone())).into();
+        expr.apply_default_alias()
     }
 
     pub fn product(self: ExprRef) -> ExprRef {
-        Self::Agg(AggExpr::Product(self)).into()
+        let expr: ExprRef = Self::Agg(AggExpr::Product(self.clone())).into();
+        expr.apply_default_alias()
     }
 
     pub fn approx_count_distinct(self: ExprRef) -> ExprRef {
@@ -1122,27 +1124,33 @@ impl Expr {
     }
 
     pub fn mean(self: ExprRef) -> ExprRef {
-        Self::Agg(AggExpr::Mean(self)).into()
+        let expr: ExprRef = Self::Agg(AggExpr::Mean(self.clone())).into();
+        expr.apply_default_alias()
     }
 
     pub fn stddev(self: ExprRef) -> ExprRef {
-        Self::Agg(AggExpr::Stddev(self)).into()
+        let expr: ExprRef = Self::Agg(AggExpr::Stddev(self.clone())).into();
+        expr.apply_default_alias()
     }
 
     pub fn min(self: ExprRef) -> ExprRef {
-        Self::Agg(AggExpr::Min(self)).into()
+        let expr: ExprRef = Self::Agg(AggExpr::Min(self.clone())).into();
+        expr.apply_default_alias()
     }
 
     pub fn max(self: ExprRef) -> ExprRef {
-        Self::Agg(AggExpr::Max(self)).into()
+        let expr: ExprRef = Self::Agg(AggExpr::Max(self.clone())).into();
+        expr.apply_default_alias()
     }
 
     pub fn bool_and(self: ExprRef) -> ExprRef {
-        Self::Agg(AggExpr::BoolAnd(self)).into()
+        let expr: ExprRef = Self::Agg(AggExpr::BoolAnd(self.clone())).into();
+        expr.apply_default_alias()
     }
 
     pub fn bool_or(self: ExprRef) -> ExprRef {
-        Self::Agg(AggExpr::BoolOr(self)).into()
+        let expr: ExprRef = Self::Agg(AggExpr::BoolOr(self.clone())).into();
+        expr.apply_default_alias()
     }
 
     pub fn any_value(self: ExprRef, ignore_nulls: bool) -> ExprRef {
@@ -1935,15 +1943,31 @@ impl Expr {
 
     /// Returns the expression as SQL using PostgreSQL's dialect.
     pub fn to_sql(&self) -> Option<String> {
-        fn to_sql_inner<W: Write>(expr: &Expr, buffer: &mut W) -> io::Result<()> {
+        self.to_sql_inner(false)
+    }
+
+    /// Returns the expression as SQL for naming purposes (using aliases).
+    pub fn to_sql_name(&self) -> Option<String> {
+        self.to_sql_inner(true)
+    }
+
+    fn to_sql_inner(&self, use_alias: bool) -> Option<String> {
+        fn to_sql_recursive<W: Write>(expr: &Expr, buffer: &mut W, use_alias: bool) -> io::Result<()> {
             match expr {
-                Expr::Column(Column::Resolved(ResolvedColumn::Basic(name))) => {
+                Expr::Column(Column::Resolved(ResolvedColumn::Basic(name)))
+                | Expr::Column(Column::Unresolved(UnresolvedColumn { name, .. })) => {
                     write!(buffer, "{}", name)
                 }
                 Expr::Literal(lit) => lit.display_sql(buffer),
-                Expr::Alias(expr, ..) => to_sql_inner(expr, buffer),
+                Expr::Alias(expr, name) => {
+                    if use_alias {
+                        write!(buffer, "{}", name)
+                    } else {
+                        to_sql_recursive(expr, buffer, use_alias)
+                    }
+                }
                 Expr::BinaryOp { op, left, right } => {
-                    to_sql_inner(left, buffer)?;
+                    to_sql_recursive(left, buffer, use_alias)?;
                     let op = match op {
                         Operator::Eq => "=",
                         Operator::EqNullSafe => "<=>",
@@ -1952,37 +1976,99 @@ impl Expr {
                         Operator::LtEq => "<=",
                         Operator::Gt => ">",
                         Operator::GtEq => ">=",
+                        Operator::Plus => "+",
+                        Operator::Minus => "-",
+                        Operator::Multiply => "*",
+                        Operator::TrueDivide => "/",
+                        Operator::FloorDivide => "/", // SQL usually uses / for division, floor divide might need CAST or FLOOR
+                        Operator::Modulus => "%",
                         Operator::And => "AND",
                         Operator::Or => "OR",
+                        Operator::Xor => "#", // Postgres uses # for XOR
                         Operator::ShiftLeft => "<<",
                         Operator::ShiftRight => ">>",
-                        _ => {
-                            return Err(io::Error::other(
-                                "Unsupported operator for SQL translation",
-                            ));
-                        }
                     };
                     write!(buffer, " {} ", op)?;
-                    to_sql_inner(right, buffer)
+                    to_sql_recursive(right, buffer, use_alias)
                 }
                 Expr::Not(inner) => {
                     write!(buffer, "NOT (")?;
-                    to_sql_inner(inner, buffer)?;
+                    to_sql_recursive(inner, buffer, use_alias)?;
                     write!(buffer, ")")
                 }
                 Expr::IsNull(inner) => {
                     write!(buffer, "(")?;
-                    to_sql_inner(inner, buffer)?;
+                    to_sql_recursive(inner, buffer, use_alias)?;
                     write!(buffer, ") IS NULL")
                 }
                 Expr::NotNull(inner) => {
                     write!(buffer, "(")?;
-                    to_sql_inner(inner, buffer)?;
+                    to_sql_recursive(inner, buffer, use_alias)?;
                     write!(buffer, ") IS NOT NULL")
                 }
+                Expr::Agg(agg_expr) => match agg_expr {
+                    AggExpr::Sum(child) => {
+                        write!(buffer, "sum(")?;
+                        to_sql_recursive(child, buffer, use_alias)?;
+                        write!(buffer, ")")
+                    }
+                    AggExpr::Mean(child) => {
+                        write!(buffer, "avg(")?;
+                        to_sql_recursive(child, buffer, use_alias)?;
+                        write!(buffer, ")")
+                    }
+                    AggExpr::Min(child) => {
+                        write!(buffer, "min(")?;
+                        to_sql_recursive(child, buffer, use_alias)?;
+                        write!(buffer, ")")
+                    }
+                    AggExpr::Max(child) => {
+                        write!(buffer, "max(")?;
+                        to_sql_recursive(child, buffer, use_alias)?;
+                        write!(buffer, ")")
+                    }
+                    AggExpr::Count(child, mode) => match mode {
+                        CountMode::All => write!(buffer, "count(1)"),
+                        CountMode::Valid => {
+                            write!(buffer, "count(")?;
+                            to_sql_recursive(child, buffer, use_alias)?;
+                            write!(buffer, ")")
+                        }
+                        CountMode::Null => Err(io::Error::other(
+                            "Unsupported CountMode::Null for SQL translation",
+                        )),
+                    },
+                    AggExpr::CountDistinct(child) => {
+                        write!(buffer, "count(distinct ")?;
+                        to_sql_recursive(child, buffer, use_alias)?;
+                        write!(buffer, ")")
+                    }
+                    AggExpr::Stddev(child) => {
+                        write!(buffer, "stddev(")?;
+                        to_sql_recursive(child, buffer, use_alias)?;
+                        write!(buffer, ")")
+                    }
+                    AggExpr::Product(child) => {
+                        write!(buffer, "product(")?;
+                        to_sql_recursive(child, buffer, use_alias)?;
+                        write!(buffer, ")")
+                    }
+                    AggExpr::BoolAnd(child) => {
+                        write!(buffer, "bool_and(")?;
+                        to_sql_recursive(child, buffer, use_alias)?;
+                        write!(buffer, ")")
+                    }
+                    AggExpr::BoolOr(child) => {
+                        write!(buffer, "bool_or(")?;
+                        to_sql_recursive(child, buffer, use_alias)?;
+                        write!(buffer, ")")
+                    }
+                    _ => Err(io::Error::other(
+                        "Unsupported aggregation for SQL translation",
+                    )),
+                },
                 // TODO: Implement SQL translations for these expressions if possible
                 Expr::IfElse { .. }
-                | Expr::Agg(..)
                 | Expr::Cast(..)
                 | Expr::IsIn(..)
                 | Expr::List(..)
@@ -2003,9 +2089,17 @@ impl Expr {
         }
 
         let mut buffer = Vec::new();
-        to_sql_inner(self, &mut buffer)
+        to_sql_recursive(self, &mut buffer, use_alias)
             .ok()
             .and_then(|()| String::from_utf8(buffer).ok())
+    }
+
+    pub fn apply_default_alias(self: ExprRef) -> ExprRef {
+        if let Some(sql) = self.to_sql_name() {
+            self.alias(sql)
+        } else {
+            self
+        }
     }
 
     /// Returns the literal value if this is a literal expression, otherwise none.
@@ -2402,4 +2496,112 @@ fn try_compute_is_in_type(exprs: &[ExprRef], schema: &Schema) -> DaftResult<Opti
         }
     }
     Ok(dtype)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{lit, resolved_col};
+    use daft_core::prelude::*;
+
+    #[test]
+    fn check_comparison_type() -> DaftResult<()> {
+        let x = lit(10.);
+        let y = lit(12);
+        let schema = Schema::empty();
+
+        let z = Expr::BinaryOp {
+            left: x,
+            right: y,
+            op: Operator::Lt,
+        };
+        assert_eq!(z.get_type(&schema)?, DataType::Boolean);
+        Ok(())
+    }
+
+    #[test]
+    fn check_alias_type() -> DaftResult<()> {
+        let a = resolved_col("a");
+        let b = a.alias("b");
+        match b.as_ref() {
+            Expr::Alias(..) => Ok(()),
+            other => Err(common_error::DaftError::ValueError(format!(
+                "expected expression to be a alias, got {other:?}"
+            ))),
+        }
+    }
+
+    #[test]
+    fn check_arithmetic_type() -> DaftResult<()> {
+        let x = lit(10.);
+        let y = lit(12);
+        let schema = Schema::empty();
+
+        let z = Expr::BinaryOp {
+            left: x,
+            right: y,
+            op: Operator::Plus,
+        };
+        assert_eq!(z.get_type(&schema)?, DataType::Float64);
+
+        let x = lit(10.);
+        let y = lit(12);
+
+        let z = Expr::BinaryOp {
+            left: y,
+            right: x,
+            op: Operator::Plus,
+        };
+        assert_eq!(z.get_type(&schema)?, DataType::Float64);
+
+        Ok(())
+    }
+
+    #[test]
+    fn check_arithmetic_type_with_columns() -> DaftResult<()> {
+        let x = resolved_col("x");
+        let y = resolved_col("y");
+        let schema = Schema::new(vec![
+            Field::new("x", DataType::Float64),
+            Field::new("y", DataType::Int64),
+        ]);
+
+        let z = Expr::BinaryOp {
+            left: x,
+            right: y,
+            op: Operator::Plus,
+        };
+        assert_eq!(z.get_type(&schema)?, DataType::Float64);
+
+        let x = resolved_col("x");
+        let y = resolved_col("y");
+
+        let z = Expr::BinaryOp {
+            left: y,
+            right: x,
+            op: Operator::Plus,
+        };
+        assert_eq!(z.get_type(&schema)?, DataType::Float64);
+
+        Ok(())
+    }
+
+    #[test]
+    fn check_agg_naming() -> DaftResult<()> {
+        let a = resolved_col("a");
+
+        assert_eq!(a.clone().sum().name(), "sum(a)");
+        assert_eq!(a.clone().mean().name(), "avg(a)");
+        assert_eq!(a.clone().count(CountMode::Valid).name(), "count(a)");
+        assert_eq!(a.clone().count(CountMode::All).name(), "count(1)");
+        assert_eq!(a.clone().count_distinct().name(), "count(distinct a)");
+        assert_eq!(a.clone().min().name(), "min(a)");
+        assert_eq!(a.clone().max().name(), "max(a)");
+        assert_eq!(a.clone().stddev().name(), "stddev(a)");
+        assert_eq!(a.clone().product().name(), "product(a)");
+        assert_eq!(a.clone().bool_and().name(), "bool_and(a)");
+        assert_eq!(a.clone().bool_or().name(), "bool_or(a)");
+
+        Ok(())
+    }
 }
