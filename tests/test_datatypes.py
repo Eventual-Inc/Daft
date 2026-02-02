@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from typing import TypedDict
+from typing import Optional, TypedDict, Union
 
 import pytest
 
@@ -89,6 +89,55 @@ def test_datatype_parsing(source, expected):
 )
 def test_subscripted_datatype_parsing(source, expected):
     assert DataType._infer(source) == expected
+
+
+@pytest.mark.parametrize(
+    ["source", "expected"],
+    [
+        # Optional types using typing.Optional
+        (Optional[str], DataType.string()),
+        (Optional[int], DataType.int64()),
+        (Optional[float], DataType.float64()),
+        (Optional[bytes], DataType.binary()),
+        (Optional[bool], DataType.bool()),
+        (Optional[list[str]], DataType.list(DataType.string())),
+        # Union types using typing.Union
+        (Union[str, None], DataType.string()),
+        (Union[int, None], DataType.int64()),
+        (Union[None, str], DataType.string()),  # None can come first
+        # Python 3.10+ union syntax (str | None)
+        (str | None, DataType.string()),
+        (int | None, DataType.int64()),
+        (float | None, DataType.float64()),
+        (bytes | None, DataType.binary()),
+        (bool | None, DataType.bool()),
+        (list[str] | None, DataType.list(DataType.string())),
+        (None | str, DataType.string()),  # None can come first
+    ],
+)
+def test_optional_datatype_parsing(source, expected):
+    assert DataType._infer(source) == expected
+
+
+def test_union_multiple_types_falls_back_to_python():
+    """Union of multiple non-None types should fall back to python() with a warning."""
+    import warnings
+
+    # typing.Union with multiple types
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        result = DataType._infer(Union[str, int])
+        assert result == DataType.python()
+        assert len(w) == 1
+        assert "Cannot infer DataType from union of multiple types" in str(w[0].message)
+
+    # Python 3.10+ union syntax with multiple types
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        result = DataType._infer(str | int)
+        assert result == DataType.python()
+        assert len(w) == 1
+        assert "Cannot infer DataType from union of multiple types" in str(w[0].message)
 
 
 @pytest.mark.parametrize("test_type", all_daft_types)

@@ -136,20 +136,59 @@ class DataType:
         """Infer Daft DataType from a Python type."""
         # NOTE: Make sure this matches the logic in `Literal::from_pyobj` in Rust
 
-        assert isinstance(t, (type, GenericAlias)), f"Input to DataType.infer_from_type must be a type, found: {t}"
-
         import datetime
         import decimal
         import importlib
+        import types as types_module
         import typing
         from typing import is_typeddict
 
         import daft.file
         import daft.series
 
+        # Accept type, GenericAlias, types.UnionType, or typing generics (like Union, Optional)
+        if not (
+            isinstance(t, (type, GenericAlias, types_module.UnionType))
+            or typing.get_origin(t) is not None
+        ):
+            raise AssertionError(f"Input to DataType.infer_from_type must be a type, found: {t}")
+
         origin_or_none = typing.get_origin(t)
         origin: type = origin_or_none if origin_or_none is not None else t  # type: ignore
         args = typing.get_args(t)
+
+        # Handle Union types (including Optional[X] which is Union[X, None])
+        # Check for typing.Union
+        if origin_or_none is typing.Union:
+            non_none_args = [arg for arg in args if arg is not type(None)]
+            if len(non_none_args) == 1:
+                # Optional[X] - infer from the non-None type
+                return cls.infer_from_type(non_none_args[0])
+            elif len(non_none_args) == 0:
+                # Union[None] - just None
+                return cls.null()
+            else:
+                # Union of multiple non-None types - fall back to python()
+                warnings.warn(
+                    f"Cannot infer DataType from union of multiple types: {t}. Defaulting to DataType.python()"
+                )
+                return cls.python()
+
+        # Handle types.UnionType (Python 3.10+ syntax like `str | None`)
+        if isinstance(t, types_module.UnionType):
+            non_none_args = [arg for arg in args if arg is not type(None)]
+            if len(non_none_args) == 1:
+                # X | None - infer from the non-None type
+                return cls.infer_from_type(non_none_args[0])
+            elif len(non_none_args) == 0:
+                # None | None (edge case) - just None
+                return cls.null()
+            else:
+                # Union of multiple non-None types - fall back to python()
+                warnings.warn(
+                    f"Cannot infer DataType from union of multiple types: {t}. Defaulting to DataType.python()"
+                )
+                return cls.python()
 
         def check_type(type_or_path: type | str) -> bool:
             """Check if `origin` is a subclass of `type_or_path`.
@@ -441,11 +480,20 @@ class DataType:
 
         Internal use only.
         """
+        import types as types_module
+        import typing
+
         if isinstance(user_provided_type, cls):
             return user_provided_type
         elif isinstance(user_provided_type, str):
             return cls.from_sql(user_provided_type)
         elif isinstance(user_provided_type, (type, GenericAlias)):
+            return cls.infer_from_type(user_provided_type)
+        # Handle typing._GenericAlias (e.g., Union[X, Y], Optional[X])
+        elif typing.get_origin(user_provided_type) is not None:
+            return cls.infer_from_type(user_provided_type)
+        # Handle types.UnionType (Python 3.10+ syntax like `str | None`)
+        elif isinstance(user_provided_type, types_module.UnionType):
             return cls.infer_from_type(user_provided_type)
         else:
             raise TypeError("DataType._infer expects a DataType, string, or type")
