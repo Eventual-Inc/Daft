@@ -28,6 +28,7 @@ pub enum FileFormatConfig {
         module_name: Option<String>,
         function_name: Option<String>,
     },
+    Text(TextSourceConfig),
 }
 #[cfg(not(debug_assertions))]
 impl std::fmt::Debug for FileFormatConfig {
@@ -66,6 +67,7 @@ impl FileFormatConfig {
                     "PythonFunction".to_string()
                 }
             }
+            Self::Text(_) => "Text".to_string(),
         }
     }
 
@@ -96,6 +98,7 @@ impl FileFormatConfig {
                 }
                 res
             }
+            Self::Text(source) => source.multiline_display(),
         }
     }
 }
@@ -453,3 +456,59 @@ impl WarcSourceConfig {
 }
 
 impl_bincode_py_state_serialization!(WarcSourceConfig);
+
+/// Configuration for a Text data source.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(debug_assertions, derive(Debug))]
+#[cfg_attr(feature = "python", pyclass(module = "daft.daft", get_all))]
+pub struct TextSourceConfig {
+    pub encoding: String,
+    pub skip_blank_lines: bool,
+    pub buffer_size: Option<usize>,
+    pub chunk_size: Option<usize>,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl TextSourceConfig {
+    /// Create a config for a Text data source.
+    #[allow(clippy::too_many_arguments)]
+    #[new]
+    #[pyo3(signature = (
+        encoding,
+        skip_blank_lines,
+        buffer_size=None,
+        chunk_size=None
+    ))]
+    fn new(
+        encoding: String,
+        skip_blank_lines: bool,
+        buffer_size: Option<usize>,
+        chunk_size: Option<usize>,
+    ) -> PyResult<Self> {
+        Ok(Self {
+            encoding,
+            skip_blank_lines,
+            buffer_size,
+            chunk_size,
+        })
+    }
+}
+
+impl TextSourceConfig {
+    #[must_use]
+    pub fn multiline_display(&self) -> Vec<String> {
+        let mut res = vec![];
+        res.push(format!("Encoding = {}", self.encoding));
+        res.push(format!("Skip blank lines = {}", self.skip_blank_lines));
+        if let Some(buffer_size) = self.buffer_size {
+            res.push(format!("Buffer size = {buffer_size}"));
+        }
+        if let Some(chunk_size) = self.chunk_size {
+            res.push(format!("Chunk size = {chunk_size}"));
+        }
+        res
+    }
+}
+
+impl_bincode_py_state_serialization!(TextSourceConfig);

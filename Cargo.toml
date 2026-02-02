@@ -21,6 +21,7 @@ daft-compression = {path = "src/daft-compression", default-features = false}
 daft-context = {path = "src/daft-context", default-features = false}
 daft-core = {path = "src/daft-core", default-features = false}
 daft-csv = {path = "src/daft-csv", default-features = false}
+daft-text = {path = "src/daft-text", default-features = false}
 daft-dashboard = {path = "src/daft-dashboard", default-features = false}
 daft-distributed = {path = "src/daft-distributed", default-features = false}
 daft-dsl = {path = "src/daft-dsl", default-features = false}
@@ -78,6 +79,7 @@ python = [
   "daft-context/python",
   "daft-core/python",
   "daft-csv/python",
+  "daft-text/python",
   "daft-dashboard/python",
   "daft-distributed/python",
   "daft-dsl/python",
@@ -228,7 +230,8 @@ members = [
   "src/daft-writers",
   "src/hyperloglog",
   "src/parquet2",
-  "src/daft-cli"
+  "src/daft-cli",
+  "src/daft-text"
 ]
 
 [workspace.dependencies]
