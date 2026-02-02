@@ -30,6 +30,32 @@ impl LogicalPlanToPipelineNodeTranslator {
             RepartitionSpec::IntoPartitions(config) => config.num_partitions,
         };
 
+        // Early exit: if child is already hash-partitioned by the same keys and target partitions equal,
+        // skip generating a new shuffle node.
+        if let RepartitionSpec::Hash(config) = &repartition_spec {
+            let input_spec = child.config().clustering_spec.as_ref();
+            if matches!(input_spec, daft_logical_plan::ClusteringSpec::Hash(..))
+                && input_spec.num_partitions() == num_partitions
+            {
+                // Bind both sides to the child's schema to normalize Bound vs Resolved forms
+                let child_keys_bound = daft_dsl::expr::bound_expr::BoundExpr::bind_all(
+                    &input_spec.partition_by(),
+                    &child.config().schema,
+                )?;
+                let target_keys_bound = daft_dsl::expr::bound_expr::BoundExpr::bind_all(
+                    &config.by,
+                    &child.config().schema,
+                )?;
+                let compatible = daft_dsl::is_partition_compatible(
+                    child_keys_bound.iter().map(|e| e.inner()),
+                    target_keys_bound.iter().map(|e| e.inner()),
+                );
+                if compatible {
+                    return Ok(child);
+                }
+            }
+        }
+
         let use_pre_shuffle_merge = self.should_use_pre_shuffle_merge(&child, num_partitions)?;
 
         if use_pre_shuffle_merge {
