@@ -7,7 +7,7 @@ from openai import OpenAI
 from openai._types import omit
 
 from daft import DataType
-from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedder, _models, get_input_text_token_limit_for_model
+from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedder, get_input_text_token_limit_for_model
 from daft.ai.protocols import TextEmbedder, TextEmbedderDescriptor
 from daft.ai.typing import EmbeddingDimensions, EmbedTextOptions, Options, UDFOptions
 from daft.utils import from_dict
@@ -35,8 +35,8 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
     def __post_init__(self) -> None:
         if self.dimensions is None:
             return
-        if self.model_name in _models and not _models[self.model_name].supports_overriding_dimensions:
-            raise ValueError(f"Embedding model '{self.model_name}' does not support specifying dimensions")
+        if self.dimensions <= 0:
+            raise ValueError("Embedding dimensions must be a positive integer.")
         if "supports_overriding_dimensions" not in self.embed_options:
             self.embed_options["supports_overriding_dimensions"] = True
 
