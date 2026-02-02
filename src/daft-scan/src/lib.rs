@@ -765,6 +765,7 @@ impl ScanTask {
                         FileFormatConfig::Parquet(_) => config.parquet_inflation_factor,
                         FileFormatConfig::Csv(_) => config.csv_inflation_factor,
                         FileFormatConfig::Json(_) => config.json_inflation_factor,
+                        FileFormatConfig::Text(_) => config.text_inflation_factor,
                         FileFormatConfig::Warc(_) => {
                             if self.is_gzipped() {
                                 5.0
