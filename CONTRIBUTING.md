@@ -33,18 +33,23 @@ When proposing features, please include:
 
 For detailed development instructions, see our [Development Guide](https://docs.daft.ai/en/stable/contributing/development/).
 
-## Contributor Community
+## Governance
 
-The Daft contributor community celebrates and supports the contributors who have helped shape the project into what it is today. Whether you’re submitting your first pull request or enhancing the documentation, you’ll find a place in our growing community. Members contribute in different ways and take on a variety of roles.
+The Daft project is governed by a community of contributors who have helped shape the project into what it is today. Members contribute in different ways and take on a variety of roles.
 
-### Daft User
-A user is someone who interacts with our software. They support the Daft project by sharing feedback with developers through bug reports and feature requests. Users also enrich the Daft community by answering questions and assisting others on mailing lists and support forums.
+### Contributor
 
-### Daft Contributor
-A contributor is someone who actively adds to the project through code or documentation. They go beyond basic use by engaging with the developer mailing list, joining discussions, and offering patches, documentation, suggestions, or constructive feedback.
+A Contributor is anyone who contributes to the Daft project in any form: code, documentation, issues, community support, talks, or tooling. Contributors are the foundation of the project and are encouraged to participate in discussions, propose features, and submit pull requests.
 
-### Daft Committer
-A committer is a developer who has consistently made meaningful contributions to the project and has been invited to this role based on the merit of their work. Committers are granted write access to specific parts of the code repository, have a signed committer agreement on file. With the ability to apply patches directly to code or documentation, they can make short-term decisions within their areas of expertise. These changes are then subject to review: the Daft Punqs may approve them as permanent or choose to reject them.
+### Maintainer
 
-### Daft Punqs
-A Daft Punq is a committer who is part of the core Daft team, recognized for sustained and meaningful contributions to the project’s growth and direction over time. They hold write access to the code repository, voting rights on community decisions, and the ability to nominate other active contributors for committership.
+A Maintainer is a recognized Contributor who has demonstrated sustained, meaningful contributions to the project. Maintainers are nominated by existing Maintainers or PMC members and approved by a majority vote of the PMC.
+
+- **Maintainer/Read**: Recognized contributors without merge access
+- **Maintainer/Write**: Maintainers with merge access to the repository who can review and merge pull requests
+
+### Project Management Committee (PMC)
+
+The PMC provides oversight and governance for the Daft project. PMC members have voting rights on community decisions, including approving new Maintainers and setting the strategic direction of the project.
+
+For the full list of Maintainers and PMC members, see the [Maintainers page](https://docs.daft.ai/en/stable/contributing/maintainers/).
