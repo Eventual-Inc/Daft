@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import re
 
-import pytest
-
 from daft.datatype import DataType
 from daft.expressions import col
 from daft.functions import format, uuid
@@ -63,7 +61,7 @@ def test_uuid_with_nested_expression(make_df) -> None:
     assert any(u != uf for u, uf in zip(pydict["u"], pydict["u_fmt"]))
 
 
-def test_uuid_in_select_allowed(make_df) -> None:
+def test_uuid_in_select(make_df) -> None:
     data = {"a": list(range(50))}
     df = make_df(data).select("a", u1=uuid(), u2=uuid()).collect()
 
@@ -77,42 +75,34 @@ def test_uuid_in_select_allowed(make_df) -> None:
     assert any(v1 != v2 for v1, v2 in zip(pydict["u1"], pydict["u2"]))
 
 
-def test_uuid_in_filter_raises(make_df) -> None:
+def test_uuid_in_filter_does_not_error(make_df) -> None:
     data = {"a": [1, 2, 3]}
-    with pytest.raises(Exception, match=r"uuid\(\) is only allowed in projections"):
-        make_df(data).filter(uuid() == "x").collect()
-
-    df = make_df(data).with_column("u", uuid()).filter(col("u") == "x").collect()
-    assert df.schema()["u"].dtype == DataType.string()
+    df = make_df(data).filter((col("a") == col("a")) | (uuid() == uuid())).collect()
+    assert len(df) == 3
 
 
-def test_uuid_in_aggregation_raises(make_df) -> None:
+def test_uuid_in_aggregation_does_not_error(make_df) -> None:
     data = {"key": ["a", "b", "a"], "value": [1, 2, 3]}
-    with pytest.raises(Exception, match=r"uuid\(\) is only allowed in projections"):
-        make_df(data).groupby("key").agg(uuid().min().alias("u")).collect()
-
-    df = make_df(data).with_column("u", uuid()).groupby("key").agg(col("u").min()).collect()
+    df = make_df(data).groupby("key").agg(uuid().min().alias("u")).collect()
     assert df.schema()["u"].dtype == DataType.string()
 
 
-def test_uuid_in_join_condition_raises(make_df) -> None:
+def test_uuid_in_join_keys_does_not_error(make_df) -> None:
     left_data = {"key": ["a", "b", "c"], "value": [1, 2, 3]}
     right_data = {"key": ["b", "c", "d"], "other": [4, 5, 6]}
-
-    with pytest.raises(Exception, match=r"uuid\(\) is only allowed in projections"):
-        make_df(left_data).join(make_df(right_data), on=uuid() == uuid(), how="inner").collect()
-
     df = (
         make_df(left_data)
-        .with_column("u", uuid())
-        .join(make_df(right_data).with_column("u", uuid()), on="u", how="inner")
+        .join(
+            make_df(right_data),
+            left_on=format("{}-{}", col("key"), uuid()),
+            right_on=format("{}-{}", col("key"), uuid()),
+            how="inner",
+        )
         .collect()
     )
-    assert "u" in df.column_names
     assert "key" in df.column_names
     assert "value" in df.column_names
     assert "other" in df.column_names
-    assert any(name in df.column_names for name in ("key_right", "right.key", "right_key"))
 
 
 def test_uuid_chained_with_column_calls_are_distinct(make_df) -> None:

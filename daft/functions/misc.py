@@ -58,10 +58,6 @@ def uuid() -> Expression:
     Returns:
         Expression (String Expression): An expression that generates UUID strings.
 
-    Note:
-        This function is only allowed in projections (e.g. `select`, `with_column`, `with_columns`).
-        Using it directly inside filters, joins, or aggregations will raise an error.
-
     Examples:
         >>> import daft
         >>> from daft.functions import uuid
