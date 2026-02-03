@@ -43,11 +43,11 @@ test_table_count_cases = [
 def test_multipartition_count_empty(mp):
     counted = mp.agg([col("a").count()])
     assert len(counted) == 1
-    assert counted.to_pydict() == {"a": [0]}
+    assert counted.to_pydict() == {"count(a)": [0]}
 
     counted = mp.agg([col("a").count()], group_by=[col("b")])
     assert len(counted) == 0
-    assert counted.to_pydict() == {"b": [], "a": []}
+    assert counted.to_pydict() == {"b": [], "count(a)": []}
 
 
 @pytest.mark.parametrize(
@@ -66,11 +66,11 @@ def test_multipartition_count_empty(mp):
 def test_multipartition_count(mp):
     counted = mp.agg([col("a").count()])
     assert len(counted) == 1
-    assert counted.to_pydict() == {"a": [2]}
+    assert counted.to_pydict() == {"count(a)": [2]}
 
     counted = mp.agg([col("a").count()], group_by=[col("b")])
     assert len(counted) == 2
-    assert counted.to_pydict() == {"b": ["a", "b"], "a": [1, 1]}
+    assert counted.to_pydict() == {"b": ["a", "b"], "count(a)": [1, 1]}
 
 
 @pytest.mark.parametrize("idx_dtype", daft_nonnull_types, ids=[f"{_}" for _ in daft_nonnull_types])
@@ -84,7 +84,7 @@ def test_table_count(idx_dtype, case) -> None:
     daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").alias("count").count()])
 
     res = daft_recordbatch.to_pydict()
-    assert res == expected
+    assert res == {"count(count)": expected["count"]}
 
 
 @pytest.mark.parametrize("length", [0, 1, 10])
@@ -93,7 +93,7 @@ def test_table_count_nulltype(length) -> None:
     daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").cast(DataType.null())])
     daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").alias("count").count()])
 
-    res = daft_recordbatch.to_pydict()["count"]
+    res = daft_recordbatch.to_pydict()["count(count)"]
     assert res == [0]
 
 
@@ -101,7 +101,7 @@ def test_table_count_pyobject() -> None:
     daft_recordbatch = MicroPartition.from_pydict({"objs": [object(), object(), None, object(), None]})
     daft_recordbatch = daft_recordbatch.eval_expression_list([col("objs").alias("count").count()])
 
-    res = daft_recordbatch.to_pydict()["count"]
+    res = daft_recordbatch.to_pydict()["count(count)"]
     assert res == [3]
 
 
@@ -131,7 +131,7 @@ def test_table_minmax_numerics(idx_dtype, case) -> None:
     )
 
     res = daft_recordbatch.to_pydict()
-    assert res == expected
+    assert res == {"min(min)": expected["min"], "max(max)": expected["max"]}
 
 
 test_table_minmax_string_cases = [
@@ -158,7 +158,7 @@ def test_table_minmax_string(idx_dtype, case) -> None:
     )
 
     res = daft_recordbatch.to_pydict()
-    assert res == expected
+    assert res == {"min(min)": expected["min"], "max(max)": expected["max"]}
 
 
 test_table_minmax_bool_cases = [
@@ -183,7 +183,7 @@ def test_table_minmax_bool(case) -> None:
     )
 
     res = daft_recordbatch.to_pydict()
-    assert res == expected
+    assert res == {"min(min)": expected["min"], "max(max)": expected["max"]}
 
 
 test_table_minmax_binary_cases = [
@@ -209,7 +209,7 @@ def test_table_minmax_binary(case, type) -> None:
     )
 
     res = daft_recordbatch.to_pydict()
-    assert res == expected
+    assert res == {"min(min)": expected["min"], "max(max)": expected["max"]}
 
 
 test_table_sum_mean_cases = [
@@ -245,7 +245,7 @@ def test_table_product(idx_dtype, case) -> None:
     daft_recordbatch = daft_recordbatch.eval_expression_list([col("input").alias("product").product()])
 
     res = daft_recordbatch.to_pydict()
-    assert res == expected
+    assert res == {"product(product)": expected["product"]}
 
 
 @pytest.mark.parametrize("idx_dtype", daft_numeric_types, ids=[f"{_}" for _ in daft_numeric_types])
@@ -263,7 +263,11 @@ def test_table_sum_mean(idx_dtype, case) -> None:
     )
 
     res = daft_recordbatch.to_pydict()
-    assert res == expected
+    assert res == {
+        "sum(sum)": expected["sum"],
+        "avg(mean)": expected["mean"],
+        "avg(avg)": expected["avg"],
+    }
 
 
 @pytest.mark.parametrize("nptype", [np.uint8, np.uint16, np.uint32, np.int8, np.int16, np.int32])
@@ -277,8 +281,8 @@ def test_table_sum_upcast(nptype) -> None:
     )
     daft_recordbatch = daft_recordbatch.eval_expression_list([col("maxes").sum(), col("mins").sum()])
     pydict = daft_recordbatch.to_pydict()
-    assert pydict["maxes"] == [128 * np.iinfo(nptype).max]
-    assert pydict["mins"] == [128 * np.iinfo(nptype).min]
+    assert pydict["sum(maxes)"] == [128 * np.iinfo(nptype).max]
+    assert pydict["sum(mins)"] == [128 * np.iinfo(nptype).min]
 
 
 def test_table_sum_badtype() -> None:
@@ -436,8 +440,16 @@ def test_table_agg_global(case) -> None:
     exp_set = expected.pop("set")
 
     # Check regular aggregations
+    expected_key_map = {
+        "count": "count(count)",
+        "sum": "sum(sum)",
+        "mean": "avg(mean)",
+        "avg": "avg(avg)",
+        "min": "min(min)",
+        "max": "max(max)",
+    }
     for key, value in expected.items():
-        assert result[key] == value
+        assert result[expected_key_map[key]] == value
 
     # Check list result
     assert len(res_list) == 1
@@ -469,7 +481,11 @@ def test_table_agg_groupby_empty(groups_and_aggs) -> None:
     )
     res = daft_recordbatch.to_pydict()
 
-    assert res == {"col_A": [], "col_B": []}
+    # Count aggregations are now default-aliased.
+    if aggs:
+        assert res == {"col_A": [], "count(col_B)": []}
+    else:
+        assert res == {"col_A": [], "col_B": []}
 
 
 test_table_agg_groupby_cases = [
@@ -484,8 +500,8 @@ test_table_agg_groupby_cases = [
         ],
         "expected": {
             "name": ["Alice", "Bob", None],
-            "sum": [None, 10, 7],
-            "count": [4, 4, 0],
+            "sum(sum)": [None, 10, 7],
+            "count(count)": [4, 4, 0],
             "list": [[None] * 4, [None, None, 5, 5], [None, 5, None, 2]],
             "set": [set(), {5}, {2, 5}],
         },
@@ -494,7 +510,7 @@ test_table_agg_groupby_cases = [
         # Group by numbers.
         "groups": ["cookies"],
         "aggs": [col("name").alias("count").count()],
-        "expected": {"cookies": [2, 5, None], "count": [0, 2, 6]},
+        "expected": {"cookies": [2, 5, None], "count(count)": [0, 2, 6]},
     },
     {
         # Group by multicol.
@@ -503,7 +519,7 @@ test_table_agg_groupby_cases = [
         "expected": {
             "name": ["Alice", "Bob", "Bob", None, None, None],
             "cookies": [None, 5, None, 2, 5, None],
-            "count": [4, 2, 2, 0, 0, 0],
+            "count(count)": [4, 2, 2, 0, 0, 0],
         },
     },
 ]
@@ -562,7 +578,7 @@ def test_groupby_all_nulls(dtype) -> None:
         }
     )
     result_table = daft_recordbatch.agg([col("cookies").sum()], group_by=[col("group")])
-    assert result_table.to_pydict() == {"group": [None], "cookies": [6]}
+    assert result_table.to_pydict() == {"group": [None], "sum(cookies)": [6]}
 
 
 @pytest.mark.parametrize(
@@ -587,8 +603,8 @@ def test_groupby_numeric_string_bool_some_nulls(dtype) -> None:
     expected_table = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist([1, None]).cast(dtype),
-            "sum": [4, 3],  # sum
-            "product": [4, 3],  # product: 2*2=4, 3=3
+            "sum(sum)": [4, 3],  # sum
+            "product(product)": [4, 3],  # product: 2*2=4, 3=3
         }
     )
 
@@ -619,8 +635,8 @@ def test_groupby_numeric_string_bool_no_nulls(dtype) -> None:
     expected_table = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist([0, 1]).cast(dtype),
-            "sum": [5, 3],  # sum
-            "product": [6, 2],  # product: 2*3=6, 1*2=2
+            "sum(sum)": [5, 3],  # sum
+            "product(product)": [6, 2],  # product: 2*3=6, 1*2=2
         }
     )
 
@@ -648,7 +664,7 @@ def test_groupby_binary_bool_some_nulls(type, agg, expected) -> None:
     expected_table = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist([b"1", None]),
-            "cookies": expected,
+            f"{agg.name()}": expected,
         }
     )
 
@@ -676,7 +692,7 @@ def test_groupby_binary_no_nulls(type, agg, expected) -> None:
     expected_table = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist([b"0", b"1"]),
-            "cookies": expected,
+            f"{agg.name()}": expected,
         }
     )
 
@@ -706,7 +722,7 @@ def test_groupby_floats_nan(dtype) -> None:
     expected_table = MicroPartition.from_pydict(
         {
             "group": Series.from_pylist([None, 1.0, NAN, -INF, INF]).cast(dtype),
-            "cookies": [2, 2, 4, 1, 2],
+            "count(cookies)": [2, 2, 4, 1, 2],
         }
     )
     # have to sort and compare since `utils.pydict_to_rows` doesn't work on NaNs
@@ -748,7 +764,7 @@ def test_groupby_timestamp() -> None:
                     datetime.datetime(2020, 1, 1, 2, 0, 0),
                 ]
             ),
-            "value": [3, 6, 9],
+            "sum(value)": [3, 6, 9],
         }
     )
 
@@ -1347,4 +1363,4 @@ def test_table_bool_agg(case) -> None:
     )
 
     res = daft_table.to_pydict()
-    assert res == expected
+    assert res == {"bool_and(bool_and)": expected["bool_and"], "bool_or(bool_or)": expected["bool_or"]}

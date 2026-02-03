@@ -49,7 +49,7 @@ def test_select_global_agg_without_alias() -> None:
 
     res = df.select(col("a").sum()).collect().to_pydict()
 
-    assert res == {"a": [6]}
+    assert res == {"sum(a)": [6]}
 
 
 def test_select_global_agg_rejects_non_agg_column_reference() -> None:

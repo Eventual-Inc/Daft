@@ -55,10 +55,10 @@ def test_decimal_sum(prec, partitions) -> None:
     df = daft.from_pydict({"decimal128": python_decimals}).repartition(partitions)
     df = df.with_column("decimal128", df["decimal128"].cast(daft.DataType.decimal128(prec, 3)))
     res = df.sum().collect()
-    assert res.to_pydict()["decimal128"] == [decimal.Decimal("108.001")]
+    assert res.to_pydict()["sum(decimal128)"] == [decimal.Decimal("108.001")]
 
     schema = res.schema()
-    assert schema["decimal128"].dtype == daft.DataType.decimal128(38, 3)
+    assert schema["sum(decimal128)"].dtype == daft.DataType.decimal128(38, 3)
 
 
 @pytest.mark.parametrize("prec, partitions", itertools.product([5, 30], [1, 2]))
@@ -67,10 +67,10 @@ def test_decimal_mean(prec, partitions) -> None:
     df = daft.from_pydict({"decimal128": python_decimals}).repartition(partitions)
     df = df.with_column("decimal128", df["decimal128"].cast(daft.DataType.decimal128(prec, 3)))
     res = df.mean().collect()
-    assert res.to_pydict()["decimal128"] == [decimal.Decimal("36.0003333")]
+    assert res.to_pydict()["avg(decimal128)"] == [decimal.Decimal("36.0003333")]
 
     schema = res.schema()
-    assert schema["decimal128"].dtype == daft.DataType.decimal128(38, 7)
+    assert schema["avg(decimal128)"].dtype == daft.DataType.decimal128(38, 7)
 
 
 @pytest.mark.parametrize("prec, partitions", itertools.product([5, 30], [1, 2]))
@@ -79,10 +79,10 @@ def test_decimal_stddev(prec, partitions) -> None:
     df = daft.from_pydict({"decimal128": python_decimals}).repartition(partitions)
     df = df.with_column("decimal128", df["decimal128"].cast(daft.DataType.decimal128(prec, 3)))
     res = df.agg(df["decimal128"].stddev())  ## TODO: we can't do `select(df['x'].stddev())` make ticket
-    assert pytest.approx(res.to_pydict()["decimal128"][0]) == 44.774792762098734
+    assert pytest.approx(res.to_pydict()["stddev(decimal128)"][0]) == 44.774792762098734
 
     schema = res.schema()
-    assert schema["decimal128"].dtype == daft.DataType.float64()
+    assert schema["stddev(decimal128)"].dtype == daft.DataType.float64()
 
 
 @pytest.mark.parametrize("prec, partitions", itertools.product([5, 30], [1, 2]))
@@ -93,9 +93,9 @@ def test_decimal_grouped_sum(prec, partitions) -> None:
     df = daft.from_pydict({"decimal128": python_decimals, "group": group}).repartition(partitions)
     df = df.with_column("decimal128", df["decimal128"].cast(daft.DataType.decimal128(prec, 3)))
     res = df.groupby("group").sum().sort("group").collect()
-    assert res.to_pydict() == {"group": [0, 1], "decimal128": [decimal.Decimal("9.000"), decimal.Decimal("99.001")]}
+    assert res.to_pydict() == {"group": [0, 1], "sum(decimal128)": [decimal.Decimal("9.000"), decimal.Decimal("99.001")]}
     schema = res.schema()
-    assert schema["decimal128"].dtype == daft.DataType.decimal128(38, 3)
+    assert schema["sum(decimal128)"].dtype == daft.DataType.decimal128(38, 3)
 
 
 @pytest.mark.parametrize("prec, partitions", itertools.product([5, 30], [1, 2]))
@@ -106,9 +106,12 @@ def test_decimal_grouped_mean(prec, partitions) -> None:
     df = daft.from_pydict({"decimal128": python_decimals, "group": group}).repartition(partitions)
     df = df.with_column("decimal128", df["decimal128"].cast(daft.DataType.decimal128(prec, 3)))
     res = df.groupby("group").mean().sort("group").collect()
-    assert res.to_pydict() == {"group": [0, 1], "decimal128": [decimal.Decimal("4.500"), decimal.Decimal("99.001")]}
+    assert res.to_pydict() == {
+        "group": [0, 1],
+        "avg(decimal128)": [decimal.Decimal("4.5000000"), decimal.Decimal("99.0010000")],
+    }
     schema = res.schema()
-    assert schema["decimal128"].dtype == daft.DataType.decimal128(38, 7)
+    assert schema["avg(decimal128)"].dtype == daft.DataType.decimal128(38, 7)
 
 
 @pytest.mark.parametrize("prec, partitions", itertools.product([5, 30], [1, 2]))
@@ -119,6 +122,6 @@ def test_decimal_grouped_stddev(prec, partitions) -> None:
     df = daft.from_pydict({"decimal128": python_decimals, "group": group}).repartition(partitions)
     df = df.with_column("decimal128", df["decimal128"].cast(daft.DataType.decimal128(prec, 3)))
     res = df.groupby("group").stddev().sort("group").collect()
-    assert res.to_pydict() == {"group": [0, 1], "decimal128": [pytest.approx(5.51), pytest.approx(0)]}
+    assert res.to_pydict() == {"group": [0, 1], "stddev(decimal128)": [pytest.approx(5.51), pytest.approx(0)]}
     schema = res.schema()
-    assert schema["decimal128"].dtype == daft.DataType.float64()
+    assert schema["stddev(decimal128)"].dtype == daft.DataType.float64()

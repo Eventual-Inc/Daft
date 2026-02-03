@@ -22,7 +22,7 @@ def test_count_col_star() -> None:
 def test_count_mixed_col_star() -> None:
     df = daft.from_pydict({"a": [1, 2, 3, 4], "b": [1, None, 3, None]})
     res = df.count(col("*"), col("a").alias("c")).to_pydict()
-    assert res == {"count(a)": [4], "count(b)": [2], "c": [4]}
+    assert res == {"count(a)": [4], "count(b)": [2], "count(c)": [4]}
 
 
 def test_count_mixed_star() -> None:

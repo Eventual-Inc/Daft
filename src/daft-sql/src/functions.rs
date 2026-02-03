@@ -465,7 +465,8 @@ impl SQLPlanner<'_> {
         if func.over.is_some() {
             let window_spec = Arc::new(self.parse_window_spec(func.over.as_ref().unwrap())?);
             let window_fn = fn_match.to_expr(&args, self)?;
-            Ok(match &*window_fn {
+            let (unaliased, _) = window_fn.unwrap_alias();
+            Ok(match &*unaliased {
                 Expr::Agg(agg_expr) => {
                     Expr::Over(WindowExpr::Agg(agg_expr.clone()), window_spec).arced()
                 }

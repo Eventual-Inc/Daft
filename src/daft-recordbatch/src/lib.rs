@@ -1412,7 +1412,11 @@ impl RecordBatch {
 
         let new_schema = Schema::new(fields);
 
-        let has_agg_expr = exprs.iter().any(|e| matches!(e.as_ref(), Expr::Agg(..)));
+        let has_agg_expr = exprs.iter().any(|e| {
+            let (unaliased, _) = e.inner().unwrap_alias();
+            matches!(unaliased.as_ref(), Expr::Agg(..))
+        });
+
         let num_rows = match (has_agg_expr, self.len()) {
             // "Normal" case: the final cardinality is the max(*results_lens, self.len())
             // This correctly accounts for broadcasting of literals, which can have unit length
