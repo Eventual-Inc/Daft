@@ -2240,6 +2240,16 @@ class Expression:
 
         return list_distinct(self)
 
+    def list_contains(self, item: Expression) -> Expression:
+        """Checks if each list contains the specified item.
+
+        Tip: See Also
+            [`daft.functions.list_contains`](https://docs.daft.ai/en/stable/api/functions/list_contains/)
+        """
+        from daft.functions import list_contains
+
+        return list_contains(self, item)
+
     def list_map(self, mapper: Expression) -> Expression:
         """Evaluates an expression on all elements in the list.
 
