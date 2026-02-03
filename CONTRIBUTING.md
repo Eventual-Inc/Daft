@@ -45,24 +45,24 @@ We thank the following community members for their contributions to Daft:
 
 | GitHub | Affiliation | Contributions |
 |--------|-------------|---------------|
-| @shaofengshi | Datastrato | Apache Gravitino catalog integration |
-| @malcolmgreaves | Meaves Industries | Documentation, tutorials, embeddings |
-| @ConeyLiu | Tencent | UTF-8 functions, regexp_replace, floor division |
-| @Lucas61000 | | SQL STRUCT parsing |
-| @j3nkii | | Dashboard fixes, documentation |
-| @destroyer22719 | Queen's University | Expression aliases, documentation |
-| @kyo-tom | DTStack | OpenAI embedder token limits |
-| @gpathak128 | | JSON null field handling |
-| @rahulkodali | UT Austin | Multi-input hash function |
-| @fenfeng9 | | Embedding dtype fixes |
-| @Abyss-lord | ctyun | Logger improvements |
-| @datanikkthegreek | | Delta Lake, Unity Catalog (issues & PRs) |
-| @djouallah | | SQL/Spark ecosystem feedback |
-| @jakajancar | Assertly | Catalog design, SQL features |
-| @ion-elgreco | NATO | Ray execution, production feedback |
-| @hongbo-miao | Archer Aviation | Installation, PyArrow, UUID support |
-| @lhoestq | Hugging Face | HuggingFace ecosystem collaboration |
-| @aaron-ang | | Distance/similarity functions, string casing, list operations, SQL |
+| [@aaron-ang](https://github.com/aaron-ang) | | Distance/similarity functions, string casing, list operations, SQL |
+| [@Abyss-lord](https://github.com/Abyss-lord) | ctyun | Logger improvements |
+| [@ConeyLiu](https://github.com/ConeyLiu) | Tencent | UTF-8 functions, regexp_replace, floor division |
+| [@datanikkthegreek](https://github.com/datanikkthegreek) | Databricks | Delta Lake, Unity Catalog (issues & PRs) |
+| [@destroyer22719](https://github.com/destroyer22719) | Queen's University | Expression aliases, documentation |
+| [@djouallah](https://github.com/djouallah) | Microsoft | SQL/Spark ecosystem feedback |
+| [@fenfeng9](https://github.com/fenfeng9) | | Embedding dtype fixes |
+| [@gpathak128](https://github.com/gpathak128) | | JSON null field handling |
+| [@hongbo-miao](https://github.com/hongbo-miao) | Archer Aviation | Installation, PyArrow, UUID support |
+| [@ion-elgreco](https://github.com/ion-elgreco) | NATO | Ray execution, production feedback |
+| [@j3nkii](https://github.com/j3nkii) | | Dashboard fixes, documentation |
+| [@jakajancar](https://github.com/jakajancar) | Assertly | Catalog design, SQL features |
+| [@kyo-tom](https://github.com/kyo-tom) | DTStack | OpenAI embedder token limits |
+| [@lhoestq](https://github.com/lhoestq) | Hugging Face | HuggingFace ecosystem collaboration |
+| [@Lucas61000](https://github.com/Lucas61000) | | SQL STRUCT parsing |
+| [@malcolmgreaves](https://github.com/malcolmgreaves) | Meaves Industries | Documentation, tutorials, embeddings |
+| [@rahulkodali](https://github.com/rahulkodali) | UT Austin | Multi-input hash function |
+| [@shaofengshi](https://github.com/shaofengshi) | Datastrato | Apache Gravitino catalog integration |
 
 ### Maintainer
 
@@ -77,12 +77,13 @@ Maintainers/Read have PR approval permissions and are welcomed to be a part of g
 
 | GitHub | Affiliation | Focus Areas |
 |--------|-------------|-------------|
-| @stayrascal | Bytedance | Storage/I/O layer, TOS support, native CSV/JSON writers |
-| @kevinzwang | SkyPilot | Core refactoring (arrow2 migration), UDF system, vLLM, type conversions |
-| @conceptofmind | Teraflop AI | Performance and UDF bug reports |
-| @everySympathy | ByteDance | Series slicing, partition optimization |
-| @VOID001 | ByteDance | Dashboard features, SQL error handling |
-| @gweaverbiodev | CloudKitchens | pyiceberg support, UDF improvements |
+| [@conceptofmind](https://github.com/conceptofmind) | Teraflop AI | Performance and UDF bug reports |
+| [@everySympathy](https://github.com/everySympathy) | ByteDance | Series slicing, partition optimization |
+| [@gweaverbiodev](https://github.com/gweaverbiodev) | CloudKitchens | pyiceberg support, UDF improvements |
+| [@kevinzwang](https://github.com/kevinzwang) | SkyPilot | Core refactoring (arrow2 migration), UDF system, vLLM, type conversions |
+| [@pdames](https://github.com/pdames) | Nvidia | Catalog support and improvements |
+| [@stayrascal](https://github.com/stayrascal) | Bytedance | Storage/I/O layer, TOS support, native CSV/JSON writers |
+| [@VOID001](https://github.com/VOID001) | ByteDance | Dashboard features, SQL error handling |
 
 **Maintainers/Write:**
 
@@ -90,25 +91,25 @@ Maintainers who additionally have merge access to the repository.
 
 | Name | GitHub | Affiliation |
 |------|--------|-------------|
-| Chris Kellog | @cckellogg | Eventual |
-| Desmond Cheong | @desmondcheongzx | Eventual |
-| Everett Kleven | @everettVT | Eventual |
-| Jay Chia | @jaychia | Eventual |
-| Jeev Balakrishnan | @jeevb | Eventual |
-| Varun Madan | @madvart | Eventual |
-| Oliver Huang | @ohbh | Eventual |
-| Colin Ho | @colin-ho | Eventual |
-| Rohit Kulshreshtha | @rohitkulshreshtha | Eventual |
-| Sammy Sidhu | @samster25 | Eventual |
-| Sam Stokes | @samstokes | Eventual |
-| Srinivas Lade | @srilman | Eventual |
-| Cory Grinstead | @universalmind303 | Eventual |
-| YK | @ykdojo | Eventual |
-| Kejian Ju | @Jay-ju | Bytedance |
-| Zhenchao Wang | @plotor | Bytedance |
-| Leilei Hu | @huleilei | Bytedance |
-| Zhiping Wu | @stayrascal | Bytedance |
-| Can Cai | @caican00 | Xiaomi |
+| Can Cai | [@caican00](https://github.com/caican00) | Xiaomi |
+| Chris Kellogg | [@cckellogg](https://github.com/cckellogg) | Eventual |
+| Colin Ho | [@colin-ho](https://github.com/colin-ho) | Eventual |
+| Cory Grinstead | [@universalmind303](https://github.com/universalmind303) | Eventual |
+| Desmond Cheong | [@desmondcheongzx](https://github.com/desmondcheongzx) | Eventual |
+| Everett Kleven | [@everettVT](https://github.com/everettVT) | Eventual |
+| Jay Chia | [@jaychia](https://github.com/jaychia) | Eventual |
+| Jeev Balakrishnan | [@jeevb](https://github.com/jeevb) | Eventual |
+| Kejian Ju | [@Jay-ju](https://github.com/Jay-ju) | Bytedance |
+| Leilei Hu | [@huleilei](https://github.com/huleilei) | Bytedance |
+| Oliver Huang | [@ohbh](https://github.com/ohbh) | Eventual |
+| Rohit Kulshreshtha | [@rohitkulshreshtha](https://github.com/rohitkulshreshtha) | Eventual |
+| Sam Stokes | [@samstokes](https://github.com/samstokes) | Eventual |
+| Sammy Sidhu | [@samster25](https://github.com/samster25) | Eventual |
+| Srinivas Lade | [@srilman](https://github.com/srilman) | Eventual |
+| Varun Madan | [@madvart](https://github.com/madvart) | Eventual |
+| YK | [@ykdojo](https://github.com/ykdojo) | Eventual |
+| Zhenchao Wang | [@plotor](https://github.com/plotor) | Bytedance |
+| Zhiping Wu | [@stayrascal](https://github.com/stayrascal) | Bytedance |
 
 ### Project Management Committee (PMC)
 
@@ -116,6 +117,6 @@ The PMC provides oversight and governance for the Daft project. PMC members have
 
 | Name | GitHub |
 |------|--------|
-| Jay Chia | @jaychia |
-| Sammy Sidhu | @samster25 |
-| Varun Madan | @madvart |
+| Jay Chia | [@jaychia](https://github.com/jaychia) |
+| Sammy Sidhu | [@samster25](https://github.com/samster25) |
+| Varun Madan | [@madvart](https://github.com/madvart) |
