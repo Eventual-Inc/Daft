@@ -3,9 +3,9 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use daft_core::prelude::Schema;
+use daft_core::prelude::{Operator, Schema};
 use daft_dsl::{
-    Expr, ExprRef, Operator, WindowExpr, WindowSpec, binary_op,
+    Expr, ExprRef, WindowExpr, WindowSpec, binary_op,
     expr::window::{WindowBoundary, WindowFrame},
     functions::{
         BuiltinScalarFn, BuiltinScalarFnVariant, FUNCTION_REGISTRY, FunctionArgs, ScalarUDF,

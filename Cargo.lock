@@ -2585,6 +2585,7 @@ name = "daft-core"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow",
+ "arrow-row",
  "bincode",
  "chrono",
  "chrono-tz",

@@ -12,7 +12,6 @@ use std::{
     fmt::Formatter,
     hash::{DefaultHasher, Hash, Hasher},
     io::{self, Write},
-    str::FromStr,
     sync::Arc,
 };
 
@@ -2125,95 +2124,6 @@ impl Expr {
             inputs: FunctionArgs::new_unchecked(vec![FunctionArg::Unnamed(self)]),
         }))
         .arced())
-    }
-}
-
-#[derive(Display, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub enum Operator {
-    #[display("==")]
-    Eq,
-    #[display("<=>")]
-    EqNullSafe,
-    #[display("!=")]
-    NotEq,
-    #[display("<")]
-    Lt,
-    #[display("<=")]
-    LtEq,
-    #[display(">")]
-    Gt,
-    #[display(">=")]
-    GtEq,
-    #[display("+")]
-    Plus,
-    #[display("-")]
-    Minus,
-    #[display("*")]
-    Multiply,
-    #[display("/")]
-    TrueDivide,
-    #[display("//")]
-    FloorDivide,
-    #[display("%")]
-    Modulus,
-    #[display("&")]
-    And,
-    #[display("|")]
-    Or,
-    #[display("^")]
-    Xor,
-    #[display("<<")]
-    ShiftLeft,
-    #[display(">>")]
-    ShiftRight,
-}
-
-impl Operator {
-    #![allow(dead_code)]
-    pub(crate) fn is_comparison(&self) -> bool {
-        matches!(
-            self,
-            Self::Eq
-                | Self::EqNullSafe
-                | Self::NotEq
-                | Self::Lt
-                | Self::LtEq
-                | Self::Gt
-                | Self::GtEq
-                | Self::And
-                | Self::Or
-                | Self::Xor
-        )
-    }
-
-    pub(crate) fn is_arithmetic(&self) -> bool {
-        !(self.is_comparison())
-    }
-}
-
-impl FromStr for Operator {
-    type Err = DaftError;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "==" => Ok(Self::Eq),
-            "!=" => Ok(Self::NotEq),
-            "<" => Ok(Self::Lt),
-            "<=" => Ok(Self::LtEq),
-            ">" => Ok(Self::Gt),
-            ">=" => Ok(Self::GtEq),
-            "+" => Ok(Self::Plus),
-            "-" => Ok(Self::Minus),
-            "*" => Ok(Self::Multiply),
-            "/" => Ok(Self::TrueDivide),
-            "//" => Ok(Self::FloorDivide),
-            "%" => Ok(Self::Modulus),
-            "&" => Ok(Self::And),
-            "|" => Ok(Self::Or),
-            "^" => Ok(Self::Xor),
-            "<<" => Ok(Self::ShiftLeft),
-            ">>" => Ok(Self::ShiftRight),
-            _ => Err(DaftError::ComputeError(format!("Invalid operator: {}", s))),
-        }
     }
 }
 
