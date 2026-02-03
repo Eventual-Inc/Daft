@@ -24,6 +24,7 @@ if TYPE_CHECKING:
 
 PLACEMENT_GROUP_READY_TIMEOUT_SECONDS = 10
 ACTOR_READY_TIMEOUT_SECONDS = 7200
+CHECKPOINT_LOADING_BATCH_SIZE = 100000
 
 
 class CheckpointActor:
@@ -293,7 +294,7 @@ def _prepare_checkpoint_filter(
             from daft.functions.struct import to_struct
 
             key_expr = to_struct(**{k: col(k) for k in key_columns})
-        df_keys.into_batches(100000).select(ingest_keys(key_expr)).collect()
+        df_keys.into_batches(CHECKPOINT_LOADING_BATCH_SIZE).select(ingest_keys(key_expr)).collect()
     except Exception as e:
         _cleanup_checkpoint_resources(actor_handles, pg)
         raise RuntimeError(f"Failed to create all checkpoint actors: {e}") from e
