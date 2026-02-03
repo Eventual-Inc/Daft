@@ -439,10 +439,35 @@ def test_resume_missing_checkpoint_raises(tmp_path: Path):
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_resume_multiple_key_columns_raises(tmp_path: Path):
+def test_resume_composite_key_filters_correctly(tmp_path: Path):
+    fmt = FileFormat.Parquet
+    root_dir = tmp_path / "ckpt_composite"
+    ck = {"key_column": ["id", "grp"]}
+
+    df_all = daft.from_pydict(
+        {
+            "id": [0, 0, 1, 1, 2, 2],
+            "grp": [0, 1, 0, 1, 0, 1],
+            "val": [0, 1, 2, 3, 4, 5],
+        }
+    )
+    df_first = df_all.where(col("grp") == 0)
+
+    helper_write_dataframe(df_first, fmt, root_dir, checkpoint_config=ck)
+    helper_write_dataframe(df_all, fmt, root_dir, checkpoint_config=ck)
+
+    df_final = helper_read_dataframe(fmt, root_dir)
+    out = df_final.select("id", "grp").to_pydict()
+    final_pairs = set(zip(out["id"], out["grp"]))
+    assert final_pairs == {(0, 0), (0, 1), (1, 0), (1, 1), (2, 0), (2, 1)}
+    assert len(out["id"]) == 6
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
+def test_resume_empty_key_list_raises(tmp_path: Path):
     df = daft.from_pydict({"id": [1], "val": ["a"]})
-    with pytest.raises(ValueError, match="only supports a single key column"):
-        df.resume(tmp_path / "a", on=["id", "val"]).collect()
+    with pytest.raises(ValueError, match="resume on must be a non-empty column name or list of column names"):
+        df.resume(tmp_path / "a", on=[], format="parquet").collect()
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")

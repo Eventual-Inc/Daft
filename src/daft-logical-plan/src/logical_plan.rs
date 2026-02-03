@@ -218,10 +218,9 @@ impl LogicalPlan {
                     .collect(),
                 None,
             ),
-            Self::ResumeCheckpoint(resume) => RequiredCols::new(
-                std::iter::once(resume.spec.key_column.clone()).collect(),
-                None,
-            ),
+            Self::ResumeCheckpoint(resume) => {
+                RequiredCols::new(resume.spec.key_column.iter().cloned().collect(), None)
+            }
             Self::Sort(sort) => {
                 let res = sort.sort_by.iter().flat_map(get_required_columns).collect();
                 RequiredCols::new(res, None)

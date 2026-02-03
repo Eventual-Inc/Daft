@@ -409,7 +409,7 @@ class LogicalPlanBuilder:
         self,
         root_dir: str | list[str],
         file_format: FileFormat,
-        key_column: str,
+        key_column: str | list[str],
         io_config: IOConfig | None = None,
         read_kwargs: dict[str, Any] | None = None,
         num_buckets: int | None = None,

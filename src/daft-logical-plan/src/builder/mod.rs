@@ -1249,7 +1249,7 @@ impl PyLogicalPlanBuilder {
         py: Python,
         root_dir: pyo3::Py<pyo3::PyAny>,
         file_format: common_file_formats::FileFormat,
-        key_column: String,
+        key_column: pyo3::Py<pyo3::PyAny>,
         io_config: Option<common_io_config::python::IOConfig>,
         read_kwargs: Option<pyo3::Py<pyo3::PyAny>>,
         num_buckets: Option<usize>,
@@ -1261,12 +1261,17 @@ impl PyLogicalPlanBuilder {
         } else {
             root_dir.extract::<Vec<String>>(py)?
         };
+        let key_columns: Vec<String> = if let Ok(s) = key_column.extract::<String>(py) {
+            vec![s]
+        } else {
+            key_column.extract::<Vec<String>>(py)?
+        };
         let read_kwargs =
             common_py_serde::PyObjectWrapper(Arc::new(read_kwargs.unwrap_or_else(|| py.None())));
         let spec = ops::ResumeCheckpointSpec::new(
             root_dirs,
             file_format,
-            key_column,
+            key_columns,
             io_config.map(|cfg| cfg.config),
             read_kwargs,
             num_buckets,

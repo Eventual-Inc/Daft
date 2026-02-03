@@ -2348,14 +2348,19 @@ class DataFrame:
         **reader_args: Any,
     ) -> "DataFrame":
         if isinstance(on, str):
-            key_column = on
+            key_column: str | list[str] = on
+            key_columns = [on]
         else:
-            if len(on) != 1:
-                raise ValueError("resume currently only supports a single key column name")
-            key_column = on[0]
+            if len(on) == 0:
+                raise ValueError("resume on must be a non-empty column name or list of column names")
+            if any((not isinstance(c, str)) or c == "" for c in on):
+                raise ValueError("resume on must be a non-empty column name or list of column names")
+            key_column = on
+            key_columns = on
 
-        if not isinstance(key_column, str) or key_column == "":
-            raise ValueError("resume on must be a non-empty column name")
+        missing = [c for c in key_columns if c not in self.column_names]
+        if missing:
+            raise ValueError(f"resume key column not found in schema: {missing}")
 
         if isinstance(format, str):
             fmt = format.strip().lower()
@@ -2372,9 +2377,6 @@ class DataFrame:
 
         if file_format not in (FileFormat.Parquet, FileFormat.Csv, FileFormat.Json):
             raise ValueError(f"Unsupported resume format: {file_format}")
-
-        if key_column not in self.column_names:
-            raise ValueError(f"resume key column not found in schema: {key_column}")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
         if batch_size is not None and batch_size <= 0:

@@ -18,7 +18,7 @@ use crate::{LogicalPlan, stats::StatsState};
 pub struct ResumeCheckpointSpec {
     pub root_dir: Vec<String>,
     pub file_format: FileFormat,
-    pub key_column: String,
+    pub key_column: Vec<String>,
     pub io_config: Option<IOConfig>,
     pub num_buckets: Option<usize>,
     pub num_cpus: Option<FloatWrapper<f64>>,
@@ -33,7 +33,7 @@ impl ResumeCheckpointSpec {
     pub fn new(
         root_dir: Vec<String>,
         file_format: FileFormat,
-        key_column: String,
+        key_column: Vec<String>,
         io_config: Option<IOConfig>,
         read_kwargs: PyObjectWrapper,
         num_buckets: Option<usize>,
@@ -46,9 +46,10 @@ impl ResumeCheckpointSpec {
                     .to_string(),
             ));
         }
-        if key_column.is_empty() {
+        if key_column.is_empty() || key_column.iter().any(|c| c.is_empty()) {
             return Err(DaftError::ValueError(
-                "resume checkpoint key_column must be non-empty".to_string(),
+                "resume checkpoint key_column must be a non-empty list of non-empty column names"
+                    .to_string(),
             ));
         }
         if matches!(num_buckets, Some(0)) {
@@ -83,7 +84,7 @@ impl ResumeCheckpointSpec {
     pub fn new(
         root_dir: Vec<String>,
         file_format: FileFormat,
-        key_column: String,
+        key_column: Vec<String>,
         io_config: Option<IOConfig>,
         num_buckets: Option<usize>,
         num_cpus: Option<f64>,
@@ -95,9 +96,10 @@ impl ResumeCheckpointSpec {
                     .to_string(),
             ));
         }
-        if key_column.is_empty() {
+        if key_column.is_empty() || key_column.iter().any(|c| c.is_empty()) {
             return Err(DaftError::ValueError(
-                "resume checkpoint key_column must be non-empty".to_string(),
+                "resume checkpoint key_column must be a non-empty list of non-empty column names"
+                    .to_string(),
             ));
         }
         if matches!(num_buckets, Some(0)) {
@@ -141,11 +143,12 @@ pub struct ResumeCheckpoint {
 impl ResumeCheckpoint {
     pub fn try_new(input: Arc<LogicalPlan>, spec: ResumeCheckpointSpec) -> DaftResult<Self> {
         let input_schema = input.schema();
-        if input_schema.get_field(&spec.key_column).is_err() {
-            return Err(DaftError::ValueError(format!(
-                "resume checkpoint key column not found in schema: {}",
-                spec.key_column
-            )));
+        for col in &spec.key_column {
+            if input_schema.get_field(col).is_err() {
+                return Err(DaftError::ValueError(format!(
+                    "resume checkpoint key column not found in schema: {col}",
+                )));
+            }
         }
         Ok(Self {
             plan_id: None,
@@ -179,9 +182,14 @@ impl ResumeCheckpoint {
         } else {
             format!("{:?}", self.spec.root_dir)
         };
+        let key_display = if self.spec.key_column.len() == 1 {
+            self.spec.key_column[0].as_str().to_string()
+        } else {
+            format!("{:?}", self.spec.key_column)
+        };
         let mut res = vec![format!(
             "ResumeCheckpoint: path = {}, format = {:?}, on = {}",
-            path_display, self.spec.file_format, self.spec.key_column
+            path_display, self.spec.file_format, key_display
         )];
         if let Some(io_config) = &self.spec.io_config {
             res.push(format!("IOConfig = {}", io_config));
@@ -216,7 +224,7 @@ mod tests {
         let spec_a = ResumeCheckpointSpec::new(
             vec!["root".to_string()],
             FileFormat::Csv,
-            "id".to_string(),
+            vec!["id".to_string()],
             None,
             None,
             None,
@@ -227,7 +235,7 @@ mod tests {
         let spec_b = ResumeCheckpointSpec::new(
             vec!["root2".to_string()],
             FileFormat::Csv,
-            "id".to_string(),
+            vec!["id".to_string()],
             None,
             None,
             None,
@@ -268,7 +276,7 @@ mod tests {
             let spec_a = ResumeCheckpointSpec::new(
                 vec!["root".to_string()],
                 FileFormat::Csv,
-                "id".to_string(),
+                vec!["id".to_string()],
                 None,
                 kwargs_a,
                 None,
@@ -280,7 +288,7 @@ mod tests {
             let spec_b = ResumeCheckpointSpec::new(
                 vec!["root".to_string()],
                 FileFormat::Csv,
-                "id".to_string(),
+                vec!["id".to_string()],
                 None,
                 kwargs_b,
                 None,
@@ -292,7 +300,7 @@ mod tests {
             let spec_c = ResumeCheckpointSpec::new(
                 vec!["root".to_string()],
                 FileFormat::Csv,
-                "id".to_string(),
+                vec!["id".to_string()],
                 None,
                 kwargs_c,
                 None,
@@ -338,7 +346,7 @@ mod tests {
             let spec = ResumeCheckpointSpec::new(
                 vec!["root".to_string()],
                 FileFormat::Csv,
-                "a".to_string(),
+                vec!["a".to_string()],
                 None,
                 kwargs,
                 None,
@@ -353,7 +361,7 @@ mod tests {
             let spec = ResumeCheckpointSpec::new(
                 vec!["root".to_string()],
                 FileFormat::Csv,
-                "a".to_string(),
+                vec!["a".to_string()],
                 None,
                 None,
                 None,
@@ -394,7 +402,7 @@ mod tests {
         let spec = ResumeCheckpointSpec::new(
             vec!["root".to_string()],
             FileFormat::Parquet,
-            "a".to_string(),
+            vec!["a".to_string()],
             None,
             None,
             None,

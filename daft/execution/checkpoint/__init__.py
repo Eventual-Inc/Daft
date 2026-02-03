@@ -51,6 +51,7 @@ class CheckpointActor:
 def create_checkpoint_filter_udf(
     num_buckets: int,
     actor_handles: list[ActorHandle] | None,
+    composite_key_fields: tuple[str, ...] = (),
 ) -> Callable[[Expression], Expression]:
     @func.batch(return_dtype=DataType.bool())
     def checkpoint_filter(input: Series) -> Series:
@@ -70,7 +71,17 @@ def create_checkpoint_filter_udf(
             return Series.from_numpy(np.empty(0, dtype=bool))
 
         # Convert Input to NumPy (Zero Copy if possible)
-        input_np = input.to_arrow().to_numpy(zero_copy_only=False)
+        if not composite_key_fields:
+            keys_np = input.to_arrow().to_numpy(zero_copy_only=False)
+        else:
+            keys = input.to_pylist()
+            keys_as_tuples: list[Any] = []
+            for item in keys:
+                if not isinstance(item, dict):
+                    raise TypeError(f"Expected composite key rows to be dicts, found: {type(item)}")
+                keys_as_tuples.append(tuple(item.get(k) for k in composite_key_fields))
+            keys_np = np.empty(len(keys_as_tuples), dtype=object)
+            keys_np[:] = keys_as_tuples
 
         # Compute Hash and Buckets
         hash_arr = input.hash().to_arrow()
@@ -93,7 +104,7 @@ def create_checkpoint_filter_udf(
             row_indices = row_order[int(start) : int(end)]
 
             # Direct numpy slice (fast)
-            keys_subset = input_np[row_indices]
+            keys_subset = keys_np[row_indices]
 
             futures.append(actor.filter.remote(keys_subset))
             row_indices_list.append(row_indices)
@@ -106,7 +117,7 @@ def create_checkpoint_filter_udf(
         finally:
             # Explicitly release memory for large intermediate arrays
             del futures
-            del input_np
+            del keys_np
             del hash_arr
             del hash_np
             del bucket_ids
@@ -137,7 +148,7 @@ def _split_partitions_evenly(total: int, buckets: int) -> tuple[int, int]:
 def _prepare_checkpoint_filter(
     root_dir: str | pathlib.Path | list[str | pathlib.Path],
     io_config: IOConfig | None,
-    key_column: str,
+    key_column: str | list[str],
     num_buckets: int,
     num_cpus: float,
     read_fn: Callable[..., DataFrame],
@@ -160,10 +171,14 @@ def _prepare_checkpoint_filter(
     root_dirs = root_dir if isinstance(root_dir, list) else [root_dir]
     root_dirs_str = [str(p) for p in root_dirs]
 
+    key_columns = [key_column] if isinstance(key_column, str) else key_column
+    if not key_columns or any((not isinstance(c, str)) or c == "" for c in key_columns):
+        raise ValueError("resume key_column must be a non-empty column name or list of non-empty column names")
+
     logger.info(
-        "Preparing checkpoint filter root_dirs=%s key_column=%s num_buckets=%s num_cpus=%s",
+        "Preparing checkpoint filter root_dirs=%s key_columns=%s num_buckets=%s num_cpus=%s",
         root_dirs_str,
-        key_column,
+        key_columns,
         num_buckets,
         num_cpus,
     )
@@ -172,8 +187,7 @@ def _prepare_checkpoint_filter(
     df_keys = None
     try:
         df_keys = read_fn(path=root_dirs_str, io_config=io_config, **(read_kwargs or {}))
-        if key_column:
-            df_keys = df_keys.select(key_column)
+        df_keys = df_keys.select(*key_columns)
     except FileNotFoundError as e:
         raise RuntimeError(f"Resume checkpoint not found at {root_dirs_str}: {e}") from e
     except Exception as e:
@@ -207,6 +221,7 @@ def _prepare_checkpoint_filter(
     actor_handles: list[ActorHandle] = []
     actors_by_bucket: dict[int, ActorHandle] = {}
     try:
+        composite_key_fields = tuple(key_columns) if len(key_columns) > 1 else ()
         for i in range(num_buckets):
             actor = (
                 ray.remote(max_concurrency=10)(CheckpointActor)
@@ -228,6 +243,7 @@ def _prepare_checkpoint_filter(
             *,
             actors_by_bucket: dict[int, ActorHandle] = actors_by_bucket,
             num_buckets: int = num_buckets,
+            composite_key_fields: tuple[str, ...] = composite_key_fields,
         ) -> Series:
             import asyncio
             import numpy as np
@@ -238,7 +254,16 @@ def _prepare_checkpoint_filter(
                 return Series.from_arrow(pa.nulls(0))
 
             keys = input.to_pylist()
-            keys_np = np.asarray(keys, dtype=object)
+            if not composite_key_fields:
+                keys_np = np.asarray(keys, dtype=object)
+            else:
+                keys_as_tuples: list[Any] = []
+                for item in keys:
+                    if not isinstance(item, dict):
+                        raise TypeError(f"Expected composite key rows to be dicts, found: {type(item)}")
+                    keys_as_tuples.append(tuple(item.get(k) for k in composite_key_fields))
+                keys_np = np.empty(len(keys_as_tuples), dtype=object)
+                keys_np[:] = keys_as_tuples
 
             hash_arr = input.hash().to_arrow()
             hash_np = hash_arr.to_numpy(zero_copy_only=False).astype(np.uint64, copy=False)
@@ -254,7 +279,7 @@ def _prepare_checkpoint_filter(
             for bucket, start, end in zip(buckets_present, run_starts, run_ends):
                 actor = actors_by_bucket[int(bucket)]
                 subset = keys_np[row_order[int(start) : int(end)]].tolist()
-                print(f"in ingest_keys: bucket={bucket} start={start} end={end} num_keys={len(subset)}")
+                print(f"in ingest_keys: bucket={bucket} start={start} end={end} num_keys={len(subset)}")  # TODO: delete
                 futures.append(actor.add_keys.remote(subset))
 
             if futures:
@@ -262,7 +287,13 @@ def _prepare_checkpoint_filter(
 
             return Series.from_arrow(pa.nulls(num_rows))
 
-        df_keys.into_batches(100000).select(ingest_keys(col(key_column))).collect()
+        if len(key_columns) == 1:
+            key_expr = col(key_columns[0])
+        else:
+            from daft.functions.struct import to_struct
+
+            key_expr = to_struct(**{k: col(k) for k in key_columns})
+        df_keys.into_batches(100000).select(ingest_keys(key_expr)).collect()
     except Exception as e:
         _cleanup_checkpoint_resources(actor_handles, pg)
         raise RuntimeError(f"Failed to create all checkpoint actors: {e}") from e

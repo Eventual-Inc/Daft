@@ -519,6 +519,7 @@ def _maybe_apply_resume_checkpoint(builder: LogicalPlanBuilder) -> tuple[Logical
         create_checkpoint_filter_udf,
     )
     from daft.expressions import col
+    from daft.functions.struct import to_struct
 
     cleanup_items: list[tuple[list[Any], Any | None]] = []
     predicates: list[Expression | None] = []
@@ -536,6 +537,18 @@ def _maybe_apply_resume_checkpoint(builder: LogicalPlanBuilder) -> tuple[Logical
             num_buckets = spec.get("num_buckets")
             num_cpus = spec.get("num_cpus")
             read_kwargs = spec.get("read_kwargs")
+
+            key_columns: list[str] | None
+            if isinstance(key_column, list):
+                if len(key_column) > 1:
+                    key_columns = key_column
+                    key_expr = to_struct(**{k: col(k) for k in key_columns})
+                else:
+                    key_columns = None
+                    key_expr = col(key_column[0])
+            else:
+                key_columns = None
+                key_expr = col(key_column)
 
             read_fn: Callable[..., DataFrame]
             if file_format == FileFormat.Parquet:
@@ -564,8 +577,10 @@ def _maybe_apply_resume_checkpoint(builder: LogicalPlanBuilder) -> tuple[Logical
             )
 
             checkpoint_filter_expr = create_checkpoint_filter_udf(
-                4 if num_buckets is None else num_buckets, actor_handles
-            )(col(key_column))
+                4 if num_buckets is None else num_buckets,
+                actor_handles,
+                tuple(key_columns) if key_columns is not None else (),
+            )(key_expr)
             cleanup_items.append((actor_handles, placement_group))
             predicates.append(checkpoint_filter_expr)
 
