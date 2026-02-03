@@ -262,7 +262,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
             size_bytes=None,
             pushdowns=pushdowns,
             stats=None,
-            source_type=self.name(),
+            source_name=self.display_name(),
         )
 
     def _create_scan_tasks_with_limit_and_no_filters(
@@ -315,7 +315,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                     size_bytes=self._estimate_size_bytes(fragment),
                     pushdowns=pushdowns,
                     stats=None,
-                    source_type=self.name(),
+                    source_name=self.display_name(),
                 )
 
     def _create_regular_scan_tasks(
@@ -350,7 +350,7 @@ class LanceDBScanOperator(ScanOperator, SupportsPushdownFilters):
                 size_bytes=size_bytes,
                 pushdowns=pushdowns,
                 stats=None,
-                source_type=self.name(),
+                source_name=self.display_name(),
             )
 
         # Use index-driven scan for point lookups with BTREE indices or nearest search.

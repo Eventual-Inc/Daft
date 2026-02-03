@@ -66,7 +66,7 @@ class _DataSourceShim(ScanOperator):
                 size_bytes=None,
                 pushdowns=pushdowns,
                 stats=None,
-                source_type=self.name(),
+                source_name=self.display_name(),
             )
 
     def as_pushdown_filter(self) -> SupportsPushdownFilters | None:

@@ -11,42 +11,77 @@ from tests.utils import clean_explain_output, explain_to_text
 
 
 @pytest.fixture
-def input_df(tmp_path):
+def input_df_with_uri(tmp_path):
+    dataset_uri = f"{tmp_path}/test.lance"
     lance = pytest.importorskip("lance")
-    lance.write_dataset(pa.Table.from_pydict({"id": [id for id in range(16)]}), uri=tmp_path)
-    return daft.read_lance(uri=str(tmp_path))
+    lance.write_dataset(pa.Table.from_pydict({"id": [id for id in range(16)]}), uri=dataset_uri)
+    return daft.read_lance(uri=dataset_uri), dataset_uri
 
 
-@pytest.mark.skipif(
-    condition=get_tests_daft_runner_name() == "native",
-    reason="The physical plan displayed in Native and Ray mode is inconsistent",
-)
-def test_explain_with_empty_scantask(input_df):
-    expected = """
-    * ScanTaskSource:
-    |   Num Scan Tasks = 1
-    |   Estimated Scan Bytes = 130
-    |   Schema: {id#Int64}
-    |   Scan Tasks: [
-    |   {daft.io.lance.lance_scan:_lancedb_table_factory_function}
-    |   ]
-    """
-    assert clean_explain_output(explain_to_text(input_df, only_physical_plan=True)) == clean_explain_output(expected)
+def test_explain_with_python_function_datasource(input_df_with_uri):
+    input_df, dataset_uri = input_df_with_uri
+    runner_type = get_or_infer_runner_type()
+    if runner_type == "native":
+        expected = f"""
+        * ScanTaskSource:
+        |   Source = LanceDBScanOperator({dataset_uri})
+        |   Num Scan Tasks = 1
+        |   Estimated Scan Bytes = 130
+        |   Num Parallel Scan Tasks = 1
+        |   Schema: {{id#Int64}}
+        |   Scan Tasks: [
+        |   {{daft.io.lance.lance_scan:_lancedb_table_factory_function}}
+        |   ]
+        |   Stats = {{ Approx num rows = 16, Approx size bytes = 130 B, Accumulated selectivity = 1.00 }}
+        |   Batch Size = Range(0, 131072]
+        """
+        input_df.explain(True)
+        assert clean_explain_output(explain_to_text(input_df, only_physical_plan=True)) == clean_explain_output(
+            expected
+        )
 
-    expected = """
-    * Limit: 0
-    |
-    * ScanTaskSource:
-    |   Num Scan Tasks = 0
-    |   Estimated Scan Bytes = 0
-    |   Pushdowns: {limit: 0}
-    |   Schema: {id#Int64}
-    |   Scan Tasks: [
-    |   ]
-    """
-    assert clean_explain_output(explain_to_text(input_df.limit(0), only_physical_plan=True)) == clean_explain_output(
-        expected
-    )
+        expected = """
+        * Limit: 0
+        |   Stats = { Approx num rows = 0, Approx size bytes = 0 B, Accumulated selectivity = 1.00 }
+        |   Batch Size = Range(0, 131072]
+        |
+        * Empty Scan:
+        |   Schema = id#Int64
+        |   Stats = { Approx num rows = 0, Approx size bytes = 0 B, Accumulated selectivity = 1.00 }
+        |   Batch Size = Range(0, 131072]
+        """
+        assert clean_explain_output(
+            explain_to_text(input_df.limit(0), only_physical_plan=True)
+        ) == clean_explain_output(expected)
+    else:
+        expected = f"""
+        * ScanTaskSource:
+        |   Source = LanceDBScanOperator({dataset_uri})
+        |   Num Scan Tasks = 1
+        |   Estimated Scan Bytes = 130
+        |   Schema: {{id#Int64}}
+        |   Scan Tasks: [
+        |   {{daft.io.lance.lance_scan:_lancedb_table_factory_function}}
+        |   ]
+        """
+        assert clean_explain_output(explain_to_text(input_df, only_physical_plan=True)) == clean_explain_output(
+            expected
+        )
+
+        expected = """
+        * Limit: 0
+        |
+        * ScanTaskSource:
+        |   Num Scan Tasks = 0
+        |   Estimated Scan Bytes = 0
+        |   Pushdowns: {limit: 0}
+        |   Schema: {id#Int64}
+        |   Scan Tasks: [
+        |   ]
+        """
+        assert clean_explain_output(
+            explain_to_text(input_df.limit(0), only_physical_plan=True)
+        ) == clean_explain_output(expected)
 
 
 @pytest.fixture(scope="session")
@@ -191,7 +226,9 @@ def gen_email(ids):
     get_or_infer_runner_type() == "native",
     reason="Native runner doesn't support setting the ray_options parameter.",
 )
-def test_explain_with_ray_options(input_df):
+def test_explain_with_ray_options(input_df_with_uri):
+    input_df, dataset_uri = input_df_with_uri
+
     # Currently only supports 'conda' option
     with pytest.raises(ValueError) as exc_info:
         gen_email_udf = gen_email.override_options(

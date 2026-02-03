@@ -329,11 +329,7 @@ impl GlobScanOperator {
                     ));
                 }
                 #[cfg(feature = "python")]
-                FileFormatConfig::PythonFunction {
-                    source_type: _,
-                    module_name: _,
-                    function_name: _,
-                } => {
+                FileFormatConfig::PythonFunction { .. } => {
                     return Err(DaftError::ValueError(
                         "Cannot glob a PythonFunction source".to_string(),
                     ));

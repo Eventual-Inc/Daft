@@ -222,8 +222,22 @@ impl Source for ScanTaskSource {
 
 impl TreeDisplay for ScanTaskSource {
     fn display_as(&self, level: DisplayLevel) -> String {
-        use std::fmt::Write;
-        fn base_display(scan: &ScanTaskSource) -> String {
+        fn base_display(scan: &ScanTaskSource) -> Vec<String> {
+            let mut items = vec!["ScanTaskSource:".to_string()];
+
+            #[cfg(feature = "python")]
+            if let Some(FileFormatConfig::PythonFunction { source_name, .. }) = scan
+                .scan_tasks
+                .first()
+                .map(|s| s.file_format_config())
+                .as_deref()
+            {
+                items.push(format!(
+                    "Source = {}",
+                    source_name.clone().unwrap_or_else(|| "None".to_string())
+                ));
+            }
+
             let num_scan_tasks = scan.scan_tasks.len();
             let total_bytes: usize = scan
                 .scan_tasks
@@ -234,71 +248,65 @@ impl TreeDisplay for ScanTaskSource {
                         .unwrap_or(0)
                 })
                 .sum();
+            items.push(format!("Num Scan Tasks = {num_scan_tasks}"));
+            items.push(format!("Estimated Scan Bytes = {total_bytes}"));
+            items.push(format!(
+                "Num Parallel Scan Tasks = {}",
+                scan.num_parallel_tasks
+            ));
 
-            let num_parallel_tasks = scan.num_parallel_tasks;
-            #[allow(unused_mut)]
-            let mut s = format!(
-                "ScanTaskSource:
-Num Scan Tasks = {num_scan_tasks}
-Estimated Scan Bytes = {total_bytes}
-Num Parallel Scan Tasks = {num_parallel_tasks}
-"
-            );
             #[cfg(feature = "python")]
             if let FileFormatConfig::Database(config) =
                 scan.scan_tasks[0].file_format_config().as_ref()
             {
                 if num_scan_tasks == 1 {
-                    writeln!(s, "SQL Query = {}", &config.sql).unwrap();
+                    items.push(format!("SQL Query = {}", &config.sql));
                 } else {
-                    writeln!(s, "SQL Queries = [{},..]", &config.sql).unwrap();
+                    items.push(format!("SQL Queries = [{},..]", &config.sql));
                 }
             }
-            s
+
+            items
         }
-        match level {
-            DisplayLevel::Compact => self.get_name(),
+        let res = match level {
+            DisplayLevel::Compact => vec![self.get_name()],
             DisplayLevel::Default => {
-                let mut s = base_display(self);
+                let mut items = base_display(self);
                 // We're only going to display the pushdowns and schema for the first scan task.
                 let pushdown = self.scan_tasks[0].pushdowns();
                 if !pushdown.is_empty() {
-                    s.push_str(&pushdown.display_as(DisplayLevel::Compact));
-                    s.push('\n');
+                    items.push(pushdown.display_as(DisplayLevel::Compact));
                 }
 
                 let schema = self.scan_tasks[0].schema();
-                writeln!(
-                    s,
+                items.push(format!(
                     "Schema: {{{}}}",
                     schema.display_as(DisplayLevel::Compact)
-                )
-                .unwrap();
+                ));
 
+                items.push("Scan Tasks: [".to_string());
                 let tasks = self.scan_tasks.iter();
-
-                writeln!(s, "Scan Tasks: [").unwrap();
                 for (i, st) in tasks.enumerate() {
                     if i < 3 || i >= self.scan_tasks.len() - 3 {
-                        writeln!(s, "{}", st.as_ref().display_as(DisplayLevel::Compact)).unwrap();
+                        items.push(st.as_ref().display_as(DisplayLevel::Compact));
                     } else if i == 3 {
-                        writeln!(s, "...").unwrap();
+                        items.push("...".to_string());
                     }
                 }
-                writeln!(s, "]").unwrap();
-
-                s
+                items.push("]".to_string());
+                items
             }
             DisplayLevel::Verbose => {
-                let mut s = base_display(self);
-                writeln!(s, "Scan Tasks: [").unwrap();
-
+                let mut items = base_display(self);
+                items.push("Scan Tasks: [".to_string());
                 for st in &self.scan_tasks {
-                    writeln!(s, "{}", st.as_ref().display_as(DisplayLevel::Verbose)).unwrap();
+                    items.push(st.as_ref().display_as(DisplayLevel::Verbose));
                 }
-                s
+                items.push("]".to_string());
+                items
             }
-        }
+        };
+        res.join("\n")
     }
 
     fn repr_json(&self) -> serde_json::Value {
