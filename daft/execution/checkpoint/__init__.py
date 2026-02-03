@@ -55,10 +55,11 @@ def create_checkpoint_filter_udf(
     composite_key_fields: tuple[str, ...] = (),
 ) -> Callable[[Expression], Expression]:
     @func.batch(return_dtype=DataType.bool())
-    def checkpoint_filter(input: Series) -> Series:
+    async def checkpoint_filter(input: Series) -> Series:
         import numpy as np
         import ray
         import os
+        import asyncio
 
         if actor_handles is None:
             return Series.from_numpy(np.full(len(input), True, dtype=bool))
@@ -112,7 +113,10 @@ def create_checkpoint_filter_udf(
 
         try:
             # Results are list of PACKED uint8 arrays
-            packed_results = ray.get(futures, timeout=300)
+            packed_results = await asyncio.wait_for(
+                asyncio.gather(*[asyncio.wrap_future(ref.future()) for ref in futures]),
+                timeout=300,
+            )
         except Exception as e:
             raise RuntimeError(f"CheckpointActor filter failed: {e}") from e
         finally:
