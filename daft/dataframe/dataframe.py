@@ -831,16 +831,13 @@ class DataFrame:
         """
         from daft.io._sql import SQLDataSink
 
-        # Build an empty pandas DataFrame that defines the schema for table creation on the driver side.
-        empty_pdf = self.limit(0).to_pandas()
-
         sink = SQLDataSink(
             table_name=table_name,
             conn=conn,
             write_mode=write_mode,
             chunk_size=chunk_size,
             dtype=dtype,
-            empty_pdf=empty_pdf,
+            df_schema=self.schema(),
         )
 
         return self.write_sink(sink)

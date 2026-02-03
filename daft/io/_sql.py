@@ -10,6 +10,7 @@ from daft.api_annotations import PublicAPI
 from daft.daft import ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
+from daft.dependencies import pa
 from daft.io.sink import DataSink, WriteResult
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch.micropartition import MicroPartition
@@ -17,7 +18,6 @@ from daft.sql.sql_connection import SQLConnection
 from daft.sql.sql_scan import PartitionBoundStrategy, SQLScanOperator
 
 if TYPE_CHECKING:
-    import pandas as pd
     from sqlalchemy.engine import Connection
 
 
@@ -150,7 +150,7 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
     write_mode: Literal["append", "overwrite", "fail"]
     chunk_size: int | None
     dtype: Any | None
-    empty_pdf: "pd.DataFrame"
+    df_schema: Schema
 
     def __post_init__(self) -> None:
         # Schema of the final result returned by ``finalize``.
@@ -190,11 +190,16 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
             inspector = inspect(connection)
             table_exists = inspector.has_table(self.table_name)
 
+            # Build an empty pandas DataFrame that defines the schema for table creation on the driver side.
+            pa_schema = self.df_schema.to_pyarrow_schema()
+            empty_table = pa.Table.from_batches([], schema=pa_schema)
+            empty_pdf = empty_table.to_pandas()
+
             if self.write_mode == "fail":
                 if table_exists:
                     raise ValueError(f"Table {self.table_name!r} already exists, cannot write with write_mode='fail'.")
                 # Create an empty table to establish schema.
-                self.empty_pdf.to_sql(
+                empty_pdf.to_sql(
                     self.table_name,
                     con=connection,
                     if_exists="fail",
@@ -204,7 +209,7 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
                 connection.commit()
             elif self.write_mode == "overwrite":
                 # Replace any existing table with an empty table that defines the schema.
-                self.empty_pdf.to_sql(
+                empty_pdf.to_sql(
                     self.table_name,
                     con=connection,
                     if_exists="replace",
@@ -215,7 +220,7 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
             else:  # append
                 if not table_exists:
                     # Create the table once if it does not exist so workers can append safely.
-                    self.empty_pdf.to_sql(
+                    empty_pdf.to_sql(
                         self.table_name,
                         con=connection,
                         if_exists="fail",
