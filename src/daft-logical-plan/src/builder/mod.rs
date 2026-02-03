@@ -14,7 +14,7 @@ use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormat, WriteMode};
 use common_io_config::IOConfig;
 use common_scan_info::{PhysicalScanInfo, Pushdowns, ScanOperatorRef, Sharder, ShardingStrategy};
-use common_treenode::TreeNode;
+use common_treenode::{Transformed, TreeNode, TreeNodeRewriter};
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::join::{JoinStrategy, JoinType};
 use daft_dsl::{
@@ -334,6 +334,75 @@ impl LogicalPlanBuilder {
 
         let logical_plan: LogicalPlan = ops::Filter::try_new(self.plan.clone(), predicate)?.into();
         Ok(self.with_new_plan(logical_plan))
+    }
+
+    pub fn resume_checkpoint(
+        &self,
+        spec: ops::ResumeCheckpointSpec,
+    ) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan =
+            ops::ResumeCheckpoint::try_new(self.plan.clone(), spec)?.into();
+        Ok(self.with_new_plan(logical_plan))
+    }
+
+    pub fn apply_resume_checkpoint_predicates(
+        &self,
+        predicates: Vec<Option<ExprRef>>,
+    ) -> DaftResult<Self> {
+        struct CollectSpecs {
+            count: usize,
+        }
+        impl TreeNodeRewriter for CollectSpecs {
+            type Node = Arc<LogicalPlan>;
+            fn f_down(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
+                if matches!(node.as_ref(), LogicalPlan::ResumeCheckpoint(_)) {
+                    self.count += 1;
+                }
+                Ok(Transformed::no(node))
+            }
+            fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
+                Ok(Transformed::no(node))
+            }
+        }
+        let mut counter = CollectSpecs { count: 0 };
+        let _ = self.plan.clone().rewrite(&mut counter)?;
+        if counter.count != predicates.len() {
+            return Err(DaftError::ValueError(format!(
+                "resume checkpoint count mismatch: plan has {}, but got {} predicates",
+                counter.count,
+                predicates.len()
+            )));
+        }
+
+        struct Apply {
+            predicates: Vec<Option<ExprRef>>,
+            idx: usize,
+        }
+        impl TreeNodeRewriter for Apply {
+            type Node = Arc<LogicalPlan>;
+            fn f_down(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
+                Ok(Transformed::no(node))
+            }
+            fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
+                if let LogicalPlan::ResumeCheckpoint(ops::ResumeCheckpoint { input, .. }) = node.as_ref() {
+                    let pred_opt = self.predicates[self.idx].clone();
+                    self.idx += 1;
+                    if let Some(predicate) = pred_opt {
+                        let expr_resolver =
+                            ExprResolver::builder().allow_actor_pool_udf(true).build();
+                        let resolved = expr_resolver.resolve_single(predicate, input.clone())?;
+                        let new_lp: LogicalPlan =
+                            ops::Filter::try_new(input.clone(), resolved)?.into();
+                        return Ok(Transformed::yes(Arc::new(new_lp)));
+                    }
+                    return Ok(Transformed::yes(input.clone()));
+                }
+                Ok(Transformed::no(node))
+            }
+        }
+        let mut rewriter = Apply { predicates, idx: 0 };
+        let transformed = self.plan.clone().rewrite(&mut rewriter)?;
+        Ok(self.with_new_plan(transformed.data))
     }
 
     pub fn resolve_window_spec(&self, window_spec: WindowSpec) -> DaftResult<WindowSpec> {
@@ -1121,6 +1190,86 @@ impl PyLogicalPlanBuilder {
 
     pub fn filter(&self, predicate: PyExpr) -> PyResult<Self> {
         Ok(self.builder.filter(predicate.expr)?.into())
+    }
+
+    #[pyo3(signature = (root_dir, file_format, key_column, io_config=None, read_kwargs=None, num_buckets=None, num_cpus=None))]
+    pub fn resume_checkpoint(
+        &self,
+        py: Python,
+        root_dir: String,
+        file_format: common_file_formats::FileFormat,
+        key_column: String,
+        io_config: Option<common_io_config::python::IOConfig>,
+        read_kwargs: Option<pyo3::Py<pyo3::PyAny>>,
+        num_buckets: Option<usize>,
+        num_cpus: Option<f64>,
+    ) -> PyResult<Self> {
+        let read_kwargs = common_py_serde::PyObjectWrapper(Arc::new(
+            read_kwargs.unwrap_or_else(|| py.None()),
+        ));
+        let spec = ops::ResumeCheckpointSpec::new(
+            root_dir,
+            file_format,
+            key_column,
+            io_config.map(|cfg| cfg.config),
+            read_kwargs,
+            num_buckets,
+            num_cpus,
+        )?;
+        Ok(self.builder.resume_checkpoint(spec)?.into())
+    }
+
+    pub fn apply_resume_checkpoint_predicates(
+        &self,
+        predicates: Vec<Option<PyExpr>>,
+    ) -> PyResult<Self> {
+        let preds = predicates
+            .into_iter()
+            .map(|p| p.map(|expr| expr.into()))
+            .collect();
+        Ok(self.builder.apply_resume_checkpoint_predicates(preds)?.into())
+    }
+
+    pub fn get_resume_checkpoint_specs(&self, py: Python) -> PyResult<Vec<pyo3::Py<pyo3::PyAny>>> {
+        use pyo3::types::PyDict;
+
+        struct CollectResumeCheckpointSpecs {
+            specs: Vec<ops::ResumeCheckpointSpec>,
+        }
+        impl TreeNodeRewriter for CollectResumeCheckpointSpecs {
+            type Node = Arc<LogicalPlan>;
+            fn f_down(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
+                Ok(Transformed::no(node))
+            }
+            fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
+                if let LogicalPlan::ResumeCheckpoint(ops::ResumeCheckpoint { spec, .. }) = node.as_ref() {
+                    self.specs.push(spec.clone());
+                }
+                Ok(Transformed::no(node))
+            }
+        }
+
+        let mut collector = CollectResumeCheckpointSpecs { specs: Vec::new() };
+        let _ = self.builder.plan.clone().rewrite(&mut collector)?;
+
+        collector
+            .specs
+            .into_iter()
+            .map(|spec| {
+                let d = PyDict::new(py);
+                d.set_item("root_dir", spec.root_dir)?;
+                d.set_item("file_format", spec.file_format)?;
+                d.set_item("key_column", spec.key_column)?;
+                d.set_item(
+                    "io_config",
+                    spec.io_config.map(common_io_config::python::IOConfig::from),
+                )?;
+                d.set_item("read_kwargs", spec.read_kwargs.0.as_ref().clone_ref(py))?;
+                d.set_item("num_buckets", spec.num_buckets)?;
+                d.set_item("num_cpus", spec.num_cpus.as_ref().map(|v| v.0))?;
+                Ok(d.into())
+            })
+            .collect()
     }
 
     pub fn limit(&self, limit: i64, eager: bool) -> PyResult<Self> {

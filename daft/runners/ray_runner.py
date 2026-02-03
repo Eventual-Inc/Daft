@@ -23,12 +23,14 @@ from daft.scarf_telemetry import track_runner_on_scarf
 from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Iterable, Iterator
+    from collections.abc import Callable, Generator, Iterable, Iterator
 
     import dask
     import dask.dataframe
 
     import daft
+    from daft.dataframe.dataframe import DataFrame
+    from daft.expressions import Expression
 
 
 logger = logging.getLogger(__name__)
@@ -42,6 +44,7 @@ except ImportError:
     raise
 
 from daft.daft import (
+    FileFormat,
     FileFormatConfig,
     FileInfos,
     IOConfig,
@@ -506,6 +509,70 @@ def _ray_num_cpus_provider(ttl_seconds: int = 1) -> Generator[int, None, None]:
             yield last_num_cpus_queried
 
 
+def _maybe_apply_resume_checkpoint(builder: LogicalPlanBuilder) -> tuple[LogicalPlanBuilder, Any | None]:
+    specs = builder._builder.get_resume_checkpoint_specs()
+    if not specs:
+        return builder, None
+    from daft.execution.checkpoint import _cleanup_checkpoint_resources, _prepare_checkpoint_filter
+
+    cleanup_items: list[tuple[list[Any], Any | None]] = []
+    predicates: list[Expression | None] = []
+
+    def cleanup() -> None:
+        for actor_handles, placement_group in cleanup_items:
+            _cleanup_checkpoint_resources(actor_handles, placement_group)
+
+    try:
+        for spec in specs:
+            root_dir = spec["root_dir"]
+            file_format = spec["file_format"]
+            key_column = spec["key_column"]
+            io_config = spec.get("io_config")
+            num_buckets = spec.get("num_buckets")
+            num_cpus = spec.get("num_cpus")
+            read_kwargs = spec.get("read_kwargs")
+
+            read_fn: Callable[..., DataFrame]
+            if file_format == FileFormat.Parquet:
+                from daft.io._parquet import read_parquet
+
+                read_fn = cast("Callable[..., DataFrame]", read_parquet)
+            elif file_format == FileFormat.Csv:
+                from daft.io._csv import read_csv
+
+                read_fn = cast("Callable[..., DataFrame]", read_csv)
+            elif file_format == FileFormat.Json:
+                from daft.io._json import read_json
+
+                read_fn = cast("Callable[..., DataFrame]", read_json)
+            else:
+                raise ValueError(f"Unsupported resume file format: {file_format}")
+
+            actor_handles, placement_group, checkpoint_filter_expr = _prepare_checkpoint_filter(
+                root_dir=root_dir,
+                io_config=io_config,
+                key_column=key_column,
+                num_buckets=4 if num_buckets is None else num_buckets,
+                num_cpus=1 if num_cpus is None else num_cpus,
+                read_fn=read_fn,
+                read_kwargs=read_kwargs,
+            )
+            cleanup_items.append((actor_handles, placement_group))
+            predicates.append(checkpoint_filter_expr)
+
+        new_inner_builder = builder._builder.apply_resume_checkpoint_predicates(
+            [p._expr if p is not None else None for p in predicates]
+        )
+        from daft.logical.builder import LogicalPlanBuilder
+
+        new_builder = LogicalPlanBuilder(new_inner_builder)
+    except Exception:
+        cleanup()
+        raise
+
+    return new_builder, cleanup
+
+
 class RayRunner(Runner[ray.ObjectRef]):
     name = "ray"
 
@@ -550,17 +617,23 @@ class RayRunner(Runner[ray.ObjectRef]):
         daft_execution_config = ctx.daft_execution_config
 
         # Optimize the logical plan.
-        builder = builder.optimize(daft_execution_config)
+        cleanup = None
+        try:
+            builder, cleanup = _maybe_apply_resume_checkpoint(builder)
+            builder = builder.optimize(daft_execution_config)
 
-        distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
-            builder._builder, query_id, daft_execution_config
-        )
-        if self.flotilla_plan_runner is None:
-            self.flotilla_plan_runner = FlotillaRunner()
+            distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
+                builder._builder, query_id, daft_execution_config
+            )
+            if self.flotilla_plan_runner is None:
+                self.flotilla_plan_runner = FlotillaRunner()
 
-        yield from self.flotilla_plan_runner.stream_plan(
-            distributed_plan, self._part_set_cache.get_all_partition_sets()
-        )
+            yield from self.flotilla_plan_runner.stream_plan(
+                distributed_plan, self._part_set_cache.get_all_partition_sets()
+            )
+        finally:
+            if cleanup is not None:
+                cleanup()
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
