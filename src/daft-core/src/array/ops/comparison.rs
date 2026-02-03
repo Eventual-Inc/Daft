@@ -997,6 +997,7 @@ impl_scalar_compare!(
 mod tests {
     use common_error::{DaftError, DaftResult};
     use daft_arrow::buffer::NullBuffer;
+    use rstest::rstest;
 
     use crate::{
         array::{
@@ -1102,30 +1103,6 @@ mod tests {
     }
 
     #[test]
-    fn compare_list_arrays_basic() -> DaftResult<()> {
-        let left_rows = vec![
-            Some(Int64Array::from(("item", vec![1, 2, 3])).into_series()),
-            Some(Int64Array::from(("item", vec![4, 5, 6])).into_series()),
-        ];
-        let right_rows = vec![
-            Some(Int64Array::from(("item", vec![1, 2, 4])).into_series()),
-            Some(Int64Array::from(("item", vec![5, 6, 7])).into_series()),
-        ];
-
-        let left = ListArray::try_from(("left", left_rows.as_slice()))?;
-        let right = ListArray::try_from(("right", right_rows.as_slice()))?;
-
-        let lt: Vec<_> = left.lt(&right)?.into_iter().collect();
-        let gt: Vec<_> = left.gt(&right)?.into_iter().collect();
-        let eq: Vec<_> = left.equal(&right)?.into_iter().collect();
-
-        assert_eq!(lt[..], [Some(true), Some(true)]);
-        assert_eq!(gt[..], [Some(false), Some(false)]);
-        assert_eq!(eq[..], [Some(false), Some(false)]);
-        Ok(())
-    }
-
-    #[test]
     fn compare_list_arrays_with_nulls() -> DaftResult<()> {
         let values = Int64Array::from(("item", vec![1, 2, 3])).into_series();
         let left_rows = vec![None, Some(values.clone())];
@@ -1138,58 +1115,6 @@ mod tests {
 
         assert_eq!(eq[..], [None, Some(true)]);
         assert_eq!(eq_null_safe[..], [Some(true), Some(true)]);
-        Ok(())
-    }
-
-    #[test]
-    fn compare_list_arrays_by_length() -> DaftResult<()> {
-        let short_rows = vec![Some(Int64Array::from(("item", vec![1])).into_series())];
-        let long_rows = vec![Some(Int64Array::from(("item", vec![1, 0])).into_series())];
-        let short = ListArray::try_from(("short", short_rows.as_slice()))?;
-        let long = ListArray::try_from(("long", long_rows.as_slice()))?;
-
-        let lt: Vec<_> = short.lt(&long)?.into_iter().collect();
-        let gt: Vec<_> = short.gt(&long)?.into_iter().collect();
-        let eq: Vec<_> = short.equal(&long)?.into_iter().collect();
-
-        assert_eq!(lt[..], [Some(true)]);
-        assert_eq!(gt[..], [Some(false)]);
-        assert_eq!(eq[..], [Some(false)]);
-        Ok(())
-    }
-
-    #[test]
-    fn compare_struct_arrays_basic() -> DaftResult<()> {
-        let field = Field::new(
-            "struct",
-            DataType::Struct(vec![
-                Field::new("x", DataType::Int64),
-                Field::new("y", DataType::Utf8),
-            ]),
-        );
-
-        let left = StructArray::new(
-            field.clone(),
-            vec![
-                Int64Array::from(("x", vec![1, 2])).into_series(),
-                Utf8Array::from(("y", &["a", "b"][..])).into_series(),
-            ],
-            None,
-        );
-        let right = StructArray::new(
-            field,
-            vec![
-                Int64Array::from(("x", vec![1, 2])).into_series(),
-                Utf8Array::from(("y", &["a", "c"][..])).into_series(),
-            ],
-            None,
-        );
-
-        let lt: Vec<_> = left.lt(&right)?.into_iter().collect();
-        let eq: Vec<_> = left.equal(&right)?.into_iter().collect();
-
-        assert_eq!(lt[..], [Some(false), Some(true)]);
-        assert_eq!(eq[..], [Some(true), Some(false)]);
         Ok(())
     }
 
@@ -1226,6 +1151,29 @@ mod tests {
 
         assert_eq!(eq[..], [Some(true), None]);
         assert_eq!(eq_null_safe[..], [Some(true), Some(true)]);
+        Ok(())
+    }
+
+    #[test]
+    fn compare_nested_list() -> DaftResult<()> {
+        let inner1 = Int64Array::from(("item", vec![1, 2])).into_series();
+        let inner2 = Int64Array::from(("item", vec![3, 4])).into_series();
+
+        let left_rows = vec![Some(
+            ListArray::try_from(("inner", vec![Some(inner1.clone())].as_slice()))?.into_series(),
+        )];
+        let right_rows = vec![Some(
+            ListArray::try_from(("inner", vec![Some(inner2)].as_slice()))?.into_series(),
+        )];
+
+        let left = ListArray::try_from(("left", left_rows.as_slice()))?;
+        let right = ListArray::try_from(("right", right_rows.as_slice()))?;
+
+        let lt: Vec<_> = left.lt(&right)?.into_iter().collect();
+        let eq: Vec<_> = left.equal(&right)?.into_iter().collect();
+
+        assert_eq!(lt[..], [Some(true)]);
+        assert_eq!(eq[..], [Some(false)]);
         Ok(())
     }
 
@@ -1646,5 +1594,181 @@ mod tests {
             DaftError::ValueError(msg) => assert!(msg.contains("different length arrays")),
             other => panic!("expected ValueError, got {other:?}"),
         }
+    }
+
+    #[rstest]
+    #[case::less_than(
+        vec![vec![1, 2, 3]],
+        vec![vec![1, 2, 4]],
+        |l: &ListArray, r: &ListArray| l.lt(r),
+        vec![Some(true)]
+    )]
+    #[case::less_than_by_length(
+        vec![vec![1]],
+        vec![vec![1, 0]],
+        |l: &ListArray, r: &ListArray| l.lt(r),
+        vec![Some(true)]
+    )]
+    #[case::less_than_equal(
+        vec![vec![1, 2, 3]],
+        vec![vec![1, 2, 3]],
+        |l: &ListArray, r: &ListArray| l.lte(r),
+        vec![Some(true)]
+    )]
+    #[case::greater_than(
+        vec![vec![1, 2, 4]],
+        vec![vec![1, 2, 3]],
+        |l: &ListArray, r: &ListArray| l.gt(r),
+        vec![Some(true)]
+    )]
+    #[case::greater_than_equal(
+        vec![vec![5]],
+        vec![vec![5]],
+        |l: &ListArray, r: &ListArray| l.gte(r),
+        vec![Some(true)]
+    )]
+    #[case::equal(
+        vec![vec![1, 2, 3]],
+        vec![vec![1, 2, 3]],
+        |l: &ListArray, r: &ListArray| l.equal(r),
+        vec![Some(true)]
+    )]
+    #[case::not_equal(
+        vec![vec![1, 2, 3]],
+        vec![vec![1, 2, 4]],
+        |l: &ListArray, r: &ListArray| l.not_equal(r),
+        vec![Some(true)]
+    )]
+    // Multi-element test cases
+    #[case::multi_less_than(
+        vec![vec![1, 2, 3], vec![4, 5, 6]],
+        vec![vec![1, 2, 4], vec![5, 6, 7]],
+        |l: &ListArray, r: &ListArray| l.lt(r),
+        vec![Some(true), Some(true)]
+    )]
+    #[case::multi_greater_than(
+        vec![vec![1, 2, 4], vec![5, 6, 7]],
+        vec![vec![1, 2, 3], vec![4, 5, 6]],
+        |l: &ListArray, r: &ListArray| l.gt(r),
+        vec![Some(true), Some(true)]
+    )]
+    #[case::multi_equal(
+        vec![vec![1, 2, 3], vec![4, 5, 6]],
+        vec![vec![1, 2, 3], vec![4, 5, 6]],
+        |l: &ListArray, r: &ListArray| l.equal(r),
+        vec![Some(true), Some(true)]
+    )]
+    fn compare_list_parametrized(
+        #[case] left_vals: Vec<Vec<i64>>,
+        #[case] right_vals: Vec<Vec<i64>>,
+        #[case] op: impl Fn(&ListArray, &ListArray) -> DaftResult<BooleanArray>,
+        #[case] expected: Vec<Option<bool>>,
+    ) -> DaftResult<()> {
+        let left_rows: Vec<_> = left_vals
+            .into_iter()
+            .map(|v| Some(Int64Array::from(("item", v)).into_series()))
+            .collect();
+        let right_rows: Vec<_> = right_vals
+            .into_iter()
+            .map(|v| Some(Int64Array::from(("item", v)).into_series()))
+            .collect();
+
+        let left = ListArray::try_from(("left", left_rows.as_slice()))?;
+        let right = ListArray::try_from(("right", right_rows.as_slice()))?;
+
+        let result: Vec<_> = op(&left, &right)?.into_iter().collect();
+        assert_eq!(result[..], expected[..]);
+        Ok(())
+    }
+
+    #[rstest]
+    #[case::less_than(
+        vec![(1, "a")],
+        vec![(1, "b")],
+        |l: &StructArray, r: &StructArray| l.lt(r),
+        vec![Some(true)]
+    )]
+    #[case::less_than_equal(
+        vec![(2, "b")],
+        vec![(2, "b")],
+        |l: &StructArray, r: &StructArray| l.lte(r),
+        vec![Some(true)]
+    )]
+    #[case::greater_than(
+        vec![(3, "z")],
+        vec![(3, "a")],
+        |l: &StructArray, r: &StructArray| l.gt(r),
+        vec![Some(true)]
+    )]
+    #[case::greater_than_equal(
+        vec![(1, "a")],
+        vec![(1, "a")],
+        |l: &StructArray, r: &StructArray| l.gte(r),
+        vec![Some(true)]
+    )]
+    #[case::equal(
+        vec![(5, "test")],
+        vec![(5, "test")],
+        |l: &StructArray, r: &StructArray| l.equal(r),
+        vec![Some(true)]
+    )]
+    #[case::not_equal(
+        vec![(1, "a")],
+        vec![(1, "b")],
+        |l: &StructArray, r: &StructArray| l.not_equal(r),
+        vec![Some(true)]
+    )]
+    // Multi-element test cases
+    #[case::multi_less_than(
+        vec![(1, "a"), (2, "b")],
+        vec![(1, "b"), (2, "c")],
+        |l: &StructArray, r: &StructArray| l.lt(r),
+        vec![Some(true), Some(true)]
+    )]
+    #[case::multi_equal_mixed(
+        vec![(1, "a"), (2, "b")],
+        vec![(1, "a"), (2, "c")],
+        |l: &StructArray, r: &StructArray| l.equal(r),
+        vec![Some(true), Some(false)]
+    )]
+    fn compare_struct_parametrized(
+        #[case] left_vals: Vec<(i64, &str)>,
+        #[case] right_vals: Vec<(i64, &str)>,
+        #[case] op: impl Fn(&StructArray, &StructArray) -> DaftResult<BooleanArray>,
+        #[case] expected: Vec<Option<bool>>,
+    ) -> DaftResult<()> {
+        let field = Field::new(
+            "struct",
+            DataType::Struct(vec![
+                Field::new("x", DataType::Int64),
+                Field::new("y", DataType::Utf8),
+            ]),
+        );
+
+        let left_x: Vec<_> = left_vals.iter().map(|(x, _)| *x).collect();
+        let left_y: Vec<_> = left_vals.iter().map(|(_, y)| *y).collect();
+        let right_x: Vec<_> = right_vals.iter().map(|(x, _)| *x).collect();
+        let right_y: Vec<_> = right_vals.iter().map(|(_, y)| *y).collect();
+
+        let left = StructArray::new(
+            field.clone(),
+            vec![
+                Int64Array::from(("x", left_x)).into_series(),
+                Utf8Array::from(("y", left_y.as_slice())).into_series(),
+            ],
+            None,
+        );
+        let right = StructArray::new(
+            field,
+            vec![
+                Int64Array::from(("x", right_x)).into_series(),
+                Utf8Array::from(("y", right_y.as_slice())).into_series(),
+            ],
+            None,
+        );
+
+        let result: Vec<_> = op(&left, &right)?.into_iter().collect();
+        assert_eq!(result[..], expected[..]);
+        Ok(())
     }
 }
