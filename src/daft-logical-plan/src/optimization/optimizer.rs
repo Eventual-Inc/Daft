@@ -408,8 +408,8 @@ mod tests {
         LogicalPlan,
         builder::LogicalPlanBuilder,
         ops::{Filter, Project, Source, UDFProject},
-        source_info::SourceInfo,
         optimization::rules::{EnrichWithStats, MaterializeScans, OptimizerRule},
+        source_info::SourceInfo,
         test::{
             dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator,
             dummy_scan_operator_for_aggregation,
@@ -867,7 +867,10 @@ mod tests {
             LogicalPlan::Source(Source::new(schema, source_info.into())).into(),
             None,
         )
-        .aggregate(vec![unresolved_col("count(1)").sum().alias("count(1)")], vec![])?
+        .aggregate(
+            vec![unresolved_col("count(1)").sum().alias("count(1)")],
+            vec![],
+        )?
         .build();
 
         let scan_materializer_and_stats_enricher = get_scan_materializer_and_stats_enricher();

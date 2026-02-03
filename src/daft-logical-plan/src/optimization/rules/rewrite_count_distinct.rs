@@ -204,9 +204,11 @@ mod tests {
         let expected = dummy_scan_node(scan_op)
             .distinct(Some(vec![unresolved_col("a")]))?
             .aggregate(
-                vec![unresolved_col("a")
-                    .count(CountMode::Valid)
-                    .alias("count(distinct a)")],
+                vec![
+                    unresolved_col("a")
+                        .count(CountMode::Valid)
+                        .alias("count(distinct a)"),
+                ],
                 vec![],
             )?
             .build();

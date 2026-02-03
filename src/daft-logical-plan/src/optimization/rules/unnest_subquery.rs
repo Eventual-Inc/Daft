@@ -655,7 +655,9 @@ mod tests {
 
         let expected = tbl1
             .join(
-                subquery.select(vec![unresolved_col("max(key)").alias(subquery_alias.clone())])?,
+                subquery.select(vec![
+                    unresolved_col("max(key)").alias(subquery_alias.clone()),
+                ])?,
                 None,
                 vec![],
                 JoinType::Inner,

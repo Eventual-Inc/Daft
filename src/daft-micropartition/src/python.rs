@@ -9,7 +9,6 @@ use daft_core::{
 };
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{
-    Expr,
     expr::bound_expr::{BoundAggExpr, BoundExpr},
     python::PyExpr,
 };

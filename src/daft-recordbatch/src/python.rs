@@ -8,7 +8,6 @@ use daft_core::{
     python::{PySchema, series::PySeries},
 };
 use daft_dsl::{
-    Expr,
     expr::bound_expr::{BoundAggExpr, BoundExpr},
     python::PyExpr,
 };

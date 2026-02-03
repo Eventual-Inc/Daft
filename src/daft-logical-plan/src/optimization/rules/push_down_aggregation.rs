@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use daft_core::{count_mode::CountMode, prelude::Schema};
 use daft_dsl::{AggExpr, Expr, ExprRef, resolved_col};
@@ -83,10 +83,12 @@ impl OptimizerRule for PushDownAggregation {
                                         // Scan operators may produce partial counts over multiple scan tasks (e.g., distributed parquet reads), so we still need to sum them.
                                         let new_aggregate = Aggregate::try_new(
                                             new_source,
-                                            vec![Arc::new(Expr::Agg(AggExpr::Sum(resolved_col(
-                                                aggregations[0].name(),
-                                            ))))
-                                            .alias(aggregations[0].name())],
+                                            vec![
+                                                Arc::new(Expr::Agg(AggExpr::Sum(resolved_col(
+                                                    aggregations[0].name(),
+                                                ))))
+                                                .alias(aggregations[0].name()),
+                                            ],
                                             groupby.clone(),
                                         )?
                                         .into();
@@ -136,14 +138,14 @@ mod tests {
 
     use crate::{
         LogicalPlan,
-        ops::Source,
-        source_info::SourceInfo,
         builder::LogicalPlanBuilder,
+        ops::Source,
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             rules::PushDownAggregation,
             test::assert_optimized_plan_with_rules_eq,
         },
+        source_info::SourceInfo,
         test::{
             dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator_for_aggregation,
         },
@@ -172,10 +174,9 @@ mod tests {
             .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
             .build();
 
-        let pushdowns = Pushdowns::default().with_aggregation(Some(Arc::new(Expr::Agg(AggExpr::Count(
-            resolved_col("a"),
-            CountMode::All,
-        )))));
+        let pushdowns = Pushdowns::default().with_aggregation(Some(Arc::new(Expr::Agg(
+            AggExpr::Count(resolved_col("a"), CountMode::All),
+        ))));
         let schema = Arc::new(Schema::new(vec![Field::new("count(1)", DataType::UInt64)]));
         let source_info = SourceInfo::Physical(PhysicalScanInfo::new(
             scan_op.clone(),

@@ -93,7 +93,10 @@ def test_decimal_grouped_sum(prec, partitions) -> None:
     df = daft.from_pydict({"decimal128": python_decimals, "group": group}).repartition(partitions)
     df = df.with_column("decimal128", df["decimal128"].cast(daft.DataType.decimal128(prec, 3)))
     res = df.groupby("group").sum().sort("group").collect()
-    assert res.to_pydict() == {"group": [0, 1], "sum(decimal128)": [decimal.Decimal("9.000"), decimal.Decimal("99.001")]}
+    assert res.to_pydict() == {
+        "group": [0, 1],
+        "sum(decimal128)": [decimal.Decimal("9.000"), decimal.Decimal("99.001")],
+    }
     schema = res.schema()
     assert schema["sum(decimal128)"].dtype == daft.DataType.decimal128(38, 3)
 
