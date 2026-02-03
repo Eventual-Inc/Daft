@@ -10,6 +10,7 @@ from .agg import (
     mean,
     avg,
     stddev,
+    var,
     min,
     max,
     bool_and,
@@ -62,7 +63,12 @@ from .datetime import (
     date_trunc,
     to_unix_epoch,
 )
-from .embedding import cosine_distance
+from .distance import cosine_distance, dot_product, euclidean_distance
+from .similarity import (
+    cosine_similarity,
+    pearson_correlation,
+    jaccard_similarity,
+)
 
 from .file_ import file, file_size, video_file, audio_file, guess_mime_type
 
@@ -261,6 +267,7 @@ __all__ = [
     "cos",
     "cosh",
     "cosine_distance",
+    "cosine_similarity",
     "cot",
     "count",
     "count_distinct",
@@ -279,6 +286,7 @@ __all__ = [
     "degrees",
     "dense_rank",
     "deserialize",
+    "dot_product",
     "download",
     "embed_image",
     "embed_text",
@@ -286,6 +294,7 @@ __all__ = [
     "encode_image",
     "endswith",
     "eq_null_safe",
+    "euclidean_distance",
     "exp",
     "explode",
     "expm1",
@@ -311,6 +320,7 @@ __all__ = [
     "is_inf",
     "is_nan",
     "is_null",
+    "jaccard_similarity",
     "jq",
     "lag",
     "lead",
@@ -364,6 +374,7 @@ __all__ = [
     "partition_iceberg_truncate",
     "partition_months",
     "partition_years",
+    "pearson_correlation",
     "pow",
     "power",
     "product",
@@ -434,6 +445,7 @@ __all__ = [
     "upper",
     "uuid",
     "value_counts",
+    "var",
     "video_file",
     "video_keyframes",
     "video_metadata",

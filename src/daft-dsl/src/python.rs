@@ -482,6 +482,10 @@ impl PyExpr {
         Ok(self.expr.clone().stddev().into())
     }
 
+    pub fn var(&self, ddof: usize) -> PyResult<Self> {
+        Ok(self.expr.clone().var(ddof).into())
+    }
+
     pub fn min(&self) -> PyResult<Self> {
         Ok(self.expr.clone().min().into())
     }

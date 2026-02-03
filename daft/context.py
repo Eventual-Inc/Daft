@@ -179,7 +179,7 @@ def set_execution_config(
     Args:
         config: A PyDaftExecutionConfig object to set the config to, before applying other kwargs. Defaults to None which indicates
             that the old (current) config should be used.
-        enable_scan_task_split_and_merge: Whether to enable scan task split and merge. Defaults to True.
+        enable_scan_task_split_and_merge: Whether to enable scan task split and merge. Defaults to False.
         scan_tasks_min_size_bytes: Minimum size of scan tasks in bytes. Defaults to 96MB.
         scan_tasks_max_size_bytes: Maximum size of scan tasks in bytes. Defaults to 384MB.
         max_sources_per_scan_task: Maximum number of sources per scan task. Defaults to 10.

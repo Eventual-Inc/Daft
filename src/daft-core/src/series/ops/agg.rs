@@ -8,7 +8,7 @@ use crate::{
         ops::{
             DaftApproxSketchAggable, DaftCountAggable, DaftHllMergeAggable, DaftMeanAggable,
             DaftProductAggable, DaftSetAggable, DaftSkewAggable as _, DaftStddevAggable,
-            DaftSumAggable, GroupIndices,
+            DaftSumAggable, DaftVarianceAggable, GroupIndices,
         },
     },
     count_mode::CountMode,
@@ -255,6 +255,27 @@ impl Series {
             }
             _ => Err(DaftError::not_implemented(format!(
                 "StdDev not implemented for {target_type}, source type: {}",
+                self.data_type()
+            ))),
+        }
+    }
+
+    pub fn var(&self, groups: Option<&GroupIndices>, ddof: usize) -> DaftResult<Self> {
+        let target_type = try_variance_aggregation_supertype(self.data_type())?;
+        match target_type {
+            DataType::Float64 => {
+                let casted = self.cast(&DataType::Float64)?;
+                let casted = casted.f64()?;
+                let series = groups
+                    .map_or_else(
+                        || casted.var(ddof),
+                        |groups| casted.grouped_var(groups, ddof),
+                    )?
+                    .into_series();
+                Ok(series)
+            }
+            _ => Err(DaftError::not_implemented(format!(
+                "Variance not implemented for {target_type}, source type: {}",
                 self.data_type()
             ))),
         }

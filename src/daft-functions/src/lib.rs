@@ -12,9 +12,11 @@ pub mod monotonically_increasing_id;
 pub mod numeric;
 #[cfg(feature = "python")]
 pub mod python;
+pub mod similarity;
 pub mod slice;
 pub mod to_struct;
 pub mod uuid;
+pub mod vector_utils;
 
 use common_error::DaftError;
 use daft_dsl::functions::{FunctionModule, FunctionRegistry};
