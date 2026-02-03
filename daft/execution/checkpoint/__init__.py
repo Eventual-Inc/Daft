@@ -280,7 +280,6 @@ def _prepare_checkpoint_filter(
             for bucket, start, end in zip(buckets_present, run_starts, run_ends):
                 actor = actors_by_bucket[int(bucket)]
                 subset = keys_np[row_order[int(start) : int(end)]].tolist()
-                print(f"in ingest_keys: bucket={bucket} start={start} end={end} num_keys={len(subset)}")  # TODO: delete
                 futures.append(actor.add_keys.remote(subset))
 
             if futures:
