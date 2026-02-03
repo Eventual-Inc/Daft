@@ -24,11 +24,11 @@ impl ScalarUDF for Explode {
     }
     fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
-        let ignore_empty = inputs
-            .optional((1, "ignore_empty"))?
+        let ignore_empty_and_null = inputs
+            .optional((1, "ignore_empty_and_null"))?
             .and_then(|s| s.bool().unwrap().get(0))
             .unwrap_or(false);
-        input.explode(ignore_empty)
+        input.explode(ignore_empty_and_null)
     }
 
     fn get_return_field(
@@ -51,6 +51,6 @@ impl ScalarUDF for Explode {
 }
 
 #[must_use]
-pub fn explode(expr: ExprRef, ignore_empty: ExprRef) -> ExprRef {
-    ScalarFn::builtin(Explode {}, vec![expr, ignore_empty]).into()
+pub fn explode(expr: ExprRef, ignore_empty_and_null: ExprRef) -> ExprRef {
+    ScalarFn::builtin(Explode {}, vec![expr, ignore_empty_and_null]).into()
 }

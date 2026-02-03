@@ -179,10 +179,13 @@ class LogicalPlanBuilder:
         return LogicalPlanBuilder(builder)
 
     def explode(
-        self, explode_expressions: list[Expression], index_column: str | None = None, ignore_empty: bool = False
+        self,
+        explode_expressions: list[Expression],
+        index_column: str | None = None,
+        ignore_empty_and_null: bool = False,
     ) -> LogicalPlanBuilder:
         explode_pyexprs = [expr._expr for expr in explode_expressions]
-        builder = self._builder.explode(explode_pyexprs, index_column, ignore_empty)
+        builder = self._builder.explode(explode_pyexprs, index_column, ignore_empty_and_null)
         return LogicalPlanBuilder(builder)
 
     def unpivot(

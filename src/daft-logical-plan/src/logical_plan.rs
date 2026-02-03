@@ -551,14 +551,14 @@ impl LogicalPlan {
                 }
                 Self::Explode(Explode {
                     to_explode,
-                    ignore_empty,
+                    ignore_empty_and_null,
                     index_column,
                     ..
                 }) => Self::Explode(
                     Explode::try_new(
                         input.clone(),
                         to_explode.clone(),
-                        *ignore_empty,
+                        *ignore_empty_and_null,
                         index_column.clone(),
                     )
                     .unwrap(),

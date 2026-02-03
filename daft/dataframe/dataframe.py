@@ -3048,19 +3048,23 @@ class DataFrame:
 
     @DataframePublicAPI
     def explode(
-        self, *columns: ColumnInputType, index_column: ColumnInputType | None = None, ignore_empty: bool = False
+        self,
+        *columns: ColumnInputType,
+        index_column: ColumnInputType | None = None,
+        ignore_empty_and_null: bool = False,
     ) -> "DataFrame":
         """Explodes a List column, where every element in each row's List becomes its own row, and all other columns in the DataFrame are duplicated across rows.
 
         If multiple columns are specified, each row must contain the same number of items in each specified column.
 
         By default, exploding Null values or empty lists will create a single Null entry (see example below).
-        Set ``ignore_empty=True`` to drop these rows instead.
+        Set ``ignore_empty_and_null=True`` to drop these rows instead.
 
         Args:
             *columns (ColumnInputType): columns to explode
             index_column (ColumnInputType | None): optional name for an index column that tracks the position of each element within its original list
-            ignore_empty (bool): whether to drop empty lists or None values. Defaults to False.
+            ignore_empty_and_null (bool): If True, drops rows where the list is empty or null.
+                If False (default), empty lists and null values each produce a single row with a null value.
 
         Returns:
             DataFrame: DataFrame with exploded column
@@ -3144,9 +3148,9 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 5 of 5 rows)
 
-            Example with ignore_empty=True:
+            Example with ignore_empty_and_null=True:
 
-            >>> df2.explode(df2["values"], df2["labels"], ignore_empty=True).collect()
+            >>> df2.explode(df2["values"], df2["labels"], ignore_empty_and_null=True).collect()
             ╭───────┬────────┬────────╮
             │ id    ┆ values ┆ labels │
             │ ---   ┆ ---    ┆ ---    │
@@ -3186,7 +3190,9 @@ class DataFrame:
         """
         parsed_exprs = column_inputs_to_expressions(columns)
         index_col_name = column_input_to_expression(index_column).name() if index_column is not None else None
-        builder = self._builder.explode(parsed_exprs, ignore_empty=ignore_empty, index_column=index_col_name)
+        builder = self._builder.explode(
+            parsed_exprs, ignore_empty_and_null=ignore_empty_and_null, index_column=index_col_name
+        )
         return DataFrame(builder)
 
     @DataframePublicAPI

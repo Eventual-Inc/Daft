@@ -83,7 +83,7 @@ pub struct ExplodeOperator {
 impl ExplodeOperator {
     pub fn new(
         to_explode: Vec<BoundExpr>,
-        ignore_empty: bool,
+        ignore_empty_and_null: bool,
         index_column: Option<String>,
     ) -> Self {
         Self {
@@ -93,7 +93,7 @@ impl ExplodeOperator {
                     .map(|expr| {
                         BoundExpr::new_unchecked(explode(
                             expr.inner().clone(),
-                            daft_dsl::lit(ignore_empty),
+                            daft_dsl::lit(ignore_empty_and_null),
                         ))
                     })
                     .collect(),

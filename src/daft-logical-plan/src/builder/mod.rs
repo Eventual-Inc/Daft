@@ -372,16 +372,20 @@ impl LogicalPlanBuilder {
     pub fn explode(
         &self,
         to_explode: Vec<ExprRef>,
-        ignore_empty: bool,
+        ignore_empty_and_null: bool,
         index_column: Option<String>,
     ) -> DaftResult<Self> {
         let expr_resolver = ExprResolver::default();
 
         let to_explode = expr_resolver.resolve(to_explode, self.plan.clone())?;
 
-        let logical_plan: LogicalPlan =
-            ops::Explode::try_new(self.plan.clone(), to_explode, ignore_empty, index_column)?
-                .into();
+        let logical_plan: LogicalPlan = ops::Explode::try_new(
+            self.plan.clone(),
+            to_explode,
+            ignore_empty_and_null,
+            index_column,
+        )?
+        .into();
         Ok(self.with_new_plan(logical_plan))
     }
 
@@ -1149,16 +1153,20 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.shard(strategy, world_size, rank)?.into())
     }
 
-    #[pyo3(signature = (to_explode, index_column=None, ignore_empty=false))]
+    #[pyo3(signature = (to_explode, index_column=None, ignore_empty_and_null=false))]
     pub fn explode(
         &self,
         to_explode: Vec<PyExpr>,
         index_column: Option<String>,
-        ignore_empty: bool,
+        ignore_empty_and_null: bool,
     ) -> PyResult<Self> {
         Ok(self
             .builder
-            .explode(pyexprs_to_exprs(to_explode), ignore_empty, index_column)?
+            .explode(
+                pyexprs_to_exprs(to_explode),
+                ignore_empty_and_null,
+                index_column,
+            )?
             .into())
     }
 

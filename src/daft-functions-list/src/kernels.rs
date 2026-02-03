@@ -25,7 +25,7 @@ use indexmap::{
 pub trait ListArrayExtension: Sized {
     fn value_counts(&self) -> DaftResult<MapArray>;
     fn count(&self, mode: CountMode) -> DaftResult<UInt64Array>;
-    fn explode(&self, ignore_empty: bool) -> DaftResult<Series>;
+    fn explode(&self, ignore_empty_and_null: bool) -> DaftResult<Series>;
     fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array>;
     fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series>;
     fn get_chunks(&self, size: usize) -> DaftResult<Series>;
@@ -213,7 +213,7 @@ impl ListArrayExtension for ListArray {
             .with_nulls(self.nulls().cloned())
     }
 
-    fn explode(&self, ignore_empty: bool) -> DaftResult<Series> {
+    fn explode(&self, ignore_empty_and_null: bool) -> DaftResult<Series> {
         let offsets = self.offsets();
 
         let total_capacity: usize = (0..self.len())
@@ -221,8 +221,8 @@ impl ListArrayExtension for ListArray {
                 let is_valid = self.is_valid(i);
                 let len: usize = (offsets.get(i + 1).unwrap() - offsets.get(i).unwrap()) as usize;
                 match (is_valid, len) {
-                    (false, _) => usize::from(!ignore_empty),
-                    (true, 0) => usize::from(!ignore_empty),
+                    (false, _) => usize::from(!ignore_empty_and_null),
+                    (true, 0) => usize::from(!ignore_empty_and_null),
                     (true, l) => l,
                 }
             })
@@ -241,12 +241,12 @@ impl ListArrayExtension for ListArray {
             let len = offsets.get(i + 1).unwrap() - start;
             match (is_valid, len) {
                 (false, _) => {
-                    if !ignore_empty {
+                    if !ignore_empty_and_null {
                         growable.add_nulls(1);
                     }
                 }
                 (true, 0) => {
-                    if !ignore_empty {
+                    if !ignore_empty_and_null {
                         growable.add_nulls(1);
                     }
                 }
@@ -518,13 +518,13 @@ impl ListArrayExtension for FixedSizeListArray {
         counts.rename(self.name()).with_nulls(self.nulls().cloned())
     }
 
-    fn explode(&self, ignore_empty: bool) -> DaftResult<Series> {
+    fn explode(&self, ignore_empty_and_null: bool) -> DaftResult<Series> {
         let list_size = self.fixed_element_len();
         let total_capacity = if list_size == 0 {
-            if ignore_empty { 0 } else { self.len() }
+            if ignore_empty_and_null { 0 } else { self.len() }
         } else {
             let null_count = self.nulls().map(|v| v.null_count()).unwrap_or(0);
-            if ignore_empty {
+            if ignore_empty_and_null {
                 list_size * (self.len() - null_count)
             } else {
                 list_size * (self.len() - null_count) + (null_count)
@@ -543,7 +543,7 @@ impl ListArrayExtension for FixedSizeListArray {
             let is_valid = self.is_valid(i) && (list_size > 0);
             match is_valid {
                 false => {
-                    if !ignore_empty {
+                    if !ignore_empty_and_null {
                         child_growable.add_nulls(1);
                     }
                 }

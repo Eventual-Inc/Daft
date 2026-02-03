@@ -15,7 +15,7 @@ pub trait SeriesListExtension: Sized {
     fn list_value_counts(&self) -> DaftResult<Self>;
     fn list_bool_and(&self) -> DaftResult<Self>;
     fn list_bool_or(&self) -> DaftResult<Self>;
-    fn explode(&self, ignore_empty: bool) -> DaftResult<Self>;
+    fn explode(&self, ignore_empty_and_null: bool) -> DaftResult<Self>;
     fn list_count(&self, mode: CountMode) -> DaftResult<UInt64Array>;
     fn join(&self, delimiter: &Utf8Array) -> DaftResult<Utf8Array>;
     fn list_get(&self, idx: &Self, default: &Self) -> DaftResult<Self>;
@@ -78,10 +78,10 @@ impl SeriesListExtension for Series {
         }
     }
 
-    fn explode(&self, ignore_empty: bool) -> DaftResult<Self> {
+    fn explode(&self, ignore_empty_and_null: bool) -> DaftResult<Self> {
         match self.data_type() {
-            DataType::List(_) => self.list()?.explode(ignore_empty),
-            DataType::FixedSizeList(..) => self.fixed_size_list()?.explode(ignore_empty),
+            DataType::List(_) => self.list()?.explode(ignore_empty_and_null),
+            DataType::FixedSizeList(..) => self.fixed_size_list()?.explode(ignore_empty_and_null),
             dt => Err(DaftError::TypeError(format!(
                 "explode not implemented for {}",
                 dt

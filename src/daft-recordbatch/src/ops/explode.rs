@@ -15,11 +15,11 @@ use crate::RecordBatch;
 fn lengths_to_indices(
     lengths: &UInt64Array,
     capacity: usize,
-    ignore_empty: bool,
+    ignore_empty_and_null: bool,
 ) -> DaftResult<UInt64Array> {
     let mut indices = Vec::with_capacity(capacity);
     for (i, l) in lengths.into_iter().enumerate() {
-        let l = if ignore_empty {
+        let l = if ignore_empty_and_null {
             *l.unwrap_or(&0)
         } else {
             std::cmp::max(*l.unwrap_or(&1), 1u64)
@@ -62,7 +62,7 @@ impl RecordBatch {
         }
 
         let mut evaluated_columns = Vec::with_capacity(exprs.len());
-        let mut ignore_empty = false;
+        let mut ignore_empty_and_null = false;
 
         for (i, expr) in exprs.iter().enumerate() {
             match expr.as_ref() {
@@ -76,17 +76,17 @@ impl RecordBatch {
                             )));
                         }
                         if inputs.len() == 2 {
-                            let ignore_empty_expr =
+                            let ignore_empty_and_null_expr =
                                 BoundExpr::new_unchecked(inputs.get(1).unwrap().clone());
-                            let val = self.eval_expression(&ignore_empty_expr)?;
-                            let current_ignore_empty = val.bool()?.get(0).unwrap_or(false);
+                            let val = self.eval_expression(&ignore_empty_and_null_expr)?;
+                            let current_ignore_empty_and_null = val.bool()?.get(0).unwrap_or(false);
                             if i == 0 {
-                                ignore_empty = current_ignore_empty;
+                                ignore_empty_and_null = current_ignore_empty_and_null;
                             } else {
-                                // All explode expressions must have the same ignore_empty value
+                                // All explode expressions must have the same ignore_empty_and_null value
                                 debug_assert_eq!(
-                                    ignore_empty, current_ignore_empty,
-                                    "All explode expressions must have consistent ignore_empty values"
+                                    ignore_empty_and_null, current_ignore_empty_and_null,
+                                    "All explode expressions must have consistent ignore_empty_and_null values"
                                 );
                             }
                         }
@@ -128,11 +128,11 @@ impl RecordBatch {
         }
         let mut exploded_columns = evaluated_columns
             .iter()
-            .map(|s| s.explode(ignore_empty))
+            .map(|s| s.explode(ignore_empty_and_null))
             .collect::<DaftResult<Vec<_>>>()?;
 
         let capacity_expected = exploded_columns.first().unwrap().len();
-        let take_idx = lengths_to_indices(&first_len, capacity_expected, ignore_empty)?;
+        let take_idx = lengths_to_indices(&first_len, capacity_expected, ignore_empty_and_null)?;
 
         let mut new_series = Arc::unwrap_or_clone(self.columns.clone());
 
