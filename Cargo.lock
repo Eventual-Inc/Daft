@@ -2577,6 +2577,7 @@ dependencies = [
  "log",
  "pyo3",
  "reqwest 0.12.28",
+ "uuid 1.19.0",
 ]
 
 [[package]]
@@ -2704,6 +2705,7 @@ dependencies = [
  "common-runtime",
  "common-scan-info",
  "common-treenode",
+ "daft-context",
  "daft-dsl",
  "daft-local-plan",
  "daft-logical-plan",
@@ -2718,6 +2720,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
+ "smallvec",
  "tokio",
  "tokio-stream",
  "tokio-util",

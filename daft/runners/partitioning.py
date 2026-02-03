@@ -213,6 +213,9 @@ class PartitionSet(Generic[PartitionT]):
 
     def to_pydict(self, schema: Schema) -> dict[str, list[Any]]:
         """Retrieves all the data in a PartitionSet as a Python dictionary. Values are the raw data from each Block."""
+        # 确保所有任务都完成
+        self.wait()
+
         merged_partition = self._get_merged_micropartition(schema)
         return merged_partition.to_pydict()
 
