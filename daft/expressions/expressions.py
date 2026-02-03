@@ -987,6 +987,21 @@ class Expression:
 
         return stddev(self)
 
+    def var(self, ddof: int = 1) -> Expression:
+        """Calculates the variance of the values in the expression.
+
+        Args:
+            ddof: Delta degrees of freedom. The divisor used in calculations
+                is N - ddof, where N is the number of non-null elements.
+                Defaults to 1 (sample variance).
+
+        Tip: See Also
+            [`daft.functions.var`](https://docs.daft.ai/en/stable/api/functions/var/)
+        """
+        from daft.functions import var
+
+        return var(self, ddof)
+
     def min(self) -> Expression:
         """Calculates the minimum value in the expression.
 
