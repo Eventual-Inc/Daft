@@ -144,7 +144,10 @@ class NativeRunner(Runner[MicroPartition]):
         try:
             while True:
                 result = next(results_gen)
-                ctx._notify_result_out(query_id, result.partition())
+                try:
+                    ctx._notify_result_out(query_id, result.partition())
+                except Exception:
+                    pass
                 yield result
         except StopIteration as e:
             query_result = PyQueryResult(QueryEndState.Finished, "Query finished")

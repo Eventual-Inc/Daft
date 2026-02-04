@@ -70,7 +70,11 @@ class NativeExecutor:
                 if part is None:
                     break
                 yield LocalMaterializedResult(MicroPartition._from_pymicropartition(part))
-        finally:
+        except KeyboardInterrupt as e:
+            raise e
+        except Exception as e:
+            raise e
+        else:
             event_loop.run(async_exec.aclose())
             assert result is not None
             return RecordBatch._from_pyrecordbatch(result.to_recordbatch())
