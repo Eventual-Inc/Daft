@@ -3455,6 +3455,8 @@ dependencies = [
  "arrow-json",
  "arrow-schema",
  "async-trait",
+ "chrono",
+ "chrono-tz",
  "common-daft-config",
  "common-error",
  "common-file-formats",

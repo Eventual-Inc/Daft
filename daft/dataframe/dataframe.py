@@ -861,6 +861,8 @@ class DataFrame:
         quote: str | None = None,
         escape: str | None = None,
         header: bool | None = True,
+        date_format: str | None = None,
+        timestamp_format: str | None = None,
     ) -> "DataFrame":
         r"""Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written.
 
@@ -875,6 +877,8 @@ class DataFrame:
             quote (Optional[str], optional): Single-character quote used around fields containing delimiters default `"`.
             escape (Optional[str], optional): Single-character escape for special characters default `\\`.
             header (Optional[bool], optional): Whether to write a header row with column names, default True.
+            date_format (Optional[str], optional): Format string for date columns. Uses chrono strftime format (e.g., "%Y-%m-%d", "%d/%m/%Y"). Defaults to None (ISO 8601 format).
+            timestamp_format (Optional[str], optional): Format string for timestamp columns. Uses chrono strftime format (e.g., "%Y-%m-%d %H:%M:%S", "%+"). Defaults to None (ISO 8601 format).
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -882,10 +886,35 @@ class DataFrame:
         Note:
             This call is **blocking** and will execute the DataFrame when called
 
+            **Timezone handling**: For timezone-aware timestamp columns, the timestamps are converted
+            to the target timezone before formatting. For example, a timestamp stored as UTC but with
+            timezone "America/New_York" will be formatted in Eastern Time, not UTC. If the timezone
+            string is invalid, an error will be raised.
+
         Examples:
+            Basic usage:
+
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
             >>> df.write_csv("output_dir", write_mode="overwrite")  # doctest: +SKIP
+
+            Custom date format (e.g., DD/MM/YYYY):
+
+            >>> import datetime
+            >>> df = daft.from_pydict({"date": [datetime.date(2024, 1, 15)]})
+            >>> df.write_csv("output_dir", date_format="%d/%m/%Y")  # doctest: +SKIP
+            # Output: 15/01/2024
+
+            Custom timestamp format:
+
+            >>> df = daft.from_pydict({"ts": [datetime.datetime(2024, 1, 15, 10, 30, 45)]})
+            >>> df.write_csv("output_dir", timestamp_format="%Y-%m-%d %H:%M:%S")  # doctest: +SKIP
+            # Output: 2024-01-15 10:30:45
+
+            ISO 8601 / RFC 3339 timestamp format:
+
+            >>> df.write_csv("output_dir", timestamp_format="%+")  # doctest: +SKIP
+            # Output: 2024-01-15T10:30:45+00:00
 
         Tip:
             See also [`df.write_parquet()`][daft.DataFrame.write_parquet] and [`df.write_json()`][daft.DataFrame.write_json]
@@ -905,7 +934,14 @@ class DataFrame:
         if partition_cols is not None:
             cols = column_inputs_to_expressions(tuple(partition_cols))
 
-        file_format_option = PyFormatSinkOption.csv(delimiter=delimiter, quote=quote, escape=escape, header=header)
+        file_format_option = PyFormatSinkOption.csv(
+            delimiter=delimiter,
+            quote=quote,
+            escape=escape,
+            header=header,
+            date_format=date_format,
+            timestamp_format=timestamp_format,
+        )
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
