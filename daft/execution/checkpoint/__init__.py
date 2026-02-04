@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from daft.udf import cls, func, method
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from daft.datatype import DataType
 from daft.series import Series
 from daft.runners import get_or_create_runner
@@ -45,6 +45,8 @@ def _iter_bucket_row_groups(input: Series, num_buckets: int) -> list[tuple[int, 
     hash_arr = input.hash().to_arrow()
     hash_np = hash_arr.to_numpy(zero_copy_only=False).astype(np.uint64, copy=False)
     bucket_ids = (hash_np % np.uint64(num_buckets)).astype(np.int64, copy=False)
+    del hash_arr
+    del hash_np
 
     row_order = np.argsort(bucket_ids, kind="stable")
     bucket_sorted = bucket_ids[row_order]
@@ -55,6 +57,70 @@ def _iter_bucket_row_groups(input: Series, num_buckets: int) -> list[tuple[int, 
         (int(bucket), row_order[int(start) : int(end)])
         for bucket, start, end in zip(buckets_present, run_starts, run_ends)
     ]
+
+
+@func.batch(return_dtype=DataType.null())
+async def _ingest_keys_udf(
+    input: Series,
+    *,
+    actors_by_bucket: dict[int, Any],
+    num_buckets: int,
+    composite_key_fields: tuple[str, ...],
+) -> Series:
+    import asyncio
+    import numpy as np
+    import pyarrow as pa
+
+    num_rows = len(input)
+    if num_rows == 0:
+        return Series.from_arrow(pa.nulls(0))
+
+    keys = input.to_pylist()
+    if not composite_key_fields:
+        keys_np = np.asarray(keys, dtype=object)
+    else:
+        keys_np = _composite_keys_to_numpy(keys, composite_key_fields)
+    del keys
+
+    futures = []
+    for bucket, row_indices in _iter_bucket_row_groups(input, num_buckets):
+        actor = actors_by_bucket[bucket]
+        subset = keys_np[row_indices].tolist()
+        futures.append(actor.add_keys.remote(subset))
+    del keys_np
+
+    if futures:
+        await asyncio.wait_for(asyncio.gather(*futures), timeout=ASYNC_AWAIT_TIMEOUT_SECONDS)
+
+    return Series.from_arrow(pa.nulls(num_rows))
+
+
+def _ingest_checkpoint_keys_to_actors(
+    df_keys: DataFrame,
+    key_columns: list[str],
+    *,
+    actors_by_bucket: dict[int, Any],
+    num_buckets: int,
+    composite_key_fields: tuple[str, ...],
+    checkpoint_loading_batch_size: int,
+) -> None:
+    if len(key_columns) == 1:
+        key_expr = col(key_columns[0])
+    else:
+        from daft.functions.struct import to_struct
+
+        key_expr = to_struct(**{k: col(k) for k in key_columns})
+
+    expr = cast(
+        "Expression",
+        _ingest_keys_udf(
+            key_expr,
+            actors_by_bucket=actors_by_bucket,
+            num_buckets=num_buckets,
+            composite_key_fields=composite_key_fields,
+        ),
+    )
+    df_keys.into_batches(checkpoint_loading_batch_size).select(expr).collect()
 
 
 class CheckpointActor:
@@ -171,8 +237,6 @@ def _prepare_checkpoint_filter(
     """
     if get_or_create_runner().name != "ray":
         raise RuntimeError("Checkpointing is only supported on Ray runner")
-    if checkpoint_actor_max_concurrency <= 0:
-        raise ValueError("resume checkpoint_actor_max_concurrency must be > 0")
 
     root_dirs = root_dir if isinstance(root_dir, list) else [root_dir]
     root_dirs_str = [str(p) for p in root_dirs]
@@ -243,46 +307,14 @@ def _prepare_checkpoint_filter(
             actor_handles.append(actor)
             actors_by_bucket[i] = actor
 
-        @func.batch(return_dtype=DataType.null())
-        async def ingest_keys(
-            input: Series,
-            *,
-            actors_by_bucket: dict[int, ActorHandle] = actors_by_bucket,
-            num_buckets: int = num_buckets,
-            composite_key_fields: tuple[str, ...] = composite_key_fields,
-        ) -> Series:
-            import asyncio
-            import numpy as np
-            import pyarrow as pa
-
-            num_rows = len(input)
-            if num_rows == 0:
-                return Series.from_arrow(pa.nulls(0))
-
-            keys = input.to_pylist()
-            if not composite_key_fields:
-                keys_np = np.asarray(keys, dtype=object)
-            else:
-                keys_np = _composite_keys_to_numpy(keys, composite_key_fields)
-
-            futures = []
-            for bucket, row_indices in _iter_bucket_row_groups(input, num_buckets):
-                actor = actors_by_bucket[bucket]
-                subset = keys_np[row_indices].tolist()
-                futures.append(actor.add_keys.remote(subset))
-
-            if futures:
-                await asyncio.wait_for(asyncio.gather(*futures), timeout=ASYNC_AWAIT_TIMEOUT_SECONDS)
-
-            return Series.from_arrow(pa.nulls(num_rows))
-
-        if len(key_columns) == 1:
-            key_expr = col(key_columns[0])
-        else:
-            from daft.functions.struct import to_struct
-
-            key_expr = to_struct(**{k: col(k) for k in key_columns})
-        df_keys.into_batches(checkpoint_loading_batch_size).select(ingest_keys(key_expr)).collect()
+        _ingest_checkpoint_keys_to_actors(
+            df_keys,
+            key_columns,
+            actors_by_bucket=actors_by_bucket,
+            num_buckets=num_buckets,
+            composite_key_fields=composite_key_fields,
+            checkpoint_loading_batch_size=checkpoint_loading_batch_size,
+        )
     except Exception as e:
         _cleanup_checkpoint_resources(actor_handles, pg)
         raise RuntimeError(f"Failed to create all checkpoint actors: {e}") from e
