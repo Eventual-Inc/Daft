@@ -26,6 +26,37 @@ ACTOR_READY_TIMEOUT_SECONDS = 7200
 ASYNC_AWAIT_TIMEOUT_SECONDS = 1000
 
 
+def _composite_keys_to_numpy(keys: list[Any], composite_key_fields: tuple[str, ...]) -> "np.ndarray":  # noqa: UP037
+    import numpy as np
+
+    keys_as_tuples: list[Any] = []
+    for item in keys:
+        if not isinstance(item, dict):
+            raise TypeError(f"Expected composite key rows to be dicts, found: {type(item)}")
+        keys_as_tuples.append(tuple(item.get(k) for k in composite_key_fields))
+    keys_np = np.empty(len(keys_as_tuples), dtype=object)
+    keys_np[:] = keys_as_tuples
+    return keys_np
+
+
+def _iter_bucket_row_groups(input: Series, num_buckets: int) -> list[tuple[int, "np.ndarray"]]:  # noqa: UP037
+    import numpy as np
+
+    hash_arr = input.hash().to_arrow()
+    hash_np = hash_arr.to_numpy(zero_copy_only=False).astype(np.uint64, copy=False)
+    bucket_ids = (hash_np % np.uint64(num_buckets)).astype(np.int64, copy=False)
+
+    row_order = np.argsort(bucket_ids, kind="stable")
+    bucket_sorted = bucket_ids[row_order]
+    run_starts = np.flatnonzero(np.r_[True, bucket_sorted[1:] != bucket_sorted[:-1]])
+    run_ends = np.r_[run_starts[1:], len(bucket_sorted)]
+    buckets_present = bucket_sorted[run_starts]
+    return [
+        (int(bucket), row_order[int(start) : int(end)])
+        for bucket, start, end in zip(buckets_present, run_starts, run_ends)
+    ]
+
+
 class CheckpointActor:
     def __init__(self, bucket_id: int):
         self.bucket_id = bucket_id
@@ -76,35 +107,14 @@ def create_checkpoint_filter_udf(
             keys_np = input.to_arrow().to_numpy(zero_copy_only=False)
         else:
             keys = input.to_pylist()
-            keys_as_tuples: list[Any] = []
-            for item in keys:
-                if not isinstance(item, dict):
-                    raise TypeError(f"Expected composite key rows to be dicts, found: {type(item)}")
-                keys_as_tuples.append(tuple(item.get(k) for k in composite_key_fields))
-            keys_np = np.empty(len(keys_as_tuples), dtype=object)
-            keys_np[:] = keys_as_tuples
-
-        # Compute Hash and Buckets
-        hash_arr = input.hash().to_arrow()
-        hash_np = hash_arr.to_numpy(zero_copy_only=False).astype(np.uint64, copy=False)
-        bucket_ids = (hash_np % np.uint64(num_buckets)).astype(np.int64, copy=False)
-
-        # Group by Bucket
-        row_order = np.argsort(bucket_ids, kind="stable")
-        bucket_sorted = bucket_ids[row_order]
-        run_starts = np.flatnonzero(np.r_[True, bucket_sorted[1:] != bucket_sorted[:-1]])
-        run_ends = np.r_[run_starts[1:], len(bucket_sorted)]
-        buckets_present = bucket_sorted[run_starts]
+            keys_np = _composite_keys_to_numpy(keys, composite_key_fields)
 
         futures = []
         row_indices_list: list[np.ndarray] = []
 
         # Dispatch to Actors
-        for bucket, start, end in zip(buckets_present, run_starts, run_ends):
-            actor = actor_handles[int(bucket)]
-            row_indices = row_order[int(start) : int(end)]
-
-            # Direct numpy slice (fast)
+        for bucket, row_indices in _iter_bucket_row_groups(input, num_buckets):
+            actor = actor_handles[bucket]
             keys_subset = keys_np[row_indices]
 
             futures.append(actor.filter.remote(keys_subset))
@@ -122,11 +132,6 @@ def create_checkpoint_filter_udf(
             # Explicitly release memory for large intermediate arrays
             del futures
             del keys_np
-            del hash_arr
-            del hash_np
-            del bucket_ids
-            del row_order
-            del bucket_sorted
 
         # Reconstruct Result
         final_result = np.full(num_rows, True, dtype=bool)
@@ -255,28 +260,12 @@ def _prepare_checkpoint_filter(
             if not composite_key_fields:
                 keys_np = np.asarray(keys, dtype=object)
             else:
-                keys_as_tuples: list[Any] = []
-                for item in keys:
-                    if not isinstance(item, dict):
-                        raise TypeError(f"Expected composite key rows to be dicts, found: {type(item)}")
-                    keys_as_tuples.append(tuple(item.get(k) for k in composite_key_fields))
-                keys_np = np.empty(len(keys_as_tuples), dtype=object)
-                keys_np[:] = keys_as_tuples
-
-            hash_arr = input.hash().to_arrow()
-            hash_np = hash_arr.to_numpy(zero_copy_only=False).astype(np.uint64, copy=False)
-            bucket_ids = (hash_np % np.uint64(num_buckets)).astype(np.int64, copy=False)
-
-            row_order = np.argsort(bucket_ids, kind="stable")
-            bucket_sorted = bucket_ids[row_order]
-            run_starts = np.flatnonzero(np.r_[True, bucket_sorted[1:] != bucket_sorted[:-1]])
-            run_ends = np.r_[run_starts[1:], len(bucket_sorted)]
-            buckets_present = bucket_sorted[run_starts]
+                keys_np = _composite_keys_to_numpy(keys, composite_key_fields)
 
             futures = []
-            for bucket, start, end in zip(buckets_present, run_starts, run_ends):
-                actor = actors_by_bucket[int(bucket)]
-                subset = keys_np[row_order[int(start) : int(end)]].tolist()
+            for bucket, row_indices in _iter_bucket_row_groups(input, num_buckets):
+                actor = actors_by_bucket[bucket]
+                subset = keys_np[row_indices].tolist()
                 futures.append(actor.add_keys.remote(subset))
 
             if futures:
