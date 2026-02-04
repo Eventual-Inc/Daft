@@ -1040,3 +1040,55 @@ def test_join_on_hash_partitioned_df_does_not_shuffle():
     assert captured.count("Repartition") == 3, (
         f"Expected 'Repartition' to appear 3 times, got {captured.count('Repartition')}\n{captured}"
     )
+
+
+def test_agg_concat_with_delimiter(make_df):
+    df = make_df({"a": ["foo", "bar", "baz"]})
+    result = df.agg_concat("a", delimiter=",").to_pydict()
+    assert result["a"] == ["foo,bar,baz"]
+
+
+def test_agg_concat_with_delimiter_with_nulls(make_df):
+    df = make_df({"a": ["foo", None, "bar", "baz"]})
+    result = df.agg_concat("a", delimiter="|").to_pydict()
+    assert result["a"] == ["foo|bar|baz"]
+
+
+def test_agg_concat_with_delimiter_all_nulls(make_df):
+    df = make_df({"a": [None, None, None]})
+    df = df.with_column("a", col("a").cast(DataType.string()))
+    result = df.agg_concat("a", delimiter=",").to_pydict()
+    assert result["a"] == [None]
+
+
+def test_groupby_string_agg_with_delimiter(make_df):
+    df = make_df({"a": ["foo", "bar", "baz", "qux"], "b": [1, 1, 2, 2]})
+    result = df.groupby("b").string_agg("a", delimiter="-").sort("b").to_pydict()
+    assert result["a"] == ["foo-bar", "baz-qux"]
+
+
+def test_groupby_string_agg_with_delimiter_with_nulls(make_df):
+    df = make_df({"a": ["foo", None, "bar", "baz"], "b": [1, 1, 2, 2]})
+    result = df.groupby("b").string_agg("a", delimiter=",").sort("b").to_pydict()
+    assert result["a"] == ["foo", "bar,baz"]
+
+
+def test_groupby_string_agg_with_delimiter_all_nulls(make_df):
+    df = make_df({"a": [None, None, None, None], "b": [1, 1, 2, 2]})
+    df = df.with_column("a", col("a").cast(DataType.string()))
+    result = df.groupby("b").string_agg("a", delimiter=",").sort("b").to_pydict()
+    assert result["a"] == [None, None]
+
+
+def test_agg_concat_list_with_delimiter_raises(make_df):
+    df = make_df({"a": [[1, 2], [3, 4]]})
+    with pytest.raises(Exception) as exc_info:
+        df.agg_concat("a", delimiter=",").collect()
+    assert "Concat Agg delimiter is only supported for Utf8 types" in str(exc_info.value)
+
+
+def test_groupby_agg_concat_list_with_delimiter_raises(make_df):
+    df = make_df({"a": [[1, 2], [3, 4]], "b": [1, 2]})
+    with pytest.raises(Exception) as exc_info:
+        df.groupby("b").string_agg("a", delimiter=",").collect()
+    assert "Concat Agg delimiter is only supported for Utf8 types" in str(exc_info.value)

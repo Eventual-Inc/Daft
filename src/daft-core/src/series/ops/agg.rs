@@ -353,11 +353,11 @@ impl Series {
                         Some(groups) => groups
                             .iter()
                             .map(|group| {
-                                let concatenated = group
+                                let values: Vec<_> = group
                                     .iter()
                                     .filter_map(|&idx| downcasted.get(idx as usize))
-                                    .join(delimiter);
-                                Some(concatenated)
+                                    .collect();
+                                (!values.is_empty()).then(|| values.join(delimiter))
                             })
                             .collect(),
                         None => {
