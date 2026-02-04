@@ -255,7 +255,7 @@ pub(crate) fn get_runner_config_from_env() -> PyResult<RunnerConfig> {
         "" => {
             let (on_ray, _) = detect_ray_state();
             Ok(if on_ray {
-                // 只要在 Ray 环境中（无论是 Driver 还是 Worker），就应该使用 RayRunner
+                // Use Ray runner on Ray environments (both in drivers and workers)
                 get_ray_runner_config_from_env()
             } else {
                 RunnerConfig::Native { num_threads: None }

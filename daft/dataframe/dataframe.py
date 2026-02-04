@@ -36,7 +36,7 @@ from daft.errors import ExpressionTypeError
 from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
-from daft.recordbatch import MicroPartition
+from daft.recordbatch import MicroPartition, RecordBatch
 from daft.runners import get_or_create_runner
 from daft.runners.partitioning import (
     LocalPartitionSet,
@@ -134,6 +134,7 @@ class DataFrame:
         self.__builder = builder
         self._result_cache: PartitionCacheEntry | None = None
         self._preview = Preview(partition=None, total_rows=None)
+        self._metrics: RecordBatch | None = None
         self._num_preview_rows = get_context().daft_execution_config.num_preview_rows
 
     @property
@@ -168,6 +169,14 @@ class DataFrame:
             return None
         else:
             return self._result_cache.value
+
+    @property
+    def metrics(self) -> RecordBatch | None:
+        if self._result_cache is None:
+            raise ValueError("Metrics are not available until the DataFrame has been materialized")
+        else:
+            # TODO: Always None from Ray runner
+            return self._metrics
 
     def pipe(
         self,
@@ -838,6 +847,7 @@ class DataFrame:
         result_df = DataFrame(write_df._builder)
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
+        result_df._metrics = write_df._metrics
         return result_df
 
     @DataframePublicAPI
@@ -914,6 +924,7 @@ class DataFrame:
         result_df = DataFrame(write_df._builder)
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
+        result_df._metrics = write_df._metrics
         return result_df
 
     @DataframePublicAPI
@@ -981,6 +992,7 @@ class DataFrame:
         result_df = DataFrame(write_df._builder)
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
+        result_df._metrics = write_df._metrics
         return result_df
 
     @DataframePublicAPI
@@ -1142,7 +1154,9 @@ class DataFrame:
 
         # NOTE: We are losing the history of the plan here.
         # This is due to the fact that the logical plan of the write_iceberg returns datafiles but we want to return the above data
-        return from_pydict(with_operations)
+        df = from_pydict(with_operations)
+        df._metrics = write_df._metrics
+        return df
 
     @DataframePublicAPI
     def write_deltalake(
@@ -1394,7 +1408,7 @@ class DataFrame:
                 "file_name": pa.array([os.path.basename(fp) for fp in paths], type=pa.string()),
             }
         )
-
+        with_operations._metrics = write_df._metrics
         return with_operations
 
     @DataframePublicAPI
@@ -1426,7 +1440,9 @@ class DataFrame:
         # TODO(desmond): Connect the old and new logical plan builders so that a .explain() shows the
         # plan from the source all the way to the sink to the sink's results. In theory we can do this
         # for all other sinks too.
-        return DataFrame._from_micropartitions(micropartition)
+        df = DataFrame._from_micropartitions(micropartition)
+        df._metrics = write_df._metrics
+        return df
 
     @DataframePublicAPI
     def write_lance(
@@ -4131,7 +4147,7 @@ class DataFrame:
     def _materialize_results(self) -> None:
         """Materializes the results of for this DataFrame and hold a pointer to the results."""
         if self._result is None:
-            self._result_cache = get_or_create_runner().run(self._builder)
+            self._result_cache, self._metrics = get_or_create_runner().run(self._builder)
             result = self._result
             assert result is not None
             result.wait()

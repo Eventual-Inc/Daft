@@ -107,7 +107,7 @@ def test_capture_states(monkeypatch):
     # Get keys from the map
     query_id = subscriber.query_ids[-1]
     assert subscriber.end_states[query_id] == QueryEndState.Finished
-    assert subscriber.end_messages[query_id] == ""
+    assert subscriber.end_messages[query_id] == "Query finished"
     # contains the Value Error message
 
     # 2. Failed state

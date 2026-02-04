@@ -216,17 +216,11 @@ impl PyDaftContext {
         Ok(())
     }
 
-    pub fn notify_query_end(
-        &self,
-        py: Python,
-        query_id: String,
-        query_result: PyQueryResult,
-    ) -> PyResult<()> {
+    pub fn notify_query_end(&self, py: Python, query_id: String, query_result: PyQueryResult) {
         py.detach(|| {
             self.inner
-                .notify_query_end(query_id.into(), query_result.into())
-        })?;
-        Ok(())
+                .notify_query_end(query_id.into(), query_result.into());
+        });
     }
 
     pub fn notify_result_out(

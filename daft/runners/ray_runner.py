@@ -377,15 +377,6 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         return len(self._results)
 
     def wait(self) -> None:
-        # 确保我们有对象引用可以等待
-        if not self._results:
-            # 如果没有结果，我们需要确保RemoteFlotillaRunner已经完成了所有任务
-            # 这里我们可以尝试等待一小段时间，让任务有机会完成
-            import time
-
-            time.sleep(0.5)
-            return
-
         deduped_object_refs = {r.partition() for r in self._results.values()}
         ray.wait(list(deduped_object_refs), fetch_local=False, num_returns=len(deduped_object_refs))
 
@@ -648,9 +639,9 @@ class RayRunner(Runner[ray.ObjectRef]):
             if should_notify:
                 try:
                     ctx._notify_exec_end(query_id)
-                    ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Finished, ""))
                 except Exception:
                     pass
+                ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Finished, "Query finished"))
 
         except GeneratorExit:
             # GeneratorExit is raised when the generator is closed (e.g. by break)
@@ -659,13 +650,8 @@ class RayRunner(Runner[ray.ObjectRef]):
             # For now, we propagate it to ensure proper cleanup.
             raise
         except Exception as e:
-            # Swallow exceptions related to Dashboard notification to avoid failing the query
-            # if only the dashboard update failed.
             if should_notify:
-                try:
-                    ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Failed, str(e)))
-                except Exception:
-                    pass
+                ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Failed, str(e)))
             raise
 
     def run_iter_tables(
@@ -684,9 +670,9 @@ class RayRunner(Runner[ray.ObjectRef]):
 
         return pset_entry
 
-    def run(self, builder: LogicalPlanBuilder) -> PartitionCacheEntry:
+    def run(self, builder: LogicalPlanBuilder) -> tuple[PartitionCacheEntry, RecordBatch | None]:
         results_iter = self.run_iter(builder)
-        return self._collect_into_cache(results_iter)
+        return self._collect_into_cache(results_iter), None
 
     def put_partition_set_into_cache(self, pset: PartitionSet[ray.ObjectRef]) -> PartitionCacheEntry:
         if isinstance(pset, LocalPartitionSet):

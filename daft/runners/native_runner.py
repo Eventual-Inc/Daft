@@ -17,7 +17,7 @@ from daft.daft import (
 from daft.errors import UDFException
 from daft.execution.native_executor import NativeExecutor
 from daft.filesystem import glob_path_with_stats
-from daft.recordbatch import MicroPartition
+from daft.recordbatch import MicroPartition, RecordBatch
 from daft.runners import runner_io
 from daft.runners.partitioning import (
     LocalMaterializedResult,
@@ -29,7 +29,7 @@ from daft.runners.runner import LOCAL_PARTITION_SET_CACHE, Runner
 from daft.scarf_telemetry import track_runner_on_scarf
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Generator, Iterator
 
     from daft.logical.builder import LogicalPlanBuilder
 
@@ -72,21 +72,27 @@ class NativeRunner(Runner[MicroPartition]):
     def runner_io(self) -> NativeRunnerIO:
         return NativeRunnerIO()
 
-    def run(self, builder: LogicalPlanBuilder) -> PartitionCacheEntry:
-        results = list(self.run_iter(builder))
-
+    def run(self, builder: LogicalPlanBuilder) -> tuple[PartitionCacheEntry, RecordBatch]:
+        results_gen = self.run_iter(builder)
         result_pset = LocalPartitionSet()
-        for i, result in enumerate(results):
-            result_pset.set_partition(i, result)
+
+        try:
+            i = 0
+            while True:
+                result = next(results_gen)
+                result_pset.set_partition(i, result)
+                i += 1
+        except StopIteration as e:
+            metrics = e.value
 
         pset_entry = self.put_partition_set_into_cache(result_pset)
-        return pset_entry
+        return pset_entry, metrics
 
     def run_iter(
         self,
         builder: LogicalPlanBuilder,
         results_buffer_size: int | None = None,
-    ) -> Iterator[LocalMaterializedResult]:
+    ) -> Generator[LocalMaterializedResult, None, RecordBatch]:
         track_runner_on_scarf(runner=self.name)
 
         # NOTE: Freeze and use this same execution config for the entire execution
@@ -136,41 +142,31 @@ class NativeRunner(Runner[MicroPartition]):
         )
 
         try:
-            for result in results_gen:
+            while True:
+                result = next(results_gen)
                 try:
                     ctx._notify_result_out(query_id, result.partition())
                 except Exception:
                     pass
                 yield result
+        except StopIteration as e:
+            query_result = PyQueryResult(QueryEndState.Finished, "Query finished")
+            ctx._notify_query_end(query_id, query_result)
+            return e.value
         except KeyboardInterrupt as e:
-            try:
-                query_result = PyQueryResult(QueryEndState.Canceled, "Query canceled by the user.")
-                ctx._notify_query_end(query_id, query_result)
-            except Exception:
-                pass
+            query_result = PyQueryResult(QueryEndState.Canceled, "Query canceled by the user.")
+            ctx._notify_query_end(query_id, query_result)
             raise e
         except UDFException as e:
             err_msg = f"UDF failed with exception: {e.original_exception}"
-            try:
-                query_result = PyQueryResult(QueryEndState.Failed, err_msg)
-                ctx._notify_query_end(query_id, query_result)
-            except Exception:
-                pass
+            query_result = PyQueryResult(QueryEndState.Failed, err_msg)
+            ctx._notify_query_end(query_id, query_result)
             raise e
         except Exception as e:
             err_msg = f"General Exception raised: {e}"
-            try:
-                query_result = PyQueryResult(QueryEndState.Failed, err_msg)
-                ctx._notify_query_end(query_id, query_result)
-            except Exception:
-                pass
+            query_result = PyQueryResult(QueryEndState.Failed, err_msg)
+            ctx._notify_query_end(query_id, query_result)
             raise e
-        else:
-            try:
-                query_result = PyQueryResult(QueryEndState.Finished, "")
-                ctx._notify_query_end(query_id, query_result)
-            except Exception:
-                pass
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None

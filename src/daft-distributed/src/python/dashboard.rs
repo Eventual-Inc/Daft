@@ -57,8 +57,8 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
                 let mut accumulated = self.operator_stats.lock().unwrap();
                 let mut started = self.started_operators.lock().unwrap();
 
-                for (node_id, task_stats) in stats {
-                    let node_id = *node_id;
+                for (node_info, task_stats) in &stats.nodes {
+                    let node_id = node_info.id;
                     if !started.contains(&node_id) {
                         started.insert(node_id);
                     }

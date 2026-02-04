@@ -11,10 +11,11 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{NodeID, QueryID, StatSnapshot, snapshot::StatSnapshotImpl};
+use common_metrics::{NodeID, QueryID, ops::NodeInfo, snapshot::StatSnapshotImpl};
 use common_runtime::RuntimeTask;
 use daft_context::Subscriber;
 use daft_dsl::common_treenode::{TreeNode, TreeNodeRecursion};
+use daft_local_plan::ExecutionEngineFinalResult;
 use futures::future;
 use itertools::Itertools;
 use progress_bar::{ProgressBar, make_progress_bar_manager};
@@ -76,7 +77,7 @@ impl RuntimeStatsManagerHandle {
 pub struct RuntimeStatsManager {
     node_tx: Arc<mpsc::UnboundedSender<(usize, bool)>>,
     finish_tx: oneshot::Sender<QueryEndState>,
-    stats_manager_task: RuntimeTask<Vec<(NodeID, StatSnapshot)>>,
+    stats_manager_task: RuntimeTask<ExecutionEngineFinalResult>,
 }
 
 impl std::fmt::Debug for RuntimeStatsManager {
@@ -94,13 +95,13 @@ impl RuntimeStatsManager {
         query_id: QueryID,
     ) -> DaftResult<Self> {
         // Construct mapping between node id and their node info and runtime stats
-        let mut node_stats_map = HashMap::new();
+        let mut node_map = HashMap::new();
         let mut node_info_map = HashMap::new();
         let _ = pipeline.apply(|node| {
             let node_info = node.node_info();
             let runtime_stats = node.runtime_stats();
-            node_stats_map.insert(node_info.id, runtime_stats);
-            node_info_map.insert(node_info.id, node_info);
+            node_info_map.insert(node_info.id, node_info.clone());
+            node_map.insert(node_info.id, (node_info, runtime_stats));
             Ok(TreeNodeRecursion::Continue)
         });
 
@@ -123,7 +124,7 @@ impl RuntimeStatsManager {
             query_id,
             subscribers,
             progress_bar,
-            node_stats_map,
+            node_map,
             throttle_interval,
         ))
     }
@@ -134,7 +135,7 @@ impl RuntimeStatsManager {
         query_id: QueryID,
         subscribers: Vec<Arc<dyn Subscriber>>,
         progress_bar: Option<Box<dyn ProgressBar>>,
-        node_stats_map: HashMap<NodeID, Arc<dyn RuntimeStats>>,
+        node_map: HashMap<NodeID, (Arc<NodeInfo>, Arc<dyn RuntimeStats>)>,
         throttle_interval: Duration,
     ) -> Self {
         let (node_tx, mut node_rx) = mpsc::unbounded_channel::<(usize, bool)>();
@@ -143,9 +144,9 @@ impl RuntimeStatsManager {
 
         let event_loop = async move {
             let mut interval = interval(throttle_interval);
-            let mut active_nodes = HashSet::with_capacity(node_stats_map.len());
+            let mut active_nodes = HashSet::with_capacity(node_map.len());
             // Reuse container for ticks
-            let mut snapshot_container = Vec::with_capacity(node_stats_map.len());
+            let mut snapshot_container = Vec::with_capacity(node_map.len());
 
             loop {
                 tokio::select! {
@@ -162,14 +163,14 @@ impl RuntimeStatsManager {
                                 }
                             }
                         } else if !is_initialize && active_nodes.remove(&node_id) {
-                            let runtime_stats = &node_stats_map[&node_id];
+                            let runtime_stats = &node_map[&node_id].1;
                             let snapshot = runtime_stats.flush();
 
                             if let Some(progress_bar) = &progress_bar {
                                 progress_bar.finalize_node(node_id, &snapshot);
                             }
 
-                            let event = std::sync::Arc::new(vec![(node_id, snapshot.to_stats())]);
+                            let event = Arc::new(vec![(node_id, snapshot.to_stats())]);
                             for res in future::join_all(subscribers.iter().map(|subscriber| async {
                                 subscriber.on_exec_emit_stats(query_id.clone(), event.clone()).await?;
                                 subscriber.on_exec_operator_end(query_id.clone(), node_id).await
@@ -188,24 +189,6 @@ impl RuntimeStatsManager {
                                 active_nodes.iter().map(|id: &usize| id.to_string()).join(", ")
                             );
                         }
-
-                        // Emit final stats to all subscribers before finishing
-                        let mut final_stats = Vec::with_capacity(node_stats_map.len());
-                        for (node_id, runtime_stats) in &node_stats_map {
-                            let event = runtime_stats.flush();
-                            final_stats.push((*node_id, event.to_stats()));
-                        }
-                        if !final_stats.is_empty() {
-                            let final_stats = std::sync::Arc::new(final_stats);
-                            for res in future::join_all(subscribers.iter().map(|subscriber| {
-                                subscriber.on_exec_emit_stats(query_id.clone(), final_stats.clone())
-                            })).await {
-                                if let Err(e) = res {
-                                    log::error!("Failed to emit final stats: {}", e);
-                                }
-                            }
-                        }
-
                         break;
                     }
 
@@ -215,7 +198,7 @@ impl RuntimeStatsManager {
                         }
 
                         for node_id in &active_nodes {
-                            let runtime_stats = &node_stats_map[node_id];
+                            let runtime_stats = &node_map[node_id].1;
                             let snapshot = runtime_stats.snapshot();
                             if let Some(progress_bar) = &progress_bar {
                                 progress_bar.handle_event(*node_id, &snapshot);
@@ -223,7 +206,7 @@ impl RuntimeStatsManager {
                             snapshot_container.push((*node_id, snapshot.to_stats()));
                         }
 
-                        let snapshot_container = std::sync::Arc::new(std::mem::take(&mut snapshot_container));
+                        let snapshot_container = Arc::new(std::mem::take(&mut snapshot_container));
                         for res in future::join_all(subscribers.iter().map(|subscriber| {
                             subscriber.on_exec_emit_stats(query_id.clone(), snapshot_container.clone())
                         })).await {
@@ -249,11 +232,11 @@ impl RuntimeStatsManager {
 
             // Return the final stat snapshot for all nodes
             let mut final_snapshot = Vec::new();
-            for (node_id, runtime_stats) in &node_stats_map {
+            for (node_info, runtime_stats) in node_map.values() {
                 let event = runtime_stats.flush();
-                final_snapshot.push((*node_id, event));
+                final_snapshot.push((node_info.clone(), event));
             }
-            final_snapshot
+            ExecutionEngineFinalResult::new(final_snapshot)
         };
 
         let task_handle = RuntimeTask::new(handle, event_loop);
@@ -268,7 +251,7 @@ impl RuntimeStatsManager {
         RuntimeStatsManagerHandle(self.node_tx.clone())
     }
 
-    pub async fn finish(self, status: QueryEndState) -> Vec<(NodeID, StatSnapshot)> {
+    pub async fn finish(self, status: QueryEndState) -> ExecutionEngineFinalResult {
         self.finish_tx
             .send(status)
             .expect("The finish_tx channel was closed");
@@ -419,7 +402,7 @@ mod tests {
             "test_query_id".into(),
             vec![mock_subscriber],
             None,
-            HashMap::from([(0, node_stat.clone())]),
+            HashMap::from([(0, (Arc::new(NodeInfo::default()), node_stat.clone()))]),
             throttle_interval,
         );
         let handle = stats_manager.handle();
@@ -480,7 +463,7 @@ mod tests {
             "test_query_id".into(),
             vec![subscriber1, subscriber2],
             None,
-            HashMap::from([(0, node_stat.clone())]),
+            HashMap::from([(0, (Arc::new(NodeInfo::default()), node_stat.clone()))]),
             throttle_interval,
         );
         let handle = stats_manager.handle();
@@ -553,7 +536,7 @@ mod tests {
             "test_query_id".into(),
             vec![failing_subscriber, mock_subscriber],
             None,
-            HashMap::from([(0, node_stat.clone())]),
+            HashMap::from([(0, (Arc::new(NodeInfo::default()), node_stat.clone()))]),
             throttle_interval,
         );
         let handle = stats_manager.handle();
@@ -606,7 +589,7 @@ mod tests {
             "test_query_id".into(),
             vec![mock_subscriber],
             None,
-            HashMap::from([(0, node_stat.clone())]),
+            HashMap::from([(0, (Arc::new(NodeInfo::default()), node_stat.clone()))]),
             throttle_interval,
         );
         let handle = stats_manager.handle();
@@ -639,7 +622,7 @@ mod tests {
             "test_query_id".into(),
             vec![mock_subscriber],
             None,
-            HashMap::from([(0, node_stat.clone())]),
+            HashMap::from([(0, (Arc::new(NodeInfo::default()), node_stat.clone()))]),
             throttle_interval,
         );
         let handle = stats_manager.handle();

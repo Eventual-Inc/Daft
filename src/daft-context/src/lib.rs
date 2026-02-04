@@ -140,13 +140,14 @@ impl DaftContext {
         })
     }
 
-    pub fn notify_query_end(&self, query_id: QueryID, result: QueryResult) -> DaftResult<()> {
+    pub fn notify_query_end(&self, query_id: QueryID, result: QueryResult) {
         self.with_state(move |state| {
             for subscriber in state.subscribers.values() {
-                subscriber.on_query_end(query_id.clone(), result.clone())?;
+                if let Err(e) = subscriber.on_query_end(query_id.clone(), result.clone()) {
+                    log::error!("Failed to notify subscriber on query end: {}", e);
+                }
             }
-            Ok::<(), DaftError>(())
-        })
+        });
     }
 
     pub fn notify_result_out(
