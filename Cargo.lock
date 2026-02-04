@@ -6087,10 +6087,10 @@ dependencies = [
 [[package]]
 name = "parquet-format-safe"
 version = "0.2.4"
+source = "git+https://github.com/Eventual-Inc/parquet-format-safe?tag=patched-parquet-format-safe#29ba7466ab3eb2c521304420e28eabc6cdaa5749"
 dependencies = [
  "async-trait",
  "futures",
- "tokio",
 ]
 
 [[package]]
