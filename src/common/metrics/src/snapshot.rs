@@ -59,7 +59,7 @@ impl StatSnapshotImpl for SourceSnapshot {
         stats![
             CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
             ROWS_OUT_KEY; Stat::Count(self.rows_out),
-            "bytes read"; Stat::Bytes(self.bytes_read),
+            "bytes_read"; Stat::Bytes(self.bytes_read),
         ]
     }
 

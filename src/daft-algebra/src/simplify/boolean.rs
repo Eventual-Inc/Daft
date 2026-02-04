@@ -1,7 +1,7 @@
 use common_error::DaftResult;
 use common_treenode::Transformed;
-use daft_core::lit::Literal;
-use daft_dsl::{Expr, ExprRef, Operator, lit};
+use daft_core::{lit::Literal, prelude::Operator};
+use daft_dsl::{Expr, ExprRef, lit};
 use daft_schema::{dtype::DataType, schema::SchemaRef};
 use indexmap::IndexSet;
 
@@ -296,7 +296,8 @@ mod tests {
 
     use common_error::DaftResult;
     use common_treenode::Transformed;
-    use daft_dsl::{Column, Expr, ExprRef, Operator, ResolvedColumn, lit};
+    use daft_core::prelude::Operator;
+    use daft_dsl::{Column, Expr, ExprRef, ResolvedColumn, lit};
     use daft_schema::{dtype::DataType, field::Field, schema::Schema};
 
     use crate::simplify::boolean::simplify_binary_compare;

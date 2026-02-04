@@ -170,9 +170,9 @@ impl RuntimeStatsManager {
                                 progress_bar.finalize_node(node_id, &snapshot);
                             }
 
-                            let event = [(node_id, snapshot.to_stats())];
+                            let event = Arc::new(vec![(node_id, snapshot.to_stats())]);
                             for res in future::join_all(subscribers.iter().map(|subscriber| async {
-                                subscriber.on_exec_emit_stats(query_id.clone(), &event).await?;
+                                subscriber.on_exec_emit_stats(query_id.clone(), event.clone()).await?;
                                 subscriber.on_exec_operator_end(query_id.clone(), node_id).await
                             })).await {
                                 if let Err(e) = res {
@@ -183,7 +183,7 @@ impl RuntimeStatsManager {
                     }
 
                     finish_status = &mut finish_rx => {
-                        if let Ok(status) = finish_status && status == QueryEndState::Finished && !active_nodes.is_empty() {
+                        if finish_status == Ok(QueryEndState::Finished) && !active_nodes.is_empty() {
                             log::error!(
                                 "RuntimeStatsManager finished with active nodes {{{}}}",
                                 active_nodes.iter().map(|id: &usize| id.to_string()).join(", ")
@@ -206,14 +206,14 @@ impl RuntimeStatsManager {
                             snapshot_container.push((*node_id, snapshot.to_stats()));
                         }
 
+                        let snapshot_container = Arc::new(std::mem::take(&mut snapshot_container));
                         for res in future::join_all(subscribers.iter().map(|subscriber| {
-                            subscriber.on_exec_emit_stats(query_id.clone(), snapshot_container.as_slice())
+                            subscriber.on_exec_emit_stats(query_id.clone(), snapshot_container.clone())
                         })).await {
                             if let Err(e) = res {
                                 log::error!("Failed to handle event: {}", e);
                             }
                         }
-                        snapshot_container.clear();
                     }
                 }
             }
@@ -378,12 +378,12 @@ mod tests {
         async fn on_exec_emit_stats(
             &self,
             _query_id: QueryID,
-            stats: &[(NodeID, Stats)],
+            stats: std::sync::Arc<Vec<(NodeID, Stats)>>,
         ) -> DaftResult<()> {
             self.state
                 .total_calls
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            for (_, snapshot) in stats {
+            for (_, snapshot) in stats.iter() {
                 *self.state.event.lock().unwrap() = Some(snapshot.clone());
             }
             Ok(())
@@ -517,7 +517,7 @@ mod tests {
             async fn on_exec_emit_stats(
                 &self,
                 _: QueryID,
-                __: &[(NodeID, Stats)],
+                __: std::sync::Arc<Vec<(NodeID, Stats)>>,
             ) -> DaftResult<()> {
                 Err(common_error::DaftError::InternalError(
                     "Test error".to_string(),

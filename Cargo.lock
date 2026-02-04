@@ -2576,6 +2576,7 @@ dependencies = [
  "log",
  "pyo3",
  "reqwest 0.12.28",
+ "uuid 1.19.0",
 ]
 
 [[package]]
@@ -2583,6 +2584,7 @@ name = "daft-core"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow",
+ "arrow-row",
  "bincode",
  "chrono",
  "chrono-tz",
@@ -2703,6 +2705,7 @@ dependencies = [
  "common-runtime",
  "common-scan-info",
  "common-treenode",
+ "daft-context",
  "daft-dsl",
  "daft-local-plan",
  "daft-logical-plan",
@@ -2717,6 +2720,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
+ "smallvec",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -2902,6 +2906,7 @@ dependencies = [
  "daft-arrow",
  "daft-core",
  "daft-dsl",
+ "heck 0.5.0",
  "itertools 0.14.0",
  "num-traits",
  "regex",

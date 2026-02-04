@@ -111,13 +111,20 @@ where
 
     let result: LargeStringArray = match nchars.len() {
         1 => {
-            let n = nchars_arrow.iter().next().unwrap().unwrap();
-            let n: usize = NumCast::from(n).ok_or_else(|| {
-                DaftError::ComputeError(format!("Error in right: failed to cast rhs as usize {n}"))
-            })?;
-            arr_iter
-                .map(|val| Some(right_most_chars(val?, n)))
-                .collect()
+            let n = nchars_arrow.iter().next().unwrap();
+            match n {
+                Some(n) => {
+                    let n: usize = NumCast::from(n).ok_or_else(|| {
+                        DaftError::ComputeError(format!(
+                            "Error in right: failed to cast rhs as usize {n}"
+                        ))
+                    })?;
+                    arr_iter
+                        .map(|val| Some(right_most_chars(val?, n)))
+                        .collect()
+                }
+                None => arr_iter.map(|_| None::<&str>).collect(),
+            }
         }
         _ => arr_iter
             .zip(nchars_arrow.iter())

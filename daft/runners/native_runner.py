@@ -10,7 +10,6 @@ from daft.daft import (
     FileInfos,
     IOConfig,
     LocalPhysicalPlan,
-    PyQueryMetadata,
     PyQueryResult,
     QueryEndState,
     set_compute_runtime_num_worker_threads,
@@ -102,12 +101,37 @@ class NativeRunner(Runner[MicroPartition]):
         output_schema = builder.schema()
 
         # Optimize the logical plan.
-        ctx._notify_query_start(query_id, PyQueryMetadata(output_schema._schema, builder.repr_json()))
-        ctx._notify_optimization_start(query_id)
+        import sys
+
+        entrypoint = "python " + " ".join(sys.argv)
+
+        try:
+            # Try to send notifications, but don't fail the query if they fail
+            from daft.daft import PyQueryMetadata
+
+            ctx._notify_query_start(
+                query_id,
+                PyQueryMetadata(
+                    output_schema._schema,
+                    builder.repr_json(),
+                    "Native (Swordfish)",
+                    ray_dashboard_url=None,
+                    entrypoint=entrypoint,
+                ),
+            )
+            ctx._notify_optimization_start(query_id)
+        except Exception as e:
+            logger.warning("Failed to send notifications: %s", e)
+            pass
         builder = builder.optimize(ctx.daft_execution_config)
-        ctx._notify_optimization_end(query_id, builder.repr_json())
+        try:
+            ctx._notify_optimization_end(query_id, builder.repr_json())
+        except Exception as e:
+            logger.warning("Failed to send optimization end notification: %s", e)
+            pass
 
         plan = LocalPhysicalPlan.from_logical_plan_builder(builder._builder)
+
         executor = NativeExecutor()
         results_gen = executor.run(
             plan,

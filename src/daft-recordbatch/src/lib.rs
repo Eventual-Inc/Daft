@@ -677,6 +677,9 @@ impl RecordBatch {
             AggExpr::Stddev(expr) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .stddev(groups),
+            AggExpr::Var(expr, ddof) => self
+                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                .var(groups, *ddof),
             AggExpr::Min(expr) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .min(groups),
@@ -874,7 +877,7 @@ impl RecordBatch {
                     )
                     .await?;
                 use daft_core::array::ops::{DaftCompare, DaftLogical};
-                use daft_dsl::Operator::*;
+                use daft_core::prelude::Operator::*;
                 match op {
                     Plus => lhs + rhs,
                     Minus => lhs - rhs,
@@ -1146,7 +1149,7 @@ impl RecordBatch {
                 let lhs = self.eval_expression_internal(&BoundExpr::new_unchecked(left.clone()), metrics)?;
                 let rhs = self.eval_expression_internal(&BoundExpr::new_unchecked(right.clone()), metrics)?;
                 use daft_core::array::ops::{DaftCompare, DaftLogical};
-                use daft_dsl::Operator::*;
+                use daft_core::prelude::Operator::*;
                 match op {
                     Plus => lhs + rhs,
                     Minus => lhs - rhs,

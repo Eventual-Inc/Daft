@@ -12,7 +12,6 @@ use std::{
     fmt::Formatter,
     hash::{DefaultHasher, Hash, Hasher},
     io::{self, Write},
-    str::FromStr,
     sync::Arc,
 };
 
@@ -23,6 +22,7 @@ use daft_core::{
     datatypes::{
         InferDataType, try_mean_aggregation_supertype, try_product_supertype,
         try_skew_aggregation_supertype, try_stddev_aggregation_supertype, try_sum_supertype,
+        try_variance_aggregation_supertype,
     },
     join::JoinSide,
     lit::Literal,
@@ -418,6 +418,9 @@ pub enum AggExpr {
     #[display("stddev({_0})")]
     Stddev(ExprRef),
 
+    #[display("var({_0}, ddof={_1})")]
+    Var(ExprRef, usize),
+
     #[display("min({_0})")]
     Min(ExprRef),
 
@@ -538,6 +541,7 @@ impl AggExpr {
             Self::MergeSketch(_, _) => "Merge Sketch",
             Self::Mean(_) => "Mean",
             Self::Stddev(_) => "Stddev",
+            Self::Var(_, _) => "Var",
             Self::Min(_) => "Min",
             Self::Max(_) => "Max",
             Self::BoolAnd(_) => "Bool And",
@@ -563,6 +567,7 @@ impl AggExpr {
             | Self::MergeSketch(expr, _)
             | Self::Mean(expr)
             | Self::Stddev(expr)
+            | Self::Var(expr, _)
             | Self::Min(expr)
             | Self::Max(expr)
             | Self::BoolAnd(expr)
@@ -629,6 +634,10 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_stddev()"))
             }
+            Self::Var(expr, ddof) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_var(ddof={ddof})"))
+            }
             Self::Min(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_min()"))
@@ -683,6 +692,7 @@ impl AggExpr {
             | Self::MergeSketch(expr, _)
             | Self::Mean(expr)
             | Self::Stddev(expr)
+            | Self::Var(expr, _)
             | Self::Min(expr)
             | Self::Max(expr)
             | Self::BoolAnd(expr)
@@ -710,6 +720,7 @@ impl AggExpr {
             Self::Product(_) => Self::Product(first_child()),
             Self::Mean(_) => Self::Mean(first_child()),
             Self::Stddev(_) => Self::Stddev(first_child()),
+            &Self::Var(_, ddof) => Self::Var(first_child(), ddof),
             Self::Min(_) => Self::Min(first_child()),
             Self::Max(_) => Self::Max(first_child()),
             Self::BoolAnd(_) => Self::BoolAnd(first_child()),
@@ -836,6 +847,13 @@ impl AggExpr {
                 Ok(Field::new(
                     field.name.as_str(),
                     try_stddev_aggregation_supertype(&field.dtype)?,
+                ))
+            }
+            Self::Var(expr, _) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(
+                    field.name.as_str(),
+                    try_variance_aggregation_supertype(&field.dtype)?,
                 ))
             }
 
@@ -1127,6 +1145,10 @@ impl Expr {
 
     pub fn stddev(self: ExprRef) -> ExprRef {
         Self::Agg(AggExpr::Stddev(self)).into()
+    }
+
+    pub fn var(self: ExprRef, ddof: usize) -> ExprRef {
+        Self::Agg(AggExpr::Var(self, ddof)).into()
     }
 
     pub fn min(self: ExprRef) -> ExprRef {
@@ -2235,95 +2257,6 @@ impl Expr {
             inputs: FunctionArgs::new_unchecked(vec![FunctionArg::Unnamed(self)]),
         }))
         .arced())
-    }
-}
-
-#[derive(Display, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub enum Operator {
-    #[display("==")]
-    Eq,
-    #[display("<=>")]
-    EqNullSafe,
-    #[display("!=")]
-    NotEq,
-    #[display("<")]
-    Lt,
-    #[display("<=")]
-    LtEq,
-    #[display(">")]
-    Gt,
-    #[display(">=")]
-    GtEq,
-    #[display("+")]
-    Plus,
-    #[display("-")]
-    Minus,
-    #[display("*")]
-    Multiply,
-    #[display("/")]
-    TrueDivide,
-    #[display("//")]
-    FloorDivide,
-    #[display("%")]
-    Modulus,
-    #[display("&")]
-    And,
-    #[display("|")]
-    Or,
-    #[display("^")]
-    Xor,
-    #[display("<<")]
-    ShiftLeft,
-    #[display(">>")]
-    ShiftRight,
-}
-
-impl Operator {
-    #![allow(dead_code)]
-    pub(crate) fn is_comparison(&self) -> bool {
-        matches!(
-            self,
-            Self::Eq
-                | Self::EqNullSafe
-                | Self::NotEq
-                | Self::Lt
-                | Self::LtEq
-                | Self::Gt
-                | Self::GtEq
-                | Self::And
-                | Self::Or
-                | Self::Xor
-        )
-    }
-
-    pub(crate) fn is_arithmetic(&self) -> bool {
-        !(self.is_comparison())
-    }
-}
-
-impl FromStr for Operator {
-    type Err = DaftError;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "==" => Ok(Self::Eq),
-            "!=" => Ok(Self::NotEq),
-            "<" => Ok(Self::Lt),
-            "<=" => Ok(Self::LtEq),
-            ">" => Ok(Self::Gt),
-            ">=" => Ok(Self::GtEq),
-            "+" => Ok(Self::Plus),
-            "-" => Ok(Self::Minus),
-            "*" => Ok(Self::Multiply),
-            "/" => Ok(Self::TrueDivide),
-            "//" => Ok(Self::FloorDivide),
-            "%" => Ok(Self::Modulus),
-            "&" => Ok(Self::And),
-            "|" => Ok(Self::Or),
-            "^" => Ok(Self::Xor),
-            "<<" => Ok(Self::ShiftLeft),
-            ">>" => Ok(Self::ShiftRight),
-            _ => Err(DaftError::ComputeError(format!("Invalid operator: {}", s))),
-        }
     }
 }
 

@@ -190,6 +190,38 @@ This ensures that the resulting Lance table uses the exact schema you specify, e
 ## Advanced Usage
 
 
+### Vector Search
+
+Daft can push Lance's vector search options through `default_scan_options`. This lets
+you express nearest-neighbor queries at scan time while keeping the rest of your
+pipeline in Daft.
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+    import pyarrow as pa
+
+    # Example: dataset with a fixed-size list or embedding column named "vector"
+    query = pa.array([0.0, 0.0], type=pa.float32())
+
+    df = daft.read_lance(
+        "/data/my_lance_vectors",
+        # Forward Lance's `nearest` options into the underlying scanner
+        default_scan_options={
+            "nearest": {
+                "column": "vector",  # Lance vector column name
+                "q": query,           # Query vector (any Lance-compatible QueryVectorLike)
+                "k": 5,               # Top-K neighbors to return
+            },
+        },
+    )
+
+    # The resulting DataFrame contains the K nearest rows according to Lance,
+    # and you can continue working with it using normal Daft APIs.
+    df.select("vector").show()
+    ```
+
 ### Data Evolution
 
 If you need to add derived columns in-place to an existing Lance dataset (e.g., apply a UDF across batches and persist the result), use `daft.io.lance.merge_columns`:
