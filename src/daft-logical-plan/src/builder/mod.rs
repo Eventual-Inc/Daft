@@ -1184,7 +1184,7 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.filter(predicate.expr)?.into())
     }
 
-    #[pyo3(signature = (root_dir, file_format, key_column, io_config=None, read_kwargs=None, num_buckets=None, num_cpus=None, resume_filter_batch_size=None, checkpoint_loading_batch_size=None))]
+    #[pyo3(signature = (root_dir, file_format, key_column, io_config=None, read_kwargs=None, num_buckets=None, num_cpus=None, resume_filter_batch_size=None, checkpoint_loading_batch_size=None, checkpoint_actor_max_concurrency=None))]
     #[allow(clippy::too_many_arguments)]
     pub fn resume_checkpoint(
         &self,
@@ -1198,6 +1198,7 @@ impl PyLogicalPlanBuilder {
         num_cpus: Option<f64>,
         resume_filter_batch_size: Option<usize>,
         checkpoint_loading_batch_size: Option<usize>,
+        checkpoint_actor_max_concurrency: Option<usize>,
     ) -> PyResult<Self> {
         let root_dirs: Vec<String> = if let Ok(s) = root_dir.extract::<String>(py) {
             vec![s]
@@ -1221,6 +1222,7 @@ impl PyLogicalPlanBuilder {
             num_cpus,
             resume_filter_batch_size,
             checkpoint_loading_batch_size,
+            checkpoint_actor_max_concurrency,
         )?;
         Ok(self.builder.resume_checkpoint(spec)?.into())
     }
@@ -1282,6 +1284,10 @@ impl PyLogicalPlanBuilder {
                 d.set_item(
                     "checkpoint_loading_batch_size",
                     spec.checkpoint_loading_batch_size,
+                )?;
+                d.set_item(
+                    "checkpoint_actor_max_concurrency",
+                    spec.checkpoint_actor_max_concurrency,
                 )?;
                 Ok(d.into())
             })

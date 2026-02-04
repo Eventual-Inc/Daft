@@ -539,6 +539,7 @@ def _maybe_apply_resume_checkpoint(builder: LogicalPlanBuilder) -> tuple[Logical
             read_kwargs = spec.get("read_kwargs")
             resume_filter_batch_size = spec.get("resume_filter_batch_size")
             checkpoint_loading_batch_size = spec.get("checkpoint_loading_batch_size")
+            checkpoint_actor_max_concurrency = spec.get("checkpoint_actor_max_concurrency")
 
             if num_buckets is None:
                 raise RuntimeError("resume num_buckets must be provided")
@@ -546,6 +547,8 @@ def _maybe_apply_resume_checkpoint(builder: LogicalPlanBuilder) -> tuple[Logical
                 raise RuntimeError("resume num_cpus must be provided")
             if checkpoint_loading_batch_size is None:
                 raise RuntimeError("resume checkpoint_loading_batch_size must be provided")
+            if checkpoint_actor_max_concurrency is None:
+                raise RuntimeError("resume checkpoint_actor_max_concurrency must be provided")
 
             key_columns: list[str] | None
             if isinstance(key_column, list):
@@ -584,6 +587,7 @@ def _maybe_apply_resume_checkpoint(builder: LogicalPlanBuilder) -> tuple[Logical
                 read_fn=read_fn,
                 read_kwargs=read_kwargs,
                 checkpoint_loading_batch_size=checkpoint_loading_batch_size,
+                checkpoint_actor_max_concurrency=checkpoint_actor_max_concurrency,
             )
 
             checkpoint_filter_expr = create_checkpoint_filter_udf(

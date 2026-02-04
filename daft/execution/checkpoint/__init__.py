@@ -155,6 +155,7 @@ def _prepare_checkpoint_filter(
     num_cpus: float,
     read_fn: Callable[..., DataFrame],
     checkpoint_loading_batch_size: int,
+    checkpoint_actor_max_concurrency: int,
     read_kwargs: dict[str, Any] | None = None,
 ) -> tuple[list[ActorHandle], PlacementGroup | None]:
     """Build and return checkpoint resources.
@@ -170,6 +171,8 @@ def _prepare_checkpoint_filter(
     """
     if get_or_create_runner().name != "ray":
         raise RuntimeError("Checkpointing is only supported on Ray runner")
+    if checkpoint_actor_max_concurrency <= 0:
+        raise ValueError("resume checkpoint_actor_max_concurrency must be > 0")
 
     root_dirs = root_dir if isinstance(root_dir, list) else [root_dir]
     root_dirs_str = [str(p) for p in root_dirs]
@@ -227,7 +230,7 @@ def _prepare_checkpoint_filter(
         composite_key_fields = tuple(key_columns) if len(key_columns) > 1 else ()
         for i in range(num_buckets):
             actor = (
-                ray.remote(max_concurrency=10)(CheckpointActor)
+                ray.remote(max_concurrency=checkpoint_actor_max_concurrency)(CheckpointActor)
                 .options(
                     num_cpus=num_cpus,
                     scheduling_strategy=ray.util.scheduling_strategies.PlacementGroupSchedulingStrategy(

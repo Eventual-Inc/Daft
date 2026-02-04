@@ -2346,6 +2346,7 @@ class DataFrame:
         num_cpus: float = 1.0,
         resume_filter_batch_size: int | None = None,
         checkpoint_loading_batch_size: int = 100000,
+        checkpoint_actor_max_concurrency: int = 10,
         **reader_args: Any,
     ) -> "DataFrame":
         if isinstance(on, str):
@@ -2388,6 +2389,8 @@ class DataFrame:
             raise ValueError("resume resume_filter_batch_size must be > 0")
         if checkpoint_loading_batch_size <= 0:
             raise ValueError("resume checkpoint_loading_batch_size must be > 0")
+        if checkpoint_actor_max_concurrency <= 0:
+            raise ValueError("resume checkpoint_actor_max_concurrency must be > 0")
 
         root_dir: str | list[str]
         if isinstance(path, list):
@@ -2409,6 +2412,7 @@ class DataFrame:
             num_cpus=num_cpus,
             resume_filter_batch_size=resume_filter_batch_size,
             checkpoint_loading_batch_size=checkpoint_loading_batch_size,
+            checkpoint_actor_max_concurrency=checkpoint_actor_max_concurrency,
         )
         return DataFrame(builder)
 

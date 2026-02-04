@@ -24,6 +24,7 @@ pub struct ResumeCheckpointSpec {
     pub num_cpus: Option<FloatWrapper<f64>>,
     pub resume_filter_batch_size: Option<usize>,
     pub checkpoint_loading_batch_size: Option<usize>,
+    pub checkpoint_actor_max_concurrency: Option<usize>,
     #[cfg(feature = "python")]
     pub read_kwargs: PyObjectWrapper,
 }
@@ -41,6 +42,7 @@ impl ResumeCheckpointSpec {
         num_cpus: Option<f64>,
         resume_filter_batch_size: Option<usize>,
         checkpoint_loading_batch_size: Option<usize>,
+        checkpoint_actor_max_concurrency: Option<usize>,
     ) -> DaftResult<Self> {
         if root_dir.is_empty() || root_dir.iter().any(|p| p.is_empty()) {
             return Err(DaftError::ValueError(
@@ -74,6 +76,11 @@ impl ResumeCheckpointSpec {
                 "resume checkpoint checkpoint_loading_batch_size must be > 0".to_string(),
             ));
         }
+        if matches!(checkpoint_actor_max_concurrency, Some(0)) {
+            return Err(DaftError::ValueError(
+                "resume checkpoint checkpoint_actor_max_concurrency must be > 0".to_string(),
+            ));
+        }
         Ok(Self {
             root_dir,
             file_format,
@@ -84,6 +91,7 @@ impl ResumeCheckpointSpec {
             num_cpus: num_cpus.map(FloatWrapper),
             resume_filter_batch_size,
             checkpoint_loading_batch_size,
+            checkpoint_actor_max_concurrency,
         })
     }
 
@@ -98,6 +106,7 @@ impl ResumeCheckpointSpec {
         num_cpus: Option<f64>,
         resume_filter_batch_size: Option<usize>,
         checkpoint_loading_batch_size: Option<usize>,
+        checkpoint_actor_max_concurrency: Option<usize>,
     ) -> DaftResult<Self> {
         if root_dir.is_empty() || root_dir.iter().any(|p| p.is_empty()) {
             return Err(DaftError::ValueError(
@@ -131,6 +140,11 @@ impl ResumeCheckpointSpec {
                 "resume checkpoint checkpoint_loading_batch_size must be > 0".to_string(),
             ));
         }
+        if matches!(checkpoint_actor_max_concurrency, Some(0)) {
+            return Err(DaftError::ValueError(
+                "resume checkpoint checkpoint_actor_max_concurrency must be > 0".to_string(),
+            ));
+        }
         Ok(Self {
             root_dir,
             file_format,
@@ -140,6 +154,7 @@ impl ResumeCheckpointSpec {
             num_cpus: num_cpus.map(FloatWrapper),
             resume_filter_batch_size,
             checkpoint_loading_batch_size,
+            checkpoint_actor_max_concurrency,
         })
     }
 }
@@ -245,6 +260,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .unwrap();
 
@@ -252,6 +268,7 @@ mod tests {
             vec!["root2".to_string()],
             FileFormat::Csv,
             vec!["id".to_string()],
+            None,
             None,
             None,
             None,
@@ -300,6 +317,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
             )
             .unwrap();
 
@@ -313,6 +331,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
             )
             .unwrap();
 
@@ -322,6 +341,7 @@ mod tests {
                 vec!["id".to_string()],
                 None,
                 kwargs_c,
+                None,
                 None,
                 None,
                 None,
@@ -374,6 +394,7 @@ mod tests {
                 None,
                 Some(10),
                 None,
+                None,
             )?;
             scan_builder.resume_checkpoint(spec)
         })?;
@@ -388,6 +409,7 @@ mod tests {
                 None,
                 None,
                 Some(10),
+                None,
                 None,
             )?;
             scan_builder.resume_checkpoint(spec)?
@@ -431,6 +453,7 @@ mod tests {
             None,
             None,
             Some(10),
+            None,
             None,
         )?;
 

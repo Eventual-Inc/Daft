@@ -416,6 +416,7 @@ class LogicalPlanBuilder:
         num_cpus: float | None = None,
         resume_filter_batch_size: int | None = None,
         checkpoint_loading_batch_size: int | None = None,
+        checkpoint_actor_max_concurrency: int | None = None,
     ) -> LogicalPlanBuilder:
         builder = self._builder.resume_checkpoint(
             root_dir,
@@ -427,5 +428,6 @@ class LogicalPlanBuilder:
             num_cpus,
             resume_filter_batch_size,
             checkpoint_loading_batch_size,
+            checkpoint_actor_max_concurrency,
         )
         return LogicalPlanBuilder(builder)
