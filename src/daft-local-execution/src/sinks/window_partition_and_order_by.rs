@@ -254,7 +254,7 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
     }
 
     fn op_type(&self) -> NodeType {
-        NodeType::WindowPartitionAndOrderBy
+        NodeType::Window
     }
 
     fn multiline_display(&self) -> Vec<String> {

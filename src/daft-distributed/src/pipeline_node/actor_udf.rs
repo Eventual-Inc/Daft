@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_metrics::ops::{NodeCategory, NodeType};
 use common_py_serde::PyObjectWrapper;
 use common_runtime::JoinSet;
 use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFProperties, python::PyExpr};
@@ -142,6 +143,8 @@ impl ActorUDF {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::DistributedActorPoolProject,
+            NodeCategory::Intermediate,
         );
         let config = PipelineNodeConfig::new(
             schema,

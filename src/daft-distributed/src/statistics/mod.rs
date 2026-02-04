@@ -6,10 +6,7 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::{
-    QueryID,
-    ops::{NodeCategory, NodeInfo, NodeType},
-};
+use common_metrics::{QueryID, ops::NodeInfo};
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_local_plan::ExecutionEngineFinalResult;
 use opentelemetry::{InstrumentationScope, KeyValue, global};
@@ -117,8 +114,8 @@ impl StatisticsManager {
             let node_info = Arc::new(NodeInfo {
                 name: node.name().to_string().into(),
                 id: node.node_id() as usize,
-                node_type: NodeType::default(),
-                node_category: NodeCategory::default(),
+                node_type: node.context().node_type.clone(),
+                node_category: node.context().node_category.clone(),
                 context: HashMap::new(),
             });
             runtime_node_managers.insert(

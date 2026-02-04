@@ -1,7 +1,11 @@
 use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
-use common_metrics::{CPU_US_KEY, Counter, ROWS_IN_KEY, StatSnapshot, snapshot::WriteSnapshot};
+use common_metrics::{
+    CPU_US_KEY, Counter, ROWS_IN_KEY, StatSnapshot,
+    ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot::WriteSnapshot,
+};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{OutputFileInfo, SinkInfo, stats::StatsState};
@@ -46,7 +50,7 @@ impl WriteStats {
 }
 
 impl RuntimeStats for WriteStats {
-    fn handle_worker_node_stats(&self, snapshot: &StatSnapshot) {
+    fn handle_worker_node_stats(&self, _node_info: &NodeInfo, snapshot: &StatSnapshot) {
         let StatSnapshot::Write(snapshot) = snapshot else {
             return;
         };
@@ -92,6 +96,8 @@ impl SinkNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::Write,
+            NodeCategory::BlockingSink,
         );
         let config = PipelineNodeConfig::new(
             file_schema,

@@ -4,7 +4,9 @@ use std::{
 };
 
 use common_metrics::{
-    CPU_US_KEY, Counter, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, snapshot::UdfSnapshot,
+    CPU_US_KEY, Counter, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot,
+    ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot::UdfSnapshot,
 };
 use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFProperties};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
@@ -47,7 +49,7 @@ impl UdfStats {
 }
 
 impl RuntimeStats for UdfStats {
-    fn handle_worker_node_stats(&self, snapshot: &StatSnapshot) {
+    fn handle_worker_node_stats(&self, _node_info: &NodeInfo, snapshot: &StatSnapshot) {
         let StatSnapshot::Udf(snapshot) = snapshot else {
             return;
         };
@@ -110,6 +112,8 @@ impl UDFNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::UDFProject,
+            NodeCategory::Intermediate,
         );
         let config = PipelineNodeConfig::new(
             schema,

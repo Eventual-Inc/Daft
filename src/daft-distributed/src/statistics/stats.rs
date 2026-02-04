@@ -9,7 +9,7 @@ use opentelemetry::{
 use crate::{pipeline_node::NodeID, statistics::TaskEvent};
 
 pub trait RuntimeStats: Send + Sync + 'static {
-    fn handle_worker_node_stats(&self, snapshot: &StatSnapshot);
+    fn handle_worker_node_stats(&self, node_info: &NodeInfo, snapshot: &StatSnapshot);
     /// Returns the accumulated stats.
     fn export_snapshot(&self) -> StatSnapshot;
 }
@@ -71,7 +71,8 @@ impl RuntimeNodeManager {
 
                 for (node_info, snapshot) in &stats.nodes {
                     if node_info.id == self.node_info.id {
-                        self.runtime_stats.handle_worker_node_stats(snapshot);
+                        self.runtime_stats
+                            .handle_worker_node_stats(node_info, snapshot);
                     }
                 }
             }
@@ -121,7 +122,7 @@ impl DefaultRuntimeStats {
 }
 
 impl RuntimeStats for DefaultRuntimeStats {
-    fn handle_worker_node_stats(&self, snapshot: &StatSnapshot) {
+    fn handle_worker_node_stats(&self, _node_info: &NodeInfo, snapshot: &StatSnapshot) {
         let StatSnapshot::Default(snapshot) = snapshot else {
             // TODO: Return immediately for now, but ideally should error
             return;

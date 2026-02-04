@@ -3,7 +3,11 @@ use std::sync::{Arc, atomic::Ordering};
 use common_display::{DisplayAs, DisplayLevel};
 #[cfg(feature = "python")]
 use common_file_formats::FileFormatConfig;
-use common_metrics::{CPU_US_KEY, Counter, ROWS_OUT_KEY, StatSnapshot, snapshot::SourceSnapshot};
+use common_metrics::{
+    CPU_US_KEY, Counter, ROWS_OUT_KEY, StatSnapshot,
+    ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot::SourceSnapshot,
+};
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, stats::StatsState};
@@ -41,7 +45,7 @@ impl SourceStats {
 }
 
 impl RuntimeStats for SourceStats {
-    fn handle_worker_node_stats(&self, snapshot: &StatSnapshot) {
+    fn handle_worker_node_stats(&self, _node_info: &NodeInfo, snapshot: &StatSnapshot) {
         let StatSnapshot::Source(snapshot) = snapshot else {
             return;
         };
@@ -83,6 +87,8 @@ impl ScanSourceNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::ScanTask,
+            NodeCategory::Source,
         );
         let config = PipelineNodeConfig::new(
             schema,
