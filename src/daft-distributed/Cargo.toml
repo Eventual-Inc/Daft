@@ -31,7 +31,6 @@ tokio-util = {workspace = true}
 tracing = {workspace = true}
 itertools = {workspace = true}
 opentelemetry = {workspace = true}
-bincode = {workspace = true}
 
 [features]
 python = [

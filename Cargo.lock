@@ -2692,7 +2692,6 @@ dependencies = [
 name = "daft-distributed"
 version = "0.3.0-dev0"
 dependencies = [
- "bincode",
  "common-daft-config",
  "common-display",
  "common-error",
