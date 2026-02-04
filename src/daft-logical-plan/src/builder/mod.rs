@@ -345,60 +345,6 @@ impl LogicalPlanBuilder {
         &self,
         predicates: Vec<Option<ExprRef>>,
     ) -> DaftResult<Self> {
-        #[cfg(feature = "python")]
-        fn override_python_udf_batch_size(expr: ExprRef, batch_size: usize) -> DaftResult<ExprRef> {
-            use std::sync::Arc;
-
-            use common_treenode::Transformed;
-            use daft_dsl::{
-                Expr,
-                functions::{FunctionExpr, python::LegacyPythonUDF, scalar::ScalarFn},
-                python_udf::{BatchPyFn, PyScalarFn},
-            };
-
-            Ok(expr
-                .transform(|e| match e.as_ref() {
-                    Expr::Function {
-                        func: FunctionExpr::Python(python_udf),
-                        inputs,
-                    } => {
-                        let new_udf = LegacyPythonUDF {
-                            batch_size: Some(batch_size),
-                            ..python_udf.clone()
-                        };
-                        Ok(Transformed::yes(
-                            Arc::new(Expr::Function {
-                                func: FunctionExpr::Python(new_udf),
-                                inputs: inputs.clone(),
-                            })
-                            .into(),
-                        ))
-                    }
-                    Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(batch_fn))) => {
-                        let new_batch_fn = BatchPyFn {
-                            batch_size: Some(batch_size),
-                            ..batch_fn.clone()
-                        };
-                        Ok(Transformed::yes(
-                            Arc::new(Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(
-                                new_batch_fn,
-                            ))))
-                            .into(),
-                        ))
-                    }
-                    _ => Ok(Transformed::no(e)),
-                })?
-                .data)
-        }
-
-        #[cfg(not(feature = "python"))]
-        fn override_python_udf_batch_size(
-            expr: ExprRef,
-            _batch_size: usize,
-        ) -> DaftResult<ExprRef> {
-            Ok(expr)
-        }
-
         struct CollectSpecs {
             count: usize,
         }
@@ -443,13 +389,9 @@ impl LogicalPlanBuilder {
                     if let Some(predicate) = pred_opt {
                         let expr_resolver =
                             ExprResolver::builder().allow_actor_pool_udf(true).build();
-                        let mut resolved =
-                            expr_resolver.resolve_single(predicate, input.clone())?;
-                        if let Some(batch_size) = spec.batch_size {
-                            resolved = override_python_udf_batch_size(resolved, batch_size)?;
-                        }
+                        let resolved = expr_resolver.resolve_single(predicate, input.clone())?;
                         let new_lp: LogicalPlan = ops::Filter::try_new(input.clone(), resolved)?
-                            .with_batch_size(spec.batch_size)
+                            .with_batch_size(spec.resume_filter_batch_size)
                             .into();
                         return Ok(Transformed::yes(Arc::new(new_lp)));
                     }
@@ -1242,7 +1184,7 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.filter(predicate.expr)?.into())
     }
 
-    #[pyo3(signature = (root_dir, file_format, key_column, io_config=None, read_kwargs=None, num_buckets=None, num_cpus=None, batch_size=None))]
+    #[pyo3(signature = (root_dir, file_format, key_column, io_config=None, read_kwargs=None, num_buckets=None, num_cpus=None, resume_filter_batch_size=None, checkpoint_loading_batch_size=None))]
     #[allow(clippy::too_many_arguments)]
     pub fn resume_checkpoint(
         &self,
@@ -1254,7 +1196,8 @@ impl PyLogicalPlanBuilder {
         read_kwargs: Option<pyo3::Py<pyo3::PyAny>>,
         num_buckets: Option<usize>,
         num_cpus: Option<f64>,
-        batch_size: Option<usize>,
+        resume_filter_batch_size: Option<usize>,
+        checkpoint_loading_batch_size: Option<usize>,
     ) -> PyResult<Self> {
         let root_dirs: Vec<String> = if let Ok(s) = root_dir.extract::<String>(py) {
             vec![s]
@@ -1276,7 +1219,8 @@ impl PyLogicalPlanBuilder {
             read_kwargs,
             num_buckets,
             num_cpus,
-            batch_size,
+            resume_filter_batch_size,
+            checkpoint_loading_batch_size,
         )?;
         Ok(self.builder.resume_checkpoint(spec)?.into())
     }
@@ -1334,7 +1278,11 @@ impl PyLogicalPlanBuilder {
                 d.set_item("read_kwargs", spec.read_kwargs.0.as_ref().clone_ref(py))?;
                 d.set_item("num_buckets", spec.num_buckets)?;
                 d.set_item("num_cpus", spec.num_cpus.as_ref().map(|v| v.0))?;
-                d.set_item("batch_size", spec.batch_size)?;
+                d.set_item("resume_filter_batch_size", spec.resume_filter_batch_size)?;
+                d.set_item(
+                    "checkpoint_loading_batch_size",
+                    spec.checkpoint_loading_batch_size,
+                )?;
                 Ok(d.into())
             })
             .collect()

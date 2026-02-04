@@ -1955,7 +1955,8 @@ class LogicalPlanBuilder:
         read_kwargs: dict[str, Any] | None = None,
         num_buckets: int | None = None,
         num_cpus: float | None = None,
-        batch_size: int | None = None,
+        resume_filter_batch_size: int | None = None,
+        checkpoint_loading_batch_size: int | None = None,
     ) -> LogicalPlanBuilder: ...
     def apply_resume_checkpoint_predicates(self, predicates: list[PyExpr | None]) -> LogicalPlanBuilder: ...
     def get_resume_checkpoint_specs(self) -> list[dict[str, Any]]: ...

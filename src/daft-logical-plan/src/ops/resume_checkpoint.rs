@@ -22,7 +22,8 @@ pub struct ResumeCheckpointSpec {
     pub io_config: Option<IOConfig>,
     pub num_buckets: Option<usize>,
     pub num_cpus: Option<FloatWrapper<f64>>,
-    pub batch_size: Option<usize>,
+    pub resume_filter_batch_size: Option<usize>,
+    pub checkpoint_loading_batch_size: Option<usize>,
     #[cfg(feature = "python")]
     pub read_kwargs: PyObjectWrapper,
 }
@@ -38,7 +39,8 @@ impl ResumeCheckpointSpec {
         read_kwargs: PyObjectWrapper,
         num_buckets: Option<usize>,
         num_cpus: Option<f64>,
-        batch_size: Option<usize>,
+        resume_filter_batch_size: Option<usize>,
+        checkpoint_loading_batch_size: Option<usize>,
     ) -> DaftResult<Self> {
         if root_dir.is_empty() || root_dir.iter().any(|p| p.is_empty()) {
             return Err(DaftError::ValueError(
@@ -62,9 +64,14 @@ impl ResumeCheckpointSpec {
                 "resume checkpoint num_cpus must be > 0".to_string(),
             ));
         }
-        if matches!(batch_size, Some(0)) {
+        if matches!(resume_filter_batch_size, Some(0)) {
             return Err(DaftError::ValueError(
-                "resume checkpoint batch_size must be > 0".to_string(),
+                "resume checkpoint resume_filter_batch_size must be > 0".to_string(),
+            ));
+        }
+        if matches!(checkpoint_loading_batch_size, Some(0)) {
+            return Err(DaftError::ValueError(
+                "resume checkpoint checkpoint_loading_batch_size must be > 0".to_string(),
             ));
         }
         Ok(Self {
@@ -75,7 +82,8 @@ impl ResumeCheckpointSpec {
             read_kwargs,
             num_buckets,
             num_cpus: num_cpus.map(FloatWrapper),
-            batch_size,
+            resume_filter_batch_size,
+            checkpoint_loading_batch_size,
         })
     }
 
@@ -88,7 +96,8 @@ impl ResumeCheckpointSpec {
         io_config: Option<IOConfig>,
         num_buckets: Option<usize>,
         num_cpus: Option<f64>,
-        batch_size: Option<usize>,
+        resume_filter_batch_size: Option<usize>,
+        checkpoint_loading_batch_size: Option<usize>,
     ) -> DaftResult<Self> {
         if root_dir.is_empty() || root_dir.iter().any(|p| p.is_empty()) {
             return Err(DaftError::ValueError(
@@ -112,9 +121,14 @@ impl ResumeCheckpointSpec {
                 "resume checkpoint num_cpus must be > 0".to_string(),
             ));
         }
-        if matches!(batch_size, Some(0)) {
+        if matches!(resume_filter_batch_size, Some(0)) {
             return Err(DaftError::ValueError(
-                "resume checkpoint batch_size must be > 0".to_string(),
+                "resume checkpoint resume_filter_batch_size must be > 0".to_string(),
+            ));
+        }
+        if matches!(checkpoint_loading_batch_size, Some(0)) {
+            return Err(DaftError::ValueError(
+                "resume checkpoint checkpoint_loading_batch_size must be > 0".to_string(),
             ));
         }
         Ok(Self {
@@ -124,7 +138,8 @@ impl ResumeCheckpointSpec {
             io_config,
             num_buckets,
             num_cpus: num_cpus.map(FloatWrapper),
-            batch_size,
+            resume_filter_batch_size,
+            checkpoint_loading_batch_size,
         })
     }
 }
@@ -194,8 +209,8 @@ impl ResumeCheckpoint {
         if let Some(io_config) = &self.spec.io_config {
             res.push(format!("IOConfig = {}", io_config));
         }
-        if let Some(batch_size) = self.spec.batch_size {
-            res.push(format!("Batch Size = {}", batch_size));
+        if let Some(batch_size) = self.spec.resume_filter_batch_size {
+            res.push(format!("Resume Filter Batch Size = {}", batch_size));
         }
         if let StatsState::Materialized(stats) = &self.stats_state {
             res.push(format!("Stats = {}", stats));
@@ -229,6 +244,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         )
         .unwrap();
 
@@ -236,6 +252,7 @@ mod tests {
             vec!["root2".to_string()],
             FileFormat::Csv,
             vec!["id".to_string()],
+            None,
             None,
             None,
             None,
@@ -282,6 +299,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
             )
             .unwrap();
 
@@ -294,6 +312,7 @@ mod tests {
                 None,
                 None,
                 None,
+                None,
             )
             .unwrap();
 
@@ -303,6 +322,7 @@ mod tests {
                 vec!["id".to_string()],
                 None,
                 kwargs_c,
+                None,
                 None,
                 None,
                 None,
@@ -328,7 +348,8 @@ mod tests {
     }
 
     #[test]
-    fn resume_checkpoint_batch_size_applied_to_filter() -> common_error::DaftResult<()> {
+    fn resume_checkpoint_resume_filter_batch_size_applied_to_filter() -> common_error::DaftResult<()>
+    {
         use daft_core::prelude::{DataType, Field};
         use daft_dsl::{lit, resolved_col};
 
@@ -352,6 +373,7 @@ mod tests {
                 None,
                 None,
                 Some(10),
+                None,
             )?;
             scan_builder.resume_checkpoint(spec)
         })?;
@@ -366,6 +388,7 @@ mod tests {
                 None,
                 None,
                 Some(10),
+                None,
             )?;
             scan_builder.resume_checkpoint(spec)?
         };
@@ -388,7 +411,8 @@ mod tests {
 
     #[cfg(not(feature = "python"))]
     #[test]
-    fn resume_checkpoint_multiline_display_includes_batch_size() -> common_error::DaftResult<()> {
+    fn resume_checkpoint_multiline_display_includes_resume_filter_batch_size()
+    -> common_error::DaftResult<()> {
         use daft_core::prelude::{DataType, Field};
 
         use crate::{
@@ -407,13 +431,14 @@ mod tests {
             None,
             None,
             Some(10),
+            None,
         )?;
 
         let plan = scan_builder.resume_checkpoint(spec)?.build();
         match plan.as_ref() {
             LogicalPlan::ResumeCheckpoint(op) => {
                 let lines = op.multiline_display();
-                assert!(lines.iter().any(|l| l == "Batch Size = 10"));
+                assert!(lines.iter().any(|l| l == "Resume Filter Batch Size = 10"));
                 Ok(())
             }
             other => Err(common_error::DaftError::InternalError(format!(

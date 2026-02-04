@@ -20,11 +20,9 @@ if TYPE_CHECKING:
     from ray.actor import ActorHandle
     import pathlib
     import numpy as np
-    import ray
 
-PLACEMENT_GROUP_READY_TIMEOUT_SECONDS = 10
+PLACEMENT_GROUP_READY_TIMEOUT_SECONDS = 50
 ACTOR_READY_TIMEOUT_SECONDS = 7200
-CHECKPOINT_LOADING_BATCH_SIZE = 100000
 
 
 class CheckpointActor:
@@ -53,11 +51,11 @@ def create_checkpoint_filter_udf(
     num_buckets: int,
     actor_handles: list[ActorHandle] | None,
     composite_key_fields: tuple[str, ...] = (),
+    resume_filter_batch_size: int | None = None,
 ) -> Callable[[Expression], Expression]:
-    @func.batch(return_dtype=DataType.bool())
+    @func.batch(return_dtype=DataType.bool(), batch_size=resume_filter_batch_size)
     async def checkpoint_filter(input: Series) -> Series:
         import numpy as np
-        import ray
         import os
         import asyncio
 
@@ -143,13 +141,6 @@ def create_checkpoint_filter_udf(
     return checkpoint_filter
 
 
-def _split_partitions_evenly(total: int, buckets: int) -> tuple[int, int]:
-    """Return (base_len, remainder) for splitting total items into buckets."""
-    base = total // buckets
-    rem = total - buckets * base
-    return base, rem
-
-
 def _prepare_checkpoint_filter(
     root_dir: str | pathlib.Path | list[str | pathlib.Path],
     io_config: IOConfig | None,
@@ -158,6 +149,7 @@ def _prepare_checkpoint_filter(
     num_cpus: float,
     read_fn: Callable[..., DataFrame],
     read_kwargs: dict[str, Any] | None = None,
+    checkpoint_loading_batch_size: int = 100000,
 ) -> tuple[list[ActorHandle], PlacementGroup | None]:
     """Build and return checkpoint resources.
 
@@ -297,7 +289,7 @@ def _prepare_checkpoint_filter(
             from daft.functions.struct import to_struct
 
             key_expr = to_struct(**{k: col(k) for k in key_columns})
-        df_keys.into_batches(CHECKPOINT_LOADING_BATCH_SIZE).select(ingest_keys(key_expr)).collect()
+        df_keys.into_batches(checkpoint_loading_batch_size).select(ingest_keys(key_expr)).collect()
     except Exception as e:
         _cleanup_checkpoint_resources(actor_handles, pg)
         raise RuntimeError(f"Failed to create all checkpoint actors: {e}") from e

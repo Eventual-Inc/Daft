@@ -391,7 +391,8 @@ def test_resume_batch_size_visible_in_explain(tmp_path: Path):
         root_dir,
         on="id",
         format="parquet",
-        batch_size=10,
+        resume_filter_batch_size=10,
+        checkpoint_loading_batch_size=1,
     )
 
     buf = io.StringIO()
@@ -406,7 +407,8 @@ def test_resume_batch_size_visible_in_explain(tmp_path: Path):
     )
     specs = write_builder._builder.get_resume_checkpoint_specs()
     assert len(specs) == 1
-    assert specs[0]["batch_size"] == 10
+    assert specs[0]["resume_filter_batch_size"] == 10
+    assert specs[0]["checkpoint_loading_batch_size"] == 1
 
     pred = (col("id") > 0)._expr
     applied = write_builder._builder.apply_resume_checkpoint_predicates([pred])

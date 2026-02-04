@@ -2344,7 +2344,8 @@ class DataFrame:
         io_config: IOConfig | None = None,
         num_buckets: int | None = None,
         num_cpus: float | None = None,
-        batch_size: int | None = None,
+        resume_filter_batch_size: int | None = None,
+        checkpoint_loading_batch_size: int = 100000,
         **reader_args: Any,
     ) -> "DataFrame":
         if isinstance(on, str):
@@ -2379,8 +2380,10 @@ class DataFrame:
             raise ValueError(f"Unsupported resume format: {file_format}")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
-        if batch_size is not None and batch_size <= 0:
-            raise ValueError("resume batch_size must be > 0")
+        if resume_filter_batch_size is not None and resume_filter_batch_size <= 0:
+            raise ValueError("resume resume_filter_batch_size must be > 0")
+        if checkpoint_loading_batch_size <= 0:
+            raise ValueError("resume checkpoint_loading_batch_size must be > 0")
 
         root_dir: str | list[str]
         if isinstance(path, list):
@@ -2400,7 +2403,8 @@ class DataFrame:
             read_kwargs=(reader_args or None),
             num_buckets=num_buckets,
             num_cpus=num_cpus,
-            batch_size=batch_size,
+            resume_filter_batch_size=resume_filter_batch_size,
+            checkpoint_loading_batch_size=checkpoint_loading_batch_size,
         )
         return DataFrame(builder)
 
