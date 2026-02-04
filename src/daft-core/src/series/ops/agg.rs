@@ -1,5 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use daft_arrow::offset::OffsetsBuffer;
+use itertools::Itertools;
 
 use crate::{
     array::{
@@ -22,19 +23,6 @@ fn deduplicate_indices(series: &Series) -> DaftResult<Vec<u64>> {
     let probe_table = series.build_probe_table_without_nulls()?;
     let unique_indices: Vec<u64> = probe_table.keys().map(|k| k.idx).collect();
     Ok(unique_indices)
-}
-
-fn join_with_delimiter<'a, I>(mut iter: I, delimiter: &str) -> Option<String>
-where
-    I: Iterator<Item = &'a str>,
-{
-    let first = iter.next()?;
-    let mut output = String::from(first);
-    for value in iter {
-        output.push_str(delimiter);
-        output.push_str(value);
-    }
-    Some(output)
 }
 
 impl Series {
@@ -364,9 +352,12 @@ impl Series {
                     let result: Utf8Array = match groups {
                         Some(groups) => groups
                             .iter()
-                            .map(|g| {
-                                let iter = g.iter().filter_map(|&idx| downcasted.get(idx as usize));
-                                join_with_delimiter(iter, delimiter)
+                            .map(|group| {
+                                let concatenated = group
+                                    .iter()
+                                    .filter_map(|&idx| downcasted.get(idx as usize))
+                                    .join(delimiter);
+                                Some(concatenated)
                             })
                             .collect(),
                         None => {
@@ -375,8 +366,7 @@ impl Series {
                             } else if downcasted.null_count() == downcasted.len() {
                                 None
                             } else {
-                                let iter = downcasted.into_iter().flatten();
-                                join_with_delimiter(iter, delimiter)
+                                Some(downcasted.into_iter().flatten().join(delimiter))
                             };
                             std::iter::once(output).collect()
                         }
