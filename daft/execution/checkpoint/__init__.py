@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
 PLACEMENT_GROUP_READY_TIMEOUT_SECONDS = 50
 ACTOR_READY_TIMEOUT_SECONDS = 7200
+ASYNC_AWAIT_TIMEOUT_SECONDS = 1000
 
 
 class CheckpointActor:
@@ -113,7 +114,7 @@ def create_checkpoint_filter_udf(
             # Results are list of PACKED uint8 arrays
             packed_results = await asyncio.wait_for(
                 asyncio.gather(*[asyncio.wrap_future(ref.future()) for ref in futures]),
-                timeout=300,
+                timeout=ASYNC_AWAIT_TIMEOUT_SECONDS,
             )
         except Exception as e:
             raise RuntimeError(f"CheckpointActor filter failed: {e}") from e
@@ -148,8 +149,8 @@ def _prepare_checkpoint_filter(
     num_buckets: int,
     num_cpus: float,
     read_fn: Callable[..., DataFrame],
+    checkpoint_loading_batch_size: int,
     read_kwargs: dict[str, Any] | None = None,
-    checkpoint_loading_batch_size: int = 100000,
 ) -> tuple[list[ActorHandle], PlacementGroup | None]:
     """Build and return checkpoint resources.
 
@@ -279,7 +280,7 @@ def _prepare_checkpoint_filter(
                 futures.append(actor.add_keys.remote(subset))
 
             if futures:
-                await asyncio.wait_for(asyncio.gather(*futures), timeout=300)
+                await asyncio.wait_for(asyncio.gather(*futures), timeout=ASYNC_AWAIT_TIMEOUT_SECONDS)
 
             return Series.from_arrow(pa.nulls(num_rows))
 

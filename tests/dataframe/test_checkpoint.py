@@ -35,12 +35,14 @@ def helper_write_dataframe(
     if checkpoint_config is not None and has_existing_data:
         if not isinstance(checkpoint_config, dict) or "key_column" not in checkpoint_config:
             raise ValueError("checkpoint_config must be a dict with key_column")
+        num_buckets = checkpoint_config.get("num_buckets")
+        num_cpus = checkpoint_config.get("num_cpus")
         df = df.resume(
             root_dir,
             on=checkpoint_config["key_column"],
             format=fmt,
-            num_buckets=checkpoint_config.get("num_buckets"),
-            num_cpus=checkpoint_config.get("num_cpus"),
+            num_buckets=4 if num_buckets is None else num_buckets,
+            num_cpus=1.0 if num_cpus is None else num_cpus,
         )
     if fmt == FileFormat.Csv:
         return df.write_csv(str(root_dir), write_mode=write_mode)

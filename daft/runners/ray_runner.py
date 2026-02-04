@@ -538,7 +538,14 @@ def _maybe_apply_resume_checkpoint(builder: LogicalPlanBuilder) -> tuple[Logical
             num_cpus = spec.get("num_cpus")
             read_kwargs = spec.get("read_kwargs")
             resume_filter_batch_size = spec.get("resume_filter_batch_size")
-            checkpoint_loading_batch_size = spec.get("checkpoint_loading_batch_size") or 100000
+            checkpoint_loading_batch_size = spec.get("checkpoint_loading_batch_size")
+
+            if num_buckets is None:
+                raise RuntimeError("resume num_buckets must be provided")
+            if num_cpus is None:
+                raise RuntimeError("resume num_cpus must be provided")
+            if checkpoint_loading_batch_size is None:
+                raise RuntimeError("resume checkpoint_loading_batch_size must be provided")
 
             key_columns: list[str] | None
             if isinstance(key_column, list):
@@ -572,15 +579,15 @@ def _maybe_apply_resume_checkpoint(builder: LogicalPlanBuilder) -> tuple[Logical
                 root_dir=root_dir,
                 io_config=io_config,
                 key_column=key_column,
-                num_buckets=4 if num_buckets is None else num_buckets,
-                num_cpus=1 if num_cpus is None else num_cpus,
+                num_buckets=num_buckets,
+                num_cpus=num_cpus,
                 read_fn=read_fn,
                 read_kwargs=read_kwargs,
                 checkpoint_loading_batch_size=checkpoint_loading_batch_size,
             )
 
             checkpoint_filter_expr = create_checkpoint_filter_udf(
-                4 if num_buckets is None else num_buckets,
+                num_buckets,
                 actor_handles,
                 tuple(key_columns) if key_columns is not None else (),
                 resume_filter_batch_size,
