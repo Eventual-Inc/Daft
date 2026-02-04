@@ -1,6 +1,8 @@
-use std::sync::Arc;
+use std::sync::{Arc, atomic::Ordering};
 
-use common_metrics::{CPU_US_KEY, Counter, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot};
+use common_metrics::{
+    CPU_US_KEY, Counter, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, snapshot::FilterSnapshot,
+};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
@@ -52,6 +54,15 @@ impl RuntimeStats for FilterStats {
         };
         self.selectivity
             .update(selectivity, self.node_kv.as_slice());
+    }
+
+    fn export_snapshot(&self) -> StatSnapshot {
+        StatSnapshot::Filter(FilterSnapshot {
+            cpu_us: self.cpu_us.load(Ordering::Relaxed),
+            rows_in: self.rows_in.load(Ordering::Relaxed),
+            rows_out: self.rows_out.load(Ordering::Relaxed),
+            selectivity: self.selectivity.load(Ordering::Relaxed),
+        })
     }
 }
 

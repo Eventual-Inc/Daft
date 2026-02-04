@@ -6,7 +6,10 @@ use std::{
 };
 
 use common_error::DaftResult;
-use common_metrics::QueryID;
+use common_metrics::{
+    QueryID,
+    ops::{NodeCategory, NodeInfo, NodeType},
+};
 use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_local_plan::ExecutionEngineFinalResult;
 use opentelemetry::{InstrumentationScope, KeyValue, global};
@@ -111,9 +114,16 @@ impl StatisticsManager {
 
         let mut runtime_node_managers = HashMap::new();
         pipeline_node.apply(|node| {
+            let node_info = Arc::new(NodeInfo {
+                name: node.name().to_string().into(),
+                id: node.node_id() as usize,
+                node_type: NodeType::default(),
+                node_category: NodeCategory::default(),
+                context: HashMap::new(),
+            });
             runtime_node_managers.insert(
                 node.node_id(),
-                RuntimeNodeManager::new(&meter, node.runtime_stats(&meter), node.node_id()),
+                RuntimeNodeManager::new(&meter, node.runtime_stats(&meter), node_info),
             );
             Ok(TreeNodeRecursion::Continue)
         })?;
@@ -139,5 +149,17 @@ impl StatisticsManager {
             subscriber.handle_event(&event)?;
         }
         Ok(())
+    }
+
+    /// Collects accumulated stats from each node manager and returns them as an
+    /// ExecutionEngineFinalResult for export to the driver (e.g. after the partition stream is done).
+    #[allow(unused)]
+    pub fn export_metrics(&self) -> ExecutionEngineFinalResult {
+        let nodes: Vec<(Arc<NodeInfo>, _)> = self
+            .runtime_node_managers
+            .values()
+            .map(RuntimeNodeManager::export_snapshot)
+            .collect();
+        ExecutionEngineFinalResult::new(nodes)
     }
 }
