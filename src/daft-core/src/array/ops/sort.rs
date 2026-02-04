@@ -1,11 +1,14 @@
 use std::sync::Arc;
 
-use arrow::array::{Array, ArrowPrimitiveType};
-use common_error::DaftResult;
+use arrow::{
+    array::{Array, ArrowPrimitiveType, make_comparator},
+    compute::SortOptions,
+};
+use common_error::{DaftError, DaftResult};
 use daft_arrow::{
     array::ord::{self, DynComparator},
     // A real tragedy. Arrow-rs has all these functions but uses 32 bit indices instead of 64 bit indices.
-    compute::sort::{SortOptions, sort, sort_to_indices},
+    compute::sort::{sort, sort_to_indices},
     types::Index,
 };
 
@@ -30,7 +33,7 @@ use crate::{
         },
     },
     file::DaftMediaType,
-    kernels::search_sorted::{build_nulls_first_compare_with_nulls, cmp_float},
+    kernels::search_sorted::cmp_float,
     prelude::UInt64Array,
     series::Series,
 };
@@ -57,12 +60,14 @@ pub fn build_multi_array_bicompare(
         .zip(descending.iter())
         .zip(nulls_first.iter())
     {
-        cmp_list.push(build_nulls_first_compare_with_nulls(
-            l.to_arrow2().as_ref(),
-            r.to_arrow2().as_ref(),
-            *desc,
-            *nf,
-        )?);
+        cmp_list.push(
+            make_comparator(
+                l.to_arrow()?.as_ref(),
+                r.to_arrow()?.as_ref(),
+                SortOptions::new(*desc, *nf),
+            )
+            .map_err(DaftError::ArrowRsError)?,
+        );
     }
 
     let combined_comparator = Box::new(move |a_idx: usize, b_idx: usize| -> std::cmp::Ordering {
@@ -447,7 +452,7 @@ impl NullArray {
 
 impl BooleanArray {
     pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
-        let options = SortOptions {
+        let options = daft_arrow::compute::sort::SortOptions {
             descending,
             nulls_first,
         };
@@ -512,7 +517,7 @@ impl BooleanArray {
     }
 
     pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
-        let options = SortOptions {
+        let options = daft_arrow::compute::sort::SortOptions {
             descending,
             nulls_first,
         };
@@ -527,7 +532,7 @@ macro_rules! impl_binary_like_sort {
     ($da:ident) => {
         impl $da {
             pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
-                let options = SortOptions {
+                let options = daft_arrow::compute::sort::SortOptions {
                     descending,
                     nulls_first,
                 };
@@ -594,7 +599,7 @@ macro_rules! impl_binary_like_sort {
             }
 
             pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
-                let options = SortOptions {
+                let options = daft_arrow::compute::sort::SortOptions {
                     descending,
                     nulls_first,
                 };
