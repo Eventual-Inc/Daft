@@ -153,7 +153,6 @@ impl StatisticsManager {
 
     /// Collects accumulated stats from each node manager and returns them as an
     /// ExecutionEngineFinalResult for export to the driver (e.g. after the partition stream is done).
-    #[allow(unused)]
     pub fn export_metrics(&self) -> ExecutionEngineFinalResult {
         let nodes: Vec<(Arc<NodeInfo>, _)> = self
             .runtime_node_managers
