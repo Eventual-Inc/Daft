@@ -4,7 +4,7 @@ use std::{
 };
 
 use arrow::array::make_array;
-use common_arrow_ffi::{self as ffi, array_to_rust_v2};
+use common_arrow_ffi::{self as ffi, array_to_rust};
 use common_error::DaftError;
 use daft_hash::HashFunctionKind;
 use daft_schema::python::PyDataType;
@@ -62,7 +62,7 @@ impl PySeries {
         pyarrow_array: Bound<PyAny>,
         dtype: Option<PyDataType>,
     ) -> PyResult<Self> {
-        let (data, field) = array_to_rust_v2(&pyarrow_array)?;
+        let (data, field) = array_to_rust(&pyarrow_array)?;
         let daft_field = daft_schema::field::Field::from_arrow(&field, true)
             .map_err(DaftError::from)?
             .rename(name);

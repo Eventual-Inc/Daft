@@ -7,10 +7,7 @@ use arrow::{
     ffi::{FFI_ArrowArray, FFI_ArrowSchema},
 };
 use arrow_schema::{Field, Schema};
-use daft_arrow::{
-    array::Array,
-    datatypes::{DataType as Arrow2DataType, arrow2_field_to_arrow},
-};
+use daft_arrow::{array::Array, datatypes::arrow2_field_to_arrow};
 use pyo3::{
     exceptions::{PyTypeError, PyValueError},
     ffi::Py_uintptr_t,
@@ -78,7 +75,7 @@ pub trait FromPyArrow: Sized {
 
 impl FromPyArrow for ArrayData {
     fn from_pyarrow_bound(value: &Bound<PyAny>) -> PyResult<Self> {
-        let (data, _) = array_to_rust_v2(value)?;
+        let (data, _) = array_to_rust(value)?;
         Ok(data)
     }
 }
@@ -196,7 +193,7 @@ impl FromPyArrow for Schema {
     }
 }
 
-pub fn array_to_rust_v2(value: &Bound<PyAny>) -> PyResult<(ArrayData, Field)> {
+pub fn array_to_rust(value: &Bound<PyAny>) -> PyResult<(ArrayData, Field)> {
     // Newer versions of PyArrow as well as other libraries with Arrow data implement this
     // method, so prefer it over _export_to_c.
     // See https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface.html

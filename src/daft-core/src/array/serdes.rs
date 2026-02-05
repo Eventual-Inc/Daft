@@ -135,7 +135,6 @@ impl serde::Serialize for ExtensionArray {
                 .field()
                 .to_arrow()
                 .expect("Failed to convert field to arrow");
-            dbg!(arrow_field);
 
             Series::try_from((
                 "physical",
