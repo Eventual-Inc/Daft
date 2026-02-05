@@ -111,8 +111,9 @@ fn expand_single_range(start_str: &str, end_str: &str) -> super::Result<String> 
         msg: format!("Invalid range end value: {}", end_str),
     })?;
 
-    // Calculate the range size
-    let range_size = (end - start).unsigned_abs() as usize + 1;
+    // Calculate the range size using i128 to avoid overflow
+    // when start and end are at opposite extremes of i64 range
+    let range_size = ((end as i128) - (start as i128)).unsigned_abs() as usize + 1;
     if range_size > MAX_RANGE_SIZE {
         return Err(super::Error::InvalidArgument {
             msg: format!(
