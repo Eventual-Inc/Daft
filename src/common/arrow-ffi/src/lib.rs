@@ -1,7 +1,9 @@
 //! FFI utilities for converting between PyArrow and Rust Arrow arrays.
 //!
 //! Portions of this module are adapted from [apache/arrow-rs](https://github.com/apache/arrow-rs),
-//! licensed under the Apache License, Version 2.0.
+//! licensed under the Apache License, Version 2.0. We vendor these conversions rather than
+//! depending on the `arrow-pyarrow` crate because it pins a different version of `pyo3` than
+//! the one used in this workspace, making it incompatible with our codebase.
 
 #![allow(deprecated, reason = "arrow2->arrow migration")]
 
