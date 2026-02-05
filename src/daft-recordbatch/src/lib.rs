@@ -941,9 +941,14 @@ impl RecordBatch {
                     evaluated_args.push(evaluated);
                 }
                 let args = FunctionArgs::new_unchecked(evaluated_args);
+                let ctx = daft_dsl::functions::scalar::EvalContext {
+                    row_count: self.len(),
+                };
                 match &func.func {
-                    BuiltinScalarFnVariant::Sync(func) => func.call(args),
-                    BuiltinScalarFnVariant::Async(func) => func.call(args).await,
+                    BuiltinScalarFnVariant::Sync(func) => func.call_with_ctx(args, Some(&ctx)),
+                    BuiltinScalarFnVariant::Async(func) => {
+                        func.call_with_ctx(args, Some(&ctx)).await
+                    }
                 }
             }
             Expr::Literal(lit_value) => Ok(lit_value.clone().into()),
@@ -1206,10 +1211,13 @@ impl RecordBatch {
                     evaluated_args.push(evaluated);
                 }
                 let args = FunctionArgs::new_unchecked(evaluated_args);
+                let ctx = daft_dsl::functions::scalar::EvalContext {
+                    row_count: self.len(),
+                };
                 match func {
-                    BuiltinScalarFnVariant::Sync(f) => f.call(args),
+                    BuiltinScalarFnVariant::Sync(f) => f.call_with_ctx(args, Some(&ctx)),
                     BuiltinScalarFnVariant::Async(f) => {
-                        get_compute_runtime().block_on_current_thread(f.call(args))
+                        get_compute_runtime().block_on_current_thread(f.call_with_ctx(args, Some(&ctx)))
                     }
                 }
             }

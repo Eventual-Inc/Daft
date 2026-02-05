@@ -2777,6 +2777,7 @@ dependencies = [
 name = "daft-functions"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
  "common-error",
  "daft-core",
  "daft-dsl",
@@ -2786,6 +2787,7 @@ dependencies = [
  "serde",
  "snafu",
  "typetag",
+ "uuid 1.19.0",
 ]
 
 [[package]]
