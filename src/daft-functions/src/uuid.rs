@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
+use arrow_array::builder::LargeStringBuilder;
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    prelude::{DataType, Field, Schema, Utf8Array},
-    series::{IntoSeries, Series},
+    prelude::{DataType, Field, Schema},
+    series::Series,
 };
 use daft_dsl::{
     ExprRef,
@@ -47,9 +50,13 @@ impl ScalarUDF for Uuid {
             }
         };
 
-        let iter = (0..len).map(|_| Some(RustUuid::new_v4().to_string()));
-        let arr = Utf8Array::from_iter("", iter);
-        Ok(arr.into_series())
+        const UUID_STR_LEN: usize = 36; // "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+        let mut builder = LargeStringBuilder::with_capacity(len, len * UUID_STR_LEN);
+        for _ in 0..len {
+            builder.append_value(RustUuid::new_v4().to_string());
+        }
+        let arrow_arr: arrow_array::ArrayRef = Arc::new(builder.finish());
+        Series::from_arrow(Arc::new(Field::new("", DataType::Utf8)), arrow_arr)
     }
 
     fn is_deterministic(&self) -> bool {

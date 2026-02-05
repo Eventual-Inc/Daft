@@ -2775,6 +2775,7 @@ dependencies = [
 name = "daft-functions"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
  "common-error",
  "daft-core",
  "daft-dsl",
