@@ -14,7 +14,7 @@ use common_runtime::JoinSet;
 use daft_core::{prelude::SchemaRef, series::Series};
 use daft_dsl::{
     expr::bound_expr::BoundExpr, functions::python::UDFProperties,
-    operator_metrics::OperatorMetrics,
+    operator_metrics::OperatorMetrics, utils::remap_used_cols,
 };
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -25,7 +25,6 @@ use tracing::{Span, instrument};
 use super::base::{StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult};
 use crate::{
     ExecutionTaskSpawner,
-    intermediate_ops::udf::remap_used_cols,
     pipeline::{MorselSizeRequirement, NodeName},
     pipeline_execution::{OperatorExecutionOutput, OperatorFinalizeOutput},
     runtime_stats::RuntimeStats,

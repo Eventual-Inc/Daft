@@ -1,9 +1,8 @@
 use std::{any::Any, collections::HashMap, future::Future, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
-use common_metrics::{NodeID, StatSnapshot};
 use common_partitioning::{Partition, PartitionRef};
-use daft_local_plan::{PyLocalPhysicalPlan, SourceId, python::PyUnresolvedInputs};
+use daft_local_plan::{ExecutionEngineFinalResult, PyLocalPhysicalPlan, SourceId, python::PyUnresolvedInputs};
 use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 
 use crate::{
@@ -87,13 +86,9 @@ impl TaskResultHandle for RayTaskResultHandle {
 
             match ray_task_result {
                 Ok(RayTaskResult::Success(ray_part_refs, stats_serialized)) => {
-                    let stats: Vec<(NodeID, StatSnapshot)> = stats_serialized
-                        .map(|stats_serialized| {
-                            bincode::decode_from_slice(&stats_serialized, bincode::config::legacy())
-                                .expect("Failed to deserialize stats")
-                                .0
-                        })
-                        .unwrap_or_default();
+                    let stats = stats_serialized
+                        .map(|s| ExecutionEngineFinalResult::decode(&s))
+                        .unwrap_or_else(|| ExecutionEngineFinalResult::new(vec![]));
                     let materialized_output = MaterializedOutput::new(
                         ray_part_refs
                             .into_iter()

@@ -242,12 +242,10 @@ daft.set_runner_native()
 
 print(daft.runners.get_or_infer_runner_type())
 
-
 @daft.udf(return_dtype=daft.DataType.string())
 def my_udf(foo):
     runner_type = daft.runners.get_or_infer_runner_type()
     return [f"{runner_type}_{f}" for f in foo]
-
 
 df = daft.from_pydict({"foo": [7]})
 pd = df.with_column(column_name="bar", expr=my_udf(df["foo"])).to_pydict()
@@ -272,6 +270,7 @@ print(daft.runners.get_or_infer_runner_type())
 def my_udf(foo):
     runner_type = daft.runners.get_or_infer_runner_type()
     return [f"{runner_type}_{f}" for f in foo]
+
 
 
 df = daft.from_pydict({"foo": [7]})

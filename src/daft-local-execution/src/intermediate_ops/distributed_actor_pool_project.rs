@@ -7,11 +7,14 @@ use std::{
     vec,
 };
 
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
-use daft_micropartition::MicroPartition;
+use daft_core::prelude::{Schema, SchemaRef};
+use daft_dsl::expr::bound_expr::BoundExpr;
 #[cfg(feature = "python")]
 use daft_micropartition::python::PyMicroPartition;
+use daft_micropartition::{MicroPartition, partitioning::Partition};
+use itertools::Itertools;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
 use rand::Rng;
@@ -106,6 +109,9 @@ pub(crate) struct DistributedActorPoolProjectOperator {
     actor_handles: Vec<ActorHandle>,
     batch_size: Option<usize>,
     memory_request: u64,
+    passthrough_columns: Vec<BoundExpr>, // Columns that no need to be passed to UDFActor for processing
+    required_columns: Vec<usize>,        // UDF input columns
+    schema: SchemaRef,                   // Output schema
     counter: AtomicUsize,
 }
 
@@ -114,6 +120,9 @@ impl DistributedActorPoolProjectOperator {
         actor_handles: Vec<impl Into<ActorHandle>>,
         batch_size: Option<usize>,
         memory_request: u64,
+        passthrough_columns: Vec<BoundExpr>,
+        required_columns: Vec<usize>,
+        schema: SchemaRef,
     ) -> DaftResult<Self> {
         let actor_handles: Vec<ActorHandle> = actor_handles.into_iter().map(|e| e.into()).collect();
         let (local_actor_handles, remote_actor_handles) =
@@ -134,6 +143,9 @@ impl DistributedActorPoolProjectOperator {
             actor_handles,
             batch_size,
             memory_request,
+            passthrough_columns,
+            required_columns,
+            schema,
             counter: AtomicUsize::new(init_counter),
         })
     }
@@ -149,9 +161,13 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         state: Self::State,
         task_spawner: &ExecutionTaskSpawner,
     ) -> IntermediateOpExecuteResult<Self> {
-        let memory_request = self.memory_request;
         #[cfg(feature = "python")]
         {
+            let memory_request = self.memory_request;
+            let required_columns = self.required_columns.clone();
+            let passthrough_columns = self.passthrough_columns.clone();
+            let output_schema = self.schema.clone();
+
             let fut = task_spawner.spawn_with_memory_request(
                 memory_request,
                 async move {

@@ -94,7 +94,7 @@ impl Source for InMemorySource {
     fn get_data(
         &mut self,
         _maintain_order: bool,
-        _io_stats: IOStatsRef,
+        io_stats: IOStatsRef,
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);

@@ -12,7 +12,6 @@ use std::{
     fmt::Formatter,
     hash::{DefaultHasher, Hash, Hasher},
     io::{self, Write},
-    str::FromStr,
     sync::Arc,
 };
 
@@ -23,6 +22,7 @@ use daft_core::{
     datatypes::{
         InferDataType, try_mean_aggregation_supertype, try_product_supertype,
         try_skew_aggregation_supertype, try_stddev_aggregation_supertype, try_sum_supertype,
+        try_variance_aggregation_supertype,
     },
     join::JoinSide,
     lit::Literal,
@@ -418,6 +418,9 @@ pub enum AggExpr {
     #[display("stddev({_0})")]
     Stddev(ExprRef),
 
+    #[display("var({_0}, ddof={_1})")]
+    Var(ExprRef, usize),
+
     #[display("min({_0})")]
     Min(ExprRef),
 
@@ -538,6 +541,7 @@ impl AggExpr {
             Self::MergeSketch(_, _) => "Merge Sketch",
             Self::Mean(_) => "Mean",
             Self::Stddev(_) => "Stddev",
+            Self::Var(_, _) => "Var",
             Self::Min(_) => "Min",
             Self::Max(_) => "Max",
             Self::BoolAnd(_) => "Bool And",
@@ -563,6 +567,7 @@ impl AggExpr {
             | Self::MergeSketch(expr, _)
             | Self::Mean(expr)
             | Self::Stddev(expr)
+            | Self::Var(expr, _)
             | Self::Min(expr)
             | Self::Max(expr)
             | Self::BoolAnd(expr)
@@ -629,6 +634,10 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_stddev()"))
             }
+            Self::Var(expr, ddof) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_var(ddof={ddof})"))
+            }
             Self::Min(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_min()"))
@@ -683,6 +692,7 @@ impl AggExpr {
             | Self::MergeSketch(expr, _)
             | Self::Mean(expr)
             | Self::Stddev(expr)
+            | Self::Var(expr, _)
             | Self::Min(expr)
             | Self::Max(expr)
             | Self::BoolAnd(expr)
@@ -710,6 +720,7 @@ impl AggExpr {
             Self::Product(_) => Self::Product(first_child()),
             Self::Mean(_) => Self::Mean(first_child()),
             Self::Stddev(_) => Self::Stddev(first_child()),
+            &Self::Var(_, ddof) => Self::Var(first_child(), ddof),
             Self::Min(_) => Self::Min(first_child()),
             Self::Max(_) => Self::Max(first_child()),
             Self::BoolAnd(_) => Self::BoolAnd(first_child()),
@@ -836,6 +847,13 @@ impl AggExpr {
                 Ok(Field::new(
                     field.name.as_str(),
                     try_stddev_aggregation_supertype(&field.dtype)?,
+                ))
+            }
+            Self::Var(expr, _) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(
+                    field.name.as_str(),
+                    try_variance_aggregation_supertype(&field.dtype)?,
                 ))
             }
 
@@ -1127,6 +1145,10 @@ impl Expr {
 
     pub fn stddev(self: ExprRef) -> ExprRef {
         Self::Agg(AggExpr::Stddev(self)).into()
+    }
+
+    pub fn var(self: ExprRef, ddof: usize) -> ExprRef {
+        Self::Agg(AggExpr::Var(self, ddof)).into()
     }
 
     pub fn min(self: ExprRef) -> ExprRef {
@@ -1449,6 +1471,139 @@ impl Expr {
             }) => FieldID::new(format!(
                 "VLLM({model}, {input}, {concurrency}, {gpus_per_actor}, {do_prefix_routing}, {max_buffer_size}, {min_bucket_size}, {prefix_match_threshold:?}, {load_balance_threshold}, {batch_size:?}, {engine_args:?}, {generate_args:?})"
             )),
+        }
+    }
+
+    pub fn display_name(&self, schema: &Schema) -> DaftResult<String> {
+        match self {
+            // Base case - anonymous column reference.
+            // Look up the column name in the provided schema and get its field ID.
+            Self::Column(Column::Unresolved(UnresolvedColumn {
+                name,
+                plan_ref: PlanRef::Alias(alias),
+                ..
+            })) => Ok(format!("{alias}.{name}")),
+
+            Self::Column(Column::Unresolved(UnresolvedColumn {
+                name,
+                plan_ref: PlanRef::Id(id),
+                ..
+            })) => Ok(format!("{id}.{name}")),
+
+            Self::Column(Column::Unresolved(UnresolvedColumn {
+                name,
+                plan_ref: PlanRef::Unqualified,
+                ..
+            })) => Ok(name.to_string()),
+
+            // TODO: If there are multiple bound columns with the same name, include index
+            Self::Column(Column::Bound(BoundColumn {
+                field: Field { name, .. },
+                ..
+            })) => Ok(name.clone()),
+
+            Self::Column(Column::Resolved(ResolvedColumn::Basic(name))) => Ok(name.to_string()),
+            Self::Column(Column::Resolved(ResolvedColumn::JoinSide(name, side))) => {
+                Ok(format!("{side}.{name}"))
+            }
+            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(
+                Field { name, .. },
+                PlanRef::Alias(alias),
+            ))) => Ok(format!("outer.{alias}.{name}")),
+            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(
+                Field { name, .. },
+                PlanRef::Id(id),
+            ))) => Ok(format!("outer.{id}.{name}")),
+            Self::Column(Column::Resolved(ResolvedColumn::OuterRef(
+                Field { name, .. },
+                PlanRef::Unqualified,
+            ))) => Ok(format!("outer.{name}")),
+
+            // Base case - literal.
+            Self::Literal(value) => Ok(format!("{value}")),
+
+            // Recursive cases.
+            Self::Cast(expr, dtype) => {
+                let child_id = expr.display_name(schema)?;
+                Ok(format!("{child_id} to {dtype}"))
+            }
+            Self::Not(expr) => {
+                let child_id = expr.display_name(schema)?;
+                Ok(format!("!{child_id}"))
+            }
+            Self::IsNull(expr) => {
+                let child_id = expr.display_name(schema)?;
+                Ok(format!("{child_id} is NULL"))
+            }
+            Self::NotNull(expr) => {
+                let child_id = expr.display_name(schema)?;
+                Ok(format!("{child_id} is not NULL"))
+            }
+            Self::FillNull(expr, fill_value) => {
+                let child_id = expr.display_name(schema)?;
+                let fill_value_id = fill_value.display_name(schema)?;
+                Ok(format!("{child_id}.fill_null({fill_value_id})"))
+            }
+            Self::IsIn(expr, items) => {
+                let child_id = expr.display_name(schema)?;
+                let items_id = items
+                    .iter()
+                    .map(|item| item.display_name(schema))
+                    .collect::<DaftResult<Vec<String>>>()?;
+
+                Ok(format!("{child_id} in ({})", items_id.join(",")))
+            }
+            Self::List(items) => {
+                let items_id = items
+                    .iter()
+                    .map(|item| item.display_name(schema))
+                    .collect::<DaftResult<Vec<String>>>()?;
+                Ok(format!("[{}]", items_id.join(",")))
+            }
+            Self::Between(expr, lower, upper) => {
+                let child_id = expr.display_name(schema)?;
+                let lower_id = lower.display_name(schema)?;
+                let upper_id = upper.display_name(schema)?;
+                Ok(format!("{lower_id} <= {child_id} <= {upper_id}"))
+            }
+            Self::BinaryOp { op, left, right } => {
+                let left_id = left.display_name(schema)?;
+                let right_id = right.display_name(schema)?;
+                // TODO: check for symmetry here.
+                Ok(format!("({left_id} {op} {right_id})"))
+            }
+            Self::IfElse {
+                if_true,
+                if_false,
+                predicate,
+            } => {
+                let if_true = if_true.display_name(schema)?;
+                let if_false = if_false.display_name(schema)?;
+                let predicate = predicate.display_name(schema)?;
+                Ok(format!("{if_true} if {predicate} else {if_false}"))
+            }
+            // Alias: ID does not change.
+            Self::Alias(expr, name) => Ok(format!("{} as {name}", expr.display_name(schema)?)),
+            Self::Function { func, inputs } => {
+                let func_name = func.fn_name();
+                let input_names = inputs
+                    .iter()
+                    .map(|input| input.display_name(schema))
+                    .collect::<DaftResult<Vec<String>>>()?;
+                Ok(format!("{func_name}({})", input_names.join(", ")))
+            }
+            Self::ScalarFn(ScalarFn::Builtin(sf)) => {
+                let sf_id = sf.name();
+                let input_names = sf
+                    .inputs
+                    .iter()
+                    .map(|input| input.inner().display_name(schema))
+                    .collect::<DaftResult<Vec<String>>>()?;
+                Ok(format!("{sf_id}({})", input_names.join(", ")))
+            }
+            other => Err(DaftError::InternalError(format!(
+                "Expression type {other} is not be displayable"
+            ))),
         }
     }
 
@@ -2102,95 +2257,6 @@ impl Expr {
             inputs: FunctionArgs::new_unchecked(vec![FunctionArg::Unnamed(self)]),
         }))
         .arced())
-    }
-}
-
-#[derive(Display, Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
-pub enum Operator {
-    #[display("==")]
-    Eq,
-    #[display("<=>")]
-    EqNullSafe,
-    #[display("!=")]
-    NotEq,
-    #[display("<")]
-    Lt,
-    #[display("<=")]
-    LtEq,
-    #[display(">")]
-    Gt,
-    #[display(">=")]
-    GtEq,
-    #[display("+")]
-    Plus,
-    #[display("-")]
-    Minus,
-    #[display("*")]
-    Multiply,
-    #[display("/")]
-    TrueDivide,
-    #[display("//")]
-    FloorDivide,
-    #[display("%")]
-    Modulus,
-    #[display("&")]
-    And,
-    #[display("|")]
-    Or,
-    #[display("^")]
-    Xor,
-    #[display("<<")]
-    ShiftLeft,
-    #[display(">>")]
-    ShiftRight,
-}
-
-impl Operator {
-    #![allow(dead_code)]
-    pub(crate) fn is_comparison(&self) -> bool {
-        matches!(
-            self,
-            Self::Eq
-                | Self::EqNullSafe
-                | Self::NotEq
-                | Self::Lt
-                | Self::LtEq
-                | Self::Gt
-                | Self::GtEq
-                | Self::And
-                | Self::Or
-                | Self::Xor
-        )
-    }
-
-    pub(crate) fn is_arithmetic(&self) -> bool {
-        !(self.is_comparison())
-    }
-}
-
-impl FromStr for Operator {
-    type Err = DaftError;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "==" => Ok(Self::Eq),
-            "!=" => Ok(Self::NotEq),
-            "<" => Ok(Self::Lt),
-            "<=" => Ok(Self::LtEq),
-            ">" => Ok(Self::Gt),
-            ">=" => Ok(Self::GtEq),
-            "+" => Ok(Self::Plus),
-            "-" => Ok(Self::Minus),
-            "*" => Ok(Self::Multiply),
-            "/" => Ok(Self::TrueDivide),
-            "//" => Ok(Self::FloorDivide),
-            "%" => Ok(Self::Modulus),
-            "&" => Ok(Self::And),
-            "|" => Ok(Self::Or),
-            "^" => Ok(Self::Xor),
-            "<<" => Ok(Self::ShiftLeft),
-            ">>" => Ok(Self::ShiftRight),
-            _ => Err(DaftError::ComputeError(format!("Invalid operator: {}", s))),
-        }
     }
 }
 

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from daft.daft import (
     LocalPhysicalPlan,
     PyDaftExecutionConfig,
+    PyExecutionEngineFinalResult,
     PyMicroPartition,
     UnresolvedInputs,
 )
@@ -13,10 +14,10 @@ from daft.daft import (
 )
 from daft.dataframe.display import MermaidOptions
 from daft.event_loop import get_or_init_event_loop
-from daft.recordbatch import MicroPartition
+from daft.recordbatch import MicroPartition, RecordBatch
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, Iterator
+    from collections.abc import AsyncGenerator, Generator
 
     from daft.context import DaftContext
     from daft.logical.builder import LogicalPlanBuilder
@@ -36,14 +37,17 @@ class NativeExecutor:
         psets: dict[str, list[PyMicroPartition]],
         ctx: DaftContext,
         context: dict[str, str] | None,
-    ) -> Iterator[LocalMaterializedResult]:
+    ) -> Generator[LocalMaterializedResult, None, RecordBatch]:
         from daft.runners.partitioning import (
             LocalMaterializedResult,
         )
 
         resolved_inputs = inputs.resolve(psets)
 
+        result: PyExecutionEngineFinalResult | None = None
+
         async def stream_results() -> AsyncGenerator[PyMicroPartition | None, None]:
+            nonlocal result
             result_handle = await self._executor.run(
                 local_physical_plan,
                 ctx._ctx,
@@ -55,7 +59,7 @@ class NativeExecutor:
                 async for batch in result_handle:
                     yield batch
             finally:
-                _ = await result_handle.finish()
+                result = await result_handle.finish()
 
         event_loop = get_or_init_event_loop()
         async_exec = stream_results()
@@ -65,8 +69,14 @@ class NativeExecutor:
                 if part is None:
                     break
                 yield LocalMaterializedResult(MicroPartition._from_pymicropartition(part))
-        finally:
+        except KeyboardInterrupt as e:
+            raise e
+        except Exception as e:
+            raise e
+        else:
             event_loop.run(async_exec.aclose())
+            assert result is not None
+            return RecordBatch._from_pyrecordbatch(result.to_recordbatch())
 
     def pretty_print(
         self,

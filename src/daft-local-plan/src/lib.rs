@@ -3,6 +3,7 @@ pub mod agg;
 mod plan;
 #[cfg(feature = "python")]
 pub mod python;
+mod results;
 mod translate;
 use std::{collections::HashMap, sync::Arc};
 
@@ -20,8 +21,9 @@ pub use plan::{
 };
 #[cfg(feature = "python")]
 pub use python::{PyLocalPhysicalPlan, register_modules};
-use serde::{Deserialize, Serialize};
+pub use results::ExecutionEngineFinalResult;
 pub use translate::translate;
+use serde::{Deserialize, Serialize};
 
 pub type InputId = u32;
 pub type SourceId = u32;

@@ -1,16 +1,18 @@
+mod dashboard;
 mod progress_bar;
 pub mod ray;
 use std::{collections::HashMap, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
-use common_display::DisplayLevel;
+use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_partitioning::Partition;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_logical_plan::PyLogicalPlanBuilder;
+use dashboard::DashboardStatisticsSubscriber;
 use futures::StreamExt;
 use progress_bar::FlotillaProgressBar;
-use pyo3::prelude::*;
-use ray::{RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
+use pyo3::{exceptions::PyRuntimeError, prelude::*};
+use ray::{RayPartitionRef, RaySwordfishTask, RaySwordfishWorker, RayWorkerManager};
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
@@ -20,7 +22,7 @@ use crate::{
         viz_distributed_pipeline_mermaid,
     },
     plan::{DistributedPhysicalPlan, PlanConfig, PlanResultStream, PlanRunner},
-    python::ray::{RayPartitionRef, RayTaskResult},
+    python::ray::RayTaskResult,
     statistics::StatisticsSubscriber,
 };
 
@@ -145,6 +147,22 @@ impl PyDistributedPhysicalPlan {
             None,
         ))
     }
+
+    fn repr_json(&self) -> PyResult<String> {
+        let plan_config = PlanConfig::new(
+            self.plan.idx(),
+            self.plan.query_id(),
+            self.plan.execution_config().clone(),
+        );
+        let pipeline_node = logical_plan_to_pipeline_node(
+            plan_config,
+            self.plan.logical_plan().clone(),
+            Arc::new(HashMap::new()), // No psets needed for repr_json
+        )
+        .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+
+        Ok(serde_json::to_string(&pipeline_node.repr_json()).unwrap())
+    }
 }
 impl_bincode_py_state_serialization!(PyDistributedPhysicalPlan);
 
@@ -181,8 +199,16 @@ impl PyDistributedPhysicalPlanRunner {
             })
             .collect();
 
-        let subscribers: Vec<Box<dyn StatisticsSubscriber>> =
+        // Create subscribers list with progress bar always included
+        let mut subscribers: Vec<Box<dyn StatisticsSubscriber>> =
             vec![Box::new(FlotillaProgressBar::try_new(py)?)];
+
+        // Only add DashboardStatisticsSubscriber if RAY_DISABLE_DASHBOARD is not set to "1"
+        if std::env::var("RAY_DISABLE_DASHBOARD").as_deref() != Ok("1") {
+            subscribers.push(Box::new(DashboardStatisticsSubscriber::new(
+                plan.plan.query_id(),
+            )));
+        }
 
         let plan_result = self.runner.run_plan(&plan.plan, psets, subscribers)?;
         let part_stream = PythonPartitionRefStream {

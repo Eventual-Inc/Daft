@@ -42,7 +42,6 @@ impl ConcatNode {
             name,
             NodeType::Concat,
             NodeCategory::Intermediate,
-            output_schema,
             context,
         );
         let runtime_stats = Arc::new(DefaultRuntimeStats::new(node_info.id));

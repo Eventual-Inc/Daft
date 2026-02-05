@@ -109,14 +109,12 @@ impl SourceNode {
         source: Box<dyn Source>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
-        output_schema: SchemaRef,
         context: &LocalNodeContext,
     ) -> Self {
         let info = ctx.next_node_info(
             source.name().into(),
             source.op_type(),
             NodeCategory::Source,
-            output_schema,
             context,
         );
         let runtime_stats = source.make_runtime_stats(info.id);
