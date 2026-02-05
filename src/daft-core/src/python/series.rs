@@ -28,7 +28,7 @@ use crate::{
         self, IntoSeries, Series,
         from_lit::{combine_lit_types, series_from_literals_iter},
     },
-    utils::{arrow::cast_array_from_daft_if_needed, supertype::try_get_collection_supertype},
+    utils::supertype::try_get_collection_supertype,
 };
 
 #[pyclass]
@@ -70,14 +70,20 @@ impl PySeries {
             .map_err(DaftError::from)?
             .rename(name);
 
-        // Use Field::to_arrow() (not DataType::to_arrow()) so logical types
-        // like Embedding, Tensor, Image, Extension are handled correctly.
-        let target_arrow_field = daft_field.to_arrow()?;
-        let target_dtype = target_arrow_field.data_type();
+        // For Extension types, get the coerced inner storage type directly
+        // (e.g. Binary → LargeBinary). We can't use Field::to_arrow() here because
+        // it uses the REGISTRY to return the *original* storage type for export,
+        // but internally we need the coerced type.
+        // For all other types, use Field::to_arrow() which handles logical types
+        // like Embedding, Tensor, Image correctly.
+        let target_arrow_dtype = match &daft_field.dtype {
+            DataType::Extension(_, inner_dtype, _) => inner_dtype.to_arrow()?,
+            _ => daft_field.to_arrow()?.data_type().clone(),
+        };
 
         let arr = make_array(data);
-        let arr = if target_dtype != field.data_type() {
-            arrow::compute::cast(&arr, target_dtype).map_err(DaftError::from)?
+        let arr = if &target_arrow_dtype != field.data_type() {
+            arrow::compute::cast(&arr, &target_arrow_dtype).map_err(DaftError::from)?
         } else {
             arr
         };
@@ -86,7 +92,7 @@ impl PySeries {
             let field = Field::new(name, dtype.into());
             series::Series::from_arrow(Arc::new(field), arr)?
         } else {
-            series::Series::from_arrow(Arc::new(daft_field), arr)?
+            series::Series::from_arrow(Arc::new(dbg!(daft_field)), arr)?
         };
 
         Ok(series.into())

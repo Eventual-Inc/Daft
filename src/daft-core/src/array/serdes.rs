@@ -131,6 +131,12 @@ impl serde::Serialize for ExtensionArray {
         let mut s = serializer.serialize_map(Some(2))?;
         s.serialize_entry("field", self.field())?;
         let values = if let DataType::Extension(_, inner, _) = self.data_type() {
+            let arrow_field = self
+                .field()
+                .to_arrow()
+                .expect("Failed to convert field to arrow");
+            dbg!(arrow_field);
+
             Series::try_from((
                 "physical",
                 self.data.convert_logical_type(inner.to_arrow2().unwrap()),

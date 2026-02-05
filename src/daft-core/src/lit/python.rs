@@ -27,7 +27,7 @@ use crate::{
     file::FileReference,
     python::PySeries,
     series::Series,
-    utils::{arrow::cast_array_from_daft_if_needed, display::display_decimal128},
+    utils::display::display_decimal128,
 };
 
 /// All Daft to Python type conversion logic should go through this implementation.
@@ -243,12 +243,20 @@ impl<'py> IntoPyObject<'py> for Literal {
                     "Expected extension literal to have length 1"
                 );
 
-                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+                let target_field = series.field().to_arrow().map_err(|e| {
+                    PyErr::from(DaftError::from(e))
+                })?;
+                let arr = series.to_arrow().map_err(|e| {
+                    PyErr::from(DaftError::from(e))
+                })?;
+                let arr = if arr.data_type() != target_field.data_type() {
+                    arrow::compute::cast(&arr, target_field.data_type())
+                        .map_err(|e| PyErr::from(DaftError::from(e)))?
+                } else {
+                    arr
+                };
 
-                let arrow_array = series.to_arrow2();
-                let arrow_array = cast_array_from_daft_if_needed(arrow_array);
-
-                ffi::to_py_array(py, arrow_array, &pyarrow)?
+                ffi::to_py_array_v2(py, arr, &target_field)?
                     .call_method0(pyo3::intern!(py, "to_pylist"))?
                     .get_item(0)
             }
