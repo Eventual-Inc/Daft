@@ -37,33 +37,6 @@ For detailed development instructions, see our [Development Guide](https://docs.
 
 The Daft project is governed by a community of contributors who have helped shape the project into what it is today. Members contribute in different ways and take on a variety of roles.
 
-### Contributor
-
-A Contributor is anyone who contributes to the Daft project in any form: code, documentation, issues, community support, talks, or tooling. Contributors are the foundation of the project and are encouraged to participate in discussions, propose features, and submit pull requests.
-
-We thank the following community members for their contributions to Daft:
-
-| GitHub | Affiliation | Contributions |
-|--------|-------------|---------------|
-| [@aaron-ang](https://github.com/aaron-ang) | | Distance/similarity functions, string casing, list operations, SQL |
-| [@Abyss-lord](https://github.com/Abyss-lord) | ctyun | Logger improvements |
-| [@ConeyLiu](https://github.com/ConeyLiu) | Tencent | UTF-8 functions, regexp_replace, floor division |
-| [@datanikkthegreek](https://github.com/datanikkthegreek) | Databricks | Delta Lake, Unity Catalog (issues & PRs) |
-| [@destroyer22719](https://github.com/destroyer22719) | Queen's University | Expression aliases, documentation |
-| [@djouallah](https://github.com/djouallah) | Microsoft | SQL/Spark ecosystem feedback |
-| [@fenfeng9](https://github.com/fenfeng9) | | Embedding dtype fixes |
-| [@gpathak128](https://github.com/gpathak128) | | JSON null field handling |
-| [@hongbo-miao](https://github.com/hongbo-miao) | Archer Aviation | Installation, PyArrow, UUID support |
-| [@ion-elgreco](https://github.com/ion-elgreco) | NATO | Ray execution, production feedback |
-| [@j3nkii](https://github.com/j3nkii) | | Dashboard fixes, documentation |
-| [@jakajancar](https://github.com/jakajancar) | Assertly | Catalog design, SQL features |
-| [@kyo-tom](https://github.com/kyo-tom) | DTStack | OpenAI embedder token limits |
-| [@lhoestq](https://github.com/lhoestq) | Hugging Face | HuggingFace ecosystem collaboration |
-| [@Lucas61000](https://github.com/Lucas61000) | | SQL STRUCT parsing |
-| [@malcolmgreaves](https://github.com/malcolmgreaves) | Meaves Industries | Documentation, tutorials, embeddings |
-| [@rahulkodali](https://github.com/rahulkodali) | UT Austin | Multi-input hash function |
-| [@shaofengshi](https://github.com/shaofengshi) | Datastrato | Apache Gravitino catalog integration |
-
 ### Maintainer
 
 A Maintainer is a recognized Contributor who has demonstrated sustained, meaningful contributions to the project. Maintainers are nominated by existing Maintainers or PMC members and approved by a majority vote of the PMC.
