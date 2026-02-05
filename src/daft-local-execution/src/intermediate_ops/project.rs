@@ -13,15 +13,14 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
-};
+use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
 use crate::{
     ExecutionTaskSpawner,
     dynamic_batching::{
         DynBatchingStrategy, LatencyConstrainedBatchingStrategy, StaticBatchingStrategy,
     },
     pipeline::{MorselSizeRequirement, NodeName},
+    pipeline_execution::OperatorExecutionOutput,
 };
 
 fn num_parallel_exprs(projection: &[BoundExpr]) -> usize {
@@ -167,7 +166,7 @@ impl IntermediateOperator for ProjectOperator {
                     };
                     Ok((
                         state,
-                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
+                        OperatorExecutionOutput::NeedMoreInput(Some(Arc::new(out))),
                     ))
                 },
                 Span::current(),
@@ -204,8 +203,8 @@ impl IntermediateOperator for ProjectOperator {
         res
     }
 
-    fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(self.max_concurrency)
+    fn max_concurrency(&self) -> usize {
+        self.max_concurrency
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {

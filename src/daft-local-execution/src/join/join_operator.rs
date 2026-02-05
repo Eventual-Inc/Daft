@@ -4,26 +4,19 @@ use common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use common_runtime::get_compute_pool_num_threads;
 use daft_micropartition::MicroPartition;
+use tokio::sync::broadcast;
 
 use crate::{
     ExecutionTaskSpawner, OperatorOutput,
     pipeline::{MorselSizeRequirement, NodeName},
+    pipeline_execution::OperatorExecutionOutput,
     runtime_stats::RuntimeStats,
 };
-
-/// Result of probing a single morsel
-pub(crate) enum ProbeOutput {
-    NeedMoreInput(Option<Arc<MicroPartition>>),
-    HasMoreOutput {
-        input: Arc<MicroPartition>,
-        output: Arc<MicroPartition>,
-    },
-}
 
 pub(crate) type BuildStateResult<Op> = OperatorOutput<DaftResult<<Op as JoinOperator>::BuildState>>;
 pub(crate) type FinalizeBuildResult<Op> = DaftResult<<Op as JoinOperator>::FinalizedBuildState>;
 pub(crate) type ProbeResult<Op> =
-    OperatorOutput<DaftResult<(<Op as JoinOperator>::ProbeState, ProbeOutput)>>;
+    OperatorOutput<DaftResult<(<Op as JoinOperator>::ProbeState, OperatorExecutionOutput)>>;
 pub(crate) type ProbeFinalizeResult = OperatorOutput<DaftResult<Option<Arc<MicroPartition>>>>;
 
 pub(crate) trait JoinOperator: Send + Sync {
@@ -54,10 +47,11 @@ pub(crate) trait JoinOperator: Send + Sync {
     /// Create a new build state
     fn make_build_state(&self) -> DaftResult<Self::BuildState>;
 
-    /// Create a probe state from the finalized build state
+    /// Create a probe state from a broadcast receiver for the finalized build state.
+    /// The receiver will be awaited lazily on first probe call.
     fn make_probe_state(
         &self,
-        finalized_build_state: Self::FinalizedBuildState,
+        receiver: broadcast::Receiver<Self::FinalizedBuildState>,
     ) -> Self::ProbeState;
 
     /// Probe a morsel against the built state
@@ -100,7 +94,4 @@ pub(crate) trait JoinOperator: Send + Sync {
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
         None
     }
-
-    /// Whether this join needs finalization after probe phase
-    fn needs_probe_finalization(&self) -> bool;
 }

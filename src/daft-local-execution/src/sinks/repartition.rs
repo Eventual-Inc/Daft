@@ -2,7 +2,6 @@ use std::{collections::VecDeque, sync::Arc};
 
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
-use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_logical_plan::partitioning::RepartitionSpec;
@@ -10,9 +9,7 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-};
+use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) struct RepartitionState {
@@ -101,7 +98,7 @@ impl BlockingSink for RepartitionSink {
         &self,
         mut states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let num_partitions = self.num_partitions;
         let schema = self.schema.clone();
 
@@ -138,7 +135,7 @@ impl BlockingSink for RepartitionSink {
                         .unwrap()
                         .into_iter()
                         .collect::<DaftResult<Vec<_>>>()?;
-                    Ok(BlockingSinkFinalizeOutput::Finished(outputs))
+                    Ok(outputs)
                 },
                 Span::current(),
             )
@@ -183,10 +180,6 @@ impl BlockingSink for RepartitionSink {
                 ]
             }
         }
-    }
-
-    fn max_concurrency(&self) -> usize {
-        get_compute_pool_num_threads()
     }
 
     fn make_state(&self) -> DaftResult<Self::State> {

@@ -17,12 +17,11 @@ use pyo3::prelude::*;
 use rand::Rng;
 use tracing::{Span, instrument};
 
-use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
-};
+use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{MorselSizeRequirement, NodeName},
+    pipeline_execution::OperatorExecutionOutput,
 };
 
 #[derive(Clone, Debug)]
@@ -98,6 +97,7 @@ impl From<common_py_serde::PyObjectWrapper> for ActorHandle {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct DistributedActorPoolProjectState {
     actor_handle: ActorHandle,
 }
@@ -141,7 +141,7 @@ impl DistributedActorPoolProjectOperator {
 
 impl IntermediateOperator for DistributedActorPoolProjectOperator {
     type State = DistributedActorPoolProjectState;
-    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
+    type BatchingStrategy = crate::dynamic_batching::DynBatchingStrategy;
     #[instrument(skip_all, name = "DistributedActorPoolProjectOperator::execute")]
     fn execute(
         &self,
@@ -155,10 +155,11 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
             let fut = task_spawner.spawn_with_memory_request(
                 memory_request,
                 async move {
-                    let res =
-                        state.actor_handle.eval_input(input).await.map(|result| {
-                            IntermediateOperatorResult::NeedMoreInput(Some(result))
-                        })?;
+                    let res = state
+                        .actor_handle
+                        .eval_input(input)
+                        .await
+                        .map(|result| OperatorExecutionOutput::NeedMoreInput(Some(result)))?;
                     Ok((state, res))
                 },
                 Span::current(),
@@ -208,10 +209,10 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         }
     }
 
-    fn max_concurrency(&self) -> DaftResult<usize> {
+    fn max_concurrency(&self) -> usize {
         // We set the max concurrency to be the number of actor handles * 2 to such that each actor handle has 2 workers submitting to it.
         // This allows inputs to be queued up concurrently with UDF execution.
-        Ok(self.actor_handles.len() * 2)
+        self.actor_handles.len() * 2
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
@@ -222,6 +223,7 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
     fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
         Ok(crate::dynamic_batching::StaticBatchingStrategy::new(
             self.morsel_size_requirement().unwrap_or_default(),
-        ))
+        )
+        .into())
     }
 }

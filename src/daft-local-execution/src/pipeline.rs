@@ -24,7 +24,7 @@ use daft_local_plan::{
     WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
-use daft_micropartition::{MicroPartition, MicroPartitionRef};
+use daft_micropartition::MicroPartitionRef;
 use daft_scan::ScanTaskRef;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
@@ -33,8 +33,8 @@ use snafu::ResultExt;
 use crate::{
     ExecutionRuntimeContext, PipelineCreationSnafu,
     channel::create_channel,
-    input_sender::InputSender,
     concat::ConcatNode,
+    input_sender::InputSender,
     intermediate_ops::{
         distributed_actor_pool_project::DistributedActorPoolProjectOperator,
         explode::ExplodeOperator, filter::FilterOperator, intermediate_op::IntermediateNode,
@@ -42,6 +42,7 @@ use crate::{
         unpivot::UnpivotOperator,
     },
     join::{CrossJoinOperator, HashJoinOperator, JoinNode, SortMergeJoinOperator},
+    pipeline_message::PipelineMessage,
     runtime_stats::RuntimeStats,
     sinks::{
         aggregate::AggregateSink,
@@ -161,7 +162,7 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
         &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<crate::channel::Receiver<Arc<MicroPartition>>>;
+    ) -> crate::Result<crate::channel::Receiver<PipelineMessage>>;
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 

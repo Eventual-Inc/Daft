@@ -13,18 +13,20 @@ use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
-use daft_micropartition::MicroPartition;
+// MicroPartition is used in PipelineMessage
 use futures::{StreamExt, stream::BoxStream};
 use opentelemetry::{KeyValue, global};
 use snafu::ResultExt;
 
 use crate::{
     ExecutionRuntimeContext, PipelineExecutionSnafu,
+    channel::create_channel,
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
+    pipeline_message::PipelineMessage,
     runtime_stats::RuntimeStats,
 };
 
-pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
+pub type SourceStream<'a> = BoxStream<'a, DaftResult<PipelineMessage>>;
 
 pub(crate) struct SourceStats {
     cpu_us: Counter,
@@ -205,12 +207,12 @@ impl PipelineNode for SourceNode {
         &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<crate::channel::Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<crate::channel::Receiver<PipelineMessage>> {
         let io_stats = self.runtime_stats.io_stats.clone();
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
 
-        let (destination_sender, destination_receiver) = crate::channel::create_channel(1);
+        let (destination_sender, destination_receiver) = create_channel(1);
         let chunk_size = match self.morsel_size_requirement {
             MorselSizeRequirement::Strict(size) => size,
             MorselSizeRequirement::Flexible(_, upper) => upper,
@@ -227,10 +229,13 @@ impl PipelineNode for SourceNode {
             async move {
                 stats_manager.activate_node(node_id);
 
-                while let Some(part) = source_stream.next().await {
-                    let part = part?;
-                    runtime_stats.add_rows_out(part.len() as u64);
-                    if destination_sender.send(part).await.is_err() {
+                while let Some(msg) = source_stream.next().await {
+                    let msg = msg?;
+                    // Track rows only for Morsel messages
+                    if let PipelineMessage::Morsel { ref partition, .. } = msg {
+                        runtime_stats.add_rows_out(partition.len() as u64);
+                    }
+                    if destination_sender.send(msg).await.is_err() {
                         break;
                     }
                 }

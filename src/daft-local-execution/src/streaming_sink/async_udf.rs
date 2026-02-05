@@ -22,14 +22,12 @@ use itertools::Itertools;
 use opentelemetry::{KeyValue, global, metrics::Meter};
 use tracing::{Span, instrument};
 
-use super::base::{
-    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
-    StreamingSinkFinalizeResult, StreamingSinkOutput,
-};
+use super::base::{StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult};
 use crate::{
     ExecutionTaskSpawner,
     intermediate_ops::udf::remap_used_cols,
     pipeline::{MorselSizeRequirement, NodeName},
+    pipeline_execution::{OperatorExecutionOutput, OperatorFinalizeOutput},
     runtime_stats::RuntimeStats,
 };
 
@@ -171,7 +169,7 @@ pub struct AsyncUdfState {
 
 impl StreamingSink for AsyncUdfSink {
     type State = AsyncUdfState;
-    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
+    type BatchingStrategy = crate::dynamic_batching::DynBatchingStrategy;
     #[instrument(skip_all, name = "AsyncUdfSink::execute")]
     fn execute(
         &self,
@@ -252,14 +250,14 @@ impl StreamingSink for AsyncUdfSink {
                             }
 
                             if ready_batches.is_empty() {
-                                Ok((state, StreamingSinkOutput::NeedMoreInput(None)))
+                                Ok((state, OperatorExecutionOutput::NeedMoreInput(None)))
                             } else {
                                 let output = Arc::new(MicroPartition::new_loaded(
                                     params.output_schema.clone(),
                                     Arc::new(ready_batches),
                                     None,
                                 ));
-                                Ok((state, StreamingSinkOutput::NeedMoreInput(Some(output))))
+                                Ok((state, OperatorExecutionOutput::NeedMoreInput(Some(output))))
                             }
                         }
                     },
@@ -286,7 +284,7 @@ impl StreamingSink for AsyncUdfSink {
                     let state = states.first_mut().unwrap();
                     if let Some(join_res) = state.task_set.join_next().await {
                         let batch = join_res??;
-                        Ok(StreamingSinkFinalizeOutput::HasMoreOutput {
+                        Ok(OperatorFinalizeOutput::HasMoreOutput {
                             states,
                             output: Some(Arc::new(MicroPartition::new_loaded(
                                 params.output_schema.clone(),
@@ -295,7 +293,7 @@ impl StreamingSink for AsyncUdfSink {
                             ))),
                         })
                     } else {
-                        Ok(StreamingSinkFinalizeOutput::Finished(None))
+                        Ok(OperatorFinalizeOutput::Finished(None))
                     }
                 },
                 Span::current(),
@@ -364,7 +362,11 @@ impl StreamingSink for AsyncUdfSink {
         Arc::new(AsyncUdfRuntimeStats::new(id))
     }
 
-    fn max_concurrency(&self) -> usize {
+    fn max_concurrency_per_input_id(&self) -> usize {
+        1
+    }
+
+    fn total_max_concurrency(&self) -> usize {
         1
     }
 
@@ -390,5 +392,6 @@ impl StreamingSink for AsyncUdfSink {
         crate::dynamic_batching::StaticBatchingStrategy::new(
             self.morsel_size_requirement().unwrap_or_default(),
         )
+        .into()
     }
 }

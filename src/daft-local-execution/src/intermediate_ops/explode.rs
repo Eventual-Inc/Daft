@@ -12,10 +12,11 @@ use itertools::Itertools;
 use opentelemetry::{KeyValue, global};
 use tracing::{Span, instrument};
 
-use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
+use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
+use crate::{
+    ExecutionTaskSpawner, pipeline::NodeName, pipeline_execution::OperatorExecutionOutput,
+    runtime_stats::RuntimeStats,
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
 
 pub struct ExplodeStats {
     cpu_us: Counter,
@@ -112,7 +113,7 @@ impl IntermediateOperator for ExplodeOperator {
                     let out = input.explode(&to_explode, index_column.as_deref())?;
                     Ok((
                         state,
-                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
+                        OperatorExecutionOutput::NeedMoreInput(Some(Arc::new(out))),
                     ))
                 },
                 Span::current(),

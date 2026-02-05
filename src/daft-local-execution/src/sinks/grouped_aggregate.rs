@@ -6,7 +6,6 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
-use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::{
     bound_col,
@@ -16,9 +15,7 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-};
+use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 #[derive(Clone, Debug)]
@@ -337,7 +334,7 @@ impl BlockingSink for GroupedAggregateSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let params = self.grouped_aggregate_params.clone();
         let num_partitions = self.num_partitions();
         spawner
@@ -407,9 +404,7 @@ impl BlockingSink for GroupedAggregateSink {
                         .into_iter()
                         .collect::<DaftResult<Vec<_>>>()?;
                     let concated = MicroPartition::concat(&results)?;
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
-                        concated,
-                    )]))
+                    Ok(vec![Arc::new(concated)])
                 },
                 Span::current(),
             )
@@ -443,10 +438,6 @@ impl BlockingSink for GroupedAggregateSink {
                 .join(", ")
         ));
         display
-    }
-
-    fn max_concurrency(&self) -> usize {
-        get_compute_pool_num_threads()
     }
 
     fn make_state(&self) -> DaftResult<Self::State> {

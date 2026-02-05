@@ -9,7 +9,7 @@ use daft_micropartition::MicroPartition;
 use tracing::instrument;
 
 use super::source::Source;
-use crate::{pipeline::NodeName, sources::source::SourceStream};
+use crate::{pipeline::NodeName, pipeline_message::PipelineMessage, sources::source::SourceStream};
 
 pub struct EmptyScanSource {
     schema: SchemaRef,
@@ -31,7 +31,16 @@ impl Source for EmptyScanSource {
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
         let empty = Arc::new(MicroPartition::empty(Some(self.schema.clone())));
-        Ok(Box::pin(futures::stream::once(async { Ok(empty) })))
+        let messages = vec![
+            PipelineMessage::Morsel {
+                input_id: 0,
+                partition: empty,
+            },
+            PipelineMessage::Flush(0),
+        ];
+        Ok(Box::pin(futures::stream::iter(
+            messages.into_iter().map(Ok),
+        )))
     }
 
     fn name(&self) -> NodeName {

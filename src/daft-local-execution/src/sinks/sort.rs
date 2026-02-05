@@ -8,7 +8,7 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+    BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
 };
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
@@ -77,7 +77,7 @@ impl BlockingSink for SortSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let params = self.params.clone();
         spawner
             .spawn(
@@ -89,7 +89,7 @@ impl BlockingSink for SortSink {
                         &params.descending,
                         &params.nulls_first,
                     )?);
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![sorted]))
+                    Ok(vec![sorted])
                 },
                 Span::current(),
             )

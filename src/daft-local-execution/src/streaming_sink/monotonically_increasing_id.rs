@@ -6,11 +6,12 @@ use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
 use tracing::{Span, instrument};
 
-use super::base::{
-    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
-    StreamingSinkFinalizeResult, StreamingSinkOutput,
+use super::base::{StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::NodeName,
+    pipeline_execution::{OperatorExecutionOutput, OperatorFinalizeOutput},
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) struct MonotonicallyIncreasingIdState {
     id_offset: u64,
@@ -85,7 +86,7 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
 
                     Ok((
                         state,
-                        StreamingSinkOutput::NeedMoreInput(Some(Arc::new(out))),
+                        OperatorExecutionOutput::NeedMoreInput(Some(Arc::new(out))),
                     ))
                 },
                 Span::current(),
@@ -110,7 +111,7 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
         _states: Vec<Self::State>,
         _spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult<Self> {
-        Ok(StreamingSinkFinalizeOutput::Finished(None)).into()
+        Ok(OperatorFinalizeOutput::Finished(None)).into()
     }
 
     fn make_state(&self) -> DaftResult<Self::State> {
@@ -121,9 +122,10 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
 
     // Monotonically increasing id is a memory-bound operation, so there's no performance benefit to parallelizing it.
     // Furthermore, it is much simpler to implement as a single-threaded operation, since we can just keep track of the current id offset without synchronization.
-    fn max_concurrency(&self) -> usize {
+    fn max_concurrency_per_input_id(&self) -> usize {
         1
     }
+
     fn batching_strategy(&self) -> Self::BatchingStrategy {
         crate::dynamic_batching::StaticBatchingStrategy::new(
             self.morsel_size_requirement().unwrap_or_default(),

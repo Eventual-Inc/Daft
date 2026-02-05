@@ -35,6 +35,7 @@ use crate::{
         RelationshipInformation, RuntimeContext, get_pipeline_relationship_mapping,
         translate_physical_plan_to_pipeline, viz_pipeline_ascii, viz_pipeline_mermaid,
     },
+    pipeline_message::PipelineMessage,
     resource_manager::get_or_init_memory_manager,
     runtime_stats::{QueryEndState, RuntimeStatsManager},
 };
@@ -190,7 +191,7 @@ impl NativeExecutor {
         let (mut pipeline, input_senders) =
             translate_physical_plan_to_pipeline(local_physical_plan, &exec_cfg, &ctx)?;
 
-        let (tx, rx) = create_channel(1);
+        let (tx, rx) = create_channel::<Arc<MicroPartition>>(1);
         let enable_explain_analyze = should_enable_explain_analyze();
 
         let query_id: common_metrics::QueryID = additional_context
@@ -226,9 +227,12 @@ impl NativeExecutor {
                 }
                 drop(input_senders);
 
-                while let Some(val) = receiver.recv().await {
-                    if tx.send(val).await.is_err() {
-                        return Ok(());
+                while let Some(msg) = receiver.recv().await {
+                    // Extract partition from Morsel messages, ignore Flush
+                    if let PipelineMessage::Morsel { partition, .. } = msg {
+                        if tx.send(partition).await.is_err() {
+                            return Ok(());
+                        }
                     }
                 }
 
@@ -398,7 +402,7 @@ impl ExecutionEngineResult {
 
         futures::stream::unfold(state, |mut state| async {
             match state.receiver.recv().await {
-                Some(part) => Some((Ok(part), state)),
+                Some(partition) => Some((Ok(partition), state)),
                 None => {
                     if let Some(handle) = state.handle.take() {
                         let result = handle.await;

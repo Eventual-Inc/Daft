@@ -21,16 +21,17 @@ pub(crate) async fn merge_bitmaps_and_construct_null_table(
     let first_state = states_iter
         .next()
         .expect("At least one state should be present for merge bitmaps and construct null table");
-    let first_tables = first_state.probe_state.get_record_batches();
-    let first_bitmap = first_state
-        .bitmap_builder
+    let (probe_state, bitmap_builder) = first_state.into_initialized();
+    let first_tables = probe_state.get_record_batches();
+    let first_bitmap = bitmap_builder
         .expect("Bitmap builder should be set for merge bitmaps and construct null table")
         .build();
 
     let merged_bitmap = {
         let bitmaps = stream::once(async move { first_bitmap })
             .chain(stream::iter(states_iter).map(|s| {
-                s.bitmap_builder
+                let (_, bitmap_builder) = s.into_initialized();
+                bitmap_builder
                     .expect(
                         "Bitmap builder should be set for merge bitmaps and construct null table",
                     )

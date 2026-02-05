@@ -7,9 +7,7 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-};
+use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) enum PivotState {
@@ -91,7 +89,7 @@ impl BlockingSink for PivotSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let pivot_params = self.pivot_params.clone();
         spawner
             .spawn(
@@ -120,7 +118,7 @@ impl BlockingSink for PivotSink {
                         pivot_params.value_column.clone(),
                         pivot_params.names.clone(),
                     )?);
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![pivoted]))
+                    Ok(vec![pivoted])
                 },
                 Span::current(),
             )

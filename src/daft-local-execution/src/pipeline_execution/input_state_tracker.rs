@@ -1,0 +1,168 @@
+use std::{collections::HashMap, sync::Arc};
+
+use common_error::DaftResult;
+use daft_micropartition::MicroPartition;
+
+use crate::{
+    pipeline::MorselSizeRequirement, pipeline_execution::StateTracker, pipeline_message::InputId,
+};
+
+/// Wrapper around HashMap<InputId, StateTracker<S>> that provides
+/// a clean API for state management, buffered partition processing, and finalization logic.
+pub(crate) struct InputStateTracker<S> {
+    trackers: HashMap<InputId, StateTracker<S>>,
+    state_creator: Box<dyn Fn(InputId) -> DaftResult<StateTracker<S>> + Send + Sync>,
+}
+
+impl<S> InputStateTracker<S> {
+    /// Create a new InputStateTracker with a state creation function.
+    /// The state creator will be called when the first partition for an input_id arrives,
+    /// and will receive the input_id as a parameter.
+    pub(crate) fn new(
+        state_creator: Box<dyn Fn(InputId) -> DaftResult<StateTracker<S>> + Send + Sync>,
+    ) -> Self {
+        Self {
+            trackers: HashMap::new(),
+            state_creator,
+        }
+    }
+
+    /// Buffer a partition for the given input_id.
+    /// If the tracker doesn't exist, calls the stored state_creator to create it.
+    /// Always buffers the partition (implements "always buffer first" pattern).
+    pub(crate) fn buffer_partition(
+        &mut self,
+        input_id: InputId,
+        partition: Arc<MicroPartition>,
+    ) -> DaftResult<()> {
+        if !self.trackers.contains_key(&input_id) {
+            let tracker = (self.state_creator)(input_id)?;
+            self.trackers.insert(input_id, tracker);
+        }
+        let tracker = self
+            .trackers
+            .get_mut(&input_id)
+            .expect("Tracker should exist after insertion");
+        tracker.buffer_partition(partition);
+        Ok(())
+    }
+
+    /// Check if finalization can proceed for the given input_id.
+    /// Returns Some(states) if finalization is ready (completed, all states available, no buffered partitions),
+    /// and removes the tracker entry. Returns None otherwise.
+    pub(crate) fn try_take_states_for_finalize(&mut self, input_id: InputId) -> Option<Vec<S>> {
+        let tracker = self.trackers.get(&input_id)?;
+        let should_finalize = tracker.is_completed()
+            && tracker.all_states_available()
+            && !tracker.has_buffered_partitions();
+
+        if should_finalize {
+            let tracker = self.trackers.remove(&input_id)?;
+            Some(tracker.take_all_states())
+        } else {
+            None
+        }
+    }
+
+    /// Get the next partition/batch and state for execution if available.
+    /// Returns Some((partition, state)) if buffered partitions and available states exist.
+    /// Returns None otherwise.
+    ///
+    /// This method respects batching bounds. For blocking sinks with bounds (0, usize::MAX),
+    /// it behaves the same as popping all partitions. For streaming sinks, it respects
+    /// dynamic bounds for proper batching.
+    pub(crate) fn get_next_partition_for_execute(
+        &mut self,
+        input_id: InputId,
+    ) -> Option<DaftResult<(Arc<MicroPartition>, S)>> {
+        let tracker = match self.trackers.get_mut(&input_id) {
+            Some(tracker) => tracker,
+            None => return None,
+        };
+
+        if !tracker.has_buffered_partitions() || !tracker.has_available_states() {
+            return None;
+        }
+
+        let batch = match tracker.next_batch_if_ready() {
+            Ok(Some(batch)) => Some(batch),
+            Ok(None) => {
+                // If tracker is completed and has buffered partitions but next_batch_if_ready returned None,
+                // try pop_all to get all remaining partitions
+                if tracker.is_completed() && tracker.has_buffered_partitions() {
+                    tracker.pop_all().ok()?
+                } else {
+                    None
+                }
+            }
+            Err(e) => return Some(Err(e)),
+        };
+
+        // Only take state if we have a batch
+        let state = if batch.is_some() {
+            tracker.take_state()
+        } else {
+            None
+        };
+
+        match (batch, state) {
+            (Some(batch), Some(state)) => Some(Ok((batch, state))),
+            (Some(_batch), None) => unreachable!(),
+            (None, Some(_state)) => unreachable!(),
+            (None, None) => None,
+        }
+    }
+
+    /// Return a state after task completion
+    pub(crate) fn return_state(&mut self, input_id: InputId, state: S) {
+        if let Some(tracker) = self.trackers.get_mut(&input_id) {
+            tracker.return_state(state);
+        }
+    }
+
+    /// Mark an input_id as completed (flush received)
+    pub(crate) fn mark_completed(&mut self, input_id: InputId) {
+        if let Some(tracker) = self.trackers.get_mut(&input_id) {
+            tracker.mark_completed();
+        }
+    }
+
+    /// Mark all trackers as completed
+    pub(crate) fn mark_all_completed(&mut self) {
+        for tracker in self.trackers.values_mut() {
+            if !tracker.is_completed() {
+                tracker.mark_completed();
+            }
+        }
+    }
+
+    /// Check if there are any unfinalized states remaining
+    pub(crate) fn has_unfinalized_states(&self) -> bool {
+        !self.trackers.is_empty()
+    }
+
+    /// Check if there are any buffered partitions across all input_ids
+    pub(crate) fn has_buffered_partitions(&self) -> bool {
+        self.trackers
+            .values()
+            .any(|tracker| tracker.has_buffered_partitions())
+    }
+
+    /// Update bounds for all input_ids (used by streaming sinks)
+    pub(crate) fn update_all_bounds(&mut self, morsel_size_requirement: MorselSizeRequirement) {
+        let (lower, upper) = morsel_size_requirement.values();
+        for tracker in self.trackers.values_mut() {
+            tracker.update_bounds(lower, upper);
+        }
+    }
+
+    /// Check if a tracker exists for the given input_id
+    pub(crate) fn contains_key(&self, input_id: InputId) -> bool {
+        self.trackers.contains_key(&input_id)
+    }
+
+    /// Get all input_ids that have trackers
+    pub(crate) fn input_ids(&self) -> Vec<InputId> {
+        self.trackers.keys().copied().collect()
+    }
+}

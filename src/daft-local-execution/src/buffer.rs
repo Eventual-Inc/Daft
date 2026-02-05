@@ -50,6 +50,11 @@ impl RowBasedBuffer {
         self.buffer.push_back(part);
     }
 
+    // Check if the buffer is empty
+    pub fn is_empty(&self) -> bool {
+        self.buffer.is_empty()
+    }
+
     fn buffer_state(&self) -> BufferState {
         match (
             self.lower_bound <= self.curr_len,

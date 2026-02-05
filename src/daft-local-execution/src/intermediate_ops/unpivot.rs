@@ -7,10 +7,10 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::intermediate_op::{
-    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
+use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
+use crate::{
+    ExecutionTaskSpawner, pipeline::NodeName, pipeline_execution::OperatorExecutionOutput,
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 struct UnpivotParams {
     ids: Vec<BoundExpr>,
@@ -62,7 +62,7 @@ impl IntermediateOperator for UnpivotOperator {
                     )?;
                     Ok((
                         state,
-                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
+                        OperatorExecutionOutput::NeedMoreInput(Some(Arc::new(out))),
                     ))
                 },
                 Span::current(),

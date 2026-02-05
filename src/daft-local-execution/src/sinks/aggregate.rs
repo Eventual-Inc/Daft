@@ -2,16 +2,13 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
-use common_runtime::get_compute_pool_num_threads;
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::{BoundAggExpr, BoundExpr};
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{
-    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
-};
+use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) enum AggregateState {
@@ -104,7 +101,7 @@ impl BlockingSink for AggregateSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult<Self> {
+    ) -> BlockingSinkFinalizeResult {
         let params = self.agg_sink_params.clone();
         spawner
             .spawn(
@@ -113,9 +110,7 @@ impl BlockingSink for AggregateSink {
                     let concated = MicroPartition::concat(all_parts)?;
                     let agged = concated.agg(&params.finalize_agg_exprs, &[])?;
                     let projected = agged.eval_expression_list(&params.final_projections)?;
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
-                        projected,
-                    )]))
+                    Ok(vec![Arc::new(projected)])
                 },
                 Span::current(),
             )
@@ -139,10 +134,6 @@ impl BlockingSink for AggregateSink {
                 .map(|e| e.to_string())
                 .join(", ")
         )]
-    }
-
-    fn max_concurrency(&self) -> usize {
-        get_compute_pool_num_threads()
     }
 
     fn make_state(&self) -> DaftResult<Self::State> {

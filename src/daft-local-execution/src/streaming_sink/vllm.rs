@@ -24,9 +24,9 @@ use crate::{
     ExecutionTaskSpawner,
     dynamic_batching::StaticBatchingStrategy,
     pipeline::{MorselSizeRequirement, NodeName},
+    pipeline_execution::{OperatorExecutionOutput, OperatorFinalizeOutput},
     streaming_sink::base::{
-        StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
-        StreamingSinkFinalizeResult, StreamingSinkOutput,
+        StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult,
     },
 };
 
@@ -384,7 +384,7 @@ impl StreamingSink for VLLMSink {
                     }
 
                     let output = this.poll_tasks(&state)?;
-                    Ok((state, StreamingSinkOutput::NeedMoreInput(output)))
+                    Ok((state, OperatorExecutionOutput::NeedMoreInput(output)))
                 },
                 Span::current(),
             )
@@ -414,11 +414,11 @@ impl StreamingSink for VLLMSink {
                     let output = this.poll_tasks(state)?;
 
                     if state.executor.all_tasks_finished()? {
-                        Ok(StreamingSinkFinalizeOutput::Finished(output))
+                        Ok(OperatorFinalizeOutput::Finished(output))
                     } else {
                         // Add a delay before polling again to avoid excessive polling
                         tokio::time::sleep(Duration::from_millis(500)).await;
-                        Ok(StreamingSinkFinalizeOutput::HasMoreOutput { states, output })
+                        Ok(OperatorFinalizeOutput::HasMoreOutput { states, output })
                     }
                 },
                 Span::current(),
@@ -454,7 +454,11 @@ impl StreamingSink for VLLMSink {
         })
     }
 
-    fn max_concurrency(&self) -> usize {
+    fn max_concurrency_per_input_id(&self) -> usize {
+        1
+    }
+
+    fn total_max_concurrency(&self) -> usize {
         1
     }
 

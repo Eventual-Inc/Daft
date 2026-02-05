@@ -6,7 +6,7 @@ use common_metrics::ops::NodeType;
 use common_runtime::{combine_stream, get_io_runtime};
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
-use daft_local_plan::InputId;
+// InputId now comes from pipeline_message module
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use futures::{FutureExt, StreamExt};
 use tracing::instrument;
@@ -15,6 +15,7 @@ use super::source::Source;
 use crate::{
     channel::{Receiver, Sender, create_channel},
     pipeline::NodeName,
+    pipeline_message::{InputId, PipelineMessage},
     sources::source::SourceStream,
 };
 
@@ -40,24 +41,46 @@ impl InMemorySource {
     fn spawn_partition_set_processor(
         &self,
         mut receiver: Receiver<(InputId, Vec<MicroPartitionRef>)>,
-        output_sender: Sender<Arc<MicroPartition>>,
+        output_sender: Sender<PipelineMessage>,
         schema: SchemaRef,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
 
         io_runtime.spawn(async move {
-            while let Some((_input_id, partitions)) = receiver.recv().await {
+            while let Some((input_id, partitions)) = receiver.recv().await {
                 if partitions.is_empty() {
                     let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
-                    if output_sender.send(empty).await.is_err() {
+                    if output_sender
+                        .send(PipelineMessage::Morsel {
+                            input_id,
+                            partition: empty,
+                        })
+                        .await
+                        .is_err()
+                    {
                         break;
                     }
                 } else {
                     for partition in partitions {
-                        if output_sender.send(partition).await.is_err() {
+                        if output_sender
+                            .send(PipelineMessage::Morsel {
+                                input_id,
+                                partition,
+                            })
+                            .await
+                            .is_err()
+                        {
                             break;
                         }
                     }
+                }
+                // Send flush signal after processing each input batch
+                if output_sender
+                    .send(PipelineMessage::Flush(input_id))
+                    .await
+                    .is_err()
+                {
+                    break;
                 }
             }
             Ok(())
@@ -74,7 +97,7 @@ impl Source for InMemorySource {
         _io_stats: IOStatsRef,
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
-        let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(1);
+        let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);
         let input_receiver = self.receiver.take().expect("Receiver not found");
 
         let processor_task =

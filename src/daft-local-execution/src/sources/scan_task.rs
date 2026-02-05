@@ -17,7 +17,7 @@ use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{AggExpr, Expr};
 use daft_io::{GetRange, IOStatsRef};
 use daft_json::{JsonConvertOptions, JsonParseOptions, JsonReadOptions};
-use daft_local_plan::InputId;
+// InputId now comes from pipeline_message module
 use daft_micropartition::MicroPartition;
 use daft_parquet::read::{ParquetSchemaInferenceOptions, read_parquet_bulk_async};
 use daft_scan::{ChunkSpec, ScanTask, ScanTaskRef};
@@ -29,6 +29,7 @@ use tracing::instrument;
 use crate::{
     channel::{Receiver, Sender, create_channel},
     pipeline::NodeName,
+    pipeline_message::{InputId, PipelineMessage},
     sources::source::{Source, SourceStream},
 };
 
@@ -63,7 +64,7 @@ impl ScanTaskSource {
     fn spawn_scan_task_processor(
         &self,
         mut receiver: Receiver<(InputId, Vec<ScanTaskRef>)>,
-        output_sender: Sender<Arc<MicroPartition>>,
+        output_sender: Sender<PipelineMessage>,
         io_stats: IOStatsRef,
         chunk_size: usize,
         schema: SchemaRef,
@@ -102,9 +103,15 @@ impl ScanTaskSource {
                     // Receive from channel only if we have capacity and receiver is not exhausted
                     recv_result = receiver.recv(), if !receiver_exhausted => {
                         match recv_result {
-                            Some((_input_id, scan_tasks_batch)) if scan_tasks_batch.is_empty() => {
+                            Some((input_id, scan_tasks_batch)) if scan_tasks_batch.is_empty() => {
                                 let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
-                                if output_sender.send(empty).await.is_err() {
+                                if output_sender.send(PipelineMessage::Morsel {
+                                    input_id,
+                                    partition: empty,
+                                }).await.is_err() {
+                                    return Ok(());
+                                }
+                                if output_sender.send(PipelineMessage::Flush(input_id)).await.is_err() {
                                     return Ok(());
                                 }
                             }
@@ -147,6 +154,10 @@ impl ScanTaskSource {
                                 *count = count.saturating_sub(1);
                                 if *count == 0 {
                                     input_id_pending_counts.remove(&completed_input_id);
+                                    // Send flush signal when all tasks for this input_id are complete
+                                    if output_sender.send(PipelineMessage::Flush(completed_input_id)).await.is_err() {
+                                        return Ok(());
+                                    }
                                 }
                             }
                             Ok(Err(e)) => {
@@ -180,7 +191,7 @@ impl Source for ScanTaskSource {
         io_stats: IOStatsRef,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
-        let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(1);
+        let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);
         let input_receiver = self.receiver.take().expect("Receiver not found");
 
         let processor_task = self.spawn_scan_task_processor(
@@ -370,7 +381,7 @@ async fn forward_scan_task_stream(
     delete_map: Option<Arc<HashMap<String, Vec<i64>>>>,
     maintain_order: bool,
     chunk_size: usize,
-    sender: Sender<Arc<MicroPartition>>,
+    sender: Sender<PipelineMessage>,
     input_id: InputId,
 ) -> DaftResult<InputId> {
     let schema = scan_task.materialized_schema();
@@ -380,7 +391,14 @@ async fn forward_scan_task_stream(
     while let Some(result) = stream.next().await {
         has_data = true;
         let partition = result?;
-        if sender.send(partition).await.is_err() {
+        if sender
+            .send(PipelineMessage::Morsel {
+                input_id,
+                partition,
+            })
+            .await
+            .is_err()
+        {
             break;
         }
     }
@@ -388,7 +406,12 @@ async fn forward_scan_task_stream(
     // If no data was emitted, send empty micropartition
     if !has_data {
         let empty = Arc::new(MicroPartition::empty(Some(schema)));
-        let _ = sender.send(empty).await;
+        let _ = sender
+            .send(PipelineMessage::Morsel {
+                input_id,
+                partition: empty,
+            })
+            .await;
     }
 
     Ok(input_id)
