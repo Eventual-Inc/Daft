@@ -41,12 +41,10 @@ The Daft project is governed by a community of contributors who have helped shap
 
 A Maintainer is a recognized Contributor who has demonstrated sustained, meaningful contributions to the project. Maintainers are nominated by existing Maintainers or PMC members and approved by a majority vote of the PMC.
 
-- **Maintainer/Read**: Recognized contributors with review (and approval) permissions, but without merge access
-- **Maintainer/Write**: Maintainer/Read with merge access to the repository
+- **Maintainer/Review**: Recognized contributors with review (and approval) permissions
+- **Maintainer/Merge**: Maintainers additionally with merge access to the repository
 
 **Maintainers/Read:**
-
-Maintainers/Read have PR approval permissions and are welcomed to be a part of growing the capabilities of the Daft engine through PR reviews!
 
 | GitHub | Affiliation | Focus Areas |
 |--------|-------------|-------------|
@@ -57,6 +55,7 @@ Maintainers/Read have PR approval permissions and are welcomed to be a part of g
 | [@pdames](https://github.com/pdames) | Nvidia | Catalog support and improvements |
 | [@stayrascal](https://github.com/stayrascal) | Bytedance | Storage/I/O layer, TOS support, native CSV/JSON writers |
 | [@VOID001](https://github.com/VOID001) | ByteDance | Dashboard features, SQL error handling |
+| [@caican00](https://github.com/caican00) | Xiaomi ||
 
 **Maintainers/Write:**
 
@@ -64,7 +63,6 @@ Maintainers who additionally have merge access to the repository.
 
 | Name | GitHub | Affiliation |
 |------|--------|-------------|
-| Can Cai | [@caican00](https://github.com/caican00) | Xiaomi |
 | Chris Kellogg | [@cckellogg](https://github.com/cckellogg) | Eventual |
 | Colin Ho | [@colin-ho](https://github.com/colin-ho) | Eventual |
 | Cory Grinstead | [@universalmind303](https://github.com/universalmind303) | Eventual |
@@ -72,8 +70,6 @@ Maintainers who additionally have merge access to the repository.
 | Everett Kleven | [@everettVT](https://github.com/everettVT) | Eventual |
 | Jay Chia | [@jaychia](https://github.com/jaychia) | Eventual |
 | Jeev Balakrishnan | [@jeevb](https://github.com/jeevb) | Eventual |
-| Kejian Ju | [@Jay-ju](https://github.com/Jay-ju) | Bytedance |
-| Leilei Hu | [@huleilei](https://github.com/huleilei) | Bytedance |
 | Oliver Huang | [@ohbh](https://github.com/ohbh) | Eventual |
 | Rohit Kulshreshtha | [@rohitkulshreshtha](https://github.com/rohitkulshreshtha) | Eventual |
 | Sam Stokes | [@samstokes](https://github.com/samstokes) | Eventual |
@@ -81,6 +77,8 @@ Maintainers who additionally have merge access to the repository.
 | Srinivas Lade | [@srilman](https://github.com/srilman) | Eventual |
 | Varun Madan | [@madvart](https://github.com/madvart) | Eventual |
 | YK | [@ykdojo](https://github.com/ykdojo) | Eventual |
+| Kejian Ju | [@Jay-ju](https://github.com/Jay-ju) | Bytedance |
+| Leilei Hu | [@huleilei](https://github.com/huleilei) | Bytedance |
 | Zhenchao Wang | [@plotor](https://github.com/plotor) | Bytedance |
 | Zhiping Wu | [@stayrascal](https://github.com/stayrascal) | Bytedance |
 
