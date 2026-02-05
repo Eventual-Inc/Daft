@@ -3058,6 +3058,7 @@ dependencies = [
  "daft-parquet",
  "daft-recordbatch",
  "daft-scan",
+ "daft-shuffles",
  "daft-warc",
  "daft-writers",
  "futures",
