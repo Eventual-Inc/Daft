@@ -1,17 +1,9 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, LazyLock, Mutex},
+    sync::{LazyLock, Mutex},
 };
 
-use arrow::{
-    array::{ArrayRef, RecordBatch},
-    datatypes::{Field, Schema},
-};
-use daft_arrow::{
-    arrow_schema::extension::{EXTENSION_TYPE_METADATA_KEY, EXTENSION_TYPE_NAME_KEY},
-    compute::cast,
-};
-use daft_schema::dtype::DAFT_SUPER_EXTENSION_NAME;
+use daft_arrow::compute::cast;
 
 // TODO(Clark): Refactor to GILOnceCell in order to avoid deadlock between the below mutex and the Python GIL.
 static REGISTRY: LazyLock<Mutex<HashMap<std::string::String, daft_arrow::datatypes::DataType>>> =
@@ -146,39 +138,6 @@ pub fn cast_array_for_daft_if_needed(
         .unwrap(),
         None => arrow_array,
     }
-}
-
-pub fn cast_recordbatch_for_daft_if_needed(batch: RecordBatch) -> RecordBatch {
-    let mut output_columns = Vec::with_capacity(batch.num_columns());
-    let mut output_schema = Vec::with_capacity(batch.num_columns());
-    let schema = batch.schema().clone();
-
-    for (i, column) in batch.columns().iter().enumerate() {
-        let orig_field = schema.field(i);
-        let field = daft_schema::field::Field::from_arrow(orig_field, true)
-            .expect("Failed to create field");
-        dbg!(&field);
-
-        let field = field.to_arrow().unwrap();
-
-        if orig_field == &field {
-            output_columns.push(column.clone());
-            output_schema.push(field.clone());
-        } else {
-            output_columns.push(arrow::compute::cast(column.as_ref(), &field.data_type()).unwrap());
-            output_schema.push(field);
-        }
-    }
-    let output_schema = Schema::new(output_schema);
-    unsafe { RecordBatch::new_unchecked(Arc::new(output_schema), output_columns, batch.num_rows()) }
-
-    // let arr = arrow_batch.column(0);
-    // let dtype = arr.data_type();
-
-    // match coerce_to_daft_compatible_type_v2(&dtype) {
-    //     Some(coerced_dtype) => arrow::compute::cast(arr.as_ref(), &coerced_dtype).unwrap(),
-    //     None => arr.clone(),
-    // }
 }
 
 fn coerce_from_daft_compatible_type(

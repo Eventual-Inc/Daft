@@ -112,8 +112,7 @@ impl Field {
                     .cloned()
                     .map_or_else(|| dtype.to_arrow(), Ok)?;
 
-                let physical =
-                    arrow_schema::Field::new(self.name.clone(), storage_type, true);
+                let physical = arrow_schema::Field::new(self.name.clone(), storage_type, true);
                 let mut metadata_map = HashMap::new();
                 metadata_map.insert(EXTENSION_TYPE_NAME_KEY.to_string(), name.clone());
                 if let Some(metadata) = metadata {

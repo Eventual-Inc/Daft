@@ -1077,6 +1077,7 @@ impl DataType {
                     tz.clone().map(|tz| tz.as_ref().to_string()),
                 ),
                 arrow_schema::DataType::Date32 => Self::Date,
+                arrow_schema::DataType::Date64 => Self::Timestamp(TimeUnit::Milliseconds, None),
                 arrow_schema::DataType::Time64(time_unit) => Self::Time(time_unit.into()),
 
                 arrow_schema::DataType::Duration(time_unit) => Self::Duration(time_unit.into()),

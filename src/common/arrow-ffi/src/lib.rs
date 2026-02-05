@@ -141,7 +141,7 @@ impl FromPyArrow for RecordBatch {
                 0,
                 "Cannot convert nullable StructArray to RecordBatch, see StructArray documentation"
             );
-            return RecordBatch::try_new_with_options(schema, columns, &options).map_err(to_py_err);
+            return Self::try_new_with_options(schema, columns, &options).map_err(to_py_err);
         }
 
         validate_class("RecordBatch", value)?;
@@ -162,8 +162,7 @@ impl FromPyArrow for RecordBatch {
             .and_then(|x| x.extract().ok());
         let options = RecordBatchOptions::default().with_row_count(row_count);
 
-        let batch =
-            RecordBatch::try_new_with_options(schema, arrays, &options).map_err(to_py_err)?;
+        let batch = Self::try_new_with_options(schema, arrays, &options).map_err(to_py_err)?;
         Ok(batch)
     }
 }
@@ -182,7 +181,7 @@ impl FromPyArrow for Schema {
                 .pointer_checked(Some(ARROW_SCHEMA_CAPSULE_NAME))?
                 .cast::<FFI_ArrowSchema>();
             unsafe {
-                let schema = Schema::try_from(schema_ptr.as_ref()).map_err(to_py_err)?;
+                let schema = Self::try_from(schema_ptr.as_ref()).map_err(to_py_err)?;
                 return Ok(schema);
             }
         }
@@ -190,9 +189,9 @@ impl FromPyArrow for Schema {
         validate_class("Schema", value)?;
 
         let c_schema = FFI_ArrowSchema::empty();
-        let c_schema_ptr = &c_schema as *const FFI_ArrowSchema;
+        let c_schema_ptr = &raw const c_schema;
         value.call_method1("_export_to_c", (c_schema_ptr as Py_uintptr_t,))?;
-        let schema = Schema::try_from(&c_schema).map_err(to_py_err)?;
+        let schema = Self::try_from(&c_schema).map_err(to_py_err)?;
         Ok(schema)
     }
 }
@@ -337,7 +336,9 @@ pub fn to_py_array<'py>(
     Ok(array)
 }
 
-/// Export an arrow-rs array to PyArrow using a caller-provided Field for the schema.
+/// Export an arrow-rs array to PyArrow
+///
+/// Uses a caller-provided Field for the schema.
 /// This preserves extension type metadata that would otherwise be lost when
 /// deriving the schema from the array's DataType alone.
 pub fn to_py_array_v2<'py>(
@@ -360,12 +361,10 @@ pub fn to_py_array_v2<'py>(
     let array_ptr: *const arrow::ffi::FFI_ArrowArray = &raw const *arrow_arr;
 
     let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-    let array = pyarrow
-        .getattr(pyo3::intern!(py, "Array"))?
-        .call_method1(
-            pyo3::intern!(py, "_import_from_c"),
-            (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
-        )?;
+    let array = pyarrow.getattr(pyo3::intern!(py, "Array"))?.call_method1(
+        pyo3::intern!(py, "_import_from_c"),
+        (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
+    )?;
 
     let array = PyModule::import(py, pyo3::intern!(py, "daft.arrow_utils"))?
         .getattr(pyo3::intern!(py, "remove_empty_struct_placeholders"))?

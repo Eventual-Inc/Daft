@@ -3,11 +3,8 @@ use std::{
     sync::Arc,
 };
 
-use arrow::{
-    array::{ArrayData, RecordBatch, make_array},
-    datatypes::Schema,
-};
-use common_arrow_ffi::{self as ffi, FromPyArrow, array_to_rust_v2};
+use arrow::array::make_array;
+use common_arrow_ffi::{self as ffi, array_to_rust_v2};
 use common_error::DaftError;
 use daft_hash::HashFunctionKind;
 use daft_schema::python::PyDataType;
@@ -92,7 +89,7 @@ impl PySeries {
             let field = Field::new(name, dtype.into());
             series::Series::from_arrow(Arc::new(field), arr)?
         } else {
-            series::Series::from_arrow(Arc::new(dbg!(daft_field)), arr)?
+            series::Series::from_arrow(Arc::new(daft_field), arr)?
         };
 
         Ok(series.into())
