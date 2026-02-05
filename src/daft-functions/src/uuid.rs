@@ -5,7 +5,10 @@ use daft_core::{
 };
 use daft_dsl::{
     ExprRef,
-    functions::{FunctionArgs, ScalarUDF, scalar::ScalarFn},
+    functions::{
+        FunctionArgs, ScalarUDF,
+        scalar::{EvalContext, ScalarFn},
+    },
 };
 use serde::{Deserialize, Serialize};
 use uuid::Uuid as RustUuid;
@@ -19,13 +22,23 @@ impl ScalarUDF for Uuid {
         "uuid"
     }
 
-    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, _inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+        Err(DaftError::ComputeError(
+            "uuid() must be evaluated with execution context".to_string(),
+        ))
+    }
+
+    fn call_with_ctx(
+        &self,
+        inputs: FunctionArgs<Series>,
+        ctx: Option<&EvalContext>,
+    ) -> DaftResult<Series> {
         let len = match inputs.len() {
-            0 => {
-                return Err(DaftError::ComputeError(
+            0 => ctx.map(|c| c.row_count).ok_or_else(|| {
+                DaftError::ComputeError(
                     "uuid() requires evaluation context to determine output length".to_string(),
-                ));
-            }
+                )
+            })?,
             1 => inputs.required(0)?.len(),
             n => {
                 return Err(DaftError::ValueError(format!(

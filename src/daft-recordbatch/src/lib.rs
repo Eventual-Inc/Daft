@@ -913,23 +913,6 @@ impl RecordBatch {
                 func.evaluate(evaluated_inputs.as_slice(), func)
             }
             Expr::ScalarFn(ScalarFn::Builtin(func)) => {
-                if func.inputs.is_empty() {
-                    match &func.func {
-                        BuiltinScalarFnVariant::Sync(f) if f.name() == "uuid" => {
-                            let placeholder =
-                                Series::full_null("", &DataType::Null, self.len());
-                            let args = FunctionArgs::new_unnamed(vec![placeholder]);
-                            return f.call(args);
-                        }
-                        BuiltinScalarFnVariant::Async(f) if f.name() == "uuid" => {
-                            let placeholder =
-                                Series::full_null("", &DataType::Null, self.len());
-                            let args = FunctionArgs::new_unnamed(vec![placeholder]);
-                            return f.call(args).await;
-                        }
-                        _ => {}
-                    }
-                }
                 let mut evaluated_args = Vec::new();
                 for arg in func.inputs.iter() {
                     let evaluated = match arg {
@@ -958,9 +941,14 @@ impl RecordBatch {
                     evaluated_args.push(evaluated);
                 }
                 let args = FunctionArgs::new_unchecked(evaluated_args);
+                let ctx = daft_dsl::functions::scalar::EvalContext {
+                    row_count: self.len(),
+                };
                 match &func.func {
-                    BuiltinScalarFnVariant::Sync(func) => func.call(args),
-                    BuiltinScalarFnVariant::Async(func) => func.call(args).await,
+                    BuiltinScalarFnVariant::Sync(func) => func.call_with_ctx(args, Some(&ctx)),
+                    BuiltinScalarFnVariant::Async(func) => {
+                        func.call_with_ctx(args, Some(&ctx)).await
+                    }
                 }
             }
             Expr::Literal(lit_value) => Ok(lit_value.clone().into()),
@@ -1199,23 +1187,6 @@ impl RecordBatch {
                 func.evaluate(evaluated_inputs.as_slice(), func)
             }
             Expr::ScalarFn(ScalarFn::Builtin(BuiltinScalarFn { func, inputs })) => {
-                if inputs.is_empty() {
-                    match &func {
-                        BuiltinScalarFnVariant::Sync(f) if f.name() == "uuid" => {
-                            let placeholder =
-                                Series::full_null("", &DataType::Null, self.len());
-                            let args = FunctionArgs::new_unnamed(vec![placeholder]);
-                            return f.call(args);
-                        }
-                        BuiltinScalarFnVariant::Async(f) if f.name() == "uuid" => {
-                            let placeholder =
-                                Series::full_null("", &DataType::Null, self.len());
-                            let args = FunctionArgs::new_unnamed(vec![placeholder]);
-                            return get_compute_runtime().block_on_current_thread(f.call(args));
-                        }
-                        _ => {}
-                    }
-                }
                 let mut evaluated_args: Vec<FunctionArg<Series>> = Vec::with_capacity(inputs.len());
                 for arg in inputs.iter() {
                     let evaluated = match arg {
@@ -1240,10 +1211,13 @@ impl RecordBatch {
                     evaluated_args.push(evaluated);
                 }
                 let args = FunctionArgs::new_unchecked(evaluated_args);
+                let ctx = daft_dsl::functions::scalar::EvalContext {
+                    row_count: self.len(),
+                };
                 match func {
-                    BuiltinScalarFnVariant::Sync(f) => f.call(args),
+                    BuiltinScalarFnVariant::Sync(f) => f.call_with_ctx(args, Some(&ctx)),
                     BuiltinScalarFnVariant::Async(f) => {
-                        get_compute_runtime().block_on_current_thread(f.call(args))
+                        get_compute_runtime().block_on_current_thread(f.call_with_ctx(args, Some(&ctx)))
                     }
                 }
             }

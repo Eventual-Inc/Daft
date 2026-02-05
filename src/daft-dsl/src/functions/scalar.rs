@@ -12,6 +12,11 @@ use serde::{Deserialize, Serialize};
 use super::function_args::{FunctionArg, FunctionArgs};
 use crate::{Expr, ExprRef, python_udf::PyScalarFn};
 
+#[derive(Clone, Copy, Debug)]
+pub struct EvalContext {
+    pub row_count: usize,
+}
+
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ScalarFn {
     Builtin(BuiltinScalarFn),
@@ -230,6 +235,14 @@ pub trait ScalarUDF: Send + Sync + std::any::Any {
     /// ```
     fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series>;
 
+    fn call_with_ctx(
+        &self,
+        args: FunctionArgs<Series>,
+        _ctx: Option<&EvalContext>,
+    ) -> DaftResult<Series> {
+        self.call(args)
+    }
+
     /// `get_return_field` is used during planning to ensure that args and datatypes are compatible.
     /// A simple example would be a string function such as `to_uppercase` that expects a single string input, and a single string output.
     /// ```rs, no_run
@@ -276,6 +289,14 @@ pub trait AsyncScalarUDF: Send + Sync + std::any::Any {
     }
 
     async fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series>;
+
+    async fn call_with_ctx(
+        &self,
+        args: FunctionArgs<Series>,
+        _ctx: Option<&EvalContext>,
+    ) -> DaftResult<Series> {
+        self.call(args).await
+    }
 
     fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field>;
 
