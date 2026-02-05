@@ -1,6 +1,6 @@
 [dependencies]
 arrow-schema = {workspace = true}
-common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false}
+common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false, optional=true}
 daft-arrow = {path = "../daft-arrow"}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
@@ -27,7 +27,7 @@ python = [
   "common-error/python",
   "common-display/python",
   "common-py-serde/python",
-  "common-arrow-ffi/python"
+  "dep:common-arrow-ffi"
 ]
 
 [lints]

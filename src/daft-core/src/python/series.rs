@@ -3,7 +3,11 @@ use std::{
     sync::Arc,
 };
 
-use common_arrow_ffi as ffi;
+use arrow::{
+    array::{ArrayData, RecordBatch, make_array},
+    datatypes::Schema,
+};
+use common_arrow_ffi::{self as ffi, FromPyArrow, array_to_rust_v2};
 use common_error::DaftError;
 use daft_hash::HashFunctionKind;
 use daft_schema::python::PyDataType;
@@ -24,10 +28,7 @@ use crate::{
         self, IntoSeries, Series,
         from_lit::{combine_lit_types, series_from_literals_iter},
     },
-    utils::{
-        arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
-        supertype::try_get_collection_supertype,
-    },
+    utils::{arrow::cast_array_from_daft_if_needed, supertype::try_get_collection_supertype},
 };
 
 #[pyclass]
@@ -60,19 +61,32 @@ impl PySeries {
     #[staticmethod]
     #[pyo3(signature = (name, pyarrow_array, dtype=None))]
     pub fn from_arrow(
-        py: Python,
         name: &str,
         pyarrow_array: Bound<PyAny>,
         dtype: Option<PyDataType>,
     ) -> PyResult<Self> {
-        let arrow_array = ffi::array_to_rust(py, pyarrow_array)?;
-        let arrow_array = cast_array_for_daft_if_needed(arrow_array.to_boxed());
+        let (data, field) = array_to_rust_v2(&pyarrow_array)?;
+        let daft_field = daft_schema::field::Field::from_arrow(&field, true)
+            .map_err(DaftError::from)?
+            .rename(name);
+
+        // Use Field::to_arrow() (not DataType::to_arrow()) so logical types
+        // like Embedding, Tensor, Image, Extension are handled correctly.
+        let target_arrow_field = daft_field.to_arrow()?;
+        let target_dtype = target_arrow_field.data_type();
+
+        let arr = make_array(data);
+        let arr = if target_dtype != field.data_type() {
+            arrow::compute::cast(&arr, target_dtype).map_err(DaftError::from)?
+        } else {
+            arr
+        };
 
         let series = if let Some(dtype) = dtype {
             let field = Field::new(name, dtype.into());
-            series::Series::try_from_field_and_arrow_array(field, arrow_array)?
+            series::Series::from_arrow(Arc::new(field), arr)?
         } else {
-            series::Series::try_from((name, arrow_array))?
+            series::Series::from_arrow(Arc::new(daft_field), arr)?
         };
 
         Ok(series.into())
@@ -129,10 +143,14 @@ impl PySeries {
     }
 
     pub fn to_arrow<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
-        let arrow_array = self.series.to_arrow2();
-        let arrow_array = cast_array_from_daft_if_needed(arrow_array);
-        let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-        ffi::to_py_array(py, arrow_array, &pyarrow)
+        let target_field = self.series.field().to_arrow()?;
+        let arr = self.series.to_arrow()?;
+        let arr = if arr.data_type() != target_field.data_type() {
+            arrow::compute::cast(&arr, target_field.data_type()).map_err(DaftError::from)?
+        } else {
+            arr
+        };
+        ffi::to_py_array_v2(py, arr, &target_field)
     }
 
     pub fn __iter__(&self) -> PySeriesIterator {
