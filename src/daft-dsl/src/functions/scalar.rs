@@ -235,6 +235,8 @@ pub trait ScalarUDF: Send + Sync + std::any::Any {
     /// ```
     fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series>;
 
+    // TODO: This is a transitional API to avoid a large breaking change across all UDFs.
+    // Once stabilized, fold EvalContext into `call()` itself and remove this method.
     fn call_with_ctx(
         &self,
         args: FunctionArgs<Series>,

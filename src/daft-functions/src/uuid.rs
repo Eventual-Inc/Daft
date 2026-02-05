@@ -27,7 +27,7 @@ impl ScalarUDF for Uuid {
 
     fn call(&self, _inputs: FunctionArgs<Series>) -> DaftResult<Series> {
         Err(DaftError::ComputeError(
-            "uuid() must be evaluated with execution context".to_string(),
+            "uuid() must be evaluated with an EvalContext".to_string(),
         ))
     }
 
