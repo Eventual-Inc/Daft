@@ -30,7 +30,7 @@ use crate::{
     plan::{PlanExecutionContext, QueryIdx, TaskIDCounter},
     scheduling::{
         scheduler::SchedulerHandle,
-        task::{SwordfishTask, SwordfishTaskBuilder},
+        task::{SwordfishTask, SwordfishTaskBuilder, TaskID},
         worker::WorkerId,
     },
     statistics::stats::{DefaultRuntimeStats, RuntimeStatsRef},
@@ -78,13 +78,22 @@ pub(crate) type NodeName = &'static str;
 pub(crate) struct MaterializedOutput {
     partition: Vec<PartitionRef>,
     worker_id: WorkerId,
+    ip_address: String,
+    task_id: TaskID,
 }
 
 impl MaterializedOutput {
-    pub fn new(partition: Vec<PartitionRef>, worker_id: WorkerId) -> Self {
+    pub fn new(
+        partition: Vec<PartitionRef>,
+        worker_id: WorkerId,
+        ip_address: String,
+        task_id: TaskID,
+    ) -> Self {
         Self {
             partition,
             worker_id,
+            ip_address,
+            task_id,
         }
     }
 
@@ -97,14 +106,28 @@ impl MaterializedOutput {
         &self.worker_id
     }
 
-    pub fn into_inner(self) -> (Vec<PartitionRef>, WorkerId) {
-        (self.partition, self.worker_id)
+    #[allow(dead_code)]
+    pub fn ip_address(&self) -> &String {
+        &self.ip_address
+    }
+
+    pub fn task_id(&self) -> TaskID {
+        self.task_id
+    }
+
+    pub fn into_inner(self) -> (Vec<PartitionRef>, WorkerId, String) {
+        (self.partition, self.worker_id, self.ip_address)
     }
 
     pub fn split_into_materialized_outputs(&self) -> Vec<Self> {
         self.partition
             .iter()
-            .map(|partition| Self::new(vec![partition.clone()], self.worker_id.clone()))
+            .map(|partition| Self {
+                partition: vec![partition.clone()],
+                worker_id: self.worker_id.clone(),
+                ip_address: self.ip_address.clone(),
+                task_id: self.task_id,
+            })
             .collect()
     }
 
