@@ -39,6 +39,10 @@ impl ScalarUDF for Uuid {
         Ok(arr.into_series())
     }
 
+    fn is_deterministic(&self) -> bool {
+        false
+    }
+
     fn get_return_field(
         &self,
         inputs: FunctionArgs<ExprRef>,

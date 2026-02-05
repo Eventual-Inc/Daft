@@ -17,6 +17,10 @@ impl ScalarUDF for MonotonicallyIncreasingId {
         ))
     }
 
+    fn is_deterministic(&self) -> bool {
+        false
+    }
+
     fn get_return_field(&self, inputs: FunctionArgs<ExprRef>, _: &Schema) -> DaftResult<Field> {
         if !inputs.is_empty() {
             return Err(DaftError::ValueError(format!(

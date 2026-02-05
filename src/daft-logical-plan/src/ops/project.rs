@@ -208,7 +208,7 @@ impl Project {
                                     matches!(
                                         e.as_ref(),
                                         Expr::ScalarFn(ScalarFn::Builtin(func))
-                                            if func.name() == "uuid"
+                                            if !func.is_deterministic()
                                     )
                                 })
                             {
