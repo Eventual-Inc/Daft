@@ -20,7 +20,7 @@ use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ExprRef, Operator,
+    ExprRef,
     expr::{Expr, VLLMExpr, WindowExpr},
     visitor::accept,
 };
@@ -567,7 +567,7 @@ impl PyExpr {
     }
 
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {
-        use crate::{Operator, binary_op};
+        use crate::binary_op;
         match op {
             CompareOp::Lt => Ok(binary_op(Operator::Lt, self.into(), other.into()).into()),
             CompareOp::Le => Ok(binary_op(Operator::LtEq, self.into(), other.into()).into()),

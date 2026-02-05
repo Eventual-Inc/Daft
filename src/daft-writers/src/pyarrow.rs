@@ -82,6 +82,8 @@ impl PyArrowWriter {
                 .delimiter
                 .map(|b| String::from_utf8(vec![b]).unwrap_or_else(|_| ",".to_string()));
             let header = format_option.header;
+            let date_format = format_option.date_format.clone();
+            let timestamp_format = format_option.timestamp_format.clone();
             let py_writer = file_writer_class.call1((
                 root_dir,
                 file_idx,
@@ -91,6 +93,8 @@ impl PyArrowWriter {
                 }),
                 delimiter,
                 header,
+                date_format,
+                timestamp_format,
             ))?;
             Ok(Self {
                 py_writer: py_writer.into(),

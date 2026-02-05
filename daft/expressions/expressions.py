@@ -1892,6 +1892,76 @@ class Expression:
 
         return capitalize(self)
 
+    def to_camel_case(self) -> Expression:
+        """Convert a string to lower camel case.
+
+        Tip: See Also
+            [`daft.functions.to_camel_case`](https://docs.daft.ai/en/stable/api/functions/to_camel_case/)
+        """
+        from daft.functions import to_camel_case
+
+        return to_camel_case(self)
+
+    def to_upper_camel_case(self) -> Expression:
+        """Convert a string to upper camel case.
+
+        Tip: See Also
+            [`daft.functions.to_upper_camel_case`](https://docs.daft.ai/en/stable/api/functions/to_upper_camel_case/)
+        """
+        from daft.functions import to_upper_camel_case
+
+        return to_upper_camel_case(self)
+
+    def to_snake_case(self) -> Expression:
+        """Convert a string to snake case.
+
+        Tip: See Also
+            [`daft.functions.to_snake_case`](https://docs.daft.ai/en/stable/api/functions/to_snake_case/)
+        """
+        from daft.functions import to_snake_case
+
+        return to_snake_case(self)
+
+    def to_upper_snake_case(self) -> Expression:
+        """Convert a string to upper snake case.
+
+        Tip: See Also
+            [`daft.functions.to_upper_snake_case`](https://docs.daft.ai/en/stable/api/functions/to_upper_snake_case/)
+        """
+        from daft.functions import to_upper_snake_case
+
+        return to_upper_snake_case(self)
+
+    def to_kebab_case(self) -> Expression:
+        """Convert a string to kebab case.
+
+        Tip: See Also
+            [`daft.functions.to_kebab_case`](https://docs.daft.ai/en/stable/api/functions/to_kebab_case/)
+        """
+        from daft.functions import to_kebab_case
+
+        return to_kebab_case(self)
+
+    def to_upper_kebab_case(self) -> Expression:
+        """Convert a string to upper kebab case.
+
+        Tip: See Also
+            [`daft.functions.to_upper_kebab_case`](https://docs.daft.ai/en/stable/api/functions/to_upper_kebab_case/)
+        """
+        from daft.functions import to_upper_kebab_case
+
+        return to_upper_kebab_case(self)
+
+    def to_title_case(self) -> Expression:
+        """Convert a string to title case.
+
+        Tip: See Also
+            [`daft.functions.to_title_case`](https://docs.daft.ai/en/stable/api/functions/to_title_case/)
+        """
+        from daft.functions import to_title_case
+
+        return to_title_case(self)
+
     def left(self, nchars: int | Expression) -> Expression:
         """Gets the n (from nchars) left-most characters of each string.
 
@@ -2239,6 +2309,16 @@ class Expression:
         from daft.functions import list_distinct
 
         return list_distinct(self)
+
+    def list_contains(self, item: Expression) -> Expression:
+        """Checks if each list contains the specified item.
+
+        Tip: See Also
+            [`daft.functions.list_contains`](https://docs.daft.ai/en/stable/api/functions/list_contains/)
+        """
+        from daft.functions import list_contains
+
+        return list_contains(self, item)
 
     def list_map(self, mapper: Expression) -> Expression:
         """Evaluates an expression on all elements in the list.

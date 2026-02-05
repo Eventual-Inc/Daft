@@ -87,13 +87,13 @@ impl Subscriber for DebugSubscriber {
     async fn on_exec_emit_stats(
         &self,
         query_id: QueryID,
-        stats: &[(NodeID, Stats)],
+        stats: std::sync::Arc<Vec<(NodeID, Stats)>>,
     ) -> DaftResult<()> {
         eprintln!("Emitting execution stats for query `{}`", query_id);
-        for node_id in stats {
-            eprintln!("  Node `{}`", node_id.0);
-            for (name, stat) in node_id.1.clone() {
-                eprintln!("  - {} = {}", name.as_ref(), stat);
+        for (node_id, node_stats) in stats.iter() {
+            eprintln!("  Node `{}`", node_id);
+            for (name, stat) in node_stats.iter() {
+                eprintln!("  - {} = {}", name, stat);
             }
         }
         Ok(())
