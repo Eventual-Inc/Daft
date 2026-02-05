@@ -77,7 +77,7 @@ impl Source for FlightShuffleReadSource {
         // Get the global flight client manager
         let schema = self.schema.clone();
         let io_runtime = common_runtime::get_io_runtime(true);
-        let (tx, rx) = create_channel(0);
+        let (tx, rx) = create_channel(1);
         let task = io_runtime
             .spawn(async move {
                 let client_manager = FlightClientManager::new(server_addresses);
