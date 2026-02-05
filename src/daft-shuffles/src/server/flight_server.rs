@@ -2,9 +2,10 @@ use std::{collections::HashMap, fs::File, pin::Pin, sync::Arc};
 
 use arrow_flight::{
     Action, ActionType, Criteria, Empty, FlightData, FlightDescriptor, FlightInfo,
-    HandshakeRequest, HandshakeResponse, PollInfo, PutResult, SchemaResult, Ticket,
+    HandshakeRequest, HandshakeResponse, PollInfo, PutResult, SchemaAsIpc, SchemaResult, Ticket,
     flight_service_server::{FlightService, FlightServiceServer},
 };
+use arrow_ipc::writer::IpcWriteOptions;
 use common_error::{DaftError, DaftResult};
 use common_runtime::RuntimeTask;
 use futures::{Stream, StreamExt, TryStreamExt};
@@ -101,7 +102,6 @@ impl FlightService for ShuffleFlightServer {
         unimplemented!("Get schema is not supported for shuffle server")
     }
 
-    #[allow(deprecated, reason = "arrow2 migration")]
     async fn do_get(
         &self,
         request: Request<Ticket>,
@@ -188,12 +188,8 @@ impl FlightService for ShuffleFlightServer {
             .to_arrow()
             .map_err(|e| Status::internal(format!("Error converting schema to arrow: {}", e)))?;
 
-        let flight_schema = FlightData {
-            // TODO: We do not actually support flight anywhere right now
-            // Once we start working on it, figure out how to serialize the schema in the header
-            // data_header: todo!(),
-            ..Default::default()
-        };
+        let options = IpcWriteOptions::default();
+        let flight_schema = SchemaAsIpc::new(&schema, &options).into();
         let flight_data =
             futures::stream::once(async { Ok(flight_schema) }).chain(flight_data_stream);
 
