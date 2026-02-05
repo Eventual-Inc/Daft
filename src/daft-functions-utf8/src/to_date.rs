@@ -21,7 +21,11 @@ impl ScalarUDF for ToDate {
     fn name(&self) -> &'static str {
         "to_date"
     }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         ensure!(inputs.len() == 2, ValueError: "Expected 2 input args, got {}", inputs.len());
         let input = inputs.required((0, "input"))?;
         let pattern = inputs.required((1, "format"))?;
