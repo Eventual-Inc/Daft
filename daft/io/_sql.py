@@ -149,7 +149,7 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
     conn: str | Callable[[], "Connection"]
     write_mode: Literal["append", "overwrite", "fail"]
     chunk_size: int | None
-    dtype: Any | None
+    column_types: Any | None
     df_schema: Schema
 
     def __post_init__(self) -> None:
@@ -204,7 +204,7 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
                     con=connection,
                     if_exists="fail",
                     index=False,
-                    dtype=self.dtype,
+                    dtype=self.column_types,
                 )
                 connection.commit()
             elif self.write_mode == "overwrite":
@@ -214,7 +214,7 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
                     con=connection,
                     if_exists="replace",
                     index=False,
-                    dtype=self.dtype,
+                    dtype=self.column_types,
                 )
                 connection.commit()
             else:  # append
@@ -225,7 +225,7 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
                         con=connection,
                         if_exists="fail",
                         index=False,
-                        dtype=self.dtype,
+                        dtype=self.column_types,
                     )
                     connection.commit()
         finally:
@@ -268,7 +268,7 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
                     if_exists="append",
                     index=False,
                     chunksize=self.chunk_size,
-                    dtype=self.dtype,
+                    dtype=self.column_types,
                 )
                 connection.commit()
 

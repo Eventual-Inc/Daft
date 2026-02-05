@@ -199,9 +199,9 @@ def test_write_sql_dtype_basic_types(test_db):
     }
     df = daft.from_pydict(data)
 
-    dtype = {"id": Integer(), "name": String(length=64), "created_at": DateTime()}
+    column_types = {"id": Integer(), "name": String(length=64), "created_at": DateTime()}
 
-    df.write_sql(table_name, test_db, dtype=dtype)
+    df.write_sql(table_name, test_db, column_types=column_types)
 
     engine = sqlalchemy.create_engine(test_db)
     try:
@@ -237,9 +237,9 @@ def test_write_sql_dtype_empty_df_creates_table(test_db):
     data = {"id": [], "name": [], "created_at": []}
     df = daft.from_pydict(data)
 
-    dtype = {"id": Integer(), "name": String(length=64), "created_at": DateTime()}
+    column_types = {"id": Integer(), "name": String(length=64), "created_at": DateTime()}
 
-    df.write_sql(table_name, test_db, dtype=dtype)
+    df.write_sql(table_name, test_db, column_types=column_types)
 
     engine = sqlalchemy.create_engine(test_db)
     try:
@@ -280,7 +280,7 @@ def test_write_sql_dtype_with_connection_factory(test_db):
     }
     df = daft.from_pydict(data)
 
-    dtype = {"id": Integer(), "name": String(length=64), "created_at": DateTime()}
+    column_types = {"id": Integer(), "name": String(length=64), "created_at": DateTime()}
 
     engine = sqlalchemy.create_engine(test_db)
     try:
@@ -288,7 +288,7 @@ def test_write_sql_dtype_with_connection_factory(test_db):
         def create_conn():
             return sqlalchemy.create_engine(test_db).connect()
 
-        df.write_sql(table_name, create_conn, dtype=dtype)
+        df.write_sql(table_name, create_conn, column_types=column_types)
 
         inspector = inspect(engine)
         columns = inspector.get_columns(table_name)
@@ -328,10 +328,10 @@ def test_write_sql_dtype_with_chunking(test_db, chunk_size):
     }
     df = daft.from_pydict(data)
 
-    dtype = {"id": Integer(), "name": String(length=64), "created_at": DateTime()}
+    column_types = {"id": Integer(), "name": String(length=64), "created_at": DateTime()}
 
     write_kwargs = {} if chunk_size is None else {"chunk_size": chunk_size}
-    df.write_sql(table_name, test_db, dtype=dtype, **write_kwargs)
+    df.write_sql(table_name, test_db, column_types=column_types, **write_kwargs)
 
     read_df = daft.read_sql(f"SELECT * FROM {table_name}", test_db).sort("id").collect()
     expected_df = daft.from_pydict(data).sort("id").collect()

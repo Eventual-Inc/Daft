@@ -773,7 +773,7 @@ class DataFrame:
         conn: str | Callable[[], "Connection"],
         write_mode: Literal["append", "overwrite", "fail"] = "append",
         chunk_size: int | None = None,
-        dtype: dict[str, Any] | None = None,
+        column_types: dict[str, Any] | None = None,
     ) -> "DataFrame":
         """Write the DataFrame to a SQL database and return write metrics.
 
@@ -785,7 +785,7 @@ class DataFrame:
             conn (str | Callable[[], "Connection"]): Connection string or factory.
             write_mode (str): Mode to write to the table. "append", "overwrite", or "fail". Defaults to "append".
             chunk_size (int): Number of rows to write at a time. Defaults to None.
-            dtype (Optional[Dict[str, Any]]): Optional mapping from column names to
+            column_types (Optional[Dict[str, Any]]): Optional mapping from column names to
                 SQLAlchemy types to use when creating the table or casting columns.
                 Passed through to the underlying SQL engine when creating or writing
                 the table.
@@ -810,24 +810,24 @@ class DataFrame:
             ...         ],
             ...     }
             ... )
-            >>> dtype = {
+            >>> column_types = {
             ...     "id": Integer(),
             ...     "name": String(length=255),
             ...     "created_at": DateTime(timezone=True),
             ... }
-            >>> metrics_df = df.write_sql("users", "sqlite:///my_database.db", dtype=dtype)
+            >>> metrics_df = df.write_sql("users", "sqlite:///my_database.db", column_types=column_types)
 
             Write to a SQL table using a SQLAlchemy connection factory and dtypes:
 
             >>> import sqlalchemy
             >>> def create_conn():
             ...     return sqlalchemy.create_engine("sqlite:///my_database.db").connect()
-            >>> metrics_df = df.write_sql("users", create_conn, dtype=dtype)
+            >>> metrics_df = df.write_sql("users", create_conn, column_types=column_types)
 
-            Write to a SQL table using a database URL with dtype=None to rely on inferred types:
+            Write to a SQL table using a database URL with column_types=None to rely on inferred types:
 
             >>> df = daft.from_pydict({"id": [1], "name": ["Alice"]})
-            >>> metrics_df = df.write_sql("users", "sqlite:///my_database.db", dtype=None)
+            >>> metrics_df = df.write_sql("users", "sqlite:///my_database.db", column_types=None)
         """
         from daft.io._sql import SQLDataSink
 
@@ -836,7 +836,7 @@ class DataFrame:
             conn=conn,
             write_mode=write_mode,
             chunk_size=chunk_size,
-            dtype=dtype,
+            column_types=column_types,
             df_schema=self.schema(),
         )
 
