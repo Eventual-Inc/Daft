@@ -6,7 +6,7 @@ daft-arrow = {path = "../daft-arrow"}
 chrono = {workspace = true}
 chrono-tz = {workspace = true}
 comfy-table = {workspace = true}
-common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false, optional=true}
+common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false, optional = true}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-hashable-float-wrapper = {path = "../common/hashable-float-wrapper"}

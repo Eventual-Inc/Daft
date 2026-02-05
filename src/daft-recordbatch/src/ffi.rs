@@ -39,7 +39,7 @@ pub fn record_batch_from_arrow(
                     .map(|(array, target_field)| {
                         if array.data_type() != target_field.data_type() {
                             arrow::compute::cast(array, target_field.data_type())
-                                .map_err(|e| common_error::DaftError::from(e))
+                                .map_err(common_error::DaftError::from)
                         } else {
                             Ok(array.clone())
                         }
