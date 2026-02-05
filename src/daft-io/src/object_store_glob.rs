@@ -12,6 +12,7 @@ use tokio::sync::mpsc::Sender;
 
 use crate::{
     object_io::{FileMetadata, FileType, ObjectSource},
+    range_expansion::expand_numeric_ranges,
     stats::IOStatsRef,
 };
 
@@ -391,6 +392,10 @@ pub async fn glob(
     limit: Option<usize>,
     io_stats: Option<IOStatsRef>,
 ) -> super::Result<BoxStream<'static, super::Result<FileMetadata>>> {
+    // Expand numeric ranges like {0..10} to {0,1,2,...,10} before processing
+    let expanded_glob = expand_numeric_ranges(glob)?;
+    let glob = expanded_glob.as_str();
+
     // If no special characters, we fall back to ls behavior
     let full_fragment = GlobFragment::new(glob);
     if !full_fragment.has_special_character() {
