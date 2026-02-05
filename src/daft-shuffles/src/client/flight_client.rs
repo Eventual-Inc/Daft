@@ -12,39 +12,38 @@ use daft_schema::field::FieldRef;
 use futures::{FutureExt, Stream, StreamExt};
 use tonic::transport::Endpoint;
 
+#[allow(clippy::large_enum_variant)]
 enum ClientState {
     // The address of the flight server
     Uninitialized(String),
     // The address of the flight server and the flight client
-    Initialized(String, Box<FlightClient>),
+    Initialized(String, FlightClient),
 }
 
 pub struct ShuffleFlightClient {
     inner: ClientState,
-    schema: SchemaRef,
 }
 
 impl ShuffleFlightClient {
-    pub fn new(address: String, schema: SchemaRef) -> Self {
+    pub fn new(address: String) -> Self {
         Self {
             inner: ClientState::Uninitialized(address),
-            schema,
         }
     }
 
     async fn connect(&mut self) -> DaftResult<(&str, &mut FlightClient)> {
         if let ClientState::Uninitialized(address) = &mut self.inner {
             let endpoint = Endpoint::from_shared(address.clone()).map_err(|e| {
-                DaftError::External(format!("Failed to create endpoint: {}", e).into())
+                DaftError::External(format!("Failed to create endpoint: {:?}", e).into())
             })?;
             let channel = endpoint.connect().await.map_err(|e| {
-                DaftError::External(format!("Failed to connect to endpoint: {}", e).into())
+                DaftError::External(format!("Failed to connect to endpoint: {:?}", e).into())
             })?;
             let client = FlightClient::new(channel);
             let inner = client.into_inner().max_decoding_message_size(usize::MAX);
             self.inner = ClientState::Initialized(
                 std::mem::take(address),
-                Box::new(FlightClient::new_from_inner(inner)),
+                FlightClient::new_from_inner(inner),
             );
         }
         match &mut self.inner {
@@ -55,15 +54,26 @@ impl ShuffleFlightClient {
 
     pub async fn get_partition(
         &mut self,
+        shuffle_id: u64,
         partition_idx: usize,
+        cache_ids: &[u32],
+        schema: SchemaRef,
     ) -> DaftResult<FlightRecordBatchStreamToDaftRecordBatchStream> {
-        let ticket = Ticket::new(partition_idx.to_string());
+        let cache_ids_str = cache_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let ticket = Ticket::new(format!(
+            "{}:{}:{}",
+            shuffle_id, partition_idx, cache_ids_str
+        ));
         let (address, client) = self.connect().await?;
         let stream = client.do_get(ticket).await.map_err(|e| {
             DaftError::External(
                 format!(
-                    "Error fetching partition: {} from {}. {}",
-                    partition_idx, address, e
+                    "Error fetching partition: {} from shuffle {} at {} with cache_ids [{}]. {}",
+                    partition_idx, shuffle_id, address, cache_ids_str, e
                 )
                 .into(),
             )
@@ -71,9 +81,8 @@ impl ShuffleFlightClient {
         Ok(FlightRecordBatchStreamToDaftRecordBatchStream {
             stream,
             done: false,
-            schema: self.schema.clone(),
-            fields: self
-                .schema
+            schema: schema.clone(),
+            fields: schema
                 .fields()
                 .iter()
                 .map(|f| Arc::new(f.clone()))
