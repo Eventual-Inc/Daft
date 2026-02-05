@@ -1,3 +1,8 @@
+//! FFI utilities for converting between PyArrow and Rust Arrow arrays.
+//!
+//! Portions of this module are adapted from [apache/arrow-rs](https://github.com/apache/arrow-rs),
+//! licensed under the Apache License, Version 2.0.
+
 #![allow(deprecated, reason = "arrow2->arrow migration")]
 
 use std::{ffi::CStr, ptr::addr_of_mut, sync::Arc};
