@@ -178,14 +178,13 @@ mod tests {
 
     #[test]
     fn test_jaq() -> DaftResult<()> {
-        let data = Utf8Array::from_values(
+        let data = Utf8Array::from_slice(
             "data",
-            vec![
+            &[
                 r#"{"foo": {"bar": 1}}"#.to_string(),
                 r#"{"foo": {"bar": 2}}"#.to_string(),
                 r#"{"foo": {"bar": 3}}"#.to_string(),
-            ]
-            .into_iter(),
+            ],
         );
 
         let filter = r".foo.bar";

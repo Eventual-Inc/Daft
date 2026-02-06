@@ -1142,7 +1142,7 @@ mod tests {
             field.clone(),
             vec![
                 Int64Array::from_slice("x", &[1, 2]).into_series(),
-                Utf8Array::from(("y", &["a", "b"][..])).into_series(),
+                Utf8Array::from_slice("y", &["a", "b"][..]).into_series(),
             ],
             Some(nulls.clone()),
         );
@@ -1150,7 +1150,7 @@ mod tests {
             field,
             vec![
                 Int64Array::from_slice("x", &[1, 2]).into_series(),
-                Utf8Array::from(("y", &["a", "b"][..])).into_series(),
+                Utf8Array::from_slice("y", &["a", "b"][..]).into_series(),
             ],
             Some(nulls),
         );
@@ -1796,7 +1796,7 @@ mod tests {
             field.clone(),
             vec![
                 Int64Array::from_vec("x", left_x).into_series(),
-                Utf8Array::from(("y", left_y.as_slice())).into_series(),
+                Utf8Array::from_slice("y", left_y.as_slice()).into_series(),
             ],
             None,
         );
@@ -1804,7 +1804,7 @@ mod tests {
             field,
             vec![
                 Int64Array::from_vec("x", right_x).into_series(),
-                Utf8Array::from(("y", right_y.as_slice())).into_series(),
+                Utf8Array::from_slice("y", right_y.as_slice()).into_series(),
             ],
             None,
         );

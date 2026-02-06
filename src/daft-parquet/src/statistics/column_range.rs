@@ -64,9 +64,9 @@ impl TryFrom<&BinaryStatistics> for Wrap<ColumnRangeStatistics> {
                         .context(UnableToParseUtf8FromBinarySnafu)?;
 
                     let lower =
-                        Utf8Array::from(("lower", [lower.as_str()].as_slice())).into_series();
+                        Utf8Array::from_slice("lower", [lower.as_str()].as_slice()).into_series();
                     let upper =
-                        Utf8Array::from(("upper", [upper.as_str()].as_slice())).into_series();
+                        Utf8Array::from_slice("upper", [upper.as_str()].as_slice()).into_series();
 
                     return Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?.into());
                 }
@@ -92,9 +92,9 @@ impl TryFrom<&BinaryStatistics> for Wrap<ColumnRangeStatistics> {
                         .context(UnableToParseUtf8FromBinarySnafu)?;
 
                     let lower =
-                        Utf8Array::from(("lower", [lower.as_str()].as_slice())).into_series();
+                        Utf8Array::from_slice("lower", [lower.as_str()].as_slice()).into_series();
                     let upper =
-                        Utf8Array::from(("upper", [upper.as_str()].as_slice())).into_series();
+                        Utf8Array::from_slice("upper", [upper.as_str()].as_slice()).into_series();
 
                     return Ok(ColumnRangeStatistics::new(Some(lower), Some(upper))?.into());
                 }

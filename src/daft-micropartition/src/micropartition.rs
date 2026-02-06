@@ -834,13 +834,13 @@ mod tests {
         let batch1 = RecordBatch::from_nonempty_columns(vec![
             Int32Array::from_slice("a", &[1, 2, 3]).into_series(),
             Float64Array::from_slice("b", &[1., 2., 3.]).into_series(),
-            Utf8Array::from_values("c", string_values.iter()).into_series(),
+            Utf8Array::from_slice("c", string_values.as_slice()).into_series(),
         ])?;
 
         let batch2 = RecordBatch::from_nonempty_columns(vec![
             Int32Array::from_slice("a", &[4, 5, 6]).into_series(),
             Float64Array::from_slice("b", &[4., 5., 6.]).into_series(),
-            Utf8Array::from_values("c", string_values.iter()).into_series(),
+            Utf8Array::from_slice("c", string_values.as_slice()).into_series(),
         ])?;
 
         assert_eq!(batch1.schema, batch2.schema);

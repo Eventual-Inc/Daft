@@ -42,7 +42,7 @@ impl RecordBatch {
             .flat_map(|n| std::iter::repeat_n(n, self.len()))
             .collect::<Vec<_>>();
         let variable_series =
-            Utf8Array::from((variable_name, variable_column.as_ref())).into_series();
+            Utf8Array::from_slice(variable_name, variable_column.as_ref()).into_series();
 
         let values_cols: Vec<&Series> = values_table.columns.iter().collect();
         let values_casted = cast_series_to_supertype(&values_cols)?;

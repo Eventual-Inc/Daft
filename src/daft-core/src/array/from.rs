@@ -29,14 +29,6 @@ impl From<(&str, daft_arrow::bitmap::Bitmap)> for BooleanArray {
     }
 }
 
-impl<T: AsRef<str>> From<(&str, &[T])> for DataArray<Utf8Type> {
-    fn from(item: (&str, &[T])) -> Self {
-        let (name, slice) = item;
-        let arrow_array = Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(slice));
-        Self::new(Field::new(name, DataType::Utf8).into(), arrow_array).unwrap()
-    }
-}
-
 impl TryFrom<(&str, Vec<u8>, Vec<i64>)> for BinaryArray {
     type Error = DaftError;
 

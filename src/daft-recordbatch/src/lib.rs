@@ -1768,7 +1768,7 @@ mod test {
         let table = RecordBatch::from_nonempty_columns(vec![
             Int64Array::from_vec("a", vec![1, 2, 3]).into_series(),
             Float64Array::from_vec("b", vec![1., 2., 3.]).into_series(),
-            Utf8Array::from_values("c", string_values.iter()).into_series(),
+            Utf8Array::from_slice("c", string_values.as_slice()).into_series(),
         ])?;
 
         let ipc_stream = table.to_ipc_stream()?;

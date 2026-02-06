@@ -68,11 +68,8 @@ impl AsyncFileWriter for DummyWriter {
     }
 
     async fn close(&mut self) -> DaftResult<Self::Result> {
-        let path_series = Utf8Array::from_values(
-            RETURN_PATHS_COLUMN_NAME,
-            std::iter::once(self.file_idx.clone()),
-        )
-        .into_series();
+        let path_series =
+            Utf8Array::from_slice(RETURN_PATHS_COLUMN_NAME, &[self.file_idx.clone()]).into_series();
         let write_count_series =
             UInt64Array::from_slice("write_count", &[self.write_count as u64]).into_series();
         let path_table = RecordBatch::new_unchecked(
@@ -185,11 +182,8 @@ impl AsyncFileWriter for FailingWriter {
         }
 
         // Same behavior as DummyWriter when not failing
-        let path_series = Utf8Array::from_values(
-            RETURN_PATHS_COLUMN_NAME,
-            std::iter::once(self.file_idx.clone()),
-        )
-        .into_series();
+        let path_series =
+            Utf8Array::from_slice(RETURN_PATHS_COLUMN_NAME, &[self.file_idx.clone()]).into_series();
         let write_count_series =
             UInt64Array::from_slice("write_count", &[self.write_count as u64]).into_series();
         let path_table = RecordBatch::new_unchecked(

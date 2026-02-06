@@ -237,7 +237,7 @@ mod test {
 
     #[test]
     fn test_into_arrow_utf8() -> DaftResult<()> {
-        let arr = Utf8Array::from_values("test", vec!["a", "b", "c"].into_iter());
+        let arr = Utf8Array::from_slice("test", &["a", "b", "c"]);
         let arrow_arr = arr.as_arrow()?;
         assert_eq!(arrow_arr.len(), 3);
         assert_eq!(
@@ -422,7 +422,7 @@ mod test {
     #[test]
     fn test_into_arrow_struct() -> DaftResult<()> {
         let field1 = Int32Array::from_slice("a", &[1, 2, 3]);
-        let field2 = Utf8Array::from_values("b", vec!["x", "y", "z"].into_iter());
+        let field2 = Utf8Array::from_slice("b", &["x", "y", "z"]);
         let arr = StructArray::new(
             Field::new(
                 "test",

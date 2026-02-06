@@ -225,12 +225,8 @@ where
 }
 
 impl Utf8Array {
-    pub fn from_values<S: AsRef<str>>(
-        name: &str,
-        iter: impl daft_arrow::trusted_len::TrustedLen<Item = S>,
-    ) -> Self {
-        let arrow_array =
-            Box::new(daft_arrow::array::Utf8Array::<i64>::from_trusted_len_values_iter(iter));
+    pub fn from_slice<T: AsRef<str>>(name: &str, slice: &[T]) -> Self {
+        let arrow_array = Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(slice));
         Self::new(Field::new(name, DataType::Utf8).into(), arrow_array).unwrap()
     }
 }

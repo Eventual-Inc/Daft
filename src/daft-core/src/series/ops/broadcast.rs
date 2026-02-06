@@ -49,7 +49,7 @@ mod tests {
 
     #[test]
     fn broadcast_utf8() -> DaftResult<()> {
-        let a = Utf8Array::from(("a", vec!["1"].as_slice())).into_series();
+        let a = Utf8Array::from_slice("a", vec!["1"].as_slice()).into_series();
         let a = a.broadcast(10)?;
         assert_eq!(a.len(), 10);
         assert_eq!(*a.data_type(), DataType::Utf8);

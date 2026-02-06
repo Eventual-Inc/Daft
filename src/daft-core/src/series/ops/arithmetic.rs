@@ -572,7 +572,7 @@ mod tests {
     fn add_int_and_utf8() -> DaftResult<()> {
         let a = Int64Array::from_slice("a", &[1, 2, 3]);
         let str_array = vec!["a", "b", "c"];
-        let b = Utf8Array::from(("b", str_array.as_slice()));
+        let b = Utf8Array::from_slice("b", str_array.as_slice());
         let c = a.into_series() + b.into_series();
         assert_eq!(*c?.data_type(), DataType::Utf8);
         Ok(())
