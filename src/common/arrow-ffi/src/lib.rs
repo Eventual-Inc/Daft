@@ -232,8 +232,9 @@ pub fn array_to_rust(value: &Bound<PyAny>) -> PyResult<(ArrayData, Field)> {
                     .as_ptr(),
             )
         };
-        let data =
+        let mut data =
             unsafe { arrow::ffi::from_ffi(array, schema_ptr.as_ref()) }.map_err(to_py_err)?;
+        data.align_buffers();
 
         let field =
             unsafe { arrow_schema::Field::try_from(schema_ptr.as_ref()).map_err(to_py_err)? };
@@ -258,7 +259,8 @@ pub fn array_to_rust(value: &Bound<PyAny>) -> PyResult<(ArrayData, Field)> {
         ),
     )?;
 
-    let data = unsafe { arrow::ffi::from_ffi(array, &schema) }.map_err(to_py_err)?;
+    let mut data = unsafe { arrow::ffi::from_ffi(array, &schema) }.map_err(to_py_err)?;
+    data.align_buffers();
     let field = arrow_schema::Field::try_from(&schema).map_err(to_py_err)?;
 
     Ok((data, field))
