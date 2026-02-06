@@ -64,7 +64,7 @@ impl GlobScanSource {
                 let mut remaining_rows = pushdowns.limit;
                 let mut has_results = false;
 
-                // Iterate over unique the glob paths and stream out the record batches
+                // Iterate over the unique glob paths and stream out the record batches
                 let unique_glob_paths = glob_paths.iter().unique().collect::<Vec<_>>();
                 // Only need to keep track of seen paths if there are multiple glob paths
                 let mut seen_paths = if unique_glob_paths.len() > 1 {
@@ -194,7 +194,7 @@ impl Source for GlobScanSource {
             self.spawn_glob_path_processor(input_reiver, output_sender, io_stats, chunk_size);
 
         let result_stream = output_receiver.into_stream().map(Ok);
-        let combined_stream = combine_stream(Box::pin(result_stream), processor_task.map(|x| x?));
+        let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));
         Ok(Box::pin(combined_stream))
     }
 

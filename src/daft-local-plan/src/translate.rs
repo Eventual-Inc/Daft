@@ -19,7 +19,7 @@ use crate::{Input, SourceId, SourceIdCounter};
 
 pub fn translate(
     plan: &LogicalPlanRef,
-    psets: Option<&HashMap<String, Vec<MicroPartitionRef>>>,
+    psets: &HashMap<String, Vec<MicroPartitionRef>>,
 ) -> DaftResult<(LocalPhysicalPlanRef, HashMap<SourceId, Input>)> {
     let mut source_counter = SourceIdCounter::default();
     translate_helper(plan, &mut source_counter, psets)
@@ -28,7 +28,7 @@ pub fn translate(
 fn translate_helper(
     plan: &LogicalPlanRef,
     source_counter: &mut SourceIdCounter,
-    psets: Option<&HashMap<String, Vec<MicroPartitionRef>>>,
+    psets: &HashMap<String, Vec<MicroPartitionRef>>,
 ) -> DaftResult<(LocalPhysicalPlanRef, HashMap<SourceId, Input>)> {
     match plan.as_ref() {
         LogicalPlan::Source(source) => {
@@ -36,10 +36,12 @@ fn translate_helper(
             let physical_plan = match source.source_info.as_ref() {
                 SourceInfo::InMemory(info) => {
                     let source_id = source_counter.next();
-                    let partitions = psets
-                        .and_then(|p| p.get(&info.cache_key))
-                        .cloned()
-                        .unwrap_or_default();
+                    let partitions = psets.get(&info.cache_key).cloned().ok_or_else(|| {
+                        DaftError::ValueError(format!(
+                            "InMemory source cache_key '{}' not found in provided partition sets",
+                            info.cache_key
+                        ))
+                    })?;
                     inputs.insert(source_id, Input::InMemory(partitions));
 
                     LocalPhysicalPlan::in_memory_scan(

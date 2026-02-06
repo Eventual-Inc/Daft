@@ -388,7 +388,7 @@ class FlotillaRunner:
             name=get_flotilla_runner_actor_name(),
             namespace=FLOTILLA_RUNNER_NAMESPACE,
             get_if_exists=True,
-            runtime_env=({"env_vars": {"DAFT_DASHBOARD_URL": dashboard_url}} if dashboard_url else None),
+            runtime_env={"env_vars": {"DAFT_DASHBOARD_URL": dashboard_url}} if dashboard_url else None,
             scheduling_strategy=(
                 ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=head_node_id,

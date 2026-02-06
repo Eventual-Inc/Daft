@@ -30,7 +30,7 @@ impl PyLocalPhysicalPlan {
             .map(|(k, v)| (k, v.into_iter().map(|p| p.inner).collect()))
             .collect();
         let logical_plan = logical_plan_builder.builder.build();
-        let (physical_plan, inputs) = translate(&logical_plan, Some(&psets_mp))?;
+        let (physical_plan, inputs) = translate(&logical_plan, &psets_mp)?;
 
         let dict = PyDict::new(py);
         for (source_id, input) in inputs {
@@ -60,8 +60,6 @@ impl PyLocalPhysicalPlan {
 
 impl_bincode_py_state_serialization!(PyLocalPhysicalPlan);
 
-/// A thin wrapper around Input for Python. Only holds ScanTasks or GlobPaths variants.
-/// InMemory data flows separately as list[MicroPartition] on the Python side.
 #[pyclass(module = "daft.daft", name = "Input", frozen)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PyInput {

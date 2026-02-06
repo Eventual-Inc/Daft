@@ -297,7 +297,7 @@ impl NativeExecutor {
         simple: bool,
     ) -> String {
         let logical_plan = logical_plan_builder.build();
-        let (physical_plan, _) = translate(&logical_plan, None).unwrap();
+        let (physical_plan, _) = translate(&logical_plan, &HashMap::new()).unwrap();
         let ctx = RuntimeContext::new();
         let (pipeline_node, _) =
             translate_physical_plan_to_pipeline(&physical_plan, &cfg, &ctx).unwrap();
@@ -311,7 +311,7 @@ impl NativeExecutor {
         options: MermaidDisplayOptions,
     ) -> String {
         let logical_plan = logical_plan_builder.build();
-        let (physical_plan, _) = translate(&logical_plan, None).unwrap();
+        let (physical_plan, _) = translate(&logical_plan, &HashMap::new()).unwrap();
         let ctx = RuntimeContext::new();
         let (pipeline_node, _) =
             translate_physical_plan_to_pipeline(&physical_plan, &cfg, &ctx).unwrap();
@@ -333,7 +333,7 @@ impl NativeExecutor {
         cfg: Arc<DaftExecutionConfig>,
     ) -> RelationshipInformation {
         let logical_plan = logical_plan_builder.build();
-        let (physical_plan, _) = translate(&logical_plan, None).unwrap();
+        let (physical_plan, _) = translate(&logical_plan, &HashMap::new()).unwrap();
         let ctx = RuntimeContext::new();
         let (pipeline_node, _) =
             translate_physical_plan_to_pipeline(&physical_plan, &cfg, &ctx).unwrap();

@@ -81,9 +81,8 @@ impl Source for InMemorySource {
         let processor_task =
             self.spawn_partition_set_processor(input_receiver, output_sender, self.schema.clone());
 
-        let result_stream = output_receiver.into_stream();
-        let combined_stream =
-            combine_stream(Box::pin(result_stream.map(Ok)), processor_task.map(|x| x?));
+        let result_stream = output_receiver.into_stream().map(Ok);
+        let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));
 
         Ok(Box::pin(combined_stream))
     }

@@ -8,7 +8,7 @@ use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 use crate::{
     pipeline_node::MaterializedOutput,
     scheduling::{
-        task::{SwordfishTask, Task, TaskContext, TaskResultHandle, TaskStatus},
+        task::{SwordfishTask, TaskContext, TaskResultHandle, TaskStatus},
         worker::WorkerId,
     },
 };
@@ -229,14 +229,5 @@ impl RaySwordfishTask {
     fn config(&self) -> PyResult<PyDaftExecutionConfig> {
         let config = self.task.config().clone();
         Ok(PyDaftExecutionConfig { config })
-    }
-
-    /// Get the last_node_id from the task context, which is used as the source_id
-    fn last_node_id(&self) -> u32 {
-        self.task.task_context().last_node_id
-    }
-
-    fn task_id(&self) -> u32 {
-        self.task.task_context().task_id
     }
 }

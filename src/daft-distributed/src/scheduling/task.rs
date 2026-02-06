@@ -356,13 +356,13 @@ impl SwordfishTaskBuilder {
         self
     }
 
-    /// Set psets (replaces any existing psets).
+    /// Add psets with source_id to the builder.
     pub fn with_psets(mut self, source_id: SourceId, psets: Vec<PartitionRef>) -> Self {
         self.psets.insert(source_id, psets);
         self
     }
 
-    /// Set scan_tasks (replaces any existing scan_tasks).
+    /// Add scan_tasks with source_id to the builder.
     pub fn with_scan_tasks(
         mut self,
         source_id: SourceId,
@@ -372,7 +372,7 @@ impl SwordfishTaskBuilder {
         self
     }
 
-    /// Set glob_paths (replaces any existing glob_paths).
+    /// Add glob paths with source_id to the builder.
     pub fn with_glob_paths(mut self, source_id: SourceId, glob_paths: Vec<String>) -> Self {
         self.inputs.insert(source_id, Input::GlobPaths(glob_paths));
         self

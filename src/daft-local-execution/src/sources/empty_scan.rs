@@ -34,10 +34,6 @@ impl Source for EmptyScanSource {
         Ok(Box::pin(futures::stream::once(async { Ok(empty) })))
     }
 
-    fn schema(&self) -> &SchemaRef {
-        &self.schema
-    }
-
     fn name(&self) -> NodeName {
         "Empty Scan".into()
     }
@@ -51,5 +47,9 @@ impl Source for EmptyScanSource {
         res.push("Empty Scan:".to_string());
         res.push(format!("Schema = {}", self.schema.short_string()));
         res
+    }
+
+    fn schema(&self) -> &SchemaRef {
+        &self.schema
     }
 }

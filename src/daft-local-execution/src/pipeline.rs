@@ -10,6 +10,7 @@ use common_display::{
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
+use common_scan_info::ScanTaskLikeRef;
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
@@ -22,7 +23,6 @@ use daft_local_plan::{
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
-use daft_scan::ScanTaskRef;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
 use snafu::ResultExt;
@@ -358,7 +358,7 @@ fn physical_plan_to_pipeline(
             stats_state,
             context,
         }) => {
-            let (tx, rx) = create_channel::<(InputId, Vec<ScanTaskRef>)>(1);
+            let (tx, rx) = create_channel::<(InputId, Vec<ScanTaskLikeRef>)>(1);
             input_senders.insert(*source_id, InputSender::ScanTasks(tx));
 
             let scan_task_source = ScanTaskSource::new(rx, pushdowns.clone(), schema.clone(), cfg);
