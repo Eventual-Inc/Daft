@@ -34,7 +34,6 @@ impl DaftApproxCountDistinctAggable for UInt64Array {
             }
             set.len() as u64
         });
-        let array = Self::from_iter_values(count_iter);
-        Ok(array.rename(self.name()))
+        Ok(Self::from_values(self.name(), count_iter))
     }
 }

@@ -249,7 +249,7 @@ mod test {
 
     #[test]
     fn test_into_arrow_boolean() -> DaftResult<()> {
-        let arr = BooleanArray::from_values("test", vec![true, false, true].into_iter());
+        let arr = BooleanArray::from_vec("test", vec![true, false, true]);
         let arrow_arr = arr.as_arrow()?;
         assert_eq!(arrow_arr.len(), 3);
         assert_eq!(arrow_arr.data_type(), &arrow::datatypes::DataType::Boolean);

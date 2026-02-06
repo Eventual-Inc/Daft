@@ -305,9 +305,10 @@ mod tests {
     /// Helper that returns a FixedSizeListArray, with each list element at len=3
     fn get_i32_fixed_size_list_array(nulls: &[bool]) -> FixedSizeListArray {
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
-        let flat_child =
-            Int32Array::from_iter_values((0i32..(nulls.len() * 3) as i32).collect::<Vec<i32>>())
-                .rename("foo");
+        let flat_child = Int32Array::from_values(
+            "foo",
+            (0i32..(nulls.len() * 3) as i32).collect::<Vec<i32>>(),
+        );
         FixedSizeListArray::new(
             field,
             flat_child.into_series(),

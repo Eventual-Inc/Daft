@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use arrow::{
     array::{ArrowPrimitiveType, BooleanBuilder},
-    buffer::ScalarBuffer,
+    buffer::{BooleanBuffer, ScalarBuffer},
 };
 use common_error::DaftResult;
 use daft_arrow::{
@@ -66,26 +66,10 @@ where
     }
 }
 
-impl Utf8Array {
-    pub fn from_iter<S: AsRef<str>>(
-        name: &str,
-        iter: impl daft_arrow::trusted_len::TrustedLen<Item = Option<S>>,
-    ) -> Self {
-        let arrow_array = Box::new(daft_arrow::array::Utf8Array::<i64>::from_trusted_len_iter(
-            iter,
-        ));
-        Self::new(
-            Field::new(name, crate::datatypes::DataType::Utf8).into(),
-            arrow_array,
-        )
-        .unwrap()
-    }
-}
-
 impl BinaryArray {
     pub fn from_iter<S: AsRef<[u8]>>(
         name: &str,
-        iter: impl daft_arrow::trusted_len::TrustedLen<Item = Option<S>>,
+        iter: impl IntoIterator<Item = Option<S>>,
     ) -> Self {
         let arrow_array = arrow::array::LargeBinaryArray::from_iter(iter);
         Self::from_arrow(
@@ -94,11 +78,16 @@ impl BinaryArray {
         )
         .expect("Failed to create BinaryArray from nullable byte arrays")
     }
+    pub fn from_values<S: AsRef<[u8]>>(name: &str, iter: impl IntoIterator<Item = S>) -> Self {
+        let arrow_array = arrow::array::LargeBinaryArray::from_iter_values(iter);
+        Self::from_arrow(Field::new(name, DataType::Binary), Arc::new(arrow_array))
+            .expect("Failed to create BinaryArray from byte arrays")
+    }
 }
 impl FixedSizeBinaryArray {
     pub fn from_iter<S: AsRef<[u8]>>(
         name: &str,
-        iter: impl daft_arrow::trusted_len::TrustedLen<Item = Option<S>>,
+        iter: impl Iterator<Item = Option<S>>,
         size: usize,
     ) -> Self {
         let arrow_array =
@@ -109,25 +98,6 @@ impl FixedSizeBinaryArray {
             Arc::new(arrow_array),
         )
         .unwrap()
-    }
-}
-
-impl BooleanArray {
-    pub fn from_iter(name: &str, iter: impl Iterator<Item = Option<bool>>) -> Self {
-        let arrow_array = Arc::new(arrow::array::BooleanArray::from_iter(iter));
-        Self::from_arrow(
-            Field::new(name, crate::datatypes::DataType::Boolean),
-            arrow_array,
-        )
-        .unwrap()
-    }
-}
-
-impl FromIterator<Option<bool>> for BooleanArray {
-    fn from_iter<T: IntoIterator<Item = Option<bool>>>(iter: T) -> Self {
-        let arrow_array = arrow::array::BooleanArray::from_iter(iter);
-        Self::from_arrow(Field::new("", DataType::Boolean), Arc::new(arrow_array))
-            .expect("Failed to create BooleanArray")
     }
 }
 
@@ -166,33 +136,20 @@ impl<T> DataArray<T>
 where
     T: DaftNumericType,
 {
-    pub fn from_iter_values<
+    pub fn from_values<
         I: IntoIterator<
             Item = <<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native,
         >,
     >(
+        name: &str,
         iter: I,
     ) -> Self {
         let arrow_arr =
             arrow::array::PrimitiveArray::<<T::Native as NumericNative>::ARROWTYPE>::from_iter_values(
                 iter,
             );
-        Self::from_arrow(Field::new("", T::get_dtype()), Arc::new(arrow_arr)).unwrap()
+        Self::from_arrow(Field::new(name, T::get_dtype()), Arc::new(arrow_arr)).unwrap()
     }
-}
-
-impl BooleanArray {
-    pub fn from_iter_values<I: IntoIterator<Item = bool>>(iter: I) -> Self {
-        let buf = arrow::buffer::BooleanBuffer::from_iter(iter);
-        let arrow_arr = arrow::array::BooleanArray::new(buf, None);
-
-        Self::from_arrow(Field::new("", DataType::Boolean), Arc::new(arrow_arr)).unwrap()
-    }
-}
-impl<T> DataArray<T>
-where
-    T: DaftNumericType,
-{
     pub fn from_slice(
         name: &str,
         slice: &[<<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native],
@@ -226,35 +183,56 @@ where
 
 impl Utf8Array {
     pub fn from_slice<T: AsRef<str>>(name: &str, slice: &[T]) -> Self {
-        let arrow_array = Box::new(daft_arrow::array::Utf8Array::<i64>::from_slice(slice));
-        Self::new(Field::new(name, DataType::Utf8).into(), arrow_array).unwrap()
-    }
-}
+        let arrow_array = arrow::array::LargeStringArray::from_iter_values(slice);
 
-impl BinaryArray {
-    pub fn from_values<S: AsRef<[u8]>>(
-        name: &str,
-        iter: impl daft_arrow::trusted_len::TrustedLen<Item = S>,
-    ) -> Self {
-        let arrow_array = arrow::array::LargeBinaryArray::from_iter_values(iter);
-        Self::from_arrow(Field::new(name, DataType::Binary), Arc::new(arrow_array))
-            .expect("Failed to create BinaryArray from byte arrays")
+        Self::from_arrow(Field::new(name, DataType::Utf8), Arc::new(arrow_array)).unwrap()
+    }
+    pub fn from_iter<S: AsRef<str>>(name: &str, iter: impl IntoIterator<Item = Option<S>>) -> Self {
+        let arrow_array = arrow::array::LargeStringArray::from_iter(iter);
+        Self::from_arrow(
+            Field::new(name, crate::datatypes::DataType::Utf8),
+            Arc::new(arrow_array),
+        )
+        .unwrap()
     }
 }
 
 impl BooleanArray {
+    pub fn from_iter(name: &str, iter: impl Iterator<Item = Option<bool>>) -> Self {
+        let arrow_array = Arc::new(arrow::array::BooleanArray::from_iter(iter));
+        Self::from_arrow(
+            Field::new(name, crate::datatypes::DataType::Boolean),
+            arrow_array,
+        )
+        .unwrap()
+    }
+    pub fn from_values(name: &str, iter: impl IntoIterator<Item = bool>) -> Self {
+        let arrow_array = Arc::new(arrow::array::BooleanArray::from_iter(iter));
+        Self::from_arrow(Field::new(name, DataType::Boolean), arrow_array).unwrap()
+    }
+
+    pub fn from_slice(name: &str, values: &[bool]) -> Self {
+        let boolean_buffer = BooleanBuffer::from(values);
+        let arrow_array = Arc::new(arrow::array::BooleanArray::new(boolean_buffer, None));
+        Self::from_arrow(Field::new(name, DataType::Boolean), arrow_array).unwrap()
+    }
+
+    pub fn from_vec(name: &str, values: Vec<bool>) -> Self {
+        let arrow_array = Arc::new(arrow::array::BooleanArray::from(values));
+        Self::from_arrow(Field::new(name, DataType::Boolean), arrow_array).unwrap()
+    }
+
     pub fn from_builder(name: &str, mut builder: BooleanBuilder) -> Self {
         let arrow_array = Arc::new(arrow::array::BooleanArray::from(builder.finish()));
         Self::from_arrow(Field::new(name, DataType::Boolean), arrow_array).unwrap()
     }
-    pub fn from_values(name: &str, iter: impl ExactSizeIterator<Item = bool>) -> Self {
-        let arrow_array =
-            Arc::new(unsafe { arrow::array::BooleanArray::from_trusted_len_iter(iter) });
-        Self::from_arrow(Field::new(name, DataType::Boolean), arrow_array).unwrap()
-    }
-    pub fn from_vec(name: &str, values: Vec<bool>) -> Self {
-        let arrow_array = Arc::new(arrow::array::BooleanArray::from(values));
-        Self::from_arrow(Field::new(name, DataType::Boolean), arrow_array).unwrap()
+}
+
+impl FromIterator<Option<bool>> for BooleanArray {
+    fn from_iter<T: IntoIterator<Item = Option<bool>>>(iter: T) -> Self {
+        let arrow_array = arrow::array::BooleanArray::from_iter(iter);
+        Self::from_arrow(Field::new("", DataType::Boolean), Arc::new(arrow_array))
+            .expect("Failed to create BooleanArray")
     }
 }
 

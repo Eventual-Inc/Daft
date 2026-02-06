@@ -281,7 +281,7 @@ mod tests {
 
     #[test]
     fn test_build_probe_table_without_nulls_basic() -> DaftResult<()> {
-        let series = Int64Array::from_iter_values(vec![1i64, 2, 3, 4, 5]).into_series();
+        let series = Int64Array::from_vec("", vec![1i64, 2, 3, 4, 5]).into_series();
         let probe_table = series.build_probe_table_without_nulls()?;
         assert_eq!(probe_table.len(), 5);
         Ok(())
@@ -289,7 +289,7 @@ mod tests {
 
     #[test]
     fn test_build_probe_table_without_nulls_with_duplicates() -> DaftResult<()> {
-        let series = Int64Array::from_iter_values(vec![1i64, 2, 2, 3, 3, 3]).into_series();
+        let series = Int64Array::from_vec("", vec![1i64, 2, 2, 3, 3, 3]).into_series();
         let probe_table = series.build_probe_table_without_nulls()?;
         assert_eq!(probe_table.len(), 3);
         Ok(())
@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn test_build_probe_table_without_nulls_all_same() -> DaftResult<()> {
-        let series = Int64Array::from_iter_values(vec![42i64; 100]).into_series();
+        let series = Int64Array::from_vec("", vec![42i64; 100]).into_series();
         let probe_table = series.build_probe_table_without_nulls()?;
         assert_eq!(probe_table.len(), 1);
         Ok(())

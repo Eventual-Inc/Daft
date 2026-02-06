@@ -101,8 +101,7 @@ impl SeriesListExtension for Series {
                 let struct_array = self.as_physical()?;
                 let data_array = struct_array.struct_()?.children[0].list().unwrap();
                 let offsets = data_array.offsets();
-                UInt64Array::from_iter_values(offsets.lengths().map(|l| l as u64))
-                    .rename(self.name())
+                UInt64Array::from_values(self.name(), offsets.lengths().map(|l| l as u64))
                     .with_nulls(data_array.nulls().cloned())
             }
             dt => Err(DaftError::TypeError(format!(

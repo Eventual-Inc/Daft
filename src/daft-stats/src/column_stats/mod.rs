@@ -129,8 +129,8 @@ impl ColumnRangeStatistics {
             TruthValue::True => (true, true),
         };
 
-        let lower = BooleanArray::from_values("lower", std::iter::once(lower)).into_series();
-        let upper = BooleanArray::from_values("upper", std::iter::once(upper)).into_series();
+        let lower = BooleanArray::from_slice("lower", &[lower]).into_series();
+        let upper = BooleanArray::from_slice("upper", &[upper]).into_series();
         Self::Loaded(lower, upper)
     }
 

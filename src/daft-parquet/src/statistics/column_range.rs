@@ -23,8 +23,8 @@ impl TryFrom<&BooleanStatistics> for Wrap<ColumnRangeStatistics> {
             && let Some(upper) = value.max_value
         {
             Ok(ColumnRangeStatistics::new(
-                Some(BooleanArray::from_values("lower", std::iter::once(lower)).into_series()),
-                Some(BooleanArray::from_values("upper", std::iter::once(upper)).into_series()),
+                Some(BooleanArray::from_slice("lower", &[lower]).into_series()),
+                Some(BooleanArray::from_slice("upper", &[upper]).into_series()),
             )?
             .into())
         } else {
