@@ -6,7 +6,7 @@ import os
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 from daft.daft import (
     DistributedPhysicalPlan,
@@ -70,31 +70,40 @@ class RaySwordfishActor:
         plan: LocalPhysicalPlan,
         exec_cfg: PyDaftExecutionConfig,
         context: dict[str, str] | None,
-        **inputs: Any,
+        **inputs: (
+            Input | PyMicroPartition
+        ),  # PyMicroPartitions are separated from Inputs because they are Ray ObjectRefs, which will be resolved by Ray.
     ) -> AsyncGenerator[MicroPartition | SwordfishTaskMetadata, None]:
         """Run a plan on swordfish and yield partitions."""
         # We import PyDaftContext inside the function because PyDaftContext is not serializable.
         from daft.daft import PyDaftContext
 
         with profile():
-            resolved: dict[int, Input | list[PyMicroPartition]] = {}
+            # group the micropartitions by source_id
             pset_by_source: dict[int, list[tuple[int, PyMicroPartition]]] = defaultdict(list)
             for k, v in inputs.items():
                 if isinstance(v, MicroPartition):
                     sid_str, idx_str = k.rsplit("_", 1)
                     pset_by_source[int(sid_str)].append((int(idx_str), v._micropartition))
-                else:
-                    resolved[int(k)] = v
+            # sort the micropartitions in ascending order of index to ensure consistent ordering
             for source_id, parts in pset_by_source.items():
-                if source_id not in resolved:
-                    resolved[source_id] = [mp for _, mp in sorted(parts, key=lambda x: x[0])]
+                pset_by_source[source_id] = sorted(parts, key=lambda x: x[0])
+
+            # create the resolved inputs from the micropartitions and the other inputs
+            resolved_inputs: dict[int, Input | list[PyMicroPartition]] = {}
+            for source_id, parts in pset_by_source.items():
+                resolved_inputs[int(source_id)] = [mp for _, mp in parts]
+            for k, v in inputs.items():
+                if isinstance(v, Input):
+                    resolved_inputs[int(k)] = v
+
             ctx = PyDaftContext()
             ctx._daft_execution_config = exec_cfg
             result_handle = await self.native_executor.run(
                 plan,
                 ctx,
                 0,
-                resolved,
+                resolved_inputs,
                 context,
             )
             metas = []
@@ -388,7 +397,7 @@ class FlotillaRunner:
             name=get_flotilla_runner_actor_name(),
             namespace=FLOTILLA_RUNNER_NAMESPACE,
             get_if_exists=True,
-            runtime_env={"env_vars": {"DAFT_DASHBOARD_URL": dashboard_url}} if dashboard_url else None,
+            runtime_env=({"env_vars": {"DAFT_DASHBOARD_URL": dashboard_url}} if dashboard_url else None),
             scheduling_strategy=(
                 ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=head_node_id,
