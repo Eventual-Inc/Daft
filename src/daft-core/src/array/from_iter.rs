@@ -212,6 +212,17 @@ where
         Self::from_arrow(Field::new(name, T::get_dtype()), Arc::new(arrow_arr)).unwrap()
     }
 
+    pub fn from_vec(
+        name: &str,
+        values: Vec<<<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native>,
+    ) -> Self {
+        let arrow_arr =
+            arrow::array::PrimitiveArray::<<T::Native as NumericNative>::ARROWTYPE>::from_iter_values(
+                values,
+            );
+        Self::from_arrow(Field::new(name, T::get_dtype()), Arc::new(arrow_arr)).unwrap()
+    }
+
     pub fn from_values(
         name: &str,
         iter: impl daft_arrow::trusted_len::TrustedLen<Item = T::Native>,

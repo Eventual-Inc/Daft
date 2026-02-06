@@ -88,10 +88,10 @@ where
         } else {
             grouped_count_arrow_bitmap(groups, &mode, self.nulls())
         };
-        Ok(DataArray::<UInt64Type>::from((
+        Ok(DataArray::<UInt64Type>::from_vec(
             self.field.name.as_ref(),
             counts_per_group,
-        )))
+        ))
     }
 }
 
@@ -113,10 +113,10 @@ macro_rules! impl_daft_count_aggable {
             fn grouped_count(&self, groups: &GroupIndices, mode: CountMode) -> Self::Output {
                 let counts_per_group: Vec<_> =
                     grouped_count_arrow_bitmap(groups, &mode, self.nulls());
-                Ok(DataArray::<UInt64Type>::from((
+                Ok(DataArray::<UInt64Type>::from_vec(
                     self.field().name.as_ref(),
                     counts_per_group,
-                )))
+                ))
             }
         }
     };

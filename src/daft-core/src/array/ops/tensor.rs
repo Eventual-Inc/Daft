@@ -86,7 +86,7 @@ mod tests {
         let raw_nulls = vec![true, false, true];
         let nulls = daft_arrow::buffer::NullBuffer::from(raw_nulls.as_slice());
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int64), 3));
-        let flat_child = Int64Array::from(("foo", (0..9).collect::<Vec<i64>>()));
+        let flat_child = Int64Array::from_vec("foo", (0..9).collect::<Vec<i64>>());
         let arr = FixedSizeListArray::new(field, flat_child.into_series(), Some(nulls));
         let dtype = DataType::FixedShapeTensor(Box::new(DataType::Int64), vec![3]);
         let tensor_array = FixedShapeTensorArray::new(Field::new("data", dtype.clone()), arr);

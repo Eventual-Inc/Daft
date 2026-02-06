@@ -276,12 +276,12 @@ mod test {
     #[test]
     fn test_equal() -> crate::Result<()> {
         let l = ColumnRangeStatistics::new(
-            Some(Int32Array::from(("l", vec![1])).into_series()),
-            Some(Int32Array::from(("l", vec![5])).into_series()),
+            Some(Int32Array::from_slice("l", &[1]).into_series()),
+            Some(Int32Array::from_slice("l", &[5]).into_series()),
         )?;
         let r = ColumnRangeStatistics::new(
-            Some(Int32Array::from(("r", vec![4])).into_series()),
-            Some(Int32Array::from(("r", vec![4])).into_series()),
+            Some(Int32Array::from_slice("r", &[4]).into_series()),
+            Some(Int32Array::from_slice("r", &[4]).into_series()),
         )?;
         assert_eq!(l.lt(&r)?.to_truth_value(), TruthValue::Maybe);
 

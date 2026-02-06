@@ -160,7 +160,7 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                 .iter()
                                 .map(|indices| {
                                     let indices_arr =
-                                        UInt64Array::from(("indices", indices.clone()));
+                                        UInt64Array::from_vec("indices", indices.clone());
                                     input_data.take(&indices_arr).unwrap()
                                 })
                                 .collect::<Vec<_>>();

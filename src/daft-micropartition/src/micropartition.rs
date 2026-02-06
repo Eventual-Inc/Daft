@@ -832,14 +832,14 @@ mod tests {
     fn test_ipc_roundtrip() -> DaftResult<()> {
         let string_values = vec!["a", "bb", "ccc"];
         let batch1 = RecordBatch::from_nonempty_columns(vec![
-            Int32Array::from(("a", vec![1, 2, 3])).into_series(),
-            Float64Array::from(("b", vec![1., 2., 3.])).into_series(),
+            Int32Array::from_slice("a", &[1, 2, 3]).into_series(),
+            Float64Array::from_slice("b", &[1., 2., 3.]).into_series(),
             Utf8Array::from_values("c", string_values.iter()).into_series(),
         ])?;
 
         let batch2 = RecordBatch::from_nonempty_columns(vec![
-            Int32Array::from(("a", vec![4, 5, 6])).into_series(),
-            Float64Array::from(("b", vec![4., 5., 6.])).into_series(),
+            Int32Array::from_slice("a", &[4, 5, 6]).into_series(),
+            Float64Array::from_slice("b", &[4., 5., 6.]).into_series(),
             Utf8Array::from_values("c", string_values.iter()).into_series(),
         ])?;
 

@@ -72,6 +72,6 @@ impl WindowAggStateOps for CountWindowState {
     }
 
     fn build(&self) -> DaftResult<Series> {
-        Ok(DataArray::<UInt64Type>::from(("", self.count_vec.clone())).into_series())
+        Ok(DataArray::<UInt64Type>::from_vec("", self.count_vec.clone()).into_series())
     }
 }

@@ -400,7 +400,7 @@ impl RecordBatch {
                 .collect()
         };
         let indices: daft_core::array::DataArray<daft_core::datatypes::UInt64Type> =
-            UInt64Array::from(("idx", values));
+            UInt64Array::from_vec("idx", values);
         self.take(&indices)
     }
 
@@ -414,7 +414,7 @@ impl RecordBatch {
         let start = (partition_num << 36) + offset;
         let end = start + self.len() as u64;
         let ids = (start..end).step_by(1).collect::<Vec<_>>();
-        let id_series = UInt64Array::from((column_name, ids)).into_series();
+        let id_series = UInt64Array::from_vec(column_name, ids).into_series();
         Self::from_nonempty_columns([&[id_series], &self.columns[..]].concat())
     }
 
@@ -439,7 +439,7 @@ impl RecordBatch {
                     .min((self.len() - 1) as u64)
             })
             .collect();
-        let indices = UInt64Array::from(("idx", sample_points));
+        let indices = UInt64Array::from_vec("idx", sample_points);
         self.take(&indices)
     }
 
@@ -1740,8 +1740,8 @@ mod test {
 
     #[test]
     fn add_int_and_float_expression() -> DaftResult<()> {
-        let a = Int64Array::from(("a", vec![1, 2, 3])).into_series();
-        let b = Float64Array::from(("b", vec![1., 2., 3.])).into_series();
+        let a = Int64Array::from_vec("a", vec![1, 2, 3]).into_series();
+        let b = Float64Array::from_vec("b", vec![1., 2., 3.]).into_series();
         let _schema = Schema::new(vec![
             a.field().clone().rename("a"),
             b.field().clone().rename("b"),
@@ -1766,8 +1766,8 @@ mod test {
     fn test_ipc_roundtrip() -> DaftResult<()> {
         let string_values = vec!["a", "bb", "ccc"];
         let table = RecordBatch::from_nonempty_columns(vec![
-            Int64Array::from(("a", vec![1, 2, 3])).into_series(),
-            Float64Array::from(("b", vec![1., 2., 3.])).into_series(),
+            Int64Array::from_vec("a", vec![1, 2, 3]).into_series(),
+            Float64Array::from_vec("b", vec![1., 2., 3.]).into_series(),
             Utf8Array::from_values("c", string_values.iter()).into_series(),
         ])?;
 

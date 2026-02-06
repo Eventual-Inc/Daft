@@ -214,7 +214,7 @@ impl DateArray {
                     TimeUnit::Seconds => 24 * 3_600,
                 };
 
-                let units_per_day = Int64Array::from(("units", vec![days_to_unit])).into_series();
+                let units_per_day = Int64Array::from_slice("units", &[days_to_unit]).into_series();
                 let unit_since_epoch = ((&self.physical.clone().into_series()) * &units_per_day)?;
                 unit_since_epoch.cast(dtype)
             }
@@ -272,12 +272,12 @@ impl TimestampArray {
                     std::cmp::Ordering::Greater => {
                         let factor = tu.to_scale_factor() / self_tu.to_scale_factor();
                         self.physical
-                            .mul(&Int64Array::from(("factor", vec![factor])))?
+                            .mul(&Int64Array::from_slice("factor", &[factor]))?
                     }
                     std::cmp::Ordering::Less => {
                         let factor = self_tu.to_scale_factor() / tu.to_scale_factor();
                         self.physical
-                            .div(&Int64Array::from(("factor", vec![factor])))?
+                            .div(&Int64Array::from_slice("factor", &[factor]))?
                     }
                 };
                 Ok(
@@ -352,12 +352,12 @@ impl TimeArray {
                     std::cmp::Ordering::Greater => {
                         let factor = tu.to_scale_factor() / self_tu.to_scale_factor();
                         self.physical
-                            .mul(&Int64Array::from(("factor", vec![factor])))?
+                            .mul(&Int64Array::from_slice("factor", &[factor]))?
                     }
                     std::cmp::Ordering::Less => {
                         let factor = self_tu.to_scale_factor() / tu.to_scale_factor();
                         self.physical
-                            .div(&Int64Array::from(("factor", vec![factor])))?
+                            .div(&Int64Array::from_slice("factor", &[factor]))?
                     }
                 };
                 Ok(TimeArray::new(Field::new(self.name(), dtype.clone()), physical).into_series())
@@ -420,15 +420,15 @@ impl DurationArray {
             TimeUnit::Seconds => self.physical.clone(),
             TimeUnit::Milliseconds => self
                 .physical
-                .div(&Int64Array::from(("MillisecondsPerSecond", vec![1000])))?,
-            TimeUnit::Microseconds => self.physical.div(&Int64Array::from((
+                .div(&Int64Array::from_slice("MillisecondsPerSecond", &[1000]))?,
+            TimeUnit::Microseconds => self.physical.div(&Int64Array::from_slice(
                 "MicrosecondsPerSecond",
-                vec![1_000_000],
-            )))?,
-            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+                &[1_000_000],
+            ))?,
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from_slice(
                 "NanosecondsPerSecond",
-                vec![1_000_000_000],
-            )))?,
+                &[1_000_000_000],
+            ))?,
         };
         Ok(seconds)
     }
@@ -441,16 +441,16 @@ impl DurationArray {
         let milliseconds = match tu {
             TimeUnit::Seconds => self
                 .physical
-                .mul(&Int64Array::from(("MillisecondsPerSecond", vec![1000])))?,
+                .mul(&Int64Array::from_slice("MillisecondsPerSecond", &[1000]))?,
             TimeUnit::Milliseconds => self.physical.clone(),
-            TimeUnit::Microseconds => self.physical.div(&Int64Array::from((
+            TimeUnit::Microseconds => self.physical.div(&Int64Array::from_slice(
                 "MicrosecondsPerMillisecond",
-                vec![1_000],
-            )))?,
-            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+                &[1_000],
+            ))?,
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from_slice(
                 "NanosecondsPerMillisecond",
-                vec![1_000_000],
-            )))?,
+                &[1_000_000],
+            ))?,
         };
         Ok(milliseconds)
     }
@@ -461,19 +461,19 @@ impl DurationArray {
             _ => panic!("Wrong dtype for DurationArray: {}", self.data_type()),
         };
         let microseconds = match tu {
-            TimeUnit::Seconds => self.physical.mul(&Int64Array::from((
+            TimeUnit::Seconds => self.physical.mul(&Int64Array::from_slice(
                 "MicrosecondsPerSecond",
-                vec![1_000_000],
-            )))?,
-            TimeUnit::Milliseconds => self.physical.mul(&Int64Array::from((
+                &[1_000_000],
+            ))?,
+            TimeUnit::Milliseconds => self.physical.mul(&Int64Array::from_slice(
                 "MicrosecondsPerMillisecond",
-                vec![1_000],
-            )))?,
+                &[1_000],
+            ))?,
             TimeUnit::Microseconds => self.physical.clone(),
-            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from_slice(
                 "NanosecondsPerMicrosecond",
-                vec![1_000],
-            )))?,
+                &[1_000],
+            ))?,
         };
         Ok(microseconds)
     }
@@ -485,18 +485,18 @@ impl DurationArray {
                 _ => panic!("Wrong dtype for DurationArray: {}", self.data_type()),
             };
             let nanoseconds = match tu {
-                TimeUnit::Seconds => self.physical.mul(&Int64Array::from((
+                TimeUnit::Seconds => self.physical.mul(&Int64Array::from_slice(
                     "NanosecondsPerSecond",
-                    vec![1_000_000_000],
-                )))?,
-                TimeUnit::Milliseconds => self.physical.mul(&Int64Array::from((
+                    &[1_000_000_000],
+                ))?,
+                TimeUnit::Milliseconds => self.physical.mul(&Int64Array::from_slice(
                     "NanosecondsPerMillisecond",
-                    vec![1_000_000],
-                )))?,
-                TimeUnit::Microseconds => self.physical.mul(&Int64Array::from((
+                    &[1_000_000],
+                ))?,
+                TimeUnit::Microseconds => self.physical.mul(&Int64Array::from_slice(
                     "NanosecondsPerMicrosecond",
-                    vec![1_000],
-                )))?,
+                    &[1_000],
+                ))?,
                 TimeUnit::Nanoseconds => self.physical.clone(),
             };
             Ok(nanoseconds)
@@ -510,18 +510,19 @@ impl DurationArray {
         let minutes = match tu {
             TimeUnit::Seconds => self
                 .physical
-                .div(&Int64Array::from(("SecondsInMinute", vec![60])))?,
-            TimeUnit::Milliseconds => self
-                .physical
-                .div(&Int64Array::from(("MillisecondsInMinute", vec![60 * 1000])))?,
-            TimeUnit::Microseconds => self.physical.div(&Int64Array::from((
+                .div(&Int64Array::from_slice("SecondsInMinute", &[60]))?,
+            TimeUnit::Milliseconds => self.physical.div(&Int64Array::from_slice(
+                "MillisecondsInMinute",
+                &[60 * 1000],
+            ))?,
+            TimeUnit::Microseconds => self.physical.div(&Int64Array::from_slice(
                 "MicrosecondsInMinute",
-                vec![60 * 1_000_000],
-            )))?,
-            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+                &[60 * 1_000_000],
+            ))?,
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from_slice(
                 "NanosecondsInMinute",
-                vec![60 * 1_000_000_000],
-            )))?,
+                &[60 * 1_000_000_000],
+            ))?,
         };
         Ok(minutes)
     }
@@ -534,19 +535,19 @@ impl DurationArray {
         let hours = match tu {
             TimeUnit::Seconds => self
                 .physical
-                .div(&Int64Array::from(("SecondsInHour", vec![60 * 60])))?,
-            TimeUnit::Milliseconds => self.physical.div(&Int64Array::from((
+                .div(&Int64Array::from_slice("SecondsInHour", &[60 * 60]))?,
+            TimeUnit::Milliseconds => self.physical.div(&Int64Array::from_slice(
                 "MillisecondsInHour",
-                vec![60 * 60 * 1000],
-            )))?,
-            TimeUnit::Microseconds => self.physical.div(&Int64Array::from((
+                &[60 * 60 * 1000],
+            ))?,
+            TimeUnit::Microseconds => self.physical.div(&Int64Array::from_slice(
                 "MicrosecondsInHour",
-                vec![60 * 60 * 1_000_000],
-            )))?,
-            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+                &[60 * 60 * 1_000_000],
+            ))?,
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from_slice(
                 "NanosecondsInHour",
-                vec![60 * 60 * 1_000_000_000],
-            )))?,
+                &[60 * 60 * 1_000_000_000],
+            ))?,
         };
         Ok(hours)
     }
@@ -559,19 +560,19 @@ impl DurationArray {
         let days = match tu {
             TimeUnit::Seconds => self
                 .physical
-                .div(&Int64Array::from(("SecondsPerDay", vec![60 * 60 * 24])))?,
-            TimeUnit::Milliseconds => self.physical.div(&Int64Array::from((
+                .div(&Int64Array::from_slice("SecondsPerDay", &[60 * 60 * 24]))?,
+            TimeUnit::Milliseconds => self.physical.div(&Int64Array::from_slice(
                 "MillisecondsPerDay",
-                vec![1_000 * 60 * 60 * 24],
-            )))?,
-            TimeUnit::Microseconds => self.physical.div(&Int64Array::from((
+                &[1_000 * 60 * 60 * 24],
+            ))?,
+            TimeUnit::Microseconds => self.physical.div(&Int64Array::from_slice(
                 "MicrosecondsPerDay",
-                vec![1_000_000 * 60 * 60 * 24],
-            )))?,
-            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+                &[1_000_000 * 60 * 60 * 24],
+            ))?,
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from_slice(
                 "NanosecondsPerDay",
-                vec![1_000_000_000 * 60 * 60 * 24],
-            )))?,
+                &[1_000_000_000 * 60 * 60 * 24],
+            ))?,
         };
         Ok(days)
     }
@@ -896,7 +897,7 @@ impl TensorArray {
                                     Some(offset)
                                 })
                                 .collect::<Vec<_>>();
-                            UInt64Array::from(("item", offsets_values)).into_series()
+                            UInt64Array::from_slice("item", offsets_values.as_slice()).into_series()
                         }
                         false => indices,
                     };
@@ -1413,7 +1414,7 @@ impl FixedShapeTensorArray {
                                     Some(offset)
                                 })
                                 .collect::<Vec<_>>();
-                            UInt64Array::from(("item", offsets_values)).into_series()
+                            UInt64Array::from_vec("item", offsets_values).into_series()
                         }
                         false => indices,
                     };

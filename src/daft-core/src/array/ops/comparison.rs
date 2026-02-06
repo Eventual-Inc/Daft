@@ -1113,7 +1113,7 @@ mod tests {
 
     #[test]
     fn compare_list_arrays_with_nulls() -> DaftResult<()> {
-        let values = Int64Array::from(("item", vec![1, 2, 3])).into_series();
+        let values = Int64Array::from_slice("item", &[1, 2, 3]).into_series();
         let left_rows = vec![None, Some(values.clone())];
         let right_rows = vec![None, Some(values)];
         let left = ListArray::try_from(("left", left_rows.as_slice()))?;
@@ -1141,7 +1141,7 @@ mod tests {
         let left = StructArray::new(
             field.clone(),
             vec![
-                Int64Array::from(("x", vec![1, 2])).into_series(),
+                Int64Array::from_slice("x", &[1, 2]).into_series(),
                 Utf8Array::from(("y", &["a", "b"][..])).into_series(),
             ],
             Some(nulls.clone()),
@@ -1149,7 +1149,7 @@ mod tests {
         let right = StructArray::new(
             field,
             vec![
-                Int64Array::from(("x", vec![1, 2])).into_series(),
+                Int64Array::from_slice("x", &[1, 2]).into_series(),
                 Utf8Array::from(("y", &["a", "b"][..])).into_series(),
             ],
             Some(nulls),
@@ -1165,8 +1165,8 @@ mod tests {
 
     #[test]
     fn compare_nested_list() -> DaftResult<()> {
-        let inner1 = Int64Array::from(("item", vec![1, 2])).into_series();
-        let inner2 = Int64Array::from(("item", vec![3, 4])).into_series();
+        let inner1 = Int64Array::from_slice("item", &[1, 2]).into_series();
+        let inner2 = Int64Array::from_slice("item", &[3, 4]).into_series();
 
         let left_rows = vec![Some(
             ListArray::try_from(("inner", vec![Some(inner1.clone())].as_slice()))?.into_series(),
@@ -1269,9 +1269,9 @@ mod tests {
 
     #[test]
     fn eq_null_safe_int64_handles_null_alignment() -> DaftResult<()> {
-        let lhs = Int64Array::from(("lhs", vec![1, 2, 3, 4]));
+        let lhs = Int64Array::from_slice("lhs", &[1, 2, 3, 4]);
         let lhs = lhs.with_nulls_slice(&[true, false, true, false])?;
-        let rhs = Int64Array::from(("rhs", vec![1, 20, 30, 4]));
+        let rhs = Int64Array::from_slice("rhs", &[1, 20, 30, 4]);
         let rhs = rhs.with_nulls_slice(&[true, true, false, false])?;
 
         let result: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
@@ -1284,9 +1284,9 @@ mod tests {
 
     #[test]
     fn eq_null_safe_int64_broadcast_null_rhs() -> DaftResult<()> {
-        let lhs = Int64Array::from(("lhs", vec![1, 2, 3]));
+        let lhs = Int64Array::from_slice("lhs", &[1, 2, 3]);
         let lhs = lhs.with_nulls_slice(&[true, false, true])?;
-        let rhs = Int64Array::from(("rhs", vec![0]));
+        let rhs = Int64Array::from_slice("rhs", &[0]);
         let rhs = rhs.with_nulls_slice(&[false])?;
 
         let result: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
@@ -1296,9 +1296,9 @@ mod tests {
 
     #[test]
     fn eq_null_safe_int64_broadcast_null_lhs() -> DaftResult<()> {
-        let lhs = Int64Array::from(("lhs", vec![0]));
+        let lhs = Int64Array::from_slice("lhs", &[0]);
         let lhs = lhs.with_nulls_slice(&[false])?;
-        let rhs = Int64Array::from(("rhs", vec![1, 2, 3]));
+        let rhs = Int64Array::from_slice("rhs", &[1, 2, 3]);
         let rhs = rhs.with_nulls_slice(&[true, false, true])?;
 
         let result: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
@@ -1308,8 +1308,8 @@ mod tests {
 
     #[test]
     fn eq_null_safe_int64_length_mismatch_errors() {
-        let lhs = Int64Array::from(("lhs", vec![1, 2, 3]));
-        let rhs = Int64Array::from(("rhs", vec![1, 2]));
+        let lhs = Int64Array::from_slice("lhs", &[1, 2, 3]);
+        let rhs = Int64Array::from_slice("rhs", &[1, 2]);
 
         let err = lhs.eq_null_safe(&rhs).unwrap_err();
         match err {
@@ -1708,11 +1708,11 @@ mod tests {
     ) -> DaftResult<()> {
         let left_rows: Vec<_> = left_vals
             .into_iter()
-            .map(|v| Some(Int64Array::from(("item", v)).into_series()))
+            .map(|v| Some(Int64Array::from_vec("item", v).into_series()))
             .collect();
         let right_rows: Vec<_> = right_vals
             .into_iter()
-            .map(|v| Some(Int64Array::from(("item", v)).into_series()))
+            .map(|v| Some(Int64Array::from_vec("item", v).into_series()))
             .collect();
 
         let left = ListArray::try_from(("left", left_rows.as_slice()))?;
@@ -1795,7 +1795,7 @@ mod tests {
         let left = StructArray::new(
             field.clone(),
             vec![
-                Int64Array::from(("x", left_x)).into_series(),
+                Int64Array::from_vec("x", left_x).into_series(),
                 Utf8Array::from(("y", left_y.as_slice())).into_series(),
             ],
             None,
@@ -1803,7 +1803,7 @@ mod tests {
         let right = StructArray::new(
             field,
             vec![
-                Int64Array::from(("x", right_x)).into_series(),
+                Int64Array::from_vec("x", right_x).into_series(),
                 Utf8Array::from(("y", right_y.as_slice())).into_series(),
             ],
             None,

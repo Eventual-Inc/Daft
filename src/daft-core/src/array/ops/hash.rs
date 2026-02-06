@@ -487,5 +487,5 @@ fn murmur3_32_hash_from_iter_no_nulls<B: AsRef<[u8]>>(
             i32::from_ne_bytes(unsigned.to_ne_bytes())
         })
         .collect::<Vec<_>>();
-    Ok(Int32Array::from((name, hashes)))
+    Ok(Int32Array::from_vec(name, hashes))
 }

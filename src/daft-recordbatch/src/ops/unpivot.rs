@@ -25,13 +25,13 @@ impl RecordBatch {
         let ids_table = self.eval_expression_list(ids)?;
         let values_table = self.eval_expression_list(values)?;
 
-        let ids_idx = UInt64Array::from((
+        let ids_idx = UInt64Array::from_vec(
             "ids_indices",
             (0..(self.len() as u64))
                 .cycle()
                 .take(unpivoted_len)
                 .collect::<Vec<_>>(),
-        ));
+        );
 
         let ids_series = ids_table.take(&ids_idx)?.columns;
         let ids_schema = ids_table.schema;

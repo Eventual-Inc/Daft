@@ -9,21 +9,10 @@ use arrow::buffer::NullBuffer;
 use common_error::{DaftError, DaftResult};
 
 use crate::{
-    datatypes::{DaftPrimitiveType, NumericNative},
+    datatypes::NumericNative,
     prelude::*,
     series::{ArrayWrapper, SeriesLike},
 };
-
-impl<T> From<(&str, Vec<T::Native>)> for DataArray<T>
-where
-    T: DaftPrimitiveType,
-{
-    fn from(item: (&str, Vec<T::Native>)) -> Self {
-        let (name, v) = item;
-        let arrow_array = Box::new(daft_arrow::array::PrimitiveArray::<T::Native>::from_vec(v));
-        Self::new(Field::new(name, T::get_dtype()).into(), arrow_array).unwrap()
-    }
-}
 
 impl From<(&str, daft_arrow::bitmap::Bitmap)> for BooleanArray {
     fn from(item: (&str, daft_arrow::bitmap::Bitmap)) -> Self {
@@ -152,14 +141,10 @@ impl ListArray {
         T::DAFTTYPE: DaftNumericType<Native = T>,
         ArrayWrapper<DataArray<T::DAFTTYPE>>: SeriesLike,
     {
-        let flat_child_vec = data
-            .iter()
-            .copied()
-            .flatten()
-            .flatten()
-            .copied()
-            .collect::<Vec<_>>();
-        let flat_child = DataArray::<T::DAFTTYPE>::from((name, flat_child_vec)).into_series();
+        // todo!()
+        let flat_child_vec: Vec<T> = data.iter().copied().flatten().flatten().copied().collect();
+        let flat_child =
+            DataArray::<T::DAFTTYPE>::from_values(name, flat_child_vec.into_iter()).into_series();
 
         let lengths = data.iter().map(|d| d.map_or(0, |d| d.len()));
         let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)
@@ -182,8 +167,10 @@ impl ListArray {
         T::DAFTTYPE: DaftNumericType<Native = T>,
         ArrayWrapper<DataArray<T::DAFTTYPE>>: SeriesLike,
     {
-        let flat_child_vec = data.iter().flatten().flatten().copied().collect::<Vec<_>>();
-        let flat_child = DataArray::<T::DAFTTYPE>::from((name, flat_child_vec)).into_series();
+        // todo!()
+        let flat_child_vec: Vec<T> = data.iter().flatten().flatten().copied().collect();
+        let flat_child =
+            DataArray::<T::DAFTTYPE>::from_values(name, flat_child_vec.into_iter()).into_series();
 
         let lengths = data.iter().map(|d| d.as_ref().map_or(0, |d| d.len()));
         let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)

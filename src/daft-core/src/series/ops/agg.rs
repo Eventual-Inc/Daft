@@ -433,7 +433,7 @@ impl DaftSetAggable for Series {
     fn set(&self) -> Self::Output {
         let child_series = self.clone();
         let unique_indices = deduplicate_indices(&child_series)?;
-        let indices_array = UInt64Array::from(("", unique_indices));
+        let indices_array = UInt64Array::from_vec("", unique_indices);
         let deduped_series = child_series.take(&indices_array)?;
 
         let offsets = OffsetsBuffer::try_from(vec![0, deduped_series.len() as i64])?;
@@ -461,7 +461,7 @@ impl DaftSetAggable for Series {
                 continue;
             }
 
-            let group_indices = UInt64Array::from(("", group.clone()));
+            let group_indices = UInt64Array::from_vec("", group.clone());
             let group_series = series.take(&group_indices)?;
 
             let unique_indices = deduplicate_indices(&group_series)?;
