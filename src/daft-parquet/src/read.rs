@@ -278,8 +278,9 @@ async fn read_parquet_single(
         }
 
         let num_deleted_rows = selection_mask.unset_bits();
+        let nb = daft_arrow::buffer::NullBuffer::from(Bitmap::from(selection_mask));
 
-        let selection_mask: BooleanArray = ("selection_mask", Bitmap::from(selection_mask)).into();
+        let selection_mask = BooleanArray::from_null_buffer("selection_mask", &nb)?;
 
         table = table.mask_filter(&selection_mask.into_series())?;
 

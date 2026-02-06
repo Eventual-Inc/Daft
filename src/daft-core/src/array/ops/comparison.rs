@@ -1107,8 +1107,8 @@ mod tests {
         let values = Int64Array::from_slice("item", &[1, 2, 3]).into_series();
         let left_rows = vec![None, Some(values.clone())];
         let right_rows = vec![None, Some(values)];
-        let left = ListArray::try_from(("left", left_rows.as_slice()))?;
-        let right = ListArray::try_from(("right", right_rows.as_slice()))?;
+        let left = ListArray::from_series("left", left_rows)?;
+        let right = ListArray::from_series("right", right_rows)?;
 
         let eq: Vec<_> = left.equal(&right)?.into_iter().collect();
         let eq_null_safe: Vec<_> = left.eq_null_safe(&right)?.into_iter().collect();
@@ -1160,14 +1160,14 @@ mod tests {
         let inner2 = Int64Array::from_slice("item", &[3, 4]).into_series();
 
         let left_rows = vec![Some(
-            ListArray::try_from(("inner", vec![Some(inner1.clone())].as_slice()))?.into_series(),
+            ListArray::from_series("inner", vec![Some(inner1.clone())])?.into_series(),
         )];
         let right_rows = vec![Some(
-            ListArray::try_from(("inner", vec![Some(inner2)].as_slice()))?.into_series(),
+            ListArray::from_series("inner", vec![Some(inner2)])?.into_series(),
         )];
 
-        let left = ListArray::try_from(("left", left_rows.as_slice()))?;
-        let right = ListArray::try_from(("right", right_rows.as_slice()))?;
+        let left = ListArray::from_series("left", left_rows)?;
+        let right = ListArray::from_series("right", right_rows)?;
 
         let lt: Vec<_> = left.lt(&right)?.into_iter().collect();
         let eq: Vec<_> = left.equal(&right)?.into_iter().collect();
@@ -1673,8 +1673,8 @@ mod tests {
             .map(|v| Some(Int64Array::from_vec("item", v).into_series()))
             .collect();
 
-        let left = ListArray::try_from(("left", left_rows.as_slice()))?;
-        let right = ListArray::try_from(("right", right_rows.as_slice()))?;
+        let left = ListArray::from_series("left", left_rows)?;
+        let right = ListArray::from_series("right", right_rows)?;
 
         let result: Vec<_> = op(&left, &right)?.into_iter().collect();
         assert_eq!(result[..], expected[..]);

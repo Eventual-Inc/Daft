@@ -1764,7 +1764,7 @@ impl StructArray {
                     })
                     .collect::<DaftResult<Vec<_>>>()?;
 
-                Ok(ListArray::try_from((self.name(), lists.as_slice()))?.into_series())
+                Ok(ListArray::from_series(self.name(), lists)?.into_series())
             }
             (DataType::Struct(..), DataType::FixedSizeList(child_dtype, length))
                 if *length == self.children.len() =>

@@ -308,7 +308,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                         .transpose()
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
-            ListArray::try_from(("literal", data.as_slice()))?.into_series()
+            ListArray::from_series("literal", data)?.into_series()
         }
         DataType::Struct(ref fields) => {
             let values = values.collect::<Vec<_>>();
@@ -373,7 +373,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 })
                 .collect::<(Vec<_>, Vec<_>)>();
 
-            let data_array = ListArray::try_from(("data", data.as_slice()))?.into_series();
+            let data_array = ListArray::from_series("data", data)?.into_series();
             let shape_array = ListArray::from_vec("shape", shapes).into_series();
 
             let nulls = data_array.nulls().cloned();
@@ -393,8 +393,8 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 })
                 .collect::<(Vec<_>, Vec<_>, Vec<_>)>();
 
-            let values_array = ListArray::try_from(("values", values.as_slice()))?.into_series();
-            let indices_array = ListArray::try_from(("indices", indices.as_slice()))?.into_series();
+            let values_array = ListArray::from_series("values", values)?.into_series();
+            let indices_array = ListArray::from_series("indices", indices)?.into_series();
             let shape_array = ListArray::from_vec("shape", shapes).into_series();
 
             let nulls = values_array.nulls().cloned();
@@ -450,7 +450,7 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
 
-            let physical = ListArray::try_from(("literal", data.as_slice()))?;
+            let physical = ListArray::from_series("literal", data)?;
 
             MapArray::new(field, physical).into_series()
         }

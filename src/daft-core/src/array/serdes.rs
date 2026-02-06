@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::{cell::RefCell, sync::Arc};
 
 use serde::ser::SerializeMap;
 
@@ -171,8 +171,15 @@ impl serde::Serialize for StructArray {
         values.extend(self.children.iter().map(Some));
 
         let nulls = self.nulls().map(|b| {
-            let bitmap = daft_arrow::buffer::from_null_buffer(b.clone());
-            BooleanArray::from(("validity", bitmap)).into_series()
+            let bool_buffer = b.inner();
+            let arrow_arr = arrow::array::BooleanArray::from(bool_buffer.clone());
+            let arr = BooleanArray::from_arrow(
+                Field::new("validity", DataType::Boolean),
+                Arc::new(arrow_arr),
+            )
+            .unwrap();
+
+            arr.into_series()
         });
         values.push(nulls.as_ref());
 
@@ -206,8 +213,15 @@ impl serde::Serialize for ListArray {
         values.push(Some(&offsets));
 
         let nulls = self.nulls().map(|b| {
-            let bitmap = daft_arrow::buffer::from_null_buffer(b.clone());
-            BooleanArray::from(("validity", bitmap)).into_series()
+            let bool_buffer = b.inner();
+            let arrow_arr = arrow::array::BooleanArray::from(bool_buffer.clone());
+            let arr = BooleanArray::from_arrow(
+                Field::new("validity", DataType::Boolean),
+                Arc::new(arrow_arr),
+            )
+            .unwrap();
+
+            arr.into_series()
         });
         values.push(nulls.as_ref());
 
@@ -225,8 +239,15 @@ impl serde::Serialize for FixedSizeListArray {
         let mut s = serializer.serialize_map(Some(2))?;
 
         let nulls = self.nulls().map(|b| {
-            let bitmap = daft_arrow::buffer::from_null_buffer(b.clone());
-            BooleanArray::from(("validity", bitmap)).into_series()
+            let bool_buffer = b.inner();
+            let arrow_arr = arrow::array::BooleanArray::from(bool_buffer.clone());
+            let arr = BooleanArray::from_arrow(
+                Field::new("validity", DataType::Boolean),
+                Arc::new(arrow_arr),
+            )
+            .unwrap();
+
+            arr.into_series()
         });
         let values = vec![Some(&self.flat_child), nulls.as_ref()];
         s.serialize_entry("field", self.field.as_ref())?;
