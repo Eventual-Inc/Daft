@@ -18,6 +18,11 @@ use crate::{
 };
 
 impl ListArray {
+    /// Creates a `ListArray` from pre-existing owned `Vec<Option<Vec<T>>>` data.
+    ///
+    /// Use this when you already have owned Vecs (e.g. deserialized data).
+    /// If you're building data element-by-element, prefer using arrow builders
+    /// directly to avoid double iteration.
     pub fn from_vec<T>(name: &str, data: Vec<Option<Vec<T>>>) -> Self
     where
         T: NumericNative,
@@ -50,6 +55,10 @@ impl ListArray {
         )
     }
 
+    /// Creates a `ListArray` from a `Vec<Option<Series>>`.
+    ///
+    /// Each `Some(series)` becomes a list element; `None` becomes null.
+    /// The child series are concatenated into a single flat child array.
     pub fn from_series(name: &str, data: Vec<Option<Series>>) -> DaftResult<Self> {
         let lengths = data.iter().map(|s| s.as_ref().map_or(0, |s| s.len()));
         let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)?.into();
@@ -71,6 +80,11 @@ impl<T> DataArray<T>
 where
     T: DaftPrimitiveType,
 {
+    /// Creates a non-nullable `DataArray` from an iterator of values with a specific [`Field`].
+    ///
+    /// Unlike the `DaftNumericType` constructors which take `&str`, this takes a [`Field`]
+    /// to support types like `Decimal128` where the dtype carries precision/scale.
+    /// All values are treated as valid (no nulls).
     pub fn from_field_and_values<F>(field: F, iter: impl IntoIterator<Item = T::Native>) -> Self
     where
         F: Into<Arc<Field>>,
@@ -90,6 +104,10 @@ where
         Self::from_arrow(field, Arc::new(arrow_arr)).unwrap()
     }
 
+    /// Creates a nullable `DataArray` from an iterator of `Option<T>` with a specific [`Field`].
+    ///
+    /// Unlike the `DaftNumericType` constructors which take `&str`, this takes a [`Field`]
+    /// to support types like `Decimal128` where the dtype carries precision/scale.
     pub fn from_iter<F, I>(field: F, iter: I) -> Self
     where
         F: Into<Arc<Field>>,
@@ -107,6 +125,7 @@ where
 }
 
 impl BinaryArray {
+    /// Creates a nullable `BinaryArray` from an iterator of optional byte slices. Single-pass.
     pub fn from_iter<S: AsRef<[u8]>>(
         name: &str,
         iter: impl IntoIterator<Item = Option<S>>,
@@ -118,6 +137,7 @@ impl BinaryArray {
         )
         .expect("Failed to create BinaryArray from nullable byte arrays")
     }
+    /// Creates a non-nullable `BinaryArray` from an iterator of byte slices. Single-pass.
     pub fn from_values<S: AsRef<[u8]>>(name: &str, iter: impl IntoIterator<Item = S>) -> Self {
         let arrow_array = arrow::array::LargeBinaryArray::from_iter_values(iter);
         Self::from_arrow(Field::new(name, DataType::Binary), Arc::new(arrow_array))
@@ -125,6 +145,7 @@ impl BinaryArray {
     }
 }
 impl FixedSizeBinaryArray {
+    /// Creates a nullable `FixedSizeBinaryArray` from an iterator of optional byte slices.
     pub fn from_iter<S: AsRef<[u8]>>(
         name: &str,
         iter: impl Iterator<Item = Option<S>>,
@@ -141,6 +162,9 @@ impl FixedSizeBinaryArray {
     }
 }
 
+/// Enables `.collect::<Utf8Array>()` from iterators of `Option<impl AsRef<str>>`.
+///
+/// The resulting array has an empty name `""`. Use `.rename()` to set it.
 impl<P: AsRef<str>> FromIterator<Option<P>> for Utf8Array {
     #[inline]
     fn from_iter<I: IntoIterator<Item = Option<P>>>(iter: I) -> Self {
@@ -150,6 +174,9 @@ impl<P: AsRef<str>> FromIterator<Option<P>> for Utf8Array {
     }
 }
 
+/// Enables `.collect::<DataArray<T>>()` from iterators of `Option<T::Native>`.
+///
+/// The resulting array has an empty name `""`. Use `.rename()` to set it.
 impl<T>
     FromIterator<Option<<<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native>>
     for DataArray<T>
@@ -176,6 +203,23 @@ impl<T> DataArray<T>
 where
     T: DaftNumericType,
 {
+    /// Creates a non-nullable `DataArray` from an iterator of non-null values. Single-pass.
+    ///
+    /// Prefer this over [`from_vec`](Self::from_vec) when you already have an iterator,
+    /// as `from_vec` internally iterates the Vec again.
+    ///
+    /// # Anti-pattern
+    /// ```ignore
+    /// // BAD: builds a Vec, then from_vec iterates it again (double iteration)
+    /// let mut v = Vec::new();
+    /// for x in source { v.push(x); }
+    /// Array::from_vec("col", v);
+    ///
+    /// // GOOD: single-pass with from_values
+    /// Array::from_values("col", source);
+    ///
+    /// // BEST: use arrow builders directly for full control
+    /// ```
     pub fn from_values<
         I: IntoIterator<
             Item = <<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native,
@@ -190,6 +234,7 @@ where
             );
         Self::from_arrow(Field::new(name, T::get_dtype()), Arc::new(arrow_arr)).unwrap()
     }
+    /// Creates a non-nullable `DataArray` from a slice
     pub fn from_slice(
         name: &str,
         slice: &[<<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native],
@@ -209,6 +254,12 @@ where
         Self::from_arrow(Field::new(name, T::get_dtype()), Arc::new(arrow_arr)).unwrap()
     }
 
+    /// Creates a non-nullable `DataArray` by taking ownership of a `Vec`.
+    ///
+    /// Only use this for Vecs you already own (e.g. returned from another API).
+    /// If you're building a Vec element-by-element just to pass it here,
+    /// use [`from_values`](Self::from_values) or arrow builders instead to
+    /// avoid double iteration.
     pub fn from_vec(
         name: &str,
         values: Vec<<<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native>,
@@ -222,11 +273,13 @@ where
 }
 
 impl Utf8Array {
+    /// Creates a non-nullable `Utf8Array` from a slice of string-like values.
     pub fn from_slice<T: AsRef<str>>(name: &str, slice: &[T]) -> Self {
         let arrow_array = arrow::array::LargeStringArray::from_iter_values(slice);
 
         Self::from_arrow(Field::new(name, DataType::Utf8), Arc::new(arrow_array)).unwrap()
     }
+    /// Creates a nullable `Utf8Array` from an iterator of optional strings. Single-pass.
     pub fn from_iter<S: AsRef<str>>(name: &str, iter: impl IntoIterator<Item = Option<S>>) -> Self {
         let arrow_array = arrow::array::LargeStringArray::from_iter(iter);
         Self::from_arrow(
@@ -238,6 +291,7 @@ impl Utf8Array {
 }
 
 impl BooleanArray {
+    /// Creates a nullable `BooleanArray` from an iterator of `Option<bool>`. Single-pass.
     pub fn from_iter(name: &str, iter: impl Iterator<Item = Option<bool>>) -> Self {
         let arrow_array = Arc::new(arrow::array::BooleanArray::from_iter(iter));
         Self::from_arrow(
@@ -246,22 +300,32 @@ impl BooleanArray {
         )
         .unwrap()
     }
+    /// Creates a non-nullable `BooleanArray` from an iterator of `bool`. Single-pass.
     pub fn from_values(name: &str, iter: impl IntoIterator<Item = bool>) -> Self {
         let arrow_array = Arc::new(arrow::array::BooleanArray::from_iter(iter));
         Self::from_arrow(Field::new(name, DataType::Boolean), arrow_array).unwrap()
     }
 
+    /// Creates a non-nullable `BooleanArray` by borrowing a bool slice.
     pub fn from_slice(name: &str, values: &[bool]) -> Self {
         let boolean_buffer = BooleanBuffer::from(values);
         let arrow_array = Arc::new(arrow::array::BooleanArray::new(boolean_buffer, None));
         Self::from_arrow(Field::new(name, DataType::Boolean), arrow_array).unwrap()
     }
 
+    /// Creates a non-nullable `BooleanArray` by taking ownership of a `Vec<bool>`.
+    ///
+    /// Only use this for Vecs you already own. If building element-by-element,
+    /// use [`from_builder`](Self::from_builder) or [`from_values`](Self::from_values) instead.
     pub fn from_vec(name: &str, values: Vec<bool>) -> Self {
         let arrow_array = Arc::new(arrow::array::BooleanArray::from(values));
         Self::from_arrow(Field::new(name, DataType::Boolean), arrow_array).unwrap()
     }
 
+    /// Creates a `BooleanArray` from a pre-built `BooleanBuilder`.
+    ///
+    /// Use this when you need fine-grained control over null placement
+    /// that other constructors don't provide.
     pub fn from_builder(name: &str, mut builder: BooleanBuilder) -> Self {
         let arrow_array = Arc::new(arrow::array::BooleanArray::from(builder.finish()));
         Self::from_arrow(Field::new(name, DataType::Boolean), arrow_array).unwrap()
@@ -275,6 +339,9 @@ impl BooleanArray {
     }
 }
 
+/// Enables `.collect::<BooleanArray>()` from iterators of `Option<bool>`.
+///
+/// The resulting array has an empty name `""`. Use `.rename()` to set it.
 impl FromIterator<Option<bool>> for BooleanArray {
     fn from_iter<T: IntoIterator<Item = Option<bool>>>(iter: T) -> Self {
         let arrow_array = arrow::array::BooleanArray::from_iter(iter);
