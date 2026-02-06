@@ -331,14 +331,13 @@ impl Series {
         groups: Option<&GroupIndices>,
         delimiter: Option<&str>,
     ) -> DaftResult<Self> {
-        match self.data_type() {
-            DataType::List(..) => {
-                let has_delimiter = delimiter.is_some_and(|d| !d.is_empty());
-                if has_delimiter {
-                    return Err(DaftError::TypeError(
-                        "concat aggregation delimiter is only supported for Utf8".to_string(),
-                    ));
-                }
+        let delimiter = delimiter.filter(|d| !d.is_empty());
+        match (self.data_type(), delimiter) {
+            (DataType::List(..), Some(_)) => Err(DaftError::TypeError(
+                "concat aggregation delimiter is only supported for Utf8".to_string(),
+            )),
+
+            (DataType::List(..), None) => {
                 let downcasted = self.downcast::<ListArray>()?;
                 let result = match groups {
                     Some(groups) => DaftConcatAggable::grouped_concat(downcasted, groups)?,
@@ -346,43 +345,40 @@ impl Series {
                 };
                 Ok(result.into_series())
             }
-            DataType::Utf8 => {
+            (DataType::Utf8, Some(delimiter)) => {
                 let downcasted = self.downcast::<Utf8Array>()?;
-                if let Some(delimiter) = delimiter.filter(|d| !d.is_empty()) {
-                    let result: Utf8Array = match groups {
-                        Some(groups) => groups
-                            .iter()
-                            .map(|group| {
-                                let values: Vec<_> = group
-                                    .iter()
-                                    .filter_map(|&idx| downcasted.get(idx as usize))
-                                    .collect();
-                                (!values.is_empty()).then(|| values.join(delimiter))
-                            })
-                            .collect(),
-                        None => {
-                            let output = if downcasted.is_empty() {
-                                Some(String::new())
-                            } else if downcasted.null_count() == downcasted.len() {
-                                None
-                            } else {
-                                Some(downcasted.into_iter().flatten().join(delimiter))
-                            };
-                            std::iter::once(output).collect()
-                        }
-                    };
-                    Ok(result.rename(downcasted.name()).into_series())
-                } else {
-                    let result = match groups {
-                        Some(groups) => DaftConcatAggable::grouped_concat(downcasted, groups)?,
-                        None => DaftConcatAggable::concat(downcasted)?,
-                    };
-                    Ok(result.into_series())
-                }
+                let result: Utf8Array = match groups {
+                    Some(groups) => groups
+                        .iter()
+                        .map(|group| {
+                            let values: Vec<_> = group
+                                .iter()
+                                .filter_map(|&idx| downcasted.get(idx as usize))
+                                .collect();
+                            (!values.is_empty()).then(|| values.join(delimiter))
+                        })
+                        .collect(),
+                    None => {
+                        let output = if downcasted.null_count() == downcasted.len() {
+                            None
+                        } else {
+                            Some(downcasted.into_iter().flatten().join(delimiter))
+                        };
+                        std::iter::once(output).collect()
+                    }
+                };
+                Ok(result.rename(downcasted.name()).into_series())
             }
-            _ => Err(DaftError::TypeError(format!(
-                "concat aggregation is only valid for List or Utf8, got {}",
-                self.data_type()
+            (DataType::Utf8, None) => {
+                let downcasted = self.downcast::<Utf8Array>()?;
+                let result = match groups {
+                    Some(groups) => DaftConcatAggable::grouped_concat(downcasted, groups)?,
+                    None => DaftConcatAggable::concat(downcasted)?,
+                };
+                Ok(result.into_series())
+            }
+            (other, _) => Err(DaftError::TypeError(format!(
+                "concat aggregation is only valid for List or Utf8, got {other}"
             ))),
         }
     }
