@@ -137,7 +137,7 @@ impl ListArrayExtension for ListArray {
         }
 
         let values = UInt64Array::from(("count", count_array)).into_series();
-        let include_mask = BooleanArray::from(("boolean", include_mask.as_slice()));
+        let include_mask = BooleanArray::from_values("boolean", include_mask.into_iter());
 
         let keys = self.flat_child.filter(&include_mask)?;
 

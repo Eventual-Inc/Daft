@@ -129,7 +129,10 @@ trait RowCompareFastPath {
             ));
         }
 
-        Ok(Some(BooleanArray::from((self.name(), values.as_slice()))))
+        Ok(Some(BooleanArray::from_values(
+            self.name(),
+            values.into_iter(),
+        )))
     }
 
     fn array_has_any_nulls(array: &dyn Array) -> bool {
@@ -360,7 +363,10 @@ fn compare_list_like_array<A: ListLikeArray>(
         results.push(compare_list_like_value(lhs_value, rhs_value, op)?);
     }
 
-    Ok(BooleanArray::from((lhs.name(), results.as_slice())))
+    Ok(results
+        .into_iter()
+        .collect::<BooleanArray>()
+        .rename(lhs.name()))
 }
 
 /// Compares two struct values field by field.
@@ -466,7 +472,10 @@ fn compare_struct_array(
         results.push(compare_struct_value(lhs, rhs, lhs_idx, rhs_idx, op)?);
     }
 
-    Ok(BooleanArray::from((lhs.name(), results.as_slice())))
+    Ok(results
+        .into_iter()
+        .collect::<BooleanArray>()
+        .rename(lhs.name()))
 }
 
 impl<T> PartialEq for DataArray<T>
@@ -1311,8 +1320,14 @@ mod tests {
 
     #[test]
     fn eq_null_safe_boolean_handles_null_alignment() -> DaftResult<()> {
-        let lhs = BooleanArray::from(("lhs", &[Some(true), None, Some(false), None][..]));
-        let rhs = BooleanArray::from(("rhs", &[Some(true), Some(false), None, None][..]));
+        let lhs = [Some(true), None, Some(false), None]
+            .into_iter()
+            .collect::<BooleanArray>()
+            .rename("lhs");
+        let rhs = [Some(true), Some(false), None, None]
+            .into_iter()
+            .collect::<BooleanArray>()
+            .rename("rhs");
 
         let result: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
         assert_eq!(
@@ -1324,8 +1339,11 @@ mod tests {
 
     #[test]
     fn eq_null_safe_boolean_broadcast_null_rhs() -> DaftResult<()> {
-        let lhs = BooleanArray::from(("lhs", &[Some(true), Some(false), None][..]));
-        let rhs = BooleanArray::from(("rhs", &[None][..]));
+        let lhs = [Some(true), Some(false), None]
+            .into_iter()
+            .collect::<BooleanArray>()
+            .rename("lhs");
+        let rhs = [None].into_iter().collect::<BooleanArray>().rename("rhs");
 
         let result: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
         assert_eq!(result, vec![Some(false), Some(false), Some(true)]);
@@ -1334,8 +1352,14 @@ mod tests {
 
     #[test]
     fn boolean_and_handles_nulls() -> DaftResult<()> {
-        let lhs = BooleanArray::from(("lhs", &[Some(true), Some(false), None][..]));
-        let rhs = BooleanArray::from(("rhs", &[Some(true), None, Some(true)][..]));
+        let lhs = [Some(true), Some(false), None]
+            .into_iter()
+            .collect::<BooleanArray>()
+            .rename("lhs");
+        let rhs = [Some(true), None, Some(true)]
+            .into_iter()
+            .collect::<BooleanArray>()
+            .rename("rhs");
 
         let result: Vec<_> = lhs.and(&rhs)?.into_iter().collect();
         assert_eq!(result, vec![Some(true), Some(false), None]);
@@ -1344,8 +1368,14 @@ mod tests {
 
     #[test]
     fn boolean_or_handles_nulls() -> DaftResult<()> {
-        let lhs = BooleanArray::from(("lhs", &[Some(true), Some(false), None][..]));
-        let rhs = BooleanArray::from(("rhs", &[Some(false), None, Some(true)][..]));
+        let lhs = [Some(true), Some(false), None]
+            .into_iter()
+            .collect::<BooleanArray>()
+            .rename("lhs");
+        let rhs = [Some(false), None, Some(true)]
+            .into_iter()
+            .collect::<BooleanArray>()
+            .rename("rhs");
 
         let result: Vec<_> = lhs.or(&rhs)?.into_iter().collect();
         assert_eq!(result, vec![Some(true), None, Some(true)]);
@@ -1354,8 +1384,11 @@ mod tests {
 
     #[test]
     fn boolean_and_with_null_scalar() -> DaftResult<()> {
-        let lhs = BooleanArray::from(("lhs", &[Some(false), Some(true)][..]));
-        let rhs = BooleanArray::from(("rhs", &[None][..]));
+        let lhs = [Some(false), Some(true)]
+            .into_iter()
+            .collect::<BooleanArray>()
+            .rename("lhs");
+        let rhs = [None].into_iter().collect::<BooleanArray>().rename("rhs");
 
         let result: Vec<_> = lhs.and(&rhs)?.into_iter().collect();
         assert_eq!(result, vec![Some(false), None]);
@@ -1364,8 +1397,11 @@ mod tests {
 
     #[test]
     fn boolean_or_with_null_scalar() -> DaftResult<()> {
-        let lhs = BooleanArray::from(("lhs", &[Some(true), Some(false)][..]));
-        let rhs = BooleanArray::from(("rhs", &[None][..]));
+        let lhs = [Some(true), Some(false)]
+            .into_iter()
+            .collect::<BooleanArray>()
+            .rename("lhs");
+        let rhs = [None].into_iter().collect::<BooleanArray>().rename("rhs");
 
         let result: Vec<_> = lhs.or(&rhs)?.into_iter().collect();
         assert_eq!(result, vec![Some(true), None]);
@@ -1374,8 +1410,14 @@ mod tests {
 
     #[test]
     fn boolean_and_null_lhs_broadcasts() -> DaftResult<()> {
-        let lhs = BooleanArray::from(("lhs", &[None][..]));
-        let rhs = BooleanArray::from(("rhs", &[Some(false), Some(true)][..]));
+        let lhs = [None::<bool>]
+            .into_iter()
+            .collect::<BooleanArray>()
+            .rename("lhs");
+        let rhs = [Some(false), Some(true)]
+            .into_iter()
+            .collect::<BooleanArray>()
+            .rename("rhs");
 
         let result: Vec<_> = lhs.and(&rhs)?.into_iter().collect();
         assert_eq!(result, vec![Some(false), None]);

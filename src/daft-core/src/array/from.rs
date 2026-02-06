@@ -25,24 +25,6 @@ where
     }
 }
 
-impl From<(&str, &[bool])> for BooleanArray {
-    fn from(item: (&str, &[bool])) -> Self {
-        let (name, slice) = item;
-        let arrow_array = Box::new(daft_arrow::array::BooleanArray::from_slice(slice));
-        Self::new(Field::new(name, DataType::Boolean).into(), arrow_array).unwrap()
-    }
-}
-
-impl From<(&str, &[Option<bool>])> for BooleanArray {
-    fn from(item: (&str, &[Option<bool>])) -> Self {
-        let (name, slice) = item;
-        let arrow_array = Box::new(daft_arrow::array::BooleanArray::from_trusted_len_iter(
-            slice.iter().copied(),
-        ));
-        Self::new(Field::new(name, DataType::Boolean).into(), arrow_array).unwrap()
-    }
-}
-
 impl From<(&str, daft_arrow::bitmap::Bitmap)> for BooleanArray {
     fn from(item: (&str, daft_arrow::bitmap::Bitmap)) -> Self {
         let (name, bitmap) = item;

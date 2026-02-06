@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::array::ArrowPrimitiveType;
+use arrow::{array::ArrowPrimitiveType, buffer::ScalarBuffer};
 use common_error::DaftResult;
 use daft_arrow::{
     array::{MutablePrimitiveArray, PrimitiveArray},
@@ -197,10 +197,18 @@ where
         name: &str,
         slice: &[<<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native],
     ) -> Self {
+        let b = arrow::buffer::Buffer::from_slice_ref(slice);
+        let len = b.len()
+            / std::mem::size_of::<
+                <<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native,
+            >();
+
+        let sb = ScalarBuffer::<
+            <<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native,
+        >::new(b, 0, len);
         let arrow_arr =
-            arrow::array::PrimitiveArray::<<T::Native as NumericNative>::ARROWTYPE>::from_iter_values(
-                slice.iter().copied(),
-            );
+            arrow::array::PrimitiveArray::<<T::Native as NumericNative>::ARROWTYPE>::new(sb, None);
+
         Self::from_arrow(Field::new(name, T::get_dtype()), Arc::new(arrow_arr)).unwrap()
     }
 

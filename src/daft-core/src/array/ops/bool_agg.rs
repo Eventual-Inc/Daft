@@ -15,12 +15,12 @@ impl DaftBoolAggable for DataArray<BooleanType> {
 
     fn bool_and(&self) -> Self::Output {
         let value = bool_and(&self.as_arrow()?);
-        Ok(Self::from((self.name(), std::slice::from_ref(&value))))
+        Ok(std::iter::once(value).collect::<Self>().rename(self.name()))
     }
 
     fn bool_or(&self) -> Self::Output {
         let value = bool_or(&self.as_arrow()?);
-        Ok(Self::from((self.name(), std::slice::from_ref(&value))))
+        Ok(std::iter::once(value).collect::<Self>().rename(self.name()))
     }
 
     fn grouped_bool_and(&self, groups: &GroupIndices) -> Self::Output {
@@ -48,7 +48,10 @@ impl DaftBoolAggable for DataArray<BooleanType> {
             results.push(if all_null { None } else { Some(result) });
         }
 
-        Ok(Self::from((self.field.name.as_ref(), results.as_slice())))
+        Ok(results
+            .into_iter()
+            .collect::<Self>()
+            .rename(self.field.name.as_ref()))
     }
 
     fn grouped_bool_or(&self, groups: &GroupIndices) -> Self::Output {
@@ -76,6 +79,9 @@ impl DaftBoolAggable for DataArray<BooleanType> {
             results.push(if all_null { None } else { Some(result) });
         }
 
-        Ok(Self::from((self.field.name.as_ref(), results.as_slice())))
+        Ok(results
+            .into_iter()
+            .collect::<Self>()
+            .rename(self.field.name.as_ref()))
     }
 }

@@ -10,7 +10,7 @@ use crate::{
 };
 
 fn default(name: &str, size: usize) -> DaftResult<Series> {
-    Ok(BooleanArray::from((name, vec![false; size].as_slice())).into_series())
+    Ok(BooleanArray::from_values(name, std::iter::repeat_n(false, size)).into_series())
 }
 
 impl Series {
