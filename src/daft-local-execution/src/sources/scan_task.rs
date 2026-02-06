@@ -76,9 +76,6 @@ impl ScanTaskSource {
             let mut task_set = JoinSet::new();
             // Store pending tasks: (scan_task, delete_map, input_id)
             let mut pending_tasks = VecDeque::new();
-            // Track how many scan tasks are pending per input_id
-            // When count reaches 0, we send flush for that input_id
-            let mut input_id_pending_counts: HashMap<InputId, usize> = HashMap::new();
             // When maintain_order is true, limit parallelism to 1 to preserve order
             let max_parallel = if maintain_order { 1 } else { num_parallel_tasks };
             let mut receiver_exhausted = false;
@@ -86,7 +83,7 @@ impl ScanTaskSource {
             while !receiver_exhausted || !pending_tasks.is_empty() || !task_set.is_empty() {
                 // First, try to spawn from pending_tasks if we have capacity
                 while task_set.len() < max_parallel && !pending_tasks.is_empty() {
-                    let (scan_task, delete_map, input_id) = pending_tasks.pop_front().unwrap();
+                    let (scan_task, delete_map, input_id) = pending_tasks.pop_front().expect("Pending tasks should not be empty");
                     task_set.spawn(forward_scan_task_stream(
                         scan_task,
                         io_stats.clone(),
@@ -119,10 +116,6 @@ impl ScanTaskSource {
                                     .flat_map(|scan_task| scan_task.split())
                                     .collect();
 
-                                // Track how many scan tasks we're processing for this input_id
-                                let num_tasks = split_tasks.len();
-                                *input_id_pending_counts.entry(input_id).or_insert(0) += num_tasks;
-
                                 // All tasks from this batch share the same delete_map and input_id
                                 for scan_task in split_tasks {
                                     pending_tasks.push_back((
@@ -141,21 +134,11 @@ impl ScanTaskSource {
                     // Wait for a task to complete
                     Some(join_result) = task_set.join_next(), if !task_set.is_empty() => {
                         match join_result {
-                            Ok(Ok(completed_input_id)) => {
-                                // task_result is DaftResult<InputId>
-                                // Decrement the count for this input_id and send flush only when all scan tasks for this input_id are done
-                                let count = input_id_pending_counts.get_mut(&completed_input_id).expect("Input id should be present in input_id_pending_counts");
-                                *count = count.saturating_sub(1);
-                                if *count == 0 {
-                                    input_id_pending_counts.remove(&completed_input_id);
-                                }
-                            }
+                            Ok(Ok(_)) => {}
                             Ok(Err(e)) => {
-                                // Error occurred joining the task, return it
                                 return Err(e.into());
                             }
                             Err(e) => {
-                                // Error occurred joining the task, return it
                                 return Err(e.into());
                             }
                         }
@@ -163,7 +146,6 @@ impl ScanTaskSource {
                 }
             }
             debug_assert!(pending_tasks.is_empty(), "Pending tasks should be empty");
-            debug_assert!(input_id_pending_counts.is_empty(), "Input id pending counts should be empty");
             debug_assert!(task_set.is_empty(), "Task set should be empty");
             debug_assert!(receiver_exhausted, "Receiver should be exhausted");
 
@@ -436,7 +418,7 @@ async fn stream_scan_task(
 
     if scan_task.sources.len() != 1 {
         return Err(common_error::DaftError::TypeError(
-            "Reads only supported for single source ScanTasks".to_string(),
+            "Streaming reads only supported for single source ScanTasks".to_string(),
         ));
     }
     let source = scan_task.sources.first().unwrap();
