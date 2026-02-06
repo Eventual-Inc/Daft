@@ -3199,7 +3199,6 @@ dependencies = [
 name = "daft-parquet"
 version = "0.3.0-dev0"
 dependencies = [
- "arrow",
  "async-compat",
  "async-stream",
  "bincode",

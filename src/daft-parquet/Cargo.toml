@@ -1,5 +1,4 @@
 [dependencies]
-arrow = {workspace = true}
 async-compat = {workspace = true}
 daft-arrow = {path = "../daft-arrow"}
 async-stream = {workspace = true}
