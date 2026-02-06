@@ -240,13 +240,10 @@ impl BinaryArray {
 }
 
 impl BooleanArray {
-    pub fn from_values(
-        name: &str,
-        iter: impl daft_arrow::trusted_len::TrustedLen<Item = bool>,
-    ) -> Self {
+    pub fn from_values(name: &str, iter: impl ExactSizeIterator<Item = bool>) -> Self {
         let arrow_array =
-            Box::new(daft_arrow::array::BooleanArray::from_trusted_len_values_iter(iter));
-        Self::new(Field::new(name, DataType::Boolean).into(), arrow_array).unwrap()
+            Arc::new(unsafe { arrow::array::BooleanArray::from_trusted_len_iter(iter) });
+        Self::from_arrow(Field::new(name, DataType::Boolean), arrow_array).unwrap()
     }
 }
 
@@ -262,20 +259,6 @@ impl IntervalArray {
     }
 }
 
-impl IntervalArray {
-    pub fn from_values<S: Into<months_days_ns>>(
-        name: &str,
-        iter: impl daft_arrow::trusted_len::TrustedLen<Item = S>,
-    ) -> Self {
-        let arrow_array = Box::new(
-            daft_arrow::array::MonthsDaysNsArray::from_trusted_len_values_iter(
-                iter.map(|x| x.into()),
-            ),
-        );
-        Self::new(Field::new(name, DataType::Interval).into(), arrow_array).unwrap()
-    }
-}
-
 #[cfg(feature = "python")]
 impl PythonArray {
     /// Create a PythonArray from an iterator.
@@ -283,7 +266,7 @@ impl PythonArray {
     /// Assumes that all Python objects are not None.
     pub fn from_iter(
         name: &str,
-        iter: impl daft_arrow::trusted_len::TrustedLen<Item = Option<Arc<Py<PyAny>>>>,
+        iter: impl ExactSizeIterator<Item = Option<Arc<Py<PyAny>>>>,
     ) -> Self {
         use daft_arrow::buffer::NullBufferBuilder;
         use pyo3::Python;
@@ -326,7 +309,7 @@ impl PythonArray {
     /// Assumes that all Python objects are not None.
     pub fn from_iter_pickled<I, T>(name: &str, iter: I) -> DaftResult<Self>
     where
-        I: daft_arrow::trusted_len::TrustedLen<Item = Option<T>>,
+        I: ExactSizeIterator<Item = Option<T>>,
         T: AsRef<[u8]>,
     {
         use daft_arrow::buffer::NullBufferBuilder;
