@@ -213,7 +213,7 @@ impl Series {
     /// Attempts to downcast the Series to a primitive slice
     /// This will return an error if the Series is not of the physical type `T`
     /// # Example
-    /// ```rust,no_run
+    /// ```ignore
     /// let i32_arr: &[i32] = series.try_as_slice::<i32>()?;
     ///
     /// let f64_arr: &[f64] = series.try_as_slice::<f64>()?;

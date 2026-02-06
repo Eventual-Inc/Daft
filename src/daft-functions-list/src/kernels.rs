@@ -271,10 +271,11 @@ impl ListArrayExtension for ListArray {
                 )
             });
 
-        Ok(Utf8Array::from((
-            self.name(),
-            Box::new(daft_arrow::array::Utf8Array::from_iter(result)),
-        )))
+        Ok(Utf8Array::new(
+            Field::new(self.name(), DataType::Utf8).into(),
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from_iter(result)),
+        )
+        .unwrap())
     }
 
     fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series> {
@@ -626,10 +627,11 @@ impl ListArrayExtension for FixedSizeListArray {
                 )
             });
 
-        Ok(Utf8Array::from((
-            self.name(),
-            Box::new(daft_arrow::array::Utf8Array::from_iter(result)),
-        )))
+        Ok(Utf8Array::new(
+            Field::new(self.name(), DataType::Utf8).into(),
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from_iter(result)),
+        )
+        .unwrap())
     }
 
     fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series> {

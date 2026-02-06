@@ -3,7 +3,7 @@
     reason = "TODO(andrewgazelka/others): This should really be changed in the future"
 )]
 
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use arrow::buffer::NullBuffer;
 use common_error::{DaftError, DaftResult};
@@ -13,72 +13,6 @@ use crate::{
     prelude::*,
     series::{ArrayWrapper, SeriesLike},
 };
-
-impl<T: DaftNumericType> From<(&str, Box<daft_arrow::array::PrimitiveArray<T::Native>>)>
-    for DataArray<T>
-{
-    fn from(item: (&str, Box<daft_arrow::array::PrimitiveArray<T::Native>>)) -> Self {
-        let (name, array) = item;
-        Self::new(Field::new(name, T::get_dtype()).into(), array).unwrap()
-    }
-}
-
-impl From<(&str, Box<daft_arrow::array::Utf8Array<i64>>)> for Utf8Array {
-    fn from(item: (&str, Box<daft_arrow::array::Utf8Array<i64>>)) -> Self {
-        let (name, array) = item;
-        Self::new(Field::new(name, DataType::Utf8).into(), array).unwrap()
-    }
-}
-
-impl From<(&str, Box<daft_arrow::array::BinaryArray<i64>>)> for BinaryArray {
-    fn from(item: (&str, Box<daft_arrow::array::BinaryArray<i64>>)) -> Self {
-        let (name, array) = item;
-        Self::new(Field::new(name, DataType::Binary).into(), array).unwrap()
-    }
-}
-
-impl From<(&str, Box<daft_arrow::array::FixedSizeBinaryArray>)> for FixedSizeBinaryArray {
-    fn from(item: (&str, Box<daft_arrow::array::FixedSizeBinaryArray>)) -> Self {
-        let (name, array) = item;
-        Self::new(
-            Field::new(name, DataType::FixedSizeBinary(array.size())).into(),
-            array,
-        )
-        .unwrap()
-    }
-}
-
-impl<'a, I> From<(&str, I, usize)> for FixedSizeBinaryArray
-where
-    Cow<'a, [u8]>: From<I>,
-{
-    fn from((name, array, length): (&str, I, usize)) -> Self {
-        let array = Cow::from(array);
-        let array = array.into_owned();
-        Self::new(
-            Field::new(name, DataType::FixedSizeBinary(length)).into(),
-            Box::new(daft_arrow::array::FixedSizeBinaryArray::new(
-                daft_arrow::datatypes::DataType::FixedSizeBinary(length),
-                daft_arrow::buffer::Buffer::from(array),
-                None,
-            )),
-        )
-        .unwrap()
-    }
-}
-
-impl<T> From<(&str, &[T::Native])> for DataArray<T>
-where
-    T: DaftPrimitiveType,
-{
-    fn from(item: (&str, &[T::Native])) -> Self {
-        let (name, slice) = item;
-        let arrow_array = Box::new(daft_arrow::array::PrimitiveArray::<T::Native>::from_slice(
-            slice,
-        ));
-        Self::new(Field::new(name, T::get_dtype()).into(), arrow_array).unwrap()
-    }
-}
 
 impl<T> From<(&str, Vec<T::Native>)> for DataArray<T>
 where

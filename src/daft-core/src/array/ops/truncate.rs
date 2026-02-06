@@ -7,8 +7,8 @@ use super::as_arrow::AsArrow;
 use crate::{
     array::DataArray,
     datatypes::{
-        DaftNumericType, Decimal128Array, Int8Type, Int16Type, Int32Type, Int64Type, UInt8Type,
-        UInt16Type, UInt32Type, UInt64Type, Utf8Array,
+        DaftDataType, DaftNumericType, DataType, Decimal128Array, Field, Int8Type, Int16Type,
+        Int32Type, Int64Type, UInt8Type, UInt16Type, UInt32Type, UInt64Type, Utf8Array,
     },
     prelude::BinaryArray,
 };
@@ -27,7 +27,13 @@ macro_rules! impl_int_truncate {
                     })
                 });
                 let array = Box::new(daft_arrow::array::PrimitiveArray::from_iter(trun_value));
-                Ok(<DataArray<$DT>>::from((self.name(), array)))
+                Ok(
+                    <DataArray<$DT>>::new(
+                        Field::new(self.name(), <$DT>::get_dtype()).into(),
+                        array,
+                    )
+                    .unwrap(),
+                )
             }
         }
     };
@@ -61,7 +67,11 @@ impl Utf8Array {
     pub fn iceberg_truncate(&self, w: i64) -> DaftResult<Self> {
         let as_arrow = self.as_arrow2();
         let substring = daft_arrow::compute::substring::utf8_substring(as_arrow, 0, &Some(w));
-        Ok(Self::from((self.name(), Box::new(substring))))
+        Ok(Self::new(
+            Field::new(self.name(), DataType::Utf8).into(),
+            Box::new(substring),
+        )
+        .unwrap())
     }
 }
 
@@ -69,6 +79,10 @@ impl BinaryArray {
     pub fn iceberg_truncate(&self, w: i64) -> DaftResult<Self> {
         let as_arrow = self.as_arrow2();
         let substring = daft_arrow::compute::substring::binary_substring(as_arrow, 0, &Some(w));
-        Ok(Self::from((self.name(), Box::new(substring))))
+        Ok(Self::new(
+            Field::new(self.name(), DataType::Binary).into(),
+            Box::new(substring),
+        )
+        .unwrap())
     }
 }

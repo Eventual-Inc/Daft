@@ -168,7 +168,11 @@ fn to_datetime_impl(
             })
             .collect::<DaftResult<daft_arrow::array::Int64Array>>()?;
 
-    let result = Int64Array::from((arr.name(), Box::new(arrow_result)));
+    let result = Int64Array::new(
+        Field::new(arr.name(), DataType::Int64).into(),
+        Box::new(arrow_result),
+    )
+    .unwrap();
     let result = TimestampArray::new(
         Field::new(arr.name(), DataType::Timestamp(timeunit, timezone)),
         result,

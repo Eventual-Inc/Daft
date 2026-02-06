@@ -79,7 +79,11 @@ fn to_date_impl(arr: &Utf8Array, format: &str) -> DaftResult<DateArray> {
         })
         .collect::<DaftResult<daft_arrow::array::Int32Array>>()?;
 
-    let result = Int32Array::from((arr.name(), Box::new(arrow_result)));
+    let result = Int32Array::new(
+        Field::new(arr.name(), DataType::Int32).into(),
+        Box::new(arrow_result),
+    )
+    .unwrap();
     let result = DateArray::new(Field::new(arr.name(), DataType::Date), result);
     assert_eq!(result.len(), len);
     Ok(result)

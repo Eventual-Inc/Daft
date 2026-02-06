@@ -1114,24 +1114,27 @@ pub fn read_parquet_statistics(
         .collect::<DaftResult<Vec<_>>>()?;
     assert_eq!(all_tuples.len(), uris.len());
 
-    let row_count_series = UInt64Array::from((
-        "row_count",
+    let row_count_series = UInt64Array::new(
+        Field::new("row_count", DataType::UInt64).into(),
         Box::new(daft_arrow::array::UInt64Array::from_iter(
             all_tuples.iter().map(|v| v.0.map(|v| v as u64)),
         )),
-    ));
-    let row_group_series = UInt64Array::from((
-        "row_group_count",
+    )
+    .unwrap();
+    let row_group_series = UInt64Array::new(
+        Field::new("row_group_count", DataType::UInt64).into(),
         Box::new(daft_arrow::array::UInt64Array::from_iter(
             all_tuples.iter().map(|v| v.1.map(|v| v as u64)),
         )),
-    ));
-    let version_series = Int32Array::from((
-        "version",
+    )
+    .unwrap();
+    let version_series = Int32Array::new(
+        Field::new("version", DataType::Int32).into(),
         Box::new(daft_arrow::array::Int32Array::from_iter(
             all_tuples.iter().map(|v| v.2),
         )),
-    ));
+    )
+    .unwrap();
 
     RecordBatch::from_nonempty_columns(vec![
         uris.clone(),

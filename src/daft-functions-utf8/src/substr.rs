@@ -263,7 +263,11 @@ where
         })
         .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>()?;
 
-    Ok(Utf8Array::from((name, Box::new(arrow_result))))
+    Ok(Utf8Array::new(
+        Field::new(name, DataType::Utf8).into(),
+        Box::new(arrow_result),
+    )
+    .unwrap())
 }
 
 fn substring(s: &str, start: usize, len: Option<usize>) -> Option<&str> {

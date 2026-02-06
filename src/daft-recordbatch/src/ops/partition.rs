@@ -58,13 +58,13 @@ impl RecordBatch {
             ));
         }
 
-        let targets = self
-            .eval_expression_list(exprs)?
-            .hash_rows()?
-            .rem(&UInt64Array::from((
-                "num_partitions",
-                [num_partitions as u64].as_slice(),
-            )))?;
+        let targets =
+            self.eval_expression_list(exprs)?
+                .hash_rows()?
+                .rem(&UInt64Array::from_slice(
+                    "num_partitions",
+                    &[num_partitions as u64],
+                ))?;
         self.partition_by_index(&targets, num_partitions)
     }
 

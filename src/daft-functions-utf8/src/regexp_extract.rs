@@ -136,5 +136,9 @@ fn regex_extract_first_match<'a>(
         })
         .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>();
 
-    Ok(Utf8Array::from((name, Box::new(arrow_result?))))
+    Ok(Utf8Array::new(
+        Field::new(name, DataType::Utf8).into(),
+        Box::new(arrow_result?),
+    )
+    .unwrap())
 }

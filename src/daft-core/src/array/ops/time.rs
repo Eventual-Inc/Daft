@@ -72,7 +72,11 @@ impl DateArray {
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let day_arr = daft_arrow::compute::temporal::day(&input_array)?;
-        Ok((self.name(), Box::new(day_arr)).into())
+        Ok(DataArray::new(
+            Field::new(self.name(), DataType::UInt32).into(),
+            Box::new(day_arr),
+        )
+        .unwrap())
     }
 
     pub fn month(&self) -> DaftResult<UInt32Array> {
@@ -82,7 +86,11 @@ impl DateArray {
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let month_arr = daft_arrow::compute::temporal::month(&input_array)?;
-        Ok((self.name(), Box::new(month_arr)).into())
+        Ok(DataArray::new(
+            Field::new(self.name(), DataType::UInt32).into(),
+            Box::new(month_arr),
+        )
+        .unwrap())
     }
 
     pub fn quarter(&self) -> DaftResult<UInt32Array> {
@@ -92,11 +100,11 @@ impl DateArray {
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let month_arr = daft_arrow::compute::temporal::month(&input_array)?;
-        let quarter_arr = month_arr
+        let quarter_arr: UInt32Array = month_arr
             .into_iter()
             .map(|opt_month| opt_month.map(|month_val| month_val.div_ceil(3)))
             .collect();
-        Ok((self.name(), Box::new(quarter_arr)).into())
+        Ok(quarter_arr.rename(self.name()))
     }
 
     pub fn year(&self) -> DaftResult<Int32Array> {
@@ -106,7 +114,11 @@ impl DateArray {
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let year_arr = daft_arrow::compute::temporal::year(&input_array)?;
-        Ok((self.name(), Box::new(year_arr)).into())
+        Ok(DataArray::new(
+            Field::new(self.name(), DataType::Int32).into(),
+            Box::new(year_arr),
+        )
+        .unwrap())
     }
 
     pub fn day_of_week(&self) -> DaftResult<UInt32Array> {
@@ -116,7 +128,11 @@ impl DateArray {
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let day_arr = daft_arrow::compute::temporal::weekday(&input_array)?;
-        Ok((self.name(), Box::new(day_arr.sub(&1))).into())
+        Ok(DataArray::new(
+            Field::new(self.name(), DataType::UInt32).into(),
+            Box::new(day_arr.sub(&1)),
+        )
+        .unwrap())
     }
 
     pub fn day_of_month(&self) -> DaftResult<UInt32Array> {
@@ -126,7 +142,11 @@ impl DateArray {
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let day_arr = daft_arrow::compute::temporal::day_of_month(&input_array)?;
-        Ok((self.name(), Box::new(day_arr)).into())
+        Ok(DataArray::new(
+            Field::new(self.name(), DataType::UInt32).into(),
+            Box::new(day_arr),
+        )
+        .unwrap())
     }
 
     pub fn day_of_year(&self) -> DaftResult<UInt32Array> {
@@ -136,7 +156,11 @@ impl DateArray {
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let ordinal_day_arr = daft_arrow::compute::temporal::day_of_year(&input_array)?;
-        Ok((self.name(), Box::new(ordinal_day_arr)).into())
+        Ok(DataArray::new(
+            Field::new(self.name(), DataType::UInt32).into(),
+            Box::new(ordinal_day_arr),
+        )
+        .unwrap())
     }
 
     pub fn week_of_year(&self) -> DaftResult<UInt32Array> {
@@ -146,7 +170,11 @@ impl DateArray {
             .clone()
             .to(daft_arrow::datatypes::DataType::Date32);
         let day_arr = daft_arrow::compute::temporal::week_of_year(&input_array)?;
-        Ok((self.name(), Box::new(day_arr)).into())
+        Ok(DataArray::new(
+            Field::new(self.name(), DataType::UInt32).into(),
+            Box::new(day_arr),
+        )
+        .unwrap())
     }
 }
 
@@ -201,7 +229,11 @@ impl TimestampArray {
         }?;
         Ok(DateArray::new(
             Field::new(self.name(), DataType::Date),
-            Int32Array::from((self.name(), Box::new(date_arrow))),
+            Int32Array::new(
+                Field::new(self.name(), DataType::Int32).into(),
+                Box::new(date_arrow),
+            )
+            .unwrap(),
         ))
     }
 
@@ -273,7 +305,11 @@ impl TimestampArray {
         }?;
         Ok(TimeArray::new(
             Field::new(self.name(), DataType::Time(*timeunit_for_cast)),
-            Int64Array::from((self.name(), Box::new(time_arrow))),
+            Int64Array::new(
+                Field::new(self.name(), DataType::Int64).into(),
+                Box::new(time_arrow),
+            )
+            .unwrap(),
         ))
     }
 
@@ -408,7 +444,11 @@ impl TimestampArray {
 
         Ok(TimestampArray::new(
             Field::new(self.name(), self.data_type().clone()),
-            Int64Array::from((self.name(), Box::new(result_timestamps))),
+            Int64Array::new(
+                Field::new(self.name(), DataType::Int64).into(),
+                Box::new(result_timestamps),
+            )
+            .unwrap(),
         ))
     }
 
@@ -464,7 +504,11 @@ impl TimestampArray {
             .to(daft_arrow::datatypes::DataType::Timestamp(tu, tz));
 
         let ordinal_day_arr = daft_arrow::compute::temporal::day_of_month(&input_array)?;
-        Ok((self.name(), Box::new(ordinal_day_arr)).into())
+        Ok(DataArray::new(
+            Field::new(self.name(), DataType::UInt32).into(),
+            Box::new(ordinal_day_arr),
+        )
+        .unwrap())
     }
 
     pub fn day_of_year(&self) -> DaftResult<UInt32Array> {
@@ -479,7 +523,11 @@ impl TimestampArray {
             .to(daft_arrow::datatypes::DataType::Timestamp(tu, tz));
 
         let ordinal_day_arr = daft_arrow::compute::temporal::day_of_year(&input_array)?;
-        Ok((self.name(), Box::new(ordinal_day_arr)).into())
+        Ok(DataArray::new(
+            Field::new(self.name(), DataType::UInt32).into(),
+            Box::new(ordinal_day_arr),
+        )
+        .unwrap())
     }
 
     pub fn week_of_year(&self) -> DaftResult<UInt32Array> {
@@ -494,7 +542,11 @@ impl TimestampArray {
             .to(daft_arrow::datatypes::DataType::Timestamp(tu, tz));
 
         let ordinal_day_arr = daft_arrow::compute::temporal::week_of_year(&input_array)?;
-        Ok((self.name(), Box::new(ordinal_day_arr)).into())
+        Ok(DataArray::new(
+            Field::new(self.name(), DataType::UInt32).into(),
+            Box::new(ordinal_day_arr),
+        )
+        .unwrap())
     }
 
     pub fn unix_date(&self) -> DaftResult<UInt64Array> {

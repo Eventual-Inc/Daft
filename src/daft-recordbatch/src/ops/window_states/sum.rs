@@ -118,9 +118,12 @@ where
     }
 
     fn build(&self) -> DaftResult<Series> {
-        DataArray::from((self.source.name(), self.sum_vec.as_ref()))
-            .into_series()
-            .with_nulls(self.nulls.finish_cloned())
+        DataArray::from_regular_iter(
+            Field::new(self.source.name(), T::get_dtype()),
+            self.sum_vec.iter().copied().map(Some),
+        )?
+        .into_series()
+        .with_nulls(self.nulls.finish_cloned())
     }
 }
 

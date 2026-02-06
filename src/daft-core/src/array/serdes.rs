@@ -8,7 +8,7 @@ use crate::prelude::PythonArray;
 use crate::{
     datatypes::{
         BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, DataType, ExtensionArray,
-        FixedSizeBinaryArray, Int64Array, IntervalArray, NullArray, Utf8Array,
+        Field, FixedSizeBinaryArray, Int64Array, IntervalArray, NullArray, Utf8Array,
         logical::LogicalArray,
     },
     series::{IntoSeries, Series},
@@ -197,7 +197,12 @@ impl serde::Serialize for ListArray {
             self.offsets().buffer().clone(),
             None,
         );
-        let offsets = Int64Array::from(("offsets", Box::new(arrow2_offsets))).into_series();
+        let offsets = Int64Array::new(
+            Field::new("offsets", DataType::Int64).into(),
+            Box::new(arrow2_offsets),
+        )
+        .unwrap()
+        .into_series();
         values.push(Some(&offsets));
 
         let nulls = self.nulls().map(|b| {

@@ -317,7 +317,9 @@ impl Series {
             }
         };
 
-        self.take(&UInt64Array::from(("", Box::new(indices))))
+        self.take(
+            &UInt64Array::new(Field::new("", DataType::UInt64).into(), Box::new(indices)).unwrap(),
+        )
     }
 
     pub fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {

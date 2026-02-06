@@ -144,8 +144,8 @@ fn make_date_column_range_statistics(
     lower: i32,
     upper: i32,
 ) -> super::Result<ColumnRangeStatistics> {
-    let lower = Int32Array::from(("lower", [lower].as_slice()));
-    let upper = Int32Array::from(("upper", [upper].as_slice()));
+    let lower = Int32Array::from_slice("lower", &[lower]);
+    let upper = Int32Array::from_slice("upper", &[upper]);
 
     let dtype = daft_core::datatypes::DataType::Date;
 
@@ -165,8 +165,8 @@ fn make_timestamp_column_range_statistics(
     lower: i64,
     upper: i64,
 ) -> super::Result<ColumnRangeStatistics> {
-    let lower = Int64Array::from(("lower", [lower].as_slice()));
-    let upper = Int64Array::from(("upper", [upper].as_slice()));
+    let lower = Int64Array::from_slice("lower", &[lower]);
+    let upper = Int64Array::from_slice("upper", &[upper]);
     let tu = match unit {
         parquet2::schema::types::TimeUnit::Nanoseconds => {
             daft_core::datatypes::TimeUnit::Nanoseconds

@@ -41,7 +41,11 @@ where
         let as_arrowed = self.as_arrow2();
         let seed = seed.map(|v| v.as_arrow2());
         let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
-        Ok(DataArray::from((self.name(), Box::new(result))))
+        Ok(DataArray::new(
+            Field::new(self.name(), DataType::UInt64).into(),
+            Box::new(result),
+        )
+        .unwrap())
     }
 }
 
@@ -57,7 +61,11 @@ impl Utf8Array {
         let as_arrowed = self.as_arrow2();
         let seed = seed.map(|v| v.as_arrow2());
         let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
-        Ok(DataArray::from((self.name(), Box::new(result))))
+        Ok(DataArray::new(
+            Field::new(self.name(), DataType::UInt64).into(),
+            Box::new(result),
+        )
+        .unwrap())
     }
 }
 
@@ -73,7 +81,11 @@ impl BinaryArray {
         let as_arrowed = self.as_arrow2();
         let seed = seed.map(|v| v.as_arrow2());
         let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
-        Ok(DataArray::from((self.name(), Box::new(result))))
+        Ok(DataArray::new(
+            Field::new(self.name(), DataType::UInt64).into(),
+            Box::new(result),
+        )
+        .unwrap())
     }
 }
 
@@ -89,7 +101,11 @@ impl FixedSizeBinaryArray {
         let as_arrowed = self.as_arrow2();
         let seed = seed.map(|v| v.as_arrow2());
         let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
-        Ok(DataArray::from((self.name(), Box::new(result))))
+        Ok(DataArray::new(
+            Field::new(self.name(), DataType::UInt64).into(),
+            Box::new(result),
+        )
+        .unwrap())
     }
 }
 
@@ -105,7 +121,11 @@ impl BooleanArray {
         let as_arrowed = self.as_arrow2();
         let seed = seed.map(|v| v.as_arrow2());
         let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
-        Ok(DataArray::from((self.name(), Box::new(result))))
+        Ok(DataArray::new(
+            Field::new(self.name(), DataType::UInt64).into(),
+            Box::new(result),
+        )
+        .unwrap())
     }
 }
 
@@ -121,7 +141,11 @@ impl NullArray {
         let as_arrowed = self.data();
         let seed = seed.map(|v| v.as_arrow2());
         let result = kernels::hashing::hash(as_arrowed, seed, hash_function)?;
-        Ok(DataArray::from((self.name(), Box::new(result))))
+        Ok(DataArray::new(
+            Field::new(self.name(), DataType::UInt64).into(),
+            Box::new(result),
+        )
+        .unwrap())
     }
 }
 
@@ -435,7 +459,7 @@ impl Decimal128Array {
             })
         });
         let array = Box::new(daft_arrow::array::Int32Array::from_iter(hashes));
-        Ok(Int32Array::from((self.name(), array)))
+        Ok(Int32Array::new(Field::new(self.name(), DataType::Int32).into(), array).unwrap())
     }
 }
 
@@ -450,7 +474,7 @@ fn murmur3_32_hash_from_iter_with_nulls<B: AsRef<[u8]>>(
         })
     });
     let array = Box::new(daft_arrow::array::Int32Array::from_iter(hashes));
-    Ok(Int32Array::from((name, array)))
+    Ok(Int32Array::new(Field::new(name, DataType::Int32).into(), array).unwrap())
 }
 
 fn murmur3_32_hash_from_iter_no_nulls<B: AsRef<[u8]>>(

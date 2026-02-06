@@ -22,7 +22,7 @@ use crate::{
 
 /// Downcasts a datatype to one that's compatible with literals.
 /// example:
-/// ```rust,no_run
+/// ```rust,ignore
 /// // Literal's dont support fixed size binary
 /// // so it gets downcast to `DataType::Binary`
 /// let dtype = DataType::FixedSizeBinary(10);

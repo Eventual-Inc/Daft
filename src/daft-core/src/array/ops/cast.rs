@@ -199,7 +199,12 @@ impl DateArray {
                         (Some(y), Some(m), Some(d)) => Some(format!("{y}-{m}-{d}")),
                     })
                     .collect();
-                Ok(Utf8Array::from((self.name(), Box::new(date_str))).into_series())
+                Ok(Utf8Array::new(
+                    Field::new(self.name(), DataType::Utf8).into(),
+                    Box::new(date_str),
+                )
+                .unwrap()
+                .into_series())
             }
             DataType::Timestamp(tu, _) => {
                 let days_to_unit: i64 = match tu {
@@ -313,7 +318,12 @@ impl TimestampArray {
                     },
                 );
 
-                Ok(Utf8Array::from((self.name(), Box::new(str_array))).into_series())
+                Ok(Utf8Array::new(
+                    Field::new(self.name(), DataType::Utf8).into(),
+                    Box::new(str_array),
+                )
+                .unwrap()
+                .into_series())
             }
             dtype if dtype.is_numeric() => self.physical.cast(dtype),
             #[cfg(feature = "python")]
@@ -365,7 +375,12 @@ impl TimeArray {
                         })
                     })
                     .collect();
-                Ok(Utf8Array::from((self.name(), Box::new(time_str))).into_series())
+                Ok(Utf8Array::new(
+                    Field::new(self.name(), DataType::Utf8).into(),
+                    Box::new(time_str),
+                )
+                .unwrap()
+                .into_series())
             }
             dtype if dtype.is_numeric() => self.physical.cast(dtype),
             #[cfg(feature = "python")]
@@ -720,10 +735,11 @@ impl ImageArray {
                 let shape_offsets = daft_arrow::offset::OffsetsBuffer::try_from(shape_offsets)?;
                 let shapes_array = ListArray::new(
                     Field::new("shape", shapes_dtype),
-                    UInt64Array::from((
-                        "shape",
+                    UInt64Array::new(
+                        Field::new("shape", DataType::UInt64).into(),
                         Box::new(daft_arrow::array::PrimitiveArray::from_vec(shapes)),
-                    ))
+                    )
+                    .unwrap()
                     .into_series(),
                     shape_offsets,
                     nulls.cloned(),
@@ -845,7 +861,7 @@ impl TensorArray {
                 let data_iterator = self.data_array().into_iter();
                 let nulls = self.data_array().nulls();
                 let shape_and_data_iter = shape_iterator.zip(data_iterator);
-                let zero_series = Int64Array::from(("item", [0].as_slice())).into_series();
+                let zero_series = Int64Array::from_slice("item", &[0]).into_series();
                 let mut non_zero_values = Vec::new();
                 let mut non_zero_indices = Vec::new();
                 for (i, (shape_series, data_series)) in shape_and_data_iter.enumerate() {
@@ -1364,7 +1380,7 @@ impl FixedShapeTensorArray {
             ) => {
                 let physical_arr = &self.physical;
                 let nulls = self.physical.nulls();
-                let zero_series = Int64Array::from(("item", [0].as_slice())).into_series();
+                let zero_series = Int64Array::from_slice("item", &[0]).into_series();
                 let mut non_zero_values = Vec::new();
                 let mut non_zero_indices = Vec::new();
                 for (i, data_series) in physical_arr.into_iter().enumerate() {

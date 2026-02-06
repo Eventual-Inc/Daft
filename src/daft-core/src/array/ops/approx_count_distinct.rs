@@ -16,8 +16,7 @@ impl DaftApproxCountDistinctAggable for UInt64Array {
             set.insert(value);
         }
         let count = set.len() as u64;
-        let data: &[u64] = &[count];
-        let array = (self.name(), data).into();
+        let array = UInt64Array::from_slice(self.name(), &[count]);
         Ok(array)
     }
 

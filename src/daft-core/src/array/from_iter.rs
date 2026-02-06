@@ -193,6 +193,17 @@ impl<T> DataArray<T>
 where
     T: DaftNumericType,
 {
+    pub fn from_slice(
+        name: &str,
+        slice: &[<<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native],
+    ) -> Self {
+        let arrow_arr =
+            arrow::array::PrimitiveArray::<<T::Native as NumericNative>::ARROWTYPE>::from_iter_values(
+                slice.iter().copied(),
+            );
+        Self::from_arrow(Field::new(name, T::get_dtype()), Arc::new(arrow_arr)).unwrap()
+    }
+
     pub fn from_values(
         name: &str,
         iter: impl daft_arrow::trusted_len::TrustedLen<Item = T::Native>,
