@@ -333,11 +333,10 @@ impl Series {
     ) -> DaftResult<Self> {
         let delimiter = delimiter.filter(|d| !d.is_empty());
         match (self.data_type(), delimiter) {
-            (DataType::List(..), Some(_)) => {
-                return Err(DaftError::TypeError(
-                    "concat aggregation delimiter is only supported for Utf8".to_string(),
-                ));
-            }
+            (DataType::List(..), Some(_)) => Err(DaftError::TypeError(
+                "concat aggregation delimiter is only supported for Utf8".to_string(),
+            )),
+
             (DataType::List(..), None) => {
                 let downcasted = self.downcast::<ListArray>()?;
                 let result = match groups {
