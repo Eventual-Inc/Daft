@@ -44,7 +44,11 @@ impl ScalarUDF for JaccardSimilarityFunction {
         "jaccard_similarity"
     }
 
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let Args {
             input: source,
             query,
