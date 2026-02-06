@@ -63,7 +63,7 @@ fn to_date_impl(arr: &Utf8Array, format: &str) -> DaftResult<DateArray> {
     let len = arr.len();
     let arr_iter = arr.into_iter();
 
-    let arrow_result = arr_iter
+    let result = arr_iter
         .map(|val| match val {
             Some(val) => {
                 let date = chrono::NaiveDate::parse_from_str(val, format).map_err(|e| {
@@ -77,14 +77,12 @@ fn to_date_impl(arr: &Utf8Array, format: &str) -> DaftResult<DateArray> {
             }
             _ => Ok(None),
         })
-        .collect::<DaftResult<daft_arrow::array::Int32Array>>()?;
+        .collect::<DaftResult<Int32Array>>()?;
 
-    let result = Int32Array::new(
-        Field::new(arr.name(), DataType::Int32).into(),
-        Box::new(arrow_result),
-    )
-    .unwrap();
-    let result = DateArray::new(Field::new(arr.name(), DataType::Date), result);
+    let result = DateArray::new(
+        Field::new(arr.name(), DataType::Date),
+        result.rename(arr.name()),
+    );
     assert_eq!(result.len(), len);
     Ok(result)
 }

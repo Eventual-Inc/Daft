@@ -120,9 +120,9 @@ where
     }
 
     fn build(&self) -> DaftResult<Series> {
-        DataArray::<T>::from_iter(
+        DataArray::<T>::from_field_and_values(
             Field::new(self.source.name(), T::get_dtype()),
-            self.sum_vec.iter().copied().map(Some),
+            self.sum_vec.iter().copied(),
         )
         .into_series()
         .with_nulls(self.nulls.finish_cloned())
