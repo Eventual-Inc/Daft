@@ -473,19 +473,4 @@ impl<T: DaftPrimitiveType> DataArray<T> {
         let arrow_buffer = Buffer::from(self.as_arrow2().values().clone());
         ScalarBuffer::from(arrow_buffer)
     }
-
-    /// Maps the values only without changing the null bitmaps
-    pub fn map_values<F>(&self, f: F) -> Self
-    where
-        F: Fn(&T::Native) -> T::Native,
-    {
-        let arrow_buffer = Buffer::from(self.as_arrow2().values().clone());
-
-        Self::from_field_and_values(
-            self.field.clone(),
-            ScalarBuffer::from(arrow_buffer).into_iter().map(f),
-        )
-        .with_nulls(self.nulls().cloned())
-        .expect("Failed to set nulls")
-    }
 }
