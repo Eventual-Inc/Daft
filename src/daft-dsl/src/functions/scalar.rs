@@ -12,6 +12,11 @@ use serde::{Deserialize, Serialize};
 use super::function_args::{FunctionArg, FunctionArgs};
 use crate::{Expr, ExprRef, python_udf::PyScalarFn};
 
+#[derive(Clone, Copy, Debug)]
+pub struct EvalContext {
+    pub row_count: usize,
+}
+
 #[derive(Display, Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum ScalarFn {
     Builtin(BuiltinScalarFn),
@@ -68,6 +73,13 @@ impl BuiltinScalarFnVariant {
         }
     }
 
+    pub fn is_deterministic(&self) -> bool {
+        match self {
+            Self::Sync(udf) => udf.is_deterministic(),
+            Self::Async(udf) => udf.is_deterministic(),
+        }
+    }
+
     pub fn type_id(&self) -> TypeId {
         match self {
             Self::Sync(udf) => udf.as_ref().type_id(),
@@ -100,6 +112,10 @@ impl BuiltinScalarFn {
     }
     pub fn name(&self) -> &str {
         self.func.name()
+    }
+
+    pub fn is_deterministic(&self) -> bool {
+        self.func.is_deterministic()
     }
 
     pub fn to_field(&self, schema: &Schema) -> DaftResult<Field> {
@@ -195,6 +211,10 @@ pub trait ScalarUDF: Send + Sync + std::any::Any {
         &[]
     }
 
+    fn is_deterministic(&self) -> bool {
+        true
+    }
+
     /// This is where the actual logic of the function is implemented.
     /// A simple example would be a string function such as `to_uppercase` that simply takes in a utf8 array and uppercases all values
     /// ```rs, no_run
@@ -214,6 +234,16 @@ pub trait ScalarUDF: Send + Sync + std::any::Any {
     /// }
     /// ```
     fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series>;
+
+    // TODO: This is a transitional API to avoid a large breaking change across all UDFs.
+    // Once stabilized, fold EvalContext into `call()` itself and remove this method.
+    fn call_with_ctx(
+        &self,
+        args: FunctionArgs<Series>,
+        _ctx: Option<&EvalContext>,
+    ) -> DaftResult<Series> {
+        self.call(args)
+    }
 
     /// `get_return_field` is used during planning to ensure that args and datatypes are compatible.
     /// A simple example would be a string function such as `to_uppercase` that expects a single string input, and a single string output.
@@ -256,7 +286,19 @@ pub trait AsyncScalarUDF: Send + Sync + std::any::Any {
         &[]
     }
 
+    fn is_deterministic(&self) -> bool {
+        true
+    }
+
     async fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series>;
+
+    async fn call_with_ctx(
+        &self,
+        args: FunctionArgs<Series>,
+        _ctx: Option<&EvalContext>,
+    ) -> DaftResult<Series> {
+        self.call(args).await
+    }
 
     fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field>;
 

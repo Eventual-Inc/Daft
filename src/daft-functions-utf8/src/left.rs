@@ -97,16 +97,23 @@ where
 
     let self_iter = create_broadcasted_str_iter(arr, expected_size);
     let result: Utf8Array = match nchars.len() {
-        1 => {
-            let n = nchars.get(0).unwrap();
-            let n: usize = NumCast::from(n).ok_or_else(|| {
-                DaftError::ComputeError(format!("Error in left: failed to cast rhs as usize {n}"))
-            })?;
-            let result: Utf8Array = self_iter
-                .map(|val| Some(left_most_chars(val?, n)))
-                .collect();
-            result.rename(arr.name())
-        }
+        1 => match nchars.get(0) {
+            Some(n) => {
+                let n: usize = NumCast::from(n).ok_or_else(|| {
+                    DaftError::ComputeError(format!(
+                        "Error in left: failed to cast rhs as usize {n}"
+                    ))
+                })?;
+                let result: Utf8Array = self_iter
+                    .map(|val| Some(left_most_chars(val?, n)))
+                    .collect();
+                result.rename(arr.name())
+            }
+            None => {
+                let result: Utf8Array = self_iter.map(|_| None::<&str>).collect();
+                result.rename(arr.name())
+            }
+        },
         _ => {
             let result: Utf8Array = self_iter
                 .zip(nchars.into_iter())
@@ -167,5 +174,15 @@ mod tests {
 
         assert_eq!(result.len(), 1);
         assert_eq!(result.get(0), Some(""));
+    }
+
+    #[test]
+    fn test_left_with_null_scalar() {
+        let arr = Utf8Array::from(("a", vec!["hello", "world"].as_slice()));
+        let nchars = Int64Array::full_null("n", &DataType::Int64, 1);
+        let result = left_impl(&arr, &nchars).unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result.get(0), None);
+        assert_eq!(result.get(1), None);
     }
 }

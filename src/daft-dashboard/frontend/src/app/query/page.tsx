@@ -11,7 +11,7 @@ import {
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
-import { toHumanReadableDate, main } from "@/lib/utils";
+import { toHumanReadableDate, main, getEngineName } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import LoadingPage from "@/components/loading";
 import { Status } from "./status";
@@ -117,16 +117,16 @@ function QueryPageInner() {
           </BreadcrumbList>
         </Breadcrumb>
 
-        <div className="w-full h-[150px] flex">
-          <div className="w-1/4 h-full border-r px-6 py-4">
+        <div className="w-full flex border-b border-zinc-800">
+          <div className="w-1/4 border-r border-zinc-800 px-6 py-4">
             <Status
               status={query.state.status}
               start_sec={query.start_sec}
               end_sec={end_sec}
             />
           </div>
-          <div className="flex-1 h-full px-6 py-4">
-            <div className="grid grid-cols-2 gap-6 h-full">
+          <div className="flex-1 px-6 py-4">
+            <div className="grid grid-cols-2 gap-6">
               <div className="space-y-3">
                 <div>
                   <h3
@@ -134,7 +134,7 @@ function QueryPageInner() {
                   >
                     Query ID
                   </h3>
-                  <p className={`${main.className} text-lg font-mono`}>
+                  <p className={`${main.className} text-lg font-mono text-zinc-100`}>
                     {query.id}
                   </p>
                 </div>
@@ -144,8 +144,16 @@ function QueryPageInner() {
                   >
                     Start Time
                   </h3>
-                  <p className={`${main.className} text-lg font-mono`}>
+                  <p className={`${main.className} text-lg font-mono text-zinc-100`}>
                     {toHumanReadableDate(query.start_sec)}
+                  </p>
+                </div>
+                <div>
+                  <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
+                    Entrypoint
+                  </h3>
+                  <p className={`${main.className} text-sm font-mono break-all text-zinc-100`} title={query.entrypoint || ""}>
+                    {query.entrypoint || "-"}
                   </p>
                 </div>
               </div>
@@ -154,10 +162,10 @@ function QueryPageInner() {
                   <h3
                     className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}
                   >
-                    Runner
+                    Engine
                   </h3>
-                  <p className={`${main.className} text-lg font-mono`}>
-                    Native (Swordfish)
+                  <p className={`${main.className} text-lg font-mono text-zinc-100`}>
+                    {getEngineName(query.runner)}
                   </p>
                 </div>
                 <div>
@@ -166,10 +174,25 @@ function QueryPageInner() {
                   >
                     End Time
                   </h3>
-                  <p className={`${main.className} text-lg font-mono`}>
+                  <p className={`${main.className} text-lg font-mono text-zinc-100`}>
                     {end_sec ? toHumanReadableDate(end_sec) : "..."}
                   </p>
                 </div>
+                {query.ray_dashboard_url && (
+                 <div>
+                    <h3 className={`${main.className} text-sm font-semibold text-zinc-400 mb-1`}>
+                      Ray Dashboard
+                    </h3>
+                    <a
+                      href={query.ray_dashboard_url.startsWith("http") ? query.ray_dashboard_url : `http://${query.ray_dashboard_url}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`${main.className} text-sm font-mono text-blue-500 hover:underline`}
+                    >
+                      Open in Ray
+                    </a>
+                 </div>
+               )}
               </div>
             </div>
           </div>

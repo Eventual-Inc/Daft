@@ -288,9 +288,11 @@ impl TreeDisplay for DistributedPipelineNode {
 
     fn repr_json(&self) -> serde_json::Value {
         serde_json::json!({
-            "id": self.id(),
+            "id": self.node_id(),
             "type": self.op.name(),
             "name": self.name(),
+            "category": "Physical",
+            "children": self.children.iter().map(|child| child.repr_json()).collect::<Vec<_>>(),
         })
     }
 

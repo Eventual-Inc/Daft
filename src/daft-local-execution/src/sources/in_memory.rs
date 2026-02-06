@@ -71,9 +71,10 @@ impl Source for InMemorySource {
     fn get_data(
         &mut self,
         _maintain_order: bool,
-        _io_stats: IOStatsRef,
+        io_stats: IOStatsRef,
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
+        io_stats.mark_bytes_read(self.size_bytes);
         let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(1);
         let input_receiver = self.receiver.take().expect("Receiver not found");
 

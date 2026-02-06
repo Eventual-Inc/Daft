@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from openai import OpenAI
+from openai._types import omit
 
 from daft import DataType
 from daft.ai.openai.protocols.text_embedder import OpenAITextEmbedder, get_input_text_token_limit_for_model
@@ -26,9 +27,18 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
     provider_name: str
     provider_options: OpenAIProviderOptions
     model_name: str
+    dimensions: int | None = None
     embed_options: EmbedTextOptions = field(
         default_factory=lambda: EmbedTextOptions(batch_size=64, max_retries=3, on_error="raise")
     )
+
+    def __post_init__(self) -> None:
+        if self.dimensions is None:
+            return
+        if self.dimensions <= 0:
+            raise ValueError("Embedding dimensions must be a positive integer.")
+        if "supports_overriding_dimensions" not in self.embed_options:
+            self.embed_options["supports_overriding_dimensions"] = True
 
     def get_provider(self) -> str:
         return "lm_studio"
@@ -48,6 +58,8 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
         return True
 
     def get_dimensions(self) -> EmbeddingDimensions:
+        if self.dimensions is not None:
+            return EmbeddingDimensions(size=self.dimensions, dtype=DataType.float32())
         try:
             client = OpenAI(**self.provider_options)
             response = client.embeddings.create(
@@ -68,10 +80,18 @@ class LMStudioTextEmbedderDescriptor(TextEmbedderDescriptor):
         # This allows LM Studio to use the same model profiles as OpenAI
         input_text_token_limit = get_input_text_token_limit_for_model(self.model_name)
 
+        # Determine if dimensions should be included in the request
+        dimensions = (
+            self.dimensions
+            if (self.dimensions is not None and self.embed_options.get("supports_overriding_dimensions", False))
+            else omit
+        )
+
         return OpenAITextEmbedder(
             provider_options=self.provider_options,
             model=self.model_name,
             embed_options=self.embed_options,
+            dimensions=dimensions,
             provider_name=self.get_provider(),
             batch_token_limit=batch_token_limit,
             input_text_token_limit=input_text_token_limit,

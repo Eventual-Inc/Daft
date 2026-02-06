@@ -19,7 +19,7 @@ impl Utf8Array {
         let nulls = input.nulls().cloned();
 
         let mut values = Vec::<u8>::new();
-        let mut offsets = OffsetBufferBuilder::new(input.len() + 1);
+        let mut offsets = OffsetBufferBuilder::new(input.len());
         for span in input.offsets().windows(2) {
             let s = span[0] as usize;
             let e = span[1] as usize;

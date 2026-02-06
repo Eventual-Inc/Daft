@@ -1,9 +1,8 @@
 use std::{any::Any, collections::HashMap, future::Future, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
-use common_metrics::{NodeID, StatSnapshot};
 use common_partitioning::{Partition, PartitionRef};
-use daft_local_plan::{PyLocalPhysicalPlan, SourceId, python::PyUnresolvedInputs};
+use daft_local_plan::{{ExecutionEngineFinalResult, PyLocalPhysicalPlan, SourceId, python::PyUnresolvedInputs}};
 use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 
 use crate::{
@@ -94,6 +93,8 @@ impl TaskResultHandle for RayTaskResultHandle {
                                 .0
                         })
                         .unwrap_or_default();
+                    let stats: ExecutionEngineFinalResult =
+                        ExecutionEngineFinalResult::decode(&stats_serialized);
                     let materialized_output = MaterializedOutput::new(
                         ray_part_refs
                             .into_iter()

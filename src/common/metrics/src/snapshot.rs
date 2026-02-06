@@ -2,6 +2,7 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use bincode::{Decode, Encode};
 use enum_dispatch::enum_dispatch;
+use indicatif::{HumanBytes, HumanCount};
 use itertools::Itertools as _;
 use smallvec::SmallVec;
 
@@ -38,7 +39,11 @@ impl StatSnapshotImpl for DefaultSnapshot {
     }
 
     fn to_message(&self) -> String {
-        format!("{} rows in, {} rows out", self.rows_in, self.rows_out)
+        format!(
+            "{} rows in, {} rows out",
+            HumanCount(self.rows_in),
+            HumanCount(self.rows_out)
+        )
     }
 }
 
@@ -54,12 +59,16 @@ impl StatSnapshotImpl for SourceSnapshot {
         stats![
             CPU_US_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
             ROWS_OUT_KEY; Stat::Count(self.rows_out),
-            "bytes read"; Stat::Bytes(self.bytes_read),
+            "bytes_read"; Stat::Bytes(self.bytes_read),
         ]
     }
 
     fn to_message(&self) -> String {
-        format!("{} rows out, {} bytes read", self.rows_out, self.bytes_read)
+        format!(
+            "{} rows out, {} read",
+            HumanCount(self.rows_out),
+            HumanBytes(self.bytes_read)
+        )
     }
 }
 
@@ -84,9 +93,9 @@ impl StatSnapshotImpl for FilterSnapshot {
     fn to_message(&self) -> String {
         format!(
             "{} rows in, {} rows out, {:.2}% kept",
-            self.rows_in,
-            self.rows_out,
-            self.selectivity * 100.0
+            HumanCount(self.rows_in),
+            HumanCount(self.rows_out),
+            self.selectivity
         )
     }
 }
@@ -112,7 +121,9 @@ impl StatSnapshotImpl for ExplodeSnapshot {
     fn to_message(&self) -> String {
         format!(
             "{} rows in, {} rows out, {:.2}x inc",
-            self.rows_in, self.rows_out, self.amplification
+            HumanCount(self.rows_in),
+            HumanCount(self.rows_out),
+            self.amplification
         )
     }
 }
@@ -144,15 +155,23 @@ impl StatSnapshotImpl for UdfSnapshot {
     }
 
     fn to_message(&self) -> String {
-        format!(
-            "{} rows in, {} rows out, {}",
-            self.rows_in,
-            self.rows_out,
-            self.custom_counters
-                .iter()
-                .map(|(name, value)| format!("{}: {}", name.as_ref(), value))
-                .join(", ")
-        )
+        if self.custom_counters.is_empty() {
+            format!(
+                "{} rows in, {} rows out",
+                HumanCount(self.rows_in),
+                HumanCount(self.rows_out)
+            )
+        } else {
+            format!(
+                "{} rows in, {} rows out, {}",
+                HumanCount(self.rows_in),
+                HumanCount(self.rows_out),
+                self.custom_counters
+                    .iter()
+                    .map(|(name, value)| format!("{}: {}", name.as_ref(), HumanCount(*value)))
+                    .join(", ")
+            )
+        }
     }
 }
 
@@ -171,7 +190,7 @@ impl StatSnapshotImpl for HashJoinBuildSnapshot {
     }
 
     fn to_message(&self) -> String {
-        format!("{} rows inserted", self.rows_inserted)
+        format!("{} rows inserted", HumanCount(self.rows_inserted))
     }
 }
 
@@ -195,8 +214,10 @@ impl StatSnapshotImpl for WriteSnapshot {
 
     fn to_message(&self) -> String {
         format!(
-            "{} rows in, {} rows written, {} bytes written",
-            self.rows_in, self.rows_written, self.bytes_written
+            "{} rows in, {} rows written, {} written",
+            HumanCount(self.rows_in),
+            HumanCount(self.rows_written),
+            HumanBytes(self.bytes_written)
         )
     }
 }

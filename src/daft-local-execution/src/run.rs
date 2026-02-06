@@ -9,23 +9,25 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayLevel, mermaid::MermaidDisplayOptions};
 use common_error::DaftResult;
-use common_metrics::{NodeID, StatSnapshot};
 use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
 use daft_context::{DaftContext, Subscriber};
-use daft_local_plan::{InputId, LocalPhysicalPlanRef, ResolvedInput, SourceId, translate};
+use daft_local_plan::{InputId, ExecutionEngineFinalResult, LocalPhysicalPlanRef, ResolvedInput, SourceId, translate};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
 use futures::{FutureExt, Stream, future::BoxFuture};
+#[cfg(feature = "python")]
+use pyo3::PyAny;
 use tokio::{runtime::Handle, sync::Mutex};
 use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
 use {
     common_daft_config::PyDaftExecutionConfig,
     daft_context::python::PyDaftContext,
+    daft_local_plan::python::PyExecutionEngineFinalResult,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    pyo3::{Bound, PyAny, PyRef, PyResult, Python, pyclass, pymethods},
+    pyo3::{Bound, PyRef, PyResult, Python, pyclass, pymethods},
 };
 
 use crate::{
@@ -102,7 +104,7 @@ impl PyNativeExecutor {
         input_id: InputId,
         inputs: daft_local_plan::python::PyResolvedInputs,
         context: Option<HashMap<String, String>>,
-    ) -> PyResult<Bound<'py, PyAny>> {
+    ) -> PyResult<Bound<'py, PyExecutionEngineResult>> {
         let daft_ctx: &DaftContext = daft_ctx.into();
         let plan = local_physical_plan.plan.clone();
         let exec_cfg = daft_ctx.execution_config();
@@ -362,10 +364,8 @@ fn should_enable_explain_analyze() -> bool {
     }
 }
 
-type ExecutionEngineFinalResult = DaftResult<Vec<(NodeID, StatSnapshot)>>;
-
 pub struct ExecutionEngineResult {
-    handle: RuntimeTask<ExecutionEngineFinalResult>,
+    handle: RuntimeTask<DaftResult<ExecutionEngineFinalResult>>,
     receiver: Receiver<Arc<MicroPartition>>,
 }
 
@@ -374,7 +374,7 @@ impl ExecutionEngineResult {
         self.receiver.recv().await
     }
 
-    async fn finish(self) -> ExecutionEngineFinalResult {
+    async fn finish(self) -> DaftResult<ExecutionEngineFinalResult> {
         drop(self.receiver);
         let result = self.handle.await;
         match result {
@@ -388,7 +388,7 @@ impl ExecutionEngineResult {
     pub fn into_stream(self) -> impl Stream<Item = DaftResult<Arc<MicroPartition>>> {
         struct StreamState {
             receiver: Receiver<Arc<MicroPartition>>,
-            handle: Option<RuntimeTask<ExecutionEngineFinalResult>>,
+            handle: Option<RuntimeTask<DaftResult<ExecutionEngineFinalResult>>>,
         }
 
         let state = StreamState {
@@ -453,8 +453,7 @@ impl PyExecutionEngineResult {
                 .expect("ExecutionEngineResult.finish() should not be called more than once.")
                 .finish()
                 .await?;
-            Ok(bincode::encode_to_vec(&stats, bincode::config::legacy())
-                .expect("Failed to serialize stats object"))
+            Ok(PyExecutionEngineFinalResult::from(stats))
         })
     }
 }

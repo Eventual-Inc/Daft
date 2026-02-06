@@ -1,14 +1,15 @@
 use std::{collections::HashMap, fmt::Display, sync::Arc};
 
-use daft_schema::schema::SchemaRef;
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 use crate::NodeID;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, Encode, Decode)]
 pub enum NodeType {
     // Sources
     // Produces MicroPartitions, never consumes
+    #[default] // For testing purposes
     EmptyScan,
     GlobScan,
     InMemoryScan,
@@ -65,8 +66,9 @@ impl Display for NodeType {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, Encode, Decode)]
 pub enum NodeCategory {
+    #[default] // For testing purposes
     Intermediate,
     Source,
     StreamingSink,
@@ -80,7 +82,7 @@ impl Display for NodeCategory {
 }
 
 /// Contains information about the node such as name, id, and the plan_id
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, Encode, Decode)]
 pub struct NodeInfo {
     pub name: Arc<str>,
     pub id: NodeID,
@@ -88,5 +90,4 @@ pub struct NodeInfo {
     pub node_type: NodeType,
     pub node_category: NodeCategory,
     pub context: HashMap<String, String>,
-    pub output_schema: SchemaRef,
 }
