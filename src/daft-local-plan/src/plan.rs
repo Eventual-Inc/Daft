@@ -104,6 +104,14 @@ impl LocalPhysicalPlan {
         self.into()
     }
 
+    pub fn output_partitions(&self) -> usize {
+        match self {
+            Self::Repartition(Repartition { num_partitions, .. }) => *num_partitions,
+            Self::IntoPartitions(IntoPartitions { num_partitions, .. }) => *num_partitions,
+            _ => 1,
+        }
+    }
+
     #[must_use]
     pub fn arced(self) -> LocalPhysicalPlanRef {
         self.into()
@@ -901,6 +909,7 @@ impl LocalPhysicalPlan {
         schema: SchemaRef,
         stats_state: StatsState,
         context: LocalNodeContext,
+        spill_threshold: Option<usize>,
     ) -> LocalPhysicalPlanRef {
         Self::Repartition(Repartition {
             input,
@@ -909,6 +918,7 @@ impl LocalPhysicalPlan {
             schema,
             stats_state,
             context,
+            spill_threshold,
         })
         .arced()
     }
@@ -1505,6 +1515,7 @@ impl LocalPhysicalPlan {
                     num_partitions,
                     schema,
                     context,
+                    spill_threshold,
                     ..
                 }) => Self::repartition(
                     new_child.clone(),
@@ -1513,6 +1524,7 @@ impl LocalPhysicalPlan {
                     schema.clone(),
                     StatsState::NotMaterialized,
                     context.clone(),
+                    *spill_threshold,
                 ),
                 Self::IntoPartitions(IntoPartitions {
                     num_partitions,
@@ -2074,6 +2086,7 @@ pub struct Repartition {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
+    pub spill_threshold: Option<usize>,
 }
 
 #[derive(Serialize, Deserialize)]

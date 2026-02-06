@@ -141,6 +141,10 @@ impl PipelineNodeImpl for RepartitionNode {
                     origin_node_id: Some(self_clone.node_id() as usize),
                     additional: None,
                 },
+                self_clone
+                    .config
+                    .execution_config
+                    .shuffle_map_spill_threshold,
             )
         });
 

@@ -47,7 +47,7 @@ use crate::{
         grouped_aggregate::GroupedAggregateSink,
         into_partitions::IntoPartitionsSink,
         pivot::PivotSink,
-        repartition::RepartitionSink,
+        repartition::RepartitionNode,
         sort::SortSink,
         top_n::TopNSink,
         window_order_by_only::WindowOrderByOnlySink,
@@ -1354,16 +1354,18 @@ fn physical_plan_to_pipeline(
             stats_state,
             schema,
             context,
+            spill_threshold,
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
-            let repartition_op =
-                RepartitionSink::new(repartition_spec.clone(), *num_partitions, schema.clone());
-            BlockingSinkNode::new(
-                Arc::new(repartition_op),
+            RepartitionNode::new(
+                repartition_spec.clone(),
+                *num_partitions,
+                schema.clone(),
                 child_node,
                 stats_state.clone(),
                 ctx,
                 context,
+                *spill_threshold,
             )
             .boxed()
         }

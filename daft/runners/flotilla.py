@@ -130,6 +130,8 @@ class RaySwordfishTaskHandle:
 
     result_handle: ray.ObjectRef
     actor_handle: ray.actor.ActorHandle
+    num_partitions: int
+    task_name: str
     task: asyncio.Task[RayTaskResult] | None = None
 
     async def _get_result(self) -> RayTaskResult:
@@ -141,11 +143,42 @@ class RaySwordfishTaskHandle:
             task_metadata: SwordfishTaskMetadata = await metadata_ref
             assert len(results) == len(task_metadata.partition_metadatas)
 
+            # Pack the results into partitions
+            num_partitions = self.num_partitions
+            partition_refs = []
+
+            # Determine if this is a shuffle-style task (multiple output partitions)
+            # or a pipelined-style task (like IntoBatches which produces multiple batches for a single logical partition).
+            # We must group chunks for shuffle tasks because the interleaving order is important.
+            # For pipelined tasks, we want to return each chunk as a separate result to allow redistribution.
+            is_into_batches = "IntoBatches" in self.task_name
+
+            if is_into_batches:
+                # For IntoBatches, return each yielded MicroPartition as a separate result.
+                # This allows nodes like IntoBatchesNode to see individual morsels and redistribute them.
+                for res, meta in zip(results, task_metadata.partition_metadatas):
+                    partition_refs.append(RayPartitionRef([res], meta.num_rows, meta.size_bytes or 0))
+            else:
+                # For Shuffle (Repartition/Sort), group chunks by partition index.
+                # Even if num_partitions == 1, we group them into a single RayMaterializedResult with multiple chunks
+                # to satisfy expectations of shuffle downstream and tests.
+                packed_results: list[list[ray.ObjectRef]] = [[] for _ in range(num_partitions)]
+                packed_metadatas: list[list[PartitionMetadata]] = [[] for _ in range(num_partitions)]
+
+                for i, (res, meta) in enumerate(zip(results, task_metadata.partition_metadatas)):
+                    part_idx = i % num_partitions
+                    packed_results[part_idx].append(res)
+                    packed_metadatas[part_idx].append(meta)
+
+                for i in range(num_partitions):
+                    chunks = packed_results[i]
+                    metas = packed_metadatas[i]
+                    total_rows = sum(m.num_rows for m in metas)
+                    total_bytes = sum(m.size_bytes or 0 for m in metas)
+                    partition_refs.append(RayPartitionRef(chunks, total_rows, total_bytes))
+
             return RayTaskResult.success(
-                [
-                    RayPartitionRef(result, metadata.num_rows, metadata.size_bytes or 0)
-                    for result, metadata in zip(results, task_metadata.partition_metadatas)
-                ],
+                partition_refs,
                 task_metadata.stats,
             )
         except (ray.exceptions.ActorDiedError, ray.exceptions.ActorUnschedulableError):
@@ -178,13 +211,15 @@ class RaySwordfishActorHandle:
         self.actor_handle = actor_handle
 
     def submit_task(self, task: RaySwordfishTask) -> RaySwordfishTaskHandle:
-        psets = {k: [v.object_ref for v in v] for k, v in task.psets().items()}
+        psets = {k: [ref for v in v for ref in v.object_refs] for k, v in task.psets().items()}
         result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(
             task.plan(), task.config(), psets, task.context()
         )
         return RaySwordfishTaskHandle(
             result_handle,
             self.actor_handle,
+            task.num_partitions(),
+            task.name(),
         )
 
     def shutdown(self) -> None:
@@ -260,10 +295,15 @@ class RemoteFlotillaRunner:
         plan: DistributedPhysicalPlan,
         partition_sets: dict[str, PartitionSet[ray.ObjectRef]],
     ) -> None:
-        psets = {
-            k: [RayPartitionRef(v.partition(), v.metadata().num_rows, v.metadata().size_bytes or 0) for v in v.values()]
-            for k, v in partition_sets.items()
-        }
+        psets = {}
+        for k, v in partition_sets.items():
+            partition_refs = []
+            for val in v.values():
+                partition_refs.append(
+                    RayPartitionRef(val.partition(), val.metadata().num_rows, val.metadata().size_bytes or 0)
+                )
+            psets[k] = partition_refs
+
         self.curr_plans[plan.idx()] = plan
         self.curr_result_gens[plan.idx()] = self.plan_runner.run_plan(plan, psets)
 
@@ -286,11 +326,19 @@ class RemoteFlotillaRunner:
             self.curr_result_gens.pop(plan_id, None)
             return None
 
+        refs = next_partition_ref.object_refs
+        # If we have a single object ref, unwrap it to maintain backward compatibility
+        # with consumers that expect a single ray.ObjectRef.
+        # If we have multiple refs (spilled case), pass the list.
+        # The consumer (RayPartitionSet) has been updated to handle both cases.
+        partition_data = refs
+
         metadata_accessor = PartitionMetadataAccessor.from_metadata_list(
             [PartitionMetadata(next_partition_ref.num_rows, next_partition_ref.size_bytes)]
         )
+
         materialized_result = RayMaterializedResult(
-            partition=next_partition_ref.object_ref,
+            partition=partition_data,
             metadatas=metadata_accessor,
             metadata_idx=0,
         )

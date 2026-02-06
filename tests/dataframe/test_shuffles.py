@@ -67,6 +67,84 @@ def flight_shuffle_ctx():
     get_tests_daft_runner_name() != "ray",
     reason="shuffle tests are meant for the ray runner",
 )
+def test_shuffle_with_spill(make_df):
+    """Test that shuffle works correctly with a very low spill threshold."""
+    from daft.recordbatch import MicroPartition
+    from daft.runners import get_or_create_runner
+
+    # Create two DataFrames and concat them to ensure we have multiple input batches
+    df1 = make_df({"a": [1, 1, 1], "b": [1, 1, 1]})
+    df2 = make_df({"a": [2, 2, 2], "b": [2, 2, 2]})
+    df = df1.concat(df2)
+
+    # Set a very low spill threshold (1 byte) to force spilling on every batch
+    # And set default_morsel_size to 1 to ensure we have multiple batches per task
+    with daft.execution_config_ctx(shuffle_map_spill_threshold=1, default_morsel_size=1):
+        # Repartition to 1 partition so all data goes to the same place
+        df = df.repartition(1, "a")
+
+        # Use the runner directly to inspect intermediate RayMaterializedResult objects
+        runner = get_or_create_runner()
+        results_iter = runner.run_iter(df._builder)
+
+        composite_partition_detected = False
+        final_partitions = []
+
+        for res in results_iter:
+            # Check if the partition is a list of multiple refs (composite partition)
+            part = res.partition()
+            if isinstance(part, list) and len(part) > 1:
+                composite_partition_detected = True
+
+            # Collect the actual data for correctness check
+            final_partitions.append(res.micropartition())
+
+        # Verify that we actually triggered the composite partition logic
+        assert composite_partition_detected, (
+            "Spill mechanism did not trigger: RayMaterializedResult did not receive multiple chunks"
+        )
+
+        # Verify data correctness
+        full_mp = MicroPartition.concat(final_partitions)
+        res_pd = full_mp.to_pandas()
+        assert sorted(res_pd["a"].tolist()) == [1, 1, 1, 2, 2, 2]
+        assert sorted(res_pd["b"].tolist()) == [1, 1, 1, 2, 2, 2]
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
+def test_shuffle_spill_exact_threshold(make_df):
+    """Spill should trigger when accumulated size equals threshold (>= condition)."""
+    from daft.runners import get_or_create_runner
+
+    # Build two small batches whose combined size is our threshold target.
+    df1 = make_df({"a": [1], "b": [1]})
+    df2 = make_df({"a": [2], "b": [2]})
+    df = df1.concat(df2)
+
+    # We don't know exact bytes; use morsel_size=1 to ensure two morsels and set a tiny threshold.
+    # Threshold = 0 should trigger on first push; 1 should trigger once size_bytes >= 1.
+    # Choose 1 to exercise the equality path (>=).
+    with daft.execution_config_ctx(shuffle_map_spill_threshold=1, default_morsel_size=1):
+        df = df.repartition(1, "a")
+        runner = get_or_create_runner()
+        results_iter = runner.run_iter(df._builder)
+
+        composite_partition_detected = False
+        for res in results_iter:
+            part = res.partition()
+            if isinstance(part, list) and len(part) > 1:
+                composite_partition_detected = True
+
+        assert composite_partition_detected, "Spill did not trigger at exact threshold"
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle tests are meant for the ray runner",
+)
 @pytest.mark.parametrize(
     "input_partitions, output_partitions",
     [(100, 100), (100, 1), (100, 50), (100, 200)],
