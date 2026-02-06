@@ -139,12 +139,18 @@ impl ListArray {
     where
         T: NumericNative,
         T::DAFTTYPE: DaftNumericType<Native = T>,
+        T::ARROWTYPE: arrow::datatypes::ArrowPrimitiveType<Native = T>,
         ArrayWrapper<DataArray<T::DAFTTYPE>>: SeriesLike,
     {
-        // todo!()
         let flat_child_vec: Vec<T> = data.iter().copied().flatten().flatten().copied().collect();
-        let flat_child =
-            DataArray::<T::DAFTTYPE>::from_values(name, flat_child_vec.into_iter()).into_series();
+        let arrow_arr =
+            arrow::array::PrimitiveArray::<T::ARROWTYPE>::from_iter_values(flat_child_vec);
+        let flat_child = DataArray::<T::DAFTTYPE>::from_arrow(
+            Field::new(name, T::DAFTTYPE::get_dtype()),
+            Arc::new(arrow_arr),
+        )
+        .unwrap()
+        .into_series();
 
         let lengths = data.iter().map(|d| d.map_or(0, |d| d.len()));
         let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)
@@ -165,12 +171,18 @@ impl ListArray {
     where
         T: NumericNative,
         T::DAFTTYPE: DaftNumericType<Native = T>,
+        T::ARROWTYPE: arrow::datatypes::ArrowPrimitiveType<Native = T>,
         ArrayWrapper<DataArray<T::DAFTTYPE>>: SeriesLike,
     {
-        // todo!()
         let flat_child_vec: Vec<T> = data.iter().flatten().flatten().copied().collect();
-        let flat_child =
-            DataArray::<T::DAFTTYPE>::from_values(name, flat_child_vec.into_iter()).into_series();
+        let arrow_arr =
+            arrow::array::PrimitiveArray::<T::ARROWTYPE>::from_iter_values(flat_child_vec);
+        let flat_child = DataArray::<T::DAFTTYPE>::from_arrow(
+            Field::new(name, T::DAFTTYPE::get_dtype()),
+            Arc::new(arrow_arr),
+        )
+        .unwrap()
+        .into_series();
 
         let lengths = data.iter().map(|d| d.as_ref().map_or(0, |d| d.len()));
         let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)

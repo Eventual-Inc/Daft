@@ -222,16 +222,6 @@ where
             );
         Self::from_arrow(Field::new(name, T::get_dtype()), Arc::new(arrow_arr)).unwrap()
     }
-
-    pub fn from_values(
-        name: &str,
-        iter: impl daft_arrow::trusted_len::TrustedLen<Item = T::Native>,
-    ) -> Self {
-        let arrow_array = Box::new(
-            daft_arrow::array::PrimitiveArray::<T::Native>::from_trusted_len_values_iter(iter),
-        );
-        Self::new(Field::new(name, T::get_dtype()).into(), arrow_array).unwrap()
-    }
 }
 
 impl Utf8Array {

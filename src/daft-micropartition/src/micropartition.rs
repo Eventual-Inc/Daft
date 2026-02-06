@@ -806,8 +806,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_mp_stream() -> DaftResult<()> {
-        let columns = vec![Int32Array::from_values("a", vec![1].into_iter()).into_series()];
-        let columns2 = vec![Int32Array::from_values("a", vec![2].into_iter()).into_series()];
+        let columns = vec![Int32Array::from_slice("a", &[1]).into_series()];
+        let columns2 = vec![Int32Array::from_slice("a", &[2]).into_series()];
         let schema = Schema::new(vec![Field::new("a", DataType::Int32)]);
 
         let table1 = RecordBatch::from_nonempty_columns(columns)?;

@@ -197,7 +197,8 @@ mod test {
             fn $test_name() -> DaftResult<()> {
                 let values = $values.clone();
                 let values_ref = values.as_slice();
-                let arr = <$array_type>::from_values("test", $values.into_iter());
+                let arr = <$array_type>::from_slice("test", values_ref);
+
                 let arrow_arr = arr.as_arrow()?;
                 assert_eq!(arrow_arr.len(), 3);
                 assert_eq!(arrow_arr.values(), values_ref);
@@ -293,7 +294,7 @@ mod test {
     fn test_into_arrow_date() -> DaftResult<()> {
         let arr = DateArray::new(
             Field::new("test", DataType::Date),
-            Int32Array::from_values("", vec![1, 2, 3].into_iter()),
+            Int32Array::from_slice("", &[1, 2, 3]),
         );
         let arrow_arr = arr.as_arrow()?;
         assert_eq!(arrow_arr.len(), 3);
@@ -305,7 +306,7 @@ mod test {
     fn test_into_arrow_time() -> DaftResult<()> {
         let arr = TimeArray::new(
             Field::new("test", DataType::Time(TimeUnit::Nanoseconds)),
-            Int64Array::from_values("", vec![1, 2, 3].into_iter()),
+            Int64Array::from_slice("", &[1, 2, 3]),
         );
         let arrow_arr = arr.as_arrow()?;
         assert_eq!(arrow_arr.len(), 3);
@@ -320,7 +321,7 @@ mod test {
     fn test_into_arrow_duration() -> DaftResult<()> {
         let arr = DurationArray::new(
             Field::new("test", DataType::Duration(TimeUnit::Milliseconds)),
-            Int64Array::from_values("", vec![1000, 2000, 3000].into_iter()),
+            Int64Array::from_slice("", &[1000, 2000, 3000]),
         );
         let arrow_arr = arr.as_arrow()?;
         assert_eq!(arrow_arr.len(), 3);
@@ -335,7 +336,7 @@ mod test {
     fn test_into_arrow_timestamp() -> DaftResult<()> {
         let arr = TimestampArray::new(
             Field::new("test", DataType::Timestamp(TimeUnit::Microseconds, None)),
-            Int64Array::from_values("", vec![1000000, 2000000, 3000000].into_iter()),
+            Int64Array::from_slice("", &[1000000, 2000000, 3000000]),
         );
         let arrow_arr = arr.as_arrow()?;
         assert_eq!(arrow_arr.len(), 3);
@@ -420,7 +421,7 @@ mod test {
 
     #[test]
     fn test_into_arrow_struct() -> DaftResult<()> {
-        let field1 = Int32Array::from_values("a", vec![1, 2, 3].into_iter());
+        let field1 = Int32Array::from_slice("a", &[1, 2, 3]);
         let field2 = Utf8Array::from_values("b", vec!["x", "y", "z"].into_iter());
         let arr = StructArray::new(
             Field::new(

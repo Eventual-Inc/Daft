@@ -74,8 +74,7 @@ impl AsyncFileWriter for DummyWriter {
         )
         .into_series();
         let write_count_series =
-            UInt64Array::from_values("write_count", std::iter::once(self.write_count as u64))
-                .into_series();
+            UInt64Array::from_slice("write_count", &[self.write_count as u64]).into_series();
         let path_table = RecordBatch::new_unchecked(
             Schema::new(vec![
                 path_series.field().clone(),
@@ -192,8 +191,7 @@ impl AsyncFileWriter for FailingWriter {
         )
         .into_series();
         let write_count_series =
-            UInt64Array::from_values("write_count", std::iter::once(self.write_count as u64))
-                .into_series();
+            UInt64Array::from_slice("write_count", &[self.write_count as u64]).into_series();
         let path_table = RecordBatch::new_unchecked(
             Schema::new(vec![
                 path_series.field().clone(),
