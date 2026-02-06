@@ -198,7 +198,11 @@ impl<'py> IntoPyObject<'py> for Literal {
                     "Key and value counts should be equal in map literal"
                 );
 
-                Ok(PyList::new(py, keys.to_literals().zip(values.to_literals()))?.into_any())
+                let map = PyDict::new(py);
+                for (key, value) in keys.to_literals().into_iter().zip(values.to_literals()) {
+                    map.set_item(key.into_pyobject(py)?, value.into_pyobject(py)?)?;
+                }
+                Ok(map.into_any())
             }
             Self::Tensor { data, shape } => {
                 let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;

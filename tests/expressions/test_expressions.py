@@ -656,7 +656,7 @@ def test_list_value_counts():
     value_counts = result.to_pydict()["value_counts"]
 
     # Expected output
-    expected = [[("a", 2), ("b", 1), ("c", 1)], [("b", 2), ("c", 1)], [("a", 3)], [], [("d", 2)]]
+    expected = [{"a": 2, "b": 1, "c": 1}, {"b": 2, "c": 1}, {"a": 3}, {}, {"d": 2}]
 
     # Check the result
     assert value_counts == expected
@@ -689,16 +689,8 @@ def test_list_value_counts_nested():
 
     # Apply list_value_counts operation and expect an exception
     result = mp.eval_expression_list([col("nested_list_col").value_counts().alias("value_counts")])
-    result_dict = result.to_pydict()
-
-    assert result_dict["value_counts"] == [
-        [([1, 2], 1), ([3, 4], 1)],
-        [([1, 2], 1), ([5, 6], 1)],
-        [([3, 4], 1), ([1, 2], 1)],
-        [],
-        [],
-        [([1, 2], 2)],
-    ]
+    with pytest.raises(TypeError):
+        result.to_pydict()
 
 
 def test_list_value_counts_fixed_size():
@@ -727,12 +719,12 @@ def test_list_value_counts_fixed_size():
     # Verify the value counts
     result_dict = result.to_pydict()
     assert result_dict["value_counts"] == [
-        [(1, 1), (2, 1), (3, 1)],
-        [(4, 2), (3, 1)],
-        [(4, 1), (5, 1), (6, 1)],
-        [(1, 1), (2, 1), (3, 1)],
-        [(7, 1), (8, 1), (9, 1)],
-        [],
+        {1: 1, 2: 1, 3: 1},
+        {4: 2, 3: 1},
+        {4: 1, 5: 1, 6: 1},
+        {1: 1, 2: 1, 3: 1},
+        {7: 1, 8: 1, 9: 1},
+        {},
     ]
 
 
@@ -754,7 +746,7 @@ def test_list_value_counts_degenerate():
     result_null = null_mp.eval_expression_list([col("null_list_col").value_counts().alias("value_counts")])
 
     # Check the result for null values
-    assert result_null.to_pydict() == {"value_counts": [[], []]}
+    assert result_null.to_pydict() == {"value_counts": [{}, {}]}
 
 
 @pytest.mark.parametrize(
