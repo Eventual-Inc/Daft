@@ -1478,7 +1478,8 @@ def udf(
     init_args: InitArgsType,
     resource_request: ResourceRequest | None,
     batch_size: int | None,
-    concurrency: int | None,
+    min_concurrency: int | None,
+    max_concurrency: int | None,
     use_process: bool | None,
     ray_options: dict[str, Any] | None = None,
 ) -> PyExpr: ...
