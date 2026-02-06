@@ -4,11 +4,7 @@ use arrow::{
     array::{ArrowPrimitiveType, BooleanBuilder},
     buffer::{BooleanBuffer, ScalarBuffer},
 };
-use common_error::DaftResult;
-use daft_arrow::{
-    array::{MutablePrimitiveArray, PrimitiveArray},
-    types::months_days_ns,
-};
+use daft_arrow::types::months_days_ns;
 #[cfg(feature = "python")]
 use pyo3::{Py, PyAny};
 
@@ -22,47 +18,38 @@ impl<T> DataArray<T>
 where
     T: DaftPrimitiveType,
 {
-    pub fn from_iter<F: Into<Arc<Field>>>(
-        field: F,
-        iter: impl daft_arrow::trusted_len::TrustedLen<Item = Option<T::Native>>,
-    ) -> Self {
-        // this is a workaround to prevent overflow issues when dealing with i128 and decimal
-        // typical behavior would be the result array would always be Decimal(32, 32)
-        let field = field.into();
-        let mut array = MutablePrimitiveArray::<T::Native>::from(field.dtype.to_arrow2().unwrap());
-        array.extend_trusted_len(iter);
-        let data_array: PrimitiveArray<_> = array.into();
-        Self::new(field, data_array.boxed()).unwrap()
-    }
-
-    pub fn from_values_iter<F: Into<Arc<Field>>>(
-        field: F,
-        iter: impl daft_arrow::trusted_len::TrustedLen<Item = T::Native>,
-    ) -> Self {
-        // this is a workaround to prevent overflow issues when dealing with i128 and decimal
-        // typical behavior would be the result array would always be Decimal(32, 32)
-        let field = field.into();
-        let mut array = MutablePrimitiveArray::<T::Native>::from(field.dtype.to_arrow2().unwrap());
-        array.extend_trusted_len_values(iter);
-        let data_array: PrimitiveArray<_> = array.into();
-        Self::new(field, data_array.boxed()).unwrap()
-    }
-
-    pub fn from_regular_iter<F, I>(field: F, iter: I) -> DaftResult<Self>
+    pub fn from_field_and_values<F>(field: F, iter: impl IntoIterator<Item = T::Native>) -> Self
     where
         F: Into<Arc<Field>>,
-        I: Iterator<Item = Option<T::Native>>,
     {
         let field = field.into();
-        let data_type = field.dtype.to_arrow2()?;
-        let mut array = MutablePrimitiveArray::<T::Native>::from(data_type);
-        let (_, upper_bound) = iter.size_hint();
-        if let Some(upper_bound) = upper_bound {
-            array.reserve(upper_bound);
-        }
-        array.extend(iter);
-        let array = PrimitiveArray::from(array).boxed();
-        Self::new(field, array)
+        let values: Vec<T::Native> = iter.into_iter().collect();
+        let buffer = arrow::buffer::Buffer::from_vec(values);
+        let len = buffer.len() / std::mem::size_of::<T::Native>();
+        let scalar_buffer = arrow::buffer::ScalarBuffer::<
+            <<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native,
+        >::new(buffer, 0, len);
+        let arrow_arr =
+            arrow::array::PrimitiveArray::<<T::Native as NumericNative>::ARROWTYPE>::new(
+                scalar_buffer,
+                None,
+            );
+        Self::from_arrow(field, Arc::new(arrow_arr)).unwrap()
+    }
+
+    pub fn from_iter<F, I>(field: F, iter: I) -> Self
+    where
+        F: Into<Arc<Field>>,
+        I: IntoIterator<
+            Item = Option<<<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native>,
+        >,
+    {
+        let field = field.into();
+        let arrow_arr =
+            arrow::array::PrimitiveArray::<<T::Native as NumericNative>::ARROWTYPE>::from_iter(
+                iter,
+            );
+        Self::from_arrow(field, Arc::new(arrow_arr)).unwrap()
     }
 }
 
@@ -296,7 +283,7 @@ impl PythonArray {
     /// Create a PythonArray from an iterator of pickled values.
     ///
     /// Assumes that all Python objects are not None.
-    pub fn from_iter_pickled<I, T>(name: &str, iter: I) -> DaftResult<Self>
+    pub fn from_iter_pickled<I, T>(name: &str, iter: I) -> common_error::DaftResult<Self>
     where
         I: ExactSizeIterator<Item = Option<T>>,
         T: AsRef<[u8]>,

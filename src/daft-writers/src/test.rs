@@ -219,9 +219,7 @@ pub fn make_dummy_target_file_size_writer_factory(
 
 pub fn make_dummy_mp(size_bytes: usize) -> Arc<MicroPartition> {
     let range = (0..size_bytes).map(|i| Some(i as u8));
-    let series = UInt8Array::from_regular_iter(Field::new("ints", DataType::UInt8), range)
-        .unwrap()
-        .into_series();
+    let series = UInt8Array::from_iter(Field::new("ints", DataType::UInt8), range).into_series();
     let schema = Arc::new(Schema::new(vec![series.field().clone()]));
     let table = RecordBatch::new_unchecked(schema.clone(), vec![series.into()], size_bytes);
     Arc::new(MicroPartition::new_loaded(

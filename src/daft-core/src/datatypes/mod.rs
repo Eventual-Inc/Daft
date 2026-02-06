@@ -481,7 +481,7 @@ impl<T: DaftPrimitiveType> DataArray<T> {
     {
         let arrow_buffer = Buffer::from(self.as_arrow2().values().clone());
 
-        Self::from_values_iter(
+        Self::from_field_and_values(
             self.field.clone(),
             ScalarBuffer::from(arrow_buffer).into_iter().map(f),
         )

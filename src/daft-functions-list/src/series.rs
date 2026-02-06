@@ -228,7 +228,7 @@ impl SeriesListExtension for Series {
                         .len() as u64;
                     Some(length)
                 });
-                Ok(UInt64Array::from_regular_iter(field, iter)?.into_series())
+                Ok(UInt64Array::from_iter(field, iter).into_series())
             }
             DataType::FixedSizeList(..) => {
                 let iter = self.fixed_size_list()?.into_iter().map(|sub_series| {
@@ -239,7 +239,7 @@ impl SeriesListExtension for Series {
                         .len() as u64;
                     Some(length)
                 });
-                Ok(UInt64Array::from_regular_iter(field, iter)?.into_series())
+                Ok(UInt64Array::from_iter(field, iter).into_series())
             }
             _ => Err(DaftError::TypeError(format!(
                 "List count distinct not implemented for {}",
