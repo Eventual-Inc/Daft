@@ -1,9 +1,11 @@
-use common_arrow_ffi as ffi;
+use arrow_schema::ffi::FFI_ArrowSchema;
+use common_error::DaftError;
 use common_py_serde::impl_bincode_py_state_serialization;
 use indexmap::IndexMap;
 use pyo3::{
     class::basic::CompareOp,
     exceptions::{PyAttributeError, PyValueError},
+    ffi::Py_uintptr_t,
     prelude::*,
 };
 use serde::{Deserialize, Serialize};
@@ -363,12 +365,29 @@ impl PyDataType {
                 } else {
                     // Fall back to default Daft super extension representation if installed pyarrow doesn't have the
                     // canonical tensor extension type.
-                    #[allow(deprecated, reason = "arrow2 migration")]
-                    ffi::dtype_to_py(py, &self.dtype.to_arrow2()?, pyarrow)
+                    let field = Field::new("", self.dtype.clone());
+                    let arrow_field = field.to_arrow()?;
+                    let c_schema =
+                        FFI_ArrowSchema::try_from(&arrow_field).map_err(DaftError::from)?;
+                    let c_schema_ptr = &raw const c_schema;
+                    let module = py.import("pyarrow")?;
+                    let class = module.getattr("DataType")?;
+                    let dtype =
+                        class.call_method1("_import_from_c", (c_schema_ptr as Py_uintptr_t,))?;
+                    Ok(dtype)
                 }
             }
-            #[allow(deprecated, reason = "arrow2 migration")]
-            _ => ffi::dtype_to_py(py, &self.dtype.to_arrow2()?, pyarrow),
+            _ => {
+                let field = Field::new("", self.dtype.clone());
+                let arrow_field = field.to_arrow()?;
+                let c_schema = FFI_ArrowSchema::try_from(&arrow_field).map_err(DaftError::from)?;
+                let c_schema_ptr = &raw const c_schema;
+                let module = py.import("pyarrow")?;
+                let class = module.getattr("DataType")?;
+                let dtype =
+                    class.call_method1("_import_from_c", (c_schema_ptr as Py_uintptr_t,))?;
+                Ok(dtype)
+            }
         }
     }
     pub fn is_null(&self) -> PyResult<bool> {

@@ -241,17 +241,14 @@ impl MapArray {
         let struct_array = arrow::array::StructArray::try_new(
             inner_struct_fields.clone(),
             struct_arrays,
-            inner_struct_array.nulls().cloned(),
+            None, // Map entries cannot contain nulls; nulls live on the MapArray itself
         )?;
 
-        let offsets_buffer =
-            arrow::buffer::Buffer::from(self.physical.offsets().clone().into_inner());
-        let scalar_buffer = arrow::buffer::ScalarBuffer::<i32>::from(offsets_buffer);
-
-        let offsets = arrow::buffer::OffsetBuffer::new(scalar_buffer);
-
+        let i32_offsets: Vec<i32> = self.physical.offsets().iter().map(|&o| o as i32).collect();
+        let offsets =
+            arrow::buffer::OffsetBuffer::new(arrow::buffer::ScalarBuffer::from(i32_offsets));
         Ok(Arc::new(arrow::array::MapArray::try_new(
-            Arc::new(arrow_field),
+            Arc::new(inner_struct_field.as_ref().clone().with_nullable(false)),
             offsets,
             struct_array,
             self.physical.nulls().cloned(),
