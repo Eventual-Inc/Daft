@@ -756,6 +756,9 @@ jobs:
       env:
         DAFT_RUNNER: native
         UNITY_CATALOG_PORT: 3000
+        DATABRICKS_ENDPOINT: ${{ secrets.ACTIONS_DATABRICKS_ENDPOINT }}
+        DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID: ${{ secrets.ACTIONS_DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID }}
+        DATABRICKS_SERVICE_PRINCIPAL_SECRET: ${{ secrets.ACTIONS_DATABRICKS_SERVICE_PRINCIPAL_SECRET }}
     - name: Run Unity integration tests (ray)
       if: always()
       run: |
@@ -766,6 +769,9 @@ jobs:
       env:
         DAFT_RUNNER: ray
         UNITY_CATALOG_PORT: 3000
+        DATABRICKS_ENDPOINT: ${{ secrets.ACTIONS_DATABRICKS_ENDPOINT }}
+        DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID: ${{ secrets.ACTIONS_DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID }}
+        DATABRICKS_SERVICE_PRINCIPAL_SECRET: ${{ secrets.ACTIONS_DATABRICKS_SERVICE_PRINCIPAL_SECRET }}
     # Iceberg tests
     - name: Run Iceberg integration tests (native)
       if: always()
