@@ -136,7 +136,8 @@ impl IntoPartitionsNode {
                     additional: None,
                 },
             );
-            let builder = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+            let builder =
+                SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);
             if result_tx.send(builder).await.is_err() {
                 break;
             }
@@ -209,8 +210,8 @@ impl IntoPartitionsNode {
                             self.config.schema.clone(),
                             self.node_id(),
                         );
-                    let builder =
-                        SwordfishTaskBuilder::new(in_memory_scan, self.as_ref()).with_psets(psets);
+                    let builder = SwordfishTaskBuilder::new(in_memory_scan, self.as_ref())
+                        .with_psets(self.node_id(), psets);
                     if result_tx.send(builder).await.is_err() {
                         break;
                     }

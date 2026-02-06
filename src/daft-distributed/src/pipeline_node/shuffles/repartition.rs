@@ -93,8 +93,8 @@ impl RepartitionNode {
                 self.config.schema.clone(),
                 self.node_id(),
             );
-            let builder =
-                SwordfishTaskBuilder::new(in_memory_source_plan, self.as_ref()).with_psets(psets);
+            let builder = SwordfishTaskBuilder::new(in_memory_source_plan, self.as_ref())
+                .with_psets(self.node_id(), psets);
 
             let _ = result_tx.send(builder).await;
         }
