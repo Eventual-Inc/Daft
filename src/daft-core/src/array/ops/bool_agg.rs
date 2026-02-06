@@ -1,4 +1,7 @@
-use arrow::compute::{bool_and, bool_or};
+use arrow::{
+    array::BooleanBuilder,
+    compute::{bool_and, bool_or},
+};
 use common_error::DaftResult;
 
 use crate::{
@@ -15,20 +18,20 @@ impl DaftBoolAggable for DataArray<BooleanType> {
 
     fn bool_and(&self) -> Self::Output {
         let value = bool_and(&self.as_arrow()?);
-        Ok(std::iter::once(value).collect::<Self>().rename(self.name()))
+        Ok(Self::from_iter(self.name(), std::iter::once(value)))
     }
 
     fn bool_or(&self) -> Self::Output {
         let value = bool_or(&self.as_arrow()?);
-        Ok(std::iter::once(value).collect::<Self>().rename(self.name()))
+        Ok(Self::from_iter(self.name(), std::iter::once(value)))
     }
 
     fn grouped_bool_and(&self, groups: &GroupIndices) -> Self::Output {
-        let mut results = Vec::with_capacity(groups.len());
+        let mut results = BooleanBuilder::with_capacity(groups.len());
 
         for group in groups {
             if group.is_empty() {
-                results.push(None);
+                results.append_null();
                 continue;
             }
 
@@ -45,21 +48,21 @@ impl DaftBoolAggable for DataArray<BooleanType> {
                 }
             }
 
-            results.push(if all_null { None } else { Some(result) });
+            if all_null {
+                results.append_null();
+            } else {
+                results.append_value(result);
+            }
         }
-
-        Ok(results
-            .into_iter()
-            .collect::<Self>()
-            .rename(self.field.name.as_ref()))
+        Ok(Self::from_builder(self.name(), results))
     }
 
     fn grouped_bool_or(&self, groups: &GroupIndices) -> Self::Output {
-        let mut results = Vec::with_capacity(groups.len());
+        let mut results = BooleanBuilder::with_capacity(groups.len());
 
         for group in groups {
             if group.is_empty() {
-                results.push(None);
+                results.append_null();
                 continue;
             }
 
@@ -76,12 +79,12 @@ impl DaftBoolAggable for DataArray<BooleanType> {
                 }
             }
 
-            results.push(if all_null { None } else { Some(result) });
+            if all_null {
+                results.append_null();
+            } else {
+                results.append_value(result);
+            }
         }
-
-        Ok(results
-            .into_iter()
-            .collect::<Self>()
-            .rename(self.field.name.as_ref()))
+        Ok(Self::from_builder(self.name(), results))
     }
 }

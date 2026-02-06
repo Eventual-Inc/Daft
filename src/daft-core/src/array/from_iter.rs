@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use arrow::{array::ArrowPrimitiveType, buffer::ScalarBuffer};
+use arrow::{
+    array::{ArrowPrimitiveType, BooleanBuilder},
+    buffer::ScalarBuffer,
+};
 use common_error::DaftResult;
 use daft_arrow::{
     array::{MutablePrimitiveArray, PrimitiveArray},
@@ -240,9 +243,17 @@ impl BinaryArray {
 }
 
 impl BooleanArray {
+    pub fn from_builder(name: &str, mut builder: BooleanBuilder) -> Self {
+        let arrow_array = Arc::new(arrow::array::BooleanArray::from(builder.finish()));
+        Self::from_arrow(Field::new(name, DataType::Boolean), arrow_array).unwrap()
+    }
     pub fn from_values(name: &str, iter: impl ExactSizeIterator<Item = bool>) -> Self {
         let arrow_array =
             Arc::new(unsafe { arrow::array::BooleanArray::from_trusted_len_iter(iter) });
+        Self::from_arrow(Field::new(name, DataType::Boolean), arrow_array).unwrap()
+    }
+    pub fn from_vec(name: &str, values: Vec<bool>) -> Self {
+        let arrow_array = Arc::new(arrow::array::BooleanArray::from(values));
         Self::from_arrow(Field::new(name, DataType::Boolean), arrow_array).unwrap()
     }
 }
