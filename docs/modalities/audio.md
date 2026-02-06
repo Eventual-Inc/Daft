@@ -1,22 +1,73 @@
 # Working with Audio
 
-Audio isn't just a collection of bytes or waveforms—it's speech, music, ambient sound with meaning you can extract, transcribe, and analyze. Daft is built to handle audio data at scale, making it easy to process recordings, transcribe speech, and transform audio in distributed pipelines.
+Daft supports working with audio natively via the new `daft.AudioFile` and its parent `daft.File`.
 
-This guide shows you how to accomplish common audio processing tasks with Daft:
+Audio data is usually stored in file formats such as MP3, WAV, or OGG. As a continuous waveform, the length of an audio file is directly proportional to its size. This can consume large amounts of RAM if processed all at once, so a common practice to reduce memory overhead is to process audio in buffered chunks via streaming. Similar to images, typically teams index audio files in tables instead of storing audio data as bytes directly.
 
-- [Read and write audio files](#reading-and-writing-audio-files)
-- [Transcribe audio with Voice Activity Detection](#transcription-with-voice-activity-detection-plus-segment-and-word-timestamps)
-- [Extract segment and word-level timestamps](#transcription-with-voice-activity-detection-plus-segment-and-word-timestamps)
+!!! note "Contribute to `daft.AudioFile`"
+    If you'd like to contribute new features to `daft.AudioFile`, please open an issue on [GitHub](https://github.com/Eventual-Inc/Daft/issues) or join our [Daft Slack Community](https://join.slack.com/t/dist-data/shared_invite/zt-2e77olvxw-uyZcPPV1SRchhi8ah6ZCtg) and send us a message in #daft-dev. Daft team members will be happy to assign any issue to you and provide any guidance if needed. There are also dedicated discussion threads for `daft.AudioFile` in the [Discussions](https://github.com/Eventual-Inc/Daft/discussions/categories/audio-file).
+
+In this guide, we'll cover how to work with audio using `daft.AudioFile` and `daft.File` to perform common use cases like:
+
+1. [Indexing and preprocessing Audio Files](#indexing-and-preprocessing-audio-files) - Discover and extract metadata from audio files in remote storage.
+2. [Reading and writing Audio Files](#reading-and-writing-audio-files) - Build custom read/write pipelines with `daft.File`.
+3. [Transcription with Faster Whisper](#transcription-with-faster-whisper) - Run a Whisper-based pipeline with timestamps.
+
+## Indexing and Preprocessing Audio Files
+
+The following example demonstrates how to use [`audio_file`](../api/functions/audio_file.md) to read an audio file and extract the metadata and resample it to 16000 Hz with the [`audio_metadata`](../api/functions/audio_metadata.md) and [`resample`](../api/functions/resample.md) functions.
+
+- The [`audio_file`](../api/functions/audio_file.md) function converts a string containing a file reference to a [`daft.AudioFile`](../api/datatypes/file_types.md) reference.
+- The [`audio_metadata`](../api/functions/audio_metadata.md) function extracts the sample rate, channels, frames, format, and subtype.
+- The [`resample`](../api/functions/resample.md) function resamples an audio file to a given sample rate and returns a tensor of floats.
+
+```python
+import daft
+from daft.functions import audio_file, audio_metadata, resample
+
+df = (
+	daft.from_glob_path("hf://datasets/Eventual-Inc/sample-files/audio/*.mp3")
+	.with_column("file", audio_file(daft.col("path")))
+	.with_column("metadata", audio_metadata(daft.col("file")))
+	.with_column("resampled", resample(daft.col("file"), sample_rate=16000))
+	.select("path", "file", "size", "metadata", "resampled")
+)
+
+df.show(3)
+```
+
+``` {title="Output"}
+╭────────────────────────────────┬────────────────────────────────┬─────────┬─────────────────────────────────────────────┬──────────────────────────╮
+│ path                           ┆ file                           ┆ size    ┆ metadata                                    ┆ resampled                │
+│ ---                            ┆ ---                            ┆ ---     ┆ ---                                         ┆ ---                      │
+│ String                         ┆ File[Audio]                    ┆ Int64   ┆ Struct[sample_rate: Int64, channels: Int64, ┆ Tensor[Float64]          │
+│                                ┆                                ┆         ┆ frames: Float64, format: String, subtype:   ┆                          │
+│                                ┆                                ┆         ┆ String]                                     ┆                          │
+╞════════════════════════════════╪════════════════════════════════╪═════════╪═════════════════════════════════════════════╪══════════════════════════╡
+│ hf://datasets/Eventual-Inc/sa… ┆ Audio(path: hf://datasets/Eve… ┆ 822924  ┆ {sample_rate: 16000,                        ┆ <Tensor shape=(2490278)> │
+│                                ┆                                ┆         ┆ channels…                                   ┆                          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ hf://datasets/Eventual-Inc/sa… ┆ Audio(path: hf://datasets/Eve… ┆ 618408  ┆ {sample_rate: 16000,                        ┆ <Tensor shape=(2207923)> │
+│                                ┆                                ┆         ┆ channels…                                   ┆                          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ hf://datasets/Eventual-Inc/sa… ┆ Audio(path: hf://datasets/Eve… ┆ 1190736 ┆ {sample_rate: 16000,                        ┆ <Tensor shape=(3341800)> │
+│                                ┆                                ┆         ┆ channels…                                   ┆                          │
+╰────────────────────────────────┴────────────────────────────────┴─────────┴─────────────────────────────────────────────┴──────────────────────────╯
+
+(Showing first 3 rows)
+```
 
 ## Reading and Writing Audio Files
 
-Audio files come in various formats and sample rates. With `daft.File`, you can read audio data into numpy arrays, resample to a target sampling rate, and write back to disk—all in parallel across your dataset.
+The `daft.AudioFile` type is new, and is still in development. For custom audio use-cases like format conversion, file writing, or other audio-specific operations, use `daft.File` inside a `daft.func` or `daft.method` UDF.
+
+For example, the following code demonstrates how to read an audio file, resample it to 16000 Hz, and save it as an MP3 file. With `daft.File`, you can read audio data into numpy arrays, resample to a target sampling rate, and write back to disk.
 
 ```python
 # /// script
 # description = "Read audio, resample, and save as mp3"
 # requires-python = ">=3.10, <3.13"
-# dependencies = ["daft", "soundfile", "numpy", "scipy"]
+# dependencies = ["daft[audio]"]
 # ///
 
 import pathlib
@@ -175,11 +226,9 @@ This example demonstrates several key patterns:
 
     The `soundfile` library supports many audio formats including WAV, FLAC, OGG, and MP3. You can easily adapt the code above to work with your preferred format by changing the `format` and `subtype` parameters in `sf.write()`.
 
-## Transcription with Voice Activity Detection plus Segment and Word Timestamps
+## Transcription with Faster Whisper
 
 Transcription is one of the most powerful use cases for audio processing in AI pipelines. Whether you're building voice assistants, generating subtitles, or analyzing customer calls, accurate transcription with timestamps is essential.
-
-### How to transcribe audio files
 
 This example shows how to transcribe audio files using [faster-whisper](https://github.com/SYSTRAN/faster-whisper) with Voice Activity Detection (VAD) to filter out silence, and extract both segment-level and word-level timestamps.
 
@@ -251,16 +300,16 @@ df_transcript.show(3, format="fancy", max_width=40)
 ╭────────────────────────────────────────┬─────────────────────────┬────────────────────────────────────────┬────┬───────┬────────┬────────┬────────────────────────────────────────┬────────────────────────────────────────┬───────────────────────┬────────────────────┬──────────────────────┬──────────────────┬─────────────╮
 │ path                                   ┆ info                    ┆ transcript                             ┆ id ┆ seek  ┆ start  ┆ end    ┆ text                                   ┆ tokens                                 ┆ avg_logprob           ┆ compression_ratio  ┆ no_speech_prob       ┆ words            ┆ temperature │
 ╞════════════════════════════════════════╪═════════════════════════╪════════════════════════════════════════╪════╪═══════╪════════╪════════╪════════════════════════════════════════╪════════════════════════════════════════╪═══════════════════════╪════════════════════╪══════════════════════╪══════════════════╪═════════════╡
-│ file:///Users/everettkleven/Desktop/N… ┆ {language: en,          ┆  Okay, so I have a cluster running wi… ┆ 1  ┆ 0     ┆ 0      ┆ 29.46  ┆  Okay, so I have a cluster running wi… ┆ [1033, 11, 370, 286, 362, 257, 13630,… ┆ -0.06497006558853646  ┆ 1.619672131147541  ┆ 0.01067733857780695  ┆ [{start: 0,      ┆ 0           │
+│ file:///Users/myusername007/Desktop/N… ┆ {language: en,          ┆  Okay, so I have a cluster running wi… ┆ 1  ┆ 0     ┆ 0      ┆ 29.46  ┆  Okay, so I have a cluster running wi… ┆ [1033, 11, 370, 286, 362, 257, 13630,… ┆ -0.06497006558853646  ┆ 1.619672131147541  ┆ 0.01067733857780695  ┆ [{start: 0,      ┆ 0           │
 │                                        ┆ language_probability: … ┆                                        ┆    ┆       ┆        ┆        ┆                                        ┆                                        ┆                       ┆                    ┆                      ┆ end: 0.48,       ┆             │
 │                                        ┆                         ┆                                        ┆    ┆       ┆        ┆        ┆                                        ┆                                        ┆                       ┆                    ┆                      ┆ word:  Okay,,    ┆             │
 │                                        ┆                         ┆                                        ┆    ┆       ┆        ┆        ┆                                        ┆                                        ┆                       ┆                    ┆                      ┆ …                ┆             │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ file:///Users/everettkleven/Desktop/N… ┆ {language: en,          ┆  Okay, so I have a cluster running wi… ┆ 2  ┆ 2940  ┆ 30.04  ┆ 56.41  ┆  Usually they want to do this to put … ┆ [11419, 436, 528, 281, 360, 341, 281,… ┆ -0.03574741696222471  ┆ 1.6338028169014085 ┆ 0.009307598695158958 ┆ [{start: 30.04,  ┆ 0           │
+│ file:///Users/myusername007/Desktop/N… ┆ {language: en,          ┆  Okay, so I have a cluster running wi… ┆ 2  ┆ 2940  ┆ 30.04  ┆ 56.41  ┆  Usually they want to do this to put … ┆ [11419, 436, 528, 281, 360, 341, 281,… ┆ -0.03574741696222471  ┆ 1.6338028169014085 ┆ 0.009307598695158958 ┆ [{start: 30.04,  ┆ 0           │
 │                                        ┆ language_probability: … ┆                                        ┆    ┆       ┆        ┆        ┆                                        ┆                                        ┆                       ┆                    ┆                      ┆ end: 30.48,      ┆             │
 │                                        ┆                         ┆                                        ┆    ┆       ┆        ┆        ┆                                        ┆                                        ┆                       ┆                    ┆                      ┆ word:  Us…       ┆             │
 ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-│ file:///Users/everettkleven/Desktop/N… ┆ {language: en,          ┆  Okay, so I have a cluster running wi… ┆ 3  ┆ 5622  ┆ 56.83  ┆ 79.56  ┆  And go number two, I want this script ┆ [400, 352, 1230, 732, 11, 286, 528, 3… ┆ -0.07241094582492397  ┆ 1.5330396475770924 ┆ 0.005606058984994888 ┆ [{start: 56.83,  ┆ 0           │
+│ file:///Users/myusername007/Desktop/N… ┆ {language: en,          ┆  Okay, so I have a cluster running wi… ┆ 3  ┆ 5622  ┆ 56.83  ┆ 79.56  ┆  And go number two, I want this script ┆ [400, 352, 1230, 732, 11, 286, 528, 3… ┆ -0.07241094582492397  ┆ 1.5330396475770924 ┆ 0.005606058984994888 ┆ [{start: 56.83,  ┆ 0           │
 │                                        ┆ language_probability: … ┆                                        ┆    ┆       ┆        ┆        ┆                                        ┆                                        ┆                       ┆                    ┆                      ┆ end: 57.27,      ┆             │
 │                                        ┆                         ┆                                        ┆    ┆       ┆        ┆        ┆                                        ┆                                        ┆                       ┆                    ┆                      ┆ word:  An…       ┆             │
 ╰────────────────────────────────────────┴─────────────────────────┴────────────────────────────────────────┴────┴───────┴────────┴────────┴────────────────────────────────────────┴────────────────────────────────────────┴───────────────────────┴────────────────────┴──────────────────────┴──────────────────┴─────────────╯
@@ -279,7 +328,7 @@ The output shows rich transcription data including:
 
     VAD filtering automatically removes silent portions of audio before transcription, which improves accuracy and reduces processing time. Adjust the `min_silence_duration_ms` parameter to control how much silence is required before a segment break.
 
-### Understanding the transcription schema
+**Understanding the transcription schema**
 
 The transcription result is a structured object with nested data. Here's the schema definition using Daft's type system. You can save this as `transcription_schema.py` and import it in your scripts:
 
@@ -383,8 +432,6 @@ TranscriptionResult = DataType.struct(
 
 Using strongly-typed schemas ensures that your data pipeline is robust and catches errors early. Daft's support for complex nested structures makes it easy to work with rich transcription data without flattening everything into primitive types.
 
-## Working with transcription results
-
 Once you have transcriptions with timestamps, you can:
 
 - **Generate subtitles**: Use the word-level timestamps to create precise subtitle files (SRT, VTT)
@@ -392,10 +439,4 @@ Once you have transcriptions with timestamps, you can:
 - **Analyze speech patterns**: Calculate speaking rates, pause durations, or word frequencies
 - **Join with metadata**: Combine transcription data with speaker information, recording metadata, or other datasets
 
-## More examples
-
-For more advanced audio processing workflows, check out:
-
-- [Custom User-Defined Functions (UDFs)](../custom-code/udfs.md) for building your own audio processing functions
-- [Working with Files and URLs](urls.md) for discovering and downloading audio from remote storage
-- [Distributed Processing](../distributed/index.md) for scaling audio processing across multiple machines
+For more advanced audio processing workflows, check out [Voice AI Analytics with Faster Whisper and embed_text](../examples/voice-ai-analytics.md) for a more advanced example of using Faster Whisper with Daft.
