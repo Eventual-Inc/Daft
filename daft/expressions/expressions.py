@@ -1082,15 +1082,18 @@ class Expression:
 
         return list_agg_distinct(self)
 
-    def string_agg(self) -> Expression:
+    def string_agg(self, delimiter: str | None = None) -> Expression:
         """Aggregates the values in the expression into a single string by concatenating them.
+
+        Args:
+            delimiter: Optional delimiter to insert between concatenated values. Only supported for string columns.
 
         Tip: See Also
             [`daft.functions.string_agg`](https://docs.daft.ai/en/stable/api/functions/string_agg/)
         """
         from daft.functions import string_agg
 
-        return string_agg(self)
+        return string_agg(self, delimiter=delimiter)
 
     def apply(self, func: Callable[..., Any], return_dtype: DataTypeLike) -> Expression:
         """Apply a function on each value in a given expression.

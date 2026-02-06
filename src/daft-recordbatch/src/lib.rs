@@ -701,9 +701,9 @@ impl RecordBatch {
             AggExpr::Set(expr) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .agg_set(groups),
-            AggExpr::Concat(expr) => self
+            AggExpr::Concat(expr, delimiter) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                .agg_concat(groups),
+                .agg_concat(groups, delimiter.as_deref()),
             AggExpr::Skew(expr) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .skew(groups),

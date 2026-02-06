@@ -3726,13 +3726,16 @@ class DataFrame:
         return self._apply_agg_fn(Expression.list_agg_distinct, cols)
 
     @DataframePublicAPI
-    def agg_concat(self, *cols: ColumnInputType) -> "DataFrame":
-        """Performs a global list concatenation agg on the DataFrame.
+    def agg_concat(self, *cols: ColumnInputType, delimiter: str | None = None) -> "DataFrame":
+        """Performs a global concatenation agg on the DataFrame.
 
         Args:
-            *cols (Union[str, Expression]): columns that are lists to concatenate
+            *cols (Union[str, Expression]): columns that are lists or strings to concatenate
+            delimiter: Optional delimiter to insert between concatenated string values. Only supported for string
+                columns.
+
         Returns:
-            DataFrame: Globally aggregated list. Should be a single row.
+            DataFrame: Globally aggregated list or string. Should be a single row.
 
         Examples:
             >>> import daft
@@ -3750,7 +3753,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        return self._apply_agg_fn(Expression.string_agg, cols)
+        return self._apply_agg_fn(lambda expr: Expression.string_agg(expr, delimiter=delimiter), cols)
 
     @DataframePublicAPI
     def agg(self, *to_agg: Expression | Iterable[Expression]) -> "DataFrame":
@@ -4950,13 +4953,13 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.list_agg_distinct, cols, self.group_by)
 
-    def string_agg(self, *cols: ColumnInputType) -> DataFrame:
+    def string_agg(self, *cols: ColumnInputType, delimiter: str | None = None) -> DataFrame:
         """Performs grouped string concat on this GroupedDataFrame.
 
         Returns:
             DataFrame: DataFrame with grouped string concatenated per column.
         """
-        return self.df._apply_agg_fn(Expression.string_agg, cols, self.group_by)
+        return self.df._apply_agg_fn(lambda expr: Expression.string_agg(expr, delimiter=delimiter), cols, self.group_by)
 
     def agg(self, *to_agg: Expression | Iterable[Expression]) -> DataFrame:
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.
