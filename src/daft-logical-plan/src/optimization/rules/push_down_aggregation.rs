@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use common_treenode::{Transformed, TreeNode};
 use daft_core::{count_mode::CountMode, prelude::Schema};
-use daft_dsl::{AggExpr, Expr, ExprRef};
+use daft_dsl::{AggExpr, Expr, ExprRef, resolved_col};
 
 use crate::{
     LogicalPlan, logical_plan::Aggregate, ops::Source as LogicalSource,
@@ -61,7 +61,7 @@ impl OptimizerRule for PushDownAggregation {
                                         external_info.pushdowns.filters.is_none()
                                     };
                                     let can_pushdown = scan_op.supports_count_pushdown()
-                                        && is_count_mode_supported(count_mode)
+                                        && is_count_mode_supported(&count_mode)
                                         && is_remaining_filters;
 
                                     if can_pushdown {
@@ -83,9 +83,12 @@ impl OptimizerRule for PushDownAggregation {
                                         // Scan operators may produce partial counts over multiple scan tasks (e.g., distributed parquet reads), so we still need to sum them.
                                         let new_aggregate = Aggregate::try_new(
                                             new_source,
-                                            vec![Arc::new(Expr::Agg(AggExpr::Sum(count_expr(
-                                                &aggregations[0],
-                                            )?)))],
+                                            vec![
+                                                Arc::new(Expr::Agg(AggExpr::Sum(resolved_col(
+                                                    aggregations[0].name(),
+                                                ))))
+                                                .alias(aggregations[0].name()),
+                                            ],
                                             groupby.clone(),
                                         )?
                                         .into();
@@ -110,19 +113,11 @@ impl OptimizerRule for PushDownAggregation {
 }
 
 // Check if expression is count aggregation
-fn is_count_expr(expr: &ExprRef) -> Option<&CountMode> {
+fn is_count_expr(expr: &ExprRef) -> Option<CountMode> {
+    let (expr, _) = expr.unwrap_alias();
     match expr.as_ref() {
-        Expr::Agg(AggExpr::Count(_, count_mode)) => Some(count_mode),
+        Expr::Agg(AggExpr::Count(_, count_mode)) => Some(*count_mode),
         _ => None,
-    }
-}
-
-fn count_expr(expr: &ExprRef) -> DaftResult<ExprRef> {
-    match expr.as_ref() {
-        Expr::Agg(AggExpr::Count(expr, _)) => Ok(expr.clone()),
-        _ => Err(DaftError::InternalError(
-            "Tried to get count expression from non-count expression".to_string(),
-        )),
     }
 }
 
@@ -137,17 +132,20 @@ mod tests {
     use std::sync::Arc;
 
     use common_error::DaftResult;
-    use common_scan_info::Pushdowns;
+    use common_scan_info::{PhysicalScanInfo, Pushdowns};
     use daft_core::prelude::*;
     use daft_dsl::{AggExpr, Expr, lit, resolved_col, unresolved_col};
 
     use crate::{
         LogicalPlan,
+        builder::LogicalPlanBuilder,
+        ops::Source,
         optimization::{
             optimizer::{RuleBatch, RuleExecutionStrategy},
             rules::PushDownAggregation,
             test::assert_optimized_plan_with_rules_eq,
         },
+        source_info::SourceInfo,
         test::{
             dummy_scan_node, dummy_scan_node_with_pushdowns, dummy_scan_operator_for_aggregation,
         },
@@ -176,14 +174,24 @@ mod tests {
             .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
             .build();
 
-        let expected = dummy_scan_node_with_pushdowns(
-            scan_op,
-            Pushdowns::default().with_aggregation(Some(Arc::new(Expr::Agg(AggExpr::Count(
-                resolved_col("a"),
-                CountMode::All,
-            ))))),
+        let pushdowns = Pushdowns::default().with_aggregation(Some(Arc::new(Expr::Agg(
+            AggExpr::Count(resolved_col("a"), CountMode::All),
+        ))));
+        let schema = Arc::new(Schema::new(vec![Field::new("count(1)", DataType::UInt64)]));
+        let source_info = SourceInfo::Physical(PhysicalScanInfo::new(
+            scan_op.clone(),
+            scan_op.0.schema(),
+            vec![],
+            pushdowns,
+        ));
+        let expected = LogicalPlanBuilder::new(
+            LogicalPlan::Source(Source::new(schema, source_info.into())).into(),
+            None,
         )
-        .aggregate(vec![unresolved_col("a").sum()], vec![])?
+        .aggregate(
+            vec![unresolved_col("count(1)").sum().alias("count(1)")],
+            vec![],
+        )?
         .build();
 
         assert_optimized_plan_eq(plan, expected)?;
@@ -309,16 +317,27 @@ mod tests {
         .aggregate(vec![unresolved_col("a").count(CountMode::All)], vec![])?
         .build();
 
-        let expected = dummy_scan_node_with_pushdowns(
-            scan_op,
-            Pushdowns::default()
-                .with_filters(Some(pushable_filter))
-                .with_aggregation(Some(Arc::new(Expr::Agg(AggExpr::Count(
-                    resolved_col("a"),
-                    CountMode::All,
-                ))))),
+        let pushdowns = Pushdowns::default()
+            .with_filters(Some(pushable_filter))
+            .with_aggregation(Some(Arc::new(Expr::Agg(AggExpr::Count(
+                resolved_col("a"),
+                CountMode::All,
+            )))));
+        let schema = Arc::new(Schema::new(vec![Field::new("count(1)", DataType::UInt64)]));
+        let source_info = SourceInfo::Physical(PhysicalScanInfo::new(
+            scan_op.clone(),
+            scan_op.0.schema(),
+            vec![],
+            pushdowns,
+        ));
+        let expected = LogicalPlanBuilder::new(
+            LogicalPlan::Source(Source::new(schema, source_info.into())).into(),
+            None,
         )
-        .aggregate(vec![unresolved_col("a").sum()], vec![])?
+        .aggregate(
+            vec![unresolved_col("count(1)").sum().alias("count(1)")],
+            vec![],
+        )?
         .build();
 
         assert_optimized_plan_eq(plan, expected)?;

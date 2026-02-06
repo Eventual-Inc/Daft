@@ -63,7 +63,7 @@ def test_stddev_with_single_partition(data_and_expected, with_morsel_size):
     except StopIteration:
         pass
 
-    assert stddev["a"] == expected
+    assert stddev["stddev(a)"] == expected
 
 
 @pytest.mark.parametrize("data_and_expected", TESTS)
@@ -79,7 +79,7 @@ def test_stddev_with_multiple_partitions(data_and_expected, with_morsel_size):
     except StopIteration:
         pass
 
-    assert stddev["a"] == expected
+    assert stddev["stddev(a)"] == expected
 
 
 GROUPED_TESTS = [
@@ -117,7 +117,7 @@ def test_grouped_stddev_with_single_partition(data_and_expected, with_morsel_siz
         check_index=False,
     )
     pd.testing.assert_series_equal(
-        pd.Series(result["data"]).sort_values(),
+        pd.Series(result["stddev(data)"]).sort_values(),
         pd.Series(expected["data"]).sort_values(),
         check_index=False,
     )
@@ -140,7 +140,7 @@ def test_grouped_stddev_with_multiple_partitions(data_and_expected, with_morsel_
         check_index=False,
     )
     pd.testing.assert_series_equal(
-        pd.Series(result["data"]).sort_values(),
+        pd.Series(result["stddev(data)"]).sort_values(),
         pd.Series(expected["data"]).sort_values(),
         check_index=False,
     )
