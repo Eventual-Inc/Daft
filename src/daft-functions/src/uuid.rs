@@ -25,30 +25,8 @@ impl ScalarUDF for Uuid {
         "uuid"
     }
 
-    fn call(&self, _inputs: FunctionArgs<Series>) -> DaftResult<Series> {
-        Err(DaftError::ComputeError(
-            "uuid() must be evaluated with an EvalContext".to_string(),
-        ))
-    }
-
-    fn call_with_ctx(
-        &self,
-        inputs: FunctionArgs<Series>,
-        ctx: Option<&EvalContext>,
-    ) -> DaftResult<Series> {
-        let len = match inputs.len() {
-            0 => ctx.map(|c| c.row_count).ok_or_else(|| {
-                DaftError::ComputeError(
-                    "uuid() requires evaluation context to determine output length".to_string(),
-                )
-            })?,
-            1 => inputs.required(0)?.len(),
-            n => {
-                return Err(DaftError::ValueError(format!(
-                    "Expected 0 args (planner) or 1 internal arg (evaluator), got {n}"
-                )));
-            }
-        };
+    fn call(&self, _inputs: FunctionArgs<Series>, ctx: &EvalContext) -> DaftResult<Series> {
+        let len = ctx.row_count;
 
         const UUID_STR_LEN: usize = 36; // "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
         let mut builder = LargeStringBuilder::with_capacity(len, len * UUID_STR_LEN);

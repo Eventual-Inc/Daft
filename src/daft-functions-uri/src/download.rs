@@ -51,7 +51,11 @@ impl AsyncScalarUDF for UrlDownload {
     fn name(&self) -> &'static str {
         "url_download"
     }
-    async fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    async fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let UrlDownloadArgs {
             input,
             multi_thread,
