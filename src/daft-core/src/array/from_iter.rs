@@ -110,13 +110,10 @@ impl FixedSizeBinaryArray {
 }
 
 impl BooleanArray {
-    pub fn from_iter(
-        name: &str,
-        iter: impl daft_arrow::trusted_len::TrustedLen<Item = Option<bool>>,
-    ) -> Self {
-        let arrow_array = Box::new(daft_arrow::array::BooleanArray::from_trusted_len_iter(iter));
-        Self::new(
-            Field::new(name, crate::datatypes::DataType::Boolean).into(),
+    pub fn from_iter(name: &str, iter: impl Iterator<Item = Option<bool>>) -> Self {
+        let arrow_array = Arc::new(arrow::array::BooleanArray::from_iter(iter));
+        Self::from_arrow(
+            Field::new(name, crate::datatypes::DataType::Boolean),
             arrow_array,
         )
         .unwrap()
