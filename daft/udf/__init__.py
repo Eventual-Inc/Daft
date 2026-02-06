@@ -320,6 +320,7 @@ def cls(
     *,
     gpus: float = 0,
     use_process: bool | None = None,
+    min_concurrency: int | None = None,
     max_concurrency: int | None = None,
     max_retries: int | None = None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
@@ -331,6 +332,7 @@ def cls(
     *,
     gpus: float = 0,
     use_process: bool | None = None,
+    min_concurrency: int | None = None,
     max_concurrency: int | None = None,
     max_retries: int | None = None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
@@ -341,6 +343,7 @@ def cls(
     *,
     gpus: float = 0,
     use_process: bool | None = None,
+    min_concurrency: int | None = None,
     max_concurrency: int | None = None,
     max_retries: int | None = None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
@@ -353,6 +356,7 @@ def cls(
               Fractional values between 0 and 1.0, such as 0.5, are supported. This can be useful when running multiple small models on the same GPU.
               However, fractional values greater than 1.0, such as 1.5 or 2.5, are not supported.
         use_process: Whether to run each instance of the class in a separate process. If unset, Daft will automatically choose based on runtime performance.
+        min_concurrency: The minimum number of concurrent instances of the class. Defaults is None.
         max_concurrency: The maximum number of concurrent instances of the class.
         name_override: The name to display for the UDF class in the plan and progress bars.
 
@@ -426,8 +430,16 @@ def cls(
     if gpus > 1 and not float(gpus).is_integer():
         raise ValueError(f"ResourceRequest num_gpus greater than 1 must be an integer, got {gpus}")
 
+    if min_concurrency is not None and max_concurrency is not None:
+        if min_concurrency > max_concurrency:
+            raise ValueError(
+                f"min_concurrency ({min_concurrency}) cannot be greater than max_concurrency ({max_concurrency})"
+            )
+    if min_concurrency is not None and max_concurrency is None:
+        max_concurrency = min_concurrency
+
     def partial_cls(c: type) -> type:
-        return wrap_cls(c, gpus, use_process, max_concurrency, max_retries, on_error, name_override)
+        return wrap_cls(c, gpus, use_process, min_concurrency, max_concurrency, max_retries, on_error, name_override)
 
     return partial_cls if class_ is None else partial_cls(class_)
 

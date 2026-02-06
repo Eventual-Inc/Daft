@@ -1,6 +1,6 @@
 # Added by jetbrains IDE
 .idea/
-
+.trae/
 .coverage
 .env
 venv

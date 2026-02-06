@@ -108,6 +108,8 @@ pub(crate) struct DistributedActorPoolProjectState {
 pub(crate) struct DistributedActorPoolProjectOperator {
     actor_handles: Vec<ActorHandle>,
     batch_size: Option<usize>,
+    min_concurrency: Option<usize>,
+    max_concurrency: Option<usize>,
     memory_request: u64,
     passthrough_columns: Vec<BoundExpr>, // Columns that no need to be passed to UDFActor for processing
     required_columns: Vec<usize>,        // UDF input columns
@@ -119,6 +121,8 @@ impl DistributedActorPoolProjectOperator {
     pub fn try_new(
         actor_handles: Vec<impl Into<ActorHandle>>,
         batch_size: Option<usize>,
+        min_concurrency: Option<usize>,
+        max_concurrency: Option<usize>,
         memory_request: u64,
         passthrough_columns: Vec<BoundExpr>,
         required_columns: Vec<usize>,
@@ -142,6 +146,8 @@ impl DistributedActorPoolProjectOperator {
         Ok(Self {
             actor_handles,
             batch_size,
+            min_concurrency,
+            max_concurrency,
             memory_request,
             passthrough_columns,
             required_columns,
@@ -258,6 +264,12 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         let mut res = vec![];
         res.push("DistributedActorPoolProject:".to_string());
         res.push(format!("BatchSize = {}", self.batch_size.unwrap_or(0)));
+        if let Some(min_concurrency) = self.min_concurrency {
+            res.push(format!("MinConcurrency = {}", min_concurrency));
+        }
+        if let Some(max_concurrency) = self.max_concurrency {
+            res.push(format!("MaxConcurrency = {}", max_concurrency));
+        }
         res.push(format!("MemoryRequest = {}", self.memory_request));
         res
     }

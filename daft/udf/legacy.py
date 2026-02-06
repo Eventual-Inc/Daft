@@ -257,12 +257,24 @@ class UDF:
     return_dtype: DataType
     init_args: InitArgsType = None
     concurrency: int | None = None
+    min_concurrency: int | None = None
+    max_concurrency: int | None = None
     resource_request: ResourceRequest | None = None
     batch_size: int | None = None
     use_process: bool | None = None
     ray_options: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
+        if self.concurrency is not None and (self.min_concurrency is not None or self.max_concurrency is not None):
+            raise ValueError("Cannot specify both `concurrency` and `min_concurrency`/`max_concurrency`")
+        if self.min_concurrency is not None and self.max_concurrency is not None:
+            if self.min_concurrency > self.max_concurrency:
+                raise ValueError(
+                    f"min_concurrency ({self.min_concurrency}) cannot be greater than max_concurrency ({self.max_concurrency})"
+                )
+        if self.min_concurrency is not None and self.max_concurrency is None:
+            self.max_concurrency = self.min_concurrency
+
         # Analogous to the @functools.wraps(self.inner) pattern
         # This will swap out identifiers on `self` to match `self.inner`. Most notably, this swaps out
         # self.__module__ and self.__qualname__, which is used in `__reduce__` during serialization.
@@ -285,6 +297,13 @@ class UDF:
         bound_args = self._bind_args(*args, **kwargs)
         expressions = list(bound_args.expressions().values())
 
+        if self.concurrency is not None:
+            min_concurrency = self.concurrency
+            max_concurrency = self.concurrency
+        else:
+            min_concurrency = self.min_concurrency
+            max_concurrency = self.max_concurrency
+
         return Expression.udf(
             name=self.name,
             inner=self.wrapped_inner,
@@ -294,7 +313,8 @@ class UDF:
             init_args=self.init_args,
             resource_request=self.resource_request,
             batch_size=self.batch_size,
-            concurrency=self.concurrency,
+            min_concurrency=min_concurrency,
+            max_concurrency=max_concurrency,
             use_process=self.use_process,
             ray_options=self.ray_options,
         )
@@ -398,6 +418,44 @@ class UDF:
         """
         return dataclasses.replace(self, concurrency=concurrency)
 
+    def with_min_concurrency(self, min_concurrency: int) -> UDF:
+        """Override the minimum concurrency of this UDF, which tells Daft the minimum number of instances of your UDF to run concurrently.
+
+        Examples:
+            >>> import daft
+            >>>
+            >>> @daft.udf(return_dtype=daft.DataType.string(), num_gpus=1)
+            ... class MyGpuUdf:
+            ...     def __init__(self, text=" world"):
+            ...         self.text = text
+            ...
+            ...     def __call__(self, data):
+            ...         return [x + self.text for x in data]
+            >>>
+            >>> # New UDF that will have at least 8 concurrent running instances (will require 8 total GPUs)
+            >>> MyGpuUdf_8_min_concurrency = MyGpuUdf.with_min_concurrency(8)
+        """
+        return dataclasses.replace(self, min_concurrency=min_concurrency)
+
+    def with_max_concurrency(self, max_concurrency: int) -> UDF:
+        """Override the maximum concurrency of this UDF, which tells Daft the maximum number of instances of your UDF to run concurrently.
+
+        Examples:
+            >>> import daft
+            >>>
+            >>> @daft.udf(return_dtype=daft.DataType.string(), num_gpus=1)
+            ... class MyGpuUdf:
+            ...     def __init__(self, text=" world"):
+            ...         self.text = text
+            ...
+            ...     def __call__(self, data):
+            ...         return [x + self.text for x in data]
+            >>>
+            >>> # New UDF that will have at most 8 concurrent running instances (will require 8 total GPUs)
+            >>> MyGpuUdf_8_max_concurrency = MyGpuUdf.with_max_concurrency(8)
+        """
+        return dataclasses.replace(self, max_concurrency=max_concurrency)
+
     def run_on_process(self, use_process: bool) -> UDF:
         """Override whether this UDF should run on a separate process or not.
 
@@ -477,6 +535,8 @@ def udf(
     ray_options: dict[str, Any] | None = None,
     batch_size: int | None = None,
     concurrency: int | None = None,
+    min_concurrency: int | None = None,
+    max_concurrency: int | None = None,
     use_process: bool | None = None,
 ) -> Callable[[UserDefinedPyFuncLike], UDF]:
     """(DEPRECATED) `@udf` Decorator to convert a Python function/class into a `UDF`.
@@ -497,6 +557,8 @@ def udf(
         concurrency: Spin up `N` number of persistent replicas of the UDF to process all partitions. Defaults to `None` which will spin up one
             UDF per partition. This is especially useful for expensive initializations that need to be amortized across partitions such as
             loading model weights for model batch inference.
+        min_concurrency: Minimum number of persistent replicas of the UDF to process all partitions. Defaults to `None`.
+        max_concurrency: Maximum number of persistent replicas of the UDF to process all partitions. Defaults to `None`.
         use_process: Run the UDF on a separate process.
             This is useful for UDFs that run a lot of Python-only code, since it avoids GIL overhead.
             This is not necessary for UDFs that run C-extension code, like NumPy or PyTorch.
@@ -652,6 +714,8 @@ def udf(
             resource_request=resource_request,
             batch_size=batch_size,
             concurrency=concurrency,
+            min_concurrency=min_concurrency,
+            max_concurrency=max_concurrency,
             use_process=use_process,
             ray_options=ray_options,
         )

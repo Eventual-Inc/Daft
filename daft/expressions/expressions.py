@@ -183,7 +183,8 @@ class Expression:
         init_args: InitArgsType,
         resource_request: ResourceRequest | None,
         batch_size: int | None,
-        concurrency: int | None,
+        min_concurrency: int | None,
+        max_concurrency: int | None,
         use_process: bool | None,
         ray_options: dict[builtins.str, builtins.str] | None = None,
     ) -> Expression:
@@ -197,7 +198,8 @@ class Expression:
                 init_args,
                 resource_request,
                 batch_size,
-                concurrency,
+                min_concurrency,
+                max_concurrency,
                 use_process,
                 ray_options,
             )
