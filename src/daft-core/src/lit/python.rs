@@ -198,9 +198,8 @@ impl<'py> IntoPyObject<'py> for Literal {
                 Ok(PyList::new(py, keys.to_literals().zip(values.to_literals()))?.into_any())
             }
             Self::Tensor { data, shape } => {
-                let arrow_field = data.field().to_arrow()?;
-                let arrow_arr = data.to_arrow()?;
-                ffi::to_py_array_v2(py, arrow_arr, &arrow_field)?
+                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+                ffi::to_py_array(py, data.to_arrow2(), &pyarrow)?
                     .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
                     .call_method1(pyo3::intern!(py, "reshape"), (shape,))
             }
@@ -210,11 +209,10 @@ impl<'py> IntoPyObject<'py> for Literal {
                 shape,
                 ..
             } => {
-                let values_field = values.field().to_arrow()?;
-                let values_arr = ffi::to_py_array_v2(py, values.to_arrow()?, &values_field)?
+                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+                let values_arr = ffi::to_py_array(py, values.to_arrow2(), &pyarrow)?
                     .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
-                let indices_field = indices.field().to_arrow()?;
-                let indices_arr = ffi::to_py_array_v2(py, indices.to_arrow()?, &indices_field)?
+                let indices_arr = ffi::to_py_array(py, indices.to_arrow2(), &pyarrow)?
                     .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
 
                 let seq = (
@@ -227,9 +225,8 @@ impl<'py> IntoPyObject<'py> for Literal {
                 Ok(PyDict::from_sequence(&seq)?.into_any())
             }
             Self::Embedding(series) => {
-                let arrow_field = series.field().to_arrow()?;
-                let arrow_arr = series.to_arrow()?;
-                ffi::to_py_array_v2(py, arrow_arr, &arrow_field)?
+                let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
+                ffi::to_py_array(py, series.to_arrow2(), &pyarrow)?
                     .call_method1(pyo3::intern!(py, "to_numpy"), (false,))
             }
             Self::Image(image) => {
