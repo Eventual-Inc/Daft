@@ -297,14 +297,11 @@ class UDF:
         bound_args = self._bind_args(*args, **kwargs)
         expressions = list(bound_args.expressions().values())
 
-        min_concurrency: int | None
-        max_concurrency: int | None
+        min_concurrency = self.min_concurrency
+        max_concurrency = self.max_concurrency
         if self.concurrency is not None:
             min_concurrency = self.concurrency
             max_concurrency = self.concurrency
-        else:
-            min_concurrency = self.min_concurrency
-            max_concurrency = self.max_concurrency
 
         return Expression.udf(
             name=self.name,

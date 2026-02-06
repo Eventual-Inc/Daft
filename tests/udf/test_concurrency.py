@@ -1,7 +1,6 @@
-
 import pytest
 import daft
-from daft import DataType, Series
+from daft import DataType
 
 # Legacy UDF tests
 def test_legacy_udf_concurrency_mapping():
