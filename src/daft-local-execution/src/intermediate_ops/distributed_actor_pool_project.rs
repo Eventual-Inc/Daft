@@ -100,7 +100,6 @@ impl From<common_py_serde::PyObjectWrapper> for ActorHandle {
     }
 }
 
-#[derive(Clone)]
 pub(crate) struct DistributedActorPoolProjectState {
     actor_handle: ActorHandle,
 }
@@ -153,7 +152,7 @@ impl DistributedActorPoolProjectOperator {
 
 impl IntermediateOperator for DistributedActorPoolProjectOperator {
     type State = DistributedActorPoolProjectState;
-    type BatchingStrategy = crate::dynamic_batching::DynBatchingStrategy;
+    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
     #[instrument(skip_all, name = "DistributedActorPoolProjectOperator::execute")]
     fn execute(
         &self,
@@ -171,12 +170,68 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
             let fut = task_spawner.spawn_with_memory_request(
                 memory_request,
                 async move {
-                    let res = state
-                        .actor_handle
-                        .eval_input(input)
-                        .await
-                        .map(|result| OperatorExecutionOutput::NeedMoreInput(Some(result)))?;
-                    Ok((state, res))
+                    // Prune input by required cols
+                    let input_schema = input.schema();
+                    let pruned_input = Arc::new(MicroPartition::new_loaded(
+                        Arc::new(Schema::new(
+                            required_columns
+                                .iter()
+                                .map(|idx| input_schema[*idx].clone()),
+                        )),
+                        Arc::new(
+                            input
+                                .clone()
+                                .record_batches()
+                                .iter()
+                                .map(|batch| batch.get_columns(required_columns.as_slice()))
+                                .collect::<Vec<_>>(),
+                        ),
+                        None,
+                    ));
+
+                    // Call the UDF with pruned input
+                    let eval_output = state.actor_handle.eval_input(pruned_input.clone()).await?;
+                    if eval_output.schema().fields().len() != 1 {
+                        return Err(DaftError::InternalError(format!(
+                            "UDF output schema must be a single column, but got '{}'",
+                            eval_output.schema().field_names().join(", ")
+                        )));
+                    }
+
+                    if pruned_input.num_rows() != eval_output.num_rows() {
+                        return Err(DaftError::InternalError(format!(
+                            "The number of rows is mismatch between UDF input {} and output {}",
+                            pruned_input.num_rows(),
+                            eval_output.num_rows()
+                        )));
+                    }
+
+                    // Combine the eval output with passthrough columns
+                    let mut output_batches = Vec::with_capacity(input.num_rows());
+                    for (input_record, output_record) in input
+                        .record_batches()
+                        .iter()
+                        .zip(eval_output.record_batches().iter())
+                    {
+                        let passthrough_record =
+                            input_record.eval_expression_list(passthrough_columns.as_slice())?;
+
+                        output_batches.push(passthrough_record.append_column(
+                            output_schema.clone(),
+                            output_record.get_column(0).clone(),
+                        )?);
+                    }
+
+                    Ok((
+                        state,
+                        OperatorExecutionOutput::NeedMoreInput(Some(Arc::new(
+                            MicroPartition::new_loaded(
+                                output_schema.clone(),
+                                Arc::new(output_batches),
+                                None,
+                            ),
+                        ))),
+                    ))
                 },
                 Span::current(),
             );
@@ -239,7 +294,6 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
     fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
         Ok(crate::dynamic_batching::StaticBatchingStrategy::new(
             self.morsel_size_requirement().unwrap_or_default(),
-        )
-        .into())
+        ))
     }
 }

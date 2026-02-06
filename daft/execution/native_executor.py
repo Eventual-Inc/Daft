@@ -44,7 +44,6 @@ class NativeExecutor:
         result: PyExecutionEngineFinalResult | None = None
 
         async def stream_results() -> AsyncGenerator[PyMicroPartition | None, None]:
-            nonlocal result
             result_handle = await self._executor.run(
                 local_physical_plan,
                 ctx._ctx,
