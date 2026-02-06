@@ -213,6 +213,10 @@ impl Source for ScanTaskSource {
             .map(|s| s.to_string())
             .collect()
     }
+
+    fn schema(&self) -> &SchemaRef {
+        &self.schema
+    }
 }
 
 impl TreeDisplay for ScanTaskSource {

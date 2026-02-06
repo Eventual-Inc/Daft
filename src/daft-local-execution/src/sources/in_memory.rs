@@ -103,4 +103,8 @@ impl Source for InMemorySource {
         res.push(format!("Size bytes = {}", self.size_bytes));
         res
     }
+
+    fn schema(&self) -> &SchemaRef {
+        &self.schema
+    }
 }

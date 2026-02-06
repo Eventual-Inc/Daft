@@ -366,7 +366,6 @@ fn physical_plan_to_pipeline(
                 Box::new(scan_task_source),
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -386,7 +385,6 @@ fn physical_plan_to_pipeline(
                 Box::new(in_memory_source),
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -408,7 +406,6 @@ fn physical_plan_to_pipeline(
                 Box::new(glob_scan_source),
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()

@@ -3,11 +3,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from daft.daft import (
+    Input,
     LocalPhysicalPlan,
     PyDaftExecutionConfig,
     PyExecutionEngineFinalResult,
     PyMicroPartition,
-    UnresolvedInputs,
 )
 from daft.daft import (
     NativeExecutor as _NativeExecutor,
@@ -17,7 +17,7 @@ from daft.event_loop import get_or_init_event_loop
 from daft.recordbatch import MicroPartition, RecordBatch
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, Generator
+    from collections.abc import AsyncGenerator, Generator, Mapping
 
     from daft.context import DaftContext
     from daft.logical.builder import LogicalPlanBuilder
@@ -33,16 +33,13 @@ class NativeExecutor:
     def run(
         self,
         local_physical_plan: LocalPhysicalPlan,
-        inputs: UnresolvedInputs,
-        psets: dict[str, list[PyMicroPartition]],
+        inputs: Mapping[int, Input | list[PyMicroPartition]],
         ctx: DaftContext,
         context: dict[str, str] | None,
     ) -> Generator[LocalMaterializedResult, None, RecordBatch]:
         from daft.runners.partitioning import (
             LocalMaterializedResult,
         )
-
-        resolved_inputs = inputs.resolve(psets)
 
         result: PyExecutionEngineFinalResult | None = None
 
@@ -51,7 +48,7 @@ class NativeExecutor:
                 local_physical_plan,
                 ctx._ctx,
                 0,
-                resolved_inputs,
+                dict(inputs),
                 context,
             )
             nonlocal result

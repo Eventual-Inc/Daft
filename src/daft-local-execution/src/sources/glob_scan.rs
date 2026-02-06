@@ -216,4 +216,8 @@ impl Source for GlobScanSource {
         res.extend(self.pushdowns.multiline_display());
         res
     }
+
+    fn schema(&self) -> &SchemaRef {
+        &self.schema
+    }
 }

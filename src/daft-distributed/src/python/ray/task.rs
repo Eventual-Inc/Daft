@@ -2,7 +2,7 @@ use std::{any::Any, collections::HashMap, future::Future, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
 use common_partitioning::{Partition, PartitionRef};
-use daft_local_plan::{{ExecutionEngineFinalResult, PyLocalPhysicalPlan, SourceId, python::PyUnresolvedInputs}};
+use daft_local_plan::{ExecutionEngineFinalResult, PyLocalPhysicalPlan, SourceId, python::PyInput};
 use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 
 use crate::{
@@ -16,7 +16,7 @@ use crate::{
 #[pyclass(module = "daft.daft", name = "RayTaskResult")]
 #[derive(Clone)]
 pub(crate) enum RayTaskResult {
-    Success(Vec<RayPartitionRef>, Option<Vec<u8>>),
+    Success(Vec<RayPartitionRef>, Vec<u8>),
     WorkerDied(),
     WorkerUnavailable(),
 }
@@ -24,7 +24,7 @@ pub(crate) enum RayTaskResult {
 #[pymethods]
 impl RayTaskResult {
     #[staticmethod]
-    fn success(ray_part_refs: Vec<RayPartitionRef>, stats_serialized: Option<Vec<u8>>) -> Self {
+    fn success(ray_part_refs: Vec<RayPartitionRef>, stats_serialized: Vec<u8>) -> Self {
         Self::Success(ray_part_refs, stats_serialized)
     }
 
@@ -86,13 +86,6 @@ impl TaskResultHandle for RayTaskResultHandle {
 
             match ray_task_result {
                 Ok(RayTaskResult::Success(ray_part_refs, stats_serialized)) => {
-                    let stats: Vec<(NodeID, StatSnapshot)> = stats_serialized
-                        .map(|stats_serialized| {
-                            bincode::decode_from_slice(&stats_serialized, bincode::config::legacy())
-                                .expect("Failed to deserialize stats")
-                                .0
-                        })
-                        .unwrap_or_default();
                     let stats: ExecutionEngineFinalResult =
                         ExecutionEngineFinalResult::decode(&stats_serialized);
                     let materialized_output = MaterializedOutput::new(
@@ -197,9 +190,13 @@ impl RaySwordfishTask {
         Ok(PyLocalPhysicalPlan { plan })
     }
 
-    fn inputs(&self) -> PyResult<PyUnresolvedInputs> {
-        let inputs = self.task.inputs().clone();
-        Ok(PyUnresolvedInputs { inner: inputs })
+    fn inputs(&self) -> PyResult<HashMap<SourceId, PyInput>> {
+        Ok(self
+            .task
+            .inputs()
+            .iter()
+            .map(|(k, v)| (*k, PyInput { inner: v.clone() }))
+            .collect())
     }
 
     fn psets(&self) -> PyResult<HashMap<SourceId, Vec<RayPartitionRef>>> {

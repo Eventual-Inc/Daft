@@ -1,5 +1,5 @@
 use common_error::{DaftError, DaftResult};
-use daft_local_plan::{InputId, ResolvedInput};
+use daft_local_plan::{Input, InputId};
 use daft_micropartition::MicroPartitionRef;
 use daft_scan::ScanTaskRef;
 
@@ -14,9 +14,9 @@ pub(crate) enum InputSender {
 }
 
 impl InputSender {
-    pub async fn send(&self, input_id: InputId, input: ResolvedInput) -> DaftResult<()> {
+    pub async fn send(&self, input_id: InputId, input: Input) -> DaftResult<()> {
         match (self, input) {
-            (Self::ScanTasks(sender), ResolvedInput::ScanTasks(tasks)) => {
+            (Self::ScanTasks(sender), Input::ScanTasks(tasks)) => {
                 // Convert ScanTaskLikeRef to ScanTaskRef
                 let tasks: Vec<ScanTaskRef> = tasks
                     .into_iter()
@@ -33,11 +33,11 @@ impl InputSender {
                     .await
                     .map_err(|e| DaftError::ValueError(e.to_string()))
             }
-            (Self::InMemory(sender), ResolvedInput::InMemoryPartitions(partitions)) => sender
+            (Self::InMemory(sender), Input::InMemory(partitions)) => sender
                 .send((input_id, partitions))
                 .await
                 .map_err(|e| DaftError::ValueError(e.to_string())),
-            (Self::GlobPaths(sender), ResolvedInput::GlobPaths(glob_paths)) => sender
+            (Self::GlobPaths(sender), Input::GlobPaths(glob_paths)) => sender
                 .send((input_id, glob_paths))
                 .await
                 .map_err(|e| DaftError::ValueError(e.to_string())),

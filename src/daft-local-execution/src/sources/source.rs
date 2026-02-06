@@ -92,6 +92,7 @@ pub trait Source: Send + Sync {
         io_stats: IOStatsRef,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>>;
+    fn schema(&self) -> &SchemaRef;
 }
 
 pub(crate) struct SourceNode {
@@ -221,16 +222,24 @@ impl PipelineNode for SourceNode {
                 node_name: self.name().to_string(),
             })?;
         let runtime_stats = self.runtime_stats.clone();
+        let schema = self.source.schema().clone();
         runtime_handle.spawn(
             async move {
+                let mut has_data = false;
                 stats_manager.activate_node(node_id);
 
                 while let Some(part) = source_stream.next().await {
+                    has_data = true;
                     let part = part?;
                     runtime_stats.add_rows_out(part.len() as u64);
                     if destination_sender.send(part).await.is_err() {
                         break;
                     }
+                }
+                if !has_data {
+                    let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
+                    let _ = destination_sender.send(empty).await;
+                    runtime_stats.add_rows_out(0);
                 }
 
                 stats_manager.finalize_node(node_id);
