@@ -57,4 +57,8 @@ impl Source for EmptyScanSource {
         res.push(format!("Schema = {}", self.schema.short_string()));
         res
     }
+
+    fn schema(&self) -> &SchemaRef {
+        &self.schema
+    }
 }

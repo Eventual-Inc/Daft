@@ -12,7 +12,9 @@ use common_error::DaftResult;
 use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
 use daft_context::{DaftContext, Subscriber};
-use daft_local_plan::{ExecutionEngineFinalResult, InputId, LocalPhysicalPlanRef, ResolvedInput, SourceId, translate};
+use daft_local_plan::{
+    ExecutionEngineFinalResult, Input, InputId, LocalPhysicalPlanRef, SourceId, translate,
+};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
 use futures::{FutureExt, Stream, future::BoxFuture};
@@ -66,7 +68,7 @@ pub(crate) struct EnqueueInputMessage {
     /// The input_id for this enqueue operation
     input_id: InputId,
     /// Plan inputs grouped by source_id
-    inputs: HashMap<SourceId, ResolvedInput>,
+    inputs: HashMap<SourceId, Input>,
 }
 
 #[cfg_attr(
@@ -101,22 +103,16 @@ impl PyNativeExecutor {
         local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
         daft_ctx: &PyDaftContext,
         input_id: InputId,
-        inputs: daft_local_plan::python::PyResolvedInputs,
+        inputs: HashMap<SourceId, Input>,
         context: Option<HashMap<String, String>>,
-    ) -> PyResult<Bound<'py, PyAny>> {
+    ) -> PyResult<Bound<'py, pyo3::PyAny>> {
         let daft_ctx: &DaftContext = daft_ctx.into();
         let plan = local_physical_plan.plan.clone();
         let exec_cfg = daft_ctx.execution_config();
         let subscribers = daft_ctx.subscribers();
         let enqueue_future = {
-            self.executor.run(
-                &plan,
-                exec_cfg,
-                subscribers,
-                context,
-                input_id,
-                inputs.inner,
-            )?
+            self.executor
+                .run(&plan, exec_cfg, subscribers, context, input_id, inputs)?
         };
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -183,7 +179,7 @@ impl NativeExecutor {
         subscribers: Vec<Arc<dyn Subscriber>>,
         additional_context: Option<HashMap<String, String>>,
         input_id: InputId,
-        inputs: HashMap<SourceId, ResolvedInput>,
+        inputs: HashMap<SourceId, Input>,
     ) -> DaftResult<BoxFuture<'static, ExecutionEngineResult>> {
         let cancel = self.cancel.clone();
         let additional_context = additional_context.unwrap_or_default();
@@ -305,7 +301,7 @@ impl NativeExecutor {
         simple: bool,
     ) -> String {
         let logical_plan = logical_plan_builder.build();
-        let (physical_plan, _) = translate(&logical_plan).unwrap();
+        let (physical_plan, _) = translate(&logical_plan, &HashMap::new()).unwrap();
         let ctx = RuntimeContext::new();
         let (pipeline_node, _) =
             translate_physical_plan_to_pipeline(&physical_plan, &cfg, &ctx).unwrap();
@@ -319,7 +315,7 @@ impl NativeExecutor {
         options: MermaidDisplayOptions,
     ) -> String {
         let logical_plan = logical_plan_builder.build();
-        let (physical_plan, _) = translate(&logical_plan).unwrap();
+        let (physical_plan, _) = translate(&logical_plan, &HashMap::new()).unwrap();
         let ctx = RuntimeContext::new();
         let (pipeline_node, _) =
             translate_physical_plan_to_pipeline(&physical_plan, &cfg, &ctx).unwrap();
@@ -341,7 +337,7 @@ impl NativeExecutor {
         cfg: Arc<DaftExecutionConfig>,
     ) -> RelationshipInformation {
         let logical_plan = logical_plan_builder.build();
-        let (physical_plan, _) = translate(&logical_plan).unwrap();
+        let (physical_plan, _) = translate(&logical_plan, &HashMap::new()).unwrap();
         let ctx = RuntimeContext::new();
         let (pipeline_node, _) =
             translate_physical_plan_to_pipeline(&physical_plan, &cfg, &ctx).unwrap();

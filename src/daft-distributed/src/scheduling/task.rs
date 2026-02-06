@@ -5,7 +5,7 @@ use common_error::DaftError;
 use common_partitioning::PartitionRef;
 use common_resource_request::ResourceRequest;
 use common_scan_info::ScanTaskLikeRef;
-use daft_local_plan::{ExecutionEngineFinalResult, LocalPhysicalPlanRef, SourceId, UnresolvedInput};
+use daft_local_plan::{ExecutionEngineFinalResult, Input, LocalPhysicalPlanRef, SourceId};
 use tokio_util::sync::CancellationToken;
 
 use super::worker::WorkerId;
@@ -211,7 +211,7 @@ pub(crate) struct SwordfishTask {
     plan: LocalPhysicalPlanRef,
     resource_request: TaskResourceRequest,
     config: Arc<DaftExecutionConfig>,
-    inputs: HashMap<SourceId, UnresolvedInput>,
+    inputs: HashMap<SourceId, Input>,
     psets: HashMap<SourceId, Vec<PartitionRef>>,
     strategy: SchedulingStrategy,
     context: HashMap<String, String>,
@@ -226,7 +226,7 @@ impl SwordfishTask {
         &self.config
     }
 
-    pub fn inputs(&self) -> &HashMap<SourceId, UnresolvedInput> {
+    pub fn inputs(&self) -> &HashMap<SourceId, Input> {
         &self.inputs
     }
 
@@ -274,7 +274,7 @@ impl Task for SwordfishTask {
 pub(crate) struct SwordfishTaskBuilder {
     plan: LocalPhysicalPlanRef,
     config: Arc<DaftExecutionConfig>,
-    inputs: HashMap<SourceId, UnresolvedInput>,
+    inputs: HashMap<SourceId, Input>,
     psets: HashMap<SourceId, Vec<PartitionRef>>,
     strategy: Option<SchedulingStrategy>,
     context: HashMap<String, String>,
@@ -356,33 +356,25 @@ impl SwordfishTaskBuilder {
         self
     }
 
-    /// Set psets (replaces any existing psets).
+    /// Add psets with source_id to the builder.
     pub fn with_psets(mut self, source_id: SourceId, psets: Vec<PartitionRef>) -> Self {
-        self.inputs.insert(
-            source_id,
-            UnresolvedInput::InMemory {
-                cache_key: source_id.to_string(),
-            },
-        );
         self.psets.insert(source_id, psets);
         self
     }
 
-    /// Set scan_tasks (replaces any existing scan_tasks).
+    /// Add scan_tasks with source_id to the builder.
     pub fn with_scan_tasks(
         mut self,
         source_id: SourceId,
         scan_tasks: Vec<ScanTaskLikeRef>,
     ) -> Self {
-        self.inputs
-            .insert(source_id, UnresolvedInput::ScanTask(Arc::new(scan_tasks)));
+        self.inputs.insert(source_id, Input::ScanTasks(scan_tasks));
         self
     }
 
-    /// Set glob_paths (replaces any existing glob_paths).
+    /// Add glob paths with source_id to the builder.
     pub fn with_glob_paths(mut self, source_id: SourceId, glob_paths: Vec<String>) -> Self {
-        self.inputs
-            .insert(source_id, UnresolvedInput::GlobPaths(Arc::new(glob_paths)));
+        self.inputs.insert(source_id, Input::GlobPaths(glob_paths));
         self
     }
 

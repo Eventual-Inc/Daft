@@ -1,17 +1,15 @@
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
-use common_error::DaftError;
 use common_py_serde::impl_bincode_py_state_serialization;
 use daft_logical_plan::PyLogicalPlanBuilder;
-use daft_micropartition::python::PyMicroPartition;
+use daft_micropartition::{MicroPartitionRef, python::PyMicroPartition};
 use daft_recordbatch::python::PyRecordBatch;
-use pyo3::prelude::*;
+use pyo3::{prelude::*, types::PyDict};
 use serde::{Deserialize, Serialize};
 
+use crate::Input;
 #[cfg(feature = "python")]
-use crate::{LocalPhysicalPlanRef, translate};
-use crate::{ExecutionEngineFinalResult, ResolvedInput, SourceId, UnresolvedInput};
+use crate::{ExecutionEngineFinalResult, LocalPhysicalPlanRef, translate};
 
 #[pyclass(module = "daft.daft", name = "LocalPhysicalPlan")]
 #[derive(Debug, Serialize, Deserialize)]
@@ -23,65 +21,69 @@ pub struct PyLocalPhysicalPlan {
 impl PyLocalPhysicalPlan {
     #[staticmethod]
     fn from_logical_plan_builder(
+        py: Python<'_>,
         logical_plan_builder: &PyLogicalPlanBuilder,
-    ) -> PyResult<(Self, PyUnresolvedInputs)> {
+        psets: HashMap<String, Vec<PyMicroPartition>>,
+    ) -> PyResult<(Self, Py<PyDict>)> {
+        let psets_mp: HashMap<String, Vec<MicroPartitionRef>> = psets
+            .into_iter()
+            .map(|(k, v)| (k, v.into_iter().map(|p| p.inner).collect()))
+            .collect();
         let logical_plan = logical_plan_builder.builder.build();
-        let (physical_plan, input_specs) = translate(&logical_plan)?;
+        let (physical_plan, inputs) = translate(&logical_plan, &psets_mp)?;
+
+        let dict = PyDict::new(py);
+        for (source_id, input) in inputs {
+            match &input {
+                Input::InMemory(partitions) => {
+                    let py_parts: Vec<PyMicroPartition> = partitions
+                        .iter()
+                        .map(|p| PyMicroPartition::from(p.clone()))
+                        .collect();
+                    dict.set_item(source_id, py_parts)?;
+                }
+                _ => {
+                    let py_input = PyInput { inner: input };
+                    dict.set_item(source_id, py_input.into_pyobject(py)?)?;
+                }
+            }
+        }
 
         Ok((
             Self {
                 plan: physical_plan,
             },
-            PyUnresolvedInputs { inner: input_specs },
+            dict.into(),
         ))
     }
 }
 
 impl_bincode_py_state_serialization!(PyLocalPhysicalPlan);
 
-#[pyclass(module = "daft.daft", name = "UnresolvedInputs", frozen)]
+#[pyclass(module = "daft.daft", name = "Input", frozen)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PyUnresolvedInputs {
-    pub inner: HashMap<SourceId, UnresolvedInput>,
+pub struct PyInput {
+    pub inner: Input,
 }
 
-#[pymethods]
-impl PyUnresolvedInputs {
-    fn resolve(&self, psets: HashMap<String, Vec<PyMicroPartition>>) -> PyResult<PyResolvedInputs> {
-        let mut plan_inputs = HashMap::new();
+impl_bincode_py_state_serialization!(PyInput);
 
-        for (source_id, unresolved_input) in &self.inner {
-            let plan_input = match &unresolved_input {
-                UnresolvedInput::ScanTask(tasks) => ResolvedInput::ScanTasks((**tasks).clone()),
-                UnresolvedInput::GlobPaths(paths) => ResolvedInput::GlobPaths((**paths).clone()),
-                UnresolvedInput::InMemory { cache_key } => {
-                    let partitions = psets.get(cache_key).ok_or(DaftError::ValueError(format!(
-                        "Cache key {} not found in psets",
-                        cache_key
-                    )))?;
-                    ResolvedInput::InMemoryPartitions(
-                        partitions
-                            .iter()
-                            .map(|p| p.inner.clone())
-                            .collect::<Vec<_>>(),
-                    )
-                }
-            };
+impl<'py> FromPyObject<'_, 'py> for Input {
+    type Error = PyErr;
 
-            plan_inputs.insert(*source_id, plan_input);
+    fn extract(ob: pyo3::Borrowed<'_, 'py, PyAny>) -> PyResult<Self> {
+        if let Ok(py_input) = ob.extract::<PyInput>() {
+            Ok(py_input.inner)
+        } else if let Ok(partitions) = ob.extract::<Vec<PyMicroPartition>>() {
+            Ok(Self::InMemory(
+                partitions.into_iter().map(|p| p.inner).collect(),
+            ))
+        } else {
+            Err(pyo3::exceptions::PyTypeError::new_err(
+                "Expected Input or list[MicroPartition]",
+            ))
         }
-
-        Ok(PyResolvedInputs { inner: plan_inputs })
     }
-}
-
-impl_bincode_py_state_serialization!(PyUnresolvedInputs);
-
-#[cfg(feature = "python")]
-#[pyclass(module = "daft.daft", name = "ResolvedInputs", frozen)]
-#[derive(Debug, Clone)]
-pub struct PyResolvedInputs {
-    pub inner: HashMap<SourceId, ResolvedInput>,
 }
 
 #[pyclass(module = "daft.daft", name = "PyExecutionEngineFinalResult", frozen)]
@@ -110,8 +112,7 @@ impl From<ExecutionEngineFinalResult> for PyExecutionEngineFinalResult {
 
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyLocalPhysicalPlan>()?;
-    parent.add_class::<PyUnresolvedInputs>()?;
-    parent.add_class::<PyResolvedInputs>()?;
+    parent.add_class::<PyInput>()?;
     parent.add_class::<PyExecutionEngineFinalResult>()?;
     Ok(())
 }

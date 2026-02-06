@@ -132,14 +132,15 @@ class NativeRunner(Runner[MicroPartition]):
             logger.warning("Failed to send optimization end notification: %s", e)
             pass
 
-        plan, inputs = LocalPhysicalPlan.from_logical_plan_builder(builder._builder)
+        psets = {
+            k: [v.micropartition()._micropartition for v in v.values()]
+            for k, v in self._part_set_cache.get_all_partition_sets().items()
+        }
+        plan, inputs = LocalPhysicalPlan.from_logical_plan_builder(builder._builder, psets)
+
         results_gen = self.native_executor.run(
             plan,
             inputs,
-            {
-                k: [v.micropartition()._micropartition for v in v.values()]
-                for k, v in self._part_set_cache.get_all_partition_sets().items()
-            },
             ctx,
             {"query_id": query_id},
         )

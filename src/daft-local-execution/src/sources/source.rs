@@ -13,6 +13,7 @@ use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
+use daft_micropartition::MicroPartition;
 // MicroPartition is used in PipelineMessage
 use futures::{StreamExt, stream::BoxStream};
 use opentelemetry::{KeyValue, global};
@@ -94,6 +95,7 @@ pub trait Source: Send + Sync {
         io_stats: IOStatsRef,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>>;
+    fn schema(&self) -> &SchemaRef;
 }
 
 pub(crate) struct SourceNode {
@@ -223,11 +225,14 @@ impl PipelineNode for SourceNode {
                 node_name: self.name().to_string(),
             })?;
         let runtime_stats = self.runtime_stats.clone();
+        let schema = self.source.schema().clone();
         runtime_handle.spawn(
             async move {
+                let mut has_data = false;
                 stats_manager.activate_node(node_id);
 
                 while let Some(msg) = source_stream.next().await {
+                    has_data = true;
                     let msg = msg?;
                     // Track rows only for Morsel messages
                     if let PipelineMessage::Morsel { ref partition, .. } = msg {
@@ -236,6 +241,16 @@ impl PipelineNode for SourceNode {
                     if destination_sender.send(msg).await.is_err() {
                         break;
                     }
+                }
+                if !has_data {
+                    let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
+                    let _ = destination_sender
+                        .send(PipelineMessage::Morsel {
+                            input_id: 0,
+                            partition: empty,
+                        })
+                        .await;
+                    runtime_stats.add_rows_out(0);
                 }
 
                 stats_manager.finalize_node(node_id);

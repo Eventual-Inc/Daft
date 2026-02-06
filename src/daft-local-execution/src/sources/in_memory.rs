@@ -97,15 +97,15 @@ impl Source for InMemorySource {
         io_stats: IOStatsRef,
         _chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
+        io_stats.mark_bytes_read(self.size_bytes);
         let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);
         let input_receiver = self.receiver.take().expect("Receiver not found");
 
         let processor_task =
             self.spawn_partition_set_processor(input_receiver, output_sender, self.schema.clone());
 
-        let result_stream = output_receiver.into_stream();
-        let combined_stream =
-            combine_stream(Box::pin(result_stream.map(Ok)), processor_task.map(|x| x?));
+        let result_stream = output_receiver.into_stream().map(Ok);
+        let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));
 
         Ok(Box::pin(combined_stream))
     }
@@ -124,5 +124,9 @@ impl Source for InMemorySource {
         res.push(format!("Schema = {}", self.schema.short_string()));
         res.push(format!("Size bytes = {}", self.size_bytes));
         res
+    }
+
+    fn schema(&self) -> &SchemaRef {
+        &self.schema
     }
 }

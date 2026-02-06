@@ -4,12 +4,14 @@ import asyncio
 import logging
 import os
 import uuid
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NamedTuple
 
 from daft.daft import (
     DistributedPhysicalPlan,
     DistributedPhysicalPlanRunner,
+    Input,
     LocalPhysicalPlan,
     NativeExecutor,
     PyDaftExecutionConfig,
@@ -18,7 +20,6 @@ from daft.daft import (
     RaySwordfishTask,
     RaySwordfishWorker,
     RayTaskResult,
-    UnresolvedInputs,
     set_compute_runtime_num_worker_threads,
 )
 from daft.event_loop import set_event_loop
@@ -69,17 +70,32 @@ class RaySwordfishActor:
         plan: LocalPhysicalPlan,
         exec_cfg: PyDaftExecutionConfig,
         context: dict[str, str] | None,
-        psets: dict[int, list[ray.ObjectRef]],
-        inputs: UnresolvedInputs,
+        **inputs: (
+            Input | PyMicroPartition
+        ),  # PyMicroPartitions are separated from Inputs because they are Ray ObjectRefs, which will be resolved by Ray.
     ) -> AsyncGenerator[MicroPartition | SwordfishTaskMetadata, None]:
         """Run a plan on swordfish and yield partitions."""
         # We import PyDaftContext inside the function because PyDaftContext is not serializable.
         from daft.daft import PyDaftContext
 
         with profile():
-            psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
-            psets_mp = {str(k): [v._micropartition for v in v] for k, v in psets.items()}
-            resolved_inputs = inputs.resolve(psets_mp)
+            # group the micropartitions by source_id
+            pset_by_source: dict[int, list[tuple[int, PyMicroPartition]]] = defaultdict(list)
+            for k, v in inputs.items():
+                if isinstance(v, MicroPartition):
+                    sid_str, idx_str = k.rsplit("_", 1)
+                    pset_by_source[int(sid_str)].append((int(idx_str), v._micropartition))
+            # sort the micropartitions in ascending order of index to ensure consistent ordering
+            for source_id, parts in pset_by_source.items():
+                pset_by_source[source_id] = sorted(parts, key=lambda x: x[0])
+
+            # create the resolved inputs from the micropartitions and the other inputs
+            resolved_inputs: dict[int, Input | list[PyMicroPartition]] = {}
+            for source_id, parts in pset_by_source.items():
+                resolved_inputs[int(source_id)] = [mp for _, mp in parts]
+            for k, v in inputs.items():
+                if isinstance(v, Input):
+                    resolved_inputs[int(k)] = v
 
             ctx = PyDaftContext()
             ctx._daft_execution_config = exec_cfg
@@ -191,14 +207,17 @@ class RaySwordfishActorHandle:
         self.actor_handle = actor_handle
 
     def submit_task(self, task: RaySwordfishTask) -> RaySwordfishTaskHandle:
-        inputs = task.inputs()
-        psets = {k: [v.object_ref for v in v] for k, v in task.psets().items()}
+        kwargs = {}
+        for source_id, py_input in task.inputs().items():
+            kwargs[str(source_id)] = py_input
+        for source_id, refs in task.psets().items():
+            for idx, v in enumerate(refs):
+                kwargs[f"{source_id}_{idx}"] = v.object_ref
         result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(
             task.plan(),
             task.config(),
             task.context(),
-            psets,
-            inputs,
+            **kwargs,
         )
         return RaySwordfishTaskHandle(
             result_handle,
@@ -378,7 +397,7 @@ class FlotillaRunner:
             name=get_flotilla_runner_actor_name(),
             namespace=FLOTILLA_RUNNER_NAMESPACE,
             get_if_exists=True,
-            runtime_env={"env_vars": {"DAFT_DASHBOARD_URL": dashboard_url}} if dashboard_url else None,
+            runtime_env=({"env_vars": {"DAFT_DASHBOARD_URL": dashboard_url}} if dashboard_url else None),
             scheduling_strategy=(
                 ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=head_node_id,

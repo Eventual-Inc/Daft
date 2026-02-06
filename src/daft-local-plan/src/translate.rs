@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 use common_error::{DaftError, DaftResult};
 use common_scan_info::ScanState;
@@ -12,33 +12,37 @@ use daft_dsl::{
     resolved_col, window_to_agg_exprs,
 };
 use daft_logical_plan::{JoinType, LogicalPlan, LogicalPlanRef, SourceInfo, stats::StatsState};
+use daft_micropartition::MicroPartitionRef;
 
 use super::plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef, SamplingMethod};
-use crate::{SourceId, SourceIdCounter, UnresolvedInput};
+use crate::{Input, SourceId, SourceIdCounter};
 
-/// Translate a logical plan into a physical plan and extract input specifications.
-/// Returns the physical plan and a map of source_id -> UnresolvedInput.
 pub fn translate(
     plan: &LogicalPlanRef,
-) -> DaftResult<(LocalPhysicalPlanRef, HashMap<SourceId, UnresolvedInput>)> {
+    psets: &HashMap<String, Vec<MicroPartitionRef>>,
+) -> DaftResult<(LocalPhysicalPlanRef, HashMap<SourceId, Input>)> {
     let mut source_counter = SourceIdCounter::default();
-    translate_helper(plan, &mut source_counter)
+    translate_helper(plan, &mut source_counter, psets)
 }
 
 fn translate_helper(
     plan: &LogicalPlanRef,
     source_counter: &mut SourceIdCounter,
-) -> DaftResult<(LocalPhysicalPlanRef, HashMap<SourceId, UnresolvedInput>)> {
+    psets: &HashMap<String, Vec<MicroPartitionRef>>,
+) -> DaftResult<(LocalPhysicalPlanRef, HashMap<SourceId, Input>)> {
     match plan.as_ref() {
         LogicalPlan::Source(source) => {
-            let mut unresolved_inputs = HashMap::new();
+            let mut inputs = HashMap::new();
             let physical_plan = match source.source_info.as_ref() {
                 SourceInfo::InMemory(info) => {
                     let source_id = source_counter.next();
-                    let unresolved_input = UnresolvedInput::InMemory {
-                        cache_key: info.cache_key.clone(),
-                    };
-                    unresolved_inputs.insert(source_id, unresolved_input);
+                    let partitions = psets.get(&info.cache_key).cloned().ok_or_else(|| {
+                        DaftError::ValueError(format!(
+                            "InMemory source cache_key '{}' not found in provided partition sets",
+                            info.cache_key
+                        ))
+                    })?;
+                    inputs.insert(source_id, Input::InMemory(partitions));
 
                     LocalPhysicalPlan::in_memory_scan(
                         source_id,
@@ -49,19 +53,14 @@ fn translate_helper(
                     )
                 }
                 SourceInfo::Physical(info) => {
-                    // We should be able to pass the ScanOperator into the physical plan directly but we need to figure out the serialization story
                     let scan_tasks = match &info.scan_state {
                         ScanState::Operator(scan_op) => {
-                            Arc::new(scan_op.0.to_scan_tasks(info.pushdowns.clone())?)
+                            scan_op.0.to_scan_tasks(info.pushdowns.clone())?
                         }
-                        ScanState::Tasks(scan_tasks) => scan_tasks.clone(),
+                        ScanState::Tasks(scan_tasks) => (**scan_tasks).clone(),
                     };
-                    // Create a physical scan
                     let source_id = source_counter.next();
-
-                    // Create InputSpec for scan tasks
-                    let unresolved_input = UnresolvedInput::ScanTask(scan_tasks);
-                    unresolved_inputs.insert(source_id, unresolved_input);
+                    inputs.insert(source_id, Input::ScanTasks(scan_tasks));
 
                     LocalPhysicalPlan::physical_scan(
                         source_id,
@@ -72,12 +71,8 @@ fn translate_helper(
                     )
                 }
                 SourceInfo::GlobScan(info) => {
-                    // Create a glob scan
                     let source_id = source_counter.next();
-
-                    // Create InputSpec for glob paths
-                    let unresolved_input = UnresolvedInput::GlobPaths(info.glob_paths.clone());
-                    unresolved_inputs.insert(source_id, unresolved_input);
+                    inputs.insert(source_id, Input::GlobPaths((*info.glob_paths).clone()));
 
                     LocalPhysicalPlan::glob_scan(
                         source_id,
@@ -97,13 +92,13 @@ fn translate_helper(
                     )
                 }
             };
-            Ok((physical_plan, unresolved_inputs))
+            Ok((physical_plan, inputs))
         }
         LogicalPlan::Shard(_) => Err(DaftError::InternalError(
             "Sharding should have been folded into a source".to_string(),
         )),
         LogicalPlan::Filter(filter) => {
-            let (input_plan, unresolved_inputs) = translate_helper(&filter.input, source_counter)?;
+            let (input_plan, inputs) = translate_helper(&filter.input, source_counter, psets)?;
             let predicate = BoundExpr::try_new(filter.predicate.clone(), input_plan.schema())?;
             Ok((
                 LocalPhysicalPlan::filter(
@@ -112,12 +107,12 @@ fn translate_helper(
                     filter.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                unresolved_inputs,
+                inputs,
             ))
         }
         LogicalPlan::IntoBatches(into_batches) => {
-            let (input_plan, unresolved_inputs) =
-                translate_helper(&into_batches.input, source_counter)?;
+            let (input_plan, inputs) =
+                translate_helper(&into_batches.input, source_counter, psets)?;
             Ok((
                 LocalPhysicalPlan::into_batches(
                     input_plan,
@@ -126,11 +121,11 @@ fn translate_helper(
                     into_batches.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                unresolved_inputs,
+                inputs,
             ))
         }
         LogicalPlan::Limit(limit) => {
-            let (input_plan, unresolved_inputs) = translate_helper(&limit.input, source_counter)?;
+            let (input_plan, inputs) = translate_helper(&limit.input, source_counter, psets)?;
             Ok((
                 LocalPhysicalPlan::limit(
                     input_plan,
@@ -139,11 +134,11 @@ fn translate_helper(
                     limit.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                unresolved_inputs,
+                inputs,
             ))
         }
         LogicalPlan::Project(project) => {
-            let (input_plan, unresolved_inputs) = translate_helper(&project.input, source_counter)?;
+            let (input_plan, inputs) = translate_helper(&project.input, source_counter, psets)?;
 
             let projection = BoundExpr::bind_all(&project.projection, input_plan.schema())?;
 
@@ -155,12 +150,11 @@ fn translate_helper(
                     project.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                unresolved_inputs,
+                inputs,
             ))
         }
         LogicalPlan::UDFProject(udf_project) => {
-            let (input_plan, unresolved_inputs) =
-                translate_helper(&udf_project.input, source_counter)?;
+            let (input_plan, inputs) = translate_helper(&udf_project.input, source_counter, psets)?;
 
             let passthrough_columns =
                 BoundExpr::bind_all(&udf_project.passthrough_columns, input_plan.schema())?;
@@ -176,11 +170,11 @@ fn translate_helper(
                     udf_project.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                unresolved_inputs,
+                inputs,
             ))
         }
         LogicalPlan::Sample(sample) => {
-            let (input_plan, unresolved_inputs) = translate_helper(&sample.input, source_counter)?;
+            let (input_plan, inputs) = translate_helper(&sample.input, source_counter, psets)?;
             let sampling_method = if let Some(fraction) = sample.fraction {
                 SamplingMethod::Fraction(fraction)
             } else if let Some(size) = sample.size {
@@ -199,12 +193,11 @@ fn translate_helper(
                     sample.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                unresolved_inputs,
+                inputs,
             ))
         }
         LogicalPlan::Aggregate(aggregate) => {
-            let (input_plan, unresolved_inputs) =
-                translate_helper(&aggregate.input, source_counter)?;
+            let (input_plan, inputs) = translate_helper(&aggregate.input, source_counter, psets)?;
 
             let aggregations = aggregate
                 .aggregations
@@ -226,7 +219,7 @@ fn translate_helper(
                         aggregate.stats_state.clone(),
                         LocalNodeContext::default(),
                     ),
-                    unresolved_inputs,
+                    inputs,
                 ))
             } else {
                 Ok((
@@ -238,12 +231,12 @@ fn translate_helper(
                         aggregate.stats_state.clone(),
                         LocalNodeContext::default(),
                     ),
-                    unresolved_inputs,
+                    inputs,
                 ))
             }
         }
         LogicalPlan::Window(window) => {
-            let (input_plan, unresolved_inputs) = translate_helper(&window.input, source_counter)?;
+            let (input_plan, inputs) = translate_helper(&window.input, source_counter, psets)?;
 
             let window_functions =
                 BoundWindowExpr::bind_all(&window.window_functions, input_plan.schema())?;
@@ -321,10 +314,10 @@ fn translate_helper(
                     ));
                 }
             };
-            Ok((plan, unresolved_inputs))
+            Ok((plan, inputs))
         }
         LogicalPlan::Unpivot(unpivot) => {
-            let (input_plan, unresolved_inputs) = translate_helper(&unpivot.input, source_counter)?;
+            let (input_plan, inputs) = translate_helper(&unpivot.input, source_counter, psets)?;
 
             let ids = BoundExpr::bind_all(&unpivot.ids, input_plan.schema())?;
             let values = BoundExpr::bind_all(&unpivot.values, input_plan.schema())?;
@@ -340,11 +333,11 @@ fn translate_helper(
                     unpivot.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                unresolved_inputs,
+                inputs,
             ))
         }
         LogicalPlan::Pivot(pivot) => {
-            let (input_plan, unresolved_inputs) = translate_helper(&pivot.input, source_counter)?;
+            let (input_plan, inputs) = translate_helper(&pivot.input, source_counter, psets)?;
 
             let group_by = BoundExpr::bind_all(&pivot.group_by, input_plan.schema())?;
             let pivot_column = BoundExpr::try_new(pivot.pivot_column.clone(), input_plan.schema())?;
@@ -365,11 +358,11 @@ fn translate_helper(
                     pivot.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                unresolved_inputs,
+                inputs,
             ))
         }
         LogicalPlan::Sort(sort) => {
-            let (input_plan, unresolved_inputs) = translate_helper(&sort.input, source_counter)?;
+            let (input_plan, inputs) = translate_helper(&sort.input, source_counter, psets)?;
 
             let sort_by = BoundExpr::bind_all(&sort.sort_by, input_plan.schema())?;
 
@@ -382,11 +375,11 @@ fn translate_helper(
                     sort.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                unresolved_inputs,
+                inputs,
             ))
         }
         LogicalPlan::TopN(top_n) => {
-            let (input_plan, unresolved_inputs) = translate_helper(&top_n.input, source_counter)?;
+            let (input_plan, inputs) = translate_helper(&top_n.input, source_counter, psets)?;
 
             let sort_by = BoundExpr::bind_all(&top_n.sort_by, input_plan.schema())?;
 
@@ -401,7 +394,7 @@ fn translate_helper(
                     top_n.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                unresolved_inputs,
+                inputs,
             ))
         }
         LogicalPlan::Join(join) => {
@@ -420,13 +413,11 @@ fn translate_helper(
                     _ => {}
                 }
             }
-            let (left_plan, mut left_unresolved_inputs) =
-                translate_helper(&join.left, source_counter)?;
-            let (right_plan, right_unresolved_inputs) =
-                translate_helper(&join.right, source_counter)?;
+            let (left_plan, mut left_inputs) = translate_helper(&join.left, source_counter, psets)?;
+            let (right_plan, right_inputs) = translate_helper(&join.right, source_counter, psets)?;
 
             // Merge inputs from both sides
-            left_unresolved_inputs.extend(right_unresolved_inputs);
+            left_inputs.extend(right_inputs);
 
             let (remaining_on, left_on, right_on, null_equals_nulls) = join.on.split_eq_preds();
 
@@ -446,7 +437,7 @@ fn translate_helper(
                         join.stats_state.clone(),
                         LocalNodeContext::default(),
                     ),
-                    left_unresolved_inputs,
+                    left_inputs,
                 ))
             } else {
                 let left_on = BoundExpr::bind_all(&left_on, left_plan.schema())?;
@@ -465,14 +456,13 @@ fn translate_helper(
                         join.stats_state.clone(),
                         LocalNodeContext::default(),
                     ),
-                    left_unresolved_inputs,
+                    left_inputs,
                 ))
             }
         }
         LogicalPlan::Distinct(distinct) => {
             let schema = distinct.input.schema();
-            let (input_plan, unresolved_inputs) =
-                translate_helper(&distinct.input, source_counter)?;
+            let (input_plan, inputs) = translate_helper(&distinct.input, source_counter, psets)?;
 
             let columns = distinct
                 .columns
@@ -488,17 +478,16 @@ fn translate_helper(
                     distinct.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                unresolved_inputs,
+                inputs,
             ))
         }
         LogicalPlan::Concat(concat) => {
-            let (input_plan, mut unresolved_inputs) =
-                translate_helper(&concat.input, source_counter)?;
-            let (other_plan, other_unresolved_inputs) =
-                translate_helper(&concat.other, source_counter)?;
+            let (input_plan, mut inputs) = translate_helper(&concat.input, source_counter, psets)?;
+            let (other_plan, other_inputs) =
+                translate_helper(&concat.other, source_counter, psets)?;
 
             // Merge inputs from both sides
-            unresolved_inputs.extend(other_unresolved_inputs);
+            inputs.extend(other_inputs);
 
             Ok((
                 LocalPhysicalPlan::concat(
@@ -507,18 +496,18 @@ fn translate_helper(
                     concat.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                unresolved_inputs,
+                inputs,
             ))
         }
         LogicalPlan::Repartition(repartition) => {
             log::warn!(
                 "Repartition not supported on the NativeRunner. This will be a no-op. Please use the RayRunner instead if you need to repartition"
             );
-            translate_helper(&repartition.input, source_counter)
+            translate_helper(&repartition.input, source_counter, psets)
         }
         LogicalPlan::MonotonicallyIncreasingId(monotonically_increasing_id) => {
-            let (input_plan, unresolved_inputs) =
-                translate_helper(&monotonically_increasing_id.input, source_counter)?;
+            let (input_plan, inputs) =
+                translate_helper(&monotonically_increasing_id.input, source_counter, psets)?;
             Ok((
                 LocalPhysicalPlan::monotonically_increasing_id(
                     input_plan,
@@ -528,12 +517,12 @@ fn translate_helper(
                     monotonically_increasing_id.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                unresolved_inputs,
+                inputs,
             ))
         }
         LogicalPlan::Sink(sink) => {
             use daft_logical_plan::SinkInfo;
-            let (input_plan, unresolved_inputs) = translate_helper(&sink.input, source_counter)?;
+            let (input_plan, inputs) = translate_helper(&sink.input, source_counter, psets)?;
             let data_schema = input_plan.schema().clone();
             let plan = match sink.sink_info.as_ref() {
                 SinkInfo::OutputFileInfo(info) => {
@@ -587,10 +576,10 @@ fn translate_helper(
                     LocalNodeContext::default(),
                 ),
             };
-            Ok((plan, unresolved_inputs))
+            Ok((plan, inputs))
         }
         LogicalPlan::Explode(explode) => {
-            let (input_plan, unresolved_inputs) = translate_helper(&explode.input, source_counter)?;
+            let (input_plan, inputs) = translate_helper(&explode.input, source_counter, psets)?;
 
             let to_explode = BoundExpr::bind_all(&explode.to_explode, input_plan.schema())?;
 
@@ -603,12 +592,12 @@ fn translate_helper(
                     explode.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                unresolved_inputs,
+                inputs,
             ))
         }
         LogicalPlan::VLLMProject(vllm_project) => {
-            let (input_plan, unresolved_inputs) =
-                translate_helper(&vllm_project.input, source_counter)?;
+            let (input_plan, inputs) =
+                translate_helper(&vllm_project.input, source_counter, psets)?;
             let expr = BoundVLLMExpr::try_new(vllm_project.expr.clone(), input_plan.schema())?;
             Ok((
                 LocalPhysicalPlan::vllm_project(
@@ -620,7 +609,7 @@ fn translate_helper(
                     vllm_project.stats_state.clone(),
                     LocalNodeContext::default(),
                 ),
-                unresolved_inputs,
+                inputs,
             ))
         }
         LogicalPlan::Intersect(_)

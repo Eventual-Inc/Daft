@@ -2,13 +2,13 @@ use std::{any::Any, collections::HashMap, future::Future, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
 use common_partitioning::{Partition, PartitionRef};
-use daft_local_plan::{ExecutionEngineFinalResult, PyLocalPhysicalPlan, SourceId, python::PyUnresolvedInputs};
+use daft_local_plan::{ExecutionEngineFinalResult, PyLocalPhysicalPlan, SourceId, python::PyInput};
 use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 
 use crate::{
     pipeline_node::MaterializedOutput,
     scheduling::{
-        task::{SwordfishTask, Task, TaskContext, TaskResultHandle, TaskStatus},
+        task::{SwordfishTask, TaskContext, TaskResultHandle, TaskStatus},
         worker::WorkerId,
     },
 };
@@ -16,7 +16,7 @@ use crate::{
 #[pyclass(module = "daft.daft", name = "RayTaskResult")]
 #[derive(Clone)]
 pub(crate) enum RayTaskResult {
-    Success(Vec<RayPartitionRef>, Option<Vec<u8>>),
+    Success(Vec<RayPartitionRef>, Vec<u8>),
     WorkerDied(),
     WorkerUnavailable(),
 }
@@ -24,7 +24,7 @@ pub(crate) enum RayTaskResult {
 #[pymethods]
 impl RayTaskResult {
     #[staticmethod]
-    fn success(ray_part_refs: Vec<RayPartitionRef>, stats_serialized: Option<Vec<u8>>) -> Self {
+    fn success(ray_part_refs: Vec<RayPartitionRef>, stats_serialized: Vec<u8>) -> Self {
         Self::Success(ray_part_refs, stats_serialized)
     }
 
@@ -86,9 +86,8 @@ impl TaskResultHandle for RayTaskResultHandle {
 
             match ray_task_result {
                 Ok(RayTaskResult::Success(ray_part_refs, stats_serialized)) => {
-                    let stats = stats_serialized
-                        .map(|s| ExecutionEngineFinalResult::decode(&s))
-                        .unwrap_or_else(|| ExecutionEngineFinalResult::new(vec![]));
+                    let stats: ExecutionEngineFinalResult =
+                        ExecutionEngineFinalResult::decode(&stats_serialized);
                     let materialized_output = MaterializedOutput::new(
                         ray_part_refs
                             .into_iter()
@@ -191,9 +190,13 @@ impl RaySwordfishTask {
         Ok(PyLocalPhysicalPlan { plan })
     }
 
-    fn inputs(&self) -> PyResult<PyUnresolvedInputs> {
-        let inputs = self.task.inputs().clone();
-        Ok(PyUnresolvedInputs { inner: inputs })
+    fn inputs(&self) -> PyResult<HashMap<SourceId, PyInput>> {
+        Ok(self
+            .task
+            .inputs()
+            .iter()
+            .map(|(k, v)| (*k, PyInput { inner: v.clone() }))
+            .collect())
     }
 
     fn psets(&self) -> PyResult<HashMap<SourceId, Vec<RayPartitionRef>>> {
@@ -226,14 +229,5 @@ impl RaySwordfishTask {
     fn config(&self) -> PyResult<PyDaftExecutionConfig> {
         let config = self.task.config().clone();
         Ok(PyDaftExecutionConfig { config })
-    }
-
-    /// Get the last_node_id from the task context, which is used as the source_id
-    fn last_node_id(&self) -> u32 {
-        self.task.task_context().last_node_id
-    }
-
-    fn task_id(&self) -> u32 {
-        self.task.task_context().task_id
     }
 }
