@@ -26,6 +26,7 @@ impl OptimizerRule for SplitExplodeFromProject {
 
             let input_schema = projection.input.schema();
 
+            let mut ignore_empty_and_null: Option<bool> = None;
             let mut to_explode = Vec::new();
             let new_projection = projection
                 .projection
@@ -40,6 +41,32 @@ impl OptimizerRule for SplitExplodeFromProject {
                     if let Expr::ScalarFn(ScalarFn::Builtin(sf)) = unaliased_expr.as_ref()
                         && sf.is_function_type::<daft_functions_list::Explode>()
                     {
+                        let current_ignore_empty_and_null = if sf.inputs.len() == 2 {
+                            match sf
+                                .inputs
+                                .iter()
+                                .nth(1)
+                                .unwrap()
+                                .inner()
+                                .as_literal()
+                                .and_then(|l| l.as_bool())
+                            {
+                                Some(b) => b,
+                                None => return Ok(expr.clone()), // Cannot optimize non-literal ignore_empty_and_null
+                            }
+                        } else {
+                            false
+                        };
+
+                        if let Some(d) = ignore_empty_and_null {
+                            if d != current_ignore_empty_and_null {
+                                // Conflicting ignore_empty_and_null flags, cannot optimize into single Explode
+                                return Ok(expr.clone());
+                            }
+                        } else {
+                            ignore_empty_and_null = Some(current_ignore_empty_and_null);
+                        }
+
                         let inner = sf
                             .inputs
                             .first()
@@ -63,10 +90,16 @@ impl OptimizerRule for SplitExplodeFromProject {
             if to_explode.is_empty() {
                 Ok(Transformed::no(node))
             } else {
+                // Explode columns with inconsistent `ignore_empty_and_null` flags are skipped (kept as scalar
+                // functions in the projection). Only columns with consistent `ignore_empty_and_null` are
+                // extracted into the Explode operator.
+                let ignore_empty_and_null = ignore_empty_and_null.unwrap_or(false);
+
                 Ok(Transformed::yes(
                     Explode::try_new(
                         Project::try_new(projection.input.clone(), new_projection)?.into(),
                         to_explode,
+                        ignore_empty_and_null,
                         None,
                     )?
                     .into(),
