@@ -19,7 +19,7 @@ use crate::{
         index_bitmap::IndexBitmapBuilder,
         inner_join::probe_inner,
         join_operator::{
-            BuildStateResult, FinalizeBuildResult, JoinOperator, ProbeOutput, ProbeFinalizeResult,
+            BuildStateResult, FinalizeBuildResult, JoinOperator, ProbeFinalizeResult, ProbeOutput,
             ProbeResult,
         },
         left_right_join::{
@@ -49,14 +49,12 @@ impl HashJoinProbeState {
     pub(crate) async fn initialize(self, needs_bitmap: bool) -> common_error::DaftResult<Self> {
         match self {
             HashJoinProbeState::Uninitialized(mut receiver) => {
-                dbg!("PROBE initialize: about to wait_for, current is_some =", receiver.borrow().is_some());
                 let finalized_ref = receiver.wait_for(|v| v.is_some()).await.map_err(|e| {
                     common_error::DaftError::ValueError(format!(
                         "Failed to receive finalized build state: {}",
                         e
                     ))
                 })?;
-                dbg!("PROBE initialize: wait_for returned");
                 let finalized = finalized_ref.as_ref().unwrap().clone();
                 drop(finalized_ref);
 
@@ -72,11 +70,6 @@ impl HashJoinProbeState {
             }
             HashJoinProbeState::Initialized { .. } => Ok(self),
         }
-    }
-
-    /// Returns true if this state has been initialized (went through a probe call).
-    pub(crate) fn is_initialized(&self) -> bool {
-        matches!(self, HashJoinProbeState::Initialized { .. })
     }
 
     /// Extract the probe_state and bitmap_builder from an Initialized state.

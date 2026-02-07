@@ -14,7 +14,7 @@ use crate::{
     },
     pipeline_execution::{InputStateTracker, PipelineEvent, StateTracker, next_event},
     pipeline_message::{InputId, PipelineMessage},
-    runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle},
+    runtime_stats::RuntimeStats,
 };
 
 /// Per-node task result for probe side.
@@ -41,9 +41,6 @@ pub(crate) struct ProbeExecutionContext<Op: JoinOperator, Strategy: BatchingStra
     output_sender: Sender<PipelineMessage>,
     batch_manager: Arc<BatchManager<Strategy>>,
     runtime_stats: Arc<dyn RuntimeStats>,
-    stats_manager: RuntimeStatsManagerHandle,
-    node_id: usize,
-    node_initialized: bool,
 }
 
 /// input_id lifecycle:
@@ -65,8 +62,6 @@ impl<Op: JoinOperator + 'static, Strategy: BatchingStrategy + 'static>
         build_state_bridge: Arc<BuildStateBridge<Op>>,
         runtime_stats: Arc<dyn RuntimeStats>,
         maintain_order: bool,
-        stats_manager: RuntimeStatsManagerHandle,
-        node_id: usize,
     ) -> Self {
         let op_for_state_creator = op.clone();
         let build_state_bridge_for_state_creator = build_state_bridge.clone();
@@ -101,9 +96,6 @@ impl<Op: JoinOperator + 'static, Strategy: BatchingStrategy + 'static>
             output_sender,
             batch_manager,
             runtime_stats,
-            stats_manager,
-            node_id,
-            node_initialized: false,
         }
     }
 
@@ -271,10 +263,6 @@ impl<Op: JoinOperator + 'static, Strategy: BatchingStrategy + 'static>
         input_id: InputId,
         partition: Arc<MicroPartition>,
     ) -> DaftResult<()> {
-        if !self.node_initialized {
-            self.stats_manager.activate_node(self.node_id);
-            self.node_initialized = true;
-        }
         self.runtime_stats.add_rows_in(partition.len() as u64);
         self.input_state_tracker
             .buffer_partition(input_id, partition)?;
@@ -309,7 +297,6 @@ impl<Op: JoinOperator + 'static, Strategy: BatchingStrategy + 'static>
         let mut input_closed = false;
 
         while !input_closed || !self.task_set.is_empty() || !self.input_state_tracker.is_empty() {
-            dbg!("PROBE loop top", input_closed, self.task_set.len(), self.input_state_tracker.is_empty(), self.input_state_tracker.input_ids());
             let event = next_event(
                 &mut self.task_set,
                 self.max_concurrency,
@@ -324,28 +311,21 @@ impl<Op: JoinOperator + 'static, Strategy: BatchingStrategy + 'static>
                     result,
                     elapsed,
                 }) => {
-                    dbg!("PROBE TaskCompleted::Probe", input_id);
                     self.handle_probe_completed(input_id, state, result, elapsed)
                         .await?
                 }
                 PipelineEvent::TaskCompleted(ProbeTaskResult::Finalize { input_id, output }) => {
-                    dbg!("PROBE TaskCompleted::Finalize", input_id, output.len());
                     self.handle_finalize_completed(input_id, output).await?
                 }
                 PipelineEvent::Morsel {
                     input_id,
                     partition,
                 } => {
-                    dbg!("PROBE Morsel", input_id, partition.len());
                     self.handle_morsel(input_id, partition)?;
                     ControlFlow::Continue
                 }
-                PipelineEvent::Flush(input_id) => {
-                    dbg!("PROBE Flush", input_id);
-                    self.handle_flush(input_id).await?
-                }
+                PipelineEvent::Flush(input_id) => self.handle_flush(input_id).await?,
                 PipelineEvent::InputClosed => {
-                    dbg!("PROBE InputClosed");
                     self.handle_input_closed()?;
                     ControlFlow::Continue
                 }
@@ -354,7 +334,6 @@ impl<Op: JoinOperator + 'static, Strategy: BatchingStrategy + 'static>
                 return Ok(());
             }
         }
-        dbg!("PROBE loop done");
         Ok(())
     }
 }

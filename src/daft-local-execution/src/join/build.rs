@@ -55,7 +55,6 @@ impl<Op: JoinOperator> BuildStateBridge<Op> {
             sender
         });
         let receiver = sender.subscribe();
-        dbg!("BRIDGE subscribe", input_id, receiver.borrow().is_some());
         receiver
     }
 }
@@ -173,7 +172,10 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
     }
 
     fn try_spawn_finalize_task(&mut self, input_id: InputId) -> DaftResult<bool> {
-        if let Some(states) = self.input_state_tracker.try_take_states_for_finalize(input_id) {
+        if let Some(states) = self
+            .input_state_tracker
+            .try_take_states_for_finalize(input_id)
+        {
             let op = self.op.clone();
             let build_state_bridge = self.build_state_bridge.clone();
             self.task_set.spawn(async move {
@@ -240,7 +242,6 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
         let mut input_closed = false;
 
         while !input_closed || !self.task_set.is_empty() || !self.input_state_tracker.is_empty() {
-            dbg!("BUILD loop top", input_closed, self.task_set.len(), self.input_state_tracker.is_empty());
             let event = next_event(
                 &mut self.task_set,
                 self.max_concurrency,
@@ -254,30 +255,23 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
                     state,
                     elapsed,
                 })) => {
-                    dbg!("BUILD TaskCompleted(Some)", input_id);
                     self.handle_build_completed(input_id, state, elapsed)?;
                 }
-                PipelineEvent::TaskCompleted(None) => {
-                    dbg!("BUILD TaskCompleted(None) - finalize done");
-                }
+                PipelineEvent::TaskCompleted(None) => {}
                 PipelineEvent::Morsel {
                     input_id,
                     partition,
                 } => {
-                    dbg!("BUILD Morsel", input_id, partition.len());
                     self.handle_morsel(input_id, partition)?;
                 }
                 PipelineEvent::Flush(input_id) => {
-                    dbg!("BUILD Flush", input_id);
                     self.handle_flush(input_id)?;
                 }
                 PipelineEvent::InputClosed => {
-                    dbg!("BUILD InputClosed");
                     self.handle_input_closed()?;
                 }
             }
         }
-        dbg!("BUILD loop done");
         Ok(())
     }
 }

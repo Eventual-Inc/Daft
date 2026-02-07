@@ -214,8 +214,6 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
             build_state_bridge.clone(),
             self.runtime_stats.clone(),
             maintain_order,
-            stats_manager.clone(),
-            node_id,
         );
 
         runtime_handle.spawn(
