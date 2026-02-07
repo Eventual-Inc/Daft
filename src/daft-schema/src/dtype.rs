@@ -321,6 +321,62 @@ impl DataType {
         Ok(dtype)
     }
 
+    /// Convert this DataType into an Arrow field including extension metadata.
+    pub fn to_arrow_field(&self, name: &str) -> DaftResult<arrow_schema::Field> {
+        match self {
+            Self::Extension(name, dtype, metadata) => {
+                let mut arrow_field =
+                    arrow_schema::Field::new(name.clone(), dtype.to_arrow()?, true);
+                let meta_map = arrow_field.metadata_mut();
+                meta_map.insert(
+                    arrow_schema::extension::EXTENSION_TYPE_NAME_KEY.to_string(),
+                    name.clone(),
+                );
+                if let Some(metadata) = metadata {
+                    meta_map.insert(
+                        arrow_schema::extension::EXTENSION_TYPE_METADATA_KEY.to_string(),
+                        metadata.clone(),
+                    );
+                }
+                Ok(arrow_field)
+            }
+            Self::Embedding(..)
+            | Self::Image(..)
+            | Self::FixedShapeImage(..)
+            | Self::Tensor(..)
+            | Self::FixedShapeTensor(..)
+            | Self::SparseTensor(..)
+            | Self::FixedShapeSparseTensor(..)
+            | Self::File(..) => {
+                let physical = Box::new(self.to_physical());
+                let logical_extension = Self::Extension(
+                    DAFT_SUPER_EXTENSION_NAME.into(),
+                    physical,
+                    Some(self.to_json()?),
+                );
+                logical_extension.to_arrow_field(name)
+            }
+            #[cfg(feature = "python")]
+            Self::Python => {
+                let physical = Box::new(Self::Binary);
+                let logical_extension = Self::Extension(
+                    DAFT_SUPER_EXTENSION_NAME.into(),
+                    physical,
+                    Some(self.to_json()?),
+                );
+                logical_extension.to_arrow_field(name)
+            }
+            Self::Unknown => Err(DaftError::TypeError(format!(
+                "Can not convert {self:?} into arrow type"
+            ))),
+            other => Ok(arrow_schema::Field::new(
+                name.to_string(),
+                other.to_arrow()?,
+                true,
+            )),
+        }
+    }
+
     #[deprecated(note = "use `to_arrow` instead")]
     #[allow(deprecated, reason = "arrow2 migration")]
     pub fn to_arrow2(&self) -> DaftResult<ArrowType> {

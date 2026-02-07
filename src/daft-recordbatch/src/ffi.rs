@@ -2,7 +2,7 @@ use common_error::DaftResult;
 use daft_core::{
     prelude::SchemaRef,
     series::Series,
-    utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
+    utils::arrow::{cast_arrow_array_from_daft_if_needed, cast_arrow2_array_for_daft_if_needed},
 };
 use pyo3::{exceptions::PyValueError, prelude::*, types::PyList};
 
@@ -48,7 +48,7 @@ pub fn record_batch_from_arrow(
                 .into_iter()
                 .enumerate()
                 .map(|(i, array)| {
-                    let cast_array = cast_array_for_daft_if_needed(array);
+                    let cast_array = cast_arrow2_array_for_daft_if_needed(array);
                     Series::try_from((names[i], cast_array))
                 })
                 .collect::<DaftResult<Vec<_>>>()?;
@@ -73,10 +73,10 @@ pub fn record_batch_to_arrow(
 
     for i in 0..table.num_columns() {
         let s = table.get_column(i);
-        #[allow(deprecated, reason = "arrow2 migration")]
-        let arrow_array = s.to_arrow2();
-        let arrow_array = cast_array_from_daft_if_needed(arrow_array.to_boxed());
-        let py_array = common_arrow_ffi::to_py_array(py, arrow_array, &pyarrow)?;
+        let arrow_field = s.field().to_arrow()?;
+        let arrow_array = s.to_arrow()?;
+        let arrow_array = cast_arrow_array_from_daft_if_needed(arrow_array, &arrow_field);
+        let py_array = common_arrow_ffi::to_py_array(py, &pyarrow, arrow_array, &arrow_field)?;
         arrays.push(py_array);
         names.push(s.name().to_string());
     }

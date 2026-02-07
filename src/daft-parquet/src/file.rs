@@ -6,7 +6,7 @@ use std::{
 
 use common_error::DaftResult;
 use common_runtime::{combine_stream, get_io_runtime};
-use daft_arrow::io::parquet::read::column_iter_to_arrays;
+use daft_arrow::{datatypes::arrow_field_to_arrow2, io::parquet::read::column_iter_to_arrays};
 use daft_core::prelude::*;
 use daft_dsl::{ExprRef, expr::bound_expr::BoundExpr};
 use daft_io::{IOClient, IOStatsRef};
@@ -23,9 +23,10 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use crate::{
     JoinSnafu, OneShotRecvSnafu, PARQUET_MORSEL_SIZE, UnableToBindExpressionSnafu,
-    UnableToConvertRowGroupMetadataToStatsSnafu, UnableToCreateParquetPageStreamSnafu,
-    UnableToParseSchemaFromMetadataSnafu, UnableToRunExpressionOnStatsSnafu,
-    determine_parquet_parallelism, infer_arrow_schema_from_metadata,
+    UnableToConvertRowGroupMetadataToStatsSnafu, UnableToConvertSchemaToDaftSnafu,
+    UnableToCreateParquetPageStreamSnafu, UnableToParseSchemaFromMetadataSnafu,
+    UnableToRunExpressionOnStatsSnafu, determine_parquet_parallelism,
+    infer_arrow_schema_from_metadata,
     metadata::read_parquet_metadata,
     read::ParquetSchemaInferenceOptions,
     read_planner::{CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
@@ -275,12 +276,21 @@ impl ParquetReaderBuilder {
             })?;
 
         if let Some(names_to_keep) = self.selected_columns {
-            arrow_schema
-                .fields
-                .retain(|f| names_to_keep.contains(f.name.as_str()));
+            let arrow_schema::Schema { fields, metadata } = arrow_schema;
+            arrow_schema = arrow_schema::Schema {
+                fields: fields
+                    .into_iter()
+                    .filter(|f| names_to_keep.contains(f.name().as_str()))
+                    .cloned()
+                    .collect(),
+                metadata,
+            };
         }
 
-        let daft_schema = Schema::from(&arrow_schema);
+        let daft_schema =
+            Schema::try_from(&arrow_schema).with_context(|_| UnableToConvertSchemaToDaftSnafu {
+                path: self.uri.clone(),
+            })?;
         let row_ranges = build_row_ranges(
             self.limit,
             self.row_start_offset,
@@ -311,7 +321,7 @@ pub struct RowGroupRange {
 pub struct ParquetFileReader {
     uri: String,
     metadata: Arc<parquet2::metadata::FileMetaData>,
-    arrow_schema: daft_arrow::datatypes::SchemaRef,
+    arrow_schema: arrow_schema::SchemaRef,
     row_ranges: Arc<Vec<RowGroupRange>>,
     chunk_size: Option<usize>,
 }
@@ -325,7 +335,7 @@ impl ParquetFileReader {
     fn new(
         uri: String,
         metadata: parquet2::metadata::FileMetaData,
-        arrow_schema: daft_arrow::datatypes::Schema,
+        arrow_schema: arrow_schema::Schema,
         row_ranges: Vec<RowGroupRange>,
         chunk_size: Option<usize>,
     ) -> super::Result<Self> {
@@ -338,7 +348,7 @@ impl ParquetFileReader {
         })
     }
 
-    pub fn arrow_schema(&self) -> &Arc<daft_arrow::datatypes::Schema> {
+    pub fn arrow_schema(&self) -> &Arc<arrow_schema::Schema> {
         &self.arrow_schema
     }
 
@@ -356,7 +366,7 @@ impl ParquetFileReader {
 
             let columns = rg.columns();
             for field in arrow_fields {
-                let field_name = field.name.clone();
+                let field_name = field.name().clone();
                 let filtered_cols = columns
                     .iter()
                     .filter(|x| x.descriptor().path_in_schema[0] == field_name)
@@ -404,7 +414,7 @@ impl ParquetFileReader {
         original_num_rows: Option<usize>,
         delete_rows: Option<Vec<i64>>,
     ) -> DaftResult<BoxStream<'static, DaftResult<RecordBatch>>> {
-        let daft_schema = Arc::new(self.arrow_schema.as_ref().into());
+        let daft_schema = Arc::new(self.arrow_schema.as_ref().try_into()?);
 
         let num_parallel_tasks = determine_parquet_parallelism(&daft_schema);
         let semaphore = Arc::new(tokio::sync::Semaphore::new(num_parallel_tasks));
@@ -442,7 +452,7 @@ impl ParquetFileReader {
                             let filtered_columns = rg
                                 .columns()
                                 .iter()
-                                .filter(|x| x.descriptor().path_in_schema[0] == field.name)
+                                .filter(|x| x.descriptor().path_in_schema[0] == *field.name())
                                 .collect::<Vec<_>>();
                             let mut decompressed_iters = Vec::with_capacity(filtered_columns.len());
                             let mut ptypes = Vec::with_capacity(filtered_columns.len());
@@ -479,7 +489,7 @@ impl ParquetFileReader {
                             let arr_iter = column_iter_to_arrays(
                                 decompressed_iters,
                                 ptypes.iter().collect(),
-                                field,
+                                arrow_field_to_arrow2(field.as_ref()),
                                 Some(chunk_size),
                                 num_rows,
                                 num_values,
@@ -576,7 +586,7 @@ impl ParquetFileReader {
                         let num_rows = rg.num_rows().min(row_range.start + row_range.num_rows);
                         let chunk_size = self.chunk_size.unwrap_or(Self::DEFAULT_CHUNK_SIZE);
                         let columns = rg.columns();
-                        let field_name = &field.name;
+                        let field_name = field.name();
                         let filtered_cols_idx = columns
                             .iter()
                             .enumerate()
@@ -647,7 +657,7 @@ impl ParquetFileReader {
                                 let arr_iter = column_iter_to_arrays(
                                     decompressed_iters,
                                     ptypes.iter().collect(),
-                                    field.clone(),
+                                    arrow_field_to_arrow2(field.as_ref()),
                                     Some(chunk_size),
                                     num_rows,
                                     num_values,
@@ -673,7 +683,7 @@ impl ParquetFileReader {
                                     }
                                     all_arrays
                                         .into_iter()
-                                        .map(|a| Series::try_from((field.name.as_str(), a)))
+                                        .map(|a| Series::try_from((field.name().as_str(), a)))
                                         .collect::<DaftResult<Vec<Series>>>()
                                 })();
 
@@ -698,10 +708,10 @@ impl ParquetFileReader {
                     let (send, recv) = tokio::sync::oneshot::channel();
                     rayon::spawn(move || {
                         let concated = if series_to_concat.is_empty() {
-                            Ok(Series::empty(
-                                owned_field.name.as_str(),
-                                &owned_field.data_type().into(),
-                            ))
+                            match owned_field.data_type().try_into() {
+                                Ok(dtype) => Ok(Series::empty(owned_field.name().as_str(), &dtype)),
+                                Err(e) => Err(e),
+                            }
                         } else {
                             Series::concat(&series_to_concat.iter().flatten().collect::<Vec<_>>())
                         };
@@ -755,7 +765,7 @@ impl ParquetFileReader {
                         let num_rows = rg.num_rows().min(row_range.start + row_range.num_rows);
                         let chunk_size = self.chunk_size.unwrap_or(PARQUET_MORSEL_SIZE);
                         let columns = rg.columns();
-                        let field_name = &field.name;
+                        let field_name = field.name();
                         let filtered_cols_idx = columns
                             .iter()
                             .enumerate()
@@ -824,7 +834,7 @@ impl ParquetFileReader {
                                 let arr_iter = column_iter_to_arrays(
                                     decompressed_iters,
                                     ptypes.iter().collect(),
-                                    field.clone(),
+                                    arrow_field_to_arrow2(field.as_ref()),
                                     Some(chunk_size),
                                     num_rows,
                                     num_values,
