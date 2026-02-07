@@ -241,7 +241,7 @@ pub fn merge_inner_join(
             }
         }
     }
-    let left_series = UInt64Array::from(("left_indices", left_indices));
-    let right_series = UInt64Array::from(("right_indices", right_indices));
+    let left_series = UInt64Array::from_vec("left_indices", left_indices);
+    let right_series = UInt64Array::from_vec("right_indices", right_indices);
     Ok((left_series, right_series))
 }

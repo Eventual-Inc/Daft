@@ -55,18 +55,18 @@ impl FixedSizeListArray {
             match i {
                 None => {
                     nulls_builder.append_null();
-                    child_indices.extend(std::iter::repeat_n(0, fixed_size));
+                    child_indices.extend(std::iter::repeat_n(0, fixed_size as _));
                 }
                 Some(i) => {
                     let i = i.to_usize();
                     nulls_builder.append(self.is_valid(i));
-                    let start = i * fixed_size;
-                    child_indices.extend(start..start + fixed_size);
+                    let start: u64 = i as u64 * fixed_size as u64;
+                    child_indices.extend(start..start + fixed_size as u64);
                 }
             }
         }
 
-        let child_idx = UInt64Array::from_iter_values(child_indices.into_iter().map(|i| i as u64));
+        let child_idx = UInt64Array::from_vec("", child_indices);
         let new_child = self.flat_child.take(&child_idx)?;
 
         Ok(Self::new(
@@ -101,7 +101,7 @@ impl ListArray {
         }
         let nulls = nulls_builder.finish();
 
-        let child_idx = UInt64Array::from_iter_values(child_indices.into_iter().map(|i| i as u64));
+        let child_idx = UInt64Array::from_values("", child_indices.into_iter().map(|i| i as u64));
         let new_child = self.flat_child.take(&child_idx)?;
 
         Ok(Self::new(

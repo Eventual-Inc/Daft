@@ -38,8 +38,8 @@ where
                 }
             }
         }
-        let left_series = DataArray::from((self.name(), left_idx));
-        let right_series = DataArray::from((other.name(), right_idx));
+        let left_series = DataArray::<UInt64Type>::from_slice(self.name(), left_idx.as_slice());
+        let right_series = DataArray::<UInt64Type>::from_slice(other.name(), right_idx.as_slice());
         Ok((left_series, right_series))
     }
 }
@@ -73,8 +73,8 @@ impl Utf8Array {
                 }
             }
         }
-        let left_series = DataArray::from((self.name(), left_idx));
-        let right_series = DataArray::from((other.name(), right_idx));
+        let left_series = DataArray::<UInt64Type>::from_slice(self.name(), left_idx.as_slice());
+        let right_series = DataArray::<UInt64Type>::from_slice(other.name(), right_idx.as_slice());
         Ok((left_series, right_series))
     }
 }
@@ -108,8 +108,8 @@ impl BooleanArray {
                 }
             }
         }
-        let left_series = DataArray::from((self.name(), left_idx));
-        let right_series = DataArray::from((other.name(), right_idx));
+        let left_series = DataArray::<UInt64Type>::from_slice(self.name(), left_idx.as_slice());
+        let right_series = DataArray::<UInt64Type>::from_slice(other.name(), right_idx.as_slice());
         Ok((left_series, right_series))
     }
 }
@@ -125,8 +125,8 @@ impl NullArray {
     {
         let left_idx = vec![];
         let right_idx = vec![];
-        let left_series = DataArray::from((self.name(), left_idx));
-        let right_series = DataArray::from((other.name(), right_idx));
+        let left_series = DataArray::<UInt64Type>::from_slice(self.name(), left_idx.as_slice());
+        let right_series = DataArray::<UInt64Type>::from_slice(other.name(), right_idx.as_slice());
         Ok((left_series, right_series))
     }
 }

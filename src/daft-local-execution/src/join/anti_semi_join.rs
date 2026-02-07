@@ -40,7 +40,7 @@ pub(crate) fn probe_anti_semi(
         .into_iter()
         .zip(input_tables.iter())
         .map(|(idxs, table)| {
-            let idxs_arr = UInt64Array::from(("idxs", idxs));
+            let idxs_arr = UInt64Array::from_vec("idxs", idxs);
             table.take(&idxs_arr)
         })
         .collect::<DaftResult<Vec<_>>>()?;

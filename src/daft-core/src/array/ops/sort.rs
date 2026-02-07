@@ -459,7 +459,11 @@ impl BooleanArray {
 
         let result = sort_to_indices::<u64>(self.data(), &options, None)?;
 
-        Ok(UInt64Array::from((self.name(), Box::new(result))))
+        Ok(UInt64Array::new(
+            Field::new(self.name(), DataType::UInt64).into(),
+            Box::new(result),
+        )
+        .unwrap())
     }
 
     pub fn argsort_multikey(
@@ -539,7 +543,11 @@ macro_rules! impl_binary_like_sort {
 
                 let result = sort_to_indices::<u64>(self.data(), &options, None)?;
 
-                Ok(UInt64Array::from((self.name(), Box::new(result))))
+                Ok(UInt64Array::new(
+                    Field::new(self.name(), DataType::UInt64).into(),
+                    Box::new(result),
+                )
+                .unwrap())
             }
 
             pub fn argsort_multikey(

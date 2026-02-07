@@ -51,8 +51,8 @@ impl ScalarUDF for Coalesce {
 
                 // coalesce output uses the computed type
                 let mut current_value = Series::full_null(name, &dtype, len);
-                let remainder = BooleanArray::from_values(name, vec![true; len].into_iter());
-                let all_false = BooleanArray::from_values(name, vec![false; len].into_iter());
+                let remainder = BooleanArray::from_vec(name, vec![true; len]);
+                let all_false = BooleanArray::from_vec(name, vec![false; len]);
                 let mut remainder = remainder.into_series();
 
                 for input in inputs {

@@ -197,7 +197,7 @@ impl VLLMSink {
     fn poll_tasks(&self, state: &VLLMState) -> DaftResult<Option<Arc<MicroPartition>>> {
         Ok(state.executor.poll()?.map(|(outputs, rows)| {
             let output_series =
-                Utf8Array::from((self.output_column_name.as_ref(), outputs.as_slice()))
+                Utf8Array::from_slice(self.output_column_name.as_ref(), outputs.as_slice())
                     .into_series();
 
             let rb = rows

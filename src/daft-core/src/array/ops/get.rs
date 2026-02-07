@@ -232,7 +232,7 @@ mod tests {
     #[test]
     fn test_fixed_size_list_get_all_valid() -> DaftResult<()> {
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
-        let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
+        let flat_child = Int32Array::from_vec("foo", (0..9).collect::<Vec<i32>>());
         let nulls = None;
         let arr = FixedSizeListArray::new(field, flat_child.into_series(), nulls);
         assert_eq!(arr.len(), 3);
@@ -262,7 +262,7 @@ mod tests {
     #[test]
     fn test_fixed_size_list_get_some_valid() -> DaftResult<()> {
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
-        let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
+        let flat_child = Int32Array::from_vec("foo", (0..9).collect::<Vec<i32>>());
         let raw_nulls = vec![true, false, true];
         let nulls = Some(daft_arrow::buffer::NullBuffer::from(raw_nulls.as_slice()));
         let arr = FixedSizeListArray::new(field, flat_child.into_series(), nulls);
@@ -303,7 +303,7 @@ mod tests {
     #[test]
     fn test_list_get_some_valid() -> DaftResult<()> {
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
-        let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
+        let flat_child = Int32Array::from_vec("foo", (0..9).collect::<Vec<i32>>());
         let raw_nulls = vec![true, false, true];
         let nulls = Some(daft_arrow::buffer::NullBuffer::from(raw_nulls.as_slice()));
         let arr = FixedSizeListArray::new(field, flat_child.into_series(), nulls);

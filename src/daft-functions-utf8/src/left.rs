@@ -148,8 +148,8 @@ mod tests {
 
     #[test]
     fn test_left_with_values() {
-        let arr = Utf8Array::from(("a", vec!["hello", "world", "foo"].as_slice()));
-        let nchars = Int64Array::from(("n", vec![2i64, 3i64, 10i64]));
+        let arr = Utf8Array::from_slice("a", vec!["hello", "world", "foo"].as_slice());
+        let nchars = Int64Array::from_slice("n", &[2i64, 3i64, 10i64]);
         let result = left_impl(&arr, &nchars).unwrap();
 
         assert_eq!(result.len(), 3);
@@ -160,8 +160,8 @@ mod tests {
 
     #[test]
     fn test_left_broadcast_nchars() {
-        let arr = Utf8Array::from(("a", vec!["hello", "world", "bar"].as_slice()));
-        let nchars = Int64Array::from(("n", vec![2i64]));
+        let arr = Utf8Array::from_slice("a", vec!["hello", "world", "bar"].as_slice());
+        let nchars = Int64Array::from_slice("n", &[2i64]);
         let result = left_impl(&arr, &nchars).unwrap();
 
         assert_eq!(result.len(), 3);
@@ -172,8 +172,8 @@ mod tests {
 
     #[test]
     fn test_left_with_zero() {
-        let arr = Utf8Array::from(("a", vec!["hello"].as_slice()));
-        let nchars = Int64Array::from(("n", vec![0i64]));
+        let arr = Utf8Array::from_slice("a", vec!["hello"].as_slice());
+        let nchars = Int64Array::from_slice("n", &[0i64]);
         let result = left_impl(&arr, &nchars).unwrap();
 
         assert_eq!(result.len(), 1);
@@ -182,7 +182,7 @@ mod tests {
 
     #[test]
     fn test_left_with_null_scalar() {
-        let arr = Utf8Array::from(("a", vec!["hello", "world"].as_slice()));
+        let arr = Utf8Array::from_slice("a", vec!["hello", "world"].as_slice());
         let nchars = Int64Array::full_null("n", &DataType::Int64, 1);
         let result = left_impl(&arr, &nchars).unwrap();
         assert_eq!(result.len(), 2);

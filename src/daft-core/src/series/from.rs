@@ -28,16 +28,16 @@ impl Series {
         // set a default name for convenience. you can rename if you want a different name
         let name = "ndarray";
         match arr {
-            NdArray::I8(arr) => Int8Array::from((name, arr.flatten().to_vec())).into_series(),
-            NdArray::U8(arr) => UInt8Array::from((name, arr.flatten().to_vec())).into_series(),
-            NdArray::I16(arr) => Int16Array::from((name, arr.flatten().to_vec())).into_series(),
-            NdArray::U16(arr) => UInt16Array::from((name, arr.flatten().to_vec())).into_series(),
-            NdArray::I32(arr) => Int32Array::from((name, arr.flatten().to_vec())).into_series(),
-            NdArray::U32(arr) => UInt32Array::from((name, arr.flatten().to_vec())).into_series(),
-            NdArray::I64(arr) => Int64Array::from((name, arr.flatten().to_vec())).into_series(),
-            NdArray::U64(arr) => UInt64Array::from((name, arr.flatten().to_vec())).into_series(),
-            NdArray::F32(arr) => Float32Array::from((name, arr.flatten().to_vec())).into_series(),
-            NdArray::F64(arr) => Float64Array::from((name, arr.flatten().to_vec())).into_series(),
+            NdArray::I8(arr) => Int8Array::from_vec(name, arr.flatten().to_vec()).into_series(),
+            NdArray::U8(arr) => UInt8Array::from_vec(name, arr.flatten().to_vec()).into_series(),
+            NdArray::I16(arr) => Int16Array::from_vec(name, arr.flatten().to_vec()).into_series(),
+            NdArray::U16(arr) => UInt16Array::from_vec(name, arr.flatten().to_vec()).into_series(),
+            NdArray::I32(arr) => Int32Array::from_vec(name, arr.flatten().to_vec()).into_series(),
+            NdArray::U32(arr) => UInt32Array::from_vec(name, arr.flatten().to_vec()).into_series(),
+            NdArray::I64(arr) => Int64Array::from_vec(name, arr.flatten().to_vec()).into_series(),
+            NdArray::U64(arr) => UInt64Array::from_vec(name, arr.flatten().to_vec()).into_series(),
+            NdArray::F32(arr) => Float32Array::from_vec(name, arr.flatten().to_vec()).into_series(),
+            NdArray::F64(arr) => Float64Array::from_vec(name, arr.flatten().to_vec()).into_series(),
             #[cfg(feature = "python")]
             NdArray::Py(arr) => {
                 use pyo3::{Python, types::PyList};

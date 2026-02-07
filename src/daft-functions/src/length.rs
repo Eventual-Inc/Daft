@@ -48,7 +48,7 @@ impl ScalarUDF for Length {
                     .lengths()
                     .map(|l| l as u64)
                     .collect::<Vec<_>>();
-                let length_arr = UInt64Array::from((input.name(), length_vec))
+                let length_arr = UInt64Array::from_vec(input.name(), length_vec)
                     .with_nulls(arr.nulls().cloned().map(Into::into))?;
                 length_arr.into_series()
             }
@@ -60,7 +60,7 @@ impl ScalarUDF for Length {
                     .lengths()
                     .map(|l| l as u64)
                     .collect::<Vec<_>>();
-                let length_arr = UInt64Array::from((input.name(), length_vec))
+                let length_arr = UInt64Array::from_vec(input.name(), length_vec)
                     .with_nulls(list_arr.nulls().cloned())?;
                 length_arr.into_series()
             }
@@ -68,7 +68,7 @@ impl ScalarUDF for Length {
                 let nulls = input.nulls();
 
                 let length_arr =
-                    UInt64Array::from((input.name(), vec![*length as u64; input.len()]))
+                    UInt64Array::from_vec(input.name(), vec![*length as u64; input.len()])
                         .with_nulls(nulls.cloned())?;
 
                 length_arr.into_series()

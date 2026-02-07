@@ -7,9 +7,9 @@ use std::{
 
 use arrow::{
     array::{
-        Array, ArrayRef, ArrowPrimitiveType, Datum, FixedSizeListArray as ArrowFixedSizeListArray,
-        LargeListArray, ListArray as ArrowListArray, PrimitiveArray,
-        StructArray as ArrowStructArray,
+        Array, ArrayRef, ArrowPrimitiveType, BooleanBuilder, Datum,
+        FixedSizeListArray as ArrowFixedSizeListArray, LargeListArray, ListArray as ArrowListArray,
+        PrimitiveArray, StructArray as ArrowStructArray,
     },
     buffer::{BooleanBuffer, NullBuffer},
     compute::kernels::cmp,
@@ -119,17 +119,18 @@ trait RowCompareFastPath {
         let lhs_rows = converter.convert_columns(&[lhs]).map_err(DaftError::from)?;
         let rhs_rows = converter.convert_columns(&[rhs]).map_err(DaftError::from)?;
 
-        let mut values = Vec::with_capacity(len);
+        let mut values = BooleanBuilder::with_capacity(len);
         for idx in 0..len {
             let lhs_idx = if lhs_scalar { 0 } else { idx };
             let rhs_idx = if rhs_scalar { 0 } else { idx };
-            values.push(compare_op_matches_ordering(
+            values.append_value(compare_op_matches_ordering(
                 op,
                 lhs_rows.row(lhs_idx).cmp(&rhs_rows.row(rhs_idx)),
             ));
         }
 
-        Ok(Some(BooleanArray::from((self.name(), values.as_slice()))))
+        let arr = BooleanArray::from_builder(self.name(), values);
+        Ok(Some(arr))
     }
 
     fn array_has_any_nulls(array: &dyn Array) -> bool {
@@ -351,16 +352,16 @@ fn compare_list_like_array<A: ListLikeArray>(
         return Ok(result);
     }
 
-    let mut results = Vec::with_capacity(len);
+    let mut results = BooleanBuilder::with_capacity(len);
     for idx in 0..len {
         let lhs_idx = if lhs_scalar { 0 } else { idx };
         let rhs_idx = if rhs_scalar { 0 } else { idx };
         let lhs_value = lhs.get(lhs_idx);
         let rhs_value = rhs.get(rhs_idx);
-        results.push(compare_list_like_value(lhs_value, rhs_value, op)?);
+        results.append_option(compare_list_like_value(lhs_value, rhs_value, op)?);
     }
 
-    Ok(BooleanArray::from((lhs.name(), results.as_slice())))
+    Ok(BooleanArray::from_builder(lhs.name(), results))
 }
 
 /// Compares two struct values field by field.
@@ -459,14 +460,13 @@ fn compare_struct_array(
         return Ok(result);
     }
 
-    let mut results = Vec::with_capacity(len);
+    let mut results = BooleanBuilder::with_capacity(len);
     for idx in 0..len {
         let lhs_idx = if lhs_scalar { 0 } else { idx };
         let rhs_idx = if rhs_scalar { 0 } else { idx };
-        results.push(compare_struct_value(lhs, rhs, lhs_idx, rhs_idx, op)?);
+        results.append_option(compare_struct_value(lhs, rhs, lhs_idx, rhs_idx, op)?);
     }
-
-    Ok(BooleanArray::from((lhs.name(), results.as_slice())))
+    Ok(BooleanArray::from_builder(lhs.name(), results))
 }
 
 impl<T> PartialEq for DataArray<T>
@@ -1104,11 +1104,11 @@ mod tests {
 
     #[test]
     fn compare_list_arrays_with_nulls() -> DaftResult<()> {
-        let values = Int64Array::from(("item", vec![1, 2, 3])).into_series();
+        let values = Int64Array::from_slice("item", &[1, 2, 3]).into_series();
         let left_rows = vec![None, Some(values.clone())];
         let right_rows = vec![None, Some(values)];
-        let left = ListArray::try_from(("left", left_rows.as_slice()))?;
-        let right = ListArray::try_from(("right", right_rows.as_slice()))?;
+        let left = ListArray::from_series("left", left_rows)?;
+        let right = ListArray::from_series("right", right_rows)?;
 
         let eq: Vec<_> = left.equal(&right)?.into_iter().collect();
         let eq_null_safe: Vec<_> = left.eq_null_safe(&right)?.into_iter().collect();
@@ -1132,16 +1132,16 @@ mod tests {
         let left = StructArray::new(
             field.clone(),
             vec![
-                Int64Array::from(("x", vec![1, 2])).into_series(),
-                Utf8Array::from(("y", &["a", "b"][..])).into_series(),
+                Int64Array::from_slice("x", &[1, 2]).into_series(),
+                Utf8Array::from_slice("y", &["a", "b"][..]).into_series(),
             ],
             Some(nulls.clone()),
         );
         let right = StructArray::new(
             field,
             vec![
-                Int64Array::from(("x", vec![1, 2])).into_series(),
-                Utf8Array::from(("y", &["a", "b"][..])).into_series(),
+                Int64Array::from_slice("x", &[1, 2]).into_series(),
+                Utf8Array::from_slice("y", &["a", "b"][..]).into_series(),
             ],
             Some(nulls),
         );
@@ -1156,18 +1156,18 @@ mod tests {
 
     #[test]
     fn compare_nested_list() -> DaftResult<()> {
-        let inner1 = Int64Array::from(("item", vec![1, 2])).into_series();
-        let inner2 = Int64Array::from(("item", vec![3, 4])).into_series();
+        let inner1 = Int64Array::from_slice("item", &[1, 2]).into_series();
+        let inner2 = Int64Array::from_slice("item", &[3, 4]).into_series();
 
         let left_rows = vec![Some(
-            ListArray::try_from(("inner", vec![Some(inner1.clone())].as_slice()))?.into_series(),
+            ListArray::from_series("inner", vec![Some(inner1.clone())])?.into_series(),
         )];
         let right_rows = vec![Some(
-            ListArray::try_from(("inner", vec![Some(inner2)].as_slice()))?.into_series(),
+            ListArray::from_series("inner", vec![Some(inner2)])?.into_series(),
         )];
 
-        let left = ListArray::try_from(("left", left_rows.as_slice()))?;
-        let right = ListArray::try_from(("right", right_rows.as_slice()))?;
+        let left = ListArray::from_series("left", left_rows)?;
+        let right = ListArray::from_series("right", right_rows)?;
 
         let lt: Vec<_> = left.lt(&right)?.into_iter().collect();
         let eq: Vec<_> = left.equal(&right)?.into_iter().collect();
@@ -1260,9 +1260,9 @@ mod tests {
 
     #[test]
     fn eq_null_safe_int64_handles_null_alignment() -> DaftResult<()> {
-        let lhs = Int64Array::from(("lhs", vec![1, 2, 3, 4]));
+        let lhs = Int64Array::from_slice("lhs", &[1, 2, 3, 4]);
         let lhs = lhs.with_nulls_slice(&[true, false, true, false])?;
-        let rhs = Int64Array::from(("rhs", vec![1, 20, 30, 4]));
+        let rhs = Int64Array::from_slice("rhs", &[1, 20, 30, 4]);
         let rhs = rhs.with_nulls_slice(&[true, true, false, false])?;
 
         let result: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
@@ -1275,9 +1275,9 @@ mod tests {
 
     #[test]
     fn eq_null_safe_int64_broadcast_null_rhs() -> DaftResult<()> {
-        let lhs = Int64Array::from(("lhs", vec![1, 2, 3]));
+        let lhs = Int64Array::from_slice("lhs", &[1, 2, 3]);
         let lhs = lhs.with_nulls_slice(&[true, false, true])?;
-        let rhs = Int64Array::from(("rhs", vec![0]));
+        let rhs = Int64Array::from_slice("rhs", &[0]);
         let rhs = rhs.with_nulls_slice(&[false])?;
 
         let result: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
@@ -1287,9 +1287,9 @@ mod tests {
 
     #[test]
     fn eq_null_safe_int64_broadcast_null_lhs() -> DaftResult<()> {
-        let lhs = Int64Array::from(("lhs", vec![0]));
+        let lhs = Int64Array::from_slice("lhs", &[0]);
         let lhs = lhs.with_nulls_slice(&[false])?;
-        let rhs = Int64Array::from(("rhs", vec![1, 2, 3]));
+        let rhs = Int64Array::from_slice("rhs", &[1, 2, 3]);
         let rhs = rhs.with_nulls_slice(&[true, false, true])?;
 
         let result: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
@@ -1299,8 +1299,8 @@ mod tests {
 
     #[test]
     fn eq_null_safe_int64_length_mismatch_errors() {
-        let lhs = Int64Array::from(("lhs", vec![1, 2, 3]));
-        let rhs = Int64Array::from(("rhs", vec![1, 2]));
+        let lhs = Int64Array::from_slice("lhs", &[1, 2, 3]);
+        let rhs = Int64Array::from_slice("rhs", &[1, 2]);
 
         let err = lhs.eq_null_safe(&rhs).unwrap_err();
         match err {
@@ -1311,8 +1311,8 @@ mod tests {
 
     #[test]
     fn eq_null_safe_boolean_handles_null_alignment() -> DaftResult<()> {
-        let lhs = BooleanArray::from(("lhs", &[Some(true), None, Some(false), None][..]));
-        let rhs = BooleanArray::from(("rhs", &[Some(true), Some(false), None, None][..]));
+        let lhs = BooleanArray::from_iter("lhs", [Some(true), None, Some(false), None].into_iter());
+        let rhs = BooleanArray::from_iter("rhs", [Some(true), Some(false), None, None].into_iter());
 
         let result: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
         assert_eq!(
@@ -1324,8 +1324,8 @@ mod tests {
 
     #[test]
     fn eq_null_safe_boolean_broadcast_null_rhs() -> DaftResult<()> {
-        let lhs = BooleanArray::from(("lhs", &[Some(true), Some(false), None][..]));
-        let rhs = BooleanArray::from(("rhs", &[None][..]));
+        let lhs = BooleanArray::from_iter("lhs", [Some(true), Some(false), None].into_iter());
+        let rhs = BooleanArray::from_iter("rhs", [None].into_iter());
 
         let result: Vec<_> = lhs.eq_null_safe(&rhs)?.into_iter().collect();
         assert_eq!(result, vec![Some(false), Some(false), Some(true)]);
@@ -1334,8 +1334,8 @@ mod tests {
 
     #[test]
     fn boolean_and_handles_nulls() -> DaftResult<()> {
-        let lhs = BooleanArray::from(("lhs", &[Some(true), Some(false), None][..]));
-        let rhs = BooleanArray::from(("rhs", &[Some(true), None, Some(true)][..]));
+        let lhs = BooleanArray::from_iter("lhs", [Some(true), Some(false), None].into_iter());
+        let rhs = BooleanArray::from_iter("rhs", [Some(true), None, Some(true)].into_iter());
 
         let result: Vec<_> = lhs.and(&rhs)?.into_iter().collect();
         assert_eq!(result, vec![Some(true), Some(false), None]);
@@ -1344,8 +1344,8 @@ mod tests {
 
     #[test]
     fn boolean_or_handles_nulls() -> DaftResult<()> {
-        let lhs = BooleanArray::from(("lhs", &[Some(true), Some(false), None][..]));
-        let rhs = BooleanArray::from(("rhs", &[Some(false), None, Some(true)][..]));
+        let lhs = BooleanArray::from_iter("lhs", [Some(true), Some(false), None].into_iter());
+        let rhs = BooleanArray::from_iter("rhs", [Some(false), None, Some(true)].into_iter());
 
         let result: Vec<_> = lhs.or(&rhs)?.into_iter().collect();
         assert_eq!(result, vec![Some(true), None, Some(true)]);
@@ -1354,8 +1354,8 @@ mod tests {
 
     #[test]
     fn boolean_and_with_null_scalar() -> DaftResult<()> {
-        let lhs = BooleanArray::from(("lhs", &[Some(false), Some(true)][..]));
-        let rhs = BooleanArray::from(("rhs", &[None][..]));
+        let lhs = BooleanArray::from_iter("lhs", [Some(false), Some(true)].into_iter());
+        let rhs = BooleanArray::from_iter("rhs", [None].into_iter());
 
         let result: Vec<_> = lhs.and(&rhs)?.into_iter().collect();
         assert_eq!(result, vec![Some(false), None]);
@@ -1364,8 +1364,8 @@ mod tests {
 
     #[test]
     fn boolean_or_with_null_scalar() -> DaftResult<()> {
-        let lhs = BooleanArray::from(("lhs", &[Some(true), Some(false)][..]));
-        let rhs = BooleanArray::from(("rhs", &[None][..]));
+        let lhs = BooleanArray::from_iter("lhs", [Some(true), Some(false)].into_iter());
+        let rhs = BooleanArray::from_iter("rhs", [None].into_iter());
 
         let result: Vec<_> = lhs.or(&rhs)?.into_iter().collect();
         assert_eq!(result, vec![Some(true), None]);
@@ -1374,8 +1374,8 @@ mod tests {
 
     #[test]
     fn boolean_and_null_lhs_broadcasts() -> DaftResult<()> {
-        let lhs = BooleanArray::from(("lhs", &[None][..]));
-        let rhs = BooleanArray::from(("rhs", &[Some(false), Some(true)][..]));
+        let lhs = BooleanArray::from_iter("lhs", [None::<bool>].into_iter());
+        let rhs = BooleanArray::from_iter("rhs", [Some(false), Some(true)].into_iter());
 
         let result: Vec<_> = lhs.and(&rhs)?.into_iter().collect();
         assert_eq!(result, vec![Some(false), None]);
@@ -1666,15 +1666,15 @@ mod tests {
     ) -> DaftResult<()> {
         let left_rows: Vec<_> = left_vals
             .into_iter()
-            .map(|v| Some(Int64Array::from(("item", v)).into_series()))
+            .map(|v| Some(Int64Array::from_vec("item", v).into_series()))
             .collect();
         let right_rows: Vec<_> = right_vals
             .into_iter()
-            .map(|v| Some(Int64Array::from(("item", v)).into_series()))
+            .map(|v| Some(Int64Array::from_vec("item", v).into_series()))
             .collect();
 
-        let left = ListArray::try_from(("left", left_rows.as_slice()))?;
-        let right = ListArray::try_from(("right", right_rows.as_slice()))?;
+        let left = ListArray::from_series("left", left_rows)?;
+        let right = ListArray::from_series("right", right_rows)?;
 
         let result: Vec<_> = op(&left, &right)?.into_iter().collect();
         assert_eq!(result[..], expected[..]);
@@ -1753,16 +1753,16 @@ mod tests {
         let left = StructArray::new(
             field.clone(),
             vec![
-                Int64Array::from(("x", left_x)).into_series(),
-                Utf8Array::from(("y", left_y.as_slice())).into_series(),
+                Int64Array::from_vec("x", left_x).into_series(),
+                Utf8Array::from_slice("y", left_y.as_slice()).into_series(),
             ],
             None,
         );
         let right = StructArray::new(
             field,
             vec![
-                Int64Array::from(("x", right_x)).into_series(),
-                Utf8Array::from(("y", right_y.as_slice())).into_series(),
+                Int64Array::from_vec("x", right_x).into_series(),
+                Utf8Array::from_slice("y", right_y.as_slice()).into_series(),
             ],
             None,
         );

@@ -32,7 +32,7 @@ macro_rules! impl_daft_numeric_agg {
                         }),
                     )
                 } else {
-                    DataArray::<$T>::from_values_iter(
+                    DataArray::<$T>::from_field_and_values(
                         self.field.clone(),
                         groups.iter().map(|g| {
                             g.iter().fold(0 as $AggType, |acc, index| {

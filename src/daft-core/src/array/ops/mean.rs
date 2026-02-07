@@ -24,7 +24,11 @@ impl DaftMeanAggable for DataArray<Float64Type> {
     fn grouped_mean(&self, groups: &GroupIndices) -> Self::Output {
         let grouped_means = stats::grouped_stats(self, groups)?.map(|(stats, _)| stats.mean);
         let data = Box::new(PrimitiveArray::from_iter(grouped_means));
-        Ok(Self::from((self.field.name.as_ref(), data)))
+        Ok(Self::new(
+            Field::new(self.field.name.clone(), DataType::Float64).into(),
+            data,
+        )
+        .unwrap())
     }
 }
 

@@ -806,8 +806,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_mp_stream() -> DaftResult<()> {
-        let columns = vec![Int32Array::from_values("a", vec![1].into_iter()).into_series()];
-        let columns2 = vec![Int32Array::from_values("a", vec![2].into_iter()).into_series()];
+        let columns = vec![Int32Array::from_slice("a", &[1]).into_series()];
+        let columns2 = vec![Int32Array::from_slice("a", &[2]).into_series()];
         let schema = Schema::new(vec![Field::new("a", DataType::Int32)]);
 
         let table1 = RecordBatch::from_nonempty_columns(columns)?;
@@ -832,15 +832,15 @@ mod tests {
     fn test_ipc_roundtrip() -> DaftResult<()> {
         let string_values = vec!["a", "bb", "ccc"];
         let batch1 = RecordBatch::from_nonempty_columns(vec![
-            Int32Array::from(("a", vec![1, 2, 3])).into_series(),
-            Float64Array::from(("b", vec![1., 2., 3.])).into_series(),
-            Utf8Array::from_values("c", string_values.iter()).into_series(),
+            Int32Array::from_slice("a", &[1, 2, 3]).into_series(),
+            Float64Array::from_slice("b", &[1., 2., 3.]).into_series(),
+            Utf8Array::from_slice("c", string_values.as_slice()).into_series(),
         ])?;
 
         let batch2 = RecordBatch::from_nonempty_columns(vec![
-            Int32Array::from(("a", vec![4, 5, 6])).into_series(),
-            Float64Array::from(("b", vec![4., 5., 6.])).into_series(),
-            Utf8Array::from_values("c", string_values.iter()).into_series(),
+            Int32Array::from_slice("a", &[4, 5, 6]).into_series(),
+            Float64Array::from_slice("b", &[4., 5., 6.]).into_series(),
+            Utf8Array::from_slice("c", string_values.as_slice()).into_series(),
         ])?;
 
         assert_eq!(batch1.schema, batch2.schema);

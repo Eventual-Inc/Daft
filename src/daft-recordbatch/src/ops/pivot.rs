@@ -11,7 +11,7 @@ fn map_name_to_pivot_key_idx<'a>(
     names: &'a [String],
 ) -> DaftResult<std::collections::HashMap<&'a String, u64>> {
     let pivot_keys_series = {
-        let indices_as_arr = UInt64Array::from(("", pivot_key_indices.to_owned()));
+        let indices_as_arr = UInt64Array::from_vec("", pivot_key_indices.to_owned());
         pivot_series.take(&indices_as_arr)?
     };
     let pivot_keys_str_values = pivot_keys_series.to_str_values()?;
@@ -120,7 +120,7 @@ impl RecordBatch {
             .collect::<DaftResult<Vec<_>>>()?;
 
         let group_keys_table = {
-            let indices_as_arr = UInt64Array::from(("", group_keys_indices));
+            let indices_as_arr = UInt64Array::from_vec("", group_keys_indices);
             groupby_table.take(&indices_as_arr)?
         };
 

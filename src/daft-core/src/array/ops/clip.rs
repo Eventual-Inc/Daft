@@ -1,14 +1,19 @@
 use std::sync::Arc;
 
+use arrow::array::ArrowPrimitiveType;
 use common_error::{DaftError, DaftResult};
 use num_traits::{clamp, clamp_max, clamp_min};
 
-use crate::{array::DataArray, datatypes::DaftNumericType};
+use crate::{
+    array::DataArray,
+    datatypes::{DaftNumericType, NumericNative},
+};
 
 impl<T> DataArray<T>
 where
     T: DaftNumericType,
     T::Native: PartialOrd,
+    <T::Native as NumericNative>::ARROWTYPE: ArrowPrimitiveType<Native = T::Native>,
 {
     /// Clips the values in the array to the provided left and right bounds.
     ///

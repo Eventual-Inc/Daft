@@ -234,7 +234,7 @@ where
     I: Iterator<Item = Result<Option<usize>, E>>,
     U: Iterator<Item = Result<Option<usize>, R>>,
 {
-    let arrow_result = iter
+    let res = iter
         .zip(start)
         .zip(length)
         .map(|((val, s), l)| {
@@ -261,9 +261,9 @@ where
                 _ => Ok(None),
             }
         })
-        .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>()?;
+        .collect::<DaftResult<Utf8Array>>()?;
 
-    Ok(Utf8Array::from((name, Box::new(arrow_result))))
+    Ok(res.rename(name))
 }
 
 fn substring(s: &str, start: usize, len: Option<usize>) -> Option<&str> {

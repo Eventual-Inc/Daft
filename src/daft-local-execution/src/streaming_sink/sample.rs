@@ -154,7 +154,7 @@ fn collect_sample_rows(rows: Vec<SampleRow>) -> DaftResult<Vec<RecordBatch>> {
 
     let mut taken_batches = Vec::with_capacity(rows_needed_per_batch.len());
     for (_, (record_batch, rows_needed)) in rows_needed_per_batch {
-        let taken = record_batch.take(&UInt64Array::from(("idx", rows_needed)))?;
+        let taken = record_batch.take(&UInt64Array::from_vec("idx", rows_needed))?;
         taken_batches.push(taken);
     }
     Ok(taken_batches)
