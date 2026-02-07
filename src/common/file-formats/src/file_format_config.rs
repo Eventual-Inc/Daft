@@ -24,7 +24,7 @@ pub enum FileFormatConfig {
     Database(DatabaseSourceConfig),
     #[cfg(feature = "python")]
     PythonFunction {
-        source_type: Option<String>,
+        source_name: Option<String>,
         module_name: Option<String>,
         function_name: Option<String>,
     },
@@ -53,12 +53,12 @@ impl FileFormatConfig {
             Self::Database(_) => "Database".to_string(),
             #[cfg(feature = "python")]
             Self::PythonFunction {
-                source_type,
+                source_name,
                 module_name,
-                function_name: _,
+                ..
             } => {
-                if let Some(source_type) = source_type {
-                    format!("{}(Python)", source_type)
+                if let Some(source_name) = source_name {
+                    format!("{}(Python)", source_name)
                 } else if let Some(module_name) = module_name {
                     // Infer type from module name
                     format!("{}(Python)", module_name)
@@ -79,7 +79,23 @@ impl FileFormatConfig {
             #[cfg(feature = "python")]
             Self::Database(source) => source.multiline_display(),
             #[cfg(feature = "python")]
-            Self::PythonFunction { .. } => vec![],
+            Self::PythonFunction {
+                source_name,
+                module_name,
+                function_name,
+            } => {
+                let mut res = vec![];
+                if let Some(source_name) = source_name {
+                    res.push(format!("Source = {source_name}"));
+                }
+                if let Some(module_name) = module_name {
+                    res.push(format!("Module = {module_name}"));
+                }
+                if let Some(function_name) = function_name {
+                    res.push(format!("Function = {function_name}"));
+                }
+                res
+            }
         }
     }
 }
