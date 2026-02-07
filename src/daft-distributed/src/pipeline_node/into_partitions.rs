@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_metrics::ops::{NodeCategory, NodeType};
 use common_runtime::OrderedJoinSet;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
@@ -44,6 +45,8 @@ impl IntoPartitionsNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::IntoPartitions,
+            NodeCategory::BlockingSink,
         );
         let config = PipelineNodeConfig::new(
             schema,

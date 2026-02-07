@@ -1,6 +1,10 @@
-use std::sync::Arc;
+use std::sync::{Arc, atomic::Ordering};
 
-use common_metrics::{CPU_US_KEY, Counter, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot};
+use common_metrics::{
+    CPU_US_KEY, Counter, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot,
+    ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot::FilterSnapshot,
+};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
@@ -33,10 +37,18 @@ impl FilterStats {
             node_kv,
         }
     }
+
+    fn selectivity(rows_in: u64, rows_out: u64) -> f64 {
+        if rows_in == 0 {
+            100.0
+        } else {
+            (rows_out as f64 / rows_in as f64) * 100.0
+        }
+    }
 }
 
 impl RuntimeStats for FilterStats {
-    fn handle_worker_node_stats(&self, snapshot: &StatSnapshot) {
+    fn handle_worker_node_stats(&self, _node_info: &NodeInfo, snapshot: &StatSnapshot) {
         let StatSnapshot::Filter(snapshot) = snapshot else {
             return;
         };
@@ -45,13 +57,21 @@ impl RuntimeStats for FilterStats {
         self.rows_out
             .add(snapshot.rows_out, self.node_kv.as_slice());
 
-        let selectivity = if snapshot.rows_in == 0 {
-            100.0
-        } else {
-            (snapshot.rows_out as f64 / snapshot.rows_in as f64) * 100.0
-        };
+        let selectivity = Self::selectivity(snapshot.rows_in, snapshot.rows_out);
         self.selectivity
             .update(selectivity, self.node_kv.as_slice());
+    }
+
+    fn export_snapshot(&self) -> StatSnapshot {
+        let rows_in = self.rows_in.load(Ordering::SeqCst);
+        let rows_out = self.rows_out.load(Ordering::SeqCst);
+        let selectivity = Self::selectivity(rows_in, rows_out);
+        StatSnapshot::Filter(FilterSnapshot {
+            cpu_us: self.cpu_us.load(Ordering::SeqCst),
+            rows_in,
+            rows_out,
+            selectivity,
+        })
     }
 }
 
@@ -77,6 +97,8 @@ impl FilterNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::Filter,
+            NodeCategory::Intermediate,
         );
         let config = PipelineNodeConfig::new(
             schema,

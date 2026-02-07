@@ -12,17 +12,13 @@ from __future__ import annotations
 import os
 import time
 from collections import defaultdict
-from collections.abc import Callable, Mapping
-from typing import Any
 
 import pytest
 from pydantic import BaseModel, Field
 
 import daft
-import daft.context
-from daft.daft import PyMicroPartition
 from daft.functions.ai import embed_text, prompt
-from daft.subscribers import StatType, Subscriber
+from daft.recordbatch import RecordBatch
 from tests.conftest import get_tests_daft_runner_name
 
 RUNNER_IS_NATIVE = get_tests_daft_runner_name() == "native"
@@ -45,65 +41,13 @@ def session(skip_no_credential):
         yield
 
 
-class PromptMetricsSubscriber(Subscriber):
-    def __init__(self) -> None:
-        self.query_ids: list[str] = []
-        self.node_stats: defaultdict[str, defaultdict[int, dict[str, tuple[StatType, Any]]]] = defaultdict(
-            lambda: defaultdict(dict)
-        )
-
-    def on_query_start(self, query_id: str, metadata: Any) -> None:
-        self.query_ids.append(query_id)
-
-    def on_exec_emit_stats(
-        self,
-        query_id: str,
-        all_stats: Mapping[int, Mapping[str, tuple[StatType, Any]]],
-    ) -> None:  # type: ignore[override]
-        for node_id, stats in all_stats.items():
-            self.node_stats[query_id][node_id] = dict(stats)
-
-    def on_query_end(self, query_id: str, result: Any) -> None:
-        """Called when a query has completed."""
-        pass
-
-    def on_result_out(self, query_id: str, result: PyMicroPartition) -> None:
-        """Called when a result is emitted for a query."""
-        pass
-
-    def on_optimization_start(self, query_id: str) -> None:
-        """Called when starting to plan / optimize a query."""
-        pass
-
-    def on_optimization_end(self, query_id: str, optimized_plan: str) -> None:
-        """Called when planning for a query has completed."""
-        pass
-
-    def on_exec_start(self, query_id: str, physical_plan: str) -> None:
-        """Called when starting to execute a query."""
-        pass
-
-    def on_exec_operator_start(self, query_id: str, node_id: int) -> None:
-        """Called when an operator has started executing."""
-        pass
-
-    def on_exec_operator_end(self, query_id: str, node_id: int) -> None:
-        """Called when an operator has completed."""
-        pass
-
-    def on_exec_end(self, query_id: str) -> None:
-        """Called when a query has finished executing."""
-        pass
-
-
-def _collect_metrics(subscriber: PromptMetricsSubscriber) -> dict[str, int]:
-    if not subscriber.query_ids:
+def _collect_metrics(metrics: RecordBatch | None) -> dict[str, int]:
+    if metrics is None:
         return {}
 
     aggregated: defaultdict[str, int] = defaultdict(int)
-    query_id = subscriber.query_ids[-1]
 
-    for stats in subscriber.node_stats[query_id].values():
+    for stats in metrics.to_pylist():
         for name, (_stat_type, value) in stats.items():
             if isinstance(value, (int, float)):
                 aggregated[name] += int(value)
@@ -111,11 +55,7 @@ def _collect_metrics(subscriber: PromptMetricsSubscriber) -> dict[str, int]:
     return dict(aggregated)
 
 
-def _assert_prompt_metrics_recorded(metrics: dict[str, int]) -> None:
-    if not RUNNER_IS_NATIVE:
-        # Ray runner does not support metrics collection yet
-        return
-
+def _assert_prompt_metrics_recorded(metrics: RecordBatch | None) -> None:
     required = {
         "requests",
         "input tokens",
@@ -123,45 +63,33 @@ def _assert_prompt_metrics_recorded(metrics: dict[str, int]) -> None:
         "total tokens",
     }
 
+    metrics_list = _collect_metrics(metrics)
+
     for name in required:
-        assert name in metrics, f"Expected metric '{name}' to be recorded."
-        assert metrics[name] >= 0
+        assert name in metrics_list, f"Expected metric '{name}' to be recorded."
+        assert metrics_list[name] >= 0
 
     assert metrics["requests"] >= 1
 
 
-def _assert_embed_metrics_recorded(metrics: dict[str, int]) -> None:
-    if not RUNNER_IS_NATIVE:
-        return
-
+def _assert_embed_metrics_recorded(metrics: RecordBatch | None) -> None:
     required = {
         "input tokens",
         "total tokens",
         "requests",
     }
 
+    metrics_list = _collect_metrics(metrics)
+
     for name in required:
-        assert name in metrics, f"Expected metric '{name}' to be recorded for embed_text."
-        assert metrics[name] >= 0
+        assert name in metrics_list, f"Expected metric '{name}' to be recorded for embed_text."
+        assert metrics_list[name] >= 0
 
     assert metrics["requests"] >= 1
 
 
-@pytest.fixture()
-def metrics() -> Callable[[], dict[str, int]]:
-    ctx = daft.context.get_context()
-    subscriber = PromptMetricsSubscriber()
-    sub_name = f"prompt-metrics-{id(subscriber)}"
-    ctx.attach_subscriber(sub_name, subscriber)
-
-    try:
-        yield lambda: _collect_metrics(subscriber)
-    finally:
-        ctx.detach_subscriber(sub_name)
-
-
 @pytest.mark.integration()
-def test_embed_text_sanity_all_models(session, metrics):
+def test_embed_text_sanity_all_models(session):
     """This tests end-to-end doesn't throw for all models. It does not check outputs."""
     from daft.ai.openai.protocols.text_embedder import _models
 
@@ -187,13 +115,13 @@ def test_embed_text_sanity_all_models(session, metrics):
             print(model, dimensions)
             df = df.with_column("embedding", embed_text(df["text"], model=model, dimensions=dimensions))
             df.collect()
-            _assert_embed_metrics_recorded(metrics())
+            _assert_embed_metrics_recorded(df.metrics)
             time.sleep(1)  # self limit to ~1 tps.
 
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("use_chat_completions", [False, True])
-def test_prompt_plain_text(session, use_chat_completions, metrics):
+def test_prompt_plain_text(session, use_chat_completions):
     """Test prompt function with plain text response."""
     df = daft.from_pydict(
         {
@@ -214,7 +142,7 @@ def test_prompt_plain_text(session, use_chat_completions, metrics):
     )
 
     answers = df.to_pydict()["answer"]
-    _assert_prompt_metrics_recorded(metrics())
+    _assert_prompt_metrics_recorded(df.metrics)
 
     # Basic sanity checks - responses should be non-empty strings
     assert len(answers) == 3
@@ -227,7 +155,7 @@ def test_prompt_plain_text(session, use_chat_completions, metrics):
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("use_chat_completions", [False, True])
-def test_prompt_structured_output(session, use_chat_completions, metrics):
+def test_prompt_structured_output(session, use_chat_completions):
     """Test prompt function with structured output (Pydantic model)."""
 
     class MovieReview(BaseModel):
@@ -257,7 +185,7 @@ def test_prompt_structured_output(session, use_chat_completions, metrics):
     )
 
     reviews = df.to_pydict()["review"]
-    _assert_prompt_metrics_recorded(metrics())
+    _assert_prompt_metrics_recorded(df.metrics)
 
     # Verify structured output
     assert len(reviews) == 3
@@ -271,7 +199,7 @@ def test_prompt_structured_output(session, use_chat_completions, metrics):
 
 @pytest.mark.integration()
 @pytest.mark.parametrize("use_chat_completions", [False, True])
-def test_prompt_with_image(session, use_chat_completions, metrics):
+def test_prompt_with_image(session, use_chat_completions):
     """Test prompt function with image input."""
     import numpy as np
 
@@ -297,7 +225,7 @@ def test_prompt_with_image(session, use_chat_completions, metrics):
     )
 
     answers = df.to_pydict()["answer"]
-    _assert_prompt_metrics_recorded(metrics())
+    _assert_prompt_metrics_recorded(df.metrics)
 
     # Basic sanity checks - responses should be non-empty strings
     # and should mention red/reddish color
@@ -312,7 +240,7 @@ def test_prompt_with_image(session, use_chat_completions, metrics):
 
 
 @pytest.mark.integration()
-def test_prompt_with_image_from_bytes(session, metrics):
+def test_prompt_with_image_from_bytes(session):
     """Test prompt function with image input from bytes column."""
     import io
 
@@ -346,7 +274,7 @@ def test_prompt_with_image_from_bytes(session, metrics):
     )
 
     answers = df.to_pydict()["answer"]
-    _assert_prompt_metrics_recorded(metrics())
+    _assert_prompt_metrics_recorded(df.metrics)
 
     # Basic sanity checks - responses should be non-empty strings
     assert len(answers) == 1
@@ -360,7 +288,7 @@ def test_prompt_with_image_from_bytes(session, metrics):
 
 
 @pytest.mark.integration()
-def test_prompt_with_image_from_file(session, metrics):
+def test_prompt_with_image_from_file(session):
     """Test prompt function with image input from File column."""
     import tempfile
 
@@ -396,7 +324,7 @@ def test_prompt_with_image_from_file(session, metrics):
         )
 
         answers = df.to_pydict()["answer"]
-        _assert_prompt_metrics_recorded(metrics())
+        _assert_prompt_metrics_recorded(df.metrics)
 
         # Basic sanity checks - responses should be non-empty strings
         assert len(answers) == 1

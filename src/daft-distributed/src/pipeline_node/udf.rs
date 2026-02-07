@@ -1,9 +1,13 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, atomic::Ordering},
 };
 
-use common_metrics::{CPU_US_KEY, Counter, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot};
+use common_metrics::{
+    CPU_US_KEY, Counter, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot,
+    ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot::UdfSnapshot,
+};
 use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFProperties};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{partitioning::translate_clustering_spec, stats::StatsState};
@@ -45,7 +49,7 @@ impl UdfStats {
 }
 
 impl RuntimeStats for UdfStats {
-    fn handle_worker_node_stats(&self, snapshot: &StatSnapshot) {
+    fn handle_worker_node_stats(&self, _node_info: &NodeInfo, snapshot: &StatSnapshot) {
         let StatSnapshot::Udf(snapshot) = snapshot else {
             return;
         };
@@ -63,6 +67,21 @@ impl RuntimeStats for UdfStats {
             });
             counter.add(*value, self.node_kv.as_slice());
         }
+    }
+
+    fn export_snapshot(&self) -> StatSnapshot {
+        StatSnapshot::Udf(UdfSnapshot {
+            cpu_us: self.cpu_us.load(Ordering::Relaxed),
+            rows_in: self.rows_in.load(Ordering::Relaxed),
+            rows_out: self.rows_out.load(Ordering::Relaxed),
+            custom_counters: self
+                .custom_counters
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(name, counter)| (name.clone(), counter.load(Ordering::Relaxed)))
+                .collect(),
+        })
     }
 }
 
@@ -93,6 +112,8 @@ impl UDFNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::UDFProject,
+            NodeCategory::Intermediate,
         );
         let config = PipelineNodeConfig::new(
             schema,

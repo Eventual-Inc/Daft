@@ -172,7 +172,7 @@ impl BlockingSink for WindowPartitionOnlySink {
     }
 
     fn op_type(&self) -> NodeType {
-        NodeType::WindowPartitionOnly
+        NodeType::Window
     }
 
     fn multiline_display(&self) -> Vec<String> {

@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{JoinType, partitioning::HashClusteringConfig, stats::StatsState};
@@ -50,6 +51,8 @@ impl HashJoinNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::DistributedHashJoin,
+            NodeCategory::BlockingSink,
         );
         let partition_cols = left_on
             .iter()

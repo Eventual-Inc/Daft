@@ -237,7 +237,7 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
     }
 
     fn op_type(&self) -> NodeType {
-        NodeType::WindowPartitionAndDynamicFrame
+        NodeType::Window
     }
 
     fn multiline_display(&self) -> Vec<String> {

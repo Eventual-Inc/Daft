@@ -1,6 +1,7 @@
 use std::{collections::HashMap, future, sync::Arc};
 
 use common_error::DaftResult;
+use common_metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, SamplingMethod};
 use daft_logical_plan::{
@@ -250,6 +251,8 @@ impl SortNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::Sort,
+            NodeCategory::BlockingSink,
         );
 
         let config = PipelineNodeConfig::new(

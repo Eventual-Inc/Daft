@@ -42,10 +42,7 @@ pub enum NodeType {
     Repartition,
     Sort,
     TopN,
-    WindowOrderByOnly,
-    WindowPartitionAndDynamicFrame,
-    WindowPartitionAndOrderBy,
-    WindowPartitionOnly,
+    Window,
     Write,
 
     // Streaming Sinks
@@ -58,6 +55,11 @@ pub enum NodeType {
     MonotonicallyIncreasingId,
     OuterHashJoinProbe,
     SortMergeJoinProbe,
+
+    // Specific to distributed only
+    DistributedHashJoin,
+    BroadcastJoin,
+    SortMergeJoin,
 }
 
 impl Display for NodeType {
