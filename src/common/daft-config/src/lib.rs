@@ -137,6 +137,7 @@ pub struct DaftExecutionConfig {
     pub maintain_order: bool,
     pub enable_dynamic_batching: bool,
     pub dynamic_batching_strategy: String,
+    pub shuffle_map_spill_threshold: Option<usize>,
 }
 
 #[cfg(not(debug_assertions))]
@@ -179,6 +180,7 @@ impl Default for DaftExecutionConfig {
             maintain_order: true,
             enable_dynamic_batching: false,
             dynamic_batching_strategy: "auto".to_string(),
+            shuffle_map_spill_threshold: None,
         }
     }
 }
@@ -193,6 +195,7 @@ impl DaftExecutionConfig {
     const ENV_CSV_INFLATION_FACTOR: &'static str = "DAFT_CSV_INFLATION_FACTOR";
     const ENV_JSON_INFLATION_FACTOR: &'static str = "DAFT_JSON_INFLATION_FACTOR";
     const ENV_DAFT_MAINTAIN_ORDER: &'static str = "DAFT_MAINTAIN_ORDER";
+    const ENV_DAFT_SHUFFLE_MAP_SPILL_THRESHOLD: &'static str = "DAFT_SHUFFLE_MAP_SPILL_THRESHOLD";
 
     #[must_use]
     pub fn from_env() -> Self {
@@ -250,6 +253,13 @@ impl DaftExecutionConfig {
             parse_number_from_env(Self::ENV_JSON_INFLATION_FACTOR, cfg.json_inflation_factor)
         {
             cfg.json_inflation_factor = val;
+        }
+
+        if let Some(val) = parse_number_from_env(
+            Self::ENV_DAFT_SHUFFLE_MAP_SPILL_THRESHOLD,
+            cfg.shuffle_map_spill_threshold.unwrap_or(0),
+        ) {
+            cfg.shuffle_map_spill_threshold = Some(val);
         }
 
         cfg

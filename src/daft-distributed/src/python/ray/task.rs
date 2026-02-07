@@ -120,7 +120,7 @@ impl TaskResultHandle for RayTaskResultHandle {
 #[pyclass(module = "daft.daft", name = "RayPartitionRef", frozen)]
 #[derive(Debug, Clone)]
 pub(crate) struct RayPartitionRef {
-    pub object_ref: Arc<Py<PyAny>>,
+    pub object_refs: Vec<Arc<Py<PyAny>>>,
     pub num_rows: usize,
     pub size_bytes: usize,
 }
@@ -128,17 +128,17 @@ pub(crate) struct RayPartitionRef {
 #[pymethods]
 impl RayPartitionRef {
     #[new]
-    pub fn new(object_ref: Py<PyAny>, num_rows: usize, size_bytes: usize) -> Self {
+    pub fn new(object_refs: Vec<Py<PyAny>>, num_rows: usize, size_bytes: usize) -> Self {
         Self {
-            object_ref: Arc::new(object_ref),
+            object_refs: object_refs.into_iter().map(Arc::new).collect(),
             num_rows,
             size_bytes,
         }
     }
 
     #[getter]
-    pub fn get_object_ref(&self, py: Python) -> Py<PyAny> {
-        self.object_ref.clone_ref(py)
+    pub fn get_object_refs(&self, py: Python) -> Vec<Py<PyAny>> {
+        self.object_refs.iter().map(|r| r.clone_ref(py)).collect()
     }
 
     #[getter]
@@ -185,6 +185,10 @@ impl RaySwordfishTask {
         self.task.name()
     }
 
+    fn num_partitions(&self) -> usize {
+        self.task.plan().output_partitions()
+    }
+
     fn plan(&self) -> PyResult<PyLocalPhysicalPlan> {
         let plan = self.task.plan();
         Ok(PyLocalPhysicalPlan { plan })
@@ -205,7 +209,7 @@ impl RaySwordfishTask {
                                 .downcast_ref::<RayPartitionRef>()
                                 .expect("Failed to downcast to RayPartitionRef");
                             RayPartitionRef {
-                                object_ref: v.object_ref.clone(),
+                                object_refs: v.object_refs.clone(),
                                 num_rows: v.num_rows,
                                 size_bytes: v.size_bytes,
                             }

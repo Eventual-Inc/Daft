@@ -118,6 +118,7 @@ impl PyDaftExecutionConfig {
         maintain_order=None,
         enable_dynamic_batching=None,
         dynamic_batching_strategy=None,
+        shuffle_map_spill_threshold=None,
     ))]
     fn with_config_values(
         &self,
@@ -150,6 +151,7 @@ impl PyDaftExecutionConfig {
         maintain_order: Option<bool>,
         enable_dynamic_batching: Option<bool>,
         dynamic_batching_strategy: Option<&str>,
+        shuffle_map_spill_threshold: Option<usize>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -265,6 +267,10 @@ impl PyDaftExecutionConfig {
                 ));
             }
             config.dynamic_batching_strategy = dynamic_batching_strategy.to_string();
+        }
+
+        if let Some(shuffle_map_spill_threshold) = shuffle_map_spill_threshold {
+            config.shuffle_map_spill_threshold = Some(shuffle_map_spill_threshold);
         }
 
         Ok(Self {
@@ -405,6 +411,11 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn dynamic_batching_strategy(&self) -> PyResult<&str> {
         Ok(self.config.dynamic_batching_strategy.as_str())
+    }
+
+    #[getter]
+    fn shuffle_map_spill_threshold(&self) -> PyResult<Option<usize>> {
+        Ok(self.config.shuffle_map_spill_threshold)
     }
 }
 
