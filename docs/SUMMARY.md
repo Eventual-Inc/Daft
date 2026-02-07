@@ -55,10 +55,6 @@
         * [Partitioning and Batching](optimization/partitioning.md)
         * [Observability](optimization/observability.md)
         * [Logging](optimization/logging.md)
-    * Contributing
-        * [Overview](contributing/overview.md)
-        * [Development Guide](contributing/development.md)
-        * [Contributing AI Functions](contributing/contributing-ai-functions.md)
     * [Sessions, Catalogs, and Tables](configuration/sessions-usage.md)
     * [Roadmap](roadmap.md)
     * [Benchmarks](benchmarks/index.md)
@@ -109,6 +105,10 @@
         * [USE](sql/statements/use.md)
     * [Data Types](sql/datatypes.md)
     * [Window Functions](sql/window_functions.md)
+* Contributing
+    * [Overview](contributing/overview.md)
+    * [Development Guide](contributing/development.md)
+    * [Contributing AI Functions](contributing/contributing-ai-functions.md)
 * [Daft Cloud](https://www.daft.ai/cloud)
 
 <!--
