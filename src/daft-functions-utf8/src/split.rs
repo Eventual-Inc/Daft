@@ -28,7 +28,11 @@ impl ScalarUDF for Split {
     fn name(&self) -> &'static str {
         "split"
     }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         binary_utf8_evaluate(inputs, "delimiter", |s, pat| series_split(s, pat, false))
     }
 
@@ -56,7 +60,11 @@ impl ScalarUDF for RegexpSplit {
     fn name(&self) -> &'static str {
         "regexp_split"
     }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         binary_utf8_evaluate(inputs, "delimiter", |s, pat| series_split(s, pat, true))
     }
 

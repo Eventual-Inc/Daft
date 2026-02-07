@@ -23,7 +23,11 @@ impl ScalarUDF for RegexpCount {
     fn name(&self) -> &'static str {
         "regexp_count"
     }
-    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let Args { input, patterns } = inputs.try_into()?;
 
         let input = input

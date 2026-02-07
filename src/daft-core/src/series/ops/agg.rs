@@ -1,14 +1,16 @@
 use common_error::{DaftError, DaftResult};
-use daft_arrow::{array::PrimitiveArray, offset::OffsetsBuffer};
+use daft_arrow::offset::OffsetsBuffer;
+use itertools::Itertools;
 
 use crate::{
     array::{
         ListArray,
         growable::make_growable,
         ops::{
-            DaftApproxSketchAggable, DaftCountAggable, DaftHllMergeAggable, DaftMeanAggable,
-            DaftProductAggable, DaftSetAggable, DaftSkewAggable as _, DaftStddevAggable,
-            DaftSumAggable, DaftVarianceAggable, GroupIndices,
+            DaftApproxSketchAggable, DaftBoolAggable, DaftConcatAggable, DaftCountAggable,
+            DaftHllMergeAggable, DaftMeanAggable, DaftMergeSketchAggable, DaftProductAggable,
+            DaftSetAggable, DaftSkewAggable, DaftStddevAggable, DaftSumAggable,
+            DaftVarianceAggable, GroupIndices,
         },
     },
     count_mode::CountMode,
@@ -96,7 +98,6 @@ impl Series {
     }
 
     pub fn product(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
-        use crate::datatypes::try_product_supertype;
         match self.data_type() {
             // intX -> int64 (in line with numpy)
             DataType::Int8 | DataType::Int16 | DataType::Int32 | DataType::Int64 => {
@@ -187,10 +188,8 @@ impl Series {
     }
 
     pub fn merge_sketch(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
-        use crate::{array::ops::DaftMergeSketchAggable, datatypes::DataType::*};
-
         match self.data_type() {
-            Struct(_) => match groups {
+            DataType::Struct(_) => match groups {
                 Some(groups) => Ok(DaftMergeSketchAggable::grouped_merge_sketch(
                     &self.struct_()?,
                     groups,
@@ -290,18 +289,17 @@ impl Series {
     }
 
     pub fn any_value(&self, groups: Option<&GroupIndices>, ignore_nulls: bool) -> DaftResult<Self> {
-        let indices = match groups {
+        let indices: UInt64Array = match groups {
             Some(groups) => {
                 if self.data_type().is_null() {
-                    PrimitiveArray::new_null(daft_arrow::datatypes::DataType::UInt64, groups.len())
+                    std::iter::repeat_n(None, groups.len()).collect()
                 } else if ignore_nulls && let Some(nulls) = self.nulls() {
-                    PrimitiveArray::from_trusted_len_iter(
-                        groups
-                            .iter()
-                            .map(|g| g.iter().find(|i| nulls.is_valid(**i as usize)).copied()),
-                    )
+                    groups
+                        .iter()
+                        .map(|g| g.iter().find(|i| nulls.is_valid(**i as usize)).copied())
+                        .collect()
                 } else {
-                    PrimitiveArray::from_trusted_len_iter(groups.iter().map(|g| g.first().copied()))
+                    groups.iter().map(|g| g.first().copied()).collect()
                 }
             }
             None => {
@@ -313,11 +311,11 @@ impl Series {
                     Some(0)
                 };
 
-                PrimitiveArray::from([idx])
+                std::iter::once(idx).collect()
             }
         };
 
-        self.take(&UInt64Array::from(("", Box::new(indices))))
+        self.take(&indices)
     }
 
     pub fn agg_list(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
@@ -328,36 +326,64 @@ impl Series {
         self.inner.agg_set(groups)
     }
 
-    pub fn agg_concat(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
-        use crate::array::ops::DaftConcatAggable;
-        match self.data_type() {
-            DataType::List(..) => {
+    pub fn agg_concat(
+        &self,
+        groups: Option<&GroupIndices>,
+        delimiter: Option<&str>,
+    ) -> DaftResult<Self> {
+        let delimiter = delimiter.filter(|d| !d.is_empty());
+        match (self.data_type(), delimiter) {
+            (DataType::List(..), Some(_)) => Err(DaftError::TypeError(
+                "concat aggregation delimiter is only supported for Utf8".to_string(),
+            )),
+
+            (DataType::List(..), None) => {
                 let downcasted = self.downcast::<ListArray>()?;
-                match groups {
-                    Some(groups) => {
-                        Ok(DaftConcatAggable::grouped_concat(downcasted, groups)?.into_series())
-                    }
-                    None => Ok(DaftConcatAggable::concat(downcasted)?.into_series()),
-                }
+                let result = match groups {
+                    Some(groups) => DaftConcatAggable::grouped_concat(downcasted, groups)?,
+                    None => DaftConcatAggable::concat(downcasted)?,
+                };
+                Ok(result.into_series())
             }
-            DataType::Utf8 => {
+            (DataType::Utf8, Some(delimiter)) => {
                 let downcasted = self.downcast::<Utf8Array>()?;
-                match groups {
-                    Some(groups) => {
-                        Ok(DaftConcatAggable::grouped_concat(downcasted, groups)?.into_series())
+                let result: Utf8Array = match groups {
+                    Some(groups) => groups
+                        .iter()
+                        .map(|group| {
+                            let values: Vec<_> = group
+                                .iter()
+                                .filter_map(|&idx| downcasted.get(idx as usize))
+                                .collect();
+                            (!values.is_empty()).then(|| values.join(delimiter))
+                        })
+                        .collect(),
+                    None => {
+                        let output = if downcasted.null_count() == downcasted.len() {
+                            None
+                        } else {
+                            Some(downcasted.into_iter().flatten().join(delimiter))
+                        };
+                        std::iter::once(output).collect()
                     }
-                    None => Ok(DaftConcatAggable::concat(downcasted)?.into_series()),
-                }
+                };
+                Ok(result.rename(downcasted.name()).into_series())
             }
-            _ => Err(DaftError::TypeError(format!(
-                "concat aggregation is only valid for List or Utf8, got {}",
-                self.data_type()
+            (DataType::Utf8, None) => {
+                let downcasted = self.downcast::<Utf8Array>()?;
+                let result = match groups {
+                    Some(groups) => DaftConcatAggable::grouped_concat(downcasted, groups)?,
+                    None => DaftConcatAggable::concat(downcasted)?,
+                };
+                Ok(result.into_series())
+            }
+            (other, _) => Err(DaftError::TypeError(format!(
+                "concat aggregation is only valid for List or Utf8, got {other}"
             ))),
         }
     }
 
     pub fn bool_and(&self, groups: Option<&GroupIndices>) -> DaftResult<Self> {
-        use crate::array::ops::DaftBoolAggable;
         match self.data_type() {
             DataType::Boolean => {
                 let downcasted = self.bool()?;

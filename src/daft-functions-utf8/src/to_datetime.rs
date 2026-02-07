@@ -19,7 +19,11 @@ impl ScalarUDF for ToDatetime {
     fn name(&self) -> &'static str {
         "to_datetime"
     }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let data = inputs.required((0, "input"))?;
         let format = inputs.required((1, "format"))?;
         ensure!(format.data_type().is_string() && format.len() == 1, ValueError: "format must be a string literal");

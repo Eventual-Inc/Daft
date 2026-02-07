@@ -35,7 +35,11 @@ impl ScalarUDF for Jq {
         Ok(Field::new(input.name, DataType::Utf8))
     }
 
-    fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        args: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let JqArgs { input, filter } = args.try_into()?;
         jaq::execute(&input, &filter)
     }

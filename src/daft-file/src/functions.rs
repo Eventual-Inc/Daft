@@ -27,7 +27,11 @@ impl ScalarUDF for File {
         "file"
     }
 
-    fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        args: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let FileArgs {
             input, io_config, ..
         } = args.try_into()?;
@@ -75,7 +79,11 @@ impl ScalarUDF for VideoFile {
         "video_file"
     }
 
-    fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        args: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let VideoFileArgs {
             input,
             verify,
@@ -164,7 +172,11 @@ impl ScalarUDF for AudioFile {
         "audio_file"
     }
 
-    fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        args: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let AudioFileArgs {
             input,
             verify,
@@ -246,7 +258,11 @@ impl ScalarUDF for Size {
         "file_size"
     }
 
-    fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        args: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let UnaryArg { input } = args.try_into()?;
 
         with_match_file_types!(input.data_type(), |$P| {
@@ -289,7 +305,11 @@ impl ScalarUDF for GuessMimeType {
         "guess_mime_type"
     }
 
-    fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        args: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let UnaryArg { input } = args.try_into()?;
 
         if !matches!(input.data_type(), DataType::Binary) {

@@ -25,7 +25,11 @@ impl ScalarUDF for Left {
         "left"
     }
 
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         binary_utf8_evaluate(inputs, "n", |s, nchars| {
             s.with_utf8_array(|arr| {
             if nchars.data_type().is_integer() {

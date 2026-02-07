@@ -28,7 +28,11 @@ struct NormalizeArgs<T> {
 
 #[typetag::serde]
 impl ScalarUDF for Normalize {
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let args: NormalizeArgs<Series> = inputs.try_into()?;
 
         normalize_impl(args)
