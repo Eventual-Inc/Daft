@@ -1019,6 +1019,21 @@ class ScanOperatorHandle:
     ) -> ScanOperatorHandle: ...
     @staticmethod
     def from_python_scan_operator(operator: ScanOperator) -> ScanOperatorHandle: ...
+    @staticmethod
+    def kafka_scan_bounded(
+        bootstrap_servers: str,
+        group_id: str,
+        topics: list[str],
+        start_kind: str,
+        start_timestamp_ms: int | None = None,
+        start_topic_partition_offsets: dict[str, dict[int, int]] | None = None,
+        end_kind: str = "latest",
+        end_timestamp_ms: int | None = None,
+        end_topic_partition_offsets: dict[str, dict[int, int]] | None = None,
+        partitions: list[int] | None = None,
+        kafka_client_config: dict[str, str] | None = None,
+        timeout_ms: int = 10_000,
+    ) -> ScanOperatorHandle: ...
 
 def logical_plan_table_scan(scan_operator: ScanOperatorHandle) -> LogicalPlanBuilder: ...
 
