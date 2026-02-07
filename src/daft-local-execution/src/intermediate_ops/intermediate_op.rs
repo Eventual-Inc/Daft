@@ -102,11 +102,11 @@ impl InputState {
     fn next_batch_if_ready(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
         let batch = self.buffer.next_batch_if_ready()?;
         if batch.is_some() {
-            return Ok(batch);
+            Ok(batch)
         } else if self.pending_flush {
             self.buffer.pop_all()
         } else {
-            return Ok(None);
+            Ok(None)
         }
     }
 }
@@ -194,7 +194,8 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
     fn try_spawn_tasks(&mut self) -> DaftResult<()> {
         let input_ids: Vec<InputId> = self.input_states.keys().copied().collect();
         for input_id in input_ids {
-            if self.task_set.len() >= self.op.max_concurrency() || self.available_states.is_empty() {
+            if self.task_set.len() >= self.op.max_concurrency() || self.available_states.is_empty()
+            {
                 break;
             }
             self.try_spawn_tasks_for_input(input_id)?;
@@ -345,10 +346,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
         Ok(ControlFlow::Continue)
     }
 
-    async fn process_input(
-        &mut self,
-        receiver: &mut Receiver<PipelineMessage>,
-    ) -> DaftResult<()> {
+    async fn process_input(&mut self, receiver: &mut Receiver<PipelineMessage>) -> DaftResult<()> {
         let mut input_closed = false;
 
         while !input_closed || !self.task_set.is_empty() || !self.input_states.is_empty() {
@@ -419,10 +417,10 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
 
 impl IntermediateOperatorResult {
     /// Get the output partition if present.
-    pub(crate) fn output(&self) -> &Option<Arc<MicroPartition>> {
+    pub(crate) fn output(&self) -> Option<&Arc<MicroPartition>> {
         match self {
-            IntermediateOperatorResult::NeedMoreInput(mp) => mp,
-            IntermediateOperatorResult::HasMoreOutput { output, .. } => output,
+            Self::NeedMoreInput(mp) => mp.as_ref(),
+            Self::HasMoreOutput { output, .. } => output.as_ref(),
         }
     }
 }
@@ -531,7 +529,7 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         let op = self.intermediate_op.clone();
         let runtime_stats = self.runtime_stats.clone();
         let node_id = self.node_id();
-        let stats_manager = runtime_handle.stats_manager().clone();
+        let stats_manager = runtime_handle.stats_manager();
         runtime_handle.spawn(
             async move {
                 let mut processor = IntermediateOpProcessor::new(

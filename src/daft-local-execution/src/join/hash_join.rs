@@ -48,7 +48,7 @@ impl HashJoinProbeState {
     /// Returns the initialized state.
     pub(crate) async fn initialize(self, needs_bitmap: bool) -> common_error::DaftResult<Self> {
         match self {
-            HashJoinProbeState::Uninitialized(mut receiver) => {
+            Self::Uninitialized(mut receiver) => {
                 let finalized_ref = receiver.wait_for(|v| v.is_some()).await.map_err(|e| {
                     common_error::DaftError::ValueError(format!(
                         "Failed to receive finalized build state: {}",
@@ -59,7 +59,7 @@ impl HashJoinProbeState {
                 drop(finalized_ref);
 
                 let record_batches = finalized.get_record_batches().to_vec();
-                Ok(HashJoinProbeState::Initialized {
+                Ok(Self::Initialized {
                     probe_state: finalized,
                     bitmap_builder: if needs_bitmap {
                         Some(IndexBitmapBuilder::new(&record_batches))
@@ -68,7 +68,7 @@ impl HashJoinProbeState {
                     },
                 })
             }
-            HashJoinProbeState::Initialized { .. } => Ok(self),
+            Self::Initialized { .. } => Ok(self),
         }
     }
 
@@ -76,11 +76,11 @@ impl HashJoinProbeState {
     /// Panics if the state is Uninitialized.
     pub(crate) fn into_initialized(self) -> (ProbeState, Option<IndexBitmapBuilder>) {
         match self {
-            HashJoinProbeState::Initialized {
+            Self::Initialized {
                 probe_state,
                 bitmap_builder,
             } => (probe_state, bitmap_builder),
-            HashJoinProbeState::Uninitialized(_) => {
+            Self::Uninitialized(_) => {
                 panic!("State must be initialized before extracting fields")
             }
         }

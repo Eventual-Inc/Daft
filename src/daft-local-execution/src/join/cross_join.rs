@@ -11,7 +11,7 @@ use tracing::Span;
 use crate::{
     ExecutionTaskSpawner,
     join::join_operator::{
-        BuildStateResult, FinalizeBuildResult, JoinOperator, ProbeOutput, ProbeFinalizeResult,
+        BuildStateResult, FinalizeBuildResult, JoinOperator, ProbeFinalizeResult, ProbeOutput,
         ProbeResult,
     },
     pipeline::NodeName,
@@ -35,7 +35,7 @@ impl CrossJoinProbeState {
     /// Returns the initialized state.
     pub(crate) async fn initialize(self) -> common_error::DaftResult<Self> {
         match self {
-            CrossJoinProbeState::Uninitialized(mut receiver) => {
+            Self::Uninitialized(mut receiver) => {
                 let finalized_ref = receiver.wait_for(|v| v.is_some()).await.map_err(|e| {
                     common_error::DaftError::ValueError(format!(
                         "Failed to receive finalized build state: {}",
@@ -45,13 +45,13 @@ impl CrossJoinProbeState {
                 let finalized = finalized_ref.as_ref().unwrap().clone();
                 drop(finalized_ref);
 
-                Ok(CrossJoinProbeState::Initialized {
+                Ok(Self::Initialized {
                     collect_tables: finalized,
                     stream_idx: 0,
                     collect_idx: 0,
                 })
             }
-            CrossJoinProbeState::Initialized { .. } => Ok(self),
+            Self::Initialized { .. } => Ok(self),
         }
     }
 
@@ -59,12 +59,12 @@ impl CrossJoinProbeState {
     /// Panics if the state is Uninitialized.
     pub(crate) fn into_initialized(self) -> (Vec<RecordBatch>, usize, usize) {
         match self {
-            CrossJoinProbeState::Initialized {
+            Self::Initialized {
                 collect_tables,
                 stream_idx,
                 collect_idx,
             } => (collect_tables, stream_idx, collect_idx),
-            CrossJoinProbeState::Uninitialized(_) => {
+            Self::Uninitialized(_) => {
                 panic!("State must be initialized before extracting fields")
             }
         }
@@ -73,16 +73,16 @@ impl CrossJoinProbeState {
     /// Get a reference to collect_tables if initialized.
     pub(crate) fn collect_tables(&self) -> Option<&Vec<RecordBatch>> {
         match self {
-            CrossJoinProbeState::Initialized { collect_tables, .. } => Some(collect_tables),
-            CrossJoinProbeState::Uninitialized(_) => None,
+            Self::Initialized { collect_tables, .. } => Some(collect_tables),
+            Self::Uninitialized(_) => None,
         }
     }
 
     /// Get stream_idx if initialized.
     pub(crate) fn stream_idx(&self) -> Option<usize> {
         match self {
-            CrossJoinProbeState::Initialized { stream_idx, .. } => Some(*stream_idx),
-            CrossJoinProbeState::Uninitialized(_) => None,
+            Self::Initialized { stream_idx, .. } => Some(*stream_idx),
+            Self::Uninitialized(_) => None,
         }
     }
 }

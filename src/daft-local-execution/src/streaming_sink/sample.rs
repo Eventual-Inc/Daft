@@ -16,14 +16,10 @@ use rand::{
 use tracing::{Span, instrument};
 
 use super::base::{
-    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkFinalizeOutput,
-    StreamingSinkOutput,
+    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeOutput,
+    StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
-use crate::{
-    ExecutionTaskSpawner,
-    dynamic_batching::StaticBatchingStrategy,
-    pipeline::NodeName,
-};
+use crate::{ExecutionTaskSpawner, dynamic_batching::StaticBatchingStrategy, pipeline::NodeName};
 
 fn build_rng(seed: Option<u64>) -> StdRng {
     match seed {
@@ -309,7 +305,9 @@ impl StreamingSink for SampleSink {
             .spawn(
                 async move {
                     match &params.sampling_method {
-                        SamplingMethod::Fraction(_) => Ok(StreamingSinkFinalizeOutput::Finished(None)),
+                        SamplingMethod::Fraction(_) => {
+                            Ok(StreamingSinkFinalizeOutput::Finished(None))
+                        }
                         SamplingMethod::Size(size) => {
                             let SampleState::Size(size_state) = states.pop().unwrap() else {
                                 unreachable!("Invalid state/params combination");

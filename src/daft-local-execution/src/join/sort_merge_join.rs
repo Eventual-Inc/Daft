@@ -11,7 +11,7 @@ use tracing::Span;
 use crate::{
     ExecutionTaskSpawner,
     join::join_operator::{
-        BuildStateResult, FinalizeBuildResult, JoinOperator, ProbeOutput, ProbeFinalizeResult,
+        BuildStateResult, FinalizeBuildResult, JoinOperator, ProbeFinalizeResult, ProbeOutput,
         ProbeResult,
     },
     pipeline::NodeName,
@@ -34,7 +34,7 @@ impl SortMergeJoinProbeState {
     /// Returns the initialized state.
     pub(crate) async fn initialize(self) -> common_error::DaftResult<Self> {
         match self {
-            SortMergeJoinProbeState::Uninitialized(mut receiver) => {
+            Self::Uninitialized(mut receiver) => {
                 let finalized_ref = receiver.wait_for(|v| v.is_some()).await.map_err(|e| {
                     common_error::DaftError::ValueError(format!(
                         "Failed to receive finalized build state: {}",
@@ -44,12 +44,12 @@ impl SortMergeJoinProbeState {
                 let finalized = finalized_ref.as_ref().unwrap().clone();
                 drop(finalized_ref);
 
-                Ok(SortMergeJoinProbeState::Initialized {
+                Ok(Self::Initialized {
                     build_contents: finalized,
                     probe_contents: Vec::new(),
                 })
             }
-            SortMergeJoinProbeState::Initialized { .. } => Ok(self),
+            Self::Initialized { .. } => Ok(self),
         }
     }
 
@@ -57,11 +57,11 @@ impl SortMergeJoinProbeState {
     /// Panics if the state is Uninitialized.
     pub(crate) fn into_initialized(self) -> (Vec<Arc<MicroPartition>>, Vec<Arc<MicroPartition>>) {
         match self {
-            SortMergeJoinProbeState::Initialized {
+            Self::Initialized {
                 build_contents,
                 probe_contents,
             } => (build_contents, probe_contents),
-            SortMergeJoinProbeState::Uninitialized(_) => {
+            Self::Uninitialized(_) => {
                 panic!("State must be initialized before extracting fields")
             }
         }
@@ -70,8 +70,8 @@ impl SortMergeJoinProbeState {
     /// Get a mutable reference to probe_contents if initialized.
     pub(crate) fn probe_contents_mut(&mut self) -> Option<&mut Vec<Arc<MicroPartition>>> {
         match self {
-            SortMergeJoinProbeState::Initialized { probe_contents, .. } => Some(probe_contents),
-            SortMergeJoinProbeState::Uninitialized(_) => None,
+            Self::Initialized { probe_contents, .. } => Some(probe_contents),
+            Self::Uninitialized(_) => None,
         }
     }
 }
@@ -164,10 +164,10 @@ impl JoinOperator for SortMergeJoinOperator {
                     let mut state = state.initialize().await?;
 
                     // Add input to probe_contents if not empty
-                    if let Some(probe_contents) = state.probe_contents_mut() {
-                        if !input.is_empty() {
-                            probe_contents.push(input);
-                        }
+                    if let Some(probe_contents) = state.probe_contents_mut()
+                        && !input.is_empty()
+                    {
+                        probe_contents.push(input);
                     }
 
                     Ok((state, ProbeOutput::NeedMoreInput(None)))

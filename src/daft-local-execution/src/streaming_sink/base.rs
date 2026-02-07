@@ -95,11 +95,11 @@ pub(crate) trait StreamingSink: Send + Sync {
 }
 
 impl StreamingSinkOutput {
-    pub(crate) fn output(&self) -> &Option<Arc<MicroPartition>> {
+    pub(crate) fn output(&self) -> Option<&Arc<MicroPartition>> {
         match self {
-            StreamingSinkOutput::NeedMoreInput(mp) => mp,
-            StreamingSinkOutput::HasMoreOutput { output, .. } => output,
-            StreamingSinkOutput::Finished(mp) => mp,
+            Self::NeedMoreInput(mp) => mp.as_ref(),
+            Self::HasMoreOutput { output, .. } => output.as_ref(),
+            Self::Finished(mp) => mp.as_ref(),
         }
     }
 }
@@ -133,43 +133,7 @@ struct StreamingSinkProcessor<Op: StreamingSink> {
     node_initialized: bool,
 }
 
-/// input_id lifecycle:
-///
-/// 1. BUFFER   — morsel arrives, data buffered
-/// 2. EXECUTE  — tasks spawned while batch_size met AND under max_concurrency
-/// 3. FLUSH_IN — flush received → mark completed → pop_all allowed for remaining buffer
-/// 4. FINALIZE — all tasks done + buffer empty → spawn finalize
-/// 5. CLEANUP  — finalize done → remove input_id → propagate flush downstream
 impl<Op: StreamingSink + 'static> StreamingSinkProcessor<Op> {
-    fn new(
-        maintain_order: bool,
-        max_concurrency: usize,
-        op: Arc<Op>,
-        task_spawner: ExecutionTaskSpawner,
-        finalize_spawner: ExecutionTaskSpawner,
-        runtime_stats: Arc<dyn RuntimeStats>,
-        output_sender: Sender<PipelineMessage>,
-        input_state_tracker: InputStatesTracker<Op::State>,
-        batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
-        stats_manager: RuntimeStatsManagerHandle,
-        node_id: usize,
-    ) -> Self {
-        Self {
-            task_set: OrderingAwareJoinSet::new(maintain_order),
-            max_concurrency,
-            input_state_tracker,
-            op,
-            task_spawner,
-            finalize_spawner,
-            runtime_stats,
-            output_sender,
-            batch_manager,
-            stats_manager,
-            node_id,
-            node_initialized: false,
-        }
-    }
-
     fn spawn_execute_task(
         &mut self,
         partition: Arc<MicroPartition>,
@@ -613,22 +577,23 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
         let node_id = self.node_id();
-        let stats_manager = runtime_handle.stats_manager().clone();
+        let stats_manager = runtime_handle.stats_manager();
         runtime_handle.spawn(
             async move {
-                let mut processor = StreamingSinkProcessor::new(
-                    maintain_order,
+                let mut processor = StreamingSinkProcessor {
+                    task_set: OrderingAwareJoinSet::new(maintain_order),
                     max_concurrency,
+                    input_state_tracker,
                     op,
                     task_spawner,
                     finalize_spawner,
                     runtime_stats,
-                    destination_sender,
-                    input_state_tracker,
+                    output_sender: destination_sender,
                     batch_manager,
-                    stats_manager.clone(),
+                    stats_manager: stats_manager.clone(),
                     node_id,
-                );
+                    node_initialized: false,
+                };
 
                 processor.process_input(&mut child_results_receiver).await?;
 

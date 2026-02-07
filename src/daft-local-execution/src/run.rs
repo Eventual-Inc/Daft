@@ -225,10 +225,10 @@ impl NativeExecutor {
 
                 while let Some(msg) = receiver.recv().await {
                     // Extract partition from Morsel messages, ignore Flush
-                    if let PipelineMessage::Morsel { partition, .. } = msg {
-                        if tx.send(partition).await.is_err() {
-                            return Ok(());
-                        }
+                    if let PipelineMessage::Morsel { partition, .. } = msg
+                        && tx.send(partition).await.is_err()
+                    {
+                        return Ok(());
                     }
                 }
 

@@ -97,11 +97,7 @@ impl<S> InputStatesTracker<S> {
         &mut self,
         input_id: InputId,
     ) -> Option<DaftResult<(Arc<MicroPartition>, S)>> {
-        let tracker = match self.trackers.get_mut(&input_id) {
-            Some(tracker) => tracker,
-            None => return None,
-        };
-
+        let tracker = self.trackers.get_mut(&input_id)?;
         if tracker.buffer.is_empty() || tracker.available_states.is_empty() {
             return None;
         }

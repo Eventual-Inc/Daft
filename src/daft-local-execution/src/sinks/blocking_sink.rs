@@ -84,33 +84,6 @@ struct BlockingSinkProcessor<Op: BlockingSink> {
 }
 
 impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
-    fn new(
-        maintain_order: bool,
-        op: Arc<Op>,
-        task_spawner: ExecutionTaskSpawner,
-        finalize_spawner: ExecutionTaskSpawner,
-        runtime_stats: Arc<dyn RuntimeStats>,
-        output_sender: Sender<PipelineMessage>,
-        input_state_tracker: InputStatesTracker<Op::State>,
-        stats_manager: RuntimeStatsManagerHandle,
-        node_id: usize,
-    ) -> Self {
-        let max_concurrency = get_compute_pool_num_threads();
-        Self {
-            task_set: OrderingAwareJoinSet::new(maintain_order),
-            max_concurrency,
-            input_state_tracker,
-            op,
-            task_spawner,
-            finalize_spawner,
-            runtime_stats,
-            output_sender,
-            stats_manager,
-            node_id,
-            node_initialized: false,
-        }
-    }
-
     fn spawn_sink_task(
         &mut self,
         partition: Arc<MicroPartition>,
@@ -436,20 +409,22 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
         let node_id = self.node_id();
-        let stats_manager = runtime_handle.stats_manager().clone();
+        let stats_manager = runtime_handle.stats_manager();
         runtime_handle.spawn(
             async move {
-                let mut processor = BlockingSinkProcessor::new(
-                    maintain_order,
+                let mut processor = BlockingSinkProcessor {
+                    task_set: OrderingAwareJoinSet::new(maintain_order),
+                    max_concurrency: get_compute_pool_num_threads(),
+                    input_state_tracker,
                     op,
                     task_spawner,
                     finalize_spawner,
                     runtime_stats,
-                    destination_sender,
-                    input_state_tracker,
-                    stats_manager.clone(),
+                    output_sender: destination_sender,
+                    stats_manager: stats_manager.clone(),
                     node_id,
-                );
+                    node_initialized: false,
+                };
 
                 processor
                     .start_processing(&mut child_results_receiver)

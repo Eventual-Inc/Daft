@@ -190,7 +190,7 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
         let build_state_bridge = Arc::new(BuildStateBridge::new());
 
         let node_id = self.node_id();
-        let stats_manager = runtime_handle.stats_manager().clone();
+        let stats_manager = runtime_handle.stats_manager();
 
         // Initialize build side
         let mut build_ctx = BuildExecutionContext::new(
@@ -211,7 +211,7 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
             Arc::new(BatchManager::new(DynBatchingStrategy::from(
                 StaticBatchingStrategy::new(self.op.morsel_size_requirement().unwrap_or_default()),
             ))),
-            build_state_bridge.clone(),
+            build_state_bridge,
             self.runtime_stats.clone(),
             maintain_order,
         );

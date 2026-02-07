@@ -46,6 +46,7 @@ pub(crate) struct ProbeExecutionContext<Op: JoinOperator, Strategy: BatchingStra
 impl<Op: JoinOperator + 'static, Strategy: BatchingStrategy + 'static>
     ProbeExecutionContext<Op, Strategy>
 {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         op: Arc<Op>,
         task_spawner: ExecutionTaskSpawner,
@@ -57,7 +58,6 @@ impl<Op: JoinOperator + 'static, Strategy: BatchingStrategy + 'static>
         maintain_order: bool,
     ) -> Self {
         let op_for_state_creator = op.clone();
-        let build_state_bridge_for_state_creator = build_state_bridge.clone();
         let batch_manager_for_state_creator = batch_manager.clone();
 
         let state_creator = Box::new(
@@ -65,7 +65,7 @@ impl<Op: JoinOperator + 'static, Strategy: BatchingStrategy + 'static>
                 let max_probe_concurrency = op_for_state_creator.max_probe_concurrency();
                 let probe_states: Vec<_> = (0..max_probe_concurrency)
                     .map(|_| {
-                        let receiver = build_state_bridge_for_state_creator.subscribe(input_id);
+                        let receiver = build_state_bridge.subscribe(input_id);
                         op_for_state_creator.make_probe_state(receiver)
                     })
                     .collect();

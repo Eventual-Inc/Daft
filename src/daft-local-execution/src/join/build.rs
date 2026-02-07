@@ -55,8 +55,7 @@ impl<Op: JoinOperator> BuildStateBridge<Op> {
             let (sender, _receiver) = watch::channel(None);
             sender
         });
-        let receiver = sender.subscribe();
-        receiver
+        sender.subscribe()
     }
 }
 

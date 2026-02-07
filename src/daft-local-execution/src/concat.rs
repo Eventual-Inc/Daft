@@ -36,12 +36,8 @@ impl ConcatNode {
         context: &LocalNodeContext,
     ) -> Self {
         let name: Arc<str> = "Concat".into();
-        let node_info = ctx.next_node_info(
-            name,
-            NodeType::Concat,
-            NodeCategory::Intermediate,
-            context,
-        );
+        let node_info =
+            ctx.next_node_info(name, NodeType::Concat, NodeCategory::Intermediate, context);
         let runtime_stats = Arc::new(DefaultRuntimeStats::new(node_info.id));
         let morsel_size_requirement = MorselSizeRequirement::default();
 
@@ -252,15 +248,14 @@ impl PipelineNode for ConcatNode {
                 // Send flush for input_id 0 once either:
                 // - The flush comes from second child (right_result == Some(true)), OR
                 // - If second child receiver is closed (right_result == Some(false))
-                if let Some(_) = right_result {
-                    if destination_sender_for_flush
+                if right_result.is_some()
+                    && destination_sender_for_flush
                         .send(PipelineMessage::Flush(0))
                         .await
                         .is_err()
-                    {
-                        stats_manager.finalize_node(node_id);
-                        return Ok(());
-                    }
+                {
+                    stats_manager.finalize_node(node_id);
+                    return Ok(());
                 }
 
                 stats_manager.finalize_node(node_id);

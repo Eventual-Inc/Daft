@@ -26,10 +26,10 @@ pub(crate) enum ProbeOutput {
 }
 
 impl ProbeOutput {
-    pub(crate) fn output(&self) -> &Option<Arc<MicroPartition>> {
+    pub(crate) fn output(&self) -> Option<&Arc<MicroPartition>> {
         match self {
-            ProbeOutput::NeedMoreInput(mp) => mp,
-            ProbeOutput::HasMoreOutput { output, .. } => output,
+            Self::NeedMoreInput(mp) => mp.as_ref(),
+            Self::HasMoreOutput { output, .. } => output.as_ref(),
         }
     }
 }
