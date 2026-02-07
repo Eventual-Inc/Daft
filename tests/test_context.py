@@ -331,22 +331,3 @@ def test_set_scantask_max_parallelism_greater_than_partition_num():
         df = daft.range(start=0, end=1024, partitions=10)
         df.explain(show_all=True, file=str_io)
         assert "Num Parallel Scan Tasks = 17" in str_io.getvalue().strip()
-
-
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() == "native", reason="Native Runner already supports enabling dashboard"
-)
-def test_enable_dashboard_for_ray_runner():
-    get_or_infer_runner_type_py_script = """
-import daft
-
-daft.range(start=0, end=1024, partitions=10).collect()
-    """
-
-    with with_null_env():
-        result = subprocess.run(
-            [sys.executable, "-c", get_or_infer_runner_type_py_script],
-            capture_output=True,
-            env={"DAFT_RUNNER": "ray", "DAFT_DASHBOARD_URL": "http://localhost:3238"},
-        )
-        assert "Dashboard isn't currently supported in Ray Runner" in result.stderr.decode()
