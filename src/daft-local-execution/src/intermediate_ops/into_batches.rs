@@ -5,11 +5,12 @@ use common_metrics::ops::NodeType;
 use daft_micropartition::MicroPartition;
 use tracing::Span;
 
-use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
+use super::intermediate_op::{
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
+};
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{MorselSizeRequirement, NodeName},
-    pipeline_execution::OperatorExecutionOutput,
 };
 
 pub struct IntoBatchesOperator {
@@ -45,7 +46,7 @@ impl IntermediateOperator for IntoBatchesOperator {
                         )),
                         None => Arc::new(MicroPartition::empty(Some(input.schema()))),
                     };
-                    Ok((state, OperatorExecutionOutput::NeedMoreInput(Some(out))))
+                    Ok((state, IntermediateOperatorResult::NeedMoreInput(Some(out))))
                 },
                 Span::current(),
             )

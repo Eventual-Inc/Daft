@@ -153,20 +153,16 @@ impl BatchingStrategy for LatencyConstrainedBatchingStrategy {
         LatencyConstrainedBatchingState::new(self.b_min, self.b_min, 256)
     }
 
-    fn initial_requirements(&self) -> MorselSizeRequirement {
-        let default_morsel_size = daft_context::get_context()
-            .execution_config()
-            .default_morsel_size;
-        let upper_bound = default_morsel_size.min(NonZeroUsize::new(256).unwrap());
-        // start with a small initial requirement that matches our search space
-        MorselSizeRequirement::Flexible(1, upper_bound)
-    }
-
-    fn calculate_new_requirements(&self, state: &mut Self::State) -> MorselSizeRequirement {
+    fn calculate_requirements(&self, state: &mut Self::State) -> MorselSizeRequirement {
         // Get recent average latency ¯𝜏
         // Get recent average batch size ¯𝑏
         let Some((b, t)) = state.avg_batch_size_and_latency() else {
-            return self.initial_requirements();
+            let default_morsel_size = daft_context::get_context()
+                .execution_config()
+                .default_morsel_size;
+            let upper_bound = default_morsel_size.min(NonZeroUsize::new(256).unwrap());
+            // start with a small initial requirement that matches our search space
+            return MorselSizeRequirement::Flexible(1, upper_bound);
         };
 
         // 𝐷SLA
@@ -318,7 +314,7 @@ mod tests {
 
         // Latency = 150ms, target = 100ms + 10ms = 110ms tolerance
         state.record_execution_stat(stats().as_ref(), 100, Duration::from_millis(150));
-        let _req = strategy.calculate_new_requirements(&mut state);
+        let _req = strategy.calculate_requirements(&mut state);
 
         // Should contract search space (search_high should be reduced)
         assert!(state.b_high < 200);
@@ -336,7 +332,7 @@ mod tests {
         // Latency = 50ms, target = 100ms - 10ms = 90ms tolerance
         state.record_execution_stat(stats().as_ref(), 50, Duration::from_millis(50));
 
-        let _req = strategy.calculate_new_requirements(&mut state);
+        let _req = strategy.calculate_requirements(&mut state);
 
         // Should expand search space
         assert_eq!(state.b_low, 79);
@@ -354,7 +350,7 @@ mod tests {
 
         state.record_execution_stat(stats().as_ref(), 80, Duration::from_millis(100));
 
-        let _req = strategy.calculate_new_requirements(&mut state);
+        let _req = strategy.calculate_requirements(&mut state);
 
         // Should tighten around current point
         let _tighten_amount = (strategy.step_size_alpha / 2).max(1); // 10
@@ -376,7 +372,7 @@ mod tests {
         let mut state = strategy.make_state();
         state.record_execution_stat(stats().as_ref(), 5, Duration::from_millis(50));
 
-        let _req = strategy.calculate_new_requirements(&mut state);
+        let _req = strategy.calculate_requirements(&mut state);
 
         assert!(state.current_batch_size >= strategy.b_min);
         assert!(state.current_batch_size <= strategy.b_max);
@@ -388,7 +384,7 @@ mod tests {
         let strategy = create_strategy();
         let mut state = strategy.make_state();
 
-        let _req = strategy.calculate_new_requirements(&mut state);
+        let _req = strategy.calculate_requirements(&mut state);
 
         // Should handle gracefully without panicking
         assert!(state.current_batch_size >= strategy.b_min);
@@ -403,7 +399,7 @@ mod tests {
         state.record_execution_stat(stats().as_ref(), 60, Duration::from_millis(120));
         state.record_execution_stat(stats().as_ref(), 70, Duration::from_millis(100));
 
-        let _req = strategy.calculate_new_requirements(&mut state);
+        let _req = strategy.calculate_requirements(&mut state);
 
         // Should handle multiple entries (avg latency = 100ms, avg batch = 60)
         assert!(state.current_batch_size > 0);
@@ -421,7 +417,7 @@ mod tests {
                 state.current_batch_size,
                 Duration::from_millis(95),
             );
-            strategy.calculate_new_requirements(&mut state);
+            strategy.calculate_requirements(&mut state);
         }
 
         // Search space should converge (high - low should be small)
@@ -436,7 +432,7 @@ mod tests {
         state.b_high = strategy.b_max + 100;
 
         state.record_execution_stat(stats().as_ref(), 50, Duration::from_millis(50));
-        let _req = strategy.calculate_new_requirements(&mut state);
+        let _req = strategy.calculate_requirements(&mut state);
         assert!(state.b_high <= strategy.b_max);
         assert!(state.current_batch_size <= strategy.b_max);
     }

@@ -5,16 +5,16 @@ use common_metrics::ops::NodeType;
 use daft_core::{join::JoinSide, prelude::SchemaRef};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
-use tokio::sync::broadcast;
+use tokio::sync::watch;
 use tracing::Span;
 
 use crate::{
     ExecutionTaskSpawner,
     join::join_operator::{
-        BuildStateResult, FinalizeBuildResult, JoinOperator, ProbeFinalizeResult, ProbeResult,
+        BuildStateResult, FinalizeBuildResult, JoinOperator, ProbeOutput, ProbeFinalizeResult,
+        ProbeResult,
     },
     pipeline::NodeName,
-    pipeline_execution::OperatorExecutionOutput,
 };
 
 pub(crate) struct CrossJoinBuildState {
@@ -22,7 +22,7 @@ pub(crate) struct CrossJoinBuildState {
 }
 
 pub(crate) enum CrossJoinProbeState {
-    Uninitialized(broadcast::Receiver<Vec<RecordBatch>>),
+    Uninitialized(watch::Receiver<Option<Vec<RecordBatch>>>),
     Initialized {
         collect_tables: Vec<RecordBatch>,
         stream_idx: usize,
@@ -36,12 +36,14 @@ impl CrossJoinProbeState {
     pub(crate) async fn initialize(self) -> common_error::DaftResult<Self> {
         match self {
             CrossJoinProbeState::Uninitialized(mut receiver) => {
-                let finalized = receiver.recv().await.map_err(|e| {
+                let finalized_ref = receiver.wait_for(|v| v.is_some()).await.map_err(|e| {
                     common_error::DaftError::ValueError(format!(
                         "Failed to receive finalized build state: {}",
                         e
                     ))
                 })?;
+                let finalized = finalized_ref.as_ref().unwrap().clone();
+                drop(finalized_ref);
 
                 Ok(CrossJoinProbeState::Initialized {
                     collect_tables: finalized,
@@ -126,7 +128,7 @@ impl JoinOperator for CrossJoinOperator {
 
     fn make_probe_state(
         &self,
-        receiver: broadcast::Receiver<Self::FinalizedBuildState>,
+        receiver: watch::Receiver<Option<Self::FinalizedBuildState>>,
     ) -> Self::ProbeState {
         CrossJoinProbeState::Uninitialized(receiver)
     }
@@ -156,7 +158,7 @@ impl JoinOperator for CrossJoinOperator {
                     // If there are no input tables or collect tables, return an empty output
                     if input.is_empty() || collect_tables_empty {
                         let empty = Arc::new(MicroPartition::empty(Some(output_schema)));
-                        return Ok((state, OperatorExecutionOutput::NeedMoreInput(Some(empty))));
+                        return Ok((state, ProbeOutput::NeedMoreInput(Some(empty))));
                     }
 
                     // Check if we've finished processing all stream tables
@@ -171,7 +173,7 @@ impl JoinOperator for CrossJoinOperator {
                                 stream_idx: 0,
                                 collect_idx: 0,
                             },
-                            OperatorExecutionOutput::NeedMoreInput(Some(empty)),
+                            ProbeOutput::NeedMoreInput(Some(empty)),
                         ));
                     }
 
@@ -205,10 +207,10 @@ impl JoinOperator for CrossJoinOperator {
 
                     let result = if stream_idx == 0 && collect_idx == 0 {
                         // Finished the outer loop, move onto next input
-                        OperatorExecutionOutput::NeedMoreInput(Some(output_morsel))
+                        ProbeOutput::NeedMoreInput(Some(output_morsel))
                     } else {
                         // Still looping through tables
-                        OperatorExecutionOutput::HasMoreOutput {
+                        ProbeOutput::HasMoreOutput {
                             input,
                             output: Some(output_morsel),
                         }

@@ -6,8 +6,7 @@ use common_metrics::{
     ops::{NodeCategory, NodeInfo},
     snapshot::StatSnapshotImpl,
 };
-use common_runtime::{OrderingAwareJoinSet, get_compute_runtime};
-use daft_core::prelude::SchemaRef;
+use common_runtime::get_compute_runtime;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use tracing::info_span;
@@ -180,65 +179,59 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
             self.runtime_stats.clone(),
             info_span!("JoinNode::Probe"),
         );
-        let finalize_spawner = ExecutionTaskSpawner::new(
+        let probe_finalize_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
             self.runtime_stats.clone(),
             info_span!("JoinNode::FinalizeProbe"),
         );
 
-        let stats_manager = runtime_handle.stats_manager();
+        // Create BuildStateBridge shared between build and probe sides
+        let build_state_bridge = Arc::new(BuildStateBridge::new());
+
         let node_id = self.node_id();
-        let runtime_stats = self.runtime_stats.clone();
-        let op_name = self.op.name().to_string();
-        let op = self.op.clone();
+        let stats_manager = runtime_handle.stats_manager().clone();
+
+        // Initialize build side
+        let mut build_ctx = BuildExecutionContext::new(
+            self.op.clone(),
+            build_task_spawner,
+            build_state_bridge.clone(),
+            self.runtime_stats.clone(),
+            stats_manager.clone(),
+            node_id,
+        );
+
+        // Initialize probe side
+        let mut probe_ctx = ProbeExecutionContext::new(
+            self.op.clone(),
+            probe_task_spawner,
+            probe_finalize_spawner,
+            destination_sender,
+            Arc::new(BatchManager::new(DynBatchingStrategy::from(
+                StaticBatchingStrategy::new(self.op.morsel_size_requirement().unwrap_or_default()),
+            ))),
+            build_state_bridge.clone(),
+            self.runtime_stats.clone(),
+            maintain_order,
+            stats_manager.clone(),
+            node_id,
+        );
+
         runtime_handle.spawn(
             async move {
-                // Create BuildStateBridge shared between build and probe sides
-                let build_state_bridge = Arc::new(BuildStateBridge::new());
-
-                // Initialize build side
-                let mut build_ctx = BuildExecutionContext::new(
-                    op.clone(),
-                    build_task_spawner,
-                    build_state_bridge.clone(),
-                    runtime_stats.clone(),
-                    stats_manager.clone(),
-                );
-
-                // Initialize probe side
-                let mut probe_ctx = ProbeExecutionContext::new(
-                    op.clone(),
-                    probe_task_spawner,
-                    finalize_spawner,
-                    destination_sender,
-                    Arc::new(BatchManager::new(DynBatchingStrategy::from(
-                        StaticBatchingStrategy::new(
-                            op.morsel_size_requirement().unwrap_or_default(),
-                        ),
-                    ))),
-                    build_state_bridge.clone(),
-                    runtime_stats.clone(),
-                    maintain_order,
-                    stats_manager,
-                );
-
-                // Spawn both processes concurrently
                 let (build_result, probe_result) = tokio::join!(
-                    build_ctx.process_build_input(node_id, build_child_receiver,),
-                    ProbeExecutionContext::process_probe_input(
-                        node_id,
-                        probe_child_receiver,
-                        &mut probe_ctx,
-                    ),
+                    build_ctx.process_build_input(build_child_receiver),
+                    probe_ctx.process_probe_input(probe_child_receiver),
                 );
 
                 build_result?;
                 probe_result?;
 
+                stats_manager.finalize_node(node_id);
                 Ok(())
             },
-            &op_name,
+            &self.name(),
         );
 
         Ok(destination_receiver)

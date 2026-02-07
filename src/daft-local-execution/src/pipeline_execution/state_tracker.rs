@@ -3,7 +3,7 @@ use std::{num::NonZeroUsize, sync::Arc};
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 
-use crate::buffer::RowBasedBuffer;
+use crate::{buffer::RowBasedBuffer, pipeline::MorselSizeRequirement};
 
 /// Tracks state for pipeline execution, managing available states,
 /// completion status, and buffered partitions for a given input_id.
@@ -77,7 +77,7 @@ impl<S> StateTracker<S> {
     }
 
     /// Update the buffer bounds.
-    pub(crate) fn update_bounds(&mut self, lower: usize, upper: NonZeroUsize) {
-        self.buffered_partitions.update_bounds(lower, upper);
+    pub(crate) fn update_bounds(&mut self, morsel_size_requirement: MorselSizeRequirement) {
+        self.buffered_partitions.update_bounds(morsel_size_requirement);
     }
 }

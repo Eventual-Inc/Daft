@@ -9,7 +9,7 @@ use daft_micropartition::MicroPartition;
 use daft_recordbatch::{ProbeState, ProbeableBuilder, RecordBatch, make_probeable_builder};
 use indexmap::IndexSet;
 use itertools::Itertools;
-use tokio::sync::broadcast;
+use tokio::sync::watch;
 use tracing::{Span, info_span};
 
 use crate::{
@@ -19,7 +19,8 @@ use crate::{
         index_bitmap::IndexBitmapBuilder,
         inner_join::probe_inner,
         join_operator::{
-            BuildStateResult, FinalizeBuildResult, JoinOperator, ProbeFinalizeResult, ProbeResult,
+            BuildStateResult, FinalizeBuildResult, JoinOperator, ProbeOutput, ProbeFinalizeResult,
+            ProbeResult,
         },
         left_right_join::{
             finalize_left, finalize_right, probe_left_right, probe_left_right_with_bitmap,
@@ -27,7 +28,6 @@ use crate::{
         outer_join::{finalize_outer, probe_outer},
     },
     pipeline::NodeName,
-    pipeline_execution::OperatorExecutionOutput,
 };
 
 pub(crate) struct HashJoinBuildState {
@@ -36,7 +36,7 @@ pub(crate) struct HashJoinBuildState {
 }
 
 pub(crate) enum HashJoinProbeState {
-    Uninitialized(broadcast::Receiver<ProbeState>),
+    Uninitialized(watch::Receiver<Option<ProbeState>>),
     Initialized {
         probe_state: ProbeState,
         bitmap_builder: Option<IndexBitmapBuilder>,
@@ -49,12 +49,16 @@ impl HashJoinProbeState {
     pub(crate) async fn initialize(self, needs_bitmap: bool) -> common_error::DaftResult<Self> {
         match self {
             HashJoinProbeState::Uninitialized(mut receiver) => {
-                let finalized = receiver.recv().await.map_err(|e| {
+                dbg!("PROBE initialize: about to wait_for, current is_some =", receiver.borrow().is_some());
+                let finalized_ref = receiver.wait_for(|v| v.is_some()).await.map_err(|e| {
                     common_error::DaftError::ValueError(format!(
                         "Failed to receive finalized build state: {}",
                         e
                     ))
                 })?;
+                dbg!("PROBE initialize: wait_for returned");
+                let finalized = finalized_ref.as_ref().unwrap().clone();
+                drop(finalized_ref);
 
                 let record_batches = finalized.get_record_batches().to_vec();
                 Ok(HashJoinProbeState::Initialized {
@@ -70,6 +74,11 @@ impl HashJoinProbeState {
         }
     }
 
+    /// Returns true if this state has been initialized (went through a probe call).
+    pub(crate) fn is_initialized(&self) -> bool {
+        matches!(self, HashJoinProbeState::Initialized { .. })
+    }
+
     /// Extract the probe_state and bitmap_builder from an Initialized state.
     /// Panics if the state is Uninitialized.
     pub(crate) fn into_initialized(self) -> (ProbeState, Option<IndexBitmapBuilder>) {
@@ -83,6 +92,19 @@ impl HashJoinProbeState {
             }
         }
     }
+}
+
+/// Initialize any uninitialized probe states by awaiting their watch receivers.
+/// States that already went through a probe call are left as-is.
+async fn initialize_all_states(
+    states: Vec<HashJoinProbeState>,
+    needs_bitmap: bool,
+) -> common_error::DaftResult<Vec<HashJoinProbeState>> {
+    let mut result = Vec::with_capacity(states.len());
+    for state in states {
+        result.push(state.initialize(needs_bitmap).await?);
+    }
+    Ok(result)
 }
 
 impl HashJoinBuildState {
@@ -226,7 +248,7 @@ impl JoinOperator for HashJoinOperator {
 
     fn make_probe_state(
         &self,
-        receiver: broadcast::Receiver<Self::FinalizedBuildState>,
+        receiver: watch::Receiver<Option<Self::FinalizedBuildState>>,
     ) -> Self::ProbeState {
         HashJoinProbeState::Uninitialized(receiver)
     }
@@ -251,7 +273,7 @@ impl JoinOperator for HashJoinOperator {
                 }
                 HashJoinProbeState::Initialized { .. } => state,
             };
-            return Ok((state, OperatorExecutionOutput::NeedMoreInput(Some(empty)))).into();
+            return Ok((state, ProbeOutput::NeedMoreInput(Some(empty)))).into();
         }
 
         let needs_bitmap = self.needs_bitmap();
@@ -297,7 +319,7 @@ impl JoinOperator for HashJoinOperator {
                                     probe_state,
                                     bitmap_builder,
                                 },
-                                OperatorExecutionOutput::NeedMoreInput(None),
+                                ProbeOutput::NeedMoreInput(None),
                             ));
                         }
                         JoinType::Anti | JoinType::Semi => {
@@ -309,7 +331,7 @@ impl JoinOperator for HashJoinOperator {
                             probe_state,
                             bitmap_builder,
                         },
-                        OperatorExecutionOutput::NeedMoreInput(Some(result)),
+                        ProbeOutput::NeedMoreInput(Some(result)),
                     ))
                 },
                 Span::current(),
@@ -327,14 +349,13 @@ impl JoinOperator for HashJoinOperator {
             return Ok(None).into();
         }
 
-        // All states should be initialized by this point since they've all been through probe calls
-        // The finalize functions will handle the enum
-
+        let needs_bitmap = self.needs_bitmap();
         let params = self.params.clone();
         match self.params.join_type {
             JoinType::Outer => spawner
                 .spawn(
                     async move {
+                        let states = initialize_all_states(states, needs_bitmap).await?;
                         let output = finalize_outer(states, &params).await?;
                         Ok(output)
                     },
@@ -349,6 +370,7 @@ impl JoinOperator for HashJoinOperator {
                 spawner
                     .spawn(
                         async move {
+                            let states = initialize_all_states(states, needs_bitmap).await?;
                             let output = finalize_left(states, &params).await?;
                             Ok(output)
                         },
@@ -364,6 +386,7 @@ impl JoinOperator for HashJoinOperator {
                 spawner
                     .spawn(
                         async move {
+                            let states = initialize_all_states(states, needs_bitmap).await?;
                             let output = finalize_right(states, &params).await?;
                             Ok(output)
                         },
@@ -380,6 +403,7 @@ impl JoinOperator for HashJoinOperator {
                 spawner
                     .spawn(
                         async move {
+                            let states = initialize_all_states(states, needs_bitmap).await?;
                             let output = finalize_anti_semi(states, is_semi).await?;
                             Ok(output)
                         },

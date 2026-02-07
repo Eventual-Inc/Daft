@@ -32,14 +32,15 @@ use opentelemetry::{KeyValue, global, metrics::Meter};
 use pyo3::{Py, prelude::*};
 use tracing::{Span, instrument};
 
-use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
+use super::intermediate_op::{
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
+};
 use crate::{
     ExecutionTaskSpawner,
     dynamic_batching::{
         DynBatchingStrategy, LatencyConstrainedBatchingStrategy, StaticBatchingStrategy,
     },
     pipeline::{MorselSizeRequirement, NodeName},
-    pipeline_execution::OperatorExecutionOutput,
     runtime_stats::RuntimeStats,
 };
 
@@ -447,7 +448,7 @@ impl IntermediateOperator for UdfOperator {
                         input,
                         runtime_stats,
                     )?;
-                    let res = OperatorExecutionOutput::NeedMoreInput(Some(result));
+                    let res = IntermediateOperatorResult::NeedMoreInput(Some(result));
                     Ok((state, res))
                 }
                 #[cfg(not(feature = "python"))]

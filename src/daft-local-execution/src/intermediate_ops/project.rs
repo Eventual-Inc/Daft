@@ -14,14 +14,15 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::intermediate_op::{IntermediateOpExecuteResult, IntermediateOperator};
+use super::intermediate_op::{
+    IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
+};
 use crate::{
     ExecutionTaskSpawner,
     dynamic_batching::{
         DynBatchingStrategy, LatencyConstrainedBatchingStrategy, StaticBatchingStrategy,
     },
     pipeline::{MorselSizeRequirement, NodeName},
-    pipeline_execution::OperatorExecutionOutput,
 };
 
 fn num_parallel_exprs(projection: &[BoundExpr]) -> usize {
@@ -169,7 +170,7 @@ impl IntermediateOperator for ProjectOperator {
                     };
                     Ok((
                         state,
-                        OperatorExecutionOutput::NeedMoreInput(Some(Arc::new(out))),
+                        IntermediateOperatorResult::NeedMoreInput(Some(Arc::new(out))),
                     ))
                 },
                 Span::current(),

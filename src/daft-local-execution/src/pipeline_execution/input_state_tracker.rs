@@ -137,22 +137,14 @@ impl<S> InputStateTracker<S> {
     }
 
     /// Check if there are any unfinalized states remaining
-    pub(crate) fn has_unfinalized_states(&self) -> bool {
-        !self.trackers.is_empty()
-    }
-
-    /// Check if there are any buffered partitions across all input_ids
-    pub(crate) fn has_buffered_partitions(&self) -> bool {
-        self.trackers
-            .values()
-            .any(|tracker| tracker.has_buffered_partitions())
+    pub(crate) fn is_empty(&self) -> bool {
+        self.trackers.is_empty()
     }
 
     /// Update bounds for all input_ids (used by streaming sinks)
     pub(crate) fn update_all_bounds(&mut self, morsel_size_requirement: MorselSizeRequirement) {
-        let (lower, upper) = morsel_size_requirement.values();
         for tracker in self.trackers.values_mut() {
-            tracker.update_bounds(lower, upper);
+            tracker.update_bounds(morsel_size_requirement);
         }
     }
 

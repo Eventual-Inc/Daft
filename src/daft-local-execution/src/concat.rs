@@ -7,7 +7,6 @@ use common_metrics::{
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::StatSnapshotImpl,
 };
-use daft_core::prelude::SchemaRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 
@@ -34,7 +33,6 @@ impl ConcatNode {
         right: Box<dyn PipelineNode>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
-        output_schema: SchemaRef,
         context: &LocalNodeContext,
     ) -> Self {
         let name: Arc<str> = "Concat".into();

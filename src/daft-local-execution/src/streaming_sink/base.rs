@@ -14,29 +14,50 @@ use daft_micropartition::MicroPartition;
 use tracing::info_span;
 
 use crate::{
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
-    channel::{Receiver, create_channel},
+    ControlFlow, ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
+    channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
-    pipeline_execution::{
-        InputStateTracker, NodeExecutionHandler, OperatorExecutionOutput, OperatorFinalizeOutput,
-        PipelineNodeExecutor, StateTracker, UnifiedFinalizeOutput, UnifiedTaskResult,
-    },
+    pipeline_execution::{InputStateTracker, PipelineEvent, StateTracker, next_event},
     pipeline_message::{InputId, PipelineMessage},
-    runtime_stats::{DefaultRuntimeStats, RuntimeStats},
+    runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
 
+/// Result of executing a streaming sink on a single partition.
+#[derive(Debug)]
+pub(crate) enum StreamingSinkOutput {
+    /// Operator needs more input to continue processing.
+    NeedMoreInput(Option<Arc<MicroPartition>>),
+
+    /// Operator has more output to produce using the same input.
+    HasMoreOutput {
+        input: Arc<MicroPartition>,
+        output: Option<Arc<MicroPartition>>,
+    },
+
+    /// Operator is finished processing.
+    Finished(Option<Arc<MicroPartition>>),
+}
+
+/// Result of finalizing a streaming sink.
+pub(crate) enum StreamingSinkFinalizeOutput<Op: StreamingSink> {
+    /// More finalization work is needed.
+    HasMoreOutput {
+        states: Vec<Op::State>,
+        output: Option<Arc<MicroPartition>>,
+    },
+    /// Finalization is complete.
+    Finished(Option<Arc<MicroPartition>>),
+}
+
 pub(crate) type StreamingSinkExecuteResult<Op> =
-    OperatorOutput<DaftResult<(<Op as StreamingSink>::State, OperatorExecutionOutput)>>;
+    OperatorOutput<DaftResult<(<Op as StreamingSink>::State, StreamingSinkOutput)>>;
 pub(crate) type StreamingSinkFinalizeResult<Op> =
-    OperatorOutput<DaftResult<OperatorFinalizeOutput<<Op as StreamingSink>::State>>>;
+    OperatorOutput<DaftResult<StreamingSinkFinalizeOutput<Op>>>;
 pub(crate) trait StreamingSink: Send + Sync {
     type State: Send + Sync + Unpin;
     type BatchingStrategy: BatchingStrategy + 'static;
 
-    /// Execute the StreamingSink operator on the morsel of input data,
-    /// received from the child,
-    /// with the given state.
     fn execute(
         &self,
         input: Arc<MicroPartition>,
@@ -44,7 +65,6 @@ pub(crate) trait StreamingSink: Send + Sync {
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult<Self>;
 
-    /// Finalize the StreamingSink operator, with the given states from each worker.
     fn finalize(
         &self,
         states: Vec<Self::State>,
@@ -53,37 +73,388 @@ pub(crate) trait StreamingSink: Send + Sync {
     where
         Self: Sized;
 
-    /// The name of the StreamingSink operator. Used for display purposes.
     fn name(&self) -> NodeName;
-
-    /// The type of the StreamingSink operator.
     fn op_type(&self) -> NodeType;
-
     fn multiline_display(&self) -> Vec<String>;
-
-    /// Create a new worker-local state for this StreamingSink.
     fn make_state(&self) -> DaftResult<Self::State>;
-
-    /// Create a new RuntimeStats for this StreamingSink.
     fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
         Arc::new(DefaultRuntimeStats::new(id))
     }
-
-    /// The maximum number of concurrent workers per input_id that can be spawned for this sink.
-    /// Each worker will has its own StreamingSinkState.
     fn max_concurrency_per_input_id(&self) -> usize {
         get_compute_pool_num_threads()
     }
-
-    /// The maximum total number of concurrent workers across all input_ids.
     fn total_max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()
     }
-
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
         None
     }
     fn batching_strategy(&self) -> Self::BatchingStrategy;
+}
+
+impl StreamingSinkOutput {
+    pub(crate) fn output(&self) -> &Option<Arc<MicroPartition>> {
+        match self {
+            StreamingSinkOutput::NeedMoreInput(mp) => mp,
+            StreamingSinkOutput::HasMoreOutput { output, .. } => output,
+            StreamingSinkOutput::Finished(mp) => mp,
+        }
+    }
+}
+
+/// Per-node task result for streaming sinks.
+enum StreamingSinkTaskResult<S, Op: StreamingSink> {
+    Execute {
+        input_id: InputId,
+        state: S,
+        result: StreamingSinkOutput,
+        elapsed: std::time::Duration,
+    },
+    Finalize {
+        input_id: InputId,
+        output: StreamingSinkFinalizeOutput<Op>,
+    },
+}
+
+struct StreamingSinkProcessor<Op: StreamingSink> {
+    task_set: OrderingAwareJoinSet<DaftResult<StreamingSinkTaskResult<Op::State, Op>>>,
+    max_concurrency: usize,
+    input_state_tracker: InputStateTracker<Op::State>,
+    op: Arc<Op>,
+    task_spawner: ExecutionTaskSpawner,
+    finalize_spawner: ExecutionTaskSpawner,
+    runtime_stats: Arc<dyn RuntimeStats>,
+    output_sender: Sender<PipelineMessage>,
+    batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
+    stats_manager: RuntimeStatsManagerHandle,
+    node_id: usize,
+    node_initialized: bool,
+}
+
+/// input_id lifecycle:
+///
+/// 1. BUFFER   — morsel arrives, data buffered
+/// 2. EXECUTE  — tasks spawned while batch_size met AND under max_concurrency
+/// 3. FLUSH_IN — flush received → mark completed → pop_all allowed for remaining buffer
+/// 4. FINALIZE — all tasks done + buffer empty → spawn finalize
+/// 5. CLEANUP  — finalize done → remove input_id → propagate flush downstream
+impl<Op: StreamingSink + 'static> StreamingSinkProcessor<Op> {
+    fn new(
+        maintain_order: bool,
+        max_concurrency: usize,
+        op: Arc<Op>,
+        task_spawner: ExecutionTaskSpawner,
+        finalize_spawner: ExecutionTaskSpawner,
+        runtime_stats: Arc<dyn RuntimeStats>,
+        output_sender: Sender<PipelineMessage>,
+        input_state_tracker: InputStateTracker<Op::State>,
+        batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
+        stats_manager: RuntimeStatsManagerHandle,
+        node_id: usize,
+    ) -> Self {
+        Self {
+            task_set: OrderingAwareJoinSet::new(maintain_order),
+            max_concurrency,
+            input_state_tracker,
+            op,
+            task_spawner,
+            finalize_spawner,
+            runtime_stats,
+            output_sender,
+            batch_manager,
+            stats_manager,
+            node_id,
+            node_initialized: false,
+        }
+    }
+
+    #[inline]
+    async fn send(&self, msg: PipelineMessage) -> ControlFlow {
+        if self.output_sender.send(msg).await.is_err() {
+            ControlFlow::Stop
+        } else {
+            ControlFlow::Continue
+        }
+    }
+
+    fn spawn_execute_task(
+        &mut self,
+        partition: Arc<MicroPartition>,
+        state: Op::State,
+        input_id: InputId,
+    ) {
+        let op = self.op.clone();
+        let task_spawner = self.task_spawner.clone();
+        self.task_set.spawn(async move {
+            let now = Instant::now();
+            let (new_state, result) = op.execute(partition, state, &task_spawner).await??;
+            let elapsed = now.elapsed();
+            Ok(StreamingSinkTaskResult::Execute {
+                input_id,
+                state: new_state,
+                result,
+                elapsed,
+            })
+        });
+    }
+
+    fn try_spawn_tasks_for_input(&mut self, input_id: InputId) -> DaftResult<()> {
+        while self.task_set.len() < self.max_concurrency {
+            let Some(next) = self
+                .input_state_tracker
+                .get_next_partition_for_execute(input_id)
+            else {
+                break;
+            };
+            let (partition, state) = next?;
+            self.spawn_execute_task(partition, state, input_id);
+        }
+        Ok(())
+    }
+
+    fn try_spawn_tasks_all_inputs(&mut self) -> DaftResult<()> {
+        let input_ids = self.input_state_tracker.input_ids();
+        for input_id in input_ids {
+            if self.task_set.len() >= self.max_concurrency {
+                break;
+            }
+            self.try_spawn_tasks_for_input(input_id)?;
+            self.try_spawn_finalize_task(input_id)?;
+        }
+        Ok(())
+    }
+
+    fn try_spawn_finalize_task(&mut self, input_id: InputId) -> DaftResult<bool> {
+        if let Some(states) = self.input_state_tracker.try_take_states_for_finalize(input_id) {
+            let op = self.op.clone();
+            let finalize_spawner = self.finalize_spawner.clone();
+            self.task_set.spawn(async move {
+                let output = op.finalize(states, &finalize_spawner).await??;
+                Ok(StreamingSinkTaskResult::Finalize { input_id, output })
+            });
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    async fn handle_execute_completed(
+        &mut self,
+        input_id: InputId,
+        state: Op::State,
+        result: StreamingSinkOutput,
+        elapsed: std::time::Duration,
+    ) -> DaftResult<ControlFlow> {
+        self.runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
+
+        // Send output if present
+        if let Some(mp) = result.output() {
+            self.runtime_stats.add_rows_out(mp.len() as u64);
+            self.batch_manager.record_execution_stats(
+                self.runtime_stats.as_ref(),
+                mp.len(),
+                elapsed,
+            );
+            if self
+                .send(PipelineMessage::Morsel {
+                    input_id,
+                    partition: mp.clone(),
+                })
+                .await
+                == ControlFlow::Stop
+            {
+                return Ok(ControlFlow::Stop);
+            }
+        }
+
+        // Update batch bounds
+        let new_requirements = self.batch_manager.calculate_batch_size();
+        self.input_state_tracker.update_all_bounds(new_requirements);
+
+        match result {
+            StreamingSinkOutput::NeedMoreInput(_) => {
+                self.input_state_tracker.return_state(input_id, state);
+                self.try_spawn_tasks_for_input(input_id)?;
+                self.try_spawn_tasks_all_inputs()?;
+                Ok(ControlFlow::Continue)
+            }
+            StreamingSinkOutput::HasMoreOutput { input, .. } => {
+                // Spawn another execution with same input and state
+                let op = self.op.clone();
+                let task_spawner = self.task_spawner.clone();
+                self.task_set.spawn(async move {
+                    let now = Instant::now();
+                    let (new_state, result) =
+                        op.execute(input, state, &task_spawner).await??;
+                    let elapsed = now.elapsed();
+                    Ok(StreamingSinkTaskResult::Execute {
+                        input_id,
+                        state: new_state,
+                        result,
+                        elapsed,
+                    })
+                });
+                Ok(ControlFlow::Continue)
+            }
+            StreamingSinkOutput::Finished(_) => {
+                // Return state and flush all active input_ids, then stop
+                self.input_state_tracker.return_state(input_id, state);
+                let active_input_ids = self.input_state_tracker.input_ids();
+                for flush_input_id in active_input_ids {
+                    if self.send(PipelineMessage::Flush(flush_input_id)).await == ControlFlow::Stop {
+                        return Ok(ControlFlow::Stop);
+                    }
+                }
+                Ok(ControlFlow::Stop)
+            }
+        }
+    }
+
+    async fn handle_finalize_completed(
+        &mut self,
+        input_id: InputId,
+        output: StreamingSinkFinalizeOutput<Op>,
+    ) -> DaftResult<ControlFlow> {
+        match output {
+            StreamingSinkFinalizeOutput::HasMoreOutput { states, output } => {
+                // Send finalize output if present
+                if let Some(mp) = output {
+                    self.runtime_stats.add_rows_out(mp.len() as u64);
+                    if self
+                        .send(PipelineMessage::Morsel {
+                            input_id,
+                            partition: mp,
+                        })
+                        .await
+                        == ControlFlow::Stop
+                    {
+                        return Ok(ControlFlow::Stop);
+                    }
+                }
+
+                // Spawn another finalize task with the returned states
+                let op = self.op.clone();
+                let finalize_spawner = self.finalize_spawner.clone();
+                self.task_set.spawn(async move {
+                    let output = op.finalize(states, &finalize_spawner).await??;
+                    Ok(StreamingSinkTaskResult::Finalize { input_id, output })
+                });
+                Ok(ControlFlow::Continue)
+            }
+            StreamingSinkFinalizeOutput::Finished(output) => {
+                // Send final output if present
+                if let Some(mp) = output {
+                    self.runtime_stats.add_rows_out(mp.len() as u64);
+                    if self
+                        .send(PipelineMessage::Morsel {
+                            input_id,
+                            partition: mp,
+                        })
+                        .await
+                        == ControlFlow::Stop
+                    {
+                        return Ok(ControlFlow::Stop);
+                    }
+                }
+
+                // Finalization complete, send flush
+                if self.send(PipelineMessage::Flush(input_id)).await == ControlFlow::Stop {
+                    return Ok(ControlFlow::Stop);
+                }
+                Ok(ControlFlow::Continue)
+            }
+        }
+    }
+
+    fn handle_morsel(
+        &mut self,
+        input_id: InputId,
+        partition: Arc<MicroPartition>,
+    ) -> DaftResult<()> {
+        if !self.node_initialized {
+            self.stats_manager.activate_node(self.node_id);
+            self.node_initialized = true;
+        }
+        self.runtime_stats.add_rows_in(partition.len() as u64);
+        self.input_state_tracker
+            .buffer_partition(input_id, partition)?;
+        self.try_spawn_tasks_all_inputs()?;
+        Ok(())
+    }
+
+    async fn handle_flush(&mut self, input_id: InputId) -> DaftResult<ControlFlow> {
+        if !self.input_state_tracker.contains_key(input_id) {
+            if self.send(PipelineMessage::Flush(input_id)).await == ControlFlow::Stop {
+                return Ok(ControlFlow::Stop);
+            }
+            return Ok(ControlFlow::Continue);
+        }
+        self.input_state_tracker.mark_completed(input_id);
+        self.try_spawn_tasks_for_input(input_id)?;
+        self.try_spawn_finalize_task(input_id)?;
+        Ok(ControlFlow::Continue)
+    }
+
+    fn handle_input_closed(&mut self) -> DaftResult<()> {
+        self.input_state_tracker.mark_all_completed();
+        self.try_spawn_tasks_all_inputs()?;
+        Ok(())
+    }
+
+    async fn process_input(
+        &mut self,
+        receiver: &mut Receiver<PipelineMessage>,
+    ) -> DaftResult<ControlFlow> {
+        let mut input_closed = false;
+
+        while !input_closed
+            || !self.task_set.is_empty()
+            || !self.input_state_tracker.is_empty()
+        {
+            let event = next_event(
+                &mut self.task_set,
+                self.max_concurrency,
+                receiver,
+                &mut input_closed,
+            )
+            .await?;
+            let cf = match event {
+                PipelineEvent::TaskCompleted(StreamingSinkTaskResult::Execute {
+                    input_id,
+                    state,
+                    result,
+                    elapsed,
+                }) => {
+                    self.handle_execute_completed(input_id, state, result, elapsed)
+                        .await?
+                }
+                PipelineEvent::TaskCompleted(StreamingSinkTaskResult::Finalize {
+                    input_id,
+                    output,
+                }) => {
+                    self.handle_finalize_completed(input_id, output).await?
+                }
+                PipelineEvent::Morsel {
+                    input_id,
+                    partition,
+                } => {
+                    self.handle_morsel(input_id, partition)?;
+                    ControlFlow::Continue
+                }
+                PipelineEvent::Flush(input_id) => self.handle_flush(input_id).await?,
+                PipelineEvent::InputClosed => {
+                    self.handle_input_closed()?;
+                    ControlFlow::Continue
+                }
+            };
+            if cf == ControlFlow::Stop {
+                return Ok(ControlFlow::Stop);
+            }
+        }
+
+        self.stats_manager.finalize_node(self.node_id);
+        Ok(ControlFlow::Continue)
+    }
 }
 
 pub struct StreamingSinkNode<Op: StreamingSink> {
@@ -93,61 +464,6 @@ pub struct StreamingSinkNode<Op: StreamingSink> {
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
     morsel_size_requirement: MorselSizeRequirement,
-}
-
-struct StreamingSinkHandler<Op: StreamingSink> {
-    op: Arc<Op>,
-}
-
-impl<Op: StreamingSink + 'static> NodeExecutionHandler<Op::State> for StreamingSinkHandler<Op> {
-    fn spawn_task(
-        &self,
-        task_set: &mut OrderingAwareJoinSet<DaftResult<UnifiedTaskResult<Op::State>>>,
-        task_spawner: ExecutionTaskSpawner,
-        partition: Arc<MicroPartition>,
-        state: Op::State,
-        input_id: InputId,
-    ) {
-        let op = self.op.clone();
-        task_set.spawn(async move {
-            let now = Instant::now();
-            let (new_state, result) = op.execute(partition, state, &task_spawner).await??;
-            let elapsed = now.elapsed();
-
-            Ok(UnifiedTaskResult::Execution {
-                input_id,
-                state: new_state,
-                elapsed,
-                output: result,
-            })
-        });
-    }
-
-    fn spawn_finalize_task(
-        &self,
-        task_set: &mut OrderingAwareJoinSet<DaftResult<UnifiedTaskResult<Op::State>>>,
-        finalize_spawner: Option<ExecutionTaskSpawner>,
-        input_id: InputId,
-        states: Vec<Op::State>,
-    ) {
-        let op = self.op.clone();
-        let finalize_spawner = finalize_spawner.expect("finalize_spawner must be set");
-        task_set.spawn(async move {
-            let finalized_result = op.finalize(states, &finalize_spawner).await??;
-
-            // Convert OperatorFinalizeOutput to UnifiedFinalizeOutput
-            let output = match finalized_result {
-                OperatorFinalizeOutput::HasMoreOutput { states, output } => {
-                    UnifiedFinalizeOutput::Continue { states, output }
-                }
-                OperatorFinalizeOutput::Finished(output) => {
-                    UnifiedFinalizeOutput::Done(output.into_iter().collect())
-                }
-            };
-
-            Ok(UnifiedTaskResult::Finalize { input_id, output })
-        });
-    }
 }
 
 impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
@@ -267,10 +583,9 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<PipelineMessage>> {
-        let child_result_receiver = self.child.start(maintain_order, runtime_handle)?;
+        let mut child_results_receiver = self.child.start(maintain_order, runtime_handle)?;
         let (destination_sender, destination_receiver) = create_channel(1);
 
-        // Create task spawners
         let task_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
@@ -290,34 +605,38 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                 let states = (0..op.max_concurrency_per_input_id())
                     .map(|_| op.make_state())
                     .collect::<DaftResult<Vec<_>>>()?;
-                let (lower, upper) = op.batching_strategy().initial_requirements().values();
+                let (lower, upper) = op
+                    .batching_strategy()
+                    .calculate_requirements(&mut op.batching_strategy().make_state())
+                    .values();
                 Ok(StateTracker::new(states, lower, upper))
             },
         ));
 
-        let mut base = PipelineNodeExecutor::new(
-            task_spawner,
-            self.runtime_stats.clone(),
-            self.op.total_max_concurrency(),
-            OrderingAwareJoinSet::new(maintain_order),
-            input_state_tracker,
-            runtime_handle.stats_manager().clone(),
-        )
-        .with_finalize_spawner(finalize_spawner)
-        .with_output_sender(destination_sender)
-        .with_batch_manager(Arc::new(BatchManager::new(self.op.batching_strategy())));
+        let batch_manager = Arc::new(BatchManager::new(self.op.batching_strategy()));
+        let max_concurrency = self.op.total_max_concurrency();
 
-        // Create handler
-        let mut handler = StreamingSinkHandler {
-            op: self.op.clone(),
-        };
-
+        let op = self.op.clone();
+        let runtime_stats = self.runtime_stats.clone();
         let node_id = self.node_id();
         let stats_manager = runtime_handle.stats_manager().clone();
         runtime_handle.spawn(
             async move {
-                base.process_input(child_result_receiver, node_id, &mut handler)
-                    .await?;
+                let mut processor = StreamingSinkProcessor::new(
+                    maintain_order,
+                    max_concurrency,
+                    op,
+                    task_spawner,
+                    finalize_spawner,
+                    runtime_stats,
+                    destination_sender,
+                    input_state_tracker,
+                    batch_manager,
+                    stats_manager.clone(),
+                    node_id,
+                );
+
+                processor.process_input(&mut child_results_receiver).await?;
 
                 stats_manager.finalize_node(node_id);
                 Ok(())

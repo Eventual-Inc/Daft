@@ -5,16 +5,16 @@ use common_metrics::ops::NodeType;
 use daft_core::{join::JoinType, prelude::SchemaRef};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
-use tokio::sync::broadcast;
+use tokio::sync::watch;
 use tracing::Span;
 
 use crate::{
     ExecutionTaskSpawner,
     join::join_operator::{
-        BuildStateResult, FinalizeBuildResult, JoinOperator, ProbeFinalizeResult, ProbeResult,
+        BuildStateResult, FinalizeBuildResult, JoinOperator, ProbeOutput, ProbeFinalizeResult,
+        ProbeResult,
     },
     pipeline::NodeName,
-    pipeline_execution::OperatorExecutionOutput,
 };
 
 pub(crate) struct SortMergeJoinBuildState {
@@ -22,7 +22,7 @@ pub(crate) struct SortMergeJoinBuildState {
 }
 
 pub(crate) enum SortMergeJoinProbeState {
-    Uninitialized(broadcast::Receiver<Vec<Arc<MicroPartition>>>),
+    Uninitialized(watch::Receiver<Option<Vec<Arc<MicroPartition>>>>),
     Initialized {
         build_contents: Vec<Arc<MicroPartition>>,
         probe_contents: Vec<Arc<MicroPartition>>,
@@ -35,12 +35,14 @@ impl SortMergeJoinProbeState {
     pub(crate) async fn initialize(self) -> common_error::DaftResult<Self> {
         match self {
             SortMergeJoinProbeState::Uninitialized(mut receiver) => {
-                let finalized = receiver.recv().await.map_err(|e| {
+                let finalized_ref = receiver.wait_for(|v| v.is_some()).await.map_err(|e| {
                     common_error::DaftError::ValueError(format!(
                         "Failed to receive finalized build state: {}",
                         e
                     ))
                 })?;
+                let finalized = finalized_ref.as_ref().unwrap().clone();
+                drop(finalized_ref);
 
                 Ok(SortMergeJoinProbeState::Initialized {
                     build_contents: finalized,
@@ -127,7 +129,7 @@ impl JoinOperator for SortMergeJoinOperator {
 
     fn make_probe_state(
         &self,
-        receiver: broadcast::Receiver<Self::FinalizedBuildState>,
+        receiver: watch::Receiver<Option<Self::FinalizedBuildState>>,
     ) -> Self::ProbeState {
         SortMergeJoinProbeState::Uninitialized(receiver)
     }
@@ -168,7 +170,7 @@ impl JoinOperator for SortMergeJoinOperator {
                         }
                     }
 
-                    Ok((state, OperatorExecutionOutput::NeedMoreInput(None)))
+                    Ok((state, ProbeOutput::NeedMoreInput(None)))
                 },
                 Span::current(),
             )

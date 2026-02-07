@@ -15,12 +15,14 @@ use rand::{
 };
 use tracing::{Span, instrument};
 
-use super::base::{StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult};
+use super::base::{
+    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkFinalizeOutput,
+    StreamingSinkOutput,
+};
 use crate::{
     ExecutionTaskSpawner,
     dynamic_batching::StaticBatchingStrategy,
     pipeline::NodeName,
-    pipeline_execution::{OperatorExecutionOutput, OperatorFinalizeOutput},
 };
 
 fn build_rng(seed: Option<u64>) -> StdRng {
@@ -270,7 +272,7 @@ impl StreamingSink for SampleSink {
                         let out = input.sample_by_fraction(fraction, with_replacement, seed)?;
                         Ok((
                             SampleState::Fraction(()),
-                            OperatorExecutionOutput::NeedMoreInput(Some(Arc::new(out))),
+                            StreamingSinkOutput::NeedMoreInput(Some(Arc::new(out))),
                         ))
                     },
                     Span::current(),
@@ -284,7 +286,7 @@ impl StreamingSink for SampleSink {
                         }
                         Ok((
                             SampleState::Size(size_state),
-                            OperatorExecutionOutput::NeedMoreInput(None),
+                            StreamingSinkOutput::NeedMoreInput(None),
                         ))
                     },
                     Span::current(),
@@ -307,14 +309,14 @@ impl StreamingSink for SampleSink {
             .spawn(
                 async move {
                     match &params.sampling_method {
-                        SamplingMethod::Fraction(_) => Ok(OperatorFinalizeOutput::Finished(None)),
+                        SamplingMethod::Fraction(_) => Ok(StreamingSinkFinalizeOutput::Finished(None)),
                         SamplingMethod::Size(size) => {
                             let SampleState::Size(size_state) = states.pop().unwrap() else {
                                 unreachable!("Invalid state/params combination");
                             };
                             let samples = size_state.into_samples(*size)?;
                             let output = Self::build_output(&params, samples)?;
-                            Ok(OperatorFinalizeOutput::Finished(Some(
+                            Ok(StreamingSinkFinalizeOutput::Finished(Some(
                                 output.into_iter().next().unwrap(),
                             )))
                         }

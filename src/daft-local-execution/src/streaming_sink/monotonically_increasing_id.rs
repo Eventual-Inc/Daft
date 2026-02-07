@@ -6,12 +6,11 @@ use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
 use tracing::{Span, instrument};
 
-use super::base::{StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult};
-use crate::{
-    ExecutionTaskSpawner,
-    pipeline::NodeName,
-    pipeline_execution::{OperatorExecutionOutput, OperatorFinalizeOutput},
+use super::base::{
+    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkFinalizeOutput,
+    StreamingSinkOutput,
 };
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) struct MonotonicallyIncreasingIdState {
     id_offset: u64,
@@ -86,7 +85,7 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
 
                     Ok((
                         state,
-                        OperatorExecutionOutput::NeedMoreInput(Some(Arc::new(out))),
+                        StreamingSinkOutput::NeedMoreInput(Some(Arc::new(out))),
                     ))
                 },
                 Span::current(),
@@ -111,7 +110,7 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
         _states: Vec<Self::State>,
         _spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult<Self> {
-        Ok(OperatorFinalizeOutput::Finished(None)).into()
+        Ok(StreamingSinkFinalizeOutput::Finished(None)).into()
     }
 
     fn make_state(&self) -> DaftResult<Self::State> {

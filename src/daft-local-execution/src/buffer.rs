@@ -3,6 +3,8 @@ use std::{collections::VecDeque, num::NonZeroUsize, sync::Arc};
 use common_error::DaftResult;
 use daft_micropartition::MicroPartition;
 
+use crate::pipeline::MorselSizeRequirement;
+
 #[derive(Debug, PartialEq)]
 enum BufferState {
     BelowLowerBound,
@@ -33,7 +35,8 @@ impl RowBasedBuffer {
             upper_bound,
         }
     }
-    pub fn update_bounds(&mut self, lower_bound: usize, upper_bound: NonZeroUsize) {
+    pub fn update_bounds(&mut self, morsel_size_requirement: MorselSizeRequirement) {
+        let (lower_bound, upper_bound) = morsel_size_requirement.values();
         assert!(
             lower_bound <= upper_bound.get(),
             "lower_bound ({}) must be <= upper_bound ({}) for a RowBasedBuffer",

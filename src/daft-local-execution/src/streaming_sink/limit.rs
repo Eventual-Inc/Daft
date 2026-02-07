@@ -8,12 +8,11 @@ use common_metrics::ops::NodeType;
 use daft_micropartition::MicroPartition;
 use tracing::{Span, instrument};
 
-use super::base::{StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult};
-use crate::{
-    ExecutionTaskSpawner,
-    pipeline::NodeName,
-    pipeline_execution::{OperatorExecutionOutput, OperatorFinalizeOutput},
+use super::base::{
+    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkFinalizeOutput,
+    StreamingSinkOutput,
 };
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) struct LimitSinkState {
     // The remaining number of rows to skip
@@ -66,7 +65,7 @@ impl StreamingSink for LimitSink {
             if skip_num_rows >= input_num_rows {
                 return Ok((
                     state,
-                    OperatorExecutionOutput::NeedMoreInput(Some(
+                    StreamingSinkOutput::NeedMoreInput(Some(
                         MicroPartition::empty(Some(input.schema())).into(),
                     )),
                 ))
@@ -80,11 +79,11 @@ impl StreamingSink for LimitSink {
         match input_num_rows.cmp(remaining_take) {
             Less => {
                 *remaining_take -= input_num_rows;
-                Ok((state, OperatorExecutionOutput::NeedMoreInput(Some(input)))).into()
+                Ok((state, StreamingSinkOutput::NeedMoreInput(Some(input)))).into()
             }
             Equal => {
                 *remaining_take = 0;
-                Ok((state, OperatorExecutionOutput::Finished(Some(input)))).into()
+                Ok((state, StreamingSinkOutput::Finished(Some(input)))).into()
             }
             Greater => {
                 let to_head = *remaining_take;
@@ -93,7 +92,7 @@ impl StreamingSink for LimitSink {
                     .spawn(
                         async move {
                             let taken = input.head(to_head)?;
-                            Ok((state, OperatorExecutionOutput::Finished(Some(taken.into()))))
+                            Ok((state, StreamingSinkOutput::Finished(Some(taken.into()))))
                         },
                         Span::current(),
                     )
@@ -122,7 +121,7 @@ impl StreamingSink for LimitSink {
         _states: Vec<Self::State>,
         _spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkFinalizeResult<Self> {
-        Ok(OperatorFinalizeOutput::Finished(None)).into()
+        Ok(StreamingSinkFinalizeOutput::Finished(None)).into()
     }
 
     fn make_state(&self) -> DaftResult<Self::State> {

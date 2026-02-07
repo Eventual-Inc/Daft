@@ -22,11 +22,13 @@ use itertools::Itertools;
 use opentelemetry::{KeyValue, global, metrics::Meter};
 use tracing::{Span, instrument};
 
-use super::base::{StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult};
+use super::base::{
+    StreamingSink, StreamingSinkExecuteResult, StreamingSinkFinalizeResult, StreamingSinkFinalizeOutput,
+    StreamingSinkOutput,
+};
 use crate::{
     ExecutionTaskSpawner,
     pipeline::{MorselSizeRequirement, NodeName},
-    pipeline_execution::{OperatorExecutionOutput, OperatorFinalizeOutput},
     runtime_stats::RuntimeStats,
 };
 
@@ -249,14 +251,14 @@ impl StreamingSink for AsyncUdfSink {
                             }
 
                             if ready_batches.is_empty() {
-                                Ok((state, OperatorExecutionOutput::NeedMoreInput(None)))
+                                Ok((state, StreamingSinkOutput::NeedMoreInput(None)))
                             } else {
                                 let output = Arc::new(MicroPartition::new_loaded(
                                     params.output_schema.clone(),
                                     Arc::new(ready_batches),
                                     None,
                                 ));
-                                Ok((state, OperatorExecutionOutput::NeedMoreInput(Some(output))))
+                                Ok((state, StreamingSinkOutput::NeedMoreInput(Some(output))))
                             }
                         }
                     },
@@ -283,7 +285,7 @@ impl StreamingSink for AsyncUdfSink {
                     let state = states.first_mut().unwrap();
                     if let Some(join_res) = state.task_set.join_next().await {
                         let batch = join_res??;
-                        Ok(OperatorFinalizeOutput::HasMoreOutput {
+                        Ok(StreamingSinkFinalizeOutput::HasMoreOutput {
                             states,
                             output: Some(Arc::new(MicroPartition::new_loaded(
                                 params.output_schema.clone(),
@@ -292,7 +294,7 @@ impl StreamingSink for AsyncUdfSink {
                             ))),
                         })
                     } else {
-                        Ok(OperatorFinalizeOutput::Finished(None))
+                        Ok(StreamingSinkFinalizeOutput::Finished(None))
                     }
                 },
                 Span::current(),
