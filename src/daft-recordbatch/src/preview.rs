@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 
-use comfy_table::{Cell, CellAlignment, Table as ComfyTable};
-use common_display::table_display::StrValue;
+use comfy_table::{CellAlignment, Table as ComfyTable};
+use common_display::table_display::{StrValue, TableBuildOptions, TableColumnOptions, build_table};
 use common_error::DaftError;
 use serde::{Deserialize, Serialize};
 
@@ -22,7 +22,7 @@ pub struct Preview {
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PreviewFormat {
-    /// Fancy box drawing (default).
+    /// Fancy box drawing.
     Fancy,
     /// No box drawing.
     Plain,
@@ -96,7 +96,7 @@ impl Preview {
     pub fn default(preview: RecordBatch) -> Self {
         Self {
             batch: preview,
-            format: PreviewFormat::Fancy,
+            format: PreviewFormat::default(),
             options: PreviewOptions::default(),
         }
     }
@@ -123,10 +123,15 @@ impl TryFrom<&str> for PreviewFormat {
             "latex" => Ok(Self::Latex),
             "html" => Ok(Self::Html),
             _ => Err(DaftError::ValueError(format!(
-                "Unknown preview format: {}",
-                s
+                "Unknown preview format: {s}"
             ))),
         }
+    }
+}
+
+impl Default for PreviewFormat {
+    fn default() -> Self {
+        Self::Fancy
     }
 }
 
@@ -160,30 +165,23 @@ impl Display for Preview {
 impl Preview {
     /// Create a ComfyTable.
     fn create_table(&self) -> ComfyTable {
-        let mut table = ComfyTable::new();
-        self.load_preset(&mut table);
-        self.push_header(&mut table);
-        self.push_body(&mut table);
-        table
+        let headers = self.headers();
+        let column_options = self.column_options();
+        let columns = self.columns();
+        let preset = self.table_preset();
+        let table_options = Self::table_build_options(preset);
+        build_table(
+            &headers,
+            Some(&columns),
+            Some(self.batch.len()),
+            Some(&column_options),
+            self.options.max_width,
+            table_options,
+        )
     }
 
-    /// Daft has its own format presets.
-    fn load_preset(&self, table: &mut ComfyTable) {
-        let preset = match self.format {
-            PreviewFormat::Fancy => presets::FANCY,
-            PreviewFormat::Plain => presets::PLAIN,
-            PreviewFormat::Simple => presets::SIMPLE,
-            PreviewFormat::Grid => presets::GRID,
-            PreviewFormat::Markdown => presets::MARKDOWN,
-            _ => unreachable!("given format `{:?}` has no preset", self.format),
-        };
-        table.load_preset(preset);
-    }
-
-    /// Push the header row to the table.
-    fn push_header(&self, table: &mut ComfyTable) {
-        let row: Vec<Cell> = self
-            .batch
+    fn headers(&self) -> Vec<String> {
+        self.batch
             .schema
             .into_iter()
             .enumerate()
@@ -197,85 +195,71 @@ impl Preview {
                     info = overrides.info.clone().unwrap_or(info);
                 }
                 // Create header cell with possible info.
-                if !self.options.verbose {
-                    Cell::new(text)
-                } else if self.format == PreviewFormat::Fancy {
-                    Cell::new(format!("{}\n---\n{}", text, info))
+                if self.options.verbose {
+                    if self.format == PreviewFormat::Fancy {
+                        format!("{text}\n---\n{info}")
+                    } else {
+                        format!("{text} ({info})")
+                    }
                 } else {
-                    Cell::new(format!("{} ({})", text, info))
+                    text
                 }
             })
-            .collect();
-        table.set_header(row);
+            .collect()
     }
 
-    /// Push the body rows to the table.
-    fn push_body(&self, table: &mut ComfyTable) {
-        let total_rows = self.batch.len();
+    fn column_options(&self) -> Vec<TableColumnOptions> {
+        self.batch
+            .schema
+            .into_iter()
+            .enumerate()
+            .map(|(idx, _)| {
+                // Use column overrides if any, falling back to the global settings.
+                let mut max_width = self.options.max_width;
+                let mut align = self.options.align;
+                if let Some(overrides) = self.options.column(idx) {
+                    max_width = overrides.max_width.or(max_width);
+                    align = overrides.align.or(align);
+                }
+                // If some alignment, translate to comfy_table
+                let align = align.map(|align| match align {
+                    PreviewAlign::Auto => CellAlignment::Left,
+                    PreviewAlign::Left => CellAlignment::Left,
+                    PreviewAlign::Center => CellAlignment::Center,
+                    PreviewAlign::Right => CellAlignment::Right,
+                });
+                TableColumnOptions { max_width, align }
+            })
+            .collect()
+    }
 
-        // Add target rows
-        for o in 0..total_rows {
-            let row: Vec<Cell> = self
-                .batch
-                .columns
-                .iter()
-                .enumerate()
-                .map(|(idx, series)| {
-                    // Unfortunately actually plumbing the formatting would make this too much work right now.
-                    let mut text = series.str_value(o);
-                    let mut alignment = CellAlignment::Left;
+    fn columns(&self) -> Vec<&dyn StrValue> {
+        self.batch
+            .columns
+            .iter()
+            .map(|s| s as &dyn StrValue)
+            .collect()
+    }
 
-                    // Use column overrides if any, falling back to the global settings.
-                    let mut max_width = self.options.max_width;
-                    let mut align: Option<PreviewAlign> = self.options.align;
-                    if let Some(overrides) = self.options.column(idx) {
-                        max_width = overrides.max_width.or(max_width);
-                        align = overrides.align.or(align);
-                    }
-
-                    // Truncate cell content if over max length.
-                    if let Some(max_width) = max_width {
-                        text = truncate(text, max_width, magic::DOTS);
-                    }
-
-                    // If some alignment, translate to comfy_table
-                    if let Some(align) = &align {
-                        alignment = match align {
-                            PreviewAlign::Auto => CellAlignment::Left,
-                            PreviewAlign::Left => CellAlignment::Left,
-                            PreviewAlign::Center => CellAlignment::Center,
-                            PreviewAlign::Right => CellAlignment::Right,
-                        };
-                    }
-
-                    // Use global overrides
-                    Cell::new(text).set_alignment(alignment)
-                })
-                .collect();
-            table.add_row(row);
+    fn table_preset(&self) -> &'static str {
+        match self.format {
+            PreviewFormat::Fancy => presets::FANCY,
+            PreviewFormat::Plain => presets::PLAIN,
+            PreviewFormat::Simple => presets::SIMPLE,
+            PreviewFormat::Grid => presets::GRID,
+            PreviewFormat::Markdown => presets::MARKDOWN,
+            _ => unreachable!("given format `{:?}` has no preset", self.format),
         }
     }
-}
 
-/// Truncate a string, appending the
-fn truncate(text: String, max_width: usize, suffix: &str) -> String {
-    if text.len() < max_width {
-        return text;
+    fn table_build_options(preset: &'static str) -> TableBuildOptions {
+        TableBuildOptions {
+            preset,
+            modifiers: &[],
+            content_arrangement: None,
+            use_terminal_width: false,
+        }
     }
-    format!(
-        "{}{suffix}",
-        &text
-            .char_indices()
-            .take(max_width - suffix.len())
-            .map(|(_, c)| c)
-            .collect::<String>()
-    )
-}
-
-/// Formatting magic strings.
-mod magic {
-    /// Fancy dots aka ellipse for truncated columns.
-    pub const DOTS: &str = "…";
 }
 
 /// Preset strings for the text art tables.
