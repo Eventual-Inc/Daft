@@ -4,7 +4,8 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftError;
 use common_partitioning::PartitionRef;
 use common_resource_request::ResourceRequest;
-use daft_local_plan::{ExecutionEngineFinalResult, LocalPhysicalPlanRef};
+use common_scan_info::ScanTaskLikeRef;
+use daft_local_plan::{ExecutionEngineFinalResult, Input, LocalPhysicalPlanRef, SourceId};
 use tokio_util::sync::CancellationToken;
 
 use super::worker::WorkerId;
@@ -210,7 +211,8 @@ pub(crate) struct SwordfishTask {
     plan: LocalPhysicalPlanRef,
     resource_request: TaskResourceRequest,
     config: Arc<DaftExecutionConfig>,
-    psets: HashMap<String, Vec<PartitionRef>>,
+    inputs: HashMap<SourceId, Input>,
+    psets: HashMap<SourceId, Vec<PartitionRef>>,
     strategy: SchedulingStrategy,
     context: HashMap<String, String>,
 }
@@ -224,7 +226,11 @@ impl SwordfishTask {
         &self.config
     }
 
-    pub fn psets(&self) -> &HashMap<String, Vec<PartitionRef>> {
+    pub fn inputs(&self) -> &HashMap<SourceId, Input> {
+        &self.inputs
+    }
+
+    pub fn psets(&self) -> &HashMap<SourceId, Vec<PartitionRef>> {
         &self.psets
     }
 
@@ -268,7 +274,8 @@ impl Task for SwordfishTask {
 pub(crate) struct SwordfishTaskBuilder {
     plan: LocalPhysicalPlanRef,
     config: Arc<DaftExecutionConfig>,
-    psets: HashMap<String, Vec<PartitionRef>>,
+    inputs: HashMap<SourceId, Input>,
+    psets: HashMap<SourceId, Vec<PartitionRef>>,
     strategy: Option<SchedulingStrategy>,
     context: HashMap<String, String>,
     node_context: Option<PipelineNodeContext>,
@@ -283,6 +290,7 @@ impl SwordfishTaskBuilder {
         Self {
             plan,
             config: node.config().execution_config.clone(),
+            inputs: HashMap::new(),
             psets: HashMap::new(),
             strategy: None,
             context: node.context().to_hashmap(),
@@ -318,6 +326,9 @@ impl SwordfishTaskBuilder {
     {
         let combined_plan = f(left.plan.clone(), right.plan.clone());
 
+        let mut inputs = left.inputs.clone();
+        inputs.extend(right.inputs.clone());
+
         let mut psets = left.psets.clone();
         psets.extend(right.psets.clone());
 
@@ -329,6 +340,7 @@ impl SwordfishTaskBuilder {
         Self {
             plan: combined_plan,
             config: left.config.clone(),
+            inputs,
             psets,
             strategy: left.strategy.clone(),
             context: left.context.clone(),
@@ -344,15 +356,25 @@ impl SwordfishTaskBuilder {
         self
     }
 
-    /// Set psets (replaces any existing psets).
-    pub fn with_psets(mut self, psets: HashMap<String, Vec<PartitionRef>>) -> Self {
-        self.psets = psets;
+    /// Add psets with source_id to the builder.
+    pub fn with_psets(mut self, source_id: SourceId, psets: Vec<PartitionRef>) -> Self {
+        self.psets.insert(source_id, psets);
         self
     }
 
-    /// Merge additional psets into existing ones.
-    pub fn merge_psets(mut self, psets: HashMap<String, Vec<PartitionRef>>) -> Self {
-        self.psets.extend(psets);
+    /// Add scan_tasks with source_id to the builder.
+    pub fn with_scan_tasks(
+        mut self,
+        source_id: SourceId,
+        scan_tasks: Vec<ScanTaskLikeRef>,
+    ) -> Self {
+        self.inputs.insert(source_id, Input::ScanTasks(scan_tasks));
+        self
+    }
+
+    /// Add glob paths with source_id to the builder.
+    pub fn with_glob_paths(mut self, source_id: SourceId, glob_paths: Vec<String>) -> Self {
+        self.inputs.insert(source_id, Input::GlobPaths(glob_paths));
         self
     }
 
@@ -394,6 +416,7 @@ impl SwordfishTaskBuilder {
             plan: self.plan,
             resource_request,
             config: self.config.clone(),
+            inputs: self.inputs,
             psets: self.psets,
             strategy,
             context,

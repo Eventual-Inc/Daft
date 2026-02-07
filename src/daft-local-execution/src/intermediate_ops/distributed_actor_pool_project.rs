@@ -281,10 +281,10 @@ impl IntermediateOperator for DistributedActorPoolProjectOperator {
         }
     }
 
-    fn max_concurrency(&self) -> DaftResult<usize> {
+    fn max_concurrency(&self) -> usize {
         // We set the max concurrency to be the number of actor handles * 2 to such that each actor handle has 2 workers submitting to it.
         // This allows inputs to be queued up concurrently with UDF execution.
-        Ok(self.actor_handles.len() * 2)
+        self.actor_handles.len() * 2
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {

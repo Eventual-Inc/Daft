@@ -98,6 +98,7 @@ where
         state.record_execution_stat(stats, batch_size, duration);
     }
 
+    #[cfg(test)]
     pub fn initial_requirements(&self) -> MorselSizeRequirement {
         self.strategy.initial_requirements()
     }

@@ -78,16 +78,17 @@ pub(crate) async fn finalize_anti_semi(
     let first_state = states_iter
         .next()
         .expect("At least one state should be present for anti/semi join finalize");
-    let first_tables = first_state.probe_state.get_record_batches();
-    let first_bitmap = first_state
-        .bitmap_builder
+    let (probe_state, bitmap_builder) = first_state.into_initialized();
+    let first_tables = probe_state.get_record_batches();
+    let first_bitmap = bitmap_builder
         .expect("Bitmap builder should be set for anti/semi join finalize")
         .build();
 
     let mut merged_bitmap = {
         let bitmaps = stream::once(async move { first_bitmap })
             .chain(stream::iter(states_iter).map(|s| {
-                s.bitmap_builder
+                let (_, bitmap_builder) = s.into_initialized();
+                bitmap_builder
                     .expect("Bitmap builder should be set for anti/semi join finalize")
                     .build()
             }))

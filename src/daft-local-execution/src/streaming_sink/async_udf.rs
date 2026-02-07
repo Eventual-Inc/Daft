@@ -170,7 +170,7 @@ pub struct AsyncUdfState {
 
 impl StreamingSink for AsyncUdfSink {
     type State = AsyncUdfState;
-    type BatchingStrategy = crate::dynamic_batching::StaticBatchingStrategy;
+    type BatchingStrategy = crate::dynamic_batching::DynBatchingStrategy;
     #[instrument(skip_all, name = "AsyncUdfSink::execute")]
     fn execute(
         &self,
@@ -363,7 +363,11 @@ impl StreamingSink for AsyncUdfSink {
         Arc::new(AsyncUdfRuntimeStats::new(id))
     }
 
-    fn max_concurrency(&self) -> usize {
+    fn max_concurrency_per_input_id(&self) -> usize {
+        1
+    }
+
+    fn total_max_concurrency(&self) -> usize {
         1
     }
 
@@ -389,5 +393,6 @@ impl StreamingSink for AsyncUdfSink {
         crate::dynamic_batching::StaticBatchingStrategy::new(
             self.morsel_size_requirement().unwrap_or_default(),
         )
+        .into()
     }
 }

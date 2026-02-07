@@ -15,25 +15,27 @@ use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_com
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
-use snafu::ResultExt;
 use tracing::info_span;
 
 use crate::{
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorControlFlow, OperatorOutput,
-    PipelineExecutionSnafu,
+    ControlFlow, ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
+    pipeline_execution::{PipelineEvent, next_event},
+    pipeline_message::{InputId, PipelineMessage},
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
+
 #[cfg_attr(debug_assertions, derive(Debug))]
-pub enum IntermediateOperatorResult {
+#[derive(Clone)]
+pub(crate) enum IntermediateOperatorResult {
     NeedMoreInput(Option<Arc<MicroPartition>>),
     #[allow(dead_code)]
     HasMoreOutput {
         input: Arc<MicroPartition>,
-        output: Arc<MicroPartition>,
+        output: Option<Arc<MicroPartition>>,
     },
 }
 
@@ -59,11 +61,8 @@ pub(crate) trait IntermediateOperator: Send + Sync {
     fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
         Arc::new(DefaultRuntimeStats::new(id))
     }
-    /// The maximum number of concurrent workers that can be spawned for this operator.
-    /// Each worker will has its own IntermediateOperatorState.
-    /// This method should be overridden if the operator needs to limit the number of concurrent workers, i.e. UDFs with resource requests.
-    fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(get_compute_pool_num_threads())
+    fn max_concurrency(&self) -> usize {
+        get_compute_pool_num_threads()
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
@@ -75,30 +74,309 @@ pub(crate) trait IntermediateOperator: Send + Sync {
 
 pub struct IntermediateNode<Op: IntermediateOperator> {
     intermediate_op: Arc<Op>,
-    children: Vec<Box<dyn PipelineNode>>,
+    child: Box<dyn PipelineNode>,
     runtime_stats: Arc<dyn RuntimeStats>,
     plan_stats: StatsState,
     morsel_size_requirement: MorselSizeRequirement,
     node_info: Arc<NodeInfo>,
 }
 
-type StateId = usize;
-
 struct ExecutionTaskResult<S> {
-    state_id: StateId,
+    input_id: InputId,
     state: S,
     result: IntermediateOperatorResult,
     elapsed: Duration,
 }
 
-struct ExecutionContext<Op: IntermediateOperator> {
+struct InputState {
+    buffer: RowBasedBuffer,
+    in_flight: usize,
+    pending_flush: bool,
+}
+
+impl InputState {
+    fn can_flush(&self) -> bool {
+        self.pending_flush && self.in_flight == 0 && self.buffer.is_empty()
+    }
+
+    fn next_batch_if_ready(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
+        let batch = self.buffer.next_batch_if_ready()?;
+        if batch.is_some() {
+            Ok(batch)
+        } else if self.pending_flush {
+            self.buffer.pop_all()
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+struct IntermediateOpProcessor<Op: IntermediateOperator> {
+    task_set: OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
+    available_states: Vec<Op::State>,
+    input_states: HashMap<InputId, InputState>,
+    batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
     op: Arc<Op>,
     task_spawner: ExecutionTaskSpawner,
-    task_set: OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
-    state_pool: HashMap<StateId, Op::State>,
-    output_sender: Sender<Arc<MicroPartition>>,
-    batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
     runtime_stats: Arc<dyn RuntimeStats>,
+    output_sender: Sender<PipelineMessage>,
+    stats_manager: RuntimeStatsManagerHandle,
+    node_id: usize,
+    node_initialized: bool,
+}
+
+/// input_id lifecycle (no finalize step):
+///
+/// 1. BUFFER  — morsel arrives, data buffered
+/// 2. EXECUTE — tasks spawned while batch_size met AND under max_concurrency
+/// 3. FLUSH   — flush received → pending_flush=true → pop_all for remaining buffer
+/// 4. CLEANUP — buffer empty + no in-flight → remove input_id → propagate flush downstream
+impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
+    fn new(
+        maintain_order: bool,
+        op: Arc<Op>,
+        task_spawner: ExecutionTaskSpawner,
+        runtime_stats: Arc<dyn RuntimeStats>,
+        output_sender: Sender<PipelineMessage>,
+        stats_manager: RuntimeStatsManagerHandle,
+        node_id: usize,
+    ) -> DaftResult<Self> {
+        let batch_manager = Arc::new(BatchManager::new(op.batching_strategy()?));
+        let available_states = (0..op.max_concurrency()).map(|_| op.make_state()).collect();
+        Ok(Self {
+            task_set: OrderingAwareJoinSet::new(maintain_order),
+            available_states,
+            input_states: HashMap::new(),
+            batch_manager,
+            op,
+            task_spawner,
+            runtime_stats,
+            output_sender,
+            stats_manager,
+            node_id,
+            node_initialized: false,
+        })
+    }
+
+    #[inline]
+    async fn send(&self, msg: PipelineMessage) -> ControlFlow {
+        if self.output_sender.send(msg).await.is_err() {
+            ControlFlow::Stop
+        } else {
+            ControlFlow::Continue
+        }
+    }
+
+    /// Spawn a single task for the given input_id, consuming a state from the pool.
+    fn spawn_task(
+        input_id: InputId,
+        op_state: Op::State,
+        batch: Arc<MicroPartition>,
+        task_set: &mut OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
+        op: &Arc<Op>,
+        task_spawner: &ExecutionTaskSpawner,
+    ) {
+        let op = op.clone();
+        let task_spawner = task_spawner.clone();
+        task_set.spawn(async move {
+            let now = Instant::now();
+            let (new_op_state, result) = op.execute(batch, op_state, &task_spawner).await??;
+            let elapsed = now.elapsed();
+            Ok(ExecutionTaskResult {
+                input_id,
+                state: new_op_state,
+                result,
+                elapsed,
+            })
+        });
+    }
+
+    fn try_spawn_tasks(&mut self) -> DaftResult<()> {
+        let input_ids: Vec<InputId> = self.input_states.keys().copied().collect();
+        for input_id in input_ids {
+            if self.task_set.len() >= self.op.max_concurrency() || self.available_states.is_empty()
+            {
+                break;
+            }
+            self.try_spawn_tasks_for_input(input_id)?;
+        }
+        Ok(())
+    }
+
+    fn try_spawn_tasks_for_input(&mut self, input_id: InputId) -> DaftResult<()> {
+        let input_state = self
+            .input_states
+            .get_mut(&input_id)
+            .expect("Input should be present");
+        while !self.available_states.is_empty()
+            && let Some(input) = input_state.next_batch_if_ready()?
+        {
+            let op_state = self.available_states.pop().unwrap();
+            input_state.in_flight += 1;
+            Self::spawn_task(
+                input_id,
+                op_state,
+                input,
+                &mut self.task_set,
+                &self.op,
+                &self.task_spawner,
+            );
+        }
+        Ok(())
+    }
+
+    async fn try_flush_input(&mut self, input_id: InputId) -> DaftResult<ControlFlow> {
+        let input_state = self
+            .input_states
+            .get_mut(&input_id)
+            .expect("Input should be present");
+        if input_state.can_flush() {
+            self.input_states.remove(&input_id);
+            if self.send(PipelineMessage::Flush(input_id)).await == ControlFlow::Stop {
+                return Ok(ControlFlow::Stop);
+            }
+            return Ok(ControlFlow::Continue);
+        }
+        Ok(ControlFlow::Continue)
+    }
+
+    async fn handle_task_completed(
+        &mut self,
+        task_result: ExecutionTaskResult<Op::State>,
+    ) -> DaftResult<ControlFlow> {
+        let ExecutionTaskResult {
+            input_id,
+            state,
+            result,
+            elapsed,
+        } = task_result;
+
+        self.runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
+
+        if let Some(mp) = result.output() {
+            self.runtime_stats.add_rows_out(mp.len() as u64);
+            self.batch_manager.record_execution_stats(
+                self.runtime_stats.as_ref(),
+                mp.len(),
+                elapsed,
+            );
+            if self
+                .send(PipelineMessage::Morsel {
+                    input_id,
+                    partition: mp.clone(),
+                })
+                .await
+                == ControlFlow::Stop
+            {
+                return Ok(ControlFlow::Stop);
+            }
+        }
+
+        let new_requirements = self.batch_manager.calculate_batch_size();
+        for input in self.input_states.values_mut() {
+            input.buffer.update_bounds(new_requirements);
+        }
+
+        match result {
+            IntermediateOperatorResult::NeedMoreInput(_) => {
+                self.input_states.get_mut(&input_id).unwrap().in_flight -= 1;
+                self.available_states.push(state);
+                self.try_spawn_tasks_for_input(input_id)?;
+                self.try_spawn_tasks()?;
+                self.try_flush_input(input_id).await
+            }
+            IntermediateOperatorResult::HasMoreOutput { input, .. } => {
+                Self::spawn_task(
+                    input_id,
+                    state,
+                    input,
+                    &mut self.task_set,
+                    &self.op,
+                    &self.task_spawner,
+                );
+                Ok(ControlFlow::Continue)
+            }
+        }
+    }
+
+    fn handle_morsel(
+        &mut self,
+        input_id: InputId,
+        partition: Arc<MicroPartition>,
+    ) -> DaftResult<()> {
+        if !self.node_initialized {
+            self.stats_manager.activate_node(self.node_id);
+            self.node_initialized = true;
+        }
+        self.runtime_stats.add_rows_in(partition.len() as u64);
+        let (lower, upper) = self.batch_manager.calculate_batch_size().values();
+        let input = self
+            .input_states
+            .entry(input_id)
+            .or_insert_with(|| InputState {
+                buffer: RowBasedBuffer::new(lower, upper),
+                in_flight: 0,
+                pending_flush: false,
+            });
+        input.buffer.push(partition);
+        self.try_spawn_tasks_for_input(input_id)
+    }
+
+    async fn handle_flush(&mut self, input_id: InputId) -> DaftResult<ControlFlow> {
+        let Some(input) = self.input_states.get_mut(&input_id) else {
+            // Never seen this input_id, forward flush immediately.
+            return Ok(self.send(PipelineMessage::Flush(input_id)).await);
+        };
+        input.pending_flush = true;
+        self.try_spawn_tasks_for_input(input_id)?;
+        self.try_flush_input(input_id).await
+    }
+
+    async fn handle_input_closed(&mut self) -> DaftResult<ControlFlow> {
+        for input_state in self.input_states.values_mut() {
+            input_state.pending_flush = true;
+        }
+        let input_ids: Vec<InputId> = self.input_states.keys().copied().collect();
+        for input_id in input_ids {
+            self.try_spawn_tasks_for_input(input_id)?;
+            if self.try_flush_input(input_id).await? == ControlFlow::Stop {
+                return Ok(ControlFlow::Stop);
+            }
+        }
+        Ok(ControlFlow::Continue)
+    }
+
+    async fn process_input(&mut self, receiver: &mut Receiver<PipelineMessage>) -> DaftResult<()> {
+        let mut input_closed = false;
+
+        while !input_closed || !self.task_set.is_empty() || !self.input_states.is_empty() {
+            let event = next_event(
+                &mut self.task_set,
+                self.op.max_concurrency(),
+                receiver,
+                &mut input_closed,
+            )
+            .await?;
+            let cf = match event {
+                PipelineEvent::TaskCompleted(task_result) => {
+                    self.handle_task_completed(task_result).await?
+                }
+                PipelineEvent::Morsel {
+                    input_id,
+                    partition,
+                } => {
+                    self.handle_morsel(input_id, partition)?;
+                    ControlFlow::Continue
+                }
+                PipelineEvent::Flush(input_id) => self.handle_flush(input_id).await?,
+                PipelineEvent::InputClosed => self.handle_input_closed().await?,
+            };
+            if cf == ControlFlow::Stop {
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
 }
 
 // ========== IntermediateNode Implementation ==========
@@ -106,7 +384,7 @@ struct ExecutionContext<Op: IntermediateOperator> {
 impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
     pub(crate) fn new(
         intermediate_op: Arc<Op>,
-        children: Vec<Box<dyn PipelineNode>>,
+        child: Box<dyn PipelineNode>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
         context: &LocalNodeContext,
@@ -124,7 +402,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
             .unwrap_or_default();
         Self {
             intermediate_op,
-            children,
+            child,
             runtime_stats,
             plan_stats,
             morsel_size_requirement,
@@ -135,182 +413,15 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
         Box::new(self)
     }
+}
 
-    // ========== Helper Functions ==========
-
-    fn spawn_execution_task(
-        ctx: &mut ExecutionContext<Op>,
-        input: Arc<MicroPartition>,
-        state: Op::State,
-        state_id: StateId,
-    ) {
-        let op = ctx.op.clone();
-        let task_spawner = ctx.task_spawner.clone();
-        ctx.task_set.spawn(async move {
-            let now = Instant::now();
-            let (new_state, result) = op.execute(input, state, &task_spawner).await??;
-            let elapsed = now.elapsed();
-
-            Ok(ExecutionTaskResult {
-                state_id,
-                state: new_state,
-                result,
-                elapsed,
-            })
-        });
-    }
-
-    async fn handle_task_completion(
-        result: ExecutionTaskResult<Op::State>,
-        ctx: &mut ExecutionContext<Op>,
-    ) -> DaftResult<OperatorControlFlow> {
-        match result.result {
-            IntermediateOperatorResult::NeedMoreInput(Some(mp)) => {
-                // Record execution stats
-                ctx.batch_manager.record_execution_stats(
-                    ctx.runtime_stats.as_ref(),
-                    mp.len(),
-                    result.elapsed,
-                );
-
-                // Send output
-                ctx.runtime_stats.add_rows_out(mp.len() as u64);
-                if ctx.output_sender.send(mp).await.is_err() {
-                    return Ok(OperatorControlFlow::Break);
-                }
-
-                // Return state to pool
-                ctx.state_pool.insert(result.state_id, result.state);
-            }
-            IntermediateOperatorResult::NeedMoreInput(None) => {
-                // No output, just return state to pool
-                ctx.state_pool.insert(result.state_id, result.state);
-            }
-            IntermediateOperatorResult::HasMoreOutput { input, output } => {
-                // Record execution stats
-                ctx.batch_manager.record_execution_stats(
-                    ctx.runtime_stats.as_ref(),
-                    output.len(),
-                    result.elapsed,
-                );
-
-                // Send output
-                ctx.runtime_stats.add_rows_out(output.len() as u64);
-                if ctx.output_sender.send(output).await.is_err() {
-                    return Ok(OperatorControlFlow::Break);
-                }
-
-                // Spawn another execution with same input and state (don't return state)
-                Self::spawn_execution_task(ctx, input, result.state, result.state_id);
-            }
+impl IntermediateOperatorResult {
+    /// Get the output partition if present.
+    pub(crate) fn output(&self) -> Option<&Arc<MicroPartition>> {
+        match self {
+            Self::NeedMoreInput(mp) => mp.as_ref(),
+            Self::HasMoreOutput { output, .. } => output.as_ref(),
         }
-        Ok(OperatorControlFlow::Continue)
-    }
-
-    fn spawn_ready_batches(
-        buffer: &mut RowBasedBuffer,
-        ctx: &mut ExecutionContext<Op>,
-    ) -> DaftResult<()> {
-        // Check buffer for ready batches and spawn tasks while states available
-        while !ctx.state_pool.is_empty()
-            && let Some(batch) = buffer.next_batch_if_ready()?
-        {
-            let state_id = *ctx
-                .state_pool
-                .keys()
-                .next()
-                .expect("State pool should have states when has_available() returns true");
-            let state = ctx
-                .state_pool
-                .remove(&state_id)
-                .expect("State pool should have states when has_available() returns true");
-
-            Self::spawn_execution_task(ctx, batch, state, state_id);
-        }
-        Ok(())
-    }
-
-    async fn process_input(
-        node_id: usize,
-        mut receiver: Receiver<Arc<MicroPartition>>,
-        ctx: &mut ExecutionContext<Op>,
-        stats_manager: &RuntimeStatsManagerHandle,
-    ) -> DaftResult<OperatorControlFlow> {
-        let (lower, upper) = ctx.batch_manager.initial_requirements().values();
-        let mut buffer = RowBasedBuffer::new(lower, upper);
-        let mut input_closed = false;
-        let mut node_initialized = false;
-        // Main processing loop
-        while !input_closed || !ctx.task_set.is_empty() {
-            tokio::select! {
-                biased;
-
-                // Branch 1: Join completed task (only if tasks exist)
-                Some(join_result) = ctx.task_set.join_next(), if !ctx.task_set.is_empty() => {
-                    let control = Self::handle_task_completion(join_result??, ctx).await?;
-                    if !control.should_continue() {
-                        return Ok(OperatorControlFlow::Break);
-                    }
-
-                    // After completing a task, update bounds and try to spawn more tasks
-                    let new_requirements = ctx.batch_manager.calculate_batch_size();
-                    let (lower, upper) = new_requirements.values();
-                    buffer.update_bounds(lower, upper);
-
-                    Self::spawn_ready_batches(&mut buffer, ctx)?;
-                }
-
-                // Branch 2: Receive input (only if states available and receiver open)
-                morsel = receiver.recv(), if !ctx.state_pool.is_empty() && !input_closed => {
-                    match morsel {
-                        Some(morsel) => {
-                            if !node_initialized {
-                                stats_manager.activate_node(node_id);
-                                node_initialized = true;
-                            }
-                            ctx.runtime_stats.add_rows_in(morsel.len() as u64);
-                            buffer.push(morsel);
-                            Self::spawn_ready_batches(&mut buffer, ctx)?;
-                        }
-                        None => {
-                            input_closed = true;
-                        }
-                    }
-                }
-            }
-        }
-
-        // After loop exits, verify invariants
-        debug_assert_eq!(ctx.task_set.len(), 0, "TaskSet should be empty after loop");
-        debug_assert!(input_closed, "Receiver should be closed after loop");
-
-        // Handle remaining buffered data
-        if let Some(last_batch) = buffer.pop_all()? {
-            // Since task_set is empty, all states should be back in the pool
-            let state_id = *ctx
-                .state_pool
-                .keys()
-                .next()
-                .expect("State pool should have states after all tasks completed");
-            let state = ctx
-                .state_pool
-                .remove(&state_id)
-                .expect("State pool should have states after all tasks completed");
-
-            Self::spawn_execution_task(ctx, last_batch, state, state_id);
-
-            // Wait for final task to complete
-            while let Some(join_result) = ctx.task_set.join_next().await {
-                let control = Self::handle_task_completion(join_result??, ctx).await?;
-                if !control.should_continue() {
-                    return Ok(OperatorControlFlow::Break);
-                }
-            }
-        }
-
-        debug_assert_eq!(ctx.task_set.len(), 0, "TaskSet should be empty after loop");
-
-        Ok(OperatorControlFlow::Continue)
     }
 }
 
@@ -364,20 +475,17 @@ impl<Op: IntermediateOperator + 'static> TreeDisplay for IntermediateNode<Op> {
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        self.children.iter().map(|v| v.as_tree_display()).collect()
+        vec![self.child.as_tree_display()]
     }
 }
 
 impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
     fn children(&self) -> Vec<&dyn PipelineNode> {
-        self.children
-            .iter()
-            .map(std::convert::AsRef::as_ref)
-            .collect()
+        vec![self.child.as_ref()]
     }
 
     fn boxed_children(&self) -> Vec<&Box<dyn PipelineNode>> {
-        self.children.iter().collect()
+        vec![&self.child]
     }
 
     fn name(&self) -> Arc<str> {
@@ -395,83 +503,48 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
             downstream_requirement,
         );
         self.morsel_size_requirement = combined_morsel_size_requirement;
-        for child in &mut self.children {
-            child.propagate_morsel_size_requirement(
-                combined_morsel_size_requirement,
-                default_requirement,
-            );
-        }
+        self.child.propagate_morsel_size_requirement(
+            combined_morsel_size_requirement,
+            default_requirement,
+        );
     }
 
     fn start(
-        &self,
+        &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<Receiver<PipelineMessage>> {
         // 1. Start children and wrap receivers
-        let mut child_result_receivers = Vec::with_capacity(self.children.len());
-        for child in &self.children {
-            let child_result_receiver = child.start(maintain_order, runtime_handle)?;
-            child_result_receivers.push(child_result_receiver);
-        }
-        // 2. Setup
-        let op = self.intermediate_op.clone();
-        let max_concurrency = op.max_concurrency().context(PipelineExecutionSnafu {
-            node_name: self.name().to_string(),
-        })?;
+        let mut child_result_receiver = self.child.start(maintain_order, runtime_handle)?;
         let (destination_sender, destination_receiver) = create_channel(1);
 
-        // 3. Create task spawner
-        let compute_runtime = get_compute_runtime();
+        // 2. Create task spawner
         let task_spawner = ExecutionTaskSpawner::new(
-            compute_runtime,
+            get_compute_runtime(),
             runtime_handle.memory_manager(),
             self.runtime_stats.clone(),
             info_span!("IntermediateOp::execute"),
         );
 
-        // 4. Spawn process_input task
-        let stats_manager = runtime_handle.stats_manager();
-        let node_id = self.node_id();
+        let op = self.intermediate_op.clone();
         let runtime_stats = self.runtime_stats.clone();
+        let node_id = self.node_id();
+        let stats_manager = runtime_handle.stats_manager();
         runtime_handle.spawn(
             async move {
-                // Initialize state pool with max_concurrency states
-                let mut state_pool = HashMap::new();
-                for i in 0..max_concurrency {
-                    state_pool.insert(i, op.make_state());
-                }
-
-                // Create batch manager and task set
-                let batch_manager = Arc::new(BatchManager::new(op.batching_strategy().context(
-                    PipelineExecutionSnafu {
-                        node_name: op.name().to_string(),
-                    },
-                )?));
-                let task_set = OrderingAwareJoinSet::new(maintain_order);
-
-                // Process each child receiver sequentially
-                let mut ctx = ExecutionContext {
+                let mut processor = IntermediateOpProcessor::new(
+                    maintain_order,
                     op,
                     task_spawner,
-                    task_set,
-                    state_pool,
-                    output_sender: destination_sender,
-                    batch_manager,
                     runtime_stats,
-                };
-                for receiver in child_result_receivers {
-                    if !Self::process_input(node_id, receiver, &mut ctx, &stats_manager)
-                        .await?
-                        .should_continue()
-                    {
-                        break;
-                    }
-                }
+                    destination_sender,
+                    stats_manager.clone(),
+                    node_id,
+                )?;
 
-                // Finalize node after processing completes
+                processor.process_input(&mut child_result_receiver).await?;
+
                 stats_manager.finalize_node(node_id);
-
                 Ok(())
             },
             &self.name(),

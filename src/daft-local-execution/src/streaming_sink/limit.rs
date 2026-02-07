@@ -128,9 +128,10 @@ impl StreamingSink for LimitSink {
         Ok(LimitSinkState::new(self.limit, self.offset))
     }
 
-    fn max_concurrency(&self) -> usize {
+    fn max_concurrency_per_input_id(&self) -> usize {
         1
     }
+
     fn batching_strategy(&self) -> Self::BatchingStrategy {
         crate::dynamic_batching::StaticBatchingStrategy::new(
             self.morsel_size_requirement().unwrap_or_default(),
