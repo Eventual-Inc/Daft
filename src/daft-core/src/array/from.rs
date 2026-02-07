@@ -100,7 +100,8 @@ where
             arrow::array::PrimitiveArray::<<T::Native as NumericNative>::ARROWTYPE>::new(
                 scalar_buffer,
                 None,
-            );
+            )
+            .with_data_type(field.dtype.to_arrow().unwrap());
         Self::from_arrow(field, Arc::new(arrow_arr)).unwrap()
     }
 
@@ -119,7 +120,8 @@ where
         let arrow_arr =
             arrow::array::PrimitiveArray::<<T::Native as NumericNative>::ARROWTYPE>::from_iter(
                 iter,
-            );
+            )
+            .with_data_type(field.dtype.to_arrow().unwrap());
         Self::from_arrow(field, Arc::new(arrow_arr)).unwrap()
     }
 }
