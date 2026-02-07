@@ -30,7 +30,11 @@ impl BatchingStrategy for StaticBatchingStrategy {
     type State = ();
     fn make_state(&self) -> Self::State {}
 
-    fn calculate_requirements(&self, _state: &mut Self::State) -> MorselSizeRequirement {
+    fn calculate_new_requirements(&self, _state: &mut Self::State) -> MorselSizeRequirement {
+        self.req
+    }
+
+    fn initial_requirements(&self) -> MorselSizeRequirement {
         self.req
     }
 }
@@ -53,7 +57,7 @@ mod tests {
         let req = MorselSizeRequirement::Flexible(5, NonZeroUsize::new(100).unwrap());
         let strategy = StaticBatchingStrategy::new(req);
 
-        assert_eq!(strategy.calculate_requirements(&mut ()), req);
+        assert_eq!(strategy.initial_requirements(), req);
     }
 
     #[test]
@@ -63,11 +67,11 @@ mod tests {
         let mut state = strategy.make_state();
 
         // Empty batch report
-        let result = strategy.calculate_requirements(&mut state);
+        let result = strategy.calculate_new_requirements(&mut state);
         assert_eq!(result, req);
 
         // Non-empty batch report (would need actual BatchReport data structure)
-        let result2 = strategy.calculate_requirements(&mut state);
+        let result2 = strategy.calculate_new_requirements(&mut state);
         assert_eq!(result2, req);
     }
 
@@ -78,9 +82,9 @@ mod tests {
         let mut state = strategy.make_state();
 
         // Multiple calls should return same result
-        let result1 = strategy.calculate_requirements(&mut state);
-        let result2 = strategy.calculate_requirements(&mut state);
-        let result3 = strategy.calculate_requirements(&mut state);
+        let result1 = strategy.calculate_new_requirements(&mut state);
+        let result2 = strategy.calculate_new_requirements(&mut state);
+        let result3 = strategy.calculate_new_requirements(&mut state);
 
         assert_eq!(result1, req);
         assert_eq!(result2, req);

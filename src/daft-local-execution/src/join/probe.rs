@@ -6,18 +6,18 @@ use daft_micropartition::MicroPartition;
 
 use crate::{
     ControlFlow, ExecutionTaskSpawner,
+    buffer::RowBasedBuffer,
     channel::{Receiver, Sender},
     dynamic_batching::{BatchManager, BatchingStrategy},
     join::{
         build::BuildStateBridge,
         join_operator::{JoinOperator, ProbeOutput},
     },
-    pipeline_execution::{InputStateTracker, PipelineEvent, StateTracker, next_event},
+    pipeline_execution::{InputStatesTracker, PipelineEvent, StateTracker, next_event},
     pipeline_message::{InputId, PipelineMessage},
     runtime_stats::RuntimeStats,
 };
 
-/// Per-node task result for probe side.
 enum ProbeTaskResult<S> {
     Probe {
         input_id: InputId,
@@ -34,7 +34,7 @@ enum ProbeTaskResult<S> {
 pub(crate) struct ProbeExecutionContext<Op: JoinOperator, Strategy: BatchingStrategy + 'static> {
     task_set: OrderingAwareJoinSet<DaftResult<ProbeTaskResult<Op::ProbeState>>>,
     max_concurrency: usize,
-    input_state_tracker: InputStateTracker<Op::ProbeState>,
+    input_state_tracker: InputStatesTracker<Op::ProbeState>,
     op: Arc<Op>,
     task_spawner: ExecutionTaskSpawner,
     finalize_spawner: ExecutionTaskSpawner,
@@ -43,13 +43,6 @@ pub(crate) struct ProbeExecutionContext<Op: JoinOperator, Strategy: BatchingStra
     runtime_stats: Arc<dyn RuntimeStats>,
 }
 
-/// input_id lifecycle:
-///
-/// 1. BUFFER   — morsel arrives, data buffered
-/// 2. EXECUTE  — tasks spawned while batch_size met AND under max_concurrency
-/// 3. FLUSH_IN — flush received → mark completed → pop_all allowed for remaining buffer
-/// 4. FINALIZE — all tasks done + buffer empty → spawn finalize
-/// 5. CLEANUP  — finalize done → remove input_id → propagate flush downstream
 impl<Op: JoinOperator + 'static, Strategy: BatchingStrategy + 'static>
     ProbeExecutionContext<Op, Strategy>
 {
@@ -79,12 +72,15 @@ impl<Op: JoinOperator + 'static, Strategy: BatchingStrategy + 'static>
                 let (lower, upper) = batch_manager_for_state_creator
                     .calculate_batch_size()
                     .values();
-                Ok(StateTracker::new(probe_states, lower, upper))
+                Ok(StateTracker::new(
+                    probe_states,
+                    RowBasedBuffer::new(lower, upper),
+                ))
             },
         );
         let max_total_concurrency = get_compute_pool_num_threads();
         let task_set = OrderingAwareJoinSet::new(maintain_order);
-        let input_state_tracker = InputStateTracker::new(state_creator);
+        let input_state_tracker = InputStatesTracker::new(state_creator);
 
         Self {
             task_set,
@@ -129,48 +125,43 @@ impl<Op: JoinOperator + 'static, Strategy: BatchingStrategy + 'static>
         });
     }
 
-    fn try_spawn_tasks_for_input(&mut self, input_id: InputId) -> DaftResult<()> {
+    fn spawn_finalize_task(&mut self, states: Vec<Op::ProbeState>, input_id: InputId) {
+        let op = self.op.clone();
+        let finalize_spawner = self.finalize_spawner.clone();
+        self.task_set.spawn(async move {
+            let output = op.finalize_probe(states, &finalize_spawner).await??;
+            Ok(ProbeTaskResult::Finalize {
+                input_id,
+                output: output.into_iter().collect(),
+            })
+        });
+    }
+
+    fn try_progress_input(&mut self, input_id: InputId) -> DaftResult<()> {
         while self.task_set.len() < self.max_concurrency
             && let Some(next) = self
                 .input_state_tracker
-                .get_next_partition_for_execute(input_id)
+                .get_next_morsel_for_execute(input_id)
         {
             let (partition, state) = next?;
             self.spawn_probe_task(partition, state, input_id);
         }
-        Ok(())
-    }
-
-    fn try_spawn_tasks_all_inputs(&mut self) -> DaftResult<()> {
-        let input_ids: Vec<InputId> = self.input_state_tracker.input_ids();
-        for other_id in input_ids {
-            if self.task_set.len() >= self.max_concurrency {
-                break;
-            }
-            self.try_spawn_tasks_for_input(other_id)?;
-            self.try_spawn_finalize_task(other_id)?;
-        }
-        Ok(())
-    }
-
-    fn try_spawn_finalize_task(&mut self, input_id: InputId) -> DaftResult<bool> {
-        if let Some(states) = self
-            .input_state_tracker
-            .try_take_states_for_finalize(input_id)
+        if self.task_set.len() < self.max_concurrency
+            && let Some(states) = self
+                .input_state_tracker
+                .try_take_states_for_finalize(input_id)
         {
-            let op = self.op.clone();
-            let finalize_spawner = self.finalize_spawner.clone();
-            self.task_set.spawn(async move {
-                let output = op.finalize_probe(states, &finalize_spawner).await??;
-                Ok(ProbeTaskResult::Finalize {
-                    input_id,
-                    output: output.into_iter().collect(),
-                })
-            });
-            Ok(true)
-        } else {
-            Ok(false)
+            self.spawn_finalize_task(states, input_id);
         }
+        Ok(())
+    }
+
+    fn try_progress_all_inputs(&mut self) -> DaftResult<()> {
+        let input_ids: Vec<InputId> = self.input_state_tracker.input_ids();
+        for input_id in input_ids {
+            self.try_progress_input(input_id)?;
+        }
+        Ok(())
     }
 
     async fn handle_probe_completed(
@@ -209,9 +200,8 @@ impl<Op: JoinOperator + 'static, Strategy: BatchingStrategy + 'static>
         match result {
             ProbeOutput::NeedMoreInput(_) => {
                 self.input_state_tracker.return_state(input_id, state);
-                self.try_spawn_tasks_for_input(input_id)?;
-                self.try_spawn_tasks_all_inputs()?;
-                self.try_spawn_finalize_task(input_id)?;
+                self.try_progress_input(input_id)?;
+                self.try_progress_all_inputs()?;
                 Ok(ControlFlow::Continue)
             }
             ProbeOutput::HasMoreOutput { input, .. } => {
@@ -255,6 +245,7 @@ impl<Op: JoinOperator + 'static, Strategy: BatchingStrategy + 'static>
         if self.send(PipelineMessage::Flush(input_id)).await == ControlFlow::Stop {
             return Ok(ControlFlow::Stop);
         }
+        self.try_progress_all_inputs()?;
         Ok(ControlFlow::Continue)
     }
 
@@ -266,7 +257,7 @@ impl<Op: JoinOperator + 'static, Strategy: BatchingStrategy + 'static>
         self.runtime_stats.add_rows_in(partition.len() as u64);
         self.input_state_tracker
             .buffer_partition(input_id, partition)?;
-        self.try_spawn_tasks_all_inputs()?;
+        self.try_progress_input(input_id)?;
         Ok(())
     }
 
@@ -278,14 +269,13 @@ impl<Op: JoinOperator + 'static, Strategy: BatchingStrategy + 'static>
             return Ok(ControlFlow::Continue);
         }
         self.input_state_tracker.mark_completed(input_id);
-        self.try_spawn_tasks_for_input(input_id)?;
-        self.try_spawn_finalize_task(input_id)?;
+        self.try_progress_input(input_id)?;
         Ok(ControlFlow::Continue)
     }
 
     fn handle_input_closed(&mut self) -> DaftResult<()> {
         self.input_state_tracker.mark_all_completed();
-        self.try_spawn_tasks_all_inputs()?;
+        self.try_progress_all_inputs()?;
         Ok(())
     }
 

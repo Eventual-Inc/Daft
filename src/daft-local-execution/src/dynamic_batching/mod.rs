@@ -20,14 +20,17 @@ pub trait BatchingStrategy: Send + Sync {
     type State: BatchingState + Send + Sync + Unpin;
     fn make_state(&self) -> Self::State;
     /// adjust the batch size based on runtime performance metrics
-    fn calculate_requirements(&self, state: &mut Self::State) -> MorselSizeRequirement;
+    fn calculate_new_requirements(&self, state: &mut Self::State) -> MorselSizeRequirement;
+
+    fn initial_requirements(&self) -> MorselSizeRequirement;
 }
 
 #[cfg(debug_assertions)]
 pub trait BatchingStrategy: Send + Sync + std::fmt::Debug {
     type State: BatchingState + Send + Sync + Unpin;
     fn make_state(&self) -> Self::State;
-    fn calculate_requirements(&self, state: &mut Self::State) -> MorselSizeRequirement;
+    fn calculate_new_requirements(&self, state: &mut Self::State) -> MorselSizeRequirement;
+    fn initial_requirements(&self) -> MorselSizeRequirement;
 }
 
 pub trait BatchingState {
@@ -78,7 +81,7 @@ where
     /// are available, returns the current cached requirements.
     pub fn calculate_batch_size(&self) -> MorselSizeRequirement {
         let mut state = self.state.lock();
-        self.strategy.calculate_requirements(&mut state)
+        self.strategy.calculate_new_requirements(&mut state)
     }
 
     /// Records execution metrics for a processed batch.
@@ -93,6 +96,11 @@ where
     ) {
         let mut state = self.state.lock();
         state.record_execution_stat(stats, batch_size, duration);
+    }
+
+    #[cfg(test)]
+    pub fn initial_requirements(&self) -> MorselSizeRequirement {
+        self.strategy.initial_requirements()
     }
 }
 
@@ -179,7 +187,11 @@ mod tests {
             }
         }
 
-        fn calculate_requirements(&self, state: &mut Self::State) -> MorselSizeRequirement {
+        fn initial_requirements(&self) -> MorselSizeRequirement {
+            self.initial_req
+        }
+
+        fn calculate_new_requirements(&self, state: &mut Self::State) -> MorselSizeRequirement {
             self.call_counter.fetch_add(1, Ordering::SeqCst);
 
             // Return different requirements based on number of measurements recorded
@@ -201,7 +213,7 @@ mod tests {
         let manager = BatchManager::new(strategy.clone());
 
         assert_eq!(
-            manager.calculate_batch_size(),
+            manager.initial_requirements(),
             MorselSizeRequirement::Flexible(1, NonZeroUsize::new(32).unwrap())
         );
         assert_eq!(strategy.call_count(), 0); // No calculations yet
@@ -350,7 +362,7 @@ mod tests {
         let strategy = StaticBatchingStrategy::new(static_req);
         let manager = BatchManager::new(strategy);
 
-        assert_eq!(manager.calculate_batch_size(), static_req);
+        assert_eq!(manager.initial_requirements(), static_req);
 
         // Even after recording stats, static strategy should return same requirement
         manager.record_execution_stats(

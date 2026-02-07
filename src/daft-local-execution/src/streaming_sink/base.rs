@@ -15,10 +15,11 @@ use tracing::info_span;
 
 use crate::{
     ControlFlow, ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
+    buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
-    pipeline_execution::{InputStateTracker, PipelineEvent, StateTracker, next_event},
+    pipeline_execution::{InputStatesTracker, PipelineEvent, StateTracker, next_event},
     pipeline_message::{InputId, PipelineMessage},
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
@@ -30,6 +31,7 @@ pub(crate) enum StreamingSinkOutput {
     NeedMoreInput(Option<Arc<MicroPartition>>),
 
     /// Operator has more output to produce using the same input.
+    #[allow(dead_code)]
     HasMoreOutput {
         input: Arc<MicroPartition>,
         output: Option<Arc<MicroPartition>>,
@@ -119,7 +121,7 @@ enum StreamingSinkTaskResult<S, Op: StreamingSink> {
 struct StreamingSinkProcessor<Op: StreamingSink> {
     task_set: OrderingAwareJoinSet<DaftResult<StreamingSinkTaskResult<Op::State, Op>>>,
     max_concurrency: usize,
-    input_state_tracker: InputStateTracker<Op::State>,
+    input_state_tracker: InputStatesTracker<Op::State>,
     op: Arc<Op>,
     task_spawner: ExecutionTaskSpawner,
     finalize_spawner: ExecutionTaskSpawner,
@@ -147,7 +149,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkProcessor<Op> {
         finalize_spawner: ExecutionTaskSpawner,
         runtime_stats: Arc<dyn RuntimeStats>,
         output_sender: Sender<PipelineMessage>,
-        input_state_tracker: InputStateTracker<Op::State>,
+        input_state_tracker: InputStatesTracker<Op::State>,
         batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
         stats_manager: RuntimeStatsManagerHandle,
         node_id: usize,
@@ -165,15 +167,6 @@ impl<Op: StreamingSink + 'static> StreamingSinkProcessor<Op> {
             stats_manager,
             node_id,
             node_initialized: false,
-        }
-    }
-
-    #[inline]
-    async fn send(&self, msg: PipelineMessage) -> ControlFlow {
-        if self.output_sender.send(msg).await.is_err() {
-            ControlFlow::Stop
-        } else {
-            ControlFlow::Continue
         }
     }
 
@@ -198,44 +191,41 @@ impl<Op: StreamingSink + 'static> StreamingSinkProcessor<Op> {
         });
     }
 
-    fn try_spawn_tasks_for_input(&mut self, input_id: InputId) -> DaftResult<()> {
-        while self.task_set.len() < self.max_concurrency {
-            let Some(next) = self
+    fn spawn_finalize_task(&mut self, states: Vec<Op::State>, input_id: InputId) {
+        let op = self.op.clone();
+        let finalize_spawner = self.finalize_spawner.clone();
+        self.task_set.spawn(async move {
+            let output = op.finalize(states, &finalize_spawner).await??;
+            Ok(StreamingSinkTaskResult::Finalize { input_id, output })
+        });
+    }
+
+    fn try_progress_input(&mut self, input_id: InputId) -> DaftResult<()> {
+        while self.task_set.len() < self.max_concurrency
+            && let Some(next) = self
                 .input_state_tracker
-                .get_next_partition_for_execute(input_id)
-            else {
-                break;
-            };
+                .get_next_morsel_for_execute(input_id)
+        {
             let (partition, state) = next?;
             self.spawn_execute_task(partition, state, input_id);
         }
+
+        if self.task_set.len() < self.max_concurrency
+            && let Some(states) = self
+                .input_state_tracker
+                .try_take_states_for_finalize(input_id)
+        {
+            self.spawn_finalize_task(states, input_id);
+        }
         Ok(())
     }
 
-    fn try_spawn_tasks_all_inputs(&mut self) -> DaftResult<()> {
+    fn try_progress_all_inputs(&mut self) -> DaftResult<()> {
         let input_ids = self.input_state_tracker.input_ids();
         for input_id in input_ids {
-            if self.task_set.len() >= self.max_concurrency {
-                break;
-            }
-            self.try_spawn_tasks_for_input(input_id)?;
-            self.try_spawn_finalize_task(input_id)?;
+            self.try_progress_input(input_id)?;
         }
         Ok(())
-    }
-
-    fn try_spawn_finalize_task(&mut self, input_id: InputId) -> DaftResult<bool> {
-        if let Some(states) = self.input_state_tracker.try_take_states_for_finalize(input_id) {
-            let op = self.op.clone();
-            let finalize_spawner = self.finalize_spawner.clone();
-            self.task_set.spawn(async move {
-                let output = op.finalize(states, &finalize_spawner).await??;
-                Ok(StreamingSinkTaskResult::Finalize { input_id, output })
-            });
-            Ok(true)
-        } else {
-            Ok(false)
-        }
     }
 
     async fn handle_execute_completed(
@@ -256,12 +246,13 @@ impl<Op: StreamingSink + 'static> StreamingSinkProcessor<Op> {
                 elapsed,
             );
             if self
+                .output_sender
                 .send(PipelineMessage::Morsel {
                     input_id,
                     partition: mp.clone(),
                 })
                 .await
-                == ControlFlow::Stop
+                .is_err()
             {
                 return Ok(ControlFlow::Stop);
             }
@@ -274,8 +265,8 @@ impl<Op: StreamingSink + 'static> StreamingSinkProcessor<Op> {
         match result {
             StreamingSinkOutput::NeedMoreInput(_) => {
                 self.input_state_tracker.return_state(input_id, state);
-                self.try_spawn_tasks_for_input(input_id)?;
-                self.try_spawn_tasks_all_inputs()?;
+                self.try_progress_input(input_id)?;
+                self.try_progress_all_inputs()?;
                 Ok(ControlFlow::Continue)
             }
             StreamingSinkOutput::HasMoreOutput { input, .. } => {
@@ -284,8 +275,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkProcessor<Op> {
                 let task_spawner = self.task_spawner.clone();
                 self.task_set.spawn(async move {
                     let now = Instant::now();
-                    let (new_state, result) =
-                        op.execute(input, state, &task_spawner).await??;
+                    let (new_state, result) = op.execute(input, state, &task_spawner).await??;
                     let elapsed = now.elapsed();
                     Ok(StreamingSinkTaskResult::Execute {
                         input_id,
@@ -301,7 +291,12 @@ impl<Op: StreamingSink + 'static> StreamingSinkProcessor<Op> {
                 self.input_state_tracker.return_state(input_id, state);
                 let active_input_ids = self.input_state_tracker.input_ids();
                 for flush_input_id in active_input_ids {
-                    if self.send(PipelineMessage::Flush(flush_input_id)).await == ControlFlow::Stop {
+                    if self
+                        .output_sender
+                        .send(PipelineMessage::Flush(flush_input_id))
+                        .await
+                        .is_err()
+                    {
                         return Ok(ControlFlow::Stop);
                     }
                 }
@@ -321,24 +316,20 @@ impl<Op: StreamingSink + 'static> StreamingSinkProcessor<Op> {
                 if let Some(mp) = output {
                     self.runtime_stats.add_rows_out(mp.len() as u64);
                     if self
+                        .output_sender
                         .send(PipelineMessage::Morsel {
                             input_id,
                             partition: mp,
                         })
                         .await
-                        == ControlFlow::Stop
+                        .is_err()
                     {
                         return Ok(ControlFlow::Stop);
                     }
                 }
 
                 // Spawn another finalize task with the returned states
-                let op = self.op.clone();
-                let finalize_spawner = self.finalize_spawner.clone();
-                self.task_set.spawn(async move {
-                    let output = op.finalize(states, &finalize_spawner).await??;
-                    Ok(StreamingSinkTaskResult::Finalize { input_id, output })
-                });
+                self.spawn_finalize_task(states, input_id);
                 Ok(ControlFlow::Continue)
             }
             StreamingSinkFinalizeOutput::Finished(output) => {
@@ -346,21 +337,28 @@ impl<Op: StreamingSink + 'static> StreamingSinkProcessor<Op> {
                 if let Some(mp) = output {
                     self.runtime_stats.add_rows_out(mp.len() as u64);
                     if self
+                        .output_sender
                         .send(PipelineMessage::Morsel {
                             input_id,
                             partition: mp,
                         })
                         .await
-                        == ControlFlow::Stop
+                        .is_err()
                     {
                         return Ok(ControlFlow::Stop);
                     }
                 }
 
                 // Finalization complete, send flush
-                if self.send(PipelineMessage::Flush(input_id)).await == ControlFlow::Stop {
+                if self
+                    .output_sender
+                    .send(PipelineMessage::Flush(input_id))
+                    .await
+                    .is_err()
+                {
                     return Ok(ControlFlow::Stop);
                 }
+                self.try_progress_all_inputs()?;
                 Ok(ControlFlow::Continue)
             }
         }
@@ -378,27 +376,31 @@ impl<Op: StreamingSink + 'static> StreamingSinkProcessor<Op> {
         self.runtime_stats.add_rows_in(partition.len() as u64);
         self.input_state_tracker
             .buffer_partition(input_id, partition)?;
-        self.try_spawn_tasks_all_inputs()?;
+        self.try_progress_input(input_id)?;
         Ok(())
     }
 
     async fn handle_flush(&mut self, input_id: InputId) -> DaftResult<ControlFlow> {
         if !self.input_state_tracker.contains_key(input_id) {
-            if self.send(PipelineMessage::Flush(input_id)).await == ControlFlow::Stop {
+            if self
+                .output_sender
+                .send(PipelineMessage::Flush(input_id))
+                .await
+                .is_err()
+            {
                 return Ok(ControlFlow::Stop);
             }
             return Ok(ControlFlow::Continue);
         }
         self.input_state_tracker.mark_completed(input_id);
-        self.try_spawn_tasks_for_input(input_id)?;
-        self.try_spawn_finalize_task(input_id)?;
+        self.try_progress_input(input_id)?;
         Ok(ControlFlow::Continue)
     }
 
-    fn handle_input_closed(&mut self) -> DaftResult<()> {
+    async fn handle_input_closed(&mut self) -> DaftResult<ControlFlow> {
         self.input_state_tracker.mark_all_completed();
-        self.try_spawn_tasks_all_inputs()?;
-        Ok(())
+        self.try_progress_all_inputs()?;
+        Ok(ControlFlow::Continue)
     }
 
     async fn process_input(
@@ -407,10 +409,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkProcessor<Op> {
     ) -> DaftResult<ControlFlow> {
         let mut input_closed = false;
 
-        while !input_closed
-            || !self.task_set.is_empty()
-            || !self.input_state_tracker.is_empty()
-        {
+        while !input_closed || !self.task_set.is_empty() || !self.input_state_tracker.is_empty() {
             let event = next_event(
                 &mut self.task_set,
                 self.max_concurrency,
@@ -431,9 +430,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkProcessor<Op> {
                 PipelineEvent::TaskCompleted(StreamingSinkTaskResult::Finalize {
                     input_id,
                     output,
-                }) => {
-                    self.handle_finalize_completed(input_id, output).await?
-                }
+                }) => self.handle_finalize_completed(input_id, output).await?,
                 PipelineEvent::Morsel {
                     input_id,
                     partition,
@@ -442,10 +439,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkProcessor<Op> {
                     ControlFlow::Continue
                 }
                 PipelineEvent::Flush(input_id) => self.handle_flush(input_id).await?,
-                PipelineEvent::InputClosed => {
-                    self.handle_input_closed()?;
-                    ControlFlow::Continue
-                }
+                PipelineEvent::InputClosed => self.handle_input_closed().await?,
             };
             if cf == ControlFlow::Stop {
                 return Ok(ControlFlow::Stop);
@@ -600,16 +594,16 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
         );
 
         let op = self.op.clone();
-        let input_state_tracker = InputStateTracker::new(Box::new(
+        let input_state_tracker = InputStatesTracker::new(Box::new(
             move |_input_id| -> DaftResult<StateTracker<Op::State>> {
                 let states = (0..op.max_concurrency_per_input_id())
                     .map(|_| op.make_state())
                     .collect::<DaftResult<Vec<_>>>()?;
                 let (lower, upper) = op
                     .batching_strategy()
-                    .calculate_requirements(&mut op.batching_strategy().make_state())
+                    .calculate_new_requirements(&mut op.batching_strategy().make_state())
                     .values();
-                Ok(StateTracker::new(states, lower, upper))
+                Ok(StateTracker::new(states, RowBasedBuffer::new(lower, upper)))
             },
         ));
 

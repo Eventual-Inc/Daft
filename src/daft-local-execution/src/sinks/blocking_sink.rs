@@ -15,9 +15,10 @@ use tracing::info_span;
 
 use crate::{
     ControlFlow, ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
+    buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
-    pipeline_execution::{InputStateTracker, PipelineEvent, StateTracker, next_event},
+    pipeline_execution::{InputStatesTracker, PipelineEvent, StateTracker, next_event},
     pipeline_message::{InputId, PipelineMessage},
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
@@ -71,7 +72,7 @@ enum BlockingSinkTaskResult<S> {
 struct BlockingSinkProcessor<Op: BlockingSink> {
     task_set: OrderingAwareJoinSet<DaftResult<BlockingSinkTaskResult<Op::State>>>,
     max_concurrency: usize,
-    input_state_tracker: InputStateTracker<Op::State>,
+    input_state_tracker: InputStatesTracker<Op::State>,
     op: Arc<Op>,
     task_spawner: ExecutionTaskSpawner,
     finalize_spawner: ExecutionTaskSpawner,
@@ -82,13 +83,6 @@ struct BlockingSinkProcessor<Op: BlockingSink> {
     node_initialized: bool,
 }
 
-/// input_id lifecycle:
-///
-/// 1. BUFFER   — morsel arrives, data buffered
-/// 2. EXECUTE  — tasks spawned while batch_size met AND under max_concurrency
-/// 3. FLUSH_IN — flush received → mark completed → pop_all allowed for remaining buffer
-/// 4. FINALIZE — all tasks done + buffer empty → spawn finalize
-/// 5. CLEANUP  — finalize done → remove input_id → propagate flush downstream
 impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
     fn new(
         maintain_order: bool,
@@ -97,7 +91,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
         finalize_spawner: ExecutionTaskSpawner,
         runtime_stats: Arc<dyn RuntimeStats>,
         output_sender: Sender<PipelineMessage>,
-        input_state_tracker: InputStateTracker<Op::State>,
+        input_state_tracker: InputStatesTracker<Op::State>,
         stats_manager: RuntimeStatsManagerHandle,
         node_id: usize,
     ) -> Self {
@@ -114,15 +108,6 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
             stats_manager,
             node_id,
             node_initialized: false,
-        }
-    }
-
-    #[inline]
-    async fn send(&self, msg: PipelineMessage) -> ControlFlow {
-        if self.output_sender.send(msg).await.is_err() {
-            ControlFlow::Stop
-        } else {
-            ControlFlow::Continue
         }
     }
 
@@ -146,36 +131,21 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
         });
     }
 
-    fn try_spawn_tasks_for_input(&mut self, input_id: InputId) -> DaftResult<()> {
-        while self.task_set.len() < self.max_concurrency {
-            let Some(next) = self
+    fn try_progress_input(&mut self, input_id: InputId) -> DaftResult<()> {
+        // Try to spawn tasks for the input
+        while self.task_set.len() < self.max_concurrency
+            && let Some(next) = self
                 .input_state_tracker
-                .get_next_partition_for_execute(input_id)
-            else {
-                break;
-            };
+                .get_next_morsel_for_execute(input_id)
+        {
             let (partition, state) = next?;
             self.spawn_sink_task(partition, state, input_id);
         }
-        Ok(())
-    }
-
-    fn try_spawn_tasks_all_inputs(&mut self) -> DaftResult<()> {
-        let input_ids = self.input_state_tracker.input_ids();
-        for input_id in input_ids {
-            if self.task_set.len() >= self.max_concurrency {
-                break;
-            }
-            self.try_spawn_tasks_for_input(input_id)?;
-            self.try_spawn_finalize_task(input_id)?;
-        }
-        Ok(())
-    }
-
-    fn try_spawn_finalize_task(&mut self, input_id: InputId) -> DaftResult<bool> {
-        if let Some(states) = self
-            .input_state_tracker
-            .try_take_states_for_finalize(input_id)
+        // Try to finalize the input
+        if self.task_set.len() < self.max_concurrency
+            && let Some(states) = self
+                .input_state_tracker
+                .try_take_states_for_finalize(input_id)
         {
             let op = self.op.clone();
             let finalize_spawner = self.finalize_spawner.clone();
@@ -183,10 +153,16 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
                 let output = op.finalize(states, &finalize_spawner).await??;
                 Ok(BlockingSinkTaskResult::Finalize { input_id, output })
             });
-            Ok(true)
-        } else {
-            Ok(false)
         }
+        Ok(())
+    }
+
+    fn try_progress_all_inputs(&mut self) -> DaftResult<()> {
+        let input_ids = self.input_state_tracker.input_ids();
+        for input_id in input_ids {
+            self.try_progress_input(input_id)?;
+        }
+        Ok(())
     }
 
     async fn handle_sink_completed(
@@ -197,8 +173,8 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
     ) -> DaftResult<ControlFlow> {
         self.runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
         self.input_state_tracker.return_state(input_id, state);
-        self.try_spawn_tasks_for_input(input_id)?;
-        self.try_spawn_tasks_all_inputs()?;
+        self.try_progress_input(input_id)?;
+        self.try_progress_all_inputs()?;
         Ok(ControlFlow::Continue)
     }
 
@@ -210,19 +186,26 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
         for partition in output {
             self.runtime_stats.add_rows_out(partition.len() as u64);
             if self
+                .output_sender
                 .send(PipelineMessage::Morsel {
                     input_id,
                     partition,
                 })
                 .await
-                == ControlFlow::Stop
+                .is_err()
             {
                 return Ok(ControlFlow::Stop);
             }
         }
-        if self.send(PipelineMessage::Flush(input_id)).await == ControlFlow::Stop {
+        if self
+            .output_sender
+            .send(PipelineMessage::Flush(input_id))
+            .await
+            .is_err()
+        {
             return Ok(ControlFlow::Stop);
         }
+        self.try_progress_all_inputs()?;
         Ok(ControlFlow::Continue)
     }
 
@@ -238,29 +221,33 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
         self.runtime_stats.add_rows_in(partition.len() as u64);
         self.input_state_tracker
             .buffer_partition(input_id, partition)?;
-        self.try_spawn_tasks_all_inputs()?;
+        self.try_progress_input(input_id)?;
         Ok(())
     }
 
     async fn handle_flush(&mut self, input_id: InputId) -> DaftResult<ControlFlow> {
-        if !self.input_state_tracker.contains_key(input_id) {
-            if self.send(PipelineMessage::Flush(input_id)).await == ControlFlow::Stop {
-                return Ok(ControlFlow::Stop);
-            }
-            return Ok(ControlFlow::Continue);
+        if !self.input_state_tracker.contains_key(input_id)
+            && self
+                .output_sender
+                .send(PipelineMessage::Flush(input_id))
+                .await
+                .is_err()
+        {
+            return Ok(ControlFlow::Stop);
+        } else {
+            self.input_state_tracker.mark_completed(input_id);
+            self.try_progress_input(input_id)?;
         }
-        self.input_state_tracker.mark_completed(input_id);
-        self.try_spawn_finalize_task(input_id)?;
         Ok(ControlFlow::Continue)
     }
 
     async fn handle_input_closed(&mut self) -> DaftResult<ControlFlow> {
         self.input_state_tracker.mark_all_completed();
-        self.try_spawn_tasks_all_inputs()?;
+        self.try_progress_all_inputs()?;
         Ok(ControlFlow::Continue)
     }
 
-    async fn process_input(
+    async fn start_processing(
         &mut self,
         receiver: &mut Receiver<PipelineMessage>,
     ) -> DaftResult<ControlFlow> {
@@ -434,15 +421,14 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         );
 
         let op = self.op.clone();
-        let input_state_tracker = InputStateTracker::new(Box::new(
+        let input_state_tracker = InputStatesTracker::new(Box::new(
             move |_input_id| -> DaftResult<StateTracker<Op::State>> {
                 let states = (0..op.max_concurrency())
                     .map(|_| op.make_state())
                     .collect::<DaftResult<Vec<_>>>()?;
                 Ok(StateTracker::new(
                     states,
-                    0,
-                    NonZeroUsize::new(usize::MAX).unwrap(),
+                    RowBasedBuffer::new(0, NonZeroUsize::new(usize::MAX).unwrap()),
                 ))
             },
         ));
@@ -465,7 +451,9 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
                     node_id,
                 );
 
-                processor.process_input(&mut child_results_receiver).await?;
+                processor
+                    .start_processing(&mut child_results_receiver)
+                    .await?;
 
                 stats_manager.finalize_node(node_id);
                 Ok(())

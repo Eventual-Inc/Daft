@@ -29,6 +29,7 @@ impl BatchingState for DynBatchingState {
 /// dynamic batching strategies to be stored and used at runtime without
 /// compile-time generic constraints.
 pub struct DynBatchingStrategy {
+    initial_req: MorselSizeRequirement,
     make_state_fn: Box<dyn Fn() -> DynBatchingState + Send + Sync>,
 }
 
@@ -36,6 +37,7 @@ pub struct DynBatchingStrategy {
 impl std::fmt::Debug for DynBatchingStrategy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DynBatchingStrategy")
+            .field("initial_req", &self.initial_req)
             .finish_non_exhaustive()
     }
 }
@@ -45,7 +47,10 @@ impl DynBatchingStrategy {
     where
         S::State: 'static,
     {
+        let initial_req = strategy.initial_requirements();
+
         Self {
+            initial_req,
             make_state_fn: Box::new(move || {
                 let state = strategy.make_state();
                 let strategy_clone = strategy.clone();
@@ -64,7 +69,7 @@ impl DynBatchingStrategy {
                     }),
                     update_fn: Box::new(move || {
                         let mut state_guard = state_for_update.lock().unwrap();
-                        strategy_clone.calculate_requirements(&mut *state_guard)
+                        strategy_clone.calculate_new_requirements(&mut *state_guard)
                     }),
                 }
             }),
@@ -87,8 +92,12 @@ impl BatchingStrategy for DynBatchingStrategy {
         (self.make_state_fn)()
     }
 
-    fn calculate_requirements(&self, state: &mut Self::State) -> MorselSizeRequirement {
+    fn calculate_new_requirements(&self, state: &mut Self::State) -> MorselSizeRequirement {
         (state.update_fn)()
+    }
+
+    fn initial_requirements(&self) -> MorselSizeRequirement {
+        self.initial_req
     }
 }
 #[cfg(test)]
@@ -137,10 +146,11 @@ mod tests {
             0
         }
 
-        fn calculate_requirements(&self, state: &mut Self::State) -> MorselSizeRequirement {
-            if *self.call_counter.lock().unwrap() == 0 {
-                return self.initial_req;
-            }
+        fn initial_requirements(&self) -> MorselSizeRequirement {
+            self.initial_req
+        }
+
+        fn calculate_new_requirements(&self, state: &mut Self::State) -> MorselSizeRequirement {
             *self.call_counter.lock().unwrap() += 1;
             *state += 1;
 
@@ -161,9 +171,8 @@ mod tests {
         ));
         let dyn_strategy = DynBatchingStrategy::new(mock);
 
-        let mut state = dyn_strategy.make_state();
         assert_eq!(
-            dyn_strategy.calculate_requirements(&mut state),
+            dyn_strategy.initial_requirements(),
             MorselSizeRequirement::Flexible(1, NonZeroUsize::new(32).unwrap())
         );
     }
@@ -176,9 +185,8 @@ mod tests {
         ));
         let dyn_strategy: DynBatchingStrategy = mock.into();
 
-        let mut state = dyn_strategy.make_state();
         assert_eq!(
-            dyn_strategy.calculate_requirements(&mut state),
+            dyn_strategy.initial_requirements(),
             MorselSizeRequirement::Flexible(2, NonZeroUsize::new(64).unwrap())
         );
     }
@@ -193,21 +201,21 @@ mod tests {
         let mut state = dyn_strategy.make_state();
 
         // First call
-        let req1 = dyn_strategy.calculate_requirements(&mut state);
+        let req1 = dyn_strategy.calculate_new_requirements(&mut state);
         assert_eq!(
             req1,
             MorselSizeRequirement::Flexible(1, NonZeroUsize::new(10).unwrap())
         );
 
         // Second call
-        let req2 = dyn_strategy.calculate_requirements(&mut state);
+        let req2 = dyn_strategy.calculate_new_requirements(&mut state);
         assert_eq!(
             req2,
             MorselSizeRequirement::Flexible(5, NonZeroUsize::new(20).unwrap())
         );
 
         // Third call
-        let req3 = dyn_strategy.calculate_requirements(&mut state);
+        let req3 = dyn_strategy.calculate_new_requirements(&mut state);
         assert_eq!(
             req3,
             MorselSizeRequirement::Flexible(10, NonZeroUsize::new(50).unwrap())
@@ -229,8 +237,8 @@ mod tests {
         let mut state2 = dyn_strategy.make_state();
 
         // Each state should be independent
-        let req1_1 = dyn_strategy.calculate_requirements(&mut state1);
-        let req2_1 = dyn_strategy.calculate_requirements(&mut state2);
+        let req1_1 = dyn_strategy.calculate_new_requirements(&mut state1);
+        let req2_1 = dyn_strategy.calculate_new_requirements(&mut state2);
 
         assert_eq!(
             req1_1,
@@ -242,14 +250,14 @@ mod tests {
         );
 
         // Second call on state1 should advance its internal state
-        let req1_2 = dyn_strategy.calculate_requirements(&mut state1);
+        let req1_2 = dyn_strategy.calculate_new_requirements(&mut state1);
         assert_eq!(
             req1_2,
             MorselSizeRequirement::Flexible(5, NonZeroUsize::new(20).unwrap())
         );
 
         // But state2 should still be at first call
-        let req2_2 = dyn_strategy.calculate_requirements(&mut state2);
+        let req2_2 = dyn_strategy.calculate_new_requirements(&mut state2);
         assert_eq!(
             req2_2,
             MorselSizeRequirement::Flexible(5, NonZeroUsize::new(20).unwrap())
@@ -270,23 +278,20 @@ mod tests {
         let dyn1 = DynBatchingStrategy::new(mock1.clone());
         let dyn2 = DynBatchingStrategy::new(mock2.clone());
 
-        let mut state1 = dyn1.make_state();
-        let mut state2 = dyn2.make_state();
-
         assert_eq!(
-            dyn1.calculate_requirements(&mut state1),
+            dyn1.initial_requirements(),
             MorselSizeRequirement::Flexible(1, NonZeroUsize::new(16).unwrap())
         );
         assert_eq!(
-            dyn2.calculate_requirements(&mut state2),
+            dyn2.initial_requirements(),
             MorselSizeRequirement::Flexible(4, NonZeroUsize::new(32).unwrap())
         );
 
         let mut state1 = dyn1.make_state();
         let mut state2 = dyn2.make_state();
 
-        dyn1.calculate_requirements(&mut state1);
-        dyn2.calculate_requirements(&mut state2);
+        dyn1.calculate_new_requirements(&mut state1);
+        dyn2.calculate_new_requirements(&mut state2);
 
         // Each should have been called independently
         assert_eq!(mock1.call_count(), 1);

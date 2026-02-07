@@ -12,9 +12,10 @@ use tokio::sync::watch;
 
 use crate::{
     ExecutionTaskSpawner,
+    buffer::RowBasedBuffer,
     channel::Receiver,
     join::join_operator::JoinOperator,
-    pipeline_execution::{InputStateTracker, PipelineEvent, StateTracker, next_event},
+    pipeline_execution::{InputStatesTracker, PipelineEvent, StateTracker, next_event},
     pipeline_message::{InputId, PipelineMessage},
     runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle},
 };
@@ -70,7 +71,7 @@ struct BuildTaskResult<S> {
 pub(crate) struct BuildExecutionContext<Op: JoinOperator> {
     task_set: OrderingAwareJoinSet<DaftResult<Option<BuildTaskResult<Op::BuildState>>>>,
     max_concurrency: usize,
-    input_state_tracker: InputStateTracker<Op::BuildState>,
+    input_state_tracker: InputStatesTracker<Op::BuildState>,
     op: Arc<Op>,
     task_spawner: ExecutionTaskSpawner,
     build_state_bridge: Arc<BuildStateBridge<Op>>,
@@ -100,13 +101,12 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
         let task_set = OrderingAwareJoinSet::new(false);
 
         let op_for_state_creator = op.clone();
-        let input_state_tracker = InputStateTracker::new(Box::new(
+        let input_state_tracker = InputStatesTracker::new(Box::new(
             move |_input_id| -> DaftResult<StateTracker<Op::BuildState>> {
                 let state = op_for_state_creator.make_build_state()?;
                 Ok(StateTracker::new(
                     vec![state],
-                    0,
-                    NonZeroUsize::new(usize::MAX).unwrap(),
+                    RowBasedBuffer::new(0, NonZeroUsize::new(usize::MAX).unwrap()),
                 ))
             },
         ));
@@ -145,49 +145,42 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
         });
     }
 
-    fn try_spawn_tasks_for_input(&mut self, input_id: InputId) -> DaftResult<()> {
-        while self.task_set.len() < self.max_concurrency {
-            let Some(next) = self
+    fn spawn_finalize_task(&mut self, states: Vec<Op::BuildState>, input_id: InputId) {
+        let op = self.op.clone();
+        let build_state_bridge = self.build_state_bridge.clone();
+        self.task_set.spawn(async move {
+            let state = states.into_iter().next().expect("Should have state");
+            let finalized = op.finalize_build(state)?;
+            build_state_bridge.send_finalized_build_state(input_id, finalized);
+            Ok(None)
+        });
+    }
+
+    fn try_progress_input(&mut self, input_id: InputId) -> DaftResult<()> {
+        while self.task_set.len() < self.max_concurrency
+            && let Some(next) = self
                 .input_state_tracker
-                .get_next_partition_for_execute(input_id)
-            else {
-                break;
-            };
+                .get_next_morsel_for_execute(input_id)
+        {
             let (partition, state) = next?;
             self.spawn_build_task(partition, state, input_id);
         }
+        if self.task_set.len() < self.max_concurrency
+            && let Some(states) = self
+                .input_state_tracker
+                .try_take_states_for_finalize(input_id)
+        {
+            self.spawn_finalize_task(states, input_id);
+        }
         Ok(())
     }
 
-    fn try_spawn_tasks_all_inputs(&mut self) -> DaftResult<()> {
+    fn try_progress_all_inputs(&mut self) -> DaftResult<()> {
         let input_ids = self.input_state_tracker.input_ids();
         for input_id in input_ids {
-            if self.task_set.len() >= self.max_concurrency {
-                break;
-            }
-            self.try_spawn_tasks_for_input(input_id)?;
-            self.try_spawn_finalize_task(input_id)?;
+            self.try_progress_input(input_id)?;
         }
         Ok(())
-    }
-
-    fn try_spawn_finalize_task(&mut self, input_id: InputId) -> DaftResult<bool> {
-        if let Some(states) = self
-            .input_state_tracker
-            .try_take_states_for_finalize(input_id)
-        {
-            let op = self.op.clone();
-            let build_state_bridge = self.build_state_bridge.clone();
-            self.task_set.spawn(async move {
-                let state = states.into_iter().next().expect("Should have state");
-                let finalized = op.finalize_build(state)?;
-                build_state_bridge.send_finalized_build_state(input_id, finalized);
-                Ok(None)
-            });
-            Ok(true)
-        } else {
-            Ok(false)
-        }
     }
 
     fn handle_build_completed(
@@ -198,7 +191,8 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
     ) -> DaftResult<()> {
         self.runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
         self.input_state_tracker.return_state(input_id, state);
-        self.try_spawn_tasks_all_inputs()?;
+        self.try_progress_input(input_id)?;
+        self.try_progress_all_inputs()?;
         Ok(())
     }
 
@@ -214,7 +208,7 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
         self.runtime_stats.add_rows_in(partition.len() as u64);
         self.input_state_tracker
             .buffer_partition(input_id, partition)?;
-        self.try_spawn_tasks_all_inputs()?;
+        self.try_progress_input(input_id)?;
         Ok(())
     }
 
@@ -223,14 +217,13 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
             return Ok(());
         }
         self.input_state_tracker.mark_completed(input_id);
-        self.try_spawn_tasks_for_input(input_id)?;
-        self.try_spawn_finalize_task(input_id)?;
+        self.try_progress_input(input_id)?;
         Ok(())
     }
 
     fn handle_input_closed(&mut self) -> DaftResult<()> {
         self.input_state_tracker.mark_all_completed();
-        self.try_spawn_tasks_all_inputs()?;
+        self.try_progress_all_inputs()?;
         Ok(())
     }
 
