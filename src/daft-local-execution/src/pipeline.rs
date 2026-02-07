@@ -543,7 +543,7 @@ fn physical_plan_to_pipeline(
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             if udf_properties.is_async
-                && udf_properties.concurrency.is_none()
+                && !udf_properties.is_actor_pool_udf()
                 && !udf_properties.use_process.unwrap_or(false)
             {
                 let async_sink = AsyncUdfSink::new(
@@ -587,6 +587,8 @@ fn physical_plan_to_pipeline(
                 input,
                 actor_objects,
                 batch_size,
+                min_concurrency,
+                max_concurrency,
                 memory_request,
                 schema,
                 passthrough_columns,
@@ -599,6 +601,8 @@ fn physical_plan_to_pipeline(
             let distributed_actor_pool_project_op = DistributedActorPoolProjectOperator::try_new(
                 actor_objects.clone(),
                 *batch_size,
+                *min_concurrency,
+                *max_concurrency,
                 *memory_request,
                 passthrough_columns.clone(),
                 required_columns.clone(),

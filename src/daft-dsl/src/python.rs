@@ -193,7 +193,8 @@ pub fn list_(items: Vec<PyExpr>) -> PyExpr {
     init_args,
     resource_request=None,
     batch_size=None,
-    concurrency=None,
+    min_concurrency=None,
+    max_concurrency=None,
     use_process=None,
     ray_options=None,
 ))]
@@ -206,7 +207,8 @@ pub fn udf(
     init_args: Py<PyAny>,
     resource_request: Option<ResourceRequest>,
     batch_size: Option<usize>,
-    concurrency: Option<usize>,
+    min_concurrency: Option<usize>,
+    max_concurrency: Option<usize>,
     use_process: Option<bool>,
     ray_options: Option<Py<PyAny>>,
 ) -> PyResult<PyExpr> {
@@ -222,10 +224,10 @@ pub fn udf(
 
     let expressions_map: Vec<ExprRef> = expressions.into_iter().map(|pyexpr| pyexpr.expr).collect();
 
-    let concurrency = concurrency
+    let max_concurrency = max_concurrency
         .map(|c| {
             NonZeroUsize::new(c)
-                .ok_or_else(|| PyValueError::new_err("concurrency for udf must be non-zero"))
+                .ok_or_else(|| PyValueError::new_err("max_concurrency for udf must be non-zero"))
         })
         .transpose()?;
     Ok(PyExpr {
@@ -238,7 +240,8 @@ pub fn udf(
             init_args.into(),
             resource_request,
             batch_size,
-            concurrency,
+            min_concurrency,
+            max_concurrency,
             use_process,
             ray_options.map(|r| r.into()),
         )?
@@ -258,6 +261,7 @@ pub fn row_wise_udf(
     return_dtype: PyDataType,
     gpus: f64,
     use_process: Option<bool>,
+    min_concurrency: Option<usize>,
     max_concurrency: Option<usize>,
     max_retries: Option<usize>,
     on_error: Option<String>,
@@ -295,6 +299,7 @@ pub fn row_wise_udf(
             return_dtype.into(),
             FloatWrapper(gpus),
             use_process,
+            min_concurrency,
             max_concurrency,
             max_retries,
             on_error_enum.unwrap_or_default(),
@@ -317,6 +322,7 @@ pub fn batch_udf(
     return_dtype: PyDataType,
     gpus: f64,
     use_process: Option<bool>,
+    min_concurrency: Option<usize>,
     max_concurrency: Option<usize>,
     batch_size: Option<usize>,
     max_retries: Option<usize>,
@@ -347,6 +353,7 @@ pub fn batch_udf(
             return_dtype.into(),
             FloatWrapper(gpus),
             use_process,
+            min_concurrency,
             max_concurrency,
             batch_size,
             original_args.into(),

@@ -120,7 +120,8 @@ pub struct LegacyPythonUDF {
     pub return_dtype: DataType,
     pub resource_request: Option<ResourceRequest>,
     pub batch_size: Option<usize>,
-    pub concurrency: Option<NonZeroUsize>,
+    pub min_concurrency: Option<usize>,
+    pub max_concurrency: Option<NonZeroUsize>,
     pub use_process: Option<bool>,
     pub ray_options: Option<RuntimePyObject>,
 }
@@ -139,7 +140,8 @@ impl LegacyPythonUDF {
             return_dtype: DataType::Int64,
             resource_request: None,
             batch_size: None,
-            concurrency: Some(NonZeroUsize::new(4).unwrap()),
+            min_concurrency: None,
+            max_concurrency: Some(NonZeroUsize::new(4).unwrap()),
             use_process: None,
             ray_options: None,
         }
@@ -156,7 +158,8 @@ pub fn udf(
     init_args: RuntimePyObject,
     resource_request: Option<ResourceRequest>,
     batch_size: Option<usize>,
-    concurrency: Option<NonZeroUsize>,
+    min_concurrency: Option<usize>,
+    max_concurrency: Option<NonZeroUsize>,
     use_process: Option<bool>,
     ray_options: Option<RuntimePyObject>,
 ) -> DaftResult<Expr> {
@@ -169,7 +172,8 @@ pub fn udf(
             return_dtype,
             resource_request,
             batch_size,
-            concurrency,
+            min_concurrency,
+            max_concurrency,
             use_process,
             ray_options,
         }),
@@ -273,7 +277,8 @@ pub struct UDFProperties {
     pub name: String,
     pub resource_request: Option<ResourceRequest>,
     pub batch_size: Option<usize>,
-    pub concurrency: Option<NonZeroUsize>,
+    pub min_concurrency: Option<usize>,
+    pub max_concurrency: Option<NonZeroUsize>,
     pub use_process: Option<bool>,
     pub max_retries: Option<usize>,
     pub builtin_name: bool,
@@ -296,7 +301,8 @@ impl UDFProperties {
                             name,
                             resource_request,
                             batch_size,
-                            concurrency,
+                            min_concurrency,
+                            max_concurrency,
                             use_process,
                             ray_options,
                             ..
@@ -308,7 +314,8 @@ impl UDFProperties {
                         name: name.as_ref().clone(),
                         resource_request: resource_request.clone(),
                         batch_size: *batch_size,
-                        concurrency: *concurrency,
+                        min_concurrency: *min_concurrency,
+                        max_concurrency: *max_concurrency,
                         use_process: *use_process,
                         max_retries: None,
                         builtin_name: false,
@@ -328,7 +335,8 @@ impl UDFProperties {
                             None,
                         )?),
                         batch_size: None, // Row-wise functions don't have batch_size
-                        concurrency: row_wise_fn.max_concurrency,
+                        min_concurrency: row_wise_fn.min_concurrency,
+                        max_concurrency: row_wise_fn.max_concurrency,
                         use_process: row_wise_fn.use_process,
                         max_retries: row_wise_fn.max_retries,
                         builtin_name: row_wise_fn.builtin_name,
@@ -341,6 +349,7 @@ impl UDFProperties {
                 Expr::ScalarFn(ScalarFn::Python(PyScalarFn::Batch(BatchPyFn {
                     function_name,
                     gpus,
+                    min_concurrency,
                     max_concurrency,
                     use_process,
                     batch_size,
@@ -359,7 +368,8 @@ impl UDFProperties {
                             None,
                         )?),
                         batch_size: *batch_size,
-                        concurrency: *max_concurrency,
+                        min_concurrency: *min_concurrency,
+                        max_concurrency: *max_concurrency,
                         use_process: *use_process,
                         max_retries: *max_retries,
                         builtin_name: *builtin_name,
@@ -386,7 +396,7 @@ impl UDFProperties {
     }
 
     pub fn is_actor_pool_udf(&self) -> bool {
-        self.concurrency.is_some()
+        self.min_concurrency.is_some() || self.max_concurrency.is_some()
     }
 
     #[must_use]
@@ -401,8 +411,12 @@ impl UDFProperties {
             properties.push(format!("batch_size = {}", batch_size));
         }
 
-        if let Some(concurrency) = &self.concurrency {
-            properties.push(format!("concurrency = {}", concurrency));
+        if let Some(min_concurrency) = &self.min_concurrency {
+            properties.push(format!("min_concurrency = {}", min_concurrency));
+        }
+
+        if let Some(max_concurrency) = &self.max_concurrency {
+            properties.push(format!("max_concurrency = {}", max_concurrency));
         }
 
         if let Some(use_process) = &self.use_process {

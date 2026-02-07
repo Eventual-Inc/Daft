@@ -59,6 +59,7 @@ class Func(Generic[P, T, C]):
     unnest: bool
     gpus: float
     use_process: bool | None
+    min_concurrency: int | None
     max_concurrency: int | None
     max_retries: int | None
     on_error: str | None
@@ -107,6 +108,7 @@ class Func(Generic[P, T, C]):
             0,
             use_process,
             None,
+            None,
             max_retries,
             on_error,
             return_dtype,
@@ -120,6 +122,7 @@ class Func(Generic[P, T, C]):
         method: Callable[Concatenate[C, P], T],
         gpus: float,
         use_process: bool | None,
+        min_concurrency: int | None,
         max_concurrency: int | None,
         max_retries: int | None,
         on_error: Literal["raise", "log", "ignore"] | None = None,
@@ -143,6 +146,7 @@ class Func(Generic[P, T, C]):
             unnest,
             gpus,
             use_process,
+            min_concurrency,
             max_concurrency,
             max_retries,
             on_error,
@@ -261,6 +265,7 @@ class Func(Generic[P, T, C]):
                     DataType.list(self.return_dtype)._dtype,
                     self.gpus,
                     self.use_process,
+                    self.min_concurrency,
                     self.max_concurrency,
                     self.max_retries,
                     self.on_error,
@@ -280,6 +285,7 @@ class Func(Generic[P, T, C]):
                     self.return_dtype._dtype,
                     self.gpus,
                     self.use_process,
+                    self.min_concurrency,
                     self.max_concurrency,
                     self.batch_size,
                     self.max_retries,
@@ -300,6 +306,7 @@ class Func(Generic[P, T, C]):
                     self.return_dtype._dtype,
                     self.gpus,
                     self.use_process,
+                    self.min_concurrency,
                     self.max_concurrency,
                     self.max_retries,
                     self.on_error,
@@ -362,6 +369,7 @@ def wrap_cls(
     cls: type,
     gpus: float,
     use_process: bool | None,
+    min_concurrency: int | None,
     max_concurrency: int | None,
     max_retries: int | None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
@@ -390,7 +398,7 @@ def wrap_cls(
                 raise AttributeError("Can only access methods on a Daft class instance.")
 
             return Func._from_method(
-                self, attr, gpus, use_process, max_concurrency, max_retries, on_error, name_override
+                self, attr, gpus, use_process, min_concurrency, max_concurrency, max_retries, on_error, name_override
             )
 
         def __call__(self, *args: Any, **kwargs: Any) -> Any:

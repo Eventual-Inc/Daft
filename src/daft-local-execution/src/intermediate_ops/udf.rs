@@ -326,7 +326,8 @@ pub(crate) struct UdfOperator {
     params: Arc<UdfParams>,
     expr: BoundExpr,
     worker_count: AtomicUsize,
-    concurrency: usize,
+    min_concurrency: Option<usize>,
+    max_concurrency: usize,
     memory_request: u64,
     use_process: bool,
 }
@@ -341,11 +342,12 @@ impl UdfOperator {
     ) -> DaftResult<Self> {
         // Determine optimal parallelism
         let resource_request = udf_properties.resource_request.as_ref();
+        let min_concurrency = udf_properties.min_concurrency;
         let max_concurrency =
             Self::get_optimal_allocation(udf_properties.name.as_str(), resource_request)?;
         // If parallelism is already specified, use that
         let concurrency = udf_properties
-            .concurrency
+            .max_concurrency
             .map(|c| c.get())
             .unwrap_or(max_concurrency);
 
@@ -375,13 +377,14 @@ impl UdfOperator {
         Ok(Self {
             expr,
             params: Arc::new(UdfParams {
-                udf_properties,
+                udf_properties: udf_properties,
                 passthrough_columns,
                 output_schema: output_schema.clone(),
                 required_cols,
             }),
             worker_count: AtomicUsize::new(0),
-            concurrency,
+            min_concurrency: min_concurrency,
+            max_concurrency: concurrency,
             memory_request,
             use_process,
         })
@@ -502,9 +505,10 @@ impl IntermediateOperator for UdfOperator {
             format!(
                 "Properties = {{ {} }}",
                 UDFProperties {
-                    concurrency: Some(
-                        NonZeroUsize::new(self.concurrency)
-                            .expect("UDF concurrency is always >= 1")
+                    min_concurrency: self.min_concurrency,
+                    max_concurrency: Some(
+                        NonZeroUsize::new(self.max_concurrency)
+                        .expect("max_concurrency is always >= 1")
                     ),
                     ..self.params.udf_properties.clone()
                 }
@@ -550,7 +554,7 @@ impl IntermediateOperator for UdfOperator {
     }
 
     fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(self.concurrency)
+        Ok(self.max_concurrency)
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {

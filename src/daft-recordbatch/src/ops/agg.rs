@@ -100,7 +100,7 @@ impl RecordBatch {
 
         let (groupkeys_table, grouped_col) = match func {
             MapGroupsFn::Legacy(udf) => {
-                if udf.concurrency.is_some() {
+                if udf.min_concurrency.is_some() || udf.max_concurrency.is_some() {
                     return Err(DaftError::ComputeError(
                         "Cannot run actor pool UDF in MapGroups".to_string(),
                     ));

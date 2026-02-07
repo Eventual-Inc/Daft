@@ -32,6 +32,7 @@ pub fn row_wise_udf(
     return_dtype: DataType,
     gpus: HashableF64<f64>,
     use_process: Option<bool>,
+    min_concurrency: Option<usize>,
     max_concurrency: Option<NonZeroUsize>,
     max_retries: Option<usize>,
     on_error: crate::functions::python::OnError,
@@ -52,6 +53,7 @@ pub fn row_wise_udf(
         args,
         gpus,
         use_process,
+        min_concurrency,
         max_concurrency,
     })))
 }
@@ -69,6 +71,7 @@ pub struct RowWisePyFn {
     pub args: Vec<ExprRef>,
     pub gpus: HashableF64<f64>,
     pub use_process: Option<bool>,
+    pub min_concurrency: Option<usize>,
     pub max_concurrency: Option<NonZeroUsize>,
     pub max_retries: Option<usize>,
     pub on_error: crate::functions::python::OnError,
@@ -102,6 +105,7 @@ impl RowWisePyFn {
             args: children,
             gpus: self.gpus.clone(),
             use_process: self.use_process,
+            min_concurrency: self.min_concurrency,
             max_concurrency: self.max_concurrency,
             max_retries: self.max_retries,
             on_error: self.on_error,

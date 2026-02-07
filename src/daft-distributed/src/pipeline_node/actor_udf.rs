@@ -42,8 +42,8 @@ impl UDFActors {
             expr: udf_expr.inner().clone(),
         };
         let num_actors = udf_properties
-            .concurrency
-            .expect("ActorUDF should have concurrency specified");
+            .max_concurrency
+            .expect("ActorUDF should have max_concurrency specified");
         let (gpu_request, cpu_request, memory_request) = match &udf_properties.resource_request {
             Some(resource_request) => (
                 resource_request.num_gpus().unwrap_or(0.0),
@@ -215,6 +215,8 @@ impl ActorUDF {
                 input,
                 actors.clone(),
                 self.udf_properties.batch_size,
+                self.udf_properties.min_concurrency,
+                self.udf_properties.max_concurrency.map(|c| c.get()),
                 memory_request,
                 self.config.schema.clone(),
                 self.passthrough_columns.clone(),
