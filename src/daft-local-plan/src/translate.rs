@@ -36,13 +36,9 @@ fn translate_helper(
             let physical_plan = match source.source_info.as_ref() {
                 SourceInfo::InMemory(info) => {
                     let source_id = source_counter.next();
-                    let partitions = psets.get(&info.cache_key).cloned().ok_or_else(|| {
-                        DaftError::ValueError(format!(
-                            "InMemory source cache_key '{}' not found in provided partition sets",
-                            info.cache_key
-                        ))
-                    })?;
-                    inputs.insert(source_id, Input::InMemory(partitions));
+                    if let Some(partitions) = psets.get(&info.cache_key).cloned() {
+                        inputs.insert(source_id, Input::InMemory(partitions));
+                    }
 
                     LocalPhysicalPlan::in_memory_scan(
                         source_id,

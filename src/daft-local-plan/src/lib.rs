@@ -41,7 +41,7 @@ impl SourceIdCounter {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Input {
     ScanTasks(Vec<ScanTaskLikeRef>),
+    GlobPaths(Vec<String>),
     #[serde(skip)]
     InMemory(Vec<MicroPartitionRef>),
-    GlobPaths(Vec<String>),
 }
