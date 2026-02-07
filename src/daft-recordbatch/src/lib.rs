@@ -701,9 +701,9 @@ impl RecordBatch {
             AggExpr::Set(expr) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .agg_set(groups),
-            AggExpr::Concat(expr) => self
+            AggExpr::Concat(expr, delimiter) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                .agg_concat(groups),
+                .agg_concat(groups, delimiter.as_deref()),
             AggExpr::Skew(expr) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .skew(groups),
@@ -945,10 +945,8 @@ impl RecordBatch {
                     row_count: self.len(),
                 };
                 match &func.func {
-                    BuiltinScalarFnVariant::Sync(func) => func.call_with_ctx(args, Some(&ctx)),
-                    BuiltinScalarFnVariant::Async(func) => {
-                        func.call_with_ctx(args, Some(&ctx)).await
-                    }
+                    BuiltinScalarFnVariant::Sync(func) => func.call(args, &ctx),
+                    BuiltinScalarFnVariant::Async(func) =>func.call(args, &ctx).await
                 }
             }
             Expr::Literal(lit_value) => Ok(lit_value.clone().into()),
@@ -1215,9 +1213,9 @@ impl RecordBatch {
                     row_count: self.len(),
                 };
                 match func {
-                    BuiltinScalarFnVariant::Sync(f) => f.call_with_ctx(args, Some(&ctx)),
+                    BuiltinScalarFnVariant::Sync(f) => f.call(args, &ctx),
                     BuiltinScalarFnVariant::Async(f) => {
-                        get_compute_runtime().block_on_current_thread(f.call_with_ctx(args, Some(&ctx)))
+                        get_compute_runtime().block_on_current_thread(f.call(args, &ctx))
                     }
                 }
             }

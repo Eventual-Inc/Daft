@@ -18,7 +18,11 @@ macro_rules! trigonometry {
 
         #[typetag::serde]
         impl ScalarUDF for $variant {
-            fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+            fn call(
+                &self,
+                inputs: FunctionArgs<Series>,
+                _ctx: &daft_dsl::functions::scalar::EvalContext,
+            ) -> DaftResult<Series> {
                 let UnaryArg { input } = inputs.try_into()?;
 
                 trigonometry(input, &TrigonometricFunction::$variant)
@@ -134,7 +138,11 @@ struct Atan2Args<T> {
 
 #[typetag::serde]
 impl ScalarUDF for Atan2 {
-    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let Atan2Args { x, y } = inputs.try_into()?;
 
         atan2_impl(x, y)

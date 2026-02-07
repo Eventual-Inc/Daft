@@ -17,7 +17,11 @@ impl ScalarUDF for Length {
     fn name(&self) -> &'static str {
         "length"
     }
-    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let UnaryArg { input } = inputs.try_into()?;
 
         Ok(match input.data_type() {
