@@ -4,7 +4,6 @@ import asyncio
 import logging
 import os
 import uuid
-from collections import defaultdict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -71,7 +70,7 @@ class RaySwordfishActor:
         exec_cfg: PyDaftExecutionConfig,
         context: dict[str, str] | None,
         **inputs: (
-            Input | PyMicroPartition
+            Input | list[ray.ObjectRef]
         ),  # PyMicroPartitions are separated from Inputs because they are Ray ObjectRefs, which will be resolved by Ray.
     ) -> AsyncGenerator[MicroPartition | SwordfishTaskMetadata, None]:
         """Run a plan on swordfish and yield partitions."""
@@ -79,23 +78,14 @@ class RaySwordfishActor:
         from daft.daft import PyDaftContext
 
         with profile():
-            # group the micropartitions by source_id
-            pset_by_source: dict[int, list[tuple[int, PyMicroPartition]]] = defaultdict(list)
-            for k, v in inputs.items():
-                if isinstance(v, MicroPartition):
-                    sid_str, idx_str = k.rsplit("_", 1)
-                    pset_by_source[int(sid_str)].append((int(idx_str), v._micropartition))
-            # sort the micropartitions in ascending order of index to ensure consistent ordering
-            for source_id, parts in pset_by_source.items():
-                pset_by_source[source_id] = sorted(parts, key=lambda x: x[0])
-
             # create the resolved inputs from the micropartitions and the other inputs
             resolved_inputs: dict[int, Input | list[PyMicroPartition]] = {}
-            for source_id, parts in pset_by_source.items():
-                resolved_inputs[int(source_id)] = [mp for _, mp in parts]
-            for k, v in inputs.items():
-                if isinstance(v, Input):
-                    resolved_inputs[int(k)] = v
+            for source_id, part in inputs.items():
+                if isinstance(part, list):
+                    mps = await asyncio.gather(*part)
+                    resolved_inputs[int(source_id)] = [mp._micropartition for mp in mps]
+                else:
+                    resolved_inputs[int(source_id)] = part
 
             ctx = PyDaftContext()
             ctx._daft_execution_config = exec_cfg
@@ -212,8 +202,7 @@ class RaySwordfishActorHandle:
         for source_id, py_input in task.inputs().items():
             kwargs[str(source_id)] = py_input
         for source_id, refs in task.psets().items():
-            for idx, v in enumerate(refs):
-                kwargs[f"{source_id}_{idx}"] = v.object_ref
+            kwargs[str(source_id)] = [ref.object_ref for ref in refs]
         result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(
             task.plan(),
             task.config(),
