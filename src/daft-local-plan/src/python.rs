@@ -19,6 +19,10 @@ pub struct PyLocalPhysicalPlan {
 
 #[pymethods]
 impl PyLocalPhysicalPlan {
+    fn fingerprint(&self) -> u64 {
+        self.plan.fingerprint()
+    }
+
     #[staticmethod]
     fn from_logical_plan_builder(
         py: Python<'_>,

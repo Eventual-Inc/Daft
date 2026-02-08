@@ -99,11 +99,12 @@ class RaySwordfishActor:
 
             ctx = PyDaftContext()
             ctx._daft_execution_config = exec_cfg
+            task_id = int(context.get("task_id", "0")) if context else 0
             result_handle = await self.native_executor.run(
                 plan,
                 ctx,
-                0,
                 resolved_inputs,
+                task_id,
                 context,
             )
             metas = []
@@ -114,7 +115,7 @@ class RaySwordfishActor:
                 metas.append(PartitionMetadata.from_table(mp))
                 yield mp
 
-            stats = await result_handle.finish()
+            stats = await result_handle.try_finish()
             yield SwordfishTaskMetadata(partition_metadatas=metas, stats=stats.encode())
 
 

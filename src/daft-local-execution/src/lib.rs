@@ -116,6 +116,15 @@ impl ExecutionRuntimeContext {
             .spawn(task.with_context(|_| PipelineExecutionSnafu { node_name }));
     }
 
+    pub async fn join_next(&mut self) -> Option<DaftResult<()>> {
+        match self.worker_set.join_next().await {
+            Some(Ok(Ok(()))) => Some(Ok(())),
+            Some(Ok(Err(e))) => Some(Err(e.into())),
+            Some(Err(e)) => Some(Err(e)),
+            None => None,
+        }
+    }
+
     pub async fn shutdown(&mut self) -> DaftResult<()> {
         self.worker_set.abort_all();
         while let Some(result) = self.worker_set.join_next().await {

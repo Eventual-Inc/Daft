@@ -1,10 +1,19 @@
 use futures::Stream;
 
-#[derive(Clone)]
 pub(crate) struct Sender<T>(tokio::sync::mpsc::Sender<T>);
+
+impl<T> Clone for Sender<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
 impl<T> Sender<T> {
     pub(crate) async fn send(&self, val: T) -> Result<(), tokio::sync::mpsc::error::SendError<T>> {
         self.0.send(val).await
+    }
+
+    pub(crate) fn is_closed(&self) -> bool {
+        self.0.is_closed()
     }
 }
 

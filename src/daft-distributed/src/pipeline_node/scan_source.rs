@@ -6,7 +6,10 @@ use common_file_formats::FileFormatConfig;
 use common_metrics::{CPU_US_KEY, Counter, ROWS_OUT_KEY, StatSnapshot};
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::{ClusteringSpec, stats::StatsState};
+use daft_logical_plan::{
+    ClusteringSpec,
+    stats::{PlanStats, StatsState},
+};
 use daft_schema::schema::SchemaRef;
 use futures::{StreamExt, stream};
 use opentelemetry::{KeyValue, metrics::Meter};
@@ -204,8 +207,11 @@ impl PipelineNodeImpl for ScanSourceNode {
         _plan_context: &mut PlanExecutionContext,
     ) -> TaskBuilderStream {
         if self.scan_tasks.is_empty() {
-            let transformed_plan = LocalPhysicalPlan::empty_scan(
+            let transformed_plan = LocalPhysicalPlan::in_memory_scan(
+                self.node_id(),
                 self.config.schema.clone(),
+                0,
+                StatsState::Materialized(PlanStats::empty().into()),
                 LocalNodeContext {
                     origin_node_id: Some(self.node_id() as usize),
                     additional: None,

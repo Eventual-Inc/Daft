@@ -42,7 +42,6 @@ pub enum LocalPhysicalPlan {
     InMemoryScan(InMemoryScan),
     PhysicalScan(PhysicalScan),
     GlobScan(GlobScan),
-    EmptyScan(EmptyScan),
     PlaceholderScan(PlaceholderScan),
     Project(Project),
     UDFProject(UDFProject),
@@ -101,6 +100,492 @@ impl std::fmt::Debug for LocalPhysicalPlan {
 }
 
 impl LocalPhysicalPlan {
+    /// Compute a fingerprint hash for plan caching in `ActivePlansRegistry`.
+    /// Two plans with the same fingerprint are structurally identical (same
+    /// operators, expressions, schemas) and can share a single pipeline.
+    pub fn fingerprint(&self) -> u64 {
+        let mut hasher = std::hash::DefaultHasher::new();
+        self.fingerprint_impl(&mut hasher);
+        Hasher::finish(&hasher)
+    }
+
+    fn fingerprint_impl<H: Hasher>(&self, hasher: &mut H) {
+        // Hash the node type name
+        self.name().hash(hasher);
+        // Hash the origin_node_id from context
+        self.context().origin_node_id.hash(hasher);
+
+        // Hash node-specific fields (excluding stats_state and RuntimePyObject/PyObjectWrapper)
+        match self {
+            Self::PhysicalScan(PhysicalScan {
+                source_id,
+                pushdowns,
+                schema,
+                ..
+            }) => {
+                source_id.hash(hasher);
+                pushdowns.hash(hasher);
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::InMemoryScan(InMemoryScan {
+                source_id,
+                schema,
+                size_bytes,
+                ..
+            }) => {
+                source_id.hash(hasher);
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::GlobScan(GlobScan {
+                source_id,
+                pushdowns,
+                schema,
+                io_config,
+                ..
+            }) => {
+                source_id.hash(hasher);
+                pushdowns.hash(hasher);
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+                io_config.hash(hasher);
+            }
+            Self::PlaceholderScan(PlaceholderScan { schema, .. }) => {
+                schema.hash(hasher);
+            }
+            Self::Project(Project {
+                projection, schema, ..
+            }) => {
+                for expr in projection {
+                    expr.hash(hasher);
+                }
+                schema.hash(hasher);
+            }
+            Self::UDFProject(UDFProject {
+                expr,
+                udf_properties,
+                passthrough_columns,
+                schema,
+                ..
+            }) => {
+                expr.hash(hasher);
+                // Hash UDF properties (excluding any RuntimePyObject)
+                udf_properties.name.hash(hasher);
+                if let Some(ref resource_request) = udf_properties.resource_request {
+                    resource_request.hash(hasher);
+                }
+                for expr in passthrough_columns {
+                    expr.hash(hasher);
+                }
+                schema.hash(hasher);
+            }
+            Self::Filter(Filter { predicate, .. }) => {
+                predicate.hash(hasher);
+            }
+            Self::IntoBatches(IntoBatches {
+                batch_size, strict, ..
+            }) => {
+                batch_size.hash(hasher);
+                strict.hash(hasher);
+            }
+            Self::Limit(Limit { limit, offset, .. }) => {
+                limit.hash(hasher);
+                offset.hash(hasher);
+            }
+            Self::Explode(Explode {
+                to_explode, schema, ..
+            }) => {
+                for expr in to_explode {
+                    expr.hash(hasher);
+                }
+                schema.hash(hasher);
+            }
+            Self::Unpivot(Unpivot {
+                ids,
+                values,
+                variable_name,
+                value_name,
+                schema,
+                ..
+            }) => {
+                for expr in ids {
+                    expr.hash(hasher);
+                }
+                for expr in values {
+                    expr.hash(hasher);
+                }
+                variable_name.hash(hasher);
+                value_name.hash(hasher);
+                schema.hash(hasher);
+            }
+            Self::Sort(Sort {
+                sort_by,
+                descending,
+                nulls_first,
+                ..
+            }) => {
+                for expr in sort_by {
+                    expr.hash(hasher);
+                }
+                descending.hash(hasher);
+                nulls_first.hash(hasher);
+            }
+            Self::TopN(TopN {
+                sort_by,
+                descending,
+                nulls_first,
+                limit,
+                offset,
+                ..
+            }) => {
+                for expr in sort_by {
+                    expr.hash(hasher);
+                }
+                descending.hash(hasher);
+                nulls_first.hash(hasher);
+                limit.hash(hasher);
+                offset.hash(hasher);
+            }
+            Self::Sample(Sample {
+                sampling_method,
+                with_replacement,
+                seed,
+                ..
+            }) => {
+                // SamplingMethod contains f64 which doesn't impl Hash, so hash manually
+                match sampling_method {
+                    SamplingMethod::Fraction(f) => {
+                        0u8.hash(hasher);
+                        f.to_bits().hash(hasher);
+                    }
+                    SamplingMethod::Size(s) => {
+                        1u8.hash(hasher);
+                        s.hash(hasher);
+                    }
+                }
+                with_replacement.hash(hasher);
+                seed.hash(hasher);
+            }
+            Self::MonotonicallyIncreasingId(MonotonicallyIncreasingId {
+                column_name,
+                starting_offset,
+                ..
+            }) => {
+                column_name.hash(hasher);
+                starting_offset.hash(hasher);
+            }
+            Self::UnGroupedAggregate(UnGroupedAggregate {
+                aggregations,
+                schema,
+                ..
+            }) => {
+                for agg in aggregations {
+                    agg.hash(hasher);
+                }
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::HashAggregate(HashAggregate {
+                aggregations,
+                group_by,
+                schema,
+                ..
+            }) => {
+                for expr in group_by {
+                    expr.hash(hasher);
+                }
+                for agg in aggregations {
+                    agg.hash(hasher);
+                }
+                schema.fields().iter().for_each(|f| {
+                    f.name.hash(hasher);
+                    f.dtype.hash(hasher);
+                });
+            }
+            Self::Dedup(Dedup {
+                columns, schema, ..
+            }) => {
+                for expr in columns {
+                    expr.hash(hasher);
+                }
+                schema.hash(hasher);
+            }
+            Self::Pivot(Pivot {
+                group_by,
+                pivot_column,
+                value_column,
+                aggregation,
+                names,
+                pre_agg,
+                schema,
+                ..
+            }) => {
+                for expr in group_by {
+                    expr.hash(hasher);
+                }
+                pivot_column.hash(hasher);
+                value_column.hash(hasher);
+                aggregation.hash(hasher);
+                names.hash(hasher);
+                pre_agg.hash(hasher);
+                schema.hash(hasher);
+            }
+            Self::Concat(Concat { .. }) => {
+                // No additional fields beyond children
+            }
+            Self::HashJoin(HashJoin {
+                left_on,
+                right_on,
+                build_on_left,
+                null_equals_null,
+                join_type,
+                schema,
+                left,
+                right,
+                ..
+            }) => {
+                let left_schema = left.schema();
+                let right_schema = right.schema();
+                for expr in left_on {
+                    if let Ok(name) = expr.inner().get_name(left_schema) {
+                        name.hash(hasher);
+                    }
+                }
+                for expr in right_on {
+                    if let Ok(name) = expr.inner().get_name(right_schema) {
+                        name.hash(hasher);
+                    }
+                }
+                build_on_left.hash(hasher);
+                null_equals_null.hash(hasher);
+                join_type.hash(hasher);
+                schema.hash(hasher);
+            }
+            Self::CrossJoin(CrossJoin { schema, .. }) => {
+                schema.hash(hasher);
+            }
+            Self::SortMergeJoin(SortMergeJoin {
+                left_on,
+                right_on,
+                join_type,
+                schema,
+                left,
+                right,
+                ..
+            }) => {
+                let left_schema = left.schema();
+                let right_schema = right.schema();
+                for expr in left_on {
+                    expr.hash(hasher);
+                }
+                for expr in right_on {
+                    expr.hash(hasher);
+                }
+                join_type.hash(hasher);
+                schema.hash(hasher);
+            }
+            Self::PhysicalWrite(PhysicalWrite {
+                data_schema,
+                file_schema,
+                file_info,
+                ..
+            }) => {
+                data_schema.hash(hasher);
+                file_schema.hash(hasher);
+                file_info.hash(hasher);
+            }
+            Self::CommitWrite(CommitWrite {
+                data_schema,
+                file_schema,
+                file_info,
+                ..
+            }) => {
+                data_schema.hash(hasher);
+                file_schema.hash(hasher);
+                file_info.hash(hasher);
+            }
+            #[cfg(feature = "python")]
+            Self::CatalogWrite(CatalogWrite {
+                catalog_type,
+                data_schema,
+                file_schema,
+                ..
+            }) => {
+                catalog_type.hash(hasher);
+                data_schema.hash(hasher);
+                file_schema.hash(hasher);
+            }
+            #[cfg(feature = "python")]
+            Self::LanceWrite(LanceWrite {
+                lance_info,
+                data_schema,
+                file_schema,
+                ..
+            }) => {
+                lance_info.hash(hasher);
+                data_schema.hash(hasher);
+                file_schema.hash(hasher);
+            }
+            #[cfg(feature = "python")]
+            Self::DataSink(DataSink {
+                data_sink_info,
+                file_schema,
+                ..
+            }) => {
+                data_sink_info.hash(hasher);
+                file_schema.hash(hasher);
+            }
+            Self::WindowPartitionOnly(WindowPartitionOnly {
+                partition_by,
+                aggregations,
+                aliases,
+                schema,
+                input,
+                ..
+            }) => {
+                for expr in partition_by {
+                    expr.hash(hasher);
+                }
+                for agg in aggregations {
+                    agg.hash(hasher);
+                }
+                aliases.hash(hasher);
+                schema.hash(hasher);
+            }
+            Self::WindowPartitionAndOrderBy(WindowPartitionAndOrderBy {
+                partition_by,
+                order_by,
+                descending,
+                nulls_first,
+                functions,
+                aliases,
+                schema,
+                input,
+                ..
+            }) => {
+                for expr in partition_by {
+                    expr.hash(hasher);
+                }
+                for expr in order_by {
+                    expr.hash(hasher);
+                }
+                descending.hash(hasher);
+                nulls_first.hash(hasher);
+                for func in functions {
+                    func.hash(hasher);
+                }
+                aliases.hash(hasher);
+                schema.hash(hasher);
+            }
+            Self::WindowPartitionAndDynamicFrame(WindowPartitionAndDynamicFrame {
+                partition_by,
+                order_by,
+                descending,
+                nulls_first,
+                frame,
+                min_periods,
+                aggregations,
+                aliases,
+                schema,
+                input,
+                ..
+            }) => {
+                for expr in partition_by {
+                    expr.hash(hasher);
+                }
+                for expr in order_by {
+                    expr.hash(hasher);
+                }
+                descending.hash(hasher);
+                nulls_first.hash(hasher);
+                frame.hash(hasher);
+                min_periods.hash(hasher);
+                for agg in aggregations {
+                    agg.hash(hasher);
+                }
+                aliases.hash(hasher);
+                schema.hash(hasher);
+            }
+            Self::WindowOrderByOnly(WindowOrderByOnly {
+                order_by,
+                descending,
+                nulls_first,
+                functions,
+                aliases,
+                schema,
+                input,
+                ..
+            }) => {
+                for expr in order_by {
+                    expr.hash(hasher);
+                }
+                descending.hash(hasher);
+                nulls_first.hash(hasher);
+                for func in functions {
+                    func.hash(hasher);
+                }
+                aliases.hash(hasher);
+                schema.hash(hasher);
+            }
+            Self::Repartition(Repartition {
+                repartition_spec,
+                num_partitions,
+                schema,
+                ..
+            }) => {
+                repartition_spec.hash(hasher);
+                num_partitions.hash(hasher);
+                schema.hash(hasher);
+            }
+            Self::IntoPartitions(IntoPartitions {
+                num_partitions,
+                schema,
+                ..
+            }) => {
+                num_partitions.hash(hasher);
+                schema.hash(hasher);
+            }
+            #[cfg(feature = "python")]
+            Self::DistributedActorPoolProject(DistributedActorPoolProject {
+                batch_size,
+                memory_request,
+                schema,
+                ..
+            }) => {
+                // Exclude actor_objects (PyObjectWrapper) and stats_state
+                batch_size.hash(hasher);
+                memory_request.hash(hasher);
+                schema.hash(hasher);
+            }
+            Self::VLLMProject(VLLMProject {
+                expr,
+                output_column_name,
+                schema,
+                input,
+                ..
+            }) => {
+                // Exclude llm_actors (RuntimePyObject) and stats_state
+                expr.hash(hasher);
+                output_column_name.hash(hasher);
+                schema.hash(hasher);
+            }
+        }
+
+        // Recursively hash children
+        for child in self.children() {
+            child.fingerprint_impl(hasher);
+        }
+    }
+
     #[must_use]
     pub fn name(&self) -> &'static str {
         // uses strum::IntoStaticStr
@@ -118,7 +603,6 @@ impl LocalPhysicalPlan {
             | Self::PhysicalScan(PhysicalScan { stats_state, .. })
             | Self::GlobScan(GlobScan { stats_state, .. })
             | Self::PlaceholderScan(PlaceholderScan { stats_state, .. })
-            | Self::EmptyScan(EmptyScan { stats_state, .. })
             | Self::Project(Project { stats_state, .. })
             | Self::UDFProject(UDFProject { stats_state, .. })
             | Self::Filter(Filter { stats_state, .. })
@@ -167,7 +651,6 @@ impl LocalPhysicalPlan {
             | Self::PhysicalScan(PhysicalScan { context, .. })
             | Self::GlobScan(GlobScan { context, .. })
             | Self::PlaceholderScan(PlaceholderScan { context, .. })
-            | Self::EmptyScan(EmptyScan { context, .. })
             | Self::Project(Project { context, .. })
             | Self::UDFProject(UDFProject { context, .. })
             | Self::Filter(Filter { context, .. })
@@ -268,15 +751,6 @@ impl LocalPhysicalPlan {
         Self::PlaceholderScan(PlaceholderScan {
             schema,
             stats_state,
-            context,
-        })
-        .arced()
-    }
-
-    pub fn empty_scan(schema: SchemaRef, context: LocalNodeContext) -> LocalPhysicalPlanRef {
-        Self::EmptyScan(EmptyScan {
-            schema,
-            stats_state: StatsState::Materialized(PlanStats::empty().into()),
             context,
         })
         .arced()
@@ -963,7 +1437,6 @@ impl LocalPhysicalPlan {
             Self::PhysicalScan(PhysicalScan { schema, .. })
             | Self::GlobScan(GlobScan { schema, .. })
             | Self::PlaceholderScan(PlaceholderScan { schema, .. })
-            | Self::EmptyScan(EmptyScan { schema, .. })
             | Self::Filter(Filter { schema, .. })
             | Self::IntoBatches(IntoBatches { schema, .. })
             | Self::Limit(Limit { schema, .. })
@@ -1042,7 +1515,6 @@ impl LocalPhysicalPlan {
             Self::PhysicalScan(_)
             | Self::GlobScan(_)
             | Self::PlaceholderScan(_)
-            | Self::EmptyScan(_)
             | Self::InMemoryScan(_) => vec![],
             Self::Filter(Filter { input, .. })
             | Self::Limit(Limit { input, .. })
@@ -1093,11 +1565,8 @@ impl LocalPhysicalPlan {
     pub fn with_new_children(&self, children: &[Arc<Self>]) -> Arc<Self> {
         match children {
             [new_child] => match self {
-                Self::PhysicalScan(_)
-                | Self::PlaceholderScan(_)
-                | Self::EmptyScan(_)
-                | Self::InMemoryScan(_) => panic!(
-                    "LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, EmptyScan, and InMemoryScan do not have children"
+                Self::PhysicalScan(_) | Self::PlaceholderScan(_) | Self::InMemoryScan(_) => panic!(
+                    "LocalPhysicalPlan::with_new_children: PhysicalScan, PlaceholderScan, and InMemoryScan do not have children"
                 ),
                 Self::Filter(Filter {
                     predicate, context, ..
@@ -1704,14 +2173,6 @@ pub struct GlobScan {
 #[derive(Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub struct PlaceholderScan {
-    pub schema: SchemaRef,
-    pub stats_state: StatsState,
-    pub context: LocalNodeContext,
-}
-
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(debug_assertions, derive(Debug))]
-pub struct EmptyScan {
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,

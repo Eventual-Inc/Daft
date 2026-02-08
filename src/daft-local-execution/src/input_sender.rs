@@ -31,4 +31,21 @@ impl InputSender {
             _ => unreachable!("Invalid input sender for input type"),
         }
     }
+
+    pub async fn send_empty(&self, input_id: InputId) -> DaftResult<()> {
+        match self {
+            Self::ScanTasks(sender) => sender
+                .send((input_id, vec![]))
+                .await
+                .map_err(|e| DaftError::ValueError(e.to_string())),
+            Self::InMemory(sender) => sender
+                .send((input_id, vec![]))
+                .await
+                .map_err(|e| DaftError::ValueError(e.to_string())),
+            Self::GlobPaths(sender) => sender
+                .send((input_id, vec![]))
+                .await
+                .map_err(|e| DaftError::ValueError(e.to_string())),
+        }
+    }
 }
