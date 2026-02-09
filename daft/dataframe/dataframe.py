@@ -1033,7 +1033,11 @@ class DataFrame:
 
     @DataframePublicAPI
     def write_iceberg(
-        self, table: "pyiceberg.table.Table", mode: str = "append", io_config: IOConfig | None = None
+        self,
+        table: "pyiceberg.table.Table",
+        mode: str = "append",
+        io_config: IOConfig | None = None,
+        snapshot_properties: dict[str, str] | None = None,
     ) -> "DataFrame":
         """Writes the DataFrame to an [Iceberg](https://iceberg.apache.org/docs/nightly/) table, returning a new DataFrame with the operations that occurred.
 
@@ -1043,6 +1047,7 @@ class DataFrame:
             table (pyiceberg.table.Table): Destination [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table) to write dataframe to.
             mode (str, optional): Operation mode of the write. `append` or `overwrite` Iceberg Table. Defaults to `append`.
             io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
+            snapshot_properties (dict[str, str], optional): Optional snapshot properties to set while writing to the table.
 
         Returns:
             DataFrame: The operations that occurred with this write.
@@ -1070,6 +1075,10 @@ class DataFrame:
 
         if parse(pyiceberg.__version__) < parse("0.6.0"):
             raise ValueError(f"Write Iceberg is only supported on pyiceberg>=0.6.0, found {pyiceberg.__version__}")
+
+        # Snapshot properties are only supported on pyiceberg >= 0.7.0. See https://github.com/apache/iceberg-python/issues/367
+        if snapshot_properties and parse(pyiceberg.__version__) < parse("0.7.0"):
+            raise ValueError("Snapshot properties are only supported on pyiceberg>=0.7.0")
 
         if parse(pa.__version__) < parse("12.0.1"):
             raise ValueError(
@@ -1139,11 +1148,12 @@ class DataFrame:
                 property_as_bool = PropertyUtil.property_as_bool
 
             tx = table.transaction()
+            snapshot_properties = snapshot_properties or {}
 
             if mode == "overwrite":
-                tx.delete(delete_filter=ALWAYS_TRUE)
+                tx.delete(delete_filter=ALWAYS_TRUE, snapshot_properties=snapshot_properties)
 
-            update_snapshot = tx.update_snapshot()
+            update_snapshot = tx.update_snapshot(snapshot_properties=snapshot_properties)
 
             manifest_merge_enabled = mode == "append" and property_as_bool(
                 tx.table_metadata.properties,
