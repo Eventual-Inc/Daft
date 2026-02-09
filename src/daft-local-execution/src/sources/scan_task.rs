@@ -27,14 +27,14 @@ use snafu::ResultExt;
 use tracing::instrument;
 
 use crate::{
-    channel::{Receiver, Sender, create_channel},
+    channel::{Sender, UnboundedReceiver, create_channel},
     pipeline::NodeName,
     pipeline_message::{InputId, PipelineMessage},
     sources::source::{Source, SourceStream},
 };
 
 pub struct ScanTaskSource {
-    receiver: Option<Receiver<(InputId, Vec<ScanTaskLikeRef>)>>,
+    receiver: Option<UnboundedReceiver<(InputId, Vec<ScanTaskLikeRef>)>>,
     pushdowns: Pushdowns,
     schema: SchemaRef,
     num_parallel_tasks: usize,
@@ -42,7 +42,7 @@ pub struct ScanTaskSource {
 
 impl ScanTaskSource {
     pub fn new(
-        receiver: Receiver<(InputId, Vec<ScanTaskLikeRef>)>,
+        receiver: UnboundedReceiver<(InputId, Vec<ScanTaskLikeRef>)>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
         cfg: &DaftExecutionConfig,
@@ -59,7 +59,7 @@ impl ScanTaskSource {
 
     fn spawn_scan_task_processor(
         &self,
-        mut receiver: Receiver<(InputId, Vec<ScanTaskLikeRef>)>,
+        mut receiver: UnboundedReceiver<(InputId, Vec<ScanTaskLikeRef>)>,
         output_sender: Sender<PipelineMessage>,
         io_stats: IOStatsRef,
         chunk_size: usize,
