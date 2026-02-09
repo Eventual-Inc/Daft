@@ -93,7 +93,6 @@ class RaySwordfishActor:
 
             print(f"[flotilla.run_plan] context={context}")
             print(f"[flotilla.run_plan] task_id (input_id)={task_id}")
-            print(f"[flotilla.run_plan] plan repr={plan.repr_ascii(True)}")
             print(f"[flotilla.run_plan] resolved_inputs keys={list(resolved_inputs.keys())}")
             for sid, v in resolved_inputs.items():
                 if isinstance(v, list):
