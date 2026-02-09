@@ -81,7 +81,7 @@ impl ScanTaskSource {
             // When count reaches 0, we send flush for that input_id
             let mut input_id_pending_counts: HashMap<InputId, usize> = HashMap::new();
             // When maintain_order is true, limit parallelism to 1 to preserve order
-            let max_parallel = if maintain_order { 1 } else { num_parallel_tasks };
+            let max_parallel = num_parallel_tasks;
             let mut receiver_exhausted = false;
 
             while !receiver_exhausted || !pending_tasks.is_empty() || !task_set.is_empty() {
