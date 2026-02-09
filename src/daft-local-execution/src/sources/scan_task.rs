@@ -48,11 +48,7 @@ impl ScanTaskSource {
         cfg: &DaftExecutionConfig,
     ) -> Self {
         let num_cpus = get_compute_pool_num_threads();
-        let num_parallel_tasks = if cfg.scantask_max_parallel > 0 {
-            cfg.scantask_max_parallel
-        } else {
-            num_cpus
-        };
+        let num_parallel_tasks = num_cpus;
         Self {
             receiver: Some(receiver),
             pushdowns,
