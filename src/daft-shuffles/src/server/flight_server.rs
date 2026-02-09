@@ -15,6 +15,52 @@ use tonic::{Request, Response, Status, transport::Server};
 use super::stream::FlightDataStreamReader;
 use crate::shuffle_cache::ShuffleCache;
 
+struct ParsedTicket {
+    shuffle_id: u64,
+    partition_idx: usize,
+    cache_ids: Option<Vec<u32>>,
+}
+
+impl ParsedTicket {
+    fn from_ticket(ticket: &Ticket) -> Result<Self, Status> {
+        let ticket_str = String::from_utf8(ticket.ticket.to_vec())
+            .map_err(|e| Status::invalid_argument(e.to_string()))?;
+
+        // Ticket format: "shuffle_id:partition_idx:cache_ids" where cache_ids is comma-separated list of u32s
+        let parts: Vec<&str> = ticket_str.splitn(3, ':').collect();
+        if parts.len() < 2 {
+            return Err(Status::invalid_argument(
+                "Invalid ticket format. Expected 'shuffle_id:partition_idx' or 'shuffle_id:partition_idx:cache_ids'",
+            ));
+        }
+
+        let shuffle_id = parts[0]
+            .parse::<u64>()
+            .map_err(|e| Status::invalid_argument(format!("Invalid shuffle id: {}", e)))?;
+        let partition_idx = parts[1]
+            .parse::<usize>()
+            .map_err(|e| Status::invalid_argument(format!("Invalid partition index: {}", e)))?;
+
+        // Parse cache_ids if provided (third part of ticket)
+        let cache_ids: Option<Vec<u32>> = if parts.len() == 3 && !parts[2].is_empty() {
+            let ids = parts[2]
+                .split(',')
+                .map(|id| id.parse::<u32>())
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| Status::invalid_argument(format!("Invalid cache id: {}", e)))?;
+            Some(ids)
+        } else {
+            None
+        };
+
+        Ok(Self {
+            shuffle_id,
+            partition_idx,
+            cache_ids,
+        })
+    }
+}
+
 #[derive(Clone)]
 struct ShuffleFlightServer {
     shuffle_caches: Arc<Mutex<HashMap<u64, Vec<Arc<ShuffleCache>>>>>,
@@ -106,43 +152,21 @@ impl FlightService for ShuffleFlightServer {
         &self,
         request: Request<Ticket>,
     ) -> Result<Response<Self::DoGetStream>, Status> {
-        let ticket = request.into_inner().ticket;
-        let ticket_str = String::from_utf8(ticket.to_vec())
-            .map_err(|e| Status::invalid_argument(e.to_string()))?;
+        let ticket = request.into_inner();
+        let ticket = ParsedTicket::from_ticket(&ticket)?;
 
-        // Ticket format: "shuffle_id:partition_idx:cache_ids" where cache_ids is comma-separated list of u32s
-        let parts: Vec<&str> = ticket_str.splitn(3, ':').collect();
-        if parts.len() < 2 {
-            return Err(Status::invalid_argument(
-                "Invalid ticket format. Expected 'shuffle_id:partition_idx' or 'shuffle_id:partition_idx:cache_ids'",
-            ));
-        }
-
-        let shuffle_id = parts[0]
-            .parse::<u64>()
-            .map_err(|e| Status::invalid_argument(format!("Invalid shuffle id: {}", e)))?;
-        let partition_idx = parts[1]
-            .parse::<usize>()
-            .map_err(|e| Status::invalid_argument(format!("Invalid partition index: {}", e)))?;
-
-        // Parse cache_ids if provided (third part of ticket)
-        let cache_ids: Option<Vec<u32>> = if parts.len() == 3 && !parts[2].is_empty() {
-            let ids = parts[2]
-                .split(',')
-                .map(|id| id.parse::<u32>())
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| Status::invalid_argument(format!("Invalid cache id: {}", e)))?;
-            Some(ids)
-        } else {
-            None
-        };
-
-        let shuffle_caches = self.get_shuffle_caches(shuffle_id).await.ok_or_else(|| {
-            Status::not_found(format!("Shuffle cache not found for id: {}", shuffle_id))
-        })?;
+        let shuffle_caches = self
+            .get_shuffle_caches(ticket.shuffle_id)
+            .await
+            .ok_or_else(|| {
+                Status::not_found(format!(
+                    "Shuffle cache not found for id: {}",
+                    ticket.shuffle_id
+                ))
+            })?;
 
         // Filter caches by cache_ids if provided
-        let filtered_caches: Vec<_> = if let Some(ref ids) = cache_ids {
+        let filtered_caches: Vec<_> = if let Some(ref ids) = ticket.cache_ids {
             shuffle_caches
                 .iter()
                 .filter(|cache| {
@@ -161,7 +185,7 @@ impl FlightService for ShuffleFlightServer {
 
         let file_paths = filtered_caches
             .iter()
-            .flat_map(|cache| cache.file_paths_for_partition(partition_idx))
+            .flat_map(|cache| cache.file_paths_for_partition(ticket.partition_idx))
             .collect::<Vec<_>>();
 
         let file_path_stream = futures::stream::iter(file_paths);
