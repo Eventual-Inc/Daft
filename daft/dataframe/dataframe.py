@@ -3602,11 +3602,14 @@ class DataFrame:
         return self._apply_agg_fn(Expression.mean, cols)
 
     @DataframePublicAPI
-    def stddev(self, *cols: ColumnInputType) -> "DataFrame":
+    def stddev(self, *cols: ColumnInputType, ddof: int = 0) -> "DataFrame":
         """Performs a global standard deviation on the DataFrame.
 
         Args:
             *cols (Union[str, Expression]): columns to stddev
+            ddof (int): Delta degrees of freedom used in the denominator `N - ddof`.
+                Defaults to 0 (population standard deviation).
+
         Returns:
             DataFrame: Globally aggregated standard deviation. Should be a single row.
 
@@ -3626,7 +3629,7 @@ class DataFrame:
             (Showing first 1 of 1 rows)
 
         """
-        return self._apply_agg_fn(Expression.stddev, cols)
+        return self._apply_agg_fn(lambda expr: Expression.stddev(expr, ddof), cols)
 
     @DataframePublicAPI
     def min(self, *cols: ColumnInputType) -> "DataFrame":
@@ -4964,11 +4967,13 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.mean, cols, self.group_by)
 
-    def stddev(self, *cols: ColumnInputType) -> DataFrame:
+    def stddev(self, *cols: ColumnInputType, ddof: int = 0) -> DataFrame:
         """Performs grouped standard deviation on this GroupedDataFrame.
 
         Args:
             *cols (Union[str, Expression]): columns to stddev
+            ddof (int): Delta degrees of freedom used in the denominator `N - ddof`.
+                Defaults to 0 (population standard deviation).
 
         Returns:
             DataFrame: DataFrame with grouped standard deviation.
@@ -4992,7 +4997,7 @@ class GroupedDataFrame:
             (Showing first 2 of 2 rows)
 
         """
-        return self.df._apply_agg_fn(Expression.stddev, cols, self.group_by)
+        return self.df._apply_agg_fn(lambda expr: Expression.stddev(expr, ddof), cols, self.group_by)
 
     def min(self, *cols: ColumnInputType) -> DataFrame:
         """Perform grouped min on this GroupedDataFrame.

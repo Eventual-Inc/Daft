@@ -1050,15 +1050,20 @@ class Expression:
 
         return mean(self)
 
-    def stddev(self) -> Expression:
+    def stddev(self, ddof: int = 0) -> Expression:
         """Calculates the standard deviation of the values in the expression.
+
+        Args:
+            ddof: Delta degrees of freedom. The divisor used in calculations
+                is N - ddof, where N is the number of non-null elements.
+                Defaults to 0 (population standard deviation).
 
         Tip: See Also
             [`daft.functions.stddev`](https://docs.daft.ai/en/stable/api/functions/stddev/)
         """
         from daft.functions import stddev
 
-        return stddev(self)
+        return stddev(self, ddof)
 
     def var(self, ddof: int = 1) -> Expression:
         """Calculates the variance of the values in the expression.

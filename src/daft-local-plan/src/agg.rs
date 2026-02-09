@@ -162,14 +162,15 @@ pub fn populate_aggregation_stages_bound_with_schema(
 
                 final_stage(merge_mean(global_sum_col, global_count_col));
             }
-            AggExpr::Stddev(expr) => {
+            AggExpr::Stddev(expr, ddof) => {
                 // The stddev calculation we're performing here is:
-                // stddev(X) = sqrt(E(X^2) - E(X)^2)
+                // stddev(X, ddof) = sqrt((E(X^2) - E(X)^2) * n / (n - ddof))
                 // where X is the sub_expr.
                 //
                 // First stage, we compute `sum(X^2)`, `sum(X)` and `count(X)`.
                 // Second stage, we `global_sqsum := sum(sum(X^2))`, `global_sum := sum(sum(X))` and `global_count := sum(count(X))` in order to get the global versions of the first stage.
-                // In the final projection, we then compute `sqrt((global_sqsum / global_count) - (global_sum / global_count) ^ 2)`.
+                // In the final projection, we then compute:
+                // `sqrt(((global_sqsum / global_count) - (global_sum / global_count) ^ 2) * global_count / (global_count - ddof))`.
 
                 // This is a workaround since we have different code paths for single stage and two stage aggregations.
                 // Currently all Std Dev types will be computed using floats.
@@ -183,10 +184,18 @@ pub fn populate_aggregation_stages_bound_with_schema(
                 let global_sq_sum_col = second_stage!(AggExpr::Sum(sq_sum_col));
                 let global_count_col = second_stage!(AggExpr::Sum(count_col));
 
-                let left = global_sq_sum_col.div(global_count_col.clone());
-                let right = global_sum_col.div(global_count_col);
-                let right = right.clone().mul(right);
-                let result = sqrt::sqrt(left.sub(right));
+                let n = global_count_col.clone().cast(&DataType::Float64);
+                let sq_mean = global_sq_sum_col.div(n.clone());
+                let mean = global_sum_col.clone().div(n.clone());
+                let mean_sq = mean.clone().mul(mean);
+                let pop_var = sq_mean.sub(mean_sq);
+
+                let ddof_expr = lit(*ddof as f64);
+                let adjusted = pop_var.mul(n.clone()).div(n.clone().sub(ddof_expr.clone()));
+                let result = n
+                    .clone()
+                    .lt_eq(ddof_expr)
+                    .if_else(null_lit(), sqrt::sqrt(adjusted));
 
                 final_stage(result);
             }

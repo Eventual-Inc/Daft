@@ -415,8 +415,8 @@ pub enum AggExpr {
     #[display("mean({_0})")]
     Mean(ExprRef),
 
-    #[display("stddev({_0})")]
-    Stddev(ExprRef),
+    #[display("stddev({_0}, ddof={_1})")]
+    Stddev(ExprRef, usize),
 
     #[display("var({_0}, ddof={_1})")]
     Var(ExprRef, usize),
@@ -540,7 +540,7 @@ impl AggExpr {
             Self::ApproxSketch(_, _) => "Approx Sketch",
             Self::MergeSketch(_, _) => "Merge Sketch",
             Self::Mean(_) => "Mean",
-            Self::Stddev(_) => "Stddev",
+            Self::Stddev(_, _) => "Stddev",
             Self::Var(_, _) => "Var",
             Self::Min(_) => "Min",
             Self::Max(_) => "Max",
@@ -566,7 +566,7 @@ impl AggExpr {
             | Self::ApproxSketch(expr, _)
             | Self::MergeSketch(expr, _)
             | Self::Mean(expr)
-            | Self::Stddev(expr)
+            | Self::Stddev(expr, _)
             | Self::Var(expr, _)
             | Self::Min(expr)
             | Self::Max(expr)
@@ -630,9 +630,9 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_mean()"))
             }
-            Self::Stddev(expr) => {
+            Self::Stddev(expr, ddof) => {
                 let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.local_stddev()"))
+                FieldID::new(format!("{child_id}.local_stddev(ddof={ddof})"))
             }
             Self::Var(expr, ddof) => {
                 let child_id = expr.semantic_id(schema);
@@ -691,7 +691,7 @@ impl AggExpr {
             | Self::ApproxSketch(expr, _)
             | Self::MergeSketch(expr, _)
             | Self::Mean(expr)
-            | Self::Stddev(expr)
+            | Self::Stddev(expr, _)
             | Self::Var(expr, _)
             | Self::Min(expr)
             | Self::Max(expr)
@@ -719,7 +719,7 @@ impl AggExpr {
             Self::Sum(_) => Self::Sum(first_child()),
             Self::Product(_) => Self::Product(first_child()),
             Self::Mean(_) => Self::Mean(first_child()),
-            Self::Stddev(_) => Self::Stddev(first_child()),
+            &Self::Stddev(_, ddof) => Self::Stddev(first_child(), ddof),
             &Self::Var(_, ddof) => Self::Var(first_child(), ddof),
             Self::Min(_) => Self::Min(first_child()),
             Self::Max(_) => Self::Max(first_child()),
@@ -842,7 +842,7 @@ impl AggExpr {
                     try_mean_aggregation_supertype(&field.dtype)?,
                 ))
             }
-            Self::Stddev(expr) => {
+            Self::Stddev(expr, _) => {
                 let field = expr.to_field(schema)?;
                 Ok(Field::new(
                     field.name.as_str(),
@@ -1153,8 +1153,8 @@ impl Expr {
         Self::Agg(AggExpr::Mean(self)).into()
     }
 
-    pub fn stddev(self: ExprRef) -> ExprRef {
-        Self::Agg(AggExpr::Stddev(self)).into()
+    pub fn stddev(self: ExprRef, ddof: usize) -> ExprRef {
+        Self::Agg(AggExpr::Stddev(self, ddof)).into()
     }
 
     pub fn var(self: ExprRef, ddof: usize) -> ExprRef {

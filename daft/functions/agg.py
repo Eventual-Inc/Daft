@@ -144,9 +144,19 @@ def avg(expr: Expression) -> Expression:
     return Expression._from_pyexpr(expr._expr.mean())
 
 
-def stddev(expr: Expression) -> Expression:
-    """Calculates the standard deviation of the values in the expression."""
-    return Expression._from_pyexpr(expr._expr.stddev())
+def stddev(expr: Expression, ddof: int = 0) -> Expression:
+    """Calculates the standard deviation of the values in the expression.
+
+    Args:
+        expr: The input expression to calculate standard deviation for.
+        ddof: Delta degrees of freedom. The divisor used in calculations
+            is N - ddof, where N is the number of non-null elements.
+            Defaults to 0 (population standard deviation).
+
+    Returns:
+        Expression representing the standard deviation.
+    """
+    return Expression._from_pyexpr(expr._expr.stddev(ddof))
 
 
 def var(expr: Expression, ddof: int = 1) -> Expression:

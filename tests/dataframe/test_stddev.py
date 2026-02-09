@@ -10,7 +10,7 @@ import pytest
 import daft
 
 
-def grouped_stddev(rows) -> tuple[list[Any], list[Any]]:
+def grouped_stddev(rows, ddof=0) -> tuple[list[Any], list[Any]]:
     map = {}
     for key, data in rows:
         if key not in map:
@@ -21,73 +21,76 @@ def grouped_stddev(rows) -> tuple[list[Any], list[Any]]:
     stddevs = []
     for key, nums in map.items():
         keys.append(key)
-        stddevs.append(stddev(nums))
+        stddevs.append(stddev(nums, ddof))
 
     return keys, stddevs
 
 
-def stddev(nums) -> float:
+def stddev(nums, ddof=0) -> float | None:
     nums = [num for num in nums if num is not None]
 
-    if not nums:
-        return 0.0
-    sum_: float = sum(nums)
     count = len(nums)
+    if count <= ddof:
+        return None
+
+    sum_: float = sum(nums)
     mean = sum_ / count
 
     squared_sums = functools.reduce(lambda acc, num: acc + (num - mean) ** 2, nums, 0)
-    stddev = math.sqrt(squared_sums / count)
+    stddev = math.sqrt(squared_sums / (count - ddof))
     return stddev
 
 
 TESTS = [
-    [nums := [0], stddev(nums)],
-    [nums := [1], stddev(nums)],
-    [nums := [0, 1, 2], stddev(nums)],
-    [nums := [100, 100, 100], stddev(nums)],
-    [nums := [None, 100, None], stddev(nums)],
-    [nums := [None] * 10 + [100], stddev(nums)],
+    [0],
+    [1],
+    [0, 1, 2],
+    [100, 100, 100],
+    [None, 100, None],
+    [None] * 10 + [100],
 ]
 
 
-@pytest.mark.parametrize("data_and_expected", TESTS)
-def test_stddev_with_single_partition(data_and_expected, with_morsel_size):
-    data, expected = data_and_expected
-    df = daft.from_pydict({"a": data})
-    result = df.agg(daft.col("a").stddev()).collect()
+@pytest.mark.parametrize("nums", TESTS)
+@pytest.mark.parametrize("ddof", [0, 1])
+def test_stddev_with_single_partition(nums, ddof, with_morsel_size):
+    expected = stddev(nums, ddof=ddof)
+    df = daft.from_pydict({"a": nums})
+    result = df.stddev("a", ddof=ddof).collect()
     rows = result.iter_rows()
-    stddev = next(rows)
+    std = next(rows)
     try:
         next(rows)
         assert False
     except StopIteration:
         pass
 
-    assert stddev["a"] == expected
+    assert std["a"] == expected
 
 
-@pytest.mark.parametrize("data_and_expected", TESTS)
-def test_stddev_with_multiple_partitions(data_and_expected, with_morsel_size):
-    data, expected = data_and_expected
-    df = daft.from_pydict({"a": data}).into_partitions(2)
-    result = df.agg(daft.col("a").stddev()).collect()
+@pytest.mark.parametrize("nums", TESTS)
+@pytest.mark.parametrize("ddof", [0, 1])
+def test_stddev_with_multiple_partitions(nums, ddof, with_morsel_size):
+    expected = stddev(nums, ddof=ddof)
+    df = daft.from_pydict({"a": nums}).into_partitions(2)
+    result = df.stddev("a", ddof=ddof).collect()
     rows = result.iter_rows()
-    stddev = next(rows)
+    std = next(rows)
     try:
         next(rows)
         assert False
     except StopIteration:
         pass
 
-    assert stddev["a"] == expected
+    assert std["a"] == expected
 
 
 GROUPED_TESTS = [
-    [rows := [("k1", 0), ("k2", 1), ("k1", 1)], *grouped_stddev(rows)],
-    [rows := [("k0", 100), ("k1", 100), ("k2", 100)], *grouped_stddev(rows)],
-    [rows := [("k0", 100), ("k0", 100), ("k0", 100)], *grouped_stddev(rows)],
-    [rows := [("k0", 0), ("k0", 1), ("k0", 2)], *grouped_stddev(rows)],
-    [rows := [("k0", None), ("k0", None), ("k0", 100)], *grouped_stddev(rows)],
+    [("k1", 0), ("k2", 1), ("k1", 1)],
+    [("k0", 100), ("k1", 100), ("k2", 100)],
+    [("k0", 100), ("k0", 100), ("k0", 100)],
+    [("k0", 0), ("k0", 1), ("k0", 2)],
+    [("k0", None), ("k0", None), ("k0", 100)],
 ]
 
 
@@ -100,13 +103,14 @@ def unzip_rows(rows: list) -> tuple[list, list]:
     return keys, nums
 
 
-@pytest.mark.parametrize("data_and_expected", GROUPED_TESTS)
-def test_grouped_stddev_with_single_partition(data_and_expected, with_morsel_size):
-    nums, expected_keys, expected_stddevs = data_and_expected
+@pytest.mark.parametrize("nums", GROUPED_TESTS)
+@pytest.mark.parametrize("ddof", [0, 1])
+def test_grouped_stddev_with_single_partition(nums, ddof, with_morsel_size):
+    expected_keys, expected_stddevs = grouped_stddev(nums, ddof=ddof)
     expected_df = daft.from_pydict({"keys": expected_keys, "data": expected_stddevs})
     keys, data = unzip_rows(nums)
     df = daft.from_pydict({"keys": keys, "data": data})
-    result_df = df.groupby("keys").agg(daft.col("data").stddev()).collect()
+    result_df = df.groupby("keys").stddev("data", ddof=ddof).collect()
 
     result = result_df.to_pydict()
     expected = expected_df.to_pydict()
@@ -123,13 +127,14 @@ def test_grouped_stddev_with_single_partition(data_and_expected, with_morsel_siz
     )
 
 
-@pytest.mark.parametrize("data_and_expected", GROUPED_TESTS)
-def test_grouped_stddev_with_multiple_partitions(data_and_expected, with_morsel_size):
-    nums, expected_keys, expected_stddevs = data_and_expected
+@pytest.mark.parametrize("nums", GROUPED_TESTS)
+@pytest.mark.parametrize("ddof", [0, 1])
+def test_grouped_stddev_with_multiple_partitions(nums, ddof, with_morsel_size):
+    expected_keys, expected_stddevs = grouped_stddev(nums, ddof=ddof)
     expected_df = daft.from_pydict({"keys": expected_keys, "data": expected_stddevs})
     keys, data = unzip_rows(nums)
     df = daft.from_pydict({"keys": keys, "data": data}).into_partitions(2)
-    result_df = df.groupby("keys").agg(daft.col("data").stddev()).collect()
+    result_df = df.groupby("keys").stddev("data", ddof=ddof).collect()
 
     result = result_df.to_pydict()
     expected = expected_df.to_pydict()
