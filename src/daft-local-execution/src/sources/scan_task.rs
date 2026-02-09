@@ -76,13 +76,11 @@ impl ScanTaskSource {
             let mut task_set = JoinSet::new();
             // Store pending tasks: (scan_task, delete_map, input_id)
             let mut pending_tasks = VecDeque::new();
-            // When maintain_order is true, limit parallelism to 1 to preserve order
-            let max_parallel = if maintain_order { 1 } else { num_parallel_tasks };
             let mut receiver_exhausted = false;
 
             while !receiver_exhausted || !pending_tasks.is_empty() || !task_set.is_empty() {
                 // First, try to spawn from pending_tasks if we have capacity
-                while task_set.len() < max_parallel && !pending_tasks.is_empty() {
+                while task_set.len() < num_parallel_tasks && !pending_tasks.is_empty() {
                     let (scan_task, delete_map, input_id) = pending_tasks.pop_front().expect("Pending tasks should not be empty");
                     task_set.spawn(forward_scan_task_stream(
                         scan_task,
