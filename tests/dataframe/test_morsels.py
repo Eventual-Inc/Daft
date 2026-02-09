@@ -144,6 +144,19 @@ def test_batch_size_from_udf_propagated_through_ops_to_scan():
 |       read_timeout_ms: 30000
 |       max_concurrent_requests: 50
 |       max_connections_per_io_thread: 50
+|   CosConfig
+|       region: None
+|       endpoint: None
+|       secret_id: None
+|       secret_key: ***
+|       security_token: ***
+|       anonymous: false
+|       max_retries: 3
+|       retry_timeout_ms: 30000
+|       connect_timeout_ms: 10000
+|       read_timeout_ms: 30000
+|       max_concurrent_requests: 50
+|       max_connections_per_io_thread: 50
 |   HTTPConfig
 |   User agent = daft/0.0.1
 |   Retry initial backoff ms = 1000

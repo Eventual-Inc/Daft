@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from daft.daft import (
     AzureConfig,
+    CosConfig,
     GCSConfig,
     GravitinoConfig,
     IOConfig,
@@ -32,6 +33,7 @@ from daft.io.av import read_video_frames
 
 __all__ = [
     "AzureConfig",
+    "CosConfig",
     "DataCatalogTable",
     "DataCatalogType",
     "DataSink",
