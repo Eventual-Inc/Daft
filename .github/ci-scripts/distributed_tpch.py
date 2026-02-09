@@ -37,7 +37,7 @@ def run_benchmark():
 
         submission_id = client.submit_job(
             entrypoint=f"DAFT_RUNNER=ray DAFT_PROGRESS_BAR=0 python answers_sql.py {parquet_path} {q}",
-            runtime_env={"working_dir": "./benchmarking/tpch"},
+            runtime_env={"working_dir": "./benchmarking/tpch", "env_vars": {"DAFT_PROGRESS_BAR": "0"}},
         )
 
         job_details = asyncio.run(tail_logs(client, submission_id))
