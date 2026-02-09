@@ -3317,6 +3317,7 @@ dependencies = [
  "arrow-schema",
  "chrono",
  "chrono-tz",
+ "common-arrow-ffi",
  "common-display",
  "common-error",
  "common-py-serde",
