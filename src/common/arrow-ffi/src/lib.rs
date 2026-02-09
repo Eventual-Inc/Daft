@@ -19,7 +19,7 @@ use arrow::{
     ffi_stream::FFI_ArrowArrayStream,
 };
 use arrow_schema::{Field, Schema};
-use daft_arrow::{array::Array, datatypes::arrow2_field_to_arrow};
+use daft_arrow::array::Array;
 use pyo3::{
     exceptions::{PyTypeError, PyValueError},
     ffi::Py_uintptr_t,
@@ -354,30 +354,4 @@ pub fn array_to_rust(value: &Bound<PyAny>) -> PyResult<(ArrayData, Field)> {
     let field = arrow_schema::Field::try_from(&schema).map_err(to_py_err)?;
 
     Ok((data, field))
-}
-
-pub fn field_to_py(
-    py: Python,
-    field: &daft_arrow::datatypes::Field,
-    pyarrow: &Bound<PyModule>,
-) -> PyResult<Py<PyAny>> {
-    let schema = Box::new(
-        FFI_ArrowSchema::try_from(arrow2_field_to_arrow(field.clone())).map_err(|e| {
-            use pyo3::exceptions::PyRuntimeError;
-
-            PyErr::new::<PyRuntimeError, _>(format!(
-                "Failed to convert field to FFI_ArrowSchema: {}",
-                e
-            ))
-        })?,
-    );
-
-    let schema_ptr: *const FFI_ArrowSchema = &raw const *schema;
-
-    let field = pyarrow.getattr(pyo3::intern!(py, "Field"))?.call_method1(
-        pyo3::intern!(py, "_import_from_c"),
-        (schema_ptr as Py_uintptr_t,),
-    )?;
-
-    Ok(field.into())
 }

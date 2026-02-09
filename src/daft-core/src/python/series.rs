@@ -63,9 +63,7 @@ impl PySeries {
         dtype: Option<PyDataType>,
     ) -> PyResult<Self> {
         let (data, field) = array_to_rust(&pyarrow_array)?;
-        let daft_field = daft_schema::field::Field::try_from(&field)
-            .map_err(DaftError::from)?
-            .rename(name);
+        let daft_field = daft_schema::field::Field::try_from(&field)?.rename(name);
 
         // For Extension types, get the coerced inner storage type directly
         // (e.g. Binary → LargeBinary). We can't use Field::to_arrow() here because
