@@ -107,25 +107,21 @@ impl DaftNotNull for PythonArray {
 macro_rules! check_nullity_nested_array {
     ($arr:expr, $is_null:expr) => {{
         match $arr.nulls() {
-            None => Ok(BooleanArray::from((
+            None => Ok(BooleanArray::from_values(
                 $arr.name(),
-                repeat(!$is_null)
-                    .take($arr.len())
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            ))),
-            Some(nulls) => Ok(BooleanArray::from((
-                $arr.name(),
-                daft_arrow::array::BooleanArray::new(
-                    daft_arrow::datatypes::DataType::Boolean,
-                    daft_arrow::buffer::from_null_buffer(if $is_null {
-                        nulls.inner().not().into()
+                repeat(!$is_null).take($arr.len()),
+            )),
+            Some(nulls) => BooleanArray::from_arrow(
+                Field::new($arr.name(), DataType::Boolean),
+                Arc::new(arrow::array::BooleanArray::new(
+                    if $is_null {
+                        nulls.inner().not()
                     } else {
-                        nulls.clone()
-                    }),
+                        nulls.clone().into_inner()
+                    },
                     None,
-                ),
-            ))),
+                )),
+            ),
         }
     }};
 }

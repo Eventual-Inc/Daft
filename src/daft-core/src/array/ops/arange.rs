@@ -15,7 +15,7 @@ where
                 "invalid range, start greater than end, {start} vs {end}"
             )));
         }
-        let arr = Int64Array::from_iter_values((start..end).step_by(step)).rename(name.as_ref());
+        let arr = Int64Array::from_values(name.as_ref(), (start..end).step_by(step));
 
         let casted_array = arr.cast(&T::get_dtype())?;
         let downcasted = casted_array.downcast::<Self>()?;

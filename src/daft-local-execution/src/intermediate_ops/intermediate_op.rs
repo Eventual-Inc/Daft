@@ -12,7 +12,6 @@ use common_metrics::{
     snapshot::StatSnapshotImpl,
 };
 use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime};
-use daft_core::prelude::SchemaRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
@@ -31,6 +30,7 @@ use crate::{
 #[cfg_attr(debug_assertions, derive(Debug))]
 pub enum IntermediateOperatorResult {
     NeedMoreInput(Option<Arc<MicroPartition>>),
+    #[allow(dead_code)]
     HasMoreOutput {
         input: Arc<MicroPartition>,
         output: Arc<MicroPartition>,
@@ -109,7 +109,6 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         children: Vec<Box<dyn PipelineNode>>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
-        output_schema: SchemaRef,
         context: &LocalNodeContext,
     ) -> Self {
         let name: Arc<str> = intermediate_op.name().into();
@@ -117,7 +116,6 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
             name,
             intermediate_op.op_type(),
             NodeCategory::Intermediate,
-            output_schema,
             context,
         );
         let runtime_stats = intermediate_op.make_runtime_stats(info.id);

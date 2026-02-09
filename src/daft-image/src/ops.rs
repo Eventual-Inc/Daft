@@ -177,22 +177,22 @@ impl ImageOps for FixedShapeImageArray {
         };
 
         match attr {
-            ImageProperty::Height => Ok(UInt32Array::from((
+            ImageProperty::Height => Ok(UInt32Array::from_slice(
                 self.name(),
-                vec![*height; self.len()].as_slice(),
-            ))),
-            ImageProperty::Width => Ok(UInt32Array::from((
+                &vec![*height; self.len()],
+            )),
+            ImageProperty::Width => Ok(UInt32Array::from_slice(
                 self.name(),
-                vec![*width; self.len()].as_slice(),
-            ))),
-            ImageProperty::Channel => Ok(UInt32Array::from((
+                &vec![*width; self.len()],
+            )),
+            ImageProperty::Channel => Ok(UInt32Array::from_slice(
                 self.name(),
-                vec![self.image_mode().num_channels() as u32; self.len()].as_slice(),
-            ))),
-            ImageProperty::Mode => Ok(UInt32Array::from((
+                &vec![self.image_mode().num_channels() as u32; self.len()],
+            )),
+            ImageProperty::Mode => Ok(UInt32Array::from_slice(
                 self.name(),
-                vec![(*self.image_mode() as u8) as u32; self.len()].as_slice(),
-            ))),
+                &vec![(*self.image_mode() as u8) as u32; self.len()],
+            )),
         }
     }
 }
@@ -230,7 +230,7 @@ fn encode_images<Arr: AsImageObj>(
         Ok(BinaryArray::from_iter(images.name(), values.into_iter()))
     } else {
         // For non-TIFF formats, use a single buffer with manual offset/validity tracking for efficiency
-        let mut offsets = OffsetBufferBuilder::<i64>::new(images.len() + 1);
+        let mut offsets = OffsetBufferBuilder::<i64>::new(images.len());
         let mut null_builder = BooleanBufferBuilder::new(images.len());
         let buf = Vec::new();
         let mut writer: CountingWriter<std::io::BufWriter<_>> =

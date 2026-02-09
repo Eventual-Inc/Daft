@@ -259,7 +259,7 @@ impl Decimal128Array {
             })
         });
         let array = Box::new(daft_arrow::array::Int32Array::from_iter(hashes));
-        Ok(Int32Array::from((self.name(), array)))
+        Ok(Int32Array::new(Field::new(self.name(), DataType::Int32).into(), array).unwrap())
     }
 }
 
@@ -352,7 +352,7 @@ fn murmur3_32_hash_from_iter_with_nulls<B: AsRef<[u8]>>(
         })
     });
     let array = Box::new(daft_arrow::array::Int32Array::from_iter(hashes));
-    Ok(Int32Array::from((name, array)))
+    Ok(Int32Array::new(Field::new(name, DataType::Int32).into(), array).unwrap())
 }
 
 fn murmur3_32_hash_from_iter_no_nulls<B: AsRef<[u8]>>(
@@ -365,7 +365,7 @@ fn murmur3_32_hash_from_iter_no_nulls<B: AsRef<[u8]>>(
             i32::from_ne_bytes(unsigned.to_ne_bytes())
         })
         .collect::<Vec<_>>();
-    Ok(Int32Array::from((name, hashes)))
+    Ok(Int32Array::from_vec(name, hashes))
 }
 
 fn hash_list(

@@ -36,7 +36,7 @@ from daft.errors import ExpressionTypeError
 from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
-from daft.recordbatch import MicroPartition
+from daft.recordbatch import MicroPartition, RecordBatch
 from daft.runners import get_or_create_runner
 from daft.runners.partitioning import (
     LocalPartitionSet,
@@ -134,6 +134,7 @@ class DataFrame:
         self.__builder = builder
         self._result_cache: PartitionCacheEntry | None = None
         self._preview = Preview(partition=None, total_rows=None)
+        self._metrics: RecordBatch | None = None
         self._num_preview_rows = get_context().daft_execution_config.num_preview_rows
 
     @property
@@ -168,6 +169,14 @@ class DataFrame:
             return None
         else:
             return self._result_cache.value
+
+    @property
+    def metrics(self) -> RecordBatch | None:
+        if self._result_cache is None:
+            raise ValueError("Metrics are not available until the DataFrame has been materialized")
+        else:
+            # TODO: Always None from Ray runner
+            return self._metrics
 
     def pipe(
         self,
@@ -838,6 +847,7 @@ class DataFrame:
         result_df = DataFrame(write_df._builder)
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
+        result_df._metrics = write_df._metrics
         return result_df
 
     @DataframePublicAPI
@@ -851,6 +861,8 @@ class DataFrame:
         quote: str | None = None,
         escape: str | None = None,
         header: bool | None = True,
+        date_format: str | None = None,
+        timestamp_format: str | None = None,
     ) -> "DataFrame":
         r"""Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written.
 
@@ -865,6 +877,8 @@ class DataFrame:
             quote (Optional[str], optional): Single-character quote used around fields containing delimiters default `"`.
             escape (Optional[str], optional): Single-character escape for special characters default `\\`.
             header (Optional[bool], optional): Whether to write a header row with column names, default True.
+            date_format (Optional[str], optional): Format string for date columns. Uses chrono strftime format (e.g., "%Y-%m-%d", "%d/%m/%Y"). Defaults to None (ISO 8601 format).
+            timestamp_format (Optional[str], optional): Format string for timestamp columns. Uses chrono strftime format (e.g., "%Y-%m-%d %H:%M:%S", "%+"). Defaults to None (ISO 8601 format).
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -872,10 +886,35 @@ class DataFrame:
         Note:
             This call is **blocking** and will execute the DataFrame when called
 
+            **Timezone handling**: For timezone-aware timestamp columns, the timestamps are converted
+            to the target timezone before formatting. For example, a timestamp stored as UTC but with
+            timezone "America/New_York" will be formatted in Eastern Time, not UTC. If the timezone
+            string is invalid, an error will be raised.
+
         Examples:
+            Basic usage:
+
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
             >>> df.write_csv("output_dir", write_mode="overwrite")  # doctest: +SKIP
+
+            Custom date format (e.g., DD/MM/YYYY):
+
+            >>> import datetime
+            >>> df = daft.from_pydict({"date": [datetime.date(2024, 1, 15)]})
+            >>> df.write_csv("output_dir", date_format="%d/%m/%Y")  # doctest: +SKIP
+            # Output: 15/01/2024
+
+            Custom timestamp format:
+
+            >>> df = daft.from_pydict({"ts": [datetime.datetime(2024, 1, 15, 10, 30, 45)]})
+            >>> df.write_csv("output_dir", timestamp_format="%Y-%m-%d %H:%M:%S")  # doctest: +SKIP
+            # Output: 2024-01-15 10:30:45
+
+            ISO 8601 / RFC 3339 timestamp format:
+
+            >>> df.write_csv("output_dir", timestamp_format="%+")  # doctest: +SKIP
+            # Output: 2024-01-15T10:30:45+00:00
 
         Tip:
             See also [`df.write_parquet()`][daft.DataFrame.write_parquet] and [`df.write_json()`][daft.DataFrame.write_json]
@@ -895,7 +934,14 @@ class DataFrame:
         if partition_cols is not None:
             cols = column_inputs_to_expressions(tuple(partition_cols))
 
-        file_format_option = PyFormatSinkOption.csv(delimiter=delimiter, quote=quote, escape=escape, header=header)
+        file_format_option = PyFormatSinkOption.csv(
+            delimiter=delimiter,
+            quote=quote,
+            escape=escape,
+            header=header,
+            date_format=date_format,
+            timestamp_format=timestamp_format,
+        )
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
@@ -914,6 +960,7 @@ class DataFrame:
         result_df = DataFrame(write_df._builder)
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
+        result_df._metrics = write_df._metrics
         return result_df
 
     @DataframePublicAPI
@@ -981,6 +1028,7 @@ class DataFrame:
         result_df = DataFrame(write_df._builder)
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
+        result_df._metrics = write_df._metrics
         return result_df
 
     @DataframePublicAPI
@@ -1142,7 +1190,9 @@ class DataFrame:
 
         # NOTE: We are losing the history of the plan here.
         # This is due to the fact that the logical plan of the write_iceberg returns datafiles but we want to return the above data
-        return from_pydict(with_operations)
+        df = from_pydict(with_operations)
+        df._metrics = write_df._metrics
+        return df
 
     @DataframePublicAPI
     def write_deltalake(
@@ -1394,7 +1444,7 @@ class DataFrame:
                 "file_name": pa.array([os.path.basename(fp) for fp in paths], type=pa.string()),
             }
         )
-
+        with_operations._metrics = write_df._metrics
         return with_operations
 
     @DataframePublicAPI
@@ -1426,7 +1476,9 @@ class DataFrame:
         # TODO(desmond): Connect the old and new logical plan builders so that a .explain() shows the
         # plan from the source all the way to the sink to the sink's results. In theory we can do this
         # for all other sinks too.
-        return DataFrame._from_micropartitions(micropartition)
+        df = DataFrame._from_micropartitions(micropartition)
+        df._metrics = write_df._metrics
+        return df
 
     @DataframePublicAPI
     def write_lance(
@@ -3674,13 +3726,16 @@ class DataFrame:
         return self._apply_agg_fn(Expression.list_agg_distinct, cols)
 
     @DataframePublicAPI
-    def agg_concat(self, *cols: ColumnInputType) -> "DataFrame":
-        """Performs a global list concatenation agg on the DataFrame.
+    def agg_concat(self, *cols: ColumnInputType, delimiter: str | None = None) -> "DataFrame":
+        """Performs a global concatenation agg on the DataFrame.
 
         Args:
-            *cols (Union[str, Expression]): columns that are lists to concatenate
+            *cols (Union[str, Expression]): columns that are lists or strings to concatenate
+            delimiter: Optional delimiter to insert between concatenated string values. Only supported for string
+                columns.
+
         Returns:
-            DataFrame: Globally aggregated list. Should be a single row.
+            DataFrame: Globally aggregated list or string. Should be a single row.
 
         Examples:
             >>> import daft
@@ -3698,7 +3753,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        return self._apply_agg_fn(Expression.string_agg, cols)
+        return self._apply_agg_fn(lambda expr: Expression.string_agg(expr, delimiter=delimiter), cols)
 
     @DataframePublicAPI
     def agg(self, *to_agg: Expression | Iterable[Expression]) -> "DataFrame":
@@ -4131,7 +4186,7 @@ class DataFrame:
     def _materialize_results(self) -> None:
         """Materializes the results of for this DataFrame and hold a pointer to the results."""
         if self._result is None:
-            self._result_cache = get_or_create_runner().run(self._builder)
+            self._result_cache, self._metrics = get_or_create_runner().run(self._builder)
             result = self._result
             assert result is not None
             result.wait()
@@ -4898,13 +4953,13 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.list_agg_distinct, cols, self.group_by)
 
-    def string_agg(self, *cols: ColumnInputType) -> DataFrame:
+    def string_agg(self, *cols: ColumnInputType, delimiter: str | None = None) -> DataFrame:
         """Performs grouped string concat on this GroupedDataFrame.
 
         Returns:
             DataFrame: DataFrame with grouped string concatenated per column.
         """
-        return self.df._apply_agg_fn(Expression.string_agg, cols, self.group_by)
+        return self.df._apply_agg_fn(lambda expr: Expression.string_agg(expr, delimiter=delimiter), cols, self.group_by)
 
     def agg(self, *to_agg: Expression | Iterable[Expression]) -> DataFrame:
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.

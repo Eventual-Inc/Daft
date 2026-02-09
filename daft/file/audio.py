@@ -23,7 +23,10 @@ class AudioFile(File):
 
     def __init__(self, url: str, io_config: IOConfig | None = None) -> None:
         if not sf.module_available():
-            raise ImportError("The 'soundfile' module is required to create audio files.")
+            raise ImportError(
+                "The 'soundfile' module is required to create audio files. "
+                "Please add 'daft[audio]' to your dependencies or install it with: pip install 'daft[audio]'"
+            )
         super().__init__(url, io_config, MediaType.audio())
 
     def __post_init__(self) -> None:
@@ -34,8 +37,12 @@ class AudioFile(File):
         """Extract basic audio metadata from container headers.
 
         Returns:
-            AudioMetadata: Audio metadata object containing sample_rate, channels, frames, format, subtype
-
+            AudioMetadata: Audio metadata object containing:
+                - sample_rate: int - The sample rate of the audio file
+                - channels: int - The number of channels in the audio file
+                - frames: int - The number of frames in the audio file
+                - format: str - The format of the audio file
+                - subtype: str | None - The subtype of the audio file
         """
         with self.open() as f:
             with sf.SoundFile(f) as af:
@@ -69,7 +76,15 @@ class AudioFile(File):
 
         """
         if not librosa.module_available():
-            raise ImportError("The 'librosa' module is required to resample audio files.")
+            raise ImportError(
+                "The 'librosa' module is required to resample audio files. "
+                "Please install it with: pip install 'daft[audio]'"
+            )
+        if not sf.module_available():
+            raise ImportError(
+                "The 'soundfile' module is required to resample audio files. "
+                "Please install it with: pip install 'daft[audio]'"
+            )
         with self.to_tempfile() as f:
             data, samplerate = sf.read(f)
             if samplerate != sample_rate:

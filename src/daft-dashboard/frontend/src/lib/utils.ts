@@ -15,7 +15,16 @@ export function toDate(epoch_time_secs: number): Date {
 }
 
 export function toHumanReadableDate(epoch_time_secs: number): string {
-  return toDate(epoch_time_secs).toLocaleTimeString();
+  const date = toDate(epoch_time_secs);
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  const day = date.getDate().toString().padStart(2, "0");
+  const hours = date.getHours().toString().padStart(2, "0");
+  const minutes = date.getMinutes().toString().padStart(2, "0");
+  const seconds = date.getSeconds().toString().padStart(2, "0");
+  const ms = date.getMilliseconds().toString().padStart(3, "0");
+
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}.${ms}`;
 }
 
 export function toHumanReadableDuration(duration_sec: number): string {
@@ -27,7 +36,7 @@ export function toHumanReadableDuration(duration_sec: number): string {
   working_sec = working_sec - hours * 3600;
   const minutes = Math.floor(working_sec / 60);
   working_sec = working_sec - minutes * 60;
-  const seconds = working_sec;
+  const seconds = Math.round(working_sec * 1000) / 1000;
 
   if (duration_sec < 60) {
     return `${seconds}s`;
@@ -38,4 +47,14 @@ export function toHumanReadableDuration(duration_sec: number): string {
   } else {
     return `${days}d ${hours}h ${minutes}m ${seconds}s`;
   }
+}
+
+export function getEngineName(runner: string): string {
+  if (runner.includes("Native")) {
+    return "Swordfish";
+  }
+  if (runner.includes("Ray")) {
+    return "Flotilla";
+  }
+  return runner;
 }

@@ -475,8 +475,8 @@ impl_arithmetic_ref_for_series!(Rem, rem);
 
 #[cfg(test)]
 mod tests {
+    use arrow::datatypes::IntervalMonthDayNano;
     use common_error::DaftResult;
-    use daft_arrow::types::months_days_ns;
 
     use crate::{
         array::ops::full::FullNull,
@@ -488,8 +488,8 @@ mod tests {
 
     #[test]
     fn add_int_and_int() -> DaftResult<()> {
-        let a = Int64Array::from(("a", vec![1, 2, 3]));
-        let b = Int64Array::from(("b", vec![1, 2, 3]));
+        let a = Int64Array::from_slice("a", &[1, 2, 3]);
+        let b = Int64Array::from_slice("b", &[1, 2, 3]);
         let c = a.into_series() + b.into_series();
         assert_eq!(*c?.data_type(), DataType::Int64);
         Ok(())
@@ -497,16 +497,16 @@ mod tests {
 
     #[test]
     fn add_int_and_float() -> DaftResult<()> {
-        let a = Int64Array::from(("a", vec![1, 2, 3]));
-        let b = Float64Array::from(("b", vec![1., 2., 3.]));
+        let a = Int64Array::from_slice("a", &[1, 2, 3]);
+        let b = Float64Array::from_slice("b", &[1., 2., 3.]);
         let c = a.into_series() + b.into_series();
         assert_eq!(*c?.data_type(), DataType::Float64);
         Ok(())
     }
     #[test]
     fn sub_int_and_float() -> DaftResult<()> {
-        let a = Int64Array::from(("a", vec![1, 2, 3]));
-        let b = Float64Array::from(("b", vec![1., 2., 3.]));
+        let a = Int64Array::from_slice("a", &[1, 2, 3]);
+        let b = Float64Array::from_slice("b", &[1., 2., 3.]);
         let c = a.into_series() - b.into_series();
         assert_eq!(*c?.data_type(), DataType::Float64);
         Ok(())
@@ -514,55 +514,55 @@ mod tests {
 
     #[test]
     fn mul_int_and_float() -> DaftResult<()> {
-        let a = Int64Array::from(("a", vec![1, 2, 3]));
-        let b = Float64Array::from(("b", vec![1., 2., 3.]));
+        let a = Int64Array::from_slice("a", &[1, 2, 3]);
+        let b = Float64Array::from_slice("b", &[1., 2., 3.]);
         let c = a.into_series() * b.into_series();
         assert_eq!(*c?.data_type(), DataType::Float64);
         Ok(())
     }
     #[test]
     fn div_int_and_float() -> DaftResult<()> {
-        let a = Int64Array::from(("a", vec![1, 2, 3]));
-        let b = Float64Array::from(("b", vec![1., 2., 3.]));
+        let a = Int64Array::from_slice("a", &[1, 2, 3]);
+        let b = Float64Array::from_slice("b", &[1., 2., 3.]);
         let c = a.into_series() / b.into_series();
         assert_eq!(*c?.data_type(), DataType::Float64);
         Ok(())
     }
     #[test]
     fn floor_div_int_and_int() -> DaftResult<()> {
-        let a = Int32Array::from(("a", vec![1, 2, 3]));
-        let b = Int64Array::from(("b", vec![1, 2, 3]));
+        let a = Int32Array::from_slice("a", &[1, 2, 3]);
+        let b = Int64Array::from_slice("b", &[1, 2, 3]);
         let c = a.into_series().floor_div(&(b.into_series()));
         assert_eq!(*c?.data_type(), DataType::Int64);
         Ok(())
     }
     #[test]
     fn floor_div_int_and_float() -> DaftResult<()> {
-        let a = Int64Array::from(("a", vec![1, 2, 3]));
-        let b = Float64Array::from(("b", vec![1., 2., 3.]));
+        let a = Int64Array::from_slice("a", &[1, 2, 3]);
+        let b = Float64Array::from_slice("b", &[1., 2., 3.]);
         let c = a.into_series().floor_div(&(b.into_series()));
         assert_eq!(*c?.data_type(), DataType::Float64);
         Ok(())
     }
     #[test]
     fn floor_div_float_and_float() -> DaftResult<()> {
-        let a = Float32Array::from(("b", vec![1., 2., 3.]));
-        let b = Float64Array::from(("b", vec![1., 2., 3.]));
+        let a = Float32Array::from_slice("a", &[1., 2., 3.]);
+        let b = Float64Array::from_slice("b", &[1., 2., 3.]);
         let c = a.into_series().floor_div(&(b.into_series()));
         assert_eq!(*c?.data_type(), DataType::Float64);
         Ok(())
     }
     #[test]
     fn rem_int_and_float() -> DaftResult<()> {
-        let a = Int64Array::from(("a", vec![1, 2, 3]));
-        let b = Float64Array::from(("b", vec![1., 2., 3.]));
+        let a = Int64Array::from_slice("a", &[1, 2, 3]);
+        let b = Float64Array::from_slice("b", &[1., 2., 3.]);
         let c = a.into_series() % b.into_series();
         assert_eq!(*c?.data_type(), DataType::Float64);
         Ok(())
     }
     #[test]
     fn add_int_and_int_full_null() -> DaftResult<()> {
-        let a = Int64Array::from(("a", vec![1, 2, 3]));
+        let a = Int64Array::from_slice("a", &[1, 2, 3]);
         let b = Int64Array::full_null("b", &DataType::Int64, 3);
         let c = a.into_series() + b.into_series();
         assert_eq!(*c?.data_type(), DataType::Int64);
@@ -570,39 +570,57 @@ mod tests {
     }
     #[test]
     fn add_int_and_utf8() -> DaftResult<()> {
-        let a = Int64Array::from(("a", vec![1, 2, 3]));
+        let a = Int64Array::from_slice("a", &[1, 2, 3]);
         let str_array = vec!["a", "b", "c"];
-        let b = Utf8Array::from(("b", str_array.as_slice()));
+        let b = Utf8Array::from_slice("b", str_array.as_slice());
         let c = a.into_series() + b.into_series();
         assert_eq!(*c?.data_type(), DataType::Utf8);
         Ok(())
     }
     #[test]
     fn mul_interval_and_int() -> DaftResult<()> {
-        let a = IntervalArray::from((
-            "a",
-            vec![
-                months_days_ns::new(1, 2, 3),
-                months_days_ns::new(4, 5, 6),
-                months_days_ns::new(7, 8, 9),
-            ],
-        ));
-        let b = Int32Array::from(("b", vec![1, 2, 3]));
+        let a = IntervalArray::from_iter_values(vec![
+            IntervalMonthDayNano {
+                months: 1,
+                days: 2,
+                nanoseconds: 3,
+            },
+            IntervalMonthDayNano {
+                months: 4,
+                days: 5,
+                nanoseconds: 6,
+            },
+            IntervalMonthDayNano {
+                months: 7,
+                days: 8,
+                nanoseconds: 9,
+            },
+        ]);
+        let b = Int32Array::from_slice("b", &[1, 2, 3]);
         let c = a.into_series() * b.into_series();
         assert_eq!(*c?.data_type(), DataType::Interval);
         Ok(())
     }
     #[test]
     fn mul_interval_and_float() -> DaftResult<()> {
-        let a = IntervalArray::from((
-            "a",
-            vec![
-                months_days_ns::new(1, 2, 3),
-                months_days_ns::new(4, 5, 6),
-                months_days_ns::new(7, 8, 9),
-            ],
-        ));
-        let b = Float64Array::from(("b", vec![1., 2., 3.]));
+        let a = IntervalArray::from_iter_values(vec![
+            IntervalMonthDayNano {
+                months: 1,
+                days: 2,
+                nanoseconds: 3,
+            },
+            IntervalMonthDayNano {
+                months: 4,
+                days: 5,
+                nanoseconds: 6,
+            },
+            IntervalMonthDayNano {
+                months: 7,
+                days: 8,
+                nanoseconds: 9,
+            },
+        ]);
+        let b = Float64Array::from_slice("b", &[1., 2., 3.]);
         let c = a.into_series() * b.into_series();
         assert!(c.is_err());
         assert_eq!(

@@ -987,6 +987,21 @@ class Expression:
 
         return stddev(self)
 
+    def var(self, ddof: int = 1) -> Expression:
+        """Calculates the variance of the values in the expression.
+
+        Args:
+            ddof: Delta degrees of freedom. The divisor used in calculations
+                is N - ddof, where N is the number of non-null elements.
+                Defaults to 1 (sample variance).
+
+        Tip: See Also
+            [`daft.functions.var`](https://docs.daft.ai/en/stable/api/functions/var/)
+        """
+        from daft.functions import var
+
+        return var(self, ddof)
+
     def min(self) -> Expression:
         """Calculates the minimum value in the expression.
 
@@ -1067,15 +1082,18 @@ class Expression:
 
         return list_agg_distinct(self)
 
-    def string_agg(self) -> Expression:
+    def string_agg(self, delimiter: str | None = None) -> Expression:
         """Aggregates the values in the expression into a single string by concatenating them.
+
+        Args:
+            delimiter: Optional delimiter to insert between concatenated values. Only supported for string columns.
 
         Tip: See Also
             [`daft.functions.string_agg`](https://docs.daft.ai/en/stable/api/functions/string_agg/)
         """
         from daft.functions import string_agg
 
-        return string_agg(self)
+        return string_agg(self, delimiter=delimiter)
 
     def apply(self, func: Callable[..., Any], return_dtype: DataTypeLike) -> Expression:
         """Apply a function on each value in a given expression.
@@ -1423,6 +1441,56 @@ class Expression:
         from daft.functions import cosine_distance
 
         return cosine_distance(self, other)
+
+    def euclidean_distance(self, other: Expression) -> Expression:
+        """Compute the Euclidean distance between two embeddings.
+
+        Tip: See Also
+            [`daft.functions.euclidean_distance`](https://docs.daft.ai/en/stable/api/functions/euclidean_distance/)
+        """
+        from daft.functions import euclidean_distance
+
+        return euclidean_distance(self, other)
+
+    def dot_product(self, other: Expression) -> Expression:
+        """Compute the dot product between two embeddings.
+
+        Tip: See Also
+            [`daft.functions.dot_product`](https://docs.daft.ai/en/stable/api/functions/dot_product/)
+        """
+        from daft.functions import dot_product
+
+        return dot_product(self, other)
+
+    def cosine_similarity(self, other: Expression) -> Expression:
+        """Compute the cosine similarity between two embeddings.
+
+        Tip: See Also
+            [`daft.functions.cosine_similarity`](https://docs.daft.ai/en/stable/api/functions/cosine_similarity/)
+        """
+        from daft.functions import cosine_similarity
+
+        return cosine_similarity(self, other)
+
+    def pearson_correlation(self, other: Expression) -> Expression:
+        """Compute the Pearson correlation between two embeddings.
+
+        Tip: See Also
+            [`daft.functions.pearson_correlation`](https://docs.daft.ai/en/stable/api/functions/pearson_correlation/)
+        """
+        from daft.functions import pearson_correlation
+
+        return pearson_correlation(self, other)
+
+    def jaccard_similarity(self, other: Expression) -> Expression:
+        """Compute the Jaccard similarity between two embeddings.
+
+        Tip: See Also
+            [`daft.functions.jaccard_similarity`](https://docs.daft.ai/en/stable/api/functions/jaccard_similarity/)
+        """
+        from daft.functions import jaccard_similarity
+
+        return jaccard_similarity(self, other)
 
     def length(self) -> Expression:
         """Retrieves the length of the given expression.
@@ -1827,6 +1895,76 @@ class Expression:
 
         return capitalize(self)
 
+    def to_camel_case(self) -> Expression:
+        """Convert a string to lower camel case.
+
+        Tip: See Also
+            [`daft.functions.to_camel_case`](https://docs.daft.ai/en/stable/api/functions/to_camel_case/)
+        """
+        from daft.functions import to_camel_case
+
+        return to_camel_case(self)
+
+    def to_upper_camel_case(self) -> Expression:
+        """Convert a string to upper camel case.
+
+        Tip: See Also
+            [`daft.functions.to_upper_camel_case`](https://docs.daft.ai/en/stable/api/functions/to_upper_camel_case/)
+        """
+        from daft.functions import to_upper_camel_case
+
+        return to_upper_camel_case(self)
+
+    def to_snake_case(self) -> Expression:
+        """Convert a string to snake case.
+
+        Tip: See Also
+            [`daft.functions.to_snake_case`](https://docs.daft.ai/en/stable/api/functions/to_snake_case/)
+        """
+        from daft.functions import to_snake_case
+
+        return to_snake_case(self)
+
+    def to_upper_snake_case(self) -> Expression:
+        """Convert a string to upper snake case.
+
+        Tip: See Also
+            [`daft.functions.to_upper_snake_case`](https://docs.daft.ai/en/stable/api/functions/to_upper_snake_case/)
+        """
+        from daft.functions import to_upper_snake_case
+
+        return to_upper_snake_case(self)
+
+    def to_kebab_case(self) -> Expression:
+        """Convert a string to kebab case.
+
+        Tip: See Also
+            [`daft.functions.to_kebab_case`](https://docs.daft.ai/en/stable/api/functions/to_kebab_case/)
+        """
+        from daft.functions import to_kebab_case
+
+        return to_kebab_case(self)
+
+    def to_upper_kebab_case(self) -> Expression:
+        """Convert a string to upper kebab case.
+
+        Tip: See Also
+            [`daft.functions.to_upper_kebab_case`](https://docs.daft.ai/en/stable/api/functions/to_upper_kebab_case/)
+        """
+        from daft.functions import to_upper_kebab_case
+
+        return to_upper_kebab_case(self)
+
+    def to_title_case(self) -> Expression:
+        """Convert a string to title case.
+
+        Tip: See Also
+            [`daft.functions.to_title_case`](https://docs.daft.ai/en/stable/api/functions/to_title_case/)
+        """
+        from daft.functions import to_title_case
+
+        return to_title_case(self)
+
     def left(self, nchars: int | Expression) -> Expression:
         """Gets the n (from nchars) left-most characters of each string.
 
@@ -2174,6 +2312,16 @@ class Expression:
         from daft.functions import list_distinct
 
         return list_distinct(self)
+
+    def list_contains(self, item: Expression) -> Expression:
+        """Checks if each list contains the specified item.
+
+        Tip: See Also
+            [`daft.functions.list_contains`](https://docs.daft.ai/en/stable/api/functions/list_contains/)
+        """
+        from daft.functions import list_contains
+
+        return list_contains(self, item)
 
     def list_map(self, mapper: Expression) -> Expression:
         """Evaluates an expression on all elements in the list.
