@@ -1,12 +1,9 @@
 use std::sync::Arc;
 
-use arrow::array::{Array, ArrayRef, LargeBinaryArray, OffsetBufferBuilder};
+use arrow::array::{Array, LargeBinaryBuilder};
 use common_error::DaftResult;
 
-use crate::{
-    datatypes::{DataType, Field},
-    prelude::{AsArrow, BinaryArray, Utf8Array},
-};
+use crate::prelude::{AsArrow, BinaryArray, Utf8Array};
 
 impl Utf8Array {
     /// For text-to-binary encoding.
@@ -18,22 +15,18 @@ impl Utf8Array {
         let buffer = input.values();
         let nulls = input.nulls().cloned();
 
-        let mut values = Vec::<u8>::new();
-        let mut offsets = OffsetBufferBuilder::new(input.len());
+        let mut builder = LargeBinaryBuilder::new();
+
         for span in input.offsets().windows(2) {
             let s = span[0] as usize;
             let e = span[1] as usize;
             let bytes = encoder(&buffer[s..e])?;
-
-            offsets.push_length(bytes.len());
-            values.extend(bytes);
+            builder.append_value(bytes);
         }
 
-        let array = LargeBinaryArray::new(offsets.finish(), values.into(), nulls);
-        let array: ArrayRef = Arc::new(array);
+        let array = builder.finish();
 
-        let binary_field = Field::new(self.field().name.clone(), DataType::Binary);
-        BinaryArray::from_arrow(binary_field, array.into())
+        BinaryArray::from_arrow(self.field().clone(), Arc::new(array))?.with_nulls(nulls)
     }
 
     /// For text-to-binary encoding, but inserts nulls on failures.

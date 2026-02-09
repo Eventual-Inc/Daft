@@ -1,5 +1,5 @@
+use arrow::buffer::NullBuffer;
 use common_error::{DaftError, DaftResult};
-use daft_arrow::buffer::NullBuffer;
 
 use crate::{array::StructArray, series::Series};
 

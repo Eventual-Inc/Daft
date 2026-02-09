@@ -26,42 +26,20 @@ mod tests {
     fn test_tensor_to_sparse_roundtrip() -> DaftResult<()> {
         let raw_nulls = vec![true, false, true];
         let nulls = daft_arrow::buffer::NullBuffer::from(raw_nulls.as_slice());
-
+        let flat_child =
+            Int64Array::from_slice("item", &[0, 1, 2, 100, 101, 102, 0, 0, 3]).into_series();
         let list_array = ListArray::new(
             Field::new("data", DataType::List(Box::new(DataType::Int64))),
-            Int64Array::new(
-                Field::new("item", DataType::Int64).into(),
-                Box::new(daft_arrow::array::Int64Array::from_iter(
-                    [
-                        Some(0),
-                        Some(1),
-                        Some(2),
-                        Some(100),
-                        Some(101),
-                        Some(102),
-                        Some(0),
-                        Some(0),
-                        Some(3),
-                    ]
-                    .iter(),
-                )),
-            )
-            .unwrap()
-            .into_series(),
+            flat_child,
             daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 3, 6, 9])?,
             Some(nulls.clone()),
         )
         .into_series();
+        let flat_child = Int64Array::from_slice("item", &[3, 3, 3]).into_series();
+
         let shapes_array = ListArray::new(
             Field::new("shape", DataType::List(Box::new(DataType::UInt64))),
-            UInt64Array::new(
-                Field::new("item", DataType::UInt64).into(),
-                Box::new(daft_arrow::array::UInt64Array::from_iter(
-                    [Some(3), Some(3), Some(3)].iter(),
-                )),
-            )
-            .unwrap()
-            .into_series(),
+            flat_child,
             daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 2, 3])?,
             Some(nulls.clone()),
         )

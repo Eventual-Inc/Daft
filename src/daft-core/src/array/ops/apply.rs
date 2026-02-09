@@ -1,5 +1,6 @@
 use std::iter::zip;
 
+use arrow::buffer::NullBuffer;
 use common_error::{DaftError, DaftResult};
 
 use super::full::FullNull;
@@ -39,8 +40,7 @@ where
                 let lhs_nulls = self.nulls().map(|v| v.clone().into());
                 let rhs_nulls = rhs.nulls().map(|v| v.clone().into());
 
-                let nulls =
-                    daft_arrow::buffer::NullBuffer::union(lhs_nulls.as_ref(), rhs_nulls.as_ref());
+                let nulls = NullBuffer::union(lhs_nulls.as_ref(), rhs_nulls.as_ref());
                 let values = self.values();
                 let rhs_values = rhs.values();
 
