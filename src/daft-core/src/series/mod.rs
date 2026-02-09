@@ -1,6 +1,4 @@
 mod array_impl;
-#[cfg(feature = "python")]
-pub mod ffi;
 mod from;
 pub mod from_lit;
 mod ops;
