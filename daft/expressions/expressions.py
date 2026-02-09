@@ -1169,7 +1169,7 @@ class Expression:
 
         return fill_null(self, fill_value)
 
-    def is_in(self, other: Any) -> Expression:
+    def is_in(self, other: Iterable[Any] | Expression) -> Expression:
         """Checks if values in the Expression are in the provided iterable.
 
         Args:
