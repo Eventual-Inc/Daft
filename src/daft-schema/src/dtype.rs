@@ -1055,89 +1055,6 @@ impl DataType {
             ))),
         }
     }
-
-    pub fn from_arrow(dtype: &arrow_schema::DataType, coerce: bool) -> DaftResult<Self> {
-        if coerce {
-            Ok(match dtype {
-                arrow_schema::DataType::Null => Self::Null,
-                arrow_schema::DataType::Boolean => Self::Boolean,
-                arrow_schema::DataType::Int8 => Self::Int8,
-                arrow_schema::DataType::Int16 => Self::Int16,
-                arrow_schema::DataType::Int32 => Self::Int32,
-                arrow_schema::DataType::Int64 => Self::Int64,
-                arrow_schema::DataType::UInt8 => Self::UInt8,
-                arrow_schema::DataType::UInt16 => Self::UInt16,
-                arrow_schema::DataType::UInt32 => Self::UInt32,
-                arrow_schema::DataType::UInt64 => Self::UInt64,
-
-                arrow_schema::DataType::Float32 => Self::Float32,
-                arrow_schema::DataType::Float64 => Self::Float64,
-                arrow_schema::DataType::Timestamp(time_unit, tz) => Self::Timestamp(
-                    time_unit.into(),
-                    tz.clone().map(|tz| tz.as_ref().to_string()),
-                ),
-                arrow_schema::DataType::Date32 => Self::Date,
-                arrow_schema::DataType::Date64 => Self::Timestamp(TimeUnit::Milliseconds, None),
-                arrow_schema::DataType::Time64(time_unit) => Self::Time(time_unit.into()),
-
-                arrow_schema::DataType::Duration(time_unit) => Self::Duration(time_unit.into()),
-                arrow_schema::DataType::Interval(IntervalUnit::MonthDayNano) => Self::Interval,
-                arrow_schema::DataType::FixedSizeBinary(size) => Self::FixedSizeBinary(*size as _),
-                arrow_schema::DataType::LargeBinary | arrow_schema::DataType::Binary => {
-                    Self::Binary
-                }
-
-                arrow_schema::DataType::LargeUtf8 | arrow_schema::DataType::Utf8 => Self::Utf8,
-
-                arrow_schema::DataType::FixedSizeList(field, size) => Self::FixedSizeList(
-                    Box::new(Field::from_arrow(field.as_ref(), coerce)?.dtype),
-                    *size as _,
-                ),
-                arrow_schema::DataType::LargeList(field) | arrow_schema::DataType::List(field) => {
-                    Self::List(Box::new(Field::from_arrow(field.as_ref(), coerce)?.dtype))
-                }
-
-                arrow_schema::DataType::Struct(fields) => Self::Struct(
-                    fields
-                        .into_iter()
-                        .map(|v| Field::from_arrow(v.as_ref(), coerce))
-                        .collect::<DaftResult<_>>()?,
-                ),
-
-                arrow_schema::DataType::Decimal128(precision, scale) => {
-                    Self::Decimal128(*precision as _, *scale as _)
-                }
-                arrow_schema::DataType::Map(field, _) => {
-                    let arrow_schema::DataType::Struct(fields) = &field.data_type() else {
-                        return Err(DaftError::ValueError(
-                            "Map field should contain a struct type".to_string(),
-                        ));
-                    };
-
-                    let [key_field, value_field] = &**fields else {
-                        return Err(DaftError::ValueError(
-                            "Map should have two fields".to_string(),
-                        ));
-                    };
-
-                    let key = Field::from_arrow(key_field.as_ref(), coerce)?.dtype;
-                    let value = Field::from_arrow(value_field.as_ref(), coerce)?.dtype;
-
-                    let key = Box::new(key);
-                    let value = Box::new(value);
-
-                    Self::Map { key, value }
-                }
-                other => {
-                    return Err(DaftError::ValueError(format!(
-                        "Unsupported Arrow DataType: {other:?}"
-                    )));
-                }
-            })
-        } else {
-            Self::try_from(dtype)
-        }
-    }
 }
 
 #[allow(deprecated, reason = "arrow2 migration")]
@@ -1228,8 +1145,8 @@ impl From<&ArrowType> for DataType {
 impl TryFrom<&arrow_schema::DataType> for DataType {
     type Error = DaftError;
 
-    fn try_from(value: &arrow_schema::DataType) -> Result<Self, Self::Error> {
-        Ok(match value {
+    fn try_from(dtype: &arrow_schema::DataType) -> Result<Self, Self::Error> {
+        Ok(match dtype {
             arrow_schema::DataType::Null => Self::Null,
             arrow_schema::DataType::Boolean => Self::Boolean,
             arrow_schema::DataType::Int8 => Self::Int8,
@@ -1248,26 +1165,27 @@ impl TryFrom<&arrow_schema::DataType> for DataType {
                 tz.clone().map(|tz| tz.as_ref().to_string()),
             ),
             arrow_schema::DataType::Date32 => Self::Date,
+            arrow_schema::DataType::Date64 => Self::Timestamp(TimeUnit::Milliseconds, None),
             arrow_schema::DataType::Time64(time_unit) => Self::Time(time_unit.into()),
 
             arrow_schema::DataType::Duration(time_unit) => Self::Duration(time_unit.into()),
             arrow_schema::DataType::Interval(IntervalUnit::MonthDayNano) => Self::Interval,
             arrow_schema::DataType::FixedSizeBinary(size) => Self::FixedSizeBinary(*size as _),
-            arrow_schema::DataType::LargeBinary => Self::Binary,
+            arrow_schema::DataType::LargeBinary | arrow_schema::DataType::Binary => Self::Binary,
 
-            arrow_schema::DataType::LargeUtf8 => Self::Utf8,
+            arrow_schema::DataType::LargeUtf8 | arrow_schema::DataType::Utf8 => Self::Utf8,
 
             arrow_schema::DataType::FixedSizeList(field, size) => {
-                Self::FixedSizeList(Box::new(field.as_ref().try_into()?), *size as _)
+                Self::FixedSizeList(Box::new(Field::try_from(field.as_ref())?.dtype), *size as _)
             }
-            arrow_schema::DataType::LargeList(field) => {
-                Self::List(Box::new(field.as_ref().try_into()?))
+            arrow_schema::DataType::LargeList(field) | arrow_schema::DataType::List(field) => {
+                Self::List(Box::new(Field::try_from(field.as_ref())?.dtype))
             }
 
             arrow_schema::DataType::Struct(fields) => Self::Struct(
                 fields
                     .into_iter()
-                    .map(|v| v.as_ref().try_into())
+                    .map(|v| Field::try_from(v.as_ref()))
                     .collect::<DaftResult<_>>()?,
             ),
 
@@ -1287,8 +1205,8 @@ impl TryFrom<&arrow_schema::DataType> for DataType {
                     ));
                 };
 
-                let key = Self::try_from(key_field.as_ref())?;
-                let value = Self::try_from(value_field.as_ref())?;
+                let key = Field::try_from(key_field.as_ref())?.dtype;
+                let value = Field::try_from(value_field.as_ref())?.dtype;
 
                 let key = Box::new(key);
                 let value = Box::new(value);
@@ -1308,23 +1226,8 @@ impl TryFrom<&arrow_schema::Field> for DataType {
     type Error = DaftError;
 
     fn try_from(value: &arrow_schema::Field) -> Result<Self, Self::Error> {
-        if let Some(extension_name) = value.extension_type_name() {
-            if extension_name == DAFT_SUPER_EXTENSION_NAME {
-                let payload = value.extension_type_metadata().expect("metadata");
-                Self::from_json(payload)
-            } else {
-                // Generic extension type
-                let physical = value.data_type().try_into()?;
-                let metadata = value.extension_type_metadata().map(|s| s.to_string());
-                Ok(Self::Extension(
-                    extension_name.to_string(),
-                    Box::new(physical),
-                    metadata,
-                ))
-            }
-        } else {
-            value.data_type().try_into()
-        }
+        let field = Field::try_from(value)?;
+        Ok(field.dtype)
     }
 }
 

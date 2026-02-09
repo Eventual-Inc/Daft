@@ -1,7 +1,7 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, TimeZone};
-use common_arrow_ffi as ffi;
+use common_arrow_ffi::ToPyArrow;
 use common_error::DaftError;
 use common_ndarray::NumpyArray;
 use daft_schema::{
@@ -197,24 +197,22 @@ impl<'py> IntoPyObject<'py> for Literal {
 
                 Ok(PyList::new(py, keys.to_literals().zip(values.to_literals()))?.into_any())
             }
-            Self::Tensor { data, shape } => {
-                let arrow_field = data.field().to_arrow()?;
-                let arrow_arr = data.to_arrow()?;
-                ffi::to_py_array_v2(py, arrow_arr, &arrow_field)?
-                    .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
-                    .call_method1(pyo3::intern!(py, "reshape"), (shape,))
-            }
+            Self::Tensor { data, shape } => data
+                .to_pyarrow(py)?
+                .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?
+                .call_method1(pyo3::intern!(py, "reshape"), (shape,)),
             Self::SparseTensor {
                 values,
                 indices,
                 shape,
                 ..
             } => {
-                let values_field = values.field().to_arrow()?;
-                let values_arr = ffi::to_py_array_v2(py, values.to_arrow()?, &values_field)?
+                let values_arr = values
+                    .to_pyarrow(py)?
                     .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
-                let indices_field = indices.field().to_arrow()?;
-                let indices_arr = ffi::to_py_array_v2(py, indices.to_arrow()?, &indices_field)?
+
+                let indices_arr = indices
+                    .to_pyarrow(py)?
                     .call_method1(pyo3::intern!(py, "to_numpy"), (false,))?;
 
                 let seq = (
@@ -226,12 +224,9 @@ impl<'py> IntoPyObject<'py> for Literal {
 
                 Ok(PyDict::from_sequence(&seq)?.into_any())
             }
-            Self::Embedding(series) => {
-                let arrow_field = series.field().to_arrow()?;
-                let arrow_arr = series.to_arrow()?;
-                ffi::to_py_array_v2(py, arrow_arr, &arrow_field)?
-                    .call_method1(pyo3::intern!(py, "to_numpy"), (false,))
-            }
+            Self::Embedding(series) => series
+                .to_pyarrow(py)?
+                .call_method1(pyo3::intern!(py, "to_numpy"), (false,)),
             Self::Image(image) => {
                 let img_arr = image.into_ndarray();
                 NumpyArray::from_ndarray(&img_arr, py).into_pyobject(py)
@@ -243,21 +238,8 @@ impl<'py> IntoPyObject<'py> for Literal {
                     "Expected extension literal to have length 1"
                 );
 
-                let target_field = series
-                    .field()
-                    .to_arrow()
-                    .map_err(|e| PyErr::from(DaftError::from(e)))?;
-                let arr = series
-                    .to_arrow()
-                    .map_err(|e| PyErr::from(DaftError::from(e)))?;
-                let arr = if arr.data_type() != target_field.data_type() {
-                    arrow::compute::cast(&arr, target_field.data_type())
-                        .map_err(|e| PyErr::from(DaftError::from(e)))?
-                } else {
-                    arr
-                };
-
-                ffi::to_py_array_v2(py, arr, &target_field)?
+                series
+                    .to_pyarrow(py)?
                     .call_method0(pyo3::intern!(py, "to_pylist"))?
                     .get_item(0)
             }

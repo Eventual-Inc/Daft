@@ -7,11 +7,16 @@
 
 #![allow(deprecated, reason = "arrow2->arrow migration")]
 
-use std::{ffi::CStr, ptr::addr_of_mut, sync::Arc};
+use std::{
+    ffi::CStr,
+    ptr::{addr_of, addr_of_mut},
+    sync::Arc,
+};
 
 use arrow::{
     array::{ArrayData, RecordBatch, RecordBatchOptions, StructArray, make_array},
     ffi::{FFI_ArrowArray, FFI_ArrowSchema},
+    ffi_stream::FFI_ArrowArrayStream,
 };
 use arrow_schema::{Field, Schema};
 use daft_arrow::{array::Array, datatypes::arrow2_field_to_arrow};
@@ -78,6 +83,24 @@ pub trait FromPyArrow: Sized {
     ///
     /// Takes a GIL-bound value from Python and returns a result with the arrow-rs type.
     fn from_pyarrow_bound(value: &Bound<PyAny>) -> PyResult<Self>;
+}
+
+/// Create a new PyArrow object from a arrow-rs type.
+pub trait ToPyArrow {
+    /// Convert the implemented type into a Python object without consuming it.
+    fn to_pyarrow<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>>;
+}
+
+/// Convert an arrow-rs type into a PyArrow object.
+pub trait IntoPyArrow {
+    /// Convert the implemented type into a Python object while consuming it.
+    fn into_pyarrow(self, py: Python<'_>) -> PyResult<Bound<'_, PyAny>>;
+}
+
+impl<T: ToPyArrow> IntoPyArrow for T {
+    fn into_pyarrow(self, py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
+        self.to_pyarrow(py)
+    }
 }
 
 impl FromPyArrow for ArrayData {
@@ -200,6 +223,73 @@ impl FromPyArrow for Schema {
     }
 }
 
+impl ToPyArrow for arrow_schema::DataType {
+    fn to_pyarrow<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let c_schema = FFI_ArrowSchema::try_from(self).map_err(to_py_err)?;
+        let c_schema_ptr = &raw const c_schema;
+        let module = py.import("pyarrow")?;
+        let class = module.getattr("DataType")?;
+        let dtype = class.call_method1("_import_from_c", (c_schema_ptr as Py_uintptr_t,))?;
+        Ok(dtype)
+    }
+}
+
+impl ToPyArrow for Schema {
+    fn to_pyarrow<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let c_schema = FFI_ArrowSchema::try_from(self).map_err(to_py_err)?;
+        let c_schema_ptr = &raw const c_schema;
+        let module = py.import("pyarrow")?;
+        let class = module.getattr("Schema")?;
+        let schema = class.call_method1("_import_from_c", (c_schema_ptr as Py_uintptr_t,))?;
+        Ok(schema)
+    }
+}
+
+impl ToPyArrow for ArrayData {
+    fn to_pyarrow<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let array = FFI_ArrowArray::new(self);
+        let schema = FFI_ArrowSchema::try_from(self.data_type()).map_err(to_py_err)?;
+
+        let module = py.import("pyarrow")?;
+        let class = module.getattr("Array")?;
+        let array = class.call_method1(
+            "_import_from_c",
+            (
+                addr_of!(array) as Py_uintptr_t,
+                addr_of!(schema) as Py_uintptr_t,
+            ),
+        )?;
+        Ok(array)
+    }
+}
+
+impl ToPyArrow for RecordBatch {
+    fn to_pyarrow<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        // Workaround apache/arrow#37669 by returning RecordBatchIterator
+        let reader = arrow::array::RecordBatchIterator::new(vec![Ok(self.clone())], self.schema());
+        let reader: Box<dyn arrow::array::RecordBatchReader + Send> = Box::new(reader);
+        let py_reader = reader.into_pyarrow(py)?;
+        py_reader.call_method0("read_next_batch")
+    }
+}
+
+/// Convert a [`RecordBatchReader`] into a `pyarrow.RecordBatchReader`.
+impl IntoPyArrow for Box<dyn arrow::array::RecordBatchReader + Send> {
+    // We can't implement `ToPyArrow` for `T: RecordBatchReader + Send` because
+    // there is already a blanket implementation for `T: ToPyArrow`.
+    fn into_pyarrow(self, py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
+        let mut stream = FFI_ArrowArrayStream::new(self);
+
+        let stream_ptr = &raw mut stream;
+        let module = py.import("pyarrow")?;
+        let class = module.getattr("RecordBatchReader")?;
+        let args = PyTuple::new(py, [stream_ptr as Py_uintptr_t])?;
+        let reader = class.call_method1("_import_from_c", args)?;
+
+        Ok(reader)
+    }
+}
+
 pub fn array_to_rust(value: &Bound<PyAny>) -> PyResult<(ArrayData, Field)> {
     // Newer versions of PyArrow as well as other libraries with Arrow data implement this
     // method, so prefer it over _export_to_c.
@@ -264,78 +354,6 @@ pub fn array_to_rust(value: &Bound<PyAny>) -> PyResult<(ArrayData, Field)> {
     let field = arrow_schema::Field::try_from(&schema).map_err(to_py_err)?;
 
     Ok((data, field))
-}
-
-pub fn to_py_array<'py>(
-    py: Python<'py>,
-    array: ArrayRef,
-    pyarrow: &Bound<'py, PyModule>,
-) -> PyResult<Bound<'py, PyAny>> {
-    let field = daft_arrow::datatypes::Field::new("", array.data_type().clone(), true);
-    let field = arrow2_field_to_arrow(field);
-    let field = arrow::ffi::FFI_ArrowSchema::try_from(&field).map_err(|e| {
-        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-            "Failed to convert Arrow field to FFI schema: {}",
-            e
-        ))
-    })?;
-
-    let schema = Box::new(field);
-
-    let mut data = daft_arrow::array::to_data(array.as_ref());
-    data.align_buffers();
-    let arrow_arr = Box::new(arrow::ffi::FFI_ArrowArray::new(&data));
-
-    let schema_ptr: *const arrow::ffi::FFI_ArrowSchema = &raw const *schema;
-    let array_ptr: *const arrow::ffi::FFI_ArrowArray = &raw const *arrow_arr;
-
-    let array = pyarrow.getattr(pyo3::intern!(py, "Array"))?.call_method1(
-        pyo3::intern!(py, "_import_from_c"),
-        (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
-    )?;
-
-    let array = PyModule::import(py, pyo3::intern!(py, "daft.arrow_utils"))?
-        .getattr(pyo3::intern!(py, "remove_empty_struct_placeholders"))?
-        .call1((array,))?;
-
-    Ok(array)
-}
-
-/// Export an arrow-rs array to PyArrow
-///
-/// Uses a caller-provided Field for the schema.
-/// This preserves extension type metadata that would otherwise be lost when
-/// deriving the schema from the array's DataType alone.
-pub fn to_py_array_v2<'py>(
-    py: Python<'py>,
-    array: arrow::array::ArrayRef,
-    field: &arrow_schema::Field,
-) -> PyResult<Bound<'py, PyAny>> {
-    let schema = Box::new(arrow::ffi::FFI_ArrowSchema::try_from(field).map_err(|e| {
-        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-            "Failed to convert Arrow field to FFI schema: {}",
-            e
-        ))
-    })?);
-
-    let mut data = array.to_data();
-    data.align_buffers();
-    let arrow_arr = Box::new(arrow::ffi::FFI_ArrowArray::new(&data));
-
-    let schema_ptr: *const arrow::ffi::FFI_ArrowSchema = &raw const *schema;
-    let array_ptr: *const arrow::ffi::FFI_ArrowArray = &raw const *arrow_arr;
-
-    let pyarrow = py.import(pyo3::intern!(py, "pyarrow"))?;
-    let array = pyarrow.getattr(pyo3::intern!(py, "Array"))?.call_method1(
-        pyo3::intern!(py, "_import_from_c"),
-        (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
-    )?;
-
-    let array = PyModule::import(py, pyo3::intern!(py, "daft.arrow_utils"))?
-        .getattr(pyo3::intern!(py, "remove_empty_struct_placeholders"))?
-        .call1((array,))?;
-
-    Ok(array)
 }
 
 pub fn field_to_py(

@@ -4,7 +4,7 @@ use std::{
 };
 
 use arrow::array::make_array;
-use common_arrow_ffi::{self as ffi, array_to_rust};
+use common_arrow_ffi::{ToPyArrow, array_to_rust};
 use common_error::DaftError;
 use daft_hash::HashFunctionKind;
 use daft_schema::python::PyDataType;
@@ -63,7 +63,7 @@ impl PySeries {
         dtype: Option<PyDataType>,
     ) -> PyResult<Self> {
         let (data, field) = array_to_rust(&pyarrow_array)?;
-        let daft_field = daft_schema::field::Field::from_arrow(&field, true)
+        let daft_field = daft_schema::field::Field::try_from(&field)
             .map_err(DaftError::from)?
             .rename(name);
 
@@ -146,14 +146,7 @@ impl PySeries {
     }
 
     pub fn to_arrow<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
-        let target_field = self.series.field().to_arrow()?;
-        let arr = self.series.to_arrow()?;
-        let arr = if arr.data_type() != target_field.data_type() {
-            arrow::compute::cast(&arr, target_field.data_type()).map_err(DaftError::from)?
-        } else {
-            arr
-        };
-        ffi::to_py_array_v2(py, arr, &target_field)
+        self.series.to_pyarrow(py)
     }
 
     pub fn __iter__(&self) -> PySeriesIterator {

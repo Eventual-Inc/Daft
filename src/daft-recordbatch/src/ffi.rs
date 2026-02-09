@@ -1,4 +1,4 @@
-use common_arrow_ffi::FromPyArrow;
+use common_arrow_ffi::{FromPyArrow, ToPyArrow};
 use common_error::DaftResult;
 use daft_core::prelude::SchemaRef;
 use pyo3::prelude::*;
@@ -28,7 +28,7 @@ pub fn record_batch_from_arrow(
         let mut tables: Vec<RecordBatch> = Vec::with_capacity(num_batches);
         for rb in arrow_batches {
             let arrow_schema = rb.schema();
-            let daft_schema = daft_core::prelude::Schema::from_arrow(arrow_schema.as_ref(), true)?;
+            let daft_schema = daft_core::prelude::Schema::try_from(arrow_schema.as_ref())?;
             let target_arrow_schema = daft_schema.to_arrow()?;
 
             // Cast columns if the coerced schema differs from the input schema
@@ -66,16 +66,9 @@ pub fn record_batch_to_arrow(
 
     for i in 0..table.num_columns() {
         let s = table.get_column(i);
-        let arrow_field = s.field().to_arrow()?;
-        let arrow_array = s.to_arrow()?;
-        let arrow_array = if arrow_array.data_type() != arrow_field.data_type() {
-            arrow::compute::cast(&arrow_array, arrow_field.data_type())
-                .map_err(common_error::DaftError::from)?
-        } else {
-            arrow_array
-        };
-        let py_array = common_arrow_ffi::to_py_array_v2(py, arrow_array, &arrow_field)?;
-        arrays.push(py_array);
+        let pyarrow_array = s.to_pyarrow(py)?;
+
+        arrays.push(pyarrow_array);
         names.push(s.name().to_string());
     }
 

@@ -250,15 +250,6 @@ impl Schema {
         })
     }
 
-    pub fn from_arrow(arrow_schema: &arrow_schema::Schema, coerce: bool) -> DaftResult<Self> {
-        let daft_fields = arrow_schema
-            .fields
-            .iter()
-            .map(|f| Field::from_arrow(f.as_ref(), coerce))
-            .collect::<DaftResult<Vec<Field>>>()?;
-        Ok(Self::new(daft_fields))
-    }
-
     pub fn to_arrow(&self) -> DaftResult<arrow_schema::Schema> {
         let arrow_fields = self
             .fields
