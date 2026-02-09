@@ -268,25 +268,26 @@ where
     where
         T::Native: ToLeBytes,
     {
-        let hashes = if let Some(seed) = seed {
-            array
-                .iter()
-                .zip(seed.iter())
-                .map(|(v, s)| match (v, s) {
+        let mut builder = UInt64Builder::with_capacity(array.len());
+
+        if let Some(seed) = seed {
+            for (v, s) in array.iter().zip(seed.iter()) {
+                let hash = match (v, s) {
                     (Some(v), Some(s)) => f(&v.to_le_bytes_vec(), s),
                     _ => NULL_HASH,
-                })
-                .collect::<Vec<_>>()
+                };
+                builder.append_value(hash);
+            }
         } else {
-            array
-                .iter()
-                .map(|v| match v {
+            for v in array {
+                let hash = match v {
                     Some(v) => f(&v.to_le_bytes_vec(), 0),
                     None => NULL_HASH,
-                })
-                .collect::<Vec<_>>()
-        };
-        PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+                };
+                builder.append_value(hash);
+            }
+        }
+        builder.finish()
     }
 
     match hash_function {
@@ -394,27 +395,28 @@ fn hash_boolean(
         seed: Option<&PrimitiveArray<UInt64Type>>,
         f: F,
     ) -> PrimitiveArray<UInt64Type> {
-        let hashes = if let Some(seed) = seed {
-            array
-                .iter()
-                .zip(seed.iter())
-                .map(|(v, s)| match (v, s) {
+        let mut builder = UInt64Builder::with_capacity(array.len());
+
+        if let Some(seed) = seed {
+            for (v, s) in array.iter().zip(seed.iter()) {
+                let hash = match (v, s) {
                     (Some(true), Some(s)) => f(b"1", s),
                     (Some(false), Some(s)) => f(b"0", s),
                     _ => NULL_HASH,
-                })
-                .collect::<Vec<_>>()
+                };
+                builder.append_value(hash);
+            }
         } else {
-            array
-                .iter()
-                .map(|v| match v {
+            for value in array {
+                let hash = match value {
                     Some(true) => TRUE_HASH,
                     Some(false) => FALSE_HASH,
                     None => NULL_HASH,
-                })
-                .collect::<Vec<_>>()
-        };
-        PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+                };
+                builder.append_value(hash);
+            }
+        }
+        builder.finish()
     }
 
     match hash_function {
@@ -507,14 +509,16 @@ fn hash_null(
         seed: Option<&PrimitiveArray<UInt64Type>>,
         f: F,
     ) -> PrimitiveArray<UInt64Type> {
-        let hashes = if let Some(seed) = seed {
-            seed.iter()
-                .map(|s| f(b"", s.unwrap_or(0)))
-                .collect::<Vec<_>>()
+        let mut builder = UInt64Builder::with_capacity(len);
+
+        if let Some(seed) = seed {
+            for s in seed {
+                builder.append_value(f(b"", s.unwrap_or(0)));
+            }
         } else {
-            (0..len).map(|_| NULL_HASH).collect::<Vec<_>>()
-        };
-        PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+            builder.append_value_n(NULL_HASH, len);
+        }
+        builder.finish()
     }
 
     match hash_function {
@@ -583,19 +587,18 @@ fn hash_large_binary(
         seed: Option<&PrimitiveArray<UInt64Type>>,
         f: F,
     ) -> PrimitiveArray<UInt64Type> {
-        let hashes = if let Some(seed) = seed {
-            array
-                .iter()
-                .zip(seed.iter())
-                .map(|(v, s)| f(v.unwrap_or(b""), s.unwrap_or(0)))
-                .collect::<Vec<_>>()
+        let mut builder = UInt64Builder::with_capacity(array.len());
+
+        if let Some(seed) = seed {
+            for (v, s) in array.iter().zip(seed.iter()) {
+                builder.append_value(f(v.unwrap_or(b""), s.unwrap_or(0)));
+            }
         } else {
-            array
-                .iter()
-                .map(|v| f(v.unwrap_or(b""), 0))
-                .collect::<Vec<_>>()
-        };
-        PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+            for v in array {
+                builder.append_value(f(v.unwrap_or(b""), 0));
+            }
+        }
+        builder.finish()
     }
 
     match hash_function {
@@ -664,19 +667,17 @@ fn hash_fixed_size_binary(
         zero_buffer: &[u8],
         f: F,
     ) -> PrimitiveArray<UInt64Type> {
-        let hashes = if let Some(seed) = seed {
-            array
-                .iter()
-                .zip(seed.iter())
-                .map(|(v, s)| f(v.unwrap_or(zero_buffer), s.unwrap_or(0)))
-                .collect::<Vec<_>>()
+        let mut builder = UInt64Builder::with_capacity(array.len());
+        if let Some(seed) = seed {
+            for (v, s) in array.iter().zip(seed.iter()) {
+                builder.append_value(f(v.unwrap_or(zero_buffer), s.unwrap_or(0)));
+            }
         } else {
-            array
-                .iter()
-                .map(|v| f(v.unwrap_or(zero_buffer), 0))
-                .collect::<Vec<_>>()
-        };
-        PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+            for v in array {
+                builder.append_value(f(v.unwrap_or(zero_buffer), 0));
+            }
+        }
+        builder.finish()
     }
 
     match hash_function {
@@ -738,19 +739,18 @@ fn hash_large_string(
         seed: Option<&PrimitiveArray<UInt64Type>>,
         f: F,
     ) -> PrimitiveArray<UInt64Type> {
-        let hashes = if let Some(seed) = seed {
-            array
-                .iter()
-                .zip(seed.iter())
-                .map(|(v, s)| f(v.unwrap_or("").as_bytes(), s.unwrap_or(0)))
-                .collect::<Vec<_>>()
+        let mut builder = UInt64Builder::with_capacity(array.len());
+
+        if let Some(seed) = seed {
+            for (v, s) in array.iter().zip(seed.iter()) {
+                builder.append_value(f(v.unwrap_or("").as_bytes(), s.unwrap_or(0)));
+            }
         } else {
-            array
-                .iter()
-                .map(|v| f(v.unwrap_or("").as_bytes(), 0))
-                .collect::<Vec<_>>()
-        };
-        PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+            for v in array {
+                builder.append_value(f(v.unwrap_or("").as_bytes(), 0));
+            }
+        }
+        builder.finish()
     }
 
     match hash_function {
@@ -812,11 +812,11 @@ fn hash_timestamp_with_timezone(
         seed: Option<&PrimitiveArray<UInt64Type>>,
         f: F,
     ) -> PrimitiveArray<UInt64Type> {
-        let hashes = if let Some(seed) = seed {
-            array
-                .iter()
-                .zip(seed.iter())
-                .map(|(v, s)| match (v, s) {
+        let mut builder = UInt64Builder::with_capacity(array.len());
+
+        if let Some(seed) = seed {
+            for (v, s) in array.iter().zip(seed.iter()) {
+                let hash = match (v, s) {
                     (Some(v), Some(s)) => {
                         // Combine timestamp and timezone for hashing
                         let mut combined = Vec::new();
@@ -825,12 +825,12 @@ fn hash_timestamp_with_timezone(
                         f(&combined, s)
                     }
                     _ => NULL_HASH,
-                })
-                .collect::<Vec<_>>()
+                };
+                builder.append_value(hash);
+            }
         } else {
-            array
-                .iter()
-                .map(|v| match v {
+            for v in array {
+                let hash = match v {
                     Some(v) => {
                         // Combine timestamp and timezone for hashing
                         let mut combined = Vec::new();
@@ -839,10 +839,11 @@ fn hash_timestamp_with_timezone(
                         f(&combined, 0)
                     }
                     None => NULL_HASH,
-                })
-                .collect::<Vec<_>>()
-        };
-        PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+                };
+                builder.append_value(hash);
+            }
+        }
+        builder.finish()
     }
 
     // For timestamps with timezone, we combine the timestamp value with the timezone string
@@ -990,31 +991,32 @@ fn hash_decimal(
         f: F,
         scale: usize,
     ) -> PrimitiveArray<UInt64Type> {
-        let hashes = if let Some(seed) = seed {
-            array
-                .iter()
-                .zip(seed.iter())
-                .map(|(v, s)| match (v, s) {
+        let mut builder = UInt64Builder::with_capacity(array.len());
+
+        if let Some(seed) = seed {
+            for (v, s) in array.iter().zip(seed.iter()) {
+                let hash = match (v, s) {
                     (Some(v), Some(s)) => {
                         let formatted = format_decimal(v, scale);
                         f(&formatted, s)
                     }
                     _ => NULL_HASH,
-                })
-                .collect::<Vec<_>>()
+                };
+                builder.append_value(hash);
+            }
         } else {
-            array
-                .iter()
-                .map(|v| match v {
+            for v in array {
+                let hash = match v {
                     Some(v) => {
                         let formatted = format_decimal(v, scale);
                         f(&formatted, 0)
                     }
                     None => NULL_HASH,
-                })
-                .collect::<Vec<_>>()
-        };
-        PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+                };
+                builder.append_value(hash);
+            }
+        }
+        builder.finish()
     }
 
     match hash_function {

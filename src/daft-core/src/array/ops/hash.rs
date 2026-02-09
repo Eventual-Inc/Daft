@@ -336,21 +336,21 @@ fn murmur3_32_hash_from_iter_with_nulls<B: AsRef<[u8]>>(
             i32::from_ne_bytes(unsigned.to_ne_bytes())
         })
     });
-    let array = Box::new(daft_arrow::array::Int32Array::from_iter(hashes));
-    Ok(Int32Array::new(Field::new(name, DataType::Int32).into(), array).unwrap())
+    Ok(Int32Array::from_iter(
+        Field::new(name, DataType::Int32),
+        hashes,
+    ))
 }
 
 fn murmur3_32_hash_from_iter_no_nulls<B: AsRef<[u8]>>(
     name: &str,
     byte_iter: impl Iterator<Item = B>,
 ) -> DaftResult<Int32Array> {
-    let hashes = byte_iter
-        .map(|b| {
-            let unsigned = mur3::murmurhash3_x86_32(b.as_ref(), 0);
-            i32::from_ne_bytes(unsigned.to_ne_bytes())
-        })
-        .collect::<Vec<_>>();
-    Ok(Int32Array::from_vec(name, hashes))
+    let hashes = byte_iter.map(|b| {
+        let unsigned = mur3::murmurhash3_x86_32(b.as_ref(), 0);
+        i32::from_ne_bytes(unsigned.to_ne_bytes())
+    });
+    Ok(Int32Array::from_values(name, hashes))
 }
 
 fn hash_list(
