@@ -1,5 +1,6 @@
 #![feature(if_let_guard)]
 mod azure_blob;
+mod cos;
 mod counting_reader;
 mod google_cloud;
 #[cfg(feature = "python")]
@@ -23,6 +24,7 @@ use std::sync::LazyLock;
 
 use azure_blob::AzureBlobSource;
 use common_file_formats::FileFormat;
+use cos::CosSource;
 pub use counting_reader::CountingReader;
 use google_cloud::GCSSource;
 #[cfg(feature = "python")]
@@ -45,7 +47,7 @@ use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 pub use common_io_config::{
-    AzureConfig, GCSConfig, GravitinoConfig, HTTPConfig, IOConfig, S3Config, TosConfig,
+    AzureConfig, CosConfig, GCSConfig, GravitinoConfig, HTTPConfig, IOConfig, S3Config, TosConfig,
 };
 use futures::{FutureExt, stream::BoxStream};
 use object_io::StreamingRetryParams;
@@ -288,6 +290,9 @@ impl IOClient {
             SourceType::Tos => {
                 TosSource::get_client(&self.config.tos).await? as Arc<dyn ObjectSource>
             }
+            SourceType::Cos => {
+                CosSource::get_client(&self.config.cos, &path).await? as Arc<dyn ObjectSource>
+            }
             SourceType::Gravitino => {
                 #[cfg(feature = "python")]
                 {
@@ -457,6 +462,7 @@ pub enum SourceType {
     HF,
     Unity,
     Tos,
+    Cos,
     Gravitino,
     OpenDAL { scheme: String },
 }
@@ -472,6 +478,7 @@ impl std::fmt::Display for SourceType {
             Self::HF => write!(f, "hf"),
             Self::Unity => write!(f, "UnityCatalog"),
             Self::Tos => write!(f, "tos"),
+            Self::Cos => write!(f, "cos"),
             Self::Gravitino => write!(f, "Gravitino"),
             Self::OpenDAL { scheme } => write!(f, "opendal({})", scheme),
         }
@@ -484,7 +491,7 @@ impl SourceType {
     pub fn supports_native_writer(&self) -> bool {
         matches!(
             self,
-            Self::File | Self::S3 | Self::Tos | Self::Gravitino | Self::OpenDAL { .. }
+            Self::File | Self::S3 | Self::Tos | Self::Cos | Self::Gravitino | Self::OpenDAL { .. }
         )
     }
 }
@@ -562,6 +569,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
         "hf" => Ok((SourceType::HF, fixed_input)),
         "tos" => Ok((SourceType::Tos, fixed_input)),
+        "cos" | "cosn" => Ok((SourceType::Cos, fixed_input)),
         "vol+dbfs" | "dbfs" => Ok((SourceType::Unity, fixed_input)),
         "gvfs" => Ok((SourceType::Gravitino, fixed_input)),
         #[cfg(target_env = "msvc")]
