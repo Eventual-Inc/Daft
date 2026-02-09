@@ -81,10 +81,7 @@ pub struct DefaultRuntimeStats {
 
 impl DefaultRuntimeStats {
     pub fn new(meter: &Meter, node_id: NodeID) -> Self {
-        let node_kv = vec![
-            KeyValue::new("node_id", node_id.to_string()),
-            KeyValue::new("runner", "ray".to_string()),
-        ];
+        let node_kv = vec![KeyValue::new("node_id", node_id.to_string())];
 
         Self {
             node_kv,
