@@ -1226,8 +1226,15 @@ impl TryFrom<&arrow_schema::Field> for DataType {
     type Error = DaftError;
 
     fn try_from(value: &arrow_schema::Field) -> Result<Self, Self::Error> {
-        let field = Field::try_from(value)?;
-        Ok(field.dtype)
+        if value.extension_type_name().is_some() {
+            // Extension types need full Field context for metadata
+            let field = Field::try_from(value)?;
+            Ok(field.dtype)
+        } else {
+            // Non-extension: convert the data type directly to avoid infinite
+            // recursion with Field::try_from which calls back into this impl.
+            Self::try_from(value.data_type())
+        }
     }
 }
 
