@@ -3,7 +3,7 @@ use std::hash::{BuildHasher, Hasher};
 use arrow::{
     array::{
         Array, BooleanArray, FixedSizeBinaryArray, LargeBinaryArray, LargeStringArray, NullArray,
-        PrimitiveArray,
+        PrimitiveArray, UInt64Builder,
     },
     datatypes::{
         ArrowPrimitiveType, DataType as ArrowDataType, Decimal128Type, Float32Type, Float64Type,
@@ -291,90 +291,78 @@ where
 
     match hash_function {
         HashFunctionKind::MurmurHash3 => {
-            let hashes = if let Some(seed) = seed {
-                array
-                    .iter()
-                    .zip(seed.iter())
-                    .map(|(v, s)| {
-                        let seed_val = s.unwrap_or(42);
-                        let hasher = MurBuildHasher::new(seed_val as u32);
-                        let mut hasher = hasher.build_hasher();
-                        match v {
-                            Some(v) => {
-                                hasher.write(&v.to_le_bytes_vec());
-                                hasher.finish()
-                            }
-                            None => {
-                                hasher.write(b"");
-                                hasher.finish()
-                            }
+            let mut builder = UInt64Builder::with_capacity(array.len());
+            if let Some(seed) = seed {
+                for (v, s) in array.iter().zip(seed.iter()) {
+                    let seed_val = s.unwrap_or(42);
+                    let hasher = MurBuildHasher::new(seed_val as u32);
+                    let mut hasher = hasher.build_hasher();
+                    match v {
+                        Some(v) => {
+                            hasher.write(&v.to_le_bytes_vec());
+                            builder.append_value(hasher.finish());
                         }
-                    })
-                    .collect::<Vec<_>>()
+                        None => {
+                            hasher.write(b"");
+                            builder.append_value(hasher.finish());
+                        }
+                    }
+                }
             } else {
                 let hasher = MurBuildHasher::new(42);
-                array
-                    .iter()
-                    .map(|v| {
-                        let mut hasher = hasher.build_hasher();
-                        match v {
-                            Some(v) => {
-                                hasher.write(&v.to_le_bytes_vec());
-                                hasher.finish()
-                            }
-                            None => {
-                                hasher.write(b"");
-                                hasher.finish()
-                            }
+                for v in array {
+                    let mut hasher = hasher.build_hasher();
+                    match v {
+                        Some(v) => {
+                            hasher.write(&v.to_le_bytes_vec());
+                            builder.append_value(hasher.finish());
                         }
-                    })
-                    .collect::<Vec<_>>()
-            };
-            PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+                        None => {
+                            hasher.write(b"");
+                            builder.append_value(hasher.finish());
+                        }
+                    }
+                }
+            }
+            builder.finish()
         }
         HashFunctionKind::Sha1 => {
-            let hashes = if let Some(seed) = seed {
-                array
-                    .iter()
-                    .zip(seed.iter())
-                    .map(|(v, s)| {
-                        let mut hasher = Sha1Hasher::default();
-                        // Note: Sha1Hasher doesn't support seeding in a standard way
-                        // We write the seed first if present, then the value
-                        if let Some(seed_val) = s {
-                            hasher.write(&seed_val.to_le_bytes());
+            let mut builder = UInt64Builder::with_capacity(array.len());
+            if let Some(seed) = seed {
+                for (v, s) in array.iter().zip(seed.iter()) {
+                    let mut hasher = Sha1Hasher::default();
+                    // Note: Sha1Hasher doesn't support seeding in a standard way
+                    // We write the seed first if present, then the value
+                    if let Some(seed_val) = s {
+                        hasher.write(&seed_val.to_le_bytes());
+                    }
+                    match v {
+                        Some(v) => {
+                            hasher.write(&v.to_le_bytes_vec());
+                            builder.append_value(hasher.finish());
                         }
-                        match v {
-                            Some(v) => {
-                                hasher.write(&v.to_le_bytes_vec());
-                                hasher.finish()
-                            }
-                            None => {
-                                hasher.write(b"");
-                                hasher.finish()
-                            }
+                        None => {
+                            hasher.write(b"");
+                            builder.append_value(hasher.finish());
                         }
-                    })
-                    .collect::<Vec<_>>()
+                    }
+                }
             } else {
-                array
-                    .iter()
-                    .map(|v| {
-                        let mut hasher = Sha1Hasher::default();
-                        match v {
-                            Some(v) => {
-                                hasher.write(&v.to_le_bytes_vec());
-                                hasher.finish()
-                            }
-                            None => {
-                                hasher.write(b"");
-                                hasher.finish()
-                            }
+                for v in array {
+                    let mut hasher = Sha1Hasher::default();
+                    match v {
+                        Some(v) => {
+                            hasher.write(&v.to_le_bytes_vec());
+                            builder.append_value(hasher.finish());
                         }
-                    })
-                    .collect::<Vec<_>>()
-            };
-            PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+                        None => {
+                            hasher.write(b"");
+                            builder.append_value(hasher.finish());
+                        }
+                    }
+                }
+            }
+            builder.finish()
         }
         HashFunctionKind::XxHash32 => {
             const NULL_HASH: u64 = const_xxh32::xxh32(b"", 0) as u64;
@@ -431,104 +419,60 @@ fn hash_boolean(
 
     match hash_function {
         HashFunctionKind::MurmurHash3 => {
-            let hashes = if let Some(seed) = seed {
-                array
-                    .iter()
-                    .zip(seed.iter())
-                    .map(|(v, s)| {
-                        let seed_val = s.unwrap_or(42);
-                        let hasher = MurBuildHasher::new(seed_val as u32);
-                        let mut hasher = hasher.build_hasher();
-                        match v {
-                            Some(true) => {
-                                hasher.write(b"1");
-                                hasher.finish()
-                            }
-                            Some(false) => {
-                                hasher.write(b"0");
-                                hasher.finish()
-                            }
-                            None => {
-                                hasher.write(b"");
-                                hasher.finish()
-                            }
-                        }
-                    })
-                    .collect::<Vec<_>>()
+            let mut builder = UInt64Builder::with_capacity(array.len());
+            if let Some(seed) = seed {
+                for (v, s) in array.iter().zip(seed.iter()) {
+                    let seed_val = s.unwrap_or(42);
+                    let hasher = MurBuildHasher::new(seed_val as u32);
+                    let mut hasher = hasher.build_hasher();
+                    match v {
+                        Some(true) => hasher.write(b"1"),
+                        Some(false) => hasher.write(b"0"),
+                        None => hasher.write(b""),
+                    }
+                    builder.append_value(hasher.finish());
+                }
             } else {
                 let hasher = MurBuildHasher::new(42);
-                array
-                    .iter()
-                    .map(|v| {
-                        let mut hasher = hasher.build_hasher();
-                        match v {
-                            Some(true) => {
-                                hasher.write(b"1");
-                                hasher.finish()
-                            }
-                            Some(false) => {
-                                hasher.write(b"0");
-                                hasher.finish()
-                            }
-                            None => {
-                                hasher.write(b"");
-                                hasher.finish()
-                            }
-                        }
-                    })
-                    .collect::<Vec<_>>()
-            };
-            PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+                for v in array {
+                    let mut hasher = hasher.build_hasher();
+                    match v {
+                        Some(true) => hasher.write(b"1"),
+                        Some(false) => hasher.write(b"0"),
+                        None => hasher.write(b""),
+                    }
+                    builder.append_value(hasher.finish());
+                }
+            }
+            builder.finish()
         }
         HashFunctionKind::Sha1 => {
-            let hashes = if let Some(seed) = seed {
-                array
-                    .iter()
-                    .zip(seed.iter())
-                    .map(|(v, s)| {
-                        let mut hasher = Sha1Hasher::default();
-                        if let Some(seed_val) = s {
-                            hasher.write(&seed_val.to_le_bytes());
-                        }
-                        match v {
-                            Some(true) => {
-                                hasher.write(b"1");
-                                hasher.finish()
-                            }
-                            Some(false) => {
-                                hasher.write(b"0");
-                                hasher.finish()
-                            }
-                            None => {
-                                hasher.write(b"");
-                                hasher.finish()
-                            }
-                        }
-                    })
-                    .collect::<Vec<_>>()
+            let mut builder = UInt64Builder::with_capacity(array.len());
+            if let Some(seed) = seed {
+                for (v, s) in array.iter().zip(seed.iter()) {
+                    let mut hasher = Sha1Hasher::default();
+                    if let Some(seed_val) = s {
+                        hasher.write(&seed_val.to_le_bytes());
+                    }
+                    match v {
+                        Some(true) => hasher.write(b"1"),
+                        Some(false) => hasher.write(b"0"),
+                        None => hasher.write(b""),
+                    }
+                    builder.append_value(hasher.finish());
+                }
             } else {
-                array
-                    .iter()
-                    .map(|v| {
-                        let mut hasher = Sha1Hasher::default();
-                        match v {
-                            Some(true) => {
-                                hasher.write(b"1");
-                                hasher.finish()
-                            }
-                            Some(false) => {
-                                hasher.write(b"0");
-                                hasher.finish()
-                            }
-                            None => {
-                                hasher.write(b"");
-                                hasher.finish()
-                            }
-                        }
-                    })
-                    .collect::<Vec<_>>()
-            };
-            PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+                for v in array {
+                    let mut hasher = Sha1Hasher::default();
+                    match v {
+                        Some(true) => hasher.write(b"1"),
+                        Some(false) => hasher.write(b"0"),
+                        None => hasher.write(b""),
+                    }
+                    builder.append_value(hasher.finish());
+                }
+            }
+            builder.finish()
         }
         HashFunctionKind::XxHash32 => {
             const NULL_HASH: u64 = const_xxh32::xxh32(b"", 0) as u64;
@@ -575,50 +519,44 @@ fn hash_null(
 
     match hash_function {
         HashFunctionKind::MurmurHash3 => {
-            let hashes = if let Some(seed) = seed {
-                seed.iter()
-                    .map(|s| {
-                        let seed_val = s.unwrap_or(42);
-                        let hasher = MurBuildHasher::new(seed_val as u32);
-                        let mut hasher = hasher.build_hasher();
-                        hasher.write(b"");
-                        hasher.finish()
-                    })
-                    .collect::<Vec<_>>()
+            let mut builder = UInt64Builder::with_capacity(array.len());
+            if let Some(seed) = seed {
+                for s in seed {
+                    let seed_val = s.unwrap_or(42);
+                    let hasher = MurBuildHasher::new(seed_val as u32);
+                    let mut hasher = hasher.build_hasher();
+                    hasher.write(b"");
+                    builder.append_value(hasher.finish());
+                }
             } else {
                 let hasher = MurBuildHasher::new(42);
-                (0..array.len())
-                    .map(|_| {
-                        let mut hasher = hasher.build_hasher();
-                        hasher.write(b"");
-                        hasher.finish()
-                    })
-                    .collect::<Vec<_>>()
-            };
-            PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+                for _ in 0..array.len() {
+                    let mut hasher = hasher.build_hasher();
+                    hasher.write(b"");
+                    builder.append_value(hasher.finish());
+                }
+            }
+            builder.finish()
         }
         HashFunctionKind::Sha1 => {
-            let hashes = if let Some(seed) = seed {
-                seed.iter()
-                    .map(|s| {
-                        let mut hasher = Sha1Hasher::default();
-                        if let Some(seed_val) = s {
-                            hasher.write(&seed_val.to_le_bytes());
-                        }
-                        hasher.write(b"");
-                        hasher.finish()
-                    })
-                    .collect::<Vec<_>>()
+            let mut builder = UInt64Builder::with_capacity(array.len());
+            if let Some(seed) = seed {
+                for s in seed {
+                    let mut hasher = Sha1Hasher::default();
+                    if let Some(seed_val) = s {
+                        hasher.write(&seed_val.to_le_bytes());
+                    }
+                    hasher.write(b"");
+                    builder.append_value(hasher.finish());
+                }
             } else {
-                (0..array.len())
-                    .map(|_| {
-                        let mut hasher = Sha1Hasher::default();
-                        hasher.write(b"");
-                        hasher.finish()
-                    })
-                    .collect::<Vec<_>>()
-            };
-            PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+                for _ in 0..array.len() {
+                    let mut hasher = Sha1Hasher::default();
+                    hasher.write(b"");
+                    builder.append_value(hasher.finish());
+                }
+            }
+            builder.finish()
         }
         HashFunctionKind::XxHash32 => {
             const NULL_HASH: u64 = const_xxh32::xxh32(b"", 0) as u64;
@@ -665,56 +603,44 @@ fn hash_large_binary(
         HashFunctionKind::XxHash64 => xxhash(array, seed, xxh64),
         HashFunctionKind::XxHash3_64 => xxhash(array, seed, xxh3_64_with_seed),
         HashFunctionKind::MurmurHash3 => {
-            let hashes = if let Some(seed) = seed {
-                array
-                    .iter()
-                    .zip(seed.iter())
-                    .map(|(v, s)| {
-                        let seed_val = s.unwrap_or(42);
-                        let hasher = MurBuildHasher::new(seed_val as u32);
-                        let mut hasher = hasher.build_hasher();
-                        hasher.write(v.unwrap_or(b""));
-                        hasher.finish()
-                    })
-                    .collect::<Vec<_>>()
+            let mut builder = UInt64Builder::with_capacity(array.len());
+            if let Some(seed) = seed {
+                for (v, s) in array.iter().zip(seed.iter()) {
+                    let seed_val = s.unwrap_or(42);
+                    let hasher = MurBuildHasher::new(seed_val as u32);
+                    let mut hasher = hasher.build_hasher();
+                    hasher.write(v.unwrap_or(b""));
+                    builder.append_value(hasher.finish());
+                }
             } else {
                 let hasher = MurBuildHasher::new(42);
-                array
-                    .iter()
-                    .map(|v| {
-                        let mut hasher = hasher.build_hasher();
-                        hasher.write(v.unwrap_or(b""));
-                        hasher.finish()
-                    })
-                    .collect::<Vec<_>>()
-            };
-            PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+                for v in array {
+                    let mut hasher = hasher.build_hasher();
+                    hasher.write(v.unwrap_or(b""));
+                    builder.append_value(hasher.finish());
+                }
+            }
+            builder.finish()
         }
         HashFunctionKind::Sha1 => {
-            let hashes = if let Some(seed) = seed {
-                array
-                    .iter()
-                    .zip(seed.iter())
-                    .map(|(v, s)| {
-                        let mut hasher = Sha1Hasher::default();
-                        if let Some(seed_val) = s {
-                            hasher.write(&seed_val.to_le_bytes());
-                        }
-                        hasher.write(v.unwrap_or(b""));
-                        hasher.finish()
-                    })
-                    .collect::<Vec<_>>()
+            let mut builder = UInt64Builder::with_capacity(array.len());
+            if let Some(seed) = seed {
+                for (v, s) in array.iter().zip(seed.iter()) {
+                    let mut hasher = Sha1Hasher::default();
+                    if let Some(seed_val) = s {
+                        hasher.write(&seed_val.to_le_bytes());
+                    }
+                    hasher.write(v.unwrap_or(b""));
+                    builder.append_value(hasher.finish());
+                }
             } else {
-                array
-                    .iter()
-                    .map(|v| {
-                        let mut hasher = Sha1Hasher::default();
-                        hasher.write(v.unwrap_or(b""));
-                        hasher.finish()
-                    })
-                    .collect::<Vec<_>>()
-            };
-            PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+                for v in array {
+                    let mut hasher = Sha1Hasher::default();
+                    hasher.write(v.unwrap_or(b""));
+                    builder.append_value(hasher.finish());
+                }
+            }
+            builder.finish()
         }
     }
 }
@@ -760,56 +686,44 @@ fn hash_fixed_size_binary(
         HashFunctionKind::XxHash64 => xxhash(array, seed, &zero_buffer, xxh64),
         HashFunctionKind::XxHash3_64 => xxhash(array, seed, &zero_buffer, xxh3_64_with_seed),
         HashFunctionKind::MurmurHash3 => {
-            let hashes = if let Some(seed) = seed {
-                array
-                    .iter()
-                    .zip(seed.iter())
-                    .map(|(v, s)| {
-                        let seed_val = s.unwrap_or(42);
-                        let hasher = MurBuildHasher::new(seed_val as u32);
-                        let mut hasher = hasher.build_hasher();
-                        hasher.write(v.unwrap_or(&zero_buffer));
-                        hasher.finish()
-                    })
-                    .collect::<Vec<_>>()
+            let mut builder = UInt64Builder::with_capacity(array.len());
+            if let Some(seed) = seed {
+                for (v, s) in array.iter().zip(seed.iter()) {
+                    let seed_val = s.unwrap_or(42);
+                    let hasher = MurBuildHasher::new(seed_val as u32);
+                    let mut hasher = hasher.build_hasher();
+                    hasher.write(v.unwrap_or(&zero_buffer));
+                    builder.append_value(hasher.finish());
+                }
             } else {
                 let hasher = MurBuildHasher::new(42);
-                array
-                    .iter()
-                    .map(|v| {
-                        let mut hasher = hasher.build_hasher();
-                        hasher.write(v.unwrap_or(&zero_buffer));
-                        hasher.finish()
-                    })
-                    .collect::<Vec<_>>()
-            };
-            PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+                for v in array {
+                    let mut hasher = hasher.build_hasher();
+                    hasher.write(v.unwrap_or(&zero_buffer));
+                    builder.append_value(hasher.finish());
+                }
+            }
+            builder.finish()
         }
         HashFunctionKind::Sha1 => {
-            let hashes = if let Some(seed) = seed {
-                array
-                    .iter()
-                    .zip(seed.iter())
-                    .map(|(v, s)| {
-                        let mut hasher = Sha1Hasher::default();
-                        if let Some(seed_val) = s {
-                            hasher.write(&seed_val.to_le_bytes());
-                        }
-                        hasher.write(v.unwrap_or(&zero_buffer));
-                        hasher.finish()
-                    })
-                    .collect::<Vec<_>>()
+            let mut builder = UInt64Builder::with_capacity(array.len());
+            if let Some(seed) = seed {
+                for (v, s) in array.iter().zip(seed.iter()) {
+                    let mut hasher = Sha1Hasher::default();
+                    if let Some(seed_val) = s {
+                        hasher.write(&seed_val.to_le_bytes());
+                    }
+                    hasher.write(v.unwrap_or(&zero_buffer));
+                    builder.append_value(hasher.finish());
+                }
             } else {
-                array
-                    .iter()
-                    .map(|v| {
-                        let mut hasher = Sha1Hasher::default();
-                        hasher.write(v.unwrap_or(&zero_buffer));
-                        hasher.finish()
-                    })
-                    .collect::<Vec<_>>()
-            };
-            PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+                for v in array {
+                    let mut hasher = Sha1Hasher::default();
+                    hasher.write(v.unwrap_or(&zero_buffer));
+                    builder.append_value(hasher.finish());
+                }
+            }
+            builder.finish()
         }
     }
 }
@@ -844,56 +758,44 @@ fn hash_large_string(
         HashFunctionKind::XxHash64 => xxhash(array, seed, xxh64),
         HashFunctionKind::XxHash3_64 => xxhash(array, seed, xxh3_64_with_seed),
         HashFunctionKind::MurmurHash3 => {
-            let hashes = if let Some(seed) = seed {
-                array
-                    .iter()
-                    .zip(seed.iter())
-                    .map(|(v, s)| {
-                        let seed_val = s.unwrap_or(42);
-                        let hasher = MurBuildHasher::new(seed_val as u32);
-                        let mut hasher = hasher.build_hasher();
-                        hasher.write(v.unwrap_or("").as_bytes());
-                        hasher.finish()
-                    })
-                    .collect::<Vec<_>>()
+            let mut builder = UInt64Builder::with_capacity(array.len());
+            if let Some(seed) = seed {
+                for (v, s) in array.iter().zip(seed.iter()) {
+                    let seed_val = s.unwrap_or(42);
+                    let hasher = MurBuildHasher::new(seed_val as u32);
+                    let mut hasher = hasher.build_hasher();
+                    hasher.write(v.unwrap_or("").as_bytes());
+                    builder.append_value(hasher.finish());
+                }
             } else {
                 let hasher = MurBuildHasher::new(42);
-                array
-                    .iter()
-                    .map(|v| {
-                        let mut hasher = hasher.build_hasher();
-                        hasher.write(v.unwrap_or("").as_bytes());
-                        hasher.finish()
-                    })
-                    .collect::<Vec<_>>()
-            };
-            PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+                for v in array {
+                    let mut hasher = hasher.build_hasher();
+                    hasher.write(v.unwrap_or("").as_bytes());
+                    builder.append_value(hasher.finish());
+                }
+            }
+            builder.finish()
         }
         HashFunctionKind::Sha1 => {
-            let hashes = if let Some(seed) = seed {
-                array
-                    .iter()
-                    .zip(seed.iter())
-                    .map(|(v, s)| {
-                        let mut hasher = Sha1Hasher::default();
-                        if let Some(seed_val) = s {
-                            hasher.write(&seed_val.to_le_bytes());
-                        }
-                        hasher.write(v.unwrap_or("").as_bytes());
-                        hasher.finish()
-                    })
-                    .collect::<Vec<_>>()
+            let mut builder = UInt64Builder::with_capacity(array.len());
+            if let Some(seed) = seed {
+                for (v, s) in array.iter().zip(seed.iter()) {
+                    let mut hasher = Sha1Hasher::default();
+                    if let Some(seed_val) = s {
+                        hasher.write(&seed_val.to_le_bytes());
+                    }
+                    hasher.write(v.unwrap_or("").as_bytes());
+                    builder.append_value(hasher.finish());
+                }
             } else {
-                array
-                    .iter()
-                    .map(|v| {
-                        let mut hasher = Sha1Hasher::default();
-                        hasher.write(v.unwrap_or("").as_bytes());
-                        hasher.finish()
-                    })
-                    .collect::<Vec<_>>()
-            };
-            PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+                for v in array {
+                    let mut hasher = Sha1Hasher::default();
+                    hasher.write(v.unwrap_or("").as_bytes());
+                    builder.append_value(hasher.finish());
+                }
+            }
+            builder.finish()
         }
     }
 }
@@ -959,96 +861,68 @@ fn hash_timestamp_with_timezone(
             xxhash::<NULL_HASH, _>(array, timezone, seed, xxh3_64_with_seed)
         }
         HashFunctionKind::MurmurHash3 => {
-            let hashes = if let Some(seed) = seed {
-                array
-                    .iter()
-                    .zip(seed.iter())
-                    .map(|(v, s)| {
-                        let seed_val = s.unwrap_or(42);
-                        let hasher = MurBuildHasher::new(seed_val as u32);
-                        let mut hasher = hasher.build_hasher();
-                        match v {
-                            Some(v) => {
-                                // Combine timestamp and timezone for hashing
-                                hasher.write(&v.to_le_bytes());
-                                hasher.write(timezone.as_bytes());
-                                hasher.finish()
-                            }
-                            None => {
-                                hasher.write(b"");
-                                hasher.finish()
-                            }
+            let mut builder = UInt64Builder::with_capacity(array.len());
+            if let Some(seed) = seed {
+                for (v, s) in array.iter().zip(seed.iter()) {
+                    let seed_val = s.unwrap_or(42);
+                    let hasher = MurBuildHasher::new(seed_val as u32);
+                    let mut hasher = hasher.build_hasher();
+                    match v {
+                        Some(v) => {
+                            hasher.write(&v.to_le_bytes());
+                            hasher.write(timezone.as_bytes());
                         }
-                    })
-                    .collect::<Vec<_>>()
+                        None => hasher.write(b""),
+                    }
+                    builder.append_value(hasher.finish());
+                }
             } else {
                 let hasher = MurBuildHasher::new(42);
-                array
-                    .iter()
-                    .map(|v| {
-                        let mut hasher = hasher.build_hasher();
-                        match v {
-                            Some(v) => {
-                                // Combine timestamp and timezone for hashing
-                                hasher.write(&v.to_le_bytes());
-                                hasher.write(timezone.as_bytes());
-                                hasher.finish()
-                            }
-                            None => {
-                                hasher.write(b"");
-                                hasher.finish()
-                            }
+                for v in array {
+                    let mut hasher = hasher.build_hasher();
+                    match v {
+                        Some(v) => {
+                            hasher.write(&v.to_le_bytes());
+                            hasher.write(timezone.as_bytes());
                         }
-                    })
-                    .collect::<Vec<_>>()
-            };
-            PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+                        None => hasher.write(b""),
+                    }
+                    builder.append_value(hasher.finish());
+                }
+            }
+            builder.finish()
         }
         HashFunctionKind::Sha1 => {
-            let hashes = if let Some(seed) = seed {
-                array
-                    .iter()
-                    .zip(seed.iter())
-                    .map(|(v, s)| {
-                        let mut hasher = Sha1Hasher::default();
-                        if let Some(seed_val) = s {
-                            hasher.write(&seed_val.to_le_bytes());
+            let mut builder = UInt64Builder::with_capacity(array.len());
+            if let Some(seed) = seed {
+                for (v, s) in array.iter().zip(seed.iter()) {
+                    let mut hasher = Sha1Hasher::default();
+                    if let Some(seed_val) = s {
+                        hasher.write(&seed_val.to_le_bytes());
+                    }
+                    match v {
+                        Some(v) => {
+                            hasher.write(&v.to_le_bytes());
+                            hasher.write(timezone.as_bytes());
                         }
-                        match v {
-                            Some(v) => {
-                                // Combine timestamp and timezone for hashing
-                                hasher.write(&v.to_le_bytes());
-                                hasher.write(timezone.as_bytes());
-                                hasher.finish()
-                            }
-                            None => {
-                                hasher.write(b"");
-                                hasher.finish()
-                            }
-                        }
-                    })
-                    .collect::<Vec<_>>()
+                        None => hasher.write(b""),
+                    }
+                    builder.append_value(hasher.finish());
+                }
             } else {
-                array
-                    .iter()
-                    .map(|v| {
-                        let mut hasher = Sha1Hasher::default();
-                        match v {
-                            Some(v) => {
-                                // Combine timestamp and timezone for hashing
-                                hasher.write(&v.to_le_bytes());
-                                hasher.write(timezone.as_bytes());
-                                hasher.finish()
-                            }
-                            None => {
-                                hasher.write(b"");
-                                hasher.finish()
-                            }
+                for v in array {
+                    let mut hasher = Sha1Hasher::default();
+                    match v {
+                        Some(v) => {
+                            hasher.write(&v.to_le_bytes());
+                            hasher.write(timezone.as_bytes());
                         }
-                    })
-                    .collect::<Vec<_>>()
-            };
-            PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+                        None => hasher.write(b""),
+                    }
+                    builder.append_value(hasher.finish());
+                }
+            }
+            builder.finish()
         }
     }
 }
@@ -1157,92 +1031,68 @@ fn hash_decimal(
             xxhash::<NULL_HASH, _>(array, seed, xxh3_64_with_seed, scale)
         }
         HashFunctionKind::MurmurHash3 => {
-            let hashes = if let Some(seed) = seed {
-                array
-                    .iter()
-                    .zip(seed.iter())
-                    .map(|(v, s)| {
-                        let seed_val = s.unwrap_or(42);
-                        let hasher = MurBuildHasher::new(seed_val as u32);
-                        let mut hasher = hasher.build_hasher();
-                        match v {
-                            Some(v) => {
-                                let formatted = format_decimal(v, scale);
-                                hasher.write(&formatted);
-                                hasher.finish()
-                            }
-                            None => {
-                                hasher.write(b"");
-                                hasher.finish()
-                            }
+            let mut builder = UInt64Builder::with_capacity(array.len());
+            if let Some(seed) = seed {
+                for (v, s) in array.iter().zip(seed.iter()) {
+                    let seed_val = s.unwrap_or(42);
+                    let hasher = MurBuildHasher::new(seed_val as u32);
+                    let mut hasher = hasher.build_hasher();
+                    match v {
+                        Some(v) => {
+                            let formatted = format_decimal(v, scale);
+                            hasher.write(&formatted);
                         }
-                    })
-                    .collect::<Vec<_>>()
+                        None => hasher.write(b""),
+                    }
+                    builder.append_value(hasher.finish());
+                }
             } else {
                 let hasher = MurBuildHasher::new(42);
-                array
-                    .iter()
-                    .map(|v| {
-                        let mut hasher = hasher.build_hasher();
-                        match v {
-                            Some(v) => {
-                                let formatted = format_decimal(v, scale);
-                                hasher.write(&formatted);
-                                hasher.finish()
-                            }
-                            None => {
-                                hasher.write(b"");
-                                hasher.finish()
-                            }
+                for v in array {
+                    let mut hasher = hasher.build_hasher();
+                    match v {
+                        Some(v) => {
+                            let formatted = format_decimal(v, scale);
+                            hasher.write(&formatted);
                         }
-                    })
-                    .collect::<Vec<_>>()
-            };
-            PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+                        None => hasher.write(b""),
+                    }
+                    builder.append_value(hasher.finish());
+                }
+            }
+            builder.finish()
         }
         HashFunctionKind::Sha1 => {
-            let hashes = if let Some(seed) = seed {
-                array
-                    .iter()
-                    .zip(seed.iter())
-                    .map(|(v, s)| {
-                        let mut hasher = Sha1Hasher::default();
-                        if let Some(seed_val) = s {
-                            hasher.write(&seed_val.to_le_bytes());
+            let mut builder = UInt64Builder::with_capacity(array.len());
+            if let Some(seed) = seed {
+                for (v, s) in array.iter().zip(seed.iter()) {
+                    let mut hasher = Sha1Hasher::default();
+                    if let Some(seed_val) = s {
+                        hasher.write(&seed_val.to_le_bytes());
+                    }
+                    match v {
+                        Some(v) => {
+                            let formatted = format_decimal(v, scale);
+                            hasher.write(&formatted);
                         }
-                        match v {
-                            Some(v) => {
-                                let formatted = format_decimal(v, scale);
-                                hasher.write(&formatted);
-                                hasher.finish()
-                            }
-                            None => {
-                                hasher.write(b"");
-                                hasher.finish()
-                            }
-                        }
-                    })
-                    .collect::<Vec<_>>()
+                        None => hasher.write(b""),
+                    }
+                    builder.append_value(hasher.finish());
+                }
             } else {
-                array
-                    .iter()
-                    .map(|v| {
-                        let mut hasher = Sha1Hasher::default();
-                        match v {
-                            Some(v) => {
-                                let formatted = format_decimal(v, scale);
-                                hasher.write(&formatted);
-                                hasher.finish()
-                            }
-                            None => {
-                                hasher.write(b"");
-                                hasher.finish()
-                            }
+                for v in array {
+                    let mut hasher = Sha1Hasher::default();
+                    match v {
+                        Some(v) => {
+                            let formatted = format_decimal(v, scale);
+                            hasher.write(&formatted);
                         }
-                    })
-                    .collect::<Vec<_>>()
-            };
-            PrimitiveArray::<UInt64Type>::from_iter_values(hashes)
+                        None => hasher.write(b""),
+                    }
+                    builder.append_value(hasher.finish());
+                }
+            }
+            builder.finish()
         }
     }
 }

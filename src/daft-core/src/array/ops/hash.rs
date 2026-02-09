@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use arrow::array::Array;
+use arrow::array::UInt64Builder;
 use common_error::DaftResult;
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
 use daft_schema::{dtype::DataType, field::Field};
@@ -60,11 +60,8 @@ impl Utf8Array {
     }
 
     pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
+        let has_nulls = self.nulls().map(|v| v.null_count() > 0).unwrap_or(false);
         let as_arrowed = self.as_arrow()?;
-        let has_nulls = as_arrowed
-            .nulls()
-            .map(|v| v.null_count() > 0)
-            .unwrap_or(false);
         if has_nulls {
             murmur3_32_hash_from_iter_with_nulls(
                 self.name(),
@@ -97,11 +94,8 @@ impl BinaryArray {
     }
 
     pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
+        let has_nulls = self.nulls().map(|v| v.null_count() > 0).unwrap_or(false);
         let as_arrowed = self.as_arrow()?;
-        let has_nulls = as_arrowed
-            .nulls()
-            .map(|v| v.null_count() > 0)
-            .unwrap_or(false);
         if has_nulls {
             murmur3_32_hash_from_iter_with_nulls(self.name(), as_arrowed.iter())
         } else {
@@ -128,11 +122,8 @@ impl FixedSizeBinaryArray {
     }
 
     pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
+        let has_nulls = self.nulls().map(|v| v.null_count() > 0).unwrap_or(false);
         let as_arrowed = self.as_arrow()?;
-        let has_nulls = as_arrowed
-            .nulls()
-            .map(|v| v.null_count() > 0)
-            .unwrap_or(false);
         if has_nulls {
             murmur3_32_hash_from_iter_with_nulls(self.name(), as_arrowed.iter())
         } else {
@@ -180,12 +171,9 @@ macro_rules! impl_primitive_murmur3_32 {
     ($ArrayT:ty) => {
         impl $ArrayT {
             pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
-                let as_arrowed = self.as_arrow()?;
-                let has_nulls = as_arrowed
-                    .nulls()
-                    .map(|v| v.null_count() > 0)
-                    .unwrap_or(false);
+                let has_nulls = self.nulls().map(|v| v.null_count() > 0).unwrap_or(false);
                 if has_nulls {
+                    let as_arrowed = self.as_arrow()?;
                     murmur3_32_hash_from_iter_with_nulls(
                         self.name(),
                         as_arrowed
@@ -195,10 +183,7 @@ macro_rules! impl_primitive_murmur3_32 {
                 } else {
                     murmur3_32_hash_from_iter_no_nulls(
                         self.name(),
-                        as_arrowed
-                            .values()
-                            .iter()
-                            .map(|v| (*v as i64).to_le_bytes()),
+                        self.values().iter().map(|v| (*v as i64).to_le_bytes()),
                     )
                 }
             }
@@ -383,7 +368,7 @@ fn hash_list(
 
     if let Some(seed_arr) = seed {
         let combined_validity = daft_arrow::buffer::NullBuffer::union(nulls, seed.unwrap().nulls());
-        let mut hashes = Vec::with_capacity(offsets.len() - 1);
+        let mut hashes_builder = UInt64Builder::with_capacity(offsets.len() - 1);
 
         for i in 0..(offsets.len() - 1) {
             let start = offsets[i] as usize;
@@ -397,9 +382,8 @@ fn hash_list(
                 .slice(start, end)?
                 .hash_with(Some(&flat_seed), hash_function)?;
             let child_bytes: Vec<u8> = hashed_child
-                .as_arrow()?
                 .values()
-                .iter()
+                .into_iter()
                 .flat_map(|v| v.to_le_bytes())
                 .collect();
 
@@ -433,24 +417,24 @@ fn hash_list(
                     hasher.finish()
                 }
             };
-            hashes.push(Some(hash_val));
+            hashes_builder.append_value(hash_val);
         }
 
-        let array = Box::new(daft_arrow::array::UInt64Array::from_iter(hashes));
-        let mut result = UInt64Array::from((name, array));
+        let arrow_arr = hashes_builder.finish();
+        let field = Arc::new(Field::new(name, DataType::UInt64));
+        let mut result = UInt64Array::from_arrow(field, Arc::new(arrow_arr))?;
         result = result.with_nulls(combined_validity)?;
         Ok(result)
     } else {
         let hashed_child = flat_child.hash_with(None, hash_function)?;
         let child_bytes: Vec<u8> = hashed_child
-            .as_arrow()?
             .values()
-            .iter()
+            .into_iter()
             .flat_map(|v| v.to_le_bytes())
             .collect();
         const OFFSET: usize = (u64::BITS as usize) / 8;
         let combined_validity = nulls.cloned();
-        let mut hashes = Vec::with_capacity(offsets.len() - 1);
+        let mut hashes_builder = UInt64Builder::with_capacity(offsets.len() - 1);
 
         for i in 0..(offsets.len() - 1) {
             let start = (offsets[i] as usize) * OFFSET;
@@ -474,11 +458,12 @@ fn hash_list(
                     hasher.finish()
                 }
             };
-            hashes.push(Some(hash_val));
+            hashes_builder.append_value(hash_val);
         }
 
-        let array = Box::new(daft_arrow::array::UInt64Array::from_iter(hashes));
-        let mut result = UInt64Array::from((name, array));
+        let arrow_arr = hashes_builder.finish();
+        let field = Arc::new(Field::new(name, DataType::UInt64));
+        let mut result = UInt64Array::from_arrow(field, Arc::new(arrow_arr))?;
         result = result.with_nulls(combined_validity)?;
         Ok(result)
     }
