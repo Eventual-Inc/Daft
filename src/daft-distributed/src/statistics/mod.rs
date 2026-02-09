@@ -105,7 +105,10 @@ impl StatisticsManager {
         subscribers: Vec<Box<dyn StatisticsSubscriber>>,
     ) -> DaftResult<StatisticsManagerRef> {
         let scope = InstrumentationScope::builder("daft.distributed.node_stats")
-            .with_attributes(vec![KeyValue::new("query_id", query_id.to_string())])
+            .with_attributes(vec![
+                KeyValue::new("query_id", query_id.to_string()),
+                KeyValue::new("runner", "ray".to_string()),
+            ])
             .build();
         let meter = global::meter_with_scope(scope);
 

@@ -1,11 +1,14 @@
+mod config;
+
 use std::{
     sync::{LazyLock, Mutex},
     time::Duration,
 };
 
 use common_runtime::get_io_runtime;
-use opentelemetry::{KeyValue, global, trace::TracerProvider};
-use opentelemetry_otlp::WithExportConfig;
+pub use config::Config;
+use opentelemetry::{global, trace::TracerProvider};
+use opentelemetry_otlp::{Protocol, WithExportConfig};
 use opentelemetry_sdk::{
     Resource,
     logs::SdkLoggerProvider,
@@ -24,27 +27,23 @@ static GLOBAL_METER_PROVIDER: LazyLock<
 pub static GLOBAL_LOGGER_PROVIDER: LazyLock<Mutex<Option<SdkLoggerProvider>>> =
     LazyLock::new(|| Mutex::new(None));
 
-const OTEL_EXPORTER_OTLP_ENDPOINT: &str = "DAFT_DEV_OTEL_EXPORTER_OTLP_ENDPOINT";
-
-pub fn should_enable_opentelemetry() -> bool {
-    std::env::var(OTEL_EXPORTER_OTLP_ENDPOINT).is_ok()
-}
-
 pub fn init_opentelemetry_providers() {
-    if !should_enable_opentelemetry() {
+    let config = Config::from_env();
+    if !config.enabled() {
         return;
     }
 
-    let otlp_endpoint = match std::env::var(OTEL_EXPORTER_OTLP_ENDPOINT) {
-        Ok(endpoint) => endpoint,
-        Err(_) => return,
-    };
-
-    let ioruntime = get_io_runtime(true);
-    ioruntime.block_on_current_thread(async {
-        init_otlp_metrics_provider(&otlp_endpoint).await;
-        init_otlp_tracer_provider(&otlp_endpoint).await;
-        init_otlp_logger_provider(&otlp_endpoint).await;
+    let runtime = get_io_runtime(true);
+    runtime.block_on_current_thread(async {
+        if let Some(endpoint) = config.metrics_endpoint() {
+            init_otlp_metrics_provider(&config, endpoint).await;
+        }
+        if let Some(endpoint) = config.traces_endpoint() {
+            init_otlp_tracer_provider(endpoint).await;
+        }
+        if let Some(endpoint) = config.logs_endpoint() {
+            init_otlp_logger_provider(endpoint).await;
+        }
     });
 }
 
@@ -58,9 +57,7 @@ async fn init_otlp_logger_provider(otlp_endpoint: &str) {
     let mut lg = GLOBAL_LOGGER_PROVIDER.lock().unwrap();
     assert!(lg.is_none(), "Expected logger provider to be None on init");
 
-    let resource = Resource::builder()
-        .with_attribute(KeyValue::new("service.name", "daft"))
-        .build();
+    let resource = Resource::builder().with_service_name("daft").build();
 
     let log_exporter = opentelemetry_otlp::LogExporter::builder()
         .with_tonic()
@@ -77,27 +74,48 @@ async fn init_otlp_logger_provider(otlp_endpoint: &str) {
     *lg = Some(logger_provider);
 }
 
-async fn init_otlp_metrics_provider(otlp_endpoint: &str) {
+pub fn flush_oltp_logger_provider() {
+    let lg = GLOBAL_LOGGER_PROVIDER.lock().unwrap();
+    if let Some(logger_provider) = lg.as_ref()
+        && let Err(e) = logger_provider.force_flush()
+    {
+        eprintln!("Failed to flush OTLP logger provider: {}", e);
+    }
+}
+
+async fn init_otlp_metrics_provider(config: &Config, endpoint: &str) {
     let mut mg = GLOBAL_METER_PROVIDER.lock().unwrap();
     assert!(mg.is_none(), "Expected meter provider to be None on init");
 
-    let resource = Resource::builder()
-        .with_attribute(KeyValue::new("service.name", "daft"))
-        .build();
+    let resource = Resource::builder().with_service_name("daft").build();
 
-    let metrics_exporter = opentelemetry_otlp::MetricExporter::builder()
-        .with_tonic()
-        .with_endpoint(otlp_endpoint)
-        .with_timeout(Duration::from_secs(10))
-        .build()
-        .expect("Failed to build OTLP metric exporter for tracing");
+    let metrics_exporter = match config.otlp_protocol {
+        Protocol::Grpc => {
+            opentelemetry_otlp::MetricExporter::builder()
+            .with_tonic()
+            .with_endpoint(endpoint)
+            .with_timeout(Duration::from_secs(10))
+            .build()
+        }
+        Protocol::HttpBinary => {
+            opentelemetry_otlp::MetricExporter::builder()
+            .with_http()
+            .with_endpoint(endpoint)
+            .with_timeout(Duration::from_secs(10))
+            .with_protocol(config.otlp_protocol)
+            .build()
+        }
+        Protocol::HttpJson => {
+            // TODO: Support by enabling the `http/json` feature of the opentelemetry-otlp crate
+            panic!("HTTP/JSON protocol is currently not supported for metrics exporter. Set `OTEL_EXPORTER_OTLP_PROTOCOL` to `grpc` or `http/protobuf` instead");
+        }
+    }.expect("Failed to build OTLP metric exporter for tracing");
 
     let metrics_reader = PeriodicReader::builder(metrics_exporter)
-        .with_interval(Duration::from_millis(500))
+        .with_interval(config.metrics_export_interval())
         .build();
 
     let metrics_provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
-        // To customize the export interval, set the **"OTEL_METRIC_EXPORT_INTERVAL"** environment variable (in milliseconds).
         .with_reader(metrics_reader)
         .with_resource(resource)
         .build();
@@ -116,22 +134,11 @@ pub fn flush_oltp_metrics_provider() {
     }
 }
 
-pub fn flush_oltp_logger_provider() {
-    let lg = GLOBAL_LOGGER_PROVIDER.lock().unwrap();
-    if let Some(logger_provider) = lg.as_ref()
-        && let Err(e) = logger_provider.force_flush()
-    {
-        eprintln!("Failed to flush OTLP logger provider: {}", e);
-    }
-}
-
 async fn init_otlp_tracer_provider(otlp_endpoint: &str) {
     let mut mg = GLOBAL_TRACER_PROVIDER.lock().unwrap();
     assert!(mg.is_none(), "Expected tracer provider to be None on init");
 
-    let resource = Resource::builder()
-        .with_attribute(KeyValue::new("service.name", "daft"))
-        .build();
+    let resource = Resource::builder().with_service_name("daft").build();
 
     let exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()

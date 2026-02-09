@@ -9,7 +9,10 @@ use common_display::{
 };
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
-use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
+use common_metrics::{
+    QueryID,
+    ops::{NodeCategory, NodeInfo, NodeType},
+};
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
@@ -27,6 +30,7 @@ use daft_micropartition::{
 use daft_scan::ScanTaskRef;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
+use opentelemetry::{InstrumentationScope, KeyValue, global, metrics::Meter};
 use snafu::ResultExt;
 
 use crate::{
@@ -184,19 +188,26 @@ impl ConcreteTreeNode for Box<dyn PipelineNode> {
 
 /// Single use context for translating a physical plan to a Pipeline.
 /// It generates a plan_id, and node ids for each plan.
-pub struct RuntimeContext {
+pub struct BuilderContext {
     index_counter: std::cell::RefCell<usize>,
+    pub meter: Meter,
     context: HashMap<String, String>,
 }
 
-impl RuntimeContext {
+impl BuilderContext {
     pub fn new() -> Self {
-        Self::new_with_context(HashMap::new())
+        Self::new_with_context("".into(), HashMap::new())
     }
 
-    pub fn new_with_context(context: HashMap<String, String>) -> Self {
+    pub fn new_with_context(query_id: QueryID, context: HashMap<String, String>) -> Self {
+        let scope = InstrumentationScope::builder("daft.local.node_stats")
+            .with_attributes(vec![KeyValue::new("query_id", query_id.to_string())])
+            .build();
+        let meter = global::meter_with_scope(scope);
+
         Self {
             index_counter: std::cell::RefCell::new(0),
+            meter,
             context,
         }
     }
@@ -320,7 +331,7 @@ pub fn translate_physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
     cfg: &Arc<DaftExecutionConfig>,
-    ctx: &RuntimeContext,
+    ctx: &BuilderContext,
 ) -> crate::Result<Box<dyn PipelineNode>> {
     let mut pipeline_node = physical_plan_to_pipeline(physical_plan, psets, cfg, ctx)?;
     pipeline_node.propagate_morsel_size_requirement(
@@ -334,7 +345,7 @@ fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
     cfg: &Arc<DaftExecutionConfig>,
-    ctx: &RuntimeContext,
+    ctx: &BuilderContext,
 ) -> crate::Result<Box<dyn PipelineNode>> {
     use daft_local_plan::PhysicalScan;
 

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common_metrics::{Counter, StatSnapshot};
+use common_metrics::{CPU_US_KEY, Counter, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot};
 use opentelemetry::{
     KeyValue,
     metrics::{Meter, UpDownCounter},
@@ -32,20 +32,10 @@ impl RuntimeNodeManager {
             node_id,
             node_kv,
             runtime_stats,
-            active_tasks: meter
-                .i64_up_down_counter("daft.distributed.node_stats.active_tasks")
-                .build(),
-            completed_tasks: Counter::new(
-                meter,
-                "daft.distributed.node_stats.completed_tasks",
-                None,
-            ),
-            failed_tasks: Counter::new(meter, "daft.distributed.node_stats.failed_tasks", None),
-            cancelled_tasks: Counter::new(
-                meter,
-                "daft.distributed.node_stats.cancelled_tasks",
-                None,
-            ),
+            active_tasks: meter.i64_up_down_counter("active_tasks").build(),
+            completed_tasks: Counter::new(meter, "completed_tasks", None),
+            failed_tasks: Counter::new(meter, "failed_tasks", None),
+            cancelled_tasks: Counter::new(meter, "cancelled_tasks", None),
         }
     }
 
@@ -91,25 +81,16 @@ pub struct DefaultRuntimeStats {
 
 impl DefaultRuntimeStats {
     pub fn new(meter: &Meter, node_id: NodeID) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", node_id.to_string())];
+        let node_kv = vec![
+            KeyValue::new("node_id", node_id.to_string()),
+            KeyValue::new("runner", "ray".to_string()),
+        ];
 
         Self {
             node_kv,
-            completed_rows_in: Counter::new(
-                meter,
-                "daft.distributed.node_stats.completed_rows_in",
-                None,
-            ),
-            completed_rows_out: Counter::new(
-                meter,
-                "daft.distributed.node_stats.completed_rows_out",
-                None,
-            ),
-            completed_cpu_us: Counter::new(
-                meter,
-                "daft.distributed.node_stats.completed_cpu_us",
-                None,
-            ),
+            completed_rows_in: Counter::new(meter, ROWS_IN_KEY, None),
+            completed_rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
+            completed_cpu_us: Counter::new(meter, CPU_US_KEY, None),
         }
     }
 }

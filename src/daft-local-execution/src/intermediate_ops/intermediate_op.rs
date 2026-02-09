@@ -15,6 +15,7 @@ use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_com
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
+use opentelemetry::metrics::Meter;
 use snafu::ResultExt;
 use tracing::info_span;
 
@@ -24,7 +25,7 @@ use crate::{
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},
-    pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
+    pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineNode},
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
 #[cfg_attr(debug_assertions, derive(Debug))]
@@ -56,8 +57,8 @@ pub(crate) trait IntermediateOperator: Send + Sync {
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> Self::State;
-    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(DefaultRuntimeStats::new(id))
+    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(DefaultRuntimeStats::new(meter, id))
     }
     /// The maximum number of concurrent workers that can be spawned for this operator.
     /// Each worker will has its own IntermediateOperatorState.
@@ -108,7 +109,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         intermediate_op: Arc<Op>,
         children: Vec<Box<dyn PipelineNode>>,
         plan_stats: StatsState,
-        ctx: &RuntimeContext,
+        ctx: &BuilderContext,
         context: &LocalNodeContext,
     ) -> Self {
         let name: Arc<str> = intermediate_op.name().into();
@@ -118,7 +119,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
             NodeCategory::Intermediate,
             context,
         );
-        let runtime_stats = intermediate_op.make_runtime_stats(info.id);
+        let runtime_stats = intermediate_op.make_runtime_stats(&ctx.meter, info.id);
         let morsel_size_requirement = intermediate_op
             .morsel_size_requirement()
             .unwrap_or_default();
