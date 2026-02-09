@@ -137,8 +137,12 @@ impl ActivePlansRegistry {
         )>,
     {
         if self.plans.contains_key(&fingerprint) {
+            println!("[run.rs get_or_create_plan] fingerprint={fingerprint} FOUND in registry (reusing existing plan)");
+            println!("[run.rs get_or_create_plan]   active_input_ids={:?}", self.plans.get(&fingerprint).unwrap().active_input_ids);
+            println!("[run.rs get_or_create_plan]   enqueue_sender closed={}", self.plans.get(&fingerprint).unwrap().enqueue_input_sender.is_closed());
             return Ok(());
         }
+        println!("[run.rs get_or_create_plan] fingerprint={fingerprint} NOT found, creating new plan");
         let (task_handle, enqueue_sender, stats_snapshot) = plan_factory()?;
         let state = PlanState {
             task_handle,
@@ -147,6 +151,7 @@ impl ActivePlansRegistry {
             active_input_ids: HashSet::new(),
         };
         self.plans.insert(fingerprint, state);
+        println!("[run.rs get_or_create_plan] fingerprint={fingerprint} plan created, total plans in registry={}", self.plans.len());
         Ok(())
     }
 
@@ -308,6 +313,16 @@ impl NativeExecutor {
             .unwrap_or("");
         let fingerprint = plan_key(local_physical_plan.fingerprint(), query_id_str);
         let enable_explain_analyze = should_enable_explain_analyze();
+
+        println!("[run.rs NativeExecutor::run] ============================");
+        println!("[run.rs NativeExecutor::run] plan_fingerprint={}, query_id={query_id_str:?}, combined_fingerprint={fingerprint}", local_physical_plan.fingerprint());
+        println!("[run.rs NativeExecutor::run] input_id={input_id}");
+        println!("[run.rs NativeExecutor::run] input source_ids={:?}", inputs.keys().collect::<Vec<_>>());
+        for (sid, input) in &inputs {
+            println!("[run.rs NativeExecutor::run]   source_id={sid}: input={input:?}");
+        }
+        println!("[run.rs NativeExecutor::run] additional_context={additional_context:?}");
+        println!("[run.rs NativeExecutor::run] plans in registry before get_or_create={}", self.active_plans.plans.len());
         // Get or create plan handle from registry
         self.active_plans.get_or_create_plan(fingerprint, || {
             let cancel = self.cancel.clone();
@@ -315,6 +330,9 @@ impl NativeExecutor {
             let ctx = RuntimeContext::new_with_context(additional_context.clone());
             let (mut pipeline, input_senders) =
                 translate_physical_plan_to_pipeline(local_physical_plan, &exec_cfg, &ctx)?;
+
+            println!("[run.rs plan_factory] pipeline ASCII:\n{}", viz_pipeline_ascii(pipeline.as_ref(), true));
+            println!("[run.rs plan_factory] input_senders keys={:?}", input_senders.keys().collect::<Vec<_>>());
 
             let query_id: common_metrics::QueryID = additional_context
                 .get("query_id")
@@ -376,9 +394,11 @@ impl NativeExecutor {
                         enqueue_msg = enqueue_input_rx.recv(), if !input_exhausted => {
                             match enqueue_msg {
                                 Some(EnqueueInputMessage { input_id, inputs, result_sender }) => {
+                                    println!("[run.rs exec_task] received enqueue for input_id={input_id}, input_source_ids={:?}, pipeline_finished={pipeline_finished}", inputs.keys().collect::<Vec<_>>());
                                     if pipeline_finished {
                                         // Pipeline is done; drop the result sender so the
                                         // caller's next() returns None (empty result).
+                                        println!("[run.rs exec_task] pipeline already finished, dropping result_sender for input_id={input_id}");
                                         drop(result_sender);
                                     } else {
                                         message_router.insert_output_sender(input_id, result_sender);
@@ -409,6 +429,7 @@ impl NativeExecutor {
                                     // All senders dropped — no more inputs coming.
                                     // Drop our Arc ref; input channels close once
                                     // in-flight dispatch tasks finish.
+                                    println!("[run.rs exec_task] enqueue channel closed (all senders dropped), input_exhausted=true, pipeline_finished={pipeline_finished}");
                                     input_senders.take();
                                     input_exhausted = true;
                                     if pipeline_finished {
@@ -420,9 +441,14 @@ impl NativeExecutor {
                         msg = receiver.recv(), if !pipeline_finished => {
                             match msg {
                                 Some(msg) => {
+                                    match &msg {
+                                        PipelineMessage::Flush(id) => println!("[run.rs exec_task] pipeline message: Flush(input_id={id})"),
+                                        PipelineMessage::Morsel { input_id: id, partition } => println!("[run.rs exec_task] pipeline message: Morsel(input_id={id}, rows={})", partition.len()),
+                                    }
                                     message_router.route_message(msg).await;
                                 }
                                 None => {
+                                    println!("[run.rs exec_task] pipeline receiver closed (pipeline finished), input_exhausted={input_exhausted}");
                                     // Close all in-flight result channels immediately
                                     // so waiters get None from next() and can call
                                     // try_finish(). Must happen before shutdown() so
@@ -432,6 +458,7 @@ impl NativeExecutor {
                                     let res = runtime_handle.shutdown().await;
                                     pipeline_finished = true;
                                     let status = if res.is_ok() { QueryEndState::Finished } else { QueryEndState::Failed };
+                                    println!("[run.rs exec_task] shutdown complete, status={status:?}");
                                     shutdown_result = Some((res, status));
                                     if input_exhausted {
                                         break shutdown_result.take().unwrap();
@@ -479,6 +506,8 @@ impl NativeExecutor {
         let plan_state = self.active_plans.plans.get_mut(&fingerprint).unwrap();
         let enqueue_input_sender = plan_state.enqueue_input_sender.clone();
         plan_state.active_input_ids.insert(input_id);
+        println!("[run.rs NativeExecutor::run] active_input_ids after insert={:?}", plan_state.active_input_ids);
+        println!("[run.rs NativeExecutor::run] enqueue_sender closed={}", plan_state.enqueue_input_sender.is_closed());
 
         Ok(async move {
             let (result_tx, result_rx) = create_channel(1);
@@ -489,11 +518,14 @@ impl NativeExecutor {
                 result_sender: result_tx,
             };
 
+            println!("[run.rs NativeExecutor::run async] sending enqueue message for input_id={input_id}");
             if enqueue_input_sender.send(enqueue_msg).await.is_err() {
+                println!("[run.rs NativeExecutor::run async] ERROR: enqueue send failed for input_id={input_id}");
                 return Err(common_error::DaftError::InternalError(
                     "Plan execution task has died; cannot enqueue new input".to_string(),
                 ));
             }
+            println!("[run.rs NativeExecutor::run async] enqueue message sent successfully for input_id={input_id}");
             Ok(ExecutionEngineResult {
                 receiver: result_rx,
             })
@@ -509,28 +541,39 @@ impl NativeExecutor {
         fingerprint: u64,
         input_id: InputId,
     ) -> DaftResult<BoxFuture<'static, DaftResult<ExecutionEngineFinalResult>>> {
+        println!("[run.rs NativeExecutor::try_finish] fingerprint={fingerprint}, input_id={input_id}");
         let should_remove = if let Some(plan_state) = self.active_plans.plans.get_mut(&fingerprint)
         {
             plan_state.active_input_ids.remove(&input_id);
-            plan_state.active_input_ids.is_empty() || plan_state.enqueue_input_sender.is_closed()
+            let is_empty = plan_state.active_input_ids.is_empty();
+            let is_closed = plan_state.enqueue_input_sender.is_closed();
+            println!("[run.rs NativeExecutor::try_finish] active_input_ids after remove={:?}, is_empty={is_empty}, enqueue_closed={is_closed}", plan_state.active_input_ids);
+            is_empty || is_closed
         } else {
+            println!("[run.rs NativeExecutor::try_finish] ERROR: unknown fingerprint {fingerprint}");
             return Err(common_error::DaftError::InternalError(format!(
                 "try_finish called for unknown plan fingerprint {fingerprint}"
             )));
         };
 
         if should_remove {
+            println!("[run.rs NativeExecutor::try_finish] REMOVING plan fingerprint={fingerprint} from registry (last input done or channel closed)");
             let plan_state = self.active_plans.plans.remove(&fingerprint).unwrap();
             let enqueue_input_sender = plan_state.enqueue_input_sender;
             let task_handle = plan_state.task_handle;
+            println!("[run.rs NativeExecutor::try_finish] plans remaining in registry={}", self.active_plans.plans.len());
             Ok(async move {
+                println!("[run.rs NativeExecutor::try_finish async] dropping enqueue sender and awaiting task handle for fingerprint={fingerprint}");
                 // Drop the sender so the exec task sees input exhaustion
                 drop(enqueue_input_sender);
                 // Await the exec task for its final result (includes stats)
-                task_handle.await?
+                let result = task_handle.await?;
+                println!("[run.rs NativeExecutor::try_finish async] task handle completed for fingerprint={fingerprint}");
+                result
             }
             .boxed())
         } else {
+            println!("[run.rs NativeExecutor::try_finish] NOT removing plan fingerprint={fingerprint} (other input_ids still active), returning snapshot");
             let stats_snapshot = self
                 .active_plans
                 .plans

@@ -90,6 +90,17 @@ class RaySwordfishActor:
             ctx = PyDaftContext()
             ctx._daft_execution_config = exec_cfg
             task_id = int(context.get("task_id", "0")) if context else 0
+
+            print(f"[flotilla.run_plan] context={context}")
+            print(f"[flotilla.run_plan] task_id (input_id)={task_id}")
+            print(f"[flotilla.run_plan] plan repr={plan.repr_ascii(True)}")
+            print(f"[flotilla.run_plan] resolved_inputs keys={list(resolved_inputs.keys())}")
+            for sid, v in resolved_inputs.items():
+                if isinstance(v, list):
+                    print(f"[flotilla.run_plan]   source_id={sid}: {len(v)} PyMicroPartitions")
+                else:
+                    print(f"[flotilla.run_plan]   source_id={sid}: Input={v}")
+
             result_handle = await self.native_executor.run(
                 plan,
                 ctx,
@@ -97,14 +108,17 @@ class RaySwordfishActor:
                 task_id,
                 context,
             )
+            print(f"[flotilla.run_plan] result_handle obtained, starting iteration")
             metas = []
             async for partition in result_handle:
                 if partition is None:
                     break
                 mp = MicroPartition._from_pymicropartition(partition)
                 metas.append(PartitionMetadata.from_table(mp))
+                print(f"[flotilla.run_plan] yielded partition: rows={metas[-1].num_rows}, size={metas[-1].size_bytes}")
                 yield mp
 
+            print(f"[flotilla.run_plan] iteration done, calling try_finish (task_id={task_id}, total_partitions={len(metas)})")
             stats = await result_handle.try_finish()
             yield SwordfishTaskMetadata(partition_metadatas=metas, stats=stats.encode())
 
