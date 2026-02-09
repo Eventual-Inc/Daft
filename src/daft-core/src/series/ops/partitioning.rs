@@ -4,7 +4,7 @@ use crate::{array::ops::as_arrow::AsArrow, prelude::*, with_match_integer_daft_t
 
 impl Series {
     pub fn partitioning_years(&self) -> DaftResult<Self> {
-        let epoch_year = Int32Array::from(("1970", vec![1970])).into_series();
+        let epoch_year = Int32Array::from_slice("1970", &[1970]).into_series();
 
         let value = match self.data_type() {
             DataType::Date | DataType::Timestamp(_, None) => {
@@ -27,8 +27,8 @@ impl Series {
     }
 
     pub fn partitioning_months(&self) -> DaftResult<Self> {
-        let months_in_year = Int32Array::from(("months", vec![12])).into_series();
-        let month_of_epoch = Int32Array::from(("months", vec![1])).into_series();
+        let months_in_year = Int32Array::from_slice("months", &[12]).into_series();
+        let month_of_epoch = Int32Array::from_slice("months", &[1]).into_series();
         let value = match self.data_type() {
             DataType::Date | DataType::Timestamp(_, None) => {
                 let years_since_1970 = self.partitioning_years()?;
@@ -79,7 +79,7 @@ impl Series {
                     TimeUnit::Milliseconds => 3_600_000,
                     TimeUnit::Seconds => 3_600,
                 };
-                let divider = Int64Array::from(("divider", vec![unit_to_hours]));
+                let divider = Int64Array::from_slice("divider", &[unit_to_hours]);
                 let hours = (physical / &divider)?;
                 Ok(hours.into_series())
             }
@@ -101,7 +101,12 @@ impl Series {
             .into_iter()
             .map(|v| v.map(|v| (v & i32::MAX) % n));
         let array = Box::new(daft_arrow::array::Int32Array::from_iter(buckets));
-        Ok(Int32Array::from((format!("{}_bucket", self.name()).as_str(), array)).into_series())
+        Ok(Int32Array::new(
+            Field::new(format!("{}_bucket", self.name()), DataType::Int32).into(),
+            array,
+        )
+        .unwrap()
+        .into_series())
     }
 
     pub fn partitioning_iceberg_truncate(&self, w: i64) -> DaftResult<Self> {

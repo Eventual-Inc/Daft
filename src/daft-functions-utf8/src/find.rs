@@ -86,8 +86,7 @@ fn find_impl(arr: &Utf8Array, substr: &Utf8Array) -> DaftResult<Int64Array> {
             _ => None,
         });
 
-    let result =
-        Int64Array::from_regular_iter(Arc::new(Field::new(arr.name(), DataType::Int64)), iter)?;
+    let result = Int64Array::from_iter(Arc::new(Field::new(arr.name(), DataType::Int64)), iter);
     assert_eq!(result.len(), expected_size);
     Ok(result)
 }
