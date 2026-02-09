@@ -85,6 +85,7 @@ class UnityCatalog:
     def __init__(
         self,
         endpoint: str,
+        # look into passing a credentials provider instead of passing credentials explicitly
         token: str | None = None,
         oauth: OAuth2Credentials | None = None,
     ):

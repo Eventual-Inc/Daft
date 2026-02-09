@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.error import HTTPError, URLError
 
-from daft.retries import retry_with_backoff
+import tenacity
 
 
 def decode_b64url(segment: str) -> bytes:
@@ -126,12 +126,6 @@ def _generate_workspace_token(workspace_url: str, oauth: OAuth2Credentials) -> s
         },
     )
 
-    @retry_with_backoff(
-        max_retries=max_retries,
-        jitter_ms=500,
-        max_backoff_ms=10_000,
-        should_retry=_is_retryable_auth_error,
-    )
     def _request_token() -> str:
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -150,6 +144,13 @@ def _generate_workspace_token(workspace_url: str, oauth: OAuth2Credentials) -> s
             raise RuntimeError(
                 f"UnityCatalog token request to {token_url} failed with HTTP {e.code}: {error_body}"
             ) from e
+
+    _request_token = tenacity.retry(
+        stop=tenacity.stop_after_attempt(max_retries),
+        wait=tenacity.wait_random_exponential(multiplier=0.5, min=0, max=10),
+        retry=tenacity.retry_if_exception(lambda e: isinstance(e, Exception) and _is_retryable_auth_error(e)),
+        reraise=True,
+    )(_request_token)
 
     try:
         return _request_token()
