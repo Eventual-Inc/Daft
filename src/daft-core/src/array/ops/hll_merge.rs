@@ -16,8 +16,7 @@ impl DaftHllMergeAggable for FixedSizeBinaryArray {
             final_hll.merge(&hll);
         }
         let count = final_hll.count() as u64;
-        let data = &[count] as &[_];
-        let array = (self.name(), data).into();
+        let array = UInt64Array::from_slice(self.name(), &[count]);
         Ok(array)
     }
 
@@ -35,7 +34,7 @@ impl DaftHllMergeAggable for FixedSizeBinaryArray {
             let count = final_hll.count() as u64;
             counts.push(count);
         }
-        let array = (self.name(), counts.as_slice()).into();
+        let array = UInt64Array::from_slice(self.name(), &counts);
         Ok(array)
     }
 }

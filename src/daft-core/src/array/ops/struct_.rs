@@ -41,7 +41,7 @@ mod tests {
         let parent_nulls = NullBuffer::from(&[true, false, false, true]);
         let combined_nulls = NullBuffer::from(&[true, false, false, false]);
 
-        let child = Int64Array::from(("bar", (0..4).collect::<Vec<i64>>()))
+        let child = Int64Array::from_vec("bar", (0..4).collect::<Vec<i64>>())
             .with_nulls(Some(child_nulls.clone()))?;
 
         let mut parent = StructArray::new(

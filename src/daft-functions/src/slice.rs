@@ -185,7 +185,7 @@ fn list_slice(
         })
         .collect::<DaftResult<Vec<_>>>()?;
 
-    ListArray::try_from((name, slices.as_slice()))
+    ListArray::from_series(name, slices)
 }
 
 fn binary_slice<'a>(

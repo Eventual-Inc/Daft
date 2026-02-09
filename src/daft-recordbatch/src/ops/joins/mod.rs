@@ -202,7 +202,7 @@ impl RecordBatch {
                 .flat_map(|i| std::iter::repeat_n(i, inner_len))
                 .collect::<Vec<_>>();
 
-            let idx_arr = UInt64Array::from(("inner_indices", idx));
+            let idx_arr = UInt64Array::from_vec("inner_indices", idx);
             input.take(&idx_arr)
         }
 
