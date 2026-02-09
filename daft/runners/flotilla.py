@@ -114,7 +114,6 @@ class RaySwordfishActor:
                     break
                 mp = MicroPartition._from_pymicropartition(partition)
                 metas.append(PartitionMetadata.from_table(mp))
-                print(f"[flotilla.run_plan] yielded partition: rows={metas[-1].num_rows}, size={metas[-1].size_bytes}")
                 yield mp
 
             print(f"[flotilla.run_plan] iteration done, calling try_finish (task_id={task_id}, total_partitions={len(metas)})")

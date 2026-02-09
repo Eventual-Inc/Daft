@@ -314,15 +314,7 @@ impl NativeExecutor {
         let fingerprint = plan_key(local_physical_plan.fingerprint(), query_id_str);
         let enable_explain_analyze = should_enable_explain_analyze();
 
-        println!("[run.rs NativeExecutor::run] ============================");
-        println!("[run.rs NativeExecutor::run] plan_fingerprint={}, query_id={query_id_str:?}, combined_fingerprint={fingerprint}", local_physical_plan.fingerprint());
-        println!("[run.rs NativeExecutor::run] input_id={input_id}");
-        println!("[run.rs NativeExecutor::run] input source_ids={:?}", inputs.keys().collect::<Vec<_>>());
-        for (sid, input) in &inputs {
-            println!("[run.rs NativeExecutor::run]   source_id={sid}: input={input:?}");
-        }
-        println!("[run.rs NativeExecutor::run] additional_context={additional_context:?}");
-        println!("[run.rs NativeExecutor::run] plans in registry before get_or_create={}", self.active_plans.plans.len());
+        println!("[run.rs NativeExecutor::run] plan_fingerprint={}, query_id={query_id_str:?}, combined_fingerprint={fingerprint}, input_id={input_id}, source_ids={:?}, registry_size={}", local_physical_plan.fingerprint(), inputs.keys().collect::<Vec<_>>(), self.active_plans.plans.len());
         // Get or create plan handle from registry
         self.active_plans.get_or_create_plan(fingerprint, || {
             let cancel = self.cancel.clone();
@@ -394,11 +386,8 @@ impl NativeExecutor {
                         enqueue_msg = enqueue_input_rx.recv(), if !input_exhausted => {
                             match enqueue_msg {
                                 Some(EnqueueInputMessage { input_id, inputs, result_sender }) => {
-                                    println!("[run.rs exec_task] received enqueue for input_id={input_id}, input_source_ids={:?}, pipeline_finished={pipeline_finished}", inputs.keys().collect::<Vec<_>>());
+                                    println!("[run.rs exec_task] enqueue input_id={input_id}, sources={:?}, pipeline_finished={pipeline_finished}", inputs.keys().collect::<Vec<_>>());
                                     if pipeline_finished {
-                                        // Pipeline is done; drop the result sender so the
-                                        // caller's next() returns None (empty result).
-                                        println!("[run.rs exec_task] pipeline already finished, dropping result_sender for input_id={input_id}");
                                         drop(result_sender);
                                     } else {
                                         message_router.insert_output_sender(input_id, result_sender);
@@ -441,9 +430,8 @@ impl NativeExecutor {
                         msg = receiver.recv(), if !pipeline_finished => {
                             match msg {
                                 Some(msg) => {
-                                    match &msg {
-                                        PipelineMessage::Flush(id) => println!("[run.rs exec_task] pipeline message: Flush(input_id={id})"),
-                                        PipelineMessage::Morsel { input_id: id, partition } => println!("[run.rs exec_task] pipeline message: Morsel(input_id={id}, rows={})", partition.len()),
+                                    if let PipelineMessage::Flush(id) = &msg {
+                                        println!("[run.rs exec_task] pipeline Flush(input_id={id})");
                                     }
                                     message_router.route_message(msg).await;
                                 }
@@ -518,9 +506,8 @@ impl NativeExecutor {
                 result_sender: result_tx,
             };
 
-            println!("[run.rs NativeExecutor::run async] sending enqueue message for input_id={input_id}");
             if enqueue_input_sender.send(enqueue_msg).await.is_err() {
-                println!("[run.rs NativeExecutor::run async] ERROR: enqueue send failed for input_id={input_id}");
+                println!("[run.rs] ERROR: enqueue send failed for input_id={input_id}");
                 return Err(common_error::DaftError::InternalError(
                     "Plan execution task has died; cannot enqueue new input".to_string(),
                 ));
