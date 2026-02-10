@@ -57,7 +57,7 @@ impl DaftConcatAggable for ListArray {
         } else {
             Series::concat(&child_slices.iter().collect::<Vec<_>>())?
         };
-        let new_offsets = OffsetBuffer::new_zeroed(new_child.len());
+        let new_offsets = OffsetBuffer::new(vec![0i64, new_child.len() as i64].into());
 
         Ok(Self::new(
             self.field.clone(),
@@ -207,7 +207,7 @@ mod test {
             )
             .unwrap()
             .into_series(),
-            OffsetBuffer::new_zeroed(4),
+            OffsetBuffer::new_zeroed(3),
             Some(daft_arrow::buffer::NullBuffer::from_iter(repeat_n(
                 false, 3,
             ))),

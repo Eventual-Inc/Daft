@@ -902,9 +902,7 @@ impl TensorArray {
                     non_zero_indices.push(indices_arr);
                 }
 
-                let offsets = OffsetBuffer::new(ScalarBuffer::from_iter(
-                    non_zero_values.iter().map(|s| s.len() as i64),
-                ));
+                let offsets = OffsetBuffer::from_lengths(non_zero_values.iter().map(|s| s.len()));
                 let non_zero_values_series =
                     Series::concat(&non_zero_values.iter().collect::<Vec<&Series>>())?;
                 let non_zero_indices_series =
@@ -1152,9 +1150,7 @@ impl SparseTensorArray {
                         })
                     })
                     .collect();
-                let offsets = OffsetBuffer::new(ScalarBuffer::from_iter(
-                    sizes_vec.iter().copied().map(|i| i as i64),
-                ));
+                let offsets = OffsetBuffer::from_lengths(sizes_vec.iter().copied());
                 let n_values = sizes_vec.iter().sum::<usize>();
                 let nulls = non_zero_indices_array.nulls();
                 let item = cast_sparse_to_dense_for_inner_dtype(
@@ -1423,9 +1419,7 @@ impl FixedShapeTensorArray {
                     non_zero_values.push(data);
                     non_zero_indices.push(indices_arr);
                 }
-                let offsets = OffsetBuffer::new(ScalarBuffer::from_iter(
-                    non_zero_values.iter().map(|s| s.len() as i64),
-                ));
+                let offsets = OffsetBuffer::from_lengths(non_zero_values.iter().map(|s| s.len()));
                 let non_zero_values_series =
                     Series::concat(&non_zero_values.iter().collect::<Vec<&Series>>())?;
                 let non_zero_indices_series =

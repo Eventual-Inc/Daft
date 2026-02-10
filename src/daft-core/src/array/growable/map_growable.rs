@@ -242,7 +242,6 @@ mod tests {
         let values_map = values_series.map()?;
 
         assert_eq!(keys.get(0), Some(outer_key));
-
         let nested_entry = values_map.get(0).unwrap();
         let nested_struct = nested_entry.struct_()?;
         let nested_keys_series = nested_struct.get("key")?;

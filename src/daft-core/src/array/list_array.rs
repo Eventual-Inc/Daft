@@ -153,13 +153,15 @@ impl ListArray {
                 "Trying to slice array with negative length, start: {start} vs end: {end}"
             )));
         }
-        let new_offsets = self.offsets.clone();
-        new_offsets.slice(start, end - start + 1);
+        // OffsetBuffer::slice(offset, len) takes len as the number of *rows*, not offset values.
+        // It internally adds 1 to account for the extra offset value (N rows need N+1 offsets).
+        let num_rows = end - start;
+        let new_offsets = self.offsets.slice(start, num_rows);
 
         let new_nulls = self
             .nulls
             .as_ref()
-            .map(|v| v.clone().slice(start, end - start));
+            .map(|v| v.clone().slice(start, num_rows));
         Ok(Self::new(
             self.field.clone(),
             self.flat_child.clone(),
