@@ -1,10 +1,13 @@
-use arrow::array::Array;
+use std::sync::Arc;
+
+use arrow::array::{Array, UInt64Builder};
 use common_error::DaftResult;
 use hyperloglog::HyperLogLog;
 
 use crate::{
     array::ops::{DaftHllMergeAggable, GroupIndices, as_arrow::AsArrow},
-    datatypes::{FixedSizeBinaryArray, UInt64Array},
+    datatypes::{Field, FixedSizeBinaryArray, UInt64Array},
+    prelude::DataType,
 };
 
 impl DaftHllMergeAggable for FixedSizeBinaryArray {
@@ -18,13 +21,17 @@ impl DaftHllMergeAggable for FixedSizeBinaryArray {
             final_hll.merge(&hll);
         }
         let count = final_hll.count() as u64;
-        let array = UInt64Array::from_slice(self.name(), &[count]);
-        Ok(array)
+        let mut builder = UInt64Builder::with_capacity(1);
+        builder.append_value(count);
+        UInt64Array::from_arrow(
+            Field::new(self.name(), DataType::UInt64),
+            Arc::new(builder.finish()),
+        )
     }
 
     fn grouped_hll_merge(&self, groups: &GroupIndices) -> Self::Output {
         let data = self.as_arrow()?;
-        let mut counts = Vec::with_capacity(groups.len());
+        let mut builder = UInt64Builder::with_capacity(groups.len());
         for group in groups {
             let mut final_hll = HyperLogLog::default();
             for &index in group {
@@ -34,10 +41,11 @@ impl DaftHllMergeAggable for FixedSizeBinaryArray {
                     final_hll.merge(&hll);
                 }
             }
-            let count = final_hll.count() as u64;
-            counts.push(count);
+            builder.append_value(final_hll.count() as u64);
         }
-        let array = UInt64Array::from_slice(self.name(), &counts);
-        Ok(array)
+        UInt64Array::from_arrow(
+            Field::new(self.name(), DataType::UInt64),
+            Arc::new(builder.finish()),
+        )
     }
 }
