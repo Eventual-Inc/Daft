@@ -63,9 +63,7 @@ impl DaftMinHash for Utf8Array {
 
         for elem in &internal_arrow_representation {
             let Some(elem) = elem else {
-                for _ in 0..num_hashes {
-                    output.append_null();
-                }
+                output.append_nulls(num_hashes);
                 continue;
             };
 
@@ -78,7 +76,7 @@ impl DaftMinHash for Utf8Array {
                 &mut alloc,
             )?;
 
-            output.extend(minhash_res.into_iter().map(Some));
+            output.append_array(&minhash_res);
         }
 
         let output_series = Series::from_arrow(
