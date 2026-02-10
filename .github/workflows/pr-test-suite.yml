@@ -50,7 +50,6 @@ jobs:
         if git diff --quiet origin/$BASE -- \
           . \
           ':!.vscode/**' \
-          ':!ci/**' \
           ':!docs/**' \
           ':!.git-blame-ignore-revs' \
           ':!.gitignore' \
