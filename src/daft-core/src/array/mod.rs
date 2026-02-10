@@ -232,7 +232,7 @@ impl<T> DataArray<T> {
         Self::new(Arc::new(self.field.rename(name)), self.data.clone()).unwrap()
     }
 
-    pub fn field(&self) -> &Field {
+    pub fn field(&self) -> &FieldRef {
         &self.field
     }
 }

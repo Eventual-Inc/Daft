@@ -1,5 +1,6 @@
 use std::{iter::repeat_n, sync::Arc};
 
+use arrow::buffer::NullBuffer;
 use common_error::DaftResult;
 
 use super::{DaftCountAggable, GroupIndices};
@@ -15,7 +16,7 @@ use crate::{
 fn grouped_count_arrow_bitmap(
     groups: &GroupIndices,
     mode: &CountMode,
-    arrow_bitmap: Option<&daft_arrow::buffer::NullBuffer>,
+    arrow_bitmap: Option<&NullBuffer>,
 ) -> Vec<u64> {
     match mode {
         CountMode::All => groups.iter().map(|g| g.len() as u64).collect(),
@@ -36,12 +37,8 @@ fn grouped_count_arrow_bitmap(
     }
 }
 
-/// Helper to perform a count on a validity map of type daft_arrow::buffer::NullBuffer
-fn count_arrow_bitmap(
-    mode: &CountMode,
-    arrow_bitmap: Option<&daft_arrow::buffer::NullBuffer>,
-    arr_len: usize,
-) -> u64 {
+/// Helper to perform a count on a validity map of type NullBuffer
+fn count_arrow_bitmap(mode: &CountMode, arrow_bitmap: Option<&NullBuffer>, arr_len: usize) -> u64 {
     match mode {
         CountMode::All => arr_len as u64,
         CountMode::Valid => match arrow_bitmap {
