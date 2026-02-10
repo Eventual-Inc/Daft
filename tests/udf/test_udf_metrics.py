@@ -16,9 +16,9 @@ VALUES = list(range(1, 11))
 VALUES_SUM = sum(VALUES)
 
 
-def _find_udf_stats(metrics: RecordBatch | None, metric_name: str) -> dict | None:
+def _find_udf_stats(metrics: RecordBatch | None, metric_name: str) -> float | None:
     metrics_list = metrics.to_pylist()
-    return next((metric for metric in metrics_list if metric["name"] == metric_name), None)
+    return next((metric[1]["value"] for op in metrics_list for metric in op["stats"] if metric[0] == metric_name), None)
 
 
 def _wrap_async(fn: Callable[..., Any]) -> Callable[..., Any]:
@@ -199,19 +199,12 @@ def test_udf_custom_metrics_func(num_udfs: int, batch_size: int | None, use_proc
         )
         df = df.with_column(f"out_{i}", udf(daft.col("value")))
 
-        cases.append(
-            {
-                "counter_name": counter_name,
-                "expected_counter": factor * VALUES_SUM,
-            }
-        )
+        cases.append((counter_name, factor * VALUES_SUM))
 
     df.collect()
 
-    for case in cases:
-        stats = _find_udf_stats(df.metrics, case["counter_name"])
-        _, counter_value = stats[case["counter_name"]]
-        assert counter_value == case["expected_counter"]
+    for counter_name, expected_counter in cases:
+        assert _find_udf_stats(df.metrics, counter_name) == expected_counter
 
 
 @pytest.mark.parametrize("num_udfs", [1, 2])
@@ -247,8 +240,7 @@ def test_udf_custom_metrics_batch(num_udfs: int, batch_size: int | None, use_pro
 
     for case in cases:
         stats = _find_udf_stats(df.metrics, case["counter_name"])
-        _, counter_value = stats[case["counter_name"]]
-        assert counter_value == case["expected_counter"]
+        assert stats == case["expected_counter"]
 
 
 @pytest.mark.parametrize("use_process", [False, True])
@@ -281,10 +273,10 @@ def test_udf_custom_metrics_shared_counter(use_process: bool) -> None:
     df.collect()
 
     counter_values = []
-    for stats in df.metrics.to_pylist():
-        if shared_counter_name in stats:
-            _, counter_value = stats[shared_counter_name]
-            counter_values.append(counter_value)
+    for operator in df.metrics.to_pylist():
+        for stat_name, stat_value_unit in operator["stats"]:
+            if stat_name == shared_counter_name:
+                counter_values.append(stat_value_unit["value"])
 
     assert counter_values, "Shared counter metric not found in operator stats"
     assert sum(counter_values) == 3 * VALUES_SUM
@@ -324,5 +316,4 @@ def test_udf_custom_metrics_cls(num_udfs: int, batch_size: int | None, concurren
 
     for case in cases:
         stats = _find_udf_stats(df.metrics, case["counter_name"])
-        _, counter_value = stats[case["counter_name"]]
-        assert counter_value == case["expected_counter"]
+        assert stats == case["expected_counter"]
