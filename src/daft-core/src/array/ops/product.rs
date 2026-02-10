@@ -1,5 +1,5 @@
+use arrow::array::Array;
 use common_error::DaftResult;
-use daft_arrow::array::Array;
 
 use super::{DaftProductAggable, as_arrow::AsArrow};
 use crate::{array::ops::GroupIndices, datatypes::*};
@@ -9,14 +9,14 @@ macro_rules! impl_daft_numeric_agg {
             type Output = DaftResult<DataArray<$T>>;
 
             fn product(&self) -> Self::Output {
-                let primitive_arr = self.as_arrow2();
+                let primitive_arr = self.as_arrow()?;
                 let product_value =
                     primitive_arr
                         .iter()
                         .flatten()
                         .fold(None, |acc, val| match acc {
-                            None => Some(*val),
-                            Some(acc_val) => Some(acc_val * *val),
+                            None => Some(val),
+                            Some(acc_val) => Some(acc_val * val),
                         });
 
                 Ok(DataArray::<$T>::from_iter(
@@ -26,7 +26,7 @@ macro_rules! impl_daft_numeric_agg {
             }
 
             fn grouped_product(&self, groups: &GroupIndices) -> Self::Output {
-                let arrow_array = self.as_arrow2();
+                let arrow_array = self.as_arrow()?;
                 let product_per_group = if arrow_array.null_count() > 0 {
                     DataArray::<$T>::from_iter(
                         self.field.clone(),
