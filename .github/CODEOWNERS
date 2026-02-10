@@ -1,12 +1,35 @@
 # CODEOWNERS for Daft
 
-# Default owners for everything in the repo
-* @Eventual-Inc/daft-punqs
+# ============================================================================
+# Locked-down paths requiring @Eventual-Inc/daft-punqs review
+# ============================================================================
 
-# ============================================================================
-# Custom I/O Modules
-# ============================================================================
-/daft/io/clickhouse/ @stayrascal @jay-ju @plotor @Eventual-Inc/daft-punqs
-/daft/io/lance/ @stayrascal @jay-ju @plotor @Eventual-Inc/daft-punqs
-/daft/io/mcap/ @stayrascal @jay-ju @plotor @Eventual-Inc/daft-punqs
-/src/daft-io/src/tos.rs @stayrascal @jay-ju @plotor @Eventual-Inc/daft-punqs
+# Core Rust crates
+/src/daft-core/ @Eventual-Inc/daft-punqs
+/src/daft-local-execution/ @Eventual-Inc/daft-punqs
+/src/daft-distributed/ @Eventual-Inc/daft-punqs
+/src/daft-io/ @Eventual-Inc/daft-punqs
+/src/daft-logical-plan/ @Eventual-Inc/daft-punqs
+/src/daft-local-plan/ @Eventual-Inc/daft-punqs
+/src/daft-schema/ @Eventual-Inc/daft-punqs
+/src/daft-shuffles/ @Eventual-Inc/daft-punqs
+/src/daft-stats/ @Eventual-Inc/daft-punqs
+/src/hyperloglog/ @Eventual-Inc/daft-punqs
+
+# Critical Python modules
+/daft/runners/ @Eventual-Inc/daft-punqs
+/daft/execution/ @Eventual-Inc/daft-punqs
+/daft/pickle/ @Eventual-Inc/daft-punqs
+/daft/recordbatch/ @Eventual-Inc/daft-punqs
+/daft/udf/ @Eventual-Inc/daft-punqs
+
+# CI/CD and build config
+/.github/ @Eventual-Inc/daft-punqs
+/.cargo/ @Eventual-Inc/daft-punqs
+/Cargo.lock @Eventual-Inc/daft-punqs
+/Cargo.toml @Eventual-Inc/daft-punqs
+/Makefile @Eventual-Inc/daft-punqs
+/pyproject.toml @Eventual-Inc/daft-punqs
+/uv.lock @Eventual-Inc/daft-punqs
+/rust-toolchain.toml @Eventual-Inc/daft-punqs
+/rustfmt.toml @Eventual-Inc/daft-punqs
