@@ -155,13 +155,10 @@ def test_series_list_size_bytes(dtype, size, with_nulls) -> None:
     s = Series.from_arrow(data)
 
     # Offset array is increased in bit width from 32 to 64 when converting to large_list
-    conversion_to_large_list_bytes = len(data) * 4
+    # N rows have N+1 offset values, each going from 4 bytes (int32) to 8 bytes (int64)
+    conversion_to_large_list_bytes = (len(data) + 1) * 4
 
     size_bytes = s.size_bytes()
-
-    # TODO(jay): There is an off-by-1 error in the arrow2 estimated_bytes_size API for List and LargeList:
-    # https://github.com/jorgecarleitao/arrow2/blob/64d8ec203f991468032025a13a4f971f1f2cfc14/src/compute/aggregate/memory.rs#LL76C1-L76C1
-    size_bytes = size_bytes + 4
 
     assert s.datatype() == DataType.from_arrow_type(list_dtype)
     assert size_bytes == get_total_buffer_size(data) + conversion_to_large_list_bytes

@@ -45,7 +45,7 @@ impl DaftConcatAggable for ListArray {
             .valid_slices()
             .map(|(start_valid, end_valid)| {
                 let child_start = self.offsets()[start_valid];
-                let child_end = self.offsets()[end_valid - 1];
+                let child_end = self.offsets()[end_valid];
                 self.flat_child
                     .slice(child_start as _, child_end as _)
                     .unwrap()

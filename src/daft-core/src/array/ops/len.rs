@@ -92,7 +92,8 @@ fn null_buffer_size(nulls: Option<&daft_arrow::buffer::NullBuffer>) -> usize {
 }
 
 fn offset_size(offsets: &OffsetBuffer<i64>) -> usize {
-    (offsets.len() + 1) * std::mem::size_of::<i64>()
+    // OffsetBuffer::len() returns the number of offset values (N+1 for N rows)
+    offsets.len() * std::mem::size_of::<i64>()
 }
 
 impl FixedSizeListArray {
