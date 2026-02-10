@@ -460,7 +460,7 @@ impl DaftSetAggable for Series {
         let indices_array = UInt64Array::from_vec("", unique_indices);
         let deduped_series = child_series.take(&indices_array)?;
 
-        let offsets = OffsetBuffer::new_zeroed(deduped_series.len());
+        let offsets = OffsetBuffer::new(vec![0, deduped_series.len() as i64].into());
 
         let list_field = self.field().to_list_field();
         Ok(ListArray::new(list_field, deduped_series, offsets, None))
