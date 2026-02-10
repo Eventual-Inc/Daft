@@ -2306,11 +2306,12 @@ pub fn is_actor_pool_udf(expr: &ExprRef) -> bool {
         expr.as_ref(),
         Expr::Function {
             func: FunctionExpr::Python(LegacyPythonUDF {
-                concurrency: Some(_),
+                min_concurrency,
+                max_concurrency,
                 ..
             }),
             ..
-        }
+        } if min_concurrency.is_some() || max_concurrency.is_some()
     )
 }
 
