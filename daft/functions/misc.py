@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any, Literal
 
 import daft.daft as native
@@ -47,6 +48,28 @@ def monotonically_increasing_id() -> Expression:
     """
     f = native.get_function_from_registry("monotonically_increasing_id")
     return Expression._from_pyexpr(f())
+
+
+def uuid() -> Expression:
+    """Generates a column of UUID strings.
+
+    Each call to `uuid()` generates a fresh UUID per row. Multiple calls in the same query
+    (e.g. two separate columns) are independent and will produce different values.
+
+    Returns:
+        Expression (String Expression): An expression that generates UUID strings.
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import uuid
+        >>> df = daft.from_pydict({"foo": [1, 2, 3]})
+        >>> df = df.with_column("u1", uuid()).with_column("u2", uuid())
+        >>> df.schema()["u1"].dtype == daft.DataType.string()
+        True
+        >>> df.schema()["u2"].dtype == daft.DataType.string()
+        True
+    """
+    return Expression._call_builtin_scalar_fn("uuid")
 
 
 def eq_null_safe(left: Expression, right: Expression) -> Expression:
@@ -226,11 +249,15 @@ def fill_null(expr: Expression, fill_value: Expression) -> Expression:
     return Expression._from_pyexpr(expr._expr.fill_null(fill_value._expr))
 
 
-def is_in(expr: Expression, other: Any) -> Expression:
-    """Checks if values in the Expression are in the provided list.
+def is_in(expr: Expression, other: Iterable[Any] | Expression) -> Expression:
+    """Checks if values in the Expression are in the provided iterable.
+
+    Args:
+        expr: The expression to check
+        other: An iterable (list, set, tuple, etc.), Expression, or array-like object containing the values to check against
 
     Returns:
-        Expression (Boolean Expression): expression indicating whether values are in the provided list
+        Expression (Boolean Expression): expression indicating whether values are in the provided iterable
 
     Examples:
         >>> import daft
@@ -254,6 +281,11 @@ def is_in(expr: Expression, other: Any) -> Expression:
         (Showing first 3 of 3 rows)
 
     """
+    # Convert non-list iterables (sets, tuples, generators, ranges, etc.) to lists
+    # Exclude strings/bytes since they are iterable but should not be treated as sequences of characters/bytes
+    if isinstance(other, Iterable) and not isinstance(other, (str, bytes, Expression)):
+        other = list(other)
+
     if isinstance(other, list):
         other = [Expression._to_expression(item) for item in other]
     elif not isinstance(other, Expression):

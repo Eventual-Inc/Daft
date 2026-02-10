@@ -1082,15 +1082,18 @@ class Expression:
 
         return list_agg_distinct(self)
 
-    def string_agg(self) -> Expression:
+    def string_agg(self, delimiter: str | None = None) -> Expression:
         """Aggregates the values in the expression into a single string by concatenating them.
+
+        Args:
+            delimiter: Optional delimiter to insert between concatenated values. Only supported for string columns.
 
         Tip: See Also
             [`daft.functions.string_agg`](https://docs.daft.ai/en/stable/api/functions/string_agg/)
         """
         from daft.functions import string_agg
 
-        return string_agg(self)
+        return string_agg(self, delimiter=delimiter)
 
     def apply(self, func: Callable[..., Any], return_dtype: DataTypeLike) -> Expression:
         """Apply a function on each value in a given expression.
@@ -1184,8 +1187,11 @@ class Expression:
 
         return fill_null(self, fill_value)
 
-    def is_in(self, other: Any) -> Expression:
-        """Checks if values in the Expression are in the provided list.
+    def is_in(self, other: Iterable[Any] | Expression) -> Expression:
+        """Checks if values in the Expression are in the provided iterable.
+
+        Args:
+            other: An iterable (list, set, tuple, etc.), Expression, or array-like object containing the values to check against
 
         Tip: See Also
             [`daft.functions.is_in`](https://docs.daft.ai/en/stable/api/functions/is_in/)

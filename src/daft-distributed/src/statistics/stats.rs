@@ -62,8 +62,9 @@ impl RuntimeNodeManager {
                 self.dec_active_tasks();
                 self.completed_tasks.add(1, self.node_kv.as_slice());
 
-                for (stat_node_id, snapshot) in stats {
-                    if *stat_node_id == (self.node_id as usize) {
+                for (node_info, snapshot) in &stats.nodes {
+                    let node_id = node_info.id;
+                    if node_id == (self.node_id as usize) {
                         self.runtime_stats.handle_worker_node_stats(snapshot);
                     }
                 }

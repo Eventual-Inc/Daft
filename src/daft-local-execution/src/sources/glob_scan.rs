@@ -125,8 +125,7 @@ impl Source for GlobScanSource {
                             }
 
                             let num_rows = paths.len();
-                            let path_array =
-                                Utf8Array::from_values("path", paths.into_iter()).into_series();
+                            let path_array = Utf8Array::from_slice("path", &paths).into_series();
                             let size_array = Int64Array::from_iter(
                                 Field::new("size", DataType::Int64),
                                 sizes.into_iter(),

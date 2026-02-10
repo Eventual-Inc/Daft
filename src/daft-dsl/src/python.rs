@@ -20,7 +20,7 @@ use pyo3::{exceptions::PyValueError, prelude::*, pyclass::CompareOp};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    ExprRef, Operator,
+    ExprRef,
     expr::{Expr, VLLMExpr, WindowExpr},
     visitor::accept,
 };
@@ -518,8 +518,9 @@ impl PyExpr {
         Ok(self.expr.clone().agg_set().into())
     }
 
-    pub fn agg_concat(&self) -> PyResult<Self> {
-        Ok(self.expr.clone().agg_concat().into())
+    #[pyo3(signature = (delimiter=None))]
+    pub fn agg_concat(&self, delimiter: Option<String>) -> PyResult<Self> {
+        Ok(self.expr.clone().agg_concat(delimiter).into())
     }
 
     pub fn __add__(&self, other: &Self) -> PyResult<Self> {
@@ -567,7 +568,7 @@ impl PyExpr {
     }
 
     pub fn __richcmp__(&self, other: &Self, op: CompareOp) -> PyResult<Self> {
-        use crate::{Operator, binary_op};
+        use crate::binary_op;
         match op {
             CompareOp::Lt => Ok(binary_op(Operator::Lt, self.into(), other.into()).into()),
             CompareOp::Le => Ok(binary_op(Operator::LtEq, self.into(), other.into()).into()),

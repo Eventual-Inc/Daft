@@ -10,7 +10,7 @@ use common_error::{DaftError, DaftResult};
 use daft_catalog::Identifier;
 use daft_core::prelude::*;
 use daft_dsl::{
-    Column, Expr, ExprRef, Operator, PlanRef, Subquery, UnresolvedColumn,
+    Column, Expr, ExprRef, PlanRef, Subquery, UnresolvedColumn,
     functions::{FunctionExpr, ScalarUDF, scalar::ScalarFn, struct_::StructExpr},
     has_agg, lit, null_lit, resolved_col, unresolved_col,
 };

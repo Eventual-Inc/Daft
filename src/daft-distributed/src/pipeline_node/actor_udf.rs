@@ -3,7 +3,10 @@ use std::sync::Arc;
 use common_error::DaftResult;
 use common_py_serde::PyObjectWrapper;
 use common_runtime::JoinSet;
-use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFProperties, python::PyExpr};
+use daft_dsl::{
+    expr::bound_expr::BoundExpr, functions::python::UDFProperties, python::PyExpr,
+    utils::remap_used_cols,
+};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
@@ -23,25 +26,21 @@ use crate::{
 };
 
 #[derive(Debug)]
-
 enum UDFActors {
-    Uninitialized(Vec<BoundExpr>, UDFProperties),
+    Uninitialized(BoundExpr, UDFProperties),
     Initialized { actors: Vec<PyObjectWrapper> },
 }
 
 impl UDFActors {
     // TODO: This is a blocking call, and should be done asynchronously.
     async fn initialize_actors(
-        projection: &[BoundExpr],
+        udf_expr: &BoundExpr,
         udf_properties: &UDFProperties,
         actor_ready_timeout: usize,
     ) -> DaftResult<Vec<PyObjectWrapper>> {
-        let py_exprs = projection
-            .iter()
-            .map(|e| PyExpr {
-                expr: e.inner().clone(),
-            })
-            .collect::<Vec<_>>();
+        let py_expr = PyExpr {
+            expr: udf_expr.inner().clone(),
+        };
         let num_actors = udf_properties
             .concurrency
             .expect("ActorUDF should have concurrency specified");
@@ -68,7 +67,7 @@ impl UDFActors {
                 ray_actor_pool_udf_module.call_method1(
                     pyo3::intern!(py, "start_udf_actors"),
                     (
-                        py_exprs,
+                        py_expr,
                         num_actors,
                         gpu_request,
                         cpu_request,
@@ -120,7 +119,9 @@ pub(crate) struct ActorUDF {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     child: DistributedPipelineNode,
-    projection: Vec<BoundExpr>,
+    udf_expr: BoundExpr,
+    passthrough_columns: Vec<BoundExpr>,
+    required_columns: Vec<usize>,
     udf_properties: UDFProperties,
     actor_ready_timeout: usize,
 }
@@ -132,7 +133,8 @@ impl ActorUDF {
     pub fn new(
         node_id: NodeID,
         plan_config: &PlanConfig,
-        projection: Vec<BoundExpr>,
+        udf_expr: BoundExpr,
+        passthrough_columns: Vec<BoundExpr>,
         udf_properties: UDFProperties,
         schema: SchemaRef,
         child: DistributedPipelineNode,
@@ -148,11 +150,14 @@ impl ActorUDF {
             plan_config.config.clone(),
             child.config().clustering_spec.clone(),
         );
+        let (udf_expr, required_columns) = remap_used_cols(udf_expr);
         Ok(Self {
             config,
             context,
             child,
-            projection,
+            udf_expr,
+            passthrough_columns,
+            required_columns,
             udf_properties,
             actor_ready_timeout: plan_config.config.actor_udf_ready_timeout,
         })
@@ -168,7 +173,7 @@ impl ActorUDF {
         result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
         let mut udf_actors =
-            UDFActors::Uninitialized(self.projection.clone(), self.udf_properties.clone());
+            UDFActors::Uninitialized(self.udf_expr.clone(), self.udf_properties.clone());
 
         let mut running_tasks = JoinSet::new();
         while let Some(builder) = input_task_stream.next().await {
@@ -212,6 +217,8 @@ impl ActorUDF {
                 self.udf_properties.batch_size,
                 memory_request,
                 self.config.schema.clone(),
+                self.passthrough_columns.clone(),
+                self.required_columns.clone(),
                 StatsState::NotMaterialized,
                 LocalNodeContext {
                     origin_node_id: Some(self.node_id() as usize),
@@ -239,9 +246,10 @@ impl PipelineNodeImpl for ActorUDF {
         use itertools::Itertools;
         let mut res = vec![
             format!("ActorUDF: {}", self.udf_properties.name),
+            format!("Expr = {}", self.udf_expr),
             format!(
-                "Projection = [{}]",
-                self.projection.iter().map(|e| e.to_string()).join(", ")
+                "Passthrough Columns = [{}]",
+                self.passthrough_columns.iter().join(", ")
             ),
             format!(
                 "Properties = {{ {} }}",

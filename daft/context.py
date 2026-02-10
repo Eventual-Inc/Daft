@@ -69,6 +69,7 @@ class DaftContext:
         self._ctx.notify_query_start(query_id, metadata)
 
     def _notify_query_end(self, query_id: str, query_result: PyQueryResult) -> None:
+        """Notifies the query end to the subscribers. Exceptions from subscribers are logged and ignored."""
         self._ctx.notify_query_end(query_id, query_result)
 
     def _notify_optimization_start(self, query_id: str) -> None:
@@ -76,6 +77,21 @@ class DaftContext:
 
     def _notify_optimization_end(self, query_id: str, optimized_plan: str) -> None:
         self._ctx.notify_optimization_end(query_id, optimized_plan)
+
+    def _notify_exec_start(self, query_id: str, physical_plan: str) -> None:
+        self._ctx.notify_exec_start(query_id, physical_plan)
+
+    def _notify_exec_end(self, query_id: str) -> None:
+        self._ctx.notify_exec_end(query_id)
+
+    def _notify_exec_operator_start(self, query_id: str, node_id: int) -> None:
+        self._ctx.notify_exec_operator_start(query_id, node_id)
+
+    def _notify_exec_operator_end(self, query_id: str, node_id: int) -> None:
+        self._ctx.notify_exec_operator_end(query_id, node_id)
+
+    def _notify_exec_emit_stats(self, query_id: str, node_id: int, stats: dict[str, int]) -> None:
+        self._ctx.notify_exec_emit_stats(query_id, node_id, stats)
 
     def _notify_result_out(self, query_id: str, result: PartitionT) -> None:
         from daft.recordbatch.micropartition import MicroPartition
