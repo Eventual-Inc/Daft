@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use arrow::array::UInt64Builder;
+use arrow::buffer::{Buffer, ScalarBuffer};
 use common_error::DaftResult;
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
 use daft_schema::{dtype::DataType, field::Field};
@@ -368,7 +368,7 @@ fn hash_list(
 
     if let Some(seed_arr) = seed {
         let combined_validity = daft_arrow::buffer::NullBuffer::union(nulls, seed.unwrap().nulls());
-        let mut hashes_builder = UInt64Builder::with_capacity(offsets.len() - 1);
+        let mut hashes = Vec::with_capacity(offsets.len());
 
         for i in 0..(offsets.len() - 1) {
             let start = offsets[i] as usize;
@@ -381,26 +381,24 @@ fn hash_list(
             let hashed_child = flat_child
                 .slice(start, end)?
                 .hash_with(Some(&flat_seed), hash_function)?;
-            let child_bytes: Vec<u8> = hashed_child
-                .values()
-                .into_iter()
-                .flat_map(|v| v.to_le_bytes())
-                .collect();
+            let hashed_arrow = hashed_child.as_arrow()?;
+            let hashed_values = hashed_arrow.values();
+            let child_bytes = hashed_values.inner().as_slice();
 
             let hash_val = match hash_function {
                 HashFunctionKind::XxHash32 => {
                     let seed = cur_seed_opt.unwrap_or(0) as u32;
-                    xxh32(&child_bytes, seed) as u64
+                    xxh32(child_bytes, seed) as u64
                 }
                 HashFunctionKind::XxHash64 => {
                     let seed = cur_seed_opt.unwrap_or(0);
-                    xxh64(&child_bytes, seed)
+                    xxh64(child_bytes, seed)
                 }
                 HashFunctionKind::XxHash3_64 => {
                     if let Some(cur_seed) = cur_seed_opt {
-                        xxh3_64_with_seed(&child_bytes, cur_seed)
+                        xxh3_64_with_seed(child_bytes, cur_seed)
                     } else {
-                        const_xxh3::xxh3_64(&child_bytes)
+                        const_xxh3::xxh3_64(child_bytes)
                     }
                 }
                 HashFunctionKind::MurmurHash3 => {
@@ -408,33 +406,33 @@ fn hash_list(
                     // refer to: https://github.com/Eventual-Inc/Daft/blob/7be4b1ff9ed3fdc3a45947beefab7e7291cd3be7/src/daft-hash/src/lib.rs#L18
                     let hasher = MurBuildHasher::new(cur_seed_opt.unwrap_or(42) as u32);
                     let mut hasher = hasher.build_hasher();
-                    hasher.write(&child_bytes);
+                    hasher.write(child_bytes);
                     hasher.finish()
                 }
                 HashFunctionKind::Sha1 => {
                     let mut hasher = Sha1Hasher::default();
-                    hasher.write(&child_bytes);
+                    hasher.write(child_bytes);
                     hasher.finish()
                 }
             };
-            hashes_builder.append_value(hash_val);
+            hashes.push(hash_val);
         }
 
-        let arrow_arr = hashes_builder.finish();
+        let sb = ScalarBuffer::from(Buffer::from(hashes));
+        let arrow_arr = arrow::array::UInt64Array::new(sb, None);
         let field = Arc::new(Field::new(name, DataType::UInt64));
         let mut result = UInt64Array::from_arrow(field, Arc::new(arrow_arr))?;
         result = result.with_nulls(combined_validity)?;
         Ok(result)
     } else {
         let hashed_child = flat_child.hash_with(None, hash_function)?;
-        let child_bytes: Vec<u8> = hashed_child
-            .values()
-            .into_iter()
-            .flat_map(|v| v.to_le_bytes())
-            .collect();
+        let hashed_arrow = hashed_child.as_arrow()?;
+        let hashed_values = hashed_arrow.values();
+        let child_bytes = hashed_values.inner().as_slice();
+
         const OFFSET: usize = (u64::BITS as usize) / 8;
         let combined_validity = nulls.cloned();
-        let mut hashes_builder = UInt64Builder::with_capacity(offsets.len() - 1);
+        let mut hashes = Vec::with_capacity(offsets.len() - 1);
 
         for i in 0..(offsets.len() - 1) {
             let start = (offsets[i] as usize) * OFFSET;
@@ -458,10 +456,11 @@ fn hash_list(
                     hasher.finish()
                 }
             };
-            hashes_builder.append_value(hash_val);
+            hashes.push(hash_val);
         }
 
-        let arrow_arr = hashes_builder.finish();
+        let sb = ScalarBuffer::from(Buffer::from(hashes));
+        let arrow_arr = arrow::array::UInt64Array::new(sb, None);
         let field = Arc::new(Field::new(name, DataType::UInt64));
         let mut result = UInt64Array::from_arrow(field, Arc::new(arrow_arr))?;
         result = result.with_nulls(combined_validity)?;
