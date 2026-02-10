@@ -17,7 +17,7 @@ where
     T: DaftArrowBackedType + 'static,
 {
     pub fn size_bytes(&self) -> usize {
-        daft_arrow::compute::aggregate::estimated_bytes_size(self.data())
+        self.to_data().get_buffer_memory_size()
     }
 }
 
