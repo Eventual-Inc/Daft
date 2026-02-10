@@ -29,7 +29,7 @@ use snafu::ResultExt;
 
 use crate::{
     ExecutionRuntimeContext, PipelineCreationSnafu,
-    channel::create_channel,
+    channel::create_unbounded_channel,
     input_sender::InputSender,
     intermediate_ops::{
         distributed_actor_pool_project::DistributedActorPoolProjectOperator,
@@ -358,7 +358,7 @@ fn physical_plan_to_pipeline(
             stats_state,
             context,
         }) => {
-            let (tx, rx) = create_channel::<(InputId, Vec<ScanTaskLikeRef>)>(1);
+            let (tx, rx) = create_unbounded_channel::<(InputId, Vec<ScanTaskLikeRef>)>();
             input_senders.insert(*source_id, InputSender::ScanTasks(tx));
 
             let scan_task_source = ScanTaskSource::new(rx, pushdowns.clone(), schema.clone(), cfg);
@@ -377,7 +377,7 @@ fn physical_plan_to_pipeline(
             stats_state,
             context,
         }) => {
-            let (tx, rx) = create_channel::<(InputId, Vec<MicroPartitionRef>)>(1);
+            let (tx, rx) = create_unbounded_channel::<(InputId, Vec<MicroPartitionRef>)>();
             input_senders.insert(*source_id, InputSender::InMemory(tx));
 
             let in_memory_source = InMemorySource::new(rx, schema.clone(), *size_bytes);
@@ -397,7 +397,7 @@ fn physical_plan_to_pipeline(
             io_config,
             context,
         }) => {
-            let (tx, rx) = create_channel::<(InputId, Vec<String>)>(1);
+            let (tx, rx) = create_unbounded_channel::<(InputId, Vec<String>)>();
             input_senders.insert(*source_id, InputSender::GlobPaths(tx));
 
             let glob_scan_source =

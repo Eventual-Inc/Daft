@@ -13,20 +13,20 @@ use tracing::instrument;
 
 use super::source::Source;
 use crate::{
-    channel::{Receiver, Sender, create_channel},
+    channel::{Sender, UnboundedReceiver, create_channel},
     pipeline::NodeName,
     sources::source::SourceStream,
 };
 
 pub struct InMemorySource {
-    receiver: Option<Receiver<(InputId, Vec<MicroPartitionRef>)>>,
+    receiver: Option<UnboundedReceiver<(InputId, Vec<MicroPartitionRef>)>>,
     schema: SchemaRef,
     size_bytes: usize,
 }
 
 impl InMemorySource {
     pub fn new(
-        receiver: Receiver<(InputId, Vec<MicroPartitionRef>)>,
+        receiver: UnboundedReceiver<(InputId, Vec<MicroPartitionRef>)>,
         schema: SchemaRef,
         size_bytes: usize,
     ) -> Self {
@@ -39,7 +39,7 @@ impl InMemorySource {
 
     fn spawn_partition_set_processor(
         &self,
-        mut receiver: Receiver<(InputId, Vec<MicroPartitionRef>)>,
+        mut receiver: UnboundedReceiver<(InputId, Vec<MicroPartitionRef>)>,
         output_sender: Sender<Arc<MicroPartition>>,
         schema: SchemaRef,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {

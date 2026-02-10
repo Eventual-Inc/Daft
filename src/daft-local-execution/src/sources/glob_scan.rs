@@ -18,13 +18,13 @@ use tracing::instrument;
 
 use super::source::Source;
 use crate::{
-    channel::{Receiver, Sender, create_channel},
+    channel::{Sender, UnboundedReceiver, create_channel},
     pipeline::NodeName,
     sources::source::SourceStream,
 };
 
 pub struct GlobScanSource {
-    receiver: Option<Receiver<(InputId, Vec<String>)>>,
+    receiver: Option<UnboundedReceiver<(InputId, Vec<String>)>>,
     pushdowns: Pushdowns,
     schema: SchemaRef,
     io_config: Option<IOConfig>,
@@ -32,7 +32,7 @@ pub struct GlobScanSource {
 
 impl GlobScanSource {
     pub fn new(
-        receiver: Receiver<(InputId, Vec<String>)>,
+        receiver: UnboundedReceiver<(InputId, Vec<String>)>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
         io_config: Option<IOConfig>,
@@ -48,7 +48,7 @@ impl GlobScanSource {
     /// Spawns the background task that continuously reads glob paths from receiver and processes them
     fn spawn_glob_path_processor(
         &self,
-        mut receiver: Receiver<(InputId, Vec<String>)>,
+        mut receiver: UnboundedReceiver<(InputId, Vec<String>)>,
         output_sender: Sender<Arc<MicroPartition>>,
         io_stats: IOStatsRef,
         chunk_size: usize,

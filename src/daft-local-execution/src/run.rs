@@ -216,7 +216,7 @@ impl NativeExecutor {
                 if let Some(message) = enqueue_input_rx.recv().await {
                     for (key, plan_input) in message.inputs {
                         if let Some(sender) = input_senders.get(&key) {
-                            let _ = sender.send(message.input_id, plan_input).await;
+                            let _ = sender.send(message.input_id, plan_input);
                         }
                     }
                 }
