@@ -3186,6 +3186,7 @@ name = "daft-minhash"
 version = "0.3.0-dev0"
 dependencies = [
  "approx",
+ "arrow",
  "common-error",
  "daft-hash",
  "fastrand 2.3.0",
