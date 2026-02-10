@@ -64,6 +64,7 @@ if TYPE_CHECKING:
 
     from daft.io import DataSink
     from daft.io.catalog import DataCatalogTable
+    from daft.io.lance.rest_config import LanceRestConfig
     from daft.io.sink import WriteResultType
     from daft.unity_catalog import UnityCatalogTable
 
@@ -1496,6 +1497,7 @@ class DataFrame:
         uri: str | pathlib.Path,
         mode: Literal["create", "append", "overwrite", "merge"] = "create",
         io_config: IOConfig | None = None,
+        rest_config: "LanceRestConfig | None" = None,
         schema: Union[Schema, "pyarrow.Schema"] | None = None,
         left_on: str | None = None,
         right_on: str | None = None,
@@ -1504,13 +1506,16 @@ class DataFrame:
         """Writes the DataFrame to a Lance table.
 
         Args:
-          uri: The URI of the Lance table to write to
+          uri: The URI of the Lance table to write to. Supports:
+            - File paths: "/path/to/lance/data/" or cloud URIs like "s3://bucket/path"
+            - REST URIs: "rest://namespace/table_name" (requires rest_config)
           mode: The write mode. One of "create", "append", "overwrite", or "merge".
           - "create" will create the dataset if it does not exist, otherwise raise an error.
           - "append" will append to the existing dataset if it exists, otherwise raise an error.
           - "overwrite" will overwrite the existing dataset if it exists, otherwise raise an error.
           - "merge" will add new columns to the existing dataset.
           io_config (IOConfig, optional): configurations to use when interacting with remote storage.
+          rest_config (RestConfig, optional): Configuration for REST-based Lance services. Required when using REST URIs.
           schema (Schema | pyarrow.Schema, optional): Desired schema to enforce during write.
             - If omitted, Daft will use the DataFrame's current schema.
             - If a pyarrow.Schema is provided, Daft will enforce the field order, types, and nullability
@@ -1575,11 +1580,32 @@ class DataFrame:
         """
         from daft import context as _context
         from daft.io.lance.lance_data_sink import LanceDataSink
+        from daft.io.lance.rest_config import parse_lance_uri
         from daft.io.object_store_options import io_config_to_storage_options
 
         if schema is None:
             schema = self.schema()
 
+        # Parse URI to determine if it's REST-based or file-based
+        uri_str = str(uri)
+        uri_type, uri_info = parse_lance_uri(uri_str)
+
+        if uri_type == "rest":
+            # REST-based Lance table
+            if rest_config is None:
+                raise ValueError("rest_config is required when using REST URIs (rest://namespace/table_name)")
+
+            # For REST, we handle writes differently
+            return self._write_lance_rest(
+                rest_config=rest_config,
+                namespace=uri_info["namespace"],
+                table_name=uri_info["table_name"],
+                mode=mode,
+                schema=schema,
+                **kwargs,
+            )
+
+        # File-based Lance table (existing logic)
         # Non-merge modes do not support schema evolution or custom join keys
         if mode != "merge":
             sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
@@ -1678,6 +1704,48 @@ class DataFrame:
                 }
             )
         )
+
+    def _write_lance_rest(
+        self,
+        rest_config: "LanceRestConfig",
+        namespace: str,
+        table_name: str,
+        mode: str,
+        schema: Union[Schema, "pyarrow.Schema"] | None = None,
+        **kwargs: Any,
+    ) -> "DataFrame":
+        """Write DataFrame to Lance table via REST API."""
+        from daft.io.lance.rest_write import write_lance_rest
+        from daft.recordbatch import MicroPartition
+
+        # Collect the DataFrame to get all data
+        collected = self.collect()
+
+        # Convert to MicroPartition - handle case where there are multiple partitions
+        if collected._result:
+            # Get all micropartitions from the result
+            micropartitions = [result.micropartition() for result in collected._result.values()]
+            # Concatenate all micropartitions if there are multiple
+            if len(micropartitions) > 1:
+                mp = MicroPartition.concat(micropartitions)
+            else:
+                mp = micropartitions[0]
+        else:
+            mp = MicroPartition.empty()
+
+        # Write via REST API
+        result_mp = write_lance_rest(
+            mp=mp,
+            rest_config=rest_config,
+            namespace=namespace,
+            table_name=table_name,
+            mode=mode,
+            schema=schema._arrow_schema if schema is not None and hasattr(schema, "_arrow_schema") else None,
+            **kwargs,
+        )
+
+        # Return result as DataFrame
+        return DataFrame._from_micropartitions(result_mp)
 
     @DataframePublicAPI
     def write_turbopuffer(
