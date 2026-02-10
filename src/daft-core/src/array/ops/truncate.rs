@@ -3,7 +3,6 @@ use std::ops::Rem;
 use common_error::DaftResult;
 use num_traits::ToPrimitive;
 
-use super::as_arrow::AsArrow;
 use crate::{
     array::DataArray,
     datatypes::{
@@ -70,12 +69,11 @@ impl Utf8Array {
 
 impl BinaryArray {
     pub fn iceberg_truncate(&self, w: i64) -> DaftResult<Self> {
-        let as_arrow = self.as_arrow2();
-        let substring = daft_arrow::compute::substring::binary_substring(as_arrow, 0, &Some(w));
-        Ok(Self::new(
-            Field::new(self.name(), DataType::Binary).into(),
-            Box::new(substring),
-        )
-        .unwrap())
+        let result = arrow::compute::kernels::substring::substring(
+            self.to_arrow().as_ref(),
+            0,
+            Some(w as _),
+        )?;
+        Self::from_arrow(Field::new(self.name(), DataType::Binary), result)
     }
 }
