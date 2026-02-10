@@ -18,7 +18,8 @@ macro_rules! impl_daft_list_agg {
 
         fn list(&self) -> Self::Output {
             let child_series = self.clone().into_series();
-            let offsets = arrow::buffer::OffsetBuffer::new_zeroed(child_series.len());
+            let offsets =
+                arrow::buffer::OffsetBuffer::new(vec![0, child_series.len() as i64].into());
             let list_field = self.field().to_list_field();
             Ok(ListArray::new(list_field, child_series, offsets, None))
         }
