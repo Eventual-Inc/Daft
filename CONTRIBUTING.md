@@ -44,7 +44,7 @@ A Maintainer is a recognized Contributor who has demonstrated sustained, meaning
 - **Maintainer/Review**: Recognized contributors with review (and approval) permissions
 - **Maintainer/Merge**: Maintainers additionally with merge access to the repository
 
-**Maintainers/Read:**
+**Maintainers/Review:**
 
 | GitHub | Affiliation | Focus Areas |
 |--------|-------------|-------------|
@@ -53,7 +53,6 @@ A Maintainer is a recognized Contributor who has demonstrated sustained, meaning
 | [@gweaverbiodev](https://github.com/gweaverbiodev) | CloudKitchens | pyiceberg support, UDF improvements |
 | [@kevinzwang](https://github.com/kevinzwang) | SkyPilot | Core refactoring (arrow2 migration), UDF system, vLLM, type conversions |
 | [@pdames](https://github.com/pdames) | Nvidia | Catalog support and improvements |
-| [@stayrascal](https://github.com/stayrascal) | Bytedance | Storage/I/O layer, TOS support, native CSV/JSON writers |
 | [@VOID001](https://github.com/VOID001) | ByteDance | Dashboard features, SQL error handling |
 | [@caican00](https://github.com/caican00) | Xiaomi ||
 
