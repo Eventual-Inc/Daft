@@ -56,7 +56,6 @@ impl LimitStats {
         self.rows_in.add(rows, self.node_kv.as_slice());
     }
     fn add_rows_out(&self, rows: u64) {
-        eprintln!("adding rows out: {}", rows);
         self.rows_out.add(rows, self.node_kv.as_slice());
     }
 }
