@@ -4,7 +4,7 @@ use arrow::{
     array::{ArrowPrimitiveType, BooleanBuilder},
     buffer::{BooleanBuffer, NullBuffer, OffsetBuffer, ScalarBuffer},
 };
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_arrow::types::months_days_ns;
 #[cfg(feature = "python")]
 use pyo3::{Py, PyAny};
@@ -40,16 +40,9 @@ impl ListArray {
         .unwrap()
         .into_series();
 
-        let lengths: ScalarBuffer<i64> = data
-            .iter()
-            .map(|d| d.as_ref().map_or(0, |d| d.len()))
-            .map(|i| {
-                i64::try_from(i).map_err(|e| DaftError::ValueError(format!("invalid length: {e}")))
-            })
-            .collect::<DaftResult<_>>()
-            .expect("failed to convert lengths to i64");
+        let lengths = data.iter().map(|d| d.as_ref().map_or(0, |d| d.len()));
 
-        let offsets = OffsetBuffer::new(lengths);
+        let offsets = OffsetBuffer::from_lengths(lengths);
 
         let nulls = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
@@ -66,16 +59,9 @@ impl ListArray {
     /// Each `Some(series)` becomes a list element; `None` becomes null.
     /// The child series are concatenated into a single flat child array.
     pub fn from_series(name: &str, data: Vec<Option<Series>>) -> DaftResult<Self> {
-        let lengths: ScalarBuffer<i64> = data
-            .iter()
-            .map(|s| s.as_ref().map_or(0, |s| s.len()))
-            .map(|i| {
-                i64::try_from(i).map_err(|e| DaftError::ValueError(format!("invalid length: {e}")))
-            })
-            .collect::<DaftResult<_>>()?;
+        let lengths = data.iter().map(|s| s.as_ref().map_or(0, |s| s.len()));
 
-        let offsets = OffsetBuffer::new(lengths);
-
+        let offsets = OffsetBuffer::from_lengths(lengths);
         let nulls = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
         let flat_child = Series::concat(&data.iter().flatten().collect::<Vec<_>>())?;
