@@ -344,16 +344,17 @@ impl PushDownFilter {
                     let pred_cols = HashSet::<_>::from_iter(get_required_columns(&predicate));
 
                     // Extract join key column names for anti/semi join handling
-                    let join_key_cols: HashSet<String> = if matches!(join_type, JoinType::Anti | JoinType::Semi) {
-                        let (_, left_keys, right_keys, _) = on.split_eq_preds();
-                        left_keys
-                            .iter()
-                            .chain(right_keys.iter())
-                            .filter_map(|e| e.input_mapping())
-                            .collect()
-                    } else {
-                        HashSet::new()
-                    };
+                    let join_key_cols: HashSet<String> =
+                        if matches!(join_type, JoinType::Anti | JoinType::Semi) {
+                            let (_, left_keys, right_keys, _) = on.split_eq_preds();
+                            left_keys
+                                .iter()
+                                .chain(right_keys.iter())
+                                .filter_map(|e| e.input_mapping())
+                                .collect()
+                        } else {
+                            HashSet::new()
+                        };
 
                     match (
                         pred_cols.is_subset(&left_cols),
