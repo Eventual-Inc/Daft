@@ -10,7 +10,7 @@ mod serdes;
 mod struct_array;
 pub mod utf8;
 
-use arrow::array::make_array;
+use arrow::{array::make_array, compute::cast};
 use daft_arrow::{
     array::to_data,
     buffer::{NullBuffer, wrap_null_buffer},
@@ -20,20 +20,19 @@ pub use fixed_size_list_array::FixedSizeListArray;
 pub use list_array::ListArray;
 pub use struct_array::StructArray;
 mod boolean;
-mod from_iter;
 pub mod prelude;
 use std::{marker::PhantomData, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
-use daft_schema::field::DaftField;
+use daft_schema::field::{DaftField, FieldRef};
 
 use crate::datatypes::{DaftArrayType, DaftPhysicalType, DataType, Field};
 
 #[derive(Debug)]
 pub struct DataArray<T> {
     pub field: Arc<Field>,
-    pub data: Box<dyn daft_arrow::array::Array>,
-    validity: Option<daft_arrow::buffer::NullBuffer>,
+    data: Box<dyn daft_arrow::array::Array>,
+    nulls: Option<daft_arrow::buffer::NullBuffer>,
     marker_: PhantomData<T>,
 }
 
@@ -50,6 +49,45 @@ impl<T: DaftPhysicalType> DaftArrayType for DataArray<T> {
 }
 
 impl<T> DataArray<T> {
+    pub fn from_arrow<F: Into<FieldRef>>(
+        field: F,
+        arrow_arr: arrow::array::ArrayRef,
+    ) -> DaftResult<Self> {
+        let physical_field = field.into();
+
+        assert!(
+            physical_field.dtype.is_physical(),
+            "Can only construct DataArray for PhysicalTypes, got {}",
+            physical_field.dtype
+        );
+
+        if let Ok(expected_arrow_physical_type) = physical_field.dtype.to_arrow() {
+            // since daft's Utf8 always maps to Arrow's LargeUtf8, we need to handle this special case
+            // If the expected physical type is LargeUtf8, but the actual Arrow type is Utf8, we need to convert it
+            if expected_arrow_physical_type == arrow::datatypes::DataType::LargeUtf8
+                && arrow_arr.data_type() == &arrow::datatypes::DataType::Utf8
+            {
+                let arr = cast(arrow_arr.as_ref(), &arrow::datatypes::DataType::LargeUtf8)?;
+                let nulls = arr.nulls().cloned().map(Into::into);
+
+                return Ok(Self {
+                    field: physical_field,
+                    data: arr.into(),
+                    nulls,
+                    marker_: PhantomData,
+                });
+            }
+        }
+
+        let nulls = arrow_arr.nulls().cloned().map(Into::into);
+        Ok(Self {
+            field: physical_field,
+            data: arrow_arr.into(),
+            nulls,
+            marker_: PhantomData,
+        })
+    }
+
     pub fn new(
         physical_field: Arc<DaftField>,
         arrow_array: Box<dyn daft_arrow::array::Array>,
@@ -72,40 +110,42 @@ impl<T> DataArray<T> {
                     .unwrap();
 
                 let arr = Box::new(utf8_to_large_utf8(utf8_arr));
-                let validity = arr.validity().cloned().map(Into::into);
+                let nulls = arr.validity().cloned().map(Into::into);
                 return Ok(Self {
                     field: physical_field,
                     data: arr,
-                    validity,
+                    nulls,
                     marker_: PhantomData,
                 });
             }
             let arrow_data_type = arrow_array.data_type();
-            assert!(
-                !(&expected_arrow_physical_type != arrow_data_type),
-                "Mismatch between expected and actual Arrow types for DataArray.\n\
-                Field name: '{}'\n\
-                Logical type: {}\n\
-                Physical type: {}\n\
-                Expected Arrow physical type: {:?}\n\
-                Actual Arrow Logical type: {:?}
+            if !matches!(physical_field.dtype, DataType::Extension(..)) {
+                assert!(
+                    !(&expected_arrow_physical_type != arrow_data_type),
+                    "Mismatch between expected and actual Arrow types for DataArray.\n\
+                    Field name: '{}'\n\
+                    Logical type: {}\n\
+                    Physical type: {}\n\
+                    Expected Arrow physical type: {:?}\n\
+                    Actual Arrow Logical type: {:?}
 
-                This error typically occurs when there's a discrepancy between the Daft DataType \
-                and the underlying Arrow representation. Please ensure that the physical type \
-                of the Daft DataType matches the Arrow type of the provided data.",
-                physical_field.name,
-                physical_field.dtype,
-                physical_field.dtype.to_physical(),
-                expected_arrow_physical_type,
-                arrow_data_type
-            );
+                    This error typically occurs when there's a discrepancy between the Daft DataType \
+                    and the underlying Arrow representation. Please ensure that the physical type \
+                    of the Daft DataType matches the Arrow type of the provided data.",
+                    physical_field.name,
+                    physical_field.dtype,
+                    physical_field.dtype.to_physical(),
+                    expected_arrow_physical_type,
+                    arrow_data_type
+                );
+            }
         }
 
-        let validity = arrow_array.validity().cloned().map(Into::into);
+        let nulls = arrow_array.validity().cloned().map(Into::into);
         Ok(Self {
             field: physical_field,
             data: arrow_array,
-            validity,
+            nulls,
             marker_: PhantomData,
         })
     }
@@ -126,22 +166,22 @@ impl<T> DataArray<T> {
         self.len() == 0
     }
 
-    pub fn with_validity_slice(&self, validity: &[bool]) -> DaftResult<Self> {
-        if validity.len() != self.data.len() {
+    pub fn with_nulls_slice(&self, nulls: &[bool]) -> DaftResult<Self> {
+        if nulls.len() != self.data.len() {
             return Err(DaftError::ValueError(format!(
-                "validity mask length does not match DataArray length, {} vs {}",
-                validity.len(),
+                "nulls length does not match DataArray length, {} vs {}",
+                nulls.len(),
                 self.data.len()
             )));
         }
         let with_bitmap = self
             .data
-            .with_validity(wrap_null_buffer(Some(NullBuffer::from(validity))));
+            .with_validity(wrap_null_buffer(Some(NullBuffer::from(nulls))));
         Self::new(self.field.clone(), with_bitmap)
     }
 
-    pub fn with_validity(&self, validity: Option<NullBuffer>) -> DaftResult<Self> {
-        if let Some(v) = &validity
+    pub fn with_nulls(&self, nulls: Option<NullBuffer>) -> DaftResult<Self> {
+        if let Some(v) = &nulls
             && v.len() != self.data.len()
         {
             return Err(DaftError::ValueError(format!(
@@ -150,12 +190,12 @@ impl<T> DataArray<T> {
                 self.data.len()
             )));
         }
-        let with_bitmap = self.data.with_validity(wrap_null_buffer(validity));
+        let with_bitmap = self.data.with_validity(wrap_null_buffer(nulls));
         Self::new(self.field.clone(), with_bitmap)
     }
 
-    pub fn validity(&self) -> Option<&NullBuffer> {
-        self.validity.as_ref()
+    pub fn nulls(&self) -> Option<&NullBuffer> {
+        self.nulls.as_ref()
     }
 
     pub fn slice(&self, start: usize, end: usize) -> DaftResult<Self> {
@@ -179,6 +219,7 @@ impl<T> DataArray<T> {
     pub fn to_data(&self) -> arrow::array::ArrayData {
         to_data(self.data())
     }
+
     pub fn to_arrow(&self) -> arrow::array::ArrayRef {
         make_array(self.to_data())
     }

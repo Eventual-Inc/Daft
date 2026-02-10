@@ -1,15 +1,14 @@
 mod buffer;
 mod channel;
-mod dispatcher;
 mod dynamic_batching;
 mod intermediate_ops;
+mod join;
 mod pipeline;
 mod resource_manager;
 mod run;
 mod runtime_stats;
 mod sinks;
 mod sources;
-mod state_bridge;
 mod streaming_sink;
 use std::{
     future::Future,
@@ -20,13 +19,30 @@ use std::{
 
 use arc_swap::ArcSwap;
 use common_error::{DaftError, DaftResult};
-use common_runtime::{RuntimeRef, RuntimeTask};
+use common_runtime::{JoinSet, RuntimeRef, RuntimeTask};
 use console::style;
 use resource_manager::MemoryManager;
 pub use run::{ExecutionEngineResult, NativeExecutor};
 use runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle, TimedFuture};
 use snafu::{ResultExt, Snafu, futures::TryFutureExt};
 use tracing::Instrument;
+
+/// Control flow indicator for processing loops.
+/// Used to signal whether processing should continue or break out of a loop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum OperatorControlFlow {
+    /// Continue processing - caller should proceed with the next iteration
+    Continue,
+    /// Break processing - caller should exit the loop immediately
+    Break,
+}
+
+impl OperatorControlFlow {
+    /// Returns true if processing should continue
+    pub(crate) fn should_continue(&self) -> bool {
+        matches!(self, Self::Continue)
+    }
+}
 
 /// The `OperatorOutput` enum represents the output of an operator.
 /// It can be either `Ready` or `Pending`.
@@ -64,47 +80,6 @@ impl<T: Send + Sync + 'static> From<RuntimeTask<T>> for OperatorOutput<T> {
     }
 }
 
-pub(crate) struct TaskSet<T> {
-    inner: tokio::task::JoinSet<T>,
-}
-
-impl<T: Send + 'static> TaskSet<T> {
-    fn new() -> Self {
-        Self {
-            inner: tokio::task::JoinSet::new(),
-        }
-    }
-
-    fn spawn<F>(&mut self, future: F)
-    where
-        F: std::future::Future<Output = T> + Send + 'static,
-        T: Send,
-    {
-        self.inner.spawn(future);
-    }
-
-    async fn join_next(&mut self) -> Option<Result<T, Error>> {
-        self.inner
-            .join_next()
-            .await
-            .map(|r| r.map_err(|e| Error::JoinError { source: e }))
-    }
-
-    fn try_join_next(&mut self) -> Option<Result<T, Error>> {
-        self.inner
-            .try_join_next()
-            .map(|r| r.map_err(|e| Error::JoinError { source: e }))
-    }
-
-    fn len(&self) -> usize {
-        self.inner.len()
-    }
-
-    fn abort_all(&mut self) {
-        self.inner.abort_all();
-    }
-}
-
 #[pin_project::pin_project]
 struct SpawnedTask<T>(#[pin] tokio::task::JoinHandle<T>);
 impl<T> Future for SpawnedTask<T> {
@@ -115,21 +90,8 @@ impl<T> Future for SpawnedTask<T> {
     }
 }
 
-struct RuntimeHandle(tokio::runtime::Handle);
-
-impl RuntimeHandle {
-    fn spawn<F>(&self, future: F) -> SpawnedTask<F::Output>
-    where
-        F: Future + Send + 'static,
-        F::Output: Send + 'static,
-    {
-        let join_handle = self.0.spawn(future);
-        SpawnedTask(join_handle)
-    }
-}
-
 pub(crate) struct ExecutionRuntimeContext {
-    worker_set: TaskSet<crate::Result<()>>,
+    worker_set: JoinSet<Result<()>>,
     memory_manager: Arc<MemoryManager>,
     stats_manager: RuntimeStatsManagerHandle,
 }
@@ -141,7 +103,7 @@ impl ExecutionRuntimeContext {
         stats_manager: RuntimeStatsManagerHandle,
     ) -> Self {
         Self {
-            worker_set: TaskSet::new(),
+            worker_set: JoinSet::new(),
             memory_manager,
             stats_manager,
         }
@@ -157,26 +119,25 @@ impl ExecutionRuntimeContext {
             .spawn(task.with_context(|_| PipelineExecutionSnafu { node_name }));
     }
 
-    pub async fn join_next(&mut self) -> Option<Result<crate::Result<()>, Error>> {
-        self.worker_set.join_next().await
-    }
-
     pub async fn shutdown(&mut self) -> DaftResult<()> {
         self.worker_set.abort_all();
-        while let Some(result) = self.join_next().await {
+        while let Some(result) = self.worker_set.join_next().await {
             match result {
-                Ok(Err(e)) | Err(e) if !matches!(&e, Error::JoinError { source } if source.is_cancelled()) =>
-                {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => return Err(e.into()),
+                Err(e) => {
+                    // Only suppress errors that are JoinError caused by cancellation
+                    if let DaftError::JoinError(ref join_err) = e
+                        && join_err.is_cancelled()
+                    {
+                        continue;
+                    }
+
                     return Err(e.into());
                 }
-                _ => {}
             }
         }
         Ok(())
-    }
-
-    pub(crate) fn handle(&self) -> RuntimeHandle {
-        RuntimeHandle(tokio::runtime::Handle::current())
     }
 
     #[must_use]

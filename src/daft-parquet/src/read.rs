@@ -278,8 +278,9 @@ async fn read_parquet_single(
         }
 
         let num_deleted_rows = selection_mask.unset_bits();
+        let nb = daft_arrow::buffer::NullBuffer::from(Bitmap::from(selection_mask));
 
-        let selection_mask: BooleanArray = ("selection_mask", Bitmap::from(selection_mask)).into();
+        let selection_mask = BooleanArray::from_null_buffer("selection_mask", &nb)?;
 
         table = table.mask_filter(&selection_mask.into_series())?;
 
@@ -1074,10 +1075,8 @@ pub fn read_parquet_statistics(
     }
 
     let path_array: &Utf8Array = uris.downcast()?;
-    use daft_core::array::ops::as_arrow::AsArrow;
-    let values = path_array.as_arrow2();
 
-    let handles_iter = values.iter().map(|uri| {
+    let handles_iter = path_array.into_iter().map(|uri| {
         let owned_string = uri.map(std::string::ToString::to_string);
         let owned_client = io_client.clone();
         let io_stats = io_stats.clone();
@@ -1107,7 +1106,7 @@ pub fn read_parquet_statistics(
         runtime_handle.block_on_current_thread(async move { join_all(handles_iter).await });
     let all_tuples = metadata_tuples
         .into_iter()
-        .zip(values.iter())
+        .zip(path_array.into_iter())
         .map(|(t, u)| {
             t.with_context(|_| JoinSnafu {
                 path: u.unwrap().to_string(),
@@ -1116,24 +1115,27 @@ pub fn read_parquet_statistics(
         .collect::<DaftResult<Vec<_>>>()?;
     assert_eq!(all_tuples.len(), uris.len());
 
-    let row_count_series = UInt64Array::from((
-        "row_count",
+    let row_count_series = UInt64Array::new(
+        Field::new("row_count", DataType::UInt64).into(),
         Box::new(daft_arrow::array::UInt64Array::from_iter(
             all_tuples.iter().map(|v| v.0.map(|v| v as u64)),
         )),
-    ));
-    let row_group_series = UInt64Array::from((
-        "row_group_count",
+    )
+    .unwrap();
+    let row_group_series = UInt64Array::new(
+        Field::new("row_group_count", DataType::UInt64).into(),
         Box::new(daft_arrow::array::UInt64Array::from_iter(
             all_tuples.iter().map(|v| v.1.map(|v| v as u64)),
         )),
-    ));
-    let version_series = Int32Array::from((
-        "version",
+    )
+    .unwrap();
+    let version_series = Int32Array::new(
+        Field::new("version", DataType::Int32).into(),
         Box::new(daft_arrow::array::Int32Array::from_iter(
             all_tuples.iter().map(|v| v.2),
         )),
-    ));
+    )
+    .unwrap();
 
     RecordBatch::from_nonempty_columns(vec![
         uris.clone(),

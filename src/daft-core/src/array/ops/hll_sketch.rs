@@ -3,7 +3,7 @@ use hyperloglog::{HyperLogLog, NUM_REGISTERS};
 
 use crate::{
     array::ops::{DaftHllSketchAggable, GroupIndices, as_arrow::AsArrow},
-    datatypes::{DataType, FixedSizeBinaryArray, UInt64Array},
+    datatypes::{DataType, Field, FixedSizeBinaryArray, UInt64Array},
 };
 
 pub const HLL_SKETCH_DTYPE: DataType = DataType::FixedSizeBinary(NUM_REGISTERS);
@@ -16,7 +16,15 @@ impl DaftHllSketchAggable for UInt64Array {
         for &value in self.as_arrow2().iter().flatten() {
             hll.add_already_hashed(value);
         }
-        let array = (self.name(), hll.registers.as_ref(), NUM_REGISTERS).into();
+        let array = FixedSizeBinaryArray::new(
+            Field::new(self.name(), DataType::FixedSizeBinary(NUM_REGISTERS)).into(),
+            Box::new(daft_arrow::array::FixedSizeBinaryArray::new(
+                daft_arrow::datatypes::DataType::FixedSizeBinary(NUM_REGISTERS),
+                daft_arrow::buffer::Buffer::from(hll.registers.to_vec()),
+                None,
+            )),
+        )
+        .unwrap();
         Ok(array)
     }
 
@@ -32,7 +40,15 @@ impl DaftHllSketchAggable for UInt64Array {
             }
             bytes.extend(hll.registers.as_ref());
         }
-        let array = (self.name(), bytes, NUM_REGISTERS).into();
+        let array = FixedSizeBinaryArray::new(
+            Field::new(self.name(), DataType::FixedSizeBinary(NUM_REGISTERS)).into(),
+            Box::new(daft_arrow::array::FixedSizeBinaryArray::new(
+                daft_arrow::datatypes::DataType::FixedSizeBinary(NUM_REGISTERS),
+                daft_arrow::buffer::Buffer::from(bytes),
+                None,
+            )),
+        )
+        .unwrap();
         Ok(array)
     }
 }

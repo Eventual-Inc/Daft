@@ -9,6 +9,9 @@ import unitycatalog
 
 from daft.io import AzureConfig, IOConfig, S3Config, UnityConfig
 
+from .auth import OAuth2Credentials, OAuth2TokenProvider, StaticTokenProvider, TokenProvider  # noqa: TID253
+from .httpx import AuthProvider  # noqa: TID253
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
@@ -63,9 +66,16 @@ def _io_config_from_temp_creds(
 
 
 class UnityCatalog:
+    _token_provider: TokenProvider
+
     """Client to access the Unity Catalog.
 
     Unity Catalog is an open-sourced data catalog that can be self-hosted, or hosted by Databricks.
+
+    Args:
+        endpoint: The Unity Catalog endpoint URL.
+        token: Authentication token for Unity Catalog. Mutually exclusive with `oauth`.
+        oauth: OAuth2 credentials for Unity Catalog. Mutually exclusive with `token`.
 
     Example of reading a dataframe from a table in Unity Catalog hosted by Databricks:
 
@@ -74,12 +84,30 @@ class UnityCatalog:
     >>> df = daft.read_deltalake(table)
     """
 
-    def __init__(self, endpoint: str, token: str | None = None):
+    def __init__(
+        self,
+        endpoint: str,
+        # look into passing a credentials provider instead of passing credentials explicitly
+        token: str | None = None,
+        oauth: OAuth2Credentials | None = None,
+    ):
+        if token is not None and oauth is not None:
+            raise ValueError("Provide only one of token or OAuth2Credentials.")
+
+        base_url = endpoint.rstrip("/")
         self._endpoint = endpoint
-        self._token = token
+
+        # should we use oauth?
+        if oauth and not token:
+            self._token_provider = OAuth2TokenProvider(base_url, oauth)
+        else:
+            self._token_provider = StaticTokenProvider(token)
+
         self._client = unitycatalog.Unitycatalog(
-            base_url=endpoint.rstrip("/") + "/api/2.1/unity-catalog/",
-            default_headers={"Authorization": f"Bearer {token}"},
+            base_url=base_url + "/api/2.1/unity-catalog/",
+            http_client=unitycatalog.DefaultHttpxClient(
+                auth=AuthProvider(self._token_provider),
+            ),
         )
 
     def _paginate_to_completion(
@@ -202,7 +230,6 @@ class UnityCatalog:
         storage_location = table_info.storage_location
         # Grab credentials from Unity catalog and place it into the Table
         temp_table_credentials = self._client.temporary_table_credentials.create(operation=operation, table_id=table_id)
-
         io_config = _io_config_from_temp_creds(temp_table_credentials, storage_location)
 
         return UnityCatalogTable(
@@ -224,4 +251,5 @@ class UnityCatalog:
         return UnityCatalogVolume(volume_info=volume_info, io_config=io_config)
 
     def to_io_config(self) -> IOConfig:
-        return IOConfig(unity=UnityConfig(endpoint=self._endpoint, token=self._token))
+        token = self._token_provider.get_token()
+        return IOConfig(unity=UnityConfig(endpoint=self._endpoint, token=token))

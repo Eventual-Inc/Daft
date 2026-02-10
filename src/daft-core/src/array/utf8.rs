@@ -37,7 +37,7 @@ mod tests {
 
     #[test]
     fn test_into_values() {
-        let array = Utf8Array::from_values("test", vec!["hello", "world"].into_iter());
+        let array = Utf8Array::from_slice("test", &["hello", "world"]);
         let values = array.into_values().unwrap();
         assert_eq!(values, vec!["hello", "world"]);
     }

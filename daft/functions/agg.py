@@ -149,6 +149,21 @@ def stddev(expr: Expression) -> Expression:
     return Expression._from_pyexpr(expr._expr.stddev())
 
 
+def var(expr: Expression, ddof: int = 1) -> Expression:
+    """Calculates the variance of the values in the expression.
+
+    Args:
+        expr: The input expression to calculate variance for.
+        ddof: Delta degrees of freedom. The divisor used in calculations
+            is N - ddof, where N is the number of non-null elements.
+            Defaults to 1 (sample variance).
+
+    Returns:
+        Expression representing the variance.
+    """
+    return Expression._from_pyexpr(expr._expr.var(ddof))
+
+
 def min(expr: Expression) -> Expression:
     """Calculates the minimum of the values in the expression."""
     return Expression._from_pyexpr(expr._expr.min())
@@ -271,6 +286,10 @@ def list_agg_distinct(expr: Expression) -> Expression:
     return Expression._from_pyexpr(expr._expr.agg_set())
 
 
-def string_agg(expr: Expression) -> Expression:
-    """Aggregates the values in the expression into a single string by concatenating them."""
-    return Expression._from_pyexpr(expr._expr.agg_concat())
+def string_agg(expr: Expression, delimiter: str | None = None) -> Expression:
+    """Aggregates the values in the expression into a single string by concatenating them.
+
+    Args:
+        delimiter: Optional delimiter to insert between concatenated values. Only supported for string columns.
+    """
+    return Expression._from_pyexpr(expr._expr.agg_concat(delimiter))

@@ -1,5 +1,6 @@
 [dependencies]
 arrow = {workspace = true}
+arrow-row = {workspace = true}
 bincode = {workspace = true}
 daft-arrow = {path = "../daft-arrow"}
 chrono = {workspace = true}

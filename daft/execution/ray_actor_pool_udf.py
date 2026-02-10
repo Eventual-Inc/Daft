@@ -74,7 +74,7 @@ def get_ready_actors_by_location(
 
 
 async def start_udf_actors(
-    projection: list[PyExpr],
+    projection: PyExpr,
     num_actors: int,
     num_gpus_per_actor: float,
     num_cpus_per_actor: float,
@@ -83,7 +83,7 @@ async def start_udf_actors(
     timeout: int,
     actor_name: str | None = None,
 ) -> list[UDFActorHandle]:
-    expr_projection = ExpressionsProjection([Expression._from_pyexpr(expr) for expr in projection])
+    expr_projection = ExpressionsProjection([Expression._from_pyexpr(projection)])
 
     udf_options = validate_and_normalize_ray_options(
         {

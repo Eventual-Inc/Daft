@@ -20,7 +20,11 @@ impl ScalarUDF for Upper {
         "upper"
     }
 
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         unary_utf8_evaluate(inputs, |s| {
             s.with_utf8_array(|arr| {
                 Ok(arr

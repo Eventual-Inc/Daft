@@ -8,9 +8,7 @@ use arrow::{
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::DataArray,
-    prelude::{
-        DaftIntegerType, DaftNumericType, DataType, Field, FromArrow, FullNull, Schema, Utf8Array,
-    },
+    prelude::*,
     series::{IntoSeries, Series},
     with_match_integer_daft_types,
 };
@@ -34,7 +32,11 @@ impl ScalarUDF for Right {
         "right"
     }
 
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         binary_utf8_evaluate(inputs, "n", |s, nchars| {
             s.with_utf8_array(|arr| {
             if nchars.data_type().is_integer() {
@@ -113,13 +115,20 @@ where
 
     let result: LargeStringArray = match nchars.len() {
         1 => {
-            let n = nchars_arrow.iter().next().unwrap().unwrap();
-            let n: usize = NumCast::from(n).ok_or_else(|| {
-                DaftError::ComputeError(format!("Error in right: failed to cast rhs as usize {n}"))
-            })?;
-            arr_iter
-                .map(|val| Some(right_most_chars(val?, n)))
-                .collect()
+            let n = nchars_arrow.iter().next().unwrap();
+            match n {
+                Some(n) => {
+                    let n: usize = NumCast::from(n).ok_or_else(|| {
+                        DaftError::ComputeError(format!(
+                            "Error in right: failed to cast rhs as usize {n}"
+                        ))
+                    })?;
+                    arr_iter
+                        .map(|val| Some(right_most_chars(val?, n)))
+                        .collect()
+                }
+                None => arr_iter.map(|_| None::<&str>).collect(),
+            }
         }
         _ => arr_iter
             .zip(nchars_arrow.iter())

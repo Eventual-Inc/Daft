@@ -6,9 +6,8 @@ use common_error::{DaftError, DaftResult};
 use common_image::{BBox, CowImage};
 use daft_core::{
     array::{
-        ops::{
-            from_arrow::FromArrow,
-            image::{AsImageObj, fixed_image_array_from_img_buffers, image_array_from_img_buffers},
+        ops::image::{
+            AsImageObj, fixed_image_array_from_img_buffers, image_array_from_img_buffers,
         },
         prelude::*,
     },
@@ -178,22 +177,22 @@ impl ImageOps for FixedShapeImageArray {
         };
 
         match attr {
-            ImageProperty::Height => Ok(UInt32Array::from((
+            ImageProperty::Height => Ok(UInt32Array::from_slice(
                 self.name(),
-                vec![*height; self.len()].as_slice(),
-            ))),
-            ImageProperty::Width => Ok(UInt32Array::from((
+                &vec![*height; self.len()],
+            )),
+            ImageProperty::Width => Ok(UInt32Array::from_slice(
                 self.name(),
-                vec![*width; self.len()].as_slice(),
-            ))),
-            ImageProperty::Channel => Ok(UInt32Array::from((
+                &vec![*width; self.len()],
+            )),
+            ImageProperty::Channel => Ok(UInt32Array::from_slice(
                 self.name(),
-                vec![self.image_mode().num_channels() as u32; self.len()].as_slice(),
-            ))),
-            ImageProperty::Mode => Ok(UInt32Array::from((
+                &vec![self.image_mode().num_channels() as u32; self.len()],
+            )),
+            ImageProperty::Mode => Ok(UInt32Array::from_slice(
                 self.name(),
-                vec![(*self.image_mode() as u8) as u32; self.len()].as_slice(),
-            ))),
+                &vec![(*self.image_mode() as u8) as u32; self.len()],
+            )),
         }
     }
 }
@@ -231,8 +230,8 @@ fn encode_images<Arr: AsImageObj>(
         Ok(BinaryArray::from_iter(images.name(), values.into_iter()))
     } else {
         // For non-TIFF formats, use a single buffer with manual offset/validity tracking for efficiency
-        let mut offsets = OffsetBufferBuilder::<i64>::new(images.len() + 1);
-        let mut validity = BooleanBufferBuilder::new(images.len());
+        let mut offsets = OffsetBufferBuilder::<i64>::new(images.len());
+        let mut null_builder = BooleanBufferBuilder::new(images.len());
         let buf = Vec::new();
         let mut writer: CountingWriter<std::io::BufWriter<_>> =
             std::io::BufWriter::new(std::io::Cursor::new(buf)).into();
@@ -244,10 +243,10 @@ fn encode_images<Arr: AsImageObj>(
                     let current_offset = writer.count();
                     offsets.push_length((current_offset - last_offset) as usize);
                     last_offset = current_offset;
-                    validity.append(true);
+                    null_builder.append(true);
                 } else {
                     offsets.push_length(0);
-                    validity.append(false);
+                    null_builder.append(false);
                 }
                 Ok(())
             })
@@ -265,7 +264,7 @@ fn encode_images<Arr: AsImageObj>(
         let arrow_array = LargeBinaryArray::new(
             offsets.finish(),
             values.into(),
-            Some(validity.finish().into()),
+            Some(null_builder.finish().into()),
         );
         BinaryArray::from_arrow(
             Field::new(images.name(), DataType::Binary),

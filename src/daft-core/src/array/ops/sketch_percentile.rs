@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
-use daft_arrow::array::{MutablePrimitiveArray, PrimitiveArray};
 
-use super::from_arrow::FromArrow;
 use crate::{
     array::{FixedSizeListArray, StructArray},
     datatypes::{DataType, Field, Float64Array},
@@ -19,30 +17,29 @@ impl StructArray {
         let output_dtype = DataType::FixedSizeList(Box::new(DataType::Float64), percentiles.len());
         let output_field = Field::new(self.field.name.as_str(), output_dtype);
 
-        let mut flat_child =
-            MutablePrimitiveArray::<f64>::with_capacity(percentiles.len() * self.len());
+        let mut array_builder =
+            arrow::array::Float64Builder::with_capacity(percentiles.len() * self.len());
         daft_sketch::from_arrow(self.to_arrow()?)?
             .iter()
             .for_each(|sketch| match sketch {
                 None => {
-                    flat_child.extend_trusted_len(std::iter::repeat_n::<Option<f64>>(
-                        None,
-                        percentiles.len(),
-                    ));
+                    array_builder
+                        .extend(std::iter::repeat_n::<Option<f64>>(None, percentiles.len()));
                 }
-                Some(sketch) => flat_child
-                    .extend_trusted_len(percentiles.iter().map(|&p| sketch.quantile(p).unwrap())),
+                Some(sketch) => {
+                    array_builder.extend(percentiles.iter().map(|&p| sketch.quantile(p).unwrap()));
+                }
             });
-        let flat_child: PrimitiveArray<f64> = flat_child.into();
-        let flat_child = Float64Array::from_arrow2(
-            Arc::new(Field::new(self.name(), DataType::Float64)),
-            flat_child.boxed(),
+        let arrow_array = array_builder.finish();
+        let flat_child = Float64Array::from_arrow(
+            Field::new(self.name(), DataType::Float64),
+            Arc::new(arrow_array),
         )?
         .into_series();
 
         if percentiles.len() > 1 || force_list_output {
             Ok(
-                FixedSizeListArray::new(output_field, flat_child, self.validity().cloned())
+                FixedSizeListArray::new(output_field, flat_child, self.nulls().cloned())
                     .into_series(),
             )
         } else {

@@ -12,8 +12,11 @@ pub mod monotonically_increasing_id;
 pub mod numeric;
 #[cfg(feature = "python")]
 pub mod python;
+pub mod similarity;
 pub mod slice;
 pub mod to_struct;
+pub mod uuid;
+pub mod vector_utils;
 
 use common_error::DaftError;
 use daft_dsl::functions::{FunctionModule, FunctionRegistry};
@@ -24,6 +27,7 @@ use minhash::MinHashFunction;
 pub use python::register as register_modules;
 use snafu::Snafu;
 use to_struct::ToStructFunction;
+use uuid::Uuid;
 
 use crate::slice::Slice;
 
@@ -63,5 +67,6 @@ impl FunctionModule for MiscFunctions {
         parent.add_fn(Length);
         parent.add_fn(ToStructFunction);
         parent.add_fn(Slice);
+        parent.add_fn(Uuid);
     }
 }

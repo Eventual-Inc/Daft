@@ -65,13 +65,13 @@ impl RecordBatch {
             .into_iter()
             .zip(aliases)
             .map(|(agg_col, name)| {
-                let take_indices = UInt64Array::from((
+                let take_indices = UInt64Array::from_vec(
                     "row_to_partition_mapping",
                     row_to_partition_mapping
                         .iter()
                         .map(|&idx| idx as u64)
                         .collect::<Vec<_>>(),
-                ));
+                );
                 agg_col.rename(name).take(&take_indices)
             })
             .collect::<DaftResult<Vec<_>>>()?;
@@ -393,7 +393,7 @@ impl RecordBatch {
         // Track previous window boundaries
         let mut prev_frame_start = 0;
         let mut prev_frame_end = 0;
-        let mut validity = NullBufferBuilder::new(total_rows);
+        let mut null_builder = NullBufferBuilder::new(total_rows);
 
         for row_idx in 0..total_rows {
             // Calculate frame bounds for this row
@@ -415,22 +415,21 @@ impl RecordBatch {
                     frame_end,
                     &mut agg_state,
                 )?;
-                validity.append_non_null();
+                null_builder.append_non_null();
             } else {
-                validity.append_null();
+                null_builder.append_null();
             }
 
             // Evaluate current state to get the result for this row
             agg_state.evaluate()?;
         }
 
-        let validity = validity.finish();
+        let nulls = null_builder.finish();
         let agg_state = agg_state.build()?.rename(name);
-        let validity =
-            daft_arrow::buffer::NullBuffer::union(validity.as_ref(), agg_state.validity());
+        let nulls = daft_arrow::buffer::NullBuffer::union(nulls.as_ref(), agg_state.nulls());
 
         // Build the final result series
-        let renamed_result = agg_state.with_validity(validity)?;
+        let renamed_result = agg_state.with_nulls(nulls)?;
         let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
         self.union(&window_batch)
     }
@@ -495,7 +494,7 @@ impl RecordBatch {
         // Use the optimized implementation with incremental state updates
         // Initialize the state for incremental aggregation
         let order_by_col = self.eval_expression(order_by)?;
-        let mut validity = NullBufferBuilder::new(total_rows);
+        let mut null_builder = NullBufferBuilder::new(total_rows);
 
         // Track previous window boundaries
         let mut prev_frame_start = 0;
@@ -539,22 +538,21 @@ impl RecordBatch {
                     frame_end,
                     &mut agg_state,
                 )?;
-                validity.append_non_null();
+                null_builder.append_non_null();
             } else {
-                validity.append_null();
+                null_builder.append_null();
             }
 
             // Evaluate current state to get the result for this row
             agg_state.evaluate()?;
         }
 
-        let validity = validity.finish();
+        let nulls = null_builder.finish();
         let agg_state = agg_state.build()?.rename(name);
-        let validity =
-            daft_arrow::buffer::NullBuffer::union(validity.as_ref(), agg_state.validity());
+        let nulls = daft_arrow::buffer::NullBuffer::union(nulls.as_ref(), agg_state.nulls());
 
         // Build the final result series
-        let renamed_result = agg_state.with_validity(validity)?;
+        let renamed_result = agg_state.with_nulls(nulls)?;
         let window_batch = Self::from_nonempty_columns(vec![renamed_result])?;
         self.union(&window_batch)
     }
@@ -633,7 +631,7 @@ impl RecordBatch {
 
     pub fn window_row_number(&self, name: String) -> DaftResult<Self> {
         let row_numbers: Vec<u64> = (1..=self.len() as u64).collect();
-        let row_number_series = UInt64Array::from((name.as_str(), row_numbers)).into_series();
+        let row_number_series = UInt64Array::from_vec(name.as_str(), row_numbers).into_series();
         let row_number_batch = Self::from_nonempty_columns(vec![row_number_series])?;
 
         self.union(&row_number_batch)
@@ -647,7 +645,7 @@ impl RecordBatch {
     ) -> DaftResult<Self> {
         if self.is_empty() {
             // Empty partition case - no work needed
-            let rank_series = UInt64Array::from((name.as_str(), Vec::<u64>::new())).into_series();
+            let rank_series = UInt64Array::from_vec(name.as_str(), Vec::<u64>::new()).into_series();
             let rank_batch = Self::from_nonempty_columns(vec![rank_series])?;
             return self.union(&rank_batch);
         }
@@ -690,7 +688,7 @@ impl RecordBatch {
             }))
             .collect();
 
-        let rank_series = UInt64Array::from((name.as_str(), rank_numbers)).into_series();
+        let rank_series = UInt64Array::from_vec(name.as_str(), rank_numbers).into_series();
         let rank_batch = Self::from_nonempty_columns(vec![rank_series])?;
 
         self.union(&rank_batch)

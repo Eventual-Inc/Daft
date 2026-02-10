@@ -12,6 +12,8 @@ on:
 
   workflow_dispatch:
 
+permissions: {}
+
 env:
   S3_BUCKET: s3://github-actions-artifacts-bucket/builds/nightly/
   AWS_REGION: us-west-2
@@ -23,6 +25,8 @@ env:
 jobs:
   build:
     name: 'Build Daft wheel for ${{ matrix.os }}-${{ matrix.arch }}-lts=${{ matrix.lts }}'
+    permissions:
+      contents: read
     uses: ./.github/workflows/build-wheel.yml
     with:
       os: ${{ matrix.os }}
@@ -55,7 +59,7 @@ jobs:
     - uses: actions/checkout@v6
       with:
         submodules: true
-    - uses: actions/download-artifact@v6
+    - uses: actions/download-artifact@v7
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -150,7 +154,7 @@ jobs:
           uv sync --no-install-project --all-extras --all-groups
           uv pip install daft --pre --extra-index-url https://d1p3klp2t5517h.cloudfront.net/builds/nightly --force-reinstall
           rm -rf daft
-    - uses: actions/cache@v4
+    - uses: actions/cache@v5
       env:
         cache-name: cache-tpch-data
       with:
@@ -159,7 +163,7 @@ jobs:
     - name: Run TPCH integration tests
       run: |
         source activate
-        pytest tests/integration/test_tpch.py --durations=50
+        pytest ./tests/integration/test_tpch.py --durations=50
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
@@ -250,7 +254,7 @@ jobs:
         role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
         role-session-name: DaftPythonPackageGitHubWorkflow
     - name: Spin up IO services
-      uses: isbang/compose-action@v2.4.1
+      uses: isbang/compose-action@v2.4.3
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes
@@ -281,6 +285,9 @@ jobs:
 
   benchmark-local-tpch:
     needs: [publish]
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/benchmark-local-tpch.yml
     with:
       daft_index_url: https://d1p3klp2t5517h.cloudfront.net/builds/nightly
@@ -312,6 +319,9 @@ jobs:
 
   benchmark-distributed-tpch:
     needs: [publish]
+    permissions:
+      contents: read
+      id-token: write
     uses: ./.github/workflows/benchmark-distributed-tpch.yml
     with:
       daft_index_url: https://d1p3klp2t5517h.cloudfront.net/builds/nightly

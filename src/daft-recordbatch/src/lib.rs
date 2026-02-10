@@ -400,7 +400,7 @@ impl RecordBatch {
                 .collect()
         };
         let indices: daft_core::array::DataArray<daft_core::datatypes::UInt64Type> =
-            UInt64Array::from(("idx", values));
+            UInt64Array::from_vec("idx", values);
         self.take(&indices)
     }
 
@@ -414,7 +414,7 @@ impl RecordBatch {
         let start = (partition_num << 36) + offset;
         let end = start + self.len() as u64;
         let ids = (start..end).step_by(1).collect::<Vec<_>>();
-        let id_series = UInt64Array::from((column_name, ids)).into_series();
+        let id_series = UInt64Array::from_vec(column_name, ids).into_series();
         Self::from_nonempty_columns([&[id_series], &self.columns[..]].concat())
     }
 
@@ -439,7 +439,7 @@ impl RecordBatch {
                     .min((self.len() - 1) as u64)
             })
             .collect();
-        let indices = UInt64Array::from(("idx", sample_points));
+        let indices = UInt64Array::from_vec("idx", sample_points);
         self.take(&indices)
     }
 
@@ -491,10 +491,10 @@ impl RecordBatch {
         } else {
             // num_filtered is the number of 'false' or null values in the mask
             let num_filtered = mask
-                .validity()
-                .map(|validity| {
+                .nulls()
+                .map(|nulls| {
                     daft_arrow::bitmap::and(
-                        &daft_arrow::buffer::from_null_buffer(validity.clone()),
+                        &daft_arrow::buffer::from_null_buffer(nulls.clone()),
                         mask.as_bitmap(),
                     )
                     .unset_bits()
@@ -637,7 +637,7 @@ impl RecordBatch {
             AggExpr::ApproxCountDistinct(expr) => {
                 let hashed = self
                     .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                    .hash_with_validity(None)?;
+                    .hash_with_nulls(None)?;
                 let series = groups
                     .map_or_else(
                         || hashed.approx_count_distinct(),
@@ -653,7 +653,7 @@ impl RecordBatch {
                     SketchType::HyperLogLog => {
                         let hashed = self
                             .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                            .hash_with_validity(None)?;
+                            .hash_with_nulls(None)?;
                         let series = groups
                             .map_or_else(
                                 || hashed.hll_sketch(),
@@ -677,6 +677,9 @@ impl RecordBatch {
             AggExpr::Stddev(expr) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .stddev(groups),
+            AggExpr::Var(expr, ddof) => self
+                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                .var(groups, *ddof),
             AggExpr::Min(expr) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .min(groups),
@@ -698,9 +701,9 @@ impl RecordBatch {
             AggExpr::Set(expr) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .agg_set(groups),
-            AggExpr::Concat(expr) => self
+            AggExpr::Concat(expr, delimiter) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                .agg_concat(groups),
+                .agg_concat(groups, delimiter.as_deref()),
             AggExpr::Skew(expr) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .skew(groups),
@@ -874,7 +877,7 @@ impl RecordBatch {
                     )
                     .await?;
                 use daft_core::array::ops::{DaftCompare, DaftLogical};
-                use daft_dsl::Operator::*;
+                use daft_core::prelude::Operator::*;
                 match op {
                     Plus => lhs + rhs,
                     Minus => lhs - rhs,
@@ -938,9 +941,12 @@ impl RecordBatch {
                     evaluated_args.push(evaluated);
                 }
                 let args = FunctionArgs::new_unchecked(evaluated_args);
+                let ctx = daft_dsl::functions::scalar::EvalContext {
+                    row_count: self.len(),
+                };
                 match &func.func {
-                    BuiltinScalarFnVariant::Sync(func) => func.call(args),
-                    BuiltinScalarFnVariant::Async(func) => func.call(args).await,
+                    BuiltinScalarFnVariant::Sync(func) => func.call(args, &ctx),
+                    BuiltinScalarFnVariant::Async(func) =>func.call(args, &ctx).await
                 }
             }
             Expr::Literal(lit_value) => Ok(lit_value.clone().into()),
@@ -1146,7 +1152,7 @@ impl RecordBatch {
                 let lhs = self.eval_expression_internal(&BoundExpr::new_unchecked(left.clone()), metrics)?;
                 let rhs = self.eval_expression_internal(&BoundExpr::new_unchecked(right.clone()), metrics)?;
                 use daft_core::array::ops::{DaftCompare, DaftLogical};
-                use daft_dsl::Operator::*;
+                use daft_core::prelude::Operator::*;
                 match op {
                     Plus => lhs + rhs,
                     Minus => lhs - rhs,
@@ -1203,10 +1209,13 @@ impl RecordBatch {
                     evaluated_args.push(evaluated);
                 }
                 let args = FunctionArgs::new_unchecked(evaluated_args);
+                let ctx = daft_dsl::functions::scalar::EvalContext {
+                    row_count: self.len(),
+                };
                 match func {
-                    BuiltinScalarFnVariant::Sync(f) => f.call(args),
+                    BuiltinScalarFnVariant::Sync(f) => f.call(args, &ctx),
                     BuiltinScalarFnVariant::Async(f) => {
-                        get_compute_runtime().block_on_current_thread(f.call(args))
+                        get_compute_runtime().block_on_current_thread(f.call(args, &ctx))
                     }
                 }
             }
@@ -1298,9 +1307,22 @@ impl RecordBatch {
         Ok(series)
     }
 
+    /// Helper to derive the result schema from evaluating expressions
+    fn derive_eval_schema(exprs: &[BoundExpr], schema: &Schema) -> DaftResult<SchemaRef> {
+        let fields = exprs
+            .iter()
+            .map(|e| e.inner().to_field(schema))
+            .collect::<DaftResult<Vec<_>>>()?;
+        Ok(Schema::new(fields).into())
+    }
+
     // TODO(universalmind303): since we now have async expressions, the entire evaluation should happen async
     // Refactor all eval_expression's to async and remove the sync version.
     pub fn eval_expression_list(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
+        if self.is_empty() && exprs.iter().all(|e| !daft_dsl::has_agg(e.inner())) {
+            let schema = Self::derive_eval_schema(exprs, &self.schema)?;
+            return Ok(Self::empty(Some(schema)));
+        }
         let result_series: Vec<_> = exprs
             .iter()
             .map(|e| self.eval_expression(e))
@@ -1314,6 +1336,10 @@ impl RecordBatch {
         exprs: &[BoundExpr],
         metrics: &mut dyn MetricsCollector,
     ) -> DaftResult<Self> {
+        if self.is_empty() && exprs.iter().all(|e| !daft_dsl::has_agg(e.inner())) {
+            let schema = Self::derive_eval_schema(exprs, &self.schema)?;
+            return Ok(Self::empty(Some(schema)));
+        }
         let result_series: Vec<_> = exprs
             .iter()
             .map(|e| self.eval_expression_with_metrics(e, metrics))
@@ -1323,6 +1349,10 @@ impl RecordBatch {
     }
 
     pub async fn eval_expression_list_async(&self, exprs: Vec<BoundExpr>) -> DaftResult<Self> {
+        if self.is_empty() && exprs.iter().all(|e| !daft_dsl::has_agg(e.inner())) {
+            let schema = Self::derive_eval_schema(&exprs, &self.schema)?;
+            return Ok(Self::empty(Some(schema)));
+        }
         let futs = exprs
             .clone()
             .into_iter()
@@ -1338,6 +1368,10 @@ impl RecordBatch {
         exprs: &[BoundExpr],
         num_parallel_tasks: usize,
     ) -> DaftResult<Self> {
+        if self.is_empty() && exprs.iter().all(|e| !daft_dsl::has_agg(e.inner())) {
+            let schema = Self::derive_eval_schema(exprs, &self.schema)?;
+            return Ok(Self::empty(Some(schema)));
+        }
         // Partition the expressions into compute and non-compute
         let (compute_exprs, non_compute_exprs): (Vec<_>, Vec<_>) = exprs
             .iter()
@@ -1706,8 +1740,8 @@ mod test {
 
     #[test]
     fn add_int_and_float_expression() -> DaftResult<()> {
-        let a = Int64Array::from(("a", vec![1, 2, 3])).into_series();
-        let b = Float64Array::from(("b", vec![1., 2., 3.])).into_series();
+        let a = Int64Array::from_vec("a", vec![1, 2, 3]).into_series();
+        let b = Float64Array::from_vec("b", vec![1., 2., 3.]).into_series();
         let _schema = Schema::new(vec![
             a.field().clone().rename("a"),
             b.field().clone().rename("b"),
@@ -1732,9 +1766,9 @@ mod test {
     fn test_ipc_roundtrip() -> DaftResult<()> {
         let string_values = vec!["a", "bb", "ccc"];
         let table = RecordBatch::from_nonempty_columns(vec![
-            Int64Array::from(("a", vec![1, 2, 3])).into_series(),
-            Float64Array::from(("b", vec![1., 2., 3.])).into_series(),
-            Utf8Array::from_values("c", string_values.iter()).into_series(),
+            Int64Array::from_vec("a", vec![1, 2, 3]).into_series(),
+            Float64Array::from_vec("b", vec![1., 2., 3.]).into_series(),
+            Utf8Array::from_slice("c", string_values.as_slice()).into_series(),
         ])?;
 
         let ipc_stream = table.to_ipc_stream()?;

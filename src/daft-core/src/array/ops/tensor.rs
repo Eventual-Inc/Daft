@@ -24,13 +24,13 @@ mod tests {
 
     #[test]
     fn test_tensor_to_sparse_roundtrip() -> DaftResult<()> {
-        let raw_validity = vec![true, false, true];
-        let validity = daft_arrow::buffer::NullBuffer::from(raw_validity.as_slice());
+        let raw_nulls = vec![true, false, true];
+        let nulls = daft_arrow::buffer::NullBuffer::from(raw_nulls.as_slice());
 
         let list_array = ListArray::new(
             Field::new("data", DataType::List(Box::new(DataType::Int64))),
-            Int64Array::from((
-                "item",
+            Int64Array::new(
+                Field::new("item", DataType::Int64).into(),
                 Box::new(daft_arrow::array::Int64Array::from_iter(
                     [
                         Some(0),
@@ -45,30 +45,32 @@ mod tests {
                     ]
                     .iter(),
                 )),
-            ))
+            )
+            .unwrap()
             .into_series(),
             daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 3, 6, 9])?,
-            Some(validity.clone()),
+            Some(nulls.clone()),
         )
         .into_series();
         let shapes_array = ListArray::new(
             Field::new("shape", DataType::List(Box::new(DataType::UInt64))),
-            UInt64Array::from((
-                "item",
+            UInt64Array::new(
+                Field::new("item", DataType::UInt64).into(),
                 Box::new(daft_arrow::array::UInt64Array::from_iter(
                     [Some(3), Some(3), Some(3)].iter(),
                 )),
-            ))
+            )
+            .unwrap()
             .into_series(),
             daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 2, 3])?,
-            Some(validity.clone()),
+            Some(nulls.clone()),
         )
         .into_series();
         let dtype = DataType::Tensor(Box::new(DataType::Int64));
         let struct_array = StructArray::new(
             Field::new("tensor", dtype.to_physical()),
             vec![list_array, shapes_array],
-            Some(validity),
+            Some(nulls),
         );
         let tensor_array =
             TensorArray::new(Field::new(struct_array.name(), dtype.clone()), struct_array);
@@ -81,11 +83,11 @@ mod tests {
 
     #[test]
     fn test_fixed_shape_tensor_to_fixed_shape_sparse_roundtrip() -> DaftResult<()> {
-        let raw_validity = vec![true, false, true];
-        let validity = daft_arrow::buffer::NullBuffer::from(raw_validity.as_slice());
+        let raw_nulls = vec![true, false, true];
+        let nulls = daft_arrow::buffer::NullBuffer::from(raw_nulls.as_slice());
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int64), 3));
-        let flat_child = Int64Array::from(("foo", (0..9).collect::<Vec<i64>>()));
-        let arr = FixedSizeListArray::new(field, flat_child.into_series(), Some(validity));
+        let flat_child = Int64Array::from_vec("foo", (0..9).collect::<Vec<i64>>());
+        let arr = FixedSizeListArray::new(field, flat_child.into_series(), Some(nulls));
         let dtype = DataType::FixedShapeTensor(Box::new(DataType::Int64), vec![3]);
         let tensor_array = FixedShapeTensorArray::new(Field::new("data", dtype.clone()), arr);
         let sparse_tensor_dtype =

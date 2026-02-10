@@ -22,7 +22,7 @@ where
     fn is_nan(&self) -> Self::Output {
         let result =
             BooleanArray::from_values(self.name(), self.values().iter().map(|v| v.is_nan()));
-        result.with_validity(self.validity().cloned())
+        result.with_nulls(self.nulls().cloned())
     }
 }
 
@@ -50,7 +50,7 @@ where
     fn is_inf(&self) -> Self::Output {
         let result =
             BooleanArray::from_values(self.name(), self.values().iter().map(|v| v.is_infinite()));
-        result.with_validity(self.validity().cloned())
+        result.with_nulls(self.nulls().cloned())
     }
 }
 
@@ -77,7 +77,7 @@ where
     fn not_nan(&self) -> Self::Output {
         let result =
             BooleanArray::from_values(self.name(), self.values().iter().map(|v| !v.is_nan()));
-        result.with_validity(self.validity().cloned())
+        result.with_nulls(self.nulls().cloned())
     }
 }
 
@@ -101,7 +101,7 @@ mod tests {
 
     #[test]
     fn test_is_nan() {
-        let arr = Float64Array::from(("a", vec![1.0, f64::NAN, 3.0, f64::NAN]));
+        let arr = Float64Array::from_slice("a", &[1.0, f64::NAN, 3.0, f64::NAN]);
         let result = arr.is_nan().unwrap();
 
         assert_eq!(result.len(), 4);
@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     fn test_is_inf() {
-        let arr = Float64Array::from(("a", vec![1.0, f64::INFINITY, f64::NEG_INFINITY, 0.0]));
+        let arr = Float64Array::from_slice("a", &[1.0, f64::INFINITY, f64::NEG_INFINITY, 0.0]);
         let result = arr.is_inf().unwrap();
 
         assert_eq!(result.len(), 4);
@@ -125,7 +125,7 @@ mod tests {
 
     #[test]
     fn test_not_nan() {
-        let arr = Float64Array::from(("a", vec![1.0, f64::NAN, 3.0]));
+        let arr = Float64Array::from_slice("a", &[1.0, f64::NAN, 3.0]);
         let result = arr.not_nan().unwrap();
 
         assert_eq!(result.len(), 3);

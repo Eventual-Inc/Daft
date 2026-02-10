@@ -13,7 +13,11 @@ pub struct Cbrt;
 
 #[typetag::serde]
 impl ScalarUDF for Cbrt {
-    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let UnaryArg { input } = inputs.try_into()?;
         let casted_dtype = input.to_floating_data_type()?;
         let casted_self = input

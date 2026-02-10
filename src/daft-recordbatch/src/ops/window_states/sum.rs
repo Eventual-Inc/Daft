@@ -1,10 +1,11 @@
 use std::ops::{AddAssign, SubAssign};
 
+use arrow::array::ArrowPrimitiveType;
 use common_error::{DaftError, DaftResult};
 use daft_arrow::buffer::NullBufferBuilder;
 use daft_core::{
     array::ops::DaftIsNan,
-    datatypes::{DaftPrimitiveType, try_sum_supertype},
+    datatypes::{DaftPrimitiveType, NumericNative, try_sum_supertype},
     prelude::*,
 };
 use num_traits::{FromPrimitive, Zero};
@@ -23,7 +24,7 @@ where
     sum_vec: Vec<T::Native>,
     valid_count: usize,
     nan_count: usize,
-    validity: NullBufferBuilder,
+    nulls: NullBufferBuilder,
 }
 
 impl<T> SumWindowState<T>
@@ -51,7 +52,7 @@ where
             sum_vec: Vec::with_capacity(total_length),
             valid_count: 0,
             nan_count: 0,
-            validity: NullBufferBuilder::new(total_length),
+            nulls: NullBufferBuilder::new(total_length),
         }
     }
 }
@@ -60,6 +61,7 @@ impl<T> WindowAggStateOps for SumWindowState<T>
 where
     T: DaftPrimitiveType,
     T::Native: Zero + AddAssign + SubAssign + Copy + FromPrimitive,
+    <T::Native as NumericNative>::ARROWTYPE: ArrowPrimitiveType<Native = T::Native>,
     DataArray<T>: IntoSeries,
 {
     fn add(&mut self, start_idx: usize, end_idx: usize) -> DaftResult<()> {
@@ -113,14 +115,17 @@ where
         } else {
             self.sum_vec.push(self.sum);
         }
-        self.validity.append(self.valid_count > 0);
+        self.nulls.append(self.valid_count > 0);
         Ok(())
     }
 
     fn build(&self) -> DaftResult<Series> {
-        DataArray::from((self.source.name(), self.sum_vec.as_ref()))
-            .into_series()
-            .with_validity(self.validity.finish_cloned())
+        DataArray::<T>::from_field_and_values(
+            Field::new(self.source.name(), T::get_dtype()),
+            self.sum_vec.iter().copied(),
+        )
+        .into_series()
+        .with_nulls(self.nulls.finish_cloned())
     }
 }
 

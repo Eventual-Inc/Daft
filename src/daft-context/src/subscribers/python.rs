@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 use common_error::DaftResult;
-use common_metrics::{QueryID, QueryPlan, StatSnapshot};
+use common_metrics::{QueryID, QueryPlan, Stats};
 use daft_micropartition::{MicroPartitionRef, python::PyMicroPartition};
 use pyo3::{IntoPyObject, Py, PyAny, Python, intern};
 
@@ -98,7 +98,7 @@ impl Subscriber for PySubscriberWrapper {
     async fn on_exec_emit_stats(
         &self,
         query_id: QueryID,
-        stats: &[(NodeID, StatSnapshot)],
+        stats: Arc<Vec<(NodeID, Stats)>>,
     ) -> DaftResult<()> {
         Python::attach(|py| {
             let stats_map = stats

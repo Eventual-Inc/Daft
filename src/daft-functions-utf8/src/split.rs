@@ -1,9 +1,10 @@
-#![allow(deprecated, reason = "arrow2 migration")]
+use std::sync::Arc;
+
+use arrow::array::{LargeStringBuilder, NullBufferBuilder, OffsetBufferBuilder};
 use common_error::{DaftError, DaftResult};
-use daft_arrow::array::Array;
 use daft_core::{
     array::ListArray,
-    prelude::{AsArrow, DataType, Field, FullNull, Schema, Utf8Array},
+    prelude::{AsArrow, DataType, Field, FromArrow, FullNull, Schema, Utf8Array},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
@@ -27,7 +28,11 @@ impl ScalarUDF for Split {
     fn name(&self) -> &'static str {
         "split"
     }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         binary_utf8_evaluate(inputs, "delimiter", |s, pat| series_split(s, pat, false))
     }
 
@@ -55,7 +60,11 @@ impl ScalarUDF for RegexpSplit {
     fn name(&self) -> &'static str {
         "regexp_split"
     }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         binary_utf8_evaluate(inputs, "delimiter", |s, pat| series_split(s, pat, true))
     }
 
@@ -113,12 +122,12 @@ fn split_impl(arr: &Utf8Array, pattern: &Utf8Array, regex: bool) -> DaftResult<L
         ));
     }
 
-    let arr_arrow = arr.as_arrow2();
+    let arr_arrow = arr.as_arrow()?;
     let buffer_len = arr_arrow.values().len();
     // This will overallocate by pattern_len * N_i, where N_i is the number of pattern occurrences in the ith string in arr_iter.
-    let mut splits = daft_arrow::array::MutableUtf8Array::with_capacity(buffer_len);
-    let mut offsets = daft_arrow::offset::Offsets::new();
-    let mut validity = daft_arrow::buffer::NullBufferBuilder::new(arr.len());
+    let mut splits = LargeStringBuilder::with_capacity(expected_size, buffer_len);
+    let mut offsets = OffsetBufferBuilder::<i64>::new(expected_size);
+    let mut null_builder = NullBufferBuilder::new(expected_size);
 
     let arr_iter = create_broadcasted_str_iter(arr, expected_size);
     match (regex, pattern.len()) {
@@ -130,20 +139,17 @@ fn split_impl(arr: &Utf8Array, pattern: &Utf8Array, regex: bool) -> DaftResult<L
                 regex_iter,
                 &mut splits,
                 &mut offsets,
-                &mut validity,
+                &mut null_builder,
             )?;
         }
         (true, _) => {
-            let regex_iter = pattern
-                .as_arrow2()
-                .iter()
-                .map(|pat| pat.map(regex::Regex::new));
+            let regex_iter = pattern.into_iter().map(|pat| pat.map(regex::Regex::new));
             split_array_on_regex(
                 arr_iter,
                 regex_iter,
                 &mut splits,
                 &mut offsets,
-                &mut validity,
+                &mut null_builder,
             )?;
         }
         (false, _) => {
@@ -153,22 +159,27 @@ fn split_impl(arr: &Utf8Array, pattern: &Utf8Array, regex: bool) -> DaftResult<L
                 pattern_iter,
                 &mut splits,
                 &mut offsets,
-                &mut validity,
+                &mut null_builder,
             )?;
         }
     }
-    // Shrink splits capacity to current length, since we will have overallocated if any of the patterns actually occurred in the strings.
-    splits.shrink_to_fit();
-    let splits: daft_arrow::array::Utf8Array<i64> = splits.into();
-    let offsets: daft_arrow::offset::OffsetsBuffer<i64> = offsets.into();
-    let validity = validity.finish();
-    let flat_child = Series::try_from(("splits", splits.to_boxed()))?;
-    let result = ListArray::new(
-        Field::new(arr.name(), DataType::List(Box::new(DataType::Utf8))),
-        flat_child,
-        offsets,
-        validity,
-    );
+    // Build the arrow-rs LargeListArray
+    let splits_array = Arc::new(splits.finish());
+    let offsets_buffer = offsets.finish();
+    let nulls = null_builder.finish();
+
+    let list_field = Arc::new(arrow::datatypes::Field::new(
+        "item",
+        arrow::datatypes::DataType::LargeUtf8,
+        true,
+    ));
+    let arrow_list =
+        arrow::array::LargeListArray::new(list_field, offsets_buffer, splits_array, nulls);
+
+    // Convert to Daft ListArray
+    let result_field = Field::new(arr.name(), DataType::List(Box::new(DataType::Utf8)));
+    let result = ListArray::from_arrow(result_field, Arc::new(arrow_list))?;
+
     assert_eq!(result.len(), expected_size);
     Ok(result)
 }
@@ -176,50 +187,50 @@ fn split_impl(arr: &Utf8Array, pattern: &Utf8Array, regex: bool) -> DaftResult<L
 fn split_array_on_regex<'a>(
     arr_iter: impl Iterator<Item = Option<&'a str>>,
     regex_iter: impl Iterator<Item = Option<Result<regex::Regex, regex::Error>>>,
-    splits: &mut daft_arrow::array::MutableUtf8Array<i64>,
-    offsets: &mut daft_arrow::offset::Offsets<i64>,
-    validity: &mut daft_arrow::buffer::NullBufferBuilder,
+    splits: &mut LargeStringBuilder,
+    offsets: &mut OffsetBufferBuilder<i64>,
+    null_builder: &mut NullBufferBuilder,
 ) -> DaftResult<()> {
     for (val, re) in arr_iter.zip(regex_iter) {
-        let mut num_splits = 0i64;
+        let mut num_splits = 0;
         match (val, re) {
             (Some(val), Some(re)) => {
                 for split in re?.split(val) {
-                    splits.push(Some(split));
+                    splits.append_value(split);
                     num_splits += 1;
                 }
-                validity.append_non_null();
+                null_builder.append_non_null();
             }
             (_, _) => {
-                validity.append_null();
+                null_builder.append_null();
             }
         }
-        offsets.try_push(num_splits)?;
+        offsets.push_length(num_splits);
     }
     Ok(())
 }
 fn split_array_on_literal<'a>(
     arr_iter: impl Iterator<Item = Option<&'a str>>,
     pattern_iter: impl Iterator<Item = Option<&'a str>>,
-    splits: &mut daft_arrow::array::MutableUtf8Array<i64>,
-    offsets: &mut daft_arrow::offset::Offsets<i64>,
-    validity: &mut daft_arrow::buffer::NullBufferBuilder,
+    splits: &mut LargeStringBuilder,
+    offsets: &mut OffsetBufferBuilder<i64>,
+    null_builder: &mut NullBufferBuilder,
 ) -> DaftResult<()> {
     for (val, pat) in arr_iter.zip(pattern_iter) {
-        let mut num_splits = 0i64;
+        let mut num_splits = 0;
         match (val, pat) {
             (Some(val), Some(pat)) => {
                 for split in val.split(pat) {
-                    splits.push(Some(split));
+                    splits.append_value(split);
                     num_splits += 1;
                 }
-                validity.append_non_null();
+                null_builder.append_non_null();
             }
             (_, _) => {
-                validity.append_null();
+                null_builder.append_null();
             }
         }
-        offsets.try_push(num_splits)?;
+        offsets.push_length(num_splits);
     }
     Ok(())
 }

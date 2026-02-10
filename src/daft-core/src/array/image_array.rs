@@ -13,7 +13,7 @@ pub struct ImageArraySidecarData {
     pub heights: Vec<u32>,
     pub widths: Vec<u32>,
     pub modes: Vec<u8>,
-    pub validity: Option<daft_arrow::buffer::NullBuffer>,
+    pub nulls: Option<daft_arrow::buffer::NullBuffer>,
 }
 
 impl ImageArray {
@@ -33,22 +33,6 @@ impl ImageArray {
     pub fn data_array(&self) -> &ListArray {
         let array = self.physical.children.get(Self::IMAGE_DATA_IDX).unwrap();
         array.list().unwrap()
-    }
-
-    pub fn channel_array(&self) -> &daft_arrow::array::UInt16Array {
-        self.channels().as_arrow2()
-    }
-
-    pub fn height_array(&self) -> &daft_arrow::array::UInt32Array {
-        self.heights().as_arrow2()
-    }
-
-    pub fn width_array(&self) -> &daft_arrow::array::UInt32Array {
-        self.widths().as_arrow2()
-    }
-
-    pub fn mode_array(&self) -> &daft_arrow::array::UInt8Array {
-        self.modes().as_arrow2()
     }
 
     pub fn channels(&self) -> &DataArray<UInt16Type> {
@@ -79,49 +63,22 @@ impl ImageArray {
     ) -> DaftResult<Self> {
         let values: Vec<Series> = vec![
             data_array.into_series().rename("data"),
-            UInt16Array::from((
-                "channel",
-                Box::new(
-                    daft_arrow::array::UInt16Array::from_vec(sidecar_data.channels).with_validity(
-                        daft_arrow::buffer::wrap_null_buffer(sidecar_data.validity.clone()),
-                    ),
-                ),
-            ))
-            .into_series(),
-            UInt32Array::from((
-                "height",
-                Box::new(
-                    daft_arrow::array::UInt32Array::from_vec(sidecar_data.heights).with_validity(
-                        daft_arrow::buffer::wrap_null_buffer(sidecar_data.validity.clone()),
-                    ),
-                ),
-            ))
-            .into_series(),
-            UInt32Array::from((
-                "width",
-                Box::new(
-                    daft_arrow::array::UInt32Array::from_vec(sidecar_data.widths).with_validity(
-                        daft_arrow::buffer::wrap_null_buffer(sidecar_data.validity.clone()),
-                    ),
-                ),
-            ))
-            .into_series(),
-            UInt8Array::from((
-                "mode",
-                Box::new(
-                    daft_arrow::array::UInt8Array::from_vec(sidecar_data.modes).with_validity(
-                        daft_arrow::buffer::wrap_null_buffer(sidecar_data.validity.clone()),
-                    ),
-                ),
-            ))
-            .into_series(),
+            UInt16Array::from_values("channel", sidecar_data.channels)
+                .with_nulls(sidecar_data.nulls.clone())?
+                .into_series(),
+            UInt32Array::from_values("height", sidecar_data.heights)
+                .with_nulls(sidecar_data.nulls.clone())?
+                .into_series(),
+            UInt32Array::from_values("width", sidecar_data.widths)
+                .with_nulls(sidecar_data.nulls.clone())?
+                .into_series(),
+            UInt8Array::from_values("mode", sidecar_data.modes)
+                .with_nulls(sidecar_data.nulls.clone())?
+                .into_series(),
         ];
         let physical_type = data_type.to_physical();
-        let struct_array = StructArray::new(
-            Field::new(name, physical_type),
-            values,
-            sidecar_data.validity,
-        );
+        let struct_array =
+            StructArray::new(Field::new(name, physical_type), values, sidecar_data.nulls);
         Ok(ImageArray::new(Field::new(name, data_type), struct_array))
     }
 
@@ -151,7 +108,7 @@ impl ImageArray {
                     as Box<dyn daft_arrow::array::Array>,
             ))?,
             offsets,
-            sidecar_data.validity.clone(),
+            sidecar_data.nulls.clone(),
         );
 
         Self::from_list_array(name, data_type, data_array, sidecar_data)

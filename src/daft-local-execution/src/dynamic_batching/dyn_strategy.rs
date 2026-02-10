@@ -10,14 +10,14 @@ use crate::{
 };
 pub struct DynBatchingState {
     #[allow(clippy::type_complexity)]
-    record_fn: Box<dyn FnMut(Arc<dyn RuntimeStats>, usize, Duration) + Send + Sync>,
+    record_fn: Box<dyn FnMut(&dyn RuntimeStats, usize, Duration) + Send + Sync>,
     update_fn: Box<dyn FnMut() -> MorselSizeRequirement + Send + Sync>,
 }
 
 impl BatchingState for DynBatchingState {
     fn record_execution_stat(
         &mut self,
-        stats: Arc<dyn RuntimeStats>,
+        stats: &dyn RuntimeStats,
         batch_size: usize,
         duration: Duration,
     ) {
@@ -102,7 +102,10 @@ impl BatchingStrategy for DynBatchingStrategy {
 }
 #[cfg(test)]
 mod tests {
-    use std::sync::{Arc, Mutex};
+    use std::{
+        num::NonZeroUsize,
+        sync::{Arc, Mutex},
+    };
 
     use super::*;
 
@@ -128,7 +131,7 @@ mod tests {
     impl BatchingState for usize {
         fn record_execution_stat(
             &mut self,
-            _stats: Arc<dyn crate::runtime_stats::RuntimeStats>,
+            _stats: &dyn crate::runtime_stats::RuntimeStats,
             batch_size: usize,
             _duration: std::time::Duration,
         ) {
@@ -153,52 +156,70 @@ mod tests {
 
             // Return different requirements based on state to test delegation
             match *state {
-                1 => MorselSizeRequirement::Flexible(1, 10),
-                2 => MorselSizeRequirement::Flexible(5, 20),
-                _ => MorselSizeRequirement::Flexible(10, 50),
+                1 => MorselSizeRequirement::Flexible(1, NonZeroUsize::new(10).unwrap()),
+                2 => MorselSizeRequirement::Flexible(5, NonZeroUsize::new(20).unwrap()),
+                _ => MorselSizeRequirement::Flexible(10, NonZeroUsize::new(50).unwrap()),
             }
         }
     }
 
     #[test]
     fn test_dyn_strategy_new() {
-        let mock = MockStrategy::new(MorselSizeRequirement::Flexible(1, 32));
+        let mock = MockStrategy::new(MorselSizeRequirement::Flexible(
+            1,
+            NonZeroUsize::new(32).unwrap(),
+        ));
         let dyn_strategy = DynBatchingStrategy::new(mock);
 
         assert_eq!(
             dyn_strategy.initial_requirements(),
-            MorselSizeRequirement::Flexible(1, 32)
+            MorselSizeRequirement::Flexible(1, NonZeroUsize::new(32).unwrap())
         );
     }
 
     #[test]
     fn test_dyn_strategy_from() {
-        let mock = MockStrategy::new(MorselSizeRequirement::Flexible(2, 64));
+        let mock = MockStrategy::new(MorselSizeRequirement::Flexible(
+            2,
+            NonZeroUsize::new(64).unwrap(),
+        ));
         let dyn_strategy: DynBatchingStrategy = mock.into();
 
         assert_eq!(
             dyn_strategy.initial_requirements(),
-            MorselSizeRequirement::Flexible(2, 64)
+            MorselSizeRequirement::Flexible(2, NonZeroUsize::new(64).unwrap())
         );
     }
 
     #[test]
     fn test_dyn_strategy_delegates_to_wrapped_strategy() {
-        let mock = MockStrategy::new(MorselSizeRequirement::Flexible(1, 16));
+        let mock = MockStrategy::new(MorselSizeRequirement::Flexible(
+            1,
+            NonZeroUsize::new(16).unwrap(),
+        ));
         let dyn_strategy = DynBatchingStrategy::new(mock.clone());
         let mut state = dyn_strategy.make_state();
 
         // First call
         let req1 = dyn_strategy.calculate_new_requirements(&mut state);
-        assert_eq!(req1, MorselSizeRequirement::Flexible(1, 10));
+        assert_eq!(
+            req1,
+            MorselSizeRequirement::Flexible(1, NonZeroUsize::new(10).unwrap())
+        );
 
         // Second call
         let req2 = dyn_strategy.calculate_new_requirements(&mut state);
-        assert_eq!(req2, MorselSizeRequirement::Flexible(5, 20));
+        assert_eq!(
+            req2,
+            MorselSizeRequirement::Flexible(5, NonZeroUsize::new(20).unwrap())
+        );
 
         // Third call
         let req3 = dyn_strategy.calculate_new_requirements(&mut state);
-        assert_eq!(req3, MorselSizeRequirement::Flexible(10, 50));
+        assert_eq!(
+            req3,
+            MorselSizeRequirement::Flexible(10, NonZeroUsize::new(50).unwrap())
+        );
 
         // Verify the wrapped strategy was called
         assert_eq!(mock.call_count(), 3);
@@ -206,7 +227,10 @@ mod tests {
 
     #[test]
     fn test_dyn_strategy_state_isolation() {
-        let mock = MockStrategy::new(MorselSizeRequirement::Flexible(1, 8));
+        let mock = MockStrategy::new(MorselSizeRequirement::Flexible(
+            1,
+            NonZeroUsize::new(8).unwrap(),
+        ));
         let dyn_strategy = DynBatchingStrategy::new(mock);
 
         let mut state1 = dyn_strategy.make_state();
@@ -216,33 +240,51 @@ mod tests {
         let req1_1 = dyn_strategy.calculate_new_requirements(&mut state1);
         let req2_1 = dyn_strategy.calculate_new_requirements(&mut state2);
 
-        assert_eq!(req1_1, MorselSizeRequirement::Flexible(1, 10));
-        assert_eq!(req2_1, MorselSizeRequirement::Flexible(1, 10));
+        assert_eq!(
+            req1_1,
+            MorselSizeRequirement::Flexible(1, NonZeroUsize::new(10).unwrap())
+        );
+        assert_eq!(
+            req2_1,
+            MorselSizeRequirement::Flexible(1, NonZeroUsize::new(10).unwrap())
+        );
 
         // Second call on state1 should advance its internal state
         let req1_2 = dyn_strategy.calculate_new_requirements(&mut state1);
-        assert_eq!(req1_2, MorselSizeRequirement::Flexible(5, 20));
+        assert_eq!(
+            req1_2,
+            MorselSizeRequirement::Flexible(5, NonZeroUsize::new(20).unwrap())
+        );
 
         // But state2 should still be at first call
         let req2_2 = dyn_strategy.calculate_new_requirements(&mut state2);
-        assert_eq!(req2_2, MorselSizeRequirement::Flexible(5, 20));
+        assert_eq!(
+            req2_2,
+            MorselSizeRequirement::Flexible(5, NonZeroUsize::new(20).unwrap())
+        );
     }
 
     #[test]
     fn test_dyn_strategy_multiple_instances() {
-        let mock1 = MockStrategy::new(MorselSizeRequirement::Flexible(1, 16));
-        let mock2 = MockStrategy::new(MorselSizeRequirement::Flexible(4, 32));
+        let mock1 = MockStrategy::new(MorselSizeRequirement::Flexible(
+            1,
+            NonZeroUsize::new(16).unwrap(),
+        ));
+        let mock2 = MockStrategy::new(MorselSizeRequirement::Flexible(
+            4,
+            NonZeroUsize::new(32).unwrap(),
+        ));
 
         let dyn1 = DynBatchingStrategy::new(mock1.clone());
         let dyn2 = DynBatchingStrategy::new(mock2.clone());
 
         assert_eq!(
             dyn1.initial_requirements(),
-            MorselSizeRequirement::Flexible(1, 16)
+            MorselSizeRequirement::Flexible(1, NonZeroUsize::new(16).unwrap())
         );
         assert_eq!(
             dyn2.initial_requirements(),
-            MorselSizeRequirement::Flexible(4, 32)
+            MorselSizeRequirement::Flexible(4, NonZeroUsize::new(32).unwrap())
         );
 
         let mut state1 = dyn1.make_state();

@@ -32,11 +32,11 @@ impl<T: DaftPhysicalType> FromArrow for DataArray<T> {
         field: FieldRef,
         arrow_arr: Box<dyn daft_arrow::array::Array>,
     ) -> DaftResult<Self> {
-        Self::try_from((field, arrow_arr))
+        Self::new(field, arrow_arr)
     }
 
     fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
-        Self::new(field.into(), arrow_arr.into())
+        Self::from_arrow(field, arrow_arr)
     }
 }
 
@@ -192,9 +192,9 @@ impl FromArrow for ListArray {
         let offsets: arrow::buffer::Buffer = list_arr.offsets().inner().clone().into_inner();
         let offsets =
             unsafe { daft_arrow::offset::OffsetsBuffer::<i64>::new_unchecked(offsets.into()) };
-        let validity = list_arr.nulls().cloned();
+        let nulls = list_arr.nulls().cloned();
 
-        Ok(Self::new(field, child_series, offsets, validity))
+        Ok(Self::new(field, child_series, offsets, nulls))
     }
 }
 
@@ -371,10 +371,11 @@ impl FromArrow for MapArray {
 
         let offsets: arrow::buffer::Buffer = arrow_arr.offsets().inner().clone().into_inner();
         let offsets =
-            unsafe { daft_arrow::offset::OffsetsBuffer::<i64>::new_unchecked(offsets.into()) };
-        let validity = arrow_arr.nulls().cloned();
+            unsafe { daft_arrow::offset::OffsetsBuffer::<i32>::new_unchecked(offsets.into()) };
+        let offsets: daft_arrow::offset::OffsetsBuffer<i64> = (&offsets).into();
+        let nulls = arrow_arr.nulls().cloned();
 
-        let physical = ListArray::new(physical_field, child_series, offsets, validity);
+        let physical = ListArray::new(physical_field, child_series, offsets, nulls);
 
         Ok(Self::new(field, physical))
     }
@@ -592,7 +593,7 @@ mod tests {
         ($test_name:ident, $array_type:ty, $value:expr) => {
             #[test]
             fn $test_name() -> DaftResult<()> {
-                let arr = <$array_type>::from_values("test", $value.into_iter());
+                let arr = <$array_type>::from_vec("test", $value);
                 let arrow_arr = arr.to_arrow();
                 let new_arr = <$array_type>::from_arrow(
                     Field::new("test", arr.data_type().clone()),
@@ -636,7 +637,7 @@ mod tests {
 
         assert_eq!(arr.field(), new_arr.field());
         assert_eq!(arr.offsets(), new_arr.offsets());
-        assert_eq!(arr.validity(), new_arr.validity());
+        assert_eq!(arr.nulls(), new_arr.nulls());
         assert_eq!(arr.flat_child, new_arr.flat_child);
 
         Ok(())
@@ -654,7 +655,7 @@ mod tests {
 
         assert_eq!(arr.field(), new_arr.field());
         assert_eq!(arr.offsets(), new_arr.offsets());
-        assert_eq!(arr.validity(), new_arr.validity());
+        assert_eq!(arr.nulls(), new_arr.nulls());
 
         Ok(())
     }
@@ -694,7 +695,7 @@ mod tests {
     fn test_arrow_roundtrip_logical_date() -> DaftResult<()> {
         let arr = LogicalArray::<DateType>::new(
             Field::new("test", DataType::Date),
-            Int32Array::from_values("", vec![1, 2, 3].into_iter()),
+            Int32Array::from_slice("", &[1, 2, 3]),
         );
 
         let arrow_arr = arr.to_arrow()?;
@@ -780,7 +781,7 @@ mod tests {
         let arrow_arr = arr.to_arrow()?;
         let new_arr = StructArray::from_arrow(arr.field().clone(), arrow_arr)?;
         assert_eq!(arr.len(), new_arr.len());
-        assert_eq!(arr.validity(), new_arr.validity());
+        assert_eq!(arr.nulls(), new_arr.nulls());
         assert_eq!(arr.field(), new_arr.field());
         for i in 0..arr.len() {
             let expected = arr.get_lit(i);
@@ -794,7 +795,7 @@ mod tests {
     fn test_arrow_roundtrip_logical_duration() -> DaftResult<()> {
         let arr = LogicalArray::<DurationType>::new(
             Field::new("test", DataType::Duration(TimeUnit::Milliseconds)),
-            Int64Array::from_values("", vec![1000, 2000, 3000].into_iter()),
+            Int64Array::from_slice("", &[1000, 2000, 3000]),
         );
 
         let arrow_arr = arr.to_arrow()?;
@@ -816,7 +817,7 @@ mod tests {
                 "test",
                 DataType::Timestamp(TimeUnit::Microseconds, Some("UTC".to_string())),
             ),
-            Int64Array::from_values("", vec![1000000, 2000000, 3000000].into_iter()),
+            Int64Array::from_slice("", &[1000000, 2000000, 3000000]),
         );
 
         let arrow_arr = arr.to_arrow()?;

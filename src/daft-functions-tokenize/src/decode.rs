@@ -31,7 +31,11 @@ struct DecodeArgs<T> {
 
 #[typetag::serde]
 impl ScalarUDF for TokenizeDecodeFunction {
-    fn call(&self, args: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        args: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let DecodeArgs {
             input,
             _varargs,
@@ -95,7 +99,7 @@ fn tokenize_decode_array(
             decode_list(&sub_series, &bpe)
         })
         .collect::<DaftResult<Vec<String>>>()?;
-    Utf8Array::from_iter(arr.name(), strs.iter().map(Some)).with_validity(arr.validity().cloned())
+    Utf8Array::from_iter(arr.name(), strs.iter().map(Some)).with_nulls(arr.nulls().cloned())
 }
 
 fn tokenize_decode_series(

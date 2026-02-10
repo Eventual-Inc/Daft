@@ -1,24 +1,22 @@
 use std::sync::Arc;
 
-use common_error::DaftResult;
 use common_io_config::IOConfig;
 use common_scan_info::Pushdowns;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
+use futures::{StreamExt, stream};
+use opentelemetry::metrics::Meter;
 
 use super::{
     DistributedPipelineNode, NodeName, PipelineNodeConfig, PipelineNodeContext,
-    SubmittableTaskStream,
+    scan_source::SourceStats,
 };
 use crate::{
-    pipeline_node::{NodeID, PipelineNodeImpl},
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
-    scheduling::{
-        scheduler::SubmittableTask,
-        task::{SchedulingStrategy, SwordfishTask, TaskContext},
-    },
-    utils::channel::{Sender, create_channel},
+    pipeline_node::{NodeID, PipelineNodeImpl, TaskBuilderStream},
+    plan::{PlanConfig, PlanExecutionContext},
+    scheduling::task::SwordfishTaskBuilder,
+    statistics::stats::RuntimeStatsRef,
 };
 
 pub struct GlobScanSourceNode {
@@ -63,41 +61,6 @@ impl GlobScanSourceNode {
     pub fn into_node(self) -> DistributedPipelineNode {
         DistributedPipelineNode::new(Arc::new(self))
     }
-
-    async fn execution_loop(
-        self: Arc<Self>,
-        result_tx: Sender<SubmittableTask<SwordfishTask>>,
-        task_id_counter: TaskIDCounter,
-    ) -> DaftResult<()> {
-        let task =
-            self.make_glob_scan_task(TaskContext::from((&self.context, task_id_counter.next())))?;
-        let _ = result_tx.send(SubmittableTask::new(task)).await;
-        Ok(())
-    }
-
-    fn make_glob_scan_task(&self, task_context: TaskContext) -> DaftResult<SwordfishTask> {
-        let physical_glob_scan = LocalPhysicalPlan::glob_scan(
-            self.glob_paths.clone(),
-            self.pushdowns.clone(),
-            self.config.schema.clone(),
-            StatsState::NotMaterialized,
-            self.io_config.clone(),
-            LocalNodeContext {
-                origin_node_id: Some(self.node_id() as usize),
-                additional: None,
-            },
-        );
-
-        let task = SwordfishTask::new(
-            task_context,
-            physical_glob_scan,
-            self.config.execution_config.clone(),
-            Default::default(),
-            SchedulingStrategy::Spread,
-            self.context.to_hashmap(),
-        );
-        Ok(task)
-    }
 }
 
 impl PipelineNodeImpl for GlobScanSourceNode {
@@ -115,12 +78,22 @@ impl PipelineNodeImpl for GlobScanSourceNode {
 
     fn produce_tasks(
         self: Arc<Self>,
-        plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
-        let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.execution_loop(result_tx, plan_context.task_id_counter());
-        plan_context.spawn(execution_loop);
-        SubmittableTaskStream::from(result_rx)
+        _plan_context: &mut PlanExecutionContext,
+    ) -> TaskBuilderStream {
+        let glob_scan_plan = LocalPhysicalPlan::glob_scan(
+            self.glob_paths.clone(),
+            self.pushdowns.clone(),
+            self.config.schema.clone(),
+            StatsState::NotMaterialized,
+            self.io_config.clone(),
+            LocalNodeContext {
+                origin_node_id: Some(self.node_id() as usize),
+                additional: None,
+            },
+        );
+
+        let builder = SwordfishTaskBuilder::new(glob_scan_plan, self.as_ref());
+        TaskBuilderStream::new(stream::iter(std::iter::once(builder)).boxed())
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {
@@ -130,5 +103,9 @@ impl PipelineNodeImpl for GlobScanSourceNode {
         ];
         res.extend(self.pushdowns.multiline_display());
         res
+    }
+
+    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(SourceStats::new(meter, self.node_id()))
     }
 }

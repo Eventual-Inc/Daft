@@ -1,27 +1,57 @@
 use std::sync::Arc;
 
 use common_display::{DisplayAs, DisplayLevel};
-use common_error::DaftResult;
 #[cfg(feature = "python")]
 use common_file_formats::FileFormatConfig;
+use common_metrics::{CPU_US_KEY, Counter, ROWS_OUT_KEY, StatSnapshot};
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
+use futures::{StreamExt, stream};
+use opentelemetry::{KeyValue, metrics::Meter};
 
 use super::{
-    NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, SubmittableTaskStream,
-    make_empty_scan_task,
+    NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
 };
 use crate::{
     pipeline_node::{DistributedPipelineNode, NodeID},
-    plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
-    scheduling::{
-        scheduler::SubmittableTask,
-        task::{SchedulingStrategy, SwordfishTask, TaskContext},
-    },
-    utils::channel::{Sender, create_channel},
+    plan::{PlanConfig, PlanExecutionContext},
+    scheduling::task::SwordfishTaskBuilder,
+    statistics::{RuntimeStats, stats::RuntimeStatsRef},
 };
+
+pub struct SourceStats {
+    cpu_us: Counter,
+    rows_out: Counter,
+    bytes_read: Counter,
+    node_kv: Vec<KeyValue>,
+}
+
+impl SourceStats {
+    pub fn new(meter: &Meter, node_id: NodeID) -> Self {
+        let node_kv = vec![KeyValue::new("node_id", node_id.to_string())];
+        Self {
+            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
+            bytes_read: Counter::new(meter, "bytes read", None),
+            node_kv,
+        }
+    }
+}
+
+impl RuntimeStats for SourceStats {
+    fn handle_worker_node_stats(&self, snapshot: &StatSnapshot) {
+        let StatSnapshot::Source(snapshot) = snapshot else {
+            return;
+        };
+        self.cpu_us.add(snapshot.cpu_us, self.node_kv.as_slice());
+        self.rows_out
+            .add(snapshot.rows_out, self.node_kv.as_slice());
+        self.bytes_read
+            .add(snapshot.bytes_read, self.node_kv.as_slice());
+    }
+}
 
 pub(crate) struct ScanSourceNode {
     config: PipelineNodeConfig,
@@ -65,60 +95,20 @@ impl ScanSourceNode {
         DistributedPipelineNode::new(Arc::new(self))
     }
 
-    async fn execution_loop(
-        self: Arc<Self>,
-        result_tx: Sender<SubmittableTask<SwordfishTask>>,
-        task_id_counter: TaskIDCounter,
-    ) -> DaftResult<()> {
-        if self.scan_tasks.is_empty() {
-            let empty_scan_task = make_empty_scan_task(
-                TaskContext::from((&self.context, task_id_counter.next())),
-                self.config.schema.clone(),
-                &(self.clone() as Arc<dyn PipelineNodeImpl>),
-            );
-            let _ = result_tx.send(SubmittableTask::new(empty_scan_task)).await;
-            return Ok(());
-        }
-
-        for scan_task in self.scan_tasks.iter() {
-            let task = self.make_source_tasks(
-                vec![scan_task.clone()].into(),
-                TaskContext::from((&self.context, task_id_counter.next())),
-            )?;
-            if result_tx.send(SubmittableTask::new(task)).await.is_err() {
-                break;
-            }
-        }
-
-        Ok(())
-    }
-
-    fn make_source_tasks(
-        &self,
-        scan_tasks: Arc<Vec<ScanTaskLikeRef>>,
-        task_context: TaskContext,
-    ) -> DaftResult<SwordfishTask> {
-        let node_id = self.node_id();
+    fn make_source_task(self: &Arc<Self>, scan_task: ScanTaskLikeRef) -> SwordfishTaskBuilder {
+        let scan_tasks = Arc::new(vec![scan_task]);
         let physical_scan = LocalPhysicalPlan::physical_scan(
-            scan_tasks.clone(),
+            scan_tasks,
             self.pushdowns.clone(),
             self.config.schema.clone(),
             StatsState::NotMaterialized,
             LocalNodeContext {
-                origin_node_id: Some(node_id as usize),
+                origin_node_id: Some(self.node_id() as usize),
                 additional: None,
             },
         );
 
-        let task = SwordfishTask::new(
-            task_context,
-            physical_scan,
-            self.config.execution_config.clone(),
-            Default::default(),
-            SchedulingStrategy::Spread,
-            self.context.to_hashmap(),
-        );
-        Ok(task)
+        SwordfishTaskBuilder::new(physical_scan, self.as_ref())
     }
 }
 
@@ -205,14 +195,29 @@ impl PipelineNodeImpl for ScanSourceNode {
         s
     }
 
+    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(SourceStats::new(meter, self.node_id()))
+    }
+
     fn produce_tasks(
         self: Arc<Self>,
-        plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
-        let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.execution_loop(result_tx, plan_context.task_id_counter());
-        plan_context.spawn(execution_loop);
-
-        SubmittableTaskStream::from(result_rx)
+        _plan_context: &mut PlanExecutionContext,
+    ) -> TaskBuilderStream {
+        if self.scan_tasks.is_empty() {
+            let transformed_plan = LocalPhysicalPlan::empty_scan(
+                self.config.schema.clone(),
+                LocalNodeContext {
+                    origin_node_id: Some(self.node_id() as usize),
+                    additional: None,
+                },
+            );
+            let empty_scan_task = SwordfishTaskBuilder::new(transformed_plan, self.as_ref());
+            TaskBuilderStream::new(stream::iter(std::iter::once(empty_scan_task)).boxed())
+        } else {
+            let slf = self.clone();
+            let builders_iter = (0..self.scan_tasks.len())
+                .map(move |i| slf.make_source_task(slf.scan_tasks[i].clone()));
+            TaskBuilderStream::new(stream::iter(builders_iter).boxed())
+        }
     }
 }

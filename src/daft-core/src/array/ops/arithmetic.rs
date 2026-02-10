@@ -147,7 +147,7 @@ impl Add for &Utf8Array {
     type Output = DaftResult<Utf8Array>;
     fn add(self, rhs: Self) -> Self::Output {
         let result = Box::new(add_utf8_arrays(self.as_arrow2(), rhs.as_arrow2())?);
-        Ok(Utf8Array::from((self.name(), result)))
+        Ok(Utf8Array::new(Field::new(self.name(), DataType::Utf8).into(), result).unwrap())
     }
 }
 impl<T> Sub for &DataArray<T>
@@ -208,10 +208,11 @@ where
             arithmetic_helper(self, rhs, basic::rem, |l, r| l % r)
         } else {
             match (self.len(), rhs.len()) {
-                (a, b) if a == b => Ok(DataArray::from((
-                    self.name(),
+                (a, b) if a == b => Ok(DataArray::new(
+                    Field::new(self.name(), T::get_dtype()).into(),
                     Box::new(rem_with_nulls(self.as_arrow2(), rhs.as_arrow2())),
-                ))),
+                )
+                .unwrap()),
                 // broadcast right path
                 (_, 1) => {
                     let opt_rhs = rhs.get(0);
@@ -233,7 +234,11 @@ where
                             let arrow_array = unsafe {
                                 PrimitiveArray::from_trusted_len_iter_unchecked(values_iter)
                             };
-                            DataArray::from((self.name(), Box::new(arrow_array)))
+                            DataArray::new(
+                                Field::new(self.name(), T::get_dtype()).into(),
+                                Box::new(arrow_array),
+                            )
+                            .unwrap()
                         }
                     })
                 }
@@ -263,10 +268,11 @@ where
             arithmetic_helper(self, rhs, basic::div, |l, r| l / r)
         } else {
             match (self.len(), rhs.len()) {
-                (a, b) if a == b => Ok(DataArray::from((
-                    self.name(),
+                (a, b) if a == b => Ok(DataArray::new(
+                    Field::new(self.name(), T::get_dtype()).into(),
                     Box::new(div_with_nulls(self.as_arrow2(), rhs.as_arrow2())),
-                ))),
+                )
+                .unwrap()),
                 // broadcast right path
                 (_, 1) => {
                     let opt_rhs = rhs.get(0);
@@ -288,7 +294,11 @@ where
                             let arrow_array = unsafe {
                                 PrimitiveArray::from_trusted_len_iter_unchecked(values_iter)
                             };
-                            DataArray::from((self.name(), Box::new(arrow_array)))
+                            DataArray::new(
+                                Field::new(self.name(), T::get_dtype()).into(),
+                                Box::new(arrow_array),
+                            )
+                            .unwrap()
                         }
                     })
                 }
@@ -378,26 +388,26 @@ where
     let lhs_len = lhs.len();
     let rhs_len = rhs.len();
 
-    let (result_child, validity) = match (lhs_len, rhs_len) {
+    let (result_child, nulls) = match (lhs_len, rhs_len) {
         (a, b) if a == b => Ok((
             kernel(lhs_child, rhs_child)?,
-            daft_arrow::buffer::NullBuffer::union(lhs.validity(), rhs.validity()),
+            daft_arrow::buffer::NullBuffer::union(lhs.nulls(), rhs.nulls()),
         )),
         (l, 1) => {
-            let validity = if rhs.is_valid(0) {
-                lhs.validity().cloned()
+            let nulls = if rhs.is_valid(0) {
+                lhs.nulls().cloned()
             } else {
                 Some(daft_arrow::buffer::NullBuffer::new_null(l))
             };
-            Ok((kernel(lhs_child, &rhs_child.repeat(lhs_len)?)?, validity))
+            Ok((kernel(lhs_child, &rhs_child.repeat(lhs_len)?)?, nulls))
         }
         (1, r) => {
-            let validity = if lhs.is_valid(0) {
-                rhs.validity().cloned()
+            let nulls = if lhs.is_valid(0) {
+                rhs.nulls().cloned()
             } else {
                 Some(daft_arrow::buffer::NullBuffer::new_null(r))
             };
-            Ok((kernel(&lhs_child.repeat(lhs_len)?, rhs_child)?, validity))
+            Ok((kernel(&lhs_child.repeat(lhs_len)?, rhs_child)?, nulls))
         }
         (a, b) => Err(DaftError::ValueError(format!(
             "Cannot apply operation on arrays of different lengths: {a} vs {b}"
@@ -411,11 +421,7 @@ where
             lhs.fixed_element_len(),
         ),
     );
-    Ok(FixedSizeListArray::new(
-        result_field,
-        result_child,
-        validity,
-    ))
+    Ok(FixedSizeListArray::new(result_field, result_child, nulls))
 }
 
 impl Add for &FixedSizeListArray {

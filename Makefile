@@ -60,15 +60,14 @@ build-release: check-toolchain .venv  ## Compile and install a faster Daft binar
 
 .PHONY: build-whl
 build-whl: check-toolchain .venv  ## Compile Daft for development, only generate whl file without installation
-	cargo clean --target-dir target
-	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin build
+	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin build --release
 
 .PHONY: test
 test: .venv build  ## Run tests
 	# You can set additional run parameters through EXTRA_ARGS, such as running a specific test case file or method:
 	# make test EXTRA_ARGS="-v tests/dataframe/test_select.py" # Run a single test file
 	# make test EXTRA_ARGS="-v tests/dataframe/test_select.py::test_select_dataframe" # Run a single test method
-	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest --hypothesis-seed=$(HYPOTHESIS_SEED) --ignore tests/integration $(EXTRA_ARGS)
+	HYPOTHESIS_MAX_EXAMPLES=$(HYPOTHESIS_MAX_EXAMPLES) $(VENV_BIN)/pytest -n auto --hypothesis-seed=$(HYPOTHESIS_SEED) --ignore tests/integration $(EXTRA_ARGS)
 
 .PHONY: doctests
 doctests: .venv
@@ -110,16 +109,18 @@ format: check-toolchain .venv  ## Format Python and Rust code
 
 .PHONY: lint
 lint: check-toolchain .venv  ## Lint Python and Rust code
-	source $(VENV_BIN)/activate && pre-commit run ruff --all-files
+	source $(VENV_BIN)/activate && pre-commit run ruff-check --all-files
 	source $(VENV_BIN)/activate && pre-commit run clippy --all-files
 
 .PHONY: precommit
-precommit:  check-toolchain .venv  ## Run all pre-commit hooks
+precommit: check-toolchain .venv  ## Run all pre-commit hooks
 	source $(VENV_BIN)/activate && pre-commit run --all-files
 
 .PHONY: clean
 clean:
+ifneq ($(SKIP_VENV),true)
 	rm -rf $(VENV)
+endif
 	rm -rf ./target
 	rm -rf ./site
 	rm -f daft/daft.abi3.so

@@ -305,16 +305,16 @@ def _infer_filesystem(
         return resolved_path, resolved_filesystem, None
 
     ###
-    # Gravitino GVFS: Not supported for PyArrow filesystem operations
+    # Gravitino GVFS: Use custom filesystem for write operations
     ###
     elif protocol == "gvfs":
-        # gvfs:// URLs are handled by Daft's Rust layer for read operations only.
-        # Write operations to gvfs:// URLs are not supported.
-        raise NotImplementedError(
-            "gvfs:// URLs are not supported for PyArrow filesystem operations. "
-            "Use daft.read_parquet() for reading from gvfs:// URLs. "
-            "Write operations to gvfs:// URLs are not currently supported."
-        )
+        # gvfs:// URLs are handled by Daft's Rust layer for read operations.
+        # For write operations, we use a custom PyArrow filesystem that delegates to Daft's Rust layer.
+        from daft.io.gravitino_filesystem import GravitinoFileSystem
+
+        resolved_filesystem = GravitinoFileSystem(io_config=io_config)
+        resolved_path = path  # Keep the full gvfs:// path
+        return resolved_path, resolved_filesystem, None
 
     else:
         raise NotImplementedError(f"Cannot infer PyArrow filesystem for protocol {protocol}: please file an issue!")

@@ -29,6 +29,7 @@ pub trait SeriesListExtension: Sized {
     fn list_fill(&self, num: &Int64Array) -> DaftResult<Self>;
     fn list_distinct(&self) -> DaftResult<Self>;
     fn list_append(&self, other: &Self) -> DaftResult<Self>;
+    fn list_contains(&self, item: &Self) -> DaftResult<Self>;
 }
 
 impl SeriesListExtension for Series {
@@ -100,16 +101,8 @@ impl SeriesListExtension for Series {
                 let struct_array = self.as_physical()?;
                 let data_array = struct_array.struct_()?.children[0].list().unwrap();
                 let offsets = data_array.offsets();
-                let array = Box::new(
-                    #[allow(deprecated, reason = "arrow2 migration")]
-                    daft_arrow::array::PrimitiveArray::from_vec(
-                        offsets.lengths().map(|l| l as u64).collect(),
-                    )
-                    .with_validity(daft_arrow::buffer::wrap_null_buffer(
-                        data_array.validity().cloned(),
-                    )),
-                );
-                Ok(UInt64Array::from((self.name(), array)))
+                UInt64Array::from_values(self.name(), offsets.lengths().map(|l| l as u64))
+                    .with_nulls(data_array.nulls().cloned())
             }
             dt => Err(DaftError::TypeError(format!(
                 "Count not implemented for {}",
@@ -235,7 +228,7 @@ impl SeriesListExtension for Series {
                         .len() as u64;
                     Some(length)
                 });
-                Ok(UInt64Array::from_regular_iter(field, iter)?.into_series())
+                Ok(UInt64Array::from_iter(field, iter).into_series())
             }
             DataType::FixedSizeList(..) => {
                 let iter = self.fixed_size_list()?.into_iter().map(|sub_series| {
@@ -246,7 +239,7 @@ impl SeriesListExtension for Series {
                         .len() as u64;
                     Some(length)
                 });
-                Ok(UInt64Array::from_regular_iter(field, iter)?.into_series())
+                Ok(UInt64Array::from_iter(field, iter).into_series())
             }
             _ => Err(DaftError::TypeError(format!(
                 "List count distinct not implemented for {}",
@@ -319,7 +312,7 @@ impl SeriesListExtension for Series {
             Arc::new(Field::new(input.name(), input.data_type().clone())),
             growable.build()?,
             OffsetsBuffer::try_from(offsets)?,
-            input.validity().cloned(),
+            input.nulls().cloned(),
         );
 
         Ok(list_array.into_series())
@@ -368,5 +361,17 @@ impl SeriesListExtension for Series {
         );
 
         Ok(list_array.into_series())
+    }
+
+    fn list_contains(&self, item: &Self) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::List(_) => Ok(self.list()?.list_contains(item)?.into_series()),
+            DataType::FixedSizeList(..) => {
+                Ok(self.fixed_size_list()?.list_contains(item)?.into_series())
+            }
+            dt => Err(DaftError::TypeError(format!(
+                "List contains not implemented for {dt}"
+            ))),
+        }
     }
 }
