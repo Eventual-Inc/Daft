@@ -128,6 +128,10 @@ impl ActivePlansRegistry {
         }
     }
 
+    fn contains(&self, fingerprint: u64) -> bool {
+        self.plans.contains_key(&fingerprint)
+    }
+
     fn get_or_create_plan<F>(&mut self, fingerprint: u64, plan_factory: F) -> DaftResult<()>
     where
         F: FnOnce() -> DaftResult<(
@@ -306,8 +310,19 @@ impl NativeExecutor {
             .and_then(|c| c.get("query_id"))
             .map(|s| s.as_str())
             .unwrap_or("");
-        let fingerprint = plan_key(local_physical_plan.fingerprint(), query_id_str);
+        let plan_fingerprint = local_physical_plan.fingerprint();
+        let fingerprint = plan_key(plan_fingerprint, query_id_str);
         let enable_explain_analyze = should_enable_explain_analyze();
+
+        if !self.active_plans.contains(fingerprint) {
+            println!("[Daft] Plan fingerprint mismatch - creating new plan");
+            println!("  Query id: {}", query_id_str);
+            println!("  Plan: {}", local_physical_plan.single_line_display());
+            println!(
+                "  Plan fingerprint: {}, Plan key: {}",
+                plan_fingerprint, fingerprint
+            );
+        }
 
         // Get or create plan handle from registry
         self.active_plans.get_or_create_plan(fingerprint, || {
