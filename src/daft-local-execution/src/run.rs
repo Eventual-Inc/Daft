@@ -208,6 +208,20 @@ impl NativeExecutor {
         additional_context: Option<HashMap<String, String>>,
     ) -> DaftResult<ExecutionEngineResult> {
         let cancel = self.cancel.clone();
+
+        // === DIAGNOSTIC: Panic hook for issue #6007 ===
+        std::panic::set_hook(Box::new(|info| {
+            let backtrace = std::backtrace::Backtrace::force_capture();
+            let thread = std::thread::current();
+            let thread_name = thread.name().unwrap_or("<unnamed>");
+            eprintln!("\n=== PANIC DIAGNOSTIC (issue #6007) ===");
+            eprintln!("Thread: '{}' ({:?})", thread_name, thread.id());
+            eprintln!("Panic info: {}", info);
+            eprintln!("Backtrace:\n{}", backtrace);
+            eprintln!("======================================\n");
+        }));
+        // === END DIAGNOSTIC ===
+
         let additional_context = additional_context.unwrap_or_default();
         let ctx = RuntimeContext::new_with_context(additional_context.clone());
         let pipeline =

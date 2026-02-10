@@ -144,6 +144,7 @@ impl RuntimeStatsManager {
 
         let event_loop = async move {
             let mut interval = interval(throttle_interval);
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             let mut active_nodes = HashSet::with_capacity(node_map.len());
             // Reuse container for ticks
             let mut snapshot_container = Vec::with_capacity(node_map.len());
