@@ -18,8 +18,7 @@ macro_rules! impl_daft_list_agg {
 
         fn list(&self) -> Self::Output {
             let child_series = self.clone().into_series();
-            let offsets =
-                daft_arrow::offset::OffsetsBuffer::try_from(vec![0, child_series.len() as i64])?;
+            let offsets = arrow::buffer::OffsetBuffer::new_zeroed(child_series.len());
             let list_field = self.field().to_list_field();
             Ok(ListArray::new(list_field, child_series, offsets, None))
         }
@@ -52,7 +51,7 @@ macro_rules! impl_daft_list_agg {
             Ok(ListArray::new(
                 list_field,
                 growable.build()?,
-                daft_arrow::offset::OffsetsBuffer::try_from(offsets)?,
+                arrow::buffer::OffsetBuffer::new(offsets.into()),
                 None,
             ))
         }

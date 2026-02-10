@@ -1,4 +1,5 @@
 #![allow(deprecated, reason = "arrow2->arrow migration")]
+use arrow::buffer::OffsetBuffer;
 use common_error::DaftResult;
 use daft_arrow::{
     array::{Array, Utf8Array},
@@ -18,7 +19,7 @@ impl DaftConcatAggable for ListArray {
     type Output = DaftResult<Self>;
     fn concat(&self) -> Self::Output {
         if self.null_count() == 0 {
-            let new_offsets = OffsetsBuffer::<i64>::try_from(vec![0, *self.offsets().last()])?;
+            let new_offsets = OffsetBuffer::new_zeroed(*self.offsets().last().unwrap() as _);
             return Ok(Self::new(
                 self.field.clone(),
                 self.flat_child.clone(),
@@ -42,9 +43,11 @@ impl DaftConcatAggable for ListArray {
             .unwrap()
             .valid_slices()
             .map(|(start_valid, end_valid)| {
-                let child_start = self.offsets().start_end(start_valid).0;
-                let child_end = self.offsets().start_end(end_valid - 1).1;
-                self.flat_child.slice(child_start, child_end).unwrap()
+                let child_start = self.offsets()[start_valid];
+                let child_end = self.offsets()[end_valid - 1];
+                self.flat_child
+                    .slice(child_start as _, child_end as _)
+                    .unwrap()
             })
             .collect();
 
@@ -53,7 +56,7 @@ impl DaftConcatAggable for ListArray {
         } else {
             Series::concat(&child_slices.iter().collect::<Vec<_>>())?
         };
-        let new_offsets = OffsetsBuffer::<i64>::try_from(vec![0, new_child.len() as i64])?;
+        let new_offsets = OffsetBuffer::new_zeroed(new_child.len());
 
         Ok(Self::new(
             self.field.clone(),
@@ -76,7 +79,8 @@ impl DaftConcatAggable for ListArray {
             let mut group_len: usize = 0;
             for idx in group {
                 if all_valid || self.is_valid(idx.to_usize()) {
-                    let (start, end) = self.offsets().start_end(*idx as usize);
+                    let start = self.offsets()[*idx as usize] as usize;
+                    let end = self.offsets()[*idx as usize + 1] as usize;
                     let len = end - start;
                     if len > 0 {
                         all_slices.push(self.flat_child.slice(start, end)?);
@@ -95,8 +99,7 @@ impl DaftConcatAggable for ListArray {
             Series::concat(&all_slices.iter().collect::<Vec<_>>())?
         };
 
-        let new_offsets =
-            daft_arrow::offset::Offsets::try_from_lengths(group_lens.iter().copied())?;
+        let new_offsets = OffsetBuffer::from_lengths(group_lens.iter().copied());
         let new_validities = if all_valid {
             None
         } else {
@@ -106,7 +109,7 @@ impl DaftConcatAggable for ListArray {
         Ok(Self::new(
             self.field.clone(),
             new_child,
-            new_offsets.into(),
+            new_offsets,
             new_validities,
         ))
     }
@@ -180,6 +183,7 @@ impl DaftConcatAggable for DataArray<Utf8Type> {
 mod test {
     use std::iter::{self, repeat_n};
 
+    use arrow::buffer::OffsetBuffer;
     use common_error::DaftResult;
 
     use crate::{
@@ -202,7 +206,7 @@ mod test {
             )
             .unwrap()
             .into_series(),
-            daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 0, 0, 0])?,
+            OffsetBuffer::new_zeroed(4),
             Some(daft_arrow::buffer::NullBuffer::from_iter(repeat_n(
                 false, 3,
             ))),
@@ -233,7 +237,7 @@ mod test {
             )
             .unwrap()
             .into_series(),
-            daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 3, 5, 6, 6, 6, 7])?,
+            OffsetBuffer::new(vec![0, 1, 3, 5, 6, 6, 6, 7].into()),
             Some(daft_arrow::buffer::NullBuffer::from(vec![
                 true, true, true, true, true, false, false,
             ])),
@@ -280,7 +284,7 @@ mod test {
             )
             .unwrap()
             .into_series(),
-            daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 3, 5, 6, 8, 8, 8, 9])?,
+            OffsetBuffer::new(vec![0, 1, 3, 5, 6, 8, 8, 8, 9].into()),
             Some(daft_arrow::buffer::NullBuffer::from(vec![
                 true, true, true, true, true, false, false, false,
             ])),

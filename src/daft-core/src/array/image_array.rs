@@ -1,5 +1,6 @@
 use std::vec;
 
+use arrow::buffer::OffsetBuffer;
 use common_error::DaftResult;
 
 use crate::{
@@ -92,7 +93,7 @@ impl ImageArray {
         if data.is_empty() {
             return Ok(ImageArray::full_null(name, &data_type, offsets.len() - 1));
         }
-        let offsets = daft_arrow::offset::OffsetsBuffer::try_from(offsets)?;
+        let offsets = OffsetBuffer::new(offsets.into());
         let arrow_dtype: daft_arrow::datatypes::DataType = T::PRIMITIVE.into();
         if let DataType::Image(Some(mode)) = &data_type {
             assert!(

@@ -74,6 +74,8 @@ impl Growable for MapGrowable<'_> {
 
 #[cfg(test)]
 mod tests {
+    use arrow::buffer::OffsetBuffer;
+
     use super::*;
     use crate::{
         array::{ListArray, StructArray},
@@ -116,7 +118,7 @@ mod tests {
                 ]))),
             ),
             struct_array.into_series(),
-            daft_arrow::offset::OffsetsBuffer::try_from(vec![0i64, num_entries as i64]).unwrap(),
+            OffsetBuffer::new(vec![0i64, num_entries as i64].into()),
             None,
         );
 
@@ -181,7 +183,7 @@ mod tests {
                 ]))),
             ),
             outer_struct_array.into_series(),
-            daft_arrow::offset::OffsetsBuffer::try_from(vec![0i64, 1i64]).unwrap(),
+            OffsetBuffer::new(vec![0i64, 1i64].into()),
             None,
         );
 
