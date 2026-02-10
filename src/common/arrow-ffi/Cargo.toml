@@ -2,10 +2,7 @@
 arrow = {workspace = true, features = ["ffi"]}
 arrow-schema = {workspace = true}
 daft-arrow = {path = "../../daft-arrow"}
-pyo3 = {workspace = true, optional = true}
-
-[features]
-python = ["dep:pyo3"]
+pyo3 = {workspace = true}
 
 [lints]
 workspace = true
