@@ -1,6 +1,5 @@
 #![allow(deprecated, reason = "arrow2->arrow migration")]
 use std::{
-    iter::repeat_n,
     ops::{Div, Mul},
     sync::Arc,
 };
@@ -1299,10 +1298,7 @@ impl FixedShapeSparseTensorArray {
                     )));
                 }
                 let n_values = size * non_zero_values_array.len();
-                let offsets = OffsetBuffer::new(ScalarBuffer::from_iter(repeat_n(
-                    target_size as i64,
-                    self.len(),
-                )));
+                let offsets = OffsetBuffer::from_repeated_length(target_size, self.len());
 
                 let item = cast_sparse_to_dense_for_inner_dtype(
                     inner_dtype,
@@ -1497,7 +1493,7 @@ impl FixedSizeListArray {
             DataType::List(child_dtype) => {
                 let element_size = self.fixed_element_len();
                 let casted_child = self.flat_child.cast(child_dtype.as_ref())?;
-                let offsets = OffsetBuffer::new(vec![element_size as i64; self.len()].into());
+                let offsets = OffsetBuffer::from_repeated_length(element_size, self.len());
                 Ok(ListArray::new(
                     Field::new(self.name().to_string(), dtype.clone()),
                     casted_child,
