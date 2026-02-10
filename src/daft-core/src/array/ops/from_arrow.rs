@@ -515,11 +515,9 @@ impl FromArrow for LogicalArray<TimeType> {
     fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
         let field = field.into();
         let target_convert = field.to_physical();
-        let physical_arrow_array = Arc::new(
-            arrow_arr
-                .as_primitive::<arrow::datatypes::Time64NanosecondType>()
-                .reinterpret_cast::<arrow::datatypes::Int64Type>(),
-        );
+        let target_convert_arrow = target_convert.dtype.to_arrow()?;
+
+        let physical_arrow_array = arrow::compute::cast(arrow_arr.as_ref(), &target_convert_arrow)?;
 
         let physical =
             <<TimeType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::from_arrow(
