@@ -35,14 +35,17 @@ pub fn init_opentelemetry_providers() {
 
     let runtime = get_io_runtime(true);
     runtime.block_on_current_thread(async {
+        // Backed by inner Arc, cheap to clone
+        let resource = Resource::builder().with_service_name("daft").build();
+
         if let Some(endpoint) = config.metrics_endpoint() {
-            init_otlp_metrics_provider(&config, endpoint).await;
+            init_otlp_metrics_provider(&config, endpoint, resource.clone()).await;
         }
         if let Some(endpoint) = config.traces_endpoint() {
-            init_otlp_tracer_provider(endpoint).await;
+            init_otlp_tracer_provider(&config, endpoint, resource.clone()).await;
         }
         if let Some(endpoint) = config.logs_endpoint() {
-            init_otlp_logger_provider(endpoint).await;
+            init_otlp_logger_provider(&config, endpoint, resource).await;
         }
     });
 }
@@ -53,11 +56,15 @@ pub fn flush_opentelemetry_providers() {
     flush_oltp_logger_provider();
 }
 
-async fn init_otlp_logger_provider(otlp_endpoint: &str) {
+async fn init_otlp_logger_provider(config: &Config, otlp_endpoint: &str, resource: Resource) {
     let mut lg = GLOBAL_LOGGER_PROVIDER.lock().unwrap();
     assert!(lg.is_none(), "Expected logger provider to be None on init");
 
-    let resource = Resource::builder().with_service_name("daft").build();
+    if config.otlp_protocol != Protocol::Grpc {
+        log::warn!(
+            "`http/json` or `http/protobuf` protocol is currently not supported for the OTEL logs exporter. gRPC will be used instead."
+        );
+    }
 
     let log_exporter = opentelemetry_otlp::LogExporter::builder()
         .with_tonic()
@@ -83,11 +90,9 @@ pub fn flush_oltp_logger_provider() {
     }
 }
 
-async fn init_otlp_metrics_provider(config: &Config, endpoint: &str) {
+async fn init_otlp_metrics_provider(config: &Config, endpoint: &str, resource: Resource) {
     let mut mg = GLOBAL_METER_PROVIDER.lock().unwrap();
     assert!(mg.is_none(), "Expected meter provider to be None on init");
-
-    let resource = Resource::builder().with_service_name("daft").build();
 
     let metrics_exporter = match config.otlp_protocol {
         Protocol::Grpc => {
@@ -107,7 +112,7 @@ async fn init_otlp_metrics_provider(config: &Config, endpoint: &str) {
         }
         Protocol::HttpJson => {
             // TODO: Support by enabling the `http/json` feature of the opentelemetry-otlp crate
-            panic!("HTTP/JSON protocol is currently not supported for metrics exporter. Set `OTEL_EXPORTER_OTLP_PROTOCOL` to `grpc` or `http/protobuf` instead");
+            panic!("`http/json` protocol is currently not supported for metrics exporter. Set `OTEL_EXPORTER_OTLP_PROTOCOL` to `grpc` or `http/protobuf` instead");
         }
     }.expect("Failed to build OTLP metric exporter for tracing");
 
@@ -134,11 +139,15 @@ pub fn flush_oltp_metrics_provider() {
     }
 }
 
-async fn init_otlp_tracer_provider(otlp_endpoint: &str) {
+async fn init_otlp_tracer_provider(config: &Config, otlp_endpoint: &str, resource: Resource) {
     let mut mg = GLOBAL_TRACER_PROVIDER.lock().unwrap();
     assert!(mg.is_none(), "Expected tracer provider to be None on init");
 
-    let resource = Resource::builder().with_service_name("daft").build();
+    if config.otlp_protocol != Protocol::Grpc {
+        log::warn!(
+            "`http/json` or `http/protobuf` protocol is currently not supported for the OTEL traces exporter. gRPC will be used instead."
+        );
+    }
 
     let exporter = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
