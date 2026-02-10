@@ -611,7 +611,7 @@ impl RecordBatch {
     /// but aggregation functions expect the input to have as many elements as the RecordBatch.
     fn eval_agg_child(&self, expr: &ExprRef) -> DaftResult<Series> {
         let result = self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))?;
-        if result.len() < self.len() {
+        if result.len() != self.len() {
             result.broadcast(self.len())
         } else {
             Ok(result)
