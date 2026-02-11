@@ -276,7 +276,11 @@ impl ObjectSource for OpenDALSource {
 
         // Reconstruct the URL prefix for file paths
         let parsed = url::Url::parse(path).context(super::InvalidUrlSnafu { path })?;
-        let base_url = format!("{}://{}", parsed.scheme(), parsed.host_str().unwrap_or(""));
+        let base_url = if let Some(host) = parsed.host_str() {
+            format!("{}://{}", parsed.scheme(), host)
+        } else {
+            format!("{}://", parsed.scheme())
+        };
 
         let files = entries
             .into_iter()
