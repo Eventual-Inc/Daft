@@ -12,7 +12,7 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
-use crate::{ExecutionTaskSpawner, pipeline::NodeName, pipeline_message::InputId};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 struct WindowOrderByOnlyParams {
     window_exprs: Vec<BoundWindowExpr>,
@@ -74,7 +74,6 @@ impl BlockingSink for WindowOrderByOnlySink {
         input: Arc<MicroPartition>,
         mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
-        _input_id: InputId,
     ) -> BlockingSinkSinkResult<Self> {
         let sink_name = self.name().to_string();
         spawner

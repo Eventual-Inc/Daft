@@ -10,7 +10,7 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
-use crate::{ExecutionTaskSpawner, pipeline::NodeName, pipeline_message::InputId};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) struct RepartitionState {
     states: VecDeque<Vec<MicroPartition>>,
@@ -57,7 +57,6 @@ impl BlockingSink for RepartitionSink {
         input: Arc<MicroPartition>,
         mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
-        _input_id: InputId,
     ) -> BlockingSinkSinkResult<Self> {
         let repartition_spec = self.repartition_spec.clone();
         let num_partitions = self.num_partitions;

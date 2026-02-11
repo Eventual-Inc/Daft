@@ -8,7 +8,7 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
-use crate::{ExecutionTaskSpawner, pipeline::NodeName, pipeline_message::InputId};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) enum PivotState {
     Accumulating(Vec<Arc<MicroPartition>>),
@@ -79,7 +79,6 @@ impl BlockingSink for PivotSink {
         input: Arc<MicroPartition>,
         mut state: Self::State,
         _spawner: &ExecutionTaskSpawner,
-        _input_id: InputId,
     ) -> BlockingSinkSinkResult<Self> {
         state.push(input);
         Ok(state).into()

@@ -16,7 +16,7 @@ use super::{
     blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult},
     window_base::{WindowBaseState, WindowSinkParams},
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName, pipeline_message::InputId};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 struct WindowPartitionAndOrderByParams {
     window_exprs: Vec<BoundWindowExpr>,
@@ -83,7 +83,6 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
         input: Arc<MicroPartition>,
         mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
-        _input_id: InputId,
     ) -> BlockingSinkSinkResult<Self> {
         let params = self.window_partition_and_order_by_params.clone();
         let sink_name = params.name().to_string();

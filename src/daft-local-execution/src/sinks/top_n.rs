@@ -8,7 +8,7 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
-use crate::{ExecutionTaskSpawner, pipeline::NodeName, pipeline_message::InputId};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 /// Parameters for the TopN that both the state and sinker need
 struct TopNParams {
@@ -85,7 +85,6 @@ impl BlockingSink for TopNSink {
         input: Arc<MicroPartition>,
         mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
-        _input_id: InputId,
     ) -> BlockingSinkSinkResult<Self> {
         let params = self.params.clone();
 

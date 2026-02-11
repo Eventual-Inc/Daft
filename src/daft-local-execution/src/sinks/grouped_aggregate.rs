@@ -1,7 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashSet, sync::Arc};
 
 use common_daft_config::DaftExecutionConfig;
 use common_error::DaftResult;
@@ -16,7 +13,7 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
-use crate::{ExecutionTaskSpawner, pipeline::NodeName, pipeline_message::InputId};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 #[derive(Clone, Debug)]
 pub(crate) enum AggStrategy {
@@ -125,11 +122,12 @@ impl GroupedAggregateState {
         num_partitions: usize,
         partial_agg_threshold: usize,
         high_cardinality_threshold_ratio: f64,
+        initial_strategy: Option<AggStrategy>,
     ) -> Self {
         let inner_states = (0..num_partitions).map(|_| None).collect::<Vec<_>>();
         Self::Accumulating {
             inner_states,
-            strategy: None,
+            strategy: initial_strategy,
             partial_agg_threshold,
             high_cardinality_threshold_ratio,
         }
@@ -139,9 +137,6 @@ impl GroupedAggregateState {
         &mut self,
         input: Arc<MicroPartition>,
         params: &GroupedAggregateParams,
-        input_id: InputId,
-        predetermined_strategy: &Option<AggStrategy>,
-        per_input_strategy: &Arc<Mutex<HashMap<InputId, AggStrategy>>>,
     ) -> DaftResult<()> {
         let Self::Accumulating {
             inner_states,
@@ -157,16 +152,13 @@ impl GroupedAggregateState {
         if let Some(strategy) = strategy {
             strategy.execute_strategy(inner_states, input, params)?;
         } else {
-            // Otherwise, determine the strategy and execute
+            // Otherwise, determine the strategy from data and execute.
             let decided_strategy = Self::determine_agg_strategy(
                 &input,
                 params,
                 *high_cardinality_threshold_ratio,
                 *partial_agg_threshold,
                 strategy,
-                input_id,
-                predetermined_strategy,
-                per_input_strategy,
             )?;
             decided_strategy.execute_strategy(inner_states, input, params)?;
         }
@@ -179,26 +171,7 @@ impl GroupedAggregateState {
         high_cardinality_threshold_ratio: f64,
         partial_agg_threshold: usize,
         local_strategy_cache: &mut Option<AggStrategy>,
-        input_id: InputId,
-        predetermined_strategy: &Option<AggStrategy>,
-        per_input_strategy: &Arc<Mutex<HashMap<InputId, AggStrategy>>>,
     ) -> DaftResult<AggStrategy> {
-        // If the strategy is predetermined (e.g. MapGroups → PartitionOnly), use it.
-        if let Some(strat) = predetermined_strategy {
-            *local_strategy_cache = Some(strat.clone());
-            return Ok(strat.clone());
-        }
-
-        // Check if another worker for the same input_id has already determined a strategy.
-        {
-            let strategy_map = per_input_strategy.lock().unwrap();
-            if let Some(strat) = strategy_map.get(&input_id) {
-                *local_strategy_cache = Some(strat.clone());
-                return Ok(strat.clone());
-            }
-        }
-
-        // Else determine the strategy from the data.
         let groupby = input.eval_expression_list(params.group_by.as_slice())?;
 
         let groupkey_hashes = groupby
@@ -221,10 +194,6 @@ impl GroupedAggregateState {
         };
 
         *local_strategy_cache = Some(decided_strategy.clone());
-        per_input_strategy
-            .lock()
-            .unwrap()
-            .insert(input_id, decided_strategy.clone());
         Ok(decided_strategy)
     }
 
@@ -256,7 +225,6 @@ pub struct GroupedAggregateSink {
     partial_agg_threshold: usize,
     high_cardinality_threshold_ratio: f64,
     predetermined_strategy: Option<AggStrategy>,
-    per_input_strategy: Arc<Mutex<HashMap<InputId, AggStrategy>>>,
 }
 
 impl GroupedAggregateSink {
@@ -317,7 +285,6 @@ impl GroupedAggregateSink {
             partial_agg_threshold: cfg.partial_aggregation_threshold,
             high_cardinality_threshold_ratio: cfg.high_cardinality_aggregation_threshold,
             predetermined_strategy,
-            per_input_strategy: Arc::new(Mutex::new(HashMap::new())),
         })
     }
 
@@ -334,15 +301,12 @@ impl BlockingSink for GroupedAggregateSink {
         input: Arc<MicroPartition>,
         mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
-        input_id: InputId,
     ) -> BlockingSinkSinkResult<Self> {
         let params = self.grouped_aggregate_params.clone();
-        let predetermined = self.predetermined_strategy.clone();
-        let per_input = self.per_input_strategy.clone();
         spawner
             .spawn(
                 async move {
-                    state.push(input, &params, input_id, &predetermined, &per_input)?;
+                    state.push(input, &params)?;
                     Ok(state)
                 },
                 Span::current(),
@@ -466,6 +430,7 @@ impl BlockingSink for GroupedAggregateSink {
             self.num_partitions(),
             self.partial_agg_threshold,
             self.high_cardinality_threshold_ratio,
+            self.predetermined_strategy.clone(),
         ))
     }
 }
