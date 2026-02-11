@@ -67,17 +67,16 @@ impl InMemorySource {
                         break;
                     }
                 } else {
-                    for partition in partitions {
-                        if output_sender
-                            .send(PipelineMessage::Morsel {
-                                input_id,
-                                partition,
-                            })
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
+                    let concated = MicroPartition::concat(partitions)?;
+                    if output_sender
+                        .send(PipelineMessage::Morsel {
+                            input_id,
+                            partition: concated.into(),
+                        })
+                        .await
+                        .is_err()
+                    {
+                        break;
                     }
                 }
                 println!(
