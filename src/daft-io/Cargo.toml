@@ -29,7 +29,8 @@ opendal = {workspace = true, features = [
   "services-cos",
   "services-obs",
   "services-memory",
-  "services-fs"
+  "services-fs",
+  "services-github"
 ]}
 pyo3 = {workspace = true, optional = true}
 rand = "0.8.5"
