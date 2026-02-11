@@ -1402,4 +1402,354 @@ mod tests {
         assert_ne!(result_xxh3.values(), result_xxh64.values());
         assert_ne!(result_xxh3.values(), result_murmur.values());
     }
+
+    // --- hash_primitive: all hash functions × no-nulls × seeded/unseeded ---
+
+    #[test]
+    fn test_hash_primitive_no_nulls_all_functions() {
+        let array = PrimitiveArray::<Int64Type>::from(vec![10, 20, 30]);
+        for hf in [
+            HashFunctionKind::XxHash3_64,
+            HashFunctionKind::XxHash64,
+            HashFunctionKind::XxHash32,
+            HashFunctionKind::MurmurHash3,
+            HashFunctionKind::Sha1,
+        ] {
+            let result = hash_primitive(&array, None, hf);
+            assert_eq!(result.len(), 3);
+            assert_eq!(result.null_count(), 0);
+            // Different values produce different hashes
+            assert_ne!(result.value(0), result.value(1));
+            // Deterministic
+            let result2 = hash_primitive(&array, None, hf);
+            assert_eq!(result.values(), result2.values());
+        }
+    }
+
+    #[test]
+    fn test_hash_primitive_no_nulls_seeded_all_functions() {
+        let array = PrimitiveArray::<Int32Type>::from(vec![1, 2, 3]);
+        let seed = PrimitiveArray::<UInt64Type>::from(vec![100, 200, 300]);
+        for hf in [
+            HashFunctionKind::XxHash3_64,
+            HashFunctionKind::XxHash64,
+            HashFunctionKind::XxHash32,
+            HashFunctionKind::MurmurHash3,
+            HashFunctionKind::Sha1,
+        ] {
+            let result = hash_primitive(&array, Some(&seed), hf);
+            assert_eq!(result.len(), 3);
+            assert_eq!(result.null_count(), 0);
+            let result_no_seed = hash_primitive(&array, None, hf);
+            assert_ne!(result.values(), result_no_seed.values());
+        }
+    }
+
+    // --- hash_primitive: with nulls × seeded/unseeded ---
+
+    #[test]
+    fn test_hash_primitive_with_nulls_all_functions() {
+        let array = PrimitiveArray::<Int32Type>::from(vec![Some(1), None, Some(3), None, Some(5)]);
+        for hf in [
+            HashFunctionKind::XxHash3_64,
+            HashFunctionKind::XxHash64,
+            HashFunctionKind::XxHash32,
+            HashFunctionKind::MurmurHash3,
+            HashFunctionKind::Sha1,
+        ] {
+            let result = hash_primitive(&array, None, hf);
+            assert_eq!(result.len(), 5);
+            assert_eq!(result.null_count(), 0);
+            // Null positions produce consistent hashes
+            assert_eq!(result.value(1), result.value(3));
+            // Non-null values differ from each other
+            assert_ne!(result.value(0), result.value(2));
+        }
+    }
+
+    #[test]
+    fn test_hash_primitive_with_nulls_seeded() {
+        let array = PrimitiveArray::<Int32Type>::from(vec![Some(10), None, Some(30)]);
+        let seed = PrimitiveArray::<UInt64Type>::from(vec![7, 7, 7]);
+        for hf in [
+            HashFunctionKind::XxHash3_64,
+            HashFunctionKind::MurmurHash3,
+            HashFunctionKind::Sha1,
+        ] {
+            let result = hash_primitive(&array, Some(&seed), hf);
+            assert_eq!(result.len(), 3);
+            assert_eq!(result.null_count(), 0);
+        }
+    }
+
+    // --- hash_primitive: multiple primitive types ---
+
+    #[test]
+    fn test_hash_primitive_various_types() {
+        // u64
+        let arr = PrimitiveArray::<UInt64Type>::from(vec![1u64, 2, 3]);
+        let r = hash_primitive(&arr, None, HashFunctionKind::XxHash3_64);
+        assert_eq!(r.len(), 3);
+        assert_ne!(r.value(0), r.value(1));
+
+        // f64
+        let arr = PrimitiveArray::<Float64Type>::from(vec![1.0, 2.0, 3.0]);
+        let r = hash_primitive(&arr, None, HashFunctionKind::XxHash3_64);
+        assert_eq!(r.len(), 3);
+        assert_ne!(r.value(0), r.value(1));
+
+        // i8
+        let arr = PrimitiveArray::<Int8Type>::from(vec![1i8, 2, 3]);
+        let r = hash_primitive(&arr, None, HashFunctionKind::MurmurHash3);
+        assert_eq!(r.len(), 3);
+        assert_ne!(r.value(0), r.value(1));
+    }
+
+    // --- hash_boolean: all paths ---
+
+    #[test]
+    fn test_hash_boolean_no_nulls_all_functions() {
+        let array = BooleanArray::from(vec![true, false, true, false]);
+        for hf in [
+            HashFunctionKind::XxHash3_64,
+            HashFunctionKind::XxHash64,
+            HashFunctionKind::XxHash32,
+            HashFunctionKind::MurmurHash3,
+            HashFunctionKind::Sha1,
+        ] {
+            let result = hash_boolean(&array, None, hf);
+            assert_eq!(result.len(), 4);
+            assert_eq!(result.null_count(), 0);
+            assert_ne!(result.value(0), result.value(1));
+            // Same values produce same hashes
+            assert_eq!(result.value(0), result.value(2));
+            assert_eq!(result.value(1), result.value(3));
+        }
+    }
+
+    #[test]
+    fn test_hash_boolean_with_nulls_seeded() {
+        let array = BooleanArray::from(vec![Some(true), None, Some(false)]);
+        let seed = PrimitiveArray::<UInt64Type>::from(vec![99, 99, 99]);
+        for hf in [
+            HashFunctionKind::XxHash3_64,
+            HashFunctionKind::MurmurHash3,
+            HashFunctionKind::Sha1,
+        ] {
+            let result = hash_boolean(&array, Some(&seed), hf);
+            assert_eq!(result.len(), 3);
+            assert_eq!(result.null_count(), 0);
+        }
+    }
+
+    // --- hash_null: seeded ---
+
+    #[test]
+    fn test_hash_null_seeded() {
+        let array = NullArray::new(3);
+        let seed = PrimitiveArray::<UInt64Type>::from(vec![10, 20, 30]);
+        for hf in [
+            HashFunctionKind::XxHash3_64,
+            HashFunctionKind::MurmurHash3,
+            HashFunctionKind::Sha1,
+        ] {
+            let result = hash_null(&array, Some(&seed), hf);
+            assert_eq!(result.len(), 3);
+        }
+    }
+
+    // --- hash_large_string: all paths ---
+
+    #[test]
+    fn test_hash_string_no_nulls_all_functions() {
+        let array = LargeStringArray::from(vec!["hello", "world", "foo"]);
+        for hf in [
+            HashFunctionKind::XxHash3_64,
+            HashFunctionKind::XxHash64,
+            HashFunctionKind::MurmurHash3,
+            HashFunctionKind::Sha1,
+        ] {
+            let result = hash_large_string(&array, None, hf);
+            assert_eq!(result.len(), 3);
+            assert_ne!(result.value(0), result.value(1));
+        }
+    }
+
+    #[test]
+    fn test_hash_string_with_nulls_seeded() {
+        let array = LargeStringArray::from(vec![Some("a"), None, Some("b")]);
+        let seed = PrimitiveArray::<UInt64Type>::from(vec![1, 2, 3]);
+        for hf in [
+            HashFunctionKind::XxHash3_64,
+            HashFunctionKind::MurmurHash3,
+            HashFunctionKind::Sha1,
+        ] {
+            let result = hash_large_string(&array, Some(&seed), hf);
+            assert_eq!(result.len(), 3);
+        }
+    }
+
+    // --- hash_large_binary: all paths ---
+
+    #[test]
+    fn test_hash_binary_no_nulls_seeded() {
+        let array =
+            LargeBinaryArray::from_iter_values(vec![b"aaa".as_ref(), b"bbb".as_ref(), b"ccc"]);
+        let seed = PrimitiveArray::<UInt64Type>::from(vec![5, 5, 5]);
+        for hf in [
+            HashFunctionKind::XxHash3_64,
+            HashFunctionKind::MurmurHash3,
+            HashFunctionKind::Sha1,
+        ] {
+            let result = hash_large_binary(&array, Some(&seed), hf);
+            assert_eq!(result.len(), 3);
+            assert_ne!(result.value(0), result.value(1));
+        }
+    }
+
+    // --- hash_timestamp_with_timezone: all paths ---
+
+    #[test]
+    fn test_hash_timestamp_tz_no_nulls_all_functions() {
+        let array = PrimitiveArray::<Int64Type>::from(vec![1000, 2000, 3000]);
+        for hf in [
+            HashFunctionKind::XxHash3_64,
+            HashFunctionKind::XxHash64,
+            HashFunctionKind::MurmurHash3,
+            HashFunctionKind::Sha1,
+        ] {
+            let result = hash_timestamp_with_timezone(&array, "UTC", None, hf);
+            assert_eq!(result.len(), 3);
+            assert_ne!(result.value(0), result.value(1));
+        }
+    }
+
+    #[test]
+    fn test_hash_timestamp_tz_with_nulls_seeded() {
+        let array = PrimitiveArray::<Int64Type>::from(vec![Some(100), None, Some(300)]);
+        let seed = PrimitiveArray::<UInt64Type>::from(vec![42, 42, 42]);
+        for hf in [
+            HashFunctionKind::XxHash3_64,
+            HashFunctionKind::MurmurHash3,
+            HashFunctionKind::Sha1,
+        ] {
+            let result = hash_timestamp_with_timezone(&array, "US/Eastern", Some(&seed), hf);
+            assert_eq!(result.len(), 3);
+        }
+    }
+
+    #[test]
+    fn test_hash_timestamp_different_tz_different_hash() {
+        let array = PrimitiveArray::<Int64Type>::from(vec![1000000]);
+        let r1 = hash_timestamp_with_timezone(&array, "UTC", None, HashFunctionKind::XxHash3_64);
+        let r2 =
+            hash_timestamp_with_timezone(&array, "US/Pacific", None, HashFunctionKind::XxHash3_64);
+        assert_ne!(r1.value(0), r2.value(0));
+    }
+
+    // --- hash_decimal: all paths ---
+
+    #[test]
+    fn test_hash_decimal_no_nulls_all_functions() {
+        let array = PrimitiveArray::<Decimal128Type>::from(vec![12300i128, 45600, 78900]);
+        for hf in [
+            HashFunctionKind::XxHash3_64,
+            HashFunctionKind::XxHash64,
+            HashFunctionKind::MurmurHash3,
+            HashFunctionKind::Sha1,
+        ] {
+            let result = hash_decimal(&array, None, hf, 2);
+            assert_eq!(result.len(), 3);
+            assert_ne!(result.value(0), result.value(1));
+        }
+    }
+
+    #[test]
+    fn test_hash_decimal_with_nulls_seeded() {
+        let array = PrimitiveArray::<Decimal128Type>::from(vec![Some(100i128), None, Some(300)]);
+        let seed = PrimitiveArray::<UInt64Type>::from(vec![1, 2, 3]);
+        for hf in [
+            HashFunctionKind::XxHash3_64,
+            HashFunctionKind::MurmurHash3,
+            HashFunctionKind::Sha1,
+        ] {
+            let result = hash_decimal(&array, Some(&seed), hf, 2);
+            assert_eq!(result.len(), 3);
+        }
+    }
+
+    // --- hash() entry point: various types ---
+
+    #[test]
+    fn test_hash_entry_point_all_types() {
+        // i32
+        let arr = PrimitiveArray::<Int32Type>::from(vec![1, 2, 3]);
+        let r = hash(&arr, None, HashFunctionKind::XxHash3_64).unwrap();
+        assert_eq!(r.len(), 3);
+
+        // u64
+        let arr = PrimitiveArray::<UInt64Type>::from(vec![10u64, 20, 30]);
+        let r = hash(&arr, None, HashFunctionKind::MurmurHash3).unwrap();
+        assert_eq!(r.len(), 3);
+
+        // f64
+        let arr = PrimitiveArray::<Float64Type>::from(vec![1.5, 2.5]);
+        let r = hash(&arr, None, HashFunctionKind::Sha1).unwrap();
+        assert_eq!(r.len(), 2);
+
+        // boolean
+        let arr = BooleanArray::from(vec![true, false]);
+        let r = hash(&arr, None, HashFunctionKind::XxHash64).unwrap();
+        assert_eq!(r.len(), 2);
+
+        // null
+        let arr = NullArray::new(4);
+        let r = hash(&arr, None, HashFunctionKind::XxHash32).unwrap();
+        assert_eq!(r.len(), 4);
+
+        // string
+        let arr = LargeStringArray::from(vec!["x", "y"]);
+        let r = hash(&arr, None, HashFunctionKind::XxHash3_64).unwrap();
+        assert_eq!(r.len(), 2);
+
+        // binary
+        let arr = LargeBinaryArray::from_opt_vec(vec![Some(b"a"), Some(b"b")]);
+        let r = hash(&arr, None, HashFunctionKind::XxHash3_64).unwrap();
+        assert_eq!(r.len(), 2);
+    }
+
+    #[test]
+    fn test_hash_entry_point_seeded() {
+        let arr = PrimitiveArray::<Int32Type>::from(vec![1, 2, 3]);
+        let seed = PrimitiveArray::<UInt64Type>::from(vec![42, 42, 42]);
+        let r = hash(&arr, Some(&seed), HashFunctionKind::XxHash3_64).unwrap();
+        assert_eq!(r.len(), 3);
+        let r2 = hash(&arr, None, HashFunctionKind::XxHash3_64).unwrap();
+        assert_ne!(r.values(), r2.values());
+    }
+
+    #[test]
+    fn test_hash_entry_point_seed_length_mismatch() {
+        let arr = PrimitiveArray::<Int32Type>::from(vec![1, 2, 3]);
+        let seed = PrimitiveArray::<UInt64Type>::from(vec![42, 42]);
+        let result = hash(&arr, Some(&seed), HashFunctionKind::XxHash3_64);
+        assert!(result.is_err());
+    }
+
+    // --- empty arrays ---
+
+    #[test]
+    fn test_hash_empty_arrays() {
+        let arr: PrimitiveArray<Int32Type> = PrimitiveArray::from(Vec::<i32>::new());
+        let r = hash_primitive(&arr, None, HashFunctionKind::XxHash3_64);
+        assert_eq!(r.len(), 0);
+
+        let arr = BooleanArray::from(Vec::<bool>::new());
+        let r = hash_boolean(&arr, None, HashFunctionKind::MurmurHash3);
+        assert_eq!(r.len(), 0);
+
+        let arr = NullArray::new(0);
+        let r = hash_null(&arr, None, HashFunctionKind::Sha1);
+        assert_eq!(r.len(), 0);
+    }
 }
