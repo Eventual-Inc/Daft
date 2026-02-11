@@ -83,6 +83,7 @@ struct BlockingSinkProcessor<Op: BlockingSink> {
     node_initialized: bool,
     op_name: Arc<str>,
     input_start_times: HashMap<InputId, Instant>,
+    finalize_in_flight: usize,
 }
 
 impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
@@ -108,40 +109,40 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
 
     fn try_progress_all_inputs(&mut self) -> DaftResult<()> {
         let input_ids = self.input_state_tracker.input_ids();
-        for input_id in input_ids {
-            // Try to spawn tasks for the input
-            while self.task_set.len() < self.max_concurrency
-                && let Some(next) = self
-                    .input_state_tracker
-                    .get_next_morsel_for_execute(input_id)
-            {
-                let (partition, state) = next?;
-                self.spawn_sink_task(partition, state, input_id);
-            }
-            // Try to finalize the input
+
+        // Pass 1: Try to spawn finalize tasks first — they get priority.
+        for input_id in &input_ids {
             if self.task_set.len() < self.max_concurrency
                 && let Some(states) = self
                     .input_state_tracker
-                    .try_take_states_for_finalize(input_id)
+                    .try_take_states_for_finalize(*input_id)
             {
+                self.finalize_in_flight += 1;
                 let op = self.op.clone();
                 let finalize_spawner = self.finalize_spawner.clone();
+                let iid = *input_id;
                 self.task_set.spawn(async move {
                     let output = op.finalize(states, &finalize_spawner).await??;
-                    Ok(BlockingSinkTaskResult::Finalize { input_id, output })
+                    Ok(BlockingSinkTaskResult::Finalize { input_id: iid, output })
                 });
             }
         }
-        if self.task_set.len() < self.max_concurrency && !self.input_state_tracker.is_empty() {
-            println!(
-                "[Daft] [{:.3}] {} UNDERUTILIZED: tasks={}/{} buffered_input_ids={:?}",
-                crate::epoch_secs(),
-                self.op_name,
-                self.task_set.len(),
-                self.max_concurrency,
-                self.input_state_tracker.input_ids(),
-            );
+
+        // Pass 2: Only spawn sink tasks if no finalize is running.
+        // This gives finalize sub-tasks the full compute pool.
+        if self.finalize_in_flight == 0 {
+            for input_id in &input_ids {
+                while self.task_set.len() < self.max_concurrency
+                    && let Some(next) = self
+                        .input_state_tracker
+                        .get_next_morsel_for_execute(*input_id)
+                {
+                    let (partition, state) = next?;
+                    self.spawn_sink_task(partition, state, *input_id);
+                }
+            }
         }
+
         Ok(())
     }
 
@@ -162,6 +163,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
         input_id: InputId,
         output: Vec<Arc<MicroPartition>>,
     ) -> DaftResult<ControlFlow> {
+        self.finalize_in_flight -= 1;
         for (i, partition) in output.iter().enumerate() {
             self.runtime_stats.add_rows_out(partition.len() as u64);
             let send_start = Instant::now();
@@ -537,6 +539,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
                     node_initialized: false,
                     op_name,
                     input_start_times: HashMap::new(),
+                    finalize_in_flight: 0,
                 };
 
                 processor
