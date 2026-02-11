@@ -447,8 +447,4 @@ impl BlockingSink for GroupedAggregateSink {
             self.high_cardinality_threshold_ratio,
         ))
     }
-
-    fn finalize_is_exclusive(&self) -> bool {
-        true
-    }
 }

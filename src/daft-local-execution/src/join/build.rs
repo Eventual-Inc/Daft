@@ -157,21 +157,27 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
 
     fn try_progress_all_inputs(&mut self) -> DaftResult<()> {
         let input_ids = self.input_state_tracker.input_ids();
-        for input_id in input_ids {
-            while self.task_set.len() < self.max_concurrency
-                && let Some(next) = self
-                    .input_state_tracker
-                    .get_next_morsel_for_execute(input_id)
-            {
-                let (partition, state) = next?;
-                self.spawn_build_task(partition, state, input_id);
-            }
+
+        // Pass 1: Finalize tasks get priority.
+        for input_id in &input_ids {
             if self.task_set.len() < self.max_concurrency
                 && let Some(states) = self
                     .input_state_tracker
-                    .try_take_states_for_finalize(input_id)
+                    .try_take_states_for_finalize(*input_id)
             {
-                self.spawn_finalize_task(states, input_id);
+                self.spawn_finalize_task(states, *input_id);
+            }
+        }
+
+        // Pass 2: Fill remaining slots with build tasks.
+        for input_id in &input_ids {
+            while self.task_set.len() < self.max_concurrency
+                && let Some(next) = self
+                    .input_state_tracker
+                    .get_next_morsel_for_execute(*input_id)
+            {
+                let (partition, state) = next?;
+                self.spawn_build_task(partition, state, *input_id);
             }
         }
         Ok(())
