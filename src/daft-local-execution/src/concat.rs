@@ -7,7 +7,6 @@ use common_metrics::{
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::StatSnapshotImpl,
 };
-use daft_core::prelude::SchemaRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
@@ -34,17 +33,11 @@ impl ConcatNode {
         right: Box<dyn PipelineNode>,
         plan_stats: StatsState,
         ctx: &RuntimeContext,
-        output_schema: SchemaRef,
         context: &LocalNodeContext,
     ) -> Self {
         let name: Arc<str> = "Concat".into();
-        let node_info = ctx.next_node_info(
-            name,
-            NodeType::Concat,
-            NodeCategory::Intermediate,
-            output_schema,
-            context,
-        );
+        let node_info =
+            ctx.next_node_info(name, NodeType::Concat, NodeCategory::Intermediate, context);
         let runtime_stats = Arc::new(DefaultRuntimeStats::new(node_info.id));
         let morsel_size_requirement = MorselSizeRequirement::default();
 
