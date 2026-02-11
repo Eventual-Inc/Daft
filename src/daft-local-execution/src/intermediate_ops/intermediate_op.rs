@@ -192,7 +192,8 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
     }
 
     fn try_spawn_tasks(&mut self) -> DaftResult<()> {
-        let input_ids: Vec<InputId> = self.input_states.keys().copied().collect();
+        let mut input_ids: Vec<InputId> = self.input_states.keys().copied().collect();
+        input_ids.sort_unstable();
         for input_id in input_ids {
             if self.task_set.len() >= self.op.max_concurrency() || self.available_states.is_empty()
             {
@@ -281,7 +282,6 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
             IntermediateOperatorResult::NeedMoreInput(_) => {
                 self.input_states.get_mut(&input_id).unwrap().in_flight -= 1;
                 self.available_states.push(state);
-                self.try_spawn_tasks_for_input(input_id)?;
                 self.try_spawn_tasks()?;
                 self.try_flush_input(input_id).await
             }
@@ -319,7 +319,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
                 pending_flush: false,
             });
         input.buffer.push(partition);
-        self.try_spawn_tasks_for_input(input_id)
+        self.try_spawn_tasks()
     }
 
     async fn handle_flush(&mut self, input_id: InputId) -> DaftResult<ControlFlow> {
@@ -328,7 +328,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
             return Ok(self.send(PipelineMessage::Flush(input_id)).await);
         };
         input.pending_flush = true;
-        self.try_spawn_tasks_for_input(input_id)?;
+        self.try_spawn_tasks()?;
         self.try_flush_input(input_id).await
     }
 
@@ -336,9 +336,10 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
         for input_state in self.input_states.values_mut() {
             input_state.pending_flush = true;
         }
-        let input_ids: Vec<InputId> = self.input_states.keys().copied().collect();
+        self.try_spawn_tasks()?;
+        let mut input_ids: Vec<InputId> = self.input_states.keys().copied().collect();
+        input_ids.sort_unstable();
         for input_id in input_ids {
-            self.try_spawn_tasks_for_input(input_id)?;
             if self.try_flush_input(input_id).await? == ControlFlow::Stop {
                 return Ok(ControlFlow::Stop);
             }

@@ -171,8 +171,10 @@ impl<S> InputStatesTracker<S> {
         self.trackers.contains_key(&input_id)
     }
 
-    /// Get all input_ids that have trackers
+    /// Get all input_ids that have trackers, sorted smallest first.
     pub(crate) fn input_ids(&self) -> Vec<InputId> {
-        self.trackers.keys().copied().collect()
+        let mut ids: Vec<InputId> = self.trackers.keys().copied().collect();
+        ids.sort_unstable();
+        ids
     }
 }

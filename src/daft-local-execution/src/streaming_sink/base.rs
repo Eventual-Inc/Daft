@@ -164,30 +164,25 @@ impl<Op: StreamingSink + 'static> StreamingSinkProcessor<Op> {
         });
     }
 
-    fn try_progress_input(&mut self, input_id: InputId) -> DaftResult<()> {
-        while self.task_set.len() < self.max_concurrency
-            && let Some(next) = self
-                .input_state_tracker
-                .get_next_morsel_for_execute(input_id)
-        {
-            let (partition, state) = next?;
-            self.spawn_execute_task(partition, state, input_id);
-        }
-
-        if self.task_set.len() < self.max_concurrency
-            && let Some(states) = self
-                .input_state_tracker
-                .try_take_states_for_finalize(input_id)
-        {
-            self.spawn_finalize_task(states, input_id);
-        }
-        Ok(())
-    }
-
     fn try_progress_all_inputs(&mut self) -> DaftResult<()> {
         let input_ids = self.input_state_tracker.input_ids();
         for input_id in input_ids {
-            self.try_progress_input(input_id)?;
+            while self.task_set.len() < self.max_concurrency
+                && let Some(next) = self
+                    .input_state_tracker
+                    .get_next_morsel_for_execute(input_id)
+            {
+                let (partition, state) = next?;
+                self.spawn_execute_task(partition, state, input_id);
+            }
+
+            if self.task_set.len() < self.max_concurrency
+                && let Some(states) = self
+                    .input_state_tracker
+                    .try_take_states_for_finalize(input_id)
+            {
+                self.spawn_finalize_task(states, input_id);
+            }
         }
         Ok(())
     }
@@ -229,7 +224,6 @@ impl<Op: StreamingSink + 'static> StreamingSinkProcessor<Op> {
         match result {
             StreamingSinkOutput::NeedMoreInput(_) => {
                 self.input_state_tracker.return_state(input_id, state);
-                self.try_progress_input(input_id)?;
                 self.try_progress_all_inputs()?;
                 Ok(ControlFlow::Continue)
             }
@@ -340,7 +334,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkProcessor<Op> {
         self.runtime_stats.add_rows_in(partition.len() as u64);
         self.input_state_tracker
             .buffer_partition(input_id, partition)?;
-        self.try_progress_input(input_id)?;
+        self.try_progress_all_inputs()?;
         Ok(())
     }
 
@@ -357,7 +351,7 @@ impl<Op: StreamingSink + 'static> StreamingSinkProcessor<Op> {
             return Ok(ControlFlow::Continue);
         }
         self.input_state_tracker.mark_completed(input_id);
-        self.try_progress_input(input_id)?;
+        self.try_progress_all_inputs()?;
         Ok(ControlFlow::Continue)
     }
 

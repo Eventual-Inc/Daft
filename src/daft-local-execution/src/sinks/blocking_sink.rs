@@ -104,36 +104,31 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
         });
     }
 
-    fn try_progress_input(&mut self, input_id: InputId) -> DaftResult<()> {
-        // Try to spawn tasks for the input
-        while self.task_set.len() < self.max_concurrency
-            && let Some(next) = self
-                .input_state_tracker
-                .get_next_morsel_for_execute(input_id)
-        {
-            let (partition, state) = next?;
-            self.spawn_sink_task(partition, state, input_id);
-        }
-        // Try to finalize the input
-        if self.task_set.len() < self.max_concurrency
-            && let Some(states) = self
-                .input_state_tracker
-                .try_take_states_for_finalize(input_id)
-        {
-            let op = self.op.clone();
-            let finalize_spawner = self.finalize_spawner.clone();
-            self.task_set.spawn(async move {
-                let output = op.finalize(states, &finalize_spawner).await??;
-                Ok(BlockingSinkTaskResult::Finalize { input_id, output })
-            });
-        }
-        Ok(())
-    }
-
     fn try_progress_all_inputs(&mut self) -> DaftResult<()> {
         let input_ids = self.input_state_tracker.input_ids();
         for input_id in input_ids {
-            self.try_progress_input(input_id)?;
+            // Try to spawn tasks for the input
+            while self.task_set.len() < self.max_concurrency
+                && let Some(next) = self
+                    .input_state_tracker
+                    .get_next_morsel_for_execute(input_id)
+            {
+                let (partition, state) = next?;
+                self.spawn_sink_task(partition, state, input_id);
+            }
+            // Try to finalize the input
+            if self.task_set.len() < self.max_concurrency
+                && let Some(states) = self
+                    .input_state_tracker
+                    .try_take_states_for_finalize(input_id)
+            {
+                let op = self.op.clone();
+                let finalize_spawner = self.finalize_spawner.clone();
+                self.task_set.spawn(async move {
+                    let output = op.finalize(states, &finalize_spawner).await??;
+                    Ok(BlockingSinkTaskResult::Finalize { input_id, output })
+                });
+            }
         }
         Ok(())
     }
@@ -146,7 +141,6 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
     ) -> DaftResult<ControlFlow> {
         self.runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
         self.input_state_tracker.return_state(input_id, state);
-        self.try_progress_input(input_id)?;
         self.try_progress_all_inputs()?;
         Ok(ControlFlow::Continue)
     }
@@ -194,7 +188,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
         self.runtime_stats.add_rows_in(partition.len() as u64);
         self.input_state_tracker
             .buffer_partition(input_id, partition)?;
-        self.try_progress_input(input_id)?;
+        self.try_progress_all_inputs()?;
         Ok(())
     }
 
@@ -209,7 +203,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
             return Ok(ControlFlow::Stop);
         } else {
             self.input_state_tracker.mark_completed(input_id);
-            self.try_progress_input(input_id)?;
+            self.try_progress_all_inputs()?;
         }
         Ok(ControlFlow::Continue)
     }
