@@ -54,6 +54,11 @@ pub(crate) trait BlockingSink: Send + Sync {
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()
     }
+    /// When true, sink tasks are paused while finalize is in flight,
+    /// giving finalize sub-tasks exclusive access to the compute pool.
+    fn finalize_is_exclusive(&self) -> bool {
+        false
+    }
 }
 
 /// Per-node task result for blocking sinks.
@@ -84,6 +89,7 @@ struct BlockingSinkProcessor<Op: BlockingSink> {
     op_name: Arc<str>,
     input_start_times: HashMap<InputId, Instant>,
     finalize_in_flight: usize,
+    finalize_is_exclusive: bool,
 }
 
 impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
@@ -128,18 +134,24 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
             }
         }
 
-        // Pass 2: Only spawn sink tasks if no finalize is running.
-        // This gives finalize sub-tasks the full compute pool.
-        if self.finalize_in_flight == 0 {
-            for input_id in &input_ids {
-                while self.task_set.len() < self.max_concurrency
-                    && let Some(next) = self
-                        .input_state_tracker
-                        .get_next_morsel_for_execute(*input_id)
-                {
-                    let (partition, state) = next?;
-                    self.spawn_sink_task(partition, state, *input_id);
-                }
+        // Pass 2: Spawn sink tasks with a cap that depends on whether
+        // an exclusive finalize is running. When finalize is active, allow
+        // only a few sink tasks so other input_ids can progress toward
+        // finalize-ready state without starving finalize of compute.
+        let sink_limit = if self.finalize_in_flight > 0 && self.finalize_is_exclusive {
+            // Reserve most of the compute pool for finalize sub-tasks.
+            self.max_concurrency / 4
+        } else {
+            self.max_concurrency
+        };
+        for input_id in &input_ids {
+            while self.task_set.len() < sink_limit
+                && let Some(next) = self
+                    .input_state_tracker
+                    .get_next_morsel_for_execute(*input_id)
+            {
+                let (partition, state) = next?;
+                self.spawn_sink_task(partition, state, *input_id);
             }
         }
 
@@ -519,6 +531,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         ));
 
         let op = self.op.clone();
+        let finalize_is_exclusive = op.finalize_is_exclusive();
         let runtime_stats = self.runtime_stats.clone();
         let node_id = self.node_id();
         let op_name = self.name();
@@ -540,6 +553,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
                     op_name,
                     input_start_times: HashMap::new(),
                     finalize_in_flight: 0,
+                    finalize_is_exclusive,
                 };
 
                 processor
