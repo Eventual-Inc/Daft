@@ -331,8 +331,17 @@ impl NativeExecutor {
             .map(|s| s.as_str())
             .unwrap_or("");
         let plan_fingerprint = local_physical_plan.fingerprint();
-        let fingerprint = plan_key(plan_fingerprint, query_id_str);
+        let mut fingerprint = plan_key(plan_fingerprint, query_id_str);
         let enable_explain_analyze = should_enable_explain_analyze();
+
+        // Experiment: never reuse the pipeline for this specific plan shape.
+        // Each input_id gets its own independent pipeline, like main.
+        let plan_display = local_physical_plan.single_line_display();
+        if plan_display == "InMemoryScan->HashAggregate->Project->Project" {
+            use std::sync::atomic::{AtomicU64, Ordering};
+            static COUNTER: AtomicU64 = AtomicU64::new(0);
+            fingerprint = fingerprint.wrapping_add(COUNTER.fetch_add(1, Ordering::Relaxed));
+        }
 
         if !self.active_plans.contains(fingerprint) {
             println!("[Daft] [{:.3}] Plan fingerprint mismatch - creating new plan", crate::epoch_secs());
