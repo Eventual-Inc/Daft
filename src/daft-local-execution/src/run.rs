@@ -33,7 +33,7 @@ use {
 
 use crate::{
     ExecutionRuntimeContext,
-    channel::{Receiver, Sender, UnboundedSender, create_channel, create_unbounded_channel},
+    channel::{Sender, UnboundedSender, create_channel, create_unbounded_channel},
     pipeline::{
         RelationshipInformation, RuntimeContext, get_pipeline_relationship_mapping,
         translate_physical_plan_to_pipeline, viz_pipeline_ascii, viz_pipeline_mermaid,
@@ -333,22 +333,16 @@ impl NativeExecutor {
         let mut fingerprint = plan_key(plan_fingerprint, query_id_str);
         let enable_explain_analyze = should_enable_explain_analyze();
 
-        // // Experiment: never reuse the pipeline for this specific plan shape.
-        // // Each input_id gets its own independent pipeline, like main.
-        // let plan_display = local_physical_plan.single_line_display();
-        // if plan_display == "InMemoryScan->HashAggregate->Project->Project" {
-        //     use std::sync::atomic::{AtomicU64, Ordering};
-        //     static COUNTER: AtomicU64 = AtomicU64::new(0);
-        //     fingerprint = fingerprint.wrapping_add(COUNTER.fetch_add(1, Ordering::Relaxed));
-        // }
-
         if !self.active_plans.contains(fingerprint) {
-            println!("[Daft] [{:.3}] Plan fingerprint mismatch - creating new plan", crate::epoch_secs());
+            println!(
+                "[Daft] [{:.3}] Plan fingerprint mismatch - creating new plan",
+                crate::epoch_secs(),
+            );
             println!("  Query id: {}", query_id_str);
             println!("  Plan: {}", local_physical_plan.single_line_display());
             println!(
                 "  Plan fingerprint: {}, Plan key: {}",
-                plan_fingerprint, fingerprint
+                plan_fingerprint, fingerprint,
             );
         }
 

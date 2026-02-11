@@ -2,7 +2,7 @@ use std::{collections::HashMap, num::NonZeroUsize, sync::Arc, time::Instant};
 
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_metrics::{
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::StatSnapshotImpl,
@@ -14,13 +14,13 @@ use daft_micropartition::MicroPartition;
 use tracing::info_span;
 
 use crate::{
-    ControlFlow, ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
-    pipeline_execution::{InputStatesTracker, PipelineEvent, StateTracker, next_event},
+    pipeline_execution::{PipelineEvent, next_event},
     pipeline_message::{InputId, PipelineMessage},
-    runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
+    runtime_stats::{DefaultRuntimeStats, RuntimeStats},
 };
 
 pub(crate) type BlockingSinkSinkResult<Op> =
@@ -59,7 +59,6 @@ pub(crate) trait BlockingSink: Send + Sync {
 /// Per-node task result for blocking sinks.
 enum BlockingSinkTaskResult<S> {
     Sink {
-        input_id: InputId,
         state: S,
         elapsed: std::time::Duration,
     },
@@ -69,30 +68,27 @@ enum BlockingSinkTaskResult<S> {
     },
 }
 
-struct BlockingSinkProcessor<Op: BlockingSink> {
+/// Dedicated processor for a single input_id. Each processor owns its own
+/// task_set and states — mirroring independent pipeline behavior at the
+/// blocking sink level while sharing the rest of the pipeline.
+struct SingleInputBlockingSinkProcessor<Op: BlockingSink> {
+    input_id: InputId,
     task_set: OrderingAwareJoinSet<DaftResult<BlockingSinkTaskResult<Op::State>>>,
     max_concurrency: usize,
-    input_state_tracker: InputStatesTracker<Op::State>,
+    states: Vec<Op::State>,
+    total_states: usize,
+    buffer: RowBasedBuffer,
+    is_completed: bool,
     op: Arc<Op>,
     task_spawner: ExecutionTaskSpawner,
     finalize_spawner: ExecutionTaskSpawner,
     runtime_stats: Arc<dyn RuntimeStats>,
     output_sender: Sender<PipelineMessage>,
-    stats_manager: RuntimeStatsManagerHandle,
-    node_id: usize,
-    node_initialized: bool,
     op_name: Arc<str>,
-    input_start_times: HashMap<InputId, Instant>,
-    finalize_in_flight: usize,
 }
 
-impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
-    fn spawn_sink_task(
-        &mut self,
-        partition: Arc<MicroPartition>,
-        state: Op::State,
-        input_id: InputId,
-    ) {
+impl<Op: BlockingSink + 'static> SingleInputBlockingSinkProcessor<Op> {
+    fn spawn_sink_task(&mut self, partition: Arc<MicroPartition>, state: Op::State) {
         let op = self.op.clone();
         let task_spawner = self.task_spawner.clone();
         self.task_set.spawn(async move {
@@ -100,214 +96,86 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
             let new_state = op.sink(partition, state, &task_spawner).await??;
             let elapsed = now.elapsed();
             Ok(BlockingSinkTaskResult::Sink {
-                input_id,
                 state: new_state,
                 elapsed,
             })
         });
     }
 
-    fn try_progress_all_inputs(&mut self) -> DaftResult<()> {
-        let input_ids = self.input_state_tracker.input_ids();
-
-        // Pass 1: Finalize tasks get priority.
-        for input_id in &input_ids {
-            if self.task_set.len() < self.max_concurrency
-                && let Some(states) = self
-                    .input_state_tracker
-                    .try_take_states_for_finalize(*input_id)
-            {
-                self.finalize_in_flight += 1;
-                let op = self.op.clone();
-                let finalize_spawner = self.finalize_spawner.clone();
-                let iid = *input_id;
-                self.task_set.spawn(async move {
-                    let output = op.finalize(states, &finalize_spawner).await??;
-                    Ok(BlockingSinkTaskResult::Finalize { input_id: iid, output })
-                });
-            }
+    fn try_progress(&mut self) -> DaftResult<()> {
+        // Try finalize first: all states returned, buffer empty, flush received
+        if self.is_completed
+            && self.states.len() == self.total_states
+            && self.buffer.is_empty()
+        {
+            let states = std::mem::take(&mut self.states);
+            let op = self.op.clone();
+            let finalize_spawner = self.finalize_spawner.clone();
+            let input_id = self.input_id;
+            self.task_set.spawn(async move {
+                let output = op.finalize(states, &finalize_spawner).await??;
+                Ok(BlockingSinkTaskResult::Finalize { input_id, output })
+            });
+            return Ok(());
         }
 
-        // Pass 2: Cap sink tasks when finalize is running to leave
-        // compute threads free for finalize sub-tasks.
-        let sink_limit = if self.finalize_in_flight > 0 {
-            self.max_concurrency / 4
-        } else {
-            self.max_concurrency
-        };
-        for input_id in &input_ids {
-            while self.task_set.len() < sink_limit
-                && let Some(next) = self
-                    .input_state_tracker
-                    .get_next_morsel_for_execute(*input_id)
-            {
-                let (partition, state) = next?;
-                self.spawn_sink_task(partition, state, *input_id);
+        // Fill remaining task slots with sink tasks
+        while self.task_set.len() < self.max_concurrency
+            && !self.states.is_empty()
+            && !self.buffer.is_empty()
+        {
+            if let Some(partition) = self.buffer.pop_all()? {
+                let state = self.states.pop().unwrap();
+                self.spawn_sink_task(partition, state);
             }
         }
         Ok(())
     }
 
-    async fn handle_sink_completed(
-        &mut self,
-        input_id: InputId,
-        state: Op::State,
-        elapsed: std::time::Duration,
-    ) -> DaftResult<ControlFlow> {
-        self.runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
-        self.input_state_tracker.return_state(input_id, state);
-        self.try_progress_all_inputs()?;
-        Ok(ControlFlow::Continue)
-    }
-
-    async fn handle_finalize_completed(
-        &mut self,
-        input_id: InputId,
-        output: Vec<Arc<MicroPartition>>,
-    ) -> DaftResult<ControlFlow> {
-        self.finalize_in_flight -= 1;
-        for (i, partition) in output.iter().enumerate() {
-            self.runtime_stats.add_rows_out(partition.len() as u64);
-            let send_start = Instant::now();
-            if self
-                .output_sender
-                .send(PipelineMessage::Morsel {
-                    input_id,
-                    partition: partition.clone(),
-                })
-                .await
-                .is_err()
-            {
-                return Ok(ControlFlow::Stop);
-            }
-            let send_elapsed = send_start.elapsed();
-            if send_elapsed.as_millis() > 10 {
-                println!(
-                    "[Daft] [{:.3}] {} output_send BLOCKED {:.3}s input_id={} part={}/{}",
-                    crate::epoch_secs(),
-                    self.op_name,
-                    send_elapsed.as_secs_f64(),
-                    input_id,
-                    i,
-                    output.len(),
-                );
-            }
-        }
-        if let Some(start) = self.input_start_times.remove(&input_id) {
-            println!(
-                "[Daft] [{:.3}] {} input_id={} finished in {:.3}s",
-                crate::epoch_secs(),
-                self.op_name,
-                input_id,
-                start.elapsed().as_secs_f64()
-            );
-        }
-        let flush_start = Instant::now();
-        if self
-            .output_sender
-            .send(PipelineMessage::Flush(input_id))
-            .await
-            .is_err()
-        {
-            return Ok(ControlFlow::Stop);
-        }
-        let flush_elapsed = flush_start.elapsed();
-        if flush_elapsed.as_millis() > 10 {
-            println!(
-                "[Daft] [{:.3}] {} flush_send BLOCKED {:.3}s input_id={}",
-                crate::epoch_secs(),
-                self.op_name,
-                flush_elapsed.as_secs_f64(),
-                input_id,
-            );
-        }
-        self.try_progress_all_inputs()?;
-        Ok(ControlFlow::Continue)
-    }
-
-    fn handle_morsel(
-        &mut self,
-        input_id: InputId,
-        partition: Arc<MicroPartition>,
-    ) -> DaftResult<()> {
-        if !self.node_initialized {
-            self.stats_manager.activate_node(self.node_id);
-            self.node_initialized = true;
-        }
-        self.input_start_times
-            .entry(input_id)
-            .or_insert_with(Instant::now);
-        self.runtime_stats.add_rows_in(partition.len() as u64);
-        self.input_state_tracker
-            .buffer_partition(input_id, partition)?;
-        self.try_progress_all_inputs()?;
-        Ok(())
-    }
-
-    async fn handle_flush(&mut self, input_id: InputId) -> DaftResult<ControlFlow> {
-        if !self.input_state_tracker.contains_key(input_id)
-            && self
-                .output_sender
-                .send(PipelineMessage::Flush(input_id))
-                .await
-                .is_err()
-        {
-            return Ok(ControlFlow::Stop);
-        } else {
-            self.input_state_tracker.mark_completed(input_id);
-            self.try_progress_all_inputs()?;
-        }
-        Ok(ControlFlow::Continue)
-    }
-
-    async fn handle_input_closed(&mut self) -> DaftResult<ControlFlow> {
-        self.input_state_tracker.mark_all_completed();
-        self.try_progress_all_inputs()?;
-        Ok(ControlFlow::Continue)
-    }
-
-    async fn start_processing(
-        &mut self,
-        receiver: &mut Receiver<PipelineMessage>,
-    ) -> DaftResult<ControlFlow> {
+    /// Run the event loop for a single input_id. Reads morsels/flushes from
+    /// `receiver`, processes them, and sends finalized output to `output_sender`.
+    async fn run(mut self, mut receiver: Receiver<PipelineMessage>) -> DaftResult<()> {
         let mut input_closed = false;
+        let start_time = Instant::now();
 
-        while !input_closed || !self.task_set.is_empty() || !self.input_state_tracker.is_empty() {
-            let wait_start = Instant::now();
+        loop {
+            // Done when: input closed, no in-flight tasks, and either finalized or nothing to do
+            if input_closed && self.task_set.is_empty() {
+                if !self.is_completed {
+                    // Input channel closed without flush — mark completed
+                    self.is_completed = true;
+                    self.try_progress()?;
+                    if self.task_set.is_empty() {
+                        break;
+                    }
+                } else if self.states.len() == self.total_states && self.buffer.is_empty() {
+                    break;
+                }
+            }
+
             let event = next_event(
                 &mut self.task_set,
                 self.max_concurrency,
-                receiver,
+                &mut receiver,
                 &mut input_closed,
             )
             .await?;
-            let wait_elapsed = wait_start.elapsed();
-            if wait_elapsed.as_millis() > 50 {
-                println!(
-                    "[Daft] [{:.3}] {} event_loop waited {:.3}s for next event (tasks={}/{})",
-                    crate::epoch_secs(),
-                    self.op_name,
-                    wait_elapsed.as_secs_f64(),
-                    self.task_set.len(),
-                    self.max_concurrency,
-                );
-            }
-            let handle_start = Instant::now();
-            let cf = match event {
+
+            match event {
                 PipelineEvent::TaskCompleted(BlockingSinkTaskResult::Sink {
-                    input_id,
-                    state,
-                    elapsed,
+                    state, elapsed,
                 }) => {
                     println!(
                         "[Daft] [{:.3}] {} sink_task completed input_id={} compute={:.3}s tasks={}",
                         crate::epoch_secs(),
                         self.op_name,
-                        input_id,
+                        self.input_id,
                         elapsed.as_secs_f64(),
                         self.task_set.len(),
                     );
-                    self.handle_sink_completed(input_id, state, elapsed).await?
+                    self.runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
+                    self.states.push(state);
+                    self.try_progress()?;
                 }
                 PipelineEvent::TaskCompleted(BlockingSinkTaskResult::Finalize {
                     input_id,
@@ -322,59 +190,75 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
                         output_rows,
                         self.task_set.len(),
                     );
-                    self.handle_finalize_completed(input_id, output).await?
+                    for partition in &output {
+                        self.runtime_stats.add_rows_out(partition.len() as u64);
+                        if self
+                            .output_sender
+                            .send(PipelineMessage::Morsel {
+                                input_id,
+                                partition: partition.clone(),
+                            })
+                            .await
+                            .is_err()
+                        {
+                            return Ok(());
+                        }
+                    }
+                    println!(
+                        "[Daft] [{:.3}] {} input_id={} finished in {:.3}s",
+                        crate::epoch_secs(),
+                        self.op_name,
+                        input_id,
+                        start_time.elapsed().as_secs_f64(),
+                    );
+                    if self
+                        .output_sender
+                        .send(PipelineMessage::Flush(input_id))
+                        .await
+                        .is_err()
+                    {
+                        return Ok(());
+                    }
+                    return Ok(()); // Done with this input_id
                 }
-                PipelineEvent::Morsel {
-                    input_id,
-                    partition,
-                } => {
+                PipelineEvent::Morsel { partition, .. } => {
                     println!(
                         "[Daft] [{:.3}] {} morsel input_id={} rows={} tasks={}",
                         crate::epoch_secs(),
                         self.op_name,
-                        input_id,
+                        self.input_id,
                         partition.len(),
                         self.task_set.len(),
                     );
-                    self.handle_morsel(input_id, partition)?;
-                    ControlFlow::Continue
+                    self.runtime_stats.add_rows_in(partition.len() as u64);
+                    self.buffer.push(partition);
+                    self.try_progress()?;
                 }
-                PipelineEvent::Flush(input_id) => {
+                PipelineEvent::Flush(_) => {
                     println!(
                         "[Daft] [{:.3}] {} flush input_id={} tasks={}",
                         crate::epoch_secs(),
                         self.op_name,
-                        input_id,
+                        self.input_id,
                         self.task_set.len(),
                     );
-                    self.handle_flush(input_id).await?
+                    self.is_completed = true;
+                    self.try_progress()?;
                 }
                 PipelineEvent::InputClosed => {
                     println!(
-                        "[Daft] [{:.3}] {} input_closed tasks={}",
+                        "[Daft] [{:.3}] {} input_closed input_id={} tasks={}",
                         crate::epoch_secs(),
                         self.op_name,
+                        self.input_id,
                         self.task_set.len(),
                     );
-                    self.handle_input_closed().await?
+                    self.is_completed = true;
+                    self.try_progress()?;
                 }
-            };
-            let handle_elapsed = handle_start.elapsed();
-            if handle_elapsed.as_millis() > 50 {
-                println!(
-                    "[Daft] [{:.3}] {} handle_event took {:.3}s",
-                    crate::epoch_secs(),
-                    self.op_name,
-                    handle_elapsed.as_secs_f64(),
-                );
-            }
-            if cf == ControlFlow::Stop {
-                return Ok(ControlFlow::Stop);
             }
         }
-
-        self.stats_manager.finalize_node(self.node_id);
-        Ok(ControlFlow::Continue)
+        Ok(())
     }
 }
 
@@ -492,7 +376,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
     ) -> crate::Result<Receiver<PipelineMessage>> {
         let mut child_results_receiver = self.child.start(false, runtime_handle)?;
 
-        let (destination_sender, destination_receiver) = create_channel(1);
+        let (destination_sender, destination_receiver) = create_channel(4);
 
         let task_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
@@ -508,45 +392,102 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         );
 
         let op = self.op.clone();
-        let input_state_tracker = InputStatesTracker::new(Box::new(
-            move |_input_id| -> DaftResult<StateTracker<Op::State>> {
-                let states = (0..op.max_concurrency())
-                    .map(|_| op.make_state())
-                    .collect::<DaftResult<Vec<_>>>()?;
-                Ok(StateTracker::new(
-                    states,
-                    RowBasedBuffer::new(0, NonZeroUsize::new(usize::MAX).unwrap()),
-                ))
-            },
-        ));
-
-        let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
         let node_id = self.node_id();
         let op_name = self.name();
         let stats_manager = runtime_handle.stats_manager();
         runtime_handle.spawn(
             async move {
-                let mut processor = BlockingSinkProcessor {
-                    task_set: OrderingAwareJoinSet::new(maintain_order),
-                    max_concurrency: get_compute_pool_num_threads(),
-                    input_state_tracker,
-                    op,
-                    task_spawner,
-                    finalize_spawner,
-                    runtime_stats,
-                    output_sender: destination_sender,
-                    stats_manager: stats_manager.clone(),
-                    node_id,
-                    node_initialized: false,
-                    op_name,
-                    input_start_times: HashMap::new(),
-                    finalize_in_flight: 0,
-                };
+                let mut per_input_senders: HashMap<InputId, Sender<PipelineMessage>> =
+                    HashMap::new();
+                let mut processor_set =
+                    tokio::task::JoinSet::<DaftResult<()>>::new();
+                let mut node_initialized = false;
+                let mut input_closed = false;
 
-                processor
-                    .start_processing(&mut child_results_receiver)
-                    .await?;
+                loop {
+                    // Done when input is closed and all processors have finished
+                    if input_closed && processor_set.is_empty() {
+                        break;
+                    }
+
+                    tokio::select! {
+                        // Branch 1: receive from child pipeline
+                        msg = child_results_receiver.recv(), if !input_closed => {
+                            let Some(msg) = msg else {
+                                // Input channel closed: drop all per-input senders
+                                // so processor channels close
+                                input_closed = true;
+                                per_input_senders.clear();
+                                continue;
+                            };
+
+                            if !node_initialized {
+                                stats_manager.activate_node(node_id);
+                                node_initialized = true;
+                            }
+
+                            let input_id = match &msg {
+                                PipelineMessage::Morsel { input_id, .. } => *input_id,
+                                PipelineMessage::Flush(input_id) => *input_id,
+                            };
+
+                            if !per_input_senders.contains_key(&input_id) {
+                                // First message for this input_id: spawn a processor
+                                println!(
+                                    "[Daft] [{:.3}] {} spawning processor for input_id={}",
+                                    crate::epoch_secs(),
+                                    op_name,
+                                    input_id,
+                                );
+                                let (tx, rx) = create_channel(4);
+                                per_input_senders.insert(input_id, tx);
+
+                                let states = (0..op.max_concurrency())
+                                    .map(|_| op.make_state())
+                                    .collect::<DaftResult<Vec<_>>>()?;
+                                let total_states = states.len();
+
+                                let processor = SingleInputBlockingSinkProcessor {
+                                    input_id,
+                                    task_set: OrderingAwareJoinSet::new(maintain_order),
+                                    max_concurrency: get_compute_pool_num_threads(),
+                                    states,
+                                    total_states,
+                                    buffer: RowBasedBuffer::new(
+                                        0,
+                                        NonZeroUsize::new(usize::MAX).unwrap(),
+                                    ),
+                                    is_completed: false,
+                                    op: op.clone(),
+                                    task_spawner: task_spawner.clone(),
+                                    finalize_spawner: finalize_spawner.clone(),
+                                    runtime_stats: runtime_stats.clone(),
+                                    output_sender: destination_sender.clone(),
+                                    op_name: op_name.clone(),
+                                };
+
+                                processor_set.spawn(async move {
+                                    processor.run(rx).await
+                                });
+                            }
+
+                            // Route message to per-input processor
+                            let is_flush = matches!(&msg, PipelineMessage::Flush(_));
+                            if per_input_senders[&input_id].send(msg).await.is_err() {
+                                // Processor died — error will surface from join below
+                            }
+                            // After flush, drop the sender so the processor's channel closes
+                            if is_flush {
+                                per_input_senders.remove(&input_id);
+                            }
+                        }
+                        // Branch 2: a processor completed (or errored)
+                        Some(result) = processor_set.join_next(), if !processor_set.is_empty() => {
+                            result.map_err(DaftError::JoinError)??;
+                        }
+                    }
+                }
 
                 stats_manager.finalize_node(node_id);
                 Ok(())

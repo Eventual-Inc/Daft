@@ -247,7 +247,10 @@ impl PipelineNode for SourceNode {
                             if let Some(start) = input_start_times.remove(input_id) {
                                 println!(
                                     "[Daft] [{:.3}] {} input_id={} finished in {:.3}s",
-                                    crate::epoch_secs(), op_name, input_id, start.elapsed().as_secs_f64()
+                                    crate::epoch_secs(),
+                                    op_name,
+                                    input_id,
+                                    start.elapsed().as_secs_f64(),
                                 );
                             }
                         }
