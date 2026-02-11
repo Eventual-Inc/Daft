@@ -724,14 +724,7 @@ fn physical_plan_to_pipeline(
         }) => {
             let left_child = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             let right_child = physical_plan_to_pipeline(other, psets, cfg, ctx)?;
-            ConcatNode::new(
-                left_child,
-                right_child,
-                stats_state.clone(),
-                ctx,
-                context,
-            )
-            .boxed()
+            ConcatNode::new(left_child, right_child, stats_state.clone(), ctx, context).boxed()
         }
         LocalPhysicalPlan::UnGroupedAggregate(UnGroupedAggregate {
             input,
