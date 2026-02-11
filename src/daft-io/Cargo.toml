@@ -24,6 +24,13 @@ google-cloud-token = {version = "0.1.2"}
 home = "0.5.12"
 itertools = {workspace = true}
 log = {workspace = true}
+opendal = {workspace = true, features = [
+  "services-oss",
+  "services-cos",
+  "services-obs",
+  "services-memory",
+  "services-fs"
+]}
 pyo3 = {workspace = true, optional = true}
 rand = "0.8.5"
 regex = {version = "1.12.2"}

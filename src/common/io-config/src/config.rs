@@ -1,4 +1,7 @@
-use std::fmt::{Display, Formatter};
+use std::{
+    collections::BTreeMap,
+    fmt::{Display, Formatter},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +21,9 @@ pub struct IOConfig {
     /// disable suffix range requests, please use range with offset
     pub disable_suffix_range: bool,
     pub tos: TosConfig,
+    /// Additional backends configured via OpenDAL.
+    /// Keys are scheme names (e.g. "oss", "cos"), values are key-value config maps.
+    pub backends: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 impl IOConfig {
@@ -60,6 +66,9 @@ impl IOConfig {
             "TOS config = {{ {} }}",
             self.tos.multiline_display().join(", ")
         ));
+        if !self.backends.is_empty() {
+            res.push(format!("OpenDAL backends = {:?}", self.backends));
+        }
         res
     }
 }
