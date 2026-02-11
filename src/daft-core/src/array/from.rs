@@ -80,7 +80,7 @@ impl<T> DataArray<T>
 where
     T: DaftPrimitiveType,
 {
-    /// Creates a non-nullable `DataArray` from an iterator of values with a specific [`Field`].
+    /// Creates a non-nullable `DataArray` from an iterator of values with a specific [`Field`]. Zero Copy
     ///
     /// Unlike the `DaftNumericType` constructors which take `&str`, this takes a [`Field`]
     /// to support types like `Decimal128` where the dtype carries precision/scale.
@@ -139,7 +139,7 @@ impl BinaryArray {
         )
         .expect("Failed to create BinaryArray from nullable byte arrays")
     }
-    /// Creates a non-nullable `BinaryArray` from an iterator of byte slices. Single-pass.
+    /// Creates a non-nullable `BinaryArray` from an iterator of byte slices. Single-pass, Zero Copy.
     pub fn from_values<S: AsRef<[u8]>>(name: &str, iter: impl IntoIterator<Item = S>) -> Self {
         let arrow_array = arrow::array::LargeBinaryArray::from_iter_values(iter);
         Self::from_arrow(Field::new(name, DataType::Binary), Arc::new(arrow_array))
@@ -256,20 +256,24 @@ where
         Self::from_arrow(Field::new(name, T::get_dtype()), Arc::new(arrow_arr)).unwrap()
     }
 
-    /// Creates a non-nullable `DataArray` by taking ownership of a `Vec`.
-    ///
-    /// Only use this for Vecs you already own (e.g. returned from another API).
-    /// If you're building a Vec element-by-element just to pass it here,
-    /// use [`from_values`](Self::from_values) or arrow builders instead to
-    /// avoid double iteration.
+    /// Creates a non-nullable `DataArray` by taking ownership of a `Vec`. Zero Copy
     pub fn from_vec(
         name: &str,
         values: Vec<<<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native>,
     ) -> Self {
+        let b = arrow::buffer::Buffer::from_vec(values);
+        let len = b.len()
+            / std::mem::size_of::<
+                <<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native,
+            >();
+
+        let sb = ScalarBuffer::<
+            <<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native,
+        >::new(b, 0, len);
+
         let arrow_arr =
-            arrow::array::PrimitiveArray::<<T::Native as NumericNative>::ARROWTYPE>::from_iter_values(
-                values,
-            );
+            arrow::array::PrimitiveArray::<<T::Native as NumericNative>::ARROWTYPE>::new(sb, None);
+
         Self::from_arrow(Field::new(name, T::get_dtype()), Arc::new(arrow_arr)).unwrap()
     }
 }
@@ -315,7 +319,7 @@ impl BooleanArray {
         Self::from_arrow(Field::new(name, DataType::Boolean), arrow_array).unwrap()
     }
 
-    /// Creates a non-nullable `BooleanArray` by taking ownership of a `Vec<bool>`.
+    /// Creates a non-nullable `BooleanArray` by taking ownership of a `Vec<bool>`. Zero Copy
     ///
     /// Only use this for Vecs you already own. If building element-by-element,
     /// use [`from_builder`](Self::from_builder) or [`from_values`](Self::from_values) instead.
