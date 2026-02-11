@@ -1223,7 +1223,7 @@ jobs:
       with:
         tool-cache: false
     - name: Generate code coverage
-      run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --lcov --output-path ./report-output/lcov.info
+      run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --exclude common-arrow-ffi --lcov --output-path ./report-output/lcov.info
     - name: Upload coverage report
       uses: actions/upload-artifact@v6
       with:
