@@ -427,6 +427,12 @@ impl NativeExecutor {
                                                 let _ = sender.send(input_id, plan_input);
                                             }
                                         }
+                                        println!(
+                                            "[Daft] [{:.3}] enqueued input_id={} to InputSender | {}",
+                                            crate::epoch_secs(),
+                                            input_id,
+                                            message_router.plan_display,
+                                        );
                                         // Send empty inputs for any source that didn't receive data,
                                         // so the pipeline can still flush this input_id properly.
                                         for (key, sender) in senders.iter() {
@@ -521,11 +527,21 @@ impl NativeExecutor {
                 result_sender: result_tx,
             };
 
+            println!(
+                "[Daft] [{:.3}] sending enqueue_input message for input_id={}",
+                crate::epoch_secs(),
+                input_id,
+            );
             if enqueue_input_sender.send(enqueue_msg).await.is_err() {
                 return Err(common_error::DaftError::InternalError(
                     "Plan execution task has died; cannot enqueue new input".to_string(),
                 ));
             }
+            println!(
+                "[Daft] [{:.3}] enqueue_input message sent for input_id={}",
+                crate::epoch_secs(),
+                input_id,
+            );
             Ok(ExecutionEngineResult {
                 receiver: result_rx,
             })
