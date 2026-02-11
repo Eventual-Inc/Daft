@@ -433,7 +433,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
             async move {
                 let mut processor = BlockingSinkProcessor {
                     task_set: OrderingAwareJoinSet::new(maintain_order),
-                    max_concurrency: get_compute_pool_num_threads(),
+                    max_concurrency: get_compute_pool_num_threads() * 2,
                     input_state_tracker,
                     op,
                     task_spawner,
