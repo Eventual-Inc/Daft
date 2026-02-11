@@ -78,12 +78,16 @@ pub(crate) struct EnqueueInputMessage {
 /// Routes pipeline messages to per-input_id channels.
 struct MessageRouter {
     output_senders: HashMap<InputId, Sender<Arc<MicroPartition>>>,
+    start_times: HashMap<InputId, std::time::Instant>,
+    plan_display: String,
 }
 
 impl MessageRouter {
-    fn new() -> Self {
+    fn new(plan_display: String) -> Self {
         Self {
             output_senders: HashMap::new(),
+            start_times: HashMap::new(),
+            plan_display,
         }
     }
 
@@ -92,6 +96,14 @@ impl MessageRouter {
         match msg {
             PipelineMessage::Flush(input_id) => {
                 self.output_senders.remove(&input_id);
+                if let Some(start) = self.start_times.remove(&input_id) {
+                    println!(
+                        "[Daft] input_id={} finished in {:.3}s | {}",
+                        input_id,
+                        start.elapsed().as_secs_f64(),
+                        self.plan_display,
+                    );
+                }
             }
             PipelineMessage::Morsel {
                 input_id,
@@ -105,6 +117,9 @@ impl MessageRouter {
     }
 
     fn insert_output_sender(&mut self, input_id: InputId, sender: Sender<Arc<MicroPartition>>) {
+        self.start_times
+            .entry(input_id)
+            .or_insert_with(std::time::Instant::now);
         self.output_senders.insert(input_id, sender);
     }
 }
@@ -351,6 +366,7 @@ impl NativeExecutor {
                 create_channel::<EnqueueInputMessage>(1);
 
             let input_senders = Arc::new(input_senders);
+            let plan_display = local_physical_plan.single_line_display();
 
             let task = async move {
                 let stats_manager_handle = stats_manager.handle();
@@ -359,7 +375,7 @@ impl NativeExecutor {
                     ExecutionRuntimeContext::new(memory_manager.clone(), stats_manager_handle);
                 let mut receiver = pipeline.start(true, &mut runtime_handle)?;
 
-                let mut message_router = MessageRouter::new();
+                let mut message_router = MessageRouter::new(plan_display);
                 let mut input_exhausted = false;
                 let mut pipeline_finished = false;
                 let mut shutdown_result: Option<(DaftResult<()>, QueryEndState)> = None;
@@ -438,7 +454,8 @@ impl NativeExecutor {
                                     // try_finish(). Must happen before shutdown() so
                                     // callers don't block waiting for results while
                                     // we wait for tasks to drain.
-                                    message_router = MessageRouter::new();
+                                    let plan_display = std::mem::take(&mut message_router.plan_display);
+                                    message_router = MessageRouter::new(plan_display);
                                     let res = runtime_handle.shutdown().await;
                                     pipeline_finished = true;
                                     let status = if res.is_ok() { QueryEndState::Finished } else { QueryEndState::Failed };
