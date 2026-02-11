@@ -30,6 +30,7 @@ use snafu::ResultExt;
 use crate::{
     ExecutionRuntimeContext, PipelineCreationSnafu,
     channel::create_unbounded_channel,
+    concat::ConcatNode,
     input_sender::InputSender,
     intermediate_ops::{
         distributed_actor_pool_project::DistributedActorPoolProjectOperator,
@@ -61,7 +62,7 @@ use crate::{
         scan_task::ScanTaskSource, source::SourceNode,
     },
     streaming_sink::{
-        async_udf::AsyncUdfSink, base::StreamingSinkNode, concat::ConcatSink, limit::LimitSink,
+        async_udf::AsyncUdfSink, base::StreamingSinkNode, limit::LimitSink,
         monotonically_increasing_id::MonotonicallyIncreasingIdSink, sample::SampleSink,
         vllm::VLLMSink,
     },
@@ -581,7 +582,7 @@ fn physical_plan_to_pipeline(
                 );
                 StreamingSinkNode::new(
                     Arc::new(async_sink),
-                    vec![child_node],
+                    child_node,
                     stats_state.clone(),
                     ctx,
                     context,
@@ -658,7 +659,7 @@ fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             StreamingSinkNode::new(
                 Arc::new(sample_sink),
-                vec![child_node],
+                child_node,
                 stats_state.clone(),
                 ctx,
                 context,
@@ -734,7 +735,7 @@ fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             StreamingSinkNode::new(
                 Arc::new(sink),
-                vec![child_node],
+                child_node,
                 stats_state.clone(),
                 ctx,
                 context,
@@ -750,15 +751,7 @@ fn physical_plan_to_pipeline(
         }) => {
             let left_child = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             let right_child = physical_plan_to_pipeline(other, cfg, ctx, input_senders)?;
-            let sink = ConcatSink {};
-            StreamingSinkNode::new(
-                Arc::new(sink),
-                vec![left_child, right_child],
-                stats_state.clone(),
-                ctx,
-                context,
-            )
-            .boxed()
+            ConcatNode::new(left_child, right_child, stats_state.clone(), ctx, context).boxed()
         }
         LocalPhysicalPlan::UnGroupedAggregate(UnGroupedAggregate {
             input,
@@ -945,7 +938,7 @@ fn physical_plan_to_pipeline(
             );
             StreamingSinkNode::new(
                 Arc::new(monotonically_increasing_id_sink),
-                vec![child_node],
+                child_node,
                 stats_state.clone(),
                 ctx,
                 context,
@@ -1429,7 +1422,7 @@ fn physical_plan_to_pipeline(
             );
             StreamingSinkNode::new(
                 Arc::new(vllm_sink),
-                vec![child_node],
+                child_node,
                 stats_state.clone(),
                 ctx,
                 context,

@@ -38,7 +38,12 @@ impl ScalarUDF for TokenizeEncodeFunction {
     fn name(&self) -> &'static str {
         "tokenize_encode"
     }
-    fn call(&self, args: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+
+        args: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let EncodeArgs {
             input,
             _varargs: _,

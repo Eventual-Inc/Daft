@@ -52,13 +52,7 @@ mod tests {
 
         let values_array = ListArray::new(
             Field::new("values", DataType::List(Box::new(DataType::Int64))),
-            Int64Array::from((
-                "item",
-                Box::new(daft_arrow::array::Int64Array::from_iter(
-                    [Some(1), Some(2), Some(0), Some(3)].iter(),
-                )),
-            ))
-            .into_series(),
+            Int64Array::from_slice("item", &[1, 2, 0, 3]).into_series(),
             daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 2, 3, 4])?,
             Some(nulls.clone()),
         )
@@ -66,13 +60,7 @@ mod tests {
 
         let indices_array = ListArray::new(
             Field::new("indices", DataType::List(Box::new(DataType::UInt64))),
-            UInt64Array::from((
-                "item",
-                Box::new(daft_arrow::array::UInt64Array::from_iter(
-                    [Some(1), Some(2), Some(0), Some(2)].iter(),
-                )),
-            ))
-            .into_series(),
+            UInt64Array::from_slice("item", &[1, 2, 0, 2]).into_series(),
             daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 2, 3, 4])?,
             Some(nulls.clone()),
         )
@@ -80,13 +68,7 @@ mod tests {
 
         let shapes_array = ListArray::new(
             Field::new("shape", DataType::List(Box::new(DataType::UInt64))),
-            UInt64Array::from((
-                "item",
-                Box::new(daft_arrow::array::UInt64Array::from_iter(
-                    [Some(3), Some(3), Some(3)].iter(),
-                )),
-            ))
-            .into_series(),
+            UInt64Array::from_slice("item", &[3, 3, 3]).into_series(),
             daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 2, 3])?,
             Some(nulls.clone()),
         )

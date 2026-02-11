@@ -38,7 +38,7 @@ macro_rules! impl_temporal {
                     stringify!([ < $name:snake:lower > ])
                 }
 
-                fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+                fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>, _ctx: &daft_dsl::functions::scalar::EvalContext) -> DaftResult<Series> {
                     let UnaryArg {input} = inputs.try_into()?;
                     input.$dt()
 

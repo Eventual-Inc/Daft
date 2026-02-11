@@ -900,6 +900,91 @@ def test_join_semi_anti_different_names(
     )
 
 
+def test_anti_join_issue_6086(make_df):
+    """Regression test for https://github.com/Eventual-Inc/Daft/issues/6086.
+
+    Tests the three scenarios from the issue: simple anti join, anti join with
+    pre-filter on a shared column name, and the left join workaround.
+    """
+    left = make_df(
+        {
+            "id": ["left_id_1", "left_id_2"],
+            "foo": [0, 0],
+        }
+    )
+    right = make_df(
+        {
+            "left_id": ["left_id_1"],
+            "foo": [20],
+        }
+    )
+
+    # Scenario 1: Simple anti join (control test)
+    joined = left.join(right, how="anti", left_on="id", right_on="left_id")
+    result = joined.to_pydict()
+    assert len(result["id"]) == 1
+    assert result["id"][0] == "left_id_2"
+
+    # Scenario 2: Anti join with pre-filter on "foo" (the bug from the issue).
+    # "foo" exists in both dataframes but is NOT a join key.
+    # All left rows have foo=0 so the filter should not remove any left rows.
+    filtered_left = left.where(col("foo") < daft.lit(10))
+    joined = filtered_left.join(right, how="anti", left_on="id", right_on="left_id")
+    result = joined.to_pydict()
+    assert len(result["id"]) == 1, f"Expected 1 row, got {len(result['id'])}: {result}"
+    assert result["id"][0] == "left_id_2"
+
+    # Scenario 3: Left join workaround (should produce same result as anti join)
+    filtered_left = left.where(col("foo") < daft.lit(10))
+    joined = filtered_left.join(right, how="left", left_on="id", right_on="left_id").where(col("left_id").is_null())
+    result = joined.to_pydict()
+    assert len(result["id"]) == 1
+    assert result["id"][0] == "left_id_2"
+
+
+@pytest.mark.parametrize("join_type", ["anti", "semi"])
+def test_anti_semi_join_filter_pushdown_with_shared_column_name(join_type, make_df):
+    """Regression test for https://github.com/Eventual-Inc/Daft/issues/6086.
+
+    When a filter predicate references a column that exists in both left and right
+    input schemas but is NOT a join key, the filter should only apply to the left side
+    for anti/semi joins. Previously, PushDownFilter would incorrectly push the filter
+    to both sides, changing the join semantics.
+    """
+    left = make_df(
+        {
+            "id": ["left_id_1", "left_id_2"],
+            "foo": [0, 0],
+        }
+    )
+    right = make_df(
+        {
+            "left_id": ["left_id_1"],
+            "foo": [20],
+        }
+    )
+
+    # Filter on "foo" which exists in both dataframes but is NOT a join key.
+    # All left rows have foo=0 so nothing should be filtered out.
+    filtered_left = left.where(col("foo") < daft.lit(10))
+
+    joined = filtered_left.join(
+        right,
+        how=join_type,
+        left_on="id",
+        right_on="left_id",
+    )
+
+    result = joined.to_pydict()
+
+    if join_type == "anti":
+        # Only left_id_2 should remain (left_id_1 is matched by the right side)
+        assert result == {"id": ["left_id_2"], "foo": [0]}
+    else:
+        # semi: only left_id_1 should remain (it's the one matched by the right side)
+        assert result == {"id": ["left_id_1"], "foo": [0]}
+
+
 @pytest.mark.parametrize(
     "join_type,expected_dtypes",
     [

@@ -233,17 +233,7 @@ pub trait ScalarUDF: Send + Sync + std::any::Any {
     ///     }
     /// }
     /// ```
-    fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series>;
-
-    // TODO: This is a transitional API to avoid a large breaking change across all UDFs.
-    // Once stabilized, fold EvalContext into `call()` itself and remove this method.
-    fn call_with_ctx(
-        &self,
-        args: FunctionArgs<Series>,
-        _ctx: Option<&EvalContext>,
-    ) -> DaftResult<Series> {
-        self.call(args)
-    }
+    fn call(&self, args: FunctionArgs<Series>, _ctx: &EvalContext) -> DaftResult<Series>;
 
     /// `get_return_field` is used during planning to ensure that args and datatypes are compatible.
     /// A simple example would be a string function such as `to_uppercase` that expects a single string input, and a single string output.
@@ -290,15 +280,7 @@ pub trait AsyncScalarUDF: Send + Sync + std::any::Any {
         true
     }
 
-    async fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series>;
-
-    async fn call_with_ctx(
-        &self,
-        args: FunctionArgs<Series>,
-        _ctx: Option<&EvalContext>,
-    ) -> DaftResult<Series> {
-        self.call(args).await
-    }
+    async fn call(&self, args: FunctionArgs<Series>, _ctx: &EvalContext) -> DaftResult<Series>;
 
     fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field>;
 

@@ -27,7 +27,11 @@ impl ScalarUDF for Slice {
         "slice"
     }
 
-    fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        args: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let SliceArgs { input, start, end } = args.try_into()?;
 
         let mut input_lengths = vec![input.len(), start.len()];
@@ -181,7 +185,7 @@ fn list_slice(
         })
         .collect::<DaftResult<Vec<_>>>()?;
 
-    ListArray::try_from((name, slices.as_slice()))
+    ListArray::from_series(name, slices)
 }
 
 fn binary_slice<'a>(

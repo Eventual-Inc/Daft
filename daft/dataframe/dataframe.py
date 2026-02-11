@@ -64,6 +64,7 @@ if TYPE_CHECKING:
 
     from daft.io import DataSink
     from daft.io.catalog import DataCatalogTable
+    from daft.io.lance.rest_config import LanceRestConfig
     from daft.io.sink import WriteResultType
     from daft.unity_catalog import UnityCatalogTable
 
@@ -1033,7 +1034,11 @@ class DataFrame:
 
     @DataframePublicAPI
     def write_iceberg(
-        self, table: "pyiceberg.table.Table", mode: str = "append", io_config: IOConfig | None = None
+        self,
+        table: "pyiceberg.table.Table",
+        mode: str = "append",
+        io_config: IOConfig | None = None,
+        snapshot_properties: dict[str, str] | None = None,
     ) -> "DataFrame":
         """Writes the DataFrame to an [Iceberg](https://iceberg.apache.org/docs/nightly/) table, returning a new DataFrame with the operations that occurred.
 
@@ -1043,6 +1048,7 @@ class DataFrame:
             table (pyiceberg.table.Table): Destination [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table) to write dataframe to.
             mode (str, optional): Operation mode of the write. `append` or `overwrite` Iceberg Table. Defaults to `append`.
             io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
+            snapshot_properties (dict[str, str], optional): Optional snapshot properties to set while writing to the table.
 
         Returns:
             DataFrame: The operations that occurred with this write.
@@ -1070,6 +1076,10 @@ class DataFrame:
 
         if parse(pyiceberg.__version__) < parse("0.6.0"):
             raise ValueError(f"Write Iceberg is only supported on pyiceberg>=0.6.0, found {pyiceberg.__version__}")
+
+        # Snapshot properties are only supported on pyiceberg >= 0.7.0. See https://github.com/apache/iceberg-python/issues/367
+        if snapshot_properties and parse(pyiceberg.__version__) < parse("0.7.0"):
+            raise ValueError("Snapshot properties are only supported on pyiceberg>=0.7.0")
 
         if parse(pa.__version__) < parse("12.0.1"):
             raise ValueError(
@@ -1139,11 +1149,12 @@ class DataFrame:
                 property_as_bool = PropertyUtil.property_as_bool
 
             tx = table.transaction()
+            snapshot_properties = snapshot_properties or {}
 
             if mode == "overwrite":
-                tx.delete(delete_filter=ALWAYS_TRUE)
+                tx.delete(delete_filter=ALWAYS_TRUE, snapshot_properties=snapshot_properties)
 
-            update_snapshot = tx.update_snapshot()
+            update_snapshot = tx.update_snapshot(snapshot_properties=snapshot_properties)
 
             manifest_merge_enabled = mode == "append" and property_as_bool(
                 tx.table_metadata.properties,
@@ -1486,6 +1497,7 @@ class DataFrame:
         uri: str | pathlib.Path,
         mode: Literal["create", "append", "overwrite", "merge"] = "create",
         io_config: IOConfig | None = None,
+        rest_config: "LanceRestConfig | None" = None,
         schema: Union[Schema, "pyarrow.Schema"] | None = None,
         left_on: str | None = None,
         right_on: str | None = None,
@@ -1494,13 +1506,16 @@ class DataFrame:
         """Writes the DataFrame to a Lance table.
 
         Args:
-          uri: The URI of the Lance table to write to
+          uri: The URI of the Lance table to write to. Supports:
+            - File paths: "/path/to/lance/data/" or cloud URIs like "s3://bucket/path"
+            - REST URIs: "rest://namespace/table_name" (requires rest_config)
           mode: The write mode. One of "create", "append", "overwrite", or "merge".
           - "create" will create the dataset if it does not exist, otherwise raise an error.
           - "append" will append to the existing dataset if it exists, otherwise raise an error.
           - "overwrite" will overwrite the existing dataset if it exists, otherwise raise an error.
           - "merge" will add new columns to the existing dataset.
           io_config (IOConfig, optional): configurations to use when interacting with remote storage.
+          rest_config (RestConfig, optional): Configuration for REST-based Lance services. Required when using REST URIs.
           schema (Schema | pyarrow.Schema, optional): Desired schema to enforce during write.
             - If omitted, Daft will use the DataFrame's current schema.
             - If a pyarrow.Schema is provided, Daft will enforce the field order, types, and nullability
@@ -1565,11 +1580,32 @@ class DataFrame:
         """
         from daft import context as _context
         from daft.io.lance.lance_data_sink import LanceDataSink
+        from daft.io.lance.rest_config import parse_lance_uri
         from daft.io.object_store_options import io_config_to_storage_options
 
         if schema is None:
             schema = self.schema()
 
+        # Parse URI to determine if it's REST-based or file-based
+        uri_str = str(uri)
+        uri_type, uri_info = parse_lance_uri(uri_str)
+
+        if uri_type == "rest":
+            # REST-based Lance table
+            if rest_config is None:
+                raise ValueError("rest_config is required when using REST URIs (rest://namespace/table_name)")
+
+            # For REST, we handle writes differently
+            return self._write_lance_rest(
+                rest_config=rest_config,
+                namespace=uri_info["namespace"],
+                table_name=uri_info["table_name"],
+                mode=mode,
+                schema=schema,
+                **kwargs,
+            )
+
+        # File-based Lance table (existing logic)
         # Non-merge modes do not support schema evolution or custom join keys
         if mode != "merge":
             sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
@@ -1668,6 +1704,48 @@ class DataFrame:
                 }
             )
         )
+
+    def _write_lance_rest(
+        self,
+        rest_config: "LanceRestConfig",
+        namespace: str,
+        table_name: str,
+        mode: str,
+        schema: Union[Schema, "pyarrow.Schema"] | None = None,
+        **kwargs: Any,
+    ) -> "DataFrame":
+        """Write DataFrame to Lance table via REST API."""
+        from daft.io.lance.rest_write import write_lance_rest
+        from daft.recordbatch import MicroPartition
+
+        # Collect the DataFrame to get all data
+        collected = self.collect()
+
+        # Convert to MicroPartition - handle case where there are multiple partitions
+        if collected._result:
+            # Get all micropartitions from the result
+            micropartitions = [result.micropartition() for result in collected._result.values()]
+            # Concatenate all micropartitions if there are multiple
+            if len(micropartitions) > 1:
+                mp = MicroPartition.concat(micropartitions)
+            else:
+                mp = micropartitions[0]
+        else:
+            mp = MicroPartition.empty()
+
+        # Write via REST API
+        result_mp = write_lance_rest(
+            mp=mp,
+            rest_config=rest_config,
+            namespace=namespace,
+            table_name=table_name,
+            mode=mode,
+            schema=schema._arrow_schema if schema is not None and hasattr(schema, "_arrow_schema") else None,
+            **kwargs,
+        )
+
+        # Return result as DataFrame
+        return DataFrame._from_micropartitions(result_mp)
 
     @DataframePublicAPI
     def write_turbopuffer(
@@ -3726,13 +3804,16 @@ class DataFrame:
         return self._apply_agg_fn(Expression.list_agg_distinct, cols)
 
     @DataframePublicAPI
-    def agg_concat(self, *cols: ColumnInputType) -> "DataFrame":
-        """Performs a global list concatenation agg on the DataFrame.
+    def agg_concat(self, *cols: ColumnInputType, delimiter: str | None = None) -> "DataFrame":
+        """Performs a global concatenation agg on the DataFrame.
 
         Args:
-            *cols (Union[str, Expression]): columns that are lists to concatenate
+            *cols (Union[str, Expression]): columns that are lists or strings to concatenate
+            delimiter: Optional delimiter to insert between concatenated string values. Only supported for string
+                columns.
+
         Returns:
-            DataFrame: Globally aggregated list. Should be a single row.
+            DataFrame: Globally aggregated list or string. Should be a single row.
 
         Examples:
             >>> import daft
@@ -3750,7 +3831,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        return self._apply_agg_fn(Expression.string_agg, cols)
+        return self._apply_agg_fn(lambda expr: Expression.string_agg(expr, delimiter=delimiter), cols)
 
     @DataframePublicAPI
     def agg(self, *to_agg: Expression | Iterable[Expression]) -> "DataFrame":
@@ -4950,13 +5031,13 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.list_agg_distinct, cols, self.group_by)
 
-    def string_agg(self, *cols: ColumnInputType) -> DataFrame:
+    def string_agg(self, *cols: ColumnInputType, delimiter: str | None = None) -> DataFrame:
         """Performs grouped string concat on this GroupedDataFrame.
 
         Returns:
             DataFrame: DataFrame with grouped string concatenated per column.
         """
-        return self.df._apply_agg_fn(Expression.string_agg, cols, self.group_by)
+        return self.df._apply_agg_fn(lambda expr: Expression.string_agg(expr, delimiter=delimiter), cols, self.group_by)
 
     def agg(self, *to_agg: Expression | Iterable[Expression]) -> DataFrame:
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.

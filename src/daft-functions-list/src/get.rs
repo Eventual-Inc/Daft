@@ -20,7 +20,12 @@ impl ScalarUDF for ListGet {
         "list_get"
     }
 
-    fn call(&self, args: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+
+        args: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let input = args.required((0, "input"))?;
         let idx = args.required((1, "index"))?;
         let _default = args.required((2, "default"))?;
