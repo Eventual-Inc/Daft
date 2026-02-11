@@ -132,6 +132,16 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
                 });
             }
         }
+        if self.task_set.len() < self.max_concurrency && !self.input_state_tracker.is_empty() {
+            println!(
+                "[Daft] [{:.3}] {} UNDERUTILIZED: tasks={}/{} buffered_input_ids={:?}",
+                crate::epoch_secs(),
+                self.op_name,
+                self.task_set.len(),
+                self.max_concurrency,
+                self.input_state_tracker.input_ids(),
+            );
+        }
         Ok(())
     }
 
@@ -169,7 +179,10 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
         if let Some(start) = self.input_start_times.remove(&input_id) {
             println!(
                 "[Daft] [{:.3}] {} input_id={} finished in {:.3}s",
-                crate::epoch_secs(), self.op_name, input_id, start.elapsed().as_secs_f64()
+                crate::epoch_secs(),
+                self.op_name,
+                input_id,
+                start.elapsed().as_secs_f64()
             );
         }
         if self
