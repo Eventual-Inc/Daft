@@ -63,10 +63,6 @@ enum BlockingSinkTaskResult<S> {
         state: S,
         elapsed: std::time::Duration,
     },
-    Finalize {
-        input_id: InputId,
-        output: Vec<Arc<MicroPartition>>,
-    },
 }
 
 struct BlockingSinkProcessor<Op: BlockingSink> {
@@ -108,25 +104,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
 
     fn try_progress_all_inputs(&mut self) -> DaftResult<()> {
         let input_ids = self.input_state_tracker.input_ids();
-
-        // Pass 1: Try to spawn finalize tasks first — they get priority.
-        for input_id in &input_ids {
-            if self.task_set.len() < self.max_concurrency
-                && let Some(states) = self
-                    .input_state_tracker
-                    .try_take_states_for_finalize(*input_id)
-            {
-                let op = self.op.clone();
-                let finalize_spawner = self.finalize_spawner.clone();
-                let iid = *input_id;
-                self.task_set.spawn(async move {
-                    let output = op.finalize(states, &finalize_spawner).await??;
-                    Ok(BlockingSinkTaskResult::Finalize { input_id: iid, output })
-                });
-            }
-        }
-
-        // Pass 2: Fill remaining slots with sink tasks.
+        // Only spawn sink tasks here — finalize is awaited directly in the event loop.
         for input_id in &input_ids {
             while self.task_set.len() < self.max_concurrency
                 && let Some(next) = self
@@ -137,7 +115,6 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
                 self.spawn_sink_task(partition, state, *input_id);
             }
         }
-
         Ok(())
     }
 
@@ -153,67 +130,108 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
         Ok(ControlFlow::Continue)
     }
 
-    async fn handle_finalize_completed(
-        &mut self,
-        input_id: InputId,
-        output: Vec<Arc<MicroPartition>>,
-    ) -> DaftResult<ControlFlow> {
-        for (i, partition) in output.iter().enumerate() {
-            self.runtime_stats.add_rows_out(partition.len() as u64);
-            let send_start = Instant::now();
+    /// Directly await any finalize-ready input_ids in the event loop.
+    /// This blocks the loop so no new sink tasks are spawned, letting
+    /// in-flight sink tasks drain and freeing compute threads for
+    /// finalize sub-tasks.
+    async fn run_ready_finalizes(&mut self) -> DaftResult<ControlFlow> {
+        loop {
+            let input_ids = self.input_state_tracker.input_ids();
+            let mut found = None;
+            for input_id in input_ids {
+                if let Some(states) = self
+                    .input_state_tracker
+                    .try_take_states_for_finalize(input_id)
+                {
+                    found = Some((input_id, states));
+                    break;
+                }
+            }
+            let Some((input_id, states)) = found else {
+                break;
+            };
+
+            println!(
+                "[Daft] [{:.3}] {} finalize_start input_id={} tasks={}",
+                crate::epoch_secs(),
+                self.op_name,
+                input_id,
+                self.task_set.len(),
+            );
+            let finalize_start = Instant::now();
+            let output = self.op.finalize(states, &self.finalize_spawner).await??;
+            let finalize_elapsed = finalize_start.elapsed();
+            let output_rows: usize = output.iter().map(|p| p.len()).sum();
+            println!(
+                "[Daft] [{:.3}] {} finalize_completed input_id={} rows={} took={:.3}s tasks={}",
+                crate::epoch_secs(),
+                self.op_name,
+                input_id,
+                output_rows,
+                finalize_elapsed.as_secs_f64(),
+                self.task_set.len(),
+            );
+
+            // Send output downstream
+            for (i, partition) in output.iter().enumerate() {
+                self.runtime_stats.add_rows_out(partition.len() as u64);
+                let send_start = Instant::now();
+                if self
+                    .output_sender
+                    .send(PipelineMessage::Morsel {
+                        input_id,
+                        partition: partition.clone(),
+                    })
+                    .await
+                    .is_err()
+                {
+                    return Ok(ControlFlow::Stop);
+                }
+                let send_elapsed = send_start.elapsed();
+                if send_elapsed.as_millis() > 10 {
+                    println!(
+                        "[Daft] [{:.3}] {} output_send BLOCKED {:.3}s input_id={} part={}/{}",
+                        crate::epoch_secs(),
+                        self.op_name,
+                        send_elapsed.as_secs_f64(),
+                        input_id,
+                        i,
+                        output.len(),
+                    );
+                }
+            }
+            if let Some(start) = self.input_start_times.remove(&input_id) {
+                println!(
+                    "[Daft] [{:.3}] {} input_id={} finished in {:.3}s",
+                    crate::epoch_secs(),
+                    self.op_name,
+                    input_id,
+                    start.elapsed().as_secs_f64()
+                );
+            }
+            let flush_start = Instant::now();
             if self
                 .output_sender
-                .send(PipelineMessage::Morsel {
-                    input_id,
-                    partition: partition.clone(),
-                })
+                .send(PipelineMessage::Flush(input_id))
                 .await
                 .is_err()
             {
                 return Ok(ControlFlow::Stop);
             }
-            let send_elapsed = send_start.elapsed();
-            if send_elapsed.as_millis() > 10 {
+            let flush_elapsed = flush_start.elapsed();
+            if flush_elapsed.as_millis() > 10 {
                 println!(
-                    "[Daft] [{:.3}] {} output_send BLOCKED {:.3}s input_id={} part={}/{}",
+                    "[Daft] [{:.3}] {} flush_send BLOCKED {:.3}s input_id={}",
                     crate::epoch_secs(),
                     self.op_name,
-                    send_elapsed.as_secs_f64(),
+                    flush_elapsed.as_secs_f64(),
                     input_id,
-                    i,
-                    output.len(),
                 );
             }
+
+            // After finalize, refill sink tasks for remaining input_ids
+            self.try_progress_all_inputs()?;
         }
-        if let Some(start) = self.input_start_times.remove(&input_id) {
-            println!(
-                "[Daft] [{:.3}] {} input_id={} finished in {:.3}s",
-                crate::epoch_secs(),
-                self.op_name,
-                input_id,
-                start.elapsed().as_secs_f64()
-            );
-        }
-        let flush_start = Instant::now();
-        if self
-            .output_sender
-            .send(PipelineMessage::Flush(input_id))
-            .await
-            .is_err()
-        {
-            return Ok(ControlFlow::Stop);
-        }
-        let flush_elapsed = flush_start.elapsed();
-        if flush_elapsed.as_millis() > 10 {
-            println!(
-                "[Daft] [{:.3}] {} flush_send BLOCKED {:.3}s input_id={}",
-                crate::epoch_secs(),
-                self.op_name,
-                flush_elapsed.as_secs_f64(),
-                input_id,
-            );
-        }
-        self.try_progress_all_inputs()?;
         Ok(ControlFlow::Continue)
     }
 
@@ -301,21 +319,6 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
                     );
                     self.handle_sink_completed(input_id, state, elapsed).await?
                 }
-                PipelineEvent::TaskCompleted(BlockingSinkTaskResult::Finalize {
-                    input_id,
-                    output,
-                }) => {
-                    let output_rows: usize = output.iter().map(|p| p.len()).sum();
-                    println!(
-                        "[Daft] [{:.3}] {} finalize_task completed input_id={} rows={} tasks={}",
-                        crate::epoch_secs(),
-                        self.op_name,
-                        input_id,
-                        output_rows,
-                        self.task_set.len(),
-                    );
-                    self.handle_finalize_completed(input_id, output).await?
-                }
                 PipelineEvent::Morsel {
                     input_id,
                     partition,
@@ -361,6 +364,11 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
                 );
             }
             if cf == ControlFlow::Stop {
+                return Ok(ControlFlow::Stop);
+            }
+            // Directly await any finalize-ready input_ids — blocks the event
+            // loop so in-flight sink tasks drain and compute threads free up.
+            if self.run_ready_finalizes().await? == ControlFlow::Stop {
                 return Ok(ControlFlow::Stop);
             }
         }
