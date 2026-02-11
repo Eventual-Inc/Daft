@@ -8,7 +8,7 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName, pipeline_message::InputId};
 
 pub(crate) enum SortState {
     Building(Vec<Arc<MicroPartition>>),
@@ -65,6 +65,7 @@ impl BlockingSink for SortSink {
         input: Arc<MicroPartition>,
         mut state: Self::State,
         _spawner: &ExecutionTaskSpawner,
+        _input_id: InputId,
     ) -> BlockingSinkSinkResult<Self> {
         state.push(input);
         Ok(state).into()

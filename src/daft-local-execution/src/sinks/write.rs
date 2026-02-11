@@ -13,7 +13,7 @@ use opentelemetry::{KeyValue, global};
 use tracing::{Span, instrument};
 
 use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
-use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName, pipeline_message::InputId, runtime_stats::RuntimeStats};
 
 struct WriteStats {
     cpu_us: Counter,
@@ -142,6 +142,7 @@ impl BlockingSink for WriteSink {
         input: Arc<MicroPartition>,
         mut state: Self::State,
         spawner: &ExecutionTaskSpawner,
+        _input_id: InputId,
     ) -> BlockingSinkSinkResult<Self> {
         let builder = spawner.runtime_stats.clone();
 

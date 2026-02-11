@@ -15,7 +15,7 @@ use itertools::Itertools;
 use tracing::{Span, instrument};
 
 use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
-use crate::{ExecutionTaskSpawner, pipeline::NodeName};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName, pipeline_message::InputId};
 
 pub(crate) struct CommitWriteState {
     written_file_path_record_batches: Vec<RecordBatch>,
@@ -62,6 +62,7 @@ impl BlockingSink for CommitWriteSink {
         input: Arc<MicroPartition>,
         mut state: Self::State,
         _spawner: &ExecutionTaskSpawner,
+        _input_id: InputId,
     ) -> BlockingSinkSinkResult<Self> {
         state.append(input.record_batches().iter().cloned());
         Ok(state).into()

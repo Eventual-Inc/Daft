@@ -34,6 +34,7 @@ pub(crate) trait BlockingSink: Send + Sync {
         input: Arc<MicroPartition>,
         state: Self::State,
         spawner: &ExecutionTaskSpawner,
+        input_id: InputId,
     ) -> BlockingSinkSinkResult<Self>
     where
         Self: Sized;
@@ -96,7 +97,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
         let task_spawner = self.task_spawner.clone();
         self.task_set.spawn(async move {
             let now = Instant::now();
-            let new_state = op.sink(partition, state, &task_spawner).await??;
+            let new_state = op.sink(partition, state, &task_spawner, input_id).await??;
             let elapsed = now.elapsed();
             Ok(BlockingSinkTaskResult::Sink {
                 input_id,
