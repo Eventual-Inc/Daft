@@ -38,17 +38,7 @@ pub(crate) async fn next_event<TaskResult: Send + 'static>(
 ) -> DaftResult<PipelineEvent<TaskResult>> {
     tokio::select! {
         biased;
-
-        // Branch 1: Join completed task (only if tasks exist)
-        Some(task_result) = task_set.join_next(), if !task_set.is_empty() => {
-            match task_result {
-                Ok(Ok(result)) => Ok(PipelineEvent::TaskCompleted(result)),
-                Ok(Err(e)) => Err(e),
-                Err(e) => Err(e.into()),
-            }
-        }
-
-        // Branch 2: Receive input (only if we can spawn task and receiver open)
+        // Branch 1: Receive input (only if we can spawn task and receiver open)
         msg = receiver.recv(), if task_set.len() < max_concurrency && !*input_closed => {
             match msg {
                 Some(PipelineMessage::Morsel { input_id, partition }) => {
@@ -61,6 +51,14 @@ pub(crate) async fn next_event<TaskResult: Send + 'static>(
                     *input_closed = true;
                     Ok(PipelineEvent::InputClosed)
                 }
+            }
+        }
+        // Branch 2: Join completed task (only if tasks exist)
+        Some(task_result) = task_set.join_next(), if !task_set.is_empty() => {
+            match task_result {
+                Ok(Ok(result)) => Ok(PipelineEvent::TaskCompleted(result)),
+                Ok(Err(e)) => Err(e),
+                Err(e) => Err(e.into()),
             }
         }
     }

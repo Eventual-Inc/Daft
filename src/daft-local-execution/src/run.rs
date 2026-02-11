@@ -378,7 +378,7 @@ impl NativeExecutor {
                 let memory_manager = get_or_init_memory_manager();
                 let mut runtime_handle =
                     ExecutionRuntimeContext::new(memory_manager.clone(), stats_manager_handle);
-                let mut receiver = pipeline.start(true, &mut runtime_handle)?;
+                let mut output_receiver = pipeline.start(true, &mut runtime_handle)?;
 
                 let mut message_router = MessageRouter::new(plan_display);
                 let mut input_exhausted = false;
@@ -454,7 +454,7 @@ impl NativeExecutor {
                                 }
                             }
                         }
-                        msg = receiver.recv(), if !pipeline_finished => {
+                        msg = output_receiver.recv(), if !pipeline_finished => {
                             match msg {
                                 Some(msg) => {
                                     message_router.route_message(msg);
