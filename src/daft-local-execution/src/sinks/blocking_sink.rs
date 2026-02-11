@@ -162,18 +162,31 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
         input_id: InputId,
         output: Vec<Arc<MicroPartition>>,
     ) -> DaftResult<ControlFlow> {
-        for partition in output {
+        for (i, partition) in output.iter().enumerate() {
             self.runtime_stats.add_rows_out(partition.len() as u64);
+            let send_start = Instant::now();
             if self
                 .output_sender
                 .send(PipelineMessage::Morsel {
                     input_id,
-                    partition,
+                    partition: partition.clone(),
                 })
                 .await
                 .is_err()
             {
                 return Ok(ControlFlow::Stop);
+            }
+            let send_elapsed = send_start.elapsed();
+            if send_elapsed.as_millis() > 10 {
+                println!(
+                    "[Daft] [{:.3}] {} output_send BLOCKED {:.3}s input_id={} part={}/{}",
+                    crate::epoch_secs(),
+                    self.op_name,
+                    send_elapsed.as_secs_f64(),
+                    input_id,
+                    i,
+                    output.len(),
+                );
             }
         }
         if let Some(start) = self.input_start_times.remove(&input_id) {
@@ -185,6 +198,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
                 start.elapsed().as_secs_f64()
             );
         }
+        let flush_start = Instant::now();
         if self
             .output_sender
             .send(PipelineMessage::Flush(input_id))
@@ -192,6 +206,16 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
             .is_err()
         {
             return Ok(ControlFlow::Stop);
+        }
+        let flush_elapsed = flush_start.elapsed();
+        if flush_elapsed.as_millis() > 10 {
+            println!(
+                "[Daft] [{:.3}] {} flush_send BLOCKED {:.3}s input_id={}",
+                crate::epoch_secs(),
+                self.op_name,
+                flush_elapsed.as_secs_f64(),
+                input_id,
+            );
         }
         self.try_progress_all_inputs()?;
         Ok(ControlFlow::Continue)
@@ -245,6 +269,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
         let mut input_closed = false;
 
         while !input_closed || !self.task_set.is_empty() || !self.input_state_tracker.is_empty() {
+            let wait_start = Instant::now();
             let event = next_event(
                 &mut self.task_set,
                 self.max_concurrency,
@@ -252,26 +277,93 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
                 &mut input_closed,
             )
             .await?;
+            let wait_elapsed = wait_start.elapsed();
+            if wait_elapsed.as_millis() > 50 {
+                println!(
+                    "[Daft] [{:.3}] {} event_loop waited {:.3}s for next event (tasks={}/{})",
+                    crate::epoch_secs(),
+                    self.op_name,
+                    wait_elapsed.as_secs_f64(),
+                    self.task_set.len(),
+                    self.max_concurrency,
+                );
+            }
+            let handle_start = Instant::now();
             let cf = match event {
                 PipelineEvent::TaskCompleted(BlockingSinkTaskResult::Sink {
                     input_id,
                     state,
                     elapsed,
-                }) => self.handle_sink_completed(input_id, state, elapsed).await?,
+                }) => {
+                    println!(
+                        "[Daft] [{:.3}] {} sink_task completed input_id={} compute={:.3}s tasks={}",
+                        crate::epoch_secs(),
+                        self.op_name,
+                        input_id,
+                        elapsed.as_secs_f64(),
+                        self.task_set.len(),
+                    );
+                    self.handle_sink_completed(input_id, state, elapsed).await?
+                }
                 PipelineEvent::TaskCompleted(BlockingSinkTaskResult::Finalize {
                     input_id,
                     output,
-                }) => self.handle_finalize_completed(input_id, output).await?,
+                }) => {
+                    let output_rows: usize = output.iter().map(|p| p.len()).sum();
+                    println!(
+                        "[Daft] [{:.3}] {} finalize_task completed input_id={} rows={} tasks={}",
+                        crate::epoch_secs(),
+                        self.op_name,
+                        input_id,
+                        output_rows,
+                        self.task_set.len(),
+                    );
+                    self.handle_finalize_completed(input_id, output).await?
+                }
                 PipelineEvent::Morsel {
                     input_id,
                     partition,
                 } => {
+                    println!(
+                        "[Daft] [{:.3}] {} morsel input_id={} rows={} tasks={}",
+                        crate::epoch_secs(),
+                        self.op_name,
+                        input_id,
+                        partition.len(),
+                        self.task_set.len(),
+                    );
                     self.handle_morsel(input_id, partition)?;
                     ControlFlow::Continue
                 }
-                PipelineEvent::Flush(input_id) => self.handle_flush(input_id).await?,
-                PipelineEvent::InputClosed => self.handle_input_closed().await?,
+                PipelineEvent::Flush(input_id) => {
+                    println!(
+                        "[Daft] [{:.3}] {} flush input_id={} tasks={}",
+                        crate::epoch_secs(),
+                        self.op_name,
+                        input_id,
+                        self.task_set.len(),
+                    );
+                    self.handle_flush(input_id).await?
+                }
+                PipelineEvent::InputClosed => {
+                    println!(
+                        "[Daft] [{:.3}] {} input_closed tasks={}",
+                        crate::epoch_secs(),
+                        self.op_name,
+                        self.task_set.len(),
+                    );
+                    self.handle_input_closed().await?
+                }
             };
+            let handle_elapsed = handle_start.elapsed();
+            if handle_elapsed.as_millis() > 50 {
+                println!(
+                    "[Daft] [{:.3}] {} handle_event took {:.3}s",
+                    crate::epoch_secs(),
+                    self.op_name,
+                    handle_elapsed.as_secs_f64(),
+                );
+            }
             if cf == ControlFlow::Stop {
                 return Ok(ControlFlow::Stop);
             }
