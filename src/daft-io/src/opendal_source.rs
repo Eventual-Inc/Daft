@@ -8,6 +8,7 @@ use snafu::ResultExt;
 
 use crate::{
     FileFormat, GetRange,
+    multipart::MultipartWriter,
     object_io::{FileMetadata, FileType, GetResult, LSResult, ObjectSource},
     object_store_glob,
     stats::IOStatsRef,
@@ -63,6 +64,42 @@ fn url_to_opendal_path(uri: &str) -> super::Result<String> {
     Ok(path.to_string())
 }
 
+pub struct OpenDALMultipartWriter {
+    writer: opendal::Writer,
+    scheme: String,
+}
+
+#[async_trait]
+impl MultipartWriter for OpenDALMultipartWriter {
+    fn part_size(&self) -> usize {
+        5 * 1024 * 1024 // 5MB
+    }
+
+    async fn put_part(&mut self, data: Bytes) -> super::Result<()> {
+        self.writer
+            .write(data)
+            .await
+            .map_err(|e| super::Error::Generic {
+                store: super::SourceType::OpenDAL {
+                    scheme: self.scheme.clone(),
+                },
+                source: e.into(),
+            })
+    }
+
+    async fn complete(&mut self) -> super::Result<()> {
+        self.writer
+            .close()
+            .await
+            .map_err(|e| super::Error::Generic {
+                store: super::SourceType::OpenDAL {
+                    scheme: self.scheme.clone(),
+                },
+                source: e.into(),
+            })
+    }
+}
+
 fn opendal_err_to_daft_err(e: opendal::Error, uri: &str, scheme: &str) -> super::Error {
     let source_type = super::SourceType::OpenDAL {
         scheme: scheme.to_string(),
@@ -92,6 +129,22 @@ fn opendal_err_to_daft_err(e: opendal::Error, uri: &str, scheme: &str) -> super:
 impl ObjectSource for OpenDALSource {
     async fn supports_range(&self, _uri: &str) -> super::Result<bool> {
         Ok(true)
+    }
+
+    async fn create_multipart_writer(
+        self: Arc<Self>,
+        uri: &str,
+    ) -> super::Result<Option<Box<dyn MultipartWriter>>> {
+        let path = url_to_opendal_path(uri)?;
+        let writer = self
+            .operator
+            .writer(&path)
+            .await
+            .map_err(|e| opendal_err_to_daft_err(e, uri, &self.scheme))?;
+        Ok(Some(Box::new(OpenDALMultipartWriter {
+            writer,
+            scheme: self.scheme.clone(),
+        })))
     }
 
     async fn get(
