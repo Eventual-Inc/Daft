@@ -222,10 +222,9 @@ impl PyNativeExecutor {
             .and_then(|c| c.get("query_id"))
             .map(|s| s.as_str())
             .unwrap_or("");
-        let fingerprint = plan_key(plan.fingerprint(), query_id);
         let exec_cfg = daft_ctx.execution_config();
         let subscribers = daft_ctx.subscribers();
-        let enqueue_future = {
+        let (fingerprint, enqueue_future) = {
             self.executor.lock_py_attached(py).unwrap().run(
                 &plan,
                 exec_cfg,
@@ -324,7 +323,7 @@ impl NativeExecutor {
         additional_context: Option<HashMap<String, String>>,
         inputs: HashMap<SourceId, Input>,
         input_id: InputId,
-    ) -> DaftResult<BoxFuture<'static, DaftResult<ExecutionEngineResult>>> {
+    ) -> DaftResult<(u64, BoxFuture<'static, DaftResult<ExecutionEngineResult>>)> {
         let query_id_str = additional_context
             .as_ref()
             .and_then(|c| c.get("query_id"))
@@ -527,7 +526,7 @@ impl NativeExecutor {
         let enqueue_input_sender = plan_state.enqueue_input_sender.clone();
         plan_state.active_input_ids.insert(input_id);
 
-        Ok(async move {
+        Ok((fingerprint, async move {
             let (result_tx, result_rx) = create_unbounded_channel();
 
             let enqueue_msg = EnqueueInputMessage {
@@ -555,7 +554,7 @@ impl NativeExecutor {
                 receiver: result_rx,
             })
         }
-        .boxed())
+        .boxed()))
     }
 
     /// Finish tracking an input_id. If no active input_ids remain (or the
