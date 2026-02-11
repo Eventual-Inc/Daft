@@ -23,7 +23,7 @@ use crate::{
     ExecutionRuntimeContext, PipelineExecutionSnafu,
     channel::create_channel,
     pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
-    pipeline_message::PipelineMessage,
+    pipeline_message::{InputId, PipelineMessage},
     runtime_stats::RuntimeStats,
 };
 
@@ -226,17 +226,31 @@ impl PipelineNode for SourceNode {
             })?;
         let runtime_stats = self.runtime_stats.clone();
         let schema = self.source.schema().clone();
+        let op_name = self.name();
         runtime_handle.spawn(
             async move {
                 let mut has_data = false;
                 stats_manager.activate_node(node_id);
+                let mut input_start_times = std::collections::HashMap::<InputId, std::time::Instant>::new();
 
                 while let Some(msg) = source_stream.next().await {
                     has_data = true;
                     let msg = msg?;
-                    // Track rows only for Morsel messages
-                    if let PipelineMessage::Morsel { ref partition, .. } = msg {
-                        runtime_stats.add_rows_out(partition.len() as u64);
+                    match &msg {
+                        PipelineMessage::Morsel { input_id, partition } => {
+                            input_start_times
+                                .entry(*input_id)
+                                .or_insert_with(std::time::Instant::now);
+                            runtime_stats.add_rows_out(partition.len() as u64);
+                        }
+                        PipelineMessage::Flush(input_id) => {
+                            if let Some(start) = input_start_times.remove(input_id) {
+                                println!(
+                                    "[Daft] {} input_id={} finished in {:.3}s",
+                                    op_name, input_id, start.elapsed().as_secs_f64()
+                                );
+                            }
+                        }
                     }
                     if destination_sender.send(msg).await.is_err() {
                         break;

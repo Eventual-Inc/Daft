@@ -60,6 +60,10 @@ impl PyLocalPhysicalPlan {
             dict.into(),
         ))
     }
+
+    fn single_line_display(&self) -> String {
+        self.plan.single_line_display()
+    }
 }
 
 impl_bincode_py_state_serialization!(PyLocalPhysicalPlan);

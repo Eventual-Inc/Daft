@@ -1,4 +1,4 @@
-use std::{num::NonZeroUsize, sync::Arc, time::Instant};
+use std::{collections::HashMap, num::NonZeroUsize, sync::Arc, time::Instant};
 
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
@@ -81,6 +81,8 @@ struct BlockingSinkProcessor<Op: BlockingSink> {
     stats_manager: RuntimeStatsManagerHandle,
     node_id: usize,
     node_initialized: bool,
+    op_name: Arc<str>,
+    input_start_times: HashMap<InputId, Instant>,
 }
 
 impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
@@ -164,6 +166,12 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
                 return Ok(ControlFlow::Stop);
             }
         }
+        if let Some(start) = self.input_start_times.remove(&input_id) {
+            println!(
+                "[Daft] {} input_id={} finished in {:.3}s",
+                self.op_name, input_id, start.elapsed().as_secs_f64()
+            );
+        }
         if self
             .output_sender
             .send(PipelineMessage::Flush(input_id))
@@ -185,6 +193,9 @@ impl<Op: BlockingSink + 'static> BlockingSinkProcessor<Op> {
             self.stats_manager.activate_node(self.node_id);
             self.node_initialized = true;
         }
+        self.input_start_times
+            .entry(input_id)
+            .or_insert_with(Instant::now);
         self.runtime_stats.add_rows_in(partition.len() as u64);
         self.input_state_tracker
             .buffer_partition(input_id, partition)?;
@@ -403,6 +414,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         let op = self.op.clone();
         let runtime_stats = self.runtime_stats.clone();
         let node_id = self.node_id();
+        let op_name = self.name();
         let stats_manager = runtime_handle.stats_manager();
         runtime_handle.spawn(
             async move {
@@ -418,6 +430,8 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
                     stats_manager: stats_manager.clone(),
                     node_id,
                     node_initialized: false,
+                    op_name,
+                    input_start_times: HashMap::new(),
                 };
 
                 processor
