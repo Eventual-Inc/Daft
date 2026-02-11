@@ -33,7 +33,7 @@ use {
 
 use crate::{
     ExecutionRuntimeContext,
-    channel::{Receiver, Sender, create_channel},
+    channel::{Receiver, Sender, UnboundedSender, create_channel, create_unbounded_channel},
     pipeline::{
         RelationshipInformation, RuntimeContext, get_pipeline_relationship_mapping,
         translate_physical_plan_to_pipeline, viz_pipeline_ascii, viz_pipeline_mermaid,
@@ -72,12 +72,12 @@ pub(crate) struct EnqueueInputMessage {
     /// Plan inputs grouped by source_id
     inputs: HashMap<SourceId, Input>,
     /// Sender for results of this input_id
-    result_sender: Sender<Arc<MicroPartition>>,
+    result_sender: UnboundedSender<Arc<MicroPartition>>,
 }
 
 /// Routes pipeline messages to per-input_id channels.
 struct MessageRouter {
-    output_senders: HashMap<InputId, Sender<Arc<MicroPartition>>>,
+    output_senders: HashMap<InputId, UnboundedSender<Arc<MicroPartition>>>,
     start_times: HashMap<InputId, std::time::Instant>,
     plan_display: String,
 }
@@ -92,7 +92,7 @@ impl MessageRouter {
     }
 
     /// Route a message to the appropriate channel based on its input_id.
-    async fn route_message(&mut self, msg: PipelineMessage) {
+    fn route_message(&mut self, msg: PipelineMessage) {
         match msg {
             PipelineMessage::Flush(input_id) => {
                 self.output_senders.remove(&input_id);
@@ -110,13 +110,17 @@ impl MessageRouter {
                 partition,
             } => {
                 if let Some(sender) = self.output_senders.get(&input_id) {
-                    let _ = sender.send(partition).await;
+                    let _ = sender.send(partition);
                 }
             }
         }
     }
 
-    fn insert_output_sender(&mut self, input_id: InputId, sender: Sender<Arc<MicroPartition>>) {
+    fn insert_output_sender(
+        &mut self,
+        input_id: InputId,
+        sender: UnboundedSender<Arc<MicroPartition>>,
+    ) {
         self.start_times
             .entry(input_id)
             .or_insert_with(std::time::Instant::now);
@@ -446,7 +450,7 @@ impl NativeExecutor {
                         msg = receiver.recv(), if !pipeline_finished => {
                             match msg {
                                 Some(msg) => {
-                                    message_router.route_message(msg).await;
+                                    message_router.route_message(msg);
                                 }
                                 None => {
                                     // Close all in-flight result channels immediately
@@ -508,7 +512,7 @@ impl NativeExecutor {
         plan_state.active_input_ids.insert(input_id);
 
         Ok(async move {
-            let (result_tx, result_rx) = create_channel(1);
+            let (result_tx, result_rx) = create_unbounded_channel();
 
             let enqueue_msg = EnqueueInputMessage {
                 input_id,
@@ -653,7 +657,7 @@ fn should_enable_explain_analyze() -> bool {
 }
 
 pub struct ExecutionEngineResult {
-    receiver: Receiver<Arc<MicroPartition>>,
+    receiver: crate::channel::UnboundedReceiver<Arc<MicroPartition>>,
 }
 
 impl ExecutionEngineResult {
@@ -664,7 +668,7 @@ impl ExecutionEngineResult {
     // Should be used independently of next() and try_finish()
     pub fn into_stream(self) -> impl Stream<Item = Arc<MicroPartition>> {
         struct StreamState {
-            receiver: Receiver<Arc<MicroPartition>>,
+            receiver: crate::channel::UnboundedReceiver<Arc<MicroPartition>>,
         }
 
         let state = StreamState {
