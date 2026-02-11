@@ -98,7 +98,8 @@ impl MessageRouter {
                 self.output_senders.remove(&input_id);
                 if let Some(start) = self.start_times.remove(&input_id) {
                     println!(
-                        "[Daft] input_id={} finished in {:.3}s | {}",
+                        "[Daft] [{:.3}] input_id={} finished in {:.3}s | {}",
+                        crate::epoch_secs(),
                         input_id,
                         start.elapsed().as_secs_f64(),
                         self.plan_display,
@@ -334,7 +335,7 @@ impl NativeExecutor {
         let enable_explain_analyze = should_enable_explain_analyze();
 
         if !self.active_plans.contains(fingerprint) {
-            println!("[Daft] Plan fingerprint mismatch - creating new plan");
+            println!("[Daft] [{:.3}] Plan fingerprint mismatch - creating new plan", crate::epoch_secs());
             println!("  Query id: {}", query_id_str);
             println!("  Plan: {}", local_physical_plan.single_line_display());
             println!(

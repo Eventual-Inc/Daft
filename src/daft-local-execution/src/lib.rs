@@ -31,6 +31,14 @@ use runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle, TimedFuture};
 use snafu::{ResultExt, Snafu, futures::TryFutureExt};
 use tracing::Instrument;
 
+/// Returns wall-clock seconds since Unix epoch with millisecond precision.
+pub(crate) fn epoch_secs() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64()
+}
+
 /// Simple control flow indicator for processing loops.
 /// Messages are sent directly by handlers, not returned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

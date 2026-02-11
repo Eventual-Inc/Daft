@@ -89,7 +89,7 @@ class RaySwordfishActor:
                 start_time = time.time()
                 list_results = await asyncio.gather(*[asyncio.gather(*part) for _, part in list_items])
                 num_objects = sum(len(mps) for mps in list_results)
-                print(f"[flotilla.run_plan] time taken to resolve {num_objects} objects: {time.time() - start_time} seconds for plan {plan.single_line_display()} and input id {task_id}")
+                print(f"[flotilla.run_plan] [{time.time():.3f}] time taken to resolve {num_objects} objects: {time.time() - start_time:.3f}s for plan {plan.single_line_display()} and input id {task_id}")
                 for (source_id, _), mps in zip(list_items, list_results):
                     resolved_inputs[int(source_id)] = [mp._micropartition for mp in mps]
 

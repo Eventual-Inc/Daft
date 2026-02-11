@@ -240,8 +240,8 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
             self.input_states.remove(&input_id);
             if let Some(start) = self.input_start_times.remove(&input_id) {
                 println!(
-                    "[Daft] {} input_id={} finished in {:.3}s",
-                    self.op_name, input_id, start.elapsed().as_secs_f64()
+                    "[Daft] [{:.3}] {} input_id={} finished in {:.3}s",
+                    crate::epoch_secs(), self.op_name, input_id, start.elapsed().as_secs_f64()
                 );
             }
             if self.send(PipelineMessage::Flush(input_id)).await == ControlFlow::Stop {

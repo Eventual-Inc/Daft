@@ -246,8 +246,8 @@ impl PipelineNode for SourceNode {
                         PipelineMessage::Flush(input_id) => {
                             if let Some(start) = input_start_times.remove(input_id) {
                                 println!(
-                                    "[Daft] {} input_id={} finished in {:.3}s",
-                                    op_name, input_id, start.elapsed().as_secs_f64()
+                                    "[Daft] [{:.3}] {} input_id={} finished in {:.3}s",
+                                    crate::epoch_secs(), op_name, input_id, start.elapsed().as_secs_f64()
                                 );
                             }
                         }
