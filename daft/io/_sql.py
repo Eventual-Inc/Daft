@@ -1,6 +1,7 @@
 # ruff: noqa: I002
 # isort: dont-add-import: from __future__ import annotations
 
+import json
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
@@ -10,7 +11,7 @@ from daft.api_annotations import PublicAPI
 from daft.daft import ScanOperatorHandle, StorageConfig
 from daft.dataframe import DataFrame
 from daft.datatype import DataType
-from daft.dependencies import pa
+from daft.dependencies import np, pa
 from daft.io.sink import DataSink, WriteResult
 from daft.logical.builder import LogicalPlanBuilder
 from daft.recordbatch.micropartition import MicroPartition
@@ -143,6 +144,11 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
 
     This sink is used internally by :meth:`daft.DataFrame.write_sql` via
     :meth:`daft.DataFrame.write_sink` and is not part of the public API.
+
+    The ``non_primitive_handling`` field controls how non-primitive columns
+    (lists, structs, maps, tensors, images, embeddings, Python objects, etc.)
+    are normalized before being written to SQL. See
+    :meth:`daft.DataFrame.write_sql` for details.
     """
 
     table_name: str
@@ -151,6 +157,7 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
     chunk_size: int | None
     column_types: Any | None
     df_schema: Schema
+    non_primitive_handling: Literal["bytes", "str", "error", "none"] | None = None
 
     def __post_init__(self) -> None:
         # Schema of the final result returned by ``finalize``.
@@ -160,12 +167,94 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
                 ("total_written_bytes", DataType.int64()),
             ]
         )
+        self._non_primitive_columns = self._detect_non_primitive_columns()
 
     def name(self) -> str:
         return "SQL Data Sink"
 
     def schema(self) -> Schema:
         return self._result_schema
+
+    def _detect_non_primitive_columns(self) -> list[str]:
+        """Return the column names in df_schema that are considered non-primitive for SQL writes."""
+        non_primitive: list[str] = []
+        for field in self.df_schema:
+            dtype = field.dtype
+            if (
+                dtype.is_python()
+                or dtype.is_list()
+                or dtype.is_struct()
+                or dtype.is_map()
+                or dtype.is_tensor()
+                or dtype.is_image()
+                or dtype.is_embedding()
+            ):
+                non_primitive.append(field.name)
+        return non_primitive
+
+    @staticmethod
+    def _coerce_value_to_str(value: Any) -> Any:
+        if value is None:
+            return None
+
+        if isinstance(value, np.ndarray):
+            to_serialize = value.tolist()
+            try:
+                return json.dumps(to_serialize)
+            except TypeError:
+                return str(to_serialize)
+
+        if isinstance(value, (list, tuple, dict)):
+            try:
+                return json.dumps(value)
+            except TypeError:
+                return str(value)
+
+        return str(value)
+
+    @staticmethod
+    def _coerce_value_to_bytes(value: Any) -> Any:
+        if value is None:
+            return None
+
+        text = SQLDataSink._coerce_value_to_str(value)
+        if text is None or isinstance(text, bytes):
+            return text
+        return str(text).encode("utf-8")
+
+    def _normalize_non_primitive_values(self, pdf: Any) -> None:
+        """Normalize values in non-primitive columns of a pandas DataFrame before writing.
+
+        This mutates ``pdf`` in-place.
+        """
+        if not self._non_primitive_columns:
+            return
+
+        handling = self.non_primitive_handling
+
+        if handling == "error":
+            cols = ", ".join(self._non_primitive_columns)
+            raise ValueError(
+                "Cannot write non-primitive columns "
+                f"{cols} to SQL when non_primitive_handling='error'. "
+                "Drop or cast these columns, or choose 'str' or 'bytes' handling instead."
+            )
+
+        if handling is None or handling in ("none", "str"):
+            mode = "str"
+        elif handling == "bytes":
+            mode = "bytes"
+        else:
+            raise ValueError(f"Invalid non_primitive_handling value: {handling!r}")
+
+        if mode == "str":
+            for col in self._non_primitive_columns:
+                if col in pdf.columns:
+                    pdf[col] = pdf[col].map(self._coerce_value_to_str)
+        else:
+            for col in self._non_primitive_columns:
+                if col in pdf.columns:
+                    pdf[col] = pdf[col].map(self._coerce_value_to_bytes)
 
     def start(self) -> None:
         """Driver-side initialization implementing first-block semantics.
@@ -259,7 +348,11 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
                 if len(pdf) == 0:
                     continue
 
-                bytes_written: int = int(pdf.memory_usage().sum())
+                # Normalize any non-primitive values before handing them to the SQL driver.
+                self._normalize_non_primitive_values(pdf)
+
+                mp_size = micropartition.size_bytes()
+                bytes_written: int = mp_size if mp_size is not None else 0
                 rows_written: int = int(pdf.shape[0])
 
                 pdf.to_sql(
@@ -285,8 +378,6 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
 
     def finalize(self, write_results: list[WriteResult[dict[str, Any] | None]]) -> MicroPartition:
         """Aggregate write statistics into a single MicroPartition."""
-        from daft.dependencies import pa
-
         total_written_rows = 0
         total_written_bytes = 0
 
@@ -296,7 +387,7 @@ class SQLDataSink(DataSink[dict[str, Any] | None]):
 
         return MicroPartition.from_pydict(
             {
-                "total_written_rows": pa.array([total_written_rows], pa.int64()),
-                "total_written_bytes": pa.array([total_written_bytes], pa.int64()),
+                "total_written_rows": [total_written_rows],
+                "total_written_bytes": [total_written_bytes],
             }
         )

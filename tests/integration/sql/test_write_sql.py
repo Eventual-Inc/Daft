@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import uuid
+import warnings
 
 import pytest
 import sqlalchemy
@@ -353,3 +354,43 @@ def test_write_sql_dtype_with_chunking(test_db, chunk_size):
         assert "integer" in id_type or "int" in id_type
     finally:
         engine.dispose()
+
+
+@pytest.mark.integration()
+def test_write_sql_non_primitive_types_warning(test_db):
+    table_name = f"write_test_non_primitive_{uuid.uuid4().hex}"
+
+    # Create a DataFrame with non-primitive columns (list and struct)
+    df = daft.from_pydict({"id": [1, 2], "list_col": [[1, 2], [3, 4]], "struct_col": [{"a": 1}, {"a": 2}]})
+
+    # Verify that a warning is issued when non_primitive_handling is None (default)
+    with pytest.warns(UserWarning, match="Detected non-primitive columns"):
+        df.write_sql(table_name, test_db)
+
+    # Verify data is written (as string/object usually)
+    read_df = daft.read_sql(f"SELECT * FROM {table_name}", test_db).sort("id").collect()
+    assert len(read_df) == 2
+
+    # Just checking we got something back; exact representation depends on pandas/sqlalchemy/driver
+    pydict = read_df.to_pydict()
+    assert pydict["id"] == [1, 2]
+    # The non-primitive columns should be present
+    assert "list_col" in pydict
+    assert "struct_col" in pydict
+
+
+@pytest.mark.integration()
+def test_write_sql_non_primitive_types_no_warning_explicit(test_db):
+    table_name = f"write_test_non_primitive_nowarn_{uuid.uuid4().hex}"
+
+    df = daft.from_pydict({"id": [1], "list_col": [[1, 2]]})
+
+    # Verify NO warning is issued when non_primitive_handling is set
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")  # Cause all warnings to always be triggered.
+        df.write_sql(table_name, test_db, non_primitive_handling="none")
+        # Filter for our specific warning
+        relevant_warnings = [
+            x for x in w if issubclass(x.category, UserWarning) and "Detected non-primitive columns" in str(x.message)
+        ]
+        assert len(relevant_warnings) == 0
