@@ -119,3 +119,15 @@ def test_video_keyframes_start_time_beyond_duration_returns_empty(sample_video_p
 
     frames = df.to_pydict()["frames"][0]
     assert frames == []
+
+
+def test_keyframes_raises_informative_error_when_pillow_missing(sample_video_path, monkeypatch):
+    """Regression test for issue #6064: ensure informative error when pillow is missing."""
+    from daft import dependencies
+
+    monkeypatch.setattr(dependencies.pil_image, "module_available", lambda: False)
+
+    file = daft.VideoFile(sample_video_path)
+
+    with pytest.raises(ImportError, match="pillow.*required.*pip install daft\\[video\\]"):
+        list(file.keyframes())
