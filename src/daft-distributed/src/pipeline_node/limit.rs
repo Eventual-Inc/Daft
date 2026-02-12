@@ -2,7 +2,7 @@ use std::{cmp::Ordering, collections::VecDeque, sync::Arc};
 
 use common_error::DaftResult;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
-use daft_logical_plan::stats::StatsState;
+use daft_logical_plan::stats::{PlanStats, StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
 
@@ -150,7 +150,7 @@ impl LimitNode {
                     } else {
                         in_memory_scan
                     };
-                    SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets)
+                    SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets)
                 }
                 Ordering::Greater => {
                     let remaining = limit_state.remaining_take();
@@ -171,7 +171,8 @@ impl LimitNode {
                             additional: None,
                         },
                     );
-                    let task = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+                    let task = SwordfishTaskBuilder::new(plan, self.as_ref())
+                        .with_psets(self.node_id(), psets);
                     limit_state.decrement_take(remaining);
                     task
                 }
@@ -237,8 +238,11 @@ impl LimitNode {
                     if next_tasks.is_empty() {
                         // If all rows need to be skipped, send an empty scan task to allow downstream tasks to
                         // continue running, such as aggregate tasks
-                        let empty_plan = LocalPhysicalPlan::empty_scan(
+                        let empty_plan = LocalPhysicalPlan::in_memory_scan(
+                            self.node_id(),
                             self.config.schema.clone(),
+                            0,
+                            StatsState::Materialized(PlanStats::empty().into()),
                             LocalNodeContext {
                                 origin_node_id: Some(self.node_id() as usize),
                                 additional: None,

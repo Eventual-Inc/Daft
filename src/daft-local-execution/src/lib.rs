@@ -2,9 +2,12 @@ mod buffer;
 mod channel;
 mod concat;
 mod dynamic_batching;
+mod input_sender;
 mod intermediate_ops;
 mod join;
 mod pipeline;
+mod pipeline_execution;
+mod pipeline_message;
 mod resource_manager;
 mod run;
 mod runtime_stats;
@@ -23,26 +26,19 @@ use common_error::{DaftError, DaftResult};
 use common_runtime::{JoinSet, RuntimeRef, RuntimeTask};
 use console::style;
 use resource_manager::MemoryManager;
-pub use run::{ExecutionEngineResult, NativeExecutor};
+pub use run::ExecutionEngineResult;
 use runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle, TimedFuture};
 use snafu::{ResultExt, Snafu, futures::TryFutureExt};
 use tracing::Instrument;
 
-/// Control flow indicator for processing loops.
-/// Used to signal whether processing should continue or break out of a loop.
+/// Simple control flow indicator for processing loops.
+/// Messages are sent directly by handlers, not returned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum OperatorControlFlow {
+pub(crate) enum ControlFlow {
     /// Continue processing - caller should proceed with the next iteration
     Continue,
-    /// Break processing - caller should exit the loop immediately
-    Break,
-}
-
-impl OperatorControlFlow {
-    /// Returns true if processing should continue
-    pub(crate) fn should_continue(&self) -> bool {
-        matches!(self, Self::Continue)
-    }
+    /// Stop processing - caller should exit the loop
+    Stop,
 }
 
 /// The `OperatorOutput` enum represents the output of an operator.
@@ -118,6 +114,15 @@ impl ExecutionRuntimeContext {
         let node_name = node_name.to_string();
         self.worker_set
             .spawn(task.with_context(|_| PipelineExecutionSnafu { node_name }));
+    }
+
+    pub async fn join_next(&mut self) -> Option<DaftResult<()>> {
+        match self.worker_set.join_next().await {
+            Some(Ok(Ok(()))) => Some(Ok(())),
+            Some(Ok(Err(e))) => Some(Err(e.into())),
+            Some(Err(e)) => Some(Err(e)),
+            None => None,
+        }
     }
 
     pub async fn shutdown(&mut self) -> DaftResult<()> {

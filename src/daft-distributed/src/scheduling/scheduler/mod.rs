@@ -216,7 +216,8 @@ impl WorkerSnapshot {
         if task.resource_request().num_gpus() > 0.0 && self.available_num_gpus() == 0.0 {
             return false;
         }
-        self.available_num_cpus() >= task.resource_request().num_cpus()
+        // Allow overscheduling by one task's worth of CPUs beyond total capacity.
+        self.active_num_cpus() <= self.total_num_cpus
     }
 }
 

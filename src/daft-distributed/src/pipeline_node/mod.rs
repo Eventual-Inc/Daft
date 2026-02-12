@@ -17,7 +17,7 @@ use common_metrics::QueryID;
 use common_partitioning::PartitionRef;
 use common_treenode::ConcreteTreeNode;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
-use daft_logical_plan::{InMemoryInfo, partitioning::ClusteringSpecRef, stats::StatsState};
+use daft_logical_plan::{partitioning::ClusteringSpecRef, stats::StatsState};
 use daft_schema::schema::SchemaRef;
 use futures::{Stream, StreamExt, stream::BoxStream};
 use materialize::materialize_all_pipeline_outputs;
@@ -123,29 +123,16 @@ impl MaterializedOutput {
         materialized_outputs: Vec<Self>,
         schema: SchemaRef,
         node_id: NodeID,
-    ) -> (LocalPhysicalPlanRef, HashMap<String, Vec<PartitionRef>>) {
+    ) -> (LocalPhysicalPlanRef, Vec<PartitionRef>) {
         let total_size_bytes = materialized_outputs
             .iter()
             .map(|output| output.size_bytes())
             .sum::<usize>();
-        let total_num_rows = materialized_outputs
-            .iter()
-            .map(|output| output.num_rows())
-            .sum::<usize>();
-
-        let info = InMemoryInfo::new(
-            schema,
-            node_id.to_string(),
-            None,
-            materialized_outputs.len(),
-            total_size_bytes,
-            total_num_rows,
-            None,
-            None,
-        );
 
         let in_memory_scan = LocalPhysicalPlan::in_memory_scan(
-            info,
+            node_id,
+            schema,
+            total_size_bytes,
             StatsState::NotMaterialized,
             LocalNodeContext {
                 origin_node_id: Some(node_id as usize),
@@ -157,9 +144,8 @@ impl MaterializedOutput {
             .into_iter()
             .flat_map(|output| output.into_inner().0)
             .collect::<Vec<_>>();
-        let psets = HashMap::from([(node_id.to_string(), partition_refs)]);
 
-        (in_memory_scan, psets)
+        (in_memory_scan, partition_refs)
     }
 }
 

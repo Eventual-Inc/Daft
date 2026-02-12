@@ -140,14 +140,15 @@ struct UdfParams {
 }
 
 #[cfg(feature = "python")]
+#[derive(Clone)]
 enum UdfHandle {
     Thread,
-    Process(Option<Py<PyAny>>),
+    Process(Option<Arc<Py<PyAny>>>),
 }
 
 #[cfg(feature = "python")]
 impl UdfHandle {
-    fn get_or_create_handle(&mut self, udf_expr: &BoundExpr) -> DaftResult<&mut Py<PyAny>> {
+    fn get_or_create_handle(&mut self, udf_expr: &BoundExpr) -> DaftResult<Arc<Py<PyAny>>> {
         match self {
             // Create process handle if it doesn't exist
             Self::Process(None) => {
@@ -163,7 +164,7 @@ impl UdfHandle {
                     )
                 })?;
 
-                *self = Self::Process(Some(handle));
+                *self = Self::Process(Some(Arc::new(handle)));
             }
             // Handle already created, nothing to do
             Self::Process(_) => {}
@@ -176,7 +177,7 @@ impl UdfHandle {
         }
 
         match self {
-            Self::Process(Some(handle)) => Ok(handle),
+            Self::Process(Some(handle)) => Ok(handle.clone()),
             Self::Process(None) => unreachable!("Process handle should be created by now"),
             Self::Thread => unreachable!("Thread variant does not have a handle"),
         }
@@ -314,6 +315,7 @@ impl Drop for UdfHandle {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct UdfState {
     expr: BoundExpr,
     worker_idx: usize,
@@ -548,8 +550,8 @@ impl IntermediateOperator for UdfOperator {
         }
     }
 
-    fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(self.concurrency)
+    fn max_concurrency(&self) -> usize {
+        self.concurrency
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {

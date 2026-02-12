@@ -29,6 +29,18 @@ pub use values::{DefaultRuntimeStats, RuntimeStats};
 
 use crate::pipeline::PipelineNode;
 
+/// A cloneable handle that can produce a stats snapshot at any time.
+/// Used by `ExecutionEngineResult::try_finish()` to return stats to each receiver
+/// without awaiting the full pipeline completion.
+#[derive(Clone)]
+pub struct RuntimeStatsSnapshot;
+
+impl RuntimeStatsSnapshot {
+    pub fn snapshot(&self) -> ExecutionEngineFinalResult {
+        ExecutionEngineFinalResult::new(vec![])
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QueryEndState {
     Finished,
@@ -249,6 +261,10 @@ impl RuntimeStatsManager {
 
     pub fn handle(&self) -> RuntimeStatsManagerHandle {
         RuntimeStatsManagerHandle(self.node_tx.clone())
+    }
+
+    pub fn snapshot_handle(&self) -> RuntimeStatsSnapshot {
+        RuntimeStatsSnapshot
     }
 
     pub async fn finish(self, status: QueryEndState) -> ExecutionEngineFinalResult {

@@ -1,27 +1,26 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs::File,
+    hash::{Hash, Hasher},
     io::Write,
-    sync::{Arc, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayLevel, mermaid::MermaidDisplayOptions};
 use common_error::DaftResult;
+use common_metrics::QueryID;
 use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
 use daft_context::{DaftContext, Subscriber};
-use daft_local_plan::{ExecutionEngineFinalResult, LocalPhysicalPlanRef, translate};
-use daft_logical_plan::LogicalPlanBuilder;
-use daft_micropartition::{
-    MicroPartition, MicroPartitionRef,
-    partitioning::{InMemoryPartitionSetCache, MicroPartitionSet, PartitionSetCache},
+use daft_local_plan::{
+    ExecutionEngineFinalResult, Input, InputId, LocalPhysicalPlanRef, SourceId, translate,
 };
-use futures::Stream;
-#[cfg(feature = "python")]
-use pyo3::PyAny;
-use tokio::{runtime::Handle, sync::Mutex};
+use daft_logical_plan::LogicalPlanBuilder;
+use daft_micropartition::MicroPartition;
+use futures::{FutureExt, Stream, future::BoxFuture};
+use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 #[cfg(feature = "python")]
 use {
@@ -30,18 +29,19 @@ use {
     daft_local_plan::python::PyExecutionEngineFinalResult,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
-    pyo3::{Bound, IntoPyObject, PyRef, PyResult, Python, pyclass, pymethods},
+    pyo3::{Bound, PyAny, PyRef, PyResult, Python, pyclass, pymethods, sync::MutexExt},
 };
 
 use crate::{
     ExecutionRuntimeContext,
-    channel::{Receiver, create_channel},
+    channel::{Sender, UnboundedSender, create_channel, create_unbounded_channel},
     pipeline::{
         BuilderContext, RelationshipInformation, get_pipeline_relationship_mapping,
         translate_physical_plan_to_pipeline, viz_pipeline_ascii, viz_pipeline_mermaid,
     },
+    pipeline_message::PipelineMessage,
     resource_manager::get_or_init_memory_manager,
-    runtime_stats::{QueryEndState, RuntimeStatsManager},
+    runtime_stats::{QueryEndState, RuntimeStatsManager, RuntimeStatsSnapshot},
 };
 
 /// Global tokio runtime shared by all NativeExecutor instances
@@ -66,12 +66,107 @@ fn get_global_runtime() -> &'static Handle {
     unimplemented!("get_global_runtime is not implemented without python feature");
 }
 
+/// Message sent to the execution task to enqueue inputs
+pub(crate) struct EnqueueInputMessage {
+    /// The input_id for this enqueue operation
+    input_id: InputId,
+    /// Plan inputs grouped by source_id
+    inputs: HashMap<SourceId, Input>,
+    /// Sender for results of this input_id
+    result_sender: UnboundedSender<Arc<MicroPartition>>,
+}
+
+/// Routes pipeline messages to per-input_id channels.
+struct MessageRouter {
+    output_senders: HashMap<InputId, UnboundedSender<Arc<MicroPartition>>>,
+}
+
+impl MessageRouter {
+    fn new() -> Self {
+        Self {
+            output_senders: HashMap::new(),
+        }
+    }
+
+    /// Route a message to the appropriate channel based on its input_id.
+    fn route_message(&mut self, msg: PipelineMessage) {
+        match msg {
+            PipelineMessage::Flush(input_id) => {
+                self.output_senders.remove(&input_id);
+            }
+            PipelineMessage::Morsel {
+                input_id,
+                partition,
+            } => {
+                if let Some(sender) = self.output_senders.get(&input_id) {
+                    let _ = sender.send(partition);
+                }
+            }
+        }
+    }
+
+    fn insert_output_sender(
+        &mut self,
+        input_id: InputId,
+        sender: UnboundedSender<Arc<MicroPartition>>,
+    ) {
+        self.output_senders.insert(input_id, sender);
+    }
+}
+
+/// Per-plan execution state
+struct PlanState {
+    task_handle: RuntimeTask<DaftResult<ExecutionEngineFinalResult>>,
+    enqueue_input_sender: Sender<EnqueueInputMessage>,
+    stats_snapshot: RuntimeStatsSnapshot,
+    active_input_ids: HashSet<InputId>,
+}
+
+struct ActivePlansRegistry {
+    plans: HashMap<u64, PlanState>,
+}
+
+impl ActivePlansRegistry {
+    fn new() -> Self {
+        Self {
+            plans: HashMap::new(),
+        }
+    }
+
+    fn get_or_create_plan<F>(&mut self, fingerprint: u64, plan_factory: F) -> DaftResult<()>
+    where
+        F: FnOnce() -> DaftResult<(
+            RuntimeTask<DaftResult<ExecutionEngineFinalResult>>,
+            Sender<EnqueueInputMessage>,
+            RuntimeStatsSnapshot,
+        )>,
+    {
+        if self.plans.contains_key(&fingerprint) {
+            return Ok(());
+        }
+        let (task_handle, enqueue_sender, stats_snapshot) = plan_factory()?;
+        let state = PlanState {
+            task_handle,
+            enqueue_input_sender: enqueue_sender,
+            stats_snapshot,
+            active_input_ids: HashSet::new(),
+        };
+        self.plans.insert(fingerprint, state);
+        Ok(())
+    }
+
+    fn cancel_plan(&mut self, fingerprint: u64) {
+        // RuntimeTask drop cancels the spawned task
+        self.plans.remove(&fingerprint);
+    }
+}
+
 #[cfg_attr(
     feature = "python",
     pyclass(module = "daft.daft", name = "NativeExecutor", frozen)
 )]
 pub struct PyNativeExecutor {
-    executor: NativeExecutor,
+    executor: Arc<Mutex<NativeExecutor>>,
 }
 
 #[cfg(feature = "python")]
@@ -87,52 +182,67 @@ impl PyNativeExecutor {
     #[new]
     pub fn new() -> Self {
         Self {
-            executor: NativeExecutor::new(),
+            executor: Arc::new(Mutex::new(NativeExecutor::new())),
         }
     }
 
-    #[pyo3(signature = (local_physical_plan, psets, daft_ctx, results_buffer_size=None, context=None))]
-    pub fn run<'a>(
+    #[pyo3(signature = (local_physical_plan, daft_ctx, inputs, input_id, context=None))]
+    pub fn run<'py>(
         &self,
-        py: Python<'a>,
+        py: Python<'py>,
         local_physical_plan: &daft_local_plan::PyLocalPhysicalPlan,
-        psets: HashMap<String, Vec<PyMicroPartition>>,
         daft_ctx: &PyDaftContext,
-        results_buffer_size: Option<usize>,
+        inputs: HashMap<SourceId, Input>,
+        input_id: InputId,
         context: Option<HashMap<String, String>>,
-    ) -> PyResult<Bound<'a, PyExecutionEngineResult>> {
-        let native_psets: HashMap<String, Arc<MicroPartitionSet>> = psets
-            .into_iter()
-            .map(|(part_id, parts)| {
-                (
-                    part_id,
-                    Arc::new(
-                        parts
-                            .into_iter()
-                            .map(std::convert::Into::into)
-                            .collect::<Vec<Arc<MicroPartition>>>()
-                            .into(),
-                    ),
-                )
-            })
-            .collect();
-        let psets = InMemoryPartitionSetCache::new(&native_psets);
+    ) -> PyResult<Bound<'py, pyo3::PyAny>> {
         let daft_ctx: &DaftContext = daft_ctx.into();
-        let res = py.detach(|| {
-            self.executor.run(
-                &local_physical_plan.plan,
-                &psets,
-                daft_ctx.execution_config(),
-                daft_ctx.subscribers(),
-                results_buffer_size,
+        let plan = local_physical_plan.plan.clone();
+        let _query_id = context
+            .as_ref()
+            .and_then(|c| c.get("query_id"))
+            .map(|s| s.as_str())
+            .unwrap_or("");
+        let exec_cfg = daft_ctx.execution_config();
+        let subscribers = daft_ctx.subscribers();
+        let (fingerprint, enqueue_future) = {
+            self.executor.lock_py_attached(py).unwrap().run(
+                &plan,
+                exec_cfg,
+                subscribers,
                 context,
-            )
-        })?;
-
-        let py_execution_result = PyExecutionEngineResult {
-            result: Arc::new(Mutex::new(Some(res))),
+                inputs,
+                input_id,
+            )?
         };
-        py_execution_result.into_pyobject(py)
+
+        let executor = self.executor.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let result = enqueue_future.await?;
+            Ok(PyResultReceiver {
+                result: Arc::new(tokio::sync::Mutex::new(Some(result))),
+                fingerprint,
+                input_id,
+                executor,
+            })
+        })
+    }
+
+    pub fn active_plan_count(&self, py: Python<'_>) -> usize {
+        self.executor
+            .lock_py_attached(py)
+            .unwrap()
+            .active_plans
+            .plans
+            .len()
+    }
+
+    pub fn cancel_plan(&self, py: Python<'_>, fingerprint: u64) -> PyResult<()> {
+        self.executor
+            .lock_py_attached(py)
+            .unwrap()
+            .cancel_plan(fingerprint);
+        Ok(())
     }
 
     #[staticmethod]
@@ -173,129 +283,263 @@ impl PyNativeExecutor {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct NativeExecutor {
+pub(crate) struct NativeExecutor {
     cancel: CancellationToken,
-    enable_explain_analyze: bool,
-}
-
-impl Default for NativeExecutor {
-    fn default() -> Self {
-        Self {
-            cancel: CancellationToken::new(),
-            enable_explain_analyze: should_enable_explain_analyze(),
-        }
-    }
+    active_plans: ActivePlansRegistry,
 }
 
 impl NativeExecutor {
     pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn enable_explain_analyze(mut self, b: bool) -> Self {
-        self.enable_explain_analyze = b;
-        self
+        Self {
+            cancel: CancellationToken::new(),
+            active_plans: ActivePlansRegistry::new(),
+        }
     }
 
     pub fn run(
-        &self,
+        &mut self,
         local_physical_plan: &LocalPhysicalPlanRef,
-        psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
         exec_cfg: Arc<DaftExecutionConfig>,
         subscribers: Vec<Arc<dyn Subscriber>>,
-        results_buffer_size: Option<usize>,
         additional_context: Option<HashMap<String, String>>,
-    ) -> DaftResult<ExecutionEngineResult> {
-        let cancel = self.cancel.clone();
-        let additional_context = additional_context.unwrap_or_default();
-        let query_id: common_metrics::QueryID = additional_context
-            .get("query_id")
-            .ok_or_else(|| {
-                common_error::DaftError::ValueError(
-                    "query_id not found in additional_context".to_string(),
-                )
-            })?
-            .clone()
-            .into();
+        inputs: HashMap<SourceId, Input>,
+        input_id: InputId,
+    ) -> DaftResult<(u64, BoxFuture<'static, DaftResult<ExecutionEngineResult>>)> {
+        let query_id = additional_context
+            .as_ref()
+            .and_then(|c| c.get("query_id"))
+            .map(|s| QueryID::from(s.as_str()))
+            .unwrap_or(QueryID::from(""));
+        let plan_fingerprint = local_physical_plan.fingerprint();
+        let fingerprint = plan_key(plan_fingerprint, query_id.clone());
+        let enable_explain_analyze = should_enable_explain_analyze();
 
-        let ctx = BuilderContext::new_with_context(query_id.clone(), additional_context);
-        let pipeline =
-            translate_physical_plan_to_pipeline(local_physical_plan, psets, &exec_cfg, &ctx)?;
+        // Get or create plan handle from registry
+        self.active_plans.get_or_create_plan(fingerprint, || {
+            let cancel = self.cancel.clone();
+            let additional_context = additional_context.clone().unwrap_or_default();
+            let ctx = BuilderContext::new_with_context(query_id.clone(), additional_context);
+            let (mut pipeline, input_senders) =
+                translate_physical_plan_to_pipeline(local_physical_plan, &exec_cfg, &ctx)?;
 
-        let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
-        let enable_explain_analyze = self.enable_explain_analyze;
+            let handle = get_global_runtime();
+            let stats_manager =
+                RuntimeStatsManager::try_new(handle, &pipeline, subscribers, query_id)?;
+            let stats_snapshot = stats_manager.snapshot_handle();
 
-        // Spawn execution on the global runtime - returns immediately
-        let handle = get_global_runtime();
-        let stats_manager = RuntimeStatsManager::try_new(handle, &pipeline, subscribers, query_id)?;
-        let task = async move {
-            let stats_manager_handle = stats_manager.handle();
-            let execution_task = async {
+            let (enqueue_input_tx, mut enqueue_input_rx) =
+                create_channel::<EnqueueInputMessage>(1);
+
+            let input_senders = Arc::new(input_senders);
+
+            let task = async move {
+                let stats_manager_handle = stats_manager.handle();
                 let memory_manager = get_or_init_memory_manager();
                 let mut runtime_handle =
                     ExecutionRuntimeContext::new(memory_manager.clone(), stats_manager_handle);
-                let mut receiver = pipeline.start(exec_cfg.maintain_order, &mut runtime_handle)?;
+                let mut output_receiver = pipeline.start(true, &mut runtime_handle)?;
 
-                while let Some(val) = receiver.recv().await {
-                    if tx.send(val).await.is_err() {
-                        return Ok(());
+                let mut message_router = MessageRouter::new();
+                let mut input_exhausted = false;
+                let mut pipeline_finished = false;
+                let mut shutdown_result: Option<(DaftResult<()>, QueryEndState)> = None;
+                let mut input_senders = Some(input_senders);
+
+                let (result, finish_status) = loop {
+                    tokio::select! {
+                        biased;
+                        () = cancel.cancelled() => {
+                            log::info!("Execution engine cancelled");
+                            break (Ok(()), QueryEndState::Cancelled);
+                        }
+                        _ = tokio::signal::ctrl_c() => {
+                            log::info!("Received Ctrl-C, shutting down execution engine");
+                            break (Ok(()), QueryEndState::Cancelled);
+                        }
+                        Some(join_result) = runtime_handle.join_next(), if !pipeline_finished => {
+                            match join_result {
+                                Ok(()) => {
+                                    // Task completed successfully, continue
+                                }
+                                Err(e) => {
+                                    if matches!(&e, common_error::DaftError::JoinError(source) if source.is_cancelled()) {
+                                        break (Ok(()), QueryEndState::Cancelled);
+                                    }
+                                    break (Err(e), QueryEndState::Failed);
+                                }
+                            }
+                        }
+                        enqueue_msg = enqueue_input_rx.recv(), if !input_exhausted => {
+                            match enqueue_msg {
+                                Some(EnqueueInputMessage { input_id, inputs, result_sender }) => {
+                                    if pipeline_finished {
+                                        drop(result_sender);
+                                    } else {
+                                        message_router.insert_output_sender(input_id, result_sender);
+                                        // Send inputs to pipeline sources. Unbounded channels
+                                        // ensure sends never block the select loop.
+                                        let senders = input_senders.as_ref().unwrap();
+                                        let provided_keys: HashSet<SourceId> =
+                                            inputs.keys().copied().collect();
+                                        for (key, plan_input) in inputs {
+                                            if let Some(sender) = senders.get(&key) {
+                                                let _ = sender.send(input_id, plan_input);
+                                            }
+                                        }
+                                        // Send empty inputs for any source that didn't receive data,
+                                        // so the pipeline can still flush this input_id properly.
+                                        for (key, sender) in senders.iter() {
+                                            if !provided_keys.contains(key) {
+                                                let _ = sender.send_empty(input_id);
+                                            }
+                                        }
+                                    }
+                                }
+                                None => {
+                                    // All senders dropped — no more inputs coming.
+                                    // Drop our Arc ref; input channels close once
+                                    // in-flight dispatch tasks finish.
+                                    input_senders.take();
+                                    input_exhausted = true;
+                                    if pipeline_finished {
+                                        break shutdown_result.take().unwrap();
+                                    }
+                                }
+                            }
+                        }
+                        msg = output_receiver.recv(), if !pipeline_finished => {
+                            match msg {
+                                Some(msg) => {
+                                    message_router.route_message(msg);
+                                }
+                                None => {
+                                    // Close all in-flight result channels immediately
+                                    // so waiters get None from next() and can call
+                                    // try_finish(). Must happen before shutdown() so
+                                    // callers don't block waiting for results while
+                                    // we wait for tasks to drain.
+                                    message_router = MessageRouter::new();
+                                    let res = runtime_handle.shutdown().await;
+                                    pipeline_finished = true;
+                                    let status = if res.is_ok() { QueryEndState::Finished } else { QueryEndState::Failed };
+                                    shutdown_result = Some((res, status));
+                                    if input_exhausted {
+                                        break shutdown_result.take().unwrap();
+                                    }
+                                }
+                            }
+                        }
                     }
-                }
+                };
 
-                runtime_handle.shutdown().await
+                drop(message_router);
+
+                // Finish the stats manager
+                let final_stats = stats_manager.finish(finish_status).await;
+
+                // TODO: Move into a runtime stats subscriber
+                if enable_explain_analyze {
+                    let curr_ms = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .expect("Time went backwards")
+                        .as_millis();
+                    let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
+                    let mut file = File::create(file_name)?;
+                    writeln!(
+                        file,
+                        "```mermaid\n{}\n```",
+                        viz_pipeline_mermaid(
+                            pipeline.as_ref(),
+                            DisplayLevel::Verbose,
+                            true,
+                            Default::default()
+                        )
+                    )?;
+                }
+                flush_opentelemetry_providers();
+                result.map(|()| final_stats)
             };
 
-            let (result, finish_status) = tokio::select! {
-                biased;
-                () = cancel.cancelled() => {
-                    log::info!("Execution engine cancelled");
-                    (Ok(()), QueryEndState::Cancelled)
-                }
-                _ = tokio::signal::ctrl_c() => {
-                    log::info!("Received Ctrl-C, shutting down execution engine");
-                    (Ok(()), QueryEndState::Cancelled)
-                }
-                result = execution_task => {
-                    let status = if result.is_err() {
-                        QueryEndState::Failed
-                    } else {
-                        QueryEndState::Finished
-                    };
-                    (result, status)
-                },
-            };
+            let handle = get_global_runtime();
+            let task_handle = RuntimeTask::new(handle, task);
+            Ok((task_handle, enqueue_input_tx, stats_snapshot))
+        })?;
 
-            // Finish the stats manager
-            let final_stats = stats_manager.finish(finish_status).await;
+        // Get the enqueue sender from the plan state
+        let plan_state = self.active_plans.plans.get_mut(&fingerprint).unwrap();
+        let enqueue_input_sender = plan_state.enqueue_input_sender.clone();
+        plan_state.active_input_ids.insert(input_id);
 
-            // TODO: Move into a runtime stats subscriber
-            if enable_explain_analyze {
-                let curr_ms = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .expect("Time went backwards")
-                    .as_millis();
-                let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
-                let mut file = File::create(file_name)?;
-                writeln!(
-                    file,
-                    "```mermaid\n{}\n```",
-                    viz_pipeline_mermaid(
-                        pipeline.as_ref(),
-                        DisplayLevel::Verbose,
-                        true,
-                        Default::default()
-                    )
-                )?;
+        Ok((
+            fingerprint,
+            async move {
+                let (result_tx, result_rx) = create_unbounded_channel();
+
+                let enqueue_msg = EnqueueInputMessage {
+                    input_id,
+                    inputs,
+                    result_sender: result_tx,
+                };
+
+                if enqueue_input_sender.send(enqueue_msg).await.is_err() {
+                    return Err(common_error::DaftError::InternalError(
+                        "Plan execution task has died; cannot enqueue new input".to_string(),
+                    ));
+                }
+                Ok(ExecutionEngineResult {
+                    receiver: result_rx,
+                })
             }
-            flush_opentelemetry_providers();
-            result.map(|()| final_stats)
+            .boxed(),
+        ))
+    }
+
+    /// Finish tracking an input_id. If no active input_ids remain (or the
+    /// enqueue channel is closed), removes the plan from the registry and
+    /// awaits the exec task for its final result.
+    pub fn try_finish(
+        &mut self,
+        fingerprint: u64,
+        input_id: InputId,
+    ) -> DaftResult<BoxFuture<'static, DaftResult<ExecutionEngineFinalResult>>> {
+        let should_remove = if let Some(plan_state) = self.active_plans.plans.get_mut(&fingerprint)
+        {
+            plan_state.active_input_ids.remove(&input_id);
+            let is_empty = plan_state.active_input_ids.is_empty();
+            let is_closed = plan_state.enqueue_input_sender.is_closed();
+            is_empty || is_closed
+        } else {
+            return Err(common_error::DaftError::InternalError(format!(
+                "try_finish called for unknown plan fingerprint {fingerprint}"
+            )));
         };
 
-        Ok(ExecutionEngineResult {
-            receiver: rx,
-            handle: RuntimeTask::new(handle, task),
-        })
+        if should_remove {
+            let plan_state = self.active_plans.plans.remove(&fingerprint).unwrap();
+            let enqueue_input_sender = plan_state.enqueue_input_sender;
+            let task_handle = plan_state.task_handle;
+            Ok(async move {
+                // Drop the sender so the exec task sees input exhaustion
+                drop(enqueue_input_sender);
+                // Await the exec task for its final result (includes stats)
+                let result = task_handle.await?;
+                result
+            }
+            .boxed())
+        } else {
+            let stats_snapshot = self
+                .active_plans
+                .plans
+                .get(&fingerprint)
+                .unwrap()
+                .stats_snapshot
+                .clone();
+            Ok(async move { Ok(stats_snapshot.snapshot()) }.boxed())
+        }
+    }
+
+    pub fn cancel_plan(&mut self, fingerprint: u64) {
+        self.active_plans.cancel_plan(fingerprint);
     }
 
     fn repr_ascii(
@@ -304,15 +548,10 @@ impl NativeExecutor {
         simple: bool,
     ) -> String {
         let logical_plan = logical_plan_builder.build();
-        let physical_plan = translate(&logical_plan).unwrap();
+        let (physical_plan, _) = translate(&logical_plan, &HashMap::new()).unwrap();
         let ctx = BuilderContext::new();
-        let pipeline_node = translate_physical_plan_to_pipeline(
-            &physical_plan,
-            &InMemoryPartitionSetCache::empty(),
-            &cfg,
-            &ctx,
-        )
-        .unwrap();
+        let (pipeline_node, _) =
+            translate_physical_plan_to_pipeline(&physical_plan, &cfg, &ctx).unwrap();
 
         viz_pipeline_ascii(pipeline_node.as_ref(), simple)
     }
@@ -323,15 +562,10 @@ impl NativeExecutor {
         options: MermaidDisplayOptions,
     ) -> String {
         let logical_plan = logical_plan_builder.build();
-        let physical_plan = translate(&logical_plan).unwrap();
+        let (physical_plan, _) = translate(&logical_plan, &HashMap::new()).unwrap();
         let ctx = BuilderContext::new();
-        let pipeline_node = translate_physical_plan_to_pipeline(
-            &physical_plan,
-            &InMemoryPartitionSetCache::empty(),
-            &cfg,
-            &ctx,
-        )
-        .unwrap();
+        let (pipeline_node, _) =
+            translate_physical_plan_to_pipeline(&physical_plan, &cfg, &ctx).unwrap();
 
         let display_type = if options.simple {
             DisplayLevel::Compact
@@ -350,15 +584,10 @@ impl NativeExecutor {
         cfg: Arc<DaftExecutionConfig>,
     ) -> RelationshipInformation {
         let logical_plan = logical_plan_builder.build();
-        let physical_plan = translate(&logical_plan).unwrap();
+        let (physical_plan, _) = translate(&logical_plan, &HashMap::new()).unwrap();
         let ctx = BuilderContext::new();
-        let pipeline_node = translate_physical_plan_to_pipeline(
-            &physical_plan,
-            &InMemoryPartitionSetCache::empty(),
-            &cfg,
-            &ctx,
-        )
-        .unwrap();
+        let (pipeline_node, _) =
+            translate_physical_plan_to_pipeline(&physical_plan, &cfg, &ctx).unwrap();
         get_pipeline_relationship_mapping(&*pipeline_node)
     }
 }
@@ -367,6 +596,15 @@ impl Drop for NativeExecutor {
     fn drop(&mut self) {
         self.cancel.cancel();
     }
+}
+
+/// Combine a plan fingerprint with a query_id to produce a plan key.
+/// Plans are only reused when both the plan shape AND query match.
+fn plan_key(plan_fingerprint: u64, query_id: QueryID) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    plan_fingerprint.hash(&mut hasher);
+    query_id.hash(&mut hasher);
+    hasher.finish()
 }
 
 fn should_enable_explain_analyze() -> bool {
@@ -381,8 +619,7 @@ fn should_enable_explain_analyze() -> bool {
 }
 
 pub struct ExecutionEngineResult {
-    handle: RuntimeTask<DaftResult<ExecutionEngineFinalResult>>,
-    receiver: Receiver<Arc<MicroPartition>>,
+    receiver: crate::channel::UnboundedReceiver<Arc<MicroPartition>>,
 }
 
 impl ExecutionEngineResult {
@@ -390,59 +627,40 @@ impl ExecutionEngineResult {
         self.receiver.recv().await
     }
 
-    async fn finish(self) -> DaftResult<ExecutionEngineFinalResult> {
-        drop(self.receiver);
-        let result = self.handle.await;
-        match result {
-            Ok(Ok(final_stats)) => Ok(final_stats),
-            Ok(Err(e)) => Err(e),
-            Err(e) => Err(e),
-        }
-    }
-
-    // Should be used independently of next() and finish()
-    pub fn into_stream(self) -> impl Stream<Item = DaftResult<Arc<MicroPartition>>> {
+    // Should be used independently of next() and try_finish()
+    pub fn into_stream(self) -> impl Stream<Item = Arc<MicroPartition>> {
         struct StreamState {
-            receiver: Receiver<Arc<MicroPartition>>,
-            handle: Option<RuntimeTask<DaftResult<ExecutionEngineFinalResult>>>,
+            receiver: crate::channel::UnboundedReceiver<Arc<MicroPartition>>,
         }
 
         let state = StreamState {
             receiver: self.receiver,
-            handle: Some(self.handle),
         };
 
         futures::stream::unfold(state, |mut state| async {
-            match state.receiver.recv().await {
-                Some(part) => Some((Ok(part), state)),
-                None => {
-                    if let Some(handle) = state.handle.take() {
-                        let result = handle.await;
-                        match result {
-                            Ok(Ok(_final_stats)) => None,
-                            Ok(Err(e)) => Some((Err(e), state)),
-                            Err(e) => Some((Err(e), state)),
-                        }
-                    } else {
-                        None
-                    }
-                }
-            }
+            state
+                .receiver
+                .recv()
+                .await
+                .map(|partition| (partition, state))
         })
     }
 }
 
 #[cfg_attr(
     feature = "python",
-    pyclass(module = "daft.daft", name = "PyExecutionEngineResult", frozen)
+    pyclass(module = "daft.daft", name = "PyResultReceiver", frozen)
 )]
-pub struct PyExecutionEngineResult {
-    result: Arc<Mutex<Option<ExecutionEngineResult>>>,
+pub struct PyResultReceiver {
+    result: Arc<tokio::sync::Mutex<Option<ExecutionEngineResult>>>,
+    fingerprint: u64,
+    input_id: InputId,
+    executor: Arc<Mutex<NativeExecutor>>,
 }
 
 #[cfg(feature = "python")]
 #[pymethods]
-impl PyExecutionEngineResult {
+impl PyResultReceiver {
     fn __aiter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
@@ -453,22 +671,29 @@ impl PyExecutionEngineResult {
             let mut result = result.lock().await;
             let part = result
                 .as_mut()
-                .expect("ExecutionEngineResult.__anext__() should not be called after finish().")
+                .expect("PyResultReceiver.__anext__() should not be called after try_finish().")
                 .next()
                 .await;
             Ok(part.map(PyMicroPartition::from))
         })
     }
 
-    fn finish<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    fn try_finish<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let result = self.result.clone();
+        let executor = self.executor.clone();
+        let fingerprint = self.fingerprint;
+        let input_id = self.input_id;
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            // Take the result to drop the receiver
             let mut result = result.lock().await;
-            let stats = result
+            let _ = result
                 .take()
-                .expect("ExecutionEngineResult.finish() should not be called more than once.")
-                .finish()
-                .await?;
+                .expect("PyResultReceiver.try_finish() should not be called more than once.");
+            drop(result);
+
+            // Delegate to NativeExecutor::try_finish
+            let finish_future = executor.lock().unwrap().try_finish(fingerprint, input_id)?;
+            let stats = finish_future.await?;
             Ok(PyExecutionEngineFinalResult::from(stats))
         })
     }

@@ -9,9 +9,8 @@ use crate::NodeID;
 pub enum NodeType {
     // Sources
     // Produces MicroPartitions, never consumes
-    #[default] // For testing purposes
-    EmptyScan,
     GlobScan,
+    #[default] // For testing purposes
     InMemoryScan,
     ScanTask,
 

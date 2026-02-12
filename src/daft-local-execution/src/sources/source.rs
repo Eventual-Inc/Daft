@@ -14,16 +14,20 @@ use daft_io::IOStatsRef;
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
+// MicroPartition is used in PipelineMessage
 use futures::{StreamExt, stream::BoxStream};
 use opentelemetry::{KeyValue, metrics::Meter};
+use snafu::ResultExt;
 
 use crate::{
-    ExecutionRuntimeContext,
+    ExecutionRuntimeContext, PipelineExecutionSnafu,
+    channel::create_channel,
     pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineNode},
+    pipeline_message::PipelineMessage,
     runtime_stats::RuntimeStats,
 };
 
-pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
+pub type SourceStream<'a> = BoxStream<'a, DaftResult<PipelineMessage>>;
 
 pub(crate) struct SourceStats {
     cpu_us: Counter,
@@ -84,8 +88,8 @@ pub trait Source: Send + Sync {
         Arc::new(SourceStats::new(meter, id))
     }
     fn multiline_display(&self) -> Vec<String>;
-    async fn get_data(
-        &self,
+    fn get_data(
+        &mut self,
         maintain_order: bool,
         io_stats: IOStatsRef,
         chunk_size: usize,
@@ -94,7 +98,7 @@ pub trait Source: Send + Sync {
 }
 
 pub(crate) struct SourceNode {
-    source: Arc<dyn Source>,
+    source: Box<dyn Source>,
     runtime_stats: Arc<SourceStats>,
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
@@ -103,7 +107,7 @@ pub(crate) struct SourceNode {
 
 impl SourceNode {
     pub fn new(
-        source: Arc<dyn Source>,
+        source: Box<dyn Source>,
         plan_stats: StatsState,
         ctx: &BuilderContext,
         context: &LocalNodeContext,
@@ -199,43 +203,54 @@ impl PipelineNode for SourceNode {
         self.morsel_size_requirement = downstream_requirement;
     }
     fn start(
-        &self,
+        &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<crate::channel::Receiver<Arc<MicroPartition>>> {
-        let source = self.source.clone();
+    ) -> crate::Result<crate::channel::Receiver<PipelineMessage>> {
         let io_stats = self.runtime_stats.io_stats.clone();
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
 
-        let (destination_sender, destination_receiver) = crate::channel::create_channel(1);
+        let (destination_sender, destination_receiver) = create_channel(1);
         let chunk_size = match self.morsel_size_requirement {
             MorselSizeRequirement::Strict(size) => size,
             MorselSizeRequirement::Flexible(_, upper) => upper,
         };
 
+        let mut source_stream = self
+            .source
+            .get_data(maintain_order, io_stats, chunk_size.into())
+            .with_context(|_| PipelineExecutionSnafu {
+                node_name: self.name().to_string(),
+            })?;
         let runtime_stats = self.runtime_stats.clone();
+        let schema = self.source.schema().clone();
         runtime_handle.spawn(
             async move {
                 let mut has_data = false;
-                let mut source_stream = source
-                    .get_data(maintain_order, io_stats, chunk_size.get())
-                    .await?;
                 stats_manager.activate_node(node_id);
 
-                while let Some(part) = source_stream.next().await {
+                while let Some(msg) = source_stream.next().await {
                     has_data = true;
-                    let part = part?;
-                    runtime_stats.add_rows_out(part.len() as u64);
-                    if destination_sender.send(part).await.is_err() {
-                        stats_manager.finalize_node(node_id);
-                        return Ok(());
+                    let msg = msg?;
+                    match &msg {
+                        PipelineMessage::Morsel { partition, .. } => {
+                            runtime_stats.add_rows_out(partition.len() as u64);
+                        }
+                        PipelineMessage::Flush(_) => {}
+                    }
+                    if destination_sender.send(msg).await.is_err() {
+                        break;
                     }
                 }
                 if !has_data {
-                    stats_manager.activate_node(node_id);
-                    let empty = Arc::new(MicroPartition::empty(Some(source.schema().clone())));
-                    let _ = destination_sender.send(empty).await;
+                    let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
+                    let _ = destination_sender
+                        .send(PipelineMessage::Morsel {
+                            input_id: 0,
+                            partition: empty,
+                        })
+                        .await;
                     runtime_stats.add_rows_out(0);
                 }
 

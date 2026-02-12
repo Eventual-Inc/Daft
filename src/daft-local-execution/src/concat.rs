@@ -9,12 +9,12 @@ use common_metrics::{
 };
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
-use daft_micropartition::MicroPartition;
 
 use crate::{
-    ExecutionRuntimeContext, OperatorControlFlow,
+    ExecutionRuntimeContext,
     channel::{Receiver, Sender, create_channel},
-    pipeline::{MorselSizeRequirement, PipelineNode, RuntimeContext},
+    pipeline::{MorselSizeRequirement, PipelineNode, BuilderContext},
+    pipeline_message::PipelineMessage,
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
 
@@ -32,13 +32,13 @@ impl ConcatNode {
         left: Box<dyn PipelineNode>,
         right: Box<dyn PipelineNode>,
         plan_stats: StatsState,
-        ctx: &RuntimeContext,
+        ctx: &BuilderContext,
         context: &LocalNodeContext,
     ) -> Self {
         let name: Arc<str> = "Concat".into();
         let node_info =
             ctx.next_node_info(name, NodeType::Concat, NodeCategory::Intermediate, context);
-        let runtime_stats = Arc::new(DefaultRuntimeStats::new(node_info.id));
+        let runtime_stats = Arc::new(DefaultRuntimeStats::new(&ctx.meter, node_info.id));
         let morsel_size_requirement = MorselSizeRequirement::default();
 
         Self {
@@ -57,25 +57,55 @@ impl ConcatNode {
 
     async fn process_child(
         node_id: usize,
-        mut receiver: Receiver<Arc<MicroPartition>>,
-        sender: Sender<Arc<MicroPartition>>,
+        mut receiver: Receiver<PipelineMessage>,
+        sender: Sender<PipelineMessage>,
         runtime_stats: Arc<dyn RuntimeStats>,
         stats_manager: &RuntimeStatsManagerHandle,
         node_initialized: &mut bool,
-    ) -> DaftResult<OperatorControlFlow> {
-        while let Some(mp) = receiver.recv().await {
-            if !*node_initialized {
-                stats_manager.activate_node(node_id);
-                *node_initialized = true;
-            }
-            runtime_stats.add_rows_in(mp.len() as u64);
-            runtime_stats.add_rows_out(mp.len() as u64);
-            if sender.send(mp).await.is_err() {
-                return Ok(OperatorControlFlow::Break);
+    ) -> DaftResult<Option<bool>> {
+        // Returns Some(true) if flush received, Some(false) if receiver closed, None if error
+        while let Some(msg) = receiver.recv().await {
+            match msg {
+                PipelineMessage::Morsel {
+                    input_id,
+                    partition,
+                } => {
+                    // Only process messages with input_id = 0
+                    if input_id != 0 {
+                        continue;
+                    }
+                    if !*node_initialized {
+                        stats_manager.activate_node(node_id);
+                        *node_initialized = true;
+                    }
+                    runtime_stats.add_rows_in(partition.len() as u64);
+                    runtime_stats.add_rows_out(partition.len() as u64);
+                    if sender
+                        .send(PipelineMessage::Morsel {
+                            input_id,
+                            partition,
+                        })
+                        .await
+                        .is_err()
+                    {
+                        return Ok(None);
+                    }
+                }
+                PipelineMessage::Flush(input_id) => {
+                    // Assert that flush is for input_id = 0
+                    assert_eq!(
+                        input_id, 0,
+                        "Concat only supports input_id = 0, got flush for input_id = {}",
+                        input_id
+                    );
+                    // Exit processing this child
+                    return Ok(Some(true));
+                }
             }
         }
 
-        Ok(OperatorControlFlow::Continue)
+        // Receiver closed
+        Ok(Some(false))
     }
 }
 
@@ -160,10 +190,10 @@ impl PipelineNode for ConcatNode {
     }
 
     fn start(
-        &self,
+        &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
-    ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+    ) -> crate::Result<Receiver<PipelineMessage>> {
         let left_receiver = self.left.start(maintain_order, runtime_handle)?;
         let right_receiver = self.right.start(maintain_order, runtime_handle)?;
 
@@ -179,8 +209,10 @@ impl PipelineNode for ConcatNode {
             async move {
                 // Process both children sequentially - first left, then right
                 let mut node_initialized = false;
+                let destination_sender_for_flush = left_sender.clone();
 
-                let control = Self::process_child(
+                // Process first child (left)
+                let left_result = Self::process_child(
                     node_id,
                     left_receiver,
                     left_sender,
@@ -189,12 +221,15 @@ impl PipelineNode for ConcatNode {
                     &mut node_initialized,
                 )
                 .await?;
-                if !control.should_continue() {
+
+                // If left child processing failed, exit
+                if left_result.is_none() {
                     stats_manager.finalize_node(node_id);
                     return Ok(());
                 }
 
-                let control = Self::process_child(
+                // Process second child (right)
+                let right_result = Self::process_child(
                     node_id,
                     right_receiver,
                     right_sender,
@@ -203,7 +238,22 @@ impl PipelineNode for ConcatNode {
                     &mut node_initialized,
                 )
                 .await?;
-                if !control.should_continue() {
+
+                // If right child processing failed, exit
+                if right_result.is_none() {
+                    stats_manager.finalize_node(node_id);
+                    return Ok(());
+                }
+
+                // Send flush for input_id 0 once either:
+                // - The flush comes from second child (right_result == Some(true)), OR
+                // - If second child receiver is closed (right_result == Some(false))
+                if right_result.is_some()
+                    && destination_sender_for_flush
+                        .send(PipelineMessage::Flush(0))
+                        .await
+                        .is_err()
+                {
                     stats_manager.finalize_node(node_id);
                     return Ok(());
                 }

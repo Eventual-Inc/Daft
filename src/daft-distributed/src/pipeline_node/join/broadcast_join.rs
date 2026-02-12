@@ -136,7 +136,7 @@ impl BroadcastJoinNode {
                         },
                     )
                 })
-                .merge_psets(broadcast_psets.clone());
+                .with_psets(self.node_id(), broadcast_psets.clone());
 
             if result_tx.send(new_builder).await.is_err() {
                 break;
