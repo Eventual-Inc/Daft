@@ -1,5 +1,6 @@
 use std::{borrow::Cow, sync::Arc};
 
+use arrow::array::ArrayRef;
 use common_error::DaftResult;
 use common_image::CowImage;
 use num_traits::FromPrimitive;
@@ -22,7 +23,7 @@ impl AsImageObj for ImageArray {
         ImageArray::name(self)
     }
 
-    fn as_image_obj<'a>(&'a self, idx: usize) -> Option<CowImage<'a>> {
+    fn as_image_obj(&self, idx: usize) -> Option<CowImage<'_>> {
         assert!(idx < self.len());
         if !self.physical.is_valid(idx) {
             return None;
@@ -35,15 +36,8 @@ impl AsImageObj for ImageArray {
         let start = *offsets.get(idx).unwrap() as usize;
         let end = *offsets.get(idx + 1).unwrap() as usize;
 
-        let values = da
-            .flat_child
-            .u8()
-            .unwrap()
-            .data()
-            .as_any()
-            .downcast_ref::<daft_arrow::array::UInt8Array>()
-            .unwrap();
-        let slice_data = Cow::Borrowed(&values.values().as_slice()[start..end] as &'a [u8]);
+        let values = da.flat_child.u8().unwrap().as_slice();
+        let slice_data = Cow::Borrowed(&values[start..end]);
 
         let c = self.channels().values()[idx];
         let h = self.heights().values()[idx];
@@ -67,7 +61,7 @@ impl AsImageObj for FixedShapeImageArray {
         FixedShapeImageArray::name(self)
     }
 
-    fn as_image_obj<'a>(&'a self, idx: usize) -> Option<CowImage<'a>> {
+    fn as_image_obj(&self, idx: usize) -> Option<CowImage<'_>> {
         assert!(idx < self.len());
         if !self.physical.is_valid(idx) {
             return None;
@@ -75,18 +69,17 @@ impl AsImageObj for FixedShapeImageArray {
 
         match self.data_type() {
             DataType::FixedShapeImage(mode, height, width) => {
-                let arrow_array = self
+                let values = self
                     .physical
                     .flat_child
                     .downcast::<UInt8Array>()
                     .unwrap()
-                    .as_arrow2();
+                    .as_slice();
                 let num_channels = mode.num_channels();
                 let size = height * width * u32::from(num_channels);
                 let start = idx * size as usize;
                 let end = (idx + 1) * size as usize;
-                let slice_data =
-                    Cow::Borrowed(&arrow_array.values().as_slice()[start..end] as &'a [u8]);
+                let slice_data = Cow::Borrowed(&values[start..end]);
                 let result = CowImage::from_raw(mode, *width, *height, slice_data);
 
                 assert_eq!(result.height(), *height);
@@ -192,23 +185,25 @@ pub fn fixed_image_array_from_img_buffers(
     let data = data_ref.concat();
     let nulls = null_builder.finish();
 
-    let arrow_dtype = daft_arrow::datatypes::DataType::FixedSizeList(
-        Box::new(daft_arrow::datatypes::Field::new(
-            "data",
-            daft_arrow::datatypes::DataType::UInt8,
-            true,
-        )),
-        list_size,
-    );
-    let arrow_array = Box::new(daft_arrow::array::FixedSizeListArray::new(
-        arrow_dtype.clone(),
-        Box::new(daft_arrow::array::PrimitiveArray::from_vec(data)),
-        daft_arrow::buffer::wrap_null_buffer(nulls),
+    let values: ArrayRef = Arc::new(arrow::array::UInt8Array::from(data));
+    let arrow_field = Arc::new(arrow::datatypes::Field::new(
+        "data",
+        arrow::datatypes::DataType::UInt8,
+        true,
     ));
-    let physical_array = FixedSizeListArray::from_arrow2(
-        Arc::new(Field::new(name, (&arrow_dtype).into())),
-        arrow_array,
-    )?;
+    let arrow_array: ArrayRef = Arc::new(arrow::array::FixedSizeListArray::try_new(
+        arrow_field,
+        i32::try_from(list_size).map_err(|_| {
+            common_error::DaftError::ComputeError(format!(
+                "Image buffer size {list_size} exceeds i32::MAX"
+            ))
+        })?,
+        values,
+        nulls,
+    )?);
+    let daft_dtype = DataType::FixedSizeList(Box::new(DataType::UInt8), list_size);
+    let physical_array =
+        FixedSizeListArray::from_arrow(Arc::new(Field::new(name, daft_dtype)), arrow_array)?;
     let logical_dtype = DataType::FixedShapeImage(*image_mode, height, width);
     Ok(FixedShapeImageArray::new(
         Field::new(name, logical_dtype),
