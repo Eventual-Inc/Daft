@@ -45,4 +45,4 @@ setup_commands:
 - grep -qF 'source ~/.venv/bin/activate' ~/.bashrc || echo "source ~/.venv/bin/activate" >> ~/.bashrc
 - source ~/.venv/bin/activate
 - uv pip install pip ray[default] --no-progress
-- uv pip install ${DAFT_INDEX_URL}
+- uv pip install daft --no-progress --pre --extra-index-url ${DAFT_INDEX_URL}
