@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use arrow::buffer::{Buffer, ScalarBuffer};
+use arrow::buffer::{Buffer, NullBuffer, ScalarBuffer};
 use common_error::DaftResult;
 use daft_hash::{HashFunctionKind, MurBuildHasher, Sha1Hasher};
 use daft_schema::{dtype::DataType, field::Field};
@@ -227,11 +227,8 @@ impl TimestampArray {
 
 impl Decimal128Array {
     pub fn murmur3_32(&self) -> DaftResult<Int32Array> {
-        let arr = self
-            .data()
-            .as_any()
-            .downcast_ref::<daft_arrow::array::PrimitiveArray<i128>>()
-            .expect("this should be a decimal array");
+        let arr = self.as_arrow()?;
+
         let hashes = arr.into_iter().map(|d| {
             d.map(|d| {
                 let twos_compliment = u128::from_ne_bytes(d.to_ne_bytes());
@@ -243,8 +240,11 @@ impl Decimal128Array {
                 i32::from_ne_bytes(unsigned.to_ne_bytes())
             })
         });
-        let array = Box::new(daft_arrow::array::Int32Array::from_iter(hashes));
-        Ok(Int32Array::new(Field::new(self.name(), DataType::Int32).into(), array).unwrap())
+
+        Ok(Int32Array::from_iter(
+            Field::new(self.name(), DataType::Int32),
+            hashes,
+        ))
     }
 }
 
@@ -357,7 +357,7 @@ fn hash_list(
     name: &str,
     offsets: &[i64],
     flat_child: &crate::series::Series,
-    nulls: Option<&daft_arrow::buffer::NullBuffer>,
+    nulls: Option<&NullBuffer>,
     seed: Option<&UInt64Array>,
     hash_function: HashFunctionKind,
 ) -> DaftResult<UInt64Array> {
@@ -367,7 +367,7 @@ fn hash_list(
     // if seed is provided, the sublists are hashed with the seed broadcasted
 
     if let Some(seed_arr) = seed {
-        let combined_validity = daft_arrow::buffer::NullBuffer::union(nulls, seed.unwrap().nulls());
+        let combined_validity = NullBuffer::union(nulls, seed.unwrap().nulls());
         let mut hashes = Vec::with_capacity(offsets.len());
 
         for i in 0..(offsets.len() - 1) {
