@@ -40,8 +40,6 @@ try:
 except ImportError:
     raise
 
-import time
-
 logger = logging.getLogger(__name__)
 
 
@@ -86,10 +84,7 @@ class RaySwordfishActor:
             non_list_items = [(source_id, part) for source_id, part in inputs.items() if not isinstance(part, list)]
             task_id = int(context.get("task_id", "0")) if context else 0
             if list_items:
-                start_time = time.time()
                 list_results = await asyncio.gather(*[asyncio.gather(*part) for _, part in list_items])
-                num_objects = sum(len(mps) for mps in list_results)
-                print(f"[flotilla.run_plan] [{time.time():.3f}] time taken to resolve {num_objects} objects: {time.time() - start_time:.3f}s for plan {plan.single_line_display()} and input id {task_id}")
                 for (source_id, _), mps in zip(list_items, list_results):
                     resolved_inputs[int(source_id)] = [mp._micropartition for mp in mps]
 

@@ -123,8 +123,6 @@ struct IntermediateOpProcessor<Op: IntermediateOperator> {
     stats_manager: RuntimeStatsManagerHandle,
     node_id: usize,
     node_initialized: bool,
-    op_name: Arc<str>,
-    input_start_times: HashMap<InputId, std::time::Instant>,
 }
 
 /// input_id lifecycle (no finalize step):
@@ -142,7 +140,6 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
         output_sender: Sender<PipelineMessage>,
         stats_manager: RuntimeStatsManagerHandle,
         node_id: usize,
-        op_name: Arc<str>,
     ) -> DaftResult<Self> {
         let batch_manager = Arc::new(BatchManager::new(op.batching_strategy()?));
         let available_states = (0..op.max_concurrency()).map(|_| op.make_state()).collect();
@@ -158,8 +155,6 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
             stats_manager,
             node_id,
             node_initialized: false,
-            op_name,
-            input_start_times: HashMap::new(),
         })
     }
 
@@ -238,15 +233,6 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
             .expect("Input should be present");
         if input_state.can_flush() {
             self.input_states.remove(&input_id);
-            if let Some(start) = self.input_start_times.remove(&input_id) {
-                println!(
-                    "[Daft] [{:.3}] {} input_id={} finished in {:.3}s",
-                    crate::epoch_secs(),
-                    self.op_name,
-                    input_id,
-                    start.elapsed().as_secs_f64(),
-                );
-            }
             if self.send(PipelineMessage::Flush(input_id)).await == ControlFlow::Stop {
                 return Ok(ControlFlow::Stop);
             }
@@ -322,9 +308,6 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
             self.stats_manager.activate_node(self.node_id);
             self.node_initialized = true;
         }
-        self.input_start_times
-            .entry(input_id)
-            .or_insert_with(std::time::Instant::now);
         self.runtime_stats.add_rows_in(partition.len() as u64);
         let (lower, upper) = self.batch_manager.calculate_batch_size().values();
         let input = self
@@ -547,7 +530,6 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         let op = self.intermediate_op.clone();
         let runtime_stats = self.runtime_stats.clone();
         let node_id = self.node_id();
-        let op_name = self.name();
         let stats_manager = runtime_handle.stats_manager();
         runtime_handle.spawn(
             async move {
@@ -559,7 +541,6 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
                     destination_sender,
                     stats_manager.clone(),
                     node_id,
-                    op_name,
                 )?;
 
                 processor.process_input(&mut child_result_receiver).await?;

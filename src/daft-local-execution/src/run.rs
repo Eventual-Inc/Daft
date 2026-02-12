@@ -78,16 +78,12 @@ pub(crate) struct EnqueueInputMessage {
 /// Routes pipeline messages to per-input_id channels.
 struct MessageRouter {
     output_senders: HashMap<InputId, UnboundedSender<Arc<MicroPartition>>>,
-    start_times: HashMap<InputId, std::time::Instant>,
-    plan_display: String,
 }
 
 impl MessageRouter {
-    fn new(plan_display: String) -> Self {
+    fn new() -> Self {
         Self {
             output_senders: HashMap::new(),
-            start_times: HashMap::new(),
-            plan_display,
         }
     }
 
@@ -96,15 +92,6 @@ impl MessageRouter {
         match msg {
             PipelineMessage::Flush(input_id) => {
                 self.output_senders.remove(&input_id);
-                if let Some(start) = self.start_times.remove(&input_id) {
-                    println!(
-                        "[Daft] [{:.3}] input_id={} finished in {:.3}s | {}",
-                        crate::epoch_secs(),
-                        input_id,
-                        start.elapsed().as_secs_f64(),
-                        self.plan_display,
-                    );
-                }
             }
             PipelineMessage::Morsel {
                 input_id,
@@ -122,9 +109,6 @@ impl MessageRouter {
         input_id: InputId,
         sender: UnboundedSender<Arc<MicroPartition>>,
     ) {
-        self.start_times
-            .entry(input_id)
-            .or_insert_with(std::time::Instant::now);
         self.output_senders.insert(input_id, sender);
     }
 }
@@ -146,10 +130,6 @@ impl ActivePlansRegistry {
         Self {
             plans: HashMap::new(),
         }
-    }
-
-    fn contains(&self, fingerprint: u64) -> bool {
-        self.plans.contains_key(&fingerprint)
     }
 
     fn get_or_create_plan<F>(&mut self, fingerprint: u64, plan_factory: F) -> DaftResult<()>
@@ -217,7 +197,7 @@ impl PyNativeExecutor {
     ) -> PyResult<Bound<'py, pyo3::PyAny>> {
         let daft_ctx: &DaftContext = daft_ctx.into();
         let plan = local_physical_plan.plan.clone();
-        let query_id = context
+        let _query_id = context
             .as_ref()
             .and_then(|c| c.get("query_id"))
             .map(|s| s.as_str())
@@ -330,21 +310,8 @@ impl NativeExecutor {
             .map(|s| s.as_str())
             .unwrap_or("");
         let plan_fingerprint = local_physical_plan.fingerprint();
-        let mut fingerprint = plan_key(plan_fingerprint, query_id_str);
+        let fingerprint = plan_key(plan_fingerprint, query_id_str);
         let enable_explain_analyze = should_enable_explain_analyze();
-
-        if !self.active_plans.contains(fingerprint) {
-            println!(
-                "[Daft] [{:.3}] Plan fingerprint mismatch - creating new plan",
-                crate::epoch_secs(),
-            );
-            println!("  Query id: {}", query_id_str);
-            println!("  Plan: {}", local_physical_plan.single_line_display());
-            println!(
-                "  Plan fingerprint: {}, Plan key: {}",
-                plan_fingerprint, fingerprint,
-            );
-        }
 
         // Get or create plan handle from registry
         self.active_plans.get_or_create_plan(fingerprint, || {
@@ -373,7 +340,6 @@ impl NativeExecutor {
                 create_channel::<EnqueueInputMessage>(1);
 
             let input_senders = Arc::new(input_senders);
-            let plan_display = local_physical_plan.single_line_display();
 
             let task = async move {
                 let stats_manager_handle = stats_manager.handle();
@@ -382,7 +348,7 @@ impl NativeExecutor {
                     ExecutionRuntimeContext::new(memory_manager.clone(), stats_manager_handle);
                 let mut output_receiver = pipeline.start(true, &mut runtime_handle)?;
 
-                let mut message_router = MessageRouter::new(plan_display);
+                let mut message_router = MessageRouter::new();
                 let mut input_exhausted = false;
                 let mut pipeline_finished = false;
                 let mut shutdown_result: Option<(DaftResult<()>, QueryEndState)> = None;
@@ -429,12 +395,6 @@ impl NativeExecutor {
                                                 let _ = sender.send(input_id, plan_input);
                                             }
                                         }
-                                        println!(
-                                            "[Daft] [{:.3}] enqueued input_id={} to InputSender | {}",
-                                            crate::epoch_secs(),
-                                            input_id,
-                                            message_router.plan_display,
-                                        );
                                         // Send empty inputs for any source that didn't receive data,
                                         // so the pipeline can still flush this input_id properly.
                                         for (key, sender) in senders.iter() {
@@ -467,8 +427,7 @@ impl NativeExecutor {
                                     // try_finish(). Must happen before shutdown() so
                                     // callers don't block waiting for results while
                                     // we wait for tasks to drain.
-                                    let plan_display = std::mem::take(&mut message_router.plan_display);
-                                    message_router = MessageRouter::new(plan_display);
+                                    message_router = MessageRouter::new();
                                     let res = runtime_handle.shutdown().await;
                                     pipeline_finished = true;
                                     let status = if res.is_ok() { QueryEndState::Finished } else { QueryEndState::Failed };
@@ -529,21 +488,11 @@ impl NativeExecutor {
                 result_sender: result_tx,
             };
 
-            println!(
-                "[Daft] [{:.3}] sending enqueue_input message for input_id={}",
-                crate::epoch_secs(),
-                input_id,
-            );
             if enqueue_input_sender.send(enqueue_msg).await.is_err() {
                 return Err(common_error::DaftError::InternalError(
                     "Plan execution task has died; cannot enqueue new input".to_string(),
                 ));
             }
-            println!(
-                "[Daft] [{:.3}] enqueue_input message sent for input_id={}",
-                crate::epoch_secs(),
-                input_id,
-            );
             Ok(ExecutionEngineResult {
                 receiver: result_rx,
             })

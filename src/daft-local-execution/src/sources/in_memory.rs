@@ -48,12 +48,6 @@ impl InMemorySource {
 
         io_runtime.spawn(async move {
             while let Some((input_id, partitions)) = receiver.recv().await {
-                println!(
-                    "[Daft] [{:.3}] InMemorySource dequeued input_id={} ({} partitions)",
-                    crate::epoch_secs(),
-                    input_id,
-                    partitions.len(),
-                );
                 if partitions.is_empty() {
                     let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
                     if output_sender
@@ -80,11 +74,6 @@ impl InMemorySource {
                         }
                     }
                 }
-                println!(
-                    "[Daft] [{:.3}] InMemorySource finished sending morsels for input_id={}",
-                    crate::epoch_secs(),
-                    input_id,
-                );
                 // Send flush signal after processing each input batch
                 if output_sender
                     .send(PipelineMessage::Flush(input_id))
