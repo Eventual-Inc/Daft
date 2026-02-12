@@ -1,282 +1,224 @@
-use std::{sync::Arc, time::Instant};
+use std::{
+    collections::HashMap,
+    ops::ControlFlow,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use common_error::DaftResult;
-use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads};
-use daft_micropartition::MicroPartition;
-
+use common_runtime::JoinSet;
 use crate::{
-    ControlFlow, ExecutionTaskSpawner,
+    ExecutionTaskSpawner,
     buffer::RowBasedBuffer,
-    channel::{Receiver, Sender},
-    dynamic_batching::{BatchManager, BatchingStrategy},
+    channel::{Receiver, Sender, create_channel},
     join::{
         build::BuildStateBridge,
         join_operator::{JoinOperator, ProbeOutput},
     },
-    pipeline_execution::{InputStatesTracker, PipelineEvent, StateTracker, next_event},
     pipeline_message::{InputId, PipelineMessage},
     runtime_stats::RuntimeStats,
 };
 
-enum ProbeTaskResult<S> {
-    Probe {
-        input_id: InputId,
-        state: S,
-        result: ProbeOutput,
-        elapsed: std::time::Duration,
-    },
-    Finalize {
-        input_id: InputId,
-        output: Vec<Arc<MicroPartition>>,
-    },
+/// Process all morsels for a single input_id on the probe side, finalize, and send output.
+#[allow(clippy::too_many_arguments)]
+async fn process_single_input<Op: JoinOperator + 'static>(
+    input_id: InputId,
+    mut receiver: Receiver<PipelineMessage>,
+    op: Arc<Op>,
+    task_spawner: ExecutionTaskSpawner,
+    finalize_spawner: ExecutionTaskSpawner,
+    runtime_stats: Arc<dyn RuntimeStats>,
+    output_sender: Sender<PipelineMessage>,
+    build_state_bridge: Arc<BuildStateBridge<Op>>,
+    _maintain_order: bool,
+) -> DaftResult<ControlFlow<()>> {
+    let max_concurrency = op.max_concurrency();
+    let mut states: Vec<Op::ProbeState> = (0..max_concurrency)
+        .map(|_| {
+            let build_rx = build_state_bridge.subscribe(input_id);
+            op.make_probe_state(build_rx)
+        })
+        .collect();
+
+    let (lower, upper) = op
+        .morsel_size_requirement()
+        .unwrap_or_default()
+        .values();
+    let mut buffer = RowBasedBuffer::new(lower, upper);
+
+    let mut task_set: JoinSet<DaftResult<(Op::ProbeState, ProbeOutput, Duration)>> =
+        JoinSet::new();
+    let mut input_closed = false;
+
+    while !input_closed || !task_set.is_empty() {
+        // Try to spawn from buffer while states are available
+        while !states.is_empty() {
+            let batch = buffer.next_batch_if_ready()?;
+            if let Some(partition) = batch {
+                let state = states.pop().unwrap();
+                let op = op.clone();
+                let task_spawner = task_spawner.clone();
+                task_set.spawn(async move {
+                    let now = Instant::now();
+                    let (new_state, result) =
+                        op.probe(partition, state, &task_spawner).await??;
+                    Ok((new_state, result, now.elapsed()))
+                });
+            } else {
+                break;
+            }
+        }
+
+        if input_closed && task_set.is_empty() {
+            break;
+        }
+
+        tokio::select! {
+            biased;
+
+            Some(result) = task_set.join_next(), if !task_set.is_empty() => {
+                let (state, result, elapsed) = result??;
+                runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
+
+                // Send output if present
+                if let Some(mp) = result.output() {
+                    runtime_stats.add_rows_out(mp.len() as u64);
+                    if output_sender
+                        .send(PipelineMessage::Morsel {
+                            input_id,
+                            partition: mp.clone(),
+                        })
+                        .await
+                        .is_err()
+                    {
+                        return Ok(ControlFlow::Break(()));
+                    }
+                }
+
+                match result {
+                    ProbeOutput::NeedMoreInput(_) => {
+                        states.push(state);
+                    }
+                    ProbeOutput::HasMoreOutput { input, .. } => {
+                        let op = op.clone();
+                        let task_spawner = task_spawner.clone();
+                        task_set.spawn(async move {
+                            let now = Instant::now();
+                            let (new_state, result) =
+                                op.probe(input, state, &task_spawner).await??;
+                            Ok((new_state, result, now.elapsed()))
+                        });
+                    }
+                }
+            }
+
+            msg = receiver.recv(), if !states.is_empty() && !input_closed => {
+                match msg {
+                    Some(PipelineMessage::Morsel { partition, .. }) => {
+                        runtime_stats.add_rows_in(partition.len() as u64);
+                        buffer.push(partition);
+                    }
+                    Some(PipelineMessage::Flush(_)) | None => {
+                        input_closed = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // Drain remaining buffer
+    if let Some(mut partition) = buffer.pop_all()? {
+        let mut state = states.pop().unwrap();
+        loop {
+            let now = Instant::now();
+            let (new_state, result) =
+                op.probe(partition, state, &task_spawner).await??;
+            let elapsed = now.elapsed();
+            runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
+
+            if let Some(mp) = result.output() {
+                runtime_stats.add_rows_out(mp.len() as u64);
+                if output_sender
+                    .send(PipelineMessage::Morsel {
+                        input_id,
+                        partition: mp.clone(),
+                    })
+                    .await
+                    .is_err()
+                {
+                    return Ok(ControlFlow::Break(()));
+                }
+            }
+
+            match result {
+                ProbeOutput::NeedMoreInput(_) => {
+                    states.push(new_state);
+                    break;
+                }
+                ProbeOutput::HasMoreOutput { input, .. } => {
+                    partition = input;
+                    state = new_state;
+                }
+            }
+        }
+    }
+
+    // Finalize
+    if let Some(mp) = op.finalize_probe(states, &finalize_spawner).await?? {
+        runtime_stats.add_rows_out(mp.len() as u64);
+        if output_sender
+            .send(PipelineMessage::Morsel {
+                input_id,
+                partition: mp,
+            })
+            .await
+            .is_err()
+        {
+            return Ok(ControlFlow::Break(()));
+        }
+    }
+
+    // Send flush
+    if output_sender
+        .send(PipelineMessage::Flush(input_id))
+        .await
+        .is_err()
+    {
+        return Ok(ControlFlow::Break(()));
+    }
+    Ok(ControlFlow::Continue(()))
 }
 
-pub(crate) struct ProbeExecutionContext<Op: JoinOperator, Strategy: BatchingStrategy + 'static> {
-    task_set: OrderingAwareJoinSet<DaftResult<ProbeTaskResult<Op::ProbeState>>>,
-    max_concurrency: usize,
-    input_state_tracker: InputStatesTracker<Op::ProbeState>,
+pub(crate) struct ProbeExecutionContext<Op: JoinOperator> {
     op: Arc<Op>,
     task_spawner: ExecutionTaskSpawner,
     finalize_spawner: ExecutionTaskSpawner,
     output_sender: Sender<PipelineMessage>,
-    batch_manager: Arc<BatchManager<Strategy>>,
+    build_state_bridge: Arc<BuildStateBridge<Op>>,
     runtime_stats: Arc<dyn RuntimeStats>,
+    maintain_order: bool,
 }
 
-impl<Op: JoinOperator + 'static, Strategy: BatchingStrategy + 'static>
-    ProbeExecutionContext<Op, Strategy>
-{
+impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         op: Arc<Op>,
         task_spawner: ExecutionTaskSpawner,
         finalize_spawner: ExecutionTaskSpawner,
         output_sender: Sender<PipelineMessage>,
-        batch_manager: Arc<BatchManager<Strategy>>,
         build_state_bridge: Arc<BuildStateBridge<Op>>,
         runtime_stats: Arc<dyn RuntimeStats>,
         maintain_order: bool,
     ) -> Self {
-        let op_for_state_creator = op.clone();
-        let batch_manager_for_state_creator = batch_manager.clone();
-
-        let state_creator = Box::new(
-            move |input_id| -> DaftResult<StateTracker<Op::ProbeState>> {
-                let max_probe_concurrency = op_for_state_creator.max_probe_concurrency();
-                let probe_states: Vec<_> = (0..max_probe_concurrency)
-                    .map(|_| {
-                        let receiver = build_state_bridge.subscribe(input_id);
-                        op_for_state_creator.make_probe_state(receiver)
-                    })
-                    .collect();
-                let (lower, upper) = batch_manager_for_state_creator
-                    .calculate_batch_size()
-                    .values();
-                Ok(StateTracker::new(
-                    probe_states,
-                    RowBasedBuffer::new(lower, upper),
-                ))
-            },
-        );
-        let max_total_concurrency = get_compute_pool_num_threads();
-        let task_set = OrderingAwareJoinSet::new(maintain_order);
-        let input_state_tracker = InputStatesTracker::new(state_creator);
-
         Self {
-            task_set,
-            max_concurrency: max_total_concurrency,
-            input_state_tracker,
             op,
             task_spawner,
             finalize_spawner,
             output_sender,
-            batch_manager,
+            build_state_bridge,
             runtime_stats,
+            maintain_order,
         }
-    }
-
-    #[inline]
-    async fn send(&self, msg: PipelineMessage) -> ControlFlow {
-        if self.output_sender.send(msg).await.is_err() {
-            ControlFlow::Stop
-        } else {
-            ControlFlow::Continue
-        }
-    }
-
-    fn spawn_probe_task(
-        &mut self,
-        partition: Arc<MicroPartition>,
-        state: Op::ProbeState,
-        input_id: InputId,
-    ) {
-        let op = self.op.clone();
-        let task_spawner = self.task_spawner.clone();
-        self.task_set.spawn(async move {
-            let now = Instant::now();
-            let (new_state, result) = op.probe(partition, state, &task_spawner).await??;
-            let elapsed = now.elapsed();
-            Ok(ProbeTaskResult::Probe {
-                input_id,
-                state: new_state,
-                result,
-                elapsed,
-            })
-        });
-    }
-
-    fn spawn_finalize_task(&mut self, states: Vec<Op::ProbeState>, input_id: InputId) {
-        let op = self.op.clone();
-        let finalize_spawner = self.finalize_spawner.clone();
-        self.task_set.spawn(async move {
-            let output = op.finalize_probe(states, &finalize_spawner).await??;
-            Ok(ProbeTaskResult::Finalize {
-                input_id,
-                output: output.into_iter().collect(),
-            })
-        });
-    }
-
-    fn try_progress_all_inputs(&mut self) -> DaftResult<()> {
-        let input_ids: Vec<InputId> = self.input_state_tracker.input_ids();
-
-        // Pass 1: Finalize tasks get priority.
-        for &input_id in &input_ids {
-            if self.task_set.len() < self.max_concurrency
-                && let Some(states) = self
-                    .input_state_tracker
-                    .try_take_states_for_finalize(input_id)
-            {
-                self.spawn_finalize_task(states, input_id);
-            }
-        }
-
-        // Pass 2: Fill remaining slots with probe tasks.
-        for &input_id in &input_ids {
-            while self.task_set.len() < self.max_concurrency
-                && let Some(next) = self
-                    .input_state_tracker
-                    .get_next_morsel_for_execute(input_id)
-            {
-                let (partition, state) = next?;
-                self.spawn_probe_task(partition, state, input_id);
-            }
-        }
-        Ok(())
-    }
-
-    async fn handle_probe_completed(
-        &mut self,
-        input_id: InputId,
-        state: Op::ProbeState,
-        result: ProbeOutput,
-        elapsed: std::time::Duration,
-    ) -> DaftResult<ControlFlow> {
-        self.runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
-
-        // Send output if present
-        if let Some(mp) = result.output() {
-            self.runtime_stats.add_rows_out(mp.len() as u64);
-            self.batch_manager.record_execution_stats(
-                self.runtime_stats.as_ref(),
-                mp.len(),
-                elapsed,
-            );
-            if self
-                .send(PipelineMessage::Morsel {
-                    input_id,
-                    partition: mp.clone(),
-                })
-                .await
-                == ControlFlow::Stop
-            {
-                return Ok(ControlFlow::Stop);
-            }
-        }
-
-        // Update batch bounds
-        let new_requirements = self.batch_manager.calculate_batch_size();
-        self.input_state_tracker.update_all_bounds(new_requirements);
-
-        match result {
-            ProbeOutput::NeedMoreInput(_) => {
-                self.input_state_tracker.return_state(input_id, state);
-                self.try_progress_all_inputs()?;
-                Ok(ControlFlow::Continue)
-            }
-            ProbeOutput::HasMoreOutput { input, .. } => {
-                // Spawn another probe with same input and state
-                let op = self.op.clone();
-                let task_spawner = self.task_spawner.clone();
-                self.task_set.spawn(async move {
-                    let now = Instant::now();
-                    let (new_state, result) = op.probe(input, state, &task_spawner).await??;
-                    let elapsed = now.elapsed();
-                    Ok(ProbeTaskResult::Probe {
-                        input_id,
-                        state: new_state,
-                        result,
-                        elapsed,
-                    })
-                });
-                Ok(ControlFlow::Continue)
-            }
-        }
-    }
-
-    async fn handle_finalize_completed(
-        &mut self,
-        input_id: InputId,
-        output: Vec<Arc<MicroPartition>>,
-    ) -> DaftResult<ControlFlow> {
-        for partition in output {
-            self.runtime_stats.add_rows_out(partition.len() as u64);
-            if self
-                .send(PipelineMessage::Morsel {
-                    input_id,
-                    partition,
-                })
-                .await
-                == ControlFlow::Stop
-            {
-                return Ok(ControlFlow::Stop);
-            }
-        }
-        if self.send(PipelineMessage::Flush(input_id)).await == ControlFlow::Stop {
-            return Ok(ControlFlow::Stop);
-        }
-        self.try_progress_all_inputs()?;
-        Ok(ControlFlow::Continue)
-    }
-
-    fn handle_morsel(
-        &mut self,
-        input_id: InputId,
-        partition: Arc<MicroPartition>,
-    ) -> DaftResult<()> {
-        self.runtime_stats.add_rows_in(partition.len() as u64);
-        self.input_state_tracker
-            .buffer_partition(input_id, partition)?;
-        self.try_progress_all_inputs()?;
-        Ok(())
-    }
-
-    async fn handle_flush(&mut self, input_id: InputId) -> DaftResult<ControlFlow> {
-        if !self.input_state_tracker.contains_key(input_id) {
-            if self.send(PipelineMessage::Flush(input_id)).await == ControlFlow::Stop {
-                return Ok(ControlFlow::Stop);
-            }
-            return Ok(ControlFlow::Continue);
-        }
-        self.input_state_tracker.mark_completed(input_id);
-        self.try_progress_all_inputs()?;
-        Ok(ControlFlow::Continue)
-    }
-
-    fn handle_input_closed(&mut self) -> DaftResult<()> {
-        self.input_state_tracker.mark_all_completed();
-        self.try_progress_all_inputs()?;
-        Ok(())
     }
 
     pub(crate) async fn process_probe_input(
@@ -284,44 +226,58 @@ impl<Op: JoinOperator + 'static, Strategy: BatchingStrategy + 'static>
         receiver: Receiver<PipelineMessage>,
     ) -> DaftResult<()> {
         let mut receiver = receiver;
+        let mut per_input_senders: HashMap<InputId, Sender<PipelineMessage>> = HashMap::new();
+        let mut processor_set: JoinSet<DaftResult<ControlFlow<()>>> = JoinSet::new();
         let mut input_closed = false;
 
-        while !input_closed || !self.task_set.is_empty() || !self.input_state_tracker.is_empty() {
-            let event = next_event(
-                &mut self.task_set,
-                self.max_concurrency,
-                &mut receiver,
-                &mut input_closed,
-            )
-            .await?;
-            let cf = match event {
-                PipelineEvent::TaskCompleted(ProbeTaskResult::Probe {
-                    input_id,
-                    state,
-                    result,
-                    elapsed,
-                }) => {
-                    self.handle_probe_completed(input_id, state, result, elapsed)
-                        .await?
+        while !input_closed || !processor_set.is_empty() {
+            tokio::select! {
+                msg = receiver.recv(), if !input_closed => {
+                    let Some(msg) = msg else {
+                        input_closed = true;
+                        per_input_senders.clear();
+                        continue;
+                    };
+
+                    let input_id = match &msg {
+                        PipelineMessage::Morsel { input_id, .. } => *input_id,
+                        PipelineMessage::Flush(input_id) => *input_id,
+                    };
+
+                    if !per_input_senders.contains_key(&input_id) {
+                        let (tx, rx) = create_channel(1);
+                        per_input_senders.insert(input_id, tx);
+
+                        let op = self.op.clone();
+                        let task_spawner = self.task_spawner.clone();
+                        let finalize_spawner = self.finalize_spawner.clone();
+                        let runtime_stats = self.runtime_stats.clone();
+                        let output_sender = self.output_sender.clone();
+                        let build_state_bridge = self.build_state_bridge.clone();
+                        let maintain_order = self.maintain_order;
+                        processor_set.spawn(async move {
+                            process_single_input(
+                                input_id, rx, op, task_spawner,
+                                finalize_spawner, runtime_stats, output_sender,
+                                build_state_bridge, maintain_order,
+                            )
+                            .await
+                        });
+                    }
+
+                    let is_flush = matches!(&msg, PipelineMessage::Flush(_));
+                    if per_input_senders[&input_id].send(msg).await.is_err() {
+                        // Processor died — error will surface from join below
+                    }
+                    if is_flush {
+                        per_input_senders.remove(&input_id);
+                    }
                 }
-                PipelineEvent::TaskCompleted(ProbeTaskResult::Finalize { input_id, output }) => {
-                    self.handle_finalize_completed(input_id, output).await?
+                Some(result) = processor_set.join_next(), if !processor_set.is_empty() => {
+                    if result??.is_break() {
+                        break;
+                    }
                 }
-                PipelineEvent::Morsel {
-                    input_id,
-                    partition,
-                } => {
-                    self.handle_morsel(input_id, partition)?;
-                    ControlFlow::Continue
-                }
-                PipelineEvent::Flush(input_id) => self.handle_flush(input_id).await?,
-                PipelineEvent::InputClosed => {
-                    self.handle_input_closed()?;
-                    ControlFlow::Continue
-                }
-            };
-            if cf == ControlFlow::Stop {
-                return Ok(());
             }
         }
         Ok(())

@@ -14,7 +14,6 @@ use tracing::info_span;
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner,
     channel::{Receiver, create_channel},
-    dynamic_batching::{BatchManager, DynBatchingStrategy, StaticBatchingStrategy},
     join::{
         build::{BuildExecutionContext, BuildStateBridge},
         join_operator::JoinOperator,
@@ -208,9 +207,6 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
             probe_task_spawner,
             probe_finalize_spawner,
             destination_sender,
-            Arc::new(BatchManager::new(DynBatchingStrategy::from(
-                StaticBatchingStrategy::new(self.op.morsel_size_requirement().unwrap_or_default()),
-            ))),
             build_state_bridge,
             self.runtime_stats.clone(),
             maintain_order,

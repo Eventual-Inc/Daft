@@ -224,7 +224,7 @@ impl JoinOperator for SortMergeJoinOperator {
         vec!["Sort Merge Join".to_string()]
     }
 
-    fn max_probe_concurrency(&self) -> usize {
+    fn max_concurrency(&self) -> usize {
         1
     }
 }

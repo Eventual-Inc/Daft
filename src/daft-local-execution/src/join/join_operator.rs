@@ -86,7 +86,7 @@ pub(crate) trait JoinOperator: Send + Sync {
     fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
         Arc::new(crate::runtime_stats::DefaultRuntimeStats::new(id))
     }
-    fn max_probe_concurrency(&self) -> usize {
+    fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()
     }
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
