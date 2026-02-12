@@ -10,10 +10,7 @@ use common_display::{
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
-use daft_core::{
-    join::JoinSide,
-    prelude::{Schema, SchemaRef},
-};
+use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
     CommitWrite, Concat, CrossJoin, Dedup, EmptyScan, Explode, Filter, GlobScan, HashAggregate,
@@ -34,6 +31,7 @@ use snafu::ResultExt;
 
 use crate::{
     ExecutionRuntimeContext, PipelineCreationSnafu,
+    concat::ConcatNode,
     intermediate_ops::{
         distributed_actor_pool_project::DistributedActorPoolProjectOperator,
         explode::ExplodeOperator, filter::FilterOperator, intermediate_op::IntermediateNode,
@@ -61,7 +59,7 @@ use crate::{
     },
     sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource, source::SourceNode},
     streaming_sink::{
-        async_udf::AsyncUdfSink, base::StreamingSinkNode, concat::ConcatSink, limit::LimitSink,
+        async_udf::AsyncUdfSink, base::StreamingSinkNode, limit::LimitSink,
         monotonically_increasing_id::MonotonicallyIncreasingIdSink, sample::SampleSink,
         vllm::VLLMSink,
     },
@@ -216,7 +214,6 @@ impl RuntimeContext {
         name: Arc<str>,
         node_type: NodeType,
         node_category: NodeCategory,
-        output_schema: SchemaRef,
         node_context: &LocalNodeContext,
     ) -> NodeInfo {
         let context = if let Some(node_context) = &node_context.additional {
@@ -237,7 +234,6 @@ impl RuntimeContext {
             node_type,
             node_category,
             context,
-            output_schema,
         }
     }
 }
@@ -354,14 +350,7 @@ fn physical_plan_to_pipeline(
             context,
         }) => {
             let source = EmptyScanSource::new(schema.clone());
-            SourceNode::new(
-                source.arced(),
-                stats_state.clone(),
-                ctx,
-                schema.clone(),
-                context,
-            )
-            .boxed()
+            SourceNode::new(source.arced(), stats_state.clone(), ctx, context).boxed()
         }
         LocalPhysicalPlan::PhysicalScan(PhysicalScan {
             scan_tasks,
@@ -377,14 +366,7 @@ fn physical_plan_to_pipeline(
 
             let scan_task_source =
                 ScanTaskSource::new(scan_tasks, pushdowns.clone(), schema.clone(), cfg);
-            SourceNode::new(
-                scan_task_source.arced(),
-                stats_state.clone(),
-                ctx,
-                schema.clone(),
-                context,
-            )
-            .boxed()
+            SourceNode::new(scan_task_source.arced(), stats_state.clone(), ctx, context).boxed()
         }
         LocalPhysicalPlan::WindowPartitionOnly(WindowPartitionOnly {
             input,
@@ -406,7 +388,6 @@ fn physical_plan_to_pipeline(
                 input_node,
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -441,7 +422,6 @@ fn physical_plan_to_pipeline(
                 input_node,
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -480,7 +460,6 @@ fn physical_plan_to_pipeline(
                 input_node,
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -513,7 +492,6 @@ fn physical_plan_to_pipeline(
                 input_node,
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -532,34 +510,25 @@ fn physical_plan_to_pipeline(
                 info.size_bytes,
             )
             .arced();
-            SourceNode::new(
-                in_memory_source,
-                stats_state.clone(),
-                ctx,
-                info.source_schema.clone(),
-                context,
-            )
-            .boxed()
+            SourceNode::new(in_memory_source, stats_state.clone(), ctx, context).boxed()
         }
         LocalPhysicalPlan::Project(Project {
             input,
             projection,
-            schema,
             stats_state,
             context,
+            ..
         }) => {
-            let proj_op = ProjectOperator::new(projection.clone()).with_context(|_| {
-                PipelineCreationSnafu {
+            let proj_op = ProjectOperator::new(projection.clone(), input.schema().clone())
+                .with_context(|_| PipelineCreationSnafu {
                     plan_name: physical_plan.name(),
-                }
-            })?;
+                })?;
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(proj_op),
                 vec![child_node],
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -586,10 +555,9 @@ fn physical_plan_to_pipeline(
                 );
                 StreamingSinkNode::new(
                     Arc::new(async_sink),
-                    vec![child_node],
+                    child_node,
                     stats_state.clone(),
                     ctx,
-                    schema.clone(),
                     context,
                 )
                 .boxed()
@@ -609,7 +577,6 @@ fn physical_plan_to_pipeline(
                     vec![child_node],
                     stats_state.clone(),
                     ctx,
-                    schema.clone(),
                     context,
                 )
                 .boxed()
@@ -623,14 +590,20 @@ fn physical_plan_to_pipeline(
                 batch_size,
                 memory_request,
                 schema,
+                passthrough_columns,
+                required_columns,
                 stats_state,
                 context,
+                ..
             },
         ) => {
             let distributed_actor_pool_project_op = DistributedActorPoolProjectOperator::try_new(
                 actor_objects.clone(),
                 *batch_size,
                 *memory_request,
+                passthrough_columns.clone(),
+                required_columns.clone(),
+                schema.clone(),
             )
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
@@ -641,7 +614,6 @@ fn physical_plan_to_pipeline(
                 vec![child_node],
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -660,10 +632,9 @@ fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             StreamingSinkNode::new(
                 Arc::new(sample_sink),
-                vec![child_node],
+                child_node,
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -671,9 +642,9 @@ fn physical_plan_to_pipeline(
         LocalPhysicalPlan::Filter(Filter {
             input,
             predicate,
-            schema,
             stats_state,
             context,
+            ..
         }) => {
             let filter_op = FilterOperator::new(predicate.clone());
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
@@ -682,7 +653,6 @@ fn physical_plan_to_pipeline(
                 vec![child_node],
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -691,9 +661,9 @@ fn physical_plan_to_pipeline(
             input,
             batch_size,
             strict,
-            schema,
             stats_state,
             context,
+            ..
         }) => {
             let into_batches_op = IntoBatchesOperator::new(*batch_size, *strict);
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
@@ -702,7 +672,6 @@ fn physical_plan_to_pipeline(
                 vec![child_node],
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -711,9 +680,9 @@ fn physical_plan_to_pipeline(
             input,
             to_explode,
             index_column,
-            schema,
             stats_state,
             context,
+            ..
         }) => {
             let explode_op = ExplodeOperator::new(to_explode.clone(), index_column.clone());
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
@@ -722,7 +691,6 @@ fn physical_plan_to_pipeline(
                 vec![child_node],
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -731,19 +699,18 @@ fn physical_plan_to_pipeline(
             input,
             limit,
             offset,
-            schema,
             stats_state,
             context,
+            ..
         }) => {
             let (offset, limit) = (*offset, *limit);
             let sink = LimitSink::new(limit as usize, offset.map(|x| x as usize));
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             StreamingSinkNode::new(
                 Arc::new(sink),
-                vec![child_node],
+                child_node,
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -751,29 +718,20 @@ fn physical_plan_to_pipeline(
         LocalPhysicalPlan::Concat(Concat {
             input,
             other,
-            schema,
             stats_state,
             context,
+            ..
         }) => {
             let left_child = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             let right_child = physical_plan_to_pipeline(other, psets, cfg, ctx)?;
-            let sink = ConcatSink {};
-            StreamingSinkNode::new(
-                Arc::new(sink),
-                vec![left_child, right_child],
-                stats_state.clone(),
-                ctx,
-                schema.clone(),
-                context,
-            )
-            .boxed()
+            ConcatNode::new(left_child, right_child, stats_state.clone(), ctx, context).boxed()
         }
         LocalPhysicalPlan::UnGroupedAggregate(UnGroupedAggregate {
             input,
             aggregations,
-            schema,
             stats_state,
             context,
+            ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             let agg_sink = AggregateSink::new(aggregations, input.schema()).with_context(|_| {
@@ -786,7 +744,6 @@ fn physical_plan_to_pipeline(
                 child_node,
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -795,7 +752,6 @@ fn physical_plan_to_pipeline(
             input,
             aggregations,
             group_by,
-            schema,
             stats_state,
             context,
             ..
@@ -810,7 +766,6 @@ fn physical_plan_to_pipeline(
                 child_node,
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -818,9 +773,9 @@ fn physical_plan_to_pipeline(
         LocalPhysicalPlan::Dedup(Dedup {
             input,
             columns,
-            schema,
             stats_state,
             context,
+            ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             let dedup_sink = DedupSink::new(columns).with_context(|_| PipelineCreationSnafu {
@@ -831,7 +786,6 @@ fn physical_plan_to_pipeline(
                 child_node,
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -842,9 +796,9 @@ fn physical_plan_to_pipeline(
             values,
             variable_name,
             value_name,
-            schema,
             stats_state,
             context,
+            ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             let unpivot_op = UnpivotOperator::new(
@@ -858,7 +812,6 @@ fn physical_plan_to_pipeline(
                 vec![child_node],
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -871,9 +824,9 @@ fn physical_plan_to_pipeline(
             aggregation,
             pre_agg,
             names,
-            schema,
             stats_state,
             context,
+            ..
         }) => {
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             let pivot_sink = PivotSink::new(
@@ -889,7 +842,6 @@ fn physical_plan_to_pipeline(
                 child_node,
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -899,7 +851,6 @@ fn physical_plan_to_pipeline(
             sort_by,
             descending,
             nulls_first,
-            schema,
             stats_state,
             context,
             ..
@@ -911,7 +862,6 @@ fn physical_plan_to_pipeline(
                 child_node,
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -923,7 +873,6 @@ fn physical_plan_to_pipeline(
             nulls_first,
             offset,
             limit,
-            schema,
             stats_state,
             context,
             ..
@@ -941,7 +890,6 @@ fn physical_plan_to_pipeline(
                 child_node,
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -963,10 +911,9 @@ fn physical_plan_to_pipeline(
             );
             StreamingSinkNode::new(
                 Arc::new(monotonically_increasing_id_sink),
-                vec![child_node],
+                child_node,
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -1140,7 +1087,6 @@ fn physical_plan_to_pipeline(
                     probe_child_node,
                     stats_state.clone(),
                     ctx,
-                    schema.clone(),
                     context,
                 )
                 .boxed())
@@ -1196,7 +1142,6 @@ fn physical_plan_to_pipeline(
                 probe_child_node,
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -1207,9 +1152,9 @@ fn physical_plan_to_pipeline(
             left_on,
             right_on,
             join_type,
-            schema,
             stats_state,
             context,
+            ..
         }) => {
             let build_child_node = physical_plan_to_pipeline(left, psets, cfg, ctx)?;
             let probe_child_node = physical_plan_to_pipeline(right, psets, cfg, ctx)?;
@@ -1228,7 +1173,6 @@ fn physical_plan_to_pipeline(
                 probe_child_node,
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -1266,7 +1210,6 @@ fn physical_plan_to_pipeline(
                 child_node,
                 stats_state.clone(),
                 ctx,
-                file_schema.clone(),
                 context,
             )
             .boxed()
@@ -1287,7 +1230,6 @@ fn physical_plan_to_pipeline(
                 child_node,
                 stats_state.clone(),
                 ctx,
-                file_schema.clone(),
                 context,
             )
             .boxed()
@@ -1342,7 +1284,6 @@ fn physical_plan_to_pipeline(
                 child_node,
                 stats_state.clone(),
                 ctx,
-                file_schema.clone(),
                 context,
             )
             .boxed()
@@ -1369,7 +1310,6 @@ fn physical_plan_to_pipeline(
                 child_node,
                 stats_state.clone(),
                 ctx,
-                file_schema.clone(),
                 context,
             )
             .boxed()
@@ -1396,7 +1336,6 @@ fn physical_plan_to_pipeline(
                 child_node,
                 stats_state.clone(),
                 ctx,
-                file_schema.clone(),
                 context,
             )
             .boxed()
@@ -1417,7 +1356,6 @@ fn physical_plan_to_pipeline(
                 child_node,
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -1436,7 +1374,6 @@ fn physical_plan_to_pipeline(
                 child_node,
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()
@@ -1456,14 +1393,7 @@ fn physical_plan_to_pipeline(
                 schema.clone(),
                 io_config.clone(),
             );
-            SourceNode::new(
-                source.arced(),
-                stats_state.clone(),
-                ctx,
-                schema.clone(),
-                context,
-            )
-            .boxed()
+            SourceNode::new(source.arced(), stats_state.clone(), ctx, context).boxed()
         }
         LocalPhysicalPlan::VLLMProject(VLLMProject {
             input,
@@ -1483,10 +1413,9 @@ fn physical_plan_to_pipeline(
             );
             StreamingSinkNode::new(
                 Arc::new(vllm_sink),
-                vec![child_node],
+                child_node,
                 stats_state.clone(),
                 ctx,
-                schema.clone(),
                 context,
             )
             .boxed()

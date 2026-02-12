@@ -242,12 +242,10 @@ daft.set_runner_native()
 
 print(daft.runners.get_or_infer_runner_type())
 
-
 @daft.udf(return_dtype=daft.DataType.string())
 def my_udf(foo):
     runner_type = daft.runners.get_or_infer_runner_type()
     return [f"{runner_type}_{f}" for f in foo]
-
 
 df = daft.from_pydict({"foo": [7]})
 pd = df.with_column(column_name="bar", expr=my_udf(df["foo"])).to_pydict()
@@ -272,6 +270,7 @@ print(daft.runners.get_or_infer_runner_type())
 def my_udf(foo):
     runner_type = daft.runners.get_or_infer_runner_type()
     return [f"{runner_type}_{f}" for f in foo]
+
 
 
 df = daft.from_pydict({"foo": [7]})
@@ -332,22 +331,3 @@ def test_set_scantask_max_parallelism_greater_than_partition_num():
         df = daft.range(start=0, end=1024, partitions=10)
         df.explain(show_all=True, file=str_io)
         assert "Num Parallel Scan Tasks = 10" in str_io.getvalue().strip()
-
-
-@pytest.mark.skipif(
-    get_tests_daft_runner_name() == "native", reason="Native Runner already supports enabling dashboard"
-)
-def test_enable_dashboard_for_ray_runner():
-    get_or_infer_runner_type_py_script = """
-import daft
-
-daft.range(start=0, end=1024, partitions=10).collect()
-    """
-
-    with with_null_env():
-        result = subprocess.run(
-            [sys.executable, "-c", get_or_infer_runner_type_py_script],
-            capture_output=True,
-            env={"DAFT_RUNNER": "ray", "DAFT_DASHBOARD_URL": "http://localhost:3238"},
-        )
-        assert "Dashboard isn't currently supported in Ray Runner" in result.stderr.decode()

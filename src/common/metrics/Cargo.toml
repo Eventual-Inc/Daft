@@ -5,7 +5,6 @@ serde = {workspace = true}
 bincode = {workspace = true}
 smallvec = {workspace = true, features = ["serde"]}
 pyo3 = {workspace = true, optional = true}
-daft-schema = {path = "../../daft-schema", default-features = false}
 enum_dispatch = "0.3"
 itertools = {workspace = true}
 opentelemetry = {workspace = true}

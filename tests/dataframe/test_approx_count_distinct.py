@@ -83,3 +83,51 @@ def test_approx_count_distinct_on_null_values(data_and_expected, with_morsel_siz
     df = make_df(data)
     df = df.agg(col("a").approx_count_distinct())
     assert_equal(df, expected)
+
+
+def test_approx_count_distinct_groupby(with_morsel_size):
+    df = daft.from_pydict(
+        {
+            "group": ["A", "A", "A", "B", "B", "B", "C", "C", "C"],
+            "values": [1, 2, 2, 3, 3, 3, 4, 5, None],
+        }
+    )
+    result = (
+        df.groupby("group").agg(col("values").approx_count_distinct().alias("approx_distinct")).sort("group").collect()
+    )
+
+    result_dict = result.to_pydict()
+    assert result_dict["group"] == ["A", "B", "C"]
+    assert result_dict["approx_distinct"] == [2, 1, 2]
+
+
+def test_approx_count_distinct_groupby_with_nulls(with_morsel_size):
+    df = daft.from_pydict(
+        {
+            "group": ["A", "A", "A", "B", "B", "B"],
+            "values": [1, None, None, None, None, None],
+        }
+    )
+    result = (
+        df.groupby("group").agg(col("values").approx_count_distinct().alias("approx_distinct")).sort("group").collect()
+    )
+
+    result_dict = result.to_pydict()
+    assert result_dict["group"] == ["A", "B"]
+    assert result_dict["approx_distinct"] == [1, 0]
+
+
+def test_approx_count_distinct_groupby_multiple_partitions(with_morsel_size):
+    df = daft.from_pydict(
+        {
+            "group": ["A"] * 5 + ["B"] * 5 + ["C"] * 5,
+            "values": [1, 2, 3, 4, 5] + [10, 10, 10, 10, 10] + [1, 1, 2, 2, 3],
+        }
+    ).into_partitions(3)
+    result = (
+        df.groupby("group").agg(col("values").approx_count_distinct().alias("approx_distinct")).sort("group").collect()
+    )
+
+    result_dict = result.to_pydict()
+    assert result_dict["group"] == ["A", "B", "C"]
+    assert result_dict["approx_distinct"] == [5, 1, 3]

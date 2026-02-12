@@ -16,7 +16,13 @@ pip install daft[unity]
 
 Daft includes an abstraction for the Unity Catalog. For more information, see also [Unity Catalog Documentation](https://docs.unitycatalog.io/integrations/unity-catalog-daft/).
 
-=== "🐍 Python"
+### Authentication options
+
+You can authenticate either with a personal access token (PAT) or with OAuth credentials.
+
+To use OAuth, create a Databricks service principal and generate an OAuth secret for it. See the Databricks docs for the exact steps: [Databricks OAuth M2M docs](https://docs.databricks.com/aws/en/dev-tools/auth/oauth-m2m).
+
+=== "🐍 Python (PAT)"
 
     ```python
     from daft.unity_catalog import UnityCatalog
@@ -25,6 +31,30 @@ Daft includes an abstraction for the Unity Catalog. For more information, see al
         endpoint="https://<databricks_workspace_id>.cloud.databricks.com",
         # Authentication can be retrieved from your provider of Unity Catalog
         token="my-token",
+    )
+
+    # See all available catalogs
+    print(unity.list_catalogs())
+
+    # See available schemas in a given catalog
+    print(unity.list_schemas("my_catalog_name"))
+
+    # See available tables in a given schema
+    print(unity.list_tables("my_catalog_name.my_schema_name"))
+    ```
+
+=== "🐍 Python (OAuth client credentials)"
+
+    ```python
+    from daft.unity_catalog import UnityCatalog
+    from daft.unity_catalog import OAuth2Credentials
+
+    unity = UnityCatalog(
+        endpoint="https://<databricks_workspace_id>.cloud.databricks.com",
+        oauth=OAuth2Credentials(
+            client_id="your-client-id",
+            client_secret="your-client-secret",
+        ),
     )
 
     # See all available catalogs

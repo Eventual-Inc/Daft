@@ -59,6 +59,6 @@ impl IndexBitmap {
     pub fn convert_to_boolean_arrays(self) -> impl Iterator<Item = BooleanArray> {
         self.bitmaps
             .into_iter()
-            .map(|bitmap| BooleanArray::from(("bitmap", bitmap)))
+            .map(|bitmap| BooleanArray::from_null_buffer("bitmap", &(bitmap.into())).unwrap())
     }
 }

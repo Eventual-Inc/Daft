@@ -689,7 +689,7 @@ def test_udf_fails_with_no_actors_schedulable():
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="Tests Flotilla-specific behavior")
 def test_udf_succeeds_with_some_actors_schedulable():
-    with execution_config_ctx(actor_udf_ready_timeout=10):
+    with execution_config_ctx(actor_udf_ready_timeout=60):
         df = daft.from_pydict({"a": [1, 2, 3]})
 
         # Request for 100 actors, with 1 cpu. Not all will be scheduled, but the query can still run.

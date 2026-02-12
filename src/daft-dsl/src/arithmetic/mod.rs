@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod tests;
 
-use crate::{Expr, ExprRef, Operator};
+use daft_core::prelude::Operator;
+
+use crate::{Expr, ExprRef};
 
 macro_rules! impl_expr_op {
     ($func_name:ident, $op_name: ident) => {

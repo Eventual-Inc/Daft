@@ -252,12 +252,15 @@ pub(crate) fn get_runner_config_from_env() -> PyResult<RunnerConfig> {
                 .to_string(),
         )
         .into()),
-        "" => Ok(if detect_ray_state() == (true, false) {
-            // on ray but not in ray worker
-            get_ray_runner_config_from_env()
-        } else {
-            RunnerConfig::Native { num_threads: None }
-        }),
+        "" => {
+            let (on_ray, _) = detect_ray_state();
+            Ok(if on_ray {
+                // Use Ray runner on Ray environments (both in drivers and workers)
+                get_ray_runner_config_from_env()
+            } else {
+                RunnerConfig::Native { num_threads: None }
+            })
+        }
         other => Err(PyValueError::new_err(format!(
             "Invalid runner type `DAFT_RUNNER={other}` specified through the env. \
             Please use either `native` or `ray`."
