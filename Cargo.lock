@@ -2031,6 +2031,7 @@ name = "common-tracing"
 version = "0.3.0-dev0"
 dependencies = [
  "common-runtime",
+ "log",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
@@ -2777,6 +2778,7 @@ dependencies = [
 name = "daft-functions"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
  "common-error",
  "daft-core",
  "daft-dsl",
@@ -2786,6 +2788,7 @@ dependencies = [
  "serde",
  "snafu",
  "typetag",
+ "uuid 1.19.0",
 ]
 
 [[package]]
@@ -2878,6 +2881,7 @@ dependencies = [
 name = "daft-functions-uri"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
  "async-trait",
  "bytes",
  "common-error",
@@ -3183,6 +3187,7 @@ name = "daft-minhash"
 version = "0.3.0-dev0"
 dependencies = [
  "approx",
+ "arrow",
  "common-error",
  "daft-hash",
  "fastrand 2.3.0",
@@ -3196,6 +3201,7 @@ dependencies = [
 name = "daft-parquet"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
  "async-compat",
  "async-stream",
  "bincode",
@@ -3455,6 +3461,8 @@ dependencies = [
  "arrow-json",
  "arrow-schema",
  "async-trait",
+ "chrono",
+ "chrono-tz",
  "common-daft-config",
  "common-error",
  "common-file-formats",

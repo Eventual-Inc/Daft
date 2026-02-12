@@ -286,6 +286,10 @@ def list_agg_distinct(expr: Expression) -> Expression:
     return Expression._from_pyexpr(expr._expr.agg_set())
 
 
-def string_agg(expr: Expression) -> Expression:
-    """Aggregates the values in the expression into a single string by concatenating them."""
-    return Expression._from_pyexpr(expr._expr.agg_concat())
+def string_agg(expr: Expression, delimiter: str | None = None) -> Expression:
+    """Aggregates the values in the expression into a single string by concatenating them.
+
+    Args:
+        delimiter: Optional delimiter to insert between concatenated values. Only supported for string columns.
+    """
+    return Expression._from_pyexpr(expr._expr.agg_concat(delimiter))

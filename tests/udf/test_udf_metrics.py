@@ -17,6 +17,7 @@ VALUES_SUM = sum(VALUES)
 
 
 def _find_udf_stats(metrics: RecordBatch | None, metric_name: str) -> float | None:
+    assert metrics is not None
     metrics_list = metrics.to_pylist()
     return next((metric[1]["value"] for op in metrics_list for metric in op["stats"] if metric[0] == metric_name), None)
 
@@ -312,8 +313,10 @@ def test_udf_custom_metrics_cls(num_udfs: int, batch_size: int | None, concurren
 
         df = df.with_column(f"out_{i}", instance(daft.col("value")))
 
+    df.explain(show_all=True)
     df.collect()
 
+    print(df.metrics.to_pydict())
     for case in cases:
         stats = _find_udf_stats(df.metrics, case["counter_name"])
         assert stats == case["expected_counter"]

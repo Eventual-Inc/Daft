@@ -41,7 +41,7 @@ impl RecordBatch {
         output_to_input_idx
             .into_iter()
             .map(|v| {
-                let indices = UInt64Array::from(("idx", v));
+                let indices = UInt64Array::from_vec("idx", v);
                 self.take(&indices)
             })
             .collect::<DaftResult<Vec<_>>>()
@@ -58,13 +58,13 @@ impl RecordBatch {
             ));
         }
 
-        let targets = self
-            .eval_expression_list(exprs)?
-            .hash_rows()?
-            .rem(&UInt64Array::from((
-                "num_partitions",
-                [num_partitions as u64].as_slice(),
-            )))?;
+        let targets =
+            self.eval_expression_list(exprs)?
+                .hash_rows()?
+                .rem(&UInt64Array::from_slice(
+                    "num_partitions",
+                    &[num_partitions as u64],
+                ))?;
         self.partition_by_index(&targets, num_partitions)
     }
 
@@ -79,7 +79,7 @@ impl RecordBatch {
 
         let rng = rand::rngs::StdRng::seed_from_u64(seed);
         let values: Vec<u64> = rng.sample_iter(&range).take(self.len()).collect();
-        let targets = UInt64Array::from(("idx", values));
+        let targets = UInt64Array::from_vec("idx", values);
 
         self.partition_by_index(&targets, num_partitions)
     }
@@ -104,13 +104,13 @@ impl RecordBatch {
     ) -> DaftResult<(Vec<Self>, Self)> {
         let partition_key_table = self.eval_expression_list(partition_keys)?;
         let (key_idx, group_idx) = partition_key_table.make_groups()?;
-        let key_idx = UInt64Array::from(("idx", key_idx));
+        let key_idx = UInt64Array::from_vec("idx", key_idx);
         let pkeys_per_output_table = partition_key_table.take(&key_idx)?;
         drop(partition_key_table);
         let output_tables = group_idx
             .into_iter()
             .map(|gidx| {
-                let gidx = UInt64Array::from(("idx", gidx));
+                let gidx = UInt64Array::from_vec("idx", gidx);
                 self.take(&gidx)
             })
             .collect::<DaftResult<Vec<_>>>()?;

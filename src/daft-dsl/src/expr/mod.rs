@@ -442,8 +442,8 @@ pub enum AggExpr {
     #[display("set({_0})")]
     Set(ExprRef),
 
-    #[display("list({_0})")]
-    Concat(ExprRef),
+    #[display("concat({_0}, delimiter={_1:?})")]
+    Concat(ExprRef, Option<String>),
 
     #[display("skew({_0}")]
     Skew(ExprRef),
@@ -549,7 +549,7 @@ impl AggExpr {
             Self::AnyValue(_, _) => "Any Value",
             Self::List(_) => "List",
             Self::Set(_) => "Set",
-            Self::Concat(_) => "Concat",
+            Self::Concat(_, _) => "Concat",
             Self::Skew(_) => "Skew",
             Self::MapGroups { .. } => "Map Groups",
         }
@@ -575,7 +575,7 @@ impl AggExpr {
             | Self::AnyValue(expr, _)
             | Self::List(expr)
             | Self::Set(expr)
-            | Self::Concat(expr)
+            | Self::Concat(expr, _)
             | Self::Skew(expr) => expr.name(),
             Self::MapGroups { func: _, inputs } => inputs.first().unwrap().name(),
         }
@@ -668,9 +668,9 @@ impl AggExpr {
                 let child_id = _expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_set()"))
             }
-            Self::Concat(expr) => {
+            Self::Concat(expr, delimiter) => {
                 let child_id = expr.semantic_id(schema);
-                FieldID::new(format!("{child_id}.local_concat()"))
+                FieldID::new(format!("{child_id}.local_concat(delimiter={delimiter:?})"))
             }
             Self::Skew(expr) => {
                 let child_id = expr.semantic_id(schema);
@@ -700,7 +700,7 @@ impl AggExpr {
             | Self::AnyValue(expr, _)
             | Self::List(expr)
             | Self::Set(expr)
-            | Self::Concat(expr)
+            | Self::Concat(expr, _)
             | Self::Skew(expr) => vec![expr.clone()],
             Self::MapGroups { func: _, inputs } => inputs.clone(),
         }
@@ -728,7 +728,7 @@ impl AggExpr {
             Self::AnyValue(_, ignore_nulls) => Self::AnyValue(first_child(), *ignore_nulls),
             Self::List(_) => Self::List(first_child()),
             Self::Set(_expr) => Self::Set(first_child()),
-            Self::Concat(_) => Self::Concat(first_child()),
+            Self::Concat(_, delimiter) => Self::Concat(first_child(), delimiter.clone()),
             Self::Skew(_) => Self::Skew(first_child()),
             Self::MapGroups { func, inputs: _ } => Self::MapGroups {
                 func: func.with_new_children(children.clone()),
@@ -869,10 +869,20 @@ impl AggExpr {
                 Ok(Field::new(field.name.as_str(), DataType::Boolean))
             }
 
-            Self::Concat(expr) => {
+            Self::Concat(expr, delimiter) => {
                 let field = expr.to_field(schema)?;
+                let has_delimiter = delimiter.as_deref().is_some_and(|d| !d.is_empty());
                 match field.dtype {
-                    DataType::List(..) => Ok(field),
+                    DataType::List(..) => {
+                        if has_delimiter {
+                            Err(DaftError::TypeError(format!(
+                                "Concat Agg delimiter is only supported for Utf8 types, got dtype {} for column \"{}\"",
+                                field.dtype, field.name
+                            )))
+                        } else {
+                            Ok(field)
+                        }
+                    }
                     DataType::Utf8 => Ok(field),
                     _ => Err(DaftError::TypeError(format!(
                         "We can only perform Concat Agg on List or Utf8 types, got dtype {} for column \"{}\"",
@@ -1183,8 +1193,9 @@ impl Expr {
         Self::Agg(AggExpr::Set(self)).into()
     }
 
-    pub fn agg_concat(self: ExprRef) -> ExprRef {
-        Self::Agg(AggExpr::Concat(self)).into()
+    pub fn agg_concat(self: ExprRef, delimiter: Option<String>) -> ExprRef {
+        let delimiter = delimiter.filter(|d| !d.is_empty());
+        Self::Agg(AggExpr::Concat(self, delimiter)).into()
     }
 
     pub fn row_number() -> ExprRef {

@@ -21,7 +21,11 @@ impl ScalarUDF for ListContains {
         "list_contains"
     }
 
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let list_series = inputs.required((0, "list"))?;
         let item = inputs.required((1, "item"))?;
 

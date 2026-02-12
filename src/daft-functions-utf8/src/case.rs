@@ -26,7 +26,11 @@ macro_rules! define_case_udf {
                 stringify!($fn_name)
             }
 
-            fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+            fn call(
+                &self,
+                inputs: FunctionArgs<Series>,
+                _ctx: &daft_dsl::functions::scalar::EvalContext,
+            ) -> DaftResult<Series> {
                 unary_utf8_evaluate(inputs, |s| {
                     s.with_utf8_array(|arr| {
                         Ok(arr

@@ -9,7 +9,10 @@ use common_display::{
 };
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
-use common_metrics::ops::{NodeCategory, NodeInfo, NodeType};
+use common_metrics::{
+    QueryID,
+    ops::{NodeCategory, NodeInfo, NodeType},
+};
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
@@ -27,10 +30,12 @@ use daft_micropartition::{
 use daft_scan::ScanTaskRef;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
+use opentelemetry::{InstrumentationScope, KeyValue, global, metrics::Meter};
 use snafu::ResultExt;
 
 use crate::{
     ExecutionRuntimeContext, PipelineCreationSnafu,
+    concat::ConcatNode,
     intermediate_ops::{
         distributed_actor_pool_project::DistributedActorPoolProjectOperator,
         explode::ExplodeOperator, filter::FilterOperator, intermediate_op::IntermediateNode,
@@ -58,7 +63,7 @@ use crate::{
     },
     sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource, source::SourceNode},
     streaming_sink::{
-        async_udf::AsyncUdfSink, base::StreamingSinkNode, concat::ConcatSink, limit::LimitSink,
+        async_udf::AsyncUdfSink, base::StreamingSinkNode, limit::LimitSink,
         monotonically_increasing_id::MonotonicallyIncreasingIdSink, sample::SampleSink,
         vllm::VLLMSink,
     },
@@ -184,19 +189,26 @@ impl ConcreteTreeNode for Box<dyn PipelineNode> {
 
 /// Single use context for translating a physical plan to a Pipeline.
 /// It generates a plan_id, and node ids for each plan.
-pub struct RuntimeContext {
+pub struct BuilderContext {
     index_counter: std::cell::RefCell<usize>,
+    pub meter: Meter,
     context: HashMap<String, String>,
 }
 
-impl RuntimeContext {
+impl BuilderContext {
     pub fn new() -> Self {
-        Self::new_with_context(HashMap::new())
+        Self::new_with_context("".into(), HashMap::new())
     }
 
-    pub fn new_with_context(context: HashMap<String, String>) -> Self {
+    pub fn new_with_context(query_id: QueryID, context: HashMap<String, String>) -> Self {
+        let scope = InstrumentationScope::builder("daft.local.node_stats")
+            .with_attributes(vec![KeyValue::new("query_id", query_id.to_string())])
+            .build();
+        let meter = global::meter_with_scope(scope);
+
         Self {
             index_counter: std::cell::RefCell::new(0),
+            meter,
             context,
         }
     }
@@ -320,7 +332,7 @@ pub fn translate_physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
     cfg: &Arc<DaftExecutionConfig>,
-    ctx: &RuntimeContext,
+    ctx: &BuilderContext,
 ) -> crate::Result<Box<dyn PipelineNode>> {
     let mut pipeline_node = physical_plan_to_pipeline(physical_plan, psets, cfg, ctx)?;
     pipeline_node.propagate_morsel_size_requirement(
@@ -334,7 +346,7 @@ fn physical_plan_to_pipeline(
     physical_plan: &LocalPhysicalPlan,
     psets: &(impl PartitionSetCache<MicroPartitionRef, Arc<MicroPartitionSet>> + ?Sized),
     cfg: &Arc<DaftExecutionConfig>,
-    ctx: &RuntimeContext,
+    ctx: &BuilderContext,
 ) -> crate::Result<Box<dyn PipelineNode>> {
     use daft_local_plan::PhysicalScan;
 
@@ -554,7 +566,7 @@ fn physical_plan_to_pipeline(
                 );
                 StreamingSinkNode::new(
                     Arc::new(async_sink),
-                    vec![child_node],
+                    child_node,
                     stats_state.clone(),
                     ctx,
                     context,
@@ -588,6 +600,9 @@ fn physical_plan_to_pipeline(
                 actor_objects,
                 batch_size,
                 memory_request,
+                schema,
+                passthrough_columns,
+                required_columns,
                 stats_state,
                 context,
                 ..
@@ -597,6 +612,9 @@ fn physical_plan_to_pipeline(
                 actor_objects.clone(),
                 *batch_size,
                 *memory_request,
+                passthrough_columns.clone(),
+                required_columns.clone(),
+                schema.clone(),
             )
             .with_context(|_| PipelineCreationSnafu {
                 plan_name: physical_plan.name(),
@@ -625,7 +643,7 @@ fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             StreamingSinkNode::new(
                 Arc::new(sample_sink),
-                vec![child_node],
+                child_node,
                 stats_state.clone(),
                 ctx,
                 context,
@@ -701,7 +719,7 @@ fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             StreamingSinkNode::new(
                 Arc::new(sink),
-                vec![child_node],
+                child_node,
                 stats_state.clone(),
                 ctx,
                 context,
@@ -717,15 +735,7 @@ fn physical_plan_to_pipeline(
         }) => {
             let left_child = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             let right_child = physical_plan_to_pipeline(other, psets, cfg, ctx)?;
-            let sink = ConcatSink {};
-            StreamingSinkNode::new(
-                Arc::new(sink),
-                vec![left_child, right_child],
-                stats_state.clone(),
-                ctx,
-                context,
-            )
-            .boxed()
+            ConcatNode::new(left_child, right_child, stats_state.clone(), ctx, context).boxed()
         }
         LocalPhysicalPlan::UnGroupedAggregate(UnGroupedAggregate {
             input,
@@ -912,7 +922,7 @@ fn physical_plan_to_pipeline(
             );
             StreamingSinkNode::new(
                 Arc::new(monotonically_increasing_id_sink),
-                vec![child_node],
+                child_node,
                 stats_state.clone(),
                 ctx,
                 context,
@@ -1414,7 +1424,7 @@ fn physical_plan_to_pipeline(
             );
             StreamingSinkNode::new(
                 Arc::new(vllm_sink),
-                vec![child_node],
+                child_node,
                 stats_state.clone(),
                 ctx,
                 context,

@@ -16,7 +16,11 @@ struct ImageToTensorArgs<T> {
 
 #[typetag::serde]
 impl ScalarUDF for ImageToTensor {
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let ImageToTensorArgs { input } = inputs.try_into()?;
         crate::series::to_tensor(&input)
     }

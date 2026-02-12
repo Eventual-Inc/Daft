@@ -63,6 +63,7 @@ def _assert_prompt_metrics_recorded(metrics: RecordBatch | None) -> None:
         "total tokens",
     }
 
+    assert metrics is not None
     metrics_list = _collect_metrics(metrics)
 
     for name in required:

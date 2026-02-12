@@ -518,8 +518,9 @@ impl PyExpr {
         Ok(self.expr.clone().agg_set().into())
     }
 
-    pub fn agg_concat(&self) -> PyResult<Self> {
-        Ok(self.expr.clone().agg_concat().into())
+    #[pyo3(signature = (delimiter=None))]
+    pub fn agg_concat(&self, delimiter: Option<String>) -> PyResult<Self> {
+        Ok(self.expr.clone().agg_concat(delimiter).into())
     }
 
     pub fn __add__(&self, other: &Self) -> PyResult<Self> {
