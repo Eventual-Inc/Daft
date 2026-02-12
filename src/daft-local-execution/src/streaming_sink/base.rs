@@ -130,14 +130,10 @@ async fn process_single_input<Op: StreamingSink + 'static>(
     let mut input_closed = false;
     let mut finished = false;
 
-    while !finished && (!input_closed || !task_set.is_empty() || !buffer.is_empty()) {
+    while !finished && (!input_closed || !task_set.is_empty()) {
         // Try to spawn from buffer while states are available
         while !states.is_empty() {
-            let batch = if input_closed {
-                buffer.pop_all()?
-            } else {
-                buffer.next_batch_if_ready()?
-            };
+            let batch = buffer.next_batch_if_ready()?;
             if let Some(partition) = batch {
                 let state = states.pop().unwrap();
                 let op = op.clone();
@@ -152,7 +148,7 @@ async fn process_single_input<Op: StreamingSink + 'static>(
             }
         }
 
-        if input_closed && task_set.is_empty() && buffer.is_empty() {
+        if input_closed && task_set.is_empty() {
             break;
         }
 
@@ -215,6 +211,57 @@ async fn process_single_input<Op: StreamingSink + 'static>(
                     }
                     Some(PipelineMessage::Flush(_)) | None => {
                         input_closed = true;
+                    }
+                }
+            }
+        }
+    }
+
+    // Drain remaining buffer
+    if !finished {
+        if let Some(mut partition) = buffer.pop_all()? {
+            let mut state = states.pop().unwrap();
+            loop {
+                let now = Instant::now();
+                let (new_state, result) =
+                    op.execute(partition, state, &task_spawner).await??;
+                let elapsed = now.elapsed();
+                runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
+
+                if let Some(mp) = result.output() {
+                    runtime_stats.add_rows_out(mp.len() as u64);
+                    batch_manager.record_execution_stats(
+                        runtime_stats.as_ref(),
+                        mp.len(),
+                        elapsed,
+                    );
+                    if output_sender
+                        .send(PipelineMessage::Morsel {
+                            input_id,
+                            partition: mp.clone(),
+                        })
+                        .await
+                        .is_err()
+                    {
+                        return Ok(ControlFlow::Break(()));
+                    }
+                }
+
+                let new_requirements = batch_manager.calculate_batch_size();
+                buffer.update_bounds(new_requirements);
+
+                match result {
+                    StreamingSinkOutput::NeedMoreInput(_) => {
+                        states.push(new_state);
+                        break;
+                    }
+                    StreamingSinkOutput::HasMoreOutput { input, .. } => {
+                        partition = input;
+                        state = new_state;
+                    }
+                    StreamingSinkOutput::Finished(_) => {
+                        finished = true;
+                        break;
                     }
                 }
             }
