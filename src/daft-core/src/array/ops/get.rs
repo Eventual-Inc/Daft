@@ -1,3 +1,4 @@
+#[cfg(feature = "python")]
 use std::sync::Arc;
 
 use daft_arrow::types::months_days_ns;
@@ -30,20 +31,16 @@ where
             idx,
             self.len()
         );
-        let arrow_array = self.as_arrow2();
-        let is_valid = arrow_array
-            .validity()
-            .is_none_or(|nulls| nulls.get_bit(idx));
-        if is_valid {
-            Some(unsafe { arrow_array.value_unchecked(idx) })
+        if self.nulls().is_none_or(|nulls| nulls.is_valid(idx)) {
+            Some(self.as_slice()[idx])
         } else {
             None
         }
     }
 }
 
-// Default implementations of get ops for DataArray and LogicalArray.
-macro_rules! impl_array_arrow_get {
+// Default get implementation for DataArray-backed types that still require arrow2 for value access.
+macro_rules! impl_dataarray_get {
     ($ArrayT:ty, $output:ty) => {
         impl $ArrayT {
             #[inline]
@@ -54,13 +51,35 @@ macro_rules! impl_array_arrow_get {
                     idx,
                     self.len()
                 );
-
-                let arrow_array = self.as_arrow2();
-                let is_valid = arrow_array
-                    .validity()
-                    .is_none_or(|nulls| nulls.get_bit(idx));
-                if is_valid {
+                if self.nulls().is_none_or(|nulls| nulls.is_valid(idx)) {
+                    let arrow_array = self.as_arrow2();
                     Some(unsafe { arrow_array.value_unchecked(idx) })
+                } else {
+                    None
+                }
+            }
+        }
+    };
+}
+
+// Default get implementation for LogicalArray-backed primitive types (nulls live on the physical array).
+macro_rules! impl_logicalarray_get {
+    ($ArrayT:ty, $output:ty) => {
+        impl $ArrayT {
+            #[inline]
+            pub fn get(&self, idx: usize) -> Option<$output> {
+                assert!(
+                    idx < self.len(),
+                    "Out of bounds: {} vs len: {}",
+                    idx,
+                    self.len()
+                );
+                if self
+                    .physical
+                    .nulls()
+                    .is_none_or(|nulls| nulls.is_valid(idx))
+                {
+                    Some(self.physical.as_slice()[idx])
                 } else {
                     None
                 }
@@ -76,15 +95,16 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
     }
 }
 
-impl_array_arrow_get!(Utf8Array, &str);
-impl_array_arrow_get!(BooleanArray, bool);
-impl_array_arrow_get!(BinaryArray, &[u8]);
-impl_array_arrow_get!(FixedSizeBinaryArray, &[u8]);
-impl_array_arrow_get!(DateArray, i32);
-impl_array_arrow_get!(TimeArray, i64);
-impl_array_arrow_get!(DurationArray, i64);
-impl_array_arrow_get!(IntervalArray, months_days_ns);
-impl_array_arrow_get!(TimestampArray, i64);
+impl_dataarray_get!(Utf8Array, &str);
+impl_dataarray_get!(BooleanArray, bool);
+impl_dataarray_get!(BinaryArray, &[u8]);
+impl_dataarray_get!(FixedSizeBinaryArray, &[u8]);
+impl_dataarray_get!(IntervalArray, months_days_ns);
+
+impl_logicalarray_get!(DateArray, i32);
+impl_logicalarray_get!(TimeArray, i64);
+impl_logicalarray_get!(DurationArray, i64);
+impl_logicalarray_get!(TimestampArray, i64);
 
 impl NullArray {
     #[inline]
@@ -108,7 +128,7 @@ impl ExtensionArray {
             idx,
             self.len()
         );
-        let is_valid = self.data.validity().is_none_or(|nulls| nulls.get_bit(idx));
+        let is_valid = self.nulls().is_none_or(|nulls| nulls.is_valid(idx));
         if is_valid {
             Some(daft_arrow::scalar::new_scalar(self.data(), idx))
         } else {
