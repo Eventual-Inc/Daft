@@ -280,7 +280,7 @@ class RemoteFlotillaRunner:
             next_partition_ref = None
 
         if next_partition_ref is None:
-            metrics = self.curr_result_gens[plan_id].finish()
+            metrics = self.curr_result_gens[plan_id].finish()  # type: ignore[attr-defined]
             self.curr_plans.pop(plan_id, None)
             self.curr_result_gens.pop(plan_id, None)
             return RecordBatch._from_pyrecordbatch(metrics.to_recordbatch())
