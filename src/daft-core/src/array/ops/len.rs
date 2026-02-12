@@ -17,7 +17,11 @@ where
     T: DaftArrowBackedType + 'static,
 {
     pub fn size_bytes(&self) -> usize {
-        self.to_data().get_buffer_memory_size()
+        // unwrap is safe: get_slice_memory_size only fails on (1) len * byte_width overflow,
+        // which is impossible since the array is already allocated in memory, or (2) an
+        // unrecognized variable-width type, which can't happen because layout() and the
+        // VariableWidth match cover exactly the same four types (Utf8, LargeUtf8, Binary, LargeBinary).
+        self.to_data().get_slice_memory_size().unwrap()
     }
 }
 
