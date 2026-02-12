@@ -102,3 +102,16 @@ pub fn try_skew_aggregation_supertype(dtype: &DataType) -> DaftResult<DataType> 
         ))),
     }
 }
+
+/// Get the data type that percentile-like aggregations should be casted to.
+pub fn try_percentile_aggregation_supertype(dtype: &DataType) -> DaftResult<DataType> {
+    match dtype {
+        d if d.is_numeric() => Ok(DataType::Float64),
+        DataType::List(inner) | DataType::FixedSizeList(inner, _) if inner.is_numeric() => {
+            Ok(DataType::Float64)
+        }
+        other => Err(DaftError::TypeError(format!(
+            "Invalid argument to percentile supertype: {other}"
+        ))),
+    }
+}
