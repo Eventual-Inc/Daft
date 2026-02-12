@@ -64,6 +64,7 @@ def _iceberg_partition_field_to_daft_partition_field(
         source_name, DataType.from_arrow_type(schema_to_pyarrow(iceberg_schema.find_type(source_name)))
     )
     transform = pfield.transform
+    name = pfield.name
     source_type = DataType.from_arrow_type(schema_to_pyarrow(source_field.field_type))
 
     from pyiceberg.transforms import (
@@ -106,7 +107,7 @@ def _iceberg_partition_field_to_daft_partition_field(
         warnings.warn(f"{transform} not implemented, Please make an issue!")
         result_type = source_type
     result_field = Field.create(name, result_type)
-    return make_partition_field(result_field, daft_field, transform=tfm)
+    return make_partition_field(result_field, daft_field, transform=tfm, name=name)
 
 
 def iceberg_partition_spec_to_fields(

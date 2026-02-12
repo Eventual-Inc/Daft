@@ -19,12 +19,16 @@ if TYPE_CHECKING:
 
 
 def make_partition_field(
-    field: Field, source_field: Field | None = None, transform: PyPartitionTransform | None = None
+    field: Field,
+    source_field: Field | None = None,
+    transform: PyPartitionTransform | None = None,
+    name: str | None = None,
 ) -> PyPartitionField:
     return PyPartitionField(
         field._field,
         source_field._field if source_field is not None else None,
         transform,
+        name,
     )
 
 
