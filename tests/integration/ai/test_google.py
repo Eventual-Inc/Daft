@@ -62,7 +62,8 @@ class PromptMetricsSubscriber(Subscriber):
         for node_id, stats in all_stats.items():
             self.node_stats[query_id][node_id] = dict(stats)
 
-    def on_query_end(self, query_id: str) -> None:
+    def on_query_end(self, query_id: str, result: Any) -> None:
+        """Called when a query has completed."""
         pass
 
     def on_result_out(self, query_id: str, result: PyMicroPartition) -> None:
