@@ -3,10 +3,9 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    array::ops::as_arrow::AsArrow,
     count_mode::CountMode,
-    datatypes::{DataType, UInt64Array},
-    series::Series,
+    datatypes::{DataType, Field, UInt64Array},
+    series::{IntoSeries, Series},
 };
 use daft_dsl::{Expr, expr::bound_expr::BoundExpr, functions::scalar::ScalarFn};
 use daft_functions_list::SeriesListExtension;
@@ -15,15 +14,38 @@ use crate::RecordBatch;
 
 fn lengths_to_indices(lengths: &UInt64Array, capacity: usize) -> DaftResult<UInt64Array> {
     let mut indices = Vec::with_capacity(capacity);
-    for (i, l) in lengths.as_arrow2().iter().enumerate() {
+    for (i, l) in lengths.into_iter().enumerate() {
         let l = std::cmp::max(*l.unwrap_or(&1), 1u64);
         (0..l).for_each(|_| indices.push(i as u64));
     }
-    Ok(UInt64Array::from(("indices", indices)))
+    Ok(UInt64Array::from_vec("indices", indices))
+}
+
+/// For each list element, generate its position within the list.
+/// For null or empty lists, generate a single None (null index).
+fn generate_explode_indices(
+    lengths: &UInt64Array,
+    capacity: usize,
+    name: &str,
+) -> DaftResult<UInt64Array> {
+    let mut indices = Vec::with_capacity(capacity);
+    for len in lengths {
+        if let Some(&l) = len
+            && l > 0
+        {
+            indices.extend((0..l).map(Some));
+        } else {
+            indices.push(None);
+        }
+    }
+    Ok(UInt64Array::from_iter(
+        Field::new(name, DataType::UInt64),
+        indices.into_iter(),
+    ))
 }
 
 impl RecordBatch {
-    pub fn explode(&self, exprs: &[BoundExpr]) -> DaftResult<Self> {
+    pub fn explode(&self, exprs: &[BoundExpr], index_column: Option<&str>) -> DaftResult<Self> {
         if exprs.is_empty() {
             return Err(DaftError::ValueError(format!(
                 "Explode needs at least 1 expression, received: {}",
@@ -101,6 +123,14 @@ impl RecordBatch {
             }
         }
         new_series.extend_from_slice(exploded_columns.as_slice());
+
+        if let Some(idx_col_name) = index_column {
+            let index_series =
+                generate_explode_indices(&first_len, capacity_expected, idx_col_name)?
+                    .into_series();
+            new_series.push(index_series);
+        }
+
         Self::from_nonempty_columns(new_series)
     }
 }

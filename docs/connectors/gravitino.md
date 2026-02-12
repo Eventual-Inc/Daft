@@ -17,6 +17,7 @@ pip install daft[gravitino]
 - **Catalog Navigation**: List catalogs, schemas, and tables
 - **Table Management**: Load existing tables or create new external tables
 - **Fileset Support**: Access Gravitino filesets for file storage
+- **GVFS Protocol**: Read and write files using `gvfs://` URLs for seamless fileset access
 - **Authentication**: Supports simple and OAuth2 authentication methods
 - **Daft Catalog Integration**: Integration with Daft's catalog system via `Catalog.from_gravitino()` and `Table.from_gravitino()`
 
@@ -90,6 +91,114 @@ The client supports two authentication methods:
 Gravitino manages storage credentials through table and fileset properties. The client automatically extracts and configures:
 
 - **S3**: Access key, secret key, and session token
+
+## GVFS Protocol Support
+
+Daft supports reading and writing files directly from Gravitino filesets using the `gvfs://` protocol. This provides a unified interface for accessing files stored in various cloud storage systems through Gravitino's metadata management.
+
+### GVFS URL Format
+
+GVFS URLs follow this format:
+```
+gvfs://fileset/<catalog>/<schema>/<fileset>/<path>
+```
+
+Where:
+- `<catalog>` - Name of the Gravitino catalog
+- `<schema>` - Name of the schema within the catalog
+- `<fileset>` - Name of the fileset
+- `<path>` - Optional path to specific files within the fileset
+
+### Reading Files with GVFS
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+    from daft.gravitino import GravitinoClient
+
+    # Create client and configure IOConfig
+    client = GravitinoClient(
+        endpoint="http://localhost:8090",
+        metalake_name="my_metalake",
+        username="admin"
+    )
+    io_config = client.to_io_config()
+
+    # Read parquet files from a fileset
+    df = daft.read_parquet(
+        "gvfs://fileset/my_catalog/my_schema/my_fileset/**/*.parquet",
+        io_config=io_config
+    )
+
+    # Read specific file
+    df = daft.read_parquet(
+        "gvfs://fileset/my_catalog/my_schema/my_fileset/data.parquet",
+        io_config=io_config
+    )
+
+    # Read CSV files
+    df = daft.read_csv(
+        "gvfs://fileset/my_catalog/my_schema/my_fileset/*.csv",
+        io_config=io_config
+    )
+
+    # Use glob patterns for file discovery
+    files_df = daft.from_glob_path(
+        "gvfs://fileset/my_catalog/my_schema/my_fileset/**/*.json",
+        io_config=io_config
+    )
+    ```
+
+### Writing Files with GVFS
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+    from daft.gravitino import GravitinoClient
+
+    # Create client and configure IOConfig
+    client = GravitinoClient(
+        endpoint="http://localhost:8090",
+        metalake_name="my_metalake",
+        username="admin"
+    )
+    io_config = client.to_io_config()
+
+    # Create sample data
+    df = daft.from_pydict({
+        "id": [1, 2, 3],
+        "name": ["Alice", "Bob", "Charlie"],
+        "age": [25, 30, 35]
+    })
+
+    # Write parquet files to a fileset
+    df.write_parquet(
+        "gvfs://fileset/my_catalog/my_schema/my_fileset/output.parquet",
+        io_config=io_config
+    )
+
+    # Write CSV files
+    df.write_csv(
+        "gvfs://fileset/my_catalog/my_schema/my_fileset/output.csv",
+        io_config=io_config
+    )
+
+    # Write JSON files
+    df.write_json(
+        "gvfs://fileset/my_catalog/my_schema/my_fileset/output.json",
+        io_config=io_config
+    )
+    ```
+
+### GVFS Benefits
+
+- **Unified Access**: Use the same URL format for reading and writing
+- **Storage Abstraction**: Access files without knowing underlying storage details (S3, GCS, etc.)
+- **Metadata Integration**: Leverage Gravitino's catalog metadata for data discovery
+- **Credential Management**: Gravitino handles storage credentials automatically
+- **Multi-format Support**: Works with Parquet, CSV, JSON, and other file formats
 
 ## API Reference
 
@@ -166,6 +275,20 @@ Represents a fileset in Gravitino for file storage.
 - `fileset_info` - Fileset metadata
 - `io_config` - Daft IOConfig for accessing the fileset
 
+**GVFS Access:**
+
+Filesets can be accessed directly using the GVFS protocol without needing to load the fileset object:
+
+=== "🐍 Python"
+
+    ```python
+    # Direct GVFS access (recommended)
+    df = daft.read_parquet(
+        "gvfs://fileset/catalog/schema/fileset/data.parquet",
+        io_config=client.to_io_config()
+    )
+    ```
+
 ## Requirements
 
 - Apache Gravitino server (0.9.0+)
@@ -185,6 +308,7 @@ The client automatically detects and handles both formats for seamless compatibi
 
 - Credential vending is not yet implemented
 - This version directly calls Gravitino RESTful API, not using Gravitino Python client
+- GVFS write support currently works with S3-backed filesets (other storage backends coming soon)
 - Some advanced Gravitino features may not be exposed through this client
 
 ## Roadmap

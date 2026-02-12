@@ -1,5 +1,4 @@
 use daft_dsl::functions::prelude::*;
-
 /// Executes a JSON filter on a UTF-8 string array.
 ///
 /// # Arguments
@@ -36,7 +35,11 @@ impl ScalarUDF for Jq {
         Ok(Field::new(input.name, DataType::Utf8))
     }
 
-    fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        args: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let JqArgs { input, filter } = args.try_into()?;
         jaq::execute(&input, &filter)
     }
@@ -46,7 +49,7 @@ impl ScalarUDF for Jq {
 mod jaq {
     use common_error::{DaftError, DaftResult};
     use daft_core::{
-        prelude::{AsArrow, DataType, Utf8Array},
+        prelude::{DataType, Utf8Array},
         series::Series,
     };
     use jaq_core::{
@@ -98,12 +101,10 @@ mod jaq {
 
         // used for the output array
         let name = arr.name().to_string();
-        #[allow(deprecated, reason = "arrow2 migration")]
-        let self_arrow = arr.as_arrow2();
 
         // execute the filter on each input, mapping to some string result
-        let values = self_arrow
-            .iter()
+        let values = arr
+            .into_iter()
             .map(|value| {
                 value.map_or(Ok(None), |input| {
                     parse_json(input).and_then(|val| {
@@ -122,9 +123,7 @@ mod jaq {
             .collect::<DaftResult<Utf8Array>>()?;
 
         // be sure to apply the name and validity of the input
-        values
-            .rename(&name)
-            .with_validity(self_arrow.validity().cloned().map(Into::into))
+        values.rename(&name).with_nulls(arr.nulls().cloned())
     }
 
     /// We need serde_json to parse, but then convert to a jaq Val to be evaluated.
@@ -172,7 +171,6 @@ mod jaq {
 }
 
 #[cfg(test)]
-#[allow(deprecated, reason = "arrow2 migration")]
 mod tests {
     use daft_core::prelude::{AsArrow, Utf8Array};
 
@@ -180,22 +178,21 @@ mod tests {
 
     #[test]
     fn test_jaq() -> DaftResult<()> {
-        let data = Utf8Array::from_values(
+        let data = Utf8Array::from_slice(
             "data",
-            vec![
+            &[
                 r#"{"foo": {"bar": 1}}"#.to_string(),
                 r#"{"foo": {"bar": 2}}"#.to_string(),
                 r#"{"foo": {"bar": 3}}"#.to_string(),
-            ]
-            .into_iter(),
+            ],
         );
 
         let filter = r".foo.bar";
         let result = jaq::execute_jaq_filter(&data, filter)?;
         assert_eq!(result.len(), 3);
-        assert_eq!(result.as_arrow2().value(0), "1");
-        assert_eq!(result.as_arrow2().value(1), "2");
-        assert_eq!(result.as_arrow2().value(2), "3");
+        assert_eq!(result.as_arrow()?.value(0), "1");
+        assert_eq!(result.as_arrow()?.value(1), "2");
+        assert_eq!(result.as_arrow()?.value(2), "3");
         Ok(())
     }
 }

@@ -1,11 +1,22 @@
-use std::{collections::HashMap, hash::Hash, sync::Arc};
+use std::{
+    collections::HashMap,
+    hash::Hash,
+    sync::{Arc, LazyLock, Mutex},
+};
 
+use arrow_schema::extension::{EXTENSION_TYPE_METADATA_KEY, EXTENSION_TYPE_NAME_KEY};
 use common_error::{DaftError, DaftResult};
 use daft_arrow::datatypes::Field as ArrowField;
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
 use crate::dtype::{DAFT_SUPER_EXTENSION_NAME, DataType};
+
+/// Registry that maps extension type names to their original arrow-rs storage DataType
+/// (before Daft coercion, e.g. Binary instead of LargeBinary). This allows `to_arrow`
+/// to reverse the coercion so PyArrow sees the original storage type.
+static EXTENSION_TYPE_REGISTRY: LazyLock<Mutex<HashMap<String, arrow_schema::DataType>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub type Metadata = std::collections::BTreeMap<String, String>;
 
@@ -92,11 +103,20 @@ impl Field {
     pub fn to_arrow(&self) -> DaftResult<arrow_schema::Field> {
         let field = match &self.dtype {
             DataType::Extension(name, dtype, metadata) => {
-                let physical = arrow_schema::Field::new(self.name.clone(), dtype.to_arrow()?, true);
+                // If we previously registered the original (pre-coercion) storage type,
+                // use it so PyArrow sees the original type (e.g. Binary, not LargeBinary).
+                let storage_type = EXTENSION_TYPE_REGISTRY
+                    .lock()
+                    .unwrap()
+                    .get(name)
+                    .cloned()
+                    .map_or_else(|| dtype.to_arrow(), Ok)?;
+
+                let physical = arrow_schema::Field::new(self.name.clone(), storage_type, true);
                 let mut metadata_map = HashMap::new();
-                metadata_map.insert("ARROW:extension:name".to_string(), name.clone());
+                metadata_map.insert(EXTENSION_TYPE_NAME_KEY.to_string(), name.clone());
                 if let Some(metadata) = metadata {
-                    metadata_map.insert("ARROW:extension:metadata".to_string(), metadata.clone());
+                    metadata_map.insert(EXTENSION_TYPE_METADATA_KEY.to_string(), metadata.clone());
                 }
                 physical.with_metadata(metadata_map)
             }
@@ -112,11 +132,11 @@ impl Field {
 
                 let mut metadata_map = HashMap::new();
                 metadata_map.insert(
-                    "ARROW:extension:name".to_string(),
+                    EXTENSION_TYPE_NAME_KEY.to_string(),
                     DAFT_SUPER_EXTENSION_NAME.into(),
                 );
 
-                metadata_map.insert("ARROW:extension:metadata".to_string(), dtype.to_json()?);
+                metadata_map.insert(EXTENSION_TYPE_METADATA_KEY.to_string(), dtype.to_json()?);
 
                 physical.to_arrow()?.with_metadata(metadata_map)
             }
@@ -128,11 +148,11 @@ impl Field {
 
                 let mut metadata_map = HashMap::new();
                 metadata_map.insert(
-                    "ARROW:extension:name".to_string(),
+                    EXTENSION_TYPE_NAME_KEY.to_string(),
                     DAFT_SUPER_EXTENSION_NAME.into(),
                 );
 
-                metadata_map.insert("ARROW:extension:metadata".to_string(), dtype.to_json()?);
+                metadata_map.insert(EXTENSION_TYPE_METADATA_KEY.to_string(), dtype.to_json()?);
 
                 physical.to_arrow()?.with_metadata(metadata_map)
             }
@@ -212,12 +232,53 @@ impl From<&ArrowField> for Field {
 impl TryFrom<&arrow_schema::Field> for Field {
     type Error = DaftError;
 
-    fn try_from(value: &arrow_schema::Field) -> Result<Self, Self::Error> {
-        Ok(Self {
-            name: value.name().clone(),
-            dtype: value.try_into()?,
-            metadata: Arc::new(value.metadata().clone().into_iter().collect()),
-        })
+    fn try_from(field: &arrow_schema::Field) -> Result<Self, Self::Error> {
+        if field.extension_type_name() == Some(DAFT_SUPER_EXTENSION_NAME) {
+            let metadata = field.extension_type_metadata()
+                         .expect("DataType::try_from<&arrow_schema::Field> failed to get metadata for extension type");
+            let dtype = DataType::from_json(metadata)?;
+
+            let mut metadata = field.metadata().clone();
+            metadata.remove(EXTENSION_TYPE_NAME_KEY);
+            metadata.remove(EXTENSION_TYPE_METADATA_KEY);
+
+            Ok(Self {
+                name: field.name().clone(),
+                dtype,
+                metadata: Arc::new(metadata.into_iter().collect()),
+            })
+        } else if let Some(extension_name) = field.extension_type_name() {
+            // Generic extension type (e.g. daft.uuid)
+            let physical = DataType::try_from(field.data_type())?;
+            let ext_metadata = field.extension_type_metadata().map(|s| s.to_string());
+
+            // Remember the original arrow storage type so to_arrow() can
+            // reverse the coercion (e.g. Binary instead of LargeBinary).
+            EXTENSION_TYPE_REGISTRY
+                .lock()
+                .unwrap()
+                .insert(extension_name.to_string(), field.data_type().clone());
+
+            let mut field_metadata = field.metadata().clone();
+            field_metadata.remove(EXTENSION_TYPE_NAME_KEY);
+            field_metadata.remove(EXTENSION_TYPE_METADATA_KEY);
+
+            Ok(Self {
+                name: field.name().clone(),
+                dtype: DataType::Extension(
+                    extension_name.to_string(),
+                    Box::new(physical),
+                    ext_metadata,
+                ),
+                metadata: Arc::new(field_metadata.into_iter().collect()),
+            })
+        } else {
+            Ok(Self {
+                name: field.name().clone(),
+                dtype: field.try_into()?,
+                metadata: Arc::new(field.metadata().clone().into_iter().collect()),
+            })
+        }
     }
 }
 
@@ -227,7 +288,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        dtype::DataType,
+        dtype::{DAFT_SUPER_EXTENSION_NAME, DataType},
         field::Field,
         media_type::MediaType,
         prelude::{ImageMode, TimeUnit},
@@ -243,17 +304,11 @@ mod tests {
         assert_eq!(arrow_field.name(), "embeddings");
         assert_eq!(arrow_field.metadata().len(), 2);
         assert_eq!(
-            arrow_field
-                .metadata()
-                .get("ARROW:extension:name")
-                .map(|s| s.as_str()),
-            Some("daft.super_extension")
+            arrow_field.extension_type_name(),
+            Some(DAFT_SUPER_EXTENSION_NAME)
         );
         assert_eq!(
-            arrow_field
-                .metadata()
-                .get("ARROW:extension:metadata")
-                .map(|s| s.as_str()),
+            arrow_field.extension_type_metadata(),
             Some(field.dtype.to_json()?.as_str())
         );
 

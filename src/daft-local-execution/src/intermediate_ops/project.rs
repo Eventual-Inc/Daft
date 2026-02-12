@@ -1,8 +1,9 @@
-use std::{cmp::max, sync::Arc, time::Duration};
+use std::{cmp::max, num::NonZeroUsize, sync::Arc, time::Duration};
 
 use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
 use common_runtime::get_compute_pool_num_threads;
+use daft_core::prelude::SchemaRef;
 use daft_dsl::{
     Expr,
     common_treenode::{self, TreeNode},
@@ -43,6 +44,38 @@ fn smallest_batch_size(prev: Option<usize>, next: Option<usize>) -> Option<usize
     }
 }
 
+/// Has interesting compute to display within the name / progress bars
+fn is_interesting(expr: &Arc<Expr>) -> bool {
+    match expr.as_ref() {
+        Expr::Column(..) => false,
+        Expr::Literal(..) => false,
+        // Shouldn't be there by this point
+        Expr::Subquery(..) => false,
+        Expr::Exists(..) => false,
+
+        Expr::Function { .. } => true,
+        Expr::ScalarFn(..) => true,
+        Expr::Agg(..) => true,
+        Expr::Over(..) => true,
+        Expr::WindowFunction(..) => true,
+        Expr::IsIn(..) => true,
+        Expr::Between(..) => true,
+        Expr::BinaryOp { .. } => true,
+        // TODO: Some casts could be considered no-ops
+        Expr::Cast(..) => true,
+        Expr::VLLM(..) => true,
+        Expr::Not(..) => true,
+        Expr::IsNull(..) => true,
+        Expr::NotNull(..) => true,
+        Expr::FillNull(..) => true,
+        Expr::IfElse { .. } => true,
+
+        Expr::Alias(expr, ..) => is_interesting(expr),
+        Expr::InSubquery(expr, _) => is_interesting(expr),
+        Expr::List(exprs) => exprs.iter().any(is_interesting),
+    }
+}
+
 /// Gets the batch size from the first UDF encountered in a given slice of expressions
 pub fn try_get_batch_size(exprs: &[BoundExpr]) -> Option<usize> {
     let mut projection_batch_size = None;
@@ -70,17 +103,19 @@ pub fn try_get_batch_size(exprs: &[BoundExpr]) -> Option<usize> {
 
 pub struct ProjectOperator {
     projection: Arc<Vec<BoundExpr>>,
+    input_schema: SchemaRef,
     max_concurrency: usize,
     parallel_exprs: usize,
     batch_size: Option<usize>,
 }
 
 impl ProjectOperator {
-    pub fn new(projection: Vec<BoundExpr>) -> DaftResult<Self> {
+    pub fn new(projection: Vec<BoundExpr>, input_schema: SchemaRef) -> DaftResult<Self> {
         let (max_concurrency, parallel_exprs) = Self::get_optimal_allocation(&projection)?;
         let batch_size = try_get_batch_size(&projection);
         Ok(Self {
             projection: Arc::new(projection),
+            input_schema,
             max_concurrency,
             parallel_exprs,
             batch_size,
@@ -144,7 +179,24 @@ impl IntermediateOperator for ProjectOperator {
     }
 
     fn name(&self) -> NodeName {
-        "Project".into()
+        let compute_expressions = self
+            .projection
+            .iter()
+            .filter(|x| is_interesting(x.inner()))
+            .collect::<Vec<_>>();
+
+        if compute_expressions.is_empty() {
+            "Rename & Reorder".into()
+        } else if compute_expressions.len() == 1
+            && let Some(name) = compute_expressions[0]
+                .inner()
+                .display_name(&self.input_schema)
+                .ok()
+        {
+            name.into()
+        } else {
+            "Project".into()
+        }
     }
 
     fn op_type(&self) -> NodeType {
@@ -166,12 +218,11 @@ impl IntermediateOperator for ProjectOperator {
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
         self.batch_size
+            .and_then(NonZeroUsize::new)
             .map(|batch_size| MorselSizeRequirement::Flexible(0, batch_size))
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
-        Ok(())
-    }
+    fn make_state(&self) -> Self::State {}
 
     fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
         let cfg = daft_context::get_context().execution_config();
@@ -194,7 +245,7 @@ impl IntermediateOperator for ProjectOperator {
                         step_size_alpha: 2048,
                         correction_delta: 64,
                         b_min: min_batch_size,
-                        b_max: max_batch_size,
+                        b_max: max_batch_size.get(),
                     }
                     .into()
                 }

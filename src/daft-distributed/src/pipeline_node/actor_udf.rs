@@ -2,47 +2,45 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_py_serde::PyObjectWrapper;
-use daft_dsl::{expr::bound_expr::BoundExpr, functions::python::UDFProperties, python::PyExpr};
+use common_runtime::JoinSet;
+use daft_dsl::{
+    expr::bound_expr::BoundExpr, functions::python::UDFProperties, python::PyExpr,
+    utils::remap_used_cols,
+};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
+use opentelemetry::metrics::Meter;
 use pyo3::{Py, PyAny, Python, types::PyAnyMethods};
 
 use super::{
-    NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl,
-    SubmittableTaskStream,
+    NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, udf::UdfStats,
 };
 use crate::{
-    pipeline_node::{DistributedPipelineNode, append_plan_to_existing_task},
+    pipeline_node::{DistributedPipelineNode, TaskBuilderStream},
     plan::{PlanConfig, PlanExecutionContext},
-    scheduling::{scheduler::SubmittableTask, task::SwordfishTask},
-    utils::{
-        channel::{Sender, create_channel},
-        joinset::JoinSet,
-    },
+    scheduling::task::SwordfishTaskBuilder,
+    statistics::stats::RuntimeStatsRef,
+    utils::channel::{Sender, create_channel},
 };
 
 #[derive(Debug)]
-
 enum UDFActors {
-    Uninitialized(Vec<BoundExpr>, UDFProperties),
+    Uninitialized(BoundExpr, UDFProperties),
     Initialized { actors: Vec<PyObjectWrapper> },
 }
 
 impl UDFActors {
     // TODO: This is a blocking call, and should be done asynchronously.
     async fn initialize_actors(
-        projection: &[BoundExpr],
+        udf_expr: &BoundExpr,
         udf_properties: &UDFProperties,
         actor_ready_timeout: usize,
     ) -> DaftResult<Vec<PyObjectWrapper>> {
-        let py_exprs = projection
-            .iter()
-            .map(|e| PyExpr {
-                expr: e.inner().clone(),
-            })
-            .collect::<Vec<_>>();
+        let py_expr = PyExpr {
+            expr: udf_expr.inner().clone(),
+        };
         let num_actors = udf_properties
             .concurrency
             .expect("ActorUDF should have concurrency specified");
@@ -69,7 +67,7 @@ impl UDFActors {
                 ray_actor_pool_udf_module.call_method1(
                     pyo3::intern!(py, "start_udf_actors"),
                     (
-                        py_exprs,
+                        py_expr,
                         num_actors,
                         gpu_request,
                         cpu_request,
@@ -121,7 +119,9 @@ pub(crate) struct ActorUDF {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     child: DistributedPipelineNode,
-    projection: Vec<BoundExpr>,
+    udf_expr: BoundExpr,
+    passthrough_columns: Vec<BoundExpr>,
+    required_columns: Vec<usize>,
     udf_properties: UDFProperties,
     actor_ready_timeout: usize,
 }
@@ -133,7 +133,8 @@ impl ActorUDF {
     pub fn new(
         node_id: NodeID,
         plan_config: &PlanConfig,
-        projection: Vec<BoundExpr>,
+        udf_expr: BoundExpr,
+        passthrough_columns: Vec<BoundExpr>,
         udf_properties: UDFProperties,
         schema: SchemaRef,
         child: DistributedPipelineNode,
@@ -149,11 +150,14 @@ impl ActorUDF {
             plan_config.config.clone(),
             child.config().clustering_spec.clone(),
         );
+        let (udf_expr, required_columns) = remap_used_cols(udf_expr);
         Ok(Self {
             config,
             context,
             child,
-            projection,
+            udf_expr,
+            passthrough_columns,
+            required_columns,
             udf_properties,
             actor_ready_timeout: plan_config.config.actor_udf_ready_timeout,
         })
@@ -165,20 +169,20 @@ impl ActorUDF {
 
     async fn execution_loop_fused(
         self: Arc<Self>,
-        mut input_task_stream: SubmittableTaskStream,
-        result_tx: Sender<SubmittableTask<SwordfishTask>>,
+        mut input_task_stream: TaskBuilderStream,
+        result_tx: Sender<SwordfishTaskBuilder>,
     ) -> DaftResult<()> {
         let mut udf_actors =
-            UDFActors::Uninitialized(self.projection.clone(), self.udf_properties.clone());
+            UDFActors::Uninitialized(self.udf_expr.clone(), self.udf_properties.clone());
 
         let mut running_tasks = JoinSet::new();
-        while let Some(task) = input_task_stream.next().await {
+        while let Some(builder) = input_task_stream.next().await {
             let actors = udf_actors.get_actors(self.actor_ready_timeout).await?;
 
-            let modified_task = self.append_actor_udf_to_task(task, actors);
-            let (submittable_task, notify_token) = modified_task.add_notify_token();
+            let modified_builder = self.append_actor_udf_to_builder(builder, actors);
+            let (builder_with_token, notify_token) = modified_builder.add_notify_token();
             running_tasks.spawn(notify_token);
-            if result_tx.send(submittable_task).await.is_err() {
+            if result_tx.send(builder_with_token).await.is_err() {
                 break;
             }
         }
@@ -193,11 +197,11 @@ impl ActorUDF {
         Ok(())
     }
 
-    fn append_actor_udf_to_task(
+    fn append_actor_udf_to_builder(
         self: &Arc<Self>,
-        submittable_task: SubmittableTask<SwordfishTask>,
+        builder: SwordfishTaskBuilder,
         actors: Vec<PyObjectWrapper>,
-    ) -> SubmittableTask<SwordfishTask> {
+    ) -> SwordfishTaskBuilder {
         let memory_request = self
             .udf_properties
             .resource_request
@@ -206,27 +210,22 @@ impl ActorUDF {
             .map(|m| m as u64)
             .unwrap_or(0);
 
-        let batch_size = self.udf_properties.batch_size;
-        let schema = self.config.schema.clone();
-        let node_id = self.node_id();
-        append_plan_to_existing_task(
-            submittable_task,
-            &(self.clone() as Arc<dyn PipelineNodeImpl>),
-            &move |input| {
-                LocalPhysicalPlan::distributed_actor_pool_project(
-                    input,
-                    actors.clone(),
-                    batch_size,
-                    memory_request,
-                    schema.clone(),
-                    StatsState::NotMaterialized,
-                    LocalNodeContext {
-                        origin_node_id: Some(node_id as usize),
-                        additional: None,
-                    },
-                )
-            },
-        )
+        builder.map_plan(self.as_ref(), |input| {
+            LocalPhysicalPlan::distributed_actor_pool_project(
+                input,
+                actors.clone(),
+                self.udf_properties.batch_size,
+                memory_request,
+                self.config.schema.clone(),
+                self.passthrough_columns.clone(),
+                self.required_columns.clone(),
+                StatsState::NotMaterialized,
+                LocalNodeContext {
+                    origin_node_id: Some(self.node_id() as usize),
+                    additional: None,
+                },
+            )
+        })
     }
 }
 
@@ -247,9 +246,10 @@ impl PipelineNodeImpl for ActorUDF {
         use itertools::Itertools;
         let mut res = vec![
             format!("ActorUDF: {}", self.udf_properties.name),
+            format!("Expr = {}", self.udf_expr),
             format!(
-                "Projection = [{}]",
-                self.projection.iter().map(|e| e.to_string()).join(", ")
+                "Passthrough Columns = [{}]",
+                self.passthrough_columns.iter().join(", ")
             ),
             format!(
                 "Properties = {{ {} }}",
@@ -270,16 +270,20 @@ impl PipelineNodeImpl for ActorUDF {
         res
     }
 
+    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(UdfStats::new(meter, self.node_id()))
+    }
+
     fn produce_tasks(
         self: Arc<Self>,
         plan_context: &mut PlanExecutionContext,
-    ) -> SubmittableTaskStream {
+    ) -> TaskBuilderStream {
         let input_node = self.child.clone().produce_tasks(plan_context);
 
         let (result_tx, result_rx) = create_channel(1);
         let execution_loop = self.execution_loop_fused(input_node, result_tx);
         plan_context.spawn(execution_loop);
 
-        SubmittableTaskStream::from(result_rx)
+        TaskBuilderStream::from(result_rx)
     }
 }

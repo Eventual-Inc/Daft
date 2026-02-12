@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use common_error::{DaftError, DaftResult, ensure};
 use daft_core::{
     datatypes::{format_string_has_offset, infer_timeunit_from_format_string},
@@ -20,7 +19,11 @@ impl ScalarUDF for ToDatetime {
     fn name(&self) -> &'static str {
         "to_datetime"
     }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let data = inputs.required((0, "input"))?;
         let format = inputs.required((1, "format"))?;
         ensure!(format.data_type().is_string() && format.len() == 1, ValueError: "format must be a string literal");
@@ -100,15 +103,15 @@ fn to_datetime_impl(
     timezone: Option<&str>,
 ) -> DaftResult<TimestampArray> {
     let len = arr.len();
-    let arr_iter = arr.as_arrow2().iter();
+    let arr_iter = arr.into_iter();
     let timeunit = infer_timeunit_from_format_string(format);
     let mut timezone = timezone.map(|tz| tz.to_string());
-    let arrow_result = arr_iter
+    let result = arr_iter
             .map(|val| match val {
                 Some(val) => {
                     let timestamp = match timezone.as_deref() {
                         Some(tz) => {
-                            let datetime = chrono::DateTime::parse_from_str(val, format).map_err(|e| {
+                            let (datetime, _) = chrono::DateTime::parse_and_remainder(val, format).map_err(|e| {
                                 DaftError::ComputeError(format!(
                                     "Error in to_datetime: failed to parse datetime {val} with format {format} : {e}"
                                 ))
@@ -127,11 +130,11 @@ fn to_datetime_impl(
                         }
                         None => {
                             if format_string_has_offset(format) {
-                                let datetime = chrono::DateTime::parse_from_str(val, format).map_err(|e| {
+                                let datetime = chrono::DateTime::parse_and_remainder(val, format).map_err(|e| {
                                     DaftError::ComputeError(format!(
                                         "Error in to_datetime: failed to parse datetime {val} with format {format} : {e}"
                                     ))
-                                })?.to_utc();
+                                })?.0.to_utc();
 
                                 // if it has an offset, we coerce it to UTC. This is consistent with other engines (duckdb, polars, datafusion)
                                 if timezone.is_none() {
@@ -145,11 +148,11 @@ fn to_datetime_impl(
                                     TimeUnit::Nanoseconds => datetime.timestamp_nanos_opt().ok_or_else(|| DaftError::ComputeError(format!("Error in to_datetime: failed to get nanoseconds for {val}")))?,
                                 }
                             } else {
-                                let naive_datetime = chrono::NaiveDateTime::parse_from_str(val, format).map_err(|e| {
+                                let naive_datetime = chrono::NaiveDateTime::parse_and_remainder(val, format).map_err(|e| {
                                     DaftError::ComputeError(format!(
                                         "Error in to_datetime: failed to parse datetime {val} with format {format} : {e}"
                                     ))
-                                })?.and_utc();
+                                })?.0.and_utc();
                                 match timeunit {
                                     TimeUnit::Seconds => naive_datetime.timestamp(),
                                     TimeUnit::Milliseconds => naive_datetime.timestamp_millis(),
@@ -163,12 +166,11 @@ fn to_datetime_impl(
                 }
                 _ => Ok(None),
             })
-            .collect::<DaftResult<daft_arrow::array::Int64Array>>()?;
+            .collect::<DaftResult<Int64Array>>()?;
 
-    let result = Int64Array::from((arr.name(), Box::new(arrow_result)));
     let result = TimestampArray::new(
         Field::new(arr.name(), DataType::Timestamp(timeunit, timezone)),
-        result,
+        result.rename(arr.name()),
     );
     assert_eq!(result.len(), len);
     Ok(result)

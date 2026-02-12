@@ -13,8 +13,8 @@ use crate::{
     array::{DataArray, FixedSizeListArray, ListArray, StructArray},
     datatypes::{DaftPrimitiveType, Field, NumericNative},
     prelude::{
-        AsArrow, BinaryType, BooleanArray, ExtensionArray, FixedSizeBinaryType, FromArrow,
-        IntervalType, NullArray, Utf8Type,
+        AsArrow, BinaryType, BooleanArray, ExtensionArray, FixedSizeBinaryType, IntervalType,
+        NullArray, Utf8Type,
     },
 };
 

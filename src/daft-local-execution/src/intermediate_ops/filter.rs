@@ -1,25 +1,19 @@
-use std::{
-    sync::{Arc, atomic::Ordering},
-    time::Duration,
-};
+use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
 use common_metrics::{
-    CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, ops::NodeType, snapshot,
+    CPU_US_KEY, Counter, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, ops::NodeType,
+    snapshot::FilterSnapshot,
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
-use opentelemetry::{KeyValue, global};
+use opentelemetry::{KeyValue, metrics::Meter};
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{
-    ExecutionTaskSpawner,
-    pipeline::NodeName,
-    runtime_stats::{Counter, Gauge, RuntimeStats},
-};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
 
 pub struct FilterStats {
     cpu_us: Counter,
@@ -30,15 +24,14 @@ pub struct FilterStats {
 }
 
 impl FilterStats {
-    pub fn new(id: usize) -> Self {
-        let meter = global::meter("daft.local.node_stats");
+    pub fn new(meter: &Meter, id: usize) -> Self {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, CPU_US_KEY.into(), None),
-            rows_in: Counter::new(&meter, ROWS_IN_KEY.into(), None),
-            rows_out: Counter::new(&meter, ROWS_OUT_KEY.into(), None),
-            selectivity: Gauge::new(&meter, "selectivity".into(), None),
+            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
+            selectivity: Gauge::new(meter, "selectivity", None),
             node_kv,
         }
     }
@@ -65,12 +58,12 @@ impl RuntimeStats for FilterStats {
         let rows_out = self.rows_out.load(ordering);
         let selectivity = self.selectivity.load(ordering);
 
-        snapshot![
-            CPU_US_KEY; Stat::Duration(Duration::from_micros(cpu_us)),
-            ROWS_IN_KEY; Stat::Count(rows_in),
-            ROWS_OUT_KEY; Stat::Count(rows_out),
-            "selectivity"; Stat::Percent(selectivity),
-        ]
+        StatSnapshot::Filter(FilterSnapshot {
+            cpu_us,
+            rows_in,
+            rows_out,
+            selectivity,
+        })
     }
 
     fn add_rows_in(&self, rows: u64) {
@@ -135,13 +128,11 @@ impl IntermediateOperator for FilterOperator {
         NodeType::Filter
     }
 
-    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(FilterStats::new(id))
+    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(FilterStats::new(meter, id))
     }
 
-    fn make_state(&self) -> DaftResult<Self::State> {
-        Ok(())
-    }
+    fn make_state(&self) -> Self::State {}
     fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
         Ok(crate::dynamic_batching::StaticBatchingStrategy::new(
             self.morsel_size_requirement().unwrap_or_default(),
@@ -153,12 +144,14 @@ impl IntermediateOperator for FilterOperator {
 mod tests {
     use std::sync::atomic::Ordering;
 
+    use opentelemetry::global;
+
     use super::FilterStats;
     use crate::runtime_stats::RuntimeStats;
 
     #[test]
     fn selectivity_updates_after_rows_events() {
-        let stats = FilterStats::new(42);
+        let stats = FilterStats::new(&global::meter("test_stats"), 42);
 
         stats.add_rows_in(200);
         stats.add_rows_out(50);
@@ -174,7 +167,7 @@ mod tests {
 
     #[test]
     fn selectivity_defaults_to_100_percent_on_zero_rows_in() {
-        let stats = FilterStats::new(1);
+        let stats = FilterStats::new(&global::meter("test_stats"), 1);
 
         stats.add_rows_out(10);
 
@@ -188,7 +181,7 @@ mod tests {
 
     #[test]
     fn selectivity_handles_multiple_updates() {
-        let stats = FilterStats::new(99);
+        let stats = FilterStats::new(&global::meter("test_stats"), 99);
 
         stats.add_rows_in(100);
         stats.add_rows_out(40);

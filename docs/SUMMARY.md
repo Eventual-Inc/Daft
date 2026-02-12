@@ -55,10 +55,6 @@
         * [Partitioning and Batching](optimization/partitioning.md)
         * [Observability](optimization/observability.md)
         * [Logging](optimization/logging.md)
-    * Contributing
-        * [Overview](contributing/overview.md)
-        * [Development Guide](contributing/development.md)
-        * [Contributing AI Functions](contributing/contributing-ai-functions.md)
     * [Sessions, Catalogs, and Tables](configuration/sessions-usage.md)
     * [Roadmap](roadmap.md)
     * [Benchmarks](benchmarks/index.md)
@@ -67,8 +63,10 @@
     * [Usage Telemetry](telemetry.md)
 * Examples
     * [Examples](examples/index.md)
+    * [Multimodal Structured Outputs: Evaluating Image Understanding](examples/mm_structured_outputs.md)
+    * [Voice AI Analytics with Faster-Whisper and embed_text](examples/voice-ai-analytics.md)
     * [Web Text Deduplication](examples/minhash-dedupe.md)
-    * [Document Processing](examples/document-processing.md)
+    * [Voice AI Analytics](examples/voice-ai-analytics.md)
     * [Audio Transcription](examples/audio-transcription.md)
     * [Generate Text Embeddings for Turbopuffer](examples/text-embeddings.md)
     * [Running LLMs on the Red Pajamas Dataset](examples/llms-red-pajamas.md)
@@ -87,7 +85,8 @@
     * [Functions](api/functions/)
     * [User-Defined Functions](api/udf.md)
     * Data Types
-        * [DataType](api/datatypes/index.md)
+        * [DataType](api/datatypes/all_datatypes.md)
+        * [daft.File Types](api/datatypes/daft_file_types.md)
         * [Type Conversions](api/datatypes/type_conversions.md)
         * [Casting](api/datatypes/casting.md)
     * [Window](api/window.md)
@@ -106,6 +105,10 @@
         * [USE](sql/statements/use.md)
     * [Data Types](sql/datatypes.md)
     * [Window Functions](sql/window_functions.md)
+* Contributing
+    * [Overview](contributing/overview.md)
+    * [Development Guide](contributing/development.md)
+    * [Contributing AI Functions](contributing/contributing-ai-functions.md)
 * [Daft Cloud](https://www.daft.ai/cloud)
 
 <!--

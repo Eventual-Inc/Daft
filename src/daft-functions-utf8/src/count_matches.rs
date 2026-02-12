@@ -21,7 +21,11 @@ impl ScalarUDF for CountMatches {
     fn name(&self) -> &'static str {
         "count_matches"
     }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         let patterns = inputs.required((1, "patterns"))?;
 
@@ -123,7 +127,7 @@ fn count_matches_impl(
             Arc::new(Field::new(arr.name(), DataType::UInt64)),
             iter::repeat_n(Some(0), arr.len()),
         )
-        .with_validity(arr.validity().cloned());
+        .with_nulls(arr.nulls().cloned());
     }
 
     let patterns = patterns.into_iter().flatten();

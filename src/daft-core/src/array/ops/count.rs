@@ -1,5 +1,6 @@
 use std::{iter::repeat_n, sync::Arc};
 
+use arrow::buffer::NullBuffer;
 use common_error::DaftResult;
 
 use super::{DaftCountAggable, GroupIndices};
@@ -15,50 +16,38 @@ use crate::{
 fn grouped_count_arrow_bitmap(
     groups: &GroupIndices,
     mode: &CountMode,
-    arrow_bitmap: Option<&daft_arrow::buffer::NullBuffer>,
+    arrow_bitmap: Option<&NullBuffer>,
 ) -> Vec<u64> {
     match mode {
         CountMode::All => groups.iter().map(|g| g.len() as u64).collect(),
         CountMode::Valid => match arrow_bitmap {
             None => groups.iter().map(|g| g.len() as u64).collect(), // Equivalent to CountMode::All
-            Some(validity) => groups
+            Some(nulls) => groups
                 .iter()
-                .map(|g| {
-                    g.iter()
-                        .map(|i| validity.is_valid(*i as usize) as u64)
-                        .sum()
-                })
+                .map(|g| g.iter().map(|i| nulls.is_valid(*i as usize) as u64).sum())
                 .collect(),
         },
         CountMode::Null => match arrow_bitmap {
             None => repeat_n(0, groups.len()).collect(), // None of the values are Null
-            Some(validity) => groups
+            Some(nulls) => groups
                 .iter()
-                .map(|g| {
-                    g.iter()
-                        .map(|i| !validity.is_valid(*i as usize) as u64)
-                        .sum()
-                })
+                .map(|g| g.iter().map(|i| !nulls.is_valid(*i as usize) as u64).sum())
                 .collect(),
         },
     }
 }
 
-/// Helper to perform a count on a validity map of type daft_arrow::buffer::NullBuffer
-fn count_arrow_bitmap(
-    mode: &CountMode,
-    arrow_bitmap: Option<&daft_arrow::buffer::NullBuffer>,
-    arr_len: usize,
-) -> u64 {
+/// Helper to perform a count on a validity map of type NullBuffer
+fn count_arrow_bitmap(mode: &CountMode, arrow_bitmap: Option<&NullBuffer>, arr_len: usize) -> u64 {
     match mode {
         CountMode::All => arr_len as u64,
         CountMode::Valid => match arrow_bitmap {
             None => arr_len as u64,
-            Some(validity) => (validity.len() - validity.null_count()) as u64,
+            Some(nulls) => (nulls.len() - nulls.null_count()) as u64,
         },
         CountMode::Null => match arrow_bitmap {
             None => 0,
-            Some(validity) => validity.null_count() as u64,
+            Some(nulls) => nulls.null_count() as u64,
         },
     }
 }
@@ -77,12 +66,13 @@ where
                 CountMode::Null => self.len() as u64,
             }
         } else {
-            count_arrow_bitmap(&mode, self.validity(), self.len())
+            count_arrow_bitmap(&mode, self.nulls(), self.len())
         };
-        let result_arrow_array = Box::new(daft_arrow::array::PrimitiveArray::from([Some(count)]));
-        DataArray::<UInt64Type>::new(
+        let result_arrow_array = arrow::array::UInt64Array::new_scalar(count);
+
+        DataArray::<UInt64Type>::from_arrow(
             Arc::new(Field::new(self.field.name.clone(), DataType::UInt64)),
-            result_arrow_array,
+            Arc::new(result_arrow_array.into_inner()),
         )
     }
     fn grouped_count(&self, groups: &GroupIndices, mode: CountMode) -> Self::Output {
@@ -93,12 +83,12 @@ where
                 CountMode::Null => groups.iter().map(|g| g.len() as u64).collect(),
             }
         } else {
-            grouped_count_arrow_bitmap(groups, &mode, self.validity())
+            grouped_count_arrow_bitmap(groups, &mode, self.nulls())
         };
-        Ok(DataArray::<UInt64Type>::from((
+        Ok(DataArray::<UInt64Type>::from_vec(
             self.field.name.as_ref(),
             counts_per_group,
-        )))
+        ))
     }
 }
 
@@ -108,22 +98,22 @@ macro_rules! impl_daft_count_aggable {
             type Output = DaftResult<DataArray<UInt64Type>>;
 
             fn count(&self, mode: CountMode) -> Self::Output {
-                let count = count_arrow_bitmap(&mode, self.validity(), self.len());
-                let result_arrow_array =
-                    Box::new(daft_arrow::array::PrimitiveArray::from([Some(count)]));
-                DataArray::<UInt64Type>::new(
+                let count = count_arrow_bitmap(&mode, self.nulls(), self.len());
+                let result_arrow_array = arrow::array::UInt64Array::new_scalar(count);
+
+                DataArray::<UInt64Type>::from_arrow(
                     Arc::new(Field::new(self.field().name.clone(), DataType::UInt64)),
-                    result_arrow_array,
+                    Arc::new(result_arrow_array.into_inner()),
                 )
             }
 
             fn grouped_count(&self, groups: &GroupIndices, mode: CountMode) -> Self::Output {
                 let counts_per_group: Vec<_> =
-                    grouped_count_arrow_bitmap(groups, &mode, self.validity());
-                Ok(DataArray::<UInt64Type>::from((
+                    grouped_count_arrow_bitmap(groups, &mode, self.nulls());
+                Ok(DataArray::<UInt64Type>::from_vec(
                     self.field().name.as_ref(),
                     counts_per_group,
-                )))
+                ))
             }
         }
     };

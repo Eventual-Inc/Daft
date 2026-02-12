@@ -153,7 +153,7 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
         let inner_field = Field::new("item", inner_dtype.clone()).to_arrow()?;
         let size = self.physical.fixed_element_len() as i32;
         let values = self.physical.flat_child.to_arrow()?;
-        let nulls = self.physical.validity().cloned();
+        let nulls = self.physical.nulls().cloned();
 
         Ok(Arc::new(arrow::array::FixedSizeListArray::try_new(
             Arc::new(inner_field),
@@ -203,13 +203,13 @@ impl MapArray {
                 .iter()
                 .map(|s| s.to_arrow2())
                 .collect(),
-            daft_arrow::buffer::wrap_null_buffer(inner_struct_array.validity().cloned()),
+            daft_arrow::buffer::wrap_null_buffer(inner_struct_array.nulls().cloned()),
         ));
         Box::new(daft_arrow::array::MapArray::new(
             arrow_dtype,
             self.physical.offsets().try_into().unwrap(),
             arrow_field,
-            daft_arrow::buffer::wrap_null_buffer(self.physical.validity().cloned()),
+            daft_arrow::buffer::wrap_null_buffer(self.physical.nulls().cloned()),
         ))
     }
 
@@ -241,20 +241,17 @@ impl MapArray {
         let struct_array = arrow::array::StructArray::try_new(
             inner_struct_fields.clone(),
             struct_arrays,
-            inner_struct_array.validity().cloned(),
+            None, // Map entries cannot contain nulls; nulls live on the MapArray itself
         )?;
 
-        let offsets_buffer =
-            arrow::buffer::Buffer::from(self.physical.offsets().clone().into_inner());
-        let scalar_buffer = arrow::buffer::ScalarBuffer::<i32>::from(offsets_buffer);
-
-        let offsets = arrow::buffer::OffsetBuffer::new(scalar_buffer);
-
+        let i32_offsets: Vec<i32> = self.physical.offsets().iter().map(|&o| o as i32).collect();
+        let offsets =
+            arrow::buffer::OffsetBuffer::new(arrow::buffer::ScalarBuffer::from(i32_offsets));
         Ok(Arc::new(arrow::array::MapArray::try_new(
-            Arc::new(arrow_field),
+            Arc::new(inner_struct_field.as_ref().clone().with_nullable(false)),
             offsets,
             struct_array,
-            self.physical.validity().cloned(),
+            self.physical.nulls().cloned(),
             false,
         )?))
     }

@@ -1,37 +1,25 @@
 use std::sync::Arc;
 
+use arrow::{array::NullBufferBuilder, buffer::NullBuffer};
 use common_error::DaftResult;
-use daft_arrow::{array::MutableFixedSizeBinaryArray, buffer::Buffer, types::Index};
+use daft_arrow::{buffer::Buffer, types::Index};
 
-use super::{as_arrow::AsArrow, from_arrow::FromArrow};
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
     array::prelude::*,
-    datatypes::{FileArray, IntervalArray, prelude::*},
+    datatypes::{FileArray, prelude::*},
     file::DaftMediaType,
 };
 
 impl<T> DataArray<T>
 where
-    T: DaftNumericType,
+    T: DaftPhysicalType,
 {
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        let result = daft_arrow::compute::take::take(self.data(), idx.as_arrow2())?;
-        Self::try_from((self.field.clone(), result))
+        let result = arrow::compute::take(self.to_arrow().as_ref(), idx.to_arrow().as_ref(), None)?;
+        Self::from_arrow(self.field.clone(), result)
     }
-}
-
-// Default implementations of take op for DataArray and LogicalArray.
-macro_rules! impl_dataarray_take {
-    ($ArrayT:ty) => {
-        impl $ArrayT {
-            pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-                let result = daft_arrow::compute::take::take(self.data(), idx.as_arrow2())?;
-                Self::try_from((self.field.clone(), result))
-            }
-        }
-    };
 }
 
 macro_rules! impl_logicalarray_take {
@@ -45,14 +33,6 @@ macro_rules! impl_logicalarray_take {
     };
 }
 
-impl_dataarray_take!(Utf8Array);
-impl_dataarray_take!(BooleanArray);
-impl_dataarray_take!(BinaryArray);
-impl_dataarray_take!(NullArray);
-impl_dataarray_take!(ExtensionArray);
-impl_dataarray_take!(IntervalArray);
-impl_dataarray_take!(Decimal128Array);
-
 impl_logicalarray_take!(DateArray);
 impl_logicalarray_take!(TimeArray);
 impl_logicalarray_take!(DurationArray);
@@ -65,6 +45,92 @@ impl_logicalarray_take!(SparseTensorArray);
 impl_logicalarray_take!(FixedShapeSparseTensorArray);
 impl_logicalarray_take!(FixedShapeTensorArray);
 impl_logicalarray_take!(MapArray);
+
+impl FixedSizeListArray {
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
+        let fixed_size = self.fixed_element_len();
+        let mut child_indices = Vec::with_capacity(idx.len() * fixed_size);
+        let mut nulls_builder = NullBufferBuilder::new(idx.len());
+
+        for i in idx {
+            match i {
+                None => {
+                    nulls_builder.append_null();
+                    child_indices.extend(std::iter::repeat_n(0, fixed_size as _));
+                }
+                Some(i) => {
+                    let i = i.to_usize();
+                    nulls_builder.append(self.is_valid(i));
+                    let start: u64 = i as u64 * fixed_size as u64;
+                    child_indices.extend(start..start + fixed_size as u64);
+                }
+            }
+        }
+
+        let child_idx = UInt64Array::from_vec("", child_indices);
+        let new_child = self.flat_child.take(&child_idx)?;
+
+        Ok(Self::new(
+            self.field.clone(),
+            new_child,
+            nulls_builder.finish(),
+        ))
+    }
+}
+
+impl ListArray {
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
+        let mut new_offsets = Vec::with_capacity(idx.len() + 1);
+        new_offsets.push(0i64);
+
+        let mut child_indices = Vec::new();
+        let mut nulls_builder = NullBufferBuilder::new(idx.len());
+
+        for i in idx {
+            match i {
+                None => {
+                    nulls_builder.append_null();
+                    new_offsets.push(*new_offsets.last().unwrap());
+                }
+                Some(i) => {
+                    let (start, end) = self.offsets().start_end(i.to_usize());
+                    child_indices.extend(start..end);
+                    new_offsets.push(*new_offsets.last().unwrap() + (end - start) as i64);
+                    nulls_builder.append(self.is_valid(i.to_usize()));
+                }
+            }
+        }
+        let nulls = nulls_builder.finish();
+
+        let child_idx = UInt64Array::from_values("", child_indices.into_iter().map(|i| i as u64));
+        let new_child = self.flat_child.take(&child_idx)?;
+
+        Ok(Self::new(
+            self.field.clone(),
+            new_child,
+            new_offsets.try_into()?,
+            nulls,
+        ))
+    }
+}
+impl StructArray {
+    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
+        let nulls = self.nulls().map(|v| {
+            NullBuffer::from_iter(idx.into_iter().map(|i| match i {
+                None => false,
+                Some(i) => v.is_valid(i.to_usize()),
+            }))
+        });
+        Ok(Self::new(
+            self.field.clone(),
+            self.children
+                .iter()
+                .map(|c| c.take(idx))
+                .collect::<DaftResult<Vec<_>>>()?,
+            nulls,
+        ))
+    }
+}
 impl<T> FileArray<T>
 where
     T: DaftMediaType,
@@ -75,44 +141,13 @@ where
     }
 }
 
-impl FixedSizeBinaryArray {
-    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        let arrow_array = self.as_arrow2();
-        let size = arrow_array.size();
-        let mut mutable = MutableFixedSizeBinaryArray::with_capacity(size, idx.len());
-
-        for i in idx {
-            match i {
-                None => {
-                    mutable.push(None::<&[u8]>);
-                }
-                Some(i) => {
-                    let idx_usize = i.to_usize();
-                    match arrow_array.get(idx_usize) {
-                        Some(value) => {
-                            let value: &[u8] = value;
-                            mutable.push(Some(value));
-                        }
-                        None => {
-                            mutable.push(None::<&[u8]>);
-                        }
-                    }
-                }
-            }
-        }
-
-        let arrow_result: daft_arrow::array::FixedSizeBinaryArray = mutable.into();
-        Self::try_from((self.field.clone(), arrow_result.boxed()))
-    }
-}
-
 #[cfg(feature = "python")]
 impl PythonArray {
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
         use pyo3::Python;
 
         let mut values = Vec::with_capacity(idx.len());
-        let mut validity = if idx.data().null_count() > 0 || self.validity().is_some() {
+        let mut validity = if idx.data().null_count() > 0 || self.nulls().is_some() {
             Some(daft_arrow::buffer::NullBufferBuilder::new(idx.len()))
         } else {
             None
@@ -149,41 +184,6 @@ impl PythonArray {
             Arc::new(self.field().clone()),
             Buffer::from(values),
             validity.and_then(|mut v| v.finish()),
-        ))
-    }
-}
-
-impl FixedSizeListArray {
-    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        let arrow_arr = self.to_arrow2();
-        let result = daft_arrow::compute::take::take(arrow_arr.as_ref(), idx.as_arrow2())?;
-        Self::from_arrow2(self.field().clone().into(), result)
-    }
-}
-
-impl ListArray {
-    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        let arrow_arr = self.to_arrow2();
-        let result = daft_arrow::compute::take::take(arrow_arr.as_ref(), idx.as_arrow2())?;
-        Self::from_arrow2(self.field().clone().into(), result)
-    }
-}
-
-impl StructArray {
-    pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        let taken_validity = self.validity().map(|v| {
-            daft_arrow::buffer::NullBuffer::from_iter(idx.into_iter().map(|i| match i {
-                None => false,
-                Some(i) => v.is_valid(i.to_usize()),
-            }))
-        });
-        Ok(Self::new(
-            self.field.clone(),
-            self.children
-                .iter()
-                .map(|c| c.take(idx))
-                .collect::<DaftResult<Vec<_>>>()?,
-            taken_validity,
         ))
     }
 }

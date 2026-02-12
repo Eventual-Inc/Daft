@@ -2,12 +2,12 @@
 
 use std::{iter::repeat_n, sync::Arc};
 
+use arrow::array::{BooleanBufferBuilder, BooleanBuilder, make_comparator};
 use common_error::DaftResult;
 use daft_arrow::offset::{Offsets, OffsetsBuffer};
 use daft_core::{
-    array::{FixedSizeListArray, ListArray, StructArray, ops::arrow::comparison::build_is_equal},
+    array::{FixedSizeListArray, ListArray, StructArray},
     datatypes::{try_mean_aggregation_supertype, try_sum_supertype},
-    kernels::search_sorted::build_is_valid,
     prelude::{
         AsArrow, BooleanArray, CountMode, DataType, Field, Int64Array, MapArray, UInt64Array,
         Utf8Array,
@@ -29,6 +29,7 @@ pub trait ListArrayExtension: Sized {
     fn list_sort(&self, desc: &BooleanArray, nulls_first: &BooleanArray) -> DaftResult<Self>;
     fn list_bool_and(&self) -> DaftResult<BooleanArray>;
     fn list_bool_or(&self) -> DaftResult<BooleanArray>;
+    fn list_contains(&self, item: &Series) -> DaftResult<BooleanArray>;
 }
 
 pub trait ListArrayAggExtension: Sized {
@@ -73,16 +74,11 @@ impl ListArrayExtension for ListArray {
 
         let hashes = self.flat_child.hash(None)?;
 
-        let flat_child = self.flat_child.to_arrow2();
-        let flat_child = &*flat_child;
+        let flat_child = self.flat_child.to_arrow()?;
+        let flat_child = flat_child.as_ref();
 
-        let is_equal = build_is_equal(
-            flat_child, flat_child,
-            false, // this value does not matter; invalid (= nulls) are never included
-            true,  // NaNs are equal so we do not get a bunch of {Nan: 1, Nan: 1, ...}
-        )?;
-
-        let is_valid = build_is_valid(flat_child);
+        let comparator = make_comparator(flat_child, flat_child, Default::default()).unwrap();
+        let is_eq = |i, j| comparator(i, j).is_eq();
 
         let key_type = self.flat_child.data_type().clone();
         let count_type = DataType::UInt64;
@@ -100,7 +96,7 @@ impl ListArrayExtension for ListArray {
 
             for index in range {
                 let index = index as usize;
-                if !is_valid(index) {
+                if !flat_child.is_valid(index) {
                     include_mask.push(false);
                     // skip nulls
                     continue;
@@ -110,7 +106,7 @@ impl ListArrayExtension for ListArray {
 
                 let entry = map
                     .raw_entry_mut_v1()
-                    .from_hash(hash, |other| is_equal(other.index, index));
+                    .from_hash(hash, |other| is_eq(other.index, index));
 
                 match entry {
                     RawEntryMut::Occupied(mut entry) => {
@@ -137,8 +133,8 @@ impl ListArrayExtension for ListArray {
             offsets.push(count_array.len() as i64);
         }
 
-        let values = UInt64Array::from(("count", count_array)).into_series();
-        let include_mask = BooleanArray::from(("boolean", include_mask.as_slice()));
+        let values = UInt64Array::from_vec("count", count_array).into_series();
+        let include_mask = BooleanArray::from_values("boolean", include_mask.into_iter());
 
         let keys = self.flat_child.filter(&include_mask)?;
 
@@ -186,37 +182,31 @@ impl ListArrayExtension for ListArray {
     }
 
     fn count(&self, mode: CountMode) -> DaftResult<UInt64Array> {
-        let counts = match (mode, self.flat_child.validity()) {
+        let counts: Vec<_> = match (mode, self.flat_child.nulls()) {
             (CountMode::All, _) | (CountMode::Valid, None) => {
                 self.offsets().lengths().map(|l| l as u64).collect()
             }
-            (CountMode::Valid, Some(validity)) => self
+            (CountMode::Valid, Some(nulls)) => self
                 .offsets()
                 .windows(2)
                 .map(|w| {
                     (w[0]..w[1])
-                        .map(|i| validity.is_valid(i as usize) as u64)
+                        .map(|i| nulls.is_valid(i as usize) as u64)
                         .sum()
                 })
                 .collect(),
             (CountMode::Null, None) => repeat_n(0, self.offsets().len() - 1).collect(),
-            (CountMode::Null, Some(validity)) => self
+            (CountMode::Null, Some(nulls)) => self
                 .offsets()
                 .windows(2)
                 .map(|w| {
                     (w[0]..w[1])
-                        .map(|i| !validity.is_valid(i as usize) as u64)
+                        .map(|i| !nulls.is_valid(i as usize) as u64)
                         .sum()
                 })
                 .collect(),
         };
-
-        let array = Box::new(
-            daft_arrow::array::PrimitiveArray::from_vec(counts).with_validity(
-                daft_arrow::buffer::wrap_null_buffer(self.validity().cloned()),
-            ),
-        );
-        Ok(UInt64Array::from((self.name(), array)))
+        UInt64Array::from_values(self.name(), counts).with_nulls(self.nulls().cloned())
     }
 
     fn explode(&self) -> DaftResult<Series> {
@@ -267,10 +257,11 @@ impl ListArrayExtension for ListArray {
                 )
             });
 
-        Ok(Utf8Array::from((
-            self.name(),
-            Box::new(daft_arrow::array::Utf8Array::from_iter(result)),
-        )))
+        Ok(Utf8Array::new(
+            Field::new(self.name(), DataType::Utf8).into(),
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from_iter(result)),
+        )
+        .unwrap())
     }
 
     fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series> {
@@ -298,7 +289,7 @@ impl ListArrayExtension for ListArray {
         get_chunks_helper(
             &self.flat_child,
             self.field.clone(),
-            self.validity(),
+            self.nulls(),
             size,
             total_elements_to_skip,
             to_skip,
@@ -312,13 +303,13 @@ impl ListArrayExtension for ListArray {
         let child_series = if desc.len() == 1 {
             let desc_iter = repeat_n(desc.get(0).unwrap(), self.len());
             let nulls_first_iter = repeat_n(nulls_first.get(0).unwrap(), self.len());
-            if let Some(validity) = self.validity() {
+            if let Some(nulls) = self.nulls() {
                 list_sort_helper(
                     &self.flat_child,
                     offsets,
                     desc_iter,
                     nulls_first_iter,
-                    validity.iter(),
+                    nulls.iter(),
                 )?
             } else {
                 list_sort_helper(
@@ -332,13 +323,13 @@ impl ListArrayExtension for ListArray {
         } else {
             let desc_iter = desc.as_arrow2().values_iter();
             let nulls_first_iter = nulls_first.as_arrow2().values_iter();
-            if let Some(validity) = self.validity() {
+            if let Some(nulls) = self.nulls() {
                 list_sort_helper(
                     &self.flat_child,
                     offsets,
                     desc_iter,
                     nulls_first_iter,
-                    validity.iter(),
+                    nulls.iter(),
                 )?
             } else {
                 list_sort_helper(
@@ -366,23 +357,23 @@ impl ListArrayExtension for ListArray {
             self.field.clone(),
             child,
             new_offsets.into(),
-            self.validity().cloned(),
+            self.nulls().cloned(),
         ))
     }
 
     fn list_bool_and(&self) -> DaftResult<BooleanArray> {
         let child = &self.flat_child;
         let offsets = self.offsets();
-        let validity = self.validity();
+        let nulls = self.nulls();
 
-        let mut result = Vec::with_capacity(self.len());
-        let mut result_validity = Vec::with_capacity(self.len());
+        let mut result = BooleanBufferBuilder::new(self.len());
+        let mut result_nulls = Vec::with_capacity(self.len());
 
         for i in 0..self.len() {
-            let is_valid = validity.is_none_or(|v| v.is_valid(i));
+            let is_valid = nulls.is_none_or(|v| v.is_valid(i));
             if !is_valid {
-                result.push(false);
-                result_validity.push(false);
+                result.append(false);
+                result_nulls.push(false);
                 continue;
             }
 
@@ -391,55 +382,49 @@ impl ListArrayExtension for ListArray {
             let slice = child.slice(start, end)?;
 
             // If slice is empty or all null, return null
-            if slice.is_empty()
-                || slice
-                    .validity()
-                    .is_some_and(|v| v.null_count() == slice.len())
-            {
-                result.push(false);
-                result_validity.push(false);
+            if slice.is_empty() || slice.nulls().is_some_and(|v| v.null_count() == slice.len()) {
+                result.append(false);
+                result_nulls.push(false);
                 continue;
             }
 
             // Look for first non-null false value
             let mut all_true = true;
             let bool_slice = slice.bool()?;
-            let bool_validity = bool_slice.validity();
+            let bool_nulls = bool_slice.nulls();
             let bool_data = bool_slice.as_arrow2().values();
             for j in 0..bool_slice.len() {
-                if bool_validity.is_none_or(|v| v.is_valid(j)) && !bool_data.get_bit(j) {
+                if bool_nulls.is_none_or(|v| v.is_valid(j)) && !bool_data.get_bit(j) {
                     all_true = false;
                     break;
                 }
             }
-            result.push(all_true);
-            result_validity.push(true);
+            result.append(all_true);
+            result_nulls.push(true);
         }
 
-        let validity_bitmap =
-            daft_arrow::buffer::NullBuffer::from_iter(result_validity.iter().copied());
-        let values = daft_arrow::bitmap::Bitmap::from_iter(result.iter().copied());
-        let arrow_array = daft_arrow::array::BooleanArray::new(
-            daft_arrow::datatypes::DataType::Boolean,
-            values,
-            daft_arrow::buffer::wrap_null_buffer(Some(validity_bitmap)),
-        );
-        Ok(BooleanArray::from((self.name(), Box::new(arrow_array))))
+        let null_buffer = daft_arrow::buffer::NullBuffer::from_iter(result_nulls.iter().copied());
+
+        let arrow_array = Arc::new(arrow::array::BooleanArray::new(
+            result.finish(),
+            Some(null_buffer),
+        ));
+        BooleanArray::from_arrow(Field::new(self.name(), DataType::Boolean), arrow_array)
     }
 
     fn list_bool_or(&self) -> DaftResult<BooleanArray> {
         let child = &self.flat_child;
         let offsets = self.offsets();
-        let validity = self.validity();
+        let nulls = self.nulls();
 
         let mut result = Vec::with_capacity(self.len());
-        let mut result_validity = Vec::with_capacity(self.len());
+        let mut result_nulls = Vec::with_capacity(self.len());
 
         for i in 0..self.len() {
-            let is_valid = validity.is_none_or(|v| v.is_valid(i));
+            let is_valid = nulls.is_none_or(|v| v.is_valid(i));
             if !is_valid {
                 result.push(false);
-                result_validity.push(false);
+                result_nulls.push(false);
                 continue;
             }
 
@@ -448,40 +433,93 @@ impl ListArrayExtension for ListArray {
             let slice = child.slice(start, end)?;
 
             // If slice is empty or all null, return null
-            if slice.is_empty()
-                || slice
-                    .validity()
-                    .is_some_and(|v| v.null_count() == slice.len())
-            {
+            if slice.is_empty() || slice.nulls().is_some_and(|v| v.null_count() == slice.len()) {
                 result.push(false);
-                result_validity.push(false);
+                result_nulls.push(false);
                 continue;
             }
 
             // Look for first non-null true value
             let mut any_true = false;
             let bool_slice = slice.bool()?;
-            let bool_validity = bool_slice.validity();
+            let bool_nulls = bool_slice.nulls();
             let bool_data = bool_slice.as_arrow2().values();
             for j in 0..bool_slice.len() {
-                if bool_validity.is_none_or(|v| v.is_valid(j)) && bool_data.get_bit(j) {
+                if bool_nulls.is_none_or(|v| v.is_valid(j)) && bool_data.get_bit(j) {
                     any_true = true;
                     break;
                 }
             }
             result.push(any_true);
-            result_validity.push(true);
+            result_nulls.push(true);
         }
 
-        let validity_bitmap =
-            daft_arrow::buffer::NullBuffer::from_iter(result_validity.iter().copied());
-        let values = daft_arrow::bitmap::Bitmap::from_iter(result.iter().copied());
-        let arrow_array = daft_arrow::array::BooleanArray::new(
-            daft_arrow::datatypes::DataType::Boolean,
-            values,
-            daft_arrow::buffer::wrap_null_buffer(Some(validity_bitmap)),
-        );
-        Ok(BooleanArray::from((self.name(), Box::new(arrow_array))))
+        let null_buffer = daft_arrow::buffer::NullBuffer::from_iter(result_nulls.iter().copied());
+        BooleanArray::from_values(self.name(), result).with_nulls(Some(null_buffer))
+    }
+
+    fn list_contains(&self, item: &Series) -> DaftResult<BooleanArray> {
+        let list_nulls = self.nulls();
+        let mut builder = BooleanBuilder::new();
+        let field = Field::new(self.name(), DataType::Boolean);
+
+        if self.flat_child.data_type() == &DataType::Null {
+            for list_idx in 0..self.len() {
+                let valid = list_nulls.is_none_or(|nulls| nulls.is_valid(list_idx))
+                    && item.is_valid(list_idx);
+                if valid {
+                    builder.append_value(false);
+                } else {
+                    builder.append_null();
+                }
+            }
+
+            let arrow_array = Arc::new(builder.finish());
+            return BooleanArray::from_arrow(field, arrow_array);
+        }
+
+        let item = item.cast(self.flat_child.data_type())?;
+        let item_hashes = item.hash(None)?;
+        let child_hashes = self.flat_child.hash(None)?;
+
+        let child_arrow = self.flat_child.to_arrow()?;
+        let item_arrow = item.to_arrow()?;
+        let comparator = make_comparator(
+            child_arrow.as_ref(),
+            item_arrow.as_ref(),
+            Default::default(),
+        )
+        .unwrap();
+
+        for (list_idx, range) in self.offsets().ranges().enumerate() {
+            if list_nulls.is_some_and(|nulls| nulls.is_null(list_idx)) {
+                builder.append_null();
+                continue;
+            }
+
+            if !item.is_valid(list_idx) {
+                builder.append_null();
+                continue;
+            }
+
+            let item_hash = item_hashes.get(list_idx).unwrap();
+            let mut found = false;
+            for elem_idx in range {
+                let elem_idx = elem_idx as usize;
+                if child_arrow.is_null(elem_idx) {
+                    continue;
+                }
+                let elem_hash = child_hashes.get(elem_idx).unwrap();
+                if elem_hash == item_hash && comparator(elem_idx, list_idx).is_eq() {
+                    found = true;
+                    break;
+                }
+            }
+
+            builder.append_value(found);
+        }
+
+        Ok(BooleanArray::from_builder(self.name(), builder))
     }
 }
 
@@ -494,39 +532,38 @@ impl ListArrayExtension for FixedSizeListArray {
         self.to_list().list_bool_or()
     }
 
+    fn list_contains(&self, item: &Series) -> DaftResult<BooleanArray> {
+        self.to_list().list_contains(item)
+    }
+
     fn value_counts(&self) -> DaftResult<MapArray> {
         self.to_list().value_counts()
     }
 
     fn count(&self, mode: CountMode) -> DaftResult<UInt64Array> {
         let size = self.fixed_element_len();
-        let counts = match (mode, self.flat_child.validity()) {
+        let counts = match (mode, self.flat_child.nulls()) {
             (CountMode::All, _) | (CountMode::Valid, None) => {
-                repeat_n(size as u64, self.len()).collect()
+                UInt64Array::from_values(self.name(), repeat_n(size as u64, self.len()))
             }
-            (CountMode::Valid, Some(validity)) => (0..self.len())
-                .map(|i| {
-                    (0..size)
-                        .map(|j| validity.is_valid(i * size + j) as u64)
-                        .sum()
-                })
-                .collect(),
-            (CountMode::Null, None) => repeat_n(0, self.len()).collect(),
-            (CountMode::Null, Some(validity)) => (0..self.len())
-                .map(|i| {
-                    (0..size)
-                        .map(|j| !validity.is_valid(i * size + j) as u64)
-                        .sum()
-                })
-                .collect(),
-        };
-
-        let array = Box::new(
-            daft_arrow::array::PrimitiveArray::from_vec(counts).with_validity(
-                daft_arrow::buffer::wrap_null_buffer(self.validity().cloned()),
+            (CountMode::Valid, Some(nulls)) => UInt64Array::from_values(
+                self.name(),
+                (0..self.len())
+                    .map(|i| (0..size).map(|j| nulls.is_valid(i * size + j) as u64).sum()),
             ),
-        );
-        Ok(UInt64Array::from((self.name(), array)))
+            (CountMode::Null, None) => {
+                UInt64Array::from_values(self.name(), repeat_n(0, self.len()))
+            }
+            (CountMode::Null, Some(nulls)) => UInt64Array::from_values(
+                self.name(),
+                (0..self.len()).map(|i| {
+                    (0..size)
+                        .map(|j| !nulls.is_valid(i * size + j) as u64)
+                        .sum()
+                }),
+            ),
+        };
+        counts.with_nulls(self.nulls().cloned())
     }
 
     fn explode(&self) -> DaftResult<Series> {
@@ -575,10 +612,11 @@ impl ListArrayExtension for FixedSizeListArray {
                 )
             });
 
-        Ok(Utf8Array::from((
-            self.name(),
-            Box::new(daft_arrow::array::Utf8Array::from_iter(result)),
-        )))
+        Ok(Utf8Array::new(
+            Field::new(self.name(), DataType::Utf8).into(),
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from_iter(result)),
+        )
+        .unwrap())
     }
 
     fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series> {
@@ -641,7 +679,7 @@ impl ListArrayExtension for FixedSizeListArray {
         get_chunks_helper(
             &self.flat_child,
             self.field.clone(),
-            self.validity(),
+            self.nulls(),
             size,
             total_elements_to_skip,
             to_skip,
@@ -656,13 +694,13 @@ impl ListArrayExtension for FixedSizeListArray {
         let child_series = if desc.len() == 1 {
             let desc_iter = repeat_n(desc.get(0).unwrap(), self.len());
             let nulls_first_iter = repeat_n(nulls_first.get(0).unwrap(), self.len());
-            if let Some(validity) = self.validity() {
+            if let Some(nulls) = self.nulls() {
                 list_sort_helper_fixed_size(
                     &self.flat_child,
                     fixed_size,
                     desc_iter,
                     nulls_first_iter,
-                    validity.iter(),
+                    nulls.iter(),
                 )?
             } else {
                 list_sort_helper_fixed_size(
@@ -676,13 +714,13 @@ impl ListArrayExtension for FixedSizeListArray {
         } else {
             let desc_iter = desc.as_arrow2().values_iter();
             let nulls_first_iter = nulls_first.as_arrow2().values_iter();
-            if let Some(validity) = self.validity() {
+            if let Some(nulls) = self.nulls() {
                 list_sort_helper_fixed_size(
                     &self.flat_child,
                     fixed_size,
                     desc_iter,
                     nulls_first_iter,
-                    validity.iter(),
+                    nulls.iter(),
                 )?
             } else {
                 list_sort_helper_fixed_size(
@@ -701,11 +739,7 @@ impl ListArrayExtension for FixedSizeListArray {
         } else {
             Series::concat(&child_refs)?
         };
-        Ok(Self::new(
-            self.field.clone(),
-            child,
-            self.validity().cloned(),
-        ))
+        Ok(Self::new(self.field.clone(), child, self.nulls().cloned()))
     }
 }
 
@@ -765,7 +799,7 @@ fn create_iter<'a>(arr: &'a Int64Array, len: usize) -> Box<dyn Iterator<Item = i
 ///
 /// * `flat_child`  - The Series that we're extracting chunks from.
 /// * `field`       - The field of the parent list.
-/// * `validity`    - The parent list's validity.
+/// * `nulls`    - The parent list's nulls.
 /// * `size`        - The size for each chunk.
 /// * `total_elements_to_skip` - The number of elements in the Series that do not fit cleanly into
 ///   chunks. We take the fast path iff this value is 0.
@@ -776,7 +810,7 @@ fn create_iter<'a>(arr: &'a Int64Array, len: usize) -> Box<dyn Iterator<Item = i
 fn get_chunks_helper(
     flat_child: &Series,
     field: Arc<Field>,
-    validity: Option<&daft_arrow::buffer::NullBuffer>,
+    nulls: Option<&daft_arrow::buffer::NullBuffer>,
     size: usize,
     total_elements_to_skip: usize,
     to_skip: Option<impl Iterator<Item = usize>>,
@@ -796,7 +830,7 @@ fn get_chunks_helper(
             inner_list_field.to_list_field(),
             inner_list.into_series(),
             daft_arrow::offset::OffsetsBuffer::try_from(new_offsets)?,
-            validity.cloned(), // Copy the parent's validity.
+            nulls.cloned(), // Copy the parent's nulls.
         )
         .into_series())
     } else {
@@ -821,7 +855,7 @@ fn get_chunks_helper(
             inner_list_field.to_list_field(),
             inner_list.into_series(),
             daft_arrow::offset::OffsetsBuffer::try_from(new_offsets)?,
-            validity.cloned(), // Copy the parent's validity.
+            nulls.cloned(), // Copy the parent's nulls.
         )
         .into_series())
     }
@@ -832,11 +866,11 @@ fn list_sort_helper(
     offsets: &OffsetsBuffer<i64>,
     desc_iter: impl Iterator<Item = bool>,
     nulls_first_iter: impl Iterator<Item = bool>,
-    validity: impl Iterator<Item = bool>,
+    nulls: impl Iterator<Item = bool>,
 ) -> DaftResult<Vec<Series>> {
     desc_iter
         .zip(nulls_first_iter)
-        .zip(validity)
+        .zip(nulls)
         .enumerate()
         .map(|(i, ((desc, nulls_first), valid))| {
             let start = *offsets.get(i).unwrap() as usize;
@@ -859,11 +893,11 @@ fn list_sort_helper_fixed_size(
     fixed_size: usize,
     desc_iter: impl Iterator<Item = bool>,
     nulls_first_iter: impl Iterator<Item = bool>,
-    validity: impl Iterator<Item = bool>,
+    nulls: impl Iterator<Item = bool>,
 ) -> DaftResult<Vec<Series>> {
     desc_iter
         .zip(nulls_first_iter)
-        .zip(validity)
+        .zip(nulls)
         .enumerate()
         .map(|(i, ((desc, nulls_first), valid))| {
             let start = i * fixed_size;

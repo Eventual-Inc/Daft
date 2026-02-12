@@ -1,14 +1,17 @@
-use std::sync::Arc;
-
+use arrow::array::ArrowPrimitiveType;
 use common_error::{DaftError, DaftResult};
 use num_traits::{clamp, clamp_max, clamp_min};
 
-use crate::{array::DataArray, datatypes::DaftNumericType};
+use crate::{
+    array::DataArray,
+    datatypes::{DaftNumericType, NumericNative},
+};
 
 impl<T> DataArray<T>
 where
     T: DaftNumericType,
     T::Native: PartialOrd,
+    <T::Native as NumericNative>::ARROWTYPE: ArrowPrimitiveType<Native = T::Native>,
 {
     /// Clips the values in the array to the provided left and right bounds.
     ///
@@ -37,8 +40,8 @@ where
                         (None, Some(r)) => Some(clamp_max(*value, *r)),
                         (None, None) => Some(*value),
                     });
-                let data_array = Self::from_iter(Arc::new(self.field().clone()), result)
-                    .with_validity(self.validity().cloned())?;
+                let data_array = Self::from_iter(self.field().clone(), result)
+                    .with_nulls(self.nulls().cloned())?;
                 Ok(data_array)
             }
             // Case where left_bound has the same length as self and right_bound has length 1
@@ -58,8 +61,8 @@ where
                                     Some(l) => Some(clamp(*value, *l, r)),
                                     None => Some(clamp_max(*value, r)), // If left is null, we can just clamp_max
                                 });
-                        let data_array = Self::from_iter(Arc::new(self.field().clone()), result)
-                            .with_validity(self.validity().cloned())?;
+                        let data_array = Self::from_iter(self.field().clone(), result)
+                            .with_nulls(self.nulls().cloned())?;
                         Ok(data_array)
                     }
                     None => {
@@ -71,8 +74,8 @@ where
                                 None => Some(*value), // Left null, and right null, so we just don't do anything
                             },
                         );
-                        let data_array = Self::from_iter(Arc::new(self.field().clone()), result)
-                            .with_validity(self.validity().cloned())?;
+                        let data_array = Self::from_iter(self.field().clone(), result)
+                            .with_nulls(self.nulls().cloned())?;
                         Ok(data_array)
                     }
                 }
@@ -89,8 +92,8 @@ where
                                 None => Some(clamp_min(*value, l)), // Right null, so we can just clamp_min
                             },
                         );
-                        let data_array = Self::from_iter(Arc::new(self.field().clone()), result)
-                            .with_validity(self.validity().cloned())?;
+                        let data_array = Self::from_iter(self.field().clone(), result)
+                            .with_nulls(self.nulls().cloned())?;
                         Ok(data_array)
                     }
                     None => {
@@ -103,8 +106,8 @@ where
                                     Some(r) => Some(clamp_max(*value, *r)),
                                     None => Some(*value),
                                 });
-                        let data_array = Self::from_iter(Arc::new(self.field().clone()), result)
-                            .with_validity(self.validity().cloned())?;
+                        let data_array = Self::from_iter(self.field().clone(), result)
+                            .with_nulls(self.nulls().cloned())?;
                         Ok(data_array)
                     }
                 }

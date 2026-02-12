@@ -20,6 +20,8 @@ class EmbedTextOptions(TypedDict, total=False):
         batch_size (int): Number of texts to process in a single batch.
         max_retries (int): Maximum number of retry attempts for failed requests.
         on_error (Literal["raise", "log", "ignore"]): Behavior when an error occurs.
+        supports_overriding_dimensions (bool): Whether to include the dimension parameter in the request. Defaults to False.
+        batch_token_limit (int): Maximum tokens allowed in a single batch request to the API. Defaults to 300,000 for OpenAI.
 
     Note:
         Any additional arguments defined here will be forwarded directly to
@@ -29,6 +31,8 @@ class EmbedTextOptions(TypedDict, total=False):
     batch_size: int
     max_retries: int
     on_error: Literal["raise", "log", "ignore"]
+    supports_overriding_dimensions: bool
+    batch_token_limit: int
 
 
 class EmbedImageOptions(TypedDict, total=False):

@@ -25,6 +25,9 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: read
+
 env:
   PYTHON_VERSION: 3.11
   DAFT_ANALYTICS_ENABLED: '0'
@@ -143,7 +146,7 @@ jobs:
         GITHUB_ACTIONS: true
 
     - name: Upload wheels
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: wheels-${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-lto=${{ inputs.use_lto }}
         path: dist
@@ -163,7 +166,7 @@ jobs:
     steps:
     - uses: actions/checkout@v6
     - name: Download built wheels
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v7
       with:
         pattern: wheels-${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-lto=${{ inputs.use_lto }}
         merge-multiple: true
@@ -184,7 +187,7 @@ jobs:
         retry_wait_seconds: 10
         command: |
           source venv/bin/activate
-          pip install ray pytest pandas dist/*.whl --force-reinstall
+          pip install ray pytest pandas pytz numpy pyarrow dist/*.whl --force-reinstall
           rm -rf daft
     - name: Run dataframe tests
       run: |

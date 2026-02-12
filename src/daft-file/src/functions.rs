@@ -27,7 +27,11 @@ impl ScalarUDF for File {
         "file"
     }
 
-    fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        args: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let FileArgs {
             input, io_config, ..
         } = args.try_into()?;
@@ -75,7 +79,11 @@ impl ScalarUDF for VideoFile {
         "video_file"
     }
 
-    fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        args: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let VideoFileArgs {
             input,
             verify,
@@ -164,7 +172,11 @@ impl ScalarUDF for AudioFile {
         "audio_file"
     }
 
-    fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        args: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let AudioFileArgs {
             input,
             verify,
@@ -246,7 +258,11 @@ impl ScalarUDF for Size {
         "file_size"
     }
 
-    fn call(&self, args: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        args: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let UnaryArg { input } = args.try_into()?;
 
         with_match_file_types!(input.data_type(), |$P| {
@@ -277,5 +293,56 @@ impl ScalarUDF for Size {
         let name = input.to_field(schema)?.name;
 
         Ok(Field::new(name, DataType::UInt64))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub struct GuessMimeType;
+
+#[typetag::serde]
+impl ScalarUDF for GuessMimeType {
+    fn name(&self) -> &'static str {
+        "guess_mime_type"
+    }
+
+    fn call(
+        &self,
+        args: FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
+        let UnaryArg { input } = args.try_into()?;
+
+        if !matches!(input.data_type(), DataType::Binary) {
+            return Err(DaftError::TypeError(format!(
+                "Unsupported data type for 'guess_mime_type' function: {}. Expected Binary",
+                input.data_type()
+            )));
+        }
+
+        let binary = input.binary()?;
+        let out = binary.into_iter().map(|bytes| {
+            bytes.and_then(|b| {
+                let mut cursor = std::io::Cursor::new(b);
+                crate::guess_mimetype_from_content(&mut cursor)
+                    .ok()
+                    .flatten()
+            })
+        });
+
+        Ok(daft_core::prelude::Utf8Array::from_iter(input.name(), out).into_series())
+    }
+
+    fn get_return_field(&self, args: FunctionArgs<ExprRef>, schema: &Schema) -> DaftResult<Field> {
+        let UnaryArg { input } = args.try_into()?;
+        let input = input.to_field(schema)?;
+
+        if !matches!(input.dtype, DataType::Binary) {
+            return Err(DaftError::TypeError(format!(
+                "Unsupported data type for 'guess_mime_type' function: {}. Expected Binary",
+                input.dtype
+            )));
+        }
+
+        Ok(Field::new(input.name, DataType::Utf8))
     }
 }

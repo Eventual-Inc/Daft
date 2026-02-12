@@ -50,7 +50,6 @@ jobs:
         if git diff --quiet origin/$BASE -- \
           . \
           ':!.vscode/**' \
-          ':!ci/**' \
           ':!docs/**' \
           ':!.git-blame-ignore-revs' \
           ':!.gitignore' \
@@ -120,6 +119,8 @@ jobs:
         cache-all-crates: 'true'
     - name: Install cargo-llvm-cov
       uses: taiki-e/install-action@cargo-llvm-cov
+      with:
+        tool: cargo-llvm-cov@0.7.1
 
     - name: install llvm tools
       run: rustup component add llvm-tools-preview
@@ -135,6 +136,16 @@ jobs:
       run: |
         uv venv --seed .venv
         echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+
+    - name: Detect Conda home path
+      run: |
+        if command -v conda &> /dev/null; then
+          CONDA_HOME_PATH=$(conda info --base)
+          echo "Conda home is $CONDA_HOME_PATH"
+          echo "CONDA_HOME=$CONDA_HOME_PATH" >> $GITHUB_ENV
+        else
+          echo "::warning::Conda not detected."
+        fi
 
     - name: Install dependencies
       uses: nick-fields/retry@v3
@@ -157,7 +168,7 @@ jobs:
         cargo llvm-cov clean --workspace
         maturin develop --uv
         pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
-        pytest --cov=daft --ignore tests/integration --durations=0 | ./tools/capture-durations.sh "pytest_output.txt"
+        pytest -n auto --cov=daft --ignore tests/integration --durations=0 | ./tools/capture-durations.sh "pytest_output.txt"
         python tools/aggregate_test_durations.py pytest_output.txt
         coverage combine -a --data-file='.coverage' || true
         mkdir -p report-output
@@ -172,10 +183,13 @@ jobs:
         CARGO_LLVM_COV_TARGET_DIR: ./target
         CARGO_TARGET_DIR: ./target
 
+        RAY_CONDA_HOME: ${{ env.CONDA_HOME }}
+        CONDA_EXE: ${{ env.CONDA_HOME }}/bin/conda
+
         DAFT_RUNNER: ${{ matrix.daft-runner }}
 
     - name: Upload coverage report
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: coverage-reports-unit-tests-${{ join(matrix.*, '-') }}
         path: ./report-output
@@ -260,7 +274,7 @@ jobs:
         source .venv/bin/activate
         maturin build --release --compatibility linux --out dist
     - name: Upload wheels
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: wheels-${{ matrix.python-version }}
         path: dist
@@ -278,7 +292,7 @@ jobs:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v7
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -304,7 +318,7 @@ jobs:
           uv sync --no-install-project --all-extras --all-groups
           uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
-    - uses: actions/cache@v4
+    - uses: actions/cache@v5
       env:
         cache-name: cache-tpch-data
       with:
@@ -315,16 +329,16 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest tests/integration/test_tpch.py --durations=0 | ./tools/capture-durations.sh "tpch_pytest_output.txt"
-        python tools/aggregate_test_durations.py tpch_pytest_output.txt
+        pytest ./tests/integration/test_tpch.py --durations=0 | ./tools/capture-durations.sh "tpch_pytest_output.txt"
+        python ./tools/aggregate_test_durations.py tpch_pytest_output.txt
       env:
         DAFT_RUNNER: native
     - name: Run TPCH integration tests (ray)
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest tests/integration/test_tpch.py --durations=0 | ./tools/capture-durations.sh "tpch_pytest_output.txt"
-        python tools/aggregate_test_durations.py tpch_pytest_output.txt
+        pytest ./tests/integration/test_tpch.py --durations=0 | ./tools/capture-durations.sh "tpch_pytest_output.txt"
+        python ./tools/aggregate_test_durations.py tpch_pytest_output.txt
       env:
         DAFT_RUNNER: ray
 
@@ -376,7 +390,7 @@ jobs:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v7
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -407,7 +421,7 @@ jobs:
         mkdir -p /tmp/daft-integration-testing/nginx
         chmod +rw /tmp/daft-integration-testing/nginx
     - name: Spin up IO services
-      uses: isbang/compose-action@v2.4.1
+      uses: isbang/compose-action@v2.4.3
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes
@@ -415,8 +429,8 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest tests/integration/io -m 'integration and not benchmark' --durations=0 | ./tools/capture-durations.sh "io_integration_pytest_output.txt"
-        pytest tests/io -m 'integration' --durations=0 | ./tools/capture-durations.sh "io_integration_pytest_output_2.txt"
+        pytest -n auto tests/integration/io -m 'integration and not benchmark' --durations=0 | ./tools/capture-durations.sh "io_integration_pytest_output.txt"
+        pytest -n auto tests/io -m 'integration' --durations=0 | ./tools/capture-durations.sh "io_integration_pytest_output_2.txt"
         python tools/aggregate_test_durations.py io_integration_pytest_output.txt io_integration_pytest_output_2.txt
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
@@ -474,7 +488,7 @@ jobs:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v7
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -519,7 +533,7 @@ jobs:
         # workload_identity_provider: ${{ secrets.ACTIONS_GCP_WORKLOAD_IDENTITY_PROVIDER }}
         # service_account: ${{ secrets.ACTIONS_GCP_SERVICE_ACCOUNT }}
     - name: Spin up IO services
-      uses: isbang/compose-action@v2.4.1
+      uses: isbang/compose-action@v2.4.3
       with:
         compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
         down-flags: --volumes
@@ -527,7 +541,7 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest tests/integration/io -m 'integration and not benchmark' --credentials --durations=0 | ./tools/capture-durations.sh "io_credentialed_pytest_output.txt"
+        pytest -n auto tests/integration/io -m 'integration and not benchmark' --credentials --durations=0 | ./tools/capture-durations.sh "io_credentialed_pytest_output.txt"
         python tools/aggregate_test_durations.py io_credentialed_pytest_output.txt
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
@@ -575,7 +589,7 @@ jobs:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v7
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -617,7 +631,7 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest tests/integration/sql -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "sql_pytest_output.txt"
+        pytest ./tests/integration/sql -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "sql_pytest_output.txt"
         python tools/aggregate_test_durations.py sql_pytest_output.txt
       env:
         DAFT_RUNNER: native
@@ -625,7 +639,7 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest tests/integration/sql -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "sql_pytest_output.txt"
+        pytest ./tests/integration/sql -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "sql_pytest_output.txt"
         python tools/aggregate_test_durations.py sql_pytest_output.txt
       env:
         DAFT_RUNNER: ray
@@ -686,7 +700,7 @@ jobs:
       working-directory: ./unitycatalog
       run: bin/start-uc-server -p 3000 &
     - name: Download built wheels
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v7
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -725,6 +739,12 @@ jobs:
         pushd ./tests/integration/iceberg/docker-compose/
         docker compose -f ./docker-compose.yml up -d
         popd
+    # Gravitino test setup
+    - name: Spin up Gravitino service
+      run: |
+        pushd ./tests/integration/gravitino/docker-compose/
+        docker compose -f ./docker-compose.yml up -d
+        popd
 
     # Unity tests
     - name: Run Unity integration tests (native)
@@ -732,29 +752,35 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest tests/integration/unity -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
-        python tools/aggregate_test_durations.py unity_pytest_output.txt
+        pytest ./tests/integration/unity -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
+        python ./tools/aggregate_test_durations.py unity_pytest_output.txt
       env:
         DAFT_RUNNER: native
         UNITY_CATALOG_PORT: 3000
+        DATABRICKS_ENDPOINT: ${{ secrets.ACTIONS_DATABRICKS_ENDPOINT }}
+        DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID: ${{ secrets.ACTIONS_DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID }}
+        DATABRICKS_SERVICE_PRINCIPAL_SECRET: ${{ secrets.ACTIONS_DATABRICKS_SERVICE_PRINCIPAL_SECRET }}
     - name: Run Unity integration tests (ray)
       if: always()
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest tests/integration/unity -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
-        python tools/aggregate_test_durations.py unity_pytest_output.txt
+        pytest ./tests/integration/unity -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
+        python ./tools/aggregate_test_durations.py unity_pytest_output.txt
       env:
         DAFT_RUNNER: ray
         UNITY_CATALOG_PORT: 3000
+        DATABRICKS_ENDPOINT: ${{ secrets.ACTIONS_DATABRICKS_ENDPOINT }}
+        DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID: ${{ secrets.ACTIONS_DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID }}
+        DATABRICKS_SERVICE_PRINCIPAL_SECRET: ${{ secrets.ACTIONS_DATABRICKS_SERVICE_PRINCIPAL_SECRET }}
     # Iceberg tests
     - name: Run Iceberg integration tests (native)
       if: always()
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest tests/integration/iceberg -m 'integration' --durations=0 | ./tools/capture-durations.sh "iceberg_pytest_output.txt"
-        python tools/aggregate_test_durations.py iceberg_pytest_output.txt
+        pytest ./tests/integration/iceberg -m 'integration' --durations=0 | ./tools/capture-durations.sh "iceberg_pytest_output.txt"
+        python ./tools/aggregate_test_durations.py iceberg_pytest_output.txt
       env:
         DAFT_RUNNER: native
     - name: Run Iceberg integration tests (ray)
@@ -762,7 +788,7 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest tests/integration/iceberg -m 'integration' --durations=0 | ./tools/capture-durations.sh "iceberg_pytest_output.txt"
+        pytest ./tests/integration/iceberg -m 'integration' --durations=0 | ./tools/capture-durations.sh "iceberg_pytest_output.txt"
         python tools/aggregate_test_durations.py iceberg_pytest_output.txt
       env:
         DAFT_RUNNER: ray
@@ -772,8 +798,8 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest tests/integration/delta_lake -m 'integration' --durations=0 | ./tools/capture-durations.sh "delta_lake_pytest_output.txt"
-        python tools/aggregate_test_durations.py delta_lake_pytest_output.txt
+        pytest ./tests/integration/delta_lake -m 'integration' --durations=0 | ./tools/capture-durations.sh "delta_lake_pytest_output.txt"
+        python ./tools/aggregate_test_durations.py delta_lake_pytest_output.txt
       env:
         DAFT_RUNNER: native
     - name: Run Delta Lake integration tests (ray)
@@ -781,10 +807,44 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest tests/integration/delta_lake -m 'integration' --durations=0 | ./tools/capture-durations.sh "delta_lake_pytest_output.txt"
-        python tools/aggregate_test_durations.py delta_lake_pytest_output.txt
+        pytest ./tests/integration/delta_lake -m 'integration' --durations=0 | ./tools/capture-durations.sh "delta_lake_pytest_output.txt"
+        python ./tools/aggregate_test_durations.py delta_lake_pytest_output.txt
       env:
         DAFT_RUNNER: ray
+    # Gravitino tests
+    - name: Run Gravitino integration tests (native)
+      if: always()
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        pytest ./tests/integration/gravitino -m 'integration' --durations=0 | ./tools/capture-durations.sh "gravitino_pytest_output.txt"
+        python ./tools/aggregate_test_durations.py gravitino_pytest_output.txt
+      env:
+        DAFT_RUNNER: native
+        GRAVITINO_ENDPOINT: http://127.0.0.1:8090
+        GRAVITINO_METALAKE: metalake_demo
+    - name: Run Gravitino integration tests (ray)
+      if: always()
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        pytest ./tests/integration/gravitino -m 'integration' --durations=0 | ./tools/capture-durations.sh "gravitino_pytest_output.txt"
+        python ./tools/aggregate_test_durations.py gravitino_pytest_output.txt
+      env:
+        DAFT_RUNNER: ray
+        GRAVITINO_ENDPOINT: http://127.0.0.1:8090
+        GRAVITINO_METALAKE: metalake_demo
+
+    # Cleanup docker services
+    - name: Cleanup Docker services
+      if: always()
+      run: |
+        pushd ./tests/integration/gravitino/docker-compose/
+        docker compose -f ./docker-compose.yml down --volumes || true
+        popd
+        pushd ./tests/integration/iceberg/docker-compose/
+        docker compose -f ./docker-compose.yml down --volumes || true
+        popd
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
@@ -835,7 +895,7 @@ jobs:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v7
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -865,7 +925,7 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest -m integration tests/ai --durations=0 | ./tools/capture-durations.sh "ai_pytest_output.txt"
+        pytest -n auto -m integration tests/ai --durations=0 | ./tools/capture-durations.sh "ai_pytest_output.txt"
         python tools/aggregate_test_durations.py ai_pytest_output.txt
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
@@ -907,7 +967,7 @@ jobs:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v7
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -937,7 +997,7 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest -m integration tests/integration/ai --credentials --durations=0 | ./tools/capture-durations.sh "ai_credentialed_pytest_output.txt"
+        pytest -n auto -m integration tests/integration/ai --credentials --durations=0 | ./tools/capture-durations.sh "ai_credentialed_pytest_output.txt"
         python tools/aggregate_test_durations.py ai_credentialed_pytest_output.txt
       env:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
@@ -974,7 +1034,7 @@ jobs:
         submodules: true
         fetch-depth: 0
     - name: Download built wheels
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v7
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -1005,6 +1065,8 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
+        # Note: These tests are run sequentially (one at a time) to avoid Ray cluster conflicts
+        # Each test spins up its own Ray cluster, so parallel execution may cause issues
         test_names=$(pytest --collect-only -q -m integration tests/integration/ray | grep "::test_")
         for test in $test_names; do
           echo "Running $test..."
@@ -1094,7 +1156,7 @@ jobs:
         maturin develop --uv --profile dev-bench
       env:
         DAFT_DASHBOARD_SKIP_BUILD: true
-    - uses: actions/cache@v4
+    - uses: actions/cache@v5
       env:
         cache-name: cache-tpch-data
       with:
@@ -1135,6 +1197,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu, Windows]
+        on-main:
+        - ${{ github.ref == 'refs/heads/main' }}
+        exclude:
+          # Don't run Windows rust tests in PRs - they take 50+ minutes
+          # Consider re-enabling if we upgrade to large runners.
+        - os: Windows
+          on-main: false
     steps:
     - uses: actions/checkout@v6
     - uses: moonrepo/setup-rust@v1
@@ -1143,6 +1212,8 @@ jobs:
         bins: cargo-llvm-cov@0.6.14
         components: llvm-tools-preview
     - uses: Swatinem/rust-cache@v2
+      # skip on windows because it misses the cache and is very slow (~15 minutes)
+      if: ${{ matrix.os != 'Windows' }}
       with:
         key: ${{ runner.os }}-rust-build
         cache-all-crates: 'true'
@@ -1152,9 +1223,9 @@ jobs:
       with:
         tool-cache: false
     - name: Generate code coverage
-      run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --lcov --output-path ./report-output/lcov.info
+      run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --exclude common-arrow-ffi --lcov --output-path ./report-output/lcov.info
     - name: Upload coverage report
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: coverage-reports-rust-tests-${{ runner.os }}
         path: ./report-output
@@ -1262,16 +1333,17 @@ jobs:
     - rust-tests-platform
     steps:
     - uses: actions/checkout@v6
-    - uses: actions/download-artifact@v6
+    - uses: actions/download-artifact@v7
       with:
         pattern: coverage-reports*
         merge-multiple: true
         path: ./report-output
     - name: Upload coverage reports to Codecov with GitHub Action
       uses: codecov/codecov-action@v5
+      with:
+        directory: ./report-output
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        files: ./report-output/*
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}
@@ -1301,6 +1373,12 @@ jobs:
       matrix:
         os: [ubuntu, Windows]
         python-version: ['3.10']
+        on-main:
+        - ${{ github.ref == 'refs/heads/main' }}
+        exclude:
+          # Don't run Windows import tests in PRs
+        - os: Windows
+          on-main: false
     steps:
     - uses: actions/checkout@v6
     - uses: moonrepo/setup-rust@v1
@@ -1414,7 +1492,7 @@ jobs:
         prefix-key: ${{ runner.os }}-build
         cache-all-crates: 'true'
 
-    - uses: actions/cache@v4
+    - uses: actions/cache@v5
       id: pre-commit-cache
       with:
         path: ~/.cache/pre-commit/

@@ -15,7 +15,7 @@ use tracing::{Span, instrument};
 use super::{
     blocking_sink::{
         BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult,
-        BlockingSinkSinkResult, BlockingSinkStatus,
+        BlockingSinkSinkResult,
     },
     window_base::{WindowBaseState, WindowSinkParams},
 };
@@ -102,7 +102,7 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
             .spawn(
                 async move {
                     state.push(input, params.partition_by(), &sink_name)?;
-                    Ok(BlockingSinkStatus::NeedMoreInput(state))
+                    Ok(state)
                 },
                 Span::current(),
             )
@@ -169,7 +169,7 @@ impl BlockingSink for WindowPartitionAndDynamicFrameSink {
                                 .iter()
                                 .map(|indices| {
                                     let indices_arr =
-                                        UInt64Array::from(("indices", indices.clone()));
+                                        UInt64Array::from_vec("indices", indices.clone());
                                     input_data.take(&indices_arr).unwrap()
                                 })
                                 .collect::<Vec<_>>();

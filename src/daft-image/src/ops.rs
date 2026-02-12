@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use arrow::array::{BooleanBufferBuilder, LargeBinaryArray, OffsetBufferBuilder};
 use base64::Engine;
 use common_error::{DaftError, DaftResult};
 use common_image::{BBox, CowImage};
@@ -174,22 +177,22 @@ impl ImageOps for FixedShapeImageArray {
         };
 
         match attr {
-            ImageProperty::Height => Ok(UInt32Array::from((
+            ImageProperty::Height => Ok(UInt32Array::from_slice(
                 self.name(),
-                vec![*height; self.len()].as_slice(),
-            ))),
-            ImageProperty::Width => Ok(UInt32Array::from((
+                &vec![*height; self.len()],
+            )),
+            ImageProperty::Width => Ok(UInt32Array::from_slice(
                 self.name(),
-                vec![*width; self.len()].as_slice(),
-            ))),
-            ImageProperty::Channel => Ok(UInt32Array::from((
+                &vec![*width; self.len()],
+            )),
+            ImageProperty::Channel => Ok(UInt32Array::from_slice(
                 self.name(),
-                vec![self.image_mode().num_channels() as u32; self.len()].as_slice(),
-            ))),
-            ImageProperty::Mode => Ok(UInt32Array::from((
+                &vec![self.image_mode().num_channels() as u32; self.len()],
+            )),
+            ImageProperty::Mode => Ok(UInt32Array::from_slice(
                 self.name(),
-                vec![(*self.image_mode() as u8) as u32; self.len()].as_slice(),
-            ))),
+                &vec![(*self.image_mode() as u8) as u32; self.len()],
+            )),
         }
     }
 }
@@ -198,7 +201,7 @@ fn encode_images<Arr: AsImageObj>(
     images: &Arr,
     image_format: ImageFormat,
 ) -> DaftResult<BinaryArray> {
-    let arrow_array = if image_format == ImageFormat::TIFF {
+    if image_format == ImageFormat::TIFF {
         // NOTE: A single writer/buffer can't be used for TIFF files because the encoder will overwrite the
         // IFD offset for the first image instead of writing it for all subsequent images, producing corrupted
         // TIFF files. We work around this by writing out a new buffer for each image.
@@ -224,23 +227,26 @@ fn encode_images<Arr: AsImageObj>(
                 .transpose()
             })
             .collect::<DaftResult<Vec<_>>>()?;
-        daft_arrow::array::BinaryArray::<i64>::from_iter(values)
+        Ok(BinaryArray::from_iter(images.name(), values.into_iter()))
     } else {
-        let mut offsets = Vec::with_capacity(images.len() + 1);
-        offsets.push(0i64);
-        let mut validity = daft_arrow::buffer::NullBufferBuilder::new(images.len());
+        // For non-TIFF formats, use a single buffer with manual offset/validity tracking for efficiency
+        let mut offsets = OffsetBufferBuilder::<i64>::new(images.len());
+        let mut null_builder = BooleanBufferBuilder::new(images.len());
         let buf = Vec::new();
         let mut writer: CountingWriter<std::io::BufWriter<_>> =
             std::io::BufWriter::new(std::io::Cursor::new(buf)).into();
+        let mut last_offset: u64 = 0;
         ImageBufferIter::new(images)
             .map(|img| {
                 if let Some(img) = img {
                     img.encode(image_format, &mut writer)?;
-                    offsets.push(writer.count() as i64);
-                    validity.append_non_null();
+                    let current_offset = writer.count();
+                    offsets.push_length((current_offset - last_offset) as usize);
+                    last_offset = current_offset;
+                    null_builder.append(true);
                 } else {
-                    offsets.push(*offsets.last().unwrap());
-                    validity.append_null();
+                    offsets.push_length(0);
+                    null_builder.append(false);
                 }
                 Ok(())
             })
@@ -255,20 +261,16 @@ fn encode_images<Arr: AsImageObj>(
                 ))
             })?
             .into_inner();
-        let encoded_data: daft_arrow::buffer::Buffer<u8> = values.into();
-        let offsets_buffer = daft_arrow::offset::OffsetsBuffer::try_from(offsets)?;
-        let validity = validity.finish();
-        daft_arrow::array::BinaryArray::<i64>::new(
-            daft_arrow::datatypes::DataType::LargeBinary,
-            offsets_buffer,
-            encoded_data,
-            daft_arrow::buffer::wrap_null_buffer(validity),
+        let arrow_array = LargeBinaryArray::new(
+            offsets.finish(),
+            values.into(),
+            Some(null_builder.finish().into()),
+        );
+        BinaryArray::from_arrow(
+            Field::new(images.name(), DataType::Binary),
+            Arc::new(arrow_array),
         )
-    };
-    BinaryArray::new(
-        Field::new(images.name(), arrow_array.data_type().into()).into(),
-        arrow_array.boxed(),
-    )
+    }
 }
 
 fn resize_images<Arr: AsImageObj>(images: &Arr, w: u32, h: u32) -> Vec<Option<CowImage<'_>>> {

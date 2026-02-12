@@ -1,25 +1,25 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
+    num::NonZeroUsize,
     sync::{Arc, Mutex, atomic::Ordering},
-    time::Duration,
 };
 
 use common_error::DaftResult;
 use common_metrics::{
-    CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, operator_metrics::OperatorCounter,
-    ops::NodeType,
+    CPU_US_KEY, Counter, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot,
+    operator_metrics::OperatorCounter, ops::NodeType, snapshot::UdfSnapshot,
 };
+use common_runtime::JoinSet;
 use daft_core::{prelude::SchemaRef, series::Series};
 use daft_dsl::{
     expr::bound_expr::BoundExpr, functions::python::UDFProperties,
-    operator_metrics::OperatorMetrics,
+    operator_metrics::OperatorMetrics, utils::remap_used_cols,
 };
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
-use opentelemetry::{KeyValue, global, metrics::Meter};
-use smallvec::SmallVec;
+use opentelemetry::{KeyValue, metrics::Meter};
 use tracing::{Span, instrument};
 
 use super::base::{
@@ -27,10 +27,9 @@ use super::base::{
     StreamingSinkFinalizeResult, StreamingSinkOutput,
 };
 use crate::{
-    ExecutionTaskSpawner, TaskSet,
-    intermediate_ops::udf::remap_used_cols,
+    ExecutionTaskSpawner,
     pipeline::{MorselSizeRequirement, NodeName},
-    runtime_stats::{Counter, RuntimeStats},
+    runtime_stats::RuntimeStats,
 };
 
 struct AsyncUdfParams {
@@ -57,23 +56,16 @@ impl RuntimeStats for AsyncUdfRuntimeStats {
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
         let counters = self.custom_counters.lock().unwrap();
-        let mut entries = SmallVec::with_capacity(3 + counters.len());
 
-        entries.push((
-            CPU_US_KEY.into(),
-            Stat::Duration(Duration::from_micros(self.cpu_us.load(ordering))),
-        ));
-        entries.push((ROWS_IN_KEY.into(), Stat::Count(self.rows_in.load(ordering))));
-        entries.push((
-            ROWS_OUT_KEY.into(),
-            Stat::Count(self.rows_out.load(ordering)),
-        ));
-
-        for (name, counter) in counters.iter() {
-            entries.push((name.clone().into(), Stat::Count(counter.load(ordering))));
-        }
-
-        StatSnapshot(entries)
+        StatSnapshot::Udf(UdfSnapshot {
+            cpu_us: self.cpu_us.load(ordering),
+            rows_in: self.rows_in.load(ordering),
+            rows_out: self.rows_out.load(ordering),
+            custom_counters: counters
+                .iter()
+                .map(|(name, counter)| (name.clone(), counter.load(ordering)))
+                .collect(),
+        })
     }
 
     fn add_rows_in(&self, rows: u64) {
@@ -90,17 +82,16 @@ impl RuntimeStats for AsyncUdfRuntimeStats {
 }
 
 impl AsyncUdfRuntimeStats {
-    fn new(id: usize) -> Self {
-        let meter = global::meter("daft.local.node_stats");
+    fn new(meter: &Meter, id: usize) -> Self {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, CPU_US_KEY.into(), None),
-            rows_in: Counter::new(&meter, ROWS_IN_KEY.into(), None),
-            rows_out: Counter::new(&meter, ROWS_OUT_KEY.into(), None),
+            meter: meter.clone(), // Cheap to clone, Arc under the hood
+            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
             custom_counters: Mutex::new(HashMap::new()),
             node_kv,
-            meter,
         }
     }
 
@@ -121,11 +112,8 @@ impl AsyncUdfRuntimeStats {
                     existing.add(value, key_values.as_slice());
                 }
                 None => {
-                    let counter = Counter::new(
-                        &self.meter,
-                        name.clone().into(),
-                        description.map(Cow::Owned),
-                    );
+                    let counter =
+                        Counter::new(&self.meter, name.clone(), description.map(Cow::Owned));
                     counter.add(value, key_values.as_slice());
                     counters.insert(name.into(), counter);
                 }
@@ -175,7 +163,7 @@ impl AsyncUdfSink {
 
 pub struct AsyncUdfState {
     udf_expr: BoundExpr,
-    task_set: TaskSet<DaftResult<RecordBatch>>,
+    task_set: JoinSet<DaftResult<RecordBatch>>,
     udf_initialized: bool,
 }
 
@@ -314,13 +302,19 @@ impl StreamingSink for AsyncUdfSink {
     }
 
     fn name(&self) -> NodeName {
-        let udf_name = if let Some((_, udf_name)) = self.params.udf_properties.name.rsplit_once('.')
-        {
-            udf_name
+        if self.params.udf_properties.builtin_name {
+            let name = self.params.udf_properties.name.clone();
+            name.into()
         } else {
-            self.params.udf_properties.name.as_str()
-        };
-        format!("Async UDF {}", udf_name).into()
+            let udf_name =
+                if let Some((_, udf_name)) = self.params.udf_properties.name.rsplit_once('.') {
+                    udf_name
+                } else {
+                    self.params.udf_properties.name.as_str()
+                };
+
+            format!("UDF {}", udf_name).into()
+        }
     }
 
     fn op_type(&self) -> NodeType {
@@ -329,7 +323,15 @@ impl StreamingSink for AsyncUdfSink {
 
     fn multiline_display(&self) -> Vec<String> {
         let mut res = vec![
-            format!("Async UDF: {}", self.params.udf_properties.name.as_str()),
+            format!(
+                "{} {}:",
+                if self.params.udf_properties.builtin_name {
+                    "Async Builtin UDF"
+                } else {
+                    "Async UDF"
+                },
+                self.params.udf_properties.name.as_str()
+            ),
             format!("Expr = {}", self.params.expr),
             format!(
                 "Passthrough Columns = [{}]",
@@ -351,13 +353,13 @@ impl StreamingSink for AsyncUdfSink {
     fn make_state(&self) -> DaftResult<Self::State> {
         Ok(AsyncUdfState {
             udf_expr: self.params.expr.clone(),
-            task_set: TaskSet::new(),
+            task_set: JoinSet::new(),
             udf_initialized: false,
         })
     }
 
-    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(AsyncUdfRuntimeStats::new(id))
+    fn make_runtime_stats(&self, meter: &Meter, node_id: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(AsyncUdfRuntimeStats::new(meter, node_id))
     }
 
     fn max_concurrency(&self) -> usize {
@@ -368,11 +370,15 @@ impl StreamingSink for AsyncUdfSink {
         self.params
             .udf_properties
             .batch_size
-            .map(MorselSizeRequirement::Strict)
+            .map(|size| {
+                MorselSizeRequirement::Strict(
+                    NonZeroUsize::new(size).expect("batch size for AsyncUDF sink must be non-zero"),
+                )
+            })
             .or_else(|| {
                 let is_scalar_udf = self.params.udf_properties.is_scalar;
                 if is_scalar_udf {
-                    Some(MorselSizeRequirement::Strict(1))
+                    Some(MorselSizeRequirement::Strict(NonZeroUsize::new(1).unwrap()))
                 } else {
                     None
                 }

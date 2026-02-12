@@ -33,7 +33,7 @@ where
         let arrow_array = self.as_arrow2();
         let is_valid = arrow_array
             .validity()
-            .is_none_or(|validity| validity.get_bit(idx));
+            .is_none_or(|nulls| nulls.get_bit(idx));
         if is_valid {
             Some(unsafe { arrow_array.value_unchecked(idx) })
         } else {
@@ -58,7 +58,7 @@ macro_rules! impl_array_arrow_get {
                 let arrow_array = self.as_arrow2();
                 let is_valid = arrow_array
                     .validity()
-                    .is_none_or(|validity| validity.get_bit(idx));
+                    .is_none_or(|nulls| nulls.get_bit(idx));
                 if is_valid {
                     Some(unsafe { arrow_array.value_unchecked(idx) })
                 } else {
@@ -108,10 +108,7 @@ impl ExtensionArray {
             idx,
             self.len()
         );
-        let is_valid = self
-            .data
-            .validity()
-            .is_none_or(|validity| validity.get_bit(idx));
+        let is_valid = self.data.validity().is_none_or(|nulls| nulls.get_bit(idx));
         if is_valid {
             Some(daft_arrow::scalar::new_scalar(self.data(), idx))
         } else {
@@ -130,7 +127,7 @@ impl PythonArray {
             idx,
             self.len()
         );
-        if self.validity().is_none_or(|v| v.is_valid(idx)) {
+        if self.nulls().is_none_or(|v| v.is_valid(idx)) {
             self.values().get(idx).cloned()
         } else {
             None
@@ -235,9 +232,9 @@ mod tests {
     #[test]
     fn test_fixed_size_list_get_all_valid() -> DaftResult<()> {
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
-        let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
-        let validity = None;
-        let arr = FixedSizeListArray::new(field, flat_child.into_series(), validity);
+        let flat_child = Int32Array::from_vec("foo", (0..9).collect::<Vec<i32>>());
+        let nulls = None;
+        let arr = FixedSizeListArray::new(field, flat_child.into_series(), nulls);
         assert_eq!(arr.len(), 3);
 
         for i in 0..3 {
@@ -265,12 +262,10 @@ mod tests {
     #[test]
     fn test_fixed_size_list_get_some_valid() -> DaftResult<()> {
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
-        let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
-        let raw_validity = vec![true, false, true];
-        let validity = Some(daft_arrow::buffer::NullBuffer::from(
-            raw_validity.as_slice(),
-        ));
-        let arr = FixedSizeListArray::new(field, flat_child.into_series(), validity);
+        let flat_child = Int32Array::from_vec("foo", (0..9).collect::<Vec<i32>>());
+        let raw_nulls = vec![true, false, true];
+        let nulls = Some(daft_arrow::buffer::NullBuffer::from(raw_nulls.as_slice()));
+        let arr = FixedSizeListArray::new(field, flat_child.into_series(), nulls);
         assert_eq!(arr.len(), 3);
 
         let element = arr.get(0);
@@ -308,12 +303,10 @@ mod tests {
     #[test]
     fn test_list_get_some_valid() -> DaftResult<()> {
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
-        let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
-        let raw_validity = vec![true, false, true];
-        let validity = Some(daft_arrow::buffer::NullBuffer::from(
-            raw_validity.as_slice(),
-        ));
-        let arr = FixedSizeListArray::new(field, flat_child.into_series(), validity);
+        let flat_child = Int32Array::from_vec("foo", (0..9).collect::<Vec<i32>>());
+        let raw_nulls = vec![true, false, true];
+        let nulls = Some(daft_arrow::buffer::NullBuffer::from(raw_nulls.as_slice()));
+        let arr = FixedSizeListArray::new(field, flat_child.into_series(), nulls);
         let list_dtype = DataType::List(Box::new(DataType::Int32));
         let list_arr = arr.cast(&list_dtype)?;
         let l = list_arr.list()?;

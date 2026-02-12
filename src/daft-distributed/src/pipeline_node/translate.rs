@@ -158,18 +158,14 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
             LogicalPlan::UDFProject(udf) if udf.is_actor_pool_udf() => {
                 #[cfg(feature = "python")]
                 {
-                    let projection = udf
-                        .passthrough_columns
-                        .iter()
-                        .chain(std::iter::once(&udf.expr))
-                        .cloned()
-                        .collect::<Vec<_>>();
-                    let projection =
-                        BoundExpr::bind_all(projection.as_slice(), &udf.input.schema())?;
+                    let udf_expr = BoundExpr::try_new(udf.expr.clone(), &udf.input.schema())?;
+                    let passthrough_columns =
+                        BoundExpr::bind_all(&udf.passthrough_columns, &udf.input.schema())?;
                     crate::pipeline_node::actor_udf::ActorUDF::new(
                         self.get_next_pipeline_node_id(),
                         &self.plan_config,
-                        projection,
+                        udf_expr,
+                        passthrough_columns,
                         udf.udf_properties.clone(),
                         udf.projected_schema.clone(),
                         self.curr_node.pop().unwrap(),
@@ -243,6 +239,7 @@ impl TreeNodeVisitor for LogicalPlanToPipelineNodeTranslator {
                     self.get_next_pipeline_node_id(),
                     &self.plan_config,
                     to_explode,
+                    explode.index_column.clone(),
                     node.schema(),
                     self.curr_node.pop().unwrap(),
                 )

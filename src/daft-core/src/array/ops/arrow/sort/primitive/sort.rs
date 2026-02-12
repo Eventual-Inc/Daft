@@ -15,12 +15,11 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-use daft_arrow::buffer::NullBuffer;
-use daft_arrow::{
-    array::PrimitiveArray,
-    buffer::{Buffer, NullBufferBuilder},
-    compute::sort::SortOptions,
-    types::NativeType,
+use arrow::{
+    array::{Array, ArrowPrimitiveType, NullBufferBuilder, PrimitiveArray},
+    buffer::{Buffer, NullBuffer, ScalarBuffer},
+    compute::SortOptions,
+    datatypes::ArrowNativeType,
 };
 
 /// # Safety
@@ -28,7 +27,7 @@ use daft_arrow::{
 #[inline]
 fn k_element_sort_inner<T, F>(values: &mut [T], descending: bool, limit: usize, mut cmp: F)
 where
-    T: NativeType,
+    T: ArrowNativeType,
     F: FnMut(&T, &T) -> std::cmp::Ordering,
 {
     if descending {
@@ -42,7 +41,7 @@ where
 
 fn sort_values<T, F>(values: &mut [T], mut cmp: F, descending: bool, limit: usize)
 where
-    T: NativeType,
+    T: ArrowNativeType,
     F: FnMut(&T, &T) -> std::cmp::Ordering,
 {
     if limit != values.len() {
@@ -58,50 +57,50 @@ where
 
 fn sort_nullable<T, F>(
     values: &[T],
-    validity: &NullBuffer,
+    nulls: &NullBuffer,
     cmp: F,
     options: &SortOptions,
     limit: usize,
-) -> (Buffer<T>, Option<NullBuffer>)
+) -> (Buffer, Option<NullBuffer>)
 where
-    T: NativeType,
+    T: ArrowNativeType,
     F: FnMut(&T, &T) -> std::cmp::Ordering,
 {
     assert!(limit <= values.len());
-    if options.nulls_first && limit < validity.null_count() {
+    if options.nulls_first && limit < nulls.null_count() {
         let buffer = vec![T::default(); limit];
         let bitmap = NullBuffer::new_null(limit);
         return (buffer.into(), Some(bitmap));
     }
 
     let mut buffer = Vec::<T>::with_capacity(values.len());
-    let mut new_validity = NullBufferBuilder::new(values.len());
-    let slices = validity.valid_slices();
+    let mut new_nulls = NullBufferBuilder::new(values.len());
+    let slices = nulls.valid_slices();
 
     if options.nulls_first {
         // validity is [0,0,0,...,1,1,1,1]
-        new_validity.append_n_nulls(validity.null_count());
-        new_validity.append_n_non_nulls(values.len() - validity.null_count());
-        new_validity.truncate(limit);
+        new_nulls.append_n_nulls(nulls.null_count());
+        new_nulls.append_n_non_nulls(values.len() - nulls.null_count());
+        new_nulls.truncate(limit);
 
         // extend buffer with constants followed by non-null values
-        buffer.resize(validity.null_count(), T::default());
+        buffer.resize(nulls.null_count(), T::default());
         for (start, end) in slices {
             buffer.extend_from_slice(&values[start..end]);
         }
 
         // sort values
         sort_values(
-            &mut buffer.as_mut_slice()[validity.null_count()..],
+            &mut buffer.as_mut_slice()[nulls.null_count()..],
             cmp,
             options.descending,
-            limit - validity.null_count(),
+            limit - nulls.null_count(),
         );
     } else {
         // validity is [1,1,1,...,0,0,0,0]
-        new_validity.append_n_non_nulls(values.len() - validity.null_count());
-        new_validity.append_n_nulls(validity.null_count());
-        new_validity.truncate(limit);
+        new_nulls.append_n_non_nulls(values.len() - nulls.null_count());
+        new_nulls.append_n_nulls(nulls.null_count());
+        new_nulls.truncate(limit);
 
         // extend buffer with non-null values
         for (start, end) in slices {
@@ -113,19 +112,19 @@ where
             buffer.as_mut_slice(),
             cmp,
             options.descending,
-            limit - validity.null_count(),
+            limit - nulls.null_count(),
         );
 
-        if limit > values.len() - validity.null_count() {
+        if limit > values.len() - nulls.null_count() {
             // extend remaining with nulls
-            buffer.resize(buffer.len() + validity.null_count(), T::default());
+            buffer.resize(buffer.len() + nulls.null_count(), T::default());
         }
     }
     // values are sorted, we can now truncate the remaining.
     buffer.truncate(limit);
     buffer.shrink_to_fit();
 
-    (buffer.into(), new_validity.finish())
+    (buffer.into(), new_nulls.finish())
 }
 
 /// Sorts a [`PrimitiveArray`] according to `cmp` comparator and [`SortOptions`].
@@ -136,19 +135,19 @@ pub fn sort_by<T, F>(
     limit: Option<usize>,
 ) -> PrimitiveArray<T>
 where
-    T: NativeType,
-    F: FnMut(&T, &T) -> std::cmp::Ordering,
+    T: ArrowPrimitiveType,
+    F: FnMut(&T::Native, &T::Native) -> std::cmp::Ordering,
 {
     let limit = limit.unwrap_or_else(|| array.len());
     let limit = limit.min(array.len());
 
-    let values = array.values();
-    let validity: Option<NullBuffer> = array.validity().map(|v| v.clone().into());
+    let values = array.values().inner().typed_data::<T::Native>();
+    let nulls = array.nulls();
 
-    let (buffer, validity) = if let Some(validity) = validity {
-        sort_nullable(values, &validity, cmp, options, limit)
+    let (buffer, nulls) = if let Some(nulls) = nulls {
+        sort_nullable(values, nulls, cmp, options, limit)
     } else {
-        let mut buffer = Vec::<T>::new();
+        let mut buffer = Vec::<T::Native>::new();
         buffer.extend_from_slice(values);
 
         sort_values(buffer.as_mut_slice(), cmp, options.descending, limit);
@@ -157,105 +156,97 @@ where
 
         (buffer.into(), None)
     };
-    PrimitiveArray::<T>::new(
-        array.data_type().clone(),
-        buffer,
-        daft_arrow::buffer::wrap_null_buffer(validity),
-    )
+
+    PrimitiveArray::<T>::new(ScalarBuffer::new(buffer, 0, limit), nulls)
 }
 
 #[cfg(test)]
 mod tests {
-    use daft_arrow::{
-        array::{Array, ord},
-        datatypes::DataType,
+    use arrow::{
+        array::{ArrowPrimitiveType, PrimitiveArray},
+        compute::SortOptions,
+        datatypes::Int8Type,
     };
 
-    use super::*;
+    use super::sort_by;
 
     fn test_sort_primitive_arrays<T>(
-        data: &[Option<T>],
-        data_type: DataType,
+        data: Vec<Option<T::Native>>,
         options: SortOptions,
-        expected_data: &[Option<T>],
+        expected_data: Vec<Option<T::Native>>,
     ) where
-        T: NativeType + std::cmp::Ord,
+        T: ArrowPrimitiveType,
+        T::Native: Ord,
     {
-        let input = PrimitiveArray::<T>::from(data)
-            .to(data_type.clone())
-            .as_any()
-            .downcast_ref::<PrimitiveArray<T>>()
-            .unwrap()
-            .clone();
-        let expected = PrimitiveArray::<T>::from(expected_data)
-            .to(data_type.clone())
-            .as_any()
-            .downcast_ref::<PrimitiveArray<T>>()
-            .unwrap()
-            .clone();
-        let output = sort_by(&input, ord::total_cmp, &options, None);
+        let input = {
+            let mut builder = PrimitiveArray::<T>::builder(data.len());
+            builder.extend(data.into_iter());
+            builder.finish()
+        };
+        let expected = {
+            let mut builder = PrimitiveArray::<T>::builder(expected_data.len());
+            builder.extend(expected_data.clone().into_iter());
+            builder.finish()
+        };
+        let output = sort_by(&input, |l, r| l.cmp(r), &options, None);
         assert_eq!(expected, output);
 
         // with limit
-        let expected = PrimitiveArray::<T>::from(&expected_data[..3])
-            .to(data_type)
-            .as_any()
-            .downcast_ref::<PrimitiveArray<T>>()
-            .unwrap()
-            .clone();
-        let output = sort_by(&input, ord::total_cmp, &options, Some(3));
+        let limit = 3;
+        let expected = {
+            let mut builder = PrimitiveArray::<T>::builder(limit);
+            builder.extend(expected_data.into_iter().take(limit));
+            builder.finish()
+        };
+        let output = sort_by(&input, |l, r| l.cmp(r), &options, Some(limit));
         assert_eq!(expected, output);
     }
 
     #[test]
     fn ascending_nulls_first() {
-        test_sort_primitive_arrays::<i8>(
-            &[None, Some(3), Some(5), Some(2), Some(3), None],
-            DataType::Int8,
+        test_sort_primitive_arrays::<Int8Type>(
+            vec![None, Some(3), Some(5), Some(2), Some(3), None],
             SortOptions {
                 descending: false,
                 nulls_first: true,
             },
-            &[None, None, Some(2), Some(3), Some(3), Some(5)],
+            vec![None, None, Some(2), Some(3), Some(3), Some(5)],
         );
     }
 
     #[test]
     fn ascending_nulls_last() {
-        test_sort_primitive_arrays::<i8>(
-            &[None, Some(3), Some(5), Some(2), Some(3), None],
-            DataType::Int8,
+        test_sort_primitive_arrays::<Int8Type>(
+            vec![None, Some(3), Some(5), Some(2), Some(3), None],
             SortOptions {
                 descending: false,
                 nulls_first: false,
             },
-            &[Some(2), Some(3), Some(3), Some(5), None, None],
+            vec![Some(2), Some(3), Some(3), Some(5), None, None],
         );
     }
 
     #[test]
     fn descending_nulls_first() {
-        test_sort_primitive_arrays::<i8>(
-            &[None, Some(3), Some(5), Some(2), Some(3), None],
-            DataType::Int8,
+        test_sort_primitive_arrays::<Int8Type>(
+            vec![None, Some(3), Some(5), Some(2), Some(3), None],
             SortOptions {
                 descending: true,
                 nulls_first: true,
             },
-            &[None, None, Some(5), Some(3), Some(3), Some(2)],
+            vec![None, None, Some(5), Some(3), Some(3), Some(2)],
         );
     }
 
     #[test]
     fn descending_nulls_last() {
-        test_sort_primitive_arrays::<i8>(
-            &[None, Some(3), Some(5), Some(2), Some(3), None],
-            DataType::Int8,
+        test_sort_primitive_arrays::<Int8Type>(
+            vec![None, Some(3), Some(5), Some(2), Some(3), None],
             SortOptions {
                 descending: true,
                 nulls_first: false,
             },
-            &[Some(5), Some(3), Some(3), Some(2), None, None],
+            vec![Some(5), Some(3), Some(3), Some(2), None, None],
         );
     }
 }

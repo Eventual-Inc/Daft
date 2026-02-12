@@ -5,8 +5,12 @@ use daft_core::{
 };
 use daft_dsl::{
     AggExpr,
-    expr::bound_expr::{BoundAggExpr, BoundExpr},
-    functions::FunctionExpr,
+    expr::{
+        MapGroupsFn,
+        bound_expr::{BoundAggExpr, BoundExpr},
+    },
+    operator_metrics::NoopMetricsCollector,
+    python_udf::PyScalarFn,
 };
 
 use crate::RecordBatch;
@@ -54,7 +58,7 @@ impl RecordBatch {
 
         // Table with the aggregated (deduplicated) group keys.
         let groupkeys_table = {
-            let indices_as_arr = UInt64Array::from(("", groupkey_indices));
+            let indices_as_arr = UInt64Array::from_vec("", groupkey_indices);
             groupby_table.take(&indices_as_arr)?
         };
 
@@ -77,34 +81,11 @@ impl RecordBatch {
     #[cfg(feature = "python")]
     pub fn map_groups(
         &self,
-        func: &FunctionExpr,
+        func: &MapGroupsFn,
         inputs: &[BoundExpr],
         group_by: &[BoundExpr],
     ) -> DaftResult<Self> {
-        use daft_core::array::ops::IntoGroups;
-        use daft_dsl::functions::python::LegacyPythonUDF;
-
-        let udf = match func {
-            FunctionExpr::Python(
-                udf @ LegacyPythonUDF {
-                    concurrency: None, ..
-                },
-            ) => udf,
-            FunctionExpr::Python(LegacyPythonUDF {
-                concurrency: Some(_),
-                ..
-            }) => {
-                return Err(DaftError::ComputeError(
-                    "Cannot run actor pool UDF in MapGroups".to_string(),
-                ));
-            }
-            _ => {
-                return Err(DaftError::ComputeError(
-                    "Trying to run non-UDF function in MapGroups!".to_string(),
-                ));
-            }
-        };
-
+        use common_runtime::get_compute_runtime;
         // Table with just the groupby columns.
         let groupby_table = self.eval_expression_list(group_by)?;
 
@@ -117,72 +98,173 @@ impl RecordBatch {
             .map(|e| self.eval_expression(e))
             .collect::<DaftResult<Vec<_>>>()?;
 
-        // Take fast path short circuit if there is only 1 group
-        let (groupkeys_table, grouped_col) = if groupvals_indices.is_empty() {
-            let empty_groupkeys_table = Self::empty(Some(groupby_table.schema));
-            let empty_udf_output_col = Series::empty(
-                evaluated_inputs
-                    .first()
-                    .map_or_else(|| "output", |s| s.name()),
-                &udf.return_dtype,
-            );
-            (empty_groupkeys_table, empty_udf_output_col)
-        } else if groupvals_indices.len() == 1 {
-            let grouped_col = udf.call_udf(evaluated_inputs.as_slice())?;
-            let groupkeys_table = {
-                let indices_as_arr = UInt64Array::from(("", groupkey_indices));
-                groupby_table.take(&indices_as_arr)?
-            };
-            (groupkeys_table, grouped_col)
-        } else {
-            let grouped_results = groupkey_indices
-                .iter()
-                .zip(groupvals_indices.iter())
-                .map(|(groupkey_index, groupval_indices)| {
-                    let evaluated_grouped_col = {
-                        // Convert group indices to Series
-                        let indices_as_arr = UInt64Array::from(("", groupval_indices.clone()));
+        let (groupkeys_table, grouped_col) = match func {
+            MapGroupsFn::Legacy(udf) => {
+                if udf.concurrency.is_some() {
+                    return Err(DaftError::ComputeError(
+                        "Cannot run actor pool UDF in MapGroups".to_string(),
+                    ));
+                }
 
-                        // Take each input Series by the group indices
-                        let input_groups = evaluated_inputs
-                            .iter()
-                            .map(|s| s.take(&indices_as_arr))
-                            .collect::<DaftResult<Vec<_>>>()?;
+                if groupvals_indices.is_empty() {
+                    let empty_groupkeys_table = Self::empty(Some(groupby_table.schema));
+                    let empty_udf_output_col = Series::empty(
+                        evaluated_inputs
+                            .first()
+                            .map_or_else(|| "output", |s| s.name()),
+                        &udf.return_dtype,
+                    );
+                    (empty_groupkeys_table, empty_udf_output_col)
+                } else if groupvals_indices.len() == 1 {
+                    let grouped_col = udf.call_udf(evaluated_inputs.as_slice())?;
+                    let groupkeys_table = {
+                        let indices_as_arr = UInt64Array::from_vec("", groupkey_indices);
+                        groupby_table.take(&indices_as_arr)?
+                    };
+                    (groupkeys_table, grouped_col)
+                } else {
+                    let grouped_results = groupkey_indices
+                        .iter()
+                        .zip(groupvals_indices.iter())
+                        .map(|(groupkey_index, groupval_indices)| {
+                            let evaluated_grouped_col = {
+                                // Convert group indices to Series
+                                let indices_as_arr =
+                                    UInt64Array::from_vec("", groupval_indices.clone());
 
-                        // Call the UDF on the grouped inputs
-                        udf.call_udf(input_groups.as_slice())?
+                                // Take each input Series by the group indices
+                                let input_groups = evaluated_inputs
+                                    .iter()
+                                    .map(|s| s.take(&indices_as_arr))
+                                    .collect::<DaftResult<Vec<_>>>()?;
+
+                                // Call the UDF on the grouped inputs
+                                udf.call_udf(input_groups.as_slice())?
+                            };
+
+                            let broadcasted_groupkeys_table = {
+                                // Convert groupkey indices to Series
+                                let groupkey_indices_as_arr =
+                                    UInt64Array::from_slice("", &[*groupkey_index]);
+
+                                // Take the group keys by the groupkey indices
+                                let groupkeys_table =
+                                    groupby_table.take(&groupkey_indices_as_arr)?;
+
+                                // Broadcast the group keys to the length of the grouped column,
+                                // because output of UDF can be more than one row
+                                let broadcasted_groupkeys = groupkeys_table
+                                    .columns
+                                    .iter()
+                                    .map(|c| c.broadcast(evaluated_grouped_col.len()))
+                                    .collect::<DaftResult<Vec<_>>>()?;
+
+                                // Combine the broadcasted group keys into a Table
+                                Self::from_nonempty_columns(broadcasted_groupkeys)?
+                            };
+
+                            Ok((broadcasted_groupkeys_table, evaluated_grouped_col))
+                        })
+                        .collect::<DaftResult<Vec<_>>>()?;
+
+                    let series_refs = grouped_results.iter().map(|(_, s)| s).collect::<Vec<_>>();
+                    let concatenated_grouped_col = Series::concat(series_refs.as_slice())?;
+
+                    let table_refs = grouped_results.iter().map(|(t, _)| t).collect::<Vec<_>>();
+                    let concatenated_groupkeys_table = Self::concat(table_refs.as_slice())?;
+
+                    (concatenated_groupkeys_table, concatenated_grouped_col)
+                }
+            }
+            MapGroupsFn::Python(py_scalar_fn) => {
+                match py_scalar_fn {
+                    PyScalarFn::RowWise(_) => {
+                        return Err(DaftError::ComputeError(
+                            "Row-wise Python UDFs are not supported in map_groups; use daft.func.batch or @daft.method.batch instead.".to_string(),
+                        ));
+                    }
+                    PyScalarFn::Batch(_) => {}
+                }
+
+                if groupvals_indices.is_empty() {
+                    let empty_groupkeys_table = Self::empty(Some(groupby_table.schema));
+                    let output_name = evaluated_inputs
+                        .first()
+                        .map_or_else(|| "output", |s| s.name());
+                    let empty_udf_output_col = Series::empty(output_name, &py_scalar_fn.dtype());
+                    (empty_groupkeys_table, empty_udf_output_col)
+                } else if groupvals_indices.len() == 1 {
+                    let mut metrics = NoopMetricsCollector;
+                    let grouped_col = if py_scalar_fn.is_async() {
+                        get_compute_runtime().block_on_current_thread(
+                            py_scalar_fn.call_async(evaluated_inputs.as_slice(), &mut metrics),
+                        )?
+                    } else {
+                        py_scalar_fn.call(evaluated_inputs.as_slice(), &mut metrics)?
                     };
 
-                    let broadcasted_groupkeys_table = {
-                        // Convert groupkey indices to Series
-                        let groupkey_indices_as_arr =
-                            UInt64Array::from(("", vec![*groupkey_index]));
-
-                        // Take the group keys by the groupkey indices
-                        let groupkeys_table = groupby_table.take(&groupkey_indices_as_arr)?;
-
-                        // Broadcast the group keys to the length of the grouped column, because output of UDF can be more than one row
-                        let broadcasted_groupkeys = groupkeys_table
-                            .columns
-                            .iter()
-                            .map(|c| c.broadcast(evaluated_grouped_col.len()))
-                            .collect::<DaftResult<Vec<_>>>()?;
-
-                        // Combine the broadcasted group keys into a Table
-                        Self::from_nonempty_columns(broadcasted_groupkeys)?
+                    let groupkeys_table = {
+                        let indices_as_arr = UInt64Array::from_vec("", groupkey_indices);
+                        groupby_table.take(&indices_as_arr)?
                     };
+                    (groupkeys_table, grouped_col)
+                } else {
+                    let grouped_results = groupkey_indices
+                        .iter()
+                        .zip(groupvals_indices.iter())
+                        .map(|(groupkey_index, groupval_indices)| {
+                            // Convert group indices to Series
+                            let indices_as_arr =
+                                UInt64Array::from_vec("", groupval_indices.clone());
 
-                    Ok((broadcasted_groupkeys_table, evaluated_grouped_col))
-                })
-                .collect::<DaftResult<Vec<_>>>()?;
+                            // Take each input Series by the group indices
+                            let input_groups = evaluated_inputs
+                                .iter()
+                                .map(|s| s.take(&indices_as_arr))
+                                .collect::<DaftResult<Vec<_>>>()?;
 
-            let series_refs = grouped_results.iter().map(|(_, s)| s).collect::<Vec<_>>();
-            let concatenated_grouped_col = Series::concat(series_refs.as_slice())?;
+                            let mut metrics = NoopMetricsCollector;
+                            let evaluated_grouped_col = if py_scalar_fn.is_async() {
+                                get_compute_runtime().block_on_current_thread(
+                                    py_scalar_fn.call_async(input_groups.as_slice(), &mut metrics),
+                                )?
+                            } else {
+                                py_scalar_fn.call(input_groups.as_slice(), &mut metrics)?
+                            };
 
-            let table_refs = grouped_results.iter().map(|(t, _)| t).collect::<Vec<_>>();
-            let concatenated_groupkeys_table = Self::concat(table_refs.as_slice())?;
+                            let broadcasted_groupkeys_table = {
+                                // Convert groupkey indices to Series
+                                let groupkey_indices_as_arr =
+                                    UInt64Array::from_slice("", &[*groupkey_index]);
 
-            (concatenated_groupkeys_table, concatenated_grouped_col)
+                                // Take the group keys by the groupkey indices
+                                let groupkeys_table =
+                                    groupby_table.take(&groupkey_indices_as_arr)?;
+
+                                // Broadcast the group keys to the length of the grouped column
+                                let broadcasted_groupkeys = groupkeys_table
+                                    .columns
+                                    .iter()
+                                    .map(|c| c.broadcast(evaluated_grouped_col.len()))
+                                    .collect::<DaftResult<Vec<_>>>()?;
+
+                                // Combine the broadcasted group keys into a Table
+                                Self::from_nonempty_columns(broadcasted_groupkeys)?
+                            };
+
+                            Ok((broadcasted_groupkeys_table, evaluated_grouped_col))
+                        })
+                        .collect::<DaftResult<Vec<_>>>()?;
+
+                    let series_refs = grouped_results.iter().map(|(_, s)| s).collect::<Vec<_>>();
+                    let concatenated_grouped_col = Series::concat(series_refs.as_slice())?;
+
+                    let table_refs = grouped_results.iter().map(|(t, _)| t).collect::<Vec<_>>();
+                    let concatenated_groupkeys_table = Self::concat(table_refs.as_slice())?;
+
+                    (concatenated_groupkeys_table, concatenated_grouped_col)
+                }
+            }
         };
 
         // Broadcast either the keys or the grouped_cols, depending on which is unit-length
@@ -201,7 +283,7 @@ impl RecordBatch {
 
         let dedup_table = self.eval_expression_list(columns)?;
         let unique_indices = dedup_table.make_unique_idxs()?;
-        let indices_as_arr = UInt64Array::from(("", unique_indices));
+        let indices_as_arr = UInt64Array::from_vec("", unique_indices);
         self.take(&indices_as_arr)
     }
 }

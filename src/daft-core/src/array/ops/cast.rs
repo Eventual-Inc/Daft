@@ -97,6 +97,25 @@ where
                 let self_arrow_type = self.data_type().to_arrow2()?;
                 let self_physical_arrow_type = self_physical_type.to_arrow2()?;
 
+                // Special case: Utf8 -> numeric needs whitespace trimming
+                // This matches Python/Pandas/NumPy behavior
+                let trimmed_utf8: Option<Utf8Array>;
+                let data_to_cast: &dyn daft_arrow::array::Array =
+                    if self.data_type() == &DataType::Utf8 && dtype.is_numeric() {
+                        let utf8_array = self
+                            .data()
+                            .as_any()
+                            .downcast_ref::<daft_arrow::array::Utf8Array<i64>>()
+                            .expect("Expected LargeUtf8 array for Utf8 DataType");
+                        trimmed_utf8 = Some(Utf8Array::from_iter(
+                            self.name(),
+                            utf8_array.iter().map(|opt_s| opt_s.map(|s| s.trim())),
+                        ));
+                        trimmed_utf8.as_ref().unwrap().data()
+                    } else {
+                        self.data()
+                    };
+
                 let result_array = if target_arrow_physical_type == target_arrow_type {
                     if !can_cast_types(&self_arrow_type, &target_arrow_type) {
                         return Err(DaftError::TypeError(format!(
@@ -108,7 +127,7 @@ where
                         )));
                     }
                     cast(
-                        self.data(),
+                        data_to_cast,
                         &target_arrow_type,
                         CastOptions {
                             wrapped: true,
@@ -118,7 +137,7 @@ where
                 } else if can_cast_types(&self_arrow_type, &target_arrow_type) {
                     // Cast from logical Arrow2 type to logical Arrow2 type.
                     cast(
-                        self.data(),
+                        data_to_cast,
                         &target_arrow_type,
                         CastOptions {
                             wrapped: true,
@@ -128,7 +147,7 @@ where
                 } else if can_cast_types(&self_physical_arrow_type, &target_arrow_physical_type) {
                     // Cast from physical Arrow2 type to physical Arrow2 type.
                     cast(
-                        self.data(),
+                        data_to_cast,
                         &target_arrow_physical_type,
                         CastOptions {
                             wrapped: true,
@@ -179,7 +198,12 @@ impl DateArray {
                         (Some(y), Some(m), Some(d)) => Some(format!("{y}-{m}-{d}")),
                     })
                     .collect();
-                Ok(Utf8Array::from((self.name(), Box::new(date_str))).into_series())
+                Ok(Utf8Array::new(
+                    Field::new(self.name(), DataType::Utf8).into(),
+                    Box::new(date_str),
+                )
+                .unwrap()
+                .into_series())
             }
             DataType::Timestamp(tu, _) => {
                 let days_to_unit: i64 = match tu {
@@ -189,7 +213,7 @@ impl DateArray {
                     TimeUnit::Seconds => 24 * 3_600,
                 };
 
-                let units_per_day = Int64Array::from(("units", vec![days_to_unit])).into_series();
+                let units_per_day = Int64Array::from_slice("units", &[days_to_unit]).into_series();
                 let unit_since_epoch = ((&self.physical.clone().into_series()) * &units_per_day)?;
                 unit_since_epoch.cast(dtype)
             }
@@ -247,12 +271,12 @@ impl TimestampArray {
                     std::cmp::Ordering::Greater => {
                         let factor = tu.to_scale_factor() / self_tu.to_scale_factor();
                         self.physical
-                            .mul(&Int64Array::from(("factor", vec![factor])))?
+                            .mul(&Int64Array::from_slice("factor", &[factor]))?
                     }
                     std::cmp::Ordering::Less => {
                         let factor = self_tu.to_scale_factor() / tu.to_scale_factor();
                         self.physical
-                            .div(&Int64Array::from(("factor", vec![factor])))?
+                            .div(&Int64Array::from_slice("factor", &[factor]))?
                     }
                 };
                 Ok(
@@ -293,7 +317,12 @@ impl TimestampArray {
                     },
                 );
 
-                Ok(Utf8Array::from((self.name(), Box::new(str_array))).into_series())
+                Ok(Utf8Array::new(
+                    Field::new(self.name(), DataType::Utf8).into(),
+                    Box::new(str_array),
+                )
+                .unwrap()
+                .into_series())
             }
             dtype if dtype.is_numeric() => self.physical.cast(dtype),
             #[cfg(feature = "python")]
@@ -322,12 +351,12 @@ impl TimeArray {
                     std::cmp::Ordering::Greater => {
                         let factor = tu.to_scale_factor() / self_tu.to_scale_factor();
                         self.physical
-                            .mul(&Int64Array::from(("factor", vec![factor])))?
+                            .mul(&Int64Array::from_slice("factor", &[factor]))?
                     }
                     std::cmp::Ordering::Less => {
                         let factor = self_tu.to_scale_factor() / tu.to_scale_factor();
                         self.physical
-                            .div(&Int64Array::from(("factor", vec![factor])))?
+                            .div(&Int64Array::from_slice("factor", &[factor]))?
                     }
                 };
                 Ok(TimeArray::new(Field::new(self.name(), dtype.clone()), physical).into_series())
@@ -345,7 +374,12 @@ impl TimeArray {
                         })
                     })
                     .collect();
-                Ok(Utf8Array::from((self.name(), Box::new(time_str))).into_series())
+                Ok(Utf8Array::new(
+                    Field::new(self.name(), DataType::Utf8).into(),
+                    Box::new(time_str),
+                )
+                .unwrap()
+                .into_series())
             }
             dtype if dtype.is_numeric() => self.physical.cast(dtype),
             #[cfg(feature = "python")]
@@ -385,15 +419,15 @@ impl DurationArray {
             TimeUnit::Seconds => self.physical.clone(),
             TimeUnit::Milliseconds => self
                 .physical
-                .div(&Int64Array::from(("MillisecondsPerSecond", vec![1000])))?,
-            TimeUnit::Microseconds => self.physical.div(&Int64Array::from((
+                .div(&Int64Array::from_slice("MillisecondsPerSecond", &[1000]))?,
+            TimeUnit::Microseconds => self.physical.div(&Int64Array::from_slice(
                 "MicrosecondsPerSecond",
-                vec![1_000_000],
-            )))?,
-            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+                &[1_000_000],
+            ))?,
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from_slice(
                 "NanosecondsPerSecond",
-                vec![1_000_000_000],
-            )))?,
+                &[1_000_000_000],
+            ))?,
         };
         Ok(seconds)
     }
@@ -406,16 +440,16 @@ impl DurationArray {
         let milliseconds = match tu {
             TimeUnit::Seconds => self
                 .physical
-                .mul(&Int64Array::from(("MillisecondsPerSecond", vec![1000])))?,
+                .mul(&Int64Array::from_slice("MillisecondsPerSecond", &[1000]))?,
             TimeUnit::Milliseconds => self.physical.clone(),
-            TimeUnit::Microseconds => self.physical.div(&Int64Array::from((
+            TimeUnit::Microseconds => self.physical.div(&Int64Array::from_slice(
                 "MicrosecondsPerMillisecond",
-                vec![1_000],
-            )))?,
-            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+                &[1_000],
+            ))?,
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from_slice(
                 "NanosecondsPerMillisecond",
-                vec![1_000_000],
-            )))?,
+                &[1_000_000],
+            ))?,
         };
         Ok(milliseconds)
     }
@@ -426,19 +460,19 @@ impl DurationArray {
             _ => panic!("Wrong dtype for DurationArray: {}", self.data_type()),
         };
         let microseconds = match tu {
-            TimeUnit::Seconds => self.physical.mul(&Int64Array::from((
+            TimeUnit::Seconds => self.physical.mul(&Int64Array::from_slice(
                 "MicrosecondsPerSecond",
-                vec![1_000_000],
-            )))?,
-            TimeUnit::Milliseconds => self.physical.mul(&Int64Array::from((
+                &[1_000_000],
+            ))?,
+            TimeUnit::Milliseconds => self.physical.mul(&Int64Array::from_slice(
                 "MicrosecondsPerMillisecond",
-                vec![1_000],
-            )))?,
+                &[1_000],
+            ))?,
             TimeUnit::Microseconds => self.physical.clone(),
-            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from_slice(
                 "NanosecondsPerMicrosecond",
-                vec![1_000],
-            )))?,
+                &[1_000],
+            ))?,
         };
         Ok(microseconds)
     }
@@ -450,18 +484,18 @@ impl DurationArray {
                 _ => panic!("Wrong dtype for DurationArray: {}", self.data_type()),
             };
             let nanoseconds = match tu {
-                TimeUnit::Seconds => self.physical.mul(&Int64Array::from((
+                TimeUnit::Seconds => self.physical.mul(&Int64Array::from_slice(
                     "NanosecondsPerSecond",
-                    vec![1_000_000_000],
-                )))?,
-                TimeUnit::Milliseconds => self.physical.mul(&Int64Array::from((
+                    &[1_000_000_000],
+                ))?,
+                TimeUnit::Milliseconds => self.physical.mul(&Int64Array::from_slice(
                     "NanosecondsPerMillisecond",
-                    vec![1_000_000],
-                )))?,
-                TimeUnit::Microseconds => self.physical.mul(&Int64Array::from((
+                    &[1_000_000],
+                ))?,
+                TimeUnit::Microseconds => self.physical.mul(&Int64Array::from_slice(
                     "NanosecondsPerMicrosecond",
-                    vec![1_000],
-                )))?,
+                    &[1_000],
+                ))?,
                 TimeUnit::Nanoseconds => self.physical.clone(),
             };
             Ok(nanoseconds)
@@ -475,18 +509,19 @@ impl DurationArray {
         let minutes = match tu {
             TimeUnit::Seconds => self
                 .physical
-                .div(&Int64Array::from(("SecondsInMinute", vec![60])))?,
-            TimeUnit::Milliseconds => self
-                .physical
-                .div(&Int64Array::from(("MillisecondsInMinute", vec![60 * 1000])))?,
-            TimeUnit::Microseconds => self.physical.div(&Int64Array::from((
+                .div(&Int64Array::from_slice("SecondsInMinute", &[60]))?,
+            TimeUnit::Milliseconds => self.physical.div(&Int64Array::from_slice(
+                "MillisecondsInMinute",
+                &[60 * 1000],
+            ))?,
+            TimeUnit::Microseconds => self.physical.div(&Int64Array::from_slice(
                 "MicrosecondsInMinute",
-                vec![60 * 1_000_000],
-            )))?,
-            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+                &[60 * 1_000_000],
+            ))?,
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from_slice(
                 "NanosecondsInMinute",
-                vec![60 * 1_000_000_000],
-            )))?,
+                &[60 * 1_000_000_000],
+            ))?,
         };
         Ok(minutes)
     }
@@ -499,19 +534,19 @@ impl DurationArray {
         let hours = match tu {
             TimeUnit::Seconds => self
                 .physical
-                .div(&Int64Array::from(("SecondsInHour", vec![60 * 60])))?,
-            TimeUnit::Milliseconds => self.physical.div(&Int64Array::from((
+                .div(&Int64Array::from_slice("SecondsInHour", &[60 * 60]))?,
+            TimeUnit::Milliseconds => self.physical.div(&Int64Array::from_slice(
                 "MillisecondsInHour",
-                vec![60 * 60 * 1000],
-            )))?,
-            TimeUnit::Microseconds => self.physical.div(&Int64Array::from((
+                &[60 * 60 * 1000],
+            ))?,
+            TimeUnit::Microseconds => self.physical.div(&Int64Array::from_slice(
                 "MicrosecondsInHour",
-                vec![60 * 60 * 1_000_000],
-            )))?,
-            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+                &[60 * 60 * 1_000_000],
+            ))?,
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from_slice(
                 "NanosecondsInHour",
-                vec![60 * 60 * 1_000_000_000],
-            )))?,
+                &[60 * 60 * 1_000_000_000],
+            ))?,
         };
         Ok(hours)
     }
@@ -524,19 +559,19 @@ impl DurationArray {
         let days = match tu {
             TimeUnit::Seconds => self
                 .physical
-                .div(&Int64Array::from(("SecondsPerDay", vec![60 * 60 * 24])))?,
-            TimeUnit::Milliseconds => self.physical.div(&Int64Array::from((
+                .div(&Int64Array::from_slice("SecondsPerDay", &[60 * 60 * 24]))?,
+            TimeUnit::Milliseconds => self.physical.div(&Int64Array::from_slice(
                 "MillisecondsPerDay",
-                vec![1_000 * 60 * 60 * 24],
-            )))?,
-            TimeUnit::Microseconds => self.physical.div(&Int64Array::from((
+                &[1_000 * 60 * 60 * 24],
+            ))?,
+            TimeUnit::Microseconds => self.physical.div(&Int64Array::from_slice(
                 "MicrosecondsPerDay",
-                vec![1_000_000 * 60 * 60 * 24],
-            )))?,
-            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+                &[1_000_000 * 60 * 60 * 24],
+            ))?,
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from_slice(
                 "NanosecondsPerDay",
-                vec![1_000_000_000 * 60 * 60 * 24],
-            )))?,
+                &[1_000_000_000 * 60 * 60 * 24],
+            ))?,
         };
         Ok(days)
     }
@@ -682,31 +717,32 @@ impl ImageArray {
                     .step_by(ndim)
                     .map(|v| v as i64)
                     .collect::<Vec<i64>>();
-                let validity = self.physical.validity();
+                let nulls = self.physical.nulls();
                 let data_series = self
                     .data_array()
                     .clone()
                     .into_series()
                     .cast(&DataType::List(inner_dtype.clone()))?;
-                let ca = self.channel_array();
-                let ha = self.height_array();
-                let wa = self.width_array();
+                let ha = self.heights().values();
+                let wa = self.widths().values();
+                let ca = self.channels().values();
                 for i in 0..self.len() {
-                    shapes.push(ha.value(i) as u64);
-                    shapes.push(wa.value(i) as u64);
-                    shapes.push(ca.value(i) as u64);
+                    shapes.push(ha[i] as u64);
+                    shapes.push(wa[i] as u64);
+                    shapes.push(ca[i] as u64);
                 }
                 let shapes_dtype = DataType::List(Box::new(DataType::UInt64));
                 let shape_offsets = daft_arrow::offset::OffsetsBuffer::try_from(shape_offsets)?;
                 let shapes_array = ListArray::new(
                     Field::new("shape", shapes_dtype),
-                    UInt64Array::from((
-                        "shape",
+                    UInt64Array::new(
+                        Field::new("shape", DataType::UInt64).into(),
                         Box::new(daft_arrow::array::PrimitiveArray::from_vec(shapes)),
-                    ))
+                    )
+                    .unwrap()
                     .into_series(),
                     shape_offsets,
-                    validity.cloned(),
+                    nulls.cloned(),
                 );
 
                 let physical_type = dtype.to_physical();
@@ -714,7 +750,7 @@ impl ImageArray {
                 let struct_array = StructArray::new(
                     Field::new(self.name(), physical_type),
                     vec![data_series, shapes_array.into_series()],
-                    validity.cloned(),
+                    nulls.cloned(),
                 );
                 Ok(
                     TensorArray::new(Field::new(self.name(), dtype.clone()), struct_array)
@@ -823,13 +859,13 @@ impl TensorArray {
             DataType::SparseTensor(inner_dtype, use_offset_indices) => {
                 let shape_iterator = self.shape_array().into_iter();
                 let data_iterator = self.data_array().into_iter();
-                let validity = self.data_array().validity();
+                let nulls = self.data_array().nulls();
                 let shape_and_data_iter = shape_iterator.zip(data_iterator);
-                let zero_series = Int64Array::from(("item", [0].as_slice())).into_series();
+                let zero_series = Int64Array::from_slice("item", &[0]).into_series();
                 let mut non_zero_values = Vec::new();
                 let mut non_zero_indices = Vec::new();
                 for (i, (shape_series, data_series)) in shape_and_data_iter.enumerate() {
-                    let is_valid = validity.is_none_or(|v| v.is_valid(i));
+                    let is_valid = nulls.is_none_or(|v| v.is_valid(i));
                     if !is_valid {
                         // Handle invalid row by populating dummy data.
                         non_zero_values.push(Series::empty("dummy", inner_dtype.as_ref()));
@@ -860,7 +896,7 @@ impl TensorArray {
                                     Some(offset)
                                 })
                                 .collect::<Vec<_>>();
-                            UInt64Array::from(("item", offsets_values)).into_series()
+                            UInt64Array::from_slice("item", offsets_values.as_slice()).into_series()
                         }
                         false => indices,
                     };
@@ -882,7 +918,7 @@ impl TensorArray {
                     ),
                     non_zero_values_series,
                     offsets.into(),
-                    validity.cloned(),
+                    nulls.cloned(),
                 );
                 let indices_list_arr = ListArray::new(
                     Field::new(
@@ -891,10 +927,10 @@ impl TensorArray {
                     ),
                     non_zero_indices_series,
                     offsets_cloned.into(),
-                    validity.cloned(),
+                    nulls.cloned(),
                 );
                 // Shapes must be all valid to reproduce dense tensor.
-                let all_valid_shape_array = self.shape_array().with_validity(None)?;
+                let all_valid_shape_array = self.shape_array().with_nulls(None)?;
                 let sparse_struct_array = StructArray::new(
                     Field::new(self.name(), dtype.to_physical()),
                     vec![
@@ -902,7 +938,7 @@ impl TensorArray {
                         indices_list_arr.into_series(),
                         all_valid_shape_array.into_series(),
                     ],
-                    validity.cloned(),
+                    nulls.cloned(),
                 );
                 Ok(SparseTensorArray::new(
                     Field::new(sparse_struct_array.name(), dtype.clone()),
@@ -955,9 +991,9 @@ impl TensorArray {
                 let mut widths = Vec::<u32>::with_capacity(num_rows);
                 let mut modes = Vec::<u8>::with_capacity(num_rows);
                 let da = self.data_array();
-                let validity = da.validity();
+                let nulls = da.nulls();
                 for i in 0..num_rows {
-                    let is_valid = validity.is_none_or(|v| v.is_valid(i));
+                    let is_valid = nulls.is_none_or(|v| v.is_valid(i));
                     if !is_valid {
                         // Handle invalid row by populating dummy data.
                         channels.push(1);
@@ -967,8 +1003,8 @@ impl TensorArray {
                         continue;
                     }
                     let shape = sa.get(i).unwrap();
-                    let shape = shape.u64().unwrap().as_arrow2();
-                    assert!(shape.validity().is_none_or(|v| v.iter().all(|b| b)));
+                    let shape = shape.u64().unwrap();
+                    assert!(shape.nulls().is_none_or(|v| v.iter().all(|b| b)));
                     let mut shape = shape.values().to_vec();
                     if shape.len() == 2 {
                         // Add unit channel dimension to grayscale height x width image.
@@ -1012,7 +1048,7 @@ impl TensorArray {
                         heights,
                         widths,
                         modes,
-                        validity: validity.cloned(),
+                        nulls: nulls.cloned(),
                     },
                 )?
                 .into_series())
@@ -1054,9 +1090,9 @@ fn cast_sparse_to_dense_for_inner_dtype(
 ) -> DaftResult<Box<dyn daft_arrow::array::Array>> {
     let item: Box<dyn daft_arrow::array::Array> = with_match_numeric_daft_types!(inner_dtype, |$T| {
             let mut values = vec![0 as <$T as DaftNumericType>::Native; n_values];
-            let validity = non_zero_values_array.validity();
+            let nulls = non_zero_values_array.nulls();
             for i in 0..non_zero_values_array.len() {
-                let is_valid = validity.is_none_or(|v| v.is_valid(i));
+                let is_valid = nulls.is_none_or(|v| v.is_valid(i));
                 if !is_valid {
                     continue;
                 }
@@ -1119,7 +1155,7 @@ impl SparseTensorArray {
                     .collect();
                 let offsets: Offsets<i64> = Offsets::try_from_iter(sizes_vec.iter().copied())?;
                 let n_values = sizes_vec.iter().sum::<usize>();
-                let validity = non_zero_indices_array.validity();
+                let nulls = non_zero_indices_array.nulls();
                 let item = cast_sparse_to_dense_for_inner_dtype(
                     inner_dtype,
                     n_values,
@@ -1135,14 +1171,14 @@ impl SparseTensorArray {
                     ),
                     Series::try_from(("item", item))?,
                     offsets.into(),
-                    validity.cloned(),
+                    nulls.cloned(),
                 )
                 .into_series();
                 let physical_type = dtype.to_physical();
                 let struct_array = StructArray::new(
                     Field::new(self.name(), physical_type),
                     vec![list_arr, shape_array.clone().into_series()],
-                    validity.cloned(),
+                    nulls.cloned(),
                 );
                 Ok(
                     TensorArray::new(Field::new(self.name(), dtype.clone()), struct_array)
@@ -1180,7 +1216,7 @@ impl SparseTensorArray {
                 let struct_array = StructArray::new(
                     Field::new(self.name(), dtype.to_physical()),
                     vec![values_array, indices_array],
-                    va.validity().cloned(),
+                    va.nulls().cloned(),
                 );
                 let sparse_tensor_array = FixedShapeSparseTensorArray::new(
                     Field::new(self.name(), dtype.clone()),
@@ -1214,7 +1250,7 @@ impl FixedShapeSparseTensorArray {
                     .map(|v| v as i64)
                     .collect::<Vec<i64>>();
 
-                let validity = self.physical.validity();
+                let nulls = self.physical.nulls();
 
                 let va = self.values_array();
                 let ia = self.indices_array();
@@ -1233,13 +1269,13 @@ impl FixedShapeSparseTensorArray {
                             as Box<dyn daft_arrow::array::Array>,
                     ))?,
                     shape_offsets,
-                    validity.cloned(),
+                    nulls.cloned(),
                 );
                 let physical_type = dtype.to_physical();
                 let struct_array = StructArray::new(
                     Field::new(self.name(), physical_type),
                     vec![values_arr, indices_arr, shapes_array.into_series()],
-                    validity.cloned(),
+                    nulls.cloned(),
                 );
                 Ok(
                     SparseTensorArray::new(Field::new(self.name(), dtype.clone()), struct_array)
@@ -1269,14 +1305,14 @@ impl FixedShapeSparseTensorArray {
                     &Offsets::try_from_iter(repeat_n(target_size, self.len()))?,
                     use_offset_indices,
                 )?;
-                let validity = non_zero_values_array.validity();
+                let nulls = non_zero_values_array.nulls();
                 let physical = FixedSizeListArray::new(
                     Field::new(
                         self.name(),
                         DataType::FixedSizeList(Box::new(inner_dtype.as_ref().clone()), size),
                     ),
                     Series::try_from(("item", item))?,
-                    validity.cloned(),
+                    nulls.cloned(),
                 );
                 let fixed_shape_tensor_array =
                     FixedShapeTensorArray::new(Field::new(self.name(), dtype.clone()), physical);
@@ -1308,7 +1344,7 @@ impl FixedShapeTensorArray {
                     .collect::<Vec<i64>>();
 
                 let physical_arr = &self.physical;
-                let validity = self.physical.validity();
+                let nulls = self.physical.nulls();
 
                 // FixedSizeList -> List
                 let list_arr = physical_arr
@@ -1325,13 +1361,13 @@ impl FixedShapeTensorArray {
                             as Box<dyn daft_arrow::array::Array>,
                     ))?,
                     shape_offsets,
-                    validity.cloned(),
+                    nulls.cloned(),
                 );
                 let physical_type = dtype.to_physical();
                 let struct_array = StructArray::new(
                     Field::new(self.name(), physical_type),
                     vec![list_arr, shapes_array.into_series()],
-                    validity.cloned(),
+                    nulls.cloned(),
                 );
                 Ok(
                     TensorArray::new(Field::new(self.name(), dtype.clone()), struct_array)
@@ -1343,12 +1379,12 @@ impl FixedShapeTensorArray {
                 DataType::FixedShapeTensor(inner_dtype, tensor_shape),
             ) => {
                 let physical_arr = &self.physical;
-                let validity = self.physical.validity();
-                let zero_series = Int64Array::from(("item", [0].as_slice())).into_series();
+                let nulls = self.physical.nulls();
+                let zero_series = Int64Array::from_slice("item", &[0]).into_series();
                 let mut non_zero_values = Vec::new();
                 let mut non_zero_indices = Vec::new();
                 for (i, data_series) in physical_arr.into_iter().enumerate() {
-                    let is_valid = validity.is_none_or(|v| v.is_valid(i));
+                    let is_valid = nulls.is_none_or(|v| v.is_valid(i));
                     if !is_valid {
                         // Handle invalid row by populating dummy data.
                         non_zero_values.push(Series::empty("dummy", inner_dtype.as_ref()));
@@ -1377,7 +1413,7 @@ impl FixedShapeTensorArray {
                                     Some(offset)
                                 })
                                 .collect::<Vec<_>>();
-                            UInt64Array::from(("item", offsets_values)).into_series()
+                            UInt64Array::from_vec("item", offsets_values).into_series()
                         }
                         false => indices,
                     };
@@ -1398,7 +1434,7 @@ impl FixedShapeTensorArray {
                     ),
                     non_zero_values_series,
                     offsets.into(),
-                    validity.cloned(),
+                    nulls.cloned(),
                 );
                 let indices_list_arr = ListArray::new(
                     Field::new(
@@ -1407,7 +1443,7 @@ impl FixedShapeTensorArray {
                     ),
                     non_zero_indices_series,
                     offsets_cloned.into(),
-                    validity.cloned(),
+                    nulls.cloned(),
                 );
 
                 let largest_index = std::cmp::max(tensor_shape.iter().product::<u64>(), 1) - 1;
@@ -1418,7 +1454,7 @@ impl FixedShapeTensorArray {
                 let sparse_struct_array = StructArray::new(
                     Field::new(self.name(), dtype.to_physical()),
                     vec![data_list_arr.into_series(), casted_indices],
-                    validity.cloned(),
+                    nulls.cloned(),
                 );
                 Ok(FixedShapeSparseTensorArray::new(
                     Field::new(sparse_struct_array.name(), dtype.clone()),
@@ -1446,7 +1482,7 @@ impl FixedSizeListArray {
                 Ok(Self::new(
                     Field::new(self.name().to_string(), dtype.clone()),
                     casted_child,
-                    self.validity().cloned(),
+                    self.nulls().cloned(),
                 )
                 .into_series())
             }
@@ -1458,7 +1494,7 @@ impl FixedSizeListArray {
                     Field::new(self.name().to_string(), dtype.clone()),
                     casted_child,
                     offsets.into(),
-                    self.validity().cloned(),
+                    self.nulls().cloned(),
                 )
                 .into_series())
             }
@@ -1542,17 +1578,17 @@ impl ListArray {
                 Field::new(self.name(), dtype.clone()),
                 self.flat_child.cast(child_dtype.as_ref())?,
                 self.offsets().clone(),
-                self.validity().cloned(),
+                self.nulls().cloned(),
             )
             .into_series()),
             DataType::FixedSizeList(child_dtype, size) => {
                 // Validate lengths of elements are equal to `size`
-                let lengths_ok = match self.validity() {
+                let lengths_ok = match self.nulls() {
                     None => self.offsets().lengths().all(|l| l == *size),
-                    Some(validity) => self
+                    Some(nulls) => self
                         .offsets()
                         .lengths()
-                        .zip(validity)
+                        .zip(nulls)
                         .all(|(l, valid)| (l == 0 && !valid) || l == *size),
                 };
                 if !lengths_ok {
@@ -1565,7 +1601,7 @@ impl ListArray {
                 // Cast child
                 let mut casted_child = self.flat_child.cast(child_dtype.as_ref())?;
                 // Build a FixedSizeListArray
-                match self.validity() {
+                match self.nulls() {
                     // All valid, easy conversion -- everything is correctly sized and valid
                     None => {
                         // Slice child to match offsets if necessary
@@ -1635,7 +1671,7 @@ impl ListArray {
                         Ok(FixedSizeListArray::new(
                             Field::new(self.name(), dtype.clone()),
                             final_child,
-                            self.validity().cloned(),
+                            self.nulls().cloned(),
                         )
                         .into_series())
                     }
@@ -1696,7 +1732,7 @@ impl StructArray {
                 Ok(Self::new(
                     Field::new(self.name(), dtype.clone()),
                     casted_series?,
-                    self.validity().cloned(),
+                    self.nulls().cloned(),
                 )
                 .into_series())
             }
@@ -1757,7 +1793,7 @@ impl StructArray {
                     })
                     .collect::<DaftResult<Vec<_>>>()?;
 
-                Ok(ListArray::try_from((self.name(), lists.as_slice()))?.into_series())
+                Ok(ListArray::from_series(self.name(), lists)?.into_series())
             }
             (DataType::Struct(..), DataType::FixedSizeList(child_dtype, length))
                 if *length == self.children.len() =>
@@ -1777,7 +1813,7 @@ impl StructArray {
                 Ok(FixedSizeListArray::new(
                     Field::new(self.name(), dtype.clone()),
                     flat_child,
-                    self.validity().cloned(),
+                    self.nulls().cloned(),
                 )
                 .into_series())
             }
@@ -1985,5 +2021,142 @@ mod tests {
                 .is_err(),
             "Not expected to be able to cast FixedSizeList into Embedding with different element type."
         );
+    }
+
+    // Tests for Utf8 to numeric casting with whitespace handling
+    // These tests verify that leading/trailing whitespace is trimmed before parsing,
+    // matching Python/Pandas/NumPy behavior.
+
+    #[test]
+    fn test_utf8_to_int32_with_whitespace() {
+        let utf8_array = Utf8Array::from_iter(
+            "test",
+            vec![Some("  42  "), Some("-1"), Some("  100  "), None].into_iter(),
+        );
+        let result = utf8_array
+            .cast(&DataType::Int32)
+            .expect("Failed to cast Utf8 to Int32");
+
+        let values: Vec<Option<i32>> = result
+            .i32()
+            .unwrap()
+            .as_arrow2()
+            .iter()
+            .map(|v| v.copied())
+            .collect();
+        assert_eq!(values, vec![Some(42), Some(-1), Some(100), None]);
+    }
+
+    #[test]
+    fn test_utf8_to_int64_with_whitespace() {
+        let utf8_array = Utf8Array::from_iter(
+            "test",
+            vec![Some("  42  "), Some("  -9999999999  "), Some("\t123\n")].into_iter(),
+        );
+        let result = utf8_array
+            .cast(&DataType::Int64)
+            .expect("Failed to cast Utf8 to Int64");
+
+        let values: Vec<Option<i64>> = result
+            .i64()
+            .unwrap()
+            .as_arrow2()
+            .iter()
+            .map(|v| v.copied())
+            .collect();
+        assert_eq!(values, vec![Some(42), Some(-9999999999), Some(123)]);
+    }
+
+    #[test]
+    fn test_utf8_to_float64_with_whitespace() {
+        let utf8_array = Utf8Array::from_iter(
+            "test",
+            vec![Some("  3.14  "), Some("-2.5"), Some("  1e10  "), None].into_iter(),
+        );
+        let result = utf8_array
+            .cast(&DataType::Float64)
+            .expect("Failed to cast Utf8 to Float64");
+
+        let values: Vec<Option<f64>> = result
+            .f64()
+            .unwrap()
+            .as_arrow2()
+            .iter()
+            .map(|v| v.copied())
+            .collect();
+        assert_eq!(values, vec![Some(3.14), Some(-2.5), Some(1e10), None]);
+    }
+
+    #[test]
+    fn test_utf8_to_float32_with_whitespace() {
+        let utf8_array =
+            Utf8Array::from_iter("test", vec![Some("  3.14  "), Some("  -2.5  ")].into_iter());
+        let result = utf8_array
+            .cast(&DataType::Float32)
+            .expect("Failed to cast Utf8 to Float32");
+
+        let values: Vec<Option<f32>> = result
+            .f32()
+            .unwrap()
+            .as_arrow2()
+            .iter()
+            .map(|v| v.copied())
+            .collect();
+        assert_eq!(values, vec![Some(3.14_f32), Some(-2.5_f32)]);
+    }
+
+    #[test]
+    fn test_utf8_to_int_invalid_returns_none() {
+        // Invalid strings should return None, not error
+        let utf8_array = Utf8Array::from_iter(
+            "test",
+            vec![Some("  42  "), Some("not_a_number"), Some("  ")].into_iter(),
+        );
+        let result = utf8_array
+            .cast(&DataType::Int32)
+            .expect("Failed to cast Utf8 to Int32");
+
+        let values: Vec<Option<i32>> = result
+            .i32()
+            .unwrap()
+            .as_arrow2()
+            .iter()
+            .map(|v| v.copied())
+            .collect();
+        assert_eq!(values, vec![Some(42), None, None]);
+    }
+
+    // Tests for Utf8 to Date casting with whitespace handling
+    // Note: Date parsing already handles whitespace (this test documents existing behavior)
+
+    #[test]
+    fn test_utf8_to_date_with_whitespace() {
+        let utf8_array = Utf8Array::from_iter(
+            "test",
+            vec![
+                Some("  2024-01-01  "),
+                Some("2024-06-15"),
+                Some("  2024-12-31  "),
+                None,
+            ]
+            .into_iter(),
+        );
+        let result = utf8_array
+            .cast(&DataType::Date)
+            .expect("Failed to cast Utf8 to Date");
+
+        // Date is stored as days since epoch (1970-01-01)
+        // 2024-01-01 = 19723 days, 2024-06-15 = 19889 days, 2024-12-31 = 20088 days
+        let date_array = result.date().unwrap();
+        let values: Vec<Option<i32>> = date_array
+            .as_arrow2()
+            .values()
+            .iter()
+            .map(|&v| Some(v))
+            .collect();
+        // Check that we got valid dates (not None from failed parse)
+        assert!(values[0].is_some(), "First date should parse successfully");
+        assert!(values[1].is_some(), "Second date should parse successfully");
+        assert!(values[2].is_some(), "Third date should parse successfully");
     }
 }

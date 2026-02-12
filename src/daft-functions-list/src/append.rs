@@ -19,7 +19,11 @@ impl ScalarUDF for ListAppend {
     fn name(&self) -> &'static str {
         "list_append"
     }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let input = inputs.required((0, "input"))?;
         let other = inputs.required((1, "other"))?;
 
@@ -56,7 +60,7 @@ impl ScalarUDF for ListAppend {
         let input_exploded = input.to_exploded_field()?;
 
         ensure!(
-            input_exploded.dtype == other.dtype,
+            input_exploded.dtype == other.dtype || other.dtype.is_null(),
             TypeError: "Cannot append value of type {} to list of type {}",
             other.dtype,
             input_exploded.dtype

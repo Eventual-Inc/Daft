@@ -11,9 +11,9 @@ use common_display::{DisplayAs, DisplayLevel, tree::TreeDisplay};
 use common_error::{DaftError, DaftResult};
 use common_file_formats::{FileFormatConfig, ParquetSourceConfig};
 use common_metrics::ops::NodeType;
-use common_runtime::{combine_stream, get_compute_pool_num_threads, get_io_runtime};
+use common_runtime::{JoinSet, combine_stream, get_compute_pool_num_threads, get_io_runtime};
 use common_scan_info::{Pushdowns, ScanTaskLike};
-use daft_core::prelude::{AsArrow, Int64Array, SchemaRef, Utf8Array};
+use daft_core::prelude::{Int64Array, SchemaRef, Utf8Array};
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{AggExpr, Expr};
 use daft_io::{GetRange, IOStatsRef};
@@ -27,7 +27,6 @@ use snafu::ResultExt;
 use tracing::instrument;
 
 use crate::{
-    TaskSet,
     channel::{Sender, create_channel},
     pipeline::NodeName,
     sources::source::{Source, SourceStream},
@@ -123,7 +122,7 @@ impl ScanTaskSource {
         let num_parallel_tasks = self.num_parallel_tasks;
 
         io_runtime.spawn(async move {
-            let mut task_set = TaskSet::new();
+            let mut task_set = JoinSet::new();
             let mut scan_task_and_sender_iter = scan_tasks.into_iter().zip(senders.into_iter());
 
             // Start initial batch of parallel tasks
@@ -176,11 +175,11 @@ impl Source for ScanTaskSource {
         let (senders, receivers) = match maintain_order {
             // If we need to maintain order, we need to create a channel for each scan task
             true => (0..self.scan_tasks.len())
-                .map(|_| create_channel::<Arc<MicroPartition>>(0))
+                .map(|_| create_channel::<Arc<MicroPartition>>(1))
                 .unzip(),
             // If we don't need to maintain order, we can use a single channel for all scan tasks
             false => {
-                let (tx, rx) = create_channel(0);
+                let (tx, rx) = create_channel(1);
                 (vec![tx; self.scan_tasks.len()], vec![rx])
             }
         };
@@ -389,12 +388,17 @@ async fn get_delete_map(
                 let positions = get_column_by_name("pos")?.downcast::<Int64Array>()?;
 
                 for (file, pos) in file_paths
-                    .as_arrow2()
-                    .values_iter()
-                    .zip(positions.as_arrow2().values_iter())
+                    .into_iter()
+                    .zip(positions.into_iter())
+                    .map(|(file, pos)| {
+                        (
+                            file.expect("file should not be null in iceberg delete files"),
+                            *pos.expect("pos should not be null in iceberg delete files"),
+                        )
+                    })
                 {
                     if delete_map.contains_key(file) {
-                        delete_map.get_mut(file).unwrap().push(*pos);
+                        delete_map.get_mut(file).unwrap().push(pos);
                     }
                 }
             }
@@ -414,7 +418,7 @@ fn flatten_receivers_into_stream(
             .map(Ok);
 
     // Handle the background task completion and forward any errors
-    combine_stream(Box::pin(flattened_receivers), background_task)
+    combine_stream(flattened_receivers, background_task)
 }
 
 async fn forward_scan_task_stream(

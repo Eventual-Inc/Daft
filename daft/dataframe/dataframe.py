@@ -20,7 +20,15 @@ from typing import TYPE_CHECKING, Any, Concatenate, Literal, ParamSpec, TypeVar,
 from daft.api_annotations import DataframePublicAPI
 from daft.context import get_context
 from daft.convert import InputListType
-from daft.daft import DistributedPhysicalPlan, FileFormat, IOConfig, JoinStrategy, JoinType, WriteMode
+from daft.daft import (
+    DistributedPhysicalPlan,
+    FileFormat,
+    IOConfig,
+    JoinStrategy,
+    JoinType,
+    PyFormatSinkOption,
+    WriteMode,
+)
 from daft.dataframe.display import MermaidOptions
 from daft.dataframe.preview import Preview, PreviewAlign, PreviewColumn, PreviewFormat, PreviewFormatter
 from daft.datatype import DataType
@@ -28,7 +36,7 @@ from daft.errors import ExpressionTypeError
 from daft.execution.native_executor import NativeExecutor
 from daft.expressions import Expression, ExpressionsProjection, col, lit
 from daft.logical.builder import LogicalPlanBuilder
-from daft.recordbatch import MicroPartition
+from daft.recordbatch import MicroPartition, RecordBatch
 from daft.runners import get_or_create_runner
 from daft.runners.partitioning import (
     LocalPartitionSet,
@@ -37,7 +45,13 @@ from daft.runners.partitioning import (
     PartitionSet,
     PartitionT,
 )
-from daft.utils import ColumnInputType, ManyColumnsInputType, column_inputs_to_expressions, in_notebook
+from daft.utils import (
+    ColumnInputType,
+    ManyColumnsInputType,
+    column_input_to_expression,
+    column_inputs_to_expressions,
+    in_notebook,
+)
 
 if TYPE_CHECKING:
     import dask
@@ -50,6 +64,7 @@ if TYPE_CHECKING:
 
     from daft.io import DataSink
     from daft.io.catalog import DataCatalogTable
+    from daft.io.lance.rest_config import LanceRestConfig
     from daft.io.sink import WriteResultType
     from daft.unity_catalog import UnityCatalogTable
 
@@ -120,6 +135,7 @@ class DataFrame:
         self.__builder = builder
         self._result_cache: PartitionCacheEntry | None = None
         self._preview = Preview(partition=None, total_rows=None)
+        self._metrics: RecordBatch | None = None
         self._num_preview_rows = get_context().daft_execution_config.num_preview_rows
 
     @property
@@ -154,6 +170,14 @@ class DataFrame:
             return None
         else:
             return self._result_cache.value
+
+    @property
+    def metrics(self) -> RecordBatch | None:
+        if self._result_cache is None:
+            raise ValueError("Metrics are not available until the DataFrame has been materialized")
+        else:
+            # TODO: Always None from Ray runner
+            return self._metrics
 
     def pipe(
         self,
@@ -805,7 +829,7 @@ class DataFrame:
 
         cols: list[Expression] | None = None
         if partition_cols is not None:
-            cols = self.__column_input_to_expression(tuple(partition_cols))
+            cols = column_inputs_to_expressions(tuple(partition_cols))
 
         builder = self._builder.write_tabular(
             root_dir=root_dir,
@@ -824,6 +848,7 @@ class DataFrame:
         result_df = DataFrame(write_df._builder)
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
+        result_df._metrics = write_df._metrics
         return result_df
 
     @DataframePublicAPI
@@ -833,16 +858,28 @@ class DataFrame:
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
+        delimiter: str | None = None,
+        quote: str | None = None,
+        escape: str | None = None,
+        header: bool | None = True,
+        date_format: str | None = None,
+        timestamp_format: str | None = None,
     ) -> "DataFrame":
-        """Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written.
+        r"""Writes the DataFrame as CSV files, returning a new DataFrame with paths to the files that were written.
 
         Files will be written to `<root_dir>/*` with randomly generated UUIDs as the file names.
 
         Args:
-            root_dir (str): root file path to write parquet files to.
+            root_dir (str): root file path to write CSV files to.
             write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
+            delimiter (Optional[str], optional): Single-character field delimiter (default `,`).
+            quote (Optional[str], optional): Single-character quote used around fields containing delimiters default `"`.
+            escape (Optional[str], optional): Single-character escape for special characters default `\\`.
+            header (Optional[bool], optional): Whether to write a header row with column names, default True.
+            date_format (Optional[str], optional): Format string for date columns. Uses chrono strftime format (e.g., "%Y-%m-%d", "%d/%m/%Y"). Defaults to None (ISO 8601 format).
+            timestamp_format (Optional[str], optional): Format string for timestamp columns. Uses chrono strftime format (e.g., "%Y-%m-%d %H:%M:%S", "%+"). Defaults to None (ISO 8601 format).
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -850,10 +887,35 @@ class DataFrame:
         Note:
             This call is **blocking** and will execute the DataFrame when called
 
+            **Timezone handling**: For timezone-aware timestamp columns, the timestamps are converted
+            to the target timezone before formatting. For example, a timestamp stored as UTC but with
+            timezone "America/New_York" will be formatted in Eastern Time, not UTC. If the timezone
+            string is invalid, an error will be raised.
+
         Examples:
+            Basic usage:
+
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
             >>> df.write_csv("output_dir", write_mode="overwrite")  # doctest: +SKIP
+
+            Custom date format (e.g., DD/MM/YYYY):
+
+            >>> import datetime
+            >>> df = daft.from_pydict({"date": [datetime.date(2024, 1, 15)]})
+            >>> df.write_csv("output_dir", date_format="%d/%m/%Y")  # doctest: +SKIP
+            # Output: 15/01/2024
+
+            Custom timestamp format:
+
+            >>> df = daft.from_pydict({"ts": [datetime.datetime(2024, 1, 15, 10, 30, 45)]})
+            >>> df.write_csv("output_dir", timestamp_format="%Y-%m-%d %H:%M:%S")  # doctest: +SKIP
+            # Output: 2024-01-15 10:30:45
+
+            ISO 8601 / RFC 3339 timestamp format:
+
+            >>> df.write_csv("output_dir", timestamp_format="%+")  # doctest: +SKIP
+            # Output: 2024-01-15T10:30:45+00:00
 
         Tip:
             See also [`df.write_parquet()`][daft.DataFrame.write_parquet] and [`df.write_json()`][daft.DataFrame.write_json]
@@ -871,13 +933,22 @@ class DataFrame:
 
         cols: list[Expression] | None = None
         if partition_cols is not None:
-            cols = self.__column_input_to_expression(tuple(partition_cols))
+            cols = column_inputs_to_expressions(tuple(partition_cols))
 
+        file_format_option = PyFormatSinkOption.csv(
+            delimiter=delimiter,
+            quote=quote,
+            escape=escape,
+            header=header,
+            date_format=date_format,
+            timestamp_format=timestamp_format,
+        )
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
             write_mode=WriteMode.from_str(write_mode),
             file_format=FileFormat.Csv,
+            file_format_option=file_format_option,
             io_config=io_config,
         )
 
@@ -890,6 +961,7 @@ class DataFrame:
         result_df = DataFrame(write_df._builder)
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
+        result_df._metrics = write_df._metrics
         return result_df
 
     @DataframePublicAPI
@@ -899,6 +971,7 @@ class DataFrame:
         write_mode: Literal["append", "overwrite", "overwrite-partitions"] = "append",
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
+        ignore_null_fields: bool | None = False,
     ) -> "DataFrame":
         """Writes the DataFrame as JSON files, returning a new DataFrame with paths to the files that were written.
 
@@ -909,6 +982,7 @@ class DataFrame:
             write_mode (str, optional): Operation mode of the write. `append` will add new data, `overwrite` will replace the contents of the root directory with new data. `overwrite-partitions` will replace only the contents in the partitions that are being written to. Defaults to "append".
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
+            ignore_null_fields (Optional[bool], optional): Whether to ignore fields with null values when writing JSON. Defaults to False.
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -935,13 +1009,15 @@ class DataFrame:
 
         cols: list[Expression] | None = None
         if partition_cols is not None:
-            cols = self.__column_input_to_expression(tuple(partition_cols))
+            cols = column_inputs_to_expressions(tuple(partition_cols))
 
+        file_format_option = PyFormatSinkOption.json(ignore_null_fields=ignore_null_fields)
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
             write_mode=WriteMode.from_str(write_mode),
             file_format=FileFormat.Json,
+            file_format_option=file_format_option,
             io_config=io_config,
         )
         # Block and write, then retrieve data
@@ -953,11 +1029,16 @@ class DataFrame:
         result_df = DataFrame(write_df._builder)
         result_df._result_cache = write_df._result_cache
         result_df._preview = write_df._preview
+        result_df._metrics = write_df._metrics
         return result_df
 
     @DataframePublicAPI
     def write_iceberg(
-        self, table: "pyiceberg.table.Table", mode: str = "append", io_config: IOConfig | None = None
+        self,
+        table: "pyiceberg.table.Table",
+        mode: str = "append",
+        io_config: IOConfig | None = None,
+        snapshot_properties: dict[str, str] | None = None,
     ) -> "DataFrame":
         """Writes the DataFrame to an [Iceberg](https://iceberg.apache.org/docs/nightly/) table, returning a new DataFrame with the operations that occurred.
 
@@ -967,6 +1048,7 @@ class DataFrame:
             table (pyiceberg.table.Table): Destination [PyIceberg Table](https://py.iceberg.apache.org/reference/pyiceberg/table/#pyiceberg.table.Table) to write dataframe to.
             mode (str, optional): Operation mode of the write. `append` or `overwrite` Iceberg Table. Defaults to `append`.
             io_config (IOConfig, optional): A custom IOConfig to use when accessing Iceberg object storage data. If provided, configurations set in `table` are ignored.
+            snapshot_properties (dict[str, str], optional): Optional snapshot properties to set while writing to the table.
 
         Returns:
             DataFrame: The operations that occurred with this write.
@@ -994,6 +1076,10 @@ class DataFrame:
 
         if parse(pyiceberg.__version__) < parse("0.6.0"):
             raise ValueError(f"Write Iceberg is only supported on pyiceberg>=0.6.0, found {pyiceberg.__version__}")
+
+        # Snapshot properties are only supported on pyiceberg >= 0.7.0. See https://github.com/apache/iceberg-python/issues/367
+        if snapshot_properties and parse(pyiceberg.__version__) < parse("0.7.0"):
+            raise ValueError("Snapshot properties are only supported on pyiceberg>=0.7.0")
 
         if parse(pa.__version__) < parse("12.0.1"):
             raise ValueError(
@@ -1063,11 +1149,12 @@ class DataFrame:
                 property_as_bool = PropertyUtil.property_as_bool
 
             tx = table.transaction()
+            snapshot_properties = snapshot_properties or {}
 
             if mode == "overwrite":
-                tx.delete(delete_filter=ALWAYS_TRUE)
+                tx.delete(delete_filter=ALWAYS_TRUE, snapshot_properties=snapshot_properties)
 
-            update_snapshot = tx.update_snapshot()
+            update_snapshot = tx.update_snapshot(snapshot_properties=snapshot_properties)
 
             manifest_merge_enabled = mode == "append" and property_as_bool(
                 tx.table_metadata.properties,
@@ -1114,7 +1201,9 @@ class DataFrame:
 
         # NOTE: We are losing the history of the plan here.
         # This is due to the fact that the logical plan of the write_iceberg returns datafiles but we want to return the above data
-        return from_pydict(with_operations)
+        df = from_pydict(with_operations)
+        df._metrics = write_df._metrics
+        return df
 
     @DataframePublicAPI
     def write_deltalake(
@@ -1366,7 +1455,7 @@ class DataFrame:
                 "file_name": pa.array([os.path.basename(fp) for fp in paths], type=pa.string()),
             }
         )
-
+        with_operations._metrics = write_df._metrics
         return with_operations
 
     @DataframePublicAPI
@@ -1398,7 +1487,9 @@ class DataFrame:
         # TODO(desmond): Connect the old and new logical plan builders so that a .explain() shows the
         # plan from the source all the way to the sink to the sink's results. In theory we can do this
         # for all other sinks too.
-        return DataFrame._from_micropartitions(micropartition)
+        df = DataFrame._from_micropartitions(micropartition)
+        df._metrics = write_df._metrics
+        return df
 
     @DataframePublicAPI
     def write_lance(
@@ -1406,6 +1497,7 @@ class DataFrame:
         uri: str | pathlib.Path,
         mode: Literal["create", "append", "overwrite", "merge"] = "create",
         io_config: IOConfig | None = None,
+        rest_config: "LanceRestConfig | None" = None,
         schema: Union[Schema, "pyarrow.Schema"] | None = None,
         left_on: str | None = None,
         right_on: str | None = None,
@@ -1414,13 +1506,16 @@ class DataFrame:
         """Writes the DataFrame to a Lance table.
 
         Args:
-          uri: The URI of the Lance table to write to
+          uri: The URI of the Lance table to write to. Supports:
+            - File paths: "/path/to/lance/data/" or cloud URIs like "s3://bucket/path"
+            - REST URIs: "rest://namespace/table_name" (requires rest_config)
           mode: The write mode. One of "create", "append", "overwrite", or "merge".
           - "create" will create the dataset if it does not exist, otherwise raise an error.
           - "append" will append to the existing dataset if it exists, otherwise raise an error.
           - "overwrite" will overwrite the existing dataset if it exists, otherwise raise an error.
           - "merge" will add new columns to the existing dataset.
           io_config (IOConfig, optional): configurations to use when interacting with remote storage.
+          rest_config (RestConfig, optional): Configuration for REST-based Lance services. Required when using REST URIs.
           schema (Schema | pyarrow.Schema, optional): Desired schema to enforce during write.
             - If omitted, Daft will use the DataFrame's current schema.
             - If a pyarrow.Schema is provided, Daft will enforce the field order, types, and nullability
@@ -1485,11 +1580,32 @@ class DataFrame:
         """
         from daft import context as _context
         from daft.io.lance.lance_data_sink import LanceDataSink
+        from daft.io.lance.rest_config import parse_lance_uri
         from daft.io.object_store_options import io_config_to_storage_options
 
         if schema is None:
             schema = self.schema()
 
+        # Parse URI to determine if it's REST-based or file-based
+        uri_str = str(uri)
+        uri_type, uri_info = parse_lance_uri(uri_str)
+
+        if uri_type == "rest":
+            # REST-based Lance table
+            if rest_config is None:
+                raise ValueError("rest_config is required when using REST URIs (rest://namespace/table_name)")
+
+            # For REST, we handle writes differently
+            return self._write_lance_rest(
+                rest_config=rest_config,
+                namespace=uri_info["namespace"],
+                table_name=uri_info["table_name"],
+                mode=mode,
+                schema=schema,
+                **kwargs,
+            )
+
+        # File-based Lance table (existing logic)
         # Non-merge modes do not support schema evolution or custom join keys
         if mode != "merge":
             sanitized_kwargs = {k: v for k, v in kwargs.items() if k not in ("left_on", "right_on")}
@@ -1588,6 +1704,48 @@ class DataFrame:
                 }
             )
         )
+
+    def _write_lance_rest(
+        self,
+        rest_config: "LanceRestConfig",
+        namespace: str,
+        table_name: str,
+        mode: str,
+        schema: Union[Schema, "pyarrow.Schema"] | None = None,
+        **kwargs: Any,
+    ) -> "DataFrame":
+        """Write DataFrame to Lance table via REST API."""
+        from daft.io.lance.rest_write import write_lance_rest
+        from daft.recordbatch import MicroPartition
+
+        # Collect the DataFrame to get all data
+        collected = self.collect()
+
+        # Convert to MicroPartition - handle case where there are multiple partitions
+        if collected._result:
+            # Get all micropartitions from the result
+            micropartitions = [result.micropartition() for result in collected._result.values()]
+            # Concatenate all micropartitions if there are multiple
+            if len(micropartitions) > 1:
+                mp = MicroPartition.concat(micropartitions)
+            else:
+                mp = micropartitions[0]
+        else:
+            mp = MicroPartition.empty()
+
+        # Write via REST API
+        result_mp = write_lance_rest(
+            mp=mp,
+            rest_config=rest_config,
+            namespace=namespace,
+            table_name=table_name,
+            mode=mode,
+            schema=schema._arrow_schema if schema is not None and hasattr(schema, "_arrow_schema") else None,
+            **kwargs,
+        )
+
+        # Return result as DataFrame
+        return DataFrame._from_micropartitions(result_mp)
 
     @DataframePublicAPI
     def write_turbopuffer(
@@ -1770,17 +1928,6 @@ class DataFrame:
     ###
     # DataFrame operations
     ###
-
-    def __column_input_to_expression(self, columns: Iterable[ColumnInputType]) -> list[Expression]:
-        # TODO(Kevin): remove this method and use _column_inputs_to_expressions
-        result = []
-        for c in columns:
-            if isinstance(c, str):
-                result.append(col(c))
-            else:
-                assert isinstance(c, Expression), f"Expected Expression or str, got {type(c)}"
-                result.append(c)
-        return result
 
     def _wildcard_inputs_to_expressions(self, columns: tuple[ManyColumnsInputType, ...]) -> list[Expression]:
         """Handles wildcard argument column inputs."""
@@ -2070,7 +2217,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 2 of 2 rows)
         """
-        builder = self._builder.distinct(self.__column_input_to_expression(on))
+        builder = self._builder.distinct(column_inputs_to_expressions(on))
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -2567,7 +2714,7 @@ class DataFrame:
         if nulls_first is None:
             nulls_first = desc
 
-        sort_by = self.__column_input_to_expression(by)
+        sort_by = column_inputs_to_expressions(by)
 
         builder = self._builder.sort(sort_by=sort_by, descending=desc, nulls_first=nulls_first)
         return DataFrame(builder)
@@ -2727,7 +2874,7 @@ class DataFrame:
             )
             builder = self._builder.random_shuffle(num)
         else:
-            builder = self._builder.hash_repartition(num, self.__column_input_to_expression(partition_by))
+            builder = self._builder.hash_repartition(num, column_inputs_to_expressions(partition_by))
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -2862,8 +3009,8 @@ class DataFrame:
         elif join_strategy == JoinStrategy.Broadcast and join_type == JoinType.Outer:
             raise ValueError("Broadcast join does not support outer joins")
 
-        left_exprs = self.__column_input_to_expression(tuple(left_on) if isinstance(left_on, list) else (left_on,))
-        right_exprs = self.__column_input_to_expression(tuple(right_on) if isinstance(right_on, list) else (right_on,))
+        left_exprs = column_inputs_to_expressions(tuple(left_on) if isinstance(left_on, list) else (left_on,))
+        right_exprs = column_inputs_to_expressions(tuple(right_on) if isinstance(right_on, list) else (right_on,))
         builder = self._builder.join(
             other._builder,
             left_on=left_exprs,
@@ -2970,9 +3117,9 @@ class DataFrame:
 
         """
         if len(cols) == 0:
-            columns = self.__column_input_to_expression(self.column_names)
+            columns = column_inputs_to_expressions(self.column_names)
         else:
-            columns = self.__column_input_to_expression(cols)
+            columns = column_inputs_to_expressions(cols)
         float_columns = [
             column
             for column in columns
@@ -3028,13 +3175,13 @@ class DataFrame:
 
         """
         if len(cols) == 0:
-            columns = self.__column_input_to_expression(self.column_names)
+            columns = column_inputs_to_expressions(self.column_names)
         else:
-            columns = self.__column_input_to_expression(cols)
+            columns = column_inputs_to_expressions(cols)
         return self.where(~reduce(lambda x, y: x | y, (x.is_null() for x in columns)))
 
     @DataframePublicAPI
-    def explode(self, *columns: ColumnInputType) -> "DataFrame":
+    def explode(self, *columns: ColumnInputType, index_column: ColumnInputType | None = None) -> "DataFrame":
         """Explodes a List column, where every element in each row's List becomes its own row, and all other columns in the DataFrame are duplicated across rows.
 
         If multiple columns are specified, each row must contain the same number of items in each specified column.
@@ -3043,6 +3190,7 @@ class DataFrame:
 
         Args:
             *columns (ColumnInputType): columns to explode
+            index_column (ColumnInputType | None): optional name for an index column that tracks the position of each element within its original list
 
         Returns:
             DataFrame: DataFrame with exploded column
@@ -3126,9 +3274,32 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 5 of 5 rows)
 
+            Example with index_column to track element positions:
+
+            >>> df3 = daft.from_pydict({"a": [[1, 2], [3, 4, 3]]})
+            >>> df3.explode("a", index_column="idx").collect()
+            ╭───────┬────────╮
+            │ a     ┆ idx    │
+            │ ---   ┆ ---    │
+            │ Int64 ┆ UInt64 │
+            ╞═══════╪════════╡
+            │ 1     ┆ 0      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 2     ┆ 1      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ 0      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 4     ┆ 1      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 3     ┆ 2      │
+            ╰───────┴────────╯
+            <BLANKLINE>
+            (Showing first 5 of 5 rows)
+
         """
-        parsed_exprs = self.__column_input_to_expression(columns)
-        builder = self._builder.explode(parsed_exprs)
+        parsed_exprs = column_inputs_to_expressions(columns)
+        index_col_name = column_input_to_expression(index_column).name() if index_column is not None else None
+        builder = self._builder.explode(parsed_exprs, index_col_name)
         return DataFrame(builder)
 
     @DataframePublicAPI
@@ -3633,13 +3804,16 @@ class DataFrame:
         return self._apply_agg_fn(Expression.list_agg_distinct, cols)
 
     @DataframePublicAPI
-    def agg_concat(self, *cols: ColumnInputType) -> "DataFrame":
-        """Performs a global list concatenation agg on the DataFrame.
+    def agg_concat(self, *cols: ColumnInputType, delimiter: str | None = None) -> "DataFrame":
+        """Performs a global concatenation agg on the DataFrame.
 
         Args:
-            *cols (Union[str, Expression]): columns that are lists to concatenate
+            *cols (Union[str, Expression]): columns that are lists or strings to concatenate
+            delimiter: Optional delimiter to insert between concatenated string values. Only supported for string
+                columns.
+
         Returns:
-            DataFrame: Globally aggregated list. Should be a single row.
+            DataFrame: Globally aggregated list or string. Should be a single row.
 
         Examples:
             >>> import daft
@@ -3657,7 +3831,7 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 1 of 1 rows)
         """
-        return self._apply_agg_fn(Expression.string_agg, cols)
+        return self._apply_agg_fn(lambda expr: Expression.string_agg(expr, delimiter=delimiter), cols)
 
     @DataframePublicAPI
     def agg(self, *to_agg: Expression | Iterable[Expression]) -> "DataFrame":
@@ -4090,7 +4264,7 @@ class DataFrame:
     def _materialize_results(self) -> None:
         """Materializes the results of for this DataFrame and hold a pointer to the results."""
         if self._result is None:
-            self._result_cache = get_or_create_runner().run(self._builder)
+            self._result_cache, self._metrics = get_or_create_runner().run(self._builder)
             result = self._result
             assert result is not None
             result.wait()
@@ -4857,13 +5031,13 @@ class GroupedDataFrame:
         """
         return self.df._apply_agg_fn(Expression.list_agg_distinct, cols, self.group_by)
 
-    def string_agg(self, *cols: ColumnInputType) -> DataFrame:
+    def string_agg(self, *cols: ColumnInputType, delimiter: str | None = None) -> DataFrame:
         """Performs grouped string concat on this GroupedDataFrame.
 
         Returns:
             DataFrame: DataFrame with grouped string concatenated per column.
         """
-        return self.df._apply_agg_fn(Expression.string_agg, cols, self.group_by)
+        return self.df._apply_agg_fn(lambda expr: Expression.string_agg(expr, delimiter=delimiter), cols, self.group_by)
 
     def agg(self, *to_agg: Expression | Iterable[Expression]) -> DataFrame:
         """Perform aggregations on this GroupedDataFrame. Allows for mixed aggregations.

@@ -4,7 +4,7 @@ use daft_dsl::{
     AggExpr, ApproxPercentileParams, ExprRef, SketchType, bound_col,
     expr::bound_expr::{BoundAggExpr, BoundExpr},
     functions::agg::merge_mean,
-    lit,
+    lit, null_lit,
 };
 use daft_functions::numeric::sqrt;
 use daft_functions_list::{count_distinct, distinct};
@@ -122,7 +122,7 @@ pub fn populate_aggregation_stages_bound_with_schema(
             }
             AggExpr::CountDistinct(expr) => {
                 let set_agg_col = first_stage!(AggExpr::Set(expr.clone()));
-                let concat_col = second_stage!(AggExpr::Concat(set_agg_col));
+                let concat_col = second_stage!(AggExpr::Concat(set_agg_col, None));
                 final_stage(count_distinct(concat_col));
             }
             AggExpr::Sum(expr) => {
@@ -190,6 +190,40 @@ pub fn populate_aggregation_stages_bound_with_schema(
 
                 final_stage(result);
             }
+            AggExpr::Var(expr, ddof) => {
+                // The variance calculation we're performing here is:
+                // var(X, ddof) = (E(X^2) - E(X)^2) * n / (n - ddof)
+                // where X is the sub_expr.
+                //
+                // First stage, we compute `sum(X^2)`, `sum(X)` and `count(X)`.
+                // Second stage, we get global versions: `global_sqsum`, `global_sum`, `global_count`.
+                // In the final projection, we compute:
+                // ((global_sqsum / global_count) - (global_sum / global_count) ^ 2) * global_count / (global_count - ddof)
+
+                let expr = expr.clone().cast(&DataType::Float64);
+
+                let sum_col = first_stage!(AggExpr::Sum(expr.clone()));
+                let sq_sum_col = first_stage!(AggExpr::Sum(expr.clone().mul(expr.clone())));
+                let count_col = first_stage!(AggExpr::Count(expr, CountMode::Valid));
+
+                let global_sum_col = second_stage!(AggExpr::Sum(sum_col));
+                let global_sq_sum_col = second_stage!(AggExpr::Sum(sq_sum_col));
+                let global_count_col = second_stage!(AggExpr::Sum(count_col));
+
+                // Population variance = (sqsum/n - (sum/n)^2)
+                let n = global_count_col.clone().cast(&DataType::Float64);
+                let sq_mean = global_sq_sum_col.div(n.clone());
+                let mean = global_sum_col.clone().div(n.clone());
+                let mean_sq = mean.clone().mul(mean);
+                let pop_var = sq_mean.sub(mean_sq);
+
+                // Adjust for ddof: sample_var = pop_var * n / (n - ddof)
+                let ddof_expr = lit(*ddof as f64);
+                let adjusted = pop_var.mul(n.clone()).div(n.clone().sub(ddof_expr.clone()));
+                let result = n.clone().lt_eq(ddof_expr).if_else(null_lit(), adjusted);
+
+                final_stage(result);
+            }
             AggExpr::Min(expr) => {
                 let min_col = first_stage!(AggExpr::Min(expr.clone()));
                 let global_min_col = second_stage!(AggExpr::Min(min_col));
@@ -217,17 +251,18 @@ pub fn populate_aggregation_stages_bound_with_schema(
             }
             AggExpr::List(expr) => {
                 let list_col = first_stage!(AggExpr::List(expr.clone()));
-                let concat_col = second_stage!(AggExpr::Concat(list_col));
+                let concat_col = second_stage!(AggExpr::Concat(list_col, None));
                 final_stage(concat_col);
             }
             AggExpr::Set(expr) => {
                 let set_col = first_stage!(AggExpr::Set(expr.clone()));
-                let concat_col = second_stage!(AggExpr::Concat(set_col));
+                let concat_col = second_stage!(AggExpr::Concat(set_col, None));
                 final_stage(distinct(concat_col));
             }
-            AggExpr::Concat(expr) => {
-                let concat_col = first_stage!(AggExpr::Concat(expr.clone()));
-                let global_concat_col = second_stage!(AggExpr::Concat(concat_col));
+            AggExpr::Concat(expr, delimiter) => {
+                let concat_col = first_stage!(AggExpr::Concat(expr.clone(), delimiter.clone()));
+                let global_concat_col =
+                    second_stage!(AggExpr::Concat(concat_col, delimiter.clone()));
                 final_stage(global_concat_col);
             }
             AggExpr::Skew(expr) => {
@@ -282,13 +317,14 @@ pub fn populate_aggregation_stages_bound_with_schema(
                 let result = numerator.div(denom).div(n);
                 final_stage(result);
             }
-            AggExpr::MapGroups { func, inputs } => {
-                // No first stage aggregation for MapGroups, do all the work in the second stage.
-                let map_groups_col = second_stage!(AggExpr::MapGroups {
-                    func: func.clone(),
-                    inputs: inputs.clone()
-                });
-                final_stage(map_groups_col);
+            AggExpr::MapGroups { .. } => {
+                // MapGroups UDFs cannot be decomposed into partial / final stages.
+                // We rely on evaluating the original MapGroups aggregation in a single
+                // pass during grouped aggregation, so we intentionally do not add
+                // any MapGroups expressions to the intermediate aggregation stages
+                // or to the final projection list here. The grouped aggregate sinks
+                // will call `agg()` with the original MapGroups expression when
+                // `partial_agg_exprs` is empty.
             }
             // Only necessary for Flotilla
             AggExpr::ApproxSketch(expr, sketch_type) => {

@@ -9,10 +9,13 @@ import daft
 from daft import DataType
 
 
-def test_cls():
-    df = daft.from_pydict({"a": ["foo", "bar", "baz"]})
+@pytest.mark.parametrize("concurrency", [None, 2])
+def test_cls(concurrency):
+    df = daft.from_pydict(
+        {"a": ["foo", "bar", "baz"], "b": [1, 2, 3], "c": [True, None, True]},
+    )
 
-    @daft.cls
+    @daft.cls(max_concurrency=concurrency)
     class RepeatN:
         def __init__(self, n: int):
             self.n = n
@@ -27,6 +30,9 @@ def test_cls():
     repeat_2 = RepeatN(2)
     result = df.select(repeat_2(df["a"]))
     assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"]}
+
+    result = df.select(repeat_2(df["a"]), "b")
+    assert result.to_pydict() == {"a": ["foofoo", "barbar", "bazbaz"], "b": [1, 2, 3]}
 
     result = df.select(repeat_2.repeat_list(df["a"]))
     assert result.to_pydict() == {"a": [["foo", "foo"], ["bar", "bar"], ["baz", "baz"]]}
@@ -50,10 +56,11 @@ def test_cls_scalar_eval():
     assert repeat_2.repeat_list("foo") == ["foo", "foo"]
 
 
-def test_cls_method_without_decorator():
-    df = daft.from_pydict({"a": [1, 2, 3]})
+@pytest.mark.parametrize("concurrency", [None, 2])
+def test_cls_method_without_decorator(concurrency):
+    df = daft.from_pydict({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
 
-    @daft.cls
+    @daft.cls(max_concurrency=concurrency)
     class Multiplier:
         def __init__(self, factor: int):
             self.factor = factor
@@ -62,14 +69,15 @@ def test_cls_method_without_decorator():
             return x * self.factor
 
     m = Multiplier(5)
-    result = df.select(m.multiply(df["a"]))
-    assert result.to_pydict() == {"a": [5, 10, 15]}
+    result = df.select("b", m.multiply(df["a"]))
+    assert result.to_pydict() == {"b": ["foo", "bar", "baz"], "a": [5, 10, 15]}
 
 
-def test_cls_multiple_instances():
-    df = daft.from_pydict({"a": [10, 20, 30]})
+@pytest.mark.parametrize("concurrency", [None, 2])
+def test_cls_multiple_instances(concurrency):
+    df = daft.from_pydict({"a": [10, 20, 30], "b": ["foo", "bar", "baz"]})
 
-    @daft.cls
+    @daft.cls(max_concurrency=concurrency)
     class Adder:
         def __init__(self, increment: int):
             self.increment = increment
@@ -83,16 +91,18 @@ def test_cls_multiple_instances():
     result = df.select(
         adder_1.add(df["a"]).alias("plus_1"),
         adder_10.add(df["a"]).alias("plus_10"),
+        "b",
     )
     assert result.to_pydict() == {
         "plus_1": [11, 21, 31],
         "plus_10": [20, 30, 40],
+        "b": ["foo", "bar", "baz"],
     }
 
 
 @pytest.mark.parametrize("concurrency", [None, 1, 2])
 def test_cls_async_method(concurrency):
-    df = daft.from_pydict({"a": [1, 2, 3]})
+    df = daft.from_pydict({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
 
     @daft.cls(max_concurrency=concurrency)
     class AsyncProcessor:
@@ -104,14 +114,17 @@ def test_cls_async_method(concurrency):
             return x * 2
 
     processor = AsyncProcessor(0.01)
-    result = df.select(processor.process(df["a"]))
-    assert sorted(result.to_pydict()["a"]) == [2, 4, 6]
+    result = df.select(processor.process(df["a"]), "b")
+    result = result.to_pydict()
+    assert sorted(result["a"]) == [2, 4, 6]
+    assert sorted(result["b"]) == ["bar", "baz", "foo"]
 
 
-def test_cls_generator_method():
+@pytest.mark.parametrize("concurrency", [None, 2])
+def test_cls_generator_method(concurrency):
     df = daft.from_pydict({"id": [0, 1, 2], "n": [0, 2, 3]})
 
-    @daft.cls
+    @daft.cls(max_concurrency=concurrency)
     class RepeatGenerator:
         def __init__(self, value: str):
             self.value = value
@@ -128,10 +141,11 @@ def test_cls_generator_method():
     }
 
 
-def test_cls_unnest_struct():
-    df = daft.from_pydict({"a": [1, 2, 3]})
+@pytest.mark.parametrize("concurrency", [None, 2])
+def test_cls_unnest_struct(concurrency):
+    df = daft.from_pydict({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
 
-    @daft.cls
+    @daft.cls(max_concurrency=concurrency)
     class Processor:
         def __init__(self, multiplier: int):
             self.multiplier = multiplier
@@ -144,8 +158,9 @@ def test_cls_unnest_struct():
             return {"doubled": x * self.multiplier, "name": f"value_{x}"}
 
     processor = Processor(2)
-    result = df.select(processor.process(df["a"]))
+    result = df.select("b", processor.process(df["a"]))
     assert result.to_pydict() == {
+        "b": ["foo", "bar", "baz"],
         "doubled": [2, 4, 6],
         "name": ["value_1", "value_2", "value_3"],
     }
@@ -183,10 +198,11 @@ def test_cls_multiple_methods():
     assert result.to_pydict() == expected
 
 
-def test_cls_with_complex_init():
-    df = daft.from_pydict({"a": [1, 2, 3]})
+@pytest.mark.parametrize("concurrency", [None, 2])
+def test_cls_with_complex_init(concurrency):
+    df = daft.from_pydict({"a": [1, 2, 3], "b": ["foo", "bar", "baz"]})
 
-    @daft.cls
+    @daft.cls(max_concurrency=concurrency)
     class Calculator:
         def __init__(self, multiplier: int, offset: int, name: str):
             self.multiplier = multiplier
@@ -203,17 +219,20 @@ def test_cls_with_complex_init():
     result = df.select(
         calc.compute(df["a"]).alias("result"),
         calc.get_name(df["a"]).alias("name"),
+        "b",
     )
     assert result.to_pydict() == {
         "result": [15, 25, 35],
         "name": ["calc_1", "calc_2", "calc_3"],
+        "b": ["foo", "bar", "baz"],
     }
 
 
-def test_cls_with_list_operations():
-    df = daft.from_pydict({"lists": [[1, 2, 3], [4, 5], [6, 7, 8, 9]]})
+@pytest.mark.parametrize("concurrency", [None, 2])
+def test_cls_with_list_operations(concurrency):
+    df = daft.from_pydict({"id": [0, 1, 2], "lists": [[1, 2, 3], [4, 5], [6, 7, 8, 9]]})
 
-    @daft.cls
+    @daft.cls(max_concurrency=concurrency)
     class ListProcessor:
         def __init__(self, threshold: int):
             self.threshold = threshold
@@ -227,19 +246,22 @@ def test_cls_with_list_operations():
 
     processor = ListProcessor(5)
     result = df.select(
+        "id",
         processor.filter_above(df["lists"]).alias("filtered"),
         processor.count_above(df["lists"]).alias("count"),
     )
     assert result.to_pydict() == {
+        "id": [0, 1, 2],
         "filtered": [[], [], [6, 7, 8, 9]],
         "count": [0, 0, 4],
     }
 
 
-def test_cls_batch_method():
-    df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6]})
+@pytest.mark.parametrize("concurrency", [None, 2])
+def test_cls_batch_method(concurrency):
+    df = daft.from_pydict({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9], "d": [10, 11, 12]})
 
-    @daft.cls
+    @daft.cls(max_concurrency=concurrency)
     class BatchAdder:
         def __init__(self, offset: int):
             self.offset = offset
@@ -312,3 +334,31 @@ def test_cls_max_concurrency_zero():
         df = daft.from_pydict({"a": [1, 2, 3]})
         result = df.select(MaxConcurrencyZero()(df["a"])).to_pydict()
         assert result == {"a": [1, 2, 3]}
+
+
+@pytest.mark.parametrize("gpus", [0.0, 0, 0.5, 1.0, 1, 2])
+def test_cls_accepts_fractional_gpus(gpus):
+    @daft.cls(gpus=gpus)
+    class Repeat:
+        def __init__(self, n: int):
+            self.n = n
+
+        def __call__(self, x) -> str:
+            return x * self.n
+
+    Repeat(2)
+
+
+def test_cls_gpus_one_point_five_is_rejected():
+    with pytest.raises(BaseException) as excinfo:
+
+        @daft.cls(gpus=1.5)
+        class BadRepeat:
+            def __init__(self, n: int):
+                self.n = n
+
+            def __call__(self, x) -> str:
+                return x * self.n
+
+        BadRepeat(2)
+    assert "num_gpus greater than 1 must be an integer" in str(excinfo.value)

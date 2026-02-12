@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
+use arrow::array::{LargeBinaryBuilder, LargeStringBuilder};
 use common_error::DaftResult;
 use common_io_config::IOConfig;
-use daft_arrow::array::{MutableArray, MutableBinaryArray, MutableUtf8Array};
 use daft_schema::{dtype::DataType, field::Field, media_type::MediaType};
 
 use crate::{
@@ -63,37 +63,38 @@ where
         name: &str,
         iter: I,
     ) -> DaftResult<Self> {
-        let mut io_conf_arr = MutableBinaryArray::<i64>::new();
-        let mut urls_arr = MutableUtf8Array::<i64>::new();
+        let mut io_conf_arr = LargeBinaryBuilder::new();
+
+        let mut urls_arr = LargeStringBuilder::new();
 
         for value in iter {
             let value = value?;
             match value {
                 Some(value) => {
-                    urls_arr.push(Some(value.url));
+                    urls_arr.append_value(value.url);
                     let io_config = value.io_config.map(|c| {
                         bincode::serde::encode_to_vec(&c, bincode::config::legacy())
                             .expect("Failed to serialize IOConfig")
                     });
-                    io_conf_arr.push(io_config);
+                    io_conf_arr.append_option(io_config);
                 }
                 None => {
-                    urls_arr.push_null();
-                    io_conf_arr.push_null();
+                    urls_arr.append_null();
+                    io_conf_arr.append_null();
                 }
             }
         }
         let sa_field = Field::new("literal", DataType::File(T::get_type()).to_physical());
-        let urls = Series::from_arrow2(
+        let urls = Series::from_arrow(
             Arc::new(Field::new("url", DataType::Utf8)),
-            urls_arr.as_box(),
+            Arc::new(urls_arr.finish()),
         )?;
-        let io_config = Series::from_arrow2(
+        let io_config = Series::from_arrow(
             Arc::new(Field::new("io_config", DataType::Binary)),
-            io_conf_arr.as_box(),
+            Arc::new(io_conf_arr.finish()),
         )?;
-        let validity = urls.validity().cloned();
-        let sa = StructArray::new(sa_field, vec![urls, io_config], validity);
+        let nulls = urls.nulls().cloned();
+        let sa = StructArray::new(sa_field, vec![urls, io_config], nulls);
 
         Ok(FileArray::new(
             Field::new(name, DataType::File(T::get_type())),
@@ -113,7 +114,7 @@ where
         let io_conf = BinaryArray::from_iter("io_config", std::iter::repeat_n(io_conf, urls.len()));
 
         let io_conf = io_conf
-            .with_validity(urls.validity().cloned())
+            .with_nulls(urls.nulls().cloned())
             .expect("Failed to set validity");
 
         let sa = StructArray::new(
@@ -122,7 +123,7 @@ where
                 urls.clone().into_series().rename("url"),
                 io_conf.into_series(),
             ],
-            urls.validity().cloned(),
+            urls.nulls().cloned(),
         );
         FileArray::new(Field::new(name, DataType::File(T::get_type())), sa)
     }
@@ -199,9 +200,9 @@ mod tests {
 
         let arr =
             FileArray::<MediaTypeUnknown>::new_from_reference_array("urls", urls, io_conf.clone());
-        let arrow_data = arr.to_arrow2();
+        let arrow_data = arr.to_arrow().unwrap();
 
-        let new_arr = FileArray::<MediaTypeUnknown>::from_arrow2(arr.field.clone(), arrow_data)
+        let new_arr = FileArray::<MediaTypeUnknown>::from_arrow(arr.field.clone(), arrow_data)
             .expect("Failed to create FileArray from arrow data");
 
         let FileReference {

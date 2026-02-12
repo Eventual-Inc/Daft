@@ -318,37 +318,43 @@ func = _FuncDecorator()
 @overload
 def cls(
     *,
-    gpus: int = 0,
+    gpus: float = 0,
     use_process: bool | None = None,
     max_concurrency: int | None = None,
     max_retries: int | None = None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
+    name_override: str | None = None,
 ) -> Callable[[type], type]: ...
 @overload
 def cls(
     class_: type,
     *,
-    gpus: int = 0,
+    gpus: float = 0,
     use_process: bool | None = None,
     max_concurrency: int | None = None,
     max_retries: int | None = None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
+    name_override: str | None = None,
 ) -> type: ...
 def cls(
     class_: type | None = None,
     *,
-    gpus: int = 0,
+    gpus: float = 0,
     use_process: bool | None = None,
     max_concurrency: int | None = None,
     max_retries: int | None = None,
     on_error: Literal["raise", "log", "ignore"] | None = None,
+    name_override: str | None = None,
 ) -> type | Callable[[type], type]:
     """Decorator to convert a Python class into a Daft user-defined class.
 
     Args:
         gpus: The number of GPUs each instance of the class requires. Defaults to 0.
+              Fractional values between 0 and 1.0, such as 0.5, are supported. This can be useful when running multiple small models on the same GPU.
+              However, fractional values greater than 1.0, such as 1.5 or 2.5, are not supported.
         use_process: Whether to run each instance of the class in a separate process. If unset, Daft will automatically choose based on runtime performance.
         max_concurrency: The maximum number of concurrent instances of the class.
+        name_override: The name to display for the UDF class in the plan and progress bars.
 
     Daft classes allow you to initialize a class instance once, and then reuse it for multiple rows of data.
     This is useful for expensive initializations that need to be amortized across multiple rows of data, such as loading a model or establishing a network connection.
@@ -414,9 +420,14 @@ def cls(
         ...     }
         ... )
     """
+    # Validate GPU resource request early: allow fractional values up to 1.0; values > 1.0 must be integers.
+    if gpus < 0:
+        raise ValueError(f"num_gpus must be non-negative, got {gpus}")
+    if gpus > 1 and not float(gpus).is_integer():
+        raise ValueError(f"ResourceRequest num_gpus greater than 1 must be an integer, got {gpus}")
 
     def partial_cls(c: type) -> type:
-        return wrap_cls(c, gpus, use_process, max_concurrency, max_retries, on_error)
+        return wrap_cls(c, gpus, use_process, max_concurrency, max_retries, on_error, name_override)
 
     return partial_cls if class_ is None else partial_cls(class_)
 
@@ -510,7 +521,7 @@ class _MethodDecorator:
         return partial_method if method is None else partial_method(method)
 
 
-method = _MethodDecorator()
+method: _MethodDecorator = _MethodDecorator()
 
 
 __all__ = ["UDF", "metrics", "udf"]

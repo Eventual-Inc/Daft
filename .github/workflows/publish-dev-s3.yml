@@ -26,6 +26,8 @@ on:
         default: false
         required: false
 
+permissions: {}
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
 
@@ -65,6 +67,8 @@ jobs:
 
   build:
     name: 'Build Daft wheel for ${{ matrix.os }}-${{ matrix.arch }}-lts=${{ matrix.lts }}-lto=${{ inputs.use_lto }}'
+    permissions:
+      contents: read
     needs: check-exists
     if: ${{ needs.check-exists.outputs.build_exists == 'false' }}
     uses: ./.github/workflows/build-wheel.yml
@@ -95,7 +99,7 @@ jobs:
     - uses: actions/checkout@v6
       with:
         submodules: true
-    - uses: actions/download-artifact@v6
+    - uses: actions/download-artifact@v7
       with:
         pattern: wheels-*
         merge-multiple: true

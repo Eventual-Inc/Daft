@@ -4,6 +4,7 @@ use arrow_json::{LineDelimitedWriter, WriterBuilder, writer::LineDelimited};
 use common_error::{DaftError, DaftResult};
 use daft_core::prelude::*;
 use daft_io::{IOConfig, SourceType, parse_url, utils::ObjectPath};
+use daft_logical_plan::sink_info::JsonFormatOption;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 
@@ -17,14 +18,35 @@ use crate::{
 type JsonFinishFn<B> =
     Arc<dyn Fn(LineDelimitedWriter<<B as StorageBackend>::Writer>) -> DaftResult<()> + Send + Sync>;
 
-/// Helper function that checks if we support native writes given the file format, root directory, and schema.
+fn native_json_field_supported(field: &Arc<arrow_schema::Field>) -> bool {
+    if field.extension_type_name().is_some() {
+        return false;
+    }
+
+    match field.data_type() {
+        arrow_schema::DataType::Duration(_) => false,
+        arrow_schema::DataType::Binary
+        | arrow_schema::DataType::FixedSizeBinary(_)
+        | arrow_schema::DataType::LargeBinary => false,
+        arrow_schema::DataType::List(inner)
+        | arrow_schema::DataType::FixedSizeList(inner, _)
+        | arrow_schema::DataType::LargeList(inner) => native_json_field_supported(inner),
+        arrow_schema::DataType::Struct(fields) => fields.iter().all(native_json_field_supported),
+        arrow_schema::DataType::Union(fields, _) => fields
+            .iter()
+            .all(|(_, field)| native_json_field_supported(field)),
+        arrow_schema::DataType::Map(inner, _) => native_json_field_supported(inner),
+        _ => true,
+    }
+}
+
+/// Helper function that checks if we support native writes given the schema
 pub(crate) fn native_json_writer_supported(file_schema: &SchemaRef) -> DaftResult<bool> {
-    // TODO(desmond): Currently we do not support extension and timestamp types.
-    #[allow(deprecated, reason = "arrow2 migration")]
-    let datatypes_convertable = file_schema.to_arrow2()?.fields.iter().all(|field| {
-        field.data_type().can_convert_to_arrow_rs() && field.data_type().can_convert_to_json()
-    });
-    Ok(datatypes_convertable)
+    Ok(file_schema
+        .to_arrow()?
+        .fields
+        .iter()
+        .all(native_json_field_supported))
 }
 
 pub(crate) fn create_native_json_writer(
@@ -32,6 +54,7 @@ pub(crate) fn create_native_json_writer(
     file_idx: usize,
     partition_values: Option<&RecordBatch>,
     io_config: Option<IOConfig>,
+    json_option: JsonFormatOption,
 ) -> DaftResult<Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Option<RecordBatch>>>>
 {
     // Parse the root directory and add partition values if present.
@@ -50,6 +73,7 @@ pub(crate) fn create_native_json_writer(
                 filename,
                 partition_values.cloned(),
                 storage_backend,
+                json_option,
             )))
         }
         source if source.supports_native_writer() => {
@@ -62,6 +86,7 @@ pub(crate) fn create_native_json_writer(
                 filename,
                 partition_values.cloned(),
                 storage_backend,
+                json_option,
             )))
         }
         _ => Err(DaftError::ValueError(format!(
@@ -75,11 +100,17 @@ fn make_json_writer<B: StorageBackend + Send + Sync>(
     filename: PathBuf,
     partition_values: Option<RecordBatch>,
     storage_backend: B,
+    json_option: JsonFormatOption,
 ) -> BatchFileWriter<B, LineDelimitedWriter<B::Writer>> {
-    let builder = Arc::new(|backend: B::Writer| {
-        WriterBuilder::new()
-            .with_explicit_nulls(true)
-            .build::<_, LineDelimited>(backend)
+    let ignore_null_fields = json_option.ignore_null_fields;
+    let builder = Arc::new(move |backend: B::Writer| {
+        let mut builder = WriterBuilder::new();
+
+        if let Some(ignore_null_fields) = ignore_null_fields {
+            builder = builder.with_explicit_nulls(!ignore_null_fields);
+        }
+
+        builder.build::<_, LineDelimited>(backend)
     });
     let write_fn = Arc::new(
         |writer: &mut LineDelimitedWriter<B::Writer>, batches: &[arrow_array::RecordBatch]| {

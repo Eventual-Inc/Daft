@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 
 import daft
-from daft import DataFrame
+from daft import DataFrame, DataType, col
 
 
 def test_filter_missing_column(make_df, valid_data: list[dict[str, Any]]) -> None:
@@ -50,3 +50,90 @@ def test_filter_alias_for_where() -> None:
     actual = df.filter("z = 9 AND y > 5").collect().to_pydict()
 
     assert actual == expected
+
+
+@pytest.mark.parametrize(
+    "op,expected",
+    [
+        (
+            "__lt__",
+            {
+                "id": [1, 2, 3],
+                "values": [[1, 2, 3], [4, 5, 6], [1, 2]],
+                "threshold": [[1, 2, 4], [5, 6, 7], [1, 2, 3]],
+            },
+        ),
+        ("__eq__", {"id": [4], "values": [[7, 8, 9]], "threshold": [[7, 8, 9]]}),
+        (
+            "__ne__",
+            {
+                "id": [1, 2, 3],
+                "values": [[1, 2, 3], [4, 5, 6], [1, 2]],
+                "threshold": [[1, 2, 4], [5, 6, 7], [1, 2, 3]],
+            },
+        ),
+    ],
+)
+def test_filter_with_list_column_comparison(op, expected) -> None:
+    df = daft.from_pydict(
+        {
+            "id": [1, 2, 3, 4],
+            "values": [[1, 2, 3], [4, 5, 6], [1, 2], [7, 8, 9]],
+            "threshold": [[1, 2, 4], [5, 6, 7], [1, 2, 3], [7, 8, 9]],
+        }
+    )
+
+    predicate = getattr(col("values"), op)(col("threshold"))
+    result = df.where(predicate).collect().to_pydict()
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "op,expected",
+    [
+        ("__lt__", {"id": [2, 3]}),
+        ("__eq__", {"id": [1, 4]}),
+        ("__ne__", {"id": [2, 3]}),
+        ("__ge__", {"id": [1, 4]}),
+    ],
+)
+def test_filter_with_struct_column_comparison(op, expected) -> None:
+    df = daft.from_pydict(
+        {
+            "id": [1, 2, 3, 4],
+            "left_struct": [{"x": 1, "y": "a"}, {"x": 2, "y": "b"}, {"x": 3, "y": "c"}, {"x": 4, "y": "d"}],
+            "right_struct": [{"x": 1, "y": "a"}, {"x": 2, "y": "c"}, {"x": 4, "y": "c"}, {"x": 4, "y": "d"}],
+        }
+    )
+
+    df = df.with_column(
+        "left_struct", col("left_struct").cast(DataType.struct({"x": DataType.int64(), "y": DataType.string()}))
+    )
+    df = df.with_column(
+        "right_struct", col("right_struct").cast(DataType.struct({"x": DataType.int64(), "y": DataType.string()}))
+    )
+
+    predicate = getattr(col("left_struct"), op)(col("right_struct"))
+    result = df.where(predicate).select("id").collect().to_pydict()
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "op,expected",
+    [
+        ("__lt__", {"id": [1], "values": [[1, 2, 3]], "threshold": [[1, 2, 4]]}),
+        ("__eq__", {"id": [4], "values": [[7, 8, 9]], "threshold": [[7, 8, 9]]}),
+    ],
+)
+def test_filter_list_with_null_values(op, expected) -> None:
+    df = daft.from_pydict(
+        {
+            "id": [1, 2, 3, 4],
+            "values": [[1, 2, 3], None, [5, 6], [7, 8, 9]],
+            "threshold": [[1, 2, 4], [5, 6, 7], None, [7, 8, 9]],
+        }
+    )
+
+    predicate = getattr(col("values"), op)(col("threshold"))
+    result = df.where(predicate).collect().to_pydict()
+    assert result == expected

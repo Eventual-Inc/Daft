@@ -83,6 +83,16 @@ def construct_lance_dataset(
             "Unable to import the `lance` package, please ensure that Daft is installed with the lance extra dependency: `pip install daft[lance]`"
         ) from e
 
+    original_default_scan_options = kwargs.pop("default_scan_options", None)
+    safe_default_scan_options = None
+    if isinstance(original_default_scan_options, dict):
+        safe_default_scan_options = {k: v for k, v in original_default_scan_options.items() if k != "nearest"}
+        if safe_default_scan_options:
+            kwargs["default_scan_options"] = safe_default_scan_options
+    elif original_default_scan_options is not None:
+        # Non-dict defaults are forwarded as-is.
+        kwargs["default_scan_options"] = original_default_scan_options
+
     ds = lance.dataset(uri, storage_options=storage_options, version=version, **kwargs)
 
     effective_kwargs = {
@@ -94,6 +104,14 @@ def construct_lance_dataset(
         ds._lance_open_kwargs = effective_kwargs
     except Exception:
         pass
+
+    # Preserve the full user-provided defaults (including nearest) for Daft's planning
+    # even if we stripped keys out before calling `lance.dataset`.
+    try:
+        ds._daft_default_scan_options = original_default_scan_options
+    except Exception:
+        pass
+
     return ds
 
 

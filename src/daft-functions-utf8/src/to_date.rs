@@ -1,9 +1,8 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use chrono::Datelike;
 use common_error::{DaftError, DaftResult, ensure};
 use daft_arrow::temporal_conversions;
 use daft_core::{
-    prelude::{AsArrow, DataType, DateArray, Field, Int32Array, Schema, Utf8Array},
+    prelude::{DataType, DateArray, Field, Int32Array, Schema, Utf8Array},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
@@ -22,7 +21,11 @@ impl ScalarUDF for ToDate {
     fn name(&self) -> &'static str {
         "to_date"
     }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         ensure!(inputs.len() == 2, ValueError: "Expected 2 input args, got {}", inputs.len());
         let input = inputs.required((0, "input"))?;
         let pattern = inputs.required((1, "format"))?;
@@ -58,9 +61,9 @@ pub fn to_date(input: ExprRef, format: ExprRef) -> ExprRef {
 
 fn to_date_impl(arr: &Utf8Array, format: &str) -> DaftResult<DateArray> {
     let len = arr.len();
-    let arr_iter = arr.as_arrow2().iter();
+    let arr_iter = arr.into_iter();
 
-    let arrow_result = arr_iter
+    let result = arr_iter
         .map(|val| match val {
             Some(val) => {
                 let date = chrono::NaiveDate::parse_from_str(val, format).map_err(|e| {
@@ -74,10 +77,12 @@ fn to_date_impl(arr: &Utf8Array, format: &str) -> DaftResult<DateArray> {
             }
             _ => Ok(None),
         })
-        .collect::<DaftResult<daft_arrow::array::Int32Array>>()?;
+        .collect::<DaftResult<Int32Array>>()?;
 
-    let result = Int32Array::from((arr.name(), Box::new(arrow_result)));
-    let result = DateArray::new(Field::new(arr.name(), DataType::Date), result);
+    let result = DateArray::new(
+        Field::new(arr.name(), DataType::Date),
+        result.rename(arr.name()),
+    );
     assert_eq!(result.len(), len);
     Ok(result)
 }

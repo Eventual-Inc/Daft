@@ -1,10 +1,9 @@
-#![allow(deprecated, reason = "arrow2 migration")]
-use std::{collections::BinaryHeap, sync::Arc, time::Duration};
+use std::{collections::BinaryHeap, num::NonZeroUsize, sync::Arc, time::Duration};
 
 use common_error::{DaftError, DaftResult};
 use common_metrics::ops::NodeType;
 use daft_core::{
-    prelude::{AsArrow, SchemaRef, Utf8Array},
+    prelude::{SchemaRef, Utf8Array},
     series::IntoSeries,
 };
 use daft_dsl::{
@@ -198,7 +197,7 @@ impl VLLMSink {
     fn poll_tasks(&self, state: &VLLMState) -> DaftResult<Option<Arc<MicroPartition>>> {
         Ok(state.executor.poll()?.map(|(outputs, rows)| {
             let output_series =
-                Utf8Array::from((self.output_column_name.as_ref(), outputs.as_slice()))
+                Utf8Array::from_slice(self.output_column_name.as_ref(), outputs.as_slice())
                     .into_series();
 
             let rb = rows
@@ -345,20 +344,16 @@ impl VLLMSink {
         let prompts = batch.eval_expression(&expr_input)?;
 
         // TODO: handle nulls
-        let prompts_vec = prompts
+        prompts
             .utf8()
+            .cloned()
             .map_err(|_| {
                 DaftError::type_error(format!(
                     "Expected input to `prompt` to be string, got {}",
                     prompts.data_type()
                 ))
             })?
-            .as_arrow2()
-            .values_iter()
-            .map(|s| s.to_string())
-            .collect::<Vec<_>>();
-
-        Ok(prompts_vec)
+            .into_values()
     }
 }
 
@@ -464,10 +459,11 @@ impl StreamingSink for VLLMSink {
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
-        self.expr
-            .inner()
-            .batch_size
-            .map(MorselSizeRequirement::Strict)
+        self.expr.inner().batch_size.map(|size| {
+            MorselSizeRequirement::Strict(
+                NonZeroUsize::new(size).expect("batch size for VLLM sink must be non-zero"),
+            )
+        })
     }
     fn batching_strategy(&self) -> Self::BatchingStrategy {
         StaticBatchingStrategy::new(self.morsel_size_requirement().unwrap_or_default())

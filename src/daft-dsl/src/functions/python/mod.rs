@@ -9,7 +9,7 @@ use common_treenode::{TreeNode, TreeNodeRecursion};
 use daft_core::prelude::*;
 use itertools::Itertools;
 #[cfg(feature = "python")]
-use pyo3::{Bound, Py, PyAny, PyResult, Python, call::PyCallArgs, types::PyDict};
+use pyo3::{Bound, Py, PyAny, PyResult, Python, call::PyCallArgs, prelude::*, types::PyDict};
 pub use runtime_py_object::RuntimePyObject;
 use serde::{Deserialize, Serialize};
 
@@ -276,6 +276,7 @@ pub struct UDFProperties {
     pub concurrency: Option<NonZeroUsize>,
     pub use_process: Option<bool>,
     pub max_retries: Option<usize>,
+    pub builtin_name: bool,
     pub is_async: bool,
     pub is_scalar: bool,
     pub on_error: Option<OnError>,
@@ -310,6 +311,7 @@ impl UDFProperties {
                         concurrency: *concurrency,
                         use_process: *use_process,
                         max_retries: None,
+                        builtin_name: false,
                         is_async: false,
                         on_error: None,
                         is_scalar: false,
@@ -322,13 +324,14 @@ impl UDFProperties {
                         name: row_wise_fn.function_name.to_string(),
                         resource_request: Some(ResourceRequest::try_new_internal(
                             None,
-                            Some(row_wise_fn.gpus as f64),
+                            Some(row_wise_fn.gpus.0),
                             None,
                         )?),
                         batch_size: None, // Row-wise functions don't have batch_size
                         concurrency: row_wise_fn.max_concurrency,
                         use_process: row_wise_fn.use_process,
                         max_retries: row_wise_fn.max_retries,
+                        builtin_name: row_wise_fn.builtin_name,
                         is_async: row_wise_fn.is_async,
                         on_error: Some(row_wise_fn.on_error),
                         is_scalar: false,
@@ -343,6 +346,7 @@ impl UDFProperties {
                     batch_size,
                     max_retries,
                     on_error,
+                    builtin_name,
                     is_async,
                     ..
                 }))) => {
@@ -351,13 +355,14 @@ impl UDFProperties {
                         name: function_name.to_string(),
                         resource_request: Some(ResourceRequest::try_new_internal(
                             None,
-                            Some(*gpus as f64),
+                            Some(gpus.0),
                             None,
                         )?),
                         batch_size: *batch_size,
                         concurrency: *max_concurrency,
                         use_process: *use_process,
                         max_retries: *max_retries,
+                        builtin_name: *builtin_name,
                         is_async: *is_async,
                         on_error: Some(*on_error),
                         is_scalar: false,
@@ -414,6 +419,27 @@ impl UDFProperties {
 
         properties.push(format!("async = {}", &self.is_async));
         properties.push(format!("scalar = {}", &self.is_scalar));
+
+        #[cfg(feature = "python")]
+        {
+            if let Some(ray_options) = &self.ray_options {
+                // FIXME(zhenchao) Perhaps the layout should be optimized to improve readability
+                let ray_options = Python::attach(|py| -> PyResult<Option<String>> {
+                    let bound = ray_options.as_ref().bind(py);
+                    if bound.is_instance_of::<PyDict>() {
+                        let repr = bound.repr()?;
+                        Ok(Some(format!("ray_options = {}", repr)))
+                    } else {
+                        Ok(None)
+                    }
+                })
+                .unwrap_or(None);
+
+                if let Some(prop) = ray_options {
+                    properties.push(prop);
+                }
+            }
+        }
 
         properties
     }

@@ -21,7 +21,11 @@ impl ScalarUDF for UrlParse {
         "url_parse"
     }
 
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let UrlParseArgs { input } = inputs.try_into()?;
         let array = input.utf8()?;
         let result = url_parse(array)?;

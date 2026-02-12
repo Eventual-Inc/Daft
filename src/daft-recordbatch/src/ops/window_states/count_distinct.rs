@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 
+use arrow::{
+    array::{DynComparator, make_comparator},
+    compute::SortOptions,
+};
 use common_error::DaftResult;
 use daft_core::{
-    array::ops::arrow::comparison::build_is_equal,
     prelude::*,
     utils::identity_hash_set::{IdentityBuildHasher, IndexHash},
 };
@@ -13,22 +16,24 @@ pub struct CountDistinctWindowState {
     hashed: DataArray<UInt64Type>,
     counts: HashMap<IndexHash, usize, IdentityBuildHasher>,
     count_vec: Vec<u64>,
-    comparator: Box<dyn Fn(usize, usize) -> bool>,
+    comparator: DynComparator,
 }
 
 impl CountDistinctWindowState {
     pub fn new(source: &Series, total_length: usize) -> Self {
-        let hashed = source.hash_with_validity(None).unwrap();
+        let hashed = source.hash_with_nulls(None).unwrap();
 
         #[allow(deprecated, reason = "arrow2 migration")]
-        let array = source.to_arrow2();
-        let comparator = build_is_equal(&*array, &*array, true, false).unwrap();
+        let array = source.to_arrow().unwrap();
+
+        let comparator =
+            make_comparator(array.as_ref(), array.as_ref(), SortOptions::default()).unwrap();
 
         Self {
             hashed,
             counts: HashMap::with_capacity_and_hasher(total_length, Default::default()),
             count_vec: Vec::with_capacity(total_length),
-            comparator: Box::new(comparator),
+            comparator,
         }
     }
 }
@@ -50,7 +55,7 @@ impl WindowAggStateOps for CountDistinctWindowState {
                 let mut found_match = false;
                 for (existing_hash, count) in &mut self.counts {
                     if existing_hash.hash == hash
-                        && (self.comparator)(i, existing_hash.idx as usize)
+                        && (self.comparator)(i, existing_hash.idx as usize).is_eq()
                     {
                         *count += 1;
                         found_match = true;
@@ -77,7 +82,7 @@ impl WindowAggStateOps for CountDistinctWindowState {
                 let mut keys_to_remove = Vec::new();
 
                 for (k, v) in &mut self.counts {
-                    if k.hash == hash && (self.comparator)(i, k.idx as usize) {
+                    if k.hash == hash && (self.comparator)(i, k.idx as usize).is_eq() {
                         *v -= 1;
                         if *v == 0 {
                             keys_to_remove.push(IndexHash {
@@ -103,6 +108,6 @@ impl WindowAggStateOps for CountDistinctWindowState {
     }
 
     fn build(&self) -> DaftResult<Series> {
-        Ok(DataArray::<UInt64Type>::from(("", self.count_vec.clone())).into_series())
+        Ok(DataArray::<UInt64Type>::from_vec("", self.count_vec.clone()).into_series())
     }
 }

@@ -1,12 +1,9 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::iter;
 
 use common_error::{DaftError, DaftResult, ensure};
 use daft_core::{
     array::DataArray,
-    prelude::{
-        AsArrow, DaftIntegerType, DaftNumericType, DataType, Field, FullNull, Schema, Utf8Array,
-    },
+    prelude::{DaftIntegerType, DaftNumericType, DataType, Field, FullNull, Schema, Utf8Array},
     series::{IntoSeries, Series},
     with_match_integer_daft_types,
 };
@@ -36,7 +33,11 @@ impl ScalarUDF for Substr {
         "substr"
     }
 
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let SubstrArgs {
             input: data,
             start,
@@ -153,7 +154,7 @@ where
                     (Some(length_repeat), None)
                 }
                 _ => {
-                    let length_iter = length.as_arrow2().iter().map(|l| match l {
+                    let length_iter = length.into_iter().map(|l| match l {
                         Some(l) => {
                             let l: usize = NumCast::from(*l).ok_or_else(|| {
                                 DaftError::ComputeError(format!(
@@ -188,7 +189,7 @@ where
             (Some(start_repeat), None)
         }
         _ => {
-            let start_iter = start.as_arrow2().iter().map(|s| match s {
+            let start_iter = start.into_iter().map(|s| match s {
                 Some(s) => {
                     let s: usize = NumCast::from(*s).ok_or_else(|| {
                         DaftError::ComputeError(format!(
@@ -233,7 +234,7 @@ where
     I: Iterator<Item = Result<Option<usize>, E>>,
     U: Iterator<Item = Result<Option<usize>, R>>,
 {
-    let arrow_result = iter
+    let res = iter
         .zip(start)
         .zip(length)
         .map(|((val, s), l)| {
@@ -260,9 +261,9 @@ where
                 _ => Ok(None),
             }
         })
-        .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>()?;
+        .collect::<DaftResult<Utf8Array>>()?;
 
-    Ok(Utf8Array::from((name, Box::new(arrow_result))))
+    Ok(res.rename(name))
 }
 
 fn substring(s: &str, start: usize, len: Option<usize>) -> Option<&str> {

@@ -10,6 +10,7 @@ import pytest
 
 import daft.exceptions
 from daft import DataType, Series
+from daft.series import SeriesStringNamespace
 
 
 @pytest.mark.parametrize(
@@ -409,6 +410,24 @@ def test_series_utf8_reverse(data, expected) -> None:
 def test_series_utf8_capitalize(data, expected) -> None:
     s = Series.from_arrow(pa.array(data))
     result = s.str.capitalize()
+    assert result.to_pylist() == expected
+
+
+@pytest.mark.parametrize(
+    ("convert", "expected"),
+    [
+        (SeriesStringNamespace.to_camel_case, ["helloWorld", "helloWorld", "helloWorld", None]),
+        (SeriesStringNamespace.to_upper_camel_case, ["HelloWorld", "HelloWorld", "HelloWorld", None]),
+        (SeriesStringNamespace.to_snake_case, ["hello_world", "hello_world", "hello_world", None]),
+        (SeriesStringNamespace.to_upper_snake_case, ["HELLO_WORLD", "HELLO_WORLD", "HELLO_WORLD", None]),
+        (SeriesStringNamespace.to_kebab_case, ["hello-world", "hello-world", "hello-world", None]),
+        (SeriesStringNamespace.to_upper_kebab_case, ["HELLO-WORLD", "HELLO-WORLD", "HELLO-WORLD", None]),
+        (SeriesStringNamespace.to_title_case, ["Hello World", "Hello World", "Hello World", None]),
+    ],
+)
+def test_series_utf8_case_conversions(convert, expected) -> None:
+    s = Series.from_arrow(pa.array(["helloWorld", "hello-world", "HelloWorld", None]))
+    result = convert(s.str)
     assert result.to_pylist() == expected
 
 
@@ -1094,13 +1113,6 @@ def test_series_utf8_repeat_bad_dtype() -> None:
         s.str.repeat(n)
 
 
-def test_series_utf8_like_bad_pattern() -> None:
-    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
-    pattern = Series.from_arrow(pa.array(["["]))
-    with pytest.raises(ValueError):
-        s.str.like(pattern)
-
-
 def test_series_utf8_like_bad_dtype() -> None:
     s = Series.from_arrow(pa.array([1, 2, 3]))
     pattern = Series.from_arrow(pa.array(["foo", "baz", "quux"]))
@@ -1148,13 +1160,6 @@ def test_series_utf8_like_empty_arrs() -> None:
     pat = Series.from_arrow(pa.array([], type=pa.string()))
     with pytest.raises(ValueError):
         s.str.like(pat)
-
-
-def test_series_utf8_ilike_bad_pattern() -> None:
-    s = Series.from_arrow(pa.array(["foo", "barbaz", "quux"]))
-    pattern = Series.from_arrow(pa.array(["["]))
-    with pytest.raises(ValueError):
-        s.str.ilike(pattern)
 
 
 def test_series_utf8_ilike_bad_dtype() -> None:

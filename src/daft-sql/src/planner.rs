@@ -10,8 +10,8 @@ use common_error::{DaftError, DaftResult};
 use daft_catalog::Identifier;
 use daft_core::prelude::*;
 use daft_dsl::{
-    Column, Expr, ExprRef, Operator, PlanRef, Subquery, UnresolvedColumn,
-    functions::{ScalarUDF, scalar::ScalarFn},
+    Column, Expr, ExprRef, PlanRef, Subquery, UnresolvedColumn,
+    functions::{FunctionExpr, ScalarUDF, scalar::ScalarFn, struct_::StructExpr},
     has_agg, lit, null_lit, resolved_col, unresolved_col,
 };
 use daft_functions::{
@@ -1247,20 +1247,41 @@ impl SQLPlanner<'_> {
 
                 let plan_schema = current_plan.plan.schema();
 
+                let is_struct_field = plan_schema
+                    .get_field(&ident_name)
+                    .map(|f| matches!(f.dtype, DataType::Struct(_)))
+                    .unwrap_or(false);
+
                 Ok(columns
                     .names()
                     .iter()
                     .map(|n| {
-                        let full_name = format!("{ident_name}.{n}");
-                        if plan_schema.has_field(&full_name) {
-                            // TODO: remove this once we do not do join column renaming
-                            unresolved_col(full_name).alias(n.clone())
+                        if is_struct_field {
+                            Arc::new(Expr::Alias(
+                                ExprRef::from(Box::new(Expr::Function {
+                                    func: FunctionExpr::Struct(StructExpr::Get(n.clone())),
+                                    inputs: vec![Arc::new(Expr::Column(Column::Unresolved(
+                                        UnresolvedColumn {
+                                            name: ident_name.clone().into(),
+                                            plan_ref: PlanRef::Unqualified,
+                                            plan_schema: Some(plan_schema.clone()),
+                                        },
+                                    )))],
+                                })),
+                                n.clone().into(),
+                            ))
                         } else {
-                            Arc::new(Expr::Column(Column::Unresolved(UnresolvedColumn {
-                                name: n.clone().into(),
-                                plan_ref: PlanRef::Alias(ident_name.clone().into()),
-                                plan_schema: Some(subquery_schema.clone()),
-                            })))
+                            let full_name = format!("{ident_name}.{n}");
+                            if plan_schema.has_field(&full_name) {
+                                // TODO: remove this once we do not do join column renaming
+                                unresolved_col(full_name).alias(n.clone())
+                            } else {
+                                Arc::new(Expr::Column(Column::Unresolved(UnresolvedColumn {
+                                    name: n.clone().into(),
+                                    plan_ref: PlanRef::Alias(ident_name.clone().into()),
+                                    plan_schema: Some(subquery_schema.clone()),
+                                })))
+                            }
                         }
                     })
                     .collect())

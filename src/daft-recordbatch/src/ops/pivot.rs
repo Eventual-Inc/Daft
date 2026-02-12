@@ -11,14 +11,13 @@ fn map_name_to_pivot_key_idx<'a>(
     names: &'a [String],
 ) -> DaftResult<std::collections::HashMap<&'a String, u64>> {
     let pivot_keys_series = {
-        let indices_as_arr = UInt64Array::from(("", pivot_key_indices.to_owned()));
+        let indices_as_arr = UInt64Array::from_vec("", pivot_key_indices.to_owned());
         pivot_series.take(&indices_as_arr)?
     };
     let pivot_keys_str_values = pivot_keys_series.to_str_values()?;
     let pivot_key_str_to_idx_mapping = pivot_keys_str_values
         .utf8()?
-        .as_arrow2()
-        .iter()
+        .into_iter()
         .zip(pivot_key_indices.iter())
         .map(|(key_str, idx)| (key_str.unwrap(), *idx))
         .collect::<std::collections::HashMap<_, _>>();
@@ -105,9 +104,10 @@ impl RecordBatch {
             .map(|name| match name_to_pivot_key_idx.get(name) {
                 Some(pivot_key_idx) => {
                     let indices = pivot_key_idx_to_values_indices.get(pivot_key_idx).unwrap();
-                    let indices_as_arrow =
-                        daft_arrow::array::UInt64Array::from_iter(indices.iter());
-                    let indices_as_arr = UInt64Array::from(("", Box::new(indices_as_arrow)));
+                    let indices_as_arr = UInt64Array::from_iter(
+                        Field::new("", DataType::UInt64),
+                        indices.iter().copied(),
+                    );
                     let values = value_series.take(&indices_as_arr)?;
                     Ok(values.rename(name))
                 }
@@ -120,7 +120,7 @@ impl RecordBatch {
             .collect::<DaftResult<Vec<_>>>()?;
 
         let group_keys_table = {
-            let indices_as_arr = UInt64Array::from(("", group_keys_indices));
+            let indices_as_arr = UInt64Array::from_vec("", group_keys_indices);
             groupby_table.take(&indices_as_arr)?
         };
 

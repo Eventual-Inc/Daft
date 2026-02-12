@@ -1,7 +1,6 @@
 [dependencies]
 arc-swap = {workspace = true}
 async-trait = {workspace = true}
-atomic_float = "*"
 capitalize = "*"
 common-daft-config = {path = "../common/daft-config", default-features = false}
 common-display = {path = "../common/display", default-features = false}
@@ -37,7 +36,6 @@ futures = {workspace = true}
 indexmap = {workspace = true}
 indicatif = {workspace = true}
 itertools = {workspace = true}
-kanal = "0.1"
 log = {workspace = true}
 parking_lot = {workspace = true}
 pin-project = "1"
@@ -45,12 +43,11 @@ pyo3 = {workspace = true, optional = true}
 pyo3-async-runtimes = {workspace = true, optional = true}
 rand = {workspace = true}
 snafu = {workspace = true}
-smallvec = {workspace = true}
 tokio = {workspace = true, features = ["test-util"]}
+tokio-stream = {workspace = true}
 tokio-util = {workspace = true}
 tracing = {workspace = true}
 serde_json = {workspace = true}
-bincode = {workspace = true}
 opentelemetry = {workspace = true}
 
 [features]
