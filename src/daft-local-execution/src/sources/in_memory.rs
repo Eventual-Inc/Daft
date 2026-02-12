@@ -3,10 +3,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
-use common_runtime::{combine_stream, get_io_runtime};
+use common_runtime::{JoinSet, combine_stream, get_io_runtime};
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
-// InputId now comes from pipeline_message module
 use daft_micropartition::{MicroPartition, MicroPartitionRef};
 use futures::{FutureExt, StreamExt};
 use tracing::instrument;
@@ -47,45 +46,75 @@ impl InMemorySource {
         let io_runtime = get_io_runtime(true);
 
         io_runtime.spawn(async move {
-            while let Some((input_id, partitions)) = receiver.recv().await {
-                if partitions.is_empty() {
-                    let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
-                    if output_sender
-                        .send(PipelineMessage::Morsel {
-                            input_id,
-                            partition: empty,
-                        })
-                        .await
-                        .is_err()
-                    {
-                        break;
+            let mut task_set: JoinSet<DaftResult<()>> = JoinSet::new();
+            let mut receiver_exhausted = false;
+
+            while !receiver_exhausted || !task_set.is_empty() {
+                tokio::select! {
+                    recv_result = receiver.recv(), if !receiver_exhausted => {
+                        match recv_result {
+                            Some((input_id, partitions)) => {
+                                task_set.spawn(forward_partition_batch(
+                                    partitions,
+                                    schema.clone(),
+                                    output_sender.clone(),
+                                    input_id,
+                                ));
+                            }
+                            None => {
+                                receiver_exhausted = true;
+                            }
+                        }
                     }
-                } else {
-                    for partition in partitions {
-                        if output_sender
-                            .send(PipelineMessage::Morsel {
-                                input_id,
-                                partition,
-                            })
-                            .await
-                            .is_err()
-                        {
-                            break;
+                    Some(join_result) = task_set.join_next(), if !task_set.is_empty() => {
+                        match join_result {
+                            Ok(Ok(())) => {}
+                            Ok(Err(e)) => {
+                                return Err(e);
+                            }
+                            Err(e) => {
+                                return Err(e.into());
+                            }
                         }
                     }
                 }
-                // Send flush signal after processing each input batch
-                if output_sender
-                    .send(PipelineMessage::Flush(input_id))
-                    .await
-                    .is_err()
-                {
-                    break;
-                }
             }
+
             Ok(())
         })
     }
+}
+
+async fn forward_partition_batch(
+    partitions: Vec<MicroPartitionRef>,
+    schema: SchemaRef,
+    sender: Sender<PipelineMessage>,
+    input_id: InputId,
+) -> DaftResult<()> {
+    if partitions.is_empty() {
+        let empty = Arc::new(MicroPartition::empty(Some(schema)));
+        let _ = sender
+            .send(PipelineMessage::Morsel {
+                input_id,
+                partition: empty,
+            })
+            .await;
+    } else {
+        for partition in partitions {
+            if sender
+                .send(PipelineMessage::Morsel {
+                    input_id,
+                    partition,
+                })
+                .await
+                .is_err()
+            {
+                break;
+            }
+        }
+    }
+    let _ = sender.send(PipelineMessage::Flush(input_id)).await;
+    Ok(())
 }
 
 #[async_trait]
