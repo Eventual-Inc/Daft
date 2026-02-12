@@ -537,7 +537,7 @@ fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(proj_op),
-                vec![child_node],
+                child_node,
                 stats_state.clone(),
                 ctx,
                 context,
@@ -585,7 +585,7 @@ fn physical_plan_to_pipeline(
                 })?;
                 IntermediateNode::new(
                     Arc::new(proj_op),
-                    vec![child_node],
+                    child_node,
                     stats_state.clone(),
                     ctx,
                     context,
@@ -622,7 +622,7 @@ fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(distributed_actor_pool_project_op),
-                vec![child_node],
+                child_node,
                 stats_state.clone(),
                 ctx,
                 context,
@@ -661,7 +661,7 @@ fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(filter_op),
-                vec![child_node],
+                child_node,
                 stats_state.clone(),
                 ctx,
                 context,
@@ -680,7 +680,7 @@ fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(into_batches_op),
-                vec![child_node],
+                child_node,
                 stats_state.clone(),
                 ctx,
                 context,
@@ -699,7 +699,7 @@ fn physical_plan_to_pipeline(
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(explode_op),
-                vec![child_node],
+                child_node,
                 stats_state.clone(),
                 ctx,
                 context,
@@ -820,7 +820,7 @@ fn physical_plan_to_pipeline(
             );
             IntermediateNode::new(
                 Arc::new(unpivot_op),
-                vec![child_node],
+                child_node,
                 stats_state.clone(),
                 ctx,
                 context,
