@@ -85,12 +85,14 @@ class IcebergCatalog(Catalog):
                 raise NotImplementedError(f"Unsupported partition transform: {pf.transform}")
 
             source_field = iceberg_schema.find_field(pf.field.name)
+            if pf.name is None:
+                raise ValueError(f"Partition field {pf} must have a name to be converted to a PyIcebergPartitionField")
             iceberg_partition_fields.append(
                 PyIcebergPartitionField(
                     source_id=source_field.field_id,
                     field_id=1000 + idx,
                     transform=transform,
-                    name=pf.field.name,
+                    name=pf.name,
                 )
             )
         return PyIcebergPartitionSpec(*iceberg_partition_fields)

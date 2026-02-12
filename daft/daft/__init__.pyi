@@ -1028,12 +1028,14 @@ class PyPartitionField:
     field: PyField
     source_field: PyField | None = None
     transform: PyPartitionTransform | None = None
+    name: str | None = None
 
     def __init__(
         self,
         field: PyField,
         source_field: PyField | None = None,
         transform: PyPartitionTransform | None = None,
+        name: str | None = None,
     ) -> None: ...
 
 class PyPartitionTransform:

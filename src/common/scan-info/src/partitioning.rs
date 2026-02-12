@@ -50,6 +50,7 @@ pub struct PartitionField {
     pub field: Field,
     pub source_field: Option<Field>,
     pub transform: Option<PartitionTransform>,
+    pub name: Option<String>,
 }
 
 impl PartitionField {
@@ -57,6 +58,7 @@ impl PartitionField {
         field: Field,
         source_field: Option<Field>,
         transform: Option<PartitionTransform>,
+        name: Option<String>,
     ) -> DaftResult<Self> {
         match (&source_field, &transform) {
             (Some(_), Some(_)) => {
@@ -65,6 +67,7 @@ impl PartitionField {
                     field,
                     source_field,
                     transform,
+                    name,
                 })
             }
             (None, Some(tfm)) => Err(DaftError::ValueError(format!(
@@ -74,6 +77,7 @@ impl PartitionField {
                 field,
                 source_field,
                 transform,
+                name,
             }),
         }
     }
@@ -85,16 +89,23 @@ impl PartitionField {
 
 impl Display for PartitionField {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let name_str = if let Some(name) = &self.name {
+            format!("name={}, ", name)
+        } else {
+            String::new()
+        };
+
         if let Some(tfm) = &self.transform {
             write!(
                 f,
-                "PartitionField({}, src={}, tfm={})",
+                "PartitionField({}field={}, src={}, tfm={})",
+                name_str,
                 self.field,
                 self.source_field.as_ref().unwrap(),
                 tfm
             )
         } else {
-            write!(f, "PartitionField({})", self.field)
+            write!(f, "PartitionField({}field={})", name_str, self.field)
         }
     }
 }

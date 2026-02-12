@@ -21,12 +21,14 @@ class PartitionField:
         field: Field,
         source_field: Field | None = None,
         transform: PartitionTransform | None = None,
+        name: str | None = None,
     ) -> PartitionField:
         pf = cls.__new__(cls)
         pf._partition_field = PyPartitionField(
             field._field,
             source_field._field if source_field is not None else None,
             transform._partition_transform if transform is not None else None,
+            name,
         )
         return pf
 
@@ -47,6 +49,10 @@ class PartitionField:
             return PartitionTransform._from_py_partition_transform(transform)
         else:
             return None
+
+    @property
+    def name(self) -> str | None:
+        return self._partition_field.name
 
 
 class PartitionTransform:

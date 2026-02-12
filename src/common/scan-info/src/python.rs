@@ -18,16 +18,18 @@ pub mod pylib {
     #[pymethods]
     impl PyPartitionField {
         #[new]
-        #[pyo3(signature = (field, source_field=None, transform=None))]
+        #[pyo3(signature = (field, source_field=None, transform=None, name=None))]
         fn new(
             field: PyField,
             source_field: Option<PyField>,
             transform: Option<PyPartitionTransform>,
+            name: Option<String>,
         ) -> PyResult<Self> {
             let p_field = PartitionField::new(
                 field.field,
                 source_field.map(std::convert::Into::into),
                 transform.map(|e| e.0),
+                name,
             )?;
             Ok(Self(Arc::new(p_field)))
         }
@@ -49,6 +51,11 @@ pub mod pylib {
         #[getter]
         pub fn transform(&self) -> PyResult<Option<PyPartitionTransform>> {
             Ok(self.0.transform.map(PyPartitionTransform))
+        }
+
+        #[getter]
+        pub fn name(&self) -> PyResult<Option<String>> {
+            Ok(self.0.name.clone())
         }
     }
 

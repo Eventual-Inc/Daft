@@ -400,7 +400,7 @@ impl GlobScanOperator {
             // Extract partitioning keys only after the user's schema hints have been applied.
             let partitioning_keys = generated_fields
                 .into_iter()
-                .map(|field| PartitionField::new(field.clone(), None, None))
+                .map(|field| PartitionField::new(field.clone(), None, None, None))
                 .collect::<Result<Vec<_>, _>>()?;
             (partitioning_keys, generated_fields)
         };
