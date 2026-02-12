@@ -152,7 +152,10 @@ impl IndicatifProgressBarManager {
         );
 
         let formatted_prefix = if node_info.name.len() > MAX_PIPELINE_NAME_LEN {
-            format!("{}...", &node_info.name[..MAX_PIPELINE_NAME_LEN - 3])
+            let truncate_at = node_info
+                .name
+                .floor_char_boundary(MAX_PIPELINE_NAME_LEN - 3);
+            format!("{}...", &node_info.name[..truncate_at])
         } else {
             format!("{:>1$}", node_info.name, max_name_len)
         };
