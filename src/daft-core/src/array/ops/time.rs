@@ -1,15 +1,9 @@
 use std::sync::Arc;
 
 use arrow::compute::{DatePart, date_part};
+use arrow::datatypes::IntervalMonthDayNano;
 use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
 use common_error::{DaftError, DaftResult};
-use daft_arrow::{
-    self,
-    array::{Array, PrimitiveArray},
-    compute::arithmetics::time::{add_interval, sub_interval},
-    datatypes::ArrowDataType,
-    types::months_days_ns,
-};
 
 use super::as_arrow::AsArrow;
 use crate::{
@@ -384,42 +378,36 @@ impl TimestampArray {
     }
 
     pub fn add_interval(&self, interval: &IntervalArray) -> DaftResult<Self> {
-        self.interval_helper(interval, add_interval)
+        let ts_array = self.to_arrow()?;
+        let interval_array = interval.to_arrow();
+        let result = if interval_array.len() == 1 {
+            let scalar = arrow::array::Scalar::new(interval_array);
+            arrow::compute::kernels::numeric::add(&ts_array, &scalar)?
+        } else {
+            arrow::compute::kernels::numeric::add(&ts_array, &interval_array)?
+        };
+        let result_i64 = arrow::compute::cast(result.as_ref(), &arrow::datatypes::DataType::Int64)?;
+        let physical_field = Arc::new(Field::new(self.name(), DataType::Int64));
+        Ok(Self::new(
+            self.field.clone(),
+            Int64Array::from_arrow(physical_field, result_i64)?,
+        ))
     }
 
     pub fn sub_interval(&self, interval: &IntervalArray) -> DaftResult<Self> {
-        self.interval_helper(interval, sub_interval)
-    }
-
-    fn interval_helper<
-        F: FnOnce(
-            &PrimitiveArray<i64>,
-            &PrimitiveArray<months_days_ns>,
-        ) -> Result<PrimitiveArray<i64>, daft_arrow::error::Error>,
-    >(
-        &self,
-        interval: &IntervalArray,
-        f: F,
-    ) -> DaftResult<Self> {
-        let arrow_interval = interval.as_arrow2();
-
-        let arrow_type = self.data_type().to_arrow2()?;
-        let mut arrow_timestamp = self.physical.as_arrow2().clone();
-
-        // `f` expect the inner type to be a timestamp
-        arrow_timestamp.change_type(arrow_type);
-
-        let mut physical_res = f(&arrow_timestamp, arrow_interval)?;
-        // but daft expects the inner type to be an int64
-        // This is because we have our own logical wrapper around the arrow array,
-        // so the physical array's dtype should always match the physical type
-        physical_res.change_type(ArrowDataType::Int64);
-
+        let ts_array = self.to_arrow()?;
+        let interval_array = interval.to_arrow();
+        let result = if interval_array.len() == 1 {
+            let scalar = arrow::array::Scalar::new(interval_array);
+            arrow::compute::kernels::numeric::sub(&ts_array, &scalar)?
+        } else {
+            arrow::compute::kernels::numeric::sub(&ts_array, &interval_array)?
+        };
+        let result_i64 = arrow::compute::cast(result.as_ref(), &arrow::datatypes::DataType::Int64)?;
         let physical_field = Arc::new(Field::new(self.name(), DataType::Int64));
-
         Ok(Self::new(
             self.field.clone(),
-            Int64Array::new(physical_field, Box::new(physical_res))?,
+            Int64Array::from_arrow(physical_field, result_i64)?,
         ))
     }
 
@@ -460,11 +448,36 @@ impl TimestampArray {
 
 impl IntervalArray {
     pub fn mul(&self, factor: &Int32Array) -> DaftResult<Self> {
-        let arrow_interval = self.as_arrow2();
-        let arrow_factor = factor.as_arrow2();
-        let result =
-            daft_arrow::compute::arithmetics::time::mul_interval(arrow_interval, arrow_factor)?;
-        Self::new(self.field.clone(), Box::new(result))
+        let intervals = self.to_arrow();
+        let intervals = intervals
+            .as_any()
+            .downcast_ref::<arrow::array::IntervalMonthDayNanoArray>()
+            .ok_or_else(|| {
+                DaftError::TypeError("Failed to downcast to IntervalMonthDayNanoArray".to_string())
+            })?;
+        let factors = factor.as_arrow()?;
+        let mul_op = |iv: IntervalMonthDayNano, f: i32| {
+            IntervalMonthDayNano::new(iv.months * f, iv.days * f, iv.nanoseconds * i64::from(f))
+        };
+        let result: arrow::array::IntervalMonthDayNanoArray = if factors.len() == 1 {
+            match factors.iter().next().unwrap() {
+                Some(f) => intervals
+                    .iter()
+                    .map(|iv| iv.map(|iv| mul_op(iv, f)))
+                    .collect(),
+                None => std::iter::repeat_n(None, intervals.len()).collect(),
+            }
+        } else {
+            intervals
+                .iter()
+                .zip(factors.iter())
+                .map(|(iv, f)| match (iv, f) {
+                    (Some(iv), Some(f)) => Some(mul_op(iv, f)),
+                    _ => None,
+                })
+                .collect()
+        };
+        Self::from_arrow(self.field.clone(), Arc::new(result))
     }
 }
 
