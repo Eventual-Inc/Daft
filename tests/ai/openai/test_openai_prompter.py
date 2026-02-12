@@ -1196,3 +1196,296 @@ def test_openai_prompter_chat_completions_with_image_structured_output():
         assert messages[0]["content"][1]["type"] == "image_url"
 
     run_async(_test())
+
+
+# Tests for HTTP URL direct passthrough
+
+
+def test_openai_prompter_with_image_url():
+    """Test prompting with image URL (no base64 encoding)."""
+
+    async def _test():
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.output_text = "This image shows a cat."
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
+
+        prompter = create_prompter()
+        prompter.llm = mock_client
+
+        image_url = "https://example.com/images/cat.jpg"
+        result = await prompter.prompt(("What is in this image?", image_url))
+
+        assert result == "This image shows a cat."
+
+        call_args = mock_client.responses.create.call_args
+        messages = call_args.kwargs["input"]
+        assert len(messages) == 1
+        assert messages[0]["role"] == "user"
+        assert isinstance(messages[0]["content"], list)
+        assert messages[0]["content"][0]["type"] == "input_text"
+        assert messages[0]["content"][0]["text"] == "What is in this image?"
+        assert messages[0]["content"][1]["type"] == "input_image"
+        assert messages[0]["content"][1]["image_url"] == image_url
+
+    run_async(_test())
+
+
+def test_openai_prompter_with_image_url_chat_completions():
+    """Test prompting with image URL using Chat Completions API."""
+
+    async def _test():
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_choice = Mock()
+        mock_message = Mock()
+        mock_message.content = "This image shows a dog."
+        mock_choice.message = mock_message
+        mock_response.choices = [mock_choice]
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        prompter = create_prompter(use_chat_completions=True)
+        prompter.llm = mock_client
+
+        image_url = "https://example.com/images/dog.png"
+        result = await prompter.prompt(("What is in this image?", image_url))
+
+        assert result == "This image shows a dog."
+
+        call_args = mock_client.chat.completions.create.call_args
+        messages = call_args.kwargs["messages"]
+        assert len(messages) == 1
+        assert messages[0]["role"] == "user"
+        assert isinstance(messages[0]["content"], list)
+        assert messages[0]["content"][0]["type"] == "text"
+        assert messages[0]["content"][1]["type"] == "image_url"
+        assert messages[0]["content"][1]["image_url"]["url"] == image_url
+
+    run_async(_test())
+
+
+def test_openai_prompter_with_video_url():
+    """Test prompting with video URL."""
+
+    async def _test():
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.output_text = "This video shows a cat playing."
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
+
+        prompter = create_prompter()
+        prompter.llm = mock_client
+
+        video_url = "https://example.com/videos/cat.mp4"
+        result = await prompter.prompt(("What is in this video?", video_url))
+
+        assert result == "This video shows a cat playing."
+
+        call_args = mock_client.responses.create.call_args
+        messages = call_args.kwargs["input"]
+        assert len(messages) == 1
+        assert messages[0]["role"] == "user"
+        assert isinstance(messages[0]["content"], list)
+        assert messages[0]["content"][0]["type"] == "input_text"
+        assert messages[0]["content"][1]["type"] == "input_video"
+        assert messages[0]["content"][1]["video_url"] == video_url
+
+    run_async(_test())
+
+
+def test_openai_prompter_with_video_url_chat_completions():
+    """Test prompting with video URL using Chat Completions API."""
+
+    async def _test():
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_choice = Mock()
+        mock_message = Mock()
+        mock_message.content = "This video shows a dog running."
+        mock_choice.message = mock_message
+        mock_response.choices = [mock_choice]
+        mock_client.chat.completions.create = AsyncMock(return_value=mock_response)
+
+        prompter = create_prompter(use_chat_completions=True)
+        prompter.llm = mock_client
+
+        video_url = "https://example.com/videos/dog.webm"
+        result = await prompter.prompt(("What is in this video?", video_url))
+
+        assert result == "This video shows a dog running."
+
+        call_args = mock_client.chat.completions.create.call_args
+        messages = call_args.kwargs["messages"]
+        assert len(messages) == 1
+        assert messages[0]["role"] == "user"
+        assert isinstance(messages[0]["content"], list)
+        assert messages[0]["content"][0]["type"] == "text"
+        assert messages[0]["content"][1]["type"] == "video_url"
+        assert messages[0]["content"][1]["video_url"]["url"] == video_url
+
+    run_async(_test())
+
+
+def test_openai_prompter_image_url_with_query_params():
+    """Test that image URLs with query params are correctly detected."""
+
+    async def _test():
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.output_text = "Response."
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
+
+        prompter = create_prompter()
+        prompter.llm = mock_client
+
+        image_url = "https://example.com/images/cat.jpg?size=large&format=webp"
+        result = await prompter.prompt(("Describe", image_url))
+
+        assert result == "Response."
+
+        call_args = mock_client.responses.create.call_args
+        messages = call_args.kwargs["input"]
+        assert messages[0]["content"][1]["type"] == "input_image"
+        assert messages[0]["content"][1]["image_url"] == image_url
+
+    run_async(_test())
+
+
+def test_openai_prompter_non_media_url_as_text():
+    """Test that non-media URLs are treated as plain text."""
+
+    async def _test():
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.output_text = "Response."
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
+
+        prompter = create_prompter()
+        prompter.llm = mock_client
+
+        url = "https://example.com/page.html"
+        result = await prompter.prompt(("Check this", url))
+
+        assert result == "Response."
+
+        call_args = mock_client.responses.create.call_args
+        messages = call_args.kwargs["input"]
+        assert len(messages) == 1
+        assert isinstance(messages[0]["content"], list)
+        assert len(messages[0]["content"]) == 2
+        assert messages[0]["content"][0]["type"] == "input_text"
+        assert messages[0]["content"][1]["type"] == "input_text"
+        assert messages[0]["content"][1]["text"] == url
+
+    run_async(_test())
+
+
+def test_openai_prompter_mixed_content_with_urls():
+    """Test prompting with mixed content including URLs and numpy arrays."""
+
+    async def _test():
+        from daft.dependencies import np
+
+        mock_client = AsyncMock()
+        mock_response = Mock()
+        mock_response.output_text = "Mixed content response."
+        mock_client.responses.create = AsyncMock(return_value=mock_response)
+
+        prompter = create_prompter()
+        prompter.llm = mock_client
+
+        image_url = "https://example.com/image.jpg"
+        video_url = "https://example.com/video.mp4"
+        numpy_image = np.zeros((50, 50, 3), dtype=np.uint8)
+
+        result = await prompter.prompt(("Compare these", image_url, video_url, numpy_image))
+
+        assert result == "Mixed content response."
+
+        call_args = mock_client.responses.create.call_args
+        messages = call_args.kwargs["input"]
+        assert len(messages) == 1
+        assert isinstance(messages[0]["content"], list)
+        assert len(messages[0]["content"]) == 4
+
+        assert messages[0]["content"][0]["type"] == "input_text"
+        assert messages[0]["content"][1]["type"] == "input_image"
+        assert messages[0]["content"][1]["image_url"] == image_url
+        assert messages[0]["content"][2]["type"] == "input_video"
+        assert messages[0]["content"][2]["video_url"] == video_url
+        assert messages[0]["content"][3]["type"] == "input_image"
+        assert messages[0]["content"][3]["image_url"].startswith("data:image/png;base64,")
+
+    run_async(_test())
+
+
+def test_openai_prompter_is_image_url_various_extensions():
+    """Test _is_image_url method with various extensions."""
+    prompter = create_prompter()
+
+    image_urls = [
+        "https://example.com/image.jpg",
+        "https://example.com/image.jpeg",
+        "https://example.com/image.PNG",
+        "https://example.com/image.GIF",
+        "https://example.com/path/to/image.WEBP",
+        "https://example.com/image.bmp",
+        "https://example.com/image.TIFF",
+        "https://example.com/image.tif",
+        "https://example.com/image.svg",
+        "https://example.com/image.heic",
+        "https://example.com/image.HEIF",
+        "https://example.com/image.avif",
+        "https://example.com/image.ico",
+        "https://example.com/image.jp2",
+    ]
+
+    for url in image_urls:
+        assert prompter._is_image_url(url), f"Failed for {url}"
+
+    non_image_urls = [
+        "https://example.com/document.pdf",
+        "https://example.com/page.html",
+        "https://example.com/video.mp4",
+    ]
+
+    for url in non_image_urls:
+        assert not prompter._is_image_url(url), f"Should not be image URL: {url}"
+
+
+def test_openai_prompter_is_video_url_various_extensions():
+    """Test _is_video_url method with various extensions."""
+    prompter = create_prompter()
+
+    video_urls = [
+        "https://example.com/video.mp4",
+        "https://example.com/video.MPEG",
+        "https://example.com/video.mpg",
+        "https://example.com/video.mov",
+        "https://example.com/video.AVI",
+        "https://example.com/video.webm",
+        "https://example.com/video.mkv",
+        "https://example.com/video.flv",
+        "https://example.com/video.WMV",
+        "https://example.com/video.m4v",
+        "https://example.com/video.3gp",
+        "https://example.com/video.3g2",
+        "https://example.com/video.rm",
+        "https://example.com/video.rmvb",
+        "https://example.com/video.ogv",
+        "https://example.com/video.ogg",
+        "https://example.com/video.ts",
+        "https://example.com/video.asf",
+    ]
+
+    for url in video_urls:
+        assert prompter._is_video_url(url), f"Failed for {url}"
+
+    non_video_urls = [
+        "https://example.com/image.jpg",
+        "https://example.com/document.pdf",
+        "https://example.com/page.html",
+    ]
+
+    for url in non_video_urls:
+        assert not prompter._is_video_url(url), f"Should not be video URL: {url}"
