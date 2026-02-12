@@ -322,3 +322,28 @@ mod python {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, sync::Arc};
+
+    use common_metrics::ops::NodeInfo;
+
+    use super::IndicatifProgressBarManager;
+
+    #[test]
+    fn test_truncate_multibyte_utf8_name() {
+        // 'ê' is 2 bytes in UTF-8. 14 ASCII + 4×2-byte = 22 bytes total.
+        // Truncation at byte 15 lands inside a multi-byte char and panics.
+        let node_info = Arc::new(NodeInfo {
+            name: Arc::from("aaaaaaaaaaaaaaêêêê"),
+            id: 0,
+            ..Default::default()
+        });
+        let mut map = HashMap::new();
+        map.insert(0, node_info);
+
+        // This should not panic.
+        let _manager = IndicatifProgressBarManager::new(&map);
+    }
+}
