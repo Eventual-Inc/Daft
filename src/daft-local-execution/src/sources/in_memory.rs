@@ -3,7 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use common_error::DaftResult;
 use common_metrics::ops::NodeType;
-use common_runtime::{combine_stream, get_io_runtime};
+use common_runtime::{JoinSet, combine_stream, get_io_runtime};
 use daft_core::prelude::SchemaRef;
 use daft_io::IOStatsRef;
 use daft_local_plan::InputId;
@@ -46,23 +46,60 @@ impl InMemorySource {
         let io_runtime = get_io_runtime(true);
 
         io_runtime.spawn(async move {
-            while let Some((_input_id, partitions)) = receiver.recv().await {
-                if partitions.is_empty() {
-                    let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
-                    if output_sender.send(empty).await.is_err() {
-                        break;
+            let mut task_set: JoinSet<DaftResult<()>> = JoinSet::new();
+            let mut receiver_exhausted = false;
+
+            while !receiver_exhausted || !task_set.is_empty() {
+                tokio::select! {
+                    recv_result = receiver.recv(), if !receiver_exhausted => {
+                        match recv_result {
+                            Some((_input_id, partitions)) => {
+                                task_set.spawn(forward_partition_batch(
+                                    partitions,
+                                    schema.clone(),
+                                    output_sender.clone(),
+                                ));
+                            }
+                            None => {
+                                receiver_exhausted = true;
+                            }
+                        }
                     }
-                } else {
-                    for partition in partitions {
-                        if output_sender.send(partition).await.is_err() {
-                            break;
+                    Some(join_result) = task_set.join_next(), if !task_set.is_empty() => {
+                        match join_result {
+                            Ok(Ok(())) => {}
+                            Ok(Err(e)) => {
+                                return Err(e);
+                            }
+                            Err(e) => {
+                                return Err(e.into());
+                            }
                         }
                     }
                 }
             }
+            debug_assert!(receiver_exhausted, "Receiver should be exhausted");
+            debug_assert!(task_set.is_empty(), "Task set should be empty");
+
             Ok(())
         })
     }
+}
+
+async fn forward_partition_batch(
+    partitions: Vec<MicroPartitionRef>,
+    schema: SchemaRef,
+    sender: Sender<Arc<MicroPartition>>,
+) -> DaftResult<()> {
+    if partitions.is_empty() {
+        let empty = Arc::new(MicroPartition::empty(Some(schema)));
+        let _ = sender.send(empty).await;
+    } else {
+        for partition in partitions {
+            let _ = sender.send(partition).await;
+        }
+    }
+    Ok(())
 }
 
 #[async_trait]
