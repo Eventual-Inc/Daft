@@ -294,7 +294,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
                             };
 
                             if !per_input_senders.contains_key(&input_id) {
-                                let (tx, rx) = create_channel(1);
+                                let (tx, rx) = create_channel(16);
                                 per_input_senders.insert(input_id, tx);
 
                                 let op = op.clone();
