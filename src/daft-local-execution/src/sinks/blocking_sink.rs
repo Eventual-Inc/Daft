@@ -16,12 +16,13 @@ use common_runtime::{JoinSet, get_compute_pool_num_threads, get_compute_runtime}
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
+use opentelemetry::metrics::Meter;
 use tracing::info_span;
 
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
     channel::{Receiver, Sender, create_channel},
-    pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
+    pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineNode},
     pipeline_message::{InputId, PipelineMessage},
     runtime_stats::{DefaultRuntimeStats, RuntimeStats},
 };
@@ -51,8 +52,8 @@ pub(crate) trait BlockingSink: Send + Sync {
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Self::State>;
-    fn make_runtime_stats(&self, name: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(DefaultRuntimeStats::new(name))
+    fn make_runtime_stats(&self, meter: &Meter, name: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(DefaultRuntimeStats::new(meter, name))
     }
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()
@@ -146,12 +147,12 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         op: Arc<Op>,
         child: Box<dyn PipelineNode>,
         plan_stats: StatsState,
-        ctx: &RuntimeContext,
+        ctx: &BuilderContext,
         context: &LocalNodeContext,
     ) -> Self {
         let name: Arc<str> = op.name().into();
         let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::BlockingSink, context);
-        let runtime_stats = op.make_runtime_stats(node_info.id);
+        let runtime_stats = op.make_runtime_stats(&ctx.meter, node_info.id);
 
         Self {
             op,

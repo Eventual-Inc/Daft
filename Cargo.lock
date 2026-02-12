@@ -2031,6 +2031,7 @@ name = "common-tracing"
 version = "0.3.0-dev0"
 dependencies = [
  "common-runtime",
+ "log",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",

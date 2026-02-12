@@ -9,7 +9,7 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_writers::{AsyncFileWriter, WriteResult, WriterFactory};
-use opentelemetry::{KeyValue, global};
+use opentelemetry::{KeyValue, metrics::Meter};
 use tracing::{Span, instrument};
 
 use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
@@ -25,15 +25,14 @@ struct WriteStats {
 }
 
 impl WriteStats {
-    pub fn new(id: usize) -> Self {
-        let meter = global::meter("daft.local.node_stats");
+    pub fn new(meter: &Meter, id: usize) -> Self {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, CPU_US_KEY, None),
-            rows_in: Counter::new(&meter, ROWS_IN_KEY, None),
-            rows_written: Counter::new(&meter, "rows written", None),
-            bytes_written: Counter::new(&meter, "bytes written", None),
+            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
+            rows_written: Counter::new(meter, "rows written", None),
+            bytes_written: Counter::new(meter, "bytes written", None),
 
             node_kv,
         }
@@ -215,8 +214,8 @@ impl BlockingSink for WriteSink {
         Ok(WriteState::new(writer))
     }
 
-    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(WriteStats::new(id))
+    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(WriteStats::new(meter, id))
     }
 
     fn multiline_display(&self) -> Vec<String> {

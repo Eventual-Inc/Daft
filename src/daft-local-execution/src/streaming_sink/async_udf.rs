@@ -19,7 +19,7 @@ use daft_dsl::{
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
-use opentelemetry::{KeyValue, global, metrics::Meter};
+use opentelemetry::{KeyValue, metrics::Meter};
 use tracing::{Span, instrument};
 
 use super::base::{
@@ -82,17 +82,16 @@ impl RuntimeStats for AsyncUdfRuntimeStats {
 }
 
 impl AsyncUdfRuntimeStats {
-    fn new(id: usize) -> Self {
-        let meter = global::meter("daft.local.node_stats");
+    fn new(meter: &Meter, id: usize) -> Self {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, CPU_US_KEY, None),
-            rows_in: Counter::new(&meter, ROWS_IN_KEY, None),
-            rows_out: Counter::new(&meter, ROWS_OUT_KEY, None),
+            meter: meter.clone(), // Cheap to clone, Arc under the hood
+            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
             custom_counters: Mutex::new(HashMap::new()),
             node_kv,
-            meter,
         }
     }
 
@@ -359,8 +358,8 @@ impl StreamingSink for AsyncUdfSink {
         })
     }
 
-    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(AsyncUdfRuntimeStats::new(id))
+    fn make_runtime_stats(&self, meter: &Meter, node_id: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(AsyncUdfRuntimeStats::new(meter, node_id))
     }
 
     fn max_concurrency(&self) -> usize {

@@ -27,7 +27,7 @@ use daft_dsl::{
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use itertools::Itertools;
-use opentelemetry::{KeyValue, global, metrics::Meter};
+use opentelemetry::{KeyValue, metrics::Meter};
 #[cfg(feature = "python")]
 use pyo3::{Py, prelude::*};
 use tracing::{Span, instrument};
@@ -91,17 +91,16 @@ impl RuntimeStats for UdfRuntimeStats {
 }
 
 impl UdfRuntimeStats {
-    fn new(id: usize) -> Self {
-        let meter = global::meter("daft.local.node_stats");
+    fn new(meter: &Meter, id: usize) -> Self {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, CPU_US_KEY, None),
-            rows_in: Counter::new(&meter, ROWS_IN_KEY, None),
-            rows_out: Counter::new(&meter, ROWS_OUT_KEY, None),
+            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
             custom_counters: Mutex::new(HashMap::new()),
             node_kv,
-            meter,
+            meter: meter.clone(), // Cheap to clone, Arc under the hood
         }
     }
 
@@ -481,8 +480,8 @@ impl IntermediateOperator for UdfOperator {
         NodeType::UDFProject
     }
 
-    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(UdfRuntimeStats::new(id))
+    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(UdfRuntimeStats::new(meter, id))
     }
 
     fn multiline_display(&self) -> Vec<String> {

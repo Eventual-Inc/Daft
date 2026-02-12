@@ -10,6 +10,7 @@ use std::{
 use common_daft_config::DaftExecutionConfig;
 use common_display::{DisplayLevel, mermaid::MermaidDisplayOptions};
 use common_error::DaftResult;
+use common_metrics::QueryID;
 use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
 use daft_context::{DaftContext, Subscriber};
@@ -35,7 +36,7 @@ use crate::{
     ExecutionRuntimeContext,
     channel::{Sender, UnboundedSender, create_channel, create_unbounded_channel},
     pipeline::{
-        RelationshipInformation, RuntimeContext, get_pipeline_relationship_mapping,
+        BuilderContext, RelationshipInformation, get_pipeline_relationship_mapping,
         translate_physical_plan_to_pipeline, viz_pipeline_ascii, viz_pipeline_mermaid,
     },
     pipeline_message::PipelineMessage,
@@ -304,32 +305,22 @@ impl NativeExecutor {
         inputs: HashMap<SourceId, Input>,
         input_id: InputId,
     ) -> DaftResult<(u64, BoxFuture<'static, DaftResult<ExecutionEngineResult>>)> {
-        let query_id_str = additional_context
+        let query_id = additional_context
             .as_ref()
             .and_then(|c| c.get("query_id"))
-            .map(|s| s.as_str())
-            .unwrap_or("");
+            .map(|s| QueryID::from(s.as_str()))
+            .unwrap_or(QueryID::from(""));
         let plan_fingerprint = local_physical_plan.fingerprint();
-        let fingerprint = plan_key(plan_fingerprint, query_id_str);
+        let fingerprint = plan_key(plan_fingerprint, query_id.clone());
         let enable_explain_analyze = should_enable_explain_analyze();
 
         // Get or create plan handle from registry
         self.active_plans.get_or_create_plan(fingerprint, || {
             let cancel = self.cancel.clone();
             let additional_context = additional_context.clone().unwrap_or_default();
-            let ctx = RuntimeContext::new_with_context(additional_context.clone());
+            let ctx = BuilderContext::new_with_context(query_id.clone(), additional_context);
             let (mut pipeline, input_senders) =
                 translate_physical_plan_to_pipeline(local_physical_plan, &exec_cfg, &ctx)?;
-
-            let query_id: common_metrics::QueryID = additional_context
-                .get("query_id")
-                .ok_or_else(|| {
-                    common_error::DaftError::ValueError(
-                        "query_id not found in additional_context".to_string(),
-                    )
-                })?
-                .clone()
-                .into();
 
             let handle = get_global_runtime();
             let stats_manager =
@@ -479,25 +470,28 @@ impl NativeExecutor {
         let enqueue_input_sender = plan_state.enqueue_input_sender.clone();
         plan_state.active_input_ids.insert(input_id);
 
-        Ok((fingerprint, async move {
-            let (result_tx, result_rx) = create_unbounded_channel();
+        Ok((
+            fingerprint,
+            async move {
+                let (result_tx, result_rx) = create_unbounded_channel();
 
-            let enqueue_msg = EnqueueInputMessage {
-                input_id,
-                inputs,
-                result_sender: result_tx,
-            };
+                let enqueue_msg = EnqueueInputMessage {
+                    input_id,
+                    inputs,
+                    result_sender: result_tx,
+                };
 
-            if enqueue_input_sender.send(enqueue_msg).await.is_err() {
-                return Err(common_error::DaftError::InternalError(
-                    "Plan execution task has died; cannot enqueue new input".to_string(),
-                ));
+                if enqueue_input_sender.send(enqueue_msg).await.is_err() {
+                    return Err(common_error::DaftError::InternalError(
+                        "Plan execution task has died; cannot enqueue new input".to_string(),
+                    ));
+                }
+                Ok(ExecutionEngineResult {
+                    receiver: result_rx,
+                })
             }
-            Ok(ExecutionEngineResult {
-                receiver: result_rx,
-            })
-        }
-        .boxed()))
+            .boxed(),
+        ))
     }
 
     /// Finish tracking an input_id. If no active input_ids remain (or the
@@ -555,7 +549,7 @@ impl NativeExecutor {
     ) -> String {
         let logical_plan = logical_plan_builder.build();
         let (physical_plan, _) = translate(&logical_plan, &HashMap::new()).unwrap();
-        let ctx = RuntimeContext::new();
+        let ctx = BuilderContext::new();
         let (pipeline_node, _) =
             translate_physical_plan_to_pipeline(&physical_plan, &cfg, &ctx).unwrap();
 
@@ -569,7 +563,7 @@ impl NativeExecutor {
     ) -> String {
         let logical_plan = logical_plan_builder.build();
         let (physical_plan, _) = translate(&logical_plan, &HashMap::new()).unwrap();
-        let ctx = RuntimeContext::new();
+        let ctx = BuilderContext::new();
         let (pipeline_node, _) =
             translate_physical_plan_to_pipeline(&physical_plan, &cfg, &ctx).unwrap();
 
@@ -591,7 +585,7 @@ impl NativeExecutor {
     ) -> RelationshipInformation {
         let logical_plan = logical_plan_builder.build();
         let (physical_plan, _) = translate(&logical_plan, &HashMap::new()).unwrap();
-        let ctx = RuntimeContext::new();
+        let ctx = BuilderContext::new();
         let (pipeline_node, _) =
             translate_physical_plan_to_pipeline(&physical_plan, &cfg, &ctx).unwrap();
         get_pipeline_relationship_mapping(&*pipeline_node)
@@ -606,7 +600,7 @@ impl Drop for NativeExecutor {
 
 /// Combine a plan fingerprint with a query_id to produce a plan key.
 /// Plans are only reused when both the plan shape AND query match.
-fn plan_key(plan_fingerprint: u64, query_id: &str) -> u64 {
+fn plan_key(plan_fingerprint: u64, query_id: QueryID) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     plan_fingerprint.hash(&mut hasher);
     query_id.hash(&mut hasher);

@@ -5,6 +5,7 @@ use common_metrics::ops::NodeType;
 use common_runtime::get_compute_pool_num_threads;
 use daft_micropartition::MicroPartition;
 use tokio::sync::watch;
+use opentelemetry::metrics::Meter;
 
 use crate::{
     ExecutionTaskSpawner, OperatorOutput,
@@ -83,8 +84,8 @@ pub(crate) trait JoinOperator: Send + Sync {
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
-    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(crate::runtime_stats::DefaultRuntimeStats::new(id))
+    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(crate::runtime_stats::DefaultRuntimeStats::new(meter, id))
     }
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()

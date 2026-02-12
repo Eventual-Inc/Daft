@@ -19,7 +19,7 @@ use crate::{
         join_operator::JoinOperator,
         probe::ProbeExecutionContext,
     },
-    pipeline::{MorselSizeRequirement, PipelineNode, RuntimeContext},
+    pipeline::{BuilderContext, MorselSizeRequirement, PipelineNode},
     pipeline_message::PipelineMessage,
     runtime_stats::RuntimeStats,
 };
@@ -40,12 +40,12 @@ impl<Op: JoinOperator + 'static> JoinNode<Op> {
         left: Box<dyn PipelineNode>,
         right: Box<dyn PipelineNode>,
         plan_stats: StatsState,
-        ctx: &RuntimeContext,
+        ctx: &BuilderContext,
         context: &LocalNodeContext,
     ) -> Self {
         let name: Arc<str> = op.name().into();
         let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::Intermediate, context);
-        let runtime_stats = op.make_runtime_stats(node_info.id);
+        let runtime_stats = op.make_runtime_stats(&ctx.meter, node_info.id);
 
         let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
         Self {
