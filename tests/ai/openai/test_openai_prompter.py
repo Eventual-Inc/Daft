@@ -1438,6 +1438,7 @@ def test_openai_prompter_is_image_url_various_extensions():
         "https://example.com/image.avif",
         "https://example.com/image.ico",
         "https://example.com/image.jp2",
+        "https://example.com/image.j2k",
     ]
 
     for url in image_urls:
