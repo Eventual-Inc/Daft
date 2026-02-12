@@ -8,11 +8,7 @@ use common_runtime::JoinSet;
 use tokio::sync::{mpsc, watch};
 
 use crate::{
-    ExecutionTaskSpawner,
-    channel::Receiver,
-    join::join_operator::JoinOperator,
-    pipeline_message::{InputId, PipelineMessage},
-    runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle},
+    channel::{create_channel, Receiver, Sender}, join::join_operator::JoinOperator, pipeline_message::{InputId, PipelineMessage}, runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle}, ExecutionTaskSpawner
 };
 
 /// Bridge for communicating finalized build state between build and probe sides.
@@ -57,7 +53,7 @@ impl<Op: JoinOperator> BuildStateBridge<Op> {
 /// Process all morsels for a single input_id on the build side, then finalize.
 async fn process_single_input<Op: JoinOperator + 'static>(
     input_id: InputId,
-    mut receiver: mpsc::UnboundedReceiver<PipelineMessage>,
+    mut receiver: Receiver<PipelineMessage>,
     op: Arc<Op>,
     task_spawner: ExecutionTaskSpawner,
     build_state_bridge: Arc<BuildStateBridge<Op>>,
@@ -115,7 +111,7 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
         receiver: Receiver<PipelineMessage>,
     ) -> DaftResult<()> {
         let mut receiver = receiver;
-        let mut per_input_senders: HashMap<InputId, mpsc::UnboundedSender<PipelineMessage>> = HashMap::new();
+        let mut per_input_senders: HashMap<InputId, Sender<PipelineMessage>> = HashMap::new();
         let mut processor_set: JoinSet<DaftResult<()>> = JoinSet::new();
         let mut node_initialized = false;
         let mut input_closed = false;
@@ -140,7 +136,7 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
                     };
 
                     if !per_input_senders.contains_key(&input_id) {
-                        let (tx, rx) = mpsc::unbounded_channel();
+                        let (tx, rx) = create_channel(16);
                         per_input_senders.insert(input_id, tx);
 
                         let op = self.op.clone();
@@ -157,7 +153,7 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
                     }
 
                     let is_flush = matches!(&msg, PipelineMessage::Flush(_));
-                    if per_input_senders[&input_id].send(msg).is_err() {
+                    if per_input_senders[&input_id].send(msg).await.is_err() {
                         // Processor died — error will surface from join below
                     }
                     if is_flush {
