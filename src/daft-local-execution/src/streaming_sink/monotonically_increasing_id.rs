@@ -121,7 +121,7 @@ impl StreamingSink for MonotonicallyIncreasingIdSink {
 
     // Monotonically increasing id is a memory-bound operation, so there's no performance benefit to parallelizing it.
     // Furthermore, it is much simpler to implement as a single-threaded operation, since we can just keep track of the current id offset without synchronization.
-    fn max_concurrency_per_input_id(&self) -> usize {
+    fn max_concurrency(&self) -> usize {
         1
     }
 

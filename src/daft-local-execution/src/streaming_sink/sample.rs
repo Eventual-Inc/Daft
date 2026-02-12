@@ -365,7 +365,7 @@ impl StreamingSink for SampleSink {
         }
     }
 
-    fn max_concurrency_per_input_id(&self) -> usize {
+    fn max_concurrency(&self) -> usize {
         match &self.params.sampling_method {
             SamplingMethod::Fraction(_) => get_compute_pool_num_threads(),
             SamplingMethod::Size(_) => 1,

@@ -454,11 +454,7 @@ impl StreamingSink for VLLMSink {
         })
     }
 
-    fn max_concurrency_per_input_id(&self) -> usize {
-        1
-    }
-
-    fn total_max_concurrency(&self) -> usize {
+    fn max_concurrency(&self) -> usize {
         1
     }
 

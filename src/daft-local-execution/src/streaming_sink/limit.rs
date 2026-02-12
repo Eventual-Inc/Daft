@@ -128,7 +128,7 @@ impl StreamingSink for LimitSink {
         Ok(LimitSinkState::new(self.limit, self.offset))
     }
 
-    fn max_concurrency_per_input_id(&self) -> usize {
+    fn max_concurrency(&self) -> usize {
         1
     }
 
