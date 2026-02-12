@@ -14,7 +14,7 @@ use daft_micropartition::MicroPartition;
 use crate::{
     ExecutionRuntimeContext, OperatorControlFlow,
     channel::{Receiver, Sender, create_channel},
-    pipeline::{MorselSizeRequirement, PipelineNode, RuntimeContext},
+    pipeline::{BuilderContext, MorselSizeRequirement, PipelineNode},
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
 
@@ -32,13 +32,13 @@ impl ConcatNode {
         left: Box<dyn PipelineNode>,
         right: Box<dyn PipelineNode>,
         plan_stats: StatsState,
-        ctx: &RuntimeContext,
+        ctx: &BuilderContext,
         context: &LocalNodeContext,
     ) -> Self {
         let name: Arc<str> = "Concat".into();
         let node_info =
             ctx.next_node_info(name, NodeType::Concat, NodeCategory::Intermediate, context);
-        let runtime_stats = Arc::new(DefaultRuntimeStats::new(node_info.id));
+        let runtime_stats = Arc::new(DefaultRuntimeStats::new(&ctx.meter, node_info.id));
         let morsel_size_requirement = MorselSizeRequirement::default();
 
         Self {
