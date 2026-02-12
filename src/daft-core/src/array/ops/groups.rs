@@ -121,7 +121,7 @@ where
         if array.null_count() > 0 {
             make_groups(array.iter())
         } else {
-            make_groups(array.values().iter().copied())
+            make_groups(array.values().iter())
         }
     }
 }
@@ -138,7 +138,7 @@ where
         if array.null_count() > 0 {
             make_unique_idxs(array.iter())
         } else {
-            make_unique_idxs(array.values().iter().copied())
+            make_unique_idxs(array.values().iter())
         }
     }
 }
@@ -149,7 +149,7 @@ impl IntoGroups for Decimal128Array {
         if array.null_count() > 0 {
             make_groups(array.iter())
         } else {
-            make_groups(array.values().iter().copied())
+            make_groups(array.values().iter())
         }
     }
 }
@@ -160,7 +160,7 @@ impl IntoUniqueIdxs for Decimal128Array {
         if array.null_count() > 0 {
             make_unique_idxs(array.iter())
         } else {
-            make_unique_idxs(array.values().iter().copied())
+            make_unique_idxs(array.values().iter())
         }
     }
 }
@@ -179,10 +179,10 @@ impl IntoGroups for Float32Array {
                 })
             }))
         } else {
-            make_groups(array.values().iter().copied().map(|f| {
+            make_groups(array.values().iter().map(|f| {
                 match f.is_nan() {
                     true => f32::NAN,
-                    false => f,
+                    false => *f,
                 }
                 .to_bits()
             }))
@@ -204,10 +204,10 @@ impl IntoUniqueIdxs for Float32Array {
                 })
             }))
         } else {
-            make_unique_idxs(array.values().iter().copied().map(|f| {
+            make_unique_idxs(array.values().iter().map(|f| {
                 match f.is_nan() {
                     true => f32::NAN,
-                    false => f,
+                    false => *f,
                 }
                 .to_bits()
             }))
@@ -229,10 +229,10 @@ impl IntoGroups for Float64Array {
                 })
             }))
         } else {
-            make_groups(array.values().iter().copied().map(|f| {
+            make_groups(array.values().iter().map(|f| {
                 match f.is_nan() {
                     true => f64::NAN,
-                    false => f,
+                    false => *f,
                 }
                 .to_bits()
             }))
@@ -254,10 +254,10 @@ impl IntoUniqueIdxs for Float64Array {
                 })
             }))
         } else {
-            make_unique_idxs(array.values().iter().copied().map(|f| {
+            make_unique_idxs(array.values().iter().map(|f| {
                 match f.is_nan() {
                     true => f64::NAN,
-                    false => f,
+                    false => *f,
                 }
                 .to_bits()
             }))
@@ -271,7 +271,7 @@ impl IntoGroups for Utf8Array {
         if array.null_count() > 0 {
             make_groups(array.iter())
         } else {
-            make_groups(array.values().iter().copied())
+            make_groups(array.values().iter())
         }
     }
 }
@@ -282,7 +282,7 @@ impl IntoUniqueIdxs for Utf8Array {
         if array.null_count() > 0 {
             make_unique_idxs(array.iter())
         } else {
-            make_unique_idxs(array.values().iter().copied())
+            make_unique_idxs(array.values().iter())
         }
     }
 }
@@ -293,7 +293,7 @@ impl IntoGroups for BinaryArray {
         if array.null_count() > 0 {
             make_groups(array.iter())
         } else {
-            make_groups(array.values().iter().copied())
+            make_groups(array.values().iter())
         }
     }
 }
@@ -304,7 +304,7 @@ impl IntoUniqueIdxs for BinaryArray {
         if array.null_count() > 0 {
             make_unique_idxs(array.iter())
         } else {
-            make_unique_idxs(array.values().iter().copied())
+            make_unique_idxs(array.values().iter())
         }
     }
 }
@@ -315,7 +315,7 @@ impl IntoGroups for FixedSizeBinaryArray {
         if array.null_count() > 0 {
             make_groups(array.iter())
         } else {
-            make_groups(array.values().iter().copied())
+            make_groups(array.values().iter())
         }
     }
 }
@@ -326,7 +326,7 @@ impl IntoUniqueIdxs for FixedSizeBinaryArray {
         if array.null_count() > 0 {
             make_unique_idxs(array.iter())
         } else {
-            make_unique_idxs(array.values().iter().copied())
+            make_unique_idxs(array.values().iter())
         }
     }
 }
