@@ -79,11 +79,12 @@ impl<'d> serde::Deserialize<'d> for Series {
                         map.next_value::<usize>()?,
                     )
                     .into_series()),
-                    DataType::Boolean => Ok(BooleanArray::from((
-                        field.name.as_str(),
-                        map.next_value::<Vec<Option<bool>>>()?.as_slice(),
-                    ))
-                    .into_series()),
+                    DataType::Boolean => Ok(map
+                        .next_value::<Vec<Option<bool>>>()?
+                        .into_iter()
+                        .collect::<BooleanArray>()
+                        .rename(field.name.as_str())
+                        .into_series()),
                     DataType::Int8 => Ok(Int8Array::from_iter(
                         field,
                         map.next_value::<Vec<Option<i8>>>()?.into_iter(),

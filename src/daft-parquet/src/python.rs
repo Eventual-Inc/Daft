@@ -1,9 +1,9 @@
+use common_arrow_ffi::ArrayRef;
 use pyo3::prelude::*;
 
 pub mod pylib {
     use std::{collections::BTreeMap, sync::Arc};
 
-    use common_arrow_ffi::{field_to_py, to_py_array};
     use daft_core::python::{PySchema, PySeries, PyTimeUnit};
     use daft_dsl::python::PyExpr;
     use daft_io::{IOStatsContext, get_io_client, python::IOConfig};
@@ -84,14 +84,14 @@ pub mod pylib {
             .into_iter()
             .map(|v| {
                 v.into_iter()
-                    .map(|a| to_py_array(py, a, pyarrow).map(pyo3::Bound::unbind))
+                    .map(|a| super::to_py_array(py, a, pyarrow).map(pyo3::Bound::unbind))
                     .collect::<PyResult<Vec<_>>>()
             })
             .collect::<PyResult<Vec<_>>>()?;
         let fields = schema
             .fields
             .iter()
-            .map(|f| field_to_py(py, f, pyarrow))
+            .map(|f| super::field_to_py(py, f, pyarrow))
             .collect::<Result<Vec<_>, _>>()?;
         let metadata = &schema.metadata;
         Ok((fields, metadata.clone(), converted_arrays, num_rows))
@@ -333,6 +333,74 @@ pub mod pylib {
         })
     }
 }
+
+fn to_py_array<'py>(
+    py: Python<'py>,
+    array: ArrayRef,
+    pyarrow: &Bound<'py, PyModule>,
+) -> PyResult<Bound<'py, PyAny>> {
+    let field = daft_arrow::datatypes::Field::new("", array.data_type().clone(), true);
+    let field = daft_arrow::datatypes::arrow2_field_to_arrow(field);
+    let field = arrow::ffi::FFI_ArrowSchema::try_from(&field).map_err(|e| {
+        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+            "Failed to convert Arrow field to FFI schema: {}",
+            e
+        ))
+    })?;
+
+    let schema = Box::new(field);
+
+    let mut data = daft_arrow::array::to_data(array.as_ref());
+    data.align_buffers();
+    let arrow_arr = Box::new(arrow::ffi::FFI_ArrowArray::new(&data));
+
+    let schema_ptr: *const arrow::ffi::FFI_ArrowSchema = &raw const *schema;
+    let array_ptr: *const arrow::ffi::FFI_ArrowArray = &raw const *arrow_arr;
+
+    let array = pyarrow.getattr(pyo3::intern!(py, "Array"))?.call_method1(
+        pyo3::intern!(py, "_import_from_c"),
+        (
+            array_ptr as pyo3::ffi::Py_uintptr_t,
+            schema_ptr as pyo3::ffi::Py_uintptr_t,
+        ),
+    )?;
+
+    let array = PyModule::import(py, pyo3::intern!(py, "daft.arrow_utils"))?
+        .getattr(pyo3::intern!(py, "remove_empty_struct_placeholders"))?
+        .call1((array,))?;
+
+    Ok(array)
+}
+
+pub fn field_to_py(
+    py: Python,
+    field: &daft_arrow::datatypes::Field,
+    pyarrow: &Bound<PyModule>,
+) -> PyResult<Py<PyAny>> {
+    let schema = Box::new(
+        arrow::ffi::FFI_ArrowSchema::try_from(daft_arrow::datatypes::arrow2_field_to_arrow(
+            field.clone(),
+        ))
+        .map_err(|e| {
+            use pyo3::exceptions::PyRuntimeError;
+
+            PyErr::new::<PyRuntimeError, _>(format!(
+                "Failed to convert field to FFI_ArrowSchema: {}",
+                e
+            ))
+        })?,
+    );
+
+    let schema_ptr: *const arrow::ffi::FFI_ArrowSchema = &raw const *schema;
+
+    let field = pyarrow.getattr(pyo3::intern!(py, "Field"))?.call_method1(
+        pyo3::intern!(py, "_import_from_c"),
+        (schema_ptr as pyo3::ffi::Py_uintptr_t,),
+    )?;
+
+    Ok(field.into())
+}
+
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_function(wrap_pyfunction!(pylib::read_parquet, parent)?)?;
     parent.add_function(wrap_pyfunction!(pylib::read_parquet_into_pyarrow, parent)?)?;

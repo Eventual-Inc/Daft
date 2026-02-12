@@ -116,7 +116,7 @@ fn regex_extract_first_match<'a>(
     index: usize,
     name: &str,
 ) -> DaftResult<Utf8Array> {
-    let arrow_result = arr_iter
+    let res = arr_iter
         .zip(regex_iter)
         .map(|(val, re)| match (val, re) {
             (Some(val), Some(re)) => {
@@ -134,7 +134,7 @@ fn regex_extract_first_match<'a>(
             }
             _ => Ok(None),
         })
-        .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>();
+        .collect::<DaftResult<Utf8Array>>();
 
-    Ok(Utf8Array::from((name, Box::new(arrow_result?))))
+    Ok(res?.rename(name))
 }

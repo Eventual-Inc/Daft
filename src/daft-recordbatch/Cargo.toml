@@ -5,7 +5,7 @@ arrow-array = {workspace = true}
 arrow-ipc = {workspace = true}
 comfy-table = {workspace = true}
 daft-arrow = {path = "../daft-arrow"}
-common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false}
+common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false, optional = true}
 common-display = {path = "../common/display", default-features = false}
 common-error = {path = "../common/error", default-features = false}
 common-py-serde = {path = "../common/py-serde", default-features = false}
@@ -31,7 +31,7 @@ python = [
   "common-error/python",
   "daft-core/python",
   "daft-dsl/python",
-  "common-arrow-ffi/python",
+  "dep:common-arrow-ffi",
   "common-display/python",
   "common-py-serde/python",
   "common-metrics/python",

@@ -87,7 +87,7 @@ mod tests {
         let num_entries = keys.len();
 
         // Create key and value series using proper from_iter methods
-        let key_array = Utf8Array::from_iter("key", keys.into_iter().map(|s| Some(s.to_string())));
+        let key_array = Utf8Array::from_slice("key", keys.as_slice());
         let value_array = Int64Array::from_iter(
             Field::new("value", DataType::Int64),
             values.into_iter().map(Some),

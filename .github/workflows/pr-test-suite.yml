@@ -50,7 +50,6 @@ jobs:
         if git diff --quiet origin/$BASE -- \
           . \
           ':!.vscode/**' \
-          ':!ci/**' \
           ':!docs/**' \
           ':!.git-blame-ignore-revs' \
           ':!.gitignore' \
@@ -120,6 +119,8 @@ jobs:
         cache-all-crates: 'true'
     - name: Install cargo-llvm-cov
       uses: taiki-e/install-action@cargo-llvm-cov
+      with:
+        tool: cargo-llvm-cov@0.7.1
 
     - name: install llvm tools
       run: rustup component add llvm-tools-preview
@@ -755,6 +756,9 @@ jobs:
       env:
         DAFT_RUNNER: native
         UNITY_CATALOG_PORT: 3000
+        DATABRICKS_ENDPOINT: ${{ secrets.ACTIONS_DATABRICKS_ENDPOINT }}
+        DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID: ${{ secrets.ACTIONS_DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID }}
+        DATABRICKS_SERVICE_PRINCIPAL_SECRET: ${{ secrets.ACTIONS_DATABRICKS_SERVICE_PRINCIPAL_SECRET }}
     - name: Run Unity integration tests (ray)
       if: always()
       run: |
@@ -765,6 +769,9 @@ jobs:
       env:
         DAFT_RUNNER: ray
         UNITY_CATALOG_PORT: 3000
+        DATABRICKS_ENDPOINT: ${{ secrets.ACTIONS_DATABRICKS_ENDPOINT }}
+        DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID: ${{ secrets.ACTIONS_DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID }}
+        DATABRICKS_SERVICE_PRINCIPAL_SECRET: ${{ secrets.ACTIONS_DATABRICKS_SERVICE_PRINCIPAL_SECRET }}
     # Iceberg tests
     - name: Run Iceberg integration tests (native)
       if: always()
@@ -1215,7 +1222,7 @@ jobs:
       with:
         tool-cache: false
     - name: Generate code coverage
-      run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --lcov --output-path ./report-output/lcov.info
+      run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --exclude common-arrow-ffi --lcov --output-path ./report-output/lcov.info
     - name: Upload coverage report
       uses: actions/upload-artifact@v6
       with:
@@ -1332,9 +1339,10 @@ jobs:
         path: ./report-output
     - name: Upload coverage reports to Codecov with GitHub Action
       uses: codecov/codecov-action@v5
+      with:
+        directory: ./report-output
       env:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
-        files: ./report-output/*
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
       if: ${{ failure() && (github.event_name == 'push') }}

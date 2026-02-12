@@ -1,5 +1,4 @@
 use common_error::DaftResult;
-use daft_arrow::array::PrimitiveArray;
 
 use crate::{
     array::{
@@ -17,9 +16,10 @@ impl DaftVarianceAggable for DataArray<Float64Type> {
         let stats = stats::calculate_stats(self)?;
         let values = self.into_iter().flatten().copied();
         let variance = stats::calculate_variance(stats, values, ddof);
-        let field = self.field.clone();
-        let data = PrimitiveArray::<f64>::from([variance]).boxed();
-        Self::new(field, data)
+        Ok(Self::from_iter(
+            self.field().clone(),
+            std::iter::once(variance),
+        ))
     }
 
     fn grouped_var(&self, groups: &GroupIndices, ddof: usize) -> Self::Output {
@@ -27,8 +27,9 @@ impl DaftVarianceAggable for DataArray<Float64Type> {
             let values = group.iter().filter_map(|&index| self.get(index as _));
             stats::calculate_variance(stats, values, ddof)
         });
-        let field = self.field.clone();
-        let data = PrimitiveArray::<f64>::from_iter(grouped_variances_iter).boxed();
-        Self::new(field, data)
+        Ok(Self::from_iter(
+            self.field().clone(),
+            grouped_variances_iter,
+        ))
     }
 }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any, Literal
 
 import daft.daft as native
@@ -248,11 +249,15 @@ def fill_null(expr: Expression, fill_value: Expression) -> Expression:
     return Expression._from_pyexpr(expr._expr.fill_null(fill_value._expr))
 
 
-def is_in(expr: Expression, other: Any) -> Expression:
-    """Checks if values in the Expression are in the provided list.
+def is_in(expr: Expression, other: Iterable[Any] | Expression) -> Expression:
+    """Checks if values in the Expression are in the provided iterable.
+
+    Args:
+        expr: The expression to check
+        other: An iterable (list, set, tuple, etc.), Expression, or array-like object containing the values to check against
 
     Returns:
-        Expression (Boolean Expression): expression indicating whether values are in the provided list
+        Expression (Boolean Expression): expression indicating whether values are in the provided iterable
 
     Examples:
         >>> import daft
@@ -276,6 +281,11 @@ def is_in(expr: Expression, other: Any) -> Expression:
         (Showing first 3 of 3 rows)
 
     """
+    # Convert non-list iterables (sets, tuples, generators, ranges, etc.) to lists
+    # Exclude strings/bytes since they are iterable but should not be treated as sequences of characters/bytes
+    if isinstance(other, Iterable) and not isinstance(other, (str, bytes, Expression)):
+        other = list(other)
+
     if isinstance(other, list):
         other = [Expression._to_expression(item) for item in other]
     elif not isinstance(other, Expression):

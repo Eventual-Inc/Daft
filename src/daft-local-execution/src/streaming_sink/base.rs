@@ -223,18 +223,13 @@ async fn process_single_input<Op: StreamingSink + 'static>(
             let mut state = states.pop().unwrap();
             loop {
                 let now = Instant::now();
-                let (new_state, result) =
-                    op.execute(partition, state, &task_spawner).await??;
+                let (new_state, result) = op.execute(partition, state, &task_spawner).await??;
                 let elapsed = now.elapsed();
                 runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
 
                 if let Some(mp) = result.output() {
                     runtime_stats.add_rows_out(mp.len() as u64);
-                    batch_manager.record_execution_stats(
-                        runtime_stats.as_ref(),
-                        mp.len(),
-                        elapsed,
-                    );
+                    batch_manager.record_execution_stats(runtime_stats.as_ref(), mp.len(), elapsed);
                     if output_sender
                         .send(PipelineMessage::Morsel {
                             input_id,
@@ -437,6 +432,10 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
             downstream_requirement,
         );
         self.morsel_size_requirement = combined_morsel_size_requirement;
+        self.child.propagate_morsel_size_requirement(
+            combined_morsel_size_requirement,
+            _default_morsel_size,
+        );
         self.child.propagate_morsel_size_requirement(
             combined_morsel_size_requirement,
             _default_morsel_size,
