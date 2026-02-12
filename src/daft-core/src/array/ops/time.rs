@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
-use arrow::compute::{DatePart, date_part};
-use arrow::datatypes::IntervalMonthDayNano;
+use arrow::{
+    compute::{DatePart, date_part},
+    datatypes::IntervalMonthDayNano,
+};
 use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
 use common_error::{DaftError, DaftResult};
 
