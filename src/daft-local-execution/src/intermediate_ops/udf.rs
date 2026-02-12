@@ -548,8 +548,8 @@ impl IntermediateOperator for UdfOperator {
         }
     }
 
-    fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(self.concurrency)
+    fn max_concurrency(&self) -> usize {
+        self.concurrency
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
