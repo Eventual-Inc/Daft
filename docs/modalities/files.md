@@ -148,30 +148,39 @@ This architecture allows us to implement storage-specific optimizations (like ne
 ```python
 import daft
 
-# Basic python usage (outside a dataframe context)
-file = daft.File("s3://bucket/image.jpg", io_config)
-content = file.read()
-
-# Custom user defined functions usage
 @daft.func
-def read_file(file: daft.File):
-    with file.open() as f:
-        return f.read()
+def read_header(f: daft.File) -> bytes:
+    with f.open() as fh:
+        return fh.read(16)
 
-# DataFrame usage
-df = daft.from_pydict({"path": ["path/to/file.txt"]})
-df = df.select(read_file(daft.col("path")))
-df.show()
+df = (
+    daft.from_glob_path("hf://datasets/Eventual-Inc/sample-files/**")
+    .with_column("file", daft.functions.file(daft.col("path")))
+    .with_column("header", read_header(daft.col("file")))
+    .select("path", "size", "file", "header")
+)
+
+df.show(5)
 ```
 
 ``` {title="Output"}
-╭────────────────────────────────┬────────────────────────────────╮
-│ path                           ┆ file                           │
-│ ---                            ┆ ---                            │
-│ String                         ┆ String                         │
-╞════════════════════════════════╪════════════════════════════════╡
-│ path/to/file.txt               ┆ Hello, world!                  │
-╰────────────────────────────────┴────────────────────────────────╯
+╭────────────────────────────────┬─────────┬────────────────────────────────┬────────────────────────────────╮
+│ path                           ┆ size    ┆ file                           ┆ header                         │
+│ ---                            ┆ ---     ┆ ---                            ┆ ---                            │
+│ String                         ┆ Int64   ┆ File[Unknown]                  ┆ Binary                         │
+╞════════════════════════════════╪═════════╪════════════════════════════════╪════════════════════════════════╡
+│ hf://datasets/Eventual-Inc/sa… ┆ 2534    ┆ Unknown(path: hf://datasets/E… ┆ b"*.7z filter=lfs "            │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ hf://datasets/Eventual-Inc/sa… ┆ 31      ┆ Unknown(path: hf://datasets/E… ┆ b"---\r\nlicense: ap"          │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ hf://datasets/Eventual-Inc/sa… ┆ 822924  ┆ Unknown(path: hf://datasets/E… ┆ b"\xff\xf3\x88\xc4\x00\x00\x0… │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ hf://datasets/Eventual-Inc/sa… ┆ 618408  ┆ Unknown(path: hf://datasets/E… ┆ b"\xff\xf3\x88\xc4\x00\x00\x0… │
+├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ hf://datasets/Eventual-Inc/sa… ┆ 1190736 ┆ Unknown(path: hf://datasets/E… ┆ b"\xff\xf3\x88\xc4\x00\x00\x0… │
+╰────────────────────────────────┴─────────┴────────────────────────────────┴────────────────────────────────╯
+
+(Showing first 5 rows)
 ```
 
 ## Using daft.File to read code and walk the AST
@@ -189,6 +198,7 @@ import daft
                 "signature": daft.DataType.string(),
                 "docstring": daft.DataType.string(),
                 "start_line": daft.DataType.int64(),
+                "end_line": daft.DataType.int64(),
             }
         )
     )
