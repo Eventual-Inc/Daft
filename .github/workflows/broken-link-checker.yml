@@ -61,7 +61,7 @@ jobs:
             echo "No broken links detected."
           fi
   notify_on_failure:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() }}
     needs: check-links
     steps:
