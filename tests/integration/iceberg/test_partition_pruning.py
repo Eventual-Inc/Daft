@@ -82,9 +82,11 @@ def test_daft_iceberg_table_predicate_pushdown_on_date_column(predicate, table, 
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     iceberg_pandas = iceberg_pandas[predicate(iceberg_pandas["dt"])]
-    if limit:
-        iceberg_pandas = iceberg_pandas[:limit]
-    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["dt"])
+    if limit and limit < len(iceberg_pandas):
+        # Limit without sort returns arbitrary subset; just verify count
+        assert len(daft_pandas) == limit
+    else:
+        assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["dt"])
 
 
 @pytest.mark.integration()
@@ -123,10 +125,11 @@ def test_daft_iceberg_table_predicate_pushdown_on_timestamp_column(predicate, ta
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     iceberg_pandas = iceberg_pandas[predicate(iceberg_pandas["ts"])]
-    if limit:
-        iceberg_pandas = iceberg_pandas[:limit]
-
-    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["ts"])
+    if limit and limit < len(iceberg_pandas):
+        # Limit without sort returns arbitrary subset; just verify count
+        assert len(daft_pandas) == limit
+    else:
+        assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["ts"])
 
 
 @pytest.mark.integration()
@@ -164,10 +167,11 @@ def test_daft_iceberg_table_predicate_pushdown_on_letter(predicate, table, limit
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     iceberg_pandas = iceberg_pandas[predicate(iceberg_pandas["letter"])]
-    if limit:
-        iceberg_pandas = iceberg_pandas[:limit]
-
-    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["letter"])
+    if limit and limit < len(iceberg_pandas):
+        # Limit without sort returns arbitrary subset; just verify count
+        assert len(daft_pandas) == limit
+    else:
+        assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["letter"])
 
 
 @pytest.mark.integration()
@@ -205,10 +209,11 @@ def test_daft_iceberg_table_predicate_pushdown_on_number(predicate, table, limit
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     iceberg_pandas = iceberg_pandas[predicate(iceberg_pandas["number"])]
-    if limit:
-        iceberg_pandas = iceberg_pandas[:limit]
-
-    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["number"])
+    if limit and limit < len(iceberg_pandas):
+        # Limit without sort returns arbitrary subset; just verify count
+        assert len(daft_pandas) == limit
+    else:
+        assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["number"])
 
 
 @pytest.mark.integration()

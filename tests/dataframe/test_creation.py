@@ -431,7 +431,7 @@ def test_create_dataframe_multiple_csvs_with_file_path_column(valid_data: list[d
         pd_df = df.to_pandas()
         assert list(pd_df.columns) == COL_NAMES + ["file_path"]
         assert len(pd_df) == (len(valid_data) * 2)
-        assert pd_df["file_path"].to_list() == [f1name] * len(valid_data) + [f2name] * len(valid_data)
+        assert sorted(pd_df["file_path"].to_list()) == sorted([f1name] * len(valid_data) + [f2name] * len(valid_data))
 
 
 def test_create_dataframe_csv_with_file_path_column_and_pushdowns(valid_data: list[dict[str, float]]) -> None:
@@ -748,7 +748,7 @@ def test_create_dataframe_multiple_jsons_with_file_path_column(valid_data: list[
         pd_df = df.to_pandas()
         assert list(pd_df.columns) == COL_NAMES + ["file_path"]
         assert len(pd_df) == (len(valid_data) * 2)
-        assert pd_df["file_path"].to_list() == [f1name] * len(valid_data) + [f2name] * len(valid_data)
+        assert sorted(pd_df["file_path"].to_list()) == sorted([f1name] * len(valid_data) + [f2name] * len(valid_data))
 
 
 def test_create_dataframe_json_with_file_path_column_and_pushdowns(valid_data: list[dict[str, float]]) -> None:
@@ -1029,7 +1029,7 @@ def test_create_dataframe_multiple_parquets_with_file_path_column(valid_data: li
         pd_df = df.to_pandas()
         assert list(pd_df.columns) == COL_NAMES + ["file_path"]
         assert len(pd_df) == (len(valid_data) * 2)
-        assert pd_df["file_path"].to_list() == [f1name] * len(valid_data) + [f2name] * len(valid_data)
+        assert sorted(pd_df["file_path"].to_list()) == sorted([f1name] * len(valid_data) + [f2name] * len(valid_data))
 
 
 def test_create_dataframe_parquet_with_file_path_column_and_pushdowns(valid_data: list[dict[str, float]]) -> None:
@@ -1238,6 +1238,7 @@ def test_create_dataframe_parquet_read_mismatched_schemas_with_pushdown():
         df = daft.read_parquet([f1, f2])
         df = df.select("x", "y")  # Applies column selection pushdown on each read
         assert df.schema().column_names() == ["x", "y"]
+        df = df.sort("x")
         assert df.to_pydict() == {"x": [1, 2, 3, 4, 5, 6, 7, 8], "y": [1, 2, 3, 4, None, None, None, None]}
 
 
@@ -1261,7 +1262,8 @@ def test_create_dataframe_parquet_read_mismatched_schemas_with_pushdown_no_rows_
         df = daft.read_parquet([f1, f2])
         df = df.select("x")  # Applies column selection pushdown on each read
         assert df.schema().column_names() == ["x"]
-        assert df.to_pydict() == {"x": [1, 2, 3, 4, None, None, None, None]}
+        result = df.to_pydict()["x"]
+        assert sorted(result, key=lambda v: (v is None, v or 0)) == [1, 2, 3, 4, None, None, None, None]
 
 
 def test_create_dataframe_of_tuples():

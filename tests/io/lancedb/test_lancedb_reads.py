@@ -92,9 +92,9 @@ def test_lancedb_read_limit_large_dataset(large_lance_dataset_path, limit_size, 
     assert len(result["vector"]) == limit_size
     assert len(result["big_int"]) == limit_size
 
-    # Verify the data is ordered correctly (should get first N rows)
+    # Verify we got the expected rows (partition ordering may be non-deterministic)
     expected_big_ints = list(range(limit_size))
-    assert result["big_int"] == expected_big_ints
+    assert sorted(result["big_int"]) == expected_big_ints
 
 
 def test_lancedb_with_version(lance_dataset_path):
