@@ -314,6 +314,14 @@ impl NativeExecutor {
         let fingerprint = plan_key(plan_fingerprint, query_id.clone());
         let enable_explain_analyze = should_enable_explain_analyze();
 
+        if !self.active_plans.plans.contains_key(&fingerprint) {
+            println!("New plan");
+            println!("{}", local_physical_plan.single_line_display());
+            println!("fingerprint: {fingerprint}");
+            println!("query_id: {query_id}");
+            println!("input id: {input_id}");
+        }
+
         // Get or create plan handle from registry
         self.active_plans.get_or_create_plan(fingerprint, || {
             let cancel = self.cancel.clone();
