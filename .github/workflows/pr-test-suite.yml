@@ -103,11 +103,20 @@ jobs:
       with:
         tool-cache: false
         android: true
-        dotnet: false
+        dotnet: true
         haskell: true
         large-packages: false
-        docker-images: false
+        docker-images: true
         swap-storage: true
+    - name: Additional disk cleanup
+      if: ${{ (runner.os == 'Linux') }}
+      run: |
+        sudo rm -rf /usr/share/swift || true
+        sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+        sudo rm -rf /opt/hostedtoolcache/go || true
+        sudo rm -rf /opt/hostedtoolcache/Ruby || true
+        sudo rm -rf /opt/hostedtoolcache/node || true
+        df -h
 
     - uses: actions/checkout@v6
     - uses: moonrepo/setup-rust@v1
@@ -380,11 +389,20 @@ jobs:
       with:
         tool-cache: false
         android: true
-        dotnet: false
+        dotnet: true
         haskell: true
         large-packages: false
-        docker-images: false
+        docker-images: true
         swap-storage: true
+    - name: Additional disk cleanup
+      if: ${{ (runner.os == 'Linux') }}
+      run: |
+        sudo rm -rf /usr/share/swift || true
+        sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+        sudo rm -rf /opt/hostedtoolcache/go || true
+        sudo rm -rf /opt/hostedtoolcache/Ruby || true
+        sudo rm -rf /opt/hostedtoolcache/node || true
+        df -h
     - uses: actions/checkout@v6
       with:
         submodules: true
@@ -478,11 +496,20 @@ jobs:
       with:
         tool-cache: false
         android: true
-        dotnet: false
+        dotnet: true
         haskell: true
         large-packages: false
-        docker-images: false
+        docker-images: true
         swap-storage: true
+    - name: Additional disk cleanup
+      if: ${{ (runner.os == 'Linux') }}
+      run: |
+        sudo rm -rf /usr/share/swift || true
+        sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+        sudo rm -rf /opt/hostedtoolcache/go || true
+        sudo rm -rf /opt/hostedtoolcache/Ruby || true
+        sudo rm -rf /opt/hostedtoolcache/node || true
+        df -h
     - uses: actions/checkout@v6
       with:
         submodules: true
@@ -579,11 +606,20 @@ jobs:
       with:
         tool-cache: false
         android: true
-        dotnet: false
+        dotnet: true
         haskell: true
         large-packages: false
-        docker-images: false
+        docker-images: true
         swap-storage: true
+    - name: Additional disk cleanup
+      if: ${{ (runner.os == 'Linux') }}
+      run: |
+        sudo rm -rf /usr/share/swift || true
+        sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+        sudo rm -rf /opt/hostedtoolcache/go || true
+        sudo rm -rf /opt/hostedtoolcache/Ruby || true
+        sudo rm -rf /opt/hostedtoolcache/node || true
+        df -h
     - uses: actions/checkout@v6
       with:
         submodules: true
@@ -677,11 +713,20 @@ jobs:
       with:
         tool-cache: false
         android: true
-        dotnet: false
+        dotnet: true
         haskell: true
         large-packages: false
-        docker-images: false
+        docker-images: true
         swap-storage: true
+    - name: Additional disk cleanup
+      if: ${{ (runner.os == 'Linux') }}
+      run: |
+        sudo rm -rf /usr/share/swift || true
+        sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+        sudo rm -rf /opt/hostedtoolcache/go || true
+        sudo rm -rf /opt/hostedtoolcache/Ruby || true
+        sudo rm -rf /opt/hostedtoolcache/node || true
+        df -h
     - uses: actions/checkout@v6
       with:
         submodules: true
@@ -885,11 +930,20 @@ jobs:
       with:
         tool-cache: false
         android: true
-        dotnet: false
+        dotnet: true
         haskell: true
         large-packages: false
-        docker-images: false
+        docker-images: true
         swap-storage: true
+    - name: Additional disk cleanup
+      if: ${{ (runner.os == 'Linux') }}
+      run: |
+        sudo rm -rf /usr/share/swift || true
+        sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+        sudo rm -rf /opt/hostedtoolcache/go || true
+        sudo rm -rf /opt/hostedtoolcache/Ruby || true
+        sudo rm -rf /opt/hostedtoolcache/node || true
+        df -h
     - uses: actions/checkout@v6
       with:
         submodules: true
@@ -1222,6 +1276,21 @@ jobs:
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: false
+        docker-images: true
+        swap-storage: true
+    - name: Additional disk cleanup
+      if: ${{ matrix.os == 'ubuntu' }}
+      run: |
+        sudo rm -rf /usr/share/swift || true
+        sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+        sudo rm -rf /opt/hostedtoolcache/go || true
+        sudo rm -rf /opt/hostedtoolcache/Ruby || true
+        sudo rm -rf /opt/hostedtoolcache/node || true
+        df -h
     - name: Generate code coverage
       run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --exclude common-arrow-ffi --lcov --output-path ./report-output/lcov.info
     - name: Upload coverage report
@@ -1286,11 +1355,20 @@ jobs:
       with:
         tool-cache: false
         android: true
-        dotnet: false
+        dotnet: true
         haskell: true
         large-packages: false
-        docker-images: false
+        docker-images: true
         swap-storage: true
+    - name: Additional disk cleanup
+      if: ${{ (runner.os == 'Linux') }}
+      run: |
+        sudo rm -rf /usr/share/swift || true
+        sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+        sudo rm -rf /opt/hostedtoolcache/go || true
+        sudo rm -rf /opt/hostedtoolcache/Ruby || true
+        sudo rm -rf /opt/hostedtoolcache/node || true
+        df -h
     - uses: actions/checkout@v6
     - uses: moonrepo/setup-rust@v1
       with:
