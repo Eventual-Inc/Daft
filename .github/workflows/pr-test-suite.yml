@@ -126,11 +126,13 @@ jobs:
         prefix-key: ${{ runner.os }}-build
         cache-all-crates: 'true'
     - name: Install cargo-llvm-cov
+      if: matrix.pyarrow-version != '8.0.0'
       uses: taiki-e/install-action@cargo-llvm-cov
       with:
         tool: cargo-llvm-cov@0.7.1
 
     - name: install llvm tools
+      if: matrix.pyarrow-version != '8.0.0'
       run: rustup component add llvm-tools-preview
 
     - name: Setup Python and uv
@@ -169,7 +171,8 @@ jobs:
         source .venv/bin/activate
         uv pip install pyarrow==${{ matrix.pyarrow-version }}
 
-    - name: Build library and Test with pytest
+    - name: Build library and Test with pytest (with coverage)
+      if: matrix.pyarrow-version != '8.0.0'
       run: |
         set -o pipefail
         source .venv/bin/activate
@@ -196,7 +199,23 @@ jobs:
 
         DAFT_RUNNER: ${{ matrix.daft-runner }}
 
+    - name: Build library and Test with pytest (no coverage)
+      if: matrix.pyarrow-version == '8.0.0'
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        maturin develop --uv
+        pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
+        pytest -n auto --ignore tests/integration --durations=0 | ./tools/capture-durations.sh "pytest_output.txt"
+        python tools/aggregate_test_durations.py pytest_output.txt
+      env:
+        RAY_CONDA_HOME: ${{ env.CONDA_HOME }}
+        CONDA_EXE: ${{ env.CONDA_HOME }}/bin/conda
+
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
+
     - name: Upload coverage report
+      if: matrix.pyarrow-version != '8.0.0'
       uses: actions/upload-artifact@v6
       with:
         name: coverage-reports-unit-tests-${{ join(matrix.*, '-') }}
