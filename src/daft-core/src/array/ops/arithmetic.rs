@@ -35,10 +35,23 @@ use crate::{
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-/// Helper function to perform arithmetic operations on a DataArray.
-/// Operates on all values including null positions; null correctness is
-/// maintained via NullBuffer union. Safe for add/sub/mul where computing
-/// on garbage null values won't panic.
+// TODO(desmond): Once DataArray stores arrow-rs arrays natively (instead of arrow2),
+// `as_arrow()` becomes a free cast. At that point, the equal-length path in
+// `arithmetic_helper` should delegate to arrow-rs kernels (e.g. `numeric::add_wrapping`)
+// instead of a manual loop. Broadcasting and custom operations (Decimal128 scale
+// adjustment, null-aware div/rem) will still need custom logic.
+//
+// Performance notes (benchmarked on aarch64 with tango-bench, n=1K..1M):
+// - The `values().iter().zip().map(op).collect()` pattern auto-vectorizes: LLVM emits
+//   4x-unrolled NEON `add.2d` instructions (8 i64s per iteration), identical to what
+//   arrow-rs `binary()` in arrow-arith/src/arity.rs generates.
+// - The arrow-rs kernel path (`as_arrow` -> kernel -> `from_arrow`) adds ~240ns of
+//   conversion overhead (arrow2<->arrow-rs type wrapping) with no compute benefit, since
+//   the kernel's inner loop is the same `zip().map().collect()` pattern.
+// - At n>=100K all three paths (arrow2 kernel, arrow-rs kernel, scalar iter) converge to
+//   the same throughput. At n=1K the conversion overhead dominates for the kernel paths.
+
+/// Perform an element-wise arithmetic operation on two DataArrays, with broadcasting.
 fn arithmetic_helper<T, F>(
     lhs: &DataArray<T>,
     rhs: &DataArray<T>,
