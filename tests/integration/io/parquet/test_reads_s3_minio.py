@@ -145,7 +145,8 @@ def test_minio_parquet_read_mismatched_schemas_with_pushdown(minio_io_config):
         )
         df = df.select("x", "y")  # Applies column selection pushdown on each read
         assert df.schema().column_names() == ["x", "y"]
-        assert df.to_pydict() == {
+        result = df.sort("x").to_pydict()
+        assert result == {
             "x": [1, 2, 3, 4, 5, 6, 7, 8],
             "y": [1, 2, 3, 4, None, None, None, None],
         }
@@ -173,4 +174,5 @@ def test_minio_parquet_read_mismatched_schemas_with_pushdown_no_rows_read(minio_
         )
         df = df.select("x")  # Applies column selection pushdown on each read
         assert df.schema().column_names() == ["x"]
-        assert df.to_pydict() == {"x": [1, 2, 3, 4, None, None, None, None]}
+        result = df.sort("x").to_pydict()
+        assert result == {"x": [None, None, None, None, 1, 2, 3, 4]}

@@ -35,7 +35,7 @@ def test_lancedb_roundtrip(lance_dataset_path):
     df2.write_lance(lance_dataset_path, mode="append")
     df_loaded = daft.read_lance(lance_dataset_path)
 
-    assert df_loaded.to_pydict() == df1.concat(df2).to_pydict()
+    assert df_loaded.sort("lat").to_pydict() == df1.concat(df2).sort("lat").to_pydict()
 
 
 @pytest.mark.integration()
@@ -48,7 +48,7 @@ def test_lancedb_minio(minio_io_config):
         df1.write_lance(s3_path, mode="create", io_config=minio_io_config)
         df2.write_lance(s3_path, mode="append", io_config=minio_io_config)
         df_loaded = daft.read_lance(s3_path, io_config=minio_io_config)
-        assert df_loaded.to_pydict() == df1.concat(df2).to_pydict()
+        assert df_loaded.sort("lat").to_pydict() == df1.concat(df2).sort("lat").to_pydict()
 
 
 def test_lancedb_write_with_schema(lance_dataset_path):
