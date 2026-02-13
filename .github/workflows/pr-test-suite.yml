@@ -196,7 +196,7 @@ jobs:
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ failure() && (github.event_name == 'push') }}
+      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {
@@ -344,7 +344,7 @@ jobs:
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ failure() && (github.event_name == 'push') }}
+      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {
@@ -436,7 +436,7 @@ jobs:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ failure() && (github.event_name == 'push') }}
+      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {
@@ -548,7 +548,7 @@ jobs:
         HF_TOKEN: ${{ secrets.ACTIONS_HF_TOKEN }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ failure() }}
+      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() }}
       with:
         payload: |
           {
@@ -646,7 +646,7 @@ jobs:
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ failure() && (github.event_name == 'push') }}
+      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {
@@ -752,7 +752,7 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest ./tests/integration/unity -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
+        pytest ./tests/integration/unity -m 'integration or not integration' --credentials --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
         python ./tools/aggregate_test_durations.py unity_pytest_output.txt
       env:
         DAFT_RUNNER: native
@@ -765,7 +765,7 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest ./tests/integration/unity -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
+        pytest ./tests/integration/unity -m 'integration or not integration' --credentials --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
         python ./tools/aggregate_test_durations.py unity_pytest_output.txt
       env:
         DAFT_RUNNER: ray
@@ -848,7 +848,7 @@ jobs:
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ failure() && (github.event_name == 'push') }}
+      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {
@@ -931,7 +931,7 @@ jobs:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ failure() && (github.event_name == 'push') }}
+      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {
@@ -1004,7 +1004,7 @@ jobs:
         OPENAI_API_KEY: ${{ secrets.ACTIONS_OPENAI_API_KEY }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ failure() && (github.event_name == 'push') }}
+      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {
@@ -1077,7 +1077,7 @@ jobs:
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ failure() && (github.event_name == 'push') }}
+      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {
@@ -1171,7 +1171,7 @@ jobs:
         DAFT_RUNNER: native
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ failure() && (github.event_name == 'push') }}
+      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {
@@ -1231,7 +1231,7 @@ jobs:
         path: ./report-output
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ failure() && (github.event_name == 'push') }}
+      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {
@@ -1339,6 +1339,7 @@ jobs:
         merge-multiple: true
         path: ./report-output
     - name: Upload coverage reports to Codecov with GitHub Action
+      if: ${{ secrets.CODECOV_TOKEN != '' }}
       uses: codecov/codecov-action@v5
       with:
         directory: ./report-output
@@ -1346,7 +1347,7 @@ jobs:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ failure() && (github.event_name == 'push') }}
+      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {
@@ -1436,7 +1437,7 @@ jobs:
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ failure() && (github.event_name == 'push') }}
+      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {
@@ -1504,7 +1505,7 @@ jobs:
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ failure() && (github.event_name == 'push') }}
+      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
       with:
         payload: |
           {

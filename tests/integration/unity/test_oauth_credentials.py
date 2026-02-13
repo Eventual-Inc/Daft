@@ -8,23 +8,24 @@ from daft.catalog import Catalog
 from daft.unity_catalog import OAuth2Credentials, UnityCatalog
 
 
+@pytest.fixture(scope="module", autouse=True)
+def skip_no_credential(pytestconfig):
+    if not pytestconfig.getoption("--credentials"):
+        pytest.skip(reason="Unity Catalog OAuth tests require the `--credentials` flag")
+    if not os.getenv("DATABRICKS_ENDPOINT"):
+        pytest.skip(reason="Unity Catalog OAuth tests require the DATABRICKS_ENDPOINT environment variable")
+    if not os.getenv("DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID"):
+        pytest.skip(reason="Unity Catalog OAuth tests require the DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID environment variable")
+    if not os.getenv("DATABRICKS_SERVICE_PRINCIPAL_SECRET"):
+        pytest.skip(reason="Unity Catalog OAuth tests require the DATABRICKS_SERVICE_PRINCIPAL_SECRET environment variable")
+
+
 @pytest.mark.integration()
-@pytest.mark.skipif(not os.getenv("DATABRICKS_ENDPOINT"), reason="requires DATABRICKS_ENDPOINT")
-@pytest.mark.skipif(
-    not os.getenv("DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID"), reason="requires DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID"
-)
-@pytest.mark.skipif(
-    not os.getenv("DATABRICKS_SERVICE_PRINCIPAL_SECRET"), reason="requires DATABRICKS_SERVICE_PRINCIPAL_SECRET"
-)
 def test_unity_catalog_oauth_credentials_connection() -> None:
     endpoint = os.getenv("DATABRICKS_ENDPOINT", "")
-    # if not endpoint:
-    #    pytest.skip("requires DATABRICKS_ENDPOINT")
 
     client_id = os.getenv("DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID", "")
     client_secret = os.getenv("DATABRICKS_SERVICE_PRINCIPAL_SECRET", "")
-    # if not client_id or not client_secret:
-    #    pytest.skip("requires DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID and DATABRICKS_SERVICE_PRINCIPAL_SECRET")
 
     unity_catalog = UnityCatalog(
         endpoint=endpoint,
