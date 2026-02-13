@@ -204,7 +204,6 @@ jobs:
       contents: read
     steps:
     - name: Free Disk Space (Ubuntu)
-      if: ${{ (runner.os == 'Linux') }}
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
@@ -215,14 +214,12 @@ jobs:
         docker-images: true
         swap-storage: true
     - name: Additional disk cleanup
-      if: ${{ (runner.os == 'Linux') }}
       run: |
         sudo rm -rf /usr/share/swift || true
         sudo rm -rf /opt/hostedtoolcache/CodeQL || true
         sudo rm -rf /opt/hostedtoolcache/go || true
         sudo rm -rf /opt/hostedtoolcache/Ruby || true
         sudo rm -rf /opt/hostedtoolcache/node || true
-        df -h
     - uses: actions/checkout@v6
       with:
         submodules: true

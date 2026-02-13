@@ -97,7 +97,7 @@ jobs:
           on-main: false
 
     steps:
-    - name: Free Disk Space (Ubuntu) # only run on ubuntu
+    - name: Free Disk Space (Ubuntu)
       if: ${{ (runner.os == 'Linux') }}
       uses: jlumbroso/free-disk-space@main
       with:
@@ -116,7 +116,6 @@ jobs:
         sudo rm -rf /opt/hostedtoolcache/go || true
         sudo rm -rf /opt/hostedtoolcache/Ruby || true
         sudo rm -rf /opt/hostedtoolcache/node || true
-        df -h
 
     - uses: actions/checkout@v6
     - uses: moonrepo/setup-rust@v1
@@ -383,8 +382,7 @@ jobs:
         python-version: ['3.10']
         daft-runner: [ray, native]
     steps:
-    - name: Free Disk Space (Ubuntu) # only run on ubuntu
-      if: ${{ (runner.os == 'Linux') }}
+    - name: Free Disk Space (Ubuntu)
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
@@ -395,14 +393,12 @@ jobs:
         docker-images: true
         swap-storage: true
     - name: Additional disk cleanup
-      if: ${{ (runner.os == 'Linux') }}
       run: |
         sudo rm -rf /usr/share/swift || true
         sudo rm -rf /opt/hostedtoolcache/CodeQL || true
         sudo rm -rf /opt/hostedtoolcache/go || true
         sudo rm -rf /opt/hostedtoolcache/Ruby || true
         sudo rm -rf /opt/hostedtoolcache/node || true
-        df -h
     - uses: actions/checkout@v6
       with:
         submodules: true
@@ -491,7 +487,6 @@ jobs:
       contents: read
     steps:
     - name: Free Disk Space (Ubuntu)
-      if: ${{ (runner.os == 'Linux') }}
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
@@ -502,14 +497,12 @@ jobs:
         docker-images: true
         swap-storage: true
     - name: Additional disk cleanup
-      if: ${{ (runner.os == 'Linux') }}
       run: |
         sudo rm -rf /usr/share/swift || true
         sudo rm -rf /opt/hostedtoolcache/CodeQL || true
         sudo rm -rf /opt/hostedtoolcache/go || true
         sudo rm -rf /opt/hostedtoolcache/Ruby || true
         sudo rm -rf /opt/hostedtoolcache/node || true
-        df -h
     - uses: actions/checkout@v6
       with:
         submodules: true
@@ -600,8 +593,7 @@ jobs:
     env:
       package-name: daft
     steps:
-    - name: Free Disk Space (Ubuntu) # only run on ubuntu
-      if: ${{ (runner.os == 'Linux') }}
+    - name: Free Disk Space (Ubuntu)
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
@@ -612,14 +604,12 @@ jobs:
         docker-images: true
         swap-storage: true
     - name: Additional disk cleanup
-      if: ${{ (runner.os == 'Linux') }}
       run: |
         sudo rm -rf /usr/share/swift || true
         sudo rm -rf /opt/hostedtoolcache/CodeQL || true
         sudo rm -rf /opt/hostedtoolcache/go || true
         sudo rm -rf /opt/hostedtoolcache/Ruby || true
         sudo rm -rf /opt/hostedtoolcache/node || true
-        df -h
     - uses: actions/checkout@v6
       with:
         submodules: true
@@ -707,8 +697,7 @@ jobs:
     env:
       package-name: daft
     steps:
-    - name: Free Disk Space (Ubuntu) # only run on ubuntu
-      if: ${{ (runner.os == 'Linux') }}
+    - name: Free Disk Space (Ubuntu)
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
@@ -719,14 +708,12 @@ jobs:
         docker-images: true
         swap-storage: true
     - name: Additional disk cleanup
-      if: ${{ (runner.os == 'Linux') }}
       run: |
         sudo rm -rf /usr/share/swift || true
         sudo rm -rf /opt/hostedtoolcache/CodeQL || true
         sudo rm -rf /opt/hostedtoolcache/go || true
         sudo rm -rf /opt/hostedtoolcache/Ruby || true
         sudo rm -rf /opt/hostedtoolcache/node || true
-        df -h
     - uses: actions/checkout@v6
       with:
         submodules: true
@@ -925,7 +912,6 @@ jobs:
         daft-runner: [ray, native]
     steps:
     - name: Free Disk Space (Ubuntu)
-      if: ${{ (runner.os == 'Linux') }}
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
@@ -936,14 +922,12 @@ jobs:
         docker-images: true
         swap-storage: true
     - name: Additional disk cleanup
-      if: ${{ (runner.os == 'Linux') }}
       run: |
         sudo rm -rf /usr/share/swift || true
         sudo rm -rf /opt/hostedtoolcache/CodeQL || true
         sudo rm -rf /opt/hostedtoolcache/go || true
         sudo rm -rf /opt/hostedtoolcache/Ruby || true
         sudo rm -rf /opt/hostedtoolcache/node || true
-        df -h
     - uses: actions/checkout@v6
       with:
         submodules: true
@@ -1271,7 +1255,7 @@ jobs:
       with:
         key: ${{ runner.os }}-rust-build
         cache-all-crates: 'true'
-    - name: Free Disk Space (Ubuntu) # only run on ubuntu
+    - name: Free Disk Space (Ubuntu)
       if: ${{ matrix.os == 'ubuntu' }}
       uses: jlumbroso/free-disk-space@main
       with:
@@ -1290,7 +1274,6 @@ jobs:
         sudo rm -rf /opt/hostedtoolcache/go || true
         sudo rm -rf /opt/hostedtoolcache/Ruby || true
         sudo rm -rf /opt/hostedtoolcache/node || true
-        df -h
     - name: Generate code coverage
       run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --exclude common-arrow-ffi --lcov --output-path ./report-output/lcov.info
     - name: Upload coverage report
@@ -1350,7 +1333,6 @@ jobs:
       python-version: '3.10'
     steps:
     - name: Free Disk Space (Ubuntu)
-      if: ${{ (runner.os == 'Linux') }}
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
@@ -1361,14 +1343,12 @@ jobs:
         docker-images: true
         swap-storage: true
     - name: Additional disk cleanup
-      if: ${{ (runner.os == 'Linux') }}
       run: |
         sudo rm -rf /usr/share/swift || true
         sudo rm -rf /opt/hostedtoolcache/CodeQL || true
         sudo rm -rf /opt/hostedtoolcache/go || true
         sudo rm -rf /opt/hostedtoolcache/Ruby || true
         sudo rm -rf /opt/hostedtoolcache/node || true
-        df -h
     - uses: actions/checkout@v6
     - uses: moonrepo/setup-rust@v1
       with:
