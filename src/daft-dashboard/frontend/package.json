@@ -25,7 +25,7 @@
     "framer-motion": "^12.23.18",
     "lucide-react": "^0.548.0",
     "motion": "^12.23.18",
-    "next": "16.0.10",
+    "next": "16.1.6",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-icons": "^5.5.0",
@@ -44,13 +44,13 @@
     "@types/react-dom": "^19.1.9",
     "babel-plugin-react-compiler": "^1.0.0",
     "eslint": "^9.36.0",
-    "eslint-config-next": "16.0.10",
+    "eslint-config-next": "16.1.6",
     "eslint-config-prettier": "^10.1.8",
     "postcss": "^8.5.6",
     "prettier": "^3.3.3",
     "typescript": "^5.7.3"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=20.9"
   }
 }
