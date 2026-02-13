@@ -62,7 +62,7 @@ jobs:
           fi
   notify_on_failure:
     runs-on: ubuntu-latest
-    if: ${{ failure() }}
+    if: failure()
     needs: check-links
     steps:
     - name: Send Slack notification on failure
