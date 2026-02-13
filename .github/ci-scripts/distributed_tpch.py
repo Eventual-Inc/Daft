@@ -10,7 +10,7 @@ import time
 from ray.job_submission import JobStatus, JobSubmissionClient
 
 import daft
-from tools.ci_bench_utils import get_run_metadata, tail_logs, upload_to_google_sheets
+from tools.ci_bench_utils import get_run_metadata, tail_logs
 
 SF_TO_S3_PATH = {
     100: "s3://eventual-dev-benchmarking-fixtures/uncompressed/tpch-dbgen/100_0/32/parquet/",
@@ -18,7 +18,7 @@ SF_TO_S3_PATH = {
 }
 
 
-def run_benchmark():
+def run_benchmark(up_to_query: int = 22):
     results = {}
 
     scale_factor = int(os.getenv("TPCH_SCALE_FACTOR"))
@@ -30,14 +30,17 @@ def run_benchmark():
 
     client = JobSubmissionClient(address="http://localhost:8265")
 
-    for q in range(1, 23):
+    for q in range(1, up_to_query + 1):
         print(f"Running TPC-H Q{q}... ", end="", flush=True)
 
         start: float = time.perf_counter()
 
         submission_id = client.submit_job(
             entrypoint=f"DAFT_RUNNER=ray DAFT_PROGRESS_BAR=0 python answers_sql.py {parquet_path} {q}",
-            runtime_env={"working_dir": "./benchmarking/tpch"},
+            runtime_env={
+                "working_dir": "./benchmarking/tpch",
+                "env_vars": {"DAFT_PROGRESS_BAR": "0", "DAFT_SHUFFLE_ALGORITHM": "flight_shuffle"},
+            },
         )
 
         job_details = asyncio.run(tail_logs(client, submission_id))
@@ -63,18 +66,18 @@ def main():
     scale_factor = int(os.getenv("TPCH_SCALE_FACTOR"))
     num_workers = int(os.getenv("RAY_NUM_WORKERS"))
 
-    print("Starting warmup run...")
-    run_benchmark()
+    # print("Starting warmup run...")
+    # run_benchmark(up_to_query=3)
 
     print("Warmup done. Running benchmark and collecting results...")
-    results = run_benchmark()
+    results = run_benchmark(up_to_query=2)
 
     data_dict = {**metadata, "scale factor": scale_factor, "num workers": num_workers, **results}
 
     print("Results:")
     print(data_dict)
 
-    upload_to_google_sheets("Distributed TPC-H", list(data_dict.values()))
+    # upload_to_google_sheets("Distributed TPC-H", list(data_dict.values()))
 
 
 if __name__ == "__main__":
