@@ -458,8 +458,11 @@ impl Decimal128Array {
                 i32::from_ne_bytes(unsigned.to_ne_bytes())
             })
         });
-        let array = Box::new(daft_arrow::array::Int32Array::from_iter(hashes));
-        Ok(Int32Array::new(Field::new(self.name(), DataType::Int32).into(), array).unwrap())
+
+        Ok(Int32Array::from_iter(
+            Field::new(self.name(), DataType::Int32),
+            hashes,
+        ))
     }
 }
 

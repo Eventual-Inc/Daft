@@ -41,6 +41,7 @@ impl FixedShapeSparseTensorArray {
 mod tests {
     use std::vec;
 
+    use arrow::buffer::OffsetBuffer;
     use common_error::DaftResult;
 
     use crate::{array::prelude::*, datatypes::prelude::*, series::IntoSeries};
@@ -53,7 +54,7 @@ mod tests {
         let values_array = ListArray::new(
             Field::new("values", DataType::List(Box::new(DataType::Int64))),
             Int64Array::from_slice("item", &[1, 2, 0, 3]).into_series(),
-            daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 2, 3, 4])?,
+            OffsetBuffer::new(vec![0, 2, 3, 4].into()),
             Some(nulls.clone()),
         )
         .into_series();
@@ -61,7 +62,7 @@ mod tests {
         let indices_array = ListArray::new(
             Field::new("indices", DataType::List(Box::new(DataType::UInt64))),
             UInt64Array::from_slice("item", &[1, 2, 0, 2]).into_series(),
-            daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 2, 3, 4])?,
+            OffsetBuffer::new(vec![0, 2, 3, 4].into()),
             Some(nulls.clone()),
         )
         .into_series();
@@ -69,7 +70,7 @@ mod tests {
         let shapes_array = ListArray::new(
             Field::new("shape", DataType::List(Box::new(DataType::UInt64))),
             UInt64Array::from_slice("item", &[3, 3, 3]).into_series(),
-            daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 2, 3])?,
+            OffsetBuffer::new(vec![0, 1, 2, 3].into()),
             Some(nulls.clone()),
         )
         .into_series();

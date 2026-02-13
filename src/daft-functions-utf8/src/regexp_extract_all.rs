@@ -1,3 +1,4 @@
+use arrow::array::OffsetBufferBuilder;
 use common_error::{DaftError, DaftResult, ensure};
 use daft_arrow::array::Array;
 use daft_core::{
@@ -128,7 +129,8 @@ fn regex_extract_all_matches<'a>(
     name: &str,
 ) -> DaftResult<ListArray> {
     let mut matches = daft_arrow::array::MutableUtf8Array::new();
-    let mut offsets = daft_arrow::offset::Offsets::new();
+    let mut offsets = OffsetBufferBuilder::new(len);
+
     let mut null_builder = daft_arrow::buffer::NullBufferBuilder::new(len);
 
     for (val, re) in arr_iter.zip(regex_iter) {
@@ -157,18 +159,18 @@ fn regex_extract_all_matches<'a>(
                 null_builder.append_null();
             }
         }
-        offsets.try_push(num_matches)?;
+        offsets.push_length(num_matches as _);
     }
 
     let matches: daft_arrow::array::Utf8Array<i64> = matches.into();
-    let offsets: daft_arrow::offset::OffsetsBuffer<i64> = offsets.into();
+
     let nulls = null_builder.finish();
     let flat_child = Series::try_from(("matches", matches.to_boxed()))?;
 
     Ok(ListArray::new(
         Field::new(name, DataType::List(Box::new(DataType::Utf8))),
         flat_child,
-        offsets,
+        offsets.finish(),
         nulls,
     ))
 }
