@@ -80,12 +80,21 @@ pub struct ExplodeOperator {
 }
 
 impl ExplodeOperator {
-    pub fn new(to_explode: Vec<BoundExpr>, index_column: Option<String>) -> Self {
+    pub fn new(
+        to_explode: Vec<BoundExpr>,
+        ignore_empty_and_null: bool,
+        index_column: Option<String>,
+    ) -> Self {
         Self {
             to_explode: Arc::new(
                 to_explode
                     .into_iter()
-                    .map(|expr| BoundExpr::new_unchecked(explode(expr.inner().clone())))
+                    .map(|expr| {
+                        BoundExpr::new_unchecked(explode(
+                            expr.inner().clone(),
+                            daft_dsl::lit(ignore_empty_and_null),
+                        ))
+                    })
                     .collect(),
             ),
             index_column,
