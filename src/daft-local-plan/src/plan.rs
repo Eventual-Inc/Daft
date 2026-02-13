@@ -175,12 +175,17 @@ impl LocalPhysicalPlan {
                 schema,
                 ..
             }) => {
-                expr.hash(hasher);
                 // Hash UDF properties (excluding any RuntimePyObject)
                 udf_properties.name.hash(hasher);
-                if let Some(ref resource_request) = udf_properties.resource_request {
-                    resource_request.hash(hasher);
-                }
+                udf_properties.resource_request.hash(hasher);
+                udf_properties.batch_size.hash(hasher);
+                udf_properties.concurrency.hash(hasher);
+                udf_properties.use_process.hash(hasher);
+                udf_properties.max_retries.hash(hasher);
+                udf_properties.builtin_name.hash(hasher);
+                udf_properties.is_async.hash(hasher);
+                udf_properties.is_scalar.hash(hasher);
+                udf_properties.on_error.hash(hasher);
                 for expr in passthrough_columns {
                     expr.hash(hasher);
                 }
@@ -559,12 +564,16 @@ impl LocalPhysicalPlan {
                 batch_size,
                 memory_request,
                 schema,
+                passthrough_columns,
+                required_columns,
                 ..
             }) => {
                 // Exclude actor_objects (PyObjectWrapper) and stats_state
                 batch_size.hash(hasher);
                 memory_request.hash(hasher);
                 schema.hash(hasher);
+                passthrough_columns.hash(hasher);
+                required_columns.hash(hasher);
             }
             Self::VLLMProject(VLLMProject {
                 expr,
