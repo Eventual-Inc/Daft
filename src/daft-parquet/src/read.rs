@@ -5,9 +5,11 @@ use std::{
     time::Duration,
 };
 
+use arrow::array::{ArrayRef, make_array};
 use common_error::DaftResult;
 use common_runtime::get_io_runtime;
 use daft_arrow::{
+    array::to_data,
     bitmap::Bitmap,
     io::parquet::read::schema::{SchemaInferenceOptions, StringEncoding},
 };
@@ -544,7 +546,7 @@ async fn read_parquet_single_into_arrow(
     let field_id_mapping_provided = field_id_mapping.is_some();
     let (source_type, fixed_uri) = parse_url(uri)?;
     let (metadata, schema, all_arrays, num_rows_read) = if matches!(source_type, SourceType::File) {
-        let (metadata, schema, all_arrays, num_rows_read) =
+        let (metadata, arrow2_schema, all_arrays, num_rows_read) =
             crate::stream_reader::local_parquet_read_into_arrow_async(
                 fixed_uri.as_ref(),
                 columns.clone(),
@@ -557,7 +559,8 @@ async fn read_parquet_single_into_arrow(
                 None,
             )
             .await?;
-        (metadata, Arc::new(schema), all_arrays, num_rows_read)
+        let schema = arrow2_schema_to_arrow_rs(&arrow2_schema);
+        (metadata, schema, all_arrays, num_rows_read)
     } else {
         let builder = ParquetReaderBuilder::from_uri(
             uri,
@@ -588,7 +591,7 @@ async fn read_parquet_single_into_arrow(
 
         let parquet_reader = builder.build()?;
 
-        let schema = parquet_reader.arrow_schema().clone();
+        let schema = arrow2_schema_to_arrow_rs(parquet_reader.arrow_schema());
         let ranges = parquet_reader.prebuffer_ranges(io_client, io_stats)?;
         let (all_arrays, num_rows_read) = parquet_reader
             .read_from_ranges_into_arrow_arrays(ranges)
@@ -711,15 +714,34 @@ pub fn read_parquet(
         .await
     })
 }
-pub type ArrowChunk = Vec<Box<dyn daft_arrow::array::Array>>;
-pub type ArrowChunkIters = Vec<
-    Box<
-        dyn Iterator<Item = daft_arrow::error::Result<Box<dyn daft_arrow::array::Array>>>
-            + Send
-            + Sync,
-    >,
->;
-pub type ParquetPyarrowChunk = (daft_arrow::datatypes::SchemaRef, Vec<ArrowChunk>, usize);
+/// Convert an arrow2 array to an arrow-rs ArrayRef (zero-copy via shared buffers).
+pub fn arrow2_to_arrow_rs(arr: Box<dyn daft_arrow::array::Array>) -> ArrayRef {
+    make_array(to_data(arr.as_ref()))
+}
+
+/// Convert an arrow2 schema to an arrow-rs schema.
+#[allow(deprecated, reason = "arrow2 migration")]
+pub fn arrow2_schema_to_arrow_rs(
+    schema: &daft_arrow::datatypes::Schema,
+) -> arrow::datatypes::SchemaRef {
+    let fields: Vec<arrow::datatypes::Field> = schema
+        .fields
+        .iter()
+        .map(|f| daft_arrow::datatypes::arrow2_field_to_arrow(f.clone()))
+        .collect();
+    let metadata: HashMap<String, String> = schema
+        .metadata
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    Arc::new(arrow::datatypes::Schema::new_with_metadata(
+        fields, metadata,
+    ))
+}
+
+pub type ArrowChunk = Vec<ArrayRef>;
+pub type ArrowChunkIters = Vec<Box<dyn Iterator<Item = DaftResult<ArrayRef>> + Send + Sync>>;
+pub type ParquetPyarrowChunk = (arrow::datatypes::SchemaRef, Vec<ArrowChunk>, usize);
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet_into_pyarrow(
     uri: &str,
@@ -1115,27 +1137,18 @@ pub fn read_parquet_statistics(
         .collect::<DaftResult<Vec<_>>>()?;
     assert_eq!(all_tuples.len(), uris.len());
 
-    let row_count_series = UInt64Array::new(
-        Field::new("row_count", DataType::UInt64).into(),
-        Box::new(daft_arrow::array::UInt64Array::from_iter(
-            all_tuples.iter().map(|v| v.0.map(|v| v as u64)),
-        )),
-    )
-    .unwrap();
-    let row_group_series = UInt64Array::new(
-        Field::new("row_group_count", DataType::UInt64).into(),
-        Box::new(daft_arrow::array::UInt64Array::from_iter(
-            all_tuples.iter().map(|v| v.1.map(|v| v as u64)),
-        )),
-    )
-    .unwrap();
-    let version_series = Int32Array::new(
-        Field::new("version", DataType::Int32).into(),
-        Box::new(daft_arrow::array::Int32Array::from_iter(
-            all_tuples.iter().map(|v| v.2),
-        )),
-    )
-    .unwrap();
+    let row_count_series = UInt64Array::from_iter(
+        Field::new("row_count", DataType::UInt64),
+        all_tuples.iter().map(|v| v.0.map(|v| v as u64)),
+    );
+    let row_group_series = UInt64Array::from_iter(
+        Field::new("row_group_count", DataType::UInt64),
+        all_tuples.iter().map(|v| v.1.map(|v| v as u64)),
+    );
+    let version_series = Int32Array::from_iter(
+        Field::new("version", DataType::Int32),
+        all_tuples.iter().map(|v| v.2),
+    );
 
     RecordBatch::from_nonempty_columns(vec![
         uris.clone(),
@@ -1150,7 +1163,7 @@ mod tests {
     use std::{path::PathBuf, sync::Arc};
 
     use common_error::DaftResult;
-    use daft_arrow::{datatypes::DataType, io::parquet::read::schema::StringEncoding};
+    use daft_arrow::io::parquet::read::schema::StringEncoding;
     use daft_io::{IOClient, IOConfig};
     use futures::StreamExt;
     use parquet2::{
@@ -1311,8 +1324,9 @@ mod tests {
             None,
         )
         .unwrap();
-        match schema.fields.as_slice() {
-            [field] => assert_eq!(field.data_type, DataType::LargeBinary),
+        let fields: Vec<_> = schema.fields().iter().collect();
+        match fields.as_slice() {
+            [field] => assert_eq!(*field.data_type(), arrow::datatypes::DataType::LargeBinary),
             _ => panic!("There should only be one field in the schema"),
         };
     }

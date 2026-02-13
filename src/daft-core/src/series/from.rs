@@ -67,6 +67,16 @@ impl TryFrom<(&str, Box<dyn daft_arrow::array::Array>)> for Series {
     }
 }
 
+impl TryFrom<(&str, arrow::array::ArrayRef)> for Series {
+    type Error = DaftError;
+
+    fn try_from((name, array): (&str, arrow::array::ArrayRef)) -> DaftResult<Self> {
+        let dtype = DaftDataType::try_from(array.data_type())?;
+        let field = Field::new(name, dtype);
+        Self::from_arrow(Arc::new(field), array)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::LazyLock;

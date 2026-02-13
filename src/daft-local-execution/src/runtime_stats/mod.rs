@@ -553,6 +553,131 @@ mod tests {
         assert_eq!(state.get_total_calls(), 1);
     }
 
+    /// Reproduction test for https://github.com/Eventual-Inc/Daft/issues/6007
+    /// Simulates a long-running operation (3+ hours) to test whether the
+    /// tokio::time::Interval with default MissedTickBehavior::Burst overflows
+    /// when computing next_deadline = start + (tick_count * interval).
+    #[tokio::test(start_paused = true)]
+    async fn test_long_running_operation_interval_overflow_issue_6007() {
+        let mock_subscriber = Arc::new(MockSubscriber::new());
+        let mock_state = mock_subscriber.state.clone();
+
+        let node_stat = Arc::new(DefaultRuntimeStats::new(&global::meter("test_stats"), 0))
+            as Arc<dyn RuntimeStats>;
+        // Use the same 200ms throttle interval as production
+        let throttle_interval = Duration::from_millis(200);
+        let stats_manager = RuntimeStatsManager::new_impl(
+            &tokio::runtime::Handle::current(),
+            "test_query_id".into(),
+            vec![mock_subscriber],
+            None,
+            HashMap::from([(0, (Arc::new(NodeInfo::default()), node_stat.clone()))]),
+            throttle_interval,
+        );
+        let handle = stats_manager.handle();
+
+        // Activate a node (so the interval branch actually processes stats)
+        handle.activate_node(0);
+        node_stat.add_rows_in(1000);
+
+        // Simulate a 3-hour operation by sleeping in the paused-time runtime.
+        // With 200ms intervals, this means ~54,000 interval ticks.
+        // Each tick computes: next_deadline = deadline + period
+        // With MissedTickBehavior::Burst, the deadline accumulates.
+        // This tests whether the accumulation causes an Instant overflow.
+        let three_hours = Duration::from_secs(3 * 3600);
+        sleep(three_hours).await;
+
+        // If we get here without a panic, the interval didn't overflow.
+        // Verify the stats manager is still working correctly.
+        let total_calls = mock_state.get_total_calls();
+        assert!(
+            total_calls > 0,
+            "Stats manager should have processed ticks during the 3-hour simulation"
+        );
+
+        // Finish the manager and verify it completes cleanly
+        handle.finalize_node(0);
+        sleep(Duration::from_millis(200)).await;
+
+        let result = stats_manager.finish(QueryEndState::Finished).await;
+        assert!(
+            !result.nodes.is_empty(),
+            "Should have final stats after long operation"
+        );
+    }
+
+    /// Reproduction of the exact root cause of https://github.com/Eventual-Inc/Daft/issues/6007
+    ///
+    /// The "overflow when adding duration to instant" panic occurs in object_store's
+    /// Azure credential code (used by delta-rs/DeltaStorageHandler) when:
+    ///
+    /// 1. A bearer token has a Unix timestamp expiry (e.g., 1739350000)
+    /// 2. The token expires during a long-running operation (>1 hour)
+    /// 3. The code computes: exp_in = expiry - current_timestamp (unsigned subtraction)
+    /// 4. Since expiry < current_timestamp, this UNDERFLOWS in release mode → ~u64::MAX
+    /// 5. Duration::from_secs(~u64::MAX) creates a ~584-billion-year Duration
+    /// 6. Instant::now() + that Duration → OVERFLOW PANIC
+    ///
+    /// This exactly matches the user's scenario: writing 2840 files to Azure OneLake
+    /// with use_fabric_endpoint=True, where the bearer token expires after ~1 hour
+    /// but the operation takes 81 minutes.
+    #[test]
+    fn test_reproduce_issue_6007_token_expiry_overflow() {
+        use std::time::{Duration, Instant};
+
+        // Simulate the object_store FabricTokenOAuthProvider scenario:
+        // The token was issued with an expiry timestamp 1 hour in the future.
+        // But now we're 81 minutes later, so the token has expired.
+
+        let token_expiry_unix: u64 = 1_739_350_000; // Token expiry (Unix timestamp)
+        let current_time_unix: u64 = 1_739_354_860; // Current time (81 min later)
+
+        // This is what object_store does in release mode:
+        //   let exp_in = expiry - Self::get_current_timestamp();
+        // When expiry < current_time, unsigned subtraction wraps around:
+        let exp_in = token_expiry_unix.wrapping_sub(current_time_unix);
+
+        // exp_in is now a HUGE number (close to u64::MAX)
+        assert!(
+            exp_in > u64::MAX / 2,
+            "Unsigned underflow should produce a very large value, got {}",
+            exp_in
+        );
+
+        // object_store then creates a Duration from this:
+        let duration = Duration::from_secs(exp_in);
+
+        // And adds it to Instant::now():
+        //   expiry: Some(Instant::now() + Duration::from_secs(exp_in))
+        // This PANICS with "overflow when adding duration to instant"
+        let result = Instant::now().checked_add(duration);
+        assert!(
+            result.is_none(),
+            "Adding ~u64::MAX seconds to Instant should overflow"
+        );
+
+        // Confirm the exact same panic message as in the issue
+        let panic_result = std::panic::catch_unwind(|| {
+            let _ = Instant::now() + duration;
+        });
+        assert!(panic_result.is_err(), "Should panic with overflow");
+
+        // Verify the panic message matches the issue
+        if let Err(panic) = panic_result {
+            let msg = panic
+                .downcast_ref::<String>()
+                .map(|s| s.as_str())
+                .or_else(|| panic.downcast_ref::<&str>().copied())
+                .unwrap_or("unknown");
+            assert!(
+                msg.contains("overflow when adding duration to instant"),
+                "Expected 'overflow when adding duration to instant', got: {}",
+                msg
+            );
+        }
+    }
+
     #[tokio::test]
     async fn test_runtime_stats_context_operations() {
         let node_stat = Arc::new(DefaultRuntimeStats::new(&global::meter("test_stats"), 0));

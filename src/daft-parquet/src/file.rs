@@ -4,6 +4,7 @@ use std::{
     sync::Arc,
 };
 
+use arrow::array::ArrayRef;
 use common_error::DaftResult;
 use common_runtime::{combine_stream, get_io_runtime};
 use daft_arrow::io::parquet::read::column_iter_to_arrays;
@@ -27,7 +28,7 @@ use crate::{
     UnableToParseSchemaFromMetadataSnafu, UnableToRunExpressionOnStatsSnafu,
     determine_parquet_parallelism, infer_arrow_schema_from_metadata,
     metadata::read_parquet_metadata,
-    read::ParquetSchemaInferenceOptions,
+    read::{ParquetSchemaInferenceOptions, arrow2_to_arrow_rs},
     read_planner::{CoalescePass, RangesContainer, ReadPlanner, SplitLargeRequestPass},
     statistics,
     stream_reader::spawn_column_iters_to_table_task,
@@ -484,6 +485,10 @@ impl ParquetFileReader {
                                 num_rows,
                                 num_values,
                             )?;
+                            // Wrap arrow2 iterator to convert to arrow-rs ArrayRef
+                            let arr_iter: Box<
+                                dyn Iterator<Item = DaftResult<ArrayRef>> + Send + Sync,
+                            > = Box::new(arr_iter.map(|a| Ok(arrow2_to_arrow_rs(a?))));
                             Ok(arr_iter)
                         })
                     });
@@ -654,17 +659,17 @@ impl ParquetFileReader {
                                 );
 
                                 let series = (|| {
-                                    let mut all_arrays = vec![];
+                                    let mut all_arrays: Vec<ArrayRef> = vec![];
                                     let mut curr_index = 0;
 
                                     for arr in arr_iter? {
-                                        let arr = arr?;
+                                        let arr = arrow2_to_arrow_rs(arr?);
                                         if (curr_index + arr.len()) < row_range.start {
                                             // throw arrays less than what we need
                                             curr_index += arr.len();
                                         } else if curr_index < row_range.start {
                                             let offset = row_range.start.saturating_sub(curr_index);
-                                            all_arrays.push(arr.sliced(offset, arr.len() - offset));
+                                            all_arrays.push(arr.slice(offset, arr.len() - offset));
                                             curr_index += arr.len();
                                         } else {
                                             curr_index += arr.len();
@@ -732,7 +737,7 @@ impl ParquetFileReader {
     pub async fn read_from_ranges_into_arrow_arrays(
         self,
         ranges: Arc<RangesContainer>,
-    ) -> DaftResult<(Vec<Vec<Box<dyn daft_arrow::array::Array>>>, usize)> {
+    ) -> DaftResult<(Vec<Vec<ArrayRef>>, usize)> {
         let metadata = self.metadata;
         let all_handles = self
             .arrow_schema
@@ -831,17 +836,17 @@ impl ParquetFileReader {
                                 );
 
                                 let ser = (|| {
-                                    let mut all_arrays = vec![];
+                                    let mut all_arrays: Vec<ArrayRef> = vec![];
                                     let mut curr_index = 0;
 
                                     for arr in arr_iter? {
-                                        let arr = arr?;
+                                        let arr = arrow2_to_arrow_rs(arr?);
                                         if (curr_index + arr.len()) < row_range.start {
                                             // throw arrays less than what we need
                                             curr_index += arr.len();
                                         } else if curr_index < row_range.start {
                                             let offset = row_range.start.saturating_sub(curr_index);
-                                            all_arrays.push(arr.sliced(offset, arr.len() - offset));
+                                            all_arrays.push(arr.slice(offset, arr.len() - offset));
                                             curr_index += arr.len();
                                         } else {
                                             curr_index += arr.len();

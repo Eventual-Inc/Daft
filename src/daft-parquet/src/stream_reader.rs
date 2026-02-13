@@ -1,5 +1,6 @@
 use std::{cmp::max, collections::HashSet, fs::File, sync::Arc};
 
+use arrow::array::ArrayRef;
 use common_error::DaftResult;
 use common_runtime::{RuntimeTask, combine_stream, get_compute_runtime};
 use daft_arrow::{bitmap::Bitmap, io::parquet::read};
@@ -20,7 +21,7 @@ use crate::{
     PARQUET_MORSEL_SIZE, determine_parquet_parallelism,
     file::{RowGroupRange, build_row_ranges},
     infer_arrow_schema_from_metadata,
-    read::{ArrowChunk, ArrowChunkIters, ParquetSchemaInferenceOptions},
+    read::{ArrowChunk, ArrowChunkIters, ParquetSchemaInferenceOptions, arrow2_to_arrow_rs},
 };
 
 fn prune_fields_from_schema(
@@ -61,16 +62,18 @@ fn arrow_chunk_to_table(
     let all_series = arrow_chunk
         .into_iter()
         .zip(schema_ref.field_names())
-        .filter_map(|(mut arr, f_name)| {
+        .filter_map(|(arr, f_name)| {
             if (*index_so_far + arr.len()) < row_range_start {
                 // No need to process arrays that are less than the start offset
                 return None;
             }
-            if *index_so_far < row_range_start {
+            let arr = if *index_so_far < row_range_start {
                 // Slice arrays that are partially needed
                 let offset = row_range_start.saturating_sub(*index_so_far);
-                arr = arr.sliced(offset, arr.len() - offset);
-            }
+                arr.slice(offset, arr.len() - offset)
+            } else {
+                arr
+            };
             let series_result = Series::try_from((f_name, arr));
             Some(series_result)
         })
@@ -308,7 +311,15 @@ pub fn local_parquet_read_into_column_iters(
         )
         .with_context(|_| super::UnableToReadParquetRowGroupSnafu { path: uri.clone() })?;
         reader.update_count();
-        Ok(single_rg_column_iter)
+        // Wrap arrow2 iterators to convert to arrow-rs ArrayRef
+        let converted: ArrowChunkIters = single_rg_column_iter
+            .into_iter()
+            .map(|iter| {
+                Box::new(iter.map(|a| Ok(arrow2_to_arrow_rs(a?))))
+                    as Box<dyn Iterator<Item = DaftResult<ArrayRef>> + Send + Sync>
+            })
+            .collect();
+        Ok(converted)
     });
     Ok((
         metadata,
@@ -413,17 +424,17 @@ pub fn local_parquet_read_into_arrow(
     let collected_columns = columns_iters_per_rg.map(|payload: Result<_, _>| {
         let (req_idx, row_range, col_idx, arr_iter) = payload?;
 
-        let mut arrays_so_far = vec![];
+        let mut arrays_so_far: Vec<ArrayRef> = vec![];
         let mut curr_index = 0;
 
         for arr in arr_iter {
-            let arr = arr?;
+            let arr = arrow2_to_arrow_rs(arr?);
             if (curr_index + arr.len()) < row_range.start {
                 // throw arrays less than what we need
                 curr_index += arr.len();
             } else if curr_index < row_range.start {
                 let offset = row_range.start.saturating_sub(curr_index);
-                arrays_so_far.push(arr.sliced(offset, arr.len() - offset));
+                arrays_so_far.push(arr.slice(offset, arr.len() - offset));
                 curr_index += arr.len();
             } else {
                 curr_index += arr.len();
