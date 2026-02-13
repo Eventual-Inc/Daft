@@ -81,6 +81,7 @@ jobs:
         daft-runner: [ray, native]
         pyarrow-version: ['22.0.0']
         os: [ubuntu-latest, macos-latest]
+        coverage: [true]
         on-main:
         - ${{ github.ref == 'refs/heads/main' }}
         include:
