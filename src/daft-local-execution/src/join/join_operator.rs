@@ -4,6 +4,7 @@ use common_error::DaftResult;
 use common_metrics::ops::NodeType;
 use common_runtime::get_compute_pool_num_threads;
 use daft_micropartition::MicroPartition;
+use opentelemetry::metrics::Meter;
 
 use crate::{
     ExecutionTaskSpawner, OperatorOutput,
@@ -87,8 +88,8 @@ pub(crate) trait JoinOperator: Send + Sync {
     fn multiline_display(&self) -> Vec<String>;
 
     /// Create runtime stats
-    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(crate::runtime_stats::DefaultRuntimeStats::new(id))
+    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(crate::runtime_stats::DefaultRuntimeStats::new(meter, id))
     }
 
     /// Maximum number of concurrent probe workers
