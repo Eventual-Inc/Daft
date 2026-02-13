@@ -1,8 +1,10 @@
-#![allow(deprecated, reason = "arrow2->arrow migration")]
-use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::{
+    iter::zip,
+    ops::{Add, Div, Mul, Rem, Sub},
+};
 
+use arrow::buffer::NullBuffer;
 use common_error::{DaftError, DaftResult};
-use daft_arrow::{array::PrimitiveArray, compute::arithmetics::basic};
 
 use super::{as_arrow::AsArrow, full::FullNull};
 use crate::{
@@ -33,26 +35,31 @@ use crate::{
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-/// Helper function to perform arithmetic operations on a DataArray
-/// Takes both Kernel (array x array operation) and operation (scalar x scalar) functions
-/// The Kernel is used for when both arrays are non-unit length and the operation is used when broadcasting
-fn arithmetic_helper<T, Kernel, F>(
+/// Helper function to perform arithmetic operations on a DataArray.
+/// Operates on all values including null positions; null correctness is
+/// maintained via NullBuffer union. Safe for add/sub/mul where computing
+/// on garbage null values won't panic.
+fn arithmetic_helper<T, F>(
     lhs: &DataArray<T>,
     rhs: &DataArray<T>,
-    kernel: Kernel,
     operation: F,
 ) -> DaftResult<DataArray<T>>
 where
     T: DaftPrimitiveType,
-    Kernel:
-        FnOnce(&PrimitiveArray<T::Native>, &PrimitiveArray<T::Native>) -> PrimitiveArray<T::Native>,
-    F: Fn(T::Native, T::Native) -> T::Native,
+    F: Fn(T::Native, T::Native) -> T::Native + Copy,
 {
     match (lhs.len(), rhs.len()) {
-        (a, b) if a == b => DataArray::new(
-            lhs.field.clone(),
-            Box::new(kernel(lhs.as_arrow2(), rhs.as_arrow2())),
-        ),
+        (a, b) if a == b => {
+            let lhs_nulls = lhs.nulls().map(|v| v.clone().into());
+            let rhs_nulls = rhs.nulls().map(|v| v.clone().into());
+            let nulls = NullBuffer::union(lhs_nulls.as_ref(), rhs_nulls.as_ref());
+
+            let lhs_values = lhs.values();
+            let rhs_values = rhs.values();
+            let iter = zip(lhs_values.iter(), rhs_values.iter()).map(|(l, r)| operation(*l, *r));
+
+            DataArray::from_field_and_values(lhs.field.clone(), iter).with_nulls(nulls)
+        }
         // broadcast right path
         (_, 1) => {
             let opt_rhs = rhs.get(0);
@@ -77,11 +84,10 @@ where
 impl<T> Add for &DataArray<T>
 where
     T: DaftNumericType,
-    T::Native: basic::NativeArithmetics,
 {
     type Output = DaftResult<DataArray<T>>;
     fn add(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, basic::add, |l, r| l + r)
+        arithmetic_helper(self, rhs, |l, r| l + r)
     }
 }
 
@@ -89,12 +95,7 @@ impl Add for &Decimal128Array {
     type Output = DaftResult<Decimal128Array>;
     fn add(self, rhs: Self) -> Self::Output {
         assert_eq!(self.data_type(), rhs.data_type());
-        arithmetic_helper(
-            self,
-            rhs,
-            daft_arrow::compute::arithmetics::decimal::add,
-            |l, r| l + r,
-        )
+        arithmetic_helper(self, rhs, |l, r| l + r)
     }
 }
 
@@ -102,12 +103,7 @@ impl Sub for &Decimal128Array {
     type Output = DaftResult<Decimal128Array>;
     fn sub(self, rhs: Self) -> Self::Output {
         assert_eq!(self.data_type(), rhs.data_type());
-        arithmetic_helper(
-            self,
-            rhs,
-            daft_arrow::compute::arithmetics::decimal::sub,
-            |l, r| l - r,
-        )
+        arithmetic_helper(self, rhs, |l, r| l - r)
     }
 }
 
@@ -120,12 +116,7 @@ impl Mul for &Decimal128Array {
             unreachable!("This should always be a Decimal128")
         };
         let scale = 10i128.pow(*s as u32);
-        arithmetic_helper(
-            self,
-            rhs,
-            daft_arrow::compute::arithmetics::decimal::mul,
-            |l, r| (l * r) / scale,
-        )
+        arithmetic_helper(self, rhs, |l, r| (l * r) / scale)
     }
 }
 
@@ -143,6 +134,10 @@ impl Add for &FixedSizeBinaryArray {
     }
 }
 
+#[allow(
+    deprecated,
+    reason = "arrow2->arrow migration: add_utf8_arrays still uses arrow2"
+)]
 impl Add for &Utf8Array {
     type Output = DaftResult<Utf8Array>;
     fn add(self, rhs: Self) -> Self::Output {
@@ -150,69 +145,95 @@ impl Add for &Utf8Array {
         Ok(Utf8Array::new(Field::new(self.name(), DataType::Utf8).into(), result).unwrap())
     }
 }
+
 impl<T> Sub for &DataArray<T>
 where
     T: DaftNumericType,
-    T::Native: basic::NativeArithmetics,
 {
     type Output = DaftResult<DataArray<T>>;
     fn sub(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, basic::sub, |l, r| l - r)
+        arithmetic_helper(self, rhs, |l, r| l - r)
     }
 }
 
 impl<T> Mul for &DataArray<T>
 where
     T: DaftNumericType,
-    T::Native: basic::NativeArithmetics,
 {
     type Output = DaftResult<DataArray<T>>;
     fn mul(self, rhs: Self) -> Self::Output {
-        arithmetic_helper(self, rhs, basic::mul, |l, r| l * r)
+        arithmetic_helper(self, rhs, |l, r| l * r)
     }
 }
 
-pub fn binary_with_nulls<T, F>(
-    lhs: &PrimitiveArray<T>,
-    rhs: &PrimitiveArray<T>,
+/// Null-aware binary operation on equal-length DataArrays.
+/// Unlike `arithmetic_helper`, this checks validity before computing each element,
+/// avoiding panics from operations like division on garbage values at null positions.
+fn null_aware_binary<T, F>(
+    lhs: &DataArray<T>,
+    rhs: &DataArray<T>,
     op: F,
-) -> PrimitiveArray<T>
+) -> DaftResult<DataArray<T>>
 where
-    T: daft_arrow::types::NativeType,
-    F: Fn(T, T) -> T,
+    T: DaftPrimitiveType,
+    F: Fn(T::Native, T::Native) -> T::Native,
 {
-    assert!(lhs.len() == rhs.len(), "expected same length");
-    let values = lhs.iter().zip(rhs.iter()).map(|(l, r)| match (l, r) {
-        (None, _) => None,
-        (_, None) => None,
-        (Some(l), Some(r)) => Some(op(*l, *r)),
-    });
-    unsafe { PrimitiveArray::<T>::from_trusted_len_iter_unchecked(values) }
+    assert_eq!(lhs.len(), rhs.len(), "expected same length");
+    let lhs_values = lhs.values();
+    let rhs_values = rhs.values();
+    let lhs_nulls = lhs.nulls().map(|v| v.clone().into());
+    let rhs_nulls = rhs.nulls().map(|v| v.clone().into());
+    let nulls = NullBuffer::union(lhs_nulls.as_ref(), rhs_nulls.as_ref());
+
+    let iter = zip(lhs_values.iter(), rhs_values.iter())
+        .enumerate()
+        .map(|(i, (l, r))| {
+            if nulls.as_ref().is_none_or(|nb| nb.is_valid(i)) {
+                op(*l, *r)
+            } else {
+                *l // placeholder; position is null
+            }
+        });
+
+    DataArray::from_field_and_values(lhs.field.clone(), iter).with_nulls(nulls)
 }
 
-fn rem_with_nulls<T>(lhs: &PrimitiveArray<T>, rhs: &PrimitiveArray<T>) -> PrimitiveArray<T>
+/// Helper for broadcast-left (lhs=scalar) with null-aware rhs iteration.
+/// Used by div/rem when rhs has nulls that might contain garbage zeros.
+fn broadcast_left_null_aware<T, F>(
+    lhs: &DataArray<T>,
+    rhs: &DataArray<T>,
+    lhs_val: T::Native,
+    op: F,
+) -> DaftResult<DataArray<T>>
 where
-    T: daft_arrow::types::NativeType + std::ops::Rem<Output = T>,
+    T: DaftPrimitiveType,
+    F: Fn(T::Native, T::Native) -> T::Native,
 {
-    binary_with_nulls(lhs, rhs, |a, b| a % b)
+    let rhs_values = rhs.values();
+    let rhs_nulls = rhs.nulls();
+    let iter = rhs_values.iter().enumerate().map(|(i, r)| {
+        if rhs_nulls.is_none_or(|nb| nb.is_valid(i)) {
+            op(lhs_val, *r)
+        } else {
+            lhs_val // placeholder; position is null
+        }
+    });
+    DataArray::from_field_and_values(lhs.field.clone(), iter)
+        .with_nulls(rhs.nulls().cloned().map(Into::into))
 }
 
 impl<T> Rem for &DataArray<T>
 where
     T: DaftNumericType,
-    T::Native: basic::NativeArithmetics,
 {
     type Output = DaftResult<DataArray<T>>;
     fn rem(self, rhs: Self) -> Self::Output {
         if rhs.data().null_count() == 0 {
-            arithmetic_helper(self, rhs, basic::rem, |l, r| l % r)
+            arithmetic_helper(self, rhs, |l, r| l % r)
         } else {
             match (self.len(), rhs.len()) {
-                (a, b) if a == b => Ok(DataArray::new(
-                    Field::new(self.name(), T::get_dtype()).into(),
-                    Box::new(rem_with_nulls(self.as_arrow2(), rhs.as_arrow2())),
-                )
-                .unwrap()),
+                (a, b) if a == b => null_aware_binary(self, rhs, |a, b| a % b),
                 // broadcast right path
                 (_, 1) => {
                     let opt_rhs = rhs.get(0);
@@ -229,16 +250,8 @@ where
                     let opt_lhs = self.get(0);
                     Ok(match opt_lhs {
                         None => DataArray::full_null(rhs.name(), rhs.data_type(), rhs.len()),
-                        Some(lhs) => {
-                            let values_iter = rhs.as_arrow2().iter().map(|v| v.map(|v| lhs % *v));
-                            let arrow_array = unsafe {
-                                PrimitiveArray::from_trusted_len_iter_unchecked(values_iter)
-                            };
-                            DataArray::new(
-                                Field::new(self.name(), T::get_dtype()).into(),
-                                Box::new(arrow_array),
-                            )
-                            .unwrap()
+                        Some(lhs_val) => {
+                            broadcast_left_null_aware(self, rhs, lhs_val, |l, r| l % r)?
                         }
                     })
                 }
@@ -250,29 +263,17 @@ where
     }
 }
 
-fn div_with_nulls<T>(lhs: &PrimitiveArray<T>, rhs: &PrimitiveArray<T>) -> PrimitiveArray<T>
-where
-    T: daft_arrow::types::NativeType + Div<Output = T>,
-{
-    binary_with_nulls(lhs, rhs, |a, b| a / b)
-}
-
 impl<T> Div for &DataArray<T>
 where
     T: DaftNumericType,
-    T::Native: basic::NativeArithmetics,
 {
     type Output = DaftResult<DataArray<T>>;
     fn div(self, rhs: Self) -> Self::Output {
         if rhs.data().null_count() == 0 {
-            arithmetic_helper(self, rhs, basic::div, |l, r| l / r)
+            arithmetic_helper(self, rhs, |l, r| l / r)
         } else {
             match (self.len(), rhs.len()) {
-                (a, b) if a == b => Ok(DataArray::new(
-                    Field::new(self.name(), T::get_dtype()).into(),
-                    Box::new(div_with_nulls(self.as_arrow2(), rhs.as_arrow2())),
-                )
-                .unwrap()),
+                (a, b) if a == b => null_aware_binary(self, rhs, |a, b| a / b),
                 // broadcast right path
                 (_, 1) => {
                     let opt_rhs = rhs.get(0);
@@ -289,16 +290,8 @@ where
                     let opt_lhs = self.get(0);
                     Ok(match opt_lhs {
                         None => DataArray::full_null(rhs.name(), rhs.data_type(), rhs.len()),
-                        Some(lhs) => {
-                            let values_iter = rhs.as_arrow2().iter().map(|v| v.map(|v| lhs / *v));
-                            let arrow_array = unsafe {
-                                PrimitiveArray::from_trusted_len_iter_unchecked(values_iter)
-                            };
-                            DataArray::new(
-                                Field::new(self.name(), T::get_dtype()).into(),
-                                Box::new(arrow_array),
-                            )
-                            .unwrap()
+                        Some(lhs_val) => {
+                            broadcast_left_null_aware(self, rhs, lhs_val, |l, r| l / r)?
                         }
                     })
                 }
@@ -320,26 +313,10 @@ impl Div for &Decimal128Array {
         let scale = 10i128.pow(*s as u32);
 
         if rhs.data().null_count() == 0 {
-            arithmetic_helper(
-                self,
-                rhs,
-                daft_arrow::compute::arithmetics::decimal::div,
-                |l, r| (l * scale) / r,
-            )
+            arithmetic_helper(self, rhs, |l, r| (l * scale) / r)
         } else {
             match (self.len(), rhs.len()) {
-                (a, b) if a == b => {
-                    let values =
-                        self.as_arrow2()
-                            .iter()
-                            .zip(rhs.as_arrow2().iter())
-                            .map(|(l, r)| match (l, r) {
-                                (None, _) => None,
-                                (_, None) => None,
-                                (Some(l), Some(r)) => Some((l * scale) / r),
-                            });
-                    Ok(Decimal128Array::from_iter(self.field.clone(), values))
-                }
+                (a, b) if a == b => null_aware_binary(self, rhs, |l, r| (l * scale) / r),
                 // broadcast right path
                 (_, 1) => {
                     let opt_rhs = rhs.get(0);
@@ -356,12 +333,8 @@ impl Div for &Decimal128Array {
                     let opt_lhs = self.get(0);
                     Ok(match opt_lhs {
                         None => DataArray::full_null(rhs.name(), rhs.data_type(), rhs.len()),
-                        Some(lhs) => {
-                            let values_iter = rhs
-                                .as_arrow2()
-                                .iter()
-                                .map(|v| v.map(|v| (lhs * scale) / *v));
-                            Decimal128Array::from_iter(self.field.clone(), values_iter)
+                        Some(lhs_val) => {
+                            broadcast_left_null_aware(self, rhs, lhs_val, |l, r| (l * scale) / r)?
                         }
                     })
                 }
