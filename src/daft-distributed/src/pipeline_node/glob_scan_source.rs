@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_io_config::IOConfig;
+use common_metrics::ops::{NodeCategory, NodeType};
 use common_scan_info::Pushdowns;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, stats::StatsState};
@@ -43,6 +44,8 @@ impl GlobScanSourceNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::GlobScan,
+            NodeCategory::Source,
         );
         let config = PipelineNodeConfig::new(
             schema,

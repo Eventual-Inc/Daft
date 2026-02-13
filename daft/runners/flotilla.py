@@ -24,6 +24,7 @@ from daft.daft import (
 )
 from daft.event_loop import set_event_loop
 from daft.expressions import Expression, ExpressionsProjection
+from daft.recordbatch import RecordBatch
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.partitioning import (
     PartitionMetadata,
@@ -32,7 +33,7 @@ from daft.runners.partitioning import (
 from daft.runners.profiler import profile
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, AsyncIterator, Iterator
+    from collections.abc import AsyncGenerator, AsyncIterator, Generator
 
     from daft.runners.ray_runner import RayMaterializedResult
 
@@ -304,14 +305,11 @@ class RemoteFlotillaRunner:
         self.curr_plans[plan.idx()] = plan
         self.curr_result_gens[plan.idx()] = self.plan_runner.run_plan(plan, psets)
 
-    async def get_next_partition(self, plan_id: str) -> RayMaterializedResult | None:
+    async def get_next_partition(self, plan_id: str) -> RayMaterializedResult | RecordBatch | None:
         from daft.runners.ray_runner import (
             PartitionMetadataAccessor,
             RayMaterializedResult,
         )
-
-        if plan_id not in self.curr_result_gens:
-            return None
 
         try:
             next_partition_ref = await self.curr_result_gens[plan_id].__anext__()
@@ -319,9 +317,10 @@ class RemoteFlotillaRunner:
             next_partition_ref = None
 
         if next_partition_ref is None:
+            metrics = self.curr_result_gens[plan_id].finish()  # type: ignore[attr-defined]
             self.curr_plans.pop(plan_id, None)
             self.curr_result_gens.pop(plan_id, None)
-            return None
+            return RecordBatch._from_pyrecordbatch(metrics.to_recordbatch())
 
         metadata_accessor = PartitionMetadataAccessor.from_metadata_list(
             [PartitionMetadata(next_partition_ref.num_rows, next_partition_ref.size_bytes)]
@@ -412,12 +411,12 @@ class FlotillaRunner:
         self,
         plan: DistributedPhysicalPlan,
         partition_sets: dict[str, PartitionSet[RayMaterializedResult]],
-    ) -> Iterator[RayMaterializedResult]:
+    ) -> Generator[RayMaterializedResult, None, RecordBatch]:
         plan_id = plan.idx()
         ray.get(self.runner.run_plan.remote(plan, partition_sets))
 
         while True:
             result = ray.get(self.runner.get_next_partition.remote(plan_id))
-            if result is None:
-                break
+            if isinstance(result, RecordBatch):
+                return result
             yield result

@@ -1,7 +1,11 @@
-use std::sync::Arc;
+use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
-use common_metrics::{CPU_US_KEY, Counter, ROWS_IN_KEY, StatSnapshot};
+use common_metrics::{
+    CPU_US_KEY, Counter, ROWS_IN_KEY, StatSnapshot,
+    ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot::WriteSnapshot,
+};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::{OutputFileInfo, SinkInfo, stats::StatsState};
@@ -46,7 +50,7 @@ impl WriteStats {
 }
 
 impl RuntimeStats for WriteStats {
-    fn handle_worker_node_stats(&self, snapshot: &StatSnapshot) {
+    fn handle_worker_node_stats(&self, _node_info: &NodeInfo, snapshot: &StatSnapshot) {
         let StatSnapshot::Write(snapshot) = snapshot else {
             return;
         };
@@ -56,6 +60,15 @@ impl RuntimeStats for WriteStats {
             .add(snapshot.rows_written, self.node_kv.as_slice());
         self.bytes_written
             .add(snapshot.bytes_written, self.node_kv.as_slice());
+    }
+
+    fn export_snapshot(&self) -> StatSnapshot {
+        StatSnapshot::Write(WriteSnapshot {
+            cpu_us: self.cpu_us.load(Ordering::Relaxed),
+            rows_in: self.rows_in.load(Ordering::Relaxed),
+            rows_written: self.rows_written.load(Ordering::Relaxed),
+            bytes_written: self.bytes_written.load(Ordering::Relaxed),
+        })
     }
 }
 
@@ -83,6 +96,8 @@ impl SinkNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::Write,
+            NodeCategory::BlockingSink,
         );
         let config = PipelineNodeConfig::new(
             file_schema,
