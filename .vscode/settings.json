@@ -12,6 +12,5 @@
   ],
   "python.testing.unittestEnabled": false,
   "python.testing.pytestEnabled": true,
-  "makefile.configureOnOpen": false,
-  "python.REPL.enableREPLSmartSend": false
+  "makefile.configureOnOpen": false
 }
