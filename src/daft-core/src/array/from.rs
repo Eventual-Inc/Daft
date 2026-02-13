@@ -285,6 +285,13 @@ impl Utf8Array {
 
         Self::from_arrow(Field::new(name, DataType::Utf8), Arc::new(arrow_array)).unwrap()
     }
+
+    /// Creates a non-nullable `Utf8Array` from an iterator of string-like values. Single-pass.
+    pub fn from_values<S: AsRef<str>>(name: &str, iter: impl IntoIterator<Item = S>) -> Self {
+        let arrow_array = arrow::array::LargeStringArray::from_iter_values(iter);
+        Self::from_arrow(Field::new(name, DataType::Utf8), Arc::new(arrow_array)).unwrap()
+    }
+
     /// Creates a nullable `Utf8Array` from an iterator of optional strings. Single-pass.
     pub fn from_iter<S: AsRef<str>>(name: &str, iter: impl IntoIterator<Item = Option<S>>) -> Self {
         let arrow_array = arrow::array::LargeStringArray::from_iter(iter);
