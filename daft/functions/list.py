@@ -34,13 +34,9 @@ def value_counts(list_expr: Expression) -> Expression:
         │ ---          ┆ ---                 │
         │ List[String] ┆ Map[String: UInt64] │
         ╞══════════════╪═════════════════════╡
-        │ [a, b, a]    ┆ [{key: a,           │
-        │              ┆ value: 2,           │
-        │              ┆ }, {key: …          │
+        │ [a, b, a]    ┆ {"a": 2, "b": 1}    │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ [b, c, b, c] ┆ [{key: b,           │
-        │              ┆ value: 2,           │
-        │              ┆ }, {key: …          │
+        │ [b, c, b, c] ┆ {"b": 2, "c": 2}    │
         ╰──────────────┴─────────────────────╯
         <BLANKLINE>
         (Showing first 2 of 2 rows)
