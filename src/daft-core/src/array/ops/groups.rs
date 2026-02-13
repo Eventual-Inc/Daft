@@ -277,54 +277,30 @@ impl IntoUniqueIdxs for Float64Array {
 impl IntoGroups for Utf8Array {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
         let array = self.as_arrow()?;
-        // Utf8 is offset-based, so grouping must use row APIs (iter/value).
-        if array.null_count() > 0 {
-            make_groups(array.iter())
-        } else {
-            // No-null fast path: avoid Option wrapping.
-            let len = array.len();
-            make_groups((0..len).map(|i| array.value(i)))
-        }
+        // Utf8 is offset-based, so use row iteration for both null and non-null arrays.
+        make_groups(array.iter())
     }
 }
 
 impl IntoUniqueIdxs for Utf8Array {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
         let array = self.as_arrow()?;
-        if array.null_count() > 0 {
-            make_unique_idxs(array.iter())
-        } else {
-            // No-null fast path: avoid Option wrapping.
-            let len = array.len();
-            make_unique_idxs((0..len).map(|i| array.value(i)))
-        }
+        make_unique_idxs(array.iter())
     }
 }
 
 impl IntoGroups for BinaryArray {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
         let array = self.as_arrow()?;
-        // Binary is offset-based, so grouping must use row APIs (iter/value).
-        if array.null_count() > 0 {
-            make_groups(array.iter())
-        } else {
-            // No-null fast path: avoid Option wrapping.
-            let len = array.len();
-            make_groups((0..len).map(|i| array.value(i)))
-        }
+        // Binary is offset-based, so use row iteration for both null and non-null arrays.
+        make_groups(array.iter())
     }
 }
 
 impl IntoUniqueIdxs for BinaryArray {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
         let array = self.as_arrow()?;
-        if array.null_count() > 0 {
-            make_unique_idxs(array.iter())
-        } else {
-            // No-null fast path: avoid Option wrapping.
-            let len = array.len();
-            make_unique_idxs((0..len).map(|i| array.value(i)))
-        }
+        make_unique_idxs(array.iter())
     }
 }
 
@@ -533,16 +509,24 @@ mod tests {
     }
 
     #[test]
-    fn test_fixed_size_binary_zero_width_groups_and_unique_idxs() -> DaftResult<()> {
+    fn test_fixed_size_binary_groups_and_unique_idxs() -> DaftResult<()> {
         let array = FixedSizeBinaryArray::from_iter(
             "a",
-            vec![Some(&[][..]), Some(&[][..]), Some(&[][..])].into_iter(),
-            0,
+            vec![Some(&[1u8][..]), Some(&[1u8][..]), Some(&[2u8][..])].into_iter(),
+            1,
         );
-        assert_eq!(array.make_groups()?, (vec![0], vec![vec![0, 1, 2]]));
-        assert_eq!(array.make_unique_idxs()?, vec![0]);
+        let (sample_indices, group_indices) = array.make_groups()?;
+        let grouped = grouped_by_sample(sample_indices, group_indices);
+        assert_eq!(
+            grouped,
+            BTreeMap::from([(0u64, vec![0u64, 1u64]), (2u64, vec![2u64])])
+        );
 
-        let empty = FixedSizeBinaryArray::from_iter("a", std::iter::empty::<Option<&[u8]>>(), 0);
+        let mut unique_idxs = array.make_unique_idxs()?;
+        unique_idxs.sort_unstable();
+        assert_eq!(unique_idxs, vec![0, 2]);
+
+        let empty = FixedSizeBinaryArray::from_iter("a", std::iter::empty::<Option<&[u8]>>(), 1);
         assert_eq!(empty.make_groups()?, (vec![], vec![]));
         assert_eq!(empty.make_unique_idxs()?, Vec::<u64>::new());
         Ok(())
