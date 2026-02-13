@@ -6,7 +6,7 @@ There are two main ways to work with videos in Daft:
 
 `daft.VideoFile` is a subclass of `daft.File` that provides a specialized interface for video-specific operations.
 
-- [daft.read_video_frames](../api/functions/read_video_frames.md) for reading video frames into a DataFrame
+- [daft.read_video_frames](../api/io.md#daft.read_video_frames) for reading video frames into a DataFrame
 - [daft.VideoFile](../api/datatypes/file_types.md) for working with video files
     - [daft.functions.video_file](../api/functions/video_file.md) for working with video files
     - [daft.functions.video_metadata](../api/functions/video_metadata.md) for working with video metadata
