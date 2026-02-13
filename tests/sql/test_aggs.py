@@ -82,8 +82,8 @@ def test_aggs_sql():
 @pytest.mark.parametrize(
     "agg,cond,expected",
     [
-        ("sum(values)", "sum(values) > 10", {"values": [22.0, 29.5]}),
-        ("sum(values)", "values > 10", {"values": [22.0, 29.5]}),
+        ("sum(values)", "sum(values) > 10", {"sum(values)": [22.0, 29.5]}),
+        ("sum(values)", "sum(values) > 10", {"sum(values)": [22.0, 29.5]}),
         ("sum(values) as sum_v", "sum(values) > 10", {"sum_v": [22.0, 29.5]}),
         ("sum(values) as sum_v", "sum_v > 10", {"sum_v": [22.0, 29.5]}),
         ("count(*) as cnt", "cnt > 2", {"cnt": [4, 5]}),
@@ -101,9 +101,9 @@ def test_aggs_sql():
         # duplicates of the above 4 `count` tests but for count-distinct
         ("count(distinct values) as count_distinct", "count_distinct > 2", {"count_distinct": [3, 5]}),
         ("count(distinct values) as count_distinct", "count(distinct values) > 2", {"count_distinct": [3, 5]}),
-        ("count(distinct values)", "count(distinct values) > 2", {"values": [3, 5]}),
+        ("count(distinct values)", "count(distinct values) > 2", {"count(distinct values)": [3, 5]}),
         ("count(distinct values) as count_distinct", "sum(values) > 10", {"count_distinct": [3, 5]}),
-        ("sum(values), count(*)", "id > 1", {"values": [10.0, 29.5], "count": [2, 5]}),
+        ("sum(values), count(*)", "id > 1", {"sum(values)": [10.0, 29.5], "count": [2, 5]}),
     ],
 )
 def test_having(agg, cond, expected):

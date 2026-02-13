@@ -201,8 +201,9 @@ class LogicalPlanBuilder:
             cheapest_col_name = self.schema().column_names()[0]
 
         cheapest_col = col(cheapest_col_name)
-        builder = self._builder.aggregate([cheapest_col.count(CountMode.All)._expr], [])
-        builder = builder.select([cheapest_col.alias("count")._expr])
+        count_expr = cheapest_col.count(CountMode.All)
+        builder = self._builder.aggregate([count_expr._expr], [])
+        builder = builder.select([col(count_expr.name()).alias("count")._expr])
         return LogicalPlanBuilder(builder)
 
     def distinct(self, on: list[Expression]) -> LogicalPlanBuilder:

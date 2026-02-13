@@ -98,12 +98,12 @@ def test_wildcard_agg():
 
     res = df.sum("*").to_pydict()
     assert res == {
-        "a": [6],
-        "b": [15],
+        "sum(a)": [6],
+        "sum(b)": [15],
     }
 
     res = df.agg(col("*").mean()).to_pydict()
     assert res == {
-        "a": [2],
-        "b": [5],
+        "avg(a)": [2],
+        "avg(b)": [5],
     }

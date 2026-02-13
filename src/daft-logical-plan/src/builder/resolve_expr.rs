@@ -93,10 +93,15 @@ fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRe
     })?;
 
     if let Some(expansion) = wildcard_expansion {
+        let (inner, alias) = expr.unwrap_alias();
+        let is_default_alias = alias
+            .as_ref()
+            .is_some_and(|a| inner.to_sql().as_deref() == Some(a));
+
         expansion
             .into_iter()
             .map(|new_name| {
-                Ok(expr
+                let new_expr = inner
                     .clone()
                     .transform(|e| match e.as_ref() {
                         Expr::Column(Column::Unresolved(UnresolvedColumn {
@@ -118,7 +123,15 @@ fn expand_wildcard(expr: ExprRef, plan: LogicalPlanRef) -> DaftResult<Vec<ExprRe
                         )),
                         _ => Ok(Transformed::no(e)),
                     })?
-                    .data)
+                    .data;
+
+                if is_default_alias {
+                    Ok(new_expr.apply_default_alias())
+                } else if let Some(a) = alias.clone() {
+                    Ok(new_expr.alias(a))
+                } else {
+                    Ok(new_expr)
+                }
             })
             .collect()
     } else {
@@ -445,7 +458,7 @@ impl ExprResolver<'_> {
     fn validate_expr(&self, expr: ExprRef) -> DaftResult<ExprRef> {
         if has_agg(&expr) {
             return Err(DaftError::ValueError(format!(
-                "Aggregation expressions are currently only allowed in agg, pivot, and window: {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383",
+                "Aggregation expressions are currently only allowed in agg, pivot, window, or as a global aggregation in select(): {expr}\nIf you would like to have this feature, please see https://github.com/Eventual-Inc/Daft/issues/1979#issue-2170913383",
             )));
         }
 
