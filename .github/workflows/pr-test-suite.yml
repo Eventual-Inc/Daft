@@ -460,118 +460,121 @@ jobs:
         webhook-type: incoming-webhook
 
   # Same as integration-test-io but runs the tests that require credentials, only on `main`
-  integration-test-io-credentialed:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: [skipcheck, integration-test-build]
-    if: ${{ needs.skipcheck.outputs.skip == 'false' && github.ref == 'refs/heads/main' }}
-    env:
-      package-name: daft
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ['3.10']
-        daft-runner: [ray, native]
-    # These permissions are needed to interact with GitHub's OIDC Token endpoint.
-    # This is used in the step "Assume GitHub Actions AWS Credentials"
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-    - name: Free Disk Space (Ubuntu)
-      if: ${{ (runner.os == 'Linux') }}
-      uses: jlumbroso/free-disk-space@main
-      with:
-        tool-cache: false
-        android: true
-        dotnet: false
-        haskell: true
-        large-packages: false
-        docker-images: false
-        swap-storage: true
-    - uses: actions/checkout@v6
-      with:
-        submodules: true
-        fetch-depth: 0
-    - name: Download built wheels
-      uses: actions/download-artifact@v7
-      with:
-        pattern: wheels-*
-        merge-multiple: true
-        path: dist
-    - name: Setup Python and uv
-      uses: astral-sh/setup-uv@v7
-      with:
-        python-version: ${{ matrix.python-version }}
-        enable-cache: true
-        cache-dependency-glob: "**/pyproject.toml"
-    - name: Setup Virtual Env
-      run: |
-        uv venv --seed .venv
-        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
-    - name: Install Daft and dev dependencies
-      uses: nick-fields/retry@v3
-      with:
-        timeout_minutes: 15
-        max_attempts: 3
-        retry_wait_seconds: 10
-        command: |
-          source .venv/bin/activate
-          uv sync --no-install-project --all-extras --all-groups
-          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
-          rm -rf daft
-    - name: Prepare tmpdirs for IO services
-      run: |
-        mkdir -p /tmp/daft-integration-testing/nginx
-        chmod +rw /tmp/daft-integration-testing/nginx
-    - name: Assume GitHub Actions AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v5
-      with:
-        aws-region: us-west-2
-        role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
-        role-session-name: DaftPythonPackageGitHubWorkflow
-    - name: Assume GitHub Actions GCloud Credentials
-      uses: google-github-actions/auth@v3
-      with:
-        credentials_json: ${{ secrets.ACTIONS_GCP_SERVICE_ACCOUNT_JSON }}
-        # NOTE: Workload Identity seems to be having problems with our Rust crate, so we use JSON instead
-        # See issue: https://github.com/yoshidan/google-cloud-rust/issues/171#issuecomment-1730511655
-        # workload_identity_provider: ${{ secrets.ACTIONS_GCP_WORKLOAD_IDENTITY_PROVIDER }}
-        # service_account: ${{ secrets.ACTIONS_GCP_SERVICE_ACCOUNT }}
-    - name: Spin up IO services
-      uses: isbang/compose-action@v2.4.3
-      with:
-        compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
-        down-flags: --volumes
-    - name: Run IO integration tests
-      run: |
-        set -o pipefail
-        source .venv/bin/activate
-        pytest -n auto tests/integration/io -m 'integration and not benchmark' --credentials --durations=0 | ./tools/capture-durations.sh "io_credentialed_pytest_output.txt"
-        python tools/aggregate_test_durations.py io_credentialed_pytest_output.txt
-      env:
-        DAFT_RUNNER: ${{ matrix.daft-runner }}
-        HF_TOKEN: ${{ secrets.ACTIONS_HF_TOKEN }}
-    - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ env.SLACK_WEBHOOK_URL && failure() }}
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      with:
-        payload: |
-          {
-            "blocks": [
-              {
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": ":rotating_light: [CI] IO Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
-                }
-              }
-            ]
-          }
-        webhook: ${{ env.SLACK_WEBHOOK_URL }}
-        webhook-type: incoming-webhook
+  # NOTE: Credentialed IO tests are commented out while secrets are being audited.
+  # These tests have non-credentialed equivalents in the integration-test-io job.
+  # Uncomment when re-enabling credentialed testing.
+  # integration-test-io-credentialed:
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 30
+  #   needs: [skipcheck, integration-test-build]
+  #   if: ${{ needs.skipcheck.outputs.skip == 'false' && github.ref == 'refs/heads/main' }}
+  #   env:
+  #     package-name: daft
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       python-version: ['3.10']
+  #       daft-runner: [ray, native]
+  #   # These permissions are needed to interact with GitHub's OIDC Token endpoint.
+  #   # This is used in the step "Assume GitHub Actions AWS Credentials"
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   steps:
+  #   - name: Free Disk Space (Ubuntu)
+  #     if: ${{ (runner.os == 'Linux') }}
+  #     uses: jlumbroso/free-disk-space@main
+  #     with:
+  #       tool-cache: false
+  #       android: true
+  #       dotnet: false
+  #       haskell: true
+  #       large-packages: false
+  #       docker-images: false
+  #       swap-storage: true
+  #   - uses: actions/checkout@v6
+  #     with:
+  #       submodules: true
+  #       fetch-depth: 0
+  #   - name: Download built wheels
+  #     uses: actions/download-artifact@v7
+  #     with:
+  #       pattern: wheels-*
+  #       merge-multiple: true
+  #       path: dist
+  #   - name: Setup Python and uv
+  #     uses: astral-sh/setup-uv@v7
+  #     with:
+  #       python-version: ${{ matrix.python-version }}
+  #       enable-cache: true
+  #       cache-dependency-glob: "**/pyproject.toml"
+  #   - name: Setup Virtual Env
+  #     run: |
+  #       uv venv --seed .venv
+  #       echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+  #   - name: Install Daft and dev dependencies
+  #     uses: nick-fields/retry@v3
+  #     with:
+  #       timeout_minutes: 15
+  #       max_attempts: 3
+  #       retry_wait_seconds: 10
+  #       command: |
+  #         source .venv/bin/activate
+  #         uv sync --no-install-project --all-extras --all-groups
+  #         uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+  #         rm -rf daft
+  #   - name: Prepare tmpdirs for IO services
+  #     run: |
+  #       mkdir -p /tmp/daft-integration-testing/nginx
+  #       chmod +rw /tmp/daft-integration-testing/nginx
+  #   - name: Assume GitHub Actions AWS Credentials
+  #     uses: aws-actions/configure-aws-credentials@v5
+  #     with:
+  #       aws-region: us-west-2
+  #       role-to-assume: ${{ secrets.ACTIONS_AWS_ROLE_ARN }}
+  #       role-session-name: DaftPythonPackageGitHubWorkflow
+  #   - name: Assume GitHub Actions GCloud Credentials
+  #     uses: google-github-actions/auth@v3
+  #     with:
+  #       credentials_json: ${{ secrets.ACTIONS_GCP_SERVICE_ACCOUNT_JSON }}
+  #       # NOTE: Workload Identity seems to be having problems with our Rust crate, so we use JSON instead
+  #       # See issue: https://github.com/yoshidan/google-cloud-rust/issues/171#issuecomment-1730511655
+  #       # workload_identity_provider: ${{ secrets.ACTIONS_GCP_WORKLOAD_IDENTITY_PROVIDER }}
+  #       # service_account: ${{ secrets.ACTIONS_GCP_SERVICE_ACCOUNT }}
+  #   - name: Spin up IO services
+  #     uses: isbang/compose-action@v2.4.3
+  #     with:
+  #       compose-file: ./tests/integration/io/docker-compose/docker-compose.yml
+  #       down-flags: --volumes
+  #   - name: Run IO integration tests
+  #     run: |
+  #       set -o pipefail
+  #       source .venv/bin/activate
+  #       pytest -n auto tests/integration/io -m 'integration and not benchmark' --credentials --durations=0 | ./tools/capture-durations.sh "io_credentialed_pytest_output.txt"
+  #       python tools/aggregate_test_durations.py io_credentialed_pytest_output.txt
+  #     env:
+  #       DAFT_RUNNER: ${{ matrix.daft-runner }}
+  #       HF_TOKEN: ${{ secrets.ACTIONS_HF_TOKEN }}
+  #   - name: Send Slack notification on failure
+  #     uses: slackapi/slack-github-action@v2.1.1
+  #     if: ${{ env.SLACK_WEBHOOK_URL && failure() }}
+  #     env:
+  #       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+  #     with:
+  #       payload: |
+  #         {
+  #           "blocks": [
+  #             {
+  #               "type": "section",
+  #               "text": {
+  #                 "type": "mrkdwn",
+  #                 "text": ":rotating_light: [CI] IO Integration Tests <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+  #               }
+  #             }
+  #           ]
+  #         }
+  #       webhook: ${{ env.SLACK_WEBHOOK_URL }}
+  #       webhook-type: incoming-webhook
 
   integration-test-sql:
     runs-on: ubuntu-latest
@@ -762,7 +765,7 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest ./tests/integration/unity -m 'integration or not integration' --credentials --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
+        pytest ./tests/integration/unity -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
         python ./tools/aggregate_test_durations.py unity_pytest_output.txt
       env:
         DAFT_RUNNER: native
@@ -775,7 +778,7 @@ jobs:
       run: |
         set -o pipefail
         source .venv/bin/activate
-        pytest ./tests/integration/unity -m 'integration or not integration' --credentials --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
+        pytest ./tests/integration/unity -m 'integration or not integration' --durations=0 | ./tools/capture-durations.sh "unity_pytest_output.txt"
         python ./tools/aggregate_test_durations.py unity_pytest_output.txt
       env:
         DAFT_RUNNER: ray
@@ -963,79 +966,82 @@ jobs:
         webhook-type: incoming-webhook
 
 
-  integration-test-ai-credentialed:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    needs: [skipcheck, integration-test-build]
-    if: ${{ needs.skipcheck.outputs.skip == 'false' && github.ref == 'refs/heads/main' }}
-    env:
-      package-name: daft
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: ['3.10']
-        daft-runner: [ray, native]
-    steps:
-    - uses: actions/checkout@v6
-      with:
-        submodules: true
-        fetch-depth: 0
-    - name: Download built wheels
-      uses: actions/download-artifact@v7
-      with:
-        pattern: wheels-*
-        merge-multiple: true
-        path: dist
-    - name: Setup Python and uv
-      uses: astral-sh/setup-uv@v7
-      with:
-        python-version: ${{ matrix.python-version }}
-        enable-cache: true
-        cache-dependency-glob: "**/pyproject.toml"
-    - name: Setup Virtual Env
-      run: |
-        uv venv --seed .venv
-        echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
-    - name: Install Daft and dev dependencies
-      uses: nick-fields/retry@v3
-      with:
-        timeout_minutes: 10
-        max_attempts: 3
-        retry_wait_seconds: 10
-        command: |
-          source .venv/bin/activate
-          uv sync --no-install-project --all-extras --all-groups
-          uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
-          rm -rf daft
-    - name: Run AI provider integration tests
-      run: |
-        set -o pipefail
-        source .venv/bin/activate
-        pytest -n auto -m integration tests/integration/ai --credentials --durations=0 | ./tools/capture-durations.sh "ai_credentialed_pytest_output.txt"
-        python tools/aggregate_test_durations.py ai_credentialed_pytest_output.txt
-      env:
-        DAFT_RUNNER: ${{ matrix.daft-runner }}
-        OPENAI_API_KEY: ${{ secrets.ACTIONS_OPENAI_API_KEY }}
-    - name: Send Slack notification on failure
-      uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      with:
-        payload: |
-          {
-            "blocks": [
-              {
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": ":rotating_light: [CI] AI Provider Integration Test Credentialed <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
-                }
-              }
-            ]
-          }
-        webhook: ${{ env.SLACK_WEBHOOK_URL }}
-        webhook-type: incoming-webhook
+  # NOTE: Credentialed AI tests are commented out while secrets are being audited.
+  # These tests have non-credentialed equivalents in the integration-test-ai job.
+  # Uncomment when re-enabling credentialed testing.
+  # integration-test-ai-credentialed:
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 30
+  #   needs: [skipcheck, integration-test-build]
+  #   if: ${{ needs.skipcheck.outputs.skip == 'false' && github.ref == 'refs/heads/main' }}
+  #   env:
+  #     package-name: daft
+  #   strategy:
+  #     fail-fast: false
+  #     matrix:
+  #       python-version: ['3.10']
+  #       daft-runner: [ray, native]
+  #   steps:
+  #   - uses: actions/checkout@v6
+  #     with:
+  #       submodules: true
+  #       fetch-depth: 0
+  #   - name: Download built wheels
+  #     uses: actions/download-artifact@v7
+  #     with:
+  #       pattern: wheels-*
+  #       merge-multiple: true
+  #       path: dist
+  #   - name: Setup Python and uv
+  #     uses: astral-sh/setup-uv@v7
+  #     with:
+  #       python-version: ${{ matrix.python-version }}
+  #       enable-cache: true
+  #       cache-dependency-glob: "**/pyproject.toml"
+  #   - name: Setup Virtual Env
+  #     run: |
+  #       uv venv --seed .venv
+  #       echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+  #   - name: Install Daft and dev dependencies
+  #     uses: nick-fields/retry@v3
+  #     with:
+  #       timeout_minutes: 10
+  #       max_attempts: 3
+  #       retry_wait_seconds: 10
+  #       command: |
+  #         source .venv/bin/activate
+  #         uv sync --no-install-project --all-extras --all-groups
+  #         uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
+  #         rm -rf daft
+  #   - name: Run AI provider integration tests
+  #     run: |
+  #       set -o pipefail
+  #       source .venv/bin/activate
+  #       pytest -n auto -m integration tests/integration/ai --credentials --durations=0 | ./tools/capture-durations.sh "ai_credentialed_pytest_output.txt"
+  #       python tools/aggregate_test_durations.py ai_credentialed_pytest_output.txt
+  #     env:
+  #       DAFT_RUNNER: ${{ matrix.daft-runner }}
+  #       OPENAI_API_KEY: ${{ secrets.ACTIONS_OPENAI_API_KEY }}
+  #   - name: Send Slack notification on failure
+  #     uses: slackapi/slack-github-action@v2.1.1
+  #     if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
+  #     env:
+  #       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+  #     with:
+  #       payload: |
+  #         {
+  #           "blocks": [
+  #             {
+  #               "type": "section",
+  #               "text": {
+  #                 "type": "mrkdwn",
+  #                 "text": ":rotating_light: [CI] AI Provider Integration Test Credentialed <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|workflow> *FAILED on main* :rotating_light:"
+  #               }
+  #             }
+  #           ]
+  #         }
+  #       webhook: ${{ env.SLACK_WEBHOOK_URL }}
+  #       webhook-type: incoming-webhook
 
   integration-test-ray:
     runs-on: ubuntu-latest
@@ -1117,11 +1123,11 @@ jobs:
     needs:
     - integration-test-tpch
     - integration-test-io
-    - integration-test-io-credentialed
+    # - integration-test-io-credentialed
     - integration-test-sql
     - integration-test-catalogs
     - integration-test-ai
-    - integration-test-ai-credentialed
+    # - integration-test-ai-credentialed
     - integration-test-ray
     if: always()
     steps:
