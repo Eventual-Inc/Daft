@@ -109,7 +109,7 @@ where
     Ok(indices)
 }
 
-// --- Primitive Implementations ---
+// Primitive
 
 impl<T> IntoGroups for DataArray<T>
 where
@@ -169,7 +169,7 @@ impl IntoUniqueIdxs for Decimal128Array {
     }
 }
 
-// --- Float Implementations (Canonicalizing NaNs) ---
+// Floats (canonicalize NaN)
 // Canonicalize all NaN payloads so every NaN hashes/equates into one group.
 
 impl IntoGroups for Float32Array {
@@ -272,41 +272,63 @@ impl IntoUniqueIdxs for Float64Array {
     }
 }
 
-// --- Variable-length / Offset-based Implementations ---
+// Variable-size binary/string
 
 impl IntoGroups for Utf8Array {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
         let array = self.as_arrow()?;
-        // For Utf8, values() is a concatenated byte buffer; use iter()
-        // so offsets are applied and each item maps to one logical row.
-        make_groups(array.iter())
+        // Utf8 is offset-based, so grouping must use row APIs (iter/value).
+        if array.null_count() > 0 {
+            make_groups(array.iter())
+        } else {
+            // No-null fast path: avoid Option wrapping.
+            let len = array.len();
+            make_groups((0..len).map(|i| array.value(i)))
+        }
     }
 }
 
 impl IntoUniqueIdxs for Utf8Array {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
         let array = self.as_arrow()?;
-        make_unique_idxs(array.iter())
+        if array.null_count() > 0 {
+            make_unique_idxs(array.iter())
+        } else {
+            // No-null fast path: avoid Option wrapping.
+            let len = array.len();
+            make_unique_idxs((0..len).map(|i| array.value(i)))
+        }
     }
 }
 
 impl IntoGroups for BinaryArray {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
         let array = self.as_arrow()?;
-        // Binary has the same offset-buffer layout as Utf8,
-        // so row-wise grouping must use iter().
-        make_groups(array.iter())
+        // Binary is offset-based, so grouping must use row APIs (iter/value).
+        if array.null_count() > 0 {
+            make_groups(array.iter())
+        } else {
+            // No-null fast path: avoid Option wrapping.
+            let len = array.len();
+            make_groups((0..len).map(|i| array.value(i)))
+        }
     }
 }
 
 impl IntoUniqueIdxs for BinaryArray {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
         let array = self.as_arrow()?;
-        make_unique_idxs(array.iter())
+        if array.null_count() > 0 {
+            make_unique_idxs(array.iter())
+        } else {
+            // No-null fast path: avoid Option wrapping.
+            let len = array.len();
+            make_unique_idxs((0..len).map(|i| array.value(i)))
+        }
     }
 }
 
-// --- Fixed-size Binary Implementations ---
+// Fixed-size binary
 
 impl IntoGroups for FixedSizeBinaryArray {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
@@ -350,7 +372,7 @@ impl IntoUniqueIdxs for FixedSizeBinaryArray {
     }
 }
 
-// --- Other Implementations ---
+// Other
 
 impl IntoGroups for BooleanArray {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {

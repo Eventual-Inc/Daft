@@ -68,7 +68,7 @@ def test_multipartition_count(mp):
     assert len(counted) == 1
     assert counted.to_pydict() == {"a": [2]}
 
-    counted = mp.agg([col("a").count()], group_by=[col("b")])
+    counted = mp.agg([col("a").count()], group_by=[col("b")]).sort([col("b")])
     assert len(counted) == 2
     assert counted.to_pydict() == {"b": ["a", "b"], "a": [1, 1]}
 
