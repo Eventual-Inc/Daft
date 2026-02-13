@@ -405,29 +405,29 @@ class LogicalPlanBuilder:
         builder = self._builder.datasink_write(name, sink)
         return LogicalPlanBuilder(builder)
 
-    def resume_checkpoint(
+    def skip_existing(
         self,
         root_dir: str | list[str],
         file_format: FileFormat,
         key_column: str | list[str],
         io_config: IOConfig | None = None,
         read_kwargs: dict[str, Any] | None = None,
-        num_buckets: int | None = None,
+        num_key_filter_partitions: int | None = None,
         num_cpus: float | None = None,
-        resume_filter_batch_size: int | None = None,
-        checkpoint_loading_batch_size: int | None = None,
-        checkpoint_actor_max_concurrency: int | None = None,
+        key_filter_batch_size: int | None = None,
+        key_filter_loading_batch_size: int | None = None,
+        key_filter_max_concurrency: int | None = None,
     ) -> LogicalPlanBuilder:
-        builder = self._builder.resume_checkpoint(
+        builder = self._builder.skip_existing(
             root_dir,
             file_format,
             key_column,
             io_config,
             read_kwargs,
-            num_buckets,
+            num_key_filter_partitions,
             num_cpus,
-            resume_filter_batch_size,
-            checkpoint_loading_batch_size,
-            checkpoint_actor_max_concurrency,
+            key_filter_batch_size,
+            key_filter_loading_batch_size,
+            key_filter_max_concurrency,
         )
         return LogicalPlanBuilder(builder)

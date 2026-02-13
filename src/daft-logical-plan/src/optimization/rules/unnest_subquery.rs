@@ -531,7 +531,7 @@ fn pull_up_correlated_cols(
         | LogicalPlan::Intersect(..)
         | LogicalPlan::Sort(..)
         | LogicalPlan::SubqueryAlias(..)
-        | LogicalPlan::ResumeCheckpoint(..) => Ok((plan.clone(), subquery_on, outer_on)),
+        | LogicalPlan::SkipExisting(..) => Ok((plan.clone(), subquery_on, outer_on)),
 
         // ops that cannot pull up correlated columns
         LogicalPlan::UDFProject(..)

@@ -335,13 +335,12 @@ impl LogicalPlanBuilder {
         Ok(self.with_new_plan(logical_plan))
     }
 
-    pub fn resume_checkpoint(&self, spec: ops::ResumeCheckpointSpec) -> DaftResult<Self> {
-        let logical_plan: LogicalPlan =
-            ops::ResumeCheckpoint::try_new(self.plan.clone(), spec)?.into();
+    pub fn skip_existing(&self, spec: ops::SkipExistingSpec) -> DaftResult<Self> {
+        let logical_plan: LogicalPlan = ops::SkipExisting::try_new(self.plan.clone(), spec)?.into();
         Ok(self.with_new_plan(logical_plan))
     }
 
-    pub fn apply_resume_checkpoint_predicates(
+    pub fn apply_skip_existing_predicates(
         &self,
         predicates: Vec<Option<ExprRef>>,
     ) -> DaftResult<Self> {
@@ -351,7 +350,7 @@ impl LogicalPlanBuilder {
         impl TreeNodeRewriter for CollectSpecs {
             type Node = Arc<LogicalPlan>;
             fn f_down(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
-                if matches!(node.as_ref(), LogicalPlan::ResumeCheckpoint(_)) {
+                if matches!(node.as_ref(), LogicalPlan::SkipExisting(_)) {
                     self.count += 1;
                 }
                 Ok(Transformed::no(node))
@@ -364,7 +363,7 @@ impl LogicalPlanBuilder {
         let _ = self.plan.clone().rewrite(&mut counter)?;
         if counter.count != predicates.len() {
             return Err(DaftError::ValueError(format!(
-                "resume checkpoint count mismatch: plan has {}, but got {} predicates",
+                "skip_existing count mismatch: plan has {}, but got {} predicates",
                 counter.count,
                 predicates.len()
             )));
@@ -380,9 +379,8 @@ impl LogicalPlanBuilder {
                 Ok(Transformed::no(node))
             }
             fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
-                if let LogicalPlan::ResumeCheckpoint(ops::ResumeCheckpoint {
-                    input, spec, ..
-                }) = node.as_ref()
+                if let LogicalPlan::SkipExisting(ops::SkipExisting { input, spec, .. }) =
+                    node.as_ref()
                 {
                     let pred_opt = self.predicates[self.idx].clone();
                     self.idx += 1;
@@ -391,7 +389,7 @@ impl LogicalPlanBuilder {
                             ExprResolver::builder().allow_actor_pool_udf(true).build();
                         let resolved = expr_resolver.resolve_single(predicate, input.clone())?;
                         let new_lp: LogicalPlan = ops::Filter::try_new(input.clone(), resolved)?
-                            .with_batch_size(spec.resume_filter_batch_size)
+                            .with_batch_size(spec.key_filter_batch_size)
                             .into();
                         return Ok(Transformed::yes(Arc::new(new_lp)));
                     }
@@ -1184,9 +1182,9 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.filter(predicate.expr)?.into())
     }
 
-    #[pyo3(signature = (root_dir, file_format, key_column, io_config=None, read_kwargs=None, num_buckets=None, num_cpus=None, resume_filter_batch_size=None, checkpoint_loading_batch_size=None, checkpoint_actor_max_concurrency=None))]
+    #[pyo3(signature = (root_dir, file_format, key_column, io_config=None, read_kwargs=None, num_key_filter_partitions=None, num_cpus=None, key_filter_batch_size=None, key_filter_loading_batch_size=None, key_filter_max_concurrency=None))]
     #[allow(clippy::too_many_arguments)]
-    pub fn resume_checkpoint(
+    pub fn skip_existing(
         &self,
         py: Python,
         root_dir: pyo3::Py<pyo3::PyAny>,
@@ -1194,11 +1192,11 @@ impl PyLogicalPlanBuilder {
         key_column: pyo3::Py<pyo3::PyAny>,
         io_config: Option<common_io_config::python::IOConfig>,
         read_kwargs: Option<pyo3::Py<pyo3::PyAny>>,
-        num_buckets: Option<usize>,
+        num_key_filter_partitions: Option<usize>,
         num_cpus: Option<f64>,
-        resume_filter_batch_size: Option<usize>,
-        checkpoint_loading_batch_size: Option<usize>,
-        checkpoint_actor_max_concurrency: Option<usize>,
+        key_filter_batch_size: Option<usize>,
+        key_filter_loading_batch_size: Option<usize>,
+        key_filter_max_concurrency: Option<usize>,
     ) -> PyResult<Self> {
         let root_dirs: Vec<String> = if let Ok(s) = root_dir.extract::<String>(py) {
             vec![s]
@@ -1212,22 +1210,22 @@ impl PyLogicalPlanBuilder {
         };
         let read_kwargs =
             common_py_serde::PyObjectWrapper(Arc::new(read_kwargs.unwrap_or_else(|| py.None())));
-        let spec = ops::ResumeCheckpointSpec::new(
+        let spec = ops::SkipExistingSpec::new(
             root_dirs,
             file_format,
             key_columns,
             io_config.map(|cfg| cfg.config),
             read_kwargs,
-            num_buckets,
+            num_key_filter_partitions,
             num_cpus,
-            resume_filter_batch_size,
-            checkpoint_loading_batch_size,
-            checkpoint_actor_max_concurrency,
+            key_filter_batch_size,
+            key_filter_loading_batch_size,
+            key_filter_max_concurrency,
         )?;
-        Ok(self.builder.resume_checkpoint(spec)?.into())
+        Ok(self.builder.skip_existing(spec)?.into())
     }
 
-    pub fn apply_resume_checkpoint_predicates(
+    pub fn apply_skip_existing_predicates(
         &self,
         predicates: Vec<Option<PyExpr>>,
     ) -> PyResult<Self> {
@@ -1235,34 +1233,29 @@ impl PyLogicalPlanBuilder {
             .into_iter()
             .map(|p| p.map(|expr| expr.into()))
             .collect();
-        Ok(self
-            .builder
-            .apply_resume_checkpoint_predicates(preds)?
-            .into())
+        Ok(self.builder.apply_skip_existing_predicates(preds)?.into())
     }
 
-    pub fn get_resume_checkpoint_specs(&self, py: Python) -> PyResult<Vec<pyo3::Py<pyo3::PyAny>>> {
+    pub fn get_skip_existing_specs(&self, py: Python) -> PyResult<Vec<pyo3::Py<pyo3::PyAny>>> {
         use pyo3::types::PyDict;
 
-        struct CollectResumeCheckpointSpecs {
-            specs: Vec<ops::ResumeCheckpointSpec>,
+        struct CollectSkipExistingSpecs {
+            specs: Vec<ops::SkipExistingSpec>,
         }
-        impl TreeNodeRewriter for CollectResumeCheckpointSpecs {
+        impl TreeNodeRewriter for CollectSkipExistingSpecs {
             type Node = Arc<LogicalPlan>;
             fn f_down(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
                 Ok(Transformed::no(node))
             }
             fn f_up(&mut self, node: Self::Node) -> DaftResult<Transformed<Self::Node>> {
-                if let LogicalPlan::ResumeCheckpoint(ops::ResumeCheckpoint { spec, .. }) =
-                    node.as_ref()
-                {
+                if let LogicalPlan::SkipExisting(ops::SkipExisting { spec, .. }) = node.as_ref() {
                     self.specs.push(spec.clone());
                 }
                 Ok(Transformed::no(node))
             }
         }
 
-        let mut collector = CollectResumeCheckpointSpecs { specs: Vec::new() };
+        let mut collector = CollectSkipExistingSpecs { specs: Vec::new() };
         let _ = self.builder.plan.clone().rewrite(&mut collector)?;
 
         collector
@@ -1278,16 +1271,16 @@ impl PyLogicalPlanBuilder {
                     spec.io_config.map(common_io_config::python::IOConfig::from),
                 )?;
                 d.set_item("read_kwargs", spec.read_kwargs.0.as_ref().clone_ref(py))?;
-                d.set_item("num_buckets", spec.num_buckets)?;
+                d.set_item("num_key_filter_partitions", spec.num_key_filter_partitions)?;
                 d.set_item("num_cpus", spec.num_cpus.as_ref().map(|v| v.0))?;
-                d.set_item("resume_filter_batch_size", spec.resume_filter_batch_size)?;
+                d.set_item("key_filter_batch_size", spec.key_filter_batch_size)?;
                 d.set_item(
-                    "checkpoint_loading_batch_size",
-                    spec.checkpoint_loading_batch_size,
+                    "key_filter_loading_batch_size",
+                    spec.key_filter_loading_batch_size,
                 )?;
                 d.set_item(
-                    "checkpoint_actor_max_concurrency",
-                    spec.checkpoint_actor_max_concurrency,
+                    "key_filter_max_concurrency",
+                    spec.key_filter_max_concurrency,
                 )?;
                 Ok(d.into())
             })

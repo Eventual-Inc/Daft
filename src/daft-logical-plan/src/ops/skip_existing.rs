@@ -15,21 +15,21 @@ use crate::{LogicalPlan, stats::StatsState};
 #[derive(Educe, Clone, Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
 #[educe(PartialEq, Eq, Hash)]
-pub struct ResumeCheckpointSpec {
+pub struct SkipExistingSpec {
     pub root_dir: Vec<String>,
     pub file_format: FileFormat,
     pub key_column: Vec<String>,
     pub io_config: Option<IOConfig>,
-    pub num_buckets: Option<usize>,
+    pub num_key_filter_partitions: Option<usize>,
     pub num_cpus: Option<FloatWrapper<f64>>,
-    pub resume_filter_batch_size: Option<usize>,
-    pub checkpoint_loading_batch_size: Option<usize>,
-    pub checkpoint_actor_max_concurrency: Option<usize>,
+    pub key_filter_batch_size: Option<usize>,
+    pub key_filter_loading_batch_size: Option<usize>,
+    pub key_filter_max_concurrency: Option<usize>,
     #[cfg(feature = "python")]
     pub read_kwargs: PyObjectWrapper,
 }
 
-impl ResumeCheckpointSpec {
+impl SkipExistingSpec {
     #[cfg(feature = "python")]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -38,47 +38,46 @@ impl ResumeCheckpointSpec {
         key_column: Vec<String>,
         io_config: Option<IOConfig>,
         read_kwargs: PyObjectWrapper,
-        num_buckets: Option<usize>,
+        num_key_filter_partitions: Option<usize>,
         num_cpus: Option<f64>,
-        resume_filter_batch_size: Option<usize>,
-        checkpoint_loading_batch_size: Option<usize>,
-        checkpoint_actor_max_concurrency: Option<usize>,
+        key_filter_batch_size: Option<usize>,
+        key_filter_loading_batch_size: Option<usize>,
+        key_filter_max_concurrency: Option<usize>,
     ) -> DaftResult<Self> {
         if root_dir.is_empty() || root_dir.iter().any(|p| p.is_empty()) {
             return Err(DaftError::ValueError(
-                "resume checkpoint root_dir must be a non-empty list of non-empty paths"
-                    .to_string(),
+                "[skip_existing] root_dir must be a non-empty list of non-empty paths".to_string(),
             ));
         }
         if key_column.is_empty() || key_column.iter().any(|c| c.is_empty()) {
             return Err(DaftError::ValueError(
-                "resume checkpoint key_column must be a non-empty list of non-empty column names"
+                "[skip_existing] key_column must be a non-empty list of non-empty column names"
                     .to_string(),
             ));
         }
-        if matches!(num_buckets, Some(0)) {
+        if matches!(num_key_filter_partitions, Some(0)) {
             return Err(DaftError::ValueError(
-                "resume checkpoint num_buckets must be > 0".to_string(),
+                "[skip_existing] num_key_filter_partitions must be > 0".to_string(),
             ));
         }
         if matches!(num_cpus, Some(v) if v <= 0.0) {
             return Err(DaftError::ValueError(
-                "resume checkpoint num_cpus must be > 0".to_string(),
+                "[skip_existing] num_cpus must be > 0".to_string(),
             ));
         }
-        if matches!(resume_filter_batch_size, Some(0)) {
+        if matches!(key_filter_batch_size, Some(0)) {
             return Err(DaftError::ValueError(
-                "resume checkpoint resume_filter_batch_size must be > 0".to_string(),
+                "[skip_existing] key_filter_batch_size must be > 0".to_string(),
             ));
         }
-        if matches!(checkpoint_loading_batch_size, Some(0)) {
+        if matches!(key_filter_loading_batch_size, Some(0)) {
             return Err(DaftError::ValueError(
-                "resume checkpoint checkpoint_loading_batch_size must be > 0".to_string(),
+                "[skip_existing] key_filter_loading_batch_size must be > 0".to_string(),
             ));
         }
-        if matches!(checkpoint_actor_max_concurrency, Some(0)) {
+        if matches!(key_filter_max_concurrency, Some(0)) {
             return Err(DaftError::ValueError(
-                "resume checkpoint checkpoint_actor_max_concurrency must be > 0".to_string(),
+                "[skip_existing] key_filter_max_concurrency must be > 0".to_string(),
             ));
         }
         Ok(Self {
@@ -87,11 +86,11 @@ impl ResumeCheckpointSpec {
             key_column,
             io_config,
             read_kwargs,
-            num_buckets,
+            num_key_filter_partitions,
             num_cpus: num_cpus.map(FloatWrapper),
-            resume_filter_batch_size,
-            checkpoint_loading_batch_size,
-            checkpoint_actor_max_concurrency,
+            key_filter_batch_size,
+            key_filter_loading_batch_size,
+            key_filter_max_concurrency,
         })
     }
 
@@ -102,47 +101,46 @@ impl ResumeCheckpointSpec {
         file_format: FileFormat,
         key_column: Vec<String>,
         io_config: Option<IOConfig>,
-        num_buckets: Option<usize>,
+        num_key_filter_partitions: Option<usize>,
         num_cpus: Option<f64>,
-        resume_filter_batch_size: Option<usize>,
-        checkpoint_loading_batch_size: Option<usize>,
-        checkpoint_actor_max_concurrency: Option<usize>,
+        key_filter_batch_size: Option<usize>,
+        key_filter_loading_batch_size: Option<usize>,
+        key_filter_max_concurrency: Option<usize>,
     ) -> DaftResult<Self> {
         if root_dir.is_empty() || root_dir.iter().any(|p| p.is_empty()) {
             return Err(DaftError::ValueError(
-                "resume checkpoint root_dir must be a non-empty list of non-empty paths"
-                    .to_string(),
+                "[skip_existing] root_dir must be a non-empty list of non-empty paths".to_string(),
             ));
         }
         if key_column.is_empty() || key_column.iter().any(|c| c.is_empty()) {
             return Err(DaftError::ValueError(
-                "resume checkpoint key_column must be a non-empty list of non-empty column names"
+                "[skip_existing] key_column must be a non-empty list of non-empty column names"
                     .to_string(),
             ));
         }
-        if matches!(num_buckets, Some(0)) {
+        if matches!(num_key_filter_partitions, Some(0)) {
             return Err(DaftError::ValueError(
-                "resume checkpoint num_buckets must be > 0".to_string(),
+                "[skip_existing] num_key_filter_partitions must be > 0".to_string(),
             ));
         }
         if matches!(num_cpus, Some(v) if v <= 0.0) {
             return Err(DaftError::ValueError(
-                "resume checkpoint num_cpus must be > 0".to_string(),
+                "[skip_existing] num_cpus must be > 0".to_string(),
             ));
         }
-        if matches!(resume_filter_batch_size, Some(0)) {
+        if matches!(key_filter_batch_size, Some(0)) {
             return Err(DaftError::ValueError(
-                "resume checkpoint resume_filter_batch_size must be > 0".to_string(),
+                "[skip_existing] key_filter_batch_size must be > 0".to_string(),
             ));
         }
-        if matches!(checkpoint_loading_batch_size, Some(0)) {
+        if matches!(key_filter_loading_batch_size, Some(0)) {
             return Err(DaftError::ValueError(
-                "resume checkpoint checkpoint_loading_batch_size must be > 0".to_string(),
+                "[skip_existing] key_filter_loading_batch_size must be > 0".to_string(),
             ));
         }
-        if matches!(checkpoint_actor_max_concurrency, Some(0)) {
+        if matches!(key_filter_max_concurrency, Some(0)) {
             return Err(DaftError::ValueError(
-                "resume checkpoint checkpoint_actor_max_concurrency must be > 0".to_string(),
+                "[skip_existing] key_filter_max_concurrency must be > 0".to_string(),
             ));
         }
         Ok(Self {
@@ -150,33 +148,33 @@ impl ResumeCheckpointSpec {
             file_format,
             key_column,
             io_config,
-            num_buckets,
+            num_key_filter_partitions,
             num_cpus: num_cpus.map(FloatWrapper),
-            resume_filter_batch_size,
-            checkpoint_loading_batch_size,
-            checkpoint_actor_max_concurrency,
+            key_filter_batch_size,
+            key_filter_loading_batch_size,
+            key_filter_max_concurrency,
         })
     }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[cfg_attr(debug_assertions, derive(Debug))]
-pub struct ResumeCheckpoint {
+pub struct SkipExisting {
     pub plan_id: Option<usize>,
     pub node_id: Option<usize>,
     pub input: Arc<LogicalPlan>,
-    pub spec: ResumeCheckpointSpec,
+    pub spec: SkipExistingSpec,
     pub output_schema: SchemaRef,
     pub stats_state: StatsState,
 }
 
-impl ResumeCheckpoint {
-    pub fn try_new(input: Arc<LogicalPlan>, spec: ResumeCheckpointSpec) -> DaftResult<Self> {
+impl SkipExisting {
+    pub fn try_new(input: Arc<LogicalPlan>, spec: SkipExistingSpec) -> DaftResult<Self> {
         let input_schema = input.schema();
         for col in &spec.key_column {
             if input_schema.get_field(col).is_err() {
                 return Err(DaftError::ValueError(format!(
-                    "resume checkpoint key column not found in schema: {col}",
+                    "[skip_existing] key column not found in schema: {col}",
                 )));
             }
         }
@@ -218,14 +216,14 @@ impl ResumeCheckpoint {
             format!("{:?}", self.spec.key_column)
         };
         let mut res = vec![format!(
-            "ResumeCheckpoint: path = {}, format = {:?}, on = {}",
+            "[skip_existing] SkipExisting: path = {}, format = {:?}, on = {}",
             path_display, self.spec.file_format, key_display
         )];
         if let Some(io_config) = &self.spec.io_config {
             res.push(format!("IOConfig = {}", io_config));
         }
-        if let Some(batch_size) = self.spec.resume_filter_batch_size {
-            res.push(format!("Resume Filter Batch Size = {}", batch_size));
+        if let Some(batch_size) = self.spec.key_filter_batch_size {
+            res.push(format!("Key Filter Batch Size = {}", batch_size));
         }
         if let StatsState::Materialized(stats) = &self.stats_state {
             res.push(format!("Stats = {}", stats));
@@ -246,12 +244,12 @@ mod tests {
     #[cfg(feature = "python")]
     use pyo3::types::PyDictMethods;
 
-    use super::ResumeCheckpointSpec;
+    use super::SkipExistingSpec;
 
     #[cfg(not(feature = "python"))]
     #[test]
-    fn test_resume_checkpoint_spec_eq_hash() {
-        let spec_a = ResumeCheckpointSpec::new(
+    fn test_skip_existing_spec_eq_hash() {
+        let spec_a = SkipExistingSpec::new(
             vec!["root".to_string()],
             FileFormat::Csv,
             vec!["id".to_string()],
@@ -264,7 +262,7 @@ mod tests {
         )
         .unwrap();
 
-        let spec_b = ResumeCheckpointSpec::new(
+        let spec_b = SkipExistingSpec::new(
             vec!["root2".to_string()],
             FileFormat::Csv,
             vec!["id".to_string()],
@@ -288,7 +286,7 @@ mod tests {
 
     #[cfg(feature = "python")]
     #[test]
-    fn test_resume_checkpoint_spec_eq_hash_kwargs() {
+    fn test_skip_existing_spec_eq_hash_kwargs() {
         pyo3::prepare_freethreaded_python();
         pyo3::Python::with_gil(|py| {
             let kwargs_a = {
@@ -307,7 +305,7 @@ mod tests {
                 common_py_serde::PyObjectWrapper(Arc::new(d.unbind().into()))
             };
 
-            let spec_a = ResumeCheckpointSpec::new(
+            let spec_a = SkipExistingSpec::new(
                 vec!["root".to_string()],
                 FileFormat::Csv,
                 vec!["id".to_string()],
@@ -321,7 +319,7 @@ mod tests {
             )
             .unwrap();
 
-            let spec_b = ResumeCheckpointSpec::new(
+            let spec_b = SkipExistingSpec::new(
                 vec!["root".to_string()],
                 FileFormat::Csv,
                 vec!["id".to_string()],
@@ -335,7 +333,7 @@ mod tests {
             )
             .unwrap();
 
-            let spec_c = ResumeCheckpointSpec::new(
+            let spec_c = SkipExistingSpec::new(
                 vec!["root".to_string()],
                 FileFormat::Csv,
                 vec!["id".to_string()],
@@ -368,8 +366,7 @@ mod tests {
     }
 
     #[test]
-    fn resume_checkpoint_resume_filter_batch_size_applied_to_filter() -> common_error::DaftResult<()>
-    {
+    fn skip_existing_filter_batch_size_applied_to_filter() -> common_error::DaftResult<()> {
         use daft_core::prelude::{DataType, Field};
         use daft_dsl::{lit, resolved_col};
 
@@ -382,26 +379,27 @@ mod tests {
             dummy_scan_node(dummy_scan_operator(vec![Field::new("a", DataType::Int64)]));
 
         #[cfg(feature = "python")]
-        let builder_with_resume = pyo3::Python::with_gil(|py| -> common_error::DaftResult<_> {
-            let kwargs = common_py_serde::PyObjectWrapper(Arc::new(py.None()));
-            let spec = ResumeCheckpointSpec::new(
-                vec!["root".to_string()],
-                FileFormat::Csv,
-                vec!["a".to_string()],
-                None,
-                kwargs,
-                None,
-                None,
-                Some(10),
-                None,
-                None,
-            )?;
-            scan_builder.resume_checkpoint(spec)
-        })?;
+        let builder_with_skip_existing =
+            pyo3::Python::with_gil(|py| -> common_error::DaftResult<_> {
+                let kwargs = common_py_serde::PyObjectWrapper(Arc::new(py.None()));
+                let spec = SkipExistingSpec::new(
+                    vec!["root".to_string()],
+                    FileFormat::Csv,
+                    vec!["a".to_string()],
+                    None,
+                    kwargs,
+                    None,
+                    None,
+                    Some(10),
+                    None,
+                    None,
+                )?;
+                scan_builder.skip_existing(spec)
+            })?;
 
         #[cfg(not(feature = "python"))]
-        let builder_with_resume = {
-            let spec = ResumeCheckpointSpec::new(
+        let builder_with_skip_existing = {
+            let spec = SkipExistingSpec::new(
                 vec!["root".to_string()],
                 FileFormat::Csv,
                 vec!["a".to_string()],
@@ -412,12 +410,12 @@ mod tests {
                 None,
                 None,
             )?;
-            scan_builder.resume_checkpoint(spec)?
+            scan_builder.skip_existing(spec)?
         };
 
         let predicate = resolved_col("a").lt(lit(2));
         let applied =
-            builder_with_resume.apply_resume_checkpoint_predicates(vec![Some(predicate)])?;
+            builder_with_skip_existing.apply_skip_existing_predicates(vec![Some(predicate)])?;
         let plan = applied.build();
 
         match plan.as_ref() {
@@ -426,15 +424,15 @@ mod tests {
                 Ok(())
             }
             other => Err(common_error::DaftError::InternalError(format!(
-                "Expected Filter after applying resume predicates, got {other:?}"
+                "[skip_existing] Expected Filter after applying skip_existing predicates, got {other:?}"
             ))),
         }
     }
 
     #[cfg(not(feature = "python"))]
     #[test]
-    fn resume_checkpoint_multiline_display_includes_resume_filter_batch_size()
-    -> common_error::DaftResult<()> {
+    fn skip_existing_multiline_display_includes_filter_batch_size() -> common_error::DaftResult<()>
+    {
         use daft_core::prelude::{DataType, Field};
 
         use crate::{
@@ -445,7 +443,7 @@ mod tests {
         let scan_builder =
             dummy_scan_node(dummy_scan_operator(vec![Field::new("a", DataType::Int64)]));
 
-        let spec = ResumeCheckpointSpec::new(
+        let spec = SkipExistingSpec::new(
             vec!["root".to_string()],
             FileFormat::Parquet,
             vec!["a".to_string()],
@@ -457,15 +455,15 @@ mod tests {
             None,
         )?;
 
-        let plan = scan_builder.resume_checkpoint(spec)?.build();
+        let plan = scan_builder.skip_existing(spec)?.build();
         match plan.as_ref() {
-            LogicalPlan::ResumeCheckpoint(op) => {
+            LogicalPlan::SkipExisting(op) => {
                 let lines = op.multiline_display();
-                assert!(lines.iter().any(|l| l == "Resume Filter Batch Size = 10"));
+                assert!(lines.iter().any(|l| l == "Key Filter Batch Size = 10"));
                 Ok(())
             }
             other => Err(common_error::DaftError::InternalError(format!(
-                "Expected ResumeCheckpoint, got {other:?}"
+                "Expected SkipExisting, got {other:?}"
             ))),
         }
     }

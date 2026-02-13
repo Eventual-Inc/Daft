@@ -1,9 +1,9 @@
-"""Consolidated pytest suite for Daft checkpoint.
+"""Consolidated pytest suite for Daft skip_existing.
 
 Notes:
 - Test functions consistently use the `test_` prefix with clear scenarios and expectations.
 - Helper/build functions consistently use `helper_` / `build_` prefixes.
-- Covers checkpoint behavior for single-source and multi-source, plus edge cases like invalid config.
+- Covers skip_existing behavior for single-source and multi-source, plus edge cases like invalid config.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ def helper_write_dataframe(
     df: daft.DataFrame,
     fmt: FileFormat,
     root_dir: Path,
-    checkpoint_config=None,
+    skip_existing_config=None,
     write_mode: str = "append",
 ) -> daft.DataFrame:
     """Write a DataFrame to a local directory (csv/parquet/json)."""
@@ -32,16 +32,16 @@ def helper_write_dataframe(
 
     has_existing_data = any(root_dir.rglob(f"*.{fmt.ext()}"))
 
-    if checkpoint_config is not None and has_existing_data:
-        if not isinstance(checkpoint_config, dict) or "key_column" not in checkpoint_config:
-            raise ValueError("checkpoint_config must be a dict with key_column")
-        num_buckets = checkpoint_config.get("num_buckets")
-        num_cpus = checkpoint_config.get("num_cpus")
-        df = df.resume(
+    if skip_existing_config is not None and has_existing_data:
+        if not isinstance(skip_existing_config, dict) or "key_column" not in skip_existing_config:
+            raise ValueError("skip_existing_config must be a dict with key_column")
+        num_key_filter_partitions = skip_existing_config.get("num_buckets")
+        num_cpus = skip_existing_config.get("num_cpus")
+        df = df.skip_existing(
             root_dir,
-            on=checkpoint_config["key_column"],
+            on=skip_existing_config["key_column"],
             format=fmt,
-            num_buckets=4 if num_buckets is None else num_buckets,
+            num_key_filter_partitions=4 if num_key_filter_partitions is None else num_key_filter_partitions,
             num_cpus=1.0 if num_cpus is None else num_cpus,
         )
     if fmt == FileFormat.Csv:
@@ -99,56 +99,56 @@ def build_df_ids_sequential(n: int = 10) -> daft.DataFrame:
     return daft.from_pydict({"id": list(range(n)), "val": [f"v{i}" for i in range(n)]})
 
 
-# ========== Tests: Checkpoint Normal (single_source) ==========
+# ========== Tests: skip_existing (single_source) ==========
 
 
 @pytest.mark.parametrize("fmt", [FileFormat.Csv, FileFormat.Parquet, FileFormat.Json])
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_checkpoint_resume_e2e(tmp_path: Path, fmt):
-    """Goal: end-to-end verification of checkpoint resume behavior."""
-    ck = {"key_column": "id"}
+def test_skip_existing_e2e(tmp_path: Path, fmt):
+    """Goal: end-to-end verification of skip_existing behavior."""
+    cfg = {"key_column": "id"}
     df_all = build_df_ids_sequential(100)
     df_first_50 = df_all.where(col("id") <= 50)
 
-    root_dir = tmp_path / f"ckpt_{fmt.ext()}"
-    helper_write_dataframe(df_first_50, fmt, root_dir, checkpoint_config=ck)
+    root_dir = tmp_path / f"existing_{fmt.ext()}"
+    helper_write_dataframe(df_first_50, fmt, root_dir, skip_existing_config=cfg)
     df_after_first = helper_read_dataframe(fmt, root_dir)
     old_ids = set(df_after_first.select("id").to_pydict()["id"])
 
-    helper_write_dataframe(df_all, fmt, root_dir, checkpoint_config=ck)
+    helper_write_dataframe(df_all, fmt, root_dir, skip_existing_config=cfg)
     df_final = helper_read_dataframe(fmt, root_dir)
     final_ids = set(df_final.select("id").to_pydict()["id"])
     new_ids = sorted(list(final_ids - old_ids))
-    assert new_ids == list(range(51, 100)), f"Resume ids mismatch: {new_ids}"
+    assert new_ids == list(range(51, 100)), f"skip_existing ids mismatch: {new_ids}"
     assert final_ids == set(range(100)), f"Final ids mismatch: {sorted(list(final_ids))}"
 
 
 @pytest.mark.parametrize("fmt", [FileFormat.Csv, FileFormat.Parquet, FileFormat.Json])
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_checkpoint_resume_e2e_with_custom_num_cpus(tmp_path: Path, fmt):
-    """Goal: end-to-end verification of checkpoint resume behavior."""
-    ck = {"key_column": "id", "num_buckets": 4, "num_cpus": 2.0}
+def test_skip_existing_e2e_with_custom_num_cpus(tmp_path: Path, fmt):
+    """Goal: end-to-end verification of skip_existing behavior."""
+    cfg = {"key_column": "id", "num_buckets": 4, "num_cpus": 2.0}
     df_all = build_df_ids_sequential(100)
     df_first_50 = df_all.where(col("id") <= 50)
 
-    root_dir = tmp_path / f"ckpt_{fmt.ext()}"
-    helper_write_dataframe(df_first_50, fmt, root_dir, checkpoint_config=ck)
+    root_dir = tmp_path / f"existing_{fmt.ext()}"
+    helper_write_dataframe(df_first_50, fmt, root_dir, skip_existing_config=cfg)
     df_after_first = helper_read_dataframe(fmt, root_dir)
     old_ids = set(df_after_first.select("id").to_pydict()["id"])
 
-    helper_write_dataframe(df_all, fmt, root_dir, checkpoint_config=ck)
+    helper_write_dataframe(df_all, fmt, root_dir, skip_existing_config=cfg)
     df_final = helper_read_dataframe(fmt, root_dir)
     final_ids = set(df_final.select("id").to_pydict()["id"])
     new_ids = sorted(list(final_ids - old_ids))
 
-    assert new_ids == list(range(51, 100)), f"Resume ids mismatch: {new_ids}"
+    assert new_ids == list(range(51, 100)), f"skip_existing ids mismatch: {new_ids}"
     assert final_ids == set(range(100)), f"Final ids mismatch: {sorted(list(final_ids))}"
 
 
 @pytest.mark.parametrize("input_fmt", [FileFormat.Csv, FileFormat.Parquet, FileFormat.Json])
 @pytest.mark.parametrize("output_fmt", [FileFormat.Csv, FileFormat.Parquet, FileFormat.Json])
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_checkpoint_multi_format(tmp_path: Path, input_fmt, output_fmt):
+def test_skip_existing_multi_format(tmp_path: Path, input_fmt, output_fmt):
     """Goal: end-to-end cross-format verification (read from fmts x write to fmts)."""
     df_src = build_df_ids_sequential(200)
 
@@ -158,7 +158,7 @@ def test_checkpoint_multi_format(tmp_path: Path, input_fmt, output_fmt):
 
     output_dir = tmp_path / f"output_{input_fmt.ext()}_to_{output_fmt.ext()}"
     helper_write_dataframe(df_in.limit(50), output_fmt, output_dir)
-    helper_write_dataframe(df_in, output_fmt, output_dir, checkpoint_config={"key_column": "id"})
+    helper_write_dataframe(df_in, output_fmt, output_dir, skip_existing_config={"key_column": "id"})
     df_out = helper_read_dataframe(output_fmt, output_dir)
 
     metrics = helper_dataframe_metrics(df_out)
@@ -168,13 +168,13 @@ def test_checkpoint_multi_format(tmp_path: Path, input_fmt, output_fmt):
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_checkpoint_from_glob_path(tmp_path: Path):
-    """Goal: verify from_glob_path + checkpoint only appends missing keys in single-source.
+def test_skip_existing_from_glob_path(tmp_path: Path):
+    """Goal: verify from_glob_path + skip_existing only appends missing keys in single-source.
 
     Scenario:
     - Create 10 text files in a temporary directory.
     - Read listing via from_glob_path (path/size/num_rows), sort by path.
-    - First write 5 files as seed, then write all 10 with checkpoint.
+    - First write 5 files as seed, then write all 10 with skip_existing.
     Expected: destination contains 10 rows total, each path appears exactly once.
     """
     # Create source directory and files
@@ -189,11 +189,11 @@ def test_checkpoint_from_glob_path(tmp_path: Path):
     df_all.show(100)
     df_seed = df_all.limit(5)
 
-    # Write to destination with checkpoint (use 'path' as key)
-    dest = tmp_path / "ckpt_from_glob"
-    ck = {"key_column": "path"}
-    helper_write_dataframe(df_seed, FileFormat.Parquet, dest, checkpoint_config=ck)
-    helper_write_dataframe(df_all, FileFormat.Parquet, dest, checkpoint_config=ck)
+    # Write to destination with skip_existing (use 'path' as key)
+    dest = tmp_path / "existing_from_glob"
+    cfg = {"key_column": "path"}
+    helper_write_dataframe(df_seed, FileFormat.Parquet, dest, skip_existing_config=cfg)
+    helper_write_dataframe(df_all, FileFormat.Parquet, dest, skip_existing_config=cfg)
 
     # Read back and verify 10 unique paths (no duplicates)
     out_df = helper_read_dataframe(FileFormat.Parquet, dest)
@@ -203,15 +203,15 @@ def test_checkpoint_from_glob_path(tmp_path: Path):
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_checkpoint_single_source_with_filter_op(tmp_path: Path):
-    dest = tmp_path / "ckpt_single_with_filter"
-    ck = {"key_column": "id"}
+def test_skip_existing_single_source_with_filter_op(tmp_path: Path):
+    dest = tmp_path / "existing_single_with_filter"
+    cfg = {"key_column": "id"}
 
-    helper_write_dataframe(build_df_ids_sequential(10), FileFormat.Parquet, dest, checkpoint_config=ck)
+    helper_write_dataframe(build_df_ids_sequential(10), FileFormat.Parquet, dest, skip_existing_config=cfg)
 
     df_all = build_df_ids_sequential(20)
     df_filtered = df_all.where(col("id") < 15)
-    helper_write_dataframe(df_filtered, FileFormat.Parquet, dest, checkpoint_config=ck)
+    helper_write_dataframe(df_filtered, FileFormat.Parquet, dest, skip_existing_config=cfg)
 
     out_df = helper_read_dataframe(FileFormat.Parquet, dest)
     metrics = helper_dataframe_metrics(out_df)
@@ -219,18 +219,18 @@ def test_checkpoint_single_source_with_filter_op(tmp_path: Path):
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_checkpoint_single_source_with_show_and_collect_op(tmp_path: Path):
-    dest = tmp_path / "ckpt_single_with_show"
-    ck = {"key_column": "id"}
+def test_skip_existing_single_source_with_show_and_collect_op(tmp_path: Path):
+    dest = tmp_path / "existing_single_with_show"
+    cfg = {"key_column": "id"}
 
-    helper_write_dataframe(build_df_ids_sequential(10), FileFormat.Parquet, dest, checkpoint_config=ck)
+    helper_write_dataframe(build_df_ids_sequential(10), FileFormat.Parquet, dest, skip_existing_config=cfg)
 
     df_all = build_df_ids_sequential(20)
     df_all.show()
     df_all.collect()
     df_all = df_all.collect()
 
-    helper_write_dataframe(df_all, FileFormat.Parquet, dest, checkpoint_config=ck)
+    helper_write_dataframe(df_all, FileFormat.Parquet, dest, skip_existing_config=cfg)
 
     out_df = helper_read_dataframe(FileFormat.Parquet, dest)
     metrics = helper_dataframe_metrics(out_df)
@@ -239,16 +239,16 @@ def test_checkpoint_single_source_with_show_and_collect_op(tmp_path: Path):
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_checkpoint_single_source_with_write_op(tmp_path: Path):
-    dest_1 = tmp_path / "ckpt_single_with_write_1"
-    dest_2 = tmp_path / "ckpt_single_with_write_2"
-    ck = {"key_column": "id"}
+def test_skip_existing_single_source_with_write_op(tmp_path: Path):
+    dest_1 = tmp_path / "existing_single_with_write_1"
+    dest_2 = tmp_path / "existing_single_with_write_2"
+    cfg = {"key_column": "id"}
 
-    helper_write_dataframe(build_df_ids_sequential(10), FileFormat.Parquet, dest_1, checkpoint_config=ck)
+    helper_write_dataframe(build_df_ids_sequential(10), FileFormat.Parquet, dest_1, skip_existing_config=cfg)
 
     df_1 = build_df_ids_sequential(20)
-    df_2 = helper_write_dataframe(df_1, FileFormat.Parquet, dest_1, checkpoint_config=ck)
-    helper_write_dataframe(df_2, FileFormat.Parquet, dest_2, checkpoint_config={"key_column": "path"})
+    df_2 = helper_write_dataframe(df_1, FileFormat.Parquet, dest_1, skip_existing_config=cfg)
+    helper_write_dataframe(df_2, FileFormat.Parquet, dest_2, skip_existing_config={"key_column": "path"})
 
     out_df_1 = helper_read_dataframe(FileFormat.Parquet, dest_1)
     metrics = helper_dataframe_metrics(out_df_1)
@@ -261,16 +261,16 @@ def test_checkpoint_single_source_with_write_op(tmp_path: Path):
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_checkpoint_single_source_with_repartition_and_into_batches_op(tmp_path: Path):
-    dest_1 = tmp_path / "ckpt_single_with_repartition_1"
-    dest_2 = tmp_path / "ckpt_single_with_repartition_2"
-    ck = {"key_column": "id"}
-    helper_write_dataframe(build_df_ids_sequential(10), FileFormat.Parquet, dest_1, checkpoint_config=ck)
+def test_skip_existing_single_source_with_repartition_and_into_batches_op(tmp_path: Path):
+    dest_1 = tmp_path / "existing_single_with_repartition_1"
+    dest_2 = tmp_path / "existing_single_with_repartition_2"
+    cfg = {"key_column": "id"}
+    helper_write_dataframe(build_df_ids_sequential(10), FileFormat.Parquet, dest_1, skip_existing_config=cfg)
     df_all = build_df_ids_sequential(20)
     df1 = df_all.repartition(4)
     df2 = df_all.into_batches(2)
-    helper_write_dataframe(df1, FileFormat.Parquet, dest_1, checkpoint_config=ck)
-    helper_write_dataframe(df2, FileFormat.Parquet, dest_2, checkpoint_config=ck)
+    helper_write_dataframe(df1, FileFormat.Parquet, dest_1, skip_existing_config=cfg)
+    helper_write_dataframe(df2, FileFormat.Parquet, dest_2, skip_existing_config=cfg)
 
     out_df_1 = helper_read_dataframe(FileFormat.Parquet, dest_1)
     metrics = helper_dataframe_metrics(out_df_1)
@@ -283,11 +283,11 @@ def test_checkpoint_single_source_with_repartition_and_into_batches_op(tmp_path:
     assert all(v == 1 for v in metrics["id_counts"].values()), f"id_counts mismatch: {metrics['id_counts']}"
 
 
-# ========== Tests: Resume API ==========
+# ========== Tests: skip_existing API ==========
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_resume_multiple_calls_chain_semantics(tmp_path: Path):
+def test_skip_existing_multiple_calls_chain_semantics(tmp_path: Path):
     df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
     ckpt_a = tmp_path / "ckpt_a"
     ckpt_b = tmp_path / "ckpt_b"
@@ -297,12 +297,12 @@ def test_resume_multiple_calls_chain_semantics(tmp_path: Path):
     (ckpt_a / "part-0.csv").write_text("id,val\n1,a\n", encoding="utf-8")
     (ckpt_b / "part-0.csv").write_text("id,val\n2,b\n", encoding="utf-8")
 
-    out = df.resume(ckpt_a, on="id", format="csv").resume(ckpt_b, on="id", format="csv").collect()
+    out = df.skip_existing(ckpt_a, on="id", format="csv").skip_existing(ckpt_b, on="id", format="csv").collect()
     assert out.select("id").to_pydict()["id"] == [3]
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_resume_multiple_calls_distinct_key_columns_are_applied_in_order(tmp_path: Path):
+def test_skip_existing_multiple_calls_distinct_key_columns_are_applied_in_order(tmp_path: Path):
     df = daft.from_pydict({"id": [1, 2, 3], "path": ["a", "b", "c"]})
     ckpt_id = tmp_path / "ckpt_id"
     ckpt_path = tmp_path / "ckpt_path"
@@ -312,12 +312,12 @@ def test_resume_multiple_calls_distinct_key_columns_are_applied_in_order(tmp_pat
     (ckpt_id / "part-0.csv").write_text("id\n1\n", encoding="utf-8")
     (ckpt_path / "part-0.csv").write_text("path\nb\n", encoding="utf-8")
 
-    out = df.resume(ckpt_id, on="id", format="csv").resume(ckpt_path, on="path", format="csv").collect()
+    out = df.skip_existing(ckpt_id, on="id", format="csv").skip_existing(ckpt_path, on="path", format="csv").collect()
     assert out.select("id").to_pydict()["id"] == [3]
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_resume_on_both_join_branches_maps_to_correct_inputs(tmp_path: Path):
+def test_skip_existing_on_both_join_branches_maps_to_correct_inputs(tmp_path: Path):
     left = daft.from_pydict({"id": [1, 2, 3], "l": ["l1", "l2", "l3"]})
     right = daft.from_pydict({"rid": [1, 2, 3], "r": ["r1", "r2", "r3"]})
 
@@ -329,14 +329,14 @@ def test_resume_on_both_join_branches_maps_to_correct_inputs(tmp_path: Path):
     (ckpt_left / "part-0.csv").write_text("id\n1\n", encoding="utf-8")
     (ckpt_right / "part-0.csv").write_text("rid\n2\n", encoding="utf-8")
 
-    left = left.resume(ckpt_left, on="id", format="csv")
-    right = right.resume(ckpt_right, on="rid", format="csv")
+    left = left.skip_existing(ckpt_left, on="id", format="csv")
+    right = right.skip_existing(ckpt_right, on="rid", format="csv")
     out = left.join(right, left_on="id", right_on="rid", how="inner").collect()
     assert out.select("id").to_pydict()["id"] == [3]
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_resume_multiple_calls_are_cumulative(tmp_path: Path):
+def test_skip_existing_multiple_calls_are_cumulative(tmp_path: Path):
     df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
     ckpt_a = tmp_path / "a"
     ckpt_b = tmp_path / "b"
@@ -346,12 +346,12 @@ def test_resume_multiple_calls_are_cumulative(tmp_path: Path):
     (ckpt_a / "part-0.csv").write_text("id,val\n1,a\n", encoding="utf-8")
     (ckpt_b / "part-0.csv").write_text("id,val\n2,b\n", encoding="utf-8")
 
-    out = df.resume(ckpt_a, on="id", format="csv").resume(ckpt_b, on="id", format="csv").collect()
+    out = df.skip_existing(ckpt_a, on="id", format="csv").skip_existing(ckpt_b, on="id", format="csv").collect()
     assert out.select("id").to_pydict()["id"] == [3]
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_resume_multiple_paths_single_call(tmp_path: Path):
+def test_skip_existing_multiple_paths_single_call(tmp_path: Path):
     df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
     ckpt_a = tmp_path / "ckpt_a_multi"
     ckpt_b = tmp_path / "ckpt_b_multi"
@@ -361,12 +361,12 @@ def test_resume_multiple_paths_single_call(tmp_path: Path):
     (ckpt_a / "part-0.csv").write_text("id\n1\n", encoding="utf-8")
     (ckpt_b / "part-0.csv").write_text("id\n2\n", encoding="utf-8")
 
-    out = df.resume([ckpt_a, ckpt_b], on="id", format="csv").collect()
+    out = df.skip_existing([ckpt_a, ckpt_b], on="id", format="csv").collect()
     assert out.select("id").to_pydict()["id"] == [3]
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_resume_csv_reader_args_applied(tmp_path: Path):
+def test_skip_existing_csv_reader_args_applied(tmp_path: Path):
     ckpt_dir = tmp_path / "ckpt_csv_custom_delim"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     (ckpt_dir / "part-0.csv").write_text("id|val\n1|a\n2|b\n", encoding="utf-8")
@@ -374,27 +374,39 @@ def test_resume_csv_reader_args_applied(tmp_path: Path):
     df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
 
     with pytest.raises(RuntimeError) as excinfo:
-        df.resume(ckpt_dir, on="id", format="csv").collect()
+        df.skip_existing(ckpt_dir, on="id", format="csv").collect()
     msg = str(excinfo.value)
-    assert "Unable to read checkpoint" in msg
+    assert "[skip_existing] Unable to read keys" in msg
     assert "id" in msg
 
-    out = df.resume(ckpt_dir, on="id", format="csv", delimiter="|").collect()
+    out = df.skip_existing(ckpt_dir, on="id", format="csv", delimiter="|").collect()
+    assert out.select("id").to_pydict()["id"] == [3]
+
+
+@pytest.mark.parametrize("fmt_alias", ["jsonl", "ndjson"])
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
+def test_skip_existing_jsonl_and_ndjson_format_aliases(tmp_path: Path, fmt_alias: str):
+    ckpt_dir = tmp_path / f"ckpt_{fmt_alias}_alias"
+    seed_df = daft.from_pydict({"id": [1, 2], "val": ["a", "b"]})
+    helper_write_dataframe(seed_df, FileFormat.Json, ckpt_dir)
+
+    df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
+    out = df.skip_existing(ckpt_dir, on="id", format=fmt_alias).collect()
     assert out.select("id").to_pydict()["id"] == [3]
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_resume_batch_size_visible_in_explain(tmp_path: Path):
+def test_skip_existing_batch_size_visible_in_explain(tmp_path: Path):
     root_dir = tmp_path / "out"
     seed_df = daft.from_pydict({"id": [1, 2], "val": ["a", "b"]})
     seed_df.write_parquet(str(root_dir), write_mode="overwrite")
 
-    df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]}).resume(
+    df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]}).skip_existing(
         root_dir,
         on="id",
         format="parquet",
-        resume_filter_batch_size=10,
-        checkpoint_loading_batch_size=1,
+        key_filter_batch_size=10,
+        key_filter_loading_batch_size=1,
     )
 
     buf = io.StringIO()
@@ -407,13 +419,13 @@ def test_resume_batch_size_visible_in_explain(tmp_path: Path):
         file_format=FileFormat.Parquet,
         io_config=io_config,
     )
-    specs = write_builder._builder.get_resume_checkpoint_specs()
+    specs = write_builder._builder.get_skip_existing_specs()
     assert len(specs) == 1
-    assert specs[0]["resume_filter_batch_size"] == 10
-    assert specs[0]["checkpoint_loading_batch_size"] == 1
+    assert specs[0]["key_filter_batch_size"] == 10
+    assert specs[0]["key_filter_loading_batch_size"] == 1
 
     pred = (col("id") > 0)._expr
-    applied = write_builder._builder.apply_resume_checkpoint_predicates([pred])
+    applied = write_builder._builder.apply_skip_existing_predicates([pred])
     from daft.logical.builder import LogicalPlanBuilder
 
     applied_builder = LogicalPlanBuilder(applied)
@@ -427,26 +439,26 @@ def test_resume_batch_size_visible_in_explain(tmp_path: Path):
 
     optimized_section = text.split("== Optimized Logical Plan ==")[1].split("== Physical Plan ==")[0]
     physical_section = text.split("== Physical Plan ==")[1]
-    assert "ResumeCheckpoint:" not in optimized_section, text
-    assert "ResumeCheckpoint:" not in physical_section, text
+    assert "SkipExisting:" not in optimized_section, text
+    assert "SkipExisting:" not in physical_section, text
     assert "Batch Size = 10" in optimized_section, text
     assert "Batch Size = 10" in physical_section, text
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_resume_missing_checkpoint_raises(tmp_path: Path):
-    ckpt_dir = tmp_path / "ckpt_missing"
+def test_skip_existing_missing_keys_raises(tmp_path: Path):
+    ckpt_dir = tmp_path / "missing_skip_existing_keys"
     df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
 
-    with pytest.raises(RuntimeError, match="Resume checkpoint not found"):
-        df.resume(ckpt_dir, on="id", format="parquet").collect()
+    with pytest.raises(RuntimeError, match=r"\[skip_existing\] keys not found"):
+        df.skip_existing(ckpt_dir, on="id", format="parquet").collect()
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_resume_composite_key_filters_correctly(tmp_path: Path):
+def test_skip_existing_composite_key_filters_correctly(tmp_path: Path):
     fmt = FileFormat.Parquet
-    root_dir = tmp_path / "ckpt_composite"
-    ck = {"key_column": ["id", "grp"]}
+    root_dir = tmp_path / "existing_keys_composite"
+    cfg = {"key_column": ["id", "grp"]}
 
     df_all = daft.from_pydict(
         {
@@ -457,8 +469,8 @@ def test_resume_composite_key_filters_correctly(tmp_path: Path):
     )
     df_first = df_all.where(col("grp") == 0)
 
-    helper_write_dataframe(df_first, fmt, root_dir, checkpoint_config=ck)
-    helper_write_dataframe(df_all, fmt, root_dir, checkpoint_config=ck)
+    helper_write_dataframe(df_first, fmt, root_dir, skip_existing_config=cfg)
+    helper_write_dataframe(df_all, fmt, root_dir, skip_existing_config=cfg)
 
     df_final = helper_read_dataframe(fmt, root_dir)
     out = df_final.select("id", "grp").to_pydict()
@@ -468,28 +480,30 @@ def test_resume_composite_key_filters_correctly(tmp_path: Path):
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_resume_empty_key_list_raises(tmp_path: Path):
+def test_skip_existing_empty_key_list_raises(tmp_path: Path):
     df = daft.from_pydict({"id": [1], "val": ["a"]})
-    with pytest.raises(ValueError, match="resume on must be a non-empty column name or list of column names"):
-        df.resume(tmp_path / "a", on=[], format="parquet").collect()
+    with pytest.raises(
+        ValueError, match=r"\[skip_existing\] on must be a non-empty column name or list of column names"
+    ):
+        df.skip_existing(tmp_path / "a", on=[], format="parquet").collect()
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_resume_invalid_format_string_raises(tmp_path: Path):
+def test_skip_existing_invalid_format_string_raises(tmp_path: Path):
     df = daft.from_pydict({"id": [1], "val": ["a"]})
-    with pytest.raises(ValueError, match="Unsupported resume format"):
-        df.resume(tmp_path / "a", on="id", format="orc").collect()
+    with pytest.raises(ValueError, match=r"\[skip_existing\] Unsupported format"):
+        df.skip_existing(tmp_path / "a", on="id", format="orc").collect()
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_resume_invalid_num_buckets_raises(tmp_path: Path):
+def test_skip_existing_invalid_num_key_filter_partitions_raises(tmp_path: Path):
     df = daft.from_pydict({"id": [1], "val": ["a"]})
-    with pytest.raises(Exception, match="num_buckets"):
-        df.resume(tmp_path / "a", on="id", num_buckets=0).collect()
+    with pytest.raises(Exception, match="num_key_filter_partitions"):
+        df.skip_existing(tmp_path / "a", on="id", num_key_filter_partitions=0).collect()
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
-def test_resume_invalid_num_cpus_raises(tmp_path: Path):
+def test_skip_existing_invalid_num_cpus_raises(tmp_path: Path):
     df = daft.from_pydict({"id": [1], "val": ["a"]})
     with pytest.raises(Exception, match="num_cpus"):
-        df.resume(tmp_path / "a", on="id", num_cpus=0).collect()
+        df.skip_existing(tmp_path / "a", on="id", num_cpus=0).collect()

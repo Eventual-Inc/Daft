@@ -95,14 +95,14 @@ async def _ingest_keys_udf(
     return Series.from_arrow(pa.nulls(num_rows))
 
 
-def _ingest_checkpoint_keys_to_actors(
+def _ingest_keys_to_actors(
     df_keys: DataFrame,
     key_columns: list[str],
     *,
     actors_by_bucket: dict[int, Any],
     num_buckets: int,
     composite_key_fields: tuple[str, ...],
-    checkpoint_loading_batch_size: int,
+    key_filter_loading_batch_size: int,
 ) -> None:
     if len(key_columns) == 1:
         key_expr = col(key_columns[0])
@@ -120,10 +120,10 @@ def _ingest_checkpoint_keys_to_actors(
             composite_key_fields=composite_key_fields,
         ),
     )
-    df_keys.into_batches(checkpoint_loading_batch_size).select(expr).collect()
+    df_keys.into_batches(key_filter_loading_batch_size).select(expr).collect()
 
 
-class CheckpointActor:
+class KeyFilterActor:
     def __init__(self, bucket_id: int):
         self.bucket_id = bucket_id
         self.key_set: set[Any] = set()
@@ -145,14 +145,14 @@ class CheckpointActor:
 
 
 # TODO: support native mode in future if needed
-def create_checkpoint_filter_udf(
+def create_key_filter_udf(
     num_buckets: int,
     actor_handles: list[ActorHandle] | None,
     composite_key_fields: tuple[str, ...] = (),
-    resume_filter_batch_size: int | None = None,
+    key_filter_batch_size: int | None = None,
 ) -> Callable[[Expression], Expression]:
-    @func.batch(return_dtype=DataType.bool(), batch_size=resume_filter_batch_size)
-    async def checkpoint_filter(input: Series) -> Series:
+    @func.batch(return_dtype=DataType.bool(), batch_size=key_filter_batch_size)
+    async def key_filter(input: Series) -> Series:
         import numpy as np
         import os
         import asyncio
@@ -163,7 +163,7 @@ def create_checkpoint_filter_udf(
         num_rows = len(input)
         # Log batch size occasionally (approx 1% of calls) to avoid log spam
         if num_rows > 0 and np.random.random() < 0.01:
-            print(f"[PID={os.getpid()}] CheckpointFilter Batch Size: {num_rows}")
+            print(f"[PID={os.getpid()}] KeyFilter Batch Size: {num_rows}")
 
         if num_rows == 0:
             return Series.from_numpy(np.empty(0, dtype=bool))
@@ -193,7 +193,7 @@ def create_checkpoint_filter_udf(
                 timeout=ASYNC_AWAIT_TIMEOUT_SECONDS,
             )
         except Exception as e:
-            raise RuntimeError(f"CheckpointActor filter failed: {e}") from e
+            raise RuntimeError(f"KeyFilterActor filter failed: {e}") from e
         finally:
             # Explicitly release memory for large intermediate arrays
             del futures
@@ -210,25 +210,25 @@ def create_checkpoint_filter_udf(
 
         return Series.from_numpy(final_result)
 
-    return checkpoint_filter
+    return key_filter
 
 
-def _prepare_checkpoint_filter(
+def _prepare_key_filter(
     root_dir: str | pathlib.Path | list[str | pathlib.Path],
     io_config: IOConfig | None,
     key_column: str | list[str],
-    num_buckets: int,
+    num_buckets: int,  # TODO: rename
     num_cpus: float,
     read_fn: Callable[..., DataFrame],
-    checkpoint_loading_batch_size: int,
-    checkpoint_actor_max_concurrency: int,
+    key_filter_loading_batch_size: int,
+    key_filter_max_concurrency: int,
     read_kwargs: dict[str, Any] | None = None,
 ) -> tuple[list[ActorHandle], PlacementGroup | None]:
-    """Build and return checkpoint resources.
+    """Build and return key_filter resources for skip_existing.
 
     Returns:
         tuple[list[ActorHandle], PlacementGroup | None]:
-            - actor_handles: created Ray actors for checkpoint filtering
+            - actor_handles: created Ray actors for key filtering
             - placement_group: PG used to reserve/spread actor resources
 
     Notes:
@@ -236,17 +236,17 @@ def _prepare_checkpoint_filter(
         - Raises RuntimeError if runner is not Ray.
     """
     if get_or_create_runner().name != "ray":
-        raise RuntimeError("Checkpointing is only supported on Ray runner")
+        raise RuntimeError("skip_existing is only supported on Ray runner")
 
     root_dirs = root_dir if isinstance(root_dir, list) else [root_dir]
     root_dirs_str = [str(p) for p in root_dirs]
 
     key_columns = [key_column] if isinstance(key_column, str) else key_column
     if not key_columns or any((not isinstance(c, str)) or c == "" for c in key_columns):
-        raise ValueError("resume key_column must be a non-empty column name or list of non-empty column names")
+        raise ValueError("[skip_existing] key_column must be a non-empty column name or list of non-empty column names")
 
     logger.info(
-        "Preparing checkpoint filter root_dirs=%s key_columns=%s num_buckets=%s num_cpus=%s",
+        "Preparing key filter root_dirs=%s key_columns=%s num_buckets=%s num_cpus=%s",
         root_dirs_str,
         key_columns,
         num_buckets,
@@ -259,9 +259,9 @@ def _prepare_checkpoint_filter(
         df_keys = read_fn(path=root_dirs_str, io_config=io_config, **(read_kwargs or {}))
         df_keys = df_keys.select(*key_columns)
     except FileNotFoundError as e:
-        raise RuntimeError(f"Resume checkpoint not found at {root_dirs_str}: {e}") from e
+        raise RuntimeError(f"[skip_existing] keys not found at {root_dirs_str}: {e}") from e
     except Exception as e:
-        raise RuntimeError(f"Unable to read checkpoint at {root_dirs_str}: {e}") from e
+        raise RuntimeError(f"[skip_existing] Unable to read keys at {root_dirs_str}: {e}") from e
 
     if df_keys is None:
         return [], None
@@ -275,7 +275,7 @@ def _prepare_checkpoint_filter(
     try:
         # Wait for placement group to be ready with a timeout (seconds)
         ray.get(pg.ready(), timeout=PLACEMENT_GROUP_READY_TIMEOUT_SECONDS)
-        logger.info("Checkpoint placement group ready")
+        logger.info("[skip_existing] Key filter placement group ready")
     except GetTimeoutError as timeout_err:
         # Best effort cleanup to avoid leaking PG
         try:
@@ -283,7 +283,7 @@ def _prepare_checkpoint_filter(
         except Exception as e:
             warnings.warn(f"Unable to remove placement group {pg}: {e}")
         raise RuntimeError(
-            "Checkpoint resource reservation timed out. Try reducing 'num_buckets' and/or 'num_cpus', "
+            "[skip_existing] Key filter resource reservation timed out. Try reducing 'num_buckets' and/or 'num_cpus', "
             "or ensure your Ray cluster has sufficient resources. "
             f"Error message: {timeout_err}"
         ) from timeout_err
@@ -294,7 +294,7 @@ def _prepare_checkpoint_filter(
         composite_key_fields = tuple(key_columns) if len(key_columns) > 1 else ()
         for i in range(num_buckets):
             actor = (
-                ray.remote(max_concurrency=checkpoint_actor_max_concurrency)(CheckpointActor)
+                ray.remote(max_concurrency=key_filter_max_concurrency)(KeyFilterActor)
                 .options(
                     num_cpus=num_cpus,
                     scheduling_strategy=ray.util.scheduling_strategies.PlacementGroupSchedulingStrategy(
@@ -307,25 +307,25 @@ def _prepare_checkpoint_filter(
             actor_handles.append(actor)
             actors_by_bucket[i] = actor
 
-        _ingest_checkpoint_keys_to_actors(
+        _ingest_keys_to_actors(
             df_keys,
             key_columns,
             actors_by_bucket=actors_by_bucket,
             num_buckets=num_buckets,
             composite_key_fields=composite_key_fields,
-            checkpoint_loading_batch_size=checkpoint_loading_batch_size,
+            key_filter_loading_batch_size=key_filter_loading_batch_size,
         )
     except Exception as e:
-        _cleanup_checkpoint_resources(actor_handles, pg)
-        raise RuntimeError(f"Failed to create all checkpoint actors: {e}") from e
+        _cleanup_key_filter_resources(actor_handles, pg)
+        raise RuntimeError(f"[skip_existing] Failed to create all key filter actors: {e}") from e
     finally:
         del df_keys
 
     return actor_handles, pg
 
 
-def _cleanup_checkpoint_resources(actor_handles: list[ActorHandle] | None, pg: PlacementGroup | None) -> None:
-    """Cleanup checkpoint resources: terminate actors and remove placement group.
+def _cleanup_key_filter_resources(actor_handles: list[ActorHandle] | None, pg: PlacementGroup | None) -> None:
+    """Cleanup skip_existing resources: terminate actors and remove placement group.
 
     Args:
         actor_handles: List of Ray ActorHandles to terminate.
@@ -338,10 +338,10 @@ def _cleanup_checkpoint_resources(actor_handles: list[ActorHandle] | None, pg: P
             try:
                 ray.kill(actor)
             except Exception as e:
-                warnings.warn(f"Unable to cleanup checkpoint resources: ray.kill failed: {e}")
+                warnings.warn(f"[skip_existing] Unable to cleanup key_filter resources: ray.kill failed: {e}")
 
     if pg:
         try:
             ray.util.remove_placement_group(pg)
         except Exception as e:
-            warnings.warn(f"Unable to cleanup checkpoint resources: remove_placement_group failed: {e}")
+            warnings.warn(f"[skip_existing] Unable to cleanup key_filter resources: remove_placement_group failed: {e}")

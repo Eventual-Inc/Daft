@@ -113,7 +113,7 @@ impl PushDownShard {
                     LogicalPlan::Intersect(_)
                     | LogicalPlan::Union(_)
                     | LogicalPlan::SubqueryAlias(_)
-                    | LogicalPlan::ResumeCheckpoint(_) => Ok(Transformed::no(plan)),
+                    | LogicalPlan::SkipExisting(_) => Ok(Transformed::no(plan)),
                 }
             }
             _ => Ok(Transformed::no(plan)),

@@ -76,7 +76,7 @@ pub fn translate(plan: &LogicalPlanRef) -> DaftResult<LocalPhysicalPlanRef> {
                 LocalNodeContext::default(),
             ))
         }
-        LogicalPlan::ResumeCheckpoint(resume) => translate(&resume.input),
+        LogicalPlan::SkipExisting(skip_existing) => translate(&skip_existing.input),
         LogicalPlan::IntoBatches(into_batches) => {
             let input = translate(&into_batches.input)?;
             Ok(LocalPhysicalPlan::into_batches(

@@ -2336,17 +2336,17 @@ class DataFrame:
         return DataFrame(builder)
 
     @DataframePublicAPI
-    def resume(
+    def skip_existing(
         self,
         path: str | pathlib.Path | list[str | pathlib.Path],
         on: str | list[str],
         format: str | FileFormat = FileFormat.Parquet,
         io_config: IOConfig | None = None,
-        num_buckets: int = 4,
+        num_key_filter_partitions: int = 4,
         num_cpus: float = 1.0,
-        resume_filter_batch_size: int | None = None,
-        checkpoint_loading_batch_size: int = 100000,
-        checkpoint_actor_max_concurrency: int = 10,
+        key_filter_batch_size: int | None = None,
+        key_filter_loading_batch_size: int = 100000,
+        key_filter_max_concurrency: int = 1,
         **reader_args: Any,
     ) -> "DataFrame":
         if isinstance(on, str):
@@ -2354,15 +2354,15 @@ class DataFrame:
             key_columns = [on]
         else:
             if len(on) == 0:
-                raise ValueError("resume on must be a non-empty column name or list of column names")
+                raise ValueError("[skip_existing] on must be a non-empty column name or list of column names")
             if any((not isinstance(c, str)) or c == "" for c in on):
-                raise ValueError("resume on must be a non-empty column name or list of column names")
+                raise ValueError("[skip_existing] on must be a non-empty column name or list of column names")
             key_column = on
             key_columns = on
 
         missing = [c for c in key_columns if c not in self.column_names]
         if missing:
-            raise ValueError(f"resume key column not found in schema: {missing}")
+            raise ValueError(f"[skip_existing] key column not found in schema: {missing}")
 
         if isinstance(format, str):
             fmt = format.strip().lower()
@@ -2370,49 +2370,49 @@ class DataFrame:
                 file_format = FileFormat.Parquet
             elif fmt == "csv":
                 file_format = FileFormat.Csv
-            elif fmt == "json":
+            elif fmt in ("json", "jsonl", "ndjson"):
                 file_format = FileFormat.Json
             else:
-                raise ValueError(f"Unsupported resume format: {format}")
+                raise ValueError(f"[skip_existing] Unsupported format: {format}")
         else:
             file_format = format
 
         if file_format not in (FileFormat.Parquet, FileFormat.Csv, FileFormat.Json):
-            raise ValueError(f"Unsupported resume format: {file_format}")
+            raise ValueError(f"[skip_existing] Unsupported format: {file_format}")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
-        if num_buckets <= 0:
-            raise ValueError("resume num_buckets must be > 0")
+        if num_key_filter_partitions <= 0:
+            raise ValueError("[skip_existing] num_key_filter_partitions must be > 0")
         if num_cpus <= 0:
-            raise ValueError("resume num_cpus must be > 0")
-        if resume_filter_batch_size is not None and resume_filter_batch_size <= 0:
-            raise ValueError("resume resume_filter_batch_size must be > 0")
-        if checkpoint_loading_batch_size <= 0:
-            raise ValueError("resume checkpoint_loading_batch_size must be > 0")
-        if checkpoint_actor_max_concurrency <= 0:
-            raise ValueError("resume checkpoint_actor_max_concurrency must be > 0")
+            raise ValueError("[skip_existing] num_cpus must be > 0")
+        if key_filter_batch_size is not None and key_filter_batch_size <= 0:
+            raise ValueError("[skip_existing] key_filter_batch_size must be > 0")
+        if key_filter_loading_batch_size <= 0:
+            raise ValueError("[skip_existing] key_filter_loading_batch_size must be > 0")
+        if key_filter_max_concurrency <= 0:
+            raise ValueError("[skip_existing] key_filter_max_concurrency must be > 0")
 
         root_dir: str | list[str]
         if isinstance(path, list):
             root_dir = [str(p) for p in path]
             if len(root_dir) == 0:
-                raise ValueError("resume path list must be non-empty")
+                raise ValueError("[skip_existing] path list must be non-empty")
             if any(p == "" for p in root_dir):
-                raise ValueError("resume path list must contain only non-empty paths")
+                raise ValueError("[skip_existing] path list must contain only non-empty paths")
         else:
             root_dir = str(path)
 
-        builder = self._builder.resume_checkpoint(
+        builder = self._builder.skip_existing(
             root_dir=root_dir,
             file_format=file_format,
             key_column=key_column,
             io_config=io_config,
             read_kwargs=(reader_args or None),
-            num_buckets=num_buckets,
+            num_key_filter_partitions=num_key_filter_partitions,
             num_cpus=num_cpus,
-            resume_filter_batch_size=resume_filter_batch_size,
-            checkpoint_loading_batch_size=checkpoint_loading_batch_size,
-            checkpoint_actor_max_concurrency=checkpoint_actor_max_concurrency,
+            key_filter_batch_size=key_filter_batch_size,
+            key_filter_loading_batch_size=key_filter_loading_batch_size,
+            key_filter_max_concurrency=key_filter_max_concurrency,
         )
         return DataFrame(builder)
 

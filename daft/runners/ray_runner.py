@@ -509,14 +509,14 @@ def _ray_num_cpus_provider(ttl_seconds: int = 1) -> Generator[int, None, None]:
             yield last_num_cpus_queried
 
 
-def _maybe_apply_resume_checkpoint(builder: LogicalPlanBuilder) -> tuple[LogicalPlanBuilder, Any | None]:
-    specs = builder._builder.get_resume_checkpoint_specs()
+def _maybe_apply_skip_existing(builder: LogicalPlanBuilder) -> tuple[LogicalPlanBuilder, Any | None]:
+    specs = builder._builder.get_skip_existing_specs()
     if not specs:
         return builder, None
-    from daft.execution.checkpoint import (
-        _cleanup_checkpoint_resources,
-        _prepare_checkpoint_filter,
-        create_checkpoint_filter_udf,
+    from daft.execution.skip_existing import (
+        _cleanup_key_filter_resources,
+        _prepare_key_filter,
+        create_key_filter_udf,
     )
     from daft.expressions import col
     from daft.functions.struct import to_struct
@@ -526,7 +526,7 @@ def _maybe_apply_resume_checkpoint(builder: LogicalPlanBuilder) -> tuple[Logical
 
     def cleanup() -> None:
         for actor_handles, placement_group in cleanup_items:
-            _cleanup_checkpoint_resources(actor_handles, placement_group)
+            _cleanup_key_filter_resources(actor_handles, placement_group)
 
     try:
         for spec in specs:
@@ -534,21 +534,21 @@ def _maybe_apply_resume_checkpoint(builder: LogicalPlanBuilder) -> tuple[Logical
             file_format = spec["file_format"]
             key_column = spec["key_column"]
             io_config = spec.get("io_config")
-            num_buckets = spec.get("num_buckets")
+            num_buckets = spec.get("num_key_filter_partitions", spec.get("num_buckets"))
             num_cpus = spec.get("num_cpus")
             read_kwargs = spec.get("read_kwargs")
-            resume_filter_batch_size = spec.get("resume_filter_batch_size")
-            checkpoint_loading_batch_size = spec.get("checkpoint_loading_batch_size")
-            checkpoint_actor_max_concurrency = spec.get("checkpoint_actor_max_concurrency")
+            key_filter_batch_size = spec.get("key_filter_batch_size")
+            key_filter_loading_batch_size = spec.get("key_filter_loading_batch_size")
+            key_filter_max_concurrency = spec.get("key_filter_max_concurrency")
 
             if num_buckets is None:
-                raise RuntimeError("resume num_buckets must be provided")
+                raise RuntimeError("[skip_existing] num_key_filter_partitions must be provided")
             if num_cpus is None:
-                raise RuntimeError("resume num_cpus must be provided")
-            if checkpoint_loading_batch_size is None:
-                raise RuntimeError("resume checkpoint_loading_batch_size must be provided")
-            if checkpoint_actor_max_concurrency is None:
-                raise RuntimeError("resume checkpoint_actor_max_concurrency must be provided")
+                raise RuntimeError("[skip_existing] num_cpus must be provided")
+            if key_filter_loading_batch_size is None:
+                raise RuntimeError("[skip_existing] key_filter_loading_batch_size must be provided")
+            if key_filter_max_concurrency is None:
+                raise RuntimeError("[skip_existing] key_filter_max_concurrency must be provided")
 
             key_columns: list[str] | None
             if isinstance(key_column, list):
@@ -576,9 +576,9 @@ def _maybe_apply_resume_checkpoint(builder: LogicalPlanBuilder) -> tuple[Logical
 
                 read_fn = cast("Callable[..., DataFrame]", read_json)
             else:
-                raise ValueError(f"Unsupported resume file format: {file_format}")
+                raise ValueError(f"[skip_existing] Unsupported file format: {file_format}")
 
-            actor_handles, placement_group = _prepare_checkpoint_filter(
+            actor_handles, placement_group = _prepare_key_filter(
                 root_dir=root_dir,
                 io_config=io_config,
                 key_column=key_column,
@@ -586,20 +586,20 @@ def _maybe_apply_resume_checkpoint(builder: LogicalPlanBuilder) -> tuple[Logical
                 num_cpus=num_cpus,
                 read_fn=read_fn,
                 read_kwargs=read_kwargs,
-                checkpoint_loading_batch_size=checkpoint_loading_batch_size,
-                checkpoint_actor_max_concurrency=checkpoint_actor_max_concurrency,
+                key_filter_loading_batch_size=key_filter_loading_batch_size,
+                key_filter_max_concurrency=key_filter_max_concurrency,
             )
 
-            checkpoint_filter_expr = create_checkpoint_filter_udf(
+            key_filter_expr = create_key_filter_udf(
                 num_buckets,
                 actor_handles,
                 tuple(key_columns) if key_columns is not None else (),
-                resume_filter_batch_size,
+                key_filter_batch_size,
             )(key_expr)
             cleanup_items.append((actor_handles, placement_group))
-            predicates.append(checkpoint_filter_expr)
+            predicates.append(key_filter_expr)
 
-        new_inner_builder = builder._builder.apply_resume_checkpoint_predicates(
+        new_inner_builder = builder._builder.apply_skip_existing_predicates(
             [p._expr if p is not None else None for p in predicates]
         )
         from daft.logical.builder import LogicalPlanBuilder
@@ -658,7 +658,7 @@ class RayRunner(Runner[ray.ObjectRef]):
         # Optimize the logical plan.
         cleanup = None
         try:
-            builder, cleanup = _maybe_apply_resume_checkpoint(builder)
+            builder, cleanup = _maybe_apply_skip_existing(builder)
             builder = builder.optimize(daft_execution_config)
 
             distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(

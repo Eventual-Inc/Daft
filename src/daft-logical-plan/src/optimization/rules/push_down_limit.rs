@@ -218,7 +218,7 @@ impl PushDownLimit {
                     | LogicalPlan::SubqueryAlias(..)
                     | LogicalPlan::Window(..)
                     | LogicalPlan::Concat(_)
-                    | LogicalPlan::ResumeCheckpoint(..)
+                    | LogicalPlan::SkipExisting(..)
                     | LogicalPlan::VLLMProject(..) => Ok(Transformed::no(plan)),
                 }
             }
