@@ -14,10 +14,8 @@
         * [Images](modalities/images.md)
         * [Audio](modalities/audio.md)
         * [Videos](modalities/videos.md)
-        * [Documents](modalities/documents.md)
         * [JSON and Nested Data](modalities/json.md)
-        * [Files and URLs](modalities/files.md)
-        * [Embeddings](modalities/embeddings.md)
+        * [URLs and Files](modalities/urls.md)
         * [Custom Modalities](modalities/custom.md)
     * Scale Custom Python Code
         * [New UDF Overview](custom-code/index.md)
@@ -88,7 +86,7 @@
     * [User-Defined Functions](api/udf.md)
     * Data Types
         * [DataType](api/datatypes/all_datatypes.md)
-        * [File Types](api/datatypes/file_types.md)
+        * [daft.File Types](api/datatypes/daft_file_types.md)
         * [Type Conversions](api/datatypes/type_conversions.md)
         * [Casting](api/datatypes/casting.md)
     * [Window](api/window.md)

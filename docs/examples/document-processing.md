@@ -803,9 +803,9 @@ print(df.schema())
 
 #### Explaining Structure Access Expressions
 
-Note that we're using `col("indexed_texts")["text"]` to construct an expression that allows Daft to extract individual field values from our complex document structure.
+Note that we're using [`.struct`](../api/expressions.md#daft.expressions.struct) to construct an expression that allows Daft to extract individual field values from our complex document structure.
 
-When we write `col("text_blocks").struct.get("bounding_box")`, we're telling Daft that we want to access the `bounding_box` field of each element from the `text_blocks` column. From this, we can provide additional field-selecting logic (e.g. `["x"]` to get the value for field `x` on the `bounding_box` value from each structure in `text_blocks`).
+When write `col("text_blocks").struct.get("bounding_box")`, we're telling Daft that we want to access the `bounding_box` field of each element from the `text_blocks` column. From this, we can provide additional field-selecting logic (e.g. `["x"]` to get the value for field `x` on the `bounding_box` value from each structure in `text_blocks`).
 
 The last part of our text box processing step is to extract the text and bounding box coordinates into their own columns. We also want to preserve the reading order index as its own column too.
 
@@ -815,14 +815,14 @@ This format makes it easier to form follow up queries on our data, such as:
 
 ```python
 df = (
-    df.with_column("text_blocks", col("indexed_texts")["text"])
-    .with_column("reading_order_index", col("indexed_texts")["index"])
+    df.with_column("text_blocks", col("indexed_texts").struct.get("text"))
+    .with_column("reading_order_index", col("indexed_texts").struct.get("index"))
     .exclude("indexed_texts")
-    .with_column("text", col("text_blocks")["text"])
-    .with_column("x", col("text_blocks")["bounding_box"]["x"])
-    .with_column("y", col("text_blocks")["bounding_box"]["y"])
-    .with_column("h", col("text_blocks")["bounding_box"]["h"])
-    .with_column("w", col("text_blocks")["bounding_box"]["w"])
+    .with_column("text", col("text_blocks").struct.get("text"))
+    .with_column("x", col("text_blocks").struct.get("bounding_box")["x"])
+    .with_column("y", col("text_blocks").struct.get("bounding_box")["y"])
+    .with_column("h", col("text_blocks").struct.get("bounding_box")["h"])
+    .with_column("w", col("text_blocks").struct.get("bounding_box")["w"])
     .exclude("text_blocks")
 )
 print(df.schema())

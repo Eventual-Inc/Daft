@@ -1,5 +1,6 @@
 # Working with Images
 
+
 Daft is built to work comfortably with images. This guide shows you how to accomplish common image processing tasks with Daft:
 
 - [Downloading and decoding images](#quickstart)
@@ -408,7 +409,6 @@ Now you're ready to call this function on the `urls` column and store the output
 !!! note "Note"
 
     Execute in notebook to see properly rendered images.
-
 ### Zero Shot Classification
 
 For zero shot classification, you can use our built in `classify_image` function to classify images
