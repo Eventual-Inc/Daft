@@ -15,9 +15,13 @@ def skip_no_credential(pytestconfig):
     if not os.getenv("DATABRICKS_ENDPOINT"):
         pytest.skip(reason="Unity Catalog OAuth tests require the DATABRICKS_ENDPOINT environment variable")
     if not os.getenv("DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID"):
-        pytest.skip(reason="Unity Catalog OAuth tests require the DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID environment variable")
+        pytest.skip(
+            reason="Unity Catalog OAuth tests require the DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID environment variable"
+        )
     if not os.getenv("DATABRICKS_SERVICE_PRINCIPAL_SECRET"):
-        pytest.skip(reason="Unity Catalog OAuth tests require the DATABRICKS_SERVICE_PRINCIPAL_SECRET environment variable")
+        pytest.skip(
+            reason="Unity Catalog OAuth tests require the DATABRICKS_SERVICE_PRINCIPAL_SECRET environment variable"
+        )
 
 
 @pytest.mark.integration()
