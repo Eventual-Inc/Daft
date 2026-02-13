@@ -74,7 +74,11 @@ class IcebergCatalog(Catalog):
             field_id = 1000 + idx
             if pf.transform is None or pf.transform.is_identity():
                 transform = IdentityTransform()
-                pf_name = pf.field.name
+                pf_name = _PartitionNameGenerator().identity(
+                    field_id=field_id,
+                    source_name=source_name,
+                    source_id=source_id,
+                )
             elif pf.transform.is_year():
                 transform = YearTransform()
                 pf_name = _PartitionNameGenerator().year(
