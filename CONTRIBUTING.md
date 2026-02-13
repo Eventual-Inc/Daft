@@ -31,7 +31,7 @@ When proposing features, please include:
 
 ## Contributing Code
 
-All **non-trivial** PRs are required to be linked to an issue that has been approved by a maintainer.
+All **non-trivial** PRs are required to be linked to an issue that has been **approved by a maintainer**.
 
 ### Contribution bar (non-trivial PRs):
 	1.	Link an approved issue (Fixes #…).
@@ -39,13 +39,13 @@ All **non-trivial** PRs are required to be linked to an issue that has been appr
 	3.	Keep PRs small; large changes require a plan/design note and should be split.
 	4.	Disclose material AI usage and what you verified.
 
-Non-trivial PRs that do not meet these requirements may be closed without review.
+Non-trivial PRs that do not meet these requirements **may be closed without review**.
 
-Trivial PRs
+### Trivial PRs
 
 Trivial PRs (docs, typos, small test fixes, clearly scoped bugfixes) may bypass the issue requirement, but must be labeled no-issue-needed by a maintainer.
 
-What counts as non-trivial
+#### What counts as non-trivial
 
 A PR is considered non-trivial if it:
 	•	Changes behavior, APIs, or performance
