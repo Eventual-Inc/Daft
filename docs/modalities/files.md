@@ -14,7 +14,7 @@ Whether you're loading data from local files, cloud storage, or the web, Daft's 
 
 ## Using file discovery with optimized distributed reads
 
-[`daft.from_glob_path`](../api/io/file_path.md) helps discover and size files, accepting wildcards and lists of paths. When paired with [`daft.functions.download`](../api/functions/download.md), the two functions enable optimized distributed reads of binary data from storage. This is ideal when your data will fit into memory or when you need the entire file content at once.
+[`daft.from_glob_path`](../api/io.md#daft.from_glob_path) helps discover and size files, accepting wildcards and lists of paths. When paired with [`daft.functions.download`](../api/functions/download.md), the two functions enable optimized distributed reads of binary data from storage. This is ideal when your data will fit into memory or when you need the entire file content at once.
 
 === "🐍 Python"
     ``` python
@@ -141,7 +141,7 @@ This architecture allows us to implement storage-specific optimizations (like ne
 2. Optimized backend readers for different sources (buffered network access, etc.)
 3. Consistent API regardless of storage location
 
-`daft.File` mirrors the [file interface in Python](https://docs.python.org/3/library/functions.html#open), but is optimized for distributed computing. Due to its lazy nature, `daft.File` does not read the file into memory until it is needed. To enforce this pattern, `daft.File` must be used inside a context manager like `with file.open() as f:` This works within a [`daft.func`](../api/custom-code/func.md) or [`daft.cls`](../api/custom-code/cls.md) user-defined functions or in native Python code.
+`daft.File` mirrors the [file interface in Python](https://docs.python.org/3/library/functions.html#open), but is optimized for distributed computing. Due to its lazy nature, `daft.File` does not read the file into memory until it is needed. To enforce this pattern, `daft.File` must be used inside a context manager like `with file.open() as f:` This works within a [`daft.func`](../custom-code/func.md) or [`daft.cls`](../custom-code/cls.md) user-defined functions or in native Python code.
 
 ## Basic Usage
 
