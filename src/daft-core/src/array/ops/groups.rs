@@ -19,9 +19,9 @@ use crate::{
 
 /// Given a list of values, return a `(Vec<u64>, Vec<Vec<u64>>)`.
 /// The sub-vector in the first part of the tuple contains the indices of the unique values.
-/// The sub-vector in the second part of the tuple contains the index of all the places of where that value was found.
+/// The second vector stores, for each unique value, all row indices where that value appears.
 ///
-/// The length of the first sub-vector will always be the same as the length of the second sub-vector.
+/// Both vectors have the same length, and position `i` in each vector describes the same group.
 ///
 /// # Example:
 /// ```text
@@ -109,6 +109,8 @@ where
     Ok(indices)
 }
 
+// --- Primitive Implementations ---
+
 impl<T> IntoGroups for DataArray<T>
 where
     T: DaftIntegerType,
@@ -121,6 +123,8 @@ where
         if array.null_count() > 0 {
             make_groups(array.iter())
         } else {
+            // PrimitiveArray::values() is row-aligned for fixed-width primitives,
+            // so with no nulls we can iterate values() directly.
             make_groups(array.values().iter())
         }
     }
@@ -164,6 +168,9 @@ impl IntoUniqueIdxs for Decimal128Array {
         }
     }
 }
+
+// --- Float Implementations (Canonicalizing NaNs) ---
+// Canonicalize all NaN payloads so every NaN hashes/equates into one group.
 
 impl IntoGroups for Float32Array {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
@@ -265,57 +272,61 @@ impl IntoUniqueIdxs for Float64Array {
     }
 }
 
+// --- Variable-length / Offset-based Implementations ---
+
 impl IntoGroups for Utf8Array {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
         let array = self.as_arrow()?;
-        if array.null_count() > 0 {
-            make_groups(array.iter())
-        } else {
-            make_groups(array.values().iter())
-        }
+        // For Utf8, values() is a concatenated byte buffer; use iter()
+        // so offsets are applied and each item maps to one logical row.
+        make_groups(array.iter())
     }
 }
 
 impl IntoUniqueIdxs for Utf8Array {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
         let array = self.as_arrow()?;
-        if array.null_count() > 0 {
-            make_unique_idxs(array.iter())
-        } else {
-            make_unique_idxs(array.values().iter())
-        }
+        make_unique_idxs(array.iter())
     }
 }
 
 impl IntoGroups for BinaryArray {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
         let array = self.as_arrow()?;
-        if array.null_count() > 0 {
-            make_groups(array.iter())
-        } else {
-            make_groups(array.values().iter())
-        }
+        // Binary has the same offset-buffer layout as Utf8,
+        // so row-wise grouping must use iter().
+        make_groups(array.iter())
     }
 }
 
 impl IntoUniqueIdxs for BinaryArray {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
         let array = self.as_arrow()?;
-        if array.null_count() > 0 {
-            make_unique_idxs(array.iter())
-        } else {
-            make_unique_idxs(array.values().iter())
-        }
+        make_unique_idxs(array.iter())
     }
 }
+
+// --- Fixed-size Binary Implementations ---
 
 impl IntoGroups for FixedSizeBinaryArray {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
         let array = self.as_arrow()?;
+        let width = array.value_length() as usize;
+
         if array.null_count() > 0 {
             make_groups(array.iter())
+        } else if width == 0 {
+            // Every non-null row is the same empty byte-slice.
+            let len = array.len() as u64;
+            if len == 0 {
+                Ok((vec![], vec![]))
+            } else {
+                Ok((vec![0], vec![(0..len).collect()]))
+            }
         } else {
-            make_groups(array.values().iter())
+            // FixedSizeBinaryArray::values() is a flat byte buffer; chunk by width
+            // to reconstruct row-aligned slices for grouping.
+            make_groups(array.values().chunks(width))
         }
     }
 }
@@ -323,13 +334,23 @@ impl IntoGroups for FixedSizeBinaryArray {
 impl IntoUniqueIdxs for FixedSizeBinaryArray {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
         let array = self.as_arrow()?;
+        let width = array.value_length() as usize;
+
         if array.null_count() > 0 {
             make_unique_idxs(array.iter())
+        } else if width == 0 {
+            if array.is_empty() {
+                Ok(vec![])
+            } else {
+                Ok(vec![0])
+            }
         } else {
-            make_unique_idxs(array.values().iter())
+            make_unique_idxs(array.values().chunks(width))
         }
     }
 }
+
+// --- Other Implementations ---
 
 impl IntoGroups for BooleanArray {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
@@ -355,6 +376,7 @@ impl IntoUniqueIdxs for BooleanArray {
 
 impl IntoGroups for NullArray {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
+        // All rows are null, so there is at most one group (or none for empty arrays).
         let l = self.len() as u64;
         if l == 0 {
             return Ok((vec![], vec![]));
@@ -418,7 +440,7 @@ mod tests {
 
     use crate::{
         array::ops::{IntoGroups, IntoUniqueIdxs, full::FullNull},
-        datatypes::{DataType, Field, Float64Array, Int64Array, NullArray},
+        datatypes::{DataType, Field, FixedSizeBinaryArray, Float64Array, Int64Array, NullArray},
     };
 
     fn grouped_by_sample(
@@ -483,6 +505,22 @@ mod tests {
         assert_eq!(arr.make_unique_idxs()?, vec![0]);
 
         let empty = NullArray::full_null("a", &DataType::Null, 0);
+        assert_eq!(empty.make_groups()?, (vec![], vec![]));
+        assert_eq!(empty.make_unique_idxs()?, Vec::<u64>::new());
+        Ok(())
+    }
+
+    #[test]
+    fn test_fixed_size_binary_zero_width_groups_and_unique_idxs() -> DaftResult<()> {
+        let array = FixedSizeBinaryArray::from_iter(
+            "a",
+            vec![Some(&[][..]), Some(&[][..]), Some(&[][..])].into_iter(),
+            0,
+        );
+        assert_eq!(array.make_groups()?, (vec![0], vec![vec![0, 1, 2]]));
+        assert_eq!(array.make_unique_idxs()?, vec![0]);
+
+        let empty = FixedSizeBinaryArray::from_iter("a", std::iter::empty::<Option<&[u8]>>(), 0);
         assert_eq!(empty.make_groups()?, (vec![], vec![]));
         assert_eq!(empty.make_unique_idxs()?, Vec::<u64>::new());
         Ok(())
