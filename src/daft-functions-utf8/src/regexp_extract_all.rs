@@ -22,7 +22,11 @@ impl ScalarUDF for RegexpExtractAll {
     fn aliases(&self) -> &'static [&'static str] {
         &["regexp_extract_all"]
     }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         ensure!(
             inputs.len() == 2 || inputs.len() == 3,
             ComputeError: "Expected 2 or 3 input args, got {}",

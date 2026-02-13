@@ -18,7 +18,11 @@ impl ScalarUDF for NotNan {
     fn name(&self) -> &'static str {
         "not_nan"
     }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let UnaryArg { input: data } = inputs.try_into()?;
 
         with_match_float_and_null_daft_types!(data.data_type(), |$T| {

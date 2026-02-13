@@ -16,7 +16,11 @@ macro_rules! exp {
 
         #[typetag::serde]
         impl ScalarUDF for $variant {
-            fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+            fn call(
+                &self,
+                inputs: FunctionArgs<Series>,
+                _ctx: &daft_dsl::functions::scalar::EvalContext,
+            ) -> DaftResult<Series> {
                 let UnaryArg { input } = inputs.try_into()?;
                 $impl(input)
             }

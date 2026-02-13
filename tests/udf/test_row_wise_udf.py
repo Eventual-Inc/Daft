@@ -469,3 +469,26 @@ def test_dynamic_batching_same_result():
         dynamic_batching_df = df.select("*", stringify_and_sum(col("x"), col("y")).alias("sum"))
         dynamic_batching_df = dynamic_batching_df.collect().sort("id")
         assert non_dynamic_batching_df.to_pydict() == dynamic_batching_df.to_pydict()
+
+
+def test_row_wise_udf_kwargs_prefix_suffix_literals_and_exprs():
+    @daft.func
+    def format_number(value: int, prefix: str = "$", suffix: str = "") -> str:
+        return f"{prefix}{value}{suffix}"
+
+    df = daft.from_pydict({"amount": [10, 20, 30]})
+    df = df.with_column("dollar", format_number(df["amount"]))
+    df = df.with_column("euro", format_number(df["amount"], prefix="€", suffix=" EUR"))
+    df = df.with_column(
+        "customized",
+        format_number(df["amount"], suffix=df["amount"].cast(DataType.string())),
+    )
+
+    result = df.to_pydict()
+    expected = {
+        "amount": [10, 20, 30],
+        "dollar": ["$10", "$20", "$30"],
+        "euro": ["€10 EUR", "€20 EUR", "€30 EUR"],
+        "customized": ["$1010", "$2020", "$3030"],
+    }
+    assert result == expected

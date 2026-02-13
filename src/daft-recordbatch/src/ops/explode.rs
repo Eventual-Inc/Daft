@@ -18,7 +18,7 @@ fn lengths_to_indices(lengths: &UInt64Array, capacity: usize) -> DaftResult<UInt
         let l = std::cmp::max(*l.unwrap_or(&1), 1u64);
         (0..l).for_each(|_| indices.push(i as u64));
     }
-    Ok(UInt64Array::from(("indices", indices)))
+    Ok(UInt64Array::from_vec("indices", indices))
 }
 
 /// For each list element, generate its position within the list.

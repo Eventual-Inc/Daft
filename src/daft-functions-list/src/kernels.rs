@@ -2,7 +2,7 @@
 
 use std::{iter::repeat_n, sync::Arc};
 
-use arrow::array::{BooleanBufferBuilder, make_comparator};
+use arrow::array::{BooleanBufferBuilder, BooleanBuilder, make_comparator};
 use common_error::DaftResult;
 use daft_arrow::offset::{Offsets, OffsetsBuffer};
 use daft_core::{
@@ -32,6 +32,7 @@ pub trait ListArrayExtension: Sized {
     fn list_sort(&self, desc: &BooleanArray, nulls_first: &BooleanArray) -> DaftResult<Self>;
     fn list_bool_and(&self) -> DaftResult<BooleanArray>;
     fn list_bool_or(&self) -> DaftResult<BooleanArray>;
+    fn list_contains(&self, item: &Series) -> DaftResult<BooleanArray>;
 }
 
 pub trait ListArrayAggExtension: Sized {
@@ -135,8 +136,8 @@ impl ListArrayExtension for ListArray {
             offsets.push(count_array.len() as i64);
         }
 
-        let values = UInt64Array::from(("count", count_array)).into_series();
-        let include_mask = BooleanArray::from(("boolean", include_mask.as_slice()));
+        let values = UInt64Array::from_vec("count", count_array).into_series();
+        let include_mask = BooleanArray::from_values("boolean", include_mask.into_iter());
 
         let keys = self.flat_child.filter(&include_mask)?;
 
@@ -208,9 +209,7 @@ impl ListArrayExtension for ListArray {
                 })
                 .collect(),
         };
-        UInt64Array::from_iter_values(counts)
-            .rename(self.name())
-            .with_nulls(self.nulls().cloned())
+        UInt64Array::from_values(self.name(), counts).with_nulls(self.nulls().cloned())
     }
 
     fn explode(&self) -> DaftResult<Series> {
@@ -270,10 +269,11 @@ impl ListArrayExtension for ListArray {
                 )
             });
 
-        Ok(Utf8Array::from((
-            self.name(),
-            Box::new(daft_arrow::array::Utf8Array::from_iter(result)),
-        )))
+        Ok(Utf8Array::new(
+            Field::new(self.name(), DataType::Utf8).into(),
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from_iter(result)),
+        )
+        .unwrap())
     }
 
     fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series> {
@@ -467,10 +467,71 @@ impl ListArrayExtension for ListArray {
         }
 
         let null_buffer = daft_arrow::buffer::NullBuffer::from_iter(result_nulls.iter().copied());
-        let values = daft_arrow::bitmap::Bitmap::from_iter(result.iter().copied());
-        BooleanArray::from_iter_values(values)
-            .rename(self.name())
-            .with_nulls(Some(null_buffer))
+        BooleanArray::from_values(self.name(), result).with_nulls(Some(null_buffer))
+    }
+
+    fn list_contains(&self, item: &Series) -> DaftResult<BooleanArray> {
+        let list_nulls = self.nulls();
+        let mut builder = BooleanBuilder::new();
+        let field = Field::new(self.name(), DataType::Boolean);
+
+        if self.flat_child.data_type() == &DataType::Null {
+            for list_idx in 0..self.len() {
+                let valid = list_nulls.is_none_or(|nulls| nulls.is_valid(list_idx))
+                    && item.is_valid(list_idx);
+                if valid {
+                    builder.append_value(false);
+                } else {
+                    builder.append_null();
+                }
+            }
+
+            let arrow_array = Arc::new(builder.finish());
+            return BooleanArray::from_arrow(field, arrow_array);
+        }
+
+        let item = item.cast(self.flat_child.data_type())?;
+        let item_hashes = item.hash(None)?;
+        let child_hashes = self.flat_child.hash(None)?;
+
+        let child_arrow = self.flat_child.to_arrow()?;
+        let item_arrow = item.to_arrow()?;
+        let comparator = make_comparator(
+            child_arrow.as_ref(),
+            item_arrow.as_ref(),
+            Default::default(),
+        )
+        .unwrap();
+
+        for (list_idx, range) in self.offsets().ranges().enumerate() {
+            if list_nulls.is_some_and(|nulls| nulls.is_null(list_idx)) {
+                builder.append_null();
+                continue;
+            }
+
+            if !item.is_valid(list_idx) {
+                builder.append_null();
+                continue;
+            }
+
+            let item_hash = item_hashes.get(list_idx).unwrap();
+            let mut found = false;
+            for elem_idx in range {
+                let elem_idx = elem_idx as usize;
+                if child_arrow.is_null(elem_idx) {
+                    continue;
+                }
+                let elem_hash = child_hashes.get(elem_idx).unwrap();
+                if elem_hash == item_hash && comparator(elem_idx, list_idx).is_eq() {
+                    found = true;
+                    break;
+                }
+            }
+
+            builder.append_value(found);
+        }
+
+        Ok(BooleanArray::from_builder(self.name(), builder))
     }
 }
 
@@ -483,6 +544,10 @@ impl ListArrayExtension for FixedSizeListArray {
         self.to_list().list_bool_or()
     }
 
+    fn list_contains(&self, item: &Series) -> DaftResult<BooleanArray> {
+        self.to_list().list_contains(item)
+    }
+
     fn value_counts(&self) -> DaftResult<MapArray> {
         self.to_list().value_counts()
     }
@@ -491,22 +556,26 @@ impl ListArrayExtension for FixedSizeListArray {
         let size = self.fixed_element_len();
         let counts = match (mode, self.flat_child.nulls()) {
             (CountMode::All, _) | (CountMode::Valid, None) => {
-                UInt64Array::from_iter_values(repeat_n(size as u64, self.len()))
+                UInt64Array::from_values(self.name(), repeat_n(size as u64, self.len()))
             }
-            (CountMode::Valid, Some(nulls)) => UInt64Array::from_iter_values(
+            (CountMode::Valid, Some(nulls)) => UInt64Array::from_values(
+                self.name(),
                 (0..self.len())
                     .map(|i| (0..size).map(|j| nulls.is_valid(i * size + j) as u64).sum()),
             ),
-            (CountMode::Null, None) => UInt64Array::from_iter_values(repeat_n(0, self.len())),
-            (CountMode::Null, Some(nulls)) => {
-                UInt64Array::from_iter_values((0..self.len()).map(|i| {
+            (CountMode::Null, None) => {
+                UInt64Array::from_values(self.name(), repeat_n(0, self.len()))
+            }
+            (CountMode::Null, Some(nulls)) => UInt64Array::from_values(
+                self.name(),
+                (0..self.len()).map(|i| {
                     (0..size)
                         .map(|j| !nulls.is_valid(i * size + j) as u64)
                         .sum()
-                }))
-            }
+                }),
+            ),
         };
-        counts.rename(self.name()).with_nulls(self.nulls().cloned())
+        counts.with_nulls(self.nulls().cloned())
     }
 
     fn explode(&self) -> DaftResult<Series> {
@@ -556,10 +625,11 @@ impl ListArrayExtension for FixedSizeListArray {
                 )
             });
 
-        Ok(Utf8Array::from((
-            self.name(),
-            Box::new(daft_arrow::array::Utf8Array::from_iter(result)),
-        )))
+        Ok(Utf8Array::new(
+            Field::new(self.name(), DataType::Utf8).into(),
+            Box::new(daft_arrow::array::Utf8Array::<i64>::from_iter(result)),
+        )
+        .unwrap())
     }
 
     fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series> {

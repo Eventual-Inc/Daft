@@ -203,7 +203,15 @@ impl Project {
                             expr.children()
                         } else {
                             // If previously seen, cache the expression (if it involves computation)
-                            if optimization::requires_computation(expr) {
+                            if optimization::requires_computation(expr)
+                                && !expr.exists(|e| {
+                                    matches!(
+                                        e.as_ref(),
+                                        Expr::ScalarFn(ScalarFn::Builtin(func))
+                                            if !func.is_deterministic()
+                                    )
+                                })
+                            {
                                 subexpressions_to_cache.insert(expr_id, expr.clone());
                             }
                             // Stop recursing if previously seen;
@@ -589,6 +597,12 @@ fn replace_column_with_semantic_id_aggexpr(
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Stddev, |_| e)
         }
+        AggExpr::Var(ref child, ddof) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema).map_yes_no(
+                |transformed_child| AggExpr::Var(transformed_child, ddof),
+                |_| e,
+            )
+        }
         AggExpr::Min(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Min, |_| e)
@@ -619,9 +633,11 @@ fn replace_column_with_semantic_id_aggexpr(
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Set, |_| e)
         }
-        AggExpr::Concat(ref child) => {
-            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
-                .map_yes_no(AggExpr::Concat, |_| e)
+        AggExpr::Concat(ref child, ref delimiter) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema).map_yes_no(
+                |transformed_child| AggExpr::Concat(transformed_child, delimiter.clone()),
+                |_| AggExpr::Concat(child.clone(), delimiter.clone()),
+            )
         }
         AggExpr::Skew(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
@@ -648,7 +664,7 @@ fn replace_column_with_semantic_id_aggexpr(
 mod tests {
     use common_error::DaftResult;
     use daft_core::prelude::*;
-    use daft_dsl::{Operator, binary_op, lit, resolved_col};
+    use daft_dsl::{binary_op, lit, resolved_col};
 
     use crate::{
         LogicalPlan,

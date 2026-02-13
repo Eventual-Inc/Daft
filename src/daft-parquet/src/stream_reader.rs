@@ -110,7 +110,10 @@ fn arrow_chunk_to_table(
             }
             *curr_delete_row_idx += 1;
         }
-        let selection_mask: BooleanArray = ("selection_mask", Bitmap::from(selection_mask)).into();
+        let nb = daft_arrow::buffer::NullBuffer::from(Bitmap::from(selection_mask));
+
+        let selection_mask = BooleanArray::from_null_buffer("selection_mask", &nb)?;
+
         table = table.mask_filter(&selection_mask.into_series())?;
     }
     *index_so_far += len;

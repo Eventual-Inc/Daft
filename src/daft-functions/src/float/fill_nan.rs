@@ -23,7 +23,11 @@ struct Args<T> {
 
 #[typetag::serde]
 impl ScalarUDF for FillNan {
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let Args { input, fill_value } = inputs.try_into()?;
 
         if input.data_type() == &DataType::Null {
@@ -37,8 +41,7 @@ impl ScalarUDF for FillNan {
         // TODO(perf): we can likely do this without fully evaluating the not_nan predicate first
         // The original implementation also did this, but was hidden behind the series methods.
         let args = FunctionArgs::new_unnamed(vec![input.clone()]);
-
-        let predicate = NotNan {}.call(args)?;
+        let predicate = NotNan {}.call(args, ctx)?;
         match fill_value.len() {
             1 => {
                 let fill_value = fill_value.broadcast(input.len())?;

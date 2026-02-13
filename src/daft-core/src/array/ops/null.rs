@@ -16,23 +16,27 @@ where
 {
     // Common functionality for nullity checks
     fn check_nullity(&self, is_null: bool) -> DaftResult<DataArray<BooleanType>> {
-        let arrow_array = &self.data;
-        let result_arrow_array = Box::new(match arrow_array.validity() {
-            // If the bitmap is None, the arrow array doesn't have null values
-            // (unless it's a NullArray - so check the null count)
-            None => match arrow_array.null_count() {
-                0 => daft_arrow::array::BooleanArray::from_slice(vec![!is_null; arrow_array.len()]), // false for is_null and true for not_null
-                _ => daft_arrow::array::BooleanArray::from_slice(vec![is_null; arrow_array.len()]), // true for is_null and false for not_null
-            },
-            Some(bitmap) => daft_arrow::array::BooleanArray::new(
-                daft_arrow::datatypes::DataType::Boolean,
-                if is_null { !bitmap } else { bitmap.clone() }, // flip the bitmap for is_null
-                None,
-            ),
-        });
-        DataArray::<BooleanType>::new(
-            Arc::new(Field::new(self.field.name.clone(), DataType::Boolean)),
-            result_arrow_array,
+        let values = match self.nulls() {
+            // If there's no null buffer, check null_count for the NullArray edge case
+            None => {
+                let all_valid = self.null_count() == 0;
+                if all_valid != is_null {
+                    arrow::buffer::BooleanBuffer::new_set(self.len())
+                } else {
+                    arrow::buffer::BooleanBuffer::new_unset(self.len())
+                }
+            }
+            Some(nulls) => {
+                if is_null {
+                    nulls.inner().not()
+                } else {
+                    nulls.clone().into_inner()
+                }
+            }
+        };
+        BooleanArray::from_arrow(
+            Field::new(self.field.name.clone(), DataType::Boolean),
+            Arc::new(arrow::array::BooleanArray::new(values, None)),
         )
     }
 }
@@ -63,25 +67,21 @@ where
 impl PythonArray {
     // Common functionality for nullity checks
     fn check_nullity(&self, is_null: bool) -> DaftResult<DataArray<BooleanType>> {
-        let bitmap = if let Some(nulls) = self.nulls() {
+        let values = if let Some(nulls) = self.nulls() {
             if is_null {
-                nulls.inner().not().into()
+                nulls.inner().not()
             } else {
-                nulls.clone()
+                nulls.clone().into_inner()
             }
         } else if is_null {
-            daft_arrow::buffer::NullBuffer::new_null(self.len())
+            daft_arrow::buffer::NullBuffer::new_null(self.len()).into_inner()
         } else {
-            daft_arrow::buffer::NullBuffer::new_valid(self.len())
+            daft_arrow::buffer::NullBuffer::new_valid(self.len()).into_inner()
         };
 
-        BooleanArray::new(
-            Arc::new(Field::new(self.name(), DataType::Boolean)),
-            Box::new(daft_arrow::array::BooleanArray::new(
-                daft_arrow::datatypes::DataType::Boolean,
-                daft_arrow::buffer::from_null_buffer(bitmap),
-                None,
-            )),
+        BooleanArray::from_arrow(
+            Field::new(self.name(), DataType::Boolean),
+            Arc::new(arrow::array::BooleanArray::new(values, None)),
         )
     }
 }
@@ -107,13 +107,10 @@ impl DaftNotNull for PythonArray {
 macro_rules! check_nullity_nested_array {
     ($arr:expr, $is_null:expr) => {{
         match $arr.nulls() {
-            None => Ok(BooleanArray::from((
+            None => Ok(BooleanArray::from_values(
                 $arr.name(),
-                repeat(!$is_null)
-                    .take($arr.len())
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            ))),
+                repeat(!$is_null).take($arr.len()),
+            )),
             Some(nulls) => BooleanArray::from_arrow(
                 Field::new($arr.name(), DataType::Boolean),
                 Arc::new(arrow::array::BooleanArray::new(
@@ -167,7 +164,10 @@ where
 {
     #[inline]
     pub fn is_valid(&self, idx: usize) -> bool {
-        self.data.is_valid(idx)
+        match self.nulls() {
+            None => self.null_count() == 0,
+            Some(nulls) => nulls.is_valid(idx),
+        }
     }
 }
 

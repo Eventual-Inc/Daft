@@ -26,7 +26,11 @@ impl ScalarUDF for ListCount {
     fn name(&self) -> &'static str {
         "list_count"
     }
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let ListCountArgs { input, mode } = inputs.try_into()?;
         let mode = mode.unwrap_or(CountMode::Valid);
 
