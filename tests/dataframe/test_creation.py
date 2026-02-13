@@ -1214,7 +1214,8 @@ def test_create_dataframe_parquet_mismatched_schemas_no_pushdown():
 
         df = daft.read_parquet([f1, f2])
         assert df.schema().column_names() == ["x"]
-        assert df.to_pydict() == {"x": [1, 2, 3, 4, None, None, None, None]}
+        result = df.sort("x").to_pydict()
+        assert result == {"x": [1, 2, 3, 4, None, None, None, None]}
 
 
 def test_create_dataframe_parquet_read_mismatched_schemas_with_pushdown():

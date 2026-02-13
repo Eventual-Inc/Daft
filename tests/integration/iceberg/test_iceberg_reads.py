@@ -68,7 +68,7 @@ SORT_KEYS = {
     "test_table_sanitized_character": ["letter/abc"],
     "test_table_version": ["number"],
     "test_uuid_and_fixed_unpartitioned": ["fixed_col"],
-    "test_add_new_column": ["idx"],
+    "test_add_new_column": ["idx", "name"],
     "test_new_column_with_no_data": ["idx"],
     "test_table_rename": ["idx_renamed"],
     "test_overlapping_deletes": ["id"],
