@@ -196,7 +196,9 @@ jobs:
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
+      if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       with:
         payload: |
           {
@@ -210,7 +212,7 @@ jobs:
               }
             ]
           }
-        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
   unit-tests:
@@ -344,7 +346,9 @@ jobs:
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
+      if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       with:
         payload: |
           {
@@ -358,7 +362,7 @@ jobs:
               }
             ]
           }
-        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
   integration-test-io:
@@ -436,7 +440,9 @@ jobs:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
+      if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       with:
         payload: |
           {
@@ -450,7 +456,7 @@ jobs:
               }
             ]
           }
-        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
   # Same as integration-test-io but runs the tests that require credentials, only on `main`
@@ -548,7 +554,9 @@ jobs:
         HF_TOKEN: ${{ secrets.ACTIONS_HF_TOKEN }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() }}
+      if: ${{ env.SLACK_WEBHOOK_URL && failure() }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       with:
         payload: |
           {
@@ -562,7 +570,7 @@ jobs:
               }
             ]
           }
-        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
   integration-test-sql:
@@ -646,7 +654,9 @@ jobs:
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
+      if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       with:
         payload: |
           {
@@ -660,7 +670,7 @@ jobs:
               }
             ]
           }
-        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
   integration-test-catalogs:
@@ -848,7 +858,9 @@ jobs:
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
+      if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       with:
         payload: |
           {
@@ -862,7 +874,7 @@ jobs:
               }
             ]
           }
-        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
 
@@ -931,7 +943,9 @@ jobs:
         DAFT_RUNNER: ${{ matrix.daft-runner }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
+      if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       with:
         payload: |
           {
@@ -945,7 +959,7 @@ jobs:
               }
             ]
           }
-        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
 
@@ -1004,7 +1018,9 @@ jobs:
         OPENAI_API_KEY: ${{ secrets.ACTIONS_OPENAI_API_KEY }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
+      if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       with:
         payload: |
           {
@@ -1018,7 +1034,7 @@ jobs:
               }
             ]
           }
-        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
   integration-test-ray:
@@ -1077,7 +1093,9 @@ jobs:
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
+      if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       with:
         payload: |
           {
@@ -1091,7 +1109,7 @@ jobs:
               }
             ]
           }
-        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
   integration-tests:
@@ -1171,7 +1189,9 @@ jobs:
         DAFT_RUNNER: native
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
+      if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       with:
         payload: |
           {
@@ -1185,7 +1205,7 @@ jobs:
               }
             ]
           }
-        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
   rust-tests-platform:
@@ -1231,7 +1251,9 @@ jobs:
         path: ./report-output
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
+      if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       with:
         payload: |
           {
@@ -1245,7 +1267,7 @@ jobs:
               }
             ]
           }
-        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
   rust-tests:
@@ -1339,7 +1361,7 @@ jobs:
         merge-multiple: true
         path: ./report-output
     - name: Upload coverage reports to Codecov with GitHub Action
-      if: ${{ secrets.CODECOV_TOKEN != '' }}
+      if: ${{ env.CODECOV_TOKEN }}
       uses: codecov/codecov-action@v5
       with:
         directory: ./report-output
@@ -1347,7 +1369,9 @@ jobs:
         CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
+      if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       with:
         payload: |
           {
@@ -1361,7 +1385,7 @@ jobs:
               }
             ]
           }
-        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
   test-imports-platform:
@@ -1437,7 +1461,9 @@ jobs:
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
+      if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       with:
         payload: |
           {
@@ -1451,7 +1477,7 @@ jobs:
               }
             ]
           }
-        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
   test-imports:
@@ -1505,7 +1531,9 @@ jobs:
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.event_name == 'push') }}
+      if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.event_name == 'push') }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       with:
         payload: |
           {
@@ -1519,5 +1547,5 @@ jobs:
               }
             ]
           }
-        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook

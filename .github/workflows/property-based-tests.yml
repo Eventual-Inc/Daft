@@ -67,7 +67,9 @@ jobs:
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ secrets.SLACK_WEBHOOK_URL != '' && failure() && (github.ref == 'refs/heads/main') }}
+      if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.ref == 'refs/heads/main') }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       with:
         payload: |
           {
@@ -81,5 +83,5 @@ jobs:
               }
             ]
           }
-        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
