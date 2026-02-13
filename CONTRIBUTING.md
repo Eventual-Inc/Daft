@@ -31,6 +31,30 @@ When proposing features, please include:
 
 ## Contributing Code
 
+All **non-trivial** PRs are required to be linked to an issue that has been approved by a maintainer.
+
+### Contribution bar (non-trivial PRs):
+	1.	Link an approved issue (Fixes #…).
+	2.	Include tests or explain why not.
+	3.	Keep PRs small; large changes require a plan/design note and should be split.
+	4.	Disclose material AI usage and what you verified.
+
+Non-trivial PRs that do not meet these requirements may be closed without review.
+
+Trivial PRs
+
+Trivial PRs (docs, typos, small test fixes, clearly scoped bugfixes) may bypass the issue requirement, but must be labeled no-issue-needed by a maintainer.
+
+What counts as non-trivial
+
+A PR is considered non-trivial if it:
+	•	Changes behavior, APIs, or performance
+	•	Touches core execution/planning logic
+	•	Adds dependencies or new features
+	•	Is large in scope (e.g. > ~300 LOC or many files)
+
+When in doubt, open an issue first.
+
 For detailed development instructions, see our [Development Guide](https://docs.daft.ai/en/stable/contributing/development/).
 
 ## Governance
@@ -56,7 +80,7 @@ A Maintainer is a recognized Contributor who has demonstrated sustained, meaning
 | [@VOID001](https://github.com/VOID001) | ByteDance | Dashboard features, SQL error handling |
 | [@caican00](https://github.com/caican00) | Xiaomi ||
 
-**Maintainers/Write:**
+**Maintainers/Merge:**
 
 Maintainers who additionally have merge access to the repository.
 
@@ -70,6 +94,7 @@ Maintainers who additionally have merge access to the repository.
 | Jay Chia | [@jaychia](https://github.com/jaychia) | Eventual |
 | Jeev Balakrishnan | [@jeevb](https://github.com/jeevb) | Eventual |
 | Oliver Huang | [@ohbh](https://github.com/ohbh) | Eventual |
+| R. C. Howell | [@rchowell](https://github.com/rchowell) | Eventual |
 | Rohit Kulshreshtha | [@rohitkulshreshtha](https://github.com/rohitkulshreshtha) | Eventual |
 | Sam Stokes | [@samstokes](https://github.com/samstokes) | Eventual |
 | Sammy Sidhu | [@samster25](https://github.com/samster25) | Eventual |
