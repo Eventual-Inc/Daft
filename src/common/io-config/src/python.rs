@@ -1,5 +1,6 @@
 use std::{
     any::Any,
+    collections::HashMap,
     hash::{Hash, Hasher},
     sync::Arc,
 };
@@ -198,7 +199,8 @@ impl IOConfig {
         hf=None,
         disable_suffix_range=None,
         tos=None,
-        gravitino=None
+        gravitino=None,
+        backends=None
     ))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -211,6 +213,7 @@ impl IOConfig {
         disable_suffix_range: Option<bool>,
         tos: Option<TosConfig>,
         gravitino: Option<GravitinoConfig>,
+        backends: Option<HashMap<String, HashMap<String, String>>>,
     ) -> Self {
         Self {
             config: config::IOConfig {
@@ -223,6 +226,11 @@ impl IOConfig {
                 disable_suffix_range: disable_suffix_range.unwrap_or_default(),
                 tos: tos.unwrap_or_default().config,
                 gravitino: gravitino.unwrap_or_default().config,
+                backends: backends
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|(k, v)| (k, v.into_iter().collect()))
+                    .collect(),
             },
         }
     }
@@ -238,7 +246,8 @@ impl IOConfig {
         hf=None,
         disable_suffix_range=None,
         tos=None,
-        gravitino=None
+        gravitino=None,
+        backends=None
     ))]
     #[allow(clippy::too_many_arguments)]
     pub fn replace(
@@ -252,6 +261,7 @@ impl IOConfig {
         disable_suffix_range: Option<bool>,
         tos: Option<TosConfig>,
         gravitino: Option<GravitinoConfig>,
+        backends: Option<HashMap<String, HashMap<String, String>>>,
     ) -> Self {
         Self {
             config: config::IOConfig {
@@ -281,6 +291,13 @@ impl IOConfig {
                 gravitino: gravitino
                     .map(|gravitino| gravitino.config)
                     .unwrap_or_else(|| self.config.gravitino.clone()),
+                backends: backends
+                    .map(|b| {
+                        b.into_iter()
+                            .map(|(k, v)| (k, v.into_iter().collect()))
+                            .collect()
+                    })
+                    .unwrap_or_else(|| self.config.backends.clone()),
             },
         }
     }
@@ -347,6 +364,22 @@ impl IOConfig {
         Ok(TosConfig {
             config: self.config.tos.clone(),
         })
+    }
+
+    /// Additional backends configured via OpenDAL
+    #[getter]
+    pub fn backends(&self) -> PyResult<HashMap<String, HashMap<String, String>>> {
+        Ok(self
+            .config
+            .backends
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.clone(),
+                    v.iter().map(|(k2, v2)| (k2.clone(), v2.clone())).collect(),
+                )
+            })
+            .collect())
     }
 
     pub fn __hash__(&self) -> PyResult<u64> {
