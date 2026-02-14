@@ -8,7 +8,7 @@ import pytest
 from daft import Series
 
 
-def stddev(nums: list[float | None], ddof: int = 0) -> float | None:
+def stddev(nums: list[float | None], ddof: int = 1) -> float | None:
     nums = [num for num in nums if num is not None]
 
     count = len(nums)

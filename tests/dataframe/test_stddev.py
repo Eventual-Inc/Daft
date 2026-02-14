@@ -10,7 +10,7 @@ import pytest
 import daft
 
 
-def grouped_stddev(rows, ddof=0) -> tuple[list[Any], list[Any]]:
+def grouped_stddev(rows, ddof=1) -> tuple[list[Any], list[Any]]:
     map = {}
     for key, data in rows:
         if key not in map:
@@ -26,7 +26,7 @@ def grouped_stddev(rows, ddof=0) -> tuple[list[Any], list[Any]]:
     return keys, stddevs
 
 
-def stddev(nums, ddof=0) -> float | None:
+def stddev(nums, ddof=1) -> float | None:
     nums = [num for num in nums if num is not None]
 
     count = len(nums)
