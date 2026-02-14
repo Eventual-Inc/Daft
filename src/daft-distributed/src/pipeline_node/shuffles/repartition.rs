@@ -133,6 +133,7 @@ impl PipelineNodeImpl for RepartitionNode {
 
         // First pipeline the local repartition op
         let self_clone = self.clone();
+        let shuffle_spill_threshold = self_clone.config.execution_config.shuffle_spill_threshold;
         let local_repartition_node = input_node.pipeline_instruction(self.clone(), move |input| {
             LocalPhysicalPlan::repartition(
                 input,
@@ -144,6 +145,7 @@ impl PipelineNodeImpl for RepartitionNode {
                     origin_node_id: Some(self_clone.node_id() as usize),
                     additional: None,
                 },
+                shuffle_spill_threshold,
             )
         });
 

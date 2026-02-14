@@ -72,7 +72,7 @@ pub(crate) async fn get_partition_boundaries_from_samples(
         let flotilla_module = py.import(pyo3::intern!(py, "daft.runners.flotilla"))?;
         let py_object_refs = ray_partition_refs
             .into_iter()
-            .map(|pr| pr.get_object_ref(py))
+            .flat_map(|pr| pr.get_object_refs(py))
             .collect::<Vec<_>>();
         flotilla_module.call_method1(
             pyo3::intern!(py, "get_boundaries"),
@@ -177,6 +177,10 @@ pub(crate) fn create_range_repartition_tasks(
 ) -> DaftResult<Vec<SubmittedTask>> {
     let context = pipeline_node.context();
     let node_id = pipeline_node.node_id();
+    let shuffle_spill_threshold = pipeline_node
+        .config()
+        .execution_config
+        .shuffle_spill_threshold;
     materialized_outputs
         .into_iter()
         .map(|mo| {
@@ -213,6 +217,7 @@ pub(crate) fn create_range_repartition_tasks(
                     origin_node_id: Some(node_id as usize),
                     additional: None,
                 },
+                shuffle_spill_threshold,
             );
             let psets = HashMap::from([(node_id.to_string(), mo.into_inner().0)]);
             let builder = SwordfishTaskBuilder::new(plan, pipeline_node).with_psets(psets);

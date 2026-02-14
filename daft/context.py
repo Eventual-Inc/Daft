@@ -186,6 +186,7 @@ def set_execution_config(
     maintain_order: bool | None = None,
     enable_dynamic_batching: bool | None = None,
     dynamic_batching_strategy: str | None = None,
+    shuffle_spill_threshold: int | None = None,
 ) -> DaftContext:
     """Globally sets various configuration parameters which control various aspects of Daft execution.
 
@@ -229,6 +230,7 @@ def set_execution_config(
         maintain_order: Whether to maintain order during execution. Defaults to True. Some blocking sink operators (e.g. write_parquet) won't respect this flag and will always keep maintain_order as false, and propagate to child operators. It's useful to set this to False for running df.collect() when no ordering is required.
         enable_dynamic_batching: Whether to enable dynamic batching. Defaults to False.
         dynamic_batching_strategy: The strategy to use for dynamic batching. Defaults to 'auto'.
+        shuffle_spill_threshold: Memory threshold in bytes for shuffle spill. Defaults to None (no spill).
     """
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
@@ -265,6 +267,7 @@ def set_execution_config(
             maintain_order=maintain_order,
             enable_dynamic_batching=enable_dynamic_batching,
             dynamic_batching_strategy=dynamic_batching_strategy,
+            shuffle_spill_threshold=shuffle_spill_threshold,
         )
 
         ctx._ctx._daft_execution_config = new_daft_execution_config

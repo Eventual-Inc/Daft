@@ -5,11 +5,16 @@ import pytest
 
 import daft
 from daft import DataFrame
+from tests.conftest import get_tests_daft_runner_name
 
 NUM_SAMPLES = 10_000_000
 NUM_PARTITIONS = 100
 
 
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() == "ray",
+    reason="Microbenchmarks are too resource-intensive for Ray CI disk space",
+)
 @pytest.mark.benchmark(group="partitioning")
 @pytest.mark.parametrize("end_partitions", [NUM_PARTITIONS])
 @pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
@@ -24,6 +29,10 @@ def test_split(benchmark, num_samples, end_partitions) -> None:
     benchmark(bench)
 
 
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() == "ray",
+    reason="Microbenchmarks are too resource-intensive for Ray CI disk space",
+)
 @pytest.mark.benchmark(group="partitioning")
 @pytest.mark.parametrize("start_partitions", [NUM_PARTITIONS])
 @pytest.mark.parametrize("num_samples", [NUM_SAMPLES])
@@ -38,6 +47,10 @@ def test_coalesce(benchmark, num_samples, start_partitions) -> None:
     benchmark(bench)
 
 
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() == "ray",
+    reason="Microbenchmarks are too resource-intensive for Ray CI disk space",
+)
 @pytest.mark.benchmark(group="partitioning")
 @pytest.mark.parametrize("end_partitions", [NUM_PARTITIONS])
 @pytest.mark.parametrize("start_partitions", [NUM_PARTITIONS])
@@ -53,6 +66,10 @@ def test_repartition_random(benchmark, num_samples, start_partitions, end_partit
     benchmark(bench)
 
 
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() == "ray",
+    reason="Microbenchmarks are too resource-intensive for Ray CI disk space",
+)
 @pytest.mark.benchmark(group="partitioning")
 @pytest.mark.parametrize("distribution", ["uniform", "skewed"])
 @pytest.mark.parametrize("end_partitions", [NUM_PARTITIONS])
