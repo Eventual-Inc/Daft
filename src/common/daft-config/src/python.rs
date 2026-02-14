@@ -118,6 +118,7 @@ impl PyDaftExecutionConfig {
         maintain_order=None,
         enable_dynamic_batching=None,
         dynamic_batching_strategy=None,
+        flight_shuffle_dirs=None,
     ))]
     fn with_config_values(
         &self,
@@ -150,6 +151,7 @@ impl PyDaftExecutionConfig {
         maintain_order: Option<bool>,
         enable_dynamic_batching: Option<bool>,
         dynamic_batching_strategy: Option<&str>,
+        flight_shuffle_dirs: Option<Vec<String>>,
     ) -> PyResult<Self> {
         let mut config = self.config.as_ref().clone();
 
@@ -265,6 +267,10 @@ impl PyDaftExecutionConfig {
                 ));
             }
             config.dynamic_batching_strategy = dynamic_batching_strategy.to_string();
+        }
+
+        if let Some(flight_shuffle_dirs) = flight_shuffle_dirs {
+            config.flight_shuffle_dirs = flight_shuffle_dirs;
         }
 
         Ok(Self {
