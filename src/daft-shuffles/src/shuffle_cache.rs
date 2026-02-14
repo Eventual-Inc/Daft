@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
-use common_runtime::{RuntimeTask, get_compute_runtime};
+use common_runtime::{RuntimeTask, get_io_runtime};
 use daft_io::{SourceType, parse_url};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
@@ -105,8 +105,7 @@ impl InProgressShuffleCache {
                 // Use a bounded channel with capacity based on number of CPUs
                 // This allows multiple concurrent partitioners to send data without blocking
                 let (tx, rx) = async_channel::bounded(num_cpus * 2);
-                let task =
-                    get_compute_runtime().spawn(async move { writer_task(rx, writer).await });
+                let task = get_io_runtime(true).spawn(async move { writer_task(rx, writer).await });
                 (task, tx)
             })
             .unzip();
@@ -242,7 +241,7 @@ async fn writer_task(
     rx: async_channel::Receiver<Arc<MicroPartition>>,
     mut writer: Box<dyn AsyncFileWriter<Input = Arc<MicroPartition>, Result = Vec<RecordBatch>>>,
 ) -> DaftResult<WriterTaskResult> {
-    let compute_runtime = get_compute_runtime();
+    let io_runtime = get_io_runtime(true);
     let mut schema = None;
     let mut total_rows_written = 0;
     let mut total_bytes_written = 0;
@@ -252,7 +251,7 @@ async fn writer_task(
         }
         total_rows_written += partition.len();
         total_bytes_written += partition.size_bytes();
-        writer = compute_runtime
+        writer = io_runtime
             .spawn(async move {
                 writer.write(partition).await?;
                 DaftResult::Ok(writer)
