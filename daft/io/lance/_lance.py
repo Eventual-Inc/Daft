@@ -510,8 +510,9 @@ def compact_files(
     default_scan_options: dict[str, Any] | None = None,
     metadata_cache_size_bytes: int | None = None,
     compaction_options: dict[str, Any] | None = None,
-    partition_num: int | None = None,
+    num_partitions: int | None = None,
     concurrency: int | None = None,
+    micro_commit_batch_size: int | None = None,
 ) -> Any:
     """Compact Lance dataset files using Daft UDF-style distributed execution.
 
@@ -537,11 +538,15 @@ def compact_files(
                 longer present in the file.(default: True).
             materialize_deletions_threadhold: The fraction of original rows that are soft deleted in a fragment
                 before the fragment is a candidate for compaction.(default: 0.1 = 10%).
-        partition_num: Number of partitions to use for compaction. Defaults to None.
+        num_partitions: Optional number of partitions to use when repartitioning fragment batches before execution. Only values greater than 1 enable additional parallelism on distributed runners; values <= 1 or None will use the default partitioning.
         concurrency: Number of concurrent compaction tasks to run. Defaults to None.
+        micro_commit_batch_size: Batch size for compacting the Lance table in batches. Use this parameter to control the size of each batch.
+            Defaults to None, which means all tasks are committed in a single batch with no micro-batching. Values <= 0 are treated the same as None (single-batch commit; no micro-batching).
 
     Returns:
-        CompactionMetrics: Compaction statistics; None if no compaction needed. The `CompactionMetrics` object contains the following fields:
+        CompactionMetrics | None: Compaction statistics when compaction was performed and committed in a single batch, or
+        `None` if no compaction was needed or when `micro_commit_batch_size` causes compaction tasks to be committed in
+        multiple micro-batches. The `CompactionMetrics` object contains the following fields:
             - `fragments_removed`: Number of fragments removed during compaction.
             - `fragments_added`: Number of fragments added during compaction.
             - `files_removed`: Number of files removed during compaction.
@@ -549,6 +554,22 @@ def compact_files(
 
     Raises:
         RuntimeError: When compaction fails or no successful results
+
+    Examples:
+        Basic usage to compact a Lance dataset:
+        >>> import daft
+        >>> daft.io.lance.compact_files("s3://my-bucket/dataset/")
+        Compact with custom compaction options:
+        >>> import daft
+        >>> compaction_options = {
+        ...     "target_rows_per_fragment": 100000,
+        ...     "materialize_deletions": True,
+        ...     "max_bytes_per_file": 1024 * 1024 * 100,  # 100MB
+        ... }
+        >>> daft.io.lance.compact_files("s3://my-bucket/dataset/", compaction_options=compaction_options, concurrency=4)
+        Compact a specific version of a dataset:
+        >>> import daft
+        >>> daft.io.lance.compact_files("s3://my-bucket/dataset/", version=5, num_partitions=8)
     """
     try:
         import lance
@@ -578,6 +599,7 @@ def compact_files(
     return compact_files_internal(
         lance_ds=lance_ds,
         compaction_options=compaction_options,
-        partition_num=partition_num,
+        num_partitions=num_partitions,
         concurrency=concurrency,
+        micro_commit_batch_size=micro_commit_batch_size,
     )
