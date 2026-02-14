@@ -79,35 +79,46 @@ jobs:
       matrix:
         python-version: ['3.10', '3.13']
         daft-runner: [ray, native]
-        pyarrow-version: [8.0.0, 22.0.0]
+        pyarrow-version: ['22.0.0']
         os: [ubuntu-latest, macos-latest]
+        coverage: [true]
         on-main:
         - ${{ github.ref == 'refs/heads/main' }}
+        include:
+        # pyarrow compat test — runs without coverage instrumentation
+        - python-version: '3.10'
+          daft-runner: native
+          pyarrow-version: '8.0.0'
+          os: ubuntu-latest
+          on-main: ${{ github.ref == 'refs/heads/main' }}
+          coverage: false
         exclude:
-        - daft-runner: ray
-          pyarrow-version: 8.0.0
         - python-version: '3.10'
           os: macos-latest
-        - pyarrow-version: 8.0.0
-          os: macos-latest
-        - python-version: '3.13'
-          pyarrow-version: 8.0.0
         # don't run mac unit tests in PRs
         - os: macos-latest
           on-main: false
 
     steps:
-    - name: Free Disk Space (Ubuntu) # only run on ubuntu
+    - name: Free Disk Space (Ubuntu)
       if: ${{ (runner.os == 'Linux') }}
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
         android: true
-        dotnet: false
+        dotnet: true
         haskell: true
         large-packages: false
-        docker-images: false
+        docker-images: true
         swap-storage: true
+    - name: Additional disk cleanup
+      if: ${{ (runner.os == 'Linux') }}
+      run: |
+        sudo rm -rf /usr/share/swift || true
+        sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+        sudo rm -rf /opt/hostedtoolcache/go || true
+        sudo rm -rf /opt/hostedtoolcache/Ruby || true
+        sudo rm -rf /opt/hostedtoolcache/node || true
 
     - uses: actions/checkout@v6
     - uses: moonrepo/setup-rust@v1
@@ -118,11 +129,13 @@ jobs:
         prefix-key: ${{ runner.os }}-build
         cache-all-crates: 'true'
     - name: Install cargo-llvm-cov
+      if: matrix.coverage != false
       uses: taiki-e/install-action@cargo-llvm-cov
       with:
         tool: cargo-llvm-cov@0.7.1
 
     - name: install llvm tools
+      if: matrix.coverage != false
       run: rustup component add llvm-tools-preview
 
     - name: Setup Python and uv
@@ -161,7 +174,8 @@ jobs:
         source .venv/bin/activate
         uv pip install pyarrow==${{ matrix.pyarrow-version }}
 
-    - name: Build library and Test with pytest
+    - name: Build library and Test with pytest (with coverage)
+      if: matrix.coverage != false
       run: |
         set -o pipefail
         source .venv/bin/activate
@@ -188,7 +202,23 @@ jobs:
 
         DAFT_RUNNER: ${{ matrix.daft-runner }}
 
+    - name: Build library and Test with pytest (no coverage)
+      if: matrix.coverage == false
+      run: |
+        set -o pipefail
+        source .venv/bin/activate
+        maturin develop --uv
+        pytest --ignore tests/integration --collect-only -qq # run this to ensure no weird imports that result in `Collector` errors
+        pytest -n auto --ignore tests/integration --durations=0 | ./tools/capture-durations.sh "pytest_output.txt"
+        python tools/aggregate_test_durations.py pytest_output.txt
+      env:
+        RAY_CONDA_HOME: ${{ env.CONDA_HOME }}
+        CONDA_EXE: ${{ env.CONDA_HOME }}/bin/conda
+
+        DAFT_RUNNER: ${{ matrix.daft-runner }}
+
     - name: Upload coverage report
+      if: matrix.coverage != false
       uses: actions/upload-artifact@v6
       with:
         name: coverage-reports-unit-tests-${{ join(matrix.*, '-') }}
@@ -374,17 +404,23 @@ jobs:
         python-version: ['3.10']
         daft-runner: [ray, native]
     steps:
-    - name: Free Disk Space (Ubuntu) # only run on ubuntu
-      if: ${{ (runner.os == 'Linux') }}
+    - name: Free Disk Space (Ubuntu)
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
         android: true
-        dotnet: false
+        dotnet: true
         haskell: true
         large-packages: false
-        docker-images: false
+        docker-images: true
         swap-storage: true
+    - name: Additional disk cleanup
+      run: |
+        sudo rm -rf /usr/share/swift || true
+        sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+        sudo rm -rf /opt/hostedtoolcache/go || true
+        sudo rm -rf /opt/hostedtoolcache/Ruby || true
+        sudo rm -rf /opt/hostedtoolcache/node || true
     - uses: actions/checkout@v6
       with:
         submodules: true
@@ -473,16 +509,22 @@ jobs:
       contents: read
     steps:
     - name: Free Disk Space (Ubuntu)
-      if: ${{ (runner.os == 'Linux') }}
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
         android: true
-        dotnet: false
+        dotnet: true
         haskell: true
         large-packages: false
-        docker-images: false
+        docker-images: true
         swap-storage: true
+    - name: Additional disk cleanup
+      run: |
+        sudo rm -rf /usr/share/swift || true
+        sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+        sudo rm -rf /opt/hostedtoolcache/go || true
+        sudo rm -rf /opt/hostedtoolcache/Ruby || true
+        sudo rm -rf /opt/hostedtoolcache/node || true
     - uses: actions/checkout@v6
       with:
         submodules: true
@@ -573,17 +615,23 @@ jobs:
     env:
       package-name: daft
     steps:
-    - name: Free Disk Space (Ubuntu) # only run on ubuntu
-      if: ${{ (runner.os == 'Linux') }}
+    - name: Free Disk Space (Ubuntu)
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
         android: true
-        dotnet: false
+        dotnet: true
         haskell: true
         large-packages: false
-        docker-images: false
+        docker-images: true
         swap-storage: true
+    - name: Additional disk cleanup
+      run: |
+        sudo rm -rf /usr/share/swift || true
+        sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+        sudo rm -rf /opt/hostedtoolcache/go || true
+        sudo rm -rf /opt/hostedtoolcache/Ruby || true
+        sudo rm -rf /opt/hostedtoolcache/node || true
     - uses: actions/checkout@v6
       with:
         submodules: true
@@ -671,17 +719,23 @@ jobs:
     env:
       package-name: daft
     steps:
-    - name: Free Disk Space (Ubuntu) # only run on ubuntu
-      if: ${{ (runner.os == 'Linux') }}
+    - name: Free Disk Space (Ubuntu)
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
         android: true
-        dotnet: false
+        dotnet: true
         haskell: true
         large-packages: false
-        docker-images: false
+        docker-images: true
         swap-storage: true
+    - name: Additional disk cleanup
+      run: |
+        sudo rm -rf /usr/share/swift || true
+        sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+        sudo rm -rf /opt/hostedtoolcache/go || true
+        sudo rm -rf /opt/hostedtoolcache/Ruby || true
+        sudo rm -rf /opt/hostedtoolcache/node || true
     - uses: actions/checkout@v6
       with:
         submodules: true
@@ -880,16 +934,22 @@ jobs:
         daft-runner: [ray, native]
     steps:
     - name: Free Disk Space (Ubuntu)
-      if: ${{ (runner.os == 'Linux') }}
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
         android: true
-        dotnet: false
+        dotnet: true
         haskell: true
         large-packages: false
-        docker-images: false
+        docker-images: true
         swap-storage: true
+    - name: Additional disk cleanup
+      run: |
+        sudo rm -rf /usr/share/swift || true
+        sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+        sudo rm -rf /opt/hostedtoolcache/go || true
+        sudo rm -rf /opt/hostedtoolcache/Ruby || true
+        sudo rm -rf /opt/hostedtoolcache/node || true
     - uses: actions/checkout@v6
       with:
         submodules: true
@@ -1217,11 +1277,25 @@ jobs:
       with:
         key: ${{ runner.os }}-rust-build
         cache-all-crates: 'true'
-    - name: Free Disk Space (Ubuntu) # only run on ubuntu
+    - name: Free Disk Space (Ubuntu)
       if: ${{ matrix.os == 'ubuntu' }}
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: false
+        docker-images: true
+        swap-storage: true
+    - name: Additional disk cleanup
+      if: ${{ matrix.os == 'ubuntu' }}
+      run: |
+        sudo rm -rf /usr/share/swift || true
+        sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+        sudo rm -rf /opt/hostedtoolcache/go || true
+        sudo rm -rf /opt/hostedtoolcache/Ruby || true
+        sudo rm -rf /opt/hostedtoolcache/node || true
     - name: Generate code coverage
       run: mkdir -p report-output && cargo llvm-cov  --no-default-features --workspace --exclude common-arrow-ffi --lcov --output-path ./report-output/lcov.info
     - name: Upload coverage report
@@ -1281,16 +1355,22 @@ jobs:
       python-version: '3.10'
     steps:
     - name: Free Disk Space (Ubuntu)
-      if: ${{ (runner.os == 'Linux') }}
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
         android: true
-        dotnet: false
+        dotnet: true
         haskell: true
         large-packages: false
-        docker-images: false
+        docker-images: true
         swap-storage: true
+    - name: Additional disk cleanup
+      run: |
+        sudo rm -rf /usr/share/swift || true
+        sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+        sudo rm -rf /opt/hostedtoolcache/go || true
+        sudo rm -rf /opt/hostedtoolcache/Ruby || true
+        sudo rm -rf /opt/hostedtoolcache/node || true
     - uses: actions/checkout@v6
     - uses: moonrepo/setup-rust@v1
       with:
