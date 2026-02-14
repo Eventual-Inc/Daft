@@ -2707,6 +2707,7 @@ dependencies = [
  "common-treenode",
  "daft-context",
  "daft-dsl",
+ "daft-io",
  "daft-local-plan",
  "daft-logical-plan",
  "daft-micropartition",

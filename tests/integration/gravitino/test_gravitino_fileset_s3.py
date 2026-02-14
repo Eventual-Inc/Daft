@@ -338,10 +338,9 @@ def test_s3_fileset_empty_glob(
         gvfs_root = f"gvfs://fileset/{catalog_name}/{schema_name}/{fileset_name}"
         glob_pattern = f"{gvfs_root}/**/*.parquet"
 
-        # Globbing empty directory should raise FileNotFoundError when collecting
+        # Globbing empty directory should return empty dataframe when collecting
         files_df = daft.from_glob_path(glob_pattern, io_config=gravitino_io_config)
-        with pytest.raises(FileNotFoundError):
-            files_df.collect()
+        assert 0 == len(files_df.collect())
 
     finally:
         delete_fileset(local_gravitino_client, gravitino_metalake, catalog_name, schema_name, fileset_name)

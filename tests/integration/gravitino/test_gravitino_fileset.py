@@ -139,11 +139,10 @@ def test_delete_file_via_gvfs_path(prepared_fileset, local_gravitino_client, gra
     shutil.rmtree(local_path)
     assert not local_path.exists()
 
-    # After deletion, globbing should raise FileNotFoundError when collecting
+    # After deletion, globbing should return empty dataframe when collecting
     glob_pattern = f"{prepared_fileset['gvfs_root']}/**/*.parquet"
     files_df = daft.from_glob_path(glob_pattern, io_config=gravitino_io_config)
-    with pytest.raises(FileNotFoundError):
-        files_df.collect()
+    assert 0 == len(files_df.collect())
 
     # Reading the deleted path should also raise an error
     with pytest.raises(Exception):
