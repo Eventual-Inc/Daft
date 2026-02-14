@@ -35,6 +35,10 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                     AggExpr::MergeSketch(Expr::Alias(e, name.clone()).into(), sketch_type)
                 }
                 AggExpr::Mean(e) => AggExpr::Mean(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Percentile(e, percentile) => {
+                    AggExpr::Percentile(Expr::Alias(e, name.clone()).into(), percentile)
+                }
+                AggExpr::Median(e) => AggExpr::Median(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Stddev(e) => AggExpr::Stddev(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Var(e, ddof) => AggExpr::Var(Expr::Alias(e, name.clone()).into(), ddof),
                 AggExpr::Min(e) => AggExpr::Min(Expr::Alias(e, name.clone()).into()),

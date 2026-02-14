@@ -302,6 +302,17 @@ impl SQLLiteral for usize {
     }
 }
 
+impl SQLLiteral for f64 {
+    fn from_expr(expr: &ExprRef) -> Result<Self, PlannerError>
+    where
+        Self: Sized,
+    {
+        expr.as_literal()
+            .and_then(daft_core::lit::Literal::as_f64)
+            .ok_or_else(|| PlannerError::invalid_operation("Expected a float literal"))
+    }
+}
+
 impl SQLLiteral for bool {
     fn from_expr(expr: &ExprRef) -> Result<Self, PlannerError>
     where

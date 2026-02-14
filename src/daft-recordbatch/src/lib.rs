@@ -674,6 +674,12 @@ impl RecordBatch {
             AggExpr::Mean(expr) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .mean(groups),
+            AggExpr::Percentile(expr, percentile) => self
+                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                .percentile(groups, percentile.0),
+            AggExpr::Median(expr) => self
+                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                .percentile(groups, 0.5),
             AggExpr::Stddev(expr) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .stddev(groups),

@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 
 use crate::{
     array::{
@@ -26,6 +26,42 @@ pub fn calculate_stats(array: &Float64Array) -> DaftResult<Stats> {
             mean: calculate_mean(sum, count),
         });
     Ok(stats)
+}
+
+pub fn exact_percentile(values: &Float64Array, percentage: f64) -> DaftResult<Option<f64>> {
+    let valid_values: Float64Array = values.into_iter().flatten().copied().map(Some).collect();
+
+    if valid_values.is_empty() {
+        return Ok(None);
+    }
+
+    let sorted = valid_values.sort(false, false)?;
+    let rank = percentage * (sorted.len() - 1) as f64;
+    let lower = rank.floor() as usize;
+    let upper = rank.ceil() as usize;
+
+    let lower_value = sorted.get(lower).ok_or_else(|| {
+        DaftError::ComputeError(
+            "Unexpected null while computing lower percentile bound".to_string(),
+        )
+    })?;
+
+    if lower == upper {
+        Ok(Some(lower_value))
+    } else {
+        let upper_value = sorted.get(upper).ok_or_else(|| {
+            DaftError::ComputeError(
+                "Unexpected null while computing upper percentile bound".to_string(),
+            )
+        })?;
+        let weight = rank - lower as f64;
+        let percentile = (upper_value - lower_value).mul_add(weight, lower_value);
+        Ok(Some(percentile))
+    }
+}
+
+pub fn is_valid_percentile_percentage(percentage: f64) -> bool {
+    (0.0..=1.0).contains(&percentage)
 }
 
 pub fn grouped_stats<'a>(

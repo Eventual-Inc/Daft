@@ -134,9 +134,23 @@ def approx_percentiles(expr: Expression, percentiles: float | list[float]) -> Ex
     return Expression._from_pyexpr(expr._expr.approx_percentiles(percentiles))
 
 
+def percentile(expr: Expression, percentage: float) -> Expression:
+    """Calculates the exact percentile for a column of numeric values.
+
+    Args:
+        percentage: Percentage at which to compute the exact value. Must be between 0 and 1.
+    """
+    return Expression._from_pyexpr(expr._expr.percentile(percentage))
+
+
 def mean(expr: Expression) -> Expression:
     """Calculates the mean of the values in the expression."""
     return Expression._from_pyexpr(expr._expr.mean())
+
+
+def median(expr: Expression) -> Expression:
+    """Calculates the median of the values in the expression."""
+    return Expression._from_pyexpr(expr._expr.median())
 
 
 def avg(expr: Expression) -> Expression:
