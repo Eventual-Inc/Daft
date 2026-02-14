@@ -202,3 +202,47 @@ def test_partition_order_by_agg_with_nulls(make_df):
     ).collect()
 
     assert_df_equals(result.to_pandas(), pd.DataFrame(expected_data), sort_key=["category", "ts"], check_dtype=False)
+
+
+def test_partition_order_by_agg_before_offset(make_df):
+    """Test that an Agg window expression followed by an Offset on the same window spec works.
+
+    Regression test: when Agg (sum/mean/etc.) comes before Offset (lag/lead) on the same
+    window spec, a SchemaMismatch error was raised due to the Agg branch using append_column
+    with the full output schema instead of union.
+
+    Input (partition "a", ordered by time):
+        | contestant | time | chocolates |
+        |------------|------|------------|
+        | a          | 1    | 10         |
+        | a          | 2    | 20         |
+
+    Expected output:
+        | contestant | time | chocolates | total | prev |
+        |------------|------|------------|-------|------|
+        | a          | 1    | 10         | 30    | 0    |  <- sum=30, no prev row so default=0
+        | a          | 2    | 20         | 30    | 10   |  <- sum=30, prev row's chocolates=10
+    """
+    data = [
+        {"contestant": "a", "time": 1, "chocolates": 10},
+        {"contestant": "a", "time": 2, "chocolates": 20},
+    ]
+    expected_data = [
+        {"contestant": "a", "time": 1, "chocolates": 10, "total": 30, "prev": 0},
+        {"contestant": "a", "time": 2, "chocolates": 20, "total": 30, "prev": 10},
+    ]
+
+    df = make_df(data)
+    window = Window().partition_by("contestant").order_by("time", desc=False)
+
+    result = df.select(
+        col("contestant"),
+        col("time"),
+        col("chocolates"),
+        col("chocolates").sum().over(window).alias("total"),
+        col("chocolates").lag(1, default=0).over(window).alias("prev"),
+    ).collect()
+
+    assert_df_equals(
+        result.to_pandas(), pd.DataFrame(expected_data), sort_key=["contestant", "time"], check_dtype=False
+    )
