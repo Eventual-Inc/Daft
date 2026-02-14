@@ -65,18 +65,10 @@ impl InMemorySourceNode {
         self: &Arc<Self>,
         partition_ref: PartitionRef,
     ) -> SwordfishTaskBuilder {
-        let info = InMemoryInfo::new(
-            self.info.source_schema.clone(),
-            self.info.cache_key.clone(),
-            None,
-            1,
-            partition_ref.size_bytes(),
-            partition_ref.num_rows(),
-            None,
-            None,
-        );
         let in_memory_scan = LocalPhysicalPlan::in_memory_scan(
-            info,
+            self.node_id(),
+            self.info.source_schema.clone(),
+            partition_ref.size_bytes(),
             StatsState::NotMaterialized,
             LocalNodeContext {
                 origin_node_id: Some(self.node_id() as usize),
@@ -84,8 +76,8 @@ impl InMemorySourceNode {
             },
         );
 
-        let psets = HashMap::from([(self.info.cache_key.clone(), vec![partition_ref])]);
-        SwordfishTaskBuilder::new(in_memory_scan, self.as_ref()).with_psets(psets)
+        SwordfishTaskBuilder::new(in_memory_scan, self.as_ref())
+            .with_psets(self.node_id(), vec![partition_ref])
     }
 }
 

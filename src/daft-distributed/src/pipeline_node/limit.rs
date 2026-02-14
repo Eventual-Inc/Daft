@@ -249,7 +249,7 @@ impl LimitNode {
 
                         (in_memory_scan, psets)
                     };
-                    SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets)
+                    SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets)
                 }
                 Ordering::Greater => {
                     let remaining = limit_state.remaining_take();
@@ -273,7 +273,8 @@ impl LimitNode {
                             )])),
                         },
                     );
-                    let task = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+                    let task = SwordfishTaskBuilder::new(plan, self.as_ref())
+                        .with_psets(self.node_id(), psets);
                     limit_state.decrement_take(remaining);
                     task
                 }

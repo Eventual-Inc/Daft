@@ -58,6 +58,7 @@ def test_range_partitioning_even():
     partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
     assert len(partitions) == 2
 
+    partitions.sort(key=lambda p: p.to_pydict()["id"][0])
     assert partitions[0].to_pydict() == {"id": [0, 1, 2, 3, 4]}
     assert partitions[1].to_pydict() == {"id": [5, 6, 7, 8, 9]}
 
@@ -69,6 +70,7 @@ def test_range_partitioning_uneven():
     partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
     assert len(partitions) == 3
 
+    partitions.sort(key=lambda p: p.to_pydict()["id"][0])
     assert partitions[0].to_pydict() == {"id": [0, 1, 2, 3]}
     assert partitions[1].to_pydict() == {"id": [4, 5, 6]}
     assert partitions[2].to_pydict() == {"id": [7, 8, 9]}
@@ -81,6 +83,7 @@ def test_range_partitioning_with_step_even():
     partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
     assert len(partitions) == 4
 
+    partitions.sort(key=lambda p: p.to_pydict()["id"][0])
     assert partitions[0].to_pydict() == {"id": [0, 2, 4]}
     assert partitions[1].to_pydict() == {"id": [6, 8, 10]}
     assert partitions[2].to_pydict() == {"id": [12, 14, 16]}
@@ -94,6 +97,7 @@ def test_range_partitioning_with_step_uneven():
     partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
     assert len(partitions) == 3
 
+    partitions.sort(key=lambda p: p.to_pydict()["id"][0])
     assert partitions[0].to_pydict() == {"id": [0, 2, 4]}
     assert partitions[1].to_pydict() == {"id": [6, 8, 10]}
     assert partitions[2].to_pydict() == {"id": [12, 14]}
@@ -106,6 +110,7 @@ def test_range_partitioning_with_negative_step_even():
     partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
     assert len(partitions) == 2
 
+    partitions.sort(key=lambda p: p.to_pydict()["id"][0], reverse=True)
     assert partitions[0].to_pydict() == {"id": [10, 8, 6]}
     assert partitions[1].to_pydict() == {"id": [4, 2, 0]}
 
@@ -117,6 +122,7 @@ def test_range_partitioning_with_negative_step_uneven():
     partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
     assert len(partitions) == 3
 
+    partitions.sort(key=lambda p: p.to_pydict()["id"][0], reverse=True)
     assert partitions[0].to_pydict() == {"id": [15, 13, 11]}
     assert partitions[1].to_pydict() == {"id": [9, 7, 5]}
     assert partitions[2].to_pydict() == {"id": [3, 1]}

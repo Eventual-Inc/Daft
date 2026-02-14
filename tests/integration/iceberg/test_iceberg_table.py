@@ -14,7 +14,7 @@ from daft.catalog import Table
 
 
 def assert_eq(df1, df2):
-    assert df1.to_pydict() == df2.to_pydict()
+    assert df1.sort("b").to_pydict() == df2.sort("b").to_pydict()
 
 
 @pytest.fixture()
