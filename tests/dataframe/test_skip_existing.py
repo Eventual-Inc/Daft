@@ -429,8 +429,8 @@ def test_skip_existing_batch_size_visible_in_explain(tmp_path: Path):
     )
     specs = write_builder._builder.get_skip_existing_specs()
     assert len(specs) == 1
-    assert specs[0]["key_filter_batch_size"] == 10
-    assert specs[0]["key_filter_loading_batch_size"] == 1
+    assert specs[0].key_filter_batch_size == 10
+    assert specs[0].key_filter_loading_batch_size == 1
 
     pred = (col("id") > 0)._expr
     applied = write_builder._builder.apply_skip_existing_predicates([pred])

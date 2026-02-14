@@ -530,16 +530,16 @@ def _maybe_apply_skip_existing(builder: LogicalPlanBuilder) -> tuple[LogicalPlan
 
     try:
         for spec in specs:
-            root_dir = spec["root_dir"]
-            file_format = spec["file_format"]
-            key_column = spec["key_column"]
-            io_config = spec.get("io_config")
-            num_buckets = spec.get("num_key_filter_partitions", spec.get("num_buckets"))
-            num_cpus = spec.get("num_cpus")
-            read_kwargs = spec.get("read_kwargs")
-            key_filter_batch_size = spec.get("key_filter_batch_size")
-            key_filter_loading_batch_size = spec.get("key_filter_loading_batch_size")
-            key_filter_max_concurrency = spec.get("key_filter_max_concurrency")
+            root_dir = spec.root_dir
+            file_format = spec.file_format
+            key_column = spec.key_column
+            io_config = spec.io_config
+            num_buckets = spec.num_key_filter_partitions
+            num_cpus = spec.num_cpus
+            read_kwargs = spec.read_kwargs
+            key_filter_batch_size = spec.key_filter_batch_size
+            key_filter_loading_batch_size = spec.key_filter_loading_batch_size
+            key_filter_max_concurrency = spec.key_filter_max_concurrency
 
             if num_buckets is None:
                 raise RuntimeError("[skip_existing] num_key_filter_partitions must be provided")
@@ -579,7 +579,7 @@ def _maybe_apply_skip_existing(builder: LogicalPlanBuilder) -> tuple[LogicalPlan
                 raise ValueError(f"[skip_existing] Unsupported file format: {file_format}")
 
             actor_handles, placement_group = _prepare_key_filter(
-                root_dir=root_dir,
+                root_dir=cast("Any", root_dir),
                 io_config=io_config,
                 key_column=key_column,
                 num_buckets=num_buckets,

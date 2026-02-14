@@ -1236,9 +1236,7 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.apply_skip_existing_predicates(preds)?.into())
     }
 
-    pub fn get_skip_existing_specs(&self, py: Python) -> PyResult<Vec<pyo3::Py<pyo3::PyAny>>> {
-        use pyo3::types::PyDict;
-
+    pub fn get_skip_existing_specs(&self, _py: Python) -> PyResult<Vec<ops::PySkipExistingSpec>> {
         struct CollectSkipExistingSpecs {
             specs: Vec<ops::SkipExistingSpec>,
         }
@@ -1258,33 +1256,11 @@ impl PyLogicalPlanBuilder {
         let mut collector = CollectSkipExistingSpecs { specs: Vec::new() };
         let _ = self.builder.plan.clone().rewrite(&mut collector)?;
 
-        collector
+        Ok(collector
             .specs
             .into_iter()
-            .map(|spec| {
-                let d = PyDict::new(py);
-                d.set_item("root_dir", spec.root_dir)?;
-                d.set_item("file_format", spec.file_format)?;
-                d.set_item("key_column", spec.key_column)?;
-                d.set_item(
-                    "io_config",
-                    spec.io_config.map(common_io_config::python::IOConfig::from),
-                )?;
-                d.set_item("read_kwargs", spec.read_kwargs.0.as_ref().clone_ref(py))?;
-                d.set_item("num_key_filter_partitions", spec.num_key_filter_partitions)?;
-                d.set_item("num_cpus", spec.num_cpus.as_ref().map(|v| v.0))?;
-                d.set_item("key_filter_batch_size", spec.key_filter_batch_size)?;
-                d.set_item(
-                    "key_filter_loading_batch_size",
-                    spec.key_filter_loading_batch_size,
-                )?;
-                d.set_item(
-                    "key_filter_max_concurrency",
-                    spec.key_filter_max_concurrency,
-                )?;
-                Ok(d.into())
-            })
-            .collect()
+            .map(|spec| spec.into())
+            .collect())
     }
 
     pub fn limit(&self, limit: i64, eager: bool) -> PyResult<Self> {

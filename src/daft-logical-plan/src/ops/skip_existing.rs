@@ -8,6 +8,8 @@ use common_io_config::IOConfig;
 use common_py_serde::PyObjectWrapper;
 use daft_schema::schema::SchemaRef;
 use educe::Educe;
+#[cfg(feature = "python")]
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{LogicalPlan, stats::StatsState};
@@ -466,5 +468,76 @@ mod tests {
                 "Expected SkipExisting, got {other:?}"
             ))),
         }
+    }
+}
+
+#[cfg(feature = "python")]
+#[pyclass(module = "daft.daft", name = "SkipExistingSpec")]
+#[derive(Clone)]
+pub struct PySkipExistingSpec {
+    pub spec: SkipExistingSpec,
+}
+
+#[cfg(feature = "python")]
+#[pymethods]
+impl PySkipExistingSpec {
+    #[getter]
+    pub fn root_dir(&self) -> Vec<String> {
+        self.spec.root_dir.clone()
+    }
+
+    #[getter]
+    pub fn file_format(&self) -> FileFormat {
+        self.spec.file_format
+    }
+
+    #[getter]
+    pub fn key_column(&self) -> Vec<String> {
+        self.spec.key_column.clone()
+    }
+
+    #[getter]
+    pub fn io_config(&self) -> Option<common_io_config::python::IOConfig> {
+        self.spec
+            .io_config
+            .as_ref()
+            .map(|c| common_io_config::python::IOConfig { config: c.clone() })
+    }
+
+    #[getter]
+    pub fn num_key_filter_partitions(&self) -> Option<usize> {
+        self.spec.num_key_filter_partitions
+    }
+
+    #[getter]
+    pub fn num_cpus(&self) -> Option<f64> {
+        self.spec.num_cpus.as_ref().map(|v| v.0)
+    }
+
+    #[getter]
+    pub fn key_filter_batch_size(&self) -> Option<usize> {
+        self.spec.key_filter_batch_size
+    }
+
+    #[getter]
+    pub fn key_filter_loading_batch_size(&self) -> Option<usize> {
+        self.spec.key_filter_loading_batch_size
+    }
+
+    #[getter]
+    pub fn key_filter_max_concurrency(&self) -> Option<usize> {
+        self.spec.key_filter_max_concurrency
+    }
+
+    #[getter]
+    pub fn read_kwargs(&self, py: Python) -> Py<PyAny> {
+        self.spec.read_kwargs.0.as_ref().clone_ref(py)
+    }
+}
+
+#[cfg(feature = "python")]
+impl From<SkipExistingSpec> for PySkipExistingSpec {
+    fn from(spec: SkipExistingSpec) -> Self {
+        Self { spec }
     }
 }
