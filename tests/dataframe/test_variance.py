@@ -238,7 +238,7 @@ def test_var_stddev_relationship(with_morsel_size):
     """Verify that variance = stddev^2."""
     df = daft.from_pydict({"a": [1, 2, 3, 4, 5]})
     result = df.agg(
-        daft.col("a").var(ddof=0).alias("var"),
+        daft.col("a").var().alias("var"),
         daft.col("a").stddev().alias("stddev"),
     ).collect()
     row = next(result.iter_rows())

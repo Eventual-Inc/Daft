@@ -674,9 +674,9 @@ impl RecordBatch {
             AggExpr::Mean(expr) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .mean(groups),
-            AggExpr::Stddev(expr) => self
+            AggExpr::Stddev(expr, ddof) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                .stddev(groups),
+                .stddev(groups, *ddof),
             AggExpr::Var(expr, ddof) => self
                 .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
                 .var(groups, *ddof),
