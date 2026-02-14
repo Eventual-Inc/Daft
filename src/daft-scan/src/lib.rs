@@ -771,13 +771,9 @@ impl ScanTask {
                             }
                         }
                         #[cfg(feature = "python")]
-                        FileFormatConfig::Database(_) => 1.0,
-                        #[cfg(feature = "python")]
-                        FileFormatConfig::PythonFunction {
-                            source_type: _,
-                            module_name: _,
-                            function_name: _,
-                        } => 1.0,
+                        FileFormatConfig::Database(_) | FileFormatConfig::PythonFunction { .. } => {
+                            1.0
+                        }
                     };
                     let in_mem_size: f64 = (file_size as f64) * inflation_factor;
                     let read_row_size = if self.is_warc() {
@@ -968,7 +964,7 @@ impl ScanTask {
 impl DisplayAs for ScanTask {
     fn display_as(&self, level: common_display::DisplayLevel) -> String {
         // take first 3 and last 3 if more than 6 sources
-        let condensed_sources = if self.sources.len() <= 6 {
+        let mut condensed_sources = if self.sources.len() <= 6 {
             self.sources.iter().map(|s| s.display_as(level)).join(", ")
         } else {
             let len = self.sources.len();
@@ -982,6 +978,16 @@ impl DisplayAs for ScanTask {
                     _ => None,
                 })
                 .join(", ")
+        };
+
+        #[cfg(feature = "python")]
+        if let FileFormatConfig::PythonFunction { .. } = self.file_format_config.as_ref() {
+            // For Python Function, only display the first source, which makes it more readable
+            if self.sources.len() > 1 {
+                condensed_sources = format!("{}, ...", self.sources[0].display_as(level));
+            } else {
+                condensed_sources = self.sources.iter().map(|s| s.display_as(level)).join(", ");
+            }
         };
 
         match level {

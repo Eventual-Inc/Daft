@@ -283,7 +283,7 @@ class LanceRestScanOperator(ScanOperator, SupportsPushdownFilters):
             size_bytes=None,
             pushdowns=pushdowns,
             stats=None,
-            source_type=self.name(),
+            source_name=self.display_name(),
         )
 
     def _create_regular_scan_tasks(
@@ -314,7 +314,7 @@ class LanceRestScanOperator(ScanOperator, SupportsPushdownFilters):
             size_bytes=None,  # Unknown for REST
             pushdowns=pushdowns,
             stats=None,
-            source_type=self.name(),
+            source_name=self.display_name(),
         )
 
     def _fetch_table_schema(self) -> Schema:

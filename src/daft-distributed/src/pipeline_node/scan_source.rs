@@ -140,73 +140,78 @@ impl PipelineNodeImpl for ScanSourceNode {
     }
 
     fn multiline_display(&self, verbose: bool) -> Vec<String> {
-        fn base_display(scan: &ScanSourceNode) -> Vec<String> {
-            let num_scan_tasks = scan.scan_tasks.len();
-            let total_bytes: usize = scan
-                .scan_tasks
-                .iter()
-                .map(|st| {
-                    st.estimate_in_memory_size_bytes(Some(scan.config.execution_config.as_ref()))
-                        .or_else(|| st.size_bytes_on_disk())
-                        .unwrap_or(0)
-                })
-                .sum();
+        let mut res = vec!["ScanTaskSource:".to_string()];
 
-            #[allow(unused_mut)]
-            let mut s = vec![
-                "ScanTaskSource:".to_string(),
-                format!("Num Scan Tasks = {num_scan_tasks}"),
-                format!("Estimated Scan Bytes = {total_bytes}"),
-            ];
-
-            if num_scan_tasks == 0 {
-                return s;
-            }
-
-            #[cfg(feature = "python")]
-            if let FileFormatConfig::Database(config) =
-                scan.scan_tasks[0].file_format_config().as_ref()
-            {
-                if num_scan_tasks == 1 {
-                    s.push(format!("SQL Query = {}", &config.sql));
-                } else {
-                    s.push(format!("SQL Queries = [{},..]", &config.sql));
-                }
-            }
-            s
+        #[cfg(feature = "python")]
+        if let Some(FileFormatConfig::PythonFunction { source_name, .. }) = self
+            .scan_tasks
+            .first()
+            .map(|s| s.file_format_config())
+            .as_deref()
+        {
+            res.push(format!(
+                "Source = {}",
+                source_name.clone().unwrap_or_else(|| "None".to_string())
+            ));
         }
 
-        let mut s = base_display(self);
-        if !verbose {
+        let num_scan_tasks = self.scan_tasks.len();
+        let total_bytes: usize = self
+            .scan_tasks
+            .iter()
+            .map(|st| {
+                st.estimate_in_memory_size_bytes(Some(self.config.execution_config.as_ref()))
+                    .or_else(|| st.size_bytes_on_disk())
+                    .unwrap_or(0)
+            })
+            .sum();
+        res.push(format!("Num Scan Tasks = {num_scan_tasks}"));
+        res.push(format!("Estimated Scan Bytes = {total_bytes}"));
+
+        #[cfg(feature = "python")]
+        if let Some(FileFormatConfig::Database(config)) = self
+            .scan_tasks
+            .first()
+            .map(|s| s.file_format_config())
+            .as_deref()
+        {
+            if num_scan_tasks == 1 {
+                res.push(format!("SQL Query = {}", &config.sql));
+            } else {
+                res.push(format!("SQL Queries = [{},..]", &config.sql));
+            }
+        }
+
+        if verbose {
+            res.push("Scan Tasks: [".to_string());
+            for st in self.scan_tasks.iter() {
+                res.push(st.as_ref().display_as(DisplayLevel::Verbose));
+            }
+        } else {
             let pushdown = &self.pushdowns;
             if !pushdown.is_empty() {
-                s.push(pushdown.display_as(DisplayLevel::Compact));
+                res.push(pushdown.display_as(DisplayLevel::Compact));
             }
 
             let schema = &self.config.schema;
-            s.push(format!(
+            res.push(format!(
                 "Schema: {{{}}}",
                 schema.display_as(DisplayLevel::Compact)
             ));
 
-            s.push("Scan Tasks: [".to_string());
+            res.push("Scan Tasks: [".to_string());
             let tasks = self.scan_tasks.iter();
             for (i, st) in tasks.enumerate() {
                 if i < 3 || i >= self.scan_tasks.len() - 3 {
-                    s.push(st.as_ref().display_as(DisplayLevel::Compact));
+                    res.push(st.as_ref().display_as(DisplayLevel::Compact));
                 } else if i == 3 {
-                    s.push("...".to_string());
+                    res.push("...".to_string());
                 }
             }
-        } else {
-            s.push("Scan Tasks: [".to_string());
-
-            for st in self.scan_tasks.iter() {
-                s.push(st.as_ref().display_as(DisplayLevel::Verbose));
-            }
         }
-        s.push("]".to_string());
-        s
+
+        res.push("]".to_string());
+        res
     }
 
     fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
