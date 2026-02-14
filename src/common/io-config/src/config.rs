@@ -3,7 +3,7 @@ use std::fmt::{Display, Formatter};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AzureConfig, GCSConfig, HTTPConfig, S3Config, gravitino::GravitinoConfig,
+    AzureConfig, CosConfig, GCSConfig, HTTPConfig, S3Config, gravitino::GravitinoConfig,
     huggingface::HuggingFaceConfig, tos::TosConfig, unity::UnityConfig,
 };
 #[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -18,6 +18,7 @@ pub struct IOConfig {
     /// disable suffix range requests, please use range with offset
     pub disable_suffix_range: bool,
     pub tos: TosConfig,
+    pub cos: CosConfig,
 }
 
 impl IOConfig {
@@ -60,6 +61,10 @@ impl IOConfig {
             "TOS config = {{ {} }}",
             self.tos.multiline_display().join(", ")
         ));
+        res.push(format!(
+            "COS config = {{ {} }}",
+            self.cos.multiline_display().join(", ")
+        ));
         res
     }
 }
@@ -76,8 +81,17 @@ impl Display for IOConfig {
 {}
 {}
 {}
+{}
 {}",
-            self.s3, self.azure, self.gcs, self.tos, self.http, self.unity, self.gravitino, self.hf,
+            self.s3,
+            self.azure,
+            self.gcs,
+            self.tos,
+            self.cos,
+            self.http,
+            self.unity,
+            self.gravitino,
+            self.hf,
         )
     }
 }
