@@ -41,7 +41,7 @@ gravitino = ["requests>=2.28.0,<3.0.0"]
 hudi = ["pyarrow >= 8.0.0,<22.1.0"]
 huggingface = ["huggingface-hub<1.5.0", "datasets<4.6.0"]
 # TODO: pyiceberg 0.9.1 has a bug https://github.com/apache/iceberg-python/issues/1979. It was not
-# triggered because we specify pyiceberg == 0.11.0 in requrements-dev.txt which hide this problem.
+# triggered because we specify pyiceberg == 0.9.0 in dev dependencies which hides this problem.
 # See https://github.com/Eventual-Inc/Daft/issues/4868.
 iceberg = ["pyiceberg >= 0.7.0, < 0.9.1"]
 lance = ["pylance<2.1.0"]
