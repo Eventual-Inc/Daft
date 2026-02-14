@@ -30,7 +30,7 @@ impl SQLModule for SQLModuleAggs {
         parent.add_fn("max", AggExpr::Max(nil.clone()));
         parent.add_fn("bool_and", AggExpr::BoolAnd(nil.clone()));
         parent.add_fn("bool_or", AggExpr::BoolOr(nil.clone()));
-        parent.add_fn("stddev", AggExpr::Stddev(nil.clone(), 0));
+        parent.add_fn("stddev", AggExpr::Stddev(nil.clone(), 1));
         parent.add_fn("stddev_samp", AggExpr::Stddev(nil.clone(), 1));
         parent.add_fn("stddev_pop", AggExpr::Stddev(nil.clone(), 0));
         parent.add_fn("variance", AggExpr::Var(nil.clone(), 1));

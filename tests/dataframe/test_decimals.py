@@ -79,7 +79,7 @@ def test_decimal_stddev(prec, partitions) -> None:
     df = daft.from_pydict({"decimal128": python_decimals}).repartition(partitions)
     df = df.with_column("decimal128", df["decimal128"].cast(daft.DataType.decimal128(prec, 3)))
     res = df.agg(df["decimal128"].stddev())  ## TODO: we can't do `select(df['x'].stddev())` make ticket
-    assert pytest.approx(res.to_pydict()["decimal128"][0]) == 44.774792762098734
+    assert pytest.approx(res.to_pydict()["decimal128"][0]) == 54.83769780300165
 
     schema = res.schema()
     assert schema["decimal128"].dtype == daft.DataType.float64()
@@ -119,6 +119,6 @@ def test_decimal_grouped_stddev(prec, partitions) -> None:
     df = daft.from_pydict({"decimal128": python_decimals, "group": group}).repartition(partitions)
     df = df.with_column("decimal128", df["decimal128"].cast(daft.DataType.decimal128(prec, 3)))
     res = df.groupby("group").stddev().sort("group").collect()
-    assert res.to_pydict() == {"group": [0, 1], "decimal128": [pytest.approx(5.51), pytest.approx(0)]}
+    assert res.to_pydict() == {"group": [0, 1], "decimal128": [pytest.approx(7.792316), None]}
     schema = res.schema()
     assert schema["decimal128"].dtype == daft.DataType.float64()

@@ -600,7 +600,7 @@ class Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.mean())
 
-    def stddev(self, ddof: int = 0) -> Series:
+    def stddev(self, ddof: int = 1) -> Series:
         assert self._series is not None
         return Series._from_pyseries(self._series.stddev(ddof))
 

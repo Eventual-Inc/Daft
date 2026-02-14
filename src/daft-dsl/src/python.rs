@@ -478,7 +478,6 @@ impl PyExpr {
         Ok(self.expr.clone().mean().into())
     }
 
-    #[pyo3(signature = (ddof=0))]
     pub fn stddev(&self, ddof: usize) -> PyResult<Self> {
         Ok(self.expr.clone().stddev(ddof).into())
     }
