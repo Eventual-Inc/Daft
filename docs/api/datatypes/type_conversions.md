@@ -22,13 +22,18 @@ This table shows the mapping from Daft DataTypes to Python types, as done in pla
 | Decimal128                                                             | `decimal.Decimal`                                                                   |
 | List[T]<br>FixedSizeList[T, n]                                         | `list[T]`                                                                           |
 | Struct[k1: T1, k2: T2, ...]                                            | `{ "k1": <T1>, "k2": <T2>, ... }`                                                   |
-| Map[K, V]                                                              | `dict[K, V]`                                                                        |
+| Map[K, V]                                                              | `list[tuple[K, V]]` (default) or `dict[K, V]` with `maps_as_pydicts`                |
 | Tensor[T]<br>FixedShapeTensor[T, [...]]                                | `numpy.typing.NDArray[T]`                                                           |
 | SparseTensor[T]<br>FixedShapeSparseTensor[T, [...]]                    | `{`<br>`"values": <T>,`<br>`"indices": [<int>],`<br>`"shape": [<int>]`<br>`}`       |
 | Embedding[T]                                                           | `numpy.typing.NDArray[T]`                                                           |
 | Image                                                                  | `numpy.typing.NDArray[numpy.uint8 | numpy.uint16 | numpy.float32]`                  |
 | Python                                                                 | `Any`                                                                               |
 | Extension[T]                                                           | `T`                                                                                 |
+
+For `Map[K, V]` conversions, Daft defaults to `list[tuple[K, V]]` to preserve duplicate keys and ordering.
+If you pass `maps_as_pydicts="lossy"` or `maps_as_pydicts="strict"`, Daft converts maps to Python dicts:
+- `"lossy"` keeps the last value for duplicate keys and emits a warning when duplicates are encountered.
+- `"strict"` raises an exception when duplicate keys are encountered.
 
 ## Python to Daft
 

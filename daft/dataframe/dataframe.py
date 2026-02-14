@@ -4546,10 +4546,17 @@ class DataFrame:
         return pa.Table.from_batches(arrow_rb_iter, schema=self.schema().to_pyarrow_schema())
 
     @DataframePublicAPI
-    def to_pydict(self) -> dict[str, list[Any]]:
+    def to_pydict(self, maps_as_pydicts: Literal["lossy", "strict"] | None = None) -> dict[str, list[Any]]:
         """Converts the current DataFrame to a python dictionary. The dictionary contains Python lists of Python objects for each column.
 
         If results have not computed yet, collect will be called.
+
+        Args:
+            maps_as_pydicts: If None (default), Map values are converted to association lists
+                (`list[tuple[key, value]]`) preserving order and duplicates.
+                If `"lossy"` or `"strict"`, Map values are converted to Python dicts.
+                `"lossy"` keeps the last value for duplicate keys and warns.
+                `"strict"` raises on duplicate keys.
 
         Returns:
             dict[str, list[Any]]: python dict converted from a Daft DataFrame
@@ -4570,11 +4577,18 @@ class DataFrame:
         self.collect()
         result = self._result
         assert result is not None
-        return result.to_pydict(schema=self.schema())
+        return result.to_pydict(schema=self.schema(), maps_as_pydicts=maps_as_pydicts)
 
     @DataframePublicAPI
-    def to_pylist(self) -> list[Any]:
+    def to_pylist(self, maps_as_pydicts: Literal["lossy", "strict"] | None = None) -> list[Any]:
         """Converts the current Dataframe into a python list.
+
+        Args:
+            maps_as_pydicts: If None (default), Map values are converted to association lists
+                (`list[tuple[key, value]]`) preserving order and duplicates.
+                If `"lossy"` or `"strict"`, Map values are converted to Python dicts.
+                `"lossy"` keeps the last value for duplicate keys and warns.
+                `"strict"` raises on duplicate keys.
 
         Returns:
             List[dict[str, Any]]: List of python dict objects.
@@ -4592,7 +4606,12 @@ class DataFrame:
         Tip: See also
             [df.iter_rows()][daft.DataFrame.iter_rows]: streaming iterator over individual rows in a DataFrame
         """
-        return list(self.iter_rows())
+        self.collect()
+        result = self._result
+        assert result is not None
+        table = result.to_pydict(schema=self.schema(), maps_as_pydicts=maps_as_pydicts)
+        column_names = table.keys()
+        return [{colname: table[colname][i] for colname in column_names} for i in range(len(self))]
 
     @DataframePublicAPI
     def to_torch_map_dataset(

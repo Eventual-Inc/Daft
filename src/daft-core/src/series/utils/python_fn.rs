@@ -40,8 +40,8 @@ fn python_binary_op_with_utilfn(
     };
 
     let result_series: Series = Python::attach(|py| -> PyResult<PySeries> {
-        let left_pylist = PySeries::from(lhs.clone()).to_pylist(py)?;
-        let right_pylist = PySeries::from(rhs).to_pylist(py)?;
+        let left_pylist = PySeries::from(lhs.clone()).to_pylist(py, None)?;
+        let right_pylist = PySeries::from(rhs).to_pylist(py, None)?;
 
         let py_operator =
             PyModule::import(py, pyo3::intern!(py, "operator"))?.getattr(operator_fn)?;
@@ -75,8 +75,8 @@ pub fn py_membership_op_utilfn(lhs: &Series, rhs: &Series) -> DaftResult<Series>
     let rhs_casted = rhs.cast(&DataType::Python)?;
 
     let result_series: Series = Python::attach(|py| -> PyResult<PySeries> {
-        let left_pylist = PySeries::from(lhs_casted.clone()).to_pylist(py)?;
-        let right_pylist = PySeries::from(rhs_casted).to_pylist(py)?;
+        let left_pylist = PySeries::from(lhs_casted.clone()).to_pylist(py, None)?;
+        let right_pylist = PySeries::from(rhs_casted).to_pylist(py, None)?;
 
         let result_pylist = PyModule::import(py, pyo3::intern!(py, "daft.utils"))?
             .getattr(pyo3::intern!(py, "python_list_membership_check"))?
@@ -135,9 +135,9 @@ pub fn py_between_op_utilfn(value: &Series, lower: &Series, upper: &Series) -> D
         };
 
     let result_series: Series = Python::attach(|py| -> PyResult<PySeries> {
-        let value_pylist = PySeries::from(value_casted.clone()).to_pylist(py)?;
-        let lower_pylist = PySeries::from(lower_casted).to_pylist(py)?;
-        let upper_pylist = PySeries::from(upper_casted).to_pylist(py)?;
+        let value_pylist = PySeries::from(value_casted.clone()).to_pylist(py, None)?;
+        let lower_pylist = PySeries::from(lower_casted).to_pylist(py, None)?;
+        let upper_pylist = PySeries::from(upper_casted).to_pylist(py, None)?;
 
         let result_pylist = PyModule::import(py, pyo3::intern!(py, "daft.utils"))?
             .getattr(pyo3::intern!(py, "python_list_between_check"))?
