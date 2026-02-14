@@ -8,6 +8,7 @@ import pytest
 import daft
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
+from tests.conftest import get_tests_daft_runner_name
 
 ###
 # Validation tests
@@ -504,3 +505,19 @@ def test_sort_with_constant_keys_and_small_partitions(make_df, with_morsel_size)
     out.collect()
     assert len(out) == 4
     assert set(out.to_pydict()["k"]) == {5}
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "ray",
+    reason="shuffle spilling is only supported on the ray runner",
+)
+def test_sort_with_spill(make_df):
+    """Test that sort works correctly with a very low spill threshold, forcing spilling during the range repartition."""
+    data = {"a": [5, 1, 4, 2, 3] * 4}
+    df = make_df(data, repartition=2)
+
+    with daft.execution_config_ctx(shuffle_spill_threshold=1, default_morsel_size=1):
+        df = df.sort("a")
+        res = df.to_pydict()
+
+    assert res["a"] == sorted(data["a"])

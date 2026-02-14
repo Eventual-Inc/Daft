@@ -3,7 +3,10 @@ use std::{any::Any, collections::HashMap, future::Future, sync::Arc};
 use common_daft_config::PyDaftExecutionConfig;
 use common_partitioning::{Partition, PartitionRef};
 use daft_local_plan::{ExecutionEngineFinalResult, PyLocalPhysicalPlan};
-use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
+use pyo3::{
+    Bound, Py, PyAny, PyResult, Python, pyclass, pymethods,
+    types::{PyAnyMethods, PyDict, PyDictMethods},
+};
 
 use crate::{
     pipeline_node::MaterializedOutput,
@@ -117,38 +120,67 @@ impl TaskResultHandle for RayTaskResultHandle {
     }
 }
 
-#[pyclass(module = "daft.daft", name = "RayPartitionRef", frozen)]
+#[pyclass(module = "daft.daft", name = "RayPartitionRef")]
 #[derive(Debug, Clone)]
 pub(crate) struct RayPartitionRef {
-    pub object_ref: Arc<Py<PyAny>>,
+    pub object_refs: Vec<Arc<Py<PyAny>>>,
+    #[pyo3(get)]
     pub num_rows: usize,
+    #[pyo3(get)]
     pub size_bytes: usize,
 }
 
 #[pymethods]
 impl RayPartitionRef {
     #[new]
-    pub fn new(object_ref: Py<PyAny>, num_rows: usize, size_bytes: usize) -> Self {
+    #[pyo3(signature = (object_refs=vec![], num_rows=0, size_bytes=0))]
+    pub fn new(object_refs: Vec<Py<PyAny>>, num_rows: usize, size_bytes: usize) -> Self {
         Self {
-            object_ref: Arc::new(object_ref),
+            object_refs: object_refs.into_iter().map(Arc::new).collect(),
             num_rows,
             size_bytes,
         }
     }
 
-    #[getter]
-    pub fn get_object_ref(&self, py: Python) -> Py<PyAny> {
-        self.object_ref.clone_ref(py)
+    #[getter(object_refs)]
+    pub fn py_object_refs(&self, py: Python) -> Vec<Py<PyAny>> {
+        self.object_refs.iter().map(|r| r.clone_ref(py)).collect()
     }
 
-    #[getter]
-    pub fn get_num_rows(&self) -> usize {
-        self.num_rows
+    pub fn get_object_refs(&self, py: Python) -> Vec<Py<PyAny>> {
+        self.py_object_refs(py)
     }
 
-    #[getter]
-    pub fn get_size_bytes(&self) -> usize {
-        self.size_bytes
+    pub fn __setstate__(&mut self, state: &Bound<PyAny>) -> PyResult<()> {
+        let dict = state.cast::<PyDict>()?;
+        if let Some(object_refs) = dict.get_item("object_refs")? {
+            self.object_refs = object_refs
+                .extract::<Vec<Py<PyAny>>>()?
+                .into_iter()
+                .map(Arc::new)
+                .collect();
+        }
+        if let Some(num_rows) = dict.get_item("num_rows")? {
+            self.num_rows = num_rows.extract()?;
+        }
+        if let Some(size_bytes) = dict.get_item("size_bytes")? {
+            self.size_bytes = size_bytes.extract()?;
+        }
+        Ok(())
+    }
+
+    pub fn __getstate__(&self, py: Python) -> PyResult<Py<PyAny>> {
+        let dict = PyDict::new(py);
+        dict.set_item(
+            "object_refs",
+            self.object_refs
+                .iter()
+                .map(|r| r.clone_ref(py))
+                .collect::<Vec<_>>(),
+        )?;
+        dict.set_item("num_rows", self.num_rows)?;
+        dict.set_item("size_bytes", self.size_bytes)?;
+        Ok(dict.unbind().into_any())
     }
 }
 
@@ -185,6 +217,10 @@ impl RaySwordfishTask {
         self.task.name()
     }
 
+    fn num_partitions(&self) -> usize {
+        self.task.plan().output_partitions()
+    }
+
     fn plan(&self) -> PyResult<PyLocalPhysicalPlan> {
         let plan = self.task.plan();
         Ok(PyLocalPhysicalPlan { plan })
@@ -205,7 +241,7 @@ impl RaySwordfishTask {
                                 .downcast_ref::<RayPartitionRef>()
                                 .expect("Failed to downcast to RayPartitionRef");
                             RayPartitionRef {
-                                object_ref: v.object_ref.clone(),
+                                object_refs: v.object_refs.clone(),
                                 num_rows: v.num_rows,
                                 size_bytes: v.size_bytes,
                             }
@@ -215,6 +251,10 @@ impl RaySwordfishTask {
             })
             .collect();
         Ok(psets)
+    }
+
+    fn is_into_batches(&self) -> bool {
+        self.task.is_into_batches()
     }
 
     fn config(&self) -> PyResult<PyDaftExecutionConfig> {

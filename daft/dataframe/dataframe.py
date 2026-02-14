@@ -577,7 +577,8 @@ class DataFrame:
         """Begin executing this dataframe and return an iterator over the partitions.
 
         Each partition will be returned as a daft.recordbatch object (if using Python runner backend)
-        or a ray ObjectRef (if using Ray runner backend).
+        or a list of ray ObjectRefs (if using Ray runner backend). The list may contain one or more
+        ObjectRefs representing chunks of the partition (e.g. when shuffle spilling is enabled).
 
         Args:
             results_buffer_size: how many partitions to allow in the results buffer (defaults to the total number of CPUs
@@ -594,8 +595,8 @@ class DataFrame:
             The default value is the total number of CPUs available on the current machine.
 
         Returns:
-            Iterator[Union[MicroPartition, ray.ObjectRef]]: An iterator over the partitions of the DataFrame.
-            Each partition is a MicroPartition object (if using Python runner backend) or a ray ObjectRef
+            Iterator[Union[MicroPartition, list[ray.ObjectRef]]]: An iterator over the partitions of the DataFrame.
+            Each partition is a MicroPartition object (if using Python runner backend) or a list of ray ObjectRefs
             (if using Ray runner backend).
 
         Examples:

@@ -137,6 +137,7 @@ pub struct DaftExecutionConfig {
     pub maintain_order: bool,
     pub enable_dynamic_batching: bool,
     pub dynamic_batching_strategy: String,
+    pub shuffle_spill_threshold: Option<usize>,
 }
 
 #[cfg(not(debug_assertions))]
@@ -179,6 +180,7 @@ impl Default for DaftExecutionConfig {
             maintain_order: true,
             enable_dynamic_batching: false,
             dynamic_batching_strategy: "auto".to_string(),
+            shuffle_spill_threshold: None,
         }
     }
 }
@@ -193,6 +195,7 @@ impl DaftExecutionConfig {
     const ENV_CSV_INFLATION_FACTOR: &'static str = "DAFT_CSV_INFLATION_FACTOR";
     const ENV_JSON_INFLATION_FACTOR: &'static str = "DAFT_JSON_INFLATION_FACTOR";
     const ENV_DAFT_MAINTAIN_ORDER: &'static str = "DAFT_MAINTAIN_ORDER";
+    const ENV_DAFT_SHUFFLE_SPILL_THRESHOLD: &'static str = "DAFT_SHUFFLE_SPILL_THRESHOLD";
 
     #[must_use]
     pub fn from_env() -> Self {
@@ -250,6 +253,25 @@ impl DaftExecutionConfig {
             parse_number_from_env(Self::ENV_JSON_INFLATION_FACTOR, cfg.json_inflation_factor)
         {
             cfg.json_inflation_factor = val;
+        }
+
+        if let Ok(val) = std::env::var(Self::ENV_DAFT_SHUFFLE_SPILL_THRESHOLD) {
+            if let Ok(parsed) = val.trim().parse::<usize>() {
+                if parsed > 0 {
+                    cfg.shuffle_spill_threshold = Some(parsed);
+                } else {
+                    eprintln!(
+                        "{} must be a positive integer, got 0, ignoring",
+                        Self::ENV_DAFT_SHUFFLE_SPILL_THRESHOLD,
+                    );
+                }
+            } else {
+                eprintln!(
+                    "Invalid {} value: {}, ignoring",
+                    Self::ENV_DAFT_SHUFFLE_SPILL_THRESHOLD,
+                    val
+                );
+            }
         }
 
         cfg
@@ -488,6 +510,40 @@ mod tests {
 
             unsafe {
                 std::env::remove_var(DaftExecutionConfig::ENV_DAFT_MAINTAIN_ORDER);
+            }
+        }
+
+        // ENV_DAFT_SHUFFLE_SPILL_THRESHOLD
+        {
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.shuffle_spill_threshold, None);
+
+            unsafe {
+                std::env::set_var(
+                    DaftExecutionConfig::ENV_DAFT_SHUFFLE_SPILL_THRESHOLD,
+                    "1024",
+                );
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.shuffle_spill_threshold, Some(1024));
+
+            unsafe {
+                std::env::set_var(
+                    DaftExecutionConfig::ENV_DAFT_SHUFFLE_SPILL_THRESHOLD,
+                    "invalid",
+                );
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.shuffle_spill_threshold, None);
+
+            unsafe {
+                std::env::set_var(DaftExecutionConfig::ENV_DAFT_SHUFFLE_SPILL_THRESHOLD, "0");
+            }
+            let cfg = DaftExecutionConfig::from_env();
+            assert_eq!(cfg.shuffle_spill_threshold, None);
+
+            unsafe {
+                std::env::remove_var(DaftExecutionConfig::ENV_DAFT_SHUFFLE_SPILL_THRESHOLD);
             }
         }
     }
