@@ -16,6 +16,7 @@ from daft.expressions import Expression
 from daft.series import Series
 
 from .udf_v2 import check_serializable
+from .utils import is_complex_ray_options
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -274,6 +275,9 @@ class UDF:
         else:
             self.wrapped_inner = UninitializedUdf(lambda: self.inner, self.name)
 
+        if self.concurrency is not None and self.concurrency == 0:
+            raise ValueError("max_concurrency for udf must be non-zero")
+
     def __call__(self, *args: Any, **kwargs: Any) -> Expression:
         self._validate_init_args()
 
@@ -285,6 +289,16 @@ class UDF:
         bound_args = self._bind_args(*args, **kwargs)
         expressions = list(bound_args.expressions().values())
 
+        ray_options = self.ray_options.copy() if self.ray_options is not None else {}
+        # NOTE: We merge num_cpus and memory_bytes into ray_options here so that the Rust layer
+        # can extract them from ray_options, achieving convergence.
+        # However, we must ensure that these don't conflict with existing keys in ray_options.
+        if self.resource_request is not None:
+            if self.resource_request.num_cpus is not None and "num_cpus" not in ray_options:
+                ray_options["num_cpus"] = self.resource_request.num_cpus
+            if self.resource_request.memory_bytes is not None and "memory" not in ray_options:
+                ray_options["memory"] = self.resource_request.memory_bytes
+
         return Expression.udf(
             name=self.name,
             inner=self.wrapped_inner,
@@ -294,9 +308,9 @@ class UDF:
             init_args=self.init_args,
             resource_request=self.resource_request,
             batch_size=self.batch_size,
-            concurrency=self.concurrency,
+            concurrency=self.concurrency or (1 if is_complex_ray_options(ray_options) else None),
             use_process=self.use_process,
-            ray_options=self.ray_options,
+            ray_options=ray_options,
         )
 
     def override_options(
