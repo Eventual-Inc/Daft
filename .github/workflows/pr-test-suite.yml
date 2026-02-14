@@ -261,7 +261,7 @@ jobs:
         cache-all-crates: 'true'
     - uses: actions/setup-node@v6
       with:
-        node-version: "20"
+        node-version: "22"
         cache: "npm"
         cache-dependency-path: src/daft-dashboard/frontend/package-lock.json
     - name: Build dashboard

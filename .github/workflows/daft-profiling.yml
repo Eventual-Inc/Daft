@@ -52,7 +52,7 @@ jobs:
         command: uv sync --no-install-project --all-extras --all-groups
     - uses: actions/setup-node@v6
       with:
-        node-version: "20"
+        node-version: "22"
         cache: "npm"
         cache-dependency-path: src/daft-dashboard/frontend/package-lock.json
     - name: Build dashboard
