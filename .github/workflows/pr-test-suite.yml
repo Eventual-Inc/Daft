@@ -178,7 +178,7 @@ jobs:
         uv pip install pyarrow==${PYARROW_VERSION}
 
         if [ "$PYARROW_MAJOR" -le 17 ]; then
-          uv pip install "pyiceberg>=0.7.0,<0.11.0"
+          uv pip install "pyiceberg>=0.7.0,<0.9.1"
         fi
 
     - name: Build library and Test with pytest (with coverage)
