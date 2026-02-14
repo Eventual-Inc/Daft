@@ -33,33 +33,33 @@ repository = "https://github.com/Eventual-Inc/Daft"
 all = ["daft[aws, azure, clickhouse, deltalake, gcp, google, gravitino, hudi, huggingface, iceberg, lance, numpy, openai, pandas, postgres, ray, sentence-transformers, sql, transformers, turbopuffer, unity, video]"]
 aws = ["boto3<1.43.0"]
 azure = []
-clickhouse = ["clickhouse_connect<0.11.0"]
-deltalake = ["deltalake < 1.3.0"]
+clickhouse = ["clickhouse_connect<0.12.0"]
+deltalake = ["deltalake < 1.5.0"]
 gcp = []
-google = ["google-genai<1.53.0", "numpy<2.4.0", "pillow==12.1.1"]
+google = ["google-genai<1.64.0", "numpy<2.4.0", "pillow==11.0.0"]
 gravitino = ["requests>=2.28.0,<3.0.0"]
 hudi = ["pyarrow >= 8.0.0,<22.1.0"]
-huggingface = ["huggingface-hub<1.2.0", "datasets<4.5.0"]
+huggingface = ["huggingface-hub<1.5.0", "datasets<4.6.0"]
 # TODO: pyiceberg 0.9.1 has a bug https://github.com/apache/iceberg-python/issues/1979. It was not
 # triggered because we specify pyiceberg == 0.11.0 in requrements-dev.txt which hide this problem.
 # See https://github.com/Eventual-Inc/Daft/issues/4868.
 iceberg = ["pyiceberg >= 0.7.0, < 0.9.1"]
-lance = ["pylance<0.40.0"]
+lance = ["pylance<2.1.0"]
 numpy = ["numpy<2.4.0"]
-openai = ["openai<2.9.0", "numpy<2.4.0", "pillow==12.1.1"]
+openai = ["openai<2.21.0", "numpy<2.4.0", "pillow==11.0.0"]
 pandas = ["pandas<2.4.0"]
-postgres = ["psycopg[binary]<3.4.0", "pgvector<0.5.0", "sqlglot<28.1.0", "connectorx>=0.4.4,<0.5.0"]
+postgres = ["psycopg[binary]<3.4.0", "pgvector<0.5.0", "sqlglot<28.11.0", "connectorx>=0.4.4,<0.5.0"]
 ray = [
   # Inherit existing Ray version. Get the "default" extra for the Ray dashboard.
-  'ray[data, client]>=2.0.0,<2.53.0; platform_system != "Windows"',
-  'ray[data, client]>=2.10.0,<2.53.0; platform_system == "Windows"'  # ray 2.10 has the pyarrow upper pin removed
+  'ray[data, client]>=2.0.0,<2.54.0; platform_system != "Windows"',
+  'ray[data, client]>=2.10.0,<2.54.0; platform_system == "Windows"'  # ray 2.10 has the pyarrow upper pin removed
 ]
-transformers = ["transformers<5.2.0", "sentence-transformers<5.3.0", "torch<2.10.0", "torchvision<0.25.0", "pillow==12.1.1"]
+transformers = ["transformers<5.2.0", "sentence-transformers<5.3.0", "torch<2.11.0", "torchvision<0.26.0", "pillow==11.0.0"]
 # connectorx 0.4.4 is needed for pgvector support.
-sql = ["connectorx>=0.4.4,<0.5.0", "sqlalchemy<2.1.0", "sqlglot<28.1.0"]
+sql = ["connectorx>=0.4.4,<0.5.0", "sqlalchemy<2.1.0", "sqlglot<28.11.0"]
 turbopuffer = ["turbopuffer<1.16.0"]
-unity = ["httpx<= 0.27.2", "unitycatalog<0.2.0", "deltalake<1.3.0"]
-video = ["av >= 15.0.0,<16.1.0"]
+unity = ["httpx<=0.28.1", "unitycatalog<0.2.0", "deltalake<1.5.0"]
+video = ["av >= 15.0.0,<16.2.0"]
 audio = ["soundfile >= 0.13.0,<0.14.0", "librosa >= 0.11.0,<0.12.0"]
 viz = []
 
@@ -98,12 +98,12 @@ dev = [
   "xxhash==3.6.0",
   "Pillow==11.0.0",
   "reportlab==4.4.10",
-  "opencv-python==4.13.0.92",
+  "opencv-python==4.10.0.84",
   "tiktoken==0.12.0",
   "duckdb==1.4.4",
   "datasets==4.5.0",
-  "torch==2.10.0",
-  "torchvision==0.25.0",
+  "torch==2.8.0",
+  "torchvision==0.23.0",
   "jax==0.6.2",
   "jaxtyping==0.3.7",
   # Pyarrow
@@ -114,7 +114,7 @@ dev = [
   # Lance
   "pylance==2.0.1",
   # Iceberg
-  "pyiceberg==0.7.0",
+  "pyiceberg==0.9.0",
   "pydantic==2.12.4",
   "tenacity==9.1.4",
   # Delta Lake
@@ -133,19 +133,19 @@ dev = [
   "sqlglot==28.10.1",
   "pyodbc==5.3.0",
   # AWS
-  "s3fs==2026.2.0",
-  "boto3==1.42.49",
-  "boto3-stubs[essential,glue,s3,s3tables]==1.42.49",
+  "s3fs==2024.9.0",
+  "boto3==1.36.2",
+  "boto3-stubs[essential,glue,s3,s3tables]==1.38.46",
   "moto[glue,s3,server]==5.1.21",
   # Azure
-  "adlfs==2026.2.0",
+  "adlfs==2024.7.0",
   "azure-storage-blob==12.28.0",
   # GCS
-  "gcsfs==2026.2.0",
+  "gcsfs==2024.9.0.post1",
   # Hugging Face
-  "huggingface-hub==1.4.1",
+  "huggingface-hub==0.36.0",
   # AI
-  "vllm==0.15.1",
+  "vllm==0.11.0",
   "openai==2.20.0",
   # Downgraded to 1.2.0 for httpx 0.27.2 compatibility (1.3.0+ requires httpx>=0.28.1)
   "google-genai==1.63.0",
