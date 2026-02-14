@@ -276,6 +276,7 @@ async fn writer_task(
         .collect::<DaftResult<Vec<String>>>()?;
 
     let bytes_per_file = writer.bytes_per_file();
+    eprintln!("bytes_per_file: {:?}", bytes_per_file);
     assert!(bytes_per_file.len() == file_paths.len());
     Ok(WriterTaskResult {
         schema,
