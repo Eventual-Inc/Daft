@@ -45,15 +45,17 @@ jobs:
     - name: Install dependencies
       run: |
         uv sync --no-install-project --all-extras --all-groups
-    - uses: oven-sh/setup-bun@v2
+    - uses: actions/setup-node@v6
       with:
-        bun-version: latest
+        node-version: "22"
+        cache: "npm"
+        cache-dependency-path: src/daft-dashboard/frontend/package-lock.json
 
-    - name: Build dashboard with Bun
+    - name: Build dashboard
       working-directory: ./src/daft-dashboard/frontend
       run: |
-        bun install
-        bun run build
+        npm ci
+        npm run build
     - name: Build Rust Library
       run: |
         source activate
