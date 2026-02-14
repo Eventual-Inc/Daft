@@ -40,7 +40,7 @@ def helper_write_dataframe(
         df = df.skip_existing(
             root_dir,
             on=skip_existing_config["key_column"],
-            format=fmt,
+            file_format=fmt,
             num_key_filter_partitions=4 if num_key_filter_partitions is None else num_key_filter_partitions,
             num_cpus=1.0 if num_cpus is None else num_cpus,
         )
@@ -297,7 +297,9 @@ def test_skip_existing_multiple_calls_chain_semantics(tmp_path: Path):
     (ckpt_a / "part-0.csv").write_text("id,val\n1,a\n", encoding="utf-8")
     (ckpt_b / "part-0.csv").write_text("id,val\n2,b\n", encoding="utf-8")
 
-    out = df.skip_existing(ckpt_a, on="id", format="csv").skip_existing(ckpt_b, on="id", format="csv").collect()
+    out = (
+        df.skip_existing(ckpt_a, on="id", file_format="csv").skip_existing(ckpt_b, on="id", file_format="csv").collect()
+    )
     assert out.select("id").to_pydict()["id"] == [3]
 
 
@@ -312,7 +314,11 @@ def test_skip_existing_multiple_calls_distinct_key_columns_are_applied_in_order(
     (ckpt_id / "part-0.csv").write_text("id\n1\n", encoding="utf-8")
     (ckpt_path / "part-0.csv").write_text("path\nb\n", encoding="utf-8")
 
-    out = df.skip_existing(ckpt_id, on="id", format="csv").skip_existing(ckpt_path, on="path", format="csv").collect()
+    out = (
+        df.skip_existing(ckpt_id, on="id", file_format="csv")
+        .skip_existing(ckpt_path, on="path", file_format="csv")
+        .collect()
+    )
     assert out.select("id").to_pydict()["id"] == [3]
 
 
@@ -329,8 +335,8 @@ def test_skip_existing_on_both_join_branches_maps_to_correct_inputs(tmp_path: Pa
     (ckpt_left / "part-0.csv").write_text("id\n1\n", encoding="utf-8")
     (ckpt_right / "part-0.csv").write_text("rid\n2\n", encoding="utf-8")
 
-    left = left.skip_existing(ckpt_left, on="id", format="csv")
-    right = right.skip_existing(ckpt_right, on="rid", format="csv")
+    left = left.skip_existing(ckpt_left, on="id", file_format="csv")
+    right = right.skip_existing(ckpt_right, on="rid", file_format="csv")
     out = left.join(right, left_on="id", right_on="rid", how="inner").collect()
     assert out.select("id").to_pydict()["id"] == [3]
 
@@ -346,7 +352,9 @@ def test_skip_existing_multiple_calls_are_cumulative(tmp_path: Path):
     (ckpt_a / "part-0.csv").write_text("id,val\n1,a\n", encoding="utf-8")
     (ckpt_b / "part-0.csv").write_text("id,val\n2,b\n", encoding="utf-8")
 
-    out = df.skip_existing(ckpt_a, on="id", format="csv").skip_existing(ckpt_b, on="id", format="csv").collect()
+    out = (
+        df.skip_existing(ckpt_a, on="id", file_format="csv").skip_existing(ckpt_b, on="id", file_format="csv").collect()
+    )
     assert out.select("id").to_pydict()["id"] == [3]
 
 
@@ -361,7 +369,7 @@ def test_skip_existing_multiple_paths_single_call(tmp_path: Path):
     (ckpt_a / "part-0.csv").write_text("id\n1\n", encoding="utf-8")
     (ckpt_b / "part-0.csv").write_text("id\n2\n", encoding="utf-8")
 
-    out = df.skip_existing([ckpt_a, ckpt_b], on="id", format="csv").collect()
+    out = df.skip_existing([ckpt_a, ckpt_b], on="id", file_format="csv").collect()
     assert out.select("id").to_pydict()["id"] == [3]
 
 
@@ -374,12 +382,12 @@ def test_skip_existing_csv_reader_args_applied(tmp_path: Path):
     df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
 
     with pytest.raises(RuntimeError) as excinfo:
-        df.skip_existing(ckpt_dir, on="id", format="csv").collect()
+        df.skip_existing(ckpt_dir, on="id", file_format="csv").collect()
     msg = str(excinfo.value)
     assert "[skip_existing] Unable to read keys" in msg
     assert "id" in msg
 
-    out = df.skip_existing(ckpt_dir, on="id", format="csv", delimiter="|").collect()
+    out = df.skip_existing(ckpt_dir, on="id", file_format="csv", delimiter="|").collect()
     assert out.select("id").to_pydict()["id"] == [3]
 
 
@@ -391,7 +399,7 @@ def test_skip_existing_jsonl_and_ndjson_format_aliases(tmp_path: Path, fmt_alias
     helper_write_dataframe(seed_df, FileFormat.Json, ckpt_dir)
 
     df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
-    out = df.skip_existing(ckpt_dir, on="id", format=fmt_alias).collect()
+    out = df.skip_existing(ckpt_dir, on="id", file_format=fmt_alias).collect()
     assert out.select("id").to_pydict()["id"] == [3]
 
 
@@ -404,7 +412,7 @@ def test_skip_existing_batch_size_visible_in_explain(tmp_path: Path):
     df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]}).skip_existing(
         root_dir,
         on="id",
-        format="parquet",
+        file_format="parquet",
         key_filter_batch_size=10,
         key_filter_loading_batch_size=1,
     )
@@ -451,7 +459,7 @@ def test_skip_existing_missing_keys_raises(tmp_path: Path):
     df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
 
     with pytest.raises(RuntimeError, match=r"\[skip_existing\] keys not found"):
-        df.skip_existing(ckpt_dir, on="id", format="parquet").collect()
+        df.skip_existing(ckpt_dir, on="id", file_format="parquet").collect()
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
@@ -485,25 +493,25 @@ def test_skip_existing_empty_key_list_raises(tmp_path: Path):
     with pytest.raises(
         ValueError, match=r"\[skip_existing\] on must be a non-empty column name or list of column names"
     ):
-        df.skip_existing(tmp_path / "a", on=[], format="parquet").collect()
+        df.skip_existing(tmp_path / "a", on=[], file_format="parquet").collect()
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
 def test_skip_existing_invalid_format_string_raises(tmp_path: Path):
     df = daft.from_pydict({"id": [1], "val": ["a"]})
     with pytest.raises(ValueError, match=r"\[skip_existing\] Unsupported format"):
-        df.skip_existing(tmp_path / "a", on="id", format="orc").collect()
+        df.skip_existing(tmp_path / "a", on="id", file_format="orc").collect()
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
 def test_skip_existing_invalid_num_key_filter_partitions_raises(tmp_path: Path):
     df = daft.from_pydict({"id": [1], "val": ["a"]})
     with pytest.raises(Exception, match="num_key_filter_partitions"):
-        df.skip_existing(tmp_path / "a", on="id", num_key_filter_partitions=0).collect()
+        df.skip_existing(tmp_path / "a", on="id", file_format="parquet", num_key_filter_partitions=0).collect()
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
 def test_skip_existing_invalid_num_cpus_raises(tmp_path: Path):
     df = daft.from_pydict({"id": [1], "val": ["a"]})
     with pytest.raises(Exception, match="num_cpus"):
-        df.skip_existing(tmp_path / "a", on="id", num_cpus=0).collect()
+        df.skip_existing(tmp_path / "a", on="id", file_format="parquet", num_cpus=0).collect()

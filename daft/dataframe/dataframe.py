@@ -2340,7 +2340,7 @@ class DataFrame:
         self,
         path: str | pathlib.Path | list[str | pathlib.Path],
         on: str | list[str],
-        format: str | FileFormat = FileFormat.Parquet,
+        file_format: str | FileFormat,
         io_config: IOConfig | None = None,
         num_key_filter_partitions: int = 4,
         num_cpus: float = 1.0,
@@ -2349,6 +2349,46 @@ class DataFrame:
         key_filter_max_concurrency: int = 1,
         **reader_args: Any,
     ) -> "DataFrame":
+        """Filter out rows whose key(s) already exist in existing data (i.e., already processed rows).
+
+        This method reads existing data from the given path(s), builds an in-memory key filter,
+        and filters the current DataFrame to only include rows whose key(s) are not present
+        in the existing data. This is useful for incremental data processing pipelines where
+        you want to avoid re-processing data that has already been written.
+
+        Args:
+            path: Path or list of paths to the existing data directory/file(s).
+            on: Column name(s) to use as the key for matching. Can be a single column name
+                or a list of column names for composite keys.
+            file_format: Format of the existing data files. Supported formats: Parquet, CSV, JSON.
+            io_config: IO configuration for reading the existing data.
+            num_key_filter_partitions: Number of partitions (buckets) for the distributed key filter.
+                More partitions allow for more parallelism but consume more resources.
+            num_cpus: Number of CPUs to allocate per key filter partition.
+            key_filter_batch_size: Batch size for filtering. If None, uses default batch size.
+            key_filter_loading_batch_size: Batch size when loading keys from existing data into
+                the key filter actors.
+            key_filter_max_concurrency: Maximum concurrency for key filter actor operations.
+            **reader_args: Additional arguments passed to the file reader (e.g., delimiter for CSV).
+
+        Returns:
+            DataFrame: A new DataFrame with rows filtered to exclude those whose keys exist
+                in the existing data.
+
+        Raises:
+            ValueError: If key columns are invalid, paths are empty, or parameters are out of range.
+            RuntimeError: If the existing data cannot be read or key filter resources cannot be allocated.
+
+        Examples:
+            >>> import daft
+            >>> df = daft.from_pydict({"id": [1, 2, 3, 4], "value": ["a", "b", "c", "d"]})
+            >>> # Filter out rows where 'id' already exists in existing Parquet data
+            >>> filtered_df = df.skip_existing(
+            ...     path="s3://bucket/existing_data/",
+            ...     on="id",
+            ...     file_format="parquet",
+            ... )
+        """
         if isinstance(on, str):
             key_column: str | list[str] = on
             key_columns = [on]
@@ -2364,8 +2404,8 @@ class DataFrame:
         if missing:
             raise ValueError(f"[skip_existing] key column not found in schema: {missing}")
 
-        if isinstance(format, str):
-            fmt = format.strip().lower()
+        if isinstance(file_format, str):
+            fmt = file_format.strip().lower()
             if fmt == "parquet":
                 file_format = FileFormat.Parquet
             elif fmt == "csv":
@@ -2373,9 +2413,7 @@ class DataFrame:
             elif fmt in ("json", "jsonl", "ndjson"):
                 file_format = FileFormat.Json
             else:
-                raise ValueError(f"[skip_existing] Unsupported format: {format}")
-        else:
-            file_format = format
+                raise ValueError(f"[skip_existing] Unsupported format: {file_format}")
 
         if file_format not in (FileFormat.Parquet, FileFormat.Csv, FileFormat.Json):
             raise ValueError(f"[skip_existing] Unsupported format: {file_format}")
