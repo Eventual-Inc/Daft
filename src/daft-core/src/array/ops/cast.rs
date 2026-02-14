@@ -291,39 +291,26 @@ impl TimestampArray {
                 let DataType::Timestamp(unit, timezone) = self.data_type() else {
                     panic!("Wrong dtype for TimestampArray: {}", self.data_type())
                 };
-
-                let str_array: daft_arrow::array::Utf8Array<i64> = timezone.as_ref().map_or_else(
-                    || {
-                        self.as_arrow2()
-                            .iter()
-                            .map(|val| val.map(|val| timestamp_to_str_naive(*val, unit)))
-                            .collect()
-                    },
-                    |timezone| {
-                        if let Ok(offset) = daft_schema::time_unit::parse_offset(timezone) {
-                            self.as_arrow2()
-                                .iter()
-                                .map(|val| {
-                                    val.map(|val| timestamp_to_str_offset(*val, unit, &offset))
-                                })
-                                .collect()
-                        } else if let Ok(tz) = daft_schema::time_unit::parse_offset_tz(timezone) {
-                            self.as_arrow2()
-                                .iter()
-                                .map(|val| val.map(|val| timestamp_to_str_tz(*val, unit, &tz)))
-                                .collect()
-                        } else {
-                            panic!("Unable to parse timezone string {}", timezone)
-                        }
-                    },
+                let tz_parsed = timezone.as_ref().map(|tz| {
+                    daft_schema::time_unit::parse_timezone(tz)
+                        .unwrap_or_else(|_| panic!("Unable to parse timezone string {tz}"))
+                });
+                let str_array = Utf8Array::from_iter(
+                    self.name(),
+                    self.physical.as_arrow()?.iter().map(|val| {
+                        val.map(|val| match &tz_parsed {
+                            Some(daft_schema::time_unit::ParsedTimezone::Fixed(offset)) => {
+                                timestamp_to_str_offset(val, unit, offset)
+                            }
+                            Some(daft_schema::time_unit::ParsedTimezone::Tz(tz)) => {
+                                timestamp_to_str_tz(val, unit, tz)
+                            }
+                            None => timestamp_to_str_naive(val, unit),
+                        })
+                    }),
                 );
 
-                Ok(Utf8Array::new(
-                    Field::new(self.name(), DataType::Utf8).into(),
-                    Box::new(str_array),
-                )
-                .unwrap()
-                .into_series())
+                Ok(str_array.into_series())
             }
             dtype if dtype.is_numeric() => self.physical.cast(dtype),
             #[cfg(feature = "python")]
