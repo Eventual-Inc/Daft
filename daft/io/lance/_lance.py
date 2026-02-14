@@ -385,8 +385,6 @@ def create_scalar_index(
     name: str | None = None,
     replace: bool = True,
     storage_options: dict[str, Any] | None = None,
-    daft_remote_args: dict[str, Any] | None = None,
-    concurrency: int | None = None,
     version: int | str | None = None,
     asof: str | None = None,
     block_size: int | None = None,
@@ -394,9 +392,12 @@ def create_scalar_index(
     index_cache_size: int | None = None,
     default_scan_options: dict[str, Any] | None = None,
     metadata_cache_size_bytes: int | None = None,
+    fragment_group_size: int | None = None,
+    num_partitions: int | None = None,
+    max_concurrency: int | None = None,
     **kwargs: Any,
 ) -> None:
-    """Build a distributed full-text search index using Daft's distributed computing.
+    """Build a distributed scalar index using Daft's distributed execution.
 
     This function distributes the index building process across multiple Daft workers,
     with each worker building indices for a subset of fragments. The indices are then
@@ -406,28 +407,35 @@ def create_scalar_index(
         uri: The URI of the Lance table (supports remote URLs to object stores such as `s3://` or `gs://`)
         io_config: A custom IOConfig to use when accessing LanceDB data. Defaults to None.
         column: Column name to index
-        index_type: Type of index to build ("INVERTED" or "FTS")
-        name: Name of the index (generated if None)
+        index_type: Type of index to build.
+            For distributed execution this supports "INVERTED", "FTS", and "BTREE".
+            Other scalar index types supported by Lance (for example "BITMAP", "NGRAM", "ZONEMAP",
+            "LABEL_LIST", "BLOOMFILTER") are passed through to Lance's scalar index implementation.
+        name: Name of the index (generated if None).
         replace: Whether to replace an existing index with the same name. Defaults to True.
-        storage_options: Storage options for the dataset
-        daft_remote_args: Options for Daft remote execution (e.g., num_cpus, num_gpus, memory_bytes)
-        concurrency: Number of Daft workers to use
-        version: Version of the dataset to use
-        asof: Timestamp to use for time travel queries
-        block_size: Block size for the index
-        commit_lock: Commit lock for the dataset
-        index_cache_size: Size of the index cache
-        default_scan_options: Default scan options for the dataset
-        metadata_cache_size_bytes: Size of the metadata cache in bytes
-        **kwargs: Additional arguments to pass to create_scalar_index
+        storage_options: Storage options for the dataset.
+        version: Version of the dataset to use.
+        asof: Timestamp to use for time travel queries.
+        block_size: Block size for the index.
+        commit_lock: Commit lock for the dataset.
+        index_cache_size: Size of the index cache.
+        default_scan_options: Default scan options for the dataset.
+        metadata_cache_size_bytes: Size of the metadata cache in bytes.
+        fragment_group_size: Number of fragments to group together in each fragment batch. If None,
+            defaults to 10. Must be a positive integer.
+        num_partitions: Optional number of partitions to use when repartitioning fragment batches before execution. Only values
+            greater than 1 enable additional parallelism on distributed runners; values <= 1 or None will use the default partitioning.
+        max_concurrency: Maximum number of concurrent tasks to use for processing fragment batches.
+            If None, Daft will use its default concurrency setting. Must be a positive integer.
+        **kwargs: Additional keyword arguments forwarded to ``lance.LanceDataset.create_scalar_index``.
 
     Returns:
         None
 
     Raises:
-        ValueError: If input parameters are invalid
-        TypeError: If column type is not string
-        RuntimeError: If index building fails
+        ValueError: If input parameters are invalid (e.g., empty column name, non-existent column, invalid index type, etc.)
+        TypeError: If column type is incompatible with the chosen ``index_type``
+        RuntimeError: If index building fails (e.g., version compatibility issues, commit failures)
         ImportError: If lance package is not available
 
     Note:
@@ -435,18 +443,27 @@ def create_scalar_index(
         To ensure that this is installed with Daft, you may install: `pip install daft[lance]`
 
     Examples:
-        Create a distributed inverted index:
+        Create a distributed inverted index with custom concurrency:
         >>> import daft
         >>> daft.io.lance.create_scalar_index(
-        ...     "s3://my-bucket/dataset/", column="text_content", index_type="INVERTED", concurrency=8
+        ...     "s3://my-bucket/dataset/", column="text_content", index_type="INVERTED", max_concurrency=8
         ... )
 
-        Create an index with custom Daft remote arguments:
+        Create a FTS (Full-Text Search) index:
+        >>> daft.io.lance.create_scalar_index("s3://my-bucket/dataset/", column="document", index_type="FTS")
+
+        Create a BTREE index for numeric or string columns:
         >>> daft.io.lance.create_scalar_index(
-        ...     "s3://my-bucket/dataset/",
-        ...     column="description",
-        ...     daft_remote_args={"num_cpus": 2},
+        ...     "s3://my-bucket/dataset/", column="price", index_type="BTREE", name="price_idx"
         ... )
+
+        Create an index with custom fragment grouping and partitioning:
+        >>> daft.io.lance.create_scalar_index(
+        ...     "s3://my-bucket/dataset/", column="description", fragment_group_size=8, num_partitions=16
+        ... )
+
+        Create an index without replacing existing ones:
+        >>> daft.io.lance.create_scalar_index("s3://my-bucket/dataset/", column="title", replace=False)
     """
     try:
         import lance
@@ -459,7 +476,7 @@ def create_scalar_index(
         if lance_version < min_required_version:
             raise RuntimeError(
                 f"Distributed indexing requires pylance >= 0.37.0, but found {lance.__version__}. "
-                "The distribute-related interfaces are not available in older versions. "
+                "The distributed indexing interfaces are not available in older versions. "
                 "Please upgrade lance by running: pip install --upgrade pylance"
             )
     except ImportError as e:
@@ -490,8 +507,9 @@ def create_scalar_index(
         name=name,
         replace=replace,
         storage_options=storage_options,
-        daft_remote_args=daft_remote_args,
-        concurrency=concurrency,
+        fragment_group_size=fragment_group_size,
+        num_partitions=num_partitions,
+        max_concurrency=max_concurrency,
         **kwargs,
     )
 
