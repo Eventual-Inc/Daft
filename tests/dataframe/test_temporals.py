@@ -319,7 +319,9 @@ def test_join_timestamp_same_timezone(tu1, tu2, tz_repr):
             [
                 datetime(2022, 1, 1, 0, 0),
                 datetime(2022, 1, 2, 0, 0),
-                datetime(2021, 3, 1, 0, 0),
+                # 2020-02-29 + 1 year: Feb 29 doesn't exist in 2021, clamps to Feb 28
+                # (SQL-standard clamping behavior, matching PostgreSQL/Oracle/Snowflake)
+                datetime(2021, 2, 28, 0, 0),
                 datetime(2021, 2, 28, 0, 0),
             ],
         ),
@@ -380,10 +382,11 @@ def test_join_timestamp_same_timezone(tu1, tu2, tz_repr):
         (
             (col("datetimes") - daft.interval(years=1)),
             [
+                datetime(2020, 1, 1, 0, 0),
                 datetime(2020, 1, 2, 0, 0),
-                datetime(2020, 1, 3, 0, 0),
+                # 2020-02-29 - 1 year: Feb 29 doesn't exist in 2019, clamps to Feb 28
                 datetime(2019, 2, 28, 0, 0),
-                datetime(2019, 2, 27, 0, 0),
+                datetime(2019, 2, 28, 0, 0),
             ],
         ),
         (
@@ -391,17 +394,18 @@ def test_join_timestamp_same_timezone(tu1, tu2, tz_repr):
             [
                 datetime(2020, 12, 1, 0, 0),
                 datetime(2020, 12, 2, 0, 0),
-                datetime(2020, 1, 31, 0, 0),
-                datetime(2020, 1, 30, 0, 0),
+                # 2020-02-29 - 1 month = Jan 29; 2020-02-28 - 1 month = Jan 28
+                datetime(2020, 1, 29, 0, 0),
+                datetime(2020, 1, 28, 0, 0),
             ],
         ),
         (
             (col("datetimes") - daft.interval(days=1)),
             [
-                datetime(2021, 1, 2, 0, 0),
-                datetime(2021, 1, 3, 0, 0),
-                datetime(2020, 3, 1, 0, 0),
-                datetime(2020, 2, 29, 0, 0),
+                datetime(2020, 12, 31, 0, 0),
+                datetime(2021, 1, 1, 0, 0),
+                datetime(2020, 2, 28, 0, 0),
+                datetime(2020, 2, 27, 0, 0),
             ],
         ),
         (
