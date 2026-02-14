@@ -195,7 +195,7 @@ def test_create_partitioned_table_bucket(catalog):
     tbl = c.get_table(f"{n}.tbl")
     partition_spec = tbl._inner.spec()
     field = partition_spec.fields[0]
-    assert field.name == "a"
+    assert field.name == "a_bucket_10"
     assert field.transform.__class__.__name__.lower().startswith("buckettransform")
     if c.has_table(f"{n}.tbl"):
         c.drop_table(f"{n}.tbl")
@@ -217,7 +217,7 @@ def test_create_partitioned_table_truncate(catalog):
     tbl = c.get_table(f"{n}.tbl")
     partition_spec = tbl._inner.spec()
     field = partition_spec.fields[0]
-    assert field.name == "a"
+    assert field.name == "a_trunc_10"
     assert field.transform.__class__.__name__.lower().startswith("truncatetransform")
     if c.has_table(f"{n}.tbl"):
         c.drop_table(f"{n}.tbl")
@@ -239,7 +239,7 @@ def test_create_partitioned_table_Year(catalog):
     tbl = c.get_table(f"{n}.tbl")
     partition_spec = tbl._inner.spec()
     field = partition_spec.fields[0]
-    assert field.name == "a"
+    assert field.name == "a_year"
     assert field.transform.__class__.__name__.lower().startswith("yeartransform")
     if c.has_table(f"{n}.tbl"):
         c.drop_table(f"{n}.tbl")
@@ -261,7 +261,7 @@ def test_create_partitioned_table_Month(catalog):
     tbl = c.get_table(f"{n}.tbl")
     partition_spec = tbl._inner.spec()
     field = partition_spec.fields[0]
-    assert field.name == "a"
+    assert field.name == "a_month"
     assert field.transform.__class__.__name__.lower().startswith("monthtransform")
     if c.has_table(f"{n}.tbl"):
         c.drop_table(f"{n}.tbl")
@@ -283,7 +283,7 @@ def test_create_partitioned_table_Day(catalog):
     tbl = c.get_table(f"{n}.tbl")
     partition_spec = tbl._inner.spec()
     field = partition_spec.fields[0]
-    assert field.name == "a"
+    assert field.name == "a_day"
     assert field.transform.__class__.__name__.lower().startswith("daytransform")
     if c.has_table(f"{n}.tbl"):
         c.drop_table(f"{n}.tbl")
@@ -305,7 +305,7 @@ def test_create_partitioned_table_Hour(catalog):
     tbl = c.get_table(f"{n}.tbl")
     partition_spec = tbl._inner.spec()
     field = partition_spec.fields[0]
-    assert field.name == "a"
+    assert field.name == "a_hour"
     assert field.transform.__class__.__name__.lower().startswith("hourtransform")
     if c.has_table(f"{n}.tbl"):
         c.drop_table(f"{n}.tbl")
