@@ -316,6 +316,7 @@ prost = "0.13.5"
 prost-types = "0.13.5"
 rand = "^0.8"
 rayon = "1.11.0"
+rdkafka = {version = "0.36", features = ["tokio", "cmake-build"]}
 regex = "1.12.2"
 rstest = "0.18.2"
 reqwest = {version = "0.12.19", default-features = false, features = ["json"]}

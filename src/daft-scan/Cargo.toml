@@ -26,6 +26,7 @@ futures = {workspace = true}
 indexmap = {workspace = true}
 itertools = {workspace = true}
 parquet2 = {workspace = true}
+rdkafka = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
 snafu = {workspace = true}
