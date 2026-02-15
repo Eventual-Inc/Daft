@@ -187,13 +187,13 @@ def bool_and(expr: Expression) -> Expression:
         >>> from daft.functions import bool_and
         >>> df = daft.from_pydict({"a": [True, None, True], "b": [True, False, None], "c": [None, None, None]})
         >>> df.agg(bool_and(df["a"]), bool_and(df["b"]), bool_and(df["c"])).show()
-        ╭──────┬───────┬──────╮
-        │ a    ┆ b     ┆ c    │
-        │ ---  ┆ ---   ┆ ---  │
-        │ Bool ┆ Bool  ┆ Bool │
-        ╞══════╪═══════╪══════╡
-        │ true ┆ false ┆ None │
-        ╰──────┴───────┴──────╯
+        ╭─────────────┬─────────────┬─────────────╮
+        │ bool_and(a) ┆ bool_and(b) ┆ bool_and(c) │
+        │ ---         ┆ ---         ┆ ---         │
+        │ Bool        ┆ Bool        ┆ Bool        │
+        ╞═════════════╪═════════════╪═════════════╡
+        │ true        ┆ false       ┆ None        │
+        ╰─────────────┴─────────────┴─────────────╯
         <BLANKLINE>
         (Showing first 1 of 1 rows)
     """
@@ -213,13 +213,13 @@ def bool_or(expr: Expression) -> Expression:
         >>> from daft.functions import bool_or
         >>> df = daft.from_pydict({"a": [False, None, False], "b": [False, True, None], "c": [None, None, None]})
         >>> df.agg(bool_or(df["a"]), bool_or(df["b"]), bool_or(df["c"])).show()
-        ╭───────┬──────┬──────╮
-        │ a     ┆ b    ┆ c    │
-        │ ---   ┆ ---  ┆ ---  │
-        │ Bool  ┆ Bool ┆ Bool │
-        ╞═══════╪══════╪══════╡
-        │ false ┆ true ┆ None │
-        ╰───────┴──────┴──────╯
+        ╭────────────┬────────────┬────────────╮
+        │ bool_or(a) ┆ bool_or(b) ┆ bool_or(c) │
+        │ ---        ┆ ---        ┆ ---        │
+        │ Bool       ┆ Bool       ┆ Bool       │
+        ╞════════════╪════════════╪════════════╡
+        │ false      ┆ true       ┆ None       │
+        ╰────────────┴────────────┴────────────╯
         <BLANKLINE>
         (Showing first 1 of 1 rows)
     """

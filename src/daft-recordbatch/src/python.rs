@@ -8,7 +8,6 @@ use daft_core::{
     python::{PySchema, series::PySeries},
 };
 use daft_dsl::{
-    Expr,
     expr::bound_expr::{BoundAggExpr, BoundExpr},
     python::PyExpr,
 };
@@ -119,13 +118,12 @@ impl PyRecordBatch {
         let converted_to_agg = BoundExpr::bind_all(&to_agg, &self.record_batch.schema)?
             .into_iter()
             .map(|expr| {
-                if let Expr::Agg(agg_expr) = expr.as_ref() {
-                    Ok(BoundAggExpr::new_unchecked(agg_expr.clone()))
-                } else {
-                    Err(DaftError::ValueError(
-                        format!("RecordBatch.agg requires all to_agg inputs to be aggregation expressions, found: {expr}"),
+                let agg_expr = daft_dsl::expr::agg::extract_agg_expr(expr.inner()).map_err(|_| {
+                    DaftError::ValueError(format!(
+                        "RecordBatch.agg requires all to_agg inputs to be aggregation expressions, found: {expr}"
                     ))
-                }
+                })?;
+                Ok(BoundAggExpr::new_unchecked(agg_expr))
             })
             .collect::<DaftResult<Vec<_>>>()?;
         let converted_group_by = BoundExpr::bind_all(&group_by, &self.record_batch.schema)?;

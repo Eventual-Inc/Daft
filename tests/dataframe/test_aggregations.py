@@ -687,7 +687,7 @@ def test_agg_with_non_agg_expr_global(make_df, repartition_nparts, with_morsel_s
     )
 
     res = daft_df.to_pydict()
-    assert res == {"id": [6], "values_mean": [5], "sum_of_means": [7]}
+    assert res == {"sum(id)": [6], "values_mean": [5], "sum_of_means": [7]}
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -714,7 +714,7 @@ def test_agg_with_non_agg_expr_groupby(make_df, repartition_nparts, with_morsel_
     res = daft_df.to_pydict()
     assert res == {
         "group": [1, 2, 3],
-        "id": [6, 9, 12],
+        "sum(id)": [6, 9, 12],
         "values_mean": [5, 6, 7],
         "sum_of_means": [7, 9, 11],
     }
@@ -738,7 +738,7 @@ def test_agg_with_literal_global(make_df, repartition_nparts, with_morsel_size):
     )
 
     res = daft_df.to_pydict()
-    assert res == {"id": [6], "values_mean": [5], "sum_plus_1": [7], "1_plus_sum": [9]}
+    assert res == {"sum(id)": [6], "values_mean": [5], "sum_plus_1": [7], "1_plus_sum": [9]}
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -766,7 +766,7 @@ def test_agg_with_literal_groupby(make_df, repartition_nparts, with_morsel_size)
     res = daft_df.to_pydict()
     assert res == {
         "group": [1, 2, 3],
-        "id": [6, 9, 12],
+        "sum(id)": [6, 9, 12],
         "values_mean": [5, 6, 7],
         "sum_plus_1": [7, 10, 13],
         "1_plus_sum": [9, 12, 15],
@@ -885,10 +885,10 @@ def test_bool_agg_global(
     df = make_df({"bool_col": input_values}, repartition=repartition_nparts)
 
     res = df.agg(col("bool_col").bool_and())
-    assert res.to_pydict() == {"bool_col": [expected_and]}, f"bool_and failed for input {input_values}"
+    assert res.to_pydict() == {"bool_and(bool_col)": [expected_and]}, f"bool_and failed for input {input_values}"
 
     res = df.agg(col("bool_col").bool_or())
-    assert res.to_pydict() == {"bool_col": [expected_or]}, f"bool_or failed for input {input_values}"
+    assert res.to_pydict() == {"bool_or(bool_col)": [expected_or]}, f"bool_or failed for input {input_values}"
 
 
 @pytest.mark.parametrize("repartition_nparts", [1, 2, 4])
@@ -916,14 +916,14 @@ def test_bool_agg_groupby(make_df, repartition_nparts, with_morsel_size):
     res = df.groupby("group").agg(col("bool_col").bool_and()).sort("group")
     assert res.to_pydict() == {
         "group": [1, 2, 3, 4],
-        "bool_col": [True, False, None, True],
+        "bool_and(bool_col)": [True, False, None, True],
     }
 
     # Test bool_or with groups
     res = df.groupby("group").agg(col("bool_col").bool_or()).sort("group")
     assert res.to_pydict() == {
         "group": [1, 2, 3, 4],
-        "bool_col": [True, False, None, True],
+        "bool_or(bool_col)": [True, False, None, True],
     }
 
 
@@ -952,10 +952,10 @@ def test_groupby_with_list_cols(make_df):
     )
 
     res = df.groupby(["key1", "key2"]).agg(col("values").sum())
-    assert sort_pydict(res.to_pydict(), "values") == {
+    assert sort_pydict(res.to_pydict(), "sum(values)") == {
         "key1": [[1, 2], [2, 3], [2, 3]],
         "key2": [["a"], ["hello", "world", "and", "beyond"], ["hello", "world"]],
-        "values": [11.0, 4.0, 3.0],
+        "sum(values)": [11.0, 4.0, 3.0],
     }
 
 

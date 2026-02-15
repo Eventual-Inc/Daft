@@ -850,7 +850,7 @@ mod tests {
         ]);
         let agg = vec![unresolved_col("a").mean(), unresolved_col("b").mean()];
         let group_by = vec![unresolved_col("c")];
-        let proj = vec![unresolved_col("a")];
+        let proj = vec![unresolved_col("avg(a)")];
         let plan = dummy_scan_node(scan_op.clone())
             .aggregate(agg, group_by.clone())?
             .select(proj.clone())?

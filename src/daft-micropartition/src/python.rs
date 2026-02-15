@@ -9,7 +9,6 @@ use daft_core::{
 };
 use daft_csv::{CsvConvertOptions, CsvParseOptions, CsvReadOptions};
 use daft_dsl::{
-    Expr,
     expr::bound_expr::{BoundAggExpr, BoundExpr},
     python::PyExpr,
 };
@@ -266,13 +265,12 @@ impl PyMicroPartition {
         let converted_to_agg: Vec<_> = BoundExpr::bind_all(&to_agg, &self.inner.schema)?
             .into_iter()
             .map(|expr| {
-                if let Expr::Agg(agg_expr) = expr.as_ref() {
-                    Ok(BoundAggExpr::new_unchecked(agg_expr.clone()))
-                } else {
-                    Err(DaftError::ValueError(
-                        format!("RecordBatch.agg requires all to_agg inputs to be aggregation expressions, found: {expr}"),
+                let agg_expr = daft_dsl::expr::agg::extract_agg_expr(expr.inner()).map_err(|_| {
+                    DaftError::ValueError(format!(
+                        "RecordBatch.agg requires all to_agg inputs to be aggregation expressions, found: {expr}"
                     ))
-                }
+                })?;
+                Ok(BoundAggExpr::new_unchecked(agg_expr))
             })
             .collect::<DaftResult<Vec<_>>>()?;
         let converted_group_by: Vec<_> = BoundExpr::bind_all(&group_by, &self.inner.schema)?;

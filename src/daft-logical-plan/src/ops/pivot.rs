@@ -37,6 +37,7 @@ impl Pivot {
         aggregation: ExprRef,
         names: Vec<String>,
     ) -> logical_plan::Result<Self> {
+        let (aggregation, _) = aggregation.unwrap_alias();
         let Expr::Agg(agg_expr) = aggregation.as_ref() else {
             return Err(DaftError::ValueError(format!(
                 "Pivot only supports using top level aggregation expressions, received {aggregation}",

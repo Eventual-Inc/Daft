@@ -185,19 +185,59 @@ def assert_df_equals(
     # If we are not asserting on the ordering being equal, we run a sort operation on both dataframes using the provided sort key
     if not assert_ordering:
         sort_key_list: list[str] = [sort_key] if isinstance(sort_key, str) else sort_key
+
+        # Default aliasing of aggregations changes column names (e.g. `Unique Key` -> `sum(Unique Key)`).
+        # For comparisons, allow sorting by a key that exists on either side under a different column name.
+        key_pairs: list[tuple[str, str]] = []
         for key in sort_key_list:
-            assert key in daft_pd_df.columns, (
+            daft_key = key
+            pd_key = key
+
+            if daft_key not in daft_pd_df.columns and pd_key in pd_df.columns:
+                # Try to find a unique matching column in Daft output.
+                candidates = [c for c in daft_pd_df.columns if c.endswith(f"({key})")]
+                if len(candidates) == 1:
+                    daft_key = candidates[0]
+
+            if pd_key not in pd_df.columns and daft_key in daft_pd_df.columns:
+                # Try to find a unique matching column in Pandas expected.
+                candidates = [c for c in pd_df.columns if c.endswith(f"({key})")]
+                if len(candidates) == 1:
+                    pd_key = candidates[0]
+
+            assert daft_key in daft_pd_df.columns, (
                 f"Daft Dataframe missing key: {key}\nNOTE: This doesn't necessarily mean your code is "
                 "breaking, but our testing utilities require sorting on this key in order to compare your "
-                "Dataframe against the expected Pandas Dataframe."
+                "Dataframe against the expected Pandas Dataframe.\n"
+                f"Available columns: {list(daft_pd_df.columns)}"
             )
-            assert key in pd_df.columns, (
+            assert pd_key in pd_df.columns, (
                 f"Pandas Dataframe missing key: {key}\nNOTE: This doesn't necessarily mean your code is "
                 "breaking, but our testing utilities require sorting on this key in order to compare your "
-                "Dataframe against the expected Pandas Dataframe."
+                "Dataframe against the expected Pandas Dataframe.\n"
+                f"Available columns: {list(pd_df.columns)}"
             )
-        daft_pd_df = daft_pd_df.sort_values(by=sort_key_list).reset_index(drop=True)
-        pd_df = pd_df.sort_values(by=sort_key_list).reset_index(drop=True)
+
+            key_pairs.append((daft_key, pd_key))
+
+        daft_sort_keys = [dk for dk, _ in key_pairs]
+        pd_sort_keys = [pk for _, pk in key_pairs]
+        daft_pd_df = daft_pd_df.sort_values(by=daft_sort_keys).reset_index(drop=True)
+        pd_df = pd_df.sort_values(by=pd_sort_keys).reset_index(drop=True)
+
+    # If default aliasing changed the column name on either side, attempt to align via a
+    # single unambiguous `(<expected_name>)` suffix match.
+    if sorted(daft_pd_df.columns) != sorted(pd_df.columns):
+        rename_map: dict[str, str] = {}
+        for expected_col in pd_df.columns:
+            if expected_col in daft_pd_df.columns:
+                continue
+            candidates = [c for c in daft_pd_df.columns if c.endswith(f"({expected_col})")]
+            if len(candidates) == 1:
+                rename_map[candidates[0]] = expected_col
+
+        if rename_map:
+            daft_pd_df = daft_pd_df.rename(columns=rename_map)
 
     assert sorted(daft_pd_df.columns) == sorted(pd_df.columns), f"Found {daft_pd_df.columns} expected {pd_df.columns}"
     for col in pd_df.columns:
