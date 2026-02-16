@@ -801,7 +801,7 @@ impl SQLPlanner<'_> {
                     ),
                 };
                 if pos == 0 {
-                    invalid_argument_err!("ORDER BY position must be >= 1");
+                    invalid_argument_err!("ORDER BY position must be >= 1 (1-based index)");
                 }
                 if pos > select_items.len() {
                     invalid_argument_err!(
