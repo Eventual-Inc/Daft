@@ -13,7 +13,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 
 pub use agg_ops::{
     try_mean_aggregation_supertype, try_product_supertype, try_skew_aggregation_supertype,
-    try_stddev_aggregation_supertype, try_sum_supertype,
+    try_stddev_aggregation_supertype, try_sum_supertype, try_variance_aggregation_supertype,
 };
 use daft_arrow::{
     compute::comparison::Simd8,
@@ -472,20 +472,5 @@ impl<T: DaftPrimitiveType> DataArray<T> {
         // this is fully zero copy to convert the values into an arrow-rs ScalarBuffer
         let arrow_buffer = Buffer::from(self.as_arrow2().values().clone());
         ScalarBuffer::from(arrow_buffer)
-    }
-
-    /// Maps the values only without changing the null bitmaps
-    pub fn map_values<F>(&self, f: F) -> Self
-    where
-        F: Fn(&T::Native) -> T::Native,
-    {
-        let arrow_buffer = Buffer::from(self.as_arrow2().values().clone());
-
-        Self::from_values_iter(
-            self.field.clone(),
-            ScalarBuffer::from(arrow_buffer).into_iter().map(f),
-        )
-        .with_nulls(self.nulls().cloned())
-        .expect("Failed to set nulls")
     }
 }

@@ -33,18 +33,60 @@ When proposing features, please include:
 
 For detailed development instructions, see our [Development Guide](https://docs.daft.ai/en/stable/contributing/development/).
 
-## Contributor Community
+## Governance
 
-The Daft contributor community celebrates and supports the contributors who have helped shape the project into what it is today. Whether you’re submitting your first pull request or enhancing the documentation, you’ll find a place in our growing community. Members contribute in different ways and take on a variety of roles.
+The Daft project is governed by a community of contributors who have helped shape the project into what it is today. Members contribute in different ways and take on a variety of roles.
 
-### Daft User
-A user is someone who interacts with our software. They support the Daft project by sharing feedback with developers through bug reports and feature requests. Users also enrich the Daft community by answering questions and assisting others on mailing lists and support forums.
+### Maintainer
 
-### Daft Contributor
-A contributor is someone who actively adds to the project through code or documentation. They go beyond basic use by engaging with the developer mailing list, joining discussions, and offering patches, documentation, suggestions, or constructive feedback.
+A Maintainer is a recognized Contributor who has demonstrated sustained, meaningful contributions to the project. Maintainers are nominated by existing Maintainers or PMC members and approved by a majority vote of the PMC.
 
-### Daft Committer
-A committer is a developer who has consistently made meaningful contributions to the project and has been invited to this role based on the merit of their work. Committers are granted write access to specific parts of the code repository, have a signed committer agreement on file. With the ability to apply patches directly to code or documentation, they can make short-term decisions within their areas of expertise. These changes are then subject to review: the Daft Punqs may approve them as permanent or choose to reject them.
+- **Maintainer/Review**: Recognized contributors with review (and approval) permissions
+- **Maintainer/Merge**: Maintainers additionally with merge access to the repository
 
-### Daft Punqs
-A Daft Punq is a committer who is part of the core Daft team, recognized for sustained and meaningful contributions to the project’s growth and direction over time. They hold write access to the code repository, voting rights on community decisions, and the ability to nominate other active contributors for committership.
+**Maintainers/Review:**
+
+| GitHub | Affiliation | Focus Areas |
+|--------|-------------|-------------|
+| [@conceptofmind](https://github.com/conceptofmind) | Teraflop AI | Performance and UDF bug reports |
+| [@everySympathy](https://github.com/everySympathy) | ByteDance | Series slicing, partition optimization |
+| [@gweaverbiodev](https://github.com/gweaverbiodev) | CloudKitchens | pyiceberg support, UDF improvements |
+| [@kevinzwang](https://github.com/kevinzwang) | SkyPilot | Core refactoring (arrow2 migration), UDF system, vLLM, type conversions |
+| [@pdames](https://github.com/pdames) | Nvidia | Catalog support and improvements |
+| [@VOID001](https://github.com/VOID001) | ByteDance | Dashboard features, SQL error handling |
+| [@caican00](https://github.com/caican00) | Xiaomi ||
+
+**Maintainers/Write:**
+
+Maintainers who additionally have merge access to the repository.
+
+| Name | GitHub | Affiliation |
+|------|--------|-------------|
+| Chris Kellogg | [@cckellogg](https://github.com/cckellogg) | Eventual |
+| Colin Ho | [@colin-ho](https://github.com/colin-ho) | Eventual |
+| Cory Grinstead | [@universalmind303](https://github.com/universalmind303) | Eventual |
+| Desmond Cheong | [@desmondcheongzx](https://github.com/desmondcheongzx) | Eventual |
+| Everett Kleven | [@everettVT](https://github.com/everettVT) | Eventual |
+| Jay Chia | [@jaychia](https://github.com/jaychia) | Eventual |
+| Jeev Balakrishnan | [@jeevb](https://github.com/jeevb) | Eventual |
+| Oliver Huang | [@ohbh](https://github.com/ohbh) | Eventual |
+| Rohit Kulshreshtha | [@rohitkulshreshtha](https://github.com/rohitkulshreshtha) | Eventual |
+| Sam Stokes | [@samstokes](https://github.com/samstokes) | Eventual |
+| Sammy Sidhu | [@samster25](https://github.com/samster25) | Eventual |
+| Srinivas Lade | [@srilman](https://github.com/srilman) | Eventual |
+| Varun Madan | [@madvart](https://github.com/madvart) | Eventual |
+| YK | [@ykdojo](https://github.com/ykdojo) | Eventual |
+| Kejian Ju | [@Jay-ju](https://github.com/Jay-ju) | Bytedance |
+| Leilei Hu | [@huleilei](https://github.com/huleilei) | Bytedance |
+| Zhenchao Wang | [@plotor](https://github.com/plotor) | Bytedance |
+| Zhiping Wu | [@stayrascal](https://github.com/stayrascal) | Bytedance |
+
+### Project Management Committee (PMC)
+
+The PMC provides oversight and governance for the Daft project. PMC members have voting rights on community decisions, including approving new Maintainers and setting the strategic direction of the project.
+
+| Name | GitHub |
+|------|--------|
+| Jay Chia | [@jaychia](https://github.com/jaychia) |
+| Sammy Sidhu | [@samster25](https://github.com/samster25) |
+| Varun Madan | [@madvart](https://github.com/madvart) |

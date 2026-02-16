@@ -371,7 +371,8 @@ impl FromArrow for MapArray {
 
         let offsets: arrow::buffer::Buffer = arrow_arr.offsets().inner().clone().into_inner();
         let offsets =
-            unsafe { daft_arrow::offset::OffsetsBuffer::<i64>::new_unchecked(offsets.into()) };
+            unsafe { daft_arrow::offset::OffsetsBuffer::<i32>::new_unchecked(offsets.into()) };
+        let offsets: daft_arrow::offset::OffsetsBuffer<i64> = (&offsets).into();
         let nulls = arrow_arr.nulls().cloned();
 
         let physical = ListArray::new(physical_field, child_series, offsets, nulls);
@@ -514,11 +515,9 @@ impl FromArrow for LogicalArray<TimeType> {
     fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
         let field = field.into();
         let target_convert = field.to_physical();
-        let physical_arrow_array = Arc::new(
-            arrow_arr
-                .as_primitive::<arrow::datatypes::Time64NanosecondType>()
-                .reinterpret_cast::<arrow::datatypes::Int64Type>(),
-        );
+        let target_convert_arrow = target_convert.dtype.to_arrow()?;
+
+        let physical_arrow_array = arrow::compute::cast(arrow_arr.as_ref(), &target_convert_arrow)?;
 
         let physical =
             <<TimeType as DaftLogicalType>::PhysicalType as DaftDataType>::ArrayType::from_arrow(
@@ -592,7 +591,7 @@ mod tests {
         ($test_name:ident, $array_type:ty, $value:expr) => {
             #[test]
             fn $test_name() -> DaftResult<()> {
-                let arr = <$array_type>::from_values("test", $value.into_iter());
+                let arr = <$array_type>::from_vec("test", $value);
                 let arrow_arr = arr.to_arrow();
                 let new_arr = <$array_type>::from_arrow(
                     Field::new("test", arr.data_type().clone()),
@@ -694,7 +693,7 @@ mod tests {
     fn test_arrow_roundtrip_logical_date() -> DaftResult<()> {
         let arr = LogicalArray::<DateType>::new(
             Field::new("test", DataType::Date),
-            Int32Array::from_values("", vec![1, 2, 3].into_iter()),
+            Int32Array::from_slice("", &[1, 2, 3]),
         );
 
         let arrow_arr = arr.to_arrow()?;
@@ -794,7 +793,7 @@ mod tests {
     fn test_arrow_roundtrip_logical_duration() -> DaftResult<()> {
         let arr = LogicalArray::<DurationType>::new(
             Field::new("test", DataType::Duration(TimeUnit::Milliseconds)),
-            Int64Array::from_values("", vec![1000, 2000, 3000].into_iter()),
+            Int64Array::from_slice("", &[1000, 2000, 3000]),
         );
 
         let arrow_arr = arr.to_arrow()?;
@@ -816,7 +815,7 @@ mod tests {
                 "test",
                 DataType::Timestamp(TimeUnit::Microseconds, Some("UTC".to_string())),
             ),
-            Int64Array::from_values("", vec![1000000, 2000000, 3000000].into_iter()),
+            Int64Array::from_slice("", &[1000000, 2000000, 3000000]),
         );
 
         let arrow_arr = arr.to_arrow()?;

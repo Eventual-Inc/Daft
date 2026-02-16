@@ -23,7 +23,11 @@ impl ScalarUDF for Repeat {
         "repeat"
     }
 
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let s = inputs.required((0, "input"))?;
         let n = inputs.required((1, "n"))?;
 

@@ -87,7 +87,7 @@ pub fn serialize(input: Series) -> DaftResult<Utf8Array> {
         nulls,
     );
     let array = Box::new(array);
-    Ok(Utf8Array::from((name, array)))
+    Ok(Utf8Array::new(Field::new(name, DataType::Utf8).into(), array).unwrap())
 }
 
 /// Serializes each input value as a JSON string, inserting null on any failures.

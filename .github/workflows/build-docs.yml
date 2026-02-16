@@ -28,11 +28,18 @@ jobs:
       with:
         tool-cache: false
         android: true
-        dotnet: false
+        dotnet: true
         haskell: true
         large-packages: false
-        docker-images: false
+        docker-images: true
         swap-storage: true
+    - name: Additional disk cleanup
+      run: |
+        sudo rm -rf /usr/share/swift || true
+        sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+        sudo rm -rf /opt/hostedtoolcache/go || true
+        sudo rm -rf /opt/hostedtoolcache/Ruby || true
+        sudo rm -rf /opt/hostedtoolcache/node || true
     - uses: actions/checkout@v6
     - uses: moonrepo/setup-rust@v1
       with:
@@ -67,7 +74,7 @@ jobs:
         maturin develop --uv
         mkdocs build
     - name: Upload built docs
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: html-docs
         path: site

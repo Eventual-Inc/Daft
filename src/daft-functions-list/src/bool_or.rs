@@ -20,7 +20,12 @@ impl ScalarUDF for ListBoolOr {
         "list_bool_or"
     }
 
-    fn call(&self, args: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+
+        args: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let input = args.required((0, "input"))?;
         input.list_bool_or()
     }

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 import logging
+import os
+import sys
 import time
 import uuid
 from collections.abc import Generator, Iterable, Iterator
@@ -45,6 +48,9 @@ from daft.daft import (
     FileFormatConfig,
     FileInfos,
     IOConfig,
+    PyQueryMetadata,
+    PyQueryResult,
+    QueryEndState,
 )
 from daft.datatype import DataType
 from daft.filesystem import glob_path_with_stats
@@ -291,6 +297,7 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         if len(ids_and_partitions) > 0:
             assert ids_and_partitions[0][0] == 0
             assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
+
         all_partitions = ray.get([part.partition() for id, part in ids_and_partitions])
         return MicroPartition.concat_or_empty(all_partitions, schema)
 
@@ -541,26 +548,118 @@ class RayRunner(Runner[ray.ObjectRef]):
 
     def run_iter(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
-    ) -> Iterator[RayMaterializedResult]:
+    ) -> Generator[RayMaterializedResult, None, RecordBatch]:
         track_runner_on_scarf(runner=self.name)
 
         # Grab and freeze the current context
         ctx = get_context()
         query_id = str(uuid.uuid4())
         daft_execution_config = ctx.daft_execution_config
+        output_schema = builder.schema()
 
-        # Optimize the logical plan.
-        builder = builder.optimize(daft_execution_config)
+        # Notify query start
+        ray_dashboard_url = None
+        if os.environ.get("RAY_DISABLE_DASHBOARD") != "1":
+            try:
+                if ray.is_initialized():
+                    ray_dashboard_url = ray.worker.get_dashboard_url()
+                    if ray_dashboard_url:
+                        if not ray_dashboard_url.startswith("http"):
+                            ray_dashboard_url = f"http://{ray_dashboard_url}"
 
-        distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
-            builder._builder, query_id, daft_execution_config
-        )
-        if self.flotilla_plan_runner is None:
-            self.flotilla_plan_runner = FlotillaRunner()
+                        # Try to append Job ID
+                        try:
+                            job_id = ray.get_runtime_context().get_job_id()
+                            if job_id:
+                                ray_dashboard_url = f"{ray_dashboard_url}/#/jobs/{job_id}"
+                        except Exception:
+                            pass
+            except Exception:
+                pass
 
-        yield from self.flotilla_plan_runner.stream_plan(
-            distributed_plan, self._part_set_cache.get_all_partition_sets()
-        )
+        entrypoint = "python " + " ".join(sys.argv)
+        dashboard_url = os.environ.get("DAFT_DASHBOARD_URL")
+        should_notify = bool(ray_dashboard_url or dashboard_url)
+
+        # Log Dashboard URL if configured
+        if dashboard_url:
+            logger.info("Daft Dashboard: %s/query/%s", dashboard_url, query_id)
+
+        try:
+            # Optimize the logical plan.
+            builder = builder.optimize(daft_execution_config)
+
+            distributed_plan = DistributedPhysicalPlan.from_logical_plan_builder(
+                builder._builder, query_id, daft_execution_config
+            )
+
+            # Only send notifications after we've successfully created the distributed plan
+            if should_notify:
+                try:
+                    ctx._notify_query_start(
+                        query_id,
+                        PyQueryMetadata(
+                            output_schema._schema, builder.repr_json(), "Ray (Flotilla)", ray_dashboard_url, entrypoint
+                        ),
+                    )
+                    ctx._notify_optimization_start(query_id)
+                    ctx._notify_optimization_end(query_id, builder.repr_json())
+                    physical_plan_json = distributed_plan.repr_json()
+                    ctx._notify_exec_start(query_id, physical_plan_json)
+                except Exception:
+                    pass
+
+            if self.flotilla_plan_runner is None:
+                self.flotilla_plan_runner = FlotillaRunner()
+
+            total_rows = 0
+            result_gen = self.flotilla_plan_runner.stream_plan(
+                distributed_plan, self._part_set_cache.get_all_partition_sets()
+            )
+            try:
+                while True:
+                    result = next(result_gen)
+                    if result.metadata() is not None:
+                        total_rows += result.metadata().num_rows
+                    yield result
+            except StopIteration as e:
+                metrics = e.value
+
+            # Mark all operators as finished to clean up the Dashboard UI before notify_exec_end
+            if should_notify:
+                try:
+                    plan_dict = json.loads(physical_plan_json)
+
+                    def notify_end(node: dict[str, Any]) -> None:
+                        if "children" in node:
+                            for child in node["children"]:
+                                notify_end(child)
+                        if "id" in node:
+                            ctx._notify_exec_operator_end(query_id, node["id"])
+
+                    notify_end(plan_dict)
+                except Exception:
+                    pass
+
+            if should_notify:
+                try:
+                    ctx._notify_exec_end(query_id)
+                except Exception:
+                    pass
+                ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Finished, "Query finished"))
+
+        except GeneratorExit:
+            # GeneratorExit is raised when the generator is closed (e.g. by break)
+            # We should treat this as a cancellation/interruption but not necessarily a failure if execution was partial
+            # However, if it's external cancellation, we might want to log it.
+            # For now, we propagate it to ensure proper cleanup.
+            raise
+        except Exception as e:
+            if should_notify:
+                ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Failed, str(e)))
+            raise
+
+        return metrics
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
@@ -568,17 +667,25 @@ class RayRunner(Runner[ray.ObjectRef]):
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield ray.get(result.partition())
 
-    def _collect_into_cache(self, results_iter: Iterator[RayMaterializedResult]) -> PartitionCacheEntry:
+    def _collect_into_cache(
+        self, results_iter: Generator[RayMaterializedResult, None, RecordBatch]
+    ) -> tuple[PartitionCacheEntry, RecordBatch | None]:
         result_pset = RayPartitionSet()
 
-        for i, result in enumerate(results_iter):
-            result_pset.set_partition(i, result)
+        metrics: RecordBatch | None = None
+        i = 0
+        try:
+            while True:
+                result = next(results_iter)
+                result_pset.set_partition(i, result)
+                i += 1
+        except StopIteration as e:
+            metrics = e.value
 
         pset_entry = self._part_set_cache.put_partition_set(result_pset)
+        return pset_entry, metrics
 
-        return pset_entry
-
-    def run(self, builder: LogicalPlanBuilder) -> PartitionCacheEntry:
+    def run(self, builder: LogicalPlanBuilder) -> tuple[PartitionCacheEntry, RecordBatch | None]:
         results_iter = self.run_iter(builder)
         return self._collect_into_cache(results_iter)
 
