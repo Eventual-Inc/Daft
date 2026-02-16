@@ -282,14 +282,14 @@ def _to_pandas_ref(df: pd.DataFrame | ray.ObjectRef) -> ray.ObjectRef:
         raise ValueError(f"Expected a Ray object ref or a Pandas DataFrame, got {type(df)}")
 
 
-class RayPartitionSet(PartitionSet[ray.ObjectRef]):
+class RayPartitionSet(PartitionSet[list[ray.ObjectRef]]):
     _results: dict[PartID, RayMaterializedResult]
 
     def __init__(self) -> None:
         super().__init__()
         self._results = {}
 
-    def items(self) -> list[tuple[PartID, MaterializedResult[ray.ObjectRef]]]:
+    def items(self) -> list[tuple[PartID, MaterializedResult[list[ray.ObjectRef]]]]:
         return [(pid, result) for pid, result in sorted(self._results.items())]
 
     def _get_merged_micropartition(self, schema: Schema) -> MicroPartition:
@@ -298,22 +298,30 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
             assert ids_and_partitions[0][0] == 0
             assert ids_and_partitions[-1][0] + 1 == len(ids_and_partitions)
 
-        all_partitions = ray.get([part.partition() for id, part in ids_and_partitions])
-        return MicroPartition.concat_or_empty(all_partitions, schema)
+        all_refs = []
+        for _, part in ids_and_partitions:
+            all_refs.extend(part.partition())
+
+        all_micropartitions = ray.get(all_refs)
+        return MicroPartition.concat_or_empty(all_micropartitions, schema)
 
     def _get_preview_micropartitions(self, num_rows: int) -> list[MicroPartition]:
         ids_and_partitions = self.items()
         preview_parts = []
         for _, mat_result in ids_and_partitions:
-            ref: ray.ObjectRef = mat_result.partition()
-            part: MicroPartition = ray.get(ref)
-            part_len = len(part)
-            if part_len >= num_rows:  # if this part has enough rows, take what we need and break
-                preview_parts.append(part.slice(0, num_rows))
+            refs: list[ray.ObjectRef] = mat_result.partition()
+            parts: list[MicroPartition] = ray.get(refs)
+            for part in parts:
+                part_len = len(part)
+                if part_len >= num_rows:
+                    preview_parts.append(part.slice(0, num_rows))
+                    num_rows = 0
+                    break
+                else:
+                    num_rows -= part_len
+                    preview_parts.append(part)
+            if num_rows == 0:
                 break
-            else:  # otherwise, take the whole part and keep going
-                num_rows -= part_len
-                preview_parts.append(part)
         return preview_parts
 
     def to_ray_dataset(self) -> RayDataset:
@@ -322,9 +330,11 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
                 "Unable to import `ray.data.from_arrow_refs`. Please ensure that you have a compatible version of Ray >= 1.10 installed."
             )
 
-        blocks = [
-            _make_ray_block_from_micropartition.remote(self._results[k].partition()) for k in self._results.keys()
-        ]
+        blocks = []
+        # Sort by partition ID for deterministic output order.
+        for k in sorted(self._results.keys()):
+            for chunk in self._results[k].partition():
+                blocks.append(_make_ray_block_from_micropartition.remote(chunk))
         # NOTE: although the Ray method is called `from_arrow_refs`, this method works also when the blocks are List[T] types
         # instead of Arrow tables as the codepath for Dataset creation is the same.
         return from_arrow_refs(blocks)
@@ -343,16 +353,17 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         def _make_dask_dataframe_partition_from_micropartition(partition: MicroPartition) -> pd.DataFrame:
             return partition.to_pandas()
 
-        ddf_parts = [
-            _make_dask_dataframe_partition_from_micropartition(self._results[k].partition())
-            for k in self._results.keys()
-        ]
+        ddf_parts = []
+        # Sort by partition ID for deterministic output order.
+        for k in sorted(self._results.keys()):
+            for chunk in self._results[k].partition():
+                ddf_parts.append(_make_dask_dataframe_partition_from_micropartition(chunk))
         return cast("dd.DataFrame", dd.from_delayed(ddf_parts, meta=meta))
 
     def get_partition(self, idx: PartID) -> RayMaterializedResult:
-        return self._results[idx].partition()
+        return self._results[idx]
 
-    def set_partition(self, idx: PartID, result: MaterializedResult[ray.ObjectRef]) -> None:
+    def set_partition(self, idx: PartID, result: MaterializedResult[list[ray.ObjectRef]]) -> None:
         assert isinstance(result, RayMaterializedResult)
         self._results[idx] = result
 
@@ -377,8 +388,11 @@ class RayPartitionSet(PartitionSet[ray.ObjectRef]):
         return len(self._results)
 
     def wait(self) -> None:
-        deduped_object_refs = {r.partition() for r in self._results.values()}
-        ray.wait(list(deduped_object_refs), fetch_local=False, num_returns=len(deduped_object_refs))
+        all_refs = []
+        for r in self._results.values():
+            all_refs.extend(r.partition())
+        deduped_object_refs = list(set(all_refs))
+        ray.wait(deduped_object_refs, fetch_local=False, num_returns=len(deduped_object_refs))
 
 
 def _from_arrow_type_with_ray_data_extensions(arrow_type: pa.DataType) -> DataType:
@@ -444,7 +458,7 @@ class RayRunnerIO(runner_io.RunnerIO):
         pset = RayPartitionSet()
 
         for i, obj in enumerate(daft_micropartitions):
-            pset.set_partition(i, RayMaterializedResult(obj))
+            pset.set_partition(i, RayMaterializedResult([obj]))
         return (
             pset,
             daft_schema,
@@ -476,7 +490,7 @@ class RayRunnerIO(runner_io.RunnerIO):
         pset = RayPartitionSet()
 
         for i, obj in enumerate(daft_micropartitions):
-            pset.set_partition(i, RayMaterializedResult(obj))
+            pset.set_partition(i, RayMaterializedResult([obj]))
         return (
             pset,
             schemas[0],
@@ -665,7 +679,7 @@ class RayRunner(Runner[ray.ObjectRef]):
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
     ) -> Iterator[MicroPartition]:
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
-            yield ray.get(result.partition())
+            yield result.micropartition()
 
     def _collect_into_cache(
         self, results_iter: Generator[RayMaterializedResult, None, RecordBatch]
@@ -689,14 +703,13 @@ class RayRunner(Runner[ray.ObjectRef]):
         results_iter = self.run_iter(builder)
         return self._collect_into_cache(results_iter)
 
-    def put_partition_set_into_cache(self, pset: PartitionSet[ray.ObjectRef]) -> PartitionCacheEntry:
+    def put_partition_set_into_cache(self, pset: PartitionSet[list[ray.ObjectRef]]) -> PartitionCacheEntry:
         if isinstance(pset, LocalPartitionSet):
             new_pset = RayPartitionSet()
             metadata_accessor = PartitionMetadataAccessor.from_metadata_list([v.metadata() for v in pset.values()])
             for i, (pid, py_mat_result) in enumerate(pset.items()):
-                new_pset.set_partition(
-                    pid, RayMaterializedResult(ray.put(py_mat_result.partition()), metadata_accessor, i)
-                )
+                part = py_mat_result.partition()
+                new_pset.set_partition(pid, RayMaterializedResult([ray.put(part)], metadata_accessor, i))
             pset = new_pset
         return self._part_set_cache.put_partition_set(pset=pset)
 
@@ -704,33 +717,53 @@ class RayRunner(Runner[ray.ObjectRef]):
         return RayRunnerIO()
 
 
-class RayMaterializedResult(MaterializedResult[ray.ObjectRef]):
+class RayMaterializedResult(MaterializedResult[list[ray.ObjectRef]]):
     def __init__(
         self,
-        partition: ray.ObjectRef[Any],
+        partition: list[ray.ObjectRef[Any]],
         metadatas: PartitionMetadataAccessor | None = None,
         metadata_idx: int | None = None,
     ):
+        assert isinstance(partition, list)
         self._partition = partition
         if metadatas is None:
             assert metadata_idx is None
-            metadatas = PartitionMetadataAccessor(get_metas.remote(self._partition))
-            metadata_idx = 0
+            metadatas = PartitionMetadataAccessor(get_metas.remote(*self._partition))
+
         self._metadatas = metadatas
         self._metadata_idx = metadata_idx
 
-    def partition(self) -> ray.ObjectRef:
+    def partition(self) -> list[ray.ObjectRef]:
         return self._partition
 
     def micropartition(self) -> MicroPartition:
-        return ray.get(self._partition)
+        parts = ray.get(self._partition)
+        return MicroPartition.concat(parts)
 
     def metadata(self) -> PartitionMetadata:
-        assert self._metadata_idx is not None
-        return self._metadatas.get_index(self._metadata_idx)
+        # Two paths:
+        # 1. _metadata_idx is set (flotilla path): metadata was pre-aggregated at task
+        #    result packing time, so we return the single indexed entry directly.
+        # 2. _metadata_idx is None (direct construction): get_metas returned per-chunk
+        #    metadata, so we aggregate across all chunks on the fly.
+        all_metas = self._metadatas._get_metadatas()
+
+        if self._metadata_idx is not None:
+            return all_metas[self._metadata_idx]
+
+        total_rows = sum(m.num_rows for m in all_metas)
+        total_bytes = 0
+        for m in all_metas:
+            if m.size_bytes is not None:
+                total_bytes += m.size_bytes
+        return PartitionMetadata(
+            num_rows=total_rows,
+            size_bytes=total_bytes if total_bytes > 0 else None,
+        )
 
     def cancel(self) -> None:
-        return ray.cancel(self._partition)
+        for p in self._partition:
+            ray.cancel(p)
 
     def _noop(self, _: ray.ObjectRef) -> None:
         return None

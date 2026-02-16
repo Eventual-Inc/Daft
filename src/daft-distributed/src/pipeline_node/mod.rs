@@ -384,6 +384,14 @@ impl From<Receiver<SwordfishTaskBuilder>> for TaskBuilderStream {
     }
 }
 
+impl From<BoxStream<'static, SwordfishTaskBuilder>> for TaskBuilderStream {
+    fn from(stream: BoxStream<'static, SwordfishTaskBuilder>) -> Self {
+        Self {
+            task_builder_stream: stream,
+        }
+    }
+}
+
 impl TaskBuilderStream {
     fn new(task_builder_stream: BoxStream<'static, SwordfishTaskBuilder>) -> Self {
         Self {
@@ -412,6 +420,14 @@ impl TaskBuilderStream {
             .map(move |builder| builder.map_plan(node.as_ref(), &plan_builder))
             .boxed();
         Self::new(task_builder_stream)
+    }
+
+    pub fn map<F, T>(self, f: F) -> impl Stream<Item = T> + Send + Unpin + 'static
+    where
+        F: Fn(SwordfishTaskBuilder) -> T + Send + Sync + 'static,
+        T: Send + 'static,
+    {
+        self.task_builder_stream.map(f)
     }
 }
 

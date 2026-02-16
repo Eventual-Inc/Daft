@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import pytest
-import ray
 
 import daft
+from tests.conftest import resolve_ray_partition
 
 
 def test_range():
@@ -55,7 +55,7 @@ def test_range_partitioning_even():
     df = daft.range(0, 10, 1, 2)
 
     partitions = list(df.iter_partitions())
-    partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
+    partitions = [resolve_ray_partition(p) for p in partitions]
     assert len(partitions) == 2
 
     assert partitions[0].to_pydict() == {"id": [0, 1, 2, 3, 4]}
@@ -66,7 +66,7 @@ def test_range_partitioning_uneven():
     df = daft.range(0, 10, 1, 3)
 
     partitions = list(df.iter_partitions())
-    partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
+    partitions = [resolve_ray_partition(p) for p in partitions]
     assert len(partitions) == 3
 
     assert partitions[0].to_pydict() == {"id": [0, 1, 2, 3]}
@@ -78,7 +78,7 @@ def test_range_partitioning_with_step_even():
     df = daft.range(0, 24, 2, 4)
 
     partitions = list(df.iter_partitions())
-    partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
+    partitions = [resolve_ray_partition(p) for p in partitions]
     assert len(partitions) == 4
 
     assert partitions[0].to_pydict() == {"id": [0, 2, 4]}
@@ -91,7 +91,7 @@ def test_range_partitioning_with_step_uneven():
     df = daft.range(0, 15, 2, 3)
 
     partitions = list(df.iter_partitions())
-    partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
+    partitions = [resolve_ray_partition(p) for p in partitions]
     assert len(partitions) == 3
 
     assert partitions[0].to_pydict() == {"id": [0, 2, 4]}
@@ -103,7 +103,7 @@ def test_range_partitioning_with_negative_step_even():
     df = daft.range(10, -2, -2, 2)
 
     partitions = list(df.iter_partitions())
-    partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
+    partitions = [resolve_ray_partition(p) for p in partitions]
     assert len(partitions) == 2
 
     assert partitions[0].to_pydict() == {"id": [10, 8, 6]}
@@ -114,7 +114,7 @@ def test_range_partitioning_with_negative_step_uneven():
     df = daft.range(15, 0, -2, 3)
 
     partitions = list(df.iter_partitions())
-    partitions = ray.get(partitions) if isinstance(partitions[0], ray.ObjectRef) else partitions
+    partitions = [resolve_ray_partition(p) for p in partitions]
     assert len(partitions) == 3
 
     assert partitions[0].to_pydict() == {"id": [15, 13, 11]}

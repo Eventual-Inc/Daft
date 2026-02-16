@@ -6,7 +6,7 @@ import pytest
 
 import daft
 from daft.errors import UDFException
-from tests.conftest import get_tests_daft_runner_name
+from tests.conftest import get_tests_daft_runner_name, resolve_ray_partition
 
 
 class MockException(Exception):
@@ -145,10 +145,7 @@ def test_iter_partitions(make_df, materialized, dynamic_batching):
             df = df.collect()
 
         parts = list(df.iter_partitions())
-        if get_tests_daft_runner_name() == "ray":
-            import ray
-
-            parts = ray.get(parts)
+        parts = [resolve_ray_partition(p) for p in parts]
         parts = [_.to_pydict() for _ in parts]
 
         assert parts == [
@@ -209,23 +206,40 @@ def test_iter_partitions_exception(make_df, dynamic_batching):
 
         it = df.iter_partitions()
         part = next(it)
-        if get_tests_daft_runner_name() == "ray":
-            import ray
-
-            part = ray.get(part)
+        part = resolve_ray_partition(part)
         part = part.to_pydict()
 
         assert part == {"a": [0, 1], "b": [0, 1]}
 
         # Ensure the exception does trigger if execution continues.
         with pytest.raises(UDFException) as exc_info:
-            res = list(it)
-            if get_tests_daft_runner_name() == "ray":
-                ray.get(res)
+            for p in it:
+                resolve_ray_partition(p)
 
-        # Ray's wrapping of the exception loses information about the `.cause`, but preserves it in the string error message
-        if get_tests_daft_runner_name() == "ray":
-            assert "MockException" in str(exc_info.value)
-        else:
-            assert isinstance(exc_info.value.__cause__, MockException)
-        assert str(exc_info.value).endswith("failed when executing on inputs:\n  - a (Int64, length=2)")
+    # Ray's wrapping of the exception loses information about the `.cause`, but preserves it in the string error message
+    if get_tests_daft_runner_name() == "ray":
+        assert "MockException" in str(exc_info.value)
+    else:
+        assert isinstance(exc_info.value.__cause__, MockException)
+    assert str(exc_info.value).endswith("failed when executing on inputs:\n  - a (Int64, length=2)")
+
+
+@pytest.mark.parametrize("dynamic_batching", [True, False])
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="To test ray shuffle exception")
+def test_iter_partitions_ray_shuffle_exception(make_df, dynamic_batching):
+    @daft.udf(return_dtype=daft.DataType.int64())
+    def trigger_shuffle_error(s):
+        if any(x >= 40 for x in s.to_pylist()):
+            raise MockException("Ray Shuffle Error")
+        return s
+
+    with daft.execution_config_ctx(enable_dynamic_batching=dynamic_batching):
+        df = make_df({"a": list(range(50))}).repartition(5).with_column("b", trigger_shuffle_error(daft.col("a")))
+
+        it = df.iter_partitions()
+
+        with pytest.raises(UDFException) as exc_info:
+            for part in it:
+                resolve_ray_partition(part)
+
+    assert "Ray Shuffle Error" in str(exc_info.value)
