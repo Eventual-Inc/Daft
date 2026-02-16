@@ -285,7 +285,22 @@ impl MapArray {
         let val = self.get(idx);
         match val {
             None => Ok("None".to_string()),
-            Some(v) => series_as_list_str(&v),
+            Some(v) => {
+                let struct_arr = v.struct_()?;
+                let keys = struct_arr.get("key")?;
+                let values = struct_arr.get("value")?;
+                let pairs: Vec<String> = (0..keys.len())
+                    .map(|i| {
+                        let key_str = if matches!(keys.data_type(), DataType::Utf8) {
+                            format!("\"{}\"", keys.str_value(i))
+                        } else {
+                            keys.str_value(i)
+                        };
+                        format!("{}: {}", key_str, values.str_value(i))
+                    })
+                    .collect();
+                Ok(format!("{{{}}}", pairs.join(", ")))
+            }
         }
     }
 }
