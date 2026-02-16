@@ -32,20 +32,15 @@ pub struct SkipExistingSpec {
 }
 
 impl SkipExistingSpec {
-    #[cfg(feature = "python")]
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        root_dir: Vec<String>,
-        file_format: FileFormat,
-        key_column: Vec<String>,
-        io_config: Option<IOConfig>,
-        read_kwargs: PyObjectWrapper,
+    fn validate_inputs(
+        root_dir: &[String],
+        key_column: &[String],
         num_key_filter_partitions: Option<usize>,
         num_cpus: Option<f64>,
         key_filter_batch_size: Option<usize>,
         key_filter_loading_batch_size: Option<usize>,
         key_filter_max_concurrency: Option<usize>,
-    ) -> DaftResult<Self> {
+    ) -> DaftResult<()> {
         if root_dir.is_empty() || root_dir.iter().any(|p| p.is_empty()) {
             return Err(DaftError::ValueError(
                 "[skip_existing] root_dir must be a non-empty list of non-empty paths".to_string(),
@@ -82,6 +77,32 @@ impl SkipExistingSpec {
                 "[skip_existing] key_filter_max_concurrency must be > 0".to_string(),
             ));
         }
+        Ok(())
+    }
+
+    #[cfg(feature = "python")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        root_dir: Vec<String>,
+        file_format: FileFormat,
+        key_column: Vec<String>,
+        io_config: Option<IOConfig>,
+        read_kwargs: PyObjectWrapper,
+        num_key_filter_partitions: Option<usize>,
+        num_cpus: Option<f64>,
+        key_filter_batch_size: Option<usize>,
+        key_filter_loading_batch_size: Option<usize>,
+        key_filter_max_concurrency: Option<usize>,
+    ) -> DaftResult<Self> {
+        Self::validate_inputs(
+            &root_dir,
+            &key_column,
+            num_key_filter_partitions,
+            num_cpus,
+            key_filter_batch_size,
+            key_filter_loading_batch_size,
+            key_filter_max_concurrency,
+        )?;
         Ok(Self {
             root_dir,
             file_format,
@@ -109,42 +130,15 @@ impl SkipExistingSpec {
         key_filter_loading_batch_size: Option<usize>,
         key_filter_max_concurrency: Option<usize>,
     ) -> DaftResult<Self> {
-        if root_dir.is_empty() || root_dir.iter().any(|p| p.is_empty()) {
-            return Err(DaftError::ValueError(
-                "[skip_existing] root_dir must be a non-empty list of non-empty paths".to_string(),
-            ));
-        }
-        if key_column.is_empty() || key_column.iter().any(|c| c.is_empty()) {
-            return Err(DaftError::ValueError(
-                "[skip_existing] key_column must be a non-empty list of non-empty column names"
-                    .to_string(),
-            ));
-        }
-        if matches!(num_key_filter_partitions, Some(0)) {
-            return Err(DaftError::ValueError(
-                "[skip_existing] num_key_filter_partitions must be > 0".to_string(),
-            ));
-        }
-        if matches!(num_cpus, Some(v) if v <= 0.0) {
-            return Err(DaftError::ValueError(
-                "[skip_existing] num_cpus must be > 0".to_string(),
-            ));
-        }
-        if matches!(key_filter_batch_size, Some(0)) {
-            return Err(DaftError::ValueError(
-                "[skip_existing] key_filter_batch_size must be > 0".to_string(),
-            ));
-        }
-        if matches!(key_filter_loading_batch_size, Some(0)) {
-            return Err(DaftError::ValueError(
-                "[skip_existing] key_filter_loading_batch_size must be > 0".to_string(),
-            ));
-        }
-        if matches!(key_filter_max_concurrency, Some(0)) {
-            return Err(DaftError::ValueError(
-                "[skip_existing] key_filter_max_concurrency must be > 0".to_string(),
-            ));
-        }
+        Self::validate_inputs(
+            &root_dir,
+            &key_column,
+            num_key_filter_partitions,
+            num_cpus,
+            key_filter_batch_size,
+            key_filter_loading_batch_size,
+            key_filter_max_concurrency,
+        )?;
         Ok(Self {
             root_dir,
             file_format,

@@ -2389,20 +2389,7 @@ class DataFrame:
             ...     file_format="parquet",
             ... )
         """
-        if isinstance(on, str):
-            key_column: str | list[str] = on
-            key_columns = [on]
-        else:
-            if len(on) == 0:
-                raise ValueError("[skip_existing] on must be a non-empty column name or list of column names")
-            if any((not isinstance(c, str)) or c == "" for c in on):
-                raise ValueError("[skip_existing] on must be a non-empty column name or list of column names")
-            key_column = on
-            key_columns = on
-
-        missing = [c for c in key_columns if c not in self.column_names]
-        if missing:
-            raise ValueError(f"[skip_existing] key column not found in schema: {missing}")
+        key_column: str | list[str] = on
 
         if isinstance(file_format, str):
             fmt = file_format.strip().lower()
@@ -2419,24 +2406,10 @@ class DataFrame:
             raise ValueError(f"[skip_existing] Unsupported format: {file_format}")
 
         io_config = get_context().daft_planning_config.default_io_config if io_config is None else io_config
-        if num_key_filter_partitions <= 0:
-            raise ValueError("[skip_existing] num_key_filter_partitions must be > 0")
-        if num_cpus <= 0:
-            raise ValueError("[skip_existing] num_cpus must be > 0")
-        if key_filter_batch_size is not None and key_filter_batch_size <= 0:
-            raise ValueError("[skip_existing] key_filter_batch_size must be > 0")
-        if key_filter_loading_batch_size <= 0:
-            raise ValueError("[skip_existing] key_filter_loading_batch_size must be > 0")
-        if key_filter_max_concurrency <= 0:
-            raise ValueError("[skip_existing] key_filter_max_concurrency must be > 0")
 
         root_dir: str | list[str]
         if isinstance(path, list):
             root_dir = [str(p) for p in path]
-            if len(root_dir) == 0:
-                raise ValueError("[skip_existing] path list must be non-empty")
-            if any(p == "" for p in root_dir):
-                raise ValueError("[skip_existing] path list must contain only non-empty paths")
         else:
             root_dir = str(path)
 

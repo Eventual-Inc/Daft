@@ -491,7 +491,7 @@ def test_skip_existing_composite_key_filters_correctly(tmp_path: Path):
 def test_skip_existing_empty_key_list_raises(tmp_path: Path):
     df = daft.from_pydict({"id": [1], "val": ["a"]})
     with pytest.raises(
-        ValueError, match=r"\[skip_existing\] on must be a non-empty column name or list of column names"
+        ValueError, match=r"\[skip_existing\] key_column must be a non-empty list of non-empty column names"
     ):
         df.skip_existing(tmp_path / "a", on=[], file_format="parquet").collect()
 
