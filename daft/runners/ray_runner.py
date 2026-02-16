@@ -514,12 +514,11 @@ def _maybe_apply_skip_existing(builder: LogicalPlanBuilder) -> tuple[LogicalPlan
     if not specs:
         return builder, None
     from daft.execution.skip_existing import (
+        KeySpec,
         _cleanup_key_filter_resources,
         _prepare_key_filter,
         create_key_filter_udf,
     )
-    from daft.expressions import col
-    from daft.functions.struct import to_struct
 
     cleanup_items: list[tuple[list[Any], Any | None]] = []
     predicates: list[Expression | None] = []
@@ -550,17 +549,8 @@ def _maybe_apply_skip_existing(builder: LogicalPlanBuilder) -> tuple[LogicalPlan
             if key_filter_max_concurrency is None:
                 raise RuntimeError("[skip_existing] key_filter_max_concurrency must be provided")
 
-            key_columns: list[str] | None
-            if isinstance(key_column, list):
-                if len(key_column) > 1:
-                    key_columns = key_column
-                    key_expr = to_struct(**{k: col(k) for k in key_columns})
-                else:
-                    key_columns = None
-                    key_expr = col(key_column[0])
-            else:
-                key_columns = None
-                key_expr = col(key_column)
+            key_spec = KeySpec(key_column)
+            key_expr = key_spec.to_expr()
 
             read_fn: Callable[..., DataFrame]
             if file_format == FileFormat.Parquet:
@@ -581,7 +571,7 @@ def _maybe_apply_skip_existing(builder: LogicalPlanBuilder) -> tuple[LogicalPlan
             actor_handles, placement_group = _prepare_key_filter(
                 root_dir=cast("Any", root_dir),
                 io_config=io_config,
-                key_column=key_column,
+                key_spec=key_spec,
                 num_buckets=num_buckets,
                 num_cpus=num_cpus,
                 read_fn=read_fn,
@@ -593,7 +583,7 @@ def _maybe_apply_skip_existing(builder: LogicalPlanBuilder) -> tuple[LogicalPlan
             key_filter_expr = create_key_filter_udf(
                 num_buckets,
                 actor_handles,
-                tuple(key_columns) if key_columns is not None else (),
+                key_spec,
                 key_filter_batch_size,
             )(key_expr)
             cleanup_items.append((actor_handles, placement_group))

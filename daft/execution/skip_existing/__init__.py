@@ -25,6 +25,30 @@ PLACEMENT_GROUP_READY_TIMEOUT_SECONDS = 50
 ASYNC_AWAIT_TIMEOUT_SECONDS = 1000
 
 
+class KeySpec:
+    def __init__(self, key_columns: list[str]):
+        if not key_columns or any((not isinstance(c, str)) or c == "" for c in key_columns):
+            raise ValueError(
+                "[skip_existing] key_column must be a non-empty column name or list of non-empty column names"
+            )
+        self.key_columns = key_columns
+        self.is_composite = len(key_columns) > 1
+        self.composite_key_fields = tuple(key_columns) if self.is_composite else ()
+
+    def to_expr(self) -> Expression:
+        if self.is_composite:
+            from daft.functions.struct import to_struct
+
+            return to_struct(**{k: col(k) for k in self.key_columns})
+        return col(self.key_columns[0])
+
+    def to_numpy(self, input: Series) -> "np.ndarray":  # noqa: UP037
+        if self.is_composite:
+            keys = input.to_pylist()
+            return _composite_keys_to_numpy(keys, self.composite_key_fields)
+        return input.to_arrow().to_numpy(zero_copy_only=False)
+
+
 def _composite_keys_to_numpy(keys: list[Any], composite_key_fields: tuple[str, ...]) -> "np.ndarray":  # noqa: UP037
     import numpy as np
 
@@ -64,22 +88,16 @@ async def _ingest_keys_udf(
     *,
     actors_by_bucket: dict[int, Any],
     num_buckets: int,
-    composite_key_fields: tuple[str, ...],
+    key_spec: KeySpec,
 ) -> Series:
     import asyncio
-    import numpy as np
     import pyarrow as pa
 
     num_rows = len(input)
     if num_rows == 0:
         return Series.from_arrow(pa.nulls(0))
 
-    keys = input.to_pylist()
-    if not composite_key_fields:
-        keys_np = np.asarray(keys, dtype=object)
-    else:
-        keys_np = _composite_keys_to_numpy(keys, composite_key_fields)
-    del keys
+    keys_np = key_spec.to_numpy(input)
 
     futures = []
     for bucket, row_indices in _iter_bucket_row_groups(input, num_buckets):
@@ -96,27 +114,20 @@ async def _ingest_keys_udf(
 
 def _ingest_keys_to_actors(
     df_keys: DataFrame,
-    key_columns: list[str],
+    key_spec: KeySpec,
     *,
     actors_by_bucket: dict[int, Any],
     num_buckets: int,
-    composite_key_fields: tuple[str, ...],
     key_filter_loading_batch_size: int,
 ) -> None:
-    if len(key_columns) == 1:
-        key_expr = col(key_columns[0])
-    else:
-        from daft.functions.struct import to_struct
-
-        key_expr = to_struct(**{k: col(k) for k in key_columns})
-
+    key_expr = key_spec.to_expr()
     expr = cast(
         "Expression",
         _ingest_keys_udf(
             key_expr,
             actors_by_bucket=actors_by_bucket,
             num_buckets=num_buckets,
-            composite_key_fields=composite_key_fields,
+            key_spec=key_spec,
         ),
     )
     df_keys.into_batches(key_filter_loading_batch_size).select(expr).collect()
@@ -147,7 +158,7 @@ class KeyFilterActor:
 def create_key_filter_udf(
     num_buckets: int,
     actor_handles: list[ActorHandle] | None,
-    composite_key_fields: tuple[str, ...] = (),
+    key_spec: KeySpec,
     key_filter_batch_size: int | None = None,
 ) -> Callable[[Expression], Expression]:
     @func.batch(return_dtype=DataType.bool(), batch_size=key_filter_batch_size)
@@ -167,12 +178,7 @@ def create_key_filter_udf(
         if num_rows == 0:
             return Series.from_numpy(np.empty(0, dtype=bool))
 
-        # Convert Input to NumPy (Zero Copy if possible)
-        if not composite_key_fields:
-            keys_np = input.to_arrow().to_numpy(zero_copy_only=False)
-        else:
-            keys = input.to_pylist()
-            keys_np = _composite_keys_to_numpy(keys, composite_key_fields)
+        keys_np = key_spec.to_numpy(input)
 
         futures = []
         row_indices_list: list[np.ndarray] = []
@@ -215,7 +221,7 @@ def create_key_filter_udf(
 def _prepare_key_filter(
     root_dir: str | pathlib.Path | list[str | pathlib.Path],
     io_config: IOConfig | None,
-    key_column: str | list[str],
+    key_spec: KeySpec,
     num_buckets: int,  # TODO: rename
     num_cpus: float,
     read_fn: Callable[..., DataFrame],
@@ -239,10 +245,7 @@ def _prepare_key_filter(
 
     root_dirs = root_dir if isinstance(root_dir, list) else [root_dir]
     root_dirs_str = [str(p) for p in root_dirs]
-
-    key_columns = [key_column] if isinstance(key_column, str) else key_column
-    if not key_columns or any((not isinstance(c, str)) or c == "" for c in key_columns):
-        raise ValueError("[skip_existing] key_column must be a non-empty column name or list of non-empty column names")
+    key_columns = key_spec.key_columns
 
     logger.info(
         "Preparing key filter root_dirs=%s key_columns=%s num_buckets=%s num_cpus=%s",
@@ -290,7 +293,6 @@ def _prepare_key_filter(
     actor_handles: list[ActorHandle] = []
     actors_by_bucket: dict[int, ActorHandle] = {}
     try:
-        composite_key_fields = tuple(key_columns) if len(key_columns) > 1 else ()
         for i in range(num_buckets):
             actor = (
                 ray.remote(max_concurrency=key_filter_max_concurrency)(KeyFilterActor)
@@ -308,10 +310,9 @@ def _prepare_key_filter(
 
         _ingest_keys_to_actors(
             df_keys,
-            key_columns,
+            key_spec,
             actors_by_bucket=actors_by_bucket,
             num_buckets=num_buckets,
-            composite_key_fields=composite_key_fields,
             key_filter_loading_batch_size=key_filter_loading_batch_size,
         )
     except Exception as e:
