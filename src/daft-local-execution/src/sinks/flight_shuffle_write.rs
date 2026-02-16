@@ -37,14 +37,15 @@ impl FlightShuffleWriteSink {
         compression: Option<String>,
         cache_id: String,
     ) -> DaftResult<Self> {
-        const TARGET_TOTAL_IN_MEMORY_SIZE_BYTES: usize = 1024 * 1024 * 1024 * 2; // 2GB
+        const TARGET_TOTAL_IN_MEMORY_SIZE_BYTES: usize = 1024 * 1024 * 2000; // 2000MB = ~2GB
 
         let shuffle_cache = InProgressShuffleCache::try_new(
             num_partitions,
             &shuffle_dirs,
             cache_id.clone(),
             shuffle_id,
-            TARGET_TOTAL_IN_MEMORY_SIZE_BYTES / num_partitions,
+            (TARGET_TOTAL_IN_MEMORY_SIZE_BYTES / num_partitions)
+                .clamp(1024 * 1024 * 8, 1024 * 1024 * 128), // Min 8MB, Max 128MB
             compression.as_deref(),
         )?;
 
