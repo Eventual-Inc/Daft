@@ -10,7 +10,7 @@ import time
 from ray.job_submission import JobStatus, JobSubmissionClient
 
 import daft
-from tools.ci_bench_utils import get_run_metadata, tail_logs
+from tools.ci_bench_utils import get_run_metadata, tail_logs, upload_to_google_sheets
 
 SF_TO_S3_PATH = {
     100: "s3://eventual-dev-benchmarking-fixtures/uncompressed/tpch-dbgen/100_0/32/parquet/",
@@ -36,10 +36,13 @@ def run_benchmark(up_to_query: int = 22):
         start: float = time.perf_counter()
 
         submission_id = client.submit_job(
-            entrypoint=f"DAFT_RUNNER=ray DAFT_PROGRESS_BAR=0 python answers_sql.py {parquet_path} {q}",
+            entrypoint=f"DAFT_RUNNER=ray python answers_sql.py {parquet_path} {q}",
             runtime_env={
                 "working_dir": "./benchmarking/tpch",
-                "env_vars": {"DAFT_PROGRESS_BAR": "0", "DAFT_SHUFFLE_ALGORITHM": "flight_shuffle"},
+                "env_vars": {
+                    "DAFT_PROGRESS_BAR": "0",
+                    "DAFT_SHUFFLE_ALGORITHM": os.getenv("DAFT_SHUFFLE_ALGORITHM", "auto"),
+                },
             },
         )
 
@@ -65,19 +68,26 @@ def main():
     metadata = get_run_metadata()
     scale_factor = int(os.getenv("TPCH_SCALE_FACTOR"))
     num_workers = int(os.getenv("RAY_NUM_WORKERS"))
+    shuffle_algorithm = os.getenv("DAFT_SHUFFLE_ALGORITHM", "auto")
 
-    # print("Starting warmup run...")
-    # run_benchmark(up_to_query=3)
+    print("Starting warmup run...")
+    run_benchmark(up_to_query=5)
 
     print("Warmup done. Running benchmark and collecting results...")
-    results = run_benchmark(up_to_query=2)
+    results = run_benchmark()
 
-    data_dict = {**metadata, "scale factor": scale_factor, "num workers": num_workers, **results}
+    data_dict = {
+        **metadata,
+        "scale factor": scale_factor,
+        "num workers": num_workers,
+        "shuffle algorithm": shuffle_algorithm,
+        **results,
+    }
 
     print("Results:")
     print(data_dict)
 
-    # upload_to_google_sheets("Distributed TPC-H", list(data_dict.values()))
+    upload_to_google_sheets("Distributed TPC-H", list(data_dict.values()))
 
 
 if __name__ == "__main__":
