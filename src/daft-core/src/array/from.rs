@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use arrow::{
     array::{ArrowPrimitiveType, BooleanBuilder},
-    buffer::{BooleanBuffer, NullBuffer, ScalarBuffer},
+    buffer::{BooleanBuffer, NullBuffer, OffsetBuffer, ScalarBuffer},
 };
 use common_error::DaftResult;
 use daft_arrow::types::months_days_ns;
@@ -41,9 +41,8 @@ impl ListArray {
         .into_series();
 
         let lengths = data.iter().map(|d| d.as_ref().map_or(0, |d| d.len()));
-        let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)
-            .unwrap()
-            .into();
+
+        let offsets = OffsetBuffer::from_lengths(lengths);
 
         let nulls = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
@@ -61,8 +60,8 @@ impl ListArray {
     /// The child series are concatenated into a single flat child array.
     pub fn from_series(name: &str, data: Vec<Option<Series>>) -> DaftResult<Self> {
         let lengths = data.iter().map(|s| s.as_ref().map_or(0, |s| s.len()));
-        let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)?.into();
 
+        let offsets = OffsetBuffer::from_lengths(lengths);
         let nulls = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
         let flat_child = Series::concat(&data.iter().flatten().collect::<Vec<_>>())?;

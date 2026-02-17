@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
 
 env:
-  DAFT_ANALYTICS_ENABLED: '0'
+  DAFT_ANALYTICS_ENABLED: "0"
   RUST_BACKTRACE: 1
   DAFT_PROGRESS_BAR: 0
 
@@ -77,25 +77,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10', '3.13']
+        python-version: ["3.10", "3.13"]
         daft-runner: [ray, native]
-        pyarrow-version: ['22.0.0']
+        pyarrow-version: ["22.0.0"]
         os: [ubuntu-latest, macos-latest]
         coverage: [true]
         on-main:
         - ${{ github.ref == 'refs/heads/main' }}
         include:
-        # pyarrow compat test — runs without coverage instrumentation
-        - python-version: '3.10'
+          # pyarrow compat test — runs without coverage instrumentation
+        - python-version: "3.10"
           daft-runner: native
-          pyarrow-version: '8.0.0'
+          pyarrow-version: "8.0.0"
           os: ubuntu-latest
           on-main: ${{ github.ref == 'refs/heads/main' }}
           coverage: false
         exclude:
-        - python-version: '3.10'
+        - python-version: "3.10"
           os: macos-latest
-        # don't run mac unit tests in PRs
+          # don't run mac unit tests in PRs
         - os: macos-latest
           on-main: false
 
@@ -127,7 +127,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2
       with:
         prefix-key: ${{ runner.os }}-build
-        cache-all-crates: 'true'
+        cache-all-crates: "true"
     - name: Install cargo-llvm-cov
       if: matrix.coverage != false
       uses: taiki-e/install-action@cargo-llvm-cov
@@ -194,7 +194,7 @@ jobs:
         coverage xml -o ./report-output/coverage-${{ join(matrix.*, '-') }}.xml
         cargo llvm-cov report --lcov --output-path report-output/rust-coverage-${{ join(matrix.*, '-') }}.lcov
       env:
-        # output of `cargo llvm-cov show-env --export-prefix`
+          # output of `cargo llvm-cov show-env --export-prefix`
         RUSTFLAGS: -C instrument-coverage --cfg=coverage --cfg=coverage_nightly --cfg=trybuild_no_target
         LLVM_PROFILE_FILE: ./target/daft-coverage-%p-%m.profraw
         CARGO_LLVM_COV: 1
@@ -271,7 +271,7 @@ jobs:
       package-name: daft
     strategy:
       matrix:
-        python-version: ['3.10']
+        python-version: ["3.10"]
     steps:
     - uses: actions/checkout@v6
       with:
@@ -295,7 +295,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2
       with:
         prefix-key: ${{ runner.os }}-integration-build
-        cache-all-crates: 'true'
+        cache-all-crates: "true"
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version: latest
@@ -305,7 +305,7 @@ jobs:
         bun install
         bun run build
 
-    # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
+      # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
     - name: Build wheels
       run: |
         source .venv/bin/activate
@@ -337,7 +337,7 @@ jobs:
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
-        python-version: '3.10'
+        python-version: "3.10"
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
@@ -410,7 +410,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10']
+        python-version: ["3.10"]
         daft-runner: [ray, native]
     steps:
     - name: Free Disk Space (Ubuntu)
@@ -659,7 +659,7 @@ jobs:
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
-        python-version: '3.10'
+        python-version: "3.10"
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
@@ -758,8 +758,8 @@ jobs:
         fetch-depth: 0
     - uses: actions/setup-java@v5
       with:
-        distribution: 'temurin'
-        java-version: '17'
+        distribution: "temurin"
+        java-version: "17"
     - uses: actions/checkout@v6
       with:
         repository: unitycatalog/unitycatalog
@@ -778,7 +778,7 @@ jobs:
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
-        python-version: '3.10'
+        python-version: "3.10"
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
@@ -796,7 +796,7 @@ jobs:
           uv sync --no-install-project --all-extras --all-groups
           uv pip install dist/${{ env.package-name }}-*x86_64*.whl --force-reinstall
           rm -rf daft
-    # Iceberg test setup
+      # Iceberg test setup
     - uses: docker/setup-buildx-action@v3
     - uses: docker/build-push-action@v6
       with:
@@ -809,14 +809,14 @@ jobs:
         pushd ./tests/integration/iceberg/docker-compose/
         docker compose -f ./docker-compose.yml up -d
         popd
-    # Gravitino test setup
+      # Gravitino test setup
     - name: Spin up Gravitino service
       run: |
         pushd ./tests/integration/gravitino/docker-compose/
         docker compose -f ./docker-compose.yml up -d
         popd
 
-    # Unity tests
+      # Unity tests
     - name: Run Unity integration tests (native)
       if: always()
       run: |
@@ -843,7 +843,7 @@ jobs:
         DATABRICKS_ENDPOINT: ${{ secrets.ACTIONS_DATABRICKS_ENDPOINT }}
         DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID: ${{ secrets.ACTIONS_DATABRICKS_SERVICE_PRINCIPAL_CLIENT_ID }}
         DATABRICKS_SERVICE_PRINCIPAL_SECRET: ${{ secrets.ACTIONS_DATABRICKS_SERVICE_PRINCIPAL_SECRET }}
-    # Iceberg tests
+      # Iceberg tests
     - name: Run Iceberg integration tests (native)
       if: always()
       run: |
@@ -862,7 +862,7 @@ jobs:
         python tools/aggregate_test_durations.py iceberg_pytest_output.txt
       env:
         DAFT_RUNNER: ray
-    # Delta Lake tests
+      # Delta Lake tests
     - name: Run Delta Lake integration tests (native)
       if: always()
       run: |
@@ -881,7 +881,7 @@ jobs:
         python ./tools/aggregate_test_durations.py delta_lake_pytest_output.txt
       env:
         DAFT_RUNNER: ray
-    # Gravitino tests
+      # Gravitino tests
     - name: Run Gravitino integration tests (native)
       if: always()
       run: |
@@ -905,7 +905,7 @@ jobs:
         GRAVITINO_ENDPOINT: http://127.0.0.1:8090
         GRAVITINO_METALAKE: metalake_demo
 
-    # Cleanup docker services
+      # Cleanup docker services
     - name: Cleanup Docker services
       if: always()
       run: |
@@ -937,7 +937,6 @@ jobs:
         webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
 
-
   integration-test-ai:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -948,7 +947,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10']
+        python-version: ["3.10"]
         daft-runner: [ray, native]
     steps:
     - name: Free Disk Space (Ubuntu)
@@ -1027,7 +1026,6 @@ jobs:
           }
         webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
-
 
   # NOTE: Credentialed AI tests are commented out while secrets are being audited.
   # These tests have non-credentialed equivalents in the integration-test-ai job.
@@ -1127,7 +1125,7 @@ jobs:
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
-        python-version: '3.10'
+        python-version: "3.10"
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
@@ -1186,11 +1184,11 @@ jobs:
     needs:
     - integration-test-tpch
     - integration-test-io
-    # - integration-test-io-credentialed
+      # - integration-test-io-credentialed
     - integration-test-sql
     - integration-test-catalogs
     - integration-test-ai
-    # - integration-test-ai-credentialed
+      # - integration-test-ai-credentialed
     - integration-test-ray
     if: always()
     steps:
@@ -1218,12 +1216,12 @@ jobs:
       with:
         prefix-key: dev-bench
         key: ${{ runner.os }}-benchmark-build
-        cache-all-crates: 'true'
+        cache-all-crates: "true"
         cache-provider: buildjet
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
-        python-version: '3.12'  # Codspeed requires Python 3.12
+        python-version: "3.12"   # Codspeed requires Python 3.12
         enable-cache: true
         cache-dependency-glob: "**/pyproject.toml"
     - name: Setup Virtual Env
@@ -1301,11 +1299,11 @@ jobs:
         bins: cargo-llvm-cov@0.6.14
         components: llvm-tools-preview
     - uses: Swatinem/rust-cache@v2
-      # skip on windows because it misses the cache and is very slow (~15 minutes)
+        # skip on windows because it misses the cache and is very slow (~15 minutes)
       if: ${{ matrix.os != 'Windows' }}
       with:
         key: ${{ runner.os }}-rust-build
-        cache-all-crates: 'true'
+        cache-all-crates: "true"
     - name: Free Disk Space (Ubuntu)
       if: ${{ matrix.os == 'ubuntu' }}
       uses: jlumbroso/free-disk-space@main
@@ -1383,7 +1381,7 @@ jobs:
   doctests:
     runs-on: ubuntu-latest
     env:
-      python-version: '3.10'
+      python-version: "3.10"
     steps:
     - name: Free Disk Space (Ubuntu)
       uses: jlumbroso/free-disk-space@main
@@ -1409,7 +1407,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2
       with:
         prefix-key: ${{ runner.os }}-build
-        cache-all-crates: 'true'
+        cache-all-crates: "true"
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -1434,7 +1432,6 @@ jobs:
         make doctests
       env:
         DAFT_RUNNER: native
-
 
   publish-coverage-reports:
     name: Publish coverage reports to CodeCov
@@ -1486,7 +1483,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu, Windows]
-        python-version: ['3.10']
+        python-version: ["3.10"]
         on-main:
         - ${{ github.ref == 'refs/heads/main' }}
         exclude:
@@ -1501,7 +1498,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2
       with:
         prefix-key: ${{ runner.os }}-build
-        cache-all-crates: 'true'
+        cache-all-crates: "true"
 
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
@@ -1582,12 +1579,11 @@ jobs:
       if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
       run: exit 1
 
-
   style:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      python-version: '3.10'
+      python-version: "3.10"
     steps:
     - uses: actions/checkout@v6
     - name: Setup Python and uv
@@ -1606,7 +1602,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2
       with:
         prefix-key: ${{ runner.os }}-build
-        cache-all-crates: 'true'
+        cache-all-crates: "true"
 
     - uses: actions/cache@v5
       id: pre-commit-cache

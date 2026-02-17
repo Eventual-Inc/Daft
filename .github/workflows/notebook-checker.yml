@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  DAFT_ANALYTICS_ENABLED: '0'
+  DAFT_ANALYTICS_ENABLED: "0"
 
 jobs:
   notebook-check:
@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10']
+        python-version: ["3.10"]
     steps:
     - uses: actions/checkout@v6
     - name: Set up Python ${{ matrix.python-version }}

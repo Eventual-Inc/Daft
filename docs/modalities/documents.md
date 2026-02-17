@@ -2,7 +2,6 @@
 
 Documents are a common type of data that can be found in many different formats. The `daft.File` type is particularly useful for working with documents in a distributed manner.
 
-
 ## Prompting LLMs with Text Documents as Context
 
 The `prompt` function supports multiple file input methods depending on the provider and file type:
@@ -10,7 +9,6 @@ The `prompt` function supports multiple file input methods depending on the prov
 - **PDF files**: Passed directly as file inputs (native OpenAI support)
 - **Text files** (Markdown, HTML, CSV, etc.): Content is automatically extracted and injected into prompts
 - **Images**: Supported via `daft.DataType.Image()` or file paths
-
 
 For example, the following code demonstrates how to use `prompt` with `daft.File` to read a PDF file to search the web for closely related papers.
 
@@ -52,7 +50,7 @@ results = df.to_pydict()
 print(results)
 ```
 
-``` {title="Output"}
+```{title="Output"}
 {
     'path': ['hf://datasets/Eventual-Inc/sample-files/papers/2102.04074v1.pdf'],
     'summary': [
@@ -134,7 +132,7 @@ if __name__ == "__main__":
     df.show(3)
 ```
 
-``` {title="Output"}
+```{title="Output"}
 ╭────────────────────────────────┬─────────────┬────────────────────────────────┬────────────────────────────────╮
 │ path                           ┆ page_number ┆ page_text                      ┆ page_image_bytes               │
 │ ---                            ┆ ---         ┆ ---                            ┆ ---                            │
@@ -157,7 +155,7 @@ if __name__ == "__main__":
 
 The following example demonstrates how to use `daft.File` to extract the structure and content from a Markdown file.
 
-```python
+````python
 import daft
 from daft import DataType
 import re
@@ -256,9 +254,9 @@ if __name__ == "__main__":
     )
 
     df.show(3)
-```
+````
 
-``` {title="Output"}
+```{title="Output"}
 ╭─────────────────────────┬─────────────────────────┬────────────────────────┬────────────────────────┬────────────────────────┬────────────────────────╮
 │ path                    ┆ title                   ┆ content                ┆ headings               ┆ code_blocks            ┆ links                  │
 │ ---                     ┆ ---                     ┆ ---                    ┆ ---                    ┆ ---                    ┆ ---                    │
