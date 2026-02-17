@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::sync::Arc;
 
 use arrow::array::{ArrayBuilder, ArrayRef, UInt32Builder};

@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use common_error::{DaftError, DaftResult};
 use daft_core::{array::ops::IntoGroups, prelude::*};
 use daft_dsl::expr::bound_expr::BoundExpr;
