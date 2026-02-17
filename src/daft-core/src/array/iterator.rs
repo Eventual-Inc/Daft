@@ -1,5 +1,7 @@
 use std::iter::{RepeatN, repeat_n};
 
+use arrow::buffer::NullBuffer;
+
 use crate::{
     array::{
         DataArray,
@@ -14,7 +16,7 @@ use crate::{
 #[derive(Clone)]
 pub struct PrimitiveIter<'a, N> {
     values: &'a [N],
-    nulls: Option<&'a daft_arrow::buffer::NullBuffer>,
+    nulls: Option<&'a NullBuffer>,
     index: usize,
     len: usize,
 }
@@ -136,7 +138,7 @@ pub struct BooleanIter<'a> {
     // TODO(arrow2): Uses arrow2 Bitmap because there's no safe way to convert an
     // arrow2 &Bitmap into an arrow-rs &BooleanBuffer. Once BooleanArray is backed by arrow-rs, then this needs to be changed.
     values: &'a daft_arrow::bitmap::Bitmap,
-    nulls: Option<&'a daft_arrow::buffer::NullBuffer>,
+    nulls: Option<&'a NullBuffer>,
     index: usize,
     len: usize,
 }
