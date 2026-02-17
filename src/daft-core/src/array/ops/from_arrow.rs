@@ -378,7 +378,7 @@ impl FromArrow for MapArray {
             DataType::List(Box::new(child_field.dtype.clone())),
         );
 
-        let child_series = Series::from_arrow(child_field.into(), arrow_child_array.clone())?;
+        let child_series = Series::from_arrow(child_field, arrow_child_array.clone())?;
 
         let offsets: arrow::buffer::Buffer = arrow_arr.offsets().inner().clone().into_inner();
         let offsets =

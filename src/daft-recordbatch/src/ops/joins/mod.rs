@@ -172,8 +172,8 @@ impl RecordBatch {
 
                 for (li, ri) in lidx.into_iter().zip(ridx.into_iter()) {
                     match (li, ri) {
-                        (Some(i), _) => growable.extend(0, *i as usize, 1),
-                        (None, Some(i)) => growable.extend(1, *i as usize, 1),
+                        (Some(i), _) => growable.extend(0, i as usize, 1),
+                        (None, Some(i)) => growable.extend(1, i as usize, 1),
                         (None, None) => unreachable!("Join should not have None for both sides"),
                     }
                 }
