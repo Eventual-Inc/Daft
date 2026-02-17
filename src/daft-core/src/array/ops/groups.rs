@@ -119,13 +119,10 @@ where
         ArrowPrimitiveType<Native = <T as DaftNumericType>::Native>,
 {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        let array = self.as_arrow()?;
-        if array.null_count() > 0 {
-            make_groups(array.iter())
+        if self.null_count() > 0 {
+            make_groups(self.into_iter())
         } else {
-            // PrimitiveArray::values() is row-aligned for fixed-width primitives,
-            // so with no nulls we can iterate values() directly.
-            make_groups(array.values().iter())
+            make_groups(self.values().iter())
         }
     }
 }
@@ -138,33 +135,30 @@ where
         ArrowPrimitiveType<Native = <T as DaftNumericType>::Native>,
 {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
-        let array = self.as_arrow()?;
-        if array.null_count() > 0 {
-            make_unique_idxs(array.iter())
+        if self.null_count() > 0 {
+            make_unique_idxs(self.into_iter())
         } else {
-            make_unique_idxs(array.values().iter())
+            make_unique_idxs(self.values().iter())
         }
     }
 }
 
 impl IntoGroups for Decimal128Array {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        let array = self.as_arrow()?;
-        if array.null_count() > 0 {
-            make_groups(array.iter())
+        if self.null_count() > 0 {
+            make_groups(self.into_iter())
         } else {
-            make_groups(array.values().iter())
+            make_groups(self.values().iter())
         }
     }
 }
 
 impl IntoUniqueIdxs for Decimal128Array {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
-        let array = self.as_arrow()?;
-        if array.null_count() > 0 {
-            make_unique_idxs(array.iter())
+        if self.null_count() > 0 {
+            make_unique_idxs(self.into_iter())
         } else {
-            make_unique_idxs(array.values().iter())
+            make_unique_idxs(self.values().iter())
         }
     }
 }
@@ -174,19 +168,18 @@ impl IntoUniqueIdxs for Decimal128Array {
 
 impl IntoGroups for Float32Array {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        let array = self.as_arrow()?;
-        if array.null_count() > 0 {
-            make_groups(array.iter().map(|f| {
+        if self.null_count() > 0 {
+            make_groups(self.into_iter().map(|f| {
                 f.map(|v| {
                     match v.is_nan() {
                         true => f32::NAN,
-                        false => v,
+                        false => *v,
                     }
                     .to_bits()
                 })
             }))
         } else {
-            make_groups(array.values().iter().map(|f| {
+            make_groups(self.values().iter().map(|f| {
                 match f.is_nan() {
                     true => f32::NAN,
                     false => *f,
@@ -199,19 +192,18 @@ impl IntoGroups for Float32Array {
 
 impl IntoUniqueIdxs for Float32Array {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
-        let array = self.as_arrow()?;
-        if array.null_count() > 0 {
-            make_unique_idxs(array.iter().map(|f| {
+        if self.null_count() > 0 {
+            make_unique_idxs(self.into_iter().map(|f| {
                 f.map(|v| {
                     match v.is_nan() {
                         true => f32::NAN,
-                        false => v,
+                        false => *v,
                     }
                     .to_bits()
                 })
             }))
         } else {
-            make_unique_idxs(array.values().iter().map(|f| {
+            make_unique_idxs(self.values().iter().map(|f| {
                 match f.is_nan() {
                     true => f32::NAN,
                     false => *f,
@@ -224,19 +216,18 @@ impl IntoUniqueIdxs for Float32Array {
 
 impl IntoGroups for Float64Array {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        let array = self.as_arrow()?;
-        if array.null_count() > 0 {
-            make_groups(array.iter().map(|f| {
+        if self.null_count() > 0 {
+            make_groups(self.into_iter().map(|f| {
                 f.map(|v| {
                     match v.is_nan() {
                         true => f64::NAN,
-                        false => v,
+                        false => *v,
                     }
                     .to_bits()
                 })
             }))
         } else {
-            make_groups(array.values().iter().map(|f| {
+            make_groups(self.values().iter().map(|f| {
                 match f.is_nan() {
                     true => f64::NAN,
                     false => *f,
@@ -249,19 +240,18 @@ impl IntoGroups for Float64Array {
 
 impl IntoUniqueIdxs for Float64Array {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
-        let array = self.as_arrow()?;
-        if array.null_count() > 0 {
-            make_unique_idxs(array.iter().map(|f| {
+        if self.null_count() > 0 {
+            make_unique_idxs(self.into_iter().map(|f| {
                 f.map(|v| {
                     match v.is_nan() {
                         true => f64::NAN,
-                        false => v,
+                        false => *v,
                     }
                     .to_bits()
                 })
             }))
         } else {
-            make_unique_idxs(array.values().iter().map(|f| {
+            make_unique_idxs(self.values().iter().map(|f| {
                 match f.is_nan() {
                     true => f64::NAN,
                     false => *f,
@@ -276,31 +266,41 @@ impl IntoUniqueIdxs for Float64Array {
 
 impl IntoGroups for Utf8Array {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        let array = self.as_arrow()?;
-        // Utf8 is offset-based, so use row iteration for both null and non-null arrays.
-        make_groups(array.iter())
+        if self.null_count() == 0 {
+            make_groups(self.values()?)
+        } else {
+            make_groups(self.into_iter())
+        }
     }
 }
 
 impl IntoUniqueIdxs for Utf8Array {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
-        let array = self.as_arrow()?;
-        make_unique_idxs(array.iter())
+        if self.null_count() == 0 {
+            make_unique_idxs(self.values()?)
+        } else {
+            make_unique_idxs(self.into_iter())
+        }
     }
 }
 
 impl IntoGroups for BinaryArray {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        let array = self.as_arrow()?;
-        // Binary is offset-based, so use row iteration for both null and non-null arrays.
-        make_groups(array.iter())
+        if self.null_count() == 0 {
+            make_groups(self.values()?)
+        } else {
+            make_groups(self.into_iter())
+        }
     }
 }
 
 impl IntoUniqueIdxs for BinaryArray {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
-        let array = self.as_arrow()?;
-        make_unique_idxs(array.iter())
+        if self.null_count() == 0 {
+            make_unique_idxs(self.values()?)
+        } else {
+            make_unique_idxs(self.into_iter())
+        }
     }
 }
 
@@ -309,6 +309,7 @@ impl IntoUniqueIdxs for BinaryArray {
 impl IntoGroups for FixedSizeBinaryArray {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
         let array = self.as_arrow()?;
+
         let width = array.value_length() as usize;
 
         if array.null_count() > 0 {
@@ -352,22 +353,20 @@ impl IntoUniqueIdxs for FixedSizeBinaryArray {
 
 impl IntoGroups for BooleanArray {
     fn make_groups(&self) -> DaftResult<super::GroupIndicesPair> {
-        let array = self.as_arrow()?;
-        if array.null_count() > 0 {
-            make_groups(array.iter())
+        if self.null_count() > 0 {
+            make_groups(self.into_iter())
         } else {
-            make_groups(array.values().iter())
+            make_groups(self.values()?)
         }
     }
 }
 
 impl IntoUniqueIdxs for BooleanArray {
     fn make_unique_idxs(&self) -> DaftResult<super::VecIndices> {
-        let array = self.as_arrow()?;
-        if array.null_count() > 0 {
-            make_unique_idxs(array.iter())
+        if self.null_count() > 0 {
+            make_unique_idxs(self.into_iter())
         } else {
-            make_unique_idxs(array.values().iter())
+            make_unique_idxs(self.values()?)
         }
     }
 }
