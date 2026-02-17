@@ -95,8 +95,8 @@ impl ListArray {
                     new_offsets.push(*new_offsets.last().unwrap());
                 }
                 Some(i) => {
-                    let start = self.offsets()[*i as usize] as usize;
-                    let end = self.offsets()[*i as usize + 1] as usize;
+                    let start = self.offsets()[i as usize] as usize;
+                    let end = self.offsets()[i as usize + 1] as usize;
                     child_indices.extend(start..end);
                     new_offsets.push(*new_offsets.last().unwrap() + (end - start) as i64);
                     nulls_builder.append(self.is_valid(i.to_usize()));
