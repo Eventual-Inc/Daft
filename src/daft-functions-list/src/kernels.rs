@@ -1,5 +1,4 @@
 #![allow(deprecated, reason = "arrow2 migration")]
-
 use std::{iter::repeat_n, sync::Arc};
 
 use arrow::array::{BooleanBufferBuilder, BooleanBuilder, make_comparator};

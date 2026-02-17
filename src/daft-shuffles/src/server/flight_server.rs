@@ -73,7 +73,6 @@ impl FlightService for ShuffleFlightServer {
         unimplemented!("Get schema is not supported for shuffle server")
     }
 
-    #[allow(deprecated, reason = "arrow2 migration")]
     async fn do_get(
         &self,
         request: Request<Ticket>,
@@ -102,9 +101,8 @@ impl FlightService for ShuffleFlightServer {
             .try_flatten();
 
         #[allow(unused)]
-        #[allow(deprecated, reason = "arrow2 migration")]
         let schema =
-            self.shuffle_cache.schema().to_arrow2().map_err(|e| {
+            self.shuffle_cache.schema().to_arrow().map_err(|e| {
                 Status::internal(format!("Error converting schema to arrow: {}", e))
             })?;
 

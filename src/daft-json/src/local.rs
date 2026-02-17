@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::{borrow::Cow, collections::HashSet, num::NonZeroUsize, sync::Arc};
 
 use common_error::DaftResult;
@@ -70,7 +69,6 @@ pub fn read_json_local(
     }
 }
 
-#[allow(deprecated, reason = "arrow2 migration")]
 pub fn read_json_array_impl(
     bytes: &[u8],
     schema: Schema,
@@ -277,7 +275,6 @@ impl<'a> JsonReader<'a> {
         Ok(tbl)
     }
 
-    #[allow(deprecated, reason = "arrow2 migration")]
     fn parse_json_chunk(&self, bytes: &[u8], chunk_size: usize) -> DaftResult<RecordBatch> {
         let mut scratch = vec![];
         let scratch = &mut scratch;
