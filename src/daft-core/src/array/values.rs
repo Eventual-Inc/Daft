@@ -9,7 +9,7 @@ impl Utf8Array {
     /// If you need to handle nulls, use the `.iter()` method instead.
     pub fn values(&self) -> DaftResult<impl Iterator<Item = &str>> {
         let arrow2_arr = self.as_arrow2();
-        if arrow2_arr.validity().is_some() {
+        if self.null_count() > 0 {
             return Err(DaftError::ComputeError(
                 "Utf8Array::values with nulls".to_string(),
             ));
@@ -25,7 +25,7 @@ impl BinaryArray {
     /// If you need to handle nulls, use the `.iter()` method instead.
     pub fn values(&self) -> DaftResult<impl Iterator<Item = &[u8]>> {
         let arrow2_arr = self.as_arrow2();
-        if arrow2_arr.validity().is_some() {
+        if self.null_count() > 0 {
             return Err(DaftError::ComputeError(
                 "BinaryArray::values with nulls".to_string(),
             ));
@@ -41,7 +41,7 @@ impl BooleanArray {
     /// If you need to handle nulls, use the `.iter()` method instead.
     pub fn values(&self) -> DaftResult<impl Iterator<Item = bool>> {
         let arrow2_arr = self.as_arrow2();
-        if arrow2_arr.validity().is_some() {
+        if self.null_count() > 0 {
             return Err(DaftError::ComputeError(
                 "BooleanArray::values with nulls".to_string(),
             ));
