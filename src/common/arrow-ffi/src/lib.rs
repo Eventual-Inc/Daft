@@ -5,8 +5,6 @@
 //! depending on the `arrow-pyarrow` crate because it pins a different version of `pyo3` than
 //! the one used in this workspace, making it incompatible with our codebase.
 
-#![allow(deprecated, reason = "arrow2->arrow migration")]
-
 use std::{
     ffi::CStr,
     ptr::{addr_of, addr_of_mut},
@@ -19,7 +17,6 @@ use arrow::{
     ffi_stream::FFI_ArrowArrayStream,
 };
 use arrow_schema::{Field, Schema};
-use daft_arrow::array::Array;
 use pyo3::{
     exceptions::{PyTypeError, PyValueError},
     ffi::Py_uintptr_t,
@@ -28,7 +25,6 @@ use pyo3::{
     pybacked::PyBackedStr,
     types::{PyCapsule, PyList, PyTuple},
 };
-pub type ArrayRef = Box<dyn Array>;
 const ARROW_SCHEMA_CAPSULE_NAME: &CStr = c"arrow_schema";
 const ARROW_ARRAY_CAPSULE_NAME: &CStr = c"arrow_array";
 

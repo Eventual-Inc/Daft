@@ -24,7 +24,7 @@ from daft.daft import (
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import lit as _lit
 from daft.daft import udf as _udf
-from daft.datatype import DataType, DataTypeLike, TimeUnit
+from daft.datatype import DataType, DataTypeLike, MediaType, TimeUnit
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
 
@@ -496,6 +496,79 @@ class Expression:
         from daft.functions import cast
 
         return cast(self, dtype)
+
+    if TYPE_CHECKING:
+
+        def as_int8(self) -> Expression: ...
+
+        def as_int16(self) -> Expression: ...
+
+        def as_int32(self) -> Expression: ...
+
+        def as_int64(self) -> Expression: ...
+
+        def as_uint8(self) -> Expression: ...
+
+        def as_uint16(self) -> Expression: ...
+
+        def as_uint32(self) -> Expression: ...
+
+        def as_uint64(self) -> Expression: ...
+
+        def as_float32(self) -> Expression: ...
+
+        def as_float64(self) -> Expression: ...
+
+        def as_string(self) -> Expression: ...
+
+        def as_bool(self) -> Expression: ...
+
+        def as_binary(self) -> Expression: ...
+
+        def as_fixed_size_binary(self, size: int) -> Expression: ...
+
+        def as_null(self) -> Expression: ...
+
+        def as_decimal128(self, precision: int, scale: int) -> Expression: ...
+
+        def as_date(self) -> Expression: ...
+
+        def as_time(self, timeunit: TimeUnit | str) -> Expression: ...
+
+        def as_timestamp(self, timeunit: TimeUnit | str, timezone: str | None = ...) -> Expression: ...
+
+        def as_duration(self, timeunit: TimeUnit | str) -> Expression: ...
+
+        def as_interval(self) -> Expression: ...
+
+        def as_list(self, dtype: DataType) -> Expression: ...
+
+        def as_fixed_size_list(self, dtype: DataType, size: int) -> Expression: ...
+
+        def as_map(self, key_type: DataType, value_type: DataType) -> Expression: ...
+
+        def as_struct(self, fields: dict[str, DataType]) -> Expression: ...
+
+        def as_extension(self, name: str, storage_dtype: DataType, metadata: str | None = ...) -> Expression: ...
+
+        def as_embedding(self, dtype: DataType, size: int) -> Expression: ...
+
+        def as_image(
+            self, mode: str | ImageMode | None = ..., height: int | None = ..., width: int | None = ...
+        ) -> Expression: ...
+
+        def as_tensor(self, dtype: DataType, shape: tuple[int, ...] | None = ...) -> Expression: ...
+
+        def as_sparse_tensor(
+            self,
+            dtype: DataType,
+            shape: tuple[int, ...] | None = ...,
+            use_offset_indices: bool = ...,
+        ) -> Expression: ...
+
+        def as_python(self) -> Expression: ...
+
+        def as_file(self, media_type: MediaType = ...) -> Expression: ...
 
     def ceil(self) -> Expression:
         """The ceiling of a numeric expression.
@@ -2841,3 +2914,27 @@ class ExpressionsProjection(Iterable[Expression]):
         self,
     ) -> tuple[Callable[[dict[str, Expression]], ExpressionsProjection], tuple[dict[str, Expression]]]:
         return ExpressionsProjection._from_serialized, (self._output_name_to_exprs,)
+
+
+def _make_expr_as_dtype_method(dtype_name: str) -> Callable[..., Expression]:
+    dtype_ctor = getattr(DataType, dtype_name)
+
+    def _as_dtype(self: Expression, *args: Any, **kwargs: Any) -> Expression:
+        return self.cast(dtype_ctor(*args, **kwargs))
+
+    _as_dtype.__name__ = f"as_{dtype_name}"
+    _as_dtype.__qualname__ = f"Expression.as_{dtype_name}"
+    _as_dtype.__doc__ = (
+        f"Casts the expression to `DataType.{dtype_name}(...)`."
+        "\n\nTip: See Also\n"
+        "    [`Expression.cast`](https://docs.daft.ai/en/stable/api/expressions/#daft.Expression.cast)"
+    )
+    return _as_dtype
+
+
+_EXPR_AS_DTYPE_METHODS = DataType._constructor_names()
+
+for _dtype_name in _EXPR_AS_DTYPE_METHODS:
+    _method_name = f"as_{_dtype_name}"
+    if not hasattr(Expression, _method_name):
+        setattr(Expression, _method_name, _make_expr_as_dtype_method(_dtype_name))

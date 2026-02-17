@@ -1,3 +1,5 @@
+#![allow(deprecated, reason = "arrow2 migration")]
+
 use common_error::DaftError;
 use futures::stream::TryChunksError;
 use snafu::Snafu;

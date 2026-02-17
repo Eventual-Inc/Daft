@@ -178,53 +178,17 @@ pub fn hash(
         ArrowDataType::Boolean => {
             hash_boolean(array.as_any().downcast_ref().unwrap(), seed, hash_function)
         }
-        ArrowDataType::Int8 => {
-            with_match_hashing_primitive_type!(array.data_type(), |$T| {
-                hash_primitive::<$T>(array.as_any().downcast_ref().unwrap(), seed, hash_function)
-            })
-        }
-        ArrowDataType::Int16 => {
-            with_match_hashing_primitive_type!(array.data_type(), |$T| {
-                hash_primitive::<$T>(array.as_any().downcast_ref().unwrap(), seed, hash_function)
-            })
-        }
-        ArrowDataType::Int32 => {
-            with_match_hashing_primitive_type!(array.data_type(), |$T| {
-                hash_primitive::<$T>(array.as_any().downcast_ref().unwrap(), seed, hash_function)
-            })
-        }
-        ArrowDataType::Int64 => {
-            with_match_hashing_primitive_type!(array.data_type(), |$T| {
-                hash_primitive::<$T>(array.as_any().downcast_ref().unwrap(), seed, hash_function)
-            })
-        }
-        ArrowDataType::UInt8 => {
-            with_match_hashing_primitive_type!(array.data_type(), |$T| {
-                hash_primitive::<$T>(array.as_any().downcast_ref().unwrap(), seed, hash_function)
-            })
-        }
-        ArrowDataType::UInt16 => {
-            with_match_hashing_primitive_type!(array.data_type(), |$T| {
-                hash_primitive::<$T>(array.as_any().downcast_ref().unwrap(), seed, hash_function)
-            })
-        }
-        ArrowDataType::UInt32 => {
-            with_match_hashing_primitive_type!(array.data_type(), |$T| {
-                hash_primitive::<$T>(array.as_any().downcast_ref().unwrap(), seed, hash_function)
-            })
-        }
-        ArrowDataType::UInt64 => {
-            with_match_hashing_primitive_type!(array.data_type(), |$T| {
-                hash_primitive::<$T>(array.as_any().downcast_ref().unwrap(), seed, hash_function)
-            })
-        }
-        ArrowDataType::Float32 => {
-            with_match_hashing_primitive_type!(array.data_type(), |$T| {
-                hash_primitive::<$T>(array.as_any().downcast_ref().unwrap(), seed, hash_function)
-            })
-        }
-        ArrowDataType::Float64 => {
-            with_match_hashing_primitive_type!(array.data_type(), |$T| {
+        dt @ (ArrowDataType::Int8
+        | ArrowDataType::Int16
+        | ArrowDataType::Int32
+        | ArrowDataType::Int64
+        | ArrowDataType::UInt8
+        | ArrowDataType::UInt16
+        | ArrowDataType::UInt32
+        | ArrowDataType::UInt64
+        | ArrowDataType::Float32
+        | ArrowDataType::Float64) => {
+            with_match_hashing_primitive_type!(dt, |$T| {
                 hash_primitive::<$T>(array.as_any().downcast_ref().unwrap(), seed, hash_function)
             })
         }

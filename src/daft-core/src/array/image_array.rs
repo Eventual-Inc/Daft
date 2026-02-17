@@ -1,11 +1,12 @@
 use std::vec;
 
+use arrow::buffer::OffsetBuffer;
 use common_error::DaftResult;
 
 use crate::{
     array::prelude::*,
-    datatypes::prelude::*,
-    series::{IntoSeries, Series},
+    datatypes::{DaftNumericType, NumericNative, prelude::*},
+    series::{ArrayWrapper, IntoSeries, Series, SeriesLike},
 };
 
 pub struct ImageArraySidecarData {
@@ -63,16 +64,16 @@ impl ImageArray {
     ) -> DaftResult<Self> {
         let values: Vec<Series> = vec![
             data_array.into_series().rename("data"),
-            UInt16Array::from_values("channel", sidecar_data.channels)
+            UInt16Array::from_vec("channel", sidecar_data.channels)
                 .with_nulls(sidecar_data.nulls.clone())?
                 .into_series(),
-            UInt32Array::from_values("height", sidecar_data.heights)
+            UInt32Array::from_vec("height", sidecar_data.heights)
                 .with_nulls(sidecar_data.nulls.clone())?
                 .into_series(),
-            UInt32Array::from_values("width", sidecar_data.widths)
+            UInt32Array::from_vec("width", sidecar_data.widths)
                 .with_nulls(sidecar_data.nulls.clone())?
                 .into_series(),
-            UInt8Array::from_values("mode", sidecar_data.modes)
+            UInt8Array::from_vec("mode", sidecar_data.modes)
                 .with_nulls(sidecar_data.nulls.clone())?
                 .into_series(),
         ];
@@ -82,31 +83,35 @@ impl ImageArray {
         Ok(ImageArray::new(Field::new(name, data_type), struct_array))
     }
 
-    pub fn from_vecs<T: daft_arrow::types::NativeType>(
+    pub fn from_vecs<T>(
         name: &str,
         data_type: DataType,
         data: Vec<T>,
         offsets: Vec<i64>,
         sidecar_data: ImageArraySidecarData,
-    ) -> DaftResult<Self> {
+    ) -> DaftResult<Self>
+    where
+        T: NumericNative,
+        T::DAFTTYPE: DaftNumericType<Native = T>,
+        T::ARROWTYPE: arrow::array::ArrowPrimitiveType<Native = T>,
+        ArrayWrapper<DataArray<T::DAFTTYPE>>: SeriesLike,
+    {
         if data.is_empty() {
             return Ok(ImageArray::full_null(name, &data_type, offsets.len() - 1));
         }
-        let offsets = daft_arrow::offset::OffsetsBuffer::try_from(offsets)?;
-        let arrow_dtype: daft_arrow::datatypes::DataType = T::PRIMITIVE.into();
+        let offsets = OffsetBuffer::new(offsets.into());
+        let child_dtype = T::DAFTTYPE::get_dtype();
         if let DataType::Image(Some(mode)) = &data_type {
+            let mode_dtype = mode.get_dtype();
             assert!(
-                !(mode.get_dtype().to_arrow2()? != arrow_dtype),
-                "Inner value dtype of provided dtype {data_type:?} is inconsistent with inferred value dtype {arrow_dtype:?}"
+                mode_dtype == child_dtype,
+                "Inner value dtype of provided dtype {data_type:?} is inconsistent with inferred value dtype {child_dtype:?}"
             );
         }
+        let flat_child = DataArray::<T::DAFTTYPE>::from_vec("data", data).into_series();
         let data_array = ListArray::new(
-            Field::new("data", DataType::List(Box::new((&arrow_dtype).into()))),
-            Series::try_from((
-                "data",
-                Box::new(daft_arrow::array::PrimitiveArray::from_vec(data))
-                    as Box<dyn daft_arrow::array::Array>,
-            ))?,
+            Field::new("data", DataType::List(Box::new(T::DAFTTYPE::get_dtype()))),
+            flat_child,
             offsets,
             sidecar_data.nulls.clone(),
         );

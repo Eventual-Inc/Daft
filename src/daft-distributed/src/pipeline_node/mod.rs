@@ -13,7 +13,10 @@ use common_display::{
     tree::TreeDisplay,
 };
 use common_error::DaftResult;
-use common_metrics::QueryID;
+use common_metrics::{
+    QueryID,
+    ops::{NodeCategory, NodeType},
+};
 use common_partitioning::PartitionRef;
 use common_treenode::ConcreteTreeNode;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
@@ -124,6 +127,20 @@ impl MaterializedOutput {
         schema: SchemaRef,
         node_id: NodeID,
     ) -> (LocalPhysicalPlanRef, HashMap<String, Vec<PartitionRef>>) {
+        Self::into_in_memory_scan_with_psets_and_context(
+            materialized_outputs,
+            schema,
+            node_id,
+            None,
+        )
+    }
+
+    pub fn into_in_memory_scan_with_psets_and_context(
+        materialized_outputs: Vec<Self>,
+        schema: SchemaRef,
+        node_id: NodeID,
+        additional: Option<HashMap<String, String>>,
+    ) -> (LocalPhysicalPlanRef, HashMap<String, Vec<PartitionRef>>) {
         let total_size_bytes = materialized_outputs
             .iter()
             .map(|output| output.size_bytes())
@@ -149,7 +166,7 @@ impl MaterializedOutput {
             StatsState::NotMaterialized,
             LocalNodeContext {
                 origin_node_id: Some(node_id as usize),
-                additional: None,
+                additional,
             },
         );
 
@@ -190,6 +207,8 @@ pub(super) struct PipelineNodeContext {
     pub query_id: QueryID,
     pub node_id: NodeID,
     pub node_name: NodeName,
+    pub node_type: NodeType,
+    pub node_category: NodeCategory,
 }
 
 impl PipelineNodeContext {
@@ -198,12 +217,16 @@ impl PipelineNodeContext {
         query_id: QueryID,
         node_id: NodeID,
         node_name: NodeName,
+        node_type: NodeType,
+        node_category: NodeCategory,
     ) -> Self {
         Self {
             query_idx,
             query_id,
             node_id,
             node_name,
+            node_type,
+            node_category,
         }
     }
 
@@ -247,7 +270,7 @@ impl DistributedPipelineNode {
         Self { op, children }
     }
 
-    fn context(&self) -> &PipelineNodeContext {
+    pub fn context(&self) -> &PipelineNodeContext {
         self.op.context()
     }
     fn config(&self) -> &PipelineNodeConfig {

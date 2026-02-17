@@ -5,7 +5,7 @@ Run prompts, embeddings, and model scoring over large datasets, then stream the 
 ## When to use Daft for batch inference
 
 - **You need to run models over your data:** Express inference on a column (e.g., [`prompt`](#example-prompt-gpt-5-with-openai), [`embed_text`](../ai-functions/embed.md#text-embeddings), [`embed_image`](../ai-functions/embed.md#image-embeddings)) and let Daft handle batching, concurrency, and backpressure.
-- **You have data consisting of large objects in cloud storage:** Daft has [record-setting](https://www.daft.ai/blog/announcing-daft-02) performance when reading from and writing to S3, and provides flexible APIs for working with [URLs and Files](../modalities/urls.md).
+- **You have data consisting of large objects in cloud storage:** Daft has [record-setting](https://www.daft.ai/blog/announcing-daft-02) performance when reading from and writing to S3, and provides flexible APIs for working with [URLs and Files](../modalities/files.md).
 - **You're working with multimodal data:** Daft supports datatypes like [images](../modalities/images.md) and [videos](../modalities/videos.md), and supports the ability to define [custom data sources and sinks](../connectors/custom.md) and [custom functions over this data](../custom-code/udfs.md).
 - **You want end-to-end pipelines where data sizes expand and shrink:** For example, downloading images from URLs, decoding them, then embedding them; [Daft streams across stages to keep memory well-behaved](https://www.daft.ai/blog/processing-300k-images-without-oom).
 
@@ -95,7 +95,7 @@ Ready to explore Daft further? Check out these topics:
 
 - [AI functions](../api/ai.md)
 - Reading from and writing to common data sources:
-    - [S3](../connectors/aws.md)
-    - [Hugging Face 🤗](../connectors/huggingface.md)
-    - [Turbopuffer](../connectors/turbopuffer.md)
+  - [S3](../connectors/aws.md)
+  - [Hugging Face 🤗](../connectors/huggingface.md)
+  - [Turbopuffer](../connectors/turbopuffer.md)
 - [Scaling out and deployment](../distributed/index.md)

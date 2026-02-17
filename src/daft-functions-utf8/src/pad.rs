@@ -139,7 +139,7 @@ where
                 .zip(padchar_iter)
                 .map(|((val, len), padchar)| match (val, len, padchar) {
                     (Some(val), Some(len), Some(padchar)) => {
-                        let len: usize = NumCast::from(*len).ok_or_else(|| {
+                        let len: usize = NumCast::from(len).ok_or_else(|| {
                             DaftError::ComputeError(format!(
                                 "Error in pad: failed to cast length as usize {len}"
                             ))

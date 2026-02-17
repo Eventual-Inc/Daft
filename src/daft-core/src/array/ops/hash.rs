@@ -259,10 +259,9 @@ impl ListArray {
         hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
         let offsets = self.offsets();
-        let offsets_slice = offsets.as_slice();
         hash_list(
             self.name(),
-            offsets_slice,
+            offsets,
             &self.flat_child,
             self.nulls(),
             seed,
@@ -281,21 +280,17 @@ impl FixedSizeListArray {
         seed: Option<&UInt64Array>,
         hash_function: HashFunctionKind,
     ) -> DaftResult<UInt64Array> {
-        if let DataType::FixedSizeList(_, size) = self.data_type() {
-            let size = *size;
-            let len = self.flat_child.len() as i64;
-            let offsets: Vec<i64> = (0..=len).step_by(size).collect();
-            hash_list(
-                self.name(),
-                &offsets,
-                &self.flat_child,
-                self.nulls(),
-                seed,
-                hash_function,
-            )
-        } else {
-            panic!("FixedSizeListArray data_type should be FixedSizeList");
-        }
+        let size = self.fixed_element_len();
+        let len = self.flat_child.len() as i64;
+        let offsets: Vec<i64> = (0..=len).step_by(size).collect();
+        hash_list(
+            self.name(),
+            &offsets,
+            &self.flat_child,
+            self.nulls(),
+            seed,
+            hash_function,
+        )
     }
 }
 
@@ -368,7 +363,7 @@ fn hash_list(
 
     if let Some(seed_arr) = seed {
         let combined_validity = NullBuffer::union(nulls, seed.unwrap().nulls());
-        let mut hashes = Vec::with_capacity(offsets.len());
+        let mut hashes = Vec::with_capacity(offsets.len() - 1);
 
         for i in 0..(offsets.len() - 1) {
             let start = offsets[i] as usize;

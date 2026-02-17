@@ -784,6 +784,20 @@ def test_cast_sql_string(sql, actual):
     assert df.schema() == actual_df.schema()
 
 
+def test_expression_as_dtype_methods() -> None:
+    expr = col("x").as_string()
+    expected = col("x").cast(DataType.string())
+    assert expr_structurally_equal(expr, expected)
+
+    expr = col("x").as_timestamp("ms", "UTC")
+    expected = col("x").cast(DataType.timestamp("ms", "UTC"))
+    assert expr_structurally_equal(expr, expected)
+
+    expr = col("x").as_list(DataType.int64())
+    expected = col("x").cast(DataType.list(DataType.int64()))
+    assert expr_structurally_equal(expr, expected)
+
+
 @pytest.mark.parametrize(
     # Some sql expressions were failing as documented previously
     "sql",
