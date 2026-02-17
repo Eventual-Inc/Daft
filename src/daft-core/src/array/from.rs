@@ -206,22 +206,6 @@ where
     T: DaftNumericType,
 {
     /// Creates a non-nullable `DataArray` from an iterator of non-null values. Single-pass.
-    ///
-    /// Prefer this over [`from_vec`](Self::from_vec) when you already have an iterator,
-    /// as `from_vec` internally iterates the Vec again.
-    ///
-    /// # Anti-pattern
-    /// ```ignore
-    /// // BAD: builds a Vec, then from_vec iterates it again (double iteration)
-    /// let mut v = Vec::new();
-    /// for x in source { v.push(x); }
-    /// Array::from_vec("col", v);
-    ///
-    /// // GOOD: single-pass with from_values
-    /// Array::from_values("col", source);
-    ///
-    /// // BEST: use arrow builders directly for full control
-    /// ```
     pub fn from_values<
         I: IntoIterator<
             Item = <<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native,
