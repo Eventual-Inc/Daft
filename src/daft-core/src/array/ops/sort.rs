@@ -54,6 +54,8 @@ pub fn build_multi_array_compare(
 /// arrow-rs `make_comparator` uses IEEE 754 total ordering where -NaN < -Inf < ... < +Inf < +NaN.
 /// Daft's sort contract treats ALL NaN as greater than regular values, so we normalize
 /// negative NaN to positive NaN before comparison.
+///
+/// TODO: Replace this with a custom `cmp_float`-based comparator to avoid the allocation.
 fn canonicalize_nan(array: ArrayRef) -> ArrayRef {
     if let Some(f64_arr) = array.as_any().downcast_ref::<ArrowFloat64Array>() {
         let canonical: ArrowFloat64Array = f64_arr
