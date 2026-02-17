@@ -11,11 +11,10 @@ permissions:
   contents: read
 
 env:
-  DAFT_ANALYTICS_ENABLED: '0'
-  TPCH_SCALE_FACTOR: '4'
-  TPCH_NUM_PARTS: '32'
-  PYTHON_VERSION: '3.10'
-
+  DAFT_ANALYTICS_ENABLED: "0"
+  TPCH_SCALE_FACTOR: "4"
+  TPCH_NUM_PARTS: "32"
+  PYTHON_VERSION: "3.10"
 
 jobs:
   profile-daft:
@@ -29,7 +28,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2
       with:
         key: ${{ runner.os }}-profile
-        cache-all-crates: 'true'
+        cache-all-crates: "true"
 
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
@@ -81,7 +80,6 @@ jobs:
     - name: Run GIL Profiling on TPCH Benchmark
       run: |
         py-spy record --native --function --gil -o tpch-gil-${{github.run_id}}.txt -f speedscope -- python benchmarking/tpch/__main__.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --skip_warmup --skip_questions=11,12,13,14,15,16,17,18,19,20,21,22 || true
-
 
     - name: Upload Profile
       uses: actions/upload-artifact@v6

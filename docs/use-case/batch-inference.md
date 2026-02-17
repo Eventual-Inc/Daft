@@ -95,7 +95,7 @@ Ready to explore Daft further? Check out these topics:
 
 - [AI functions](../api/ai.md)
 - Reading from and writing to common data sources:
-    - [S3](../connectors/aws.md)
-    - [Hugging Face 🤗](../connectors/huggingface.md)
-    - [Turbopuffer](../connectors/turbopuffer.md)
+  - [S3](../connectors/aws.md)
+  - [Hugging Face 🤗](../connectors/huggingface.md)
+  - [Turbopuffer](../connectors/turbopuffer.md)
 - [Scaling out and deployment](../distributed/index.md)

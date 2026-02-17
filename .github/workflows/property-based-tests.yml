@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  DAFT_ANALYTICS_ENABLED: '0'
+  DAFT_ANALYTICS_ENABLED: "0"
 
 jobs:
   test:
@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10']
+        python-version: ["3.10"]
         daft_runner: [ray, native]
     steps:
     - uses: actions/checkout@v6
@@ -28,7 +28,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2
       with:
         key: ${{ runner.os }}-build
-        cache-all-crates: 'true'
+        cache-all-crates: "true"
 
     - name: Setup Python ${{ matrix.python-version  }} and UV
       uses: astral-sh/setup-uv@v7

@@ -169,7 +169,8 @@ impl ListArray {
         );
         let valid = self.is_valid(idx);
         if valid {
-            let (start, end) = self.offsets().start_end(idx);
+            let start = self.offsets()[idx] as usize;
+            let end = self.offsets()[idx + 1] as usize;
             Some(self.flat_child.slice(start, end).unwrap())
         } else {
             None

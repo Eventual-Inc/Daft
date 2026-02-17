@@ -204,7 +204,6 @@ impl FlightService for ShuffleFlightServer {
             })
             .try_flatten();
 
-        #[allow(unused)]
         let schema = filtered_caches
             .first()
             .unwrap()

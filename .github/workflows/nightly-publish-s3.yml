@@ -2,12 +2,12 @@ name: Nightly package build, S3 publish, and tests
 
 on:
   schedule:
-  #       ┌───────────── minute (0 - 59)
-  #       │ ┌───────────── hour (0 - 23)
-  #       │ │ ┌───────────── day of the month (1 - 31)
-  #       │ │ │ ┌───────────── month (1 - 12 or JAN-DEC)
-  #       │ │ │ │ ┌───────────── day of the week (0 - 6 or SUN-SAT)
-  #       │ │ │ │ │
+    #       ┌───────────── minute (0 - 59)
+    #       │ ┌───────────── hour (0 - 23)
+    #       │ │ ┌───────────── day of the month (1 - 31)
+    #       │ │ │ ┌───────────── month (1 - 12 or JAN-DEC)
+    #       │ │ │ │ ┌───────────── day of the week (0 - 6 or SUN-SAT)
+    #       │ │ │ │ │
   - cron: 0 5 * * *
 
   workflow_dispatch:
@@ -19,12 +19,12 @@ env:
   AWS_REGION: us-west-2
   CLOUDFRONT_DIST_ID: E3H8WN738AJ1D4
 
-  DAFT_ANALYTICS_ENABLED: '0'
-  PYTHON_VERSION: '3.10'
+  DAFT_ANALYTICS_ENABLED: "0"
+  PYTHON_VERSION: "3.10"
 
 jobs:
   build:
-    name: 'Build Daft wheel for ${{ matrix.os }}-${{ matrix.arch }}-lts=${{ matrix.lts }}'
+    name: "Build Daft wheel for ${{ matrix.os }}-${{ matrix.arch }}-lts=${{ matrix.lts }}"
     permissions:
       contents: read
     uses: ./.github/workflows/build-wheel.yml
@@ -189,7 +189,6 @@ jobs:
           }
         webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook
-
 
   integration-test-io:
     needs: [publish]
