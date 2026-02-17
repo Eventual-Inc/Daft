@@ -297,3 +297,225 @@ impl IntoIterator for &'_ NullArray {
         self.iter()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use daft_schema::field::Field;
+
+    use crate::{
+        array::ops::full::FullNull,
+        datatypes::{
+            BinaryArray, BooleanArray, DataType, FixedSizeBinaryArray, Int64Array, NullType,
+            Utf8Array,
+        },
+    };
+
+    // ---- Primitive ----
+
+    #[test]
+    fn primitive_no_nulls() {
+        let arr = Int64Array::from_slice("a", &[10, 20, 30]);
+        let vals: Vec<_> = arr.iter().collect();
+        assert_eq!(vals, vec![Some(10i64), Some(20), Some(30)]);
+    }
+
+    #[test]
+    fn primitive_with_nulls() {
+        let arr = Int64Array::from_iter(
+            Field::new("a", DataType::Int64),
+            [Some(1i64), None, Some(3)],
+        );
+        let vals: Vec<_> = arr.iter().collect();
+        assert_eq!(vals, vec![Some(1i64), None, Some(3)]);
+    }
+
+    #[test]
+    fn primitive_all_null() {
+        let arr = Int64Array::from_iter(Field::new("a", DataType::Int64), [None::<i64>, None]);
+        let vals: Vec<_> = arr.iter().collect();
+        assert_eq!(vals, vec![None, None]);
+    }
+
+    #[test]
+    fn primitive_empty() {
+        let arr = Int64Array::from_iter(
+            Field::new("a", DataType::Int64),
+            std::iter::empty::<Option<i64>>(),
+        );
+        assert_eq!(arr.iter().len(), 0);
+        assert_eq!(arr.iter().next(), None);
+    }
+
+    #[test]
+    fn primitive_into_iter() {
+        let arr = Int64Array::from_slice("a", &[1, 2]);
+        let vals: Vec<_> = (&arr).into_iter().collect();
+        assert_eq!(vals, vec![Some(1i64), Some(2)]);
+    }
+
+    #[test]
+    fn primitive_double_ended() {
+        let arr = Int64Array::from_slice("a", &[1, 2, 3]);
+        let vals: Vec<_> = arr.iter().rev().collect();
+        assert_eq!(vals, vec![Some(3i64), Some(2), Some(1)]);
+    }
+
+    #[test]
+    fn primitive_double_ended_with_nulls() {
+        let arr = Int64Array::from_iter(
+            Field::new("a", DataType::Int64),
+            [Some(1i64), None, Some(3)],
+        );
+        let vals: Vec<_> = arr.iter().rev().collect();
+        assert_eq!(vals, vec![Some(3i64), None, Some(1)]);
+    }
+
+    #[test]
+    fn primitive_exact_size() {
+        let arr = Int64Array::from_slice("a", &[1, 2, 3]);
+        let mut it = arr.iter();
+        assert_eq!(it.len(), 3);
+        it.next();
+        assert_eq!(it.len(), 2);
+        it.next_back();
+        assert_eq!(it.len(), 1);
+    }
+
+    #[test]
+    fn primitive_clone() {
+        let arr = Int64Array::from_slice("a", &[1, 2, 3]);
+        let mut it = arr.iter();
+        it.next();
+        let cloned = it.clone();
+        assert_eq!(cloned.collect::<Vec<_>>(), vec![Some(2i64), Some(3)]);
+    }
+
+    // ---- Boolean ----
+
+    #[test]
+    fn boolean_no_nulls() {
+        let arr = BooleanArray::from_slice("b", &[true, false, true]);
+        let vals: Vec<_> = arr.iter().collect();
+        assert_eq!(vals, vec![Some(true), Some(false), Some(true)]);
+    }
+
+    #[test]
+    fn boolean_with_nulls() {
+        let arr = BooleanArray::from_iter("b", [Some(true), None, Some(false)].into_iter());
+        let vals: Vec<_> = arr.iter().collect();
+        assert_eq!(vals, vec![Some(true), None, Some(false)]);
+    }
+
+    #[test]
+    fn boolean_empty() {
+        let arr = BooleanArray::from_iter("b", std::iter::empty::<Option<bool>>());
+        assert_eq!(arr.iter().len(), 0);
+    }
+
+    #[test]
+    fn boolean_double_ended() {
+        let arr = BooleanArray::from_iter("b", [Some(true), None, Some(false)].into_iter());
+        let vals: Vec<_> = arr.iter().rev().collect();
+        assert_eq!(vals, vec![Some(false), None, Some(true)]);
+    }
+
+    // ---- Utf8 ----
+
+    #[test]
+    fn utf8_no_nulls() {
+        let arr = Utf8Array::from_slice("s", &["hello", "world"]);
+        let vals: Vec<_> = arr.iter().collect();
+        assert_eq!(vals, vec![Some("hello"), Some("world")]);
+    }
+
+    #[test]
+    fn utf8_with_nulls() {
+        let arr = Utf8Array::from_iter("s", [Some("a"), None, Some("c")]);
+        let vals: Vec<_> = arr.iter().collect();
+        assert_eq!(vals, vec![Some("a"), None, Some("c")]);
+    }
+
+    #[test]
+    fn utf8_empty() {
+        let arr = Utf8Array::from_iter("s", std::iter::empty::<Option<&str>>());
+        assert_eq!(arr.iter().len(), 0);
+    }
+
+    #[test]
+    fn utf8_double_ended() {
+        let arr = Utf8Array::from_slice("s", &["a", "b", "c"]);
+        let vals: Vec<_> = arr.iter().rev().collect();
+        assert_eq!(vals, vec![Some("c"), Some("b"), Some("a")]);
+    }
+
+    // ---- Binary ----
+
+    #[test]
+    fn binary_no_nulls() {
+        let arr = BinaryArray::from_values("b", [b"ab".as_slice(), b"cd"]);
+        let vals: Vec<_> = arr.iter().collect();
+        assert_eq!(vals, vec![Some(b"ab".as_slice()), Some(b"cd".as_slice())]);
+    }
+
+    #[test]
+    fn binary_with_nulls() {
+        let arr =
+            BinaryArray::from_iter("b", [Some(b"ab".as_slice()), None, Some(b"ef".as_slice())]);
+        let vals: Vec<_> = arr.iter().collect();
+        assert_eq!(
+            vals,
+            vec![Some(b"ab".as_slice()), None, Some(b"ef".as_slice())]
+        );
+    }
+
+    // ---- FixedSizeBinary ----
+
+    #[test]
+    fn fixed_size_binary_no_nulls() {
+        let arr = FixedSizeBinaryArray::from_iter(
+            "fb",
+            [Some([1u8, 2u8]), Some([3u8, 4u8])].into_iter(),
+            2,
+        );
+        let vals: Vec<_> = arr.iter().collect();
+        assert_eq!(
+            vals,
+            vec![Some([1u8, 2u8].as_slice()), Some([3u8, 4u8].as_slice())]
+        );
+    }
+
+    #[test]
+    fn fixed_size_binary_with_nulls() {
+        let arr = FixedSizeBinaryArray::from_iter(
+            "fb",
+            [Some([1u8, 2u8]), None, Some([5u8, 6u8])].into_iter(),
+            2,
+        );
+        let vals: Vec<_> = arr.iter().collect();
+        assert_eq!(
+            vals,
+            vec![
+                Some([1u8, 2u8].as_slice()),
+                None,
+                Some([5u8, 6u8].as_slice())
+            ]
+        );
+    }
+
+    // ---- Null ----
+
+    #[test]
+    fn null_array() {
+        use crate::array::DataArray;
+        let arr = DataArray::<NullType>::full_null("n", &DataType::Null, 3);
+        let vals: Vec<_> = arr.iter().collect();
+        assert_eq!(vals, vec![None, None, None]);
+    }
+
+    #[test]
+    fn null_array_empty() {
+        use crate::array::DataArray;
+        let arr = DataArray::<NullType>::full_null("n", &DataType::Null, 0);
+        assert_eq!(arr.iter().len(), 0);
+    }
+}
