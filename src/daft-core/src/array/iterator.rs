@@ -1,4 +1,4 @@
-use std::iter::{RepeatN, repeat_n};
+use std::iter::{FusedIterator, RepeatN, repeat_n};
 
 use arrow::buffer::NullBuffer;
 
@@ -61,6 +61,7 @@ impl<N: Copy> DoubleEndedIterator for PrimitiveIter<'_, N> {
 }
 
 impl<N: Copy> ExactSizeIterator for PrimitiveIter<'_, N> {}
+impl<N: Copy> FusedIterator for PrimitiveIter<'_, N> {}
 
 impl<T: DaftPrimitiveType> DataArray<T> {
     pub fn iter(&self) -> PrimitiveIter<'_, T::Native> {
@@ -128,6 +129,7 @@ impl<A, T> DoubleEndedIterator for GenericArrayIter<'_, A, T> {
 }
 
 impl<A, T> ExactSizeIterator for GenericArrayIter<'_, A, T> {}
+impl<A, T> FusedIterator for GenericArrayIter<'_, A, T> {}
 
 // ---- Boolean ----
 
@@ -183,6 +185,7 @@ impl DoubleEndedIterator for BooleanIter<'_> {
 }
 
 impl ExactSizeIterator for BooleanIter<'_> {}
+impl FusedIterator for BooleanIter<'_> {}
 
 impl BooleanArray {
     pub fn iter(&self) -> BooleanIter<'_> {
