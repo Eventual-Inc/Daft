@@ -4,6 +4,7 @@ import datetime
 import decimal
 import gzip
 import json
+import os
 
 import pyarrow as pa
 import pytest
@@ -277,8 +278,6 @@ def test_roundtrip_ndjson_with_mismatched_schema_between_files(tmp_path, compres
 
 def _read_first_json_file_text(root: str) -> str:
     """Read the text content of the first JSON file in the directory."""
-    import os
-
     files = [os.path.join(root, f) for f in os.listdir(root)]
     files = [f for f in files if os.path.isfile(f)]
     assert len(files) > 0

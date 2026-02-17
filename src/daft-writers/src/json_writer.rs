@@ -1,13 +1,13 @@
 use std::{fmt::Write, path::PathBuf, sync::Arc};
 
 use arrow_array::{
-    ArrayRef, RecordBatch as ArrowRecordBatch,
-    builder::LargeStringBuilder,
-    cast::AsArray,
+    Array, ArrayRef, RecordBatch as ArrowRecordBatch, builder::LargeStringBuilder, cast::AsArray,
     types::Date32Type,
 };
 use arrow_json::{LineDelimitedWriter, WriterBuilder, writer::LineDelimited};
-use arrow_schema::{ArrowError, DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema, TimeUnit};
+use arrow_schema::{
+    ArrowError, DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema, TimeUnit,
+};
 use chrono::{DateTime, NaiveDate, format::StrftimeItems};
 use chrono_tz::Tz;
 use common_error::{DaftError, DaftResult};
