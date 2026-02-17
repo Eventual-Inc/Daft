@@ -1,5 +1,5 @@
+use arrow::buffer::OffsetBuffer;
 use common_error::{DaftError, DaftResult};
-use daft_arrow::offset::OffsetsBuffer;
 use itertools::Itertools;
 
 use crate::{
@@ -460,7 +460,8 @@ impl DaftSetAggable for Series {
         let indices_array = UInt64Array::from_vec("", unique_indices);
         let deduped_series = child_series.take(&indices_array)?;
 
-        let offsets = OffsetsBuffer::try_from(vec![0, deduped_series.len() as i64])?;
+        let offsets = OffsetBuffer::new(vec![0, deduped_series.len() as i64].into());
+
         let list_field = self.field().to_list_field();
         Ok(ListArray::new(list_field, deduped_series, offsets, None))
     }
@@ -502,7 +503,7 @@ impl DaftSetAggable for Series {
         let result = ListArray::new(
             list_field,
             growable.build()?,
-            OffsetsBuffer::try_from(offsets)?,
+            OffsetBuffer::new(offsets.into()),
             None,
         );
 

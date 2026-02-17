@@ -2,7 +2,7 @@
 
 Embeddings transform text, images, and other data into dense vector representations that capture semantic meaning—enabling similarity search, retrieval-augmented generation (RAG), and AI-powered discovery. Daft makes it easy to generate, store, and query embeddings at scale.
 
-With the native [`daft.DataType.embedding`](../api/datatypes/embedding.md) type and [`embed_text`](../api/functions/embed_text.md) function, you can:
+With the native [`daft.DataType.embedding`](../api/datatypes/all_datatypes.md#daft.datatype.DataType.embedding) type and [`embed_text`](../api/functions/embed_text.md) function, you can:
 
 - **Generate embeddings** from any text column using providers like OpenAI, Cohere, or local models
 - **Compute similarity** with built-in distance functions like `cosine_distance`

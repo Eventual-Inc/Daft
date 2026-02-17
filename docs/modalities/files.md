@@ -14,10 +14,10 @@ Whether you're loading data from local files, cloud storage, or the web, Daft's 
 
 ## Using file discovery with optimized distributed reads
 
-[`daft.from_glob_path`](../api/io/file_path.md) helps discover and size files, accepting wildcards and lists of paths. When paired with [`daft.functions.download`](../api/functions/download.md), the two functions enable optimized distributed reads of binary data from storage. This is ideal when your data will fit into memory or when you need the entire file content at once.
+[`daft.from_glob_path`](../api/io.md#daft.from_glob_path) helps discover and size files, accepting wildcards and lists of paths. When paired with [`daft.functions.download`](../api/functions/download.md), the two functions enable optimized distributed reads of binary data from storage. This is ideal when your data will fit into memory or when you need the entire file content at once.
 
 === "🐍 Python"
-    ``` python
+`python
     df = daft.from_pydict({
         "urls": [
             "https://www.google.com",
@@ -26,10 +26,10 @@ Whether you're loading data from local files, cloud storage, or the web, Daft's 
     })
     df = df.with_column("data", df["urls"].download())
     df.collect()
-    ```
+   `
 
 === "⚙️ SQL"
-    ```python
+`python
     df = daft.from_pydict({
         "urls": [
             "https://www.google.com",
@@ -43,9 +43,9 @@ Whether you're loading data from local files, cloud storage, or the web, Daft's 
         FROM df
     """)
     df.collect()
-    ```
+    `
 
-``` {title="Output"}
+```{title="Output"}
 
 ╭────────────────────────────────┬────────────────────────────────╮
 │ urls                           ┆ data                           │
@@ -62,16 +62,15 @@ Whether you're loading data from local files, cloud storage, or the web, Daft's 
 
 This works well for URLs which are HTTP paths to non-HTML files (e.g. jpeg), local filepaths or even paths to a file in an object store such as AWS S3 as well!
 
-
 ## The [`daft.File`](../api/datatypes/file_types.md) Datatype
 
 [`daft.File`](../api/datatypes/file_types.md) is particularly useful for working with large files that don't fit in memory or when you only need to access specific portions of a file. This is a common use case when working with audio or video data where loading the entire object is prohibitive. The `daft.File` Type is subclassed by the [`daft.AudioFile`](../api/datatypes/file_types.md) and [`daft.VideoFile`](../api/datatypes/file_types.md) types which streamline common operations. It provides a [pythonic file-like interface](https://docs.python.org/3/library/functions.html#open) with random access capabilities:
 
 === "🐍 Python"
-    ``` python
-    import daft
-    from daft.functions import file
-    from daft.io import IOConfig, S3Config
+``` python
+import daft
+from daft.functions import file
+from daft.io import IOConfig, S3Config
 
     io_config = IOConfig(s3=S3Config(anonymous=True))
 
@@ -112,7 +111,7 @@ This works well for URLs which are HTTP paths to non-HTML files (e.g. jpeg), loc
     df.collect()
     ```
 
-``` {title="Output"}
+```{title="Output"}
 ╭────────────────────────────────┬───────────╮
 │ urls                           ┆ file_type │
 │ ---                            ┆ ---       │
@@ -141,7 +140,7 @@ This architecture allows us to implement storage-specific optimizations (like ne
 2. Optimized backend readers for different sources (buffered network access, etc.)
 3. Consistent API regardless of storage location
 
-`daft.File` mirrors the [file interface in Python](https://docs.python.org/3/library/functions.html#open), but is optimized for distributed computing. Due to its lazy nature, `daft.File` does not read the file into memory until it is needed. To enforce this pattern, `daft.File` must be used inside a context manager like `with file.open() as f:` This works within a [`daft.func`](../api/custom-code/func.md) or [`daft.cls`](../api/custom-code/cls.md) user-defined functions or in native Python code.
+`daft.File` mirrors the [file interface in Python](https://docs.python.org/3/library/functions.html#open), but is optimized for distributed computing. Due to its lazy nature, `daft.File` does not read the file into memory until it is needed. To enforce this pattern, `daft.File` must be used inside a context manager like `with file.open() as f:` This works within a [`daft.func`](../custom-code/func.md) or [`daft.cls`](../custom-code/cls.md) user-defined functions or in native Python code.
 
 ## Basic Usage
 
@@ -163,7 +162,7 @@ df = (
 df.show(5)
 ```
 
-``` {title="Output"}
+```{title="Output"}
 ╭────────────────────────────────┬─────────┬────────────────────────────────┬────────────────────────────────╮
 │ path                           ┆ size    ┆ file                           ┆ header                         │
 │ ---                            ┆ ---     ┆ ---                            ┆ ---                            │
@@ -245,7 +244,7 @@ if __name__ == "__main__":
     df.show(3) # Show the first 3 rows of the dataframe
 ```
 
-``` {title="Output"}
+```{title="Output"}
 ╭────────────────────────────────┬─────────────────────────────┬────────────────────────────────┬────────────────────────────────┬────────────╮
 │ path                           ┆ name                        ┆ signature                      ┆ docstring                      ┆ start_line │
 │ ---                            ┆ ---                         ┆ ---                            ┆ ---                            ┆ ---        │

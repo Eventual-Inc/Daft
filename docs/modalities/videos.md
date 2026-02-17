@@ -1,16 +1,17 @@
 # Working with Videos
 
 There are two main ways to work with videos in Daft:
+
 1. Use `daft.read_video_frames` to read frames of a video into a DataFrame.
 2. Use the `daft.VideoFile` class to work with video files and metadata.
 
 `daft.VideoFile` is a subclass of `daft.File` that provides a specialized interface for video-specific operations.
 
-- [daft.read_video_frames](../api/functions/read_video_frames.md) for reading video frames into a DataFrame
+- [daft.read_video_frames](../api/io.md#daft.read_video_frames) for reading video frames into a DataFrame
 - [daft.VideoFile](../api/datatypes/file_types.md) for working with video files
-    - [daft.functions.video_file](../api/functions/video_file.md) for working with video files
-    - [daft.functions.video_metadata](../api/functions/video_metadata.md) for working with video metadata
-    - [daft.functions.video_keyframes](../api/functions/video_keyframes.md) for working with video keyframes
+  - [daft.functions.video_file](../api/functions/video_file.md) for working with video files
+  - [daft.functions.video_metadata](../api/functions/video_metadata.md) for working with video metadata
+  - [daft.functions.video_keyframes](../api/functions/video_keyframes.md) for working with video keyframes
 
 ### Reading Video Frames with `daft.read_video_frames`
 
@@ -30,7 +31,6 @@ This example shows reading a video's frames into a DataFrame using the `daft.rea
 
     df.show()
     ```
-
 
 ```{title="Output"}
 ╭────────────────────────────────┬──────────────┬────────────────────┬─────────────────┬───────────┬───────────┬────────────────┬──────────────┬───────────────────────╮
@@ -59,7 +59,6 @@ This example shows reading a video's frames into a DataFrame using the `daft.rea
 !!! note "Note"
 
     You can specify multiple paths and use globs like `daft.read_video_frames("/path/to/file.mp4")` and `daft.read_video_frames("/path/to/files-*.mp4")`
-
 
 ### Reading from YouTube
 
@@ -111,6 +110,7 @@ This example shows reading the key frames of a youtube video, you can also pass 
 ```
 
 ### Working with daft.VideoFile
+
 The following example demonstrates how to use `daft.VideoFile` to read a video file and extract metadata.
 
 ```python

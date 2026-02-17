@@ -1,10 +1,11 @@
 #![allow(deprecated, reason = "arrow2 migration")]
-
 use std::{iter::repeat_n, sync::Arc};
 
-use arrow::array::{BooleanBufferBuilder, BooleanBuilder, make_comparator};
+use arrow::{
+    array::{BooleanBufferBuilder, BooleanBuilder, make_comparator},
+    buffer::OffsetBuffer,
+};
 use common_error::DaftResult;
-use daft_arrow::offset::{Offsets, OffsetsBuffer};
 use daft_core::{
     array::{
         FixedSizeListArray, ListArray, StructArray,
@@ -46,7 +47,7 @@ pub fn list_fill(elem: &Series, num_array: &Int64Array) -> DaftResult<ListArray>
     let generated = general_list_fill_helper(elem, num_array)?;
     let generated_refs: Vec<&Series> = generated.iter().collect();
     let lengths = generated.iter().map(|arr| arr.len());
-    let offsets = Offsets::try_from_lengths(lengths)?;
+    let offsets = OffsetBuffer::from_lengths(lengths);
     let flat_child = if generated_refs.is_empty() {
         // when there's no output, we should create an empty series
         Series::empty(elem.name(), elem.data_type())
@@ -56,7 +57,7 @@ pub fn list_fill(elem: &Series, num_array: &Int64Array) -> DaftResult<ListArray>
     Ok(ListArray::new(
         elem.field().to_list_field(),
         flat_child,
-        offsets.into(),
+        offsets,
         None,
     ))
 }
@@ -94,7 +95,13 @@ impl ListArrayExtension for ListArray {
         offsets.push(0_i64);
 
         let mut map: IndexMap<IndexRef, u64, IdentityBuildHasher> = IndexMap::default();
-        for range in self.offsets().ranges() {
+
+        for range in self.offsets().windows(2).map(|w| {
+            let from = w[0];
+            let to = w[1];
+            debug_assert!(from <= to, "offsets must be monotonically increasing");
+            from..to
+        }) {
             map.clear();
 
             for index in range {
@@ -164,7 +171,7 @@ impl ListArrayExtension for ListArray {
 
         let list_type = DataType::List(Box::new(struct_type));
 
-        let offsets = OffsetsBuffer::try_from(offsets)?;
+        let offsets = OffsetBuffer::new(offsets.into());
 
         let list_array = Self::new(
             Arc::new(Field::new("entries", list_type)),
@@ -363,12 +370,12 @@ impl ListArrayExtension for ListArray {
 
         // Calculate new offsets based on the lengths of the sorted series.
         let lengths = child_series.iter().map(|s| s.len());
-        let new_offsets = Offsets::try_from_lengths(lengths)?;
+        let new_offsets = OffsetBuffer::from_lengths(lengths);
 
         Ok(Self::new(
             self.field.clone(),
             child,
-            new_offsets.into(),
+            new_offsets,
             self.nulls().cloned(),
         ))
     }
@@ -503,7 +510,17 @@ impl ListArrayExtension for ListArray {
         )
         .unwrap();
 
-        for (list_idx, range) in self.offsets().ranges().enumerate() {
+        for (list_idx, range) in self
+            .offsets()
+            .windows(2)
+            .map(|w| {
+                let from = w[0];
+                let to = w[1];
+                debug_assert!(from <= to, "offsets must be monotonically increasing");
+                from..to
+            })
+            .enumerate()
+        {
             if list_nulls.is_some_and(|nulls| nulls.is_null(list_idx)) {
                 builder.append_null();
                 continue;
@@ -841,7 +858,7 @@ fn get_chunks_helper(
         Ok(ListArray::new(
             inner_list_field.to_list_field(),
             inner_list.into_series(),
-            daft_arrow::offset::OffsetsBuffer::try_from(new_offsets)?,
+            OffsetBuffer::new(new_offsets.into()),
             nulls.cloned(), // Copy the parent's nulls.
         )
         .into_series())
@@ -865,7 +882,7 @@ fn get_chunks_helper(
         Ok(ListArray::new(
             inner_list_field.to_list_field(),
             inner_list.into_series(),
-            daft_arrow::offset::OffsetsBuffer::try_from(new_offsets)?,
+            OffsetBuffer::new(new_offsets.into()),
             nulls.cloned(), // Copy the parent's nulls.
         )
         .into_series())
@@ -874,7 +891,7 @@ fn get_chunks_helper(
 
 fn list_sort_helper(
     flat_child: &Series,
-    offsets: &OffsetsBuffer<i64>,
+    offsets: &OffsetBuffer<i64>,
     desc_iter: impl Iterator<Item = bool>,
     nulls_first_iter: impl Iterator<Item = bool>,
     nulls: impl Iterator<Item = bool>,
