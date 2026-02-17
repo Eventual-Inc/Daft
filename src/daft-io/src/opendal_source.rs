@@ -21,6 +21,11 @@ pub(crate) struct OpenDALSource {
 }
 
 impl OpenDALSource {
+    /// List the OpenDAL service schemes that are compiled into this build.
+    fn available_schemes() -> &'static [&'static str] {
+        &["oss", "cos", "obs", "memory", "fs", "github"]
+    }
+
     pub async fn get_client(
         scheme: &str,
         config: &BTreeMap<String, String>,
@@ -32,7 +37,13 @@ impl OpenDALSource {
                     store: super::SourceType::OpenDAL {
                         scheme: scheme.to_string(),
                     },
-                    source: e.into(),
+                    source: format!(
+                        "Unknown scheme '{}'. Available OpenDAL schemes: [{}]. Error: {}",
+                        scheme,
+                        Self::available_schemes().join(", "),
+                        e
+                    )
+                    .into(),
                 })?;
 
         let operator =
@@ -41,7 +52,13 @@ impl OpenDALSource {
                     store: super::SourceType::OpenDAL {
                         scheme: scheme.to_string(),
                     },
-                    source: e.into(),
+                    source: format!(
+                        "Failed to create OpenDAL operator for '{}'. \
+                         You may need to configure it via IOConfig(opendal_backends={{\"{}\": {{...}}}}). \
+                         Error: {}",
+                        scheme, scheme, e
+                    )
+                    .into(),
                 }
             })?;
 
@@ -91,6 +108,7 @@ impl MultipartWriter for OpenDALMultipartWriter {
         self.writer
             .close()
             .await
+            .map(|_| ())
             .map_err(|e| super::Error::Generic {
                 store: super::SourceType::OpenDAL {
                     scheme: self.scheme.clone(),
@@ -155,47 +173,66 @@ impl ObjectSource for OpenDALSource {
     ) -> super::Result<GetResult> {
         let path = url_to_opendal_path(uri)?;
 
-        let data = match range {
-            Some(GetRange::Bounded(r)) => self
-                .operator
-                .read_with(&path)
-                .range(r.start as u64..r.end as u64)
-                .await
-                .map_err(|e| opendal_err_to_daft_err(e, uri, &self.scheme))?,
-            Some(GetRange::Offset(offset)) => self
-                .operator
-                .read_with(&path)
-                .range(offset as u64..)
-                .await
-                .map_err(|e| opendal_err_to_daft_err(e, uri, &self.scheme))?,
+        let reader = self
+            .operator
+            .reader(&path)
+            .await
+            .map_err(|e| opendal_err_to_daft_err(e, uri, &self.scheme))?;
+
+        let scheme = self.scheme.clone();
+        let uri_owned = uri.to_string();
+        let (byte_stream, size) = match range {
+            Some(GetRange::Bounded(r)) => {
+                let size = Some(r.end - r.start);
+                let stream = reader
+                    .into_bytes_stream(r.start as u64..r.end as u64)
+                    .await
+                    .map_err(|e| opendal_err_to_daft_err(e, &uri_owned, &scheme))?;
+                (stream, size)
+            }
+            Some(GetRange::Offset(offset)) => {
+                let stream = reader
+                    .into_bytes_stream(offset as u64..)
+                    .await
+                    .map_err(|e| opendal_err_to_daft_err(e, &uri_owned, &scheme))?;
+                (stream, None)
+            }
             Some(GetRange::Suffix(n)) => {
-                // OpenDAL doesn't have a direct suffix range API, so we stat first
                 let meta = self
                     .operator
                     .stat(&path)
                     .await
-                    .map_err(|e| opendal_err_to_daft_err(e, uri, &self.scheme))?;
-                let size = meta.content_length();
-                let start = size.saturating_sub(n as u64);
-                self.operator
-                    .read_with(&path)
-                    .range(start..size)
+                    .map_err(|e| opendal_err_to_daft_err(e, &uri_owned, &scheme))?;
+                let file_size = meta.content_length();
+                let start = file_size.saturating_sub(n as u64);
+                let size = Some((file_size - start) as usize);
+                let stream = reader
+                    .into_bytes_stream(start..file_size)
                     .await
-                    .map_err(|e| opendal_err_to_daft_err(e, uri, &self.scheme))?
+                    .map_err(|e| opendal_err_to_daft_err(e, &uri_owned, &scheme))?;
+                (stream, size)
             }
-            None => self
-                .operator
-                .read(&path)
-                .await
-                .map_err(|e| opendal_err_to_daft_err(e, uri, &self.scheme))?,
+            None => {
+                let stream = reader
+                    .into_bytes_stream(..)
+                    .await
+                    .map_err(|e| opendal_err_to_daft_err(e, &uri_owned, &scheme))?;
+                (stream, None)
+            }
         };
 
-        let bytes: Bytes = data.to_bytes();
-        let len = bytes.len();
-        let stream = futures::stream::once(async { Ok(bytes) });
-        let owned_stream = Box::pin(stream);
+        use futures::StreamExt;
+        let mapped_stream = byte_stream.map(move |result| {
+            result.map_err(|e| super::Error::Generic {
+                store: super::SourceType::OpenDAL {
+                    scheme: scheme.clone(),
+                },
+                source: e.into(),
+            })
+        });
+        let owned_stream = Box::pin(mapped_stream);
         let stream_with_stats = io_stats_on_bytestream(owned_stream, io_stats);
-        Ok(GetResult::Stream(stream_with_stats, Some(len), None, None))
+        Ok(GetResult::Stream(stream_with_stats, size, None, None))
     }
 
     async fn put(
@@ -208,6 +245,7 @@ impl ObjectSource for OpenDALSource {
         self.operator
             .write(&path, data)
             .await
+            .map(|_| ())
             .map_err(|e| opendal_err_to_daft_err(e, uri, &self.scheme))
     }
 
@@ -392,7 +430,7 @@ mod tests {
             .await
             .expect("delete failed");
 
-        let result = source.get("memory://test/delete.txt", None, None).await;
+        let result = source.get_size("memory://test/delete.txt", None).await;
         assert!(result.is_err());
     }
 

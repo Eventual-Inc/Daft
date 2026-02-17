@@ -903,7 +903,7 @@ class IOConfig:
     disable_suffix_range: bool
     tos: TosConfig
     gravitino: GravitinoConfig
-    backends: dict[str, dict[str, str]]
+    opendal_backends: dict[str, dict[str, str]]
 
     def __init__(
         self,
@@ -916,7 +916,7 @@ class IOConfig:
         disable_suffix_range: bool | None = None,
         tos: TosConfig | None = None,
         gravitino: GravitinoConfig | None = None,
-        backends: dict[str, dict[str, str]] | None = None,
+        opendal_backends: dict[str, dict[str, str]] | None = None,
     ): ...
     def replace(
         self,
@@ -929,7 +929,7 @@ class IOConfig:
         disable_suffix_range: bool | None = None,
         tos: TosConfig | None = None,
         gravitino: GravitinoConfig | None = None,
-        backends: dict[str, dict[str, str]] | None = None,
+        opendal_backends: dict[str, dict[str, str]] | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig."""
         ...

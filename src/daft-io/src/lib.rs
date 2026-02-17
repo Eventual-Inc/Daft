@@ -300,14 +300,12 @@ impl IOClient {
                 }
             }
             SourceType::OpenDAL { scheme } => {
-                let backend_config = self.config.backends.get(scheme).ok_or_else(|| {
-                    Error::NotImplementedSource {
-                        store: format!(
-                            "{}. Configure it via IOConfig(backends={{\"{}\":{{...}}}})",
-                            scheme, scheme
-                        ),
-                    }
-                })?;
+                let empty_config = std::collections::BTreeMap::new();
+                let backend_config = self
+                    .config
+                    .opendal_backends
+                    .get(scheme)
+                    .unwrap_or(&empty_config);
                 OpenDALSource::get_client(scheme, backend_config).await? as Arc<dyn ObjectSource>
             }
         };

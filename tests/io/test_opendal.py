@@ -1,4 +1,4 @@
-"""Integration tests for OpenDAL backend support via IOConfig(backends={...})."""
+"""Integration tests for OpenDAL backend support via IOConfig(opendal_backends={...})."""
 
 from __future__ import annotations
 
@@ -35,7 +35,7 @@ def csv_data(tmp_path):
 def _fs_io_config(root_dir: Path) -> IOConfig:
     """Create an IOConfig using OpenDAL's 'fs' (filesystem) backend."""
     return IOConfig(
-        backends={
+        opendal_backends={
             "fs": {
                 "root": str(root_dir),
             }
@@ -73,33 +73,33 @@ def test_opendal_fs_glob_parquet(tmp_path):
 
 def test_opendal_unconfigured_scheme_error():
     """Test that an unconfigured scheme gives a helpful error message."""
-    with pytest.raises(Exception, match="Configure it via IOConfig"):
+    with pytest.raises(Exception, match="IOConfig\\(opendal_backends="):
         daft.read_parquet("unknownscheme://bucket/data.parquet").collect()
 
 
 def test_opendal_ioconfig_roundtrip():
-    """Test that IOConfig with backends survives serialization roundtrip."""
+    """Test that IOConfig with opendal_backends survives serialization roundtrip."""
     import pickle
 
     config = IOConfig(
-        backends={
+        opendal_backends={
             "oss": {"bucket": "my-bucket", "access_key_id": "test"},
             "cos": {"bucket": "other-bucket"},
         }
     )
 
     restored = pickle.loads(pickle.dumps(config))
-    assert restored.backends == config.backends
+    assert restored.opendal_backends == config.opendal_backends
     assert hash(config) == hash(restored)
 
 
 def test_opendal_ioconfig_replace():
-    """Test that IOConfig.replace works with backends."""
-    config = IOConfig(backends={"oss": {"bucket": "original"}})
-    replaced = config.replace(backends={"cos": {"bucket": "new"}})
+    """Test that IOConfig.replace works with opendal_backends."""
+    config = IOConfig(opendal_backends={"oss": {"bucket": "original"}})
+    replaced = config.replace(opendal_backends={"cos": {"bucket": "new"}})
 
-    assert replaced.backends == {"cos": {"bucket": "new"}}
-    assert config.backends == {"oss": {"bucket": "original"}}
+    assert replaced.opendal_backends == {"cos": {"bucket": "new"}}
+    assert config.opendal_backends == {"oss": {"bucket": "original"}}
 
 
 def test_opendal_fs_write_parquet(tmp_path):
@@ -214,7 +214,7 @@ def test_opendal_fs_roundtrip_parquet_large(tmp_path):
     assert out["data"] == [f"row-{i}" for i in range(n)]
 
 
-def test_opendal_ioconfig_default_empty_backends():
-    """Test that default IOConfig has empty backends."""
+def test_opendal_ioconfig_default_empty_opendal_backends():
+    """Test that default IOConfig has empty opendal_backends."""
     config = IOConfig()
-    assert config.backends == {}
+    assert config.opendal_backends == {}

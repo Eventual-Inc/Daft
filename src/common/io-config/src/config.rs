@@ -23,7 +23,7 @@ pub struct IOConfig {
     pub tos: TosConfig,
     /// Additional backends configured via OpenDAL.
     /// Keys are scheme names (e.g. "oss", "cos"), values are key-value config maps.
-    pub backends: BTreeMap<String, BTreeMap<String, String>>,
+    pub opendal_backends: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 impl IOConfig {
@@ -66,8 +66,8 @@ impl IOConfig {
             "TOS config = {{ {} }}",
             self.tos.multiline_display().join(", ")
         ));
-        if !self.backends.is_empty() {
-            res.push(format!("OpenDAL backends = {:?}", self.backends));
+        if !self.opendal_backends.is_empty() {
+            res.push(format!("OpenDAL backends = {:?}", self.opendal_backends));
         }
         res
     }
