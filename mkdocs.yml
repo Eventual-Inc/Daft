@@ -158,6 +158,8 @@ plugins:
       migration/dask_migration.md: index.md
       resources/benchmarks/tpch.md: benchmarks/index.md
       core_concepts.md: index.md
+      api/datatypes/index.md: api/datatypes/all_datatypes.md
+      modalities/urls.md: modalities/files.md
 - mkdocstrings:
     custom_templates: docs/templates
     handlers:
