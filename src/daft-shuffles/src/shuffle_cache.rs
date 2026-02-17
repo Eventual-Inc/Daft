@@ -209,10 +209,7 @@ impl InProgressShuffleCache {
                 )
             })
             .multiunzip();
-        eprintln!(
-            "bytes_per_file_per_partition: {:?}",
-            bytes_per_file_per_partition
-        );
+
         Ok(ShuffleCache::new(
             schema,
             bytes_per_file_per_partition,
