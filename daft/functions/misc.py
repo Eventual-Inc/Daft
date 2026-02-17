@@ -681,15 +681,11 @@ def map_get(expr: Expression, key: Expression) -> Expression:
         │ ---                ┆ ---   │
         │ Map[String: Int64] ┆ Int64 │
         ╞════════════════════╪═══════╡
-        │ [{key: a,          ┆ 1     │
-        │ value: 1,          ┆       │
-        │ }]                 ┆       │
+        │ {"a": 1}           ┆ 1     │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ []                 ┆ None  │
+        │ {}                 ┆ None  │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
-        │ [{key: b,          ┆ None  │
-        │ value: 2,          ┆       │
-        │ }]                 ┆       │
+        │ {"b": 2}           ┆ None  │
         ╰────────────────────┴───────╯
         <BLANKLINE>
         (Showing first 3 of 3 rows)

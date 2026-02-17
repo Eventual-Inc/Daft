@@ -174,6 +174,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         let runtime = get_or_init_runtime();
         let (result_sender, result_receiver) = create_channel(1);
         let this = self.clone();
+        let statistics_manager_clone = statistics_manager.clone();
         let joinset = runtime.block_on_current_thread(async move {
             let mut joinset = create_join_set();
             let scheduler_handle = spawn_scheduler_actor(
@@ -188,6 +189,10 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
             });
             joinset
         });
-        Ok(PlanResult::new(joinset, result_receiver))
+        Ok(PlanResult::new(
+            joinset,
+            result_receiver,
+            statistics_manager_clone,
+        ))
     }
 }
