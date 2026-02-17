@@ -134,7 +134,8 @@ impl Series {
             Ok(<<$T as DaftDataType>::ArrayType as FromArrow>::from_arrow2(field, arrow_arr)?.into_series())
         })
     }
-    pub fn from_arrow(field: FieldRef, arrow_arr: ArrayRef) -> DaftResult<Self> {
+    pub fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
+        let field = field.into();
         with_match_daft_types!(field.dtype, |$T| {
             Ok(<<$T as DaftDataType>::ArrayType as FromArrow>::from_arrow(field, arrow_arr)?.into_series())
         })

@@ -1,8 +1,7 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::{iter::repeat_n, sync::Arc};
 
 use arrow::{
-    array::{BooleanBufferBuilder, BooleanBuilder, make_comparator},
+    array::{ArrayRef, AsArray, BooleanBufferBuilder, BooleanBuilder, make_comparator},
     buffer::OffsetBuffer,
 };
 use common_error::DaftResult;
@@ -13,8 +12,7 @@ use daft_core::{
     },
     datatypes::{try_mean_aggregation_supertype, try_sum_supertype},
     prelude::{
-        AsArrow, BooleanArray, CountMode, DataType, Field, Int64Array, MapArray, UInt64Array,
-        Utf8Array,
+        BooleanArray, CountMode, DataType, Field, Int64Array, MapArray, UInt64Array, Utf8Array,
     },
     series::{IntoSeries, Series},
     utils::identity_hash_set::IdentityBuildHasher,
@@ -148,15 +146,10 @@ impl ListArrayExtension for ListArray {
 
         let keys = self.flat_child.filter(&include_mask)?;
 
-        let keys = Series::try_from_field_and_arrow_array(
-            Field::new("key", key_type.clone()),
-            keys.to_arrow2(),
-        )?;
+        let keys = Series::from_arrow(Field::new("key", key_type.clone()), keys.to_arrow()?)?;
 
-        let values = Series::try_from_field_and_arrow_array(
-            Field::new("value", count_type.clone()),
-            values.to_arrow2(),
-        )?;
+        let values =
+            Series::from_arrow(Field::new("value", count_type.clone()), values.to_arrow()?)?;
 
         let struct_type = DataType::Struct(vec![
             Field::new("key", key_type.clone()),
@@ -263,7 +256,7 @@ impl ListArrayExtension for ListArray {
         } else {
             assert_eq!(delimiter.len(), self.len());
 
-            Box::new(delimiter.as_arrow2().iter())
+            Box::new(delimiter.into_iter())
         };
         let self_iter = (0..self.len()).map(|i| self.get(i));
 
@@ -271,16 +264,13 @@ impl ListArrayExtension for ListArray {
             .zip(delimiter_iter)
             .map(|(list_element, delimiter)| {
                 join_arrow_list_of_utf8s(
-                    list_element.as_ref().map(|l| l.utf8().unwrap().data()),
+                    list_element.as_ref().map(|l| l.utf8().unwrap().to_arrow()),
                     delimiter.unwrap_or(""),
                 )
-            });
+            })
+            .collect::<Utf8Array>();
 
-        Ok(Utf8Array::new(
-            Field::new(self.name(), DataType::Utf8).into(),
-            Box::new(daft_arrow::array::Utf8Array::<i64>::from_iter(result)),
-        )
-        .unwrap())
+        Ok(result.rename(self.name()))
     }
 
     fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series> {
@@ -340,8 +330,9 @@ impl ListArrayExtension for ListArray {
                 )?
             }
         } else {
-            let desc_iter = desc.as_arrow2().values_iter();
-            let nulls_first_iter = nulls_first.as_arrow2().values_iter();
+            let desc_iter = desc.values()?;
+
+            let nulls_first_iter = nulls_first.values()?;
             if let Some(nulls) = self.nulls() {
                 list_sort_helper(
                     &self.flat_child,
@@ -411,9 +402,8 @@ impl ListArrayExtension for ListArray {
             let mut all_true = true;
             let bool_slice = slice.bool()?;
             let bool_nulls = bool_slice.nulls();
-            let bool_data = bool_slice.as_arrow2().values();
             for j in 0..bool_slice.len() {
-                if bool_nulls.is_none_or(|v| v.is_valid(j)) && !bool_data.get_bit(j) {
+                if bool_nulls.is_none_or(|v| v.is_valid(j)) && !bool_slice.get(j).unwrap() {
                     all_true = false;
                     break;
                 }
@@ -462,9 +452,9 @@ impl ListArrayExtension for ListArray {
             let mut any_true = false;
             let bool_slice = slice.bool()?;
             let bool_nulls = bool_slice.nulls();
-            let bool_data = bool_slice.as_arrow2().values();
+
             for j in 0..bool_slice.len() {
-                if bool_nulls.is_none_or(|v| v.is_valid(j)) && bool_data.get_bit(j) {
+                if bool_nulls.is_none_or(|v| v.is_valid(j)) && bool_slice.get(j).unwrap() {
                     any_true = true;
                     break;
                 }
@@ -629,7 +619,7 @@ impl ListArrayExtension for FixedSizeListArray {
             Box::new(repeat_n(delimiter.get(0), self.len()))
         } else {
             assert_eq!(delimiter.len(), self.len());
-            Box::new(delimiter.as_arrow2().iter())
+            Box::new(delimiter.into_iter())
         };
         let self_iter = (0..self.len()).map(|i| self.get(i));
 
@@ -637,16 +627,13 @@ impl ListArrayExtension for FixedSizeListArray {
             .zip(delimiter_iter)
             .map(|(list_element, delimiter)| {
                 join_arrow_list_of_utf8s(
-                    list_element.as_ref().map(|l| l.utf8().unwrap().data()),
+                    list_element.as_ref().map(|l| l.utf8().unwrap().to_arrow()),
                     delimiter.unwrap_or(""),
                 )
-            });
+            })
+            .collect::<Utf8Array>();
 
-        Ok(Utf8Array::new(
-            Field::new(self.name(), DataType::Utf8).into(),
-            Box::new(daft_arrow::array::Utf8Array::<i64>::from_iter(result)),
-        )
-        .unwrap())
+        Ok(result.rename(self.name()))
     }
 
     fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series> {
@@ -741,8 +728,8 @@ impl ListArrayExtension for FixedSizeListArray {
                 )?
             }
         } else {
-            let desc_iter = desc.as_arrow2().values_iter();
-            let nulls_first_iter = nulls_first.as_arrow2().values_iter();
+            let desc_iter = desc.values()?;
+            let nulls_first_iter = nulls_first.values()?;
             if let Some(nulls) = self.nulls() {
                 list_sort_helper_fixed_size(
                     &self.flat_child,
@@ -772,16 +759,11 @@ impl ListArrayExtension for FixedSizeListArray {
     }
 }
 
-fn join_arrow_list_of_utf8s(
-    list_element: Option<&dyn daft_arrow::array::Array>,
-    delimiter_str: &str,
-) -> Option<String> {
+fn join_arrow_list_of_utf8s(list_element: Option<ArrayRef>, delimiter_str: &str) -> Option<String> {
     list_element
         .map(|list_element| {
             list_element
-                .as_any()
-                .downcast_ref::<daft_arrow::array::Utf8Array<i64>>()
-                .unwrap()
+                .as_string::<i64>()
                 .iter()
                 .fold(String::new(), |acc, str_item| {
                     acc + str_item.unwrap_or("") + delimiter_str
@@ -806,7 +788,7 @@ fn create_iter<'a>(arr: &'a Int64Array, len: usize) -> Box<dyn Iterator<Item = i
         1 => Box::new(repeat_n(arr.get(0).unwrap(), len)),
         arr_len => {
             assert_eq!(arr_len, len);
-            Box::new(arr.as_arrow2().iter().map(|x| *x.unwrap()))
+            Box::new(arr.into_iter().map(|x| *x.unwrap()))
         }
     }
 }
