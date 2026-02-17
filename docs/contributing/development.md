@@ -10,7 +10,7 @@ To set up your development environment:
 
 1. Install [uv](https://docs.astral.sh/uv/). You can run `curl -LsSf https://astral.sh/uv/install.sh | sh` on macOS and Linux.
 2. [Install the Rust compilation toolchain](https://www.rust-lang.org/tools/install)
-3. Install [Node.js](https://nodejs.org/) (20.x LTS) and npm in order to build docs and the daft-dashboard functionality.
+3. Install [Node.js](https://nodejs.org/) (22.x LTS) and npm in order to build docs and the daft-dashboard functionality.
 4. Install [cmake](https://cmake.org/). If you use [homebrew](https://brew.sh), you can run `brew install cmake`.
 5. Install [protoc](https://protobuf.dev/installation/). You will need this for release builds -- `make build-release`. With homebrew, installation is `brew install protobuf`.
 6. Clone the Daft repo: `git clone git@github.com:Eventual-Inc/Daft.git`
