@@ -4,7 +4,6 @@ async-compat = {workspace = true}
 daft-arrow = {path = "../daft-arrow"}
 async-stream = {workspace = true}
 bytes = {workspace = true}
-common-arrow-ffi = {path = "../common/arrow-ffi", default-features = false, optional = true}
 common-error = {path = "../common/error", default-features = false}
 common-runtime = {path = "../common/runtime", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
@@ -30,7 +29,7 @@ bincode = {workspace = true}
 path_macro = {workspace = true}
 
 [features]
-python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-io/python", "daft-recordbatch/python", "daft-stats/python", "daft-dsl/python", "dep:common-arrow-ffi"]
+python = ["dep:pyo3", "common-error/python", "daft-core/python", "daft-io/python", "daft-recordbatch/python", "daft-stats/python", "daft-dsl/python"]
 
 [lints]
 workspace = true

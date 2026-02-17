@@ -1812,7 +1812,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow",
  "arrow-schema",
- "daft-arrow",
  "pyo3",
 ]
 
@@ -3206,7 +3205,6 @@ dependencies = [
  "async-stream",
  "bincode",
  "bytes",
- "common-arrow-ffi",
  "common-error",
  "common-runtime",
  "daft-arrow",
