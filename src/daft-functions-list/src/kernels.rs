@@ -788,7 +788,7 @@ fn create_iter<'a>(arr: &'a Int64Array, len: usize) -> Box<dyn Iterator<Item = i
         1 => Box::new(repeat_n(arr.get(0).unwrap(), len)),
         arr_len => {
             assert_eq!(arr_len, len);
-            Box::new(arr.into_iter().map(|x| *x.unwrap()))
+            Box::new(arr.into_iter().map(|x| x.unwrap()))
         }
     }
 }
