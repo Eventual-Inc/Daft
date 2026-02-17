@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2->arrow migration")]
 use std::{
     iter::repeat_n,
     ops::{Div, Mul},

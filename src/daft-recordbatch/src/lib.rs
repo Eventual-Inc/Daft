@@ -150,7 +150,6 @@ impl RecordBatch {
     }
 
     #[deprecated(note = "arrow2 migration")]
-    #[allow(deprecated, reason = "arrow2 migration")]
     pub fn get_inner_arrow_arrays(
         &self,
     ) -> impl Iterator<Item = Box<dyn daft_arrow::array::Array>> + '_ {
@@ -1616,7 +1615,6 @@ impl RecordBatch {
 impl TryFrom<RecordBatch> for arrow_array::RecordBatch {
     type Error = DaftError;
 
-    #[allow(deprecated, reason = "arrow2 migration")]
     fn try_from(record_batch: RecordBatch) -> DaftResult<Self> {
         let schema = Arc::new(record_batch.schema.to_arrow2()?.into());
         let columns = record_batch
