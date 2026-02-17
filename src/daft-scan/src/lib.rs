@@ -1,3 +1,5 @@
+#![allow(deprecated, reason = "arrow2 migration")]
+
 use std::{
     any::Any,
     borrow::Cow,

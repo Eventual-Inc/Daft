@@ -16,7 +16,6 @@
 - [Computes embeddings using a lightweight LLM, running locally](#text-embedding)
 - [Saves everything as Parquet files](#writing-to-parquet)
 
-
 **tl;dr**: If you'd like, you can [jump to the end to see the full pipeline](#entire-end-to-end-pipeline).
 
 ## Installing and Importing Dependencies
@@ -91,11 +90,11 @@ Daft knows about URLs and has built-in support for downloading their contents! T
 
 Let's switch back to building out a document processing pipeline. We know that we can get the PDF bytes and load up each document. But, for our pipeline, we'd like to have a structured representation for the content we care about in each document. Namely, the text!
 
- Documents are two-dimensional: when doing document processing, we care about what the document says and _where_ it says it. What page? Where on the page? We can often make inferences on what role a piece of text fills by where it occurs on a page. For example, if we're processing forms, something right next to the "First Name:" field is _probably_ someone's first name.
+Documents are two-dimensional: when doing document processing, we care about what the document says and _where_ it says it. What page? Where on the page? We can often make inferences on what role a piece of text fills by where it occurs on a page. For example, if we're processing forms, something right next to the "First Name:" field is _probably_ someone's first name.
 
- If we're doing ML after this pipeline, we will absolutely want to provide this spatial information to our model.
+If we're doing ML after this pipeline, we will absolutely want to provide this spatial information to our model.
 
- So, before we can define any steps in our pipeline, we will need to define some Pydantic classes to help us represent a document!
+So, before we can define any steps in our pipeline, we will need to define some Pydantic classes to help us represent a document!
 
 ```python
 class BoundingBox(BaseModel):
@@ -231,7 +230,6 @@ The first part of our pipeline is to load the PDF's contents, locate all text, a
 This procedure can either perform OCR to locate text boxes or it can inspect the PDF and, if it is supported, directly extract text boxes. Note that there are no guarantees that a PDF will support text. And if supported, there are no guarantees that the text boxes will make sense from a human readability standpoint.
 
 We will create a user defined function (UDF) to allow Daft to load and parse our PDFs. This UDF, `LoadDirectAndParsePdf`, will use supporting functions for performing OCR with Tesseract or for extracting text out of the file via PyMuPDF.
-
 
 ```python
 # Daft needs you to tell it what the expected output of any UDF looks like.
@@ -670,8 +668,8 @@ class TextEmbedder:
 
 In Daft, we express our pipeline as a `daft.DataFrame` instance. We use the DataFrame's methods to produce transformations from one view of the data into another. Here, we'll combine all of the functionality defined in this tutorial into a complete DataFrame-based pipeline.
 
-
 ### Options
+
 We will start out by defining the configuration options our pipeline uses -- change _any_ of these values and rerun to see how they affect the pipeline!
 
 ```python
@@ -761,16 +759,19 @@ print(df.schema())
 A note on how Daft works -- in our above UDF application, we're providing column expressions as input. Specifically, the [`col`](../api/expressions.md#daft.expressions.col) part. When we write `col("url")`, we're telling Daft to wire things up under the hood to reference the data in the `url` column of the dataframe.
 
 Breaking down the PDF loading and parsing UDF call, the first part is actually constructing the UDF instance:
+
 ```python
 LoadDirectAndParsePdf.with_init_args(ocr, page_limit)
 ```
 
 While the second part is actually applying that UDF to our two columns, `url` and `pdf_bytes`:
+
 ```python
 (col("url"), col("pdf_bytes"))
 ```
 
 Note that this is equivalent:
+
 ```python
 f = LoadDirectAndParsePdf.with_init_args(ocr, page_limit)
 f(col("url"), col("pdf_bytes"))
@@ -803,9 +804,9 @@ print(df.schema())
 
 #### Explaining Structure Access Expressions
 
-Note that we're using [`.struct`](../api/expressions.md#daft.expressions.struct) to construct an expression that allows Daft to extract individual field values from our complex document structure.
+Note that we're using `col("indexed_texts")["text"]` to construct an expression that allows Daft to extract individual field values from our complex document structure.
 
-When write `col("text_blocks").struct.get("bounding_box")`, we're telling Daft that we want to access the `bounding_box` field of each element from the `text_blocks` column. From this, we can provide additional field-selecting logic (e.g. `["x"]` to get the value for field `x` on the `bounding_box` value from each structure in `text_blocks`).
+When we write `col("text_blocks").struct.get("bounding_box")`, we're telling Daft that we want to access the `bounding_box` field of each element from the `text_blocks` column. From this, we can provide additional field-selecting logic (e.g. `["x"]` to get the value for field `x` on the `bounding_box` value from each structure in `text_blocks`).
 
 The last part of our text box processing step is to extract the text and bounding box coordinates into their own columns. We also want to preserve the reading order index as its own column too.
 
@@ -815,14 +816,14 @@ This format makes it easier to form follow up queries on our data, such as:
 
 ```python
 df = (
-    df.with_column("text_blocks", col("indexed_texts").struct.get("text"))
-    .with_column("reading_order_index", col("indexed_texts").struct.get("index"))
+    df.with_column("text_blocks", col("indexed_texts")["text"])
+    .with_column("reading_order_index", col("indexed_texts")["index"])
     .exclude("indexed_texts")
-    .with_column("text", col("text_blocks").struct.get("text"))
-    .with_column("x", col("text_blocks").struct.get("bounding_box")["x"])
-    .with_column("y", col("text_blocks").struct.get("bounding_box")["y"])
-    .with_column("h", col("text_blocks").struct.get("bounding_box")["h"])
-    .with_column("w", col("text_blocks").struct.get("bounding_box")["w"])
+    .with_column("text", col("text_blocks")["text"])
+    .with_column("x", col("text_blocks")["bounding_box"]["x"])
+    .with_column("y", col("text_blocks")["bounding_box"]["y"])
+    .with_column("h", col("text_blocks")["bounding_box"]["h"])
+    .with_column("w", col("text_blocks")["bounding_box"]["w"])
     .exclude("text_blocks")
 )
 print(df.schema())
@@ -845,7 +846,7 @@ At this point, our `df` value contains the entire pipeline. We can show the fina
 print(f"Pipeline constructed:\n{df.schema()}")
 ```
 
-And we can peek under the hood and ask Daft to show us the entire logical plan  that it will run when we ask it to execute our pipeline:
+And we can peek under the hood and ask Daft to show us the entire logical plan that it will run when we ask it to execute our pipeline:
 
 ```python
 print(f"Execution plan for pipeline:\n{df.explain()}")

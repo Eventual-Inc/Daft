@@ -15,11 +15,11 @@ use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use futures::{StreamExt, stream::BoxStream};
-use opentelemetry::{KeyValue, global};
+use opentelemetry::{KeyValue, metrics::Meter};
 
 use crate::{
     ExecutionRuntimeContext,
-    pipeline::{MorselSizeRequirement, NodeName, PipelineNode, RuntimeContext},
+    pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineNode},
     runtime_stats::RuntimeStats,
 };
 
@@ -34,13 +34,12 @@ pub(crate) struct SourceStats {
 }
 
 impl SourceStats {
-    pub fn new(id: usize) -> Self {
-        let meter = global::meter("daft.local.node_stats");
+    pub fn new(meter: &Meter, id: usize) -> Self {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, CPU_US_KEY, None),
-            rows_out: Counter::new(&meter, ROWS_OUT_KEY, None),
+            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
             io_stats: IOStatsRef::default(),
 
             node_kv,
@@ -81,8 +80,8 @@ impl RuntimeStats for SourceStats {
 pub trait Source: Send + Sync {
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
-    fn make_runtime_stats(&self, id: usize) -> Arc<SourceStats> {
-        Arc::new(SourceStats::new(id))
+    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<SourceStats> {
+        Arc::new(SourceStats::new(meter, id))
     }
     fn multiline_display(&self) -> Vec<String>;
     async fn get_data(
@@ -106,7 +105,7 @@ impl SourceNode {
     pub fn new(
         source: Arc<dyn Source>,
         plan_stats: StatsState,
-        ctx: &RuntimeContext,
+        ctx: &BuilderContext,
         context: &LocalNodeContext,
     ) -> Self {
         let info = ctx.next_node_info(
@@ -115,7 +114,7 @@ impl SourceNode {
             NodeCategory::Source,
             context,
         );
-        let runtime_stats = source.make_runtime_stats(info.id);
+        let runtime_stats = source.make_runtime_stats(&ctx.meter, info.id);
         Self {
             source,
             runtime_stats,

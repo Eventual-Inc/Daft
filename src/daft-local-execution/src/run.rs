@@ -37,7 +37,7 @@ use crate::{
     ExecutionRuntimeContext,
     channel::{Receiver, create_channel},
     pipeline::{
-        RelationshipInformation, RuntimeContext, get_pipeline_relationship_mapping,
+        BuilderContext, RelationshipInformation, get_pipeline_relationship_mapping,
         translate_physical_plan_to_pipeline, viz_pipeline_ascii, viz_pipeline_mermaid,
     },
     resource_manager::get_or_init_memory_manager,
@@ -209,13 +209,6 @@ impl NativeExecutor {
     ) -> DaftResult<ExecutionEngineResult> {
         let cancel = self.cancel.clone();
         let additional_context = additional_context.unwrap_or_default();
-        let ctx = RuntimeContext::new_with_context(additional_context.clone());
-        let pipeline =
-            translate_physical_plan_to_pipeline(local_physical_plan, psets, &exec_cfg, &ctx)?;
-
-        let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
-        let enable_explain_analyze = self.enable_explain_analyze;
-
         let query_id: common_metrics::QueryID = additional_context
             .get("query_id")
             .ok_or_else(|| {
@@ -225,6 +218,13 @@ impl NativeExecutor {
             })?
             .clone()
             .into();
+
+        let ctx = BuilderContext::new_with_context(query_id.clone(), additional_context);
+        let pipeline =
+            translate_physical_plan_to_pipeline(local_physical_plan, psets, &exec_cfg, &ctx)?;
+
+        let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
+        let enable_explain_analyze = self.enable_explain_analyze;
 
         // Spawn execution on the global runtime - returns immediately
         let handle = get_global_runtime();
@@ -305,7 +305,7 @@ impl NativeExecutor {
     ) -> String {
         let logical_plan = logical_plan_builder.build();
         let physical_plan = translate(&logical_plan).unwrap();
-        let ctx = RuntimeContext::new();
+        let ctx = BuilderContext::new();
         let pipeline_node = translate_physical_plan_to_pipeline(
             &physical_plan,
             &InMemoryPartitionSetCache::empty(),
@@ -324,7 +324,7 @@ impl NativeExecutor {
     ) -> String {
         let logical_plan = logical_plan_builder.build();
         let physical_plan = translate(&logical_plan).unwrap();
-        let ctx = RuntimeContext::new();
+        let ctx = BuilderContext::new();
         let pipeline_node = translate_physical_plan_to_pipeline(
             &physical_plan,
             &InMemoryPartitionSetCache::empty(),
@@ -351,7 +351,7 @@ impl NativeExecutor {
     ) -> RelationshipInformation {
         let logical_plan = logical_plan_builder.build();
         let physical_plan = translate(&logical_plan).unwrap();
-        let ctx = RuntimeContext::new();
+        let ctx = BuilderContext::new();
         let pipeline_node = translate_physical_plan_to_pipeline(
             &physical_plan,
             &InMemoryPartitionSetCache::empty(),

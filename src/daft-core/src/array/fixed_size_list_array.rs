@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use arrow::{
     array::{Array, ArrayRef},
+    buffer::{NullBuffer, OffsetBuffer, ScalarBuffer},
     compute::kernels::concat::concat,
 };
 use common_error::{DaftError, DaftResult};
-use daft_arrow::offset::OffsetsBuffer;
 
 use crate::{
     datatypes::{DaftArrayType, DataType, Field},
@@ -18,7 +18,7 @@ pub struct FixedSizeListArray {
     pub field: Arc<Field>,
     /// contains all the elements of the nested lists flattened into a single contiguous array.
     pub flat_child: Series,
-    nulls: Option<daft_arrow::buffer::NullBuffer>,
+    nulls: Option<NullBuffer>,
 }
 
 impl DaftArrayType for FixedSizeListArray {
@@ -201,16 +201,16 @@ impl FixedSizeListArray {
         ))
     }
 
-    fn generate_offsets(&self) -> OffsetsBuffer<i64> {
+    fn generate_offsets(&self) -> OffsetBuffer<i64> {
         let size = self.fixed_element_len();
         let len = self.len();
 
         // Create new offsets
-        let offsets: Vec<i64> = (0..=len)
+        let offsets: ScalarBuffer<i64> = (0..=len)
             .map(|i| i64::try_from(i * size).unwrap())
             .collect();
 
-        OffsetsBuffer::try_from(offsets).expect("Failed to create OffsetsBuffer")
+        OffsetBuffer::new(offsets)
     }
 
     pub fn to_list(&self) -> ListArray {

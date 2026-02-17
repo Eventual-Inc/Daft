@@ -31,7 +31,7 @@ repository = "https://github.com/Eventual-Inc/Daft"
 
 [project.optional-dependencies]
 all = ["daft[aws, azure, clickhouse, deltalake, gcp, google, gravitino, hudi, huggingface, iceberg, lance, numpy, openai, pandas, postgres, ray, sentence-transformers, sql, transformers, turbopuffer, unity, video]"]
-aws = ["boto3<1.43.0"]
+aws = ["boto3<1.43.0", "mypy-boto3-glue"]
 azure = []
 clickhouse = ["clickhouse_connect<0.11.0"]
 deltalake = ["deltalake < 1.3.0"]

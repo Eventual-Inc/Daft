@@ -972,6 +972,8 @@ class DataFrame:
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
         ignore_null_fields: bool | None = False,
+        date_format: str | None = None,
+        timestamp_format: str | None = None,
     ) -> "DataFrame":
         """Writes the DataFrame as JSON files, returning a new DataFrame with paths to the files that were written.
 
@@ -983,6 +985,8 @@ class DataFrame:
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
             ignore_null_fields (Optional[bool], optional): Whether to ignore fields with null values when writing JSON. Defaults to False.
+            date_format (Optional[str], optional): Format string for date columns. Uses chrono strftime format (e.g., "%Y-%m-%d", "%d/%m/%Y"). Defaults to None (ISO 8601 format).
+            timestamp_format (Optional[str], optional): Format string for timestamp columns. Uses chrono strftime format (e.g., "%Y-%m-%d %H:%M:%S", "%+"). Defaults to None (ISO 8601 format).
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -990,10 +994,35 @@ class DataFrame:
         Note:
             This call is **blocking** and will execute the DataFrame when called
 
+        **Timezone handling**: For timezone-aware timestamp columns, the timestamps are converted
+        to the target timezone before formatting. For example, a timestamp stored as UTC but with
+        timezone "America/New_York" will be formatted in Eastern Time, not UTC. If the timezone
+        string is invalid, an error will be raised.
+
         Examples:
+            Basic usage:
+
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
             >>> df.write_json("output_dir", write_mode="overwrite")  # doctest: +SKIP
+
+            Custom date format (e.g., DD/MM/YYYY):
+
+            >>> import datetime
+            >>> df = daft.from_pydict({"date": [datetime.date(2024, 1, 15)]})
+            >>> df.write_json("output_dir", date_format="%d/%m/%Y")  # doctest: +SKIP
+            # Output: "15/01/2024"
+
+            Custom timestamp format:
+
+            >>> df = daft.from_pydict({"ts": [datetime.datetime(2024, 1, 15, 10, 30, 45)]})
+            >>> df.write_json("output_dir", timestamp_format="%Y-%m-%d %H:%M:%S")  # doctest: +SKIP
+            # Output: "2024-01-15 10:30:45"
+
+            ISO 8601 / RFC 3339 timestamp format:
+
+            >>> df.write_json("output_dir", timestamp_format="%+")  # doctest: +SKIP
+            # Output: "2024-01-15T10:30:45+00:00"
 
         Warning:
             Currently only supported with the Native runner!
@@ -1011,7 +1040,11 @@ class DataFrame:
         if partition_cols is not None:
             cols = column_inputs_to_expressions(tuple(partition_cols))
 
-        file_format_option = PyFormatSinkOption.json(ignore_null_fields=ignore_null_fields)
+        file_format_option = PyFormatSinkOption.json(
+            ignore_null_fields=ignore_null_fields,
+            date_format=date_format,
+            timestamp_format=timestamp_format,
+        )
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,

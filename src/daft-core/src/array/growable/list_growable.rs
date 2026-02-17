@@ -1,5 +1,6 @@
+use arrow::buffer::OffsetBuffer;
 use common_error::DaftResult;
-use daft_arrow::types::Index;
+use daft_arrow::{offset::OffsetsBuffer, types::Index};
 
 use super::{Growable, bitmap_growable::ArrowBitmapGrowable};
 use crate::{
@@ -12,7 +13,7 @@ pub struct ListGrowable<'a> {
     name: String,
     dtype: DataType,
     child_growable: Box<dyn Growable + 'a>,
-    child_arrays_offsets: Vec<&'a daft_arrow::offset::OffsetsBuffer<i64>>,
+    child_arrays_offsets: Vec<&'a OffsetBuffer<i64>>,
     growable_validity: Option<ArrowBitmapGrowable<'a>>,
     growable_offsets: daft_arrow::offset::Offsets<i64>,
 }
@@ -63,8 +64,8 @@ impl<'a> ListGrowable<'a> {
 impl Growable for ListGrowable<'_> {
     fn extend(&mut self, index: usize, start: usize, len: usize) {
         let offsets = self.child_arrays_offsets.get(index).unwrap();
-        let start_offset = &offsets.buffer()[start];
-        let end_offset = &offsets.buffer()[start + len];
+        let start_offset = &offsets.inner()[start];
+        let end_offset = &offsets.inner()[start + len];
         self.child_growable.extend(
             index,
             start_offset.to_usize(),
@@ -74,9 +75,12 @@ impl Growable for ListGrowable<'_> {
         if let Some(growable_validity) = &mut self.growable_validity {
             growable_validity.extend(index, start, len);
         }
+        let offsets = OffsetBuffer::new(offsets.inner().clone());
+        let arrow2_offsets: OffsetsBuffer<i64> =
+            offsets.try_into().expect("Failed to convert offsets");
 
         self.growable_offsets
-            .try_extend_from_slice(offsets, start, len)
+            .try_extend_from_slice(&arrow2_offsets, start, len)
             .unwrap();
     }
 
@@ -93,11 +97,12 @@ impl Growable for ListGrowable<'_> {
 
         let built_child = self.child_growable.build()?;
         let built_validity = grown_validity.and_then(|v| v.build());
-        let built_offsets = grown_offsets.into();
+        let built_offsets = grown_offsets.into_inner();
+        let offsets = OffsetBuffer::new(built_offsets.into());
         Ok(ListArray::new(
             Field::new(self.name.clone(), self.dtype.clone()),
             built_child,
-            built_offsets,
+            offsets,
             built_validity,
         )
         .into_series())
