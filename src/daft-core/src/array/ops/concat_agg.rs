@@ -236,8 +236,8 @@ mod test {
                 .downcast::<Int64Array>()
                 .unwrap()
                 .into_iter()
-                .collect::<Vec<Option<&i64>>>(),
-            vec![Some(&0), Some(&1), Some(&1), Some(&2), None, None]
+                .collect::<Vec<Option<i64>>>(),
+            vec![Some(0), Some(1), Some(1), Some(2), None, None]
         );
         Ok(())
     }
@@ -287,8 +287,8 @@ mod test {
                 .downcast::<Int64Array>()
                 .unwrap()
                 .into_iter()
-                .collect::<Vec<Option<&i64>>>(),
-            vec![Some(&0), Some(&0), Some(&0)]
+                .collect::<Vec<Option<i64>>>(),
+            vec![Some(0), Some(0), Some(0)]
         );
 
         let element_1 = concatted.get(1).unwrap();
@@ -297,8 +297,8 @@ mod test {
                 .downcast::<Int64Array>()
                 .unwrap()
                 .into_iter()
-                .collect::<Vec<Option<&i64>>>(),
-            vec![Some(&1), None, None]
+                .collect::<Vec<Option<i64>>>(),
+            vec![Some(1), None, None]
         );
 
         let element_2 = concatted.get(2).unwrap();
@@ -307,8 +307,8 @@ mod test {
                 .downcast::<Int64Array>()
                 .unwrap()
                 .into_iter()
-                .collect::<Vec<Option<&i64>>>(),
-            vec![Some(&2), None]
+                .collect::<Vec<Option<i64>>>(),
+            vec![Some(2), None]
         );
 
         let element_3 = concatted.get(3);

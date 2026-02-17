@@ -85,7 +85,7 @@ impl Series {
 
         for (idx, hash) in hashed_series.into_iter().enumerate() {
             let hash = match hash {
-                Some(&hash) => hash,
+                Some(hash) => hash,
                 None => continue,
             };
             let entry = probe_table.raw_entry_v1().from_hash(hash, |other| {
