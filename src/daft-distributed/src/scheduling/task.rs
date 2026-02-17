@@ -213,6 +213,7 @@ pub(crate) struct SwordfishTask {
     psets: HashMap<String, Vec<PartitionRef>>,
     strategy: SchedulingStrategy,
     context: HashMap<String, String>,
+    is_into_batches: bool,
 }
 
 impl SwordfishTask {
@@ -234,6 +235,10 @@ impl SwordfishTask {
 
     pub fn name(&self) -> String {
         self.plan.single_line_display()
+    }
+
+    pub fn is_into_batches(&self) -> bool {
+        self.is_into_batches
     }
 }
 
@@ -274,6 +279,7 @@ pub(crate) struct SwordfishTaskBuilder {
     node_context: Option<PipelineNodeContext>,
     pending_node_ids: Vec<NodeID>,
     notify_tokens: Vec<OneshotSender<()>>,
+    is_into_batches: bool,
 }
 
 impl SwordfishTaskBuilder {
@@ -289,6 +295,7 @@ impl SwordfishTaskBuilder {
             node_context: None,
             pending_node_ids: vec![node.node_id()],
             notify_tokens: vec![],
+            is_into_batches: false,
         }
     }
 
@@ -335,7 +342,22 @@ impl SwordfishTaskBuilder {
             node_context: left.node_context.clone(),
             pending_node_ids,
             notify_tokens: vec![],
+            // Currently only join nodes use combine_with, and they should never involve
+            // IntoBatches tasks. If this invariant changes, the round-robin packing
+            // logic in the Python runner must be revisited.
+            is_into_batches: {
+                debug_assert!(
+                    !left.is_into_batches && !right.is_into_batches,
+                    "combine_with does not support merging IntoBatches tasks"
+                );
+                left.is_into_batches || right.is_into_batches
+            },
         }
+    }
+
+    pub fn with_is_into_batches(mut self, is_into_batches: bool) -> Self {
+        self.is_into_batches = is_into_batches;
+        self
     }
 
     /// Conditionally set the scheduling strategy. If None, no-op.
@@ -397,6 +419,7 @@ impl SwordfishTaskBuilder {
             psets: self.psets,
             strategy,
             context,
+            is_into_batches: self.is_into_batches,
         };
 
         let cancel_token = CancellationToken::new();
@@ -512,6 +535,7 @@ pub(super) mod tests {
         cancel_notifier: Arc<Mutex<Option<OneshotSender<()>>>>,
         sleep_duration: Option<std::time::Duration>,
         failure: Option<MockTaskFailure>,
+        is_into_batches: bool,
     }
 
     #[derive(Debug, Clone)]
@@ -607,6 +631,7 @@ pub(super) mod tests {
                 cancel_notifier: self.cancel_notifier,
                 sleep_duration: self.sleep_duration,
                 failure: self.failure,
+                is_into_batches: false,
             }
         }
     }

@@ -9,7 +9,6 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
-import daft
 import daft.context
 from daft.recordbatch import MicroPartition
 
@@ -40,6 +39,22 @@ def get_tests_daft_runner_name() -> Literal["ray"] | Literal["native"]:
 
     assert name in {"ray", "native"}, f"Runner name not recognized: {name}"
     return name
+
+
+def resolve_ray_partition(part):
+    """Resolve a partition from iter_partitions.
+
+    On the Ray runner, partitions are list[ray.ObjectRef]; on native they are MicroPartition.
+    """
+    if not isinstance(part, list):
+        return part
+
+    import ray
+
+    from daft.recordbatch import MicroPartition
+
+    parts = ray.get(part)
+    return MicroPartition.concat(parts)
 
 
 class UuidType(pa.ExtensionType):

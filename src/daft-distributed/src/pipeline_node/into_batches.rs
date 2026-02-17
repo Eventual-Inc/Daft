@@ -118,7 +118,9 @@ impl IntoBatchesNode {
                             additional: None,
                         },
                     );
-                    let builder = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+                    let builder = SwordfishTaskBuilder::new(plan, self.as_ref())
+                        .with_psets(psets)
+                        .with_is_into_batches(true);
                     if result_tx.send(builder).await.is_err() {
                         break;
                     }
@@ -142,7 +144,9 @@ impl IntoBatchesNode {
                     additional: None,
                 },
             );
-            let builder = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+            let builder = SwordfishTaskBuilder::new(plan, self.as_ref())
+                .with_psets(psets)
+                .with_is_into_batches(true);
             let _ = result_tx.send(builder).await;
         }
         Ok(())
@@ -185,6 +189,11 @@ impl PipelineNodeImpl for IntoBatchesNode {
                 },
             )
         });
+        let local_into_batches_node = TaskBuilderStream::from(
+            local_into_batches_node
+                .map(move |builder| builder.with_is_into_batches(true))
+                .boxed(),
+        );
 
         let (result_tx, result_rx) = create_channel(1);
         let execution_future = self.execute_into_batches(
