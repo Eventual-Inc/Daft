@@ -173,7 +173,7 @@ impl IntoGroups for Float32Array {
                 f.map(|v| {
                     match v.is_nan() {
                         true => f32::NAN,
-                        false => *v,
+                        false => v,
                     }
                     .to_bits()
                 })
@@ -197,7 +197,7 @@ impl IntoUniqueIdxs for Float32Array {
                 f.map(|v| {
                     match v.is_nan() {
                         true => f32::NAN,
-                        false => *v,
+                        false => v,
                     }
                     .to_bits()
                 })
@@ -221,7 +221,7 @@ impl IntoGroups for Float64Array {
                 f.map(|v| {
                     match v.is_nan() {
                         true => f64::NAN,
-                        false => *v,
+                        false => v,
                     }
                     .to_bits()
                 })
@@ -245,7 +245,7 @@ impl IntoUniqueIdxs for Float64Array {
                 f.map(|v| {
                     match v.is_nan() {
                         true => f64::NAN,
-                        false => *v,
+                        false => v,
                     }
                     .to_bits()
                 })
