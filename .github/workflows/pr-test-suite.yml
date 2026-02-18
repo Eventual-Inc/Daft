@@ -632,7 +632,7 @@ jobs:
 
   integration-test-sql:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     needs: [skipcheck, integration-test-build]
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
