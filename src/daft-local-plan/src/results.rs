@@ -2,11 +2,14 @@ use std::sync::Arc;
 
 use arrow_array::{
     ArrayRef,
-    builder::{Float64Builder, LargeStringBuilder, MapBuilder, StructBuilder, UInt64Builder},
+    builder::{
+        DurationMicrosecondBuilder, Float64Builder, LargeStringBuilder, MapBuilder, StructBuilder,
+        UInt64Builder,
+    },
 };
 use common_error::{DaftError, DaftResult};
-use common_metrics::{StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl};
-use daft_core::prelude::{DataType, Field, Schema};
+use common_metrics::{CPU_US_KEY, Stat, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl};
+use daft_core::prelude::{DataType, Field, Schema, TimeUnit};
 use daft_recordbatch::RecordBatch;
 
 #[derive(Debug, Clone)]
@@ -43,6 +46,7 @@ impl ExecutionEngineFinalResult {
             Field::new("name", DataType::Utf8),
             Field::new("type", DataType::Utf8),
             Field::new("category", DataType::Utf8),
+            Field::new("cpu us", DataType::Duration(TimeUnit::Microseconds)),
             Field::new(
                 "stats",
                 DataType::Map {
@@ -59,6 +63,7 @@ impl ExecutionEngineFinalResult {
         let mut names = LargeStringBuilder::new();
         let mut types = LargeStringBuilder::new();
         let mut categories = LargeStringBuilder::new();
+        let mut cpu_us_values = DurationMicrosecondBuilder::new();
         let stats_values = StructBuilder::from_fields(
             vec![
                 arrow_schema::Field::new("value", arrow_schema::DataType::Float64, false),
@@ -74,6 +79,14 @@ impl ExecutionEngineFinalResult {
             types.append_value(node_info.node_type.to_string());
             categories.append_value(node_info.node_category.to_string());
             for (name, value) in stat_snapshot.to_stats() {
+                if name.as_ref() == CPU_US_KEY {
+                    let Stat::Duration(cpu_us) = value else {
+                        panic!("cpu us is always a Duration in stats");
+                    };
+                    cpu_us_values.append_value(cpu_us.as_micros() as i64);
+                    continue;
+                }
+
                 stats.keys().append_value(name);
                 let values = stats.values();
                 let (value, unit) = value.into_f64_and_unit();
@@ -97,6 +110,7 @@ impl ExecutionEngineFinalResult {
                 Arc::new(names.finish()) as ArrayRef,
                 Arc::new(types.finish()) as ArrayRef,
                 Arc::new(categories.finish()) as ArrayRef,
+                Arc::new(cpu_us_values.finish()) as ArrayRef,
                 Arc::new(stats.finish()) as ArrayRef,
             ],
         )
