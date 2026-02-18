@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Daft Repartition Visualizer</title>
+  <style>
+    :root {
+      --bg-0: #0a1115;
+      --bg-1: #102028;
+      --bg-2: #162e38;
+      --panel: #0f1b22cc;
+      --line: #2e4a56;
+      --text: #e5f2f8;
+      --muted: #98b7c5;
+      --accent: #ffd166;
+      --accent-2: #7bdff2;
+      --good: #8be28b;
+      --warn: #ffb86b;
+      --chip0: #49a078;
+      --chip1: #4d7ea8;
+      --chip2: #c77dff;
+      --chip3: #f07167;
+      --chip4: #ffafcc;
+      --shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Space Grotesk", "Avenir Next", "Helvetica Neue", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(1200px 700px at 5% -10%, #214857 0%, transparent 55%),
+        radial-gradient(900px 500px at 95% -15%, #284a62 0%, transparent 60%),
+        linear-gradient(165deg, var(--bg-0) 0%, var(--bg-1) 55%, var(--bg-2) 100%);
+      min-height: 100vh;
+    }
+
+    .wrap {
+      max-width: 1220px;
+      margin: 0 auto;
+      padding: 28px 18px 42px;
+    }
+
+    .headline {
+      display: grid;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.5rem, 2.8vw, 2.5rem);
+      letter-spacing: 0.02em;
+    }
+
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+      max-width: 980px;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      background: var(--panel);
+      border: 1px solid #335261;
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      padding: 14px;
+      margin-bottom: 16px;
+    }
+
+    .row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .label {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-right: 4px;
+    }
+
+    select, button, input {
+      font: inherit;
+      color: var(--text);
+      background: #10232d;
+      border: 1px solid #426573;
+      border-radius: 10px;
+      padding: 8px 10px;
+    }
+
+    button {
+      cursor: pointer;
+      background: linear-gradient(180deg, #274657, #1d3645);
+      transition: transform 120ms ease, border-color 120ms ease;
+    }
+
+    button:hover { transform: translateY(-1px); border-color: #6a9fb5; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      border: 1px solid #406473;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 0.8rem;
+      color: var(--muted);
+      background: #10232d;
+    }
+
+    .stage-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(200px, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .stage {
+      background: var(--panel);
+      border: 1px solid #345663;
+      border-radius: 14px;
+      padding: 10px;
+      min-height: 240px;
+      box-shadow: var(--shadow);
+      opacity: 0;
+      transform: translateY(8px);
+      animation: rise 450ms ease forwards;
+    }
+
+    .stage:nth-child(2) { animation-delay: 80ms; }
+    .stage:nth-child(3) { animation-delay: 160ms; }
+    .stage:nth-child(4) { animation-delay: 240ms; }
+
+    @keyframes rise {
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .stage h2 {
+      margin: 0 0 10px;
+      font-size: 0.92rem;
+      color: var(--accent-2);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .partition {
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      margin-bottom: 8px;
+      background: #0d1a21;
+      overflow: hidden;
+    }
+
+    .partition .head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 8px;
+      border-bottom: 1px solid #1f3743;
+      font-size: 0.78rem;
+      color: var(--muted);
+      background: #11232d;
+    }
+
+    .partition .body {
+      padding: 7px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      min-height: 38px;
+    }
+
+    .chip {
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 0.76rem;
+      font-family: "IBM Plex Mono", "SF Mono", "Menlo", monospace;
+      letter-spacing: 0.02em;
+      color: #0c1014;
+      font-weight: 700;
+      box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.18);
+    }
+
+    .empty {
+      color: #5f7f8e;
+      font-size: 0.78rem;
+    }
+
+    .notes {
+      background: var(--panel);
+      border: 1px solid #345663;
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      padding: 12px;
+      display: grid;
+      gap: 7px;
+    }
+
+    .notes pre {
+      margin: 0;
+      padding: 9px;
+      border-radius: 10px;
+      background: #0f2028;
+      border: 1px solid #24414f;
+      color: #d4ebf5;
+      font-family: "IBM Plex Mono", "SF Mono", "Menlo", monospace;
+      font-size: 0.77rem;
+      white-space: pre-wrap;
+    }
+
+    .hint { color: var(--muted); font-size: 0.86rem; }
+    .warn { color: var(--warn); }
+    .ok { color: var(--good); }
+
+    @media (max-width: 1000px) {
+      .stage-grid { grid-template-columns: repeat(2, minmax(220px, 1fr)); }
+    }
+
+    @media (max-width: 650px) {
+      .stage-grid { grid-template-columns: 1fr; }
+      .wrap { padding: 18px 12px 26px; }
+      .partition .head { font-size: 0.76rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="headline">
+      <h1>Daft Repartition Visualizer</h1>
+      <p class="subtitle">
+        Visual model of logical repartition -> local bucketization -> distributed transpose/merge -> downstream tasks.
+        This mirrors the flow in the Daft files you referenced.
+      </p>
+    </section>
+
+    <section class="controls">
+      <div class="row">
+        <span class="label">Repartition Type</span>
+        <select id="typeSelect">
+          <option value="hash">Hash</option>
+          <option value="random">Random</option>
+          <option value="range">Range</option>
+          <option value="into">IntoPartitions</option>
+        </select>
+
+        <span id="hashColControl">
+          <span class="label">Hash Column</span>
+          <select id="hashColSelect">
+            <option value="user_id">user_id</option>
+            <option value="score">score</option>
+            <option value="id">id</option>
+          </select>
+        </span>
+
+        <span class="label">Input Workers</span>
+        <input id="workersInput" type="number" min="1" max="5" value="3" />
+
+        <span class="label">Output Partitions</span>
+        <input id="partitionsInput" type="number" min="1" max="6" value="3" />
+
+        <button id="rerunBtn">Re-run</button>
+      </div>
+      <div class="row">
+        <span class="pill" id="typeInfo"></span>
+        <span class="pill" id="invariantInfo"></span>
+      </div>
+      <div class="row" id="originLegend"></div>
+    </section>
+
+    <section class="stage-grid">
+      <article class="stage">
+        <h2>1) Upstream Input Tasks</h2>
+        <div id="upstream"></div>
+      </article>
+
+      <article class="stage">
+        <h2>2) Local Repartition Output</h2>
+        <div id="localBuckets"></div>
+      </article>
+
+      <article class="stage">
+        <h2>3) Transpose / Merge Groups</h2>
+        <div id="transpose"></div>
+      </article>
+
+      <article class="stage">
+        <h2>4) Downstream Tasks</h2>
+        <div id="downstream"></div>
+      </article>
+    </section>
+
+    <section class="notes">
+      <div class="hint" id="explain"></div>
+      <pre id="pseudo"></pre>
+      <div class="hint" id="limitation"></div>
+    </section>
+  </div>
+
+  <script>
+    const palette = ["var(--chip0)", "var(--chip1)", "var(--chip2)", "var(--chip3)", "var(--chip4)"];
+
+    const datasets = {
+      hash: [
+        { id: "A", user_id: 101, score: 7 },
+        { id: "B", user_id: 205, score: 15 },
+        { id: "C", user_id: 101, score: 23 },
+        { id: "D", user_id: 308, score: 2 },
+        { id: "E", user_id: 205, score: 21 },
+        { id: "F", user_id: 450, score: 18 },
+        { id: "G", user_id: 110, score: 6 },
+        { id: "H", user_id: 308, score: 11 },
+        { id: "I", user_id: 450, score: 32 }
+      ],
+      random: [
+        { id: "A", user_id: 11, score: 4 },
+        { id: "B", user_id: 12, score: 8 },
+        { id: "C", user_id: 13, score: 12 },
+        { id: "D", user_id: 14, score: 16 },
+        { id: "E", user_id: 15, score: 20 },
+        { id: "F", user_id: 16, score: 24 },
+        { id: "G", user_id: 17, score: 28 },
+        { id: "H", user_id: 18, score: 32 }
+      ],
+      range: [
+        { id: "A", user_id: 101, score: 3 },
+        { id: "B", user_id: 102, score: 10 },
+        { id: "C", user_id: 103, score: 7 },
+        { id: "D", user_id: 104, score: 25 },
+        { id: "E", user_id: 105, score: 19 },
+        { id: "F", user_id: 106, score: 20 },
+        { id: "G", user_id: 107, score: 12 },
+        { id: "H", user_id: 108, score: 30 }
+      ],
+      into: [
+        { id: "A", user_id: 1, score: 5 },
+        { id: "B", user_id: 2, score: 6 },
+        { id: "C", user_id: 3, score: 7 },
+        { id: "D", user_id: 4, score: 8 },
+        { id: "E", user_id: 5, score: 9 },
+        { id: "F", user_id: 6, score: 10 },
+        { id: "G", user_id: 7, score: 11 }
+      ]
+    };
+
+    const typeInfo = {
+      hash: "Hash: partition = hash(column) % N",
+      random: "Random (visualized): shuffled then round-robin for balanced spread",
+      range: "Range: boundaries [10, 20] over score",
+      into: "IntoPartitions: concatenate then slice evenly by row count"
+    };
+
+    const invariantInfo = {
+      hash: "Invariant: same user_id always lands in the same partition id.",
+      random: "Invariant: no key grouping, approximate balancing only.",
+      range: "Invariant: each partition contains one contiguous score range.",
+      into: "Invariant: preserves row order after concat, then fixed-size slices."
+    };
+
+    const limitationInfo = {
+      hash: "Modeled after RepartitionSink::Hash path.",
+      random: "Close to RepartitionSink::Random; visualization uses balanced-random assignment to make flows easier to track.",
+      range: "Modeled after partition_by_range with boundaries.len()+1 outputs.",
+      into: "Note: IntoPartitions is not executed in RepartitionSink path; it uses separate IntoPartitionsSink in distributed planning."
+    };
+
+    const pseudo = {
+      hash: `for each input_task:\n  local = partition_by_hash(rows, by=user_id, N)\ntranspose groups by partition_index\nfor i in [0..N):\n  downstream_task_i consumes concat(all local[i])`,
+      random: `for each input_task:\n  local = partition_by_random(rows, N, seed)\ntranspose groups by partition_index\nfor i in [0..N):\n  downstream_task_i consumes concat(all local[i])`,
+      range: `boundaries = [10, 20]  // => 3 partitions\nfor each input_task:\n  local = partition_by_range(rows, by=score, boundaries)\ntranspose groups by partition_index\nfor i in [0..N):\n  downstream_task_i consumes concat(all local[i])`,
+      into: `all = concat(all input rows in order)\nrows_per_partition = ceil(total_rows / N)\nfor i in [0..N):\n  downstream_task_i consumes all.slice(i*rows_per_partition, ...)`
+    };
+
+    function hashValue(value) {
+      const mix32 = (x) => {
+        let v = x >>> 0;
+        v = Math.imul(v ^ (v >>> 16), 0x45d9f3b);
+        v = Math.imul(v ^ (v >>> 16), 0x45d9f3b);
+        v = v ^ (v >>> 16);
+        return v >>> 0;
+      };
+
+      const n = Number(value);
+      if (Number.isFinite(n)) {
+        return mix32(n | 0);
+      }
+
+      const s = String(value);
+      let h = 2166136261;
+      for (let i = 0; i < s.length; i += 1) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      return mix32(h);
+    }
+
+    function mulberry32(seed) {
+      let t = seed >>> 0;
+      return function () {
+        t += 0x6D2B79F5;
+        let x = Math.imul(t ^ (t >>> 15), t | 1);
+        x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+        return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    function splitToWorkers(rows, workers) {
+      const bins = Array.from({ length: workers }, () => []);
+      rows.forEach((r, i) => {
+        const task = i % workers;
+        bins[task].push({ ...r, _originTask: task });
+      });
+      return bins;
+    }
+
+    function localBucketize(rows, type, partitions, hashCol) {
+      const out = Array.from({ length: partitions }, () => []);
+      if (type === "hash") {
+        rows.forEach((r) => out[hashValue(r[hashCol]) % partitions].push(r));
+        return out;
+      }
+      if (type === "random") {
+        // Visualization mode: balanced random assignment for readability.
+        // We first shuffle row order deterministically, then assign round-robin.
+        const shuffled = [...rows];
+        const seedBase = rows.reduce((acc, r) => acc + (r._originTask + 1) * r.id.charCodeAt(0), 0);
+        const rng = mulberry32(seedBase + rows.length * 31 + partitions * 13 + 7);
+        for (let i = shuffled.length - 1; i > 0; i -= 1) {
+          const j = Math.floor(rng() * (i + 1));
+          const tmp = shuffled[i];
+          shuffled[i] = shuffled[j];
+          shuffled[j] = tmp;
+        }
+        shuffled.forEach((r, i) => out[i % partitions].push(r));
+        return out;
+      }
+      if (type === "range") {
+        const boundaries = [10, 20];
+        rows.forEach((r) => {
+          let idx = 0;
+          while (idx < boundaries.length && r.score >= boundaries[idx]) idx += 1;
+          out[Math.min(idx, partitions - 1)].push(r);
+        });
+        return out;
+      }
+      // into (local step here keeps one logical stream; actual sink is separate)
+      rows.forEach((r, i) => out[Math.min(i, partitions - 1)].push(r));
+      return out;
+    }
+
+    function transpose(groupsByTask, partitions) {
+      const transposed = Array.from({ length: partitions }, () => []);
+      groupsByTask.forEach((perTask) => {
+        for (let i = 0; i < partitions; i += 1) {
+          transposed[i].push(...(perTask[i] || []));
+        }
+      });
+      return transposed;
+    }
+
+    function intoPartitionsGlobal(workerRows, partitions) {
+      const all = workerRows.flat();
+      const per = Math.ceil(all.length / partitions);
+      return Array.from({ length: partitions }, (_, i) => all.slice(i * per, (i + 1) * per));
+    }
+
+    function chip(row) {
+      const c = palette[row._originTask % palette.length];
+      return `<span class="chip" style="background:${c}">${row.id}(u${row.user_id},s${row.score},T${row._originTask})</span>`;
+    }
+
+    function partitionCard(name, rows, extra = "") {
+      const body = rows.length ? rows.map(chip).join("") : `<span class="empty">(empty)</span>`;
+      return `
+        <div class="partition">
+          <div class="head"><span>${name}</span><span>${rows.length} rows ${extra}</span></div>
+          <div class="body">${body}</div>
+        </div>`;
+    }
+
+    function draw() {
+      const type = document.getElementById("typeSelect").value;
+      const hashCol = document.getElementById("hashColSelect").value;
+      const workers = Math.max(1, Math.min(5, Number(document.getElementById("workersInput").value) || 3));
+      const reqPartitions = Math.max(1, Math.min(6, Number(document.getElementById("partitionsInput").value) || 3));
+      const partitions = type === "range" ? Math.min(reqPartitions, 3) : reqPartitions;
+      const hashControl = document.getElementById("hashColSelect");
+      const hashControlWrap = document.getElementById("hashColControl");
+      hashControl.disabled = type !== "hash";
+      hashControlWrap.style.display = type === "hash" ? "inline-flex" : "none";
+
+      document.getElementById("partitionsInput").value = partitions;
+
+      const rows = datasets[type];
+      const workerRows = splitToWorkers(rows, workers);
+
+      let local = workerRows.map((r) => localBucketize(r, type, partitions, hashCol));
+      let transposed = transpose(local, partitions);
+
+      if (type === "into") {
+        transposed = intoPartitionsGlobal(workerRows, partitions);
+        local = workerRows.map((r, idx) => {
+          const v = Array.from({ length: partitions }, () => []);
+          v[Math.min(idx, partitions - 1)] = r;
+          return v;
+        });
+      }
+
+      const upstreamHtml = workerRows
+        .map((rowsInTask, i) => partitionCard(`Input Task T${i}`, rowsInTask))
+        .join("");
+
+      const localHtml = local
+        .map((parts, t) => parts
+          .map((p, i) => partitionCard(`T${t} -> local P${i}`, p))
+          .join(""))
+        .join("");
+
+      const transposeHtml = transposed
+        .map((rowsInP, i) => partitionCard(`Merge Group G${i}`, rowsInP))
+        .join("");
+
+      const downstreamHtml = transposed
+        .map((rowsInP, i) => partitionCard(`Downstream Task for Final P${i}`, rowsInP, "(1 task/partition)"))
+        .join("");
+
+      document.getElementById("upstream").innerHTML = upstreamHtml;
+      document.getElementById("localBuckets").innerHTML = localHtml;
+      document.getElementById("transpose").innerHTML = transposeHtml;
+      document.getElementById("downstream").innerHTML = downstreamHtml;
+
+      document.getElementById("typeInfo").textContent = type === "hash"
+        ? `Hash: partition = hash(${hashCol}) % N`
+        : typeInfo[type];
+      document.getElementById("invariantInfo").textContent = invariantInfo[type];
+      document.getElementById("originLegend").innerHTML = Array.from({ length: workers }, (_, i) =>
+        `<span class="pill"><span class="chip" style="background:${palette[i % palette.length]}; margin-right:6px;">T${i}</span>Origin Input Task T${i}</span>`
+      ).join("");
+      document.getElementById("explain").textContent = `Input: ${workers} upstream tasks. Output: ${partitions} downstream tasks (exactly one per final partition index).`;
+      document.getElementById("pseudo").textContent = type === "hash"
+        ? `for each input_task:\n  local = partition_by_hash(rows, by=${hashCol}, N)\ntranspose groups by partition_index\nfor i in [0..N):\n  downstream_task_i consumes concat(all local[i])`
+        : pseudo[type];
+      document.getElementById("limitation").innerHTML = type === "into"
+        ? `<span class="warn">${limitationInfo[type]}</span>`
+        : `<span class="ok">${limitationInfo[type]}</span>`;
+    }
+
+    document.getElementById("typeSelect").addEventListener("change", draw);
+    document.getElementById("hashColSelect").addEventListener("change", draw);
+    document.getElementById("workersInput").addEventListener("input", draw);
+    document.getElementById("partitionsInput").addEventListener("input", draw);
+    document.getElementById("rerunBtn").addEventListener("click", draw);
+
+    draw();
+  </script>
+</body>
+</html>

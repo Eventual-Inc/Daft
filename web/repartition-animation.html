@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Distributed Repartition Animation</title>
+  <style>
+    :root {
+      --bg: #091218;
+      --panel: #0f2029;
+      --panel-2: #112733;
+      --line: #2b4a5a;
+      --text: #e6f4fb;
+      --muted: #9bbccd;
+      --good: #8ae29f;
+      --warn: #ffd37b;
+      --chip0: #64c39a;
+      --chip1: #6fa8dc;
+      --chip2: #c987ff;
+      --chip3: #f28f8f;
+      --chip4: #ffb4d6;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Space Grotesk", "Avenir Next", "Helvetica Neue", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(1200px 700px at 8% -20%, #1d4658 0%, transparent 58%),
+        radial-gradient(900px 500px at 100% -15%, #2b4560 0%, transparent 62%),
+        linear-gradient(160deg, #060d12 0%, var(--bg) 55%, #122733 100%);
+    }
+
+    .wrap {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 20px 14px 28px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.25rem, 2.2vw, 2rem);
+      letter-spacing: 0.02em;
+    }
+
+    .sub {
+      margin: 6px 0 14px;
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      background: #0e1d25cc;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 10px;
+      margin-bottom: 12px;
+    }
+
+    label { color: var(--muted); font-size: 0.84rem; }
+
+    select, input, button {
+      font: inherit;
+      color: var(--text);
+      background: #122833;
+      border: 1px solid #3c6272;
+      border-radius: 10px;
+      padding: 7px 10px;
+    }
+
+    button { cursor: pointer; }
+
+    .primary { background: linear-gradient(180deg, #2f5364, #1e3c4a); }
+
+    .pill {
+      border: 1px solid #3f6273;
+      border-radius: 999px;
+      padding: 5px 9px;
+      font-size: 0.78rem;
+      color: var(--muted);
+      background: #10232e;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(240px, 1fr));
+      gap: 10px;
+    }
+
+    .stage {
+      background: #0e1c24cc;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 10px;
+      min-height: 470px;
+    }
+
+    .stage h2 {
+      margin: 0 0 8px;
+      font-size: 0.9rem;
+      color: #8fdcf2;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+
+    .bucket {
+      border: 1px solid #284552;
+      background: #0f2029;
+      border-radius: 10px;
+      margin-bottom: 8px;
+      overflow: hidden;
+    }
+
+    .bucket .head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.76rem;
+      color: var(--muted);
+      padding: 6px 8px;
+      border-bottom: 1px solid #203a46;
+      background: #112732;
+    }
+
+    .bucket .body {
+      min-height: 34px;
+      padding: 6px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .empty { color: #5c7f8f; font-size: 0.76rem; }
+
+    .chip {
+      border-radius: 999px;
+      padding: 2px 8px;
+      font-family: "IBM Plex Mono", "SF Mono", Menlo, monospace;
+      font-size: 0.73rem;
+      color: #0d1419;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .chip.dim { opacity: 0.4; }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 999;
+    }
+
+    .flying {
+      position: fixed;
+      transform: translate(-50%, -50%);
+      transition: transform 520ms ease, opacity 520ms ease;
+      z-index: 1000;
+      opacity: 1;
+    }
+
+    .status {
+      margin-top: 10px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .status b { color: var(--warn); }
+
+    @media (max-width: 1100px) { .grid { grid-template-columns: repeat(2, minmax(240px, 1fr)); } }
+    @media (max-width: 680px) { .grid { grid-template-columns: 1fr; } .stage { min-height: 300px; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Distributed Repartition Operator Animation</h1>
+    <p class="sub">Rows flow through four stages: upstream input task -> local repartition bucket -> transpose/merge group -> downstream task.</p>
+
+    <section class="controls">
+      <label>Type
+        <select id="typeSelect">
+          <option value="hash">Hash</option>
+          <option value="random">Random</option>
+          <option value="range">Range</option>
+        </select>
+      </label>
+
+      <span id="hashCtrl">
+        <label>Hash Column
+          <select id="hashCol">
+            <option value="user_id">user_id</option>
+            <option value="score">score</option>
+            <option value="id">id</option>
+          </select>
+        </label>
+      </span>
+
+      <label>Workers
+        <input id="workers" type="number" min="1" max="5" value="3" />
+      </label>
+
+      <label>Partitions
+        <input id="partitions" type="number" min="1" max="6" value="3" />
+      </label>
+
+      <button class="primary" id="startBtn">Start</button>
+      <button id="pauseBtn">Pause</button>
+      <button id="resetBtn">Reset</button>
+      <button id="stepBtn">Step</button>
+    </section>
+
+    <section class="controls" style="padding:8px 10px;">
+      <span class="pill" id="specPill"></span>
+      <span class="pill" id="invariantPill"></span>
+      <span class="pill" id="countPill"></span>
+    </section>
+
+    <section class="grid">
+      <article class="stage">
+        <h2>1) Upstream Input Tasks</h2>
+        <div id="inputStage"></div>
+      </article>
+      <article class="stage">
+        <h2>2) Local Repartition Output</h2>
+        <div id="localStage"></div>
+      </article>
+      <article class="stage">
+        <h2>3) Transpose / Merge Groups</h2>
+        <div id="mergeStage"></div>
+      </article>
+      <article class="stage">
+        <h2>4) Downstream Tasks</h2>
+        <div id="downStage"></div>
+      </article>
+    </section>
+
+    <section class="status">
+      <span class="pill" id="statusPill">Idle</span>
+      <span class="pill" id="eventPill">No events yet</span>
+    </section>
+  </div>
+
+  <div class="overlay" id="overlay"></div>
+
+  <script>
+    const palette = ["var(--chip0)", "var(--chip1)", "var(--chip2)", "var(--chip3)", "var(--chip4)"];
+
+    const data = [
+      { id: "A", user_id: 101, score: 3 },
+      { id: "B", user_id: 205, score: 10 },
+      { id: "C", user_id: 101, score: 7 },
+      { id: "D", user_id: 308, score: 25 },
+      { id: "E", user_id: 205, score: 19 },
+      { id: "F", user_id: 450, score: 20 },
+      { id: "G", user_id: 110, score: 12 },
+      { id: "H", user_id: 308, score: 30 },
+      { id: "I", user_id: 450, score: 18 },
+      { id: "J", user_id: 110, score: 4 }
+    ];
+
+    const state = {
+      type: "hash",
+      hashCol: "user_id",
+      workers: 3,
+      partitions: 3,
+      rows: [],
+      events: [],
+      cursor: 0,
+      running: false,
+      timer: null,
+      speedMs: 650
+    };
+
+    function hashValue(v) {
+      const mix32 = (x) => {
+        let m = x >>> 0;
+        m = Math.imul(m ^ (m >>> 16), 0x45d9f3b);
+        m = Math.imul(m ^ (m >>> 16), 0x45d9f3b);
+        m = m ^ (m >>> 16);
+        return m >>> 0;
+      };
+
+      const n = Number(v);
+      if (Number.isFinite(n)) {
+        return mix32(n | 0);
+      }
+
+      const s = String(v);
+      let h = 2166136261;
+      for (let i = 0; i < s.length; i += 1) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      return mix32(h);
+    }
+
+    function mulberry32(seed) {
+      let t = seed >>> 0;
+      return function () {
+        t += 0x6D2B79F5;
+        let x = Math.imul(t ^ (t >>> 15), t | 1);
+        x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+        return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    function byType(row, type, partitions, hashCol) {
+      if (type === "hash") return hashValue(row[hashCol]) % partitions;
+      if (type === "range") {
+        const boundaries = [10, 20];
+        let idx = 0;
+        while (idx < boundaries.length && row.score >= boundaries[idx]) idx += 1;
+        return Math.min(idx, partitions - 1);
+      }
+      return row._randomBucket;
+    }
+
+    function chipHTML(row, dim = false) {
+      const bg = palette[row._originTask % palette.length];
+      return `<span class="chip ${dim ? "dim" : ""}" style="background:${bg}">${row.id}(u${row.user_id},s${row.score},T${row._originTask})</span>`;
+    }
+
+    function bucketHTML(id, title) {
+      return `
+        <div class="bucket" id="${id}">
+          <div class="head"><span>${title}</span><span class="count">0 rows</span></div>
+          <div class="body"><span class="empty">(empty)</span></div>
+        </div>`;
+    }
+
+    function setCount(bucketEl) {
+      const body = bucketEl.querySelector(".body");
+      const count = body.querySelectorAll(".chip:not(.flying)").length;
+      bucketEl.querySelector(".count").textContent = `${count} rows`;
+      if (count === 0) body.innerHTML = `<span class="empty">(empty)</span>`;
+    }
+
+    function addChip(bucketId, row, dim = false) {
+      const bucket = document.getElementById(bucketId);
+      const body = bucket.querySelector(".body");
+      if (body.querySelector(".empty")) body.innerHTML = "";
+      body.insertAdjacentHTML("beforeend", chipHTML(row, dim));
+      setCount(bucket);
+    }
+
+    function findChipElement(bucketId, rowId, allowDim = true) {
+      const bucket = document.getElementById(bucketId);
+      const chips = [...bucket.querySelectorAll(".chip")];
+      return chips.find((el) => {
+        const txt = el.textContent;
+        const ok = txt.startsWith(`${rowId}(`);
+        return allowDim ? ok : (ok && !el.classList.contains("dim"));
+      });
+    }
+
+    async function flyFromTo(fromEl, toBucketId, row) {
+      const overlay = document.getElementById("overlay");
+      const toBucket = document.getElementById(toBucketId);
+      const toBody = toBucket.querySelector(".body");
+
+      const fromRect = fromEl.getBoundingClientRect();
+      const toRect = toBody.getBoundingClientRect();
+
+      const startX = fromRect.left + fromRect.width / 2;
+      const startY = fromRect.top + fromRect.height / 2;
+      const endX = toRect.left + Math.min(40 + (toBody.childElementCount * 16), toRect.width - 24);
+      const endY = toRect.top + 18 + (Math.floor(toBody.childElementCount / 3) * 22);
+
+      const flyer = document.createElement("span");
+      flyer.className = "chip flying";
+      flyer.style.background = palette[row._originTask % palette.length];
+      flyer.textContent = `${row.id}(u${row.user_id},s${row.score},T${row._originTask})`;
+      flyer.style.left = `${startX}px`;
+      flyer.style.top = `${startY}px`;
+      overlay.appendChild(flyer);
+
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+
+      const dx = endX - startX;
+      const dy = endY - startY;
+      flyer.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+      flyer.style.opacity = "0.15";
+
+      await new Promise((resolve) => setTimeout(resolve, 520));
+      flyer.remove();
+    }
+
+    function renderSkeleton() {
+      const { workers, partitions } = state;
+
+      document.getElementById("inputStage").innerHTML = Array.from({ length: workers }, (_, t) =>
+        bucketHTML(`in_t${t}`, `Input Task T${t}`)
+      ).join("");
+
+      document.getElementById("localStage").innerHTML = Array.from({ length: workers }, (_, t) =>
+        Array.from({ length: partitions }, (_, p) => bucketHTML(`loc_t${t}_p${p}`, `T${t} -> local P${p}`)).join("")
+      ).join("");
+
+      document.getElementById("mergeStage").innerHTML = Array.from({ length: partitions }, (_, p) =>
+        bucketHTML(`merge_p${p}`, `Merge Group G${p}`)
+      ).join("");
+
+      document.getElementById("downStage").innerHTML = Array.from({ length: partitions }, (_, p) =>
+        bucketHTML(`down_p${p}`, `Downstream Task for Final P${p}`)
+      ).join("");
+    }
+
+    function seedRows() {
+      const rows = data.map((r, i) => ({ ...r, _originTask: i % state.workers }));
+      if (state.type === "random") {
+        const rng = mulberry32(7 + state.workers * 11 + state.partitions * 17);
+        rows.forEach((r) => { r._randomBucket = Math.floor(rng() * state.partitions); });
+      }
+      state.rows = rows;
+    }
+
+    function buildEvents() {
+      const events = [];
+      const rowsByTask = Array.from({ length: state.workers }, () => []);
+      const rowsByPartition = Array.from({ length: state.partitions }, () => []);
+
+      for (const row of state.rows) {
+        rowsByTask[row._originTask].push(row);
+      }
+
+      // Phase 1: upstream input tasks receive rows.
+      for (let t = 0; t < state.workers; t += 1) {
+        for (const row of rowsByTask[t]) {
+          events.push({
+            kind: "in",
+            row,
+            from: null,
+            to: `in_t${t}`,
+            msg: `${row.id} entered Input Task T${t}`
+          });
+        }
+      }
+
+      // Phase 2: local repartition per upstream task.
+      for (let t = 0; t < state.workers; t += 1) {
+        events.push({
+          kind: "phase",
+          msg: `Materializing local repartition output for upstream task T${t}`
+        });
+        for (const row of rowsByTask[t]) {
+          const p = byType(row, state.type, state.partitions, state.hashCol);
+          rowsByPartition[p].push(row);
+          events.push({
+            kind: "to_local",
+            row,
+            from: `in_t${t}`,
+            to: `loc_t${t}_p${p}`,
+            msg: `${row.id} local repartition in T${t} -> bucket P${p}`
+          });
+        }
+      }
+
+      // Phase 3: transpose materialized outputs, grouped by partition index.
+      for (let p = 0; p < state.partitions; p += 1) {
+        events.push({
+          kind: "phase",
+          msg: `Transposing partition index ${p}: collect local P${p} from all upstream tasks`
+        });
+        for (let t = 0; t < state.workers; t += 1) {
+          for (const row of rowsByTask[t]) {
+            const rp = byType(row, state.type, state.partitions, state.hashCol);
+            if (rp !== p) continue;
+            events.push({
+              kind: "to_merge",
+              row,
+              from: `loc_t${t}_p${p}`,
+              to: `merge_p${p}`,
+              msg: `${row.id} moved to merge group G${p}`
+            });
+          }
+        }
+      }
+
+      // Phase 4: emit one downstream task per final partition group.
+      for (let p = 0; p < state.partitions; p += 1) {
+        events.push({
+          kind: "phase",
+          msg: `Building downstream task for final partition P${p}`
+        });
+        for (const row of rowsByPartition[p]) {
+          events.push({
+            kind: "to_down",
+            row,
+            from: `merge_p${p}`,
+            to: `down_p${p}`,
+            msg: `${row.id} emitted via downstream task for P${p}`
+          });
+        }
+      }
+      state.events = events;
+      state.cursor = 0;
+    }
+
+    function updatePills() {
+      const spec = state.type === "hash"
+        ? `Hash: partition = hash(${state.hashCol}) % ${state.partitions}`
+        : state.type === "random"
+          ? `Random: partition ~ uniform in [0, ${state.partitions})`
+          : `Range: score boundaries [10,20], partitions=${state.partitions}`;
+
+      const inv = state.type === "hash"
+        ? "Invariant: same key -> same final partition id"
+        : state.type === "random"
+          ? "Invariant: no key grouping, stochastic spread"
+          : "Invariant: partition holds contiguous score range";
+
+      document.getElementById("specPill").textContent = spec;
+      document.getElementById("invariantPill").textContent = inv;
+      document.getElementById("countPill").textContent = `Rows=${state.rows.length}, Events=${state.events.length}`;
+    }
+
+    async function runEvent(evt) {
+      if (evt.kind === "phase") {
+        document.getElementById("eventPill").textContent = evt.msg;
+        return;
+      }
+      if (evt.kind === "in") {
+        addChip(evt.to, evt.row, false);
+      } else {
+        const source = findChipElement(evt.from, evt.row.id, false) || findChipElement(evt.from, evt.row.id, true);
+        if (!source) return;
+        source.classList.add("dim");
+        await flyFromTo(source, evt.to, evt.row);
+        addChip(evt.to, evt.row, false);
+      }
+      document.getElementById("eventPill").textContent = evt.msg;
+    }
+
+    async function tick() {
+      if (!state.running) return;
+      if (state.cursor >= state.events.length) {
+        state.running = false;
+        document.getElementById("statusPill").textContent = "Done";
+        return;
+      }
+      const evt = state.events[state.cursor];
+      state.cursor += 1;
+      document.getElementById("statusPill").textContent = `Running (${state.cursor}/${state.events.length})`;
+      await runEvent(evt);
+      if (state.running) state.timer = setTimeout(tick, state.speedMs);
+    }
+
+    function pause() {
+      state.running = false;
+      if (state.timer) clearTimeout(state.timer);
+      document.getElementById("statusPill").textContent = "Paused";
+    }
+
+    function resetAll() {
+      pause();
+      state.type = document.getElementById("typeSelect").value;
+      state.hashCol = document.getElementById("hashCol").value;
+      state.workers = Math.max(1, Math.min(5, Number(document.getElementById("workers").value) || 3));
+      state.partitions = Math.max(1, Math.min(6, Number(document.getElementById("partitions").value) || 3));
+      if (state.type === "range") {
+        state.partitions = Math.min(state.partitions, 3);
+        document.getElementById("partitions").value = state.partitions;
+      }
+      renderSkeleton();
+      seedRows();
+      buildEvents();
+      updatePills();
+      document.getElementById("eventPill").textContent = "Ready";
+      document.getElementById("statusPill").textContent = "Idle";
+    }
+
+    function start() {
+      if (state.cursor >= state.events.length) resetAll();
+      if (state.running) return;
+      state.running = true;
+      tick();
+    }
+
+    async function stepOnce() {
+      if (state.cursor >= state.events.length) return;
+      pause();
+      const evt = state.events[state.cursor];
+      state.cursor += 1;
+      document.getElementById("statusPill").textContent = `Step (${state.cursor}/${state.events.length})`;
+      await runEvent(evt);
+    }
+
+    document.getElementById("typeSelect").addEventListener("change", () => {
+      const isHash = document.getElementById("typeSelect").value === "hash";
+      document.getElementById("hashCtrl").style.display = isHash ? "inline-block" : "none";
+      resetAll();
+    });
+    document.getElementById("hashCol").addEventListener("change", resetAll);
+    document.getElementById("workers").addEventListener("input", resetAll);
+    document.getElementById("partitions").addEventListener("input", resetAll);
+
+    document.getElementById("startBtn").addEventListener("click", start);
+    document.getElementById("pauseBtn").addEventListener("click", pause);
+    document.getElementById("resetBtn").addEventListener("click", resetAll);
+    document.getElementById("stepBtn").addEventListener("click", stepOnce);
+
+    document.getElementById("hashCtrl").style.display = "inline-block";
+    resetAll();
+  </script>
+</body>
+</html>

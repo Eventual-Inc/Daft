@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flotilla Distributed Repartition Flow</title>
+  <style>
+    :root {
+      --bg: #0b1419;
+      --panel: #102029;
+      --line: #2b4a59;
+      --text: #e9f5fb;
+      --muted: #9ec0d0;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Space Grotesk", "Avenir Next", "Helvetica Neue", sans-serif;
+      background:
+        radial-gradient(900px 600px at 10% -10%, #1f4556 0%, transparent 60%),
+        linear-gradient(160deg, #081015 0%, var(--bg) 55%, #12232d 100%);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .wrap {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px 16px 32px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: clamp(1.4rem, 2.5vw, 2.2rem);
+      letter-spacing: 0.02em;
+    }
+
+    p {
+      margin: 0 0 14px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .panel {
+      background: #0f1d25cc;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+      overflow: auto;
+    }
+
+    .fallback {
+      display: none;
+      margin-top: 10px;
+      color: #ffbf7f;
+      font-size: 0.9rem;
+    }
+
+    .notes {
+      margin-top: 12px;
+      background: #0f1d25cc;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .notes code {
+      color: #d8ecf8;
+      font-family: "IBM Plex Mono", "SF Mono", Menlo, monospace;
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <h1>Flotilla Distributed Repartition Flow</h1>
+    <p>Diagram of how repartition runs in the distributed engine, including the separate <code>IntoPartitions</code> path.</p>
+
+    <section class="panel">
+      <div class="mermaid" id="diagram">
+flowchart TD
+    A[LogicalPlan::Repartition\nRepartitionSpec] --> B{Spec Type}
+
+    B -->|Hash / Random / Range| C[Translator::gen_shuffle_node\nresolve target num_partitions]
+    C --> D{shuffle_algorithm}
+    D -->|auto / pre_shuffle_merge| E[Optional PreShuffleMergeNode]
+    D -->|map_reduce| F[Skip PreShuffleMerge]
+    E --> G[RepartitionNode]
+    F --> G
+
+    G --> H[produce_tasks: pipeline LocalPhysicalPlan::repartition]
+    H --> I[Local RepartitionSink per upstream task]
+    I --> I1[Hash: partition_by_hash]
+    I --> I2[Random: partition_by_random]
+    I --> I3[Range: partition_by_range]
+
+    I1 --> J[Each upstream task emits vector of N local buckets]
+    I2 --> J
+    I3 --> J
+
+    J --> K[transpose_materialized_outputs_from_stream\ngroup by bucket index]
+    K --> L[For each final partition i:\nmerge all task contributions]
+    L --> M[MaterializedOutput::into_in_memory_scan_with_psets]
+    M --> N[Emit 1 downstream task per final partition]
+    N --> O[Next distributed operator]
+
+    B -->|IntoPartitions| P[IntoPartitionsNode path]
+    P --> Q[IntoPartitionsSink\nconcat all rows, slice evenly]
+    Q --> R[Emit N partitions to downstream]
+
+    classDef logical fill:#16313f,stroke:#70a7c4,color:#e8f4fb;
+    classDef physical fill:#1c3d31,stroke:#73be8f,color:#ecfff3;
+    classDef shuffle fill:#3b2f1b,stroke:#f0c36d,color:#fff4db;
+    classDef alt fill:#3b2238,stroke:#d591d0,color:#ffeefe;
+
+    class A,B logical;
+    class C,D,E,F,G,H,I,J,K,L,M,N,O shuffle;
+    class I1,I2,I3 physical;
+    class P,Q,R alt;
+      </div>
+      <div class="fallback" id="fallback">
+        Mermaid failed to load (likely offline/no CDN access). You can still view the source in <code>web/flotilla-repartition-flow.md</code>.
+      </div>
+    </section>
+
+    <section class="notes">
+      Key point: transpose/merge creates exactly one downstream task per final partition index.
+    </section>
+  </main>
+
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+
+    try {
+      mermaid.initialize({ startOnLoad: true, theme: "dark" });
+    } catch (err) {
+      document.getElementById("fallback").style.display = "block";
+      console.error(err);
+    }
+  </script>
+</body>
+</html>
