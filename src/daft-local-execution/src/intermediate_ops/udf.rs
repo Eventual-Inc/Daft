@@ -12,8 +12,11 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use common_metrics::{
-    CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, meters::Counter,
-    operator_metrics::OperatorCounter, ops::NodeType, snapshot::UdfSnapshot,
+    ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, TASK_DURATION_KEY,
+    meters::Counter,
+    operator_metrics::OperatorCounter,
+    ops::{NodeInfo, NodeType},
+    snapshot::UdfSnapshot,
 };
 use common_resource_request::ResourceRequest;
 use common_runtime::get_compute_pool_num_threads;
@@ -40,6 +43,7 @@ use crate::{
     dynamic_batching::{
         DynBatchingStrategy, LatencyConstrainedBatchingStrategy, StaticBatchingStrategy,
     },
+    metrics::key_values_from_node_info,
     pipeline::{MorselSizeRequirement, NodeName},
     runtime_stats::RuntimeStats,
 };
@@ -91,11 +95,11 @@ impl RuntimeStats for UdfRuntimeStats {
 }
 
 impl UdfRuntimeStats {
-    fn new(meter: &Meter, id: usize) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+        let node_kv = key_values_from_node_info(node_info);
 
         Self {
-            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            cpu_us: Counter::new(meter, TASK_DURATION_KEY, None),
             rows_in: Counter::new(meter, ROWS_IN_KEY, None),
             rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
             custom_counters: Mutex::new(HashMap::new()),
@@ -478,8 +482,8 @@ impl IntermediateOperator for UdfOperator {
         NodeType::UDFProject
     }
 
-    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(UdfRuntimeStats::new(meter, id))
+    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
+        Arc::new(UdfRuntimeStats::new(meter, node_info))
     }
 
     fn multiline_display(&self) -> Vec<String> {

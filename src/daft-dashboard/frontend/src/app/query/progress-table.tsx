@@ -1,6 +1,10 @@
 import { AnimatedFish, Naruto } from "@/components/icons";
 import { ExecutingState, OperatorStatus, Stat } from "./types";
 
+const ROWS_IN_STAT_KEY = "rows.in";
+const ROWS_OUT_STAT_KEY = "rows.out";
+const DURATION_US_STAT_KEY = "task.duration_us";
+
 const getStatusIcon = (status: OperatorStatus) => {
   switch (status) {
     case "Finished":
@@ -114,12 +118,17 @@ export default function ProgressTable({
             .map(([operatorId, operator]) => {
               const name = operator.node_info.name;
               // Extract important stats from operator.stats
-              const rowsIn = operator.stats["rows in"]?.value || 0;
-              const rowsOut = operator.stats["rows out"]?.value || 0;
+              const rowsIn = operator.stats[ROWS_IN_STAT_KEY]?.value || 0;
+              const rowsOut = operator.stats[ROWS_OUT_STAT_KEY]?.value || 0;
 
               const extraStats = Object.entries(operator.stats)
                 .filter(
-                  ([key]) => !["rows in", "rows out", "cpu us"].includes(key)
+                  ([key]) =>
+                    ![
+                      ROWS_IN_STAT_KEY,
+                      ROWS_OUT_STAT_KEY,
+                      DURATION_US_STAT_KEY,
+                    ].includes(key)
                 )
                 .map(
                   ([key, stat]) =>
@@ -143,7 +152,9 @@ export default function ProgressTable({
                       {getStatusText(operator.status)}
                     </span>
                   </div>
-                  <div className={`px-3 py-4 text-sm text-zinc-200 truncate border-r border-zinc-700 h-full flex items-center`}>
+                  <div
+                    className={`px-3 py-4 text-sm text-zinc-200 truncate border-r border-zinc-700 h-full flex items-center`}
+                  >
                     {name}
                   </div>
                   <div className="px-3 py-4 text-right text-sm text-zinc-300 font-mono border-r border-zinc-700 h-full flex items-center justify-end">

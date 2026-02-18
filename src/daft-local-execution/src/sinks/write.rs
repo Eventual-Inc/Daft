@@ -2,7 +2,9 @@ use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
 use common_metrics::{
-    CPU_US_KEY, Counter, ROWS_IN_KEY, StatSnapshot, ops::NodeType, snapshot::WriteSnapshot,
+    BYTES_WRITTEN_KEY, Counter, ROWS_IN_KEY, ROWS_WRITTEN_KEY, StatSnapshot, TASK_DURATION_KEY,
+    ops::{NodeInfo, NodeType},
+    snapshot::WriteSnapshot,
 };
 use daft_core::prelude::SchemaRef;
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -15,7 +17,10 @@ use tracing::{Span, instrument};
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
+use crate::{
+    ExecutionTaskSpawner, metrics::key_values_from_node_info, pipeline::NodeName,
+    runtime_stats::RuntimeStats,
+};
 
 struct WriteStats {
     cpu_us: Counter,
@@ -27,14 +32,14 @@ struct WriteStats {
 }
 
 impl WriteStats {
-    pub fn new(meter: &Meter, id: usize) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+    pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+        let node_kv = key_values_from_node_info(node_info);
 
         Self {
-            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            cpu_us: Counter::new(meter, TASK_DURATION_KEY, None),
             rows_in: Counter::new(meter, ROWS_IN_KEY, None),
-            rows_written: Counter::new(meter, "rows written", None),
-            bytes_written: Counter::new(meter, "bytes written", None),
+            rows_written: Counter::new(meter, ROWS_WRITTEN_KEY, None),
+            bytes_written: Counter::new(meter, BYTES_WRITTEN_KEY, None),
 
             node_kv,
         }
@@ -216,8 +221,8 @@ impl BlockingSink for WriteSink {
         Ok(WriteState::new(writer))
     }
 
-    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(WriteStats::new(meter, id))
+    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
+        Arc::new(WriteStats::new(meter, node_info))
     }
 
     fn multiline_display(&self) -> Vec<String> {

@@ -51,6 +51,7 @@ mod into_partitions;
 mod join;
 mod limit;
 pub(crate) mod materialize;
+pub(crate) mod metrics;
 mod monotonically_increasing_id;
 mod pivot;
 mod project;
@@ -243,7 +244,7 @@ pub(crate) trait PipelineNodeImpl: Send + Sync {
     fn context(&self) -> &PipelineNodeContext;
     fn config(&self) -> &PipelineNodeConfig;
     fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
-        Arc::new(DefaultRuntimeStats::new(meter, self.node_id()))
+        Arc::new(DefaultRuntimeStats::new(meter, self.context()))
     }
 
     fn children(&self) -> Vec<DistributedPipelineNode>;

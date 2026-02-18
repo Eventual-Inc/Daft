@@ -5,7 +5,7 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
-    CPU_US_KEY, Counter, ROWS_OUT_KEY, StatSnapshot,
+    Counter, ROWS_OUT_KEY, StatSnapshot, TASK_DURATION_KEY,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::{SourceSnapshot, StatSnapshotImpl},
 };
@@ -19,6 +19,7 @@ use opentelemetry::{KeyValue, metrics::Meter};
 
 use crate::{
     ExecutionRuntimeContext,
+    metrics::key_values_from_node_info,
     pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineNode},
     runtime_stats::RuntimeStats,
 };
@@ -34,11 +35,11 @@ pub(crate) struct SourceStats {
 }
 
 impl SourceStats {
-    pub fn new(meter: &Meter, id: usize) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+    pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+        let node_kv = key_values_from_node_info(node_info);
 
         Self {
-            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            cpu_us: Counter::new(meter, TASK_DURATION_KEY, None),
             rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
             io_stats: IOStatsRef::default(),
 
@@ -80,8 +81,8 @@ impl RuntimeStats for SourceStats {
 pub trait Source: Send + Sync {
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
-    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<SourceStats> {
-        Arc::new(SourceStats::new(meter, id))
+    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<SourceStats> {
+        Arc::new(SourceStats::new(meter, node_info))
     }
     fn multiline_display(&self) -> Vec<String>;
     async fn get_data(
@@ -114,7 +115,7 @@ impl SourceNode {
             NodeCategory::Source,
             context,
         );
-        let runtime_stats = source.make_runtime_stats(&ctx.meter, info.id);
+        let runtime_stats = source.make_runtime_stats(&ctx.meter, &info);
         Self {
             source,
             runtime_stats,

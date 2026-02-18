@@ -1,7 +1,7 @@
 use std::sync::{Arc, atomic::Ordering};
 
 use common_metrics::{
-    CPU_US_KEY, Counter, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot,
+    Counter, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, TASK_DURATION_KEY,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::FilterSnapshot,
 };
@@ -13,7 +13,9 @@ use opentelemetry::{KeyValue, metrics::Meter};
 
 use super::{DistributedPipelineNode, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
+    pipeline_node::{
+        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, metrics::key_values_from_context,
+    },
     plan::{PlanConfig, PlanExecutionContext},
     statistics::{RuntimeStats, stats::RuntimeStatsRef},
 };
@@ -27,10 +29,10 @@ pub struct FilterStats {
 }
 
 impl FilterStats {
-    pub fn new(meter: &Meter, node_id: NodeID) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", node_id.to_string())];
+    pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
+        let node_kv = key_values_from_context(context);
         Self {
-            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            cpu_us: Counter::new(meter, TASK_DURATION_KEY, None),
             rows_in: Counter::new(meter, ROWS_IN_KEY, None),
             rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
             selectivity: Gauge::new(meter, "selectivity", None),
@@ -136,7 +138,7 @@ impl PipelineNodeImpl for FilterNode {
     }
 
     fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
-        Arc::new(FilterStats::new(meter, self.node_id()))
+        Arc::new(FilterStats::new(meter, self.context()))
     }
 
     fn produce_tasks(

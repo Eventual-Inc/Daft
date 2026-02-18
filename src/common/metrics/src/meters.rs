@@ -6,7 +6,8 @@ use std::{
 use atomic_float::AtomicF64;
 use opentelemetry::{KeyValue, metrics::Meter};
 
-fn normalize_name(name: Cow<'static, str>) -> String {
+pub fn normalize_name(name: impl Into<Cow<'static, str>>) -> String {
+    let name = name.into();
     if name.starts_with("daft.") {
         name.to_string()
     } else {
@@ -25,7 +26,7 @@ impl Counter {
         name: impl Into<Cow<'static, str>>,
         description: Option<Cow<'static, str>>,
     ) -> Self {
-        let normalized_name = normalize_name(name.into());
+        let normalized_name = normalize_name(name);
         let builder = meter.u64_counter(normalized_name);
         let builder = if let Some(description) = description {
             builder.with_description(description)
@@ -60,7 +61,7 @@ impl Gauge {
         name: impl Into<Cow<'static, str>>,
         description: Option<Cow<'static, str>>,
     ) -> Self {
-        let normalized_name = normalize_name(name.into());
+        let normalized_name = normalize_name(name);
         let builder = meter.f64_gauge(normalized_name);
         let builder = if let Some(description) = description {
             builder.with_description(description)

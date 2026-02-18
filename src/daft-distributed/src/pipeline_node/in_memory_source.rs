@@ -132,6 +132,6 @@ impl PipelineNodeImpl for InMemorySourceNode {
     }
 
     fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
-        Arc::new(SourceStats::new(meter, self.node_id()))
+        Arc::new(SourceStats::new(meter, self.context()))
     }
 }

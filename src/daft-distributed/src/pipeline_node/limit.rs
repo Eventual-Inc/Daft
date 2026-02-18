@@ -6,7 +6,7 @@ use std::{
 
 use common_error::DaftResult;
 use common_metrics::{
-    CPU_US_KEY, Counter, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot,
+    Counter, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, TASK_DURATION_KEY,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::DefaultSnapshot,
 };
@@ -18,7 +18,9 @@ use opentelemetry::{KeyValue, metrics::Meter};
 
 use super::{DistributedPipelineNode, MaterializedOutput, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
+    pipeline_node::{
+        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, metrics::key_values_from_context,
+    },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SchedulerHandle,
@@ -39,10 +41,10 @@ pub struct LimitStats {
 }
 
 impl LimitStats {
-    pub fn new(meter: &Meter, node_id: NodeID) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", node_id.to_string())];
+    pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
+        let node_kv = key_values_from_context(context);
         Self {
-            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            cpu_us: Counter::new(meter, TASK_DURATION_KEY, None),
             rows_in: Counter::new(meter, ROWS_IN_KEY, None),
             rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
             node_kv,
@@ -395,7 +397,7 @@ impl PipelineNodeImpl for LimitNode {
     }
 
     fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
-        Arc::new(LimitStats::new(meter, self.node_id()))
+        Arc::new(LimitStats::new(meter, self.context()))
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {

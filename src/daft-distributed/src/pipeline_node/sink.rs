@@ -2,7 +2,7 @@ use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
 use common_metrics::{
-    CPU_US_KEY, Counter, ROWS_IN_KEY, StatSnapshot,
+    BYTES_WRITTEN_KEY, Counter, ROWS_IN_KEY, ROWS_WRITTEN_KEY, StatSnapshot, TASK_DURATION_KEY,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::WriteSnapshot,
 };
@@ -17,7 +17,7 @@ use super::{PipelineNodeImpl, TaskBuilderStream};
 use crate::{
     pipeline_node::{
         DistributedPipelineNode, MaterializedOutput, NodeID, NodeName, PipelineNodeConfig,
-        PipelineNodeContext,
+        PipelineNodeContext, metrics::key_values_from_context,
     },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
@@ -37,13 +37,13 @@ pub struct WriteStats {
 }
 
 impl WriteStats {
-    pub fn new(meter: &Meter, node_id: NodeID) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", node_id.to_string())];
+    pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
+        let node_kv = key_values_from_context(context);
         Self {
-            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            cpu_us: Counter::new(meter, TASK_DURATION_KEY, None),
             rows_in: Counter::new(meter, ROWS_IN_KEY, None),
-            rows_written: Counter::new(meter, "rows written", None),
-            bytes_written: Counter::new(meter, "bytes written", None),
+            rows_written: Counter::new(meter, ROWS_WRITTEN_KEY, None),
+            bytes_written: Counter::new(meter, BYTES_WRITTEN_KEY, None),
             node_kv,
         }
     }
@@ -260,7 +260,7 @@ impl PipelineNodeImpl for SinkNode {
     }
 
     fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
-        Arc::new(WriteStats::new(meter, self.node_id()))
+        Arc::new(WriteStats::new(meter, self.context()))
     }
 
     fn produce_tasks(

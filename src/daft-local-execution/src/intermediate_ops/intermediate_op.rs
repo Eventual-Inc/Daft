@@ -57,8 +57,8 @@ pub(crate) trait IntermediateOperator: Send + Sync {
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> Self::State;
-    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(DefaultRuntimeStats::new(meter, id))
+    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
+        Arc::new(DefaultRuntimeStats::new(meter, node_info))
     }
     /// The maximum number of concurrent workers that can be spawned for this operator.
     /// Each worker will has its own IntermediateOperatorState.
@@ -119,7 +119,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
             NodeCategory::Intermediate,
             context,
         );
-        let runtime_stats = intermediate_op.make_runtime_stats(&ctx.meter, info.id);
+        let runtime_stats = intermediate_op.make_runtime_stats(&ctx.meter, &info);
         let morsel_size_requirement = intermediate_op
             .morsel_size_requirement()
             .unwrap_or_default();
