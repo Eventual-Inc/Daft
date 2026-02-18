@@ -80,8 +80,6 @@ impl TaskResultHandle for RayTaskResultHandle {
     fn get_result(&mut self) -> impl Future<Output = TaskStatus> + Send + 'static {
         // Create a rust future that will await the coroutine
         let coroutine = self.coroutine.take().unwrap();
-        // TODO: What is this for?
-        // let task_locals = self.task_locals.take().unwrap();
         let ip_address = self.ip_address.clone();
         let worker_id = self.worker_id.clone();
 

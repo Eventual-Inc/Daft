@@ -52,6 +52,8 @@ impl ShuffleFlightClient {
         }
     }
 
+    /// Get a stream of RecordBatches from a remote shuffle server
+    /// Note, this function should not take long, since the actual data transfer is done in the stream.
     pub async fn get_partition(
         &mut self,
         shuffle_id: u64,

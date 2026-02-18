@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import shutil
 import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NamedTuple
@@ -56,8 +57,6 @@ def _clear_flight_shuffle_dirs(shuffle_dirs: list[str]) -> None:
     Args:
         shuffle_dirs: List of shuffle directories to clear (full paths)
     """
-    import shutil
-
     for shuffle_dir in shuffle_dirs:
         if os.path.exists(shuffle_dir):
             try:

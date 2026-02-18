@@ -189,7 +189,6 @@ impl FlightService for ShuffleFlightServer {
             .collect::<Vec<_>>();
 
         let file_path_stream = futures::stream::iter(file_paths);
-        #[allow(unused)]
         let flight_data_stream = file_path_stream
             .map(|file_path| {
                 let reader = File::open(file_path)
@@ -206,7 +205,7 @@ impl FlightService for ShuffleFlightServer {
 
         let schema = filtered_caches
             .first()
-            .unwrap()
+            .expect("Expected at least one cache")
             .schema()
             .to_arrow()
             .map_err(|e| Status::internal(format!("Error converting schema to arrow: {}", e)))?;
