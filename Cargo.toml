@@ -165,7 +165,7 @@ inherits = "dev"
 debug = true
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
-libc = {version = "^0.2.150", default-features = false}
+libc = {workspace = true}
 tikv-jemallocator = {version = "0.6.0", features = [
   "disable_initial_exec_tls"
 ]}
@@ -354,6 +354,7 @@ typetag = "0.2.21"
 url = "2.4.0"
 uuid = {version = "1.19.0", features = ["v4"]}
 xxhash-rust = {version = "0.8.15", features = ["const_xxh3", "const_xxh64", "const_xxh32", "xxh64", "xxh3", "xxh32"]}
+libc = {version = "^0.2.150", default-features = false}
 
 [workspace.dependencies.arrow2]
 features = ["serde_types"]

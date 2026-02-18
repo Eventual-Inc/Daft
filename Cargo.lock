@@ -2530,6 +2530,7 @@ dependencies = [
  "clap",
  "console",
  "daft-dashboard",
+ "libc",
  "pyo3",
  "tokio",
  "tracing-subscriber",
