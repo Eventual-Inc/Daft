@@ -79,6 +79,8 @@ impl ExecutionEngineFinalResult {
             types.append_value(node_info.node_type.to_string());
             categories.append_value(node_info.node_category.to_string());
             for (name, value) in stat_snapshot.to_stats() {
+                // Note: Always expect one stat for duration by the execution engine
+                // TODO: Add checks just in case
                 if name.as_ref() == CPU_US_KEY {
                     let Stat::Duration(cpu_us) = value else {
                         panic!("cpu us is always a Duration in stats");
