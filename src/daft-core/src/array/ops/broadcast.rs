@@ -166,45 +166,34 @@ impl Broadcastable for DataArray<Utf8Type> {
     }
 }
 
-impl Broadcastable for FixedSizeListArray {
-    fn broadcast(&self, num: usize) -> DaftResult<Self> {
-        if self.len() != 1 {
-            return Err(DaftError::ValueError(format!(
-                "Attempting to broadcast non-unit length Array named: {}",
-                self.name()
-            )));
-        }
+macro_rules! impl_broadcast_via_concat {
+    ($ArrayT:ty) => {
+        impl Broadcastable for $ArrayT {
+            fn broadcast(&self, num: usize) -> DaftResult<Self> {
+                if self.len() != 1 {
+                    return Err(DaftError::ValueError(format!(
+                        "Attempting to broadcast non-unit length Array named: {}",
+                        self.name()
+                    )));
+                }
 
-        if self.is_valid(0) {
-            // Get the single element and repeat it
-            let single_element = self.slice(0, 1)?;
-            let repeated: Vec<&Self> = repeat_n(&single_element, num).collect();
-            Self::concat(&repeated)
-        } else {
-            Ok(Self::full_null(self.name(), self.data_type(), num))
+                if self.is_valid(0) {
+                    let single_element = self.slice(0, 1)?;
+                    let repeated: Vec<&Self> = repeat_n(&single_element, num).collect();
+                    Self::concat(&repeated)
+                } else {
+                    Ok(Self::full_null(self.name(), self.data_type(), num))
+                }
+            }
         }
-    }
+    };
 }
 
-impl Broadcastable for ListArray {
-    fn broadcast(&self, num: usize) -> DaftResult<Self> {
-        if self.len() != 1 {
-            return Err(DaftError::ValueError(format!(
-                "Attempting to broadcast non-unit length Array named: {}",
-                self.name()
-            )));
-        }
-
-        if self.is_valid(0) {
-            // Get the single element and repeat it
-            let single_element = self.slice(0, 1)?;
-            let repeated: Vec<&Self> = repeat_n(&single_element, num).collect();
-            Self::concat(&repeated)
-        } else {
-            Ok(Self::full_null(self.name(), self.data_type(), num))
-        }
-    }
-}
+impl_broadcast_via_concat!(FixedSizeListArray);
+impl_broadcast_via_concat!(ListArray);
+impl_broadcast_via_concat!(ExtensionArray);
+#[cfg(feature = "python")]
+impl_broadcast_via_concat!(PythonArray);
 
 impl Broadcastable for StructArray {
     fn broadcast(&self, num: usize) -> DaftResult<Self> {
@@ -216,56 +205,16 @@ impl Broadcastable for StructArray {
         }
 
         if self.is_valid(0) {
-            // Broadcast each child field and reconstruct the struct
-            let mut broadcasted_children = Vec::new();
-            for child in &self.children {
-                broadcasted_children.push(child.broadcast(num)?);
-            }
+            let broadcasted_children = self
+                .children
+                .iter()
+                .map(|child| child.broadcast(num))
+                .collect::<DaftResult<Vec<_>>>()?;
             Ok(Self::new(
                 Arc::new(Field::new(self.name(), self.data_type().clone())),
                 broadcasted_children,
                 None,
             ))
-        } else {
-            Ok(Self::full_null(self.name(), self.data_type(), num))
-        }
-    }
-}
-
-#[cfg(feature = "python")]
-impl Broadcastable for PythonArray {
-    fn broadcast(&self, num: usize) -> DaftResult<Self> {
-        if self.len() != 1 {
-            return Err(DaftError::ValueError(format!(
-                "Attempting to broadcast non-unit length Array named: {}",
-                self.name()
-            )));
-        }
-
-        if self.is_valid(0) {
-            // Get the single element and repeat it
-            let single_element = self.slice(0, 1)?;
-            let repeated: Vec<&Self> = repeat_n(&single_element, num).collect();
-            Self::concat(&repeated)
-        } else {
-            Ok(Self::full_null(self.name(), self.data_type(), num))
-        }
-    }
-}
-
-impl Broadcastable for ExtensionArray {
-    fn broadcast(&self, num: usize) -> DaftResult<Self> {
-        if self.len() != 1 {
-            return Err(DaftError::ValueError(format!(
-                "Attempting to broadcast non-unit length Array named: {}",
-                self.name()
-            )));
-        }
-
-        if self.is_valid(0) {
-            let single_element = self.slice(0, 1)?;
-            let repeated: Vec<&Self> = repeat_n(&single_element, num).collect();
-            Self::concat(&repeated)
         } else {
             Ok(Self::full_null(self.name(), self.data_type(), num))
         }
