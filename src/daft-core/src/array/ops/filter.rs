@@ -21,33 +21,29 @@ where
 
 impl ListArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let arrow_arr = self.to_arrow2();
-        let filtered = daft_arrow::compute::filter::filter(arrow_arr.as_ref(), mask.as_arrow2())?;
-        Self::from_arrow2(self.field().clone().into(), filtered)
+        let filtered = arrow::compute::filter(self.to_arrow()?.as_ref(), &mask.as_arrow()?)?;
+        Self::from_arrow(self.field().clone(), filtered)
     }
 }
 
 impl FixedSizeListArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let arrow_arr = self.to_arrow2();
-        let filtered = daft_arrow::compute::filter::filter(arrow_arr.as_ref(), mask.as_arrow2())?;
-        Self::from_arrow2(self.field().clone().into(), filtered)
+        let filtered = arrow::compute::filter(self.to_arrow()?.as_ref(), &mask.as_arrow()?)?;
+        Self::from_arrow(self.field().clone(), filtered)
     }
 }
 
 impl StructArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let arrow_arr = self.to_arrow2();
-        let filtered = daft_arrow::compute::filter::filter(arrow_arr.as_ref(), mask.as_arrow2())?;
-        Self::from_arrow2(self.field().clone().into(), filtered)
+        let filtered = arrow::compute::filter(self.to_arrow()?.as_ref(), &mask.as_arrow()?)?;
+        Self::from_arrow(self.field().clone(), filtered)
     }
 }
 
 #[cfg(feature = "python")]
 impl PythonArray {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let arrow_arr = self.to_arrow2()?;
-        let filtered = daft_arrow::compute::filter::filter(arrow_arr.as_ref(), mask.as_arrow2())?;
-        Self::from_arrow2(self.field().clone().into(), filtered)
+        let filtered = arrow::compute::filter(self.to_arrow()?.as_ref(), &mask.as_arrow()?)?;
+        Self::from_arrow(self.field().clone(), filtered)
     }
 }

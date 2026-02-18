@@ -1,13 +1,12 @@
-use std::sync::Arc;
-
 use arrow::{array::NullBufferBuilder, buffer::NullBuffer};
 use common_error::DaftResult;
-use daft_arrow::{buffer::Buffer, types::Index};
+use daft_arrow::types::Index;
 
-#[cfg(feature = "python")]
-use crate::prelude::PythonArray;
 use crate::{
-    array::prelude::*,
+    array::{
+        growable::{Growable, GrowableArray},
+        prelude::*,
+    },
     datatypes::{FileArray, prelude::*},
     file::DaftMediaType,
 };
@@ -141,49 +140,29 @@ where
     }
 }
 
+// TODO(desmond): Migrate this to arrow-rs after migrating growable internals.
 #[cfg(feature = "python")]
 impl PythonArray {
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        use pyo3::Python;
+        let mut growable = Self::make_growable(
+            self.name(),
+            self.data_type(),
+            vec![self],
+            idx.data().null_count() > 0,
+            idx.len(),
+        );
 
-        let mut values = Vec::with_capacity(idx.len());
-        let mut validity = if idx.data().null_count() > 0 || self.nulls().is_some() {
-            Some(daft_arrow::buffer::NullBufferBuilder::new(idx.len()))
-        } else {
-            None
-        };
-
-        Python::attach(|_py| {
-            for i in idx {
-                match i {
-                    None => {
-                        values.push(Arc::new(Python::attach(|py| py.None())));
-                        if let Some(ref mut v) = validity {
-                            v.append_null();
-                        }
-                    }
-                    Some(i) => {
-                        let idx_usize = i.to_usize();
-                        if self.is_valid(idx_usize) {
-                            values.push(self.values().get(idx_usize).unwrap().clone());
-                            if let Some(ref mut v) = validity {
-                                v.append_non_null();
-                            }
-                        } else {
-                            values.push(Arc::new(Python::attach(|py| py.None())));
-                            if let Some(ref mut v) = validity {
-                                v.append_null();
-                            }
-                        }
-                    }
+        for i in idx {
+            match i {
+                None => {
+                    growable.add_nulls(1);
+                }
+                Some(i) => {
+                    growable.extend(0, i.to_usize(), 1);
                 }
             }
-        });
+        }
 
-        Ok(Self::new(
-            Arc::new(self.field().clone()),
-            Buffer::from(values),
-            validity.and_then(|mut v| v.finish()),
-        ))
+        Ok(growable.build()?.downcast::<Self>()?.clone())
     }
 }
