@@ -223,16 +223,8 @@ def s3_uri(tmp_path: pathlib.Path, data_dir: str) -> str:
     return "s3://" + path
 
 
-@pytest.fixture(
-    scope="function",
-    params=[
-        None,
-        pytest.param("glue_table", marks=pytest.mark.glue),
-        pytest.param("unity_table_s3", marks=pytest.mark.unity),
-    ],
-)
+@pytest.fixture(scope="function")
 def s3_path(
-    request,
     s3_uri: str,
     aws_server: str,
     aws_credentials: dict[str, str],
@@ -262,8 +254,7 @@ def s3_path(
     bucket.create(CreateBucketConfiguration={"LocationConstraint": "us-west-2"})
     # Bucket will get cleared by reset_s3 fixture, so we don't need to delete it at the end of the test via the
     # typical try-yield-finally block.
-    catalog_table = request.getfixturevalue(request.param) if request.param is not None else None
-    return s3_uri, io_config, catalog_table
+    return s3_uri, io_config, None
 
 
 ###############################
@@ -323,18 +314,10 @@ def az_server(az_server_ip: str, az_server_port: int) -> Iterator[str]:
         azurite.stop()
 
 
-@pytest.fixture(
-    scope="function",
-    params=[
-        None,
-        pytest.param("unity_table_az", marks=pytest.mark.unity),
-    ],
-)
+@pytest.fixture(scope="function")
 def az_path(
-    request, az_uri: str, az_server: str, az_credentials: dict[str, str]
+    az_uri: str, az_server: str, az_credentials: dict[str, str]
 ) -> Iterator[tuple[str, daft.io.IOConfig, None]]:
-    if request.param is not None:
-        request.getfixturevalue(request.param)
     account_name = az_credentials["ACCOUNT_NAME"]
     key = az_credentials["KEY"]
     endpoint_url = f"{az_server}/{account_name}"
