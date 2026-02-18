@@ -29,7 +29,7 @@ from daft.logical.schema import Schema
 from daft.series import Series, item_to_series
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Mapping
 
     from daft.io import IOConfig
 
@@ -80,8 +80,8 @@ class RecordBatch:
         return tab
 
     @staticmethod
-    def _from_series(series: list[Series]) -> RecordBatch:
-        return RecordBatch._from_pyrecordbatch(_PyRecordBatch.from_pyseries_list([s._series for s in series]))
+    def _from_series(series: list[Series], num_rows: int | None = None) -> RecordBatch:
+        return RecordBatch._from_pyrecordbatch(_PyRecordBatch.from_pyseries_list([s._series for s in series], num_rows))
 
     @staticmethod
     def from_arrow_table(arrow_table: pa.Table) -> RecordBatch:
@@ -472,10 +472,9 @@ class RecordBatch:
             raise TypeError(f"Expected a bool, list[bool] or None for `nulls_first` but got {type(nulls_first)}")
         return Series._from_pyseries(self._recordbatch.argsort(pyexprs, descending, nulls_first))
 
-    def __reduce__(
-        self,
-    ) -> tuple[Callable[[list[Series]], RecordBatch], tuple[list[Series]]]:
-        return RecordBatch._from_series, (self.columns(),)
+    def __reduce__(self) -> tuple[Any, ...]:
+        columns = self.columns()
+        return RecordBatch._from_series, (columns, len(self))
 
     @classmethod
     def read_parquet(

@@ -263,7 +263,7 @@ def test_parquet_rows_cross_page_boundaries(tmpdir, minio_io_config, chunk_size)
             after = daft.read_parquet(file_path, _chunk_size=chunk_size)
             compare_before_and_after(before, after)
             # Test reads from S3.
-            bucket_name = "my-bucket"
+            bucket_name = f"parquet-test-{uuid.uuid4()}"
             s3_path = f"s3://{bucket_name}/my-folder"
             with minio_create_bucket(minio_io_config=minio_io_config, bucket_name=bucket_name):
                 before.write_parquet(s3_path, io_config=minio_io_config)

@@ -169,10 +169,17 @@ jobs:
         command: |
           uv sync --no-install-project --all-extras --all-groups
 
-    - name: Override pyarrow
+    - name: Override pyarrow and pyiceberg
       run: |
         source .venv/bin/activate
-        uv pip install pyarrow==${{ matrix.pyarrow-version }}
+        PYARROW_VERSION="${{ matrix.pyarrow-version }}"
+        PYARROW_MAJOR="${PYARROW_VERSION%%.*}"
+
+        uv pip install pyarrow==${PYARROW_VERSION}
+
+        if [ "$PYARROW_MAJOR" -le 17 ]; then
+          uv pip install "pyiceberg==0.7.0"
+        fi
 
     - name: Build library and Test with pytest (with coverage)
       if: matrix.coverage != false
@@ -296,14 +303,16 @@ jobs:
       with:
         prefix-key: ${{ runner.os }}-integration-build
         cache-all-crates: "true"
-    - uses: oven-sh/setup-bun@v2
+    - uses: actions/setup-node@v6
       with:
-        bun-version: latest
-    - name: Build dashboard with Bun
+        node-version: "22"
+        cache: "npm"
+        cache-dependency-path: src/daft-dashboard/frontend/package-lock.json
+    - name: Build dashboard
       working-directory: ./src/daft-dashboard/frontend
       run: |
-        bun install
-        bun run build
+        npm ci
+        npm run build
 
       # NOTE: we don't build with all the actual release optimizations to avoid hellish CI times
     - name: Build wheels
