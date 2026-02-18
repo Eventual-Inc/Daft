@@ -153,6 +153,7 @@ import daft.runners as runners
 import daft.datasets as datasets
 import daft.functions as functions
 import daft.gravitino as gravitino
+import daft.testing as testing
 
 __all__ = [
     "AudioFile",
@@ -260,6 +261,7 @@ __all__ = [
     "set_session",
     "sql",
     "sql_expr",
+    "testing",
     "udf",
     "write_table",
 ]
