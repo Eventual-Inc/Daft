@@ -1,8 +1,8 @@
 use std::{iter::repeat_n, sync::Arc};
 
 use arrow::array::{
-    BooleanBuilder, FixedSizeBinaryBuilder, IntervalMonthDayNanoBuilder, LargeBinaryBuilder,
-    LargeStringBuilder, PrimitiveBuilder,
+    Array as _, BooleanBuilder, FixedSizeBinaryBuilder, IntervalMonthDayNanoBuilder,
+    LargeBinaryBuilder, LargeStringBuilder, PrimitiveBuilder,
 };
 use common_error::{DaftError, DaftResult};
 
@@ -68,12 +68,17 @@ where
         }
 
         if self.is_valid(0) {
-            let value = self.as_arrow()?.value(0);
+            let arrow_array = self.as_arrow()?;
+            let value = arrow_array.value(0);
             let mut builder =
                 PrimitiveBuilder::<<T::Native as NumericNative>::ARROWTYPE>::with_capacity(num);
             builder.append_value_n(value, num);
 
-            Self::from_arrow(self.field.clone(), Arc::new(builder.finish()))
+            // Preserve the original arrow data type (important for Decimal128 precision/scale).
+            let result = builder
+                .finish()
+                .with_data_type(arrow_array.data_type().clone());
+            Self::from_arrow(self.field.clone(), Arc::new(result))
         } else {
             Ok(Self::full_null(self.name(), self.data_type(), num))
         }
