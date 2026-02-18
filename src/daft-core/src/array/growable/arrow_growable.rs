@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{marker::PhantomData, sync::Arc};
 
 use arrow::array::{ArrayData, MutableArrayData, make_array};
 use common_error::DaftResult;
@@ -12,13 +12,6 @@ use crate::{
 };
 
 /// Operation recorded by `extend`/`add_nulls` and replayed in `build()`.
-///
-/// We record ops instead of writing directly to a `MutableArrayData` because
-/// `MutableArrayData` borrows `&ArrayData`, and converting our arrow2-backed
-/// sources to `ArrayData` produces owned values — combining both in one struct
-/// would require `unsafe`.
-// TODO(desmond): Once Daft stores arrow-rs arrays natively, remove GrowOp and
-// write directly to a `MutableArrayData` field.
 enum GrowOp {
     Extend {
         index: usize,
@@ -30,13 +23,21 @@ enum GrowOp {
 
 /// Single generic growable for all `DaftArrowBackedType` variants (bool, int, float, string,
 /// binary, decimal, interval, extension, etc.).
+///
+/// Source arrays are converted from arrow2 to arrow-rs `ArrayData` once in `new()`.
+/// Operations are deferred and replayed in `build()` because `MutableArrayData` borrows
+/// `&ArrayData`, and storing both owned data and the borrower in one struct would be
+/// self-referential.
+// TODO(desmond): Once Daft stores arrow-rs arrays natively, remove GrowOp and write
+// directly to a `MutableArrayData` field.
 pub struct ArrowGrowable<'a, T: DaftArrowBackedType> {
     name: String,
     dtype: DataType,
-    sources: Vec<&'a DataArray<T>>,
+    source_data: Vec<ArrayData>,
     ops: Vec<GrowOp>,
     use_validity: bool,
     capacity: usize,
+    _phantom: PhantomData<&'a T>,
 }
 
 impl<'a, T: DaftArrowBackedType> ArrowGrowable<'a, T> {
@@ -47,13 +48,15 @@ impl<'a, T: DaftArrowBackedType> ArrowGrowable<'a, T> {
         use_validity: bool,
         capacity: usize,
     ) -> Self {
+        let source_data = arrays.iter().map(|s| to_data(s.data())).collect();
         Self {
             name: name.to_string(),
             dtype: dtype.clone(),
-            sources: arrays,
+            source_data,
             ops: Vec::new(),
             use_validity,
             capacity,
+            _phantom: PhantomData,
         }
     }
 }
@@ -73,11 +76,8 @@ where
     }
 
     fn build(&mut self) -> DaftResult<Series> {
-        // Convert sources to ArrayData (owned).
-        let array_data: Vec<ArrayData> = self.sources.iter().map(|s| to_data(s.data())).collect();
-        let array_data_refs: Vec<&ArrayData> = array_data.iter().collect();
-
-        let mut mutable = MutableArrayData::new(array_data_refs, self.use_validity, self.capacity);
+        let refs: Vec<&ArrayData> = self.source_data.iter().collect();
+        let mut mutable = MutableArrayData::new(refs, self.use_validity, self.capacity);
 
         // Replay recorded operations.
         // Note: MutableArrayData::extend takes (index, start, end) not (index, start, len).
