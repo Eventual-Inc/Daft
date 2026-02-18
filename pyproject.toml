@@ -5,7 +5,7 @@ requires = ["maturin>=1.5.0,<2.0.0"]
 [project]
 authors = [{name = "Eventual Inc", email = "daft@eventualcomputing.com"}]
 dependencies = [
-  "pyarrow >= 8.0.0,< 24.0.0",
+  "pyarrow >= 8.0.0,<24.0.0",
   "fsspec<2026.3.0",
   "tqdm<4.68.0",
   "typing-extensions >= 4.0.0; python_version < '3.11'",
@@ -106,7 +106,7 @@ dev = [
   "jax==0.6.2",
   "jaxtyping==0.3.7",
   # Pyarrow
-  "pyarrow >= 8.0.0,< 24.0.0",
+  "pyarrow >= 8.0.0,<24.0.0",
   "pyarrow-stubs==20.0.0.20251215",
   # Ray
   "ray[data, client]==2.53.0",
@@ -146,7 +146,6 @@ dev = [
   # AI
   "vllm==0.11.0",
   "openai==2.20.0",
-  # Downgraded to 1.2.0 for httpx 0.27.2 compatibility (1.3.0+ requires httpx>=0.28.1)
   "google-genai==1.63.0",
   # AV
   "av==16.1.0",

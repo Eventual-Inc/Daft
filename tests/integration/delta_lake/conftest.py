@@ -223,6 +223,10 @@ def s3_uri(tmp_path: pathlib.Path, data_dir: str) -> str:
     return "s3://" + path
 
 
+# TODO: This fixture previously parametrized over [None, glue_table, unity_table_s3] via pytest-lazy-fixture
+# to test Delta Lake reads through AWS Glue and Unity catalog code paths. The parametrization was removed
+# for pytest 9 compatibility (lazy_fixture is incompatible). Restore coverage with an alternative approach
+# (e.g., separate dedicated fixtures or pytest-lazy-fixtures).
 @pytest.fixture(scope="function")
 def s3_path(
     s3_uri: str,
@@ -314,6 +318,9 @@ def az_server(az_server_ip: str, az_server_port: int) -> Iterator[str]:
         azurite.stop()
 
 
+# TODO: This fixture previously parametrized over [None, unity_table_az] via pytest-lazy-fixture
+# to test Delta Lake reads through Unity catalog on Azure. The parametrization was removed for
+# pytest 9 compatibility. Restore coverage with an alternative approach.
 @pytest.fixture(scope="function")
 def az_path(
     az_uri: str, az_server: str, az_credentials: dict[str, str]
