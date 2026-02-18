@@ -257,6 +257,24 @@ def s3_path(
     return s3_uri, io_config, None
 
 
+@pytest.fixture(scope="function")
+def s3_path_with_glue(
+    s3_path: tuple[str, daft.io.IOConfig, DataCatalogTable | None],
+    glue_table: DataCatalogTable,
+) -> tuple[str, daft.io.IOConfig, DataCatalogTable]:
+    uri, io_config, _ = s3_path
+    return uri, io_config, glue_table
+
+
+@pytest.fixture(scope="function")
+def s3_path_with_unity(
+    s3_path: tuple[str, daft.io.IOConfig, DataCatalogTable | None],
+    unity_table_s3: DataCatalogTable,
+) -> tuple[str, daft.io.IOConfig, DataCatalogTable]:
+    uri, io_config, _ = s3_path
+    return uri, io_config, unity_table_s3
+
+
 ###############################
 ### Azure-specific fixtures ###
 ###############################
@@ -341,6 +359,15 @@ def az_path(
 
 
 @pytest.fixture(scope="function")
+def az_path_with_unity(
+    az_path: tuple[str, daft.io.IOConfig, None],
+    unity_table_az: DataCatalogTable,
+) -> Iterator[tuple[str, daft.io.IOConfig, DataCatalogTable]]:
+    uri, io_config, _ = az_path
+    yield uri, io_config, unity_table_az
+
+
+@pytest.fixture(scope="function")
 def local_path(tmp_path: pathlib.Path, data_dir: str) -> tuple[str, None, None]:
     path = os.path.join(tmp_path, data_dir)
     os.mkdir(path)
@@ -352,9 +379,12 @@ def local_path(tmp_path: pathlib.Path, data_dir: str) -> tuple[str, None, None]:
     params=[
         pytest.param("local_path", marks=pytest.mark.local),
         pytest.param("s3_path", marks=pytest.mark.s3),
+        pytest.param("s3_path_with_glue", marks=(pytest.mark.s3, pytest.mark.glue)),
+        pytest.param("s3_path_with_unity", marks=(pytest.mark.s3, pytest.mark.unity)),
         # Azure tests require starting a Docker container + mock server that (1) requires a dev Docker dependency, and
         # (2) takes 15+ seconds to start on every run, so we current mark it as an integration test.
         pytest.param("az_path", marks=(pytest.mark.az, pytest.mark.integration)),
+        pytest.param("az_path_with_unity", marks=(pytest.mark.az, pytest.mark.integration, pytest.mark.unity)),
     ],
 )
 def cloud_paths(
