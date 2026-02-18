@@ -151,12 +151,14 @@ impl<T: Task> Scheduler<T> for DefaultScheduler<T> {
     fn get_autoscaling_request(&mut self) -> Option<Vec<TaskResourceRequest>> {
         // If we need to autoscale, return the resource requests of the pending tasks
         let needs_autoscaling = self.needs_autoscaling();
-        needs_autoscaling.then(|| {
-            self.pending_tasks
-                .iter()
-                .map(|task| task.task.resource_request().clone())
-                .collect()
-        })
+        needs_autoscaling.then(|| self.get_backlog_resource_requests())
+    }
+
+    fn get_backlog_resource_requests(&self) -> Vec<TaskResourceRequest> {
+        self.pending_tasks
+            .iter()
+            .map(|task| task.task.resource_request().clone())
+            .collect()
     }
 }
 
