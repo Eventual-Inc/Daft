@@ -2893,7 +2893,6 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "common-error",
- "daft-arrow",
  "daft-core",
  "daft-dsl",
  "heck 0.5.0",
