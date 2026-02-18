@@ -8,7 +8,7 @@ mod list_array;
 pub mod ops;
 mod serdes;
 mod struct_array;
-pub mod utf8;
+pub mod values;
 
 use arrow::{array::make_array, compute::cast};
 use daft_arrow::{
@@ -20,7 +20,6 @@ pub use fixed_size_list_array::FixedSizeListArray;
 pub use list_array::ListArray;
 pub use struct_array::StructArray;
 mod boolean;
-mod from_iter;
 pub mod prelude;
 use std::{marker::PhantomData, sync::Arc};
 
@@ -233,7 +232,7 @@ impl<T> DataArray<T> {
         Self::new(Arc::new(self.field.rename(name)), self.data.clone()).unwrap()
     }
 
-    pub fn field(&self) -> &Field {
+    pub fn field(&self) -> &FieldRef {
         &self.field
     }
 }

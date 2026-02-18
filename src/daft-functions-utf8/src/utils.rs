@@ -1,23 +1,19 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
+use arrow::array::{Datum, Scalar};
 use common_error::{DaftError, DaftResult, ensure};
+use daft_arrow::ArrowError;
 use daft_core::{
-    array::DataArray,
+    array::{DataArray, iterator::Utf8Iter},
     prelude::{BooleanArray, DaftPhysicalType, DataType, Field, FullNull, Schema, Utf8Array},
-    series::Series,
+    series::{IntoSeries, Series},
 };
 use daft_dsl::{ExprRef, functions::FunctionArgs};
 use itertools::Itertools;
 
 pub(crate) enum BroadcastedStrIter<'a> {
     Repeat(std::iter::RepeatN<Option<&'a str>>),
-    NonRepeat(
-        daft_arrow::bitmap::utils::ZipValidity<
-            &'a str,
-            daft_arrow::array::ArrayValuesIter<'a, daft_arrow::array::Utf8Array<i64>>,
-            daft_arrow::bitmap::utils::BitmapIter<'a>,
-        >,
-    ),
+    NonRepeat(Utf8Iter<'a>),
 }
 
 impl<'a> Iterator for BroadcastedStrIter<'a> {
@@ -29,6 +25,32 @@ impl<'a> Iterator for BroadcastedStrIter<'a> {
             BroadcastedStrIter::NonRepeat(iter) => iter.next(),
         }
     }
+}
+
+pub(crate) fn utf8_compare_op(
+    arr: &Series,
+    pattern: &Series,
+    op: impl Fn(&dyn Datum, &dyn Datum) -> Result<arrow::array::BooleanArray, ArrowError>,
+) -> DaftResult<Series> {
+    let name = arr.name();
+    let arr = arr.utf8()?.to_arrow();
+    let pattern = pattern.utf8()?.to_arrow();
+
+    let result = match (arr.len(), pattern.len()) {
+        (_, 1) => op(&arr, &Scalar::new(pattern))?,
+        (1, _) => op(&Scalar::new(arr), &pattern)?,
+        (l, r) if l == r => op(&arr, &pattern)?,
+        (l, r) => {
+            return Err(DaftError::ValueError(format!(
+                "Inputs have invalid lengths: {l}, {r}"
+            )));
+        }
+    };
+
+    Ok(
+        BooleanArray::from_arrow(Field::new(name, DataType::Boolean), Arc::new(result))?
+            .into_series(),
+    )
 }
 
 pub(crate) fn create_broadcasted_str_iter(arr: &Utf8Array, len: usize) -> BroadcastedStrIter<'_> {

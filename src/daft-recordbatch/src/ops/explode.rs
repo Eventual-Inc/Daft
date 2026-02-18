@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
@@ -20,13 +19,13 @@ fn lengths_to_indices(
     let mut indices = Vec::with_capacity(capacity);
     for (i, l) in lengths.into_iter().enumerate() {
         let l = if ignore_empty_and_null {
-            *l.unwrap_or(&0)
+            l.unwrap_or(0)
         } else {
-            std::cmp::max(*l.unwrap_or(&1), 1u64)
+            std::cmp::max(l.unwrap_or(1), 1u64)
         };
         (0..l).for_each(|_| indices.push(i as u64));
     }
-    Ok(UInt64Array::from(("indices", indices)))
+    Ok(UInt64Array::from_vec("indices", indices))
 }
 
 /// For each list element, generate its position within the list.
@@ -38,7 +37,7 @@ fn generate_explode_indices(
 ) -> DaftResult<UInt64Array> {
     let mut indices = Vec::with_capacity(capacity);
     for len in lengths {
-        if let Some(&l) = len
+        if let Some(l) = len
             && l > 0
         {
             indices.extend((0..l).map(Some));

@@ -34,13 +34,9 @@ def value_counts(list_expr: Expression) -> Expression:
         │ ---          ┆ ---                 │
         │ List[String] ┆ Map[String: UInt64] │
         ╞══════════════╪═════════════════════╡
-        │ [a, b, a]    ┆ [{key: a,           │
-        │              ┆ value: 2,           │
-        │              ┆ }, {key: …          │
+        │ [a, b, a]    ┆ {"a": 2, "b": 1}    │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ [b, c, b, c] ┆ [{key: b,           │
-        │              ┆ value: 2,           │
-        │              ┆ }, {key: …          │
+        │ [b, c, b, c] ┆ {"b": 2, "c": 2}    │
         ╰──────────────┴─────────────────────╯
         <BLANKLINE>
         (Showing first 2 of 2 rows)
@@ -460,6 +456,52 @@ def list_append(list_expr: Expression, other: Expression) -> Expression:
         (Showing first 2 of 2 rows)
     """
     return Expression._call_builtin_scalar_fn("list_append", list_expr, other)
+
+
+def list_contains(list_expr: Expression, item: Expression) -> Expression:
+    """Checks if each list contains the specified item.
+
+    Args:
+        list_expr: expression to search in
+        item: value or column of values to search for
+
+    Returns:
+        Boolean expression indicating whether each list contains the item
+
+    Examples:
+        >>> import daft
+        >>> from daft.functions import list_contains
+        >>>
+        >>> df = daft.from_pydict({"a": [[1, 2, 3], [2, 4], [1, 3, 5], []]})
+        >>> df.where(list_contains(df["a"], 3)).show()
+        ╭─────────────╮
+        │ a           │
+        │ ---         │
+        │ List[Int64] │
+        ╞═════════════╡
+        │ [1, 2, 3]   │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+        │ [1, 3, 5]   │
+        ╰─────────────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+
+        >>> # Check against another column
+        >>> df2 = daft.from_pydict({"lists": [[1, 2], [3, 4]], "items": [1, 4]})
+        >>> df2.with_column("match", list_contains(df2["lists"], df2["items"])).show()
+        ╭─────────────┬───────┬───────╮
+        │ lists       ┆ items ┆ match │
+        │ ---         ┆ ---   ┆ ---   │
+        │ List[Int64] ┆ Int64 ┆ Bool  │
+        ╞═════════════╪═══════╪═══════╡
+        │ [1, 2]      ┆ 1     ┆ true  │
+        ├╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌┤
+        │ [3, 4]      ┆ 4     ┆ true  │
+        ╰─────────────┴───────┴───────╯
+        <BLANKLINE>
+        (Showing first 2 of 2 rows)
+    """
+    return Expression._call_builtin_scalar_fn("list_contains", list_expr, item)
 
 
 def to_list(*items: Expression) -> Expression:

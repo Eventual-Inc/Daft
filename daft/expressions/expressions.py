@@ -24,7 +24,7 @@ from daft.daft import (
 from daft.daft import PyExpr as _PyExpr
 from daft.daft import lit as _lit
 from daft.daft import udf as _udf
-from daft.datatype import DataType, DataTypeLike, TimeUnit
+from daft.datatype import DataType, DataTypeLike, MediaType, TimeUnit
 from daft.expressions.testing import expr_structurally_equal
 from daft.logical.schema import Field, Schema
 
@@ -496,6 +496,79 @@ class Expression:
         from daft.functions import cast
 
         return cast(self, dtype)
+
+    if TYPE_CHECKING:
+
+        def as_int8(self) -> Expression: ...
+
+        def as_int16(self) -> Expression: ...
+
+        def as_int32(self) -> Expression: ...
+
+        def as_int64(self) -> Expression: ...
+
+        def as_uint8(self) -> Expression: ...
+
+        def as_uint16(self) -> Expression: ...
+
+        def as_uint32(self) -> Expression: ...
+
+        def as_uint64(self) -> Expression: ...
+
+        def as_float32(self) -> Expression: ...
+
+        def as_float64(self) -> Expression: ...
+
+        def as_string(self) -> Expression: ...
+
+        def as_bool(self) -> Expression: ...
+
+        def as_binary(self) -> Expression: ...
+
+        def as_fixed_size_binary(self, size: int) -> Expression: ...
+
+        def as_null(self) -> Expression: ...
+
+        def as_decimal128(self, precision: int, scale: int) -> Expression: ...
+
+        def as_date(self) -> Expression: ...
+
+        def as_time(self, timeunit: TimeUnit | str) -> Expression: ...
+
+        def as_timestamp(self, timeunit: TimeUnit | str, timezone: str | None = ...) -> Expression: ...
+
+        def as_duration(self, timeunit: TimeUnit | str) -> Expression: ...
+
+        def as_interval(self) -> Expression: ...
+
+        def as_list(self, dtype: DataType) -> Expression: ...
+
+        def as_fixed_size_list(self, dtype: DataType, size: int) -> Expression: ...
+
+        def as_map(self, key_type: DataType, value_type: DataType) -> Expression: ...
+
+        def as_struct(self, fields: dict[str, DataType]) -> Expression: ...
+
+        def as_extension(self, name: str, storage_dtype: DataType, metadata: str | None = ...) -> Expression: ...
+
+        def as_embedding(self, dtype: DataType, size: int) -> Expression: ...
+
+        def as_image(
+            self, mode: str | ImageMode | None = ..., height: int | None = ..., width: int | None = ...
+        ) -> Expression: ...
+
+        def as_tensor(self, dtype: DataType, shape: tuple[int, ...] | None = ...) -> Expression: ...
+
+        def as_sparse_tensor(
+            self,
+            dtype: DataType,
+            shape: tuple[int, ...] | None = ...,
+            use_offset_indices: bool = ...,
+        ) -> Expression: ...
+
+        def as_python(self) -> Expression: ...
+
+        def as_file(self, media_type: MediaType = ...) -> Expression: ...
 
     def ceil(self) -> Expression:
         """The ceiling of a numeric expression.
@@ -987,6 +1060,21 @@ class Expression:
 
         return stddev(self)
 
+    def var(self, ddof: int = 1) -> Expression:
+        """Calculates the variance of the values in the expression.
+
+        Args:
+            ddof: Delta degrees of freedom. The divisor used in calculations
+                is N - ddof, where N is the number of non-null elements.
+                Defaults to 1 (sample variance).
+
+        Tip: See Also
+            [`daft.functions.var`](https://docs.daft.ai/en/stable/api/functions/var/)
+        """
+        from daft.functions import var
+
+        return var(self, ddof)
+
     def min(self) -> Expression:
         """Calculates the minimum value in the expression.
 
@@ -1067,15 +1155,18 @@ class Expression:
 
         return list_agg_distinct(self)
 
-    def string_agg(self) -> Expression:
+    def string_agg(self, delimiter: str | None = None) -> Expression:
         """Aggregates the values in the expression into a single string by concatenating them.
+
+        Args:
+            delimiter: Optional delimiter to insert between concatenated values. Only supported for string columns.
 
         Tip: See Also
             [`daft.functions.string_agg`](https://docs.daft.ai/en/stable/api/functions/string_agg/)
         """
         from daft.functions import string_agg
 
-        return string_agg(self)
+        return string_agg(self, delimiter=delimiter)
 
     def apply(self, func: Callable[..., Any], return_dtype: DataTypeLike) -> Expression:
         """Apply a function on each value in a given expression.
@@ -1169,8 +1260,11 @@ class Expression:
 
         return fill_null(self, fill_value)
 
-    def is_in(self, other: Any) -> Expression:
-        """Checks if values in the Expression are in the provided list.
+    def is_in(self, other: Iterable[Any] | Expression) -> Expression:
+        """Checks if values in the Expression are in the provided iterable.
+
+        Args:
+            other: An iterable (list, set, tuple, etc.), Expression, or array-like object containing the values to check against
 
         Tip: See Also
             [`daft.functions.is_in`](https://docs.daft.ai/en/stable/api/functions/is_in/)
@@ -1427,6 +1521,56 @@ class Expression:
         from daft.functions import cosine_distance
 
         return cosine_distance(self, other)
+
+    def euclidean_distance(self, other: Expression) -> Expression:
+        """Compute the Euclidean distance between two embeddings.
+
+        Tip: See Also
+            [`daft.functions.euclidean_distance`](https://docs.daft.ai/en/stable/api/functions/euclidean_distance/)
+        """
+        from daft.functions import euclidean_distance
+
+        return euclidean_distance(self, other)
+
+    def dot_product(self, other: Expression) -> Expression:
+        """Compute the dot product between two embeddings.
+
+        Tip: See Also
+            [`daft.functions.dot_product`](https://docs.daft.ai/en/stable/api/functions/dot_product/)
+        """
+        from daft.functions import dot_product
+
+        return dot_product(self, other)
+
+    def cosine_similarity(self, other: Expression) -> Expression:
+        """Compute the cosine similarity between two embeddings.
+
+        Tip: See Also
+            [`daft.functions.cosine_similarity`](https://docs.daft.ai/en/stable/api/functions/cosine_similarity/)
+        """
+        from daft.functions import cosine_similarity
+
+        return cosine_similarity(self, other)
+
+    def pearson_correlation(self, other: Expression) -> Expression:
+        """Compute the Pearson correlation between two embeddings.
+
+        Tip: See Also
+            [`daft.functions.pearson_correlation`](https://docs.daft.ai/en/stable/api/functions/pearson_correlation/)
+        """
+        from daft.functions import pearson_correlation
+
+        return pearson_correlation(self, other)
+
+    def jaccard_similarity(self, other: Expression) -> Expression:
+        """Compute the Jaccard similarity between two embeddings.
+
+        Tip: See Also
+            [`daft.functions.jaccard_similarity`](https://docs.daft.ai/en/stable/api/functions/jaccard_similarity/)
+        """
+        from daft.functions import jaccard_similarity
+
+        return jaccard_similarity(self, other)
 
     def length(self) -> Expression:
         """Retrieves the length of the given expression.
@@ -1831,6 +1975,76 @@ class Expression:
 
         return capitalize(self)
 
+    def to_camel_case(self) -> Expression:
+        """Convert a string to lower camel case.
+
+        Tip: See Also
+            [`daft.functions.to_camel_case`](https://docs.daft.ai/en/stable/api/functions/to_camel_case/)
+        """
+        from daft.functions import to_camel_case
+
+        return to_camel_case(self)
+
+    def to_upper_camel_case(self) -> Expression:
+        """Convert a string to upper camel case.
+
+        Tip: See Also
+            [`daft.functions.to_upper_camel_case`](https://docs.daft.ai/en/stable/api/functions/to_upper_camel_case/)
+        """
+        from daft.functions import to_upper_camel_case
+
+        return to_upper_camel_case(self)
+
+    def to_snake_case(self) -> Expression:
+        """Convert a string to snake case.
+
+        Tip: See Also
+            [`daft.functions.to_snake_case`](https://docs.daft.ai/en/stable/api/functions/to_snake_case/)
+        """
+        from daft.functions import to_snake_case
+
+        return to_snake_case(self)
+
+    def to_upper_snake_case(self) -> Expression:
+        """Convert a string to upper snake case.
+
+        Tip: See Also
+            [`daft.functions.to_upper_snake_case`](https://docs.daft.ai/en/stable/api/functions/to_upper_snake_case/)
+        """
+        from daft.functions import to_upper_snake_case
+
+        return to_upper_snake_case(self)
+
+    def to_kebab_case(self) -> Expression:
+        """Convert a string to kebab case.
+
+        Tip: See Also
+            [`daft.functions.to_kebab_case`](https://docs.daft.ai/en/stable/api/functions/to_kebab_case/)
+        """
+        from daft.functions import to_kebab_case
+
+        return to_kebab_case(self)
+
+    def to_upper_kebab_case(self) -> Expression:
+        """Convert a string to upper kebab case.
+
+        Tip: See Also
+            [`daft.functions.to_upper_kebab_case`](https://docs.daft.ai/en/stable/api/functions/to_upper_kebab_case/)
+        """
+        from daft.functions import to_upper_kebab_case
+
+        return to_upper_kebab_case(self)
+
+    def to_title_case(self) -> Expression:
+        """Convert a string to title case.
+
+        Tip: See Also
+            [`daft.functions.to_title_case`](https://docs.daft.ai/en/stable/api/functions/to_title_case/)
+        """
+        from daft.functions import to_title_case
+
+        return to_title_case(self)
+
     def left(self, nchars: int | Expression) -> Expression:
         """Gets the n (from nchars) left-most characters of each string.
 
@@ -2178,6 +2392,16 @@ class Expression:
         from daft.functions import list_distinct
 
         return list_distinct(self)
+
+    def list_contains(self, item: Expression) -> Expression:
+        """Checks if each list contains the specified item.
+
+        Tip: See Also
+            [`daft.functions.list_contains`](https://docs.daft.ai/en/stable/api/functions/list_contains/)
+        """
+        from daft.functions import list_contains
+
+        return list_contains(self, item)
 
     def list_map(self, mapper: Expression) -> Expression:
         """Evaluates an expression on all elements in the list.
@@ -2694,3 +2918,27 @@ class ExpressionsProjection(Iterable[Expression]):
         self,
     ) -> tuple[Callable[[dict[str, Expression]], ExpressionsProjection], tuple[dict[str, Expression]]]:
         return ExpressionsProjection._from_serialized, (self._output_name_to_exprs,)
+
+
+def _make_expr_as_dtype_method(dtype_name: str) -> Callable[..., Expression]:
+    dtype_ctor = getattr(DataType, dtype_name)
+
+    def _as_dtype(self: Expression, *args: Any, **kwargs: Any) -> Expression:
+        return self.cast(dtype_ctor(*args, **kwargs))
+
+    _as_dtype.__name__ = f"as_{dtype_name}"
+    _as_dtype.__qualname__ = f"Expression.as_{dtype_name}"
+    _as_dtype.__doc__ = (
+        f"Casts the expression to `DataType.{dtype_name}(...)`."
+        "\n\nTip: See Also\n"
+        "    [`Expression.cast`](https://docs.daft.ai/en/stable/api/expressions/#daft.Expression.cast)"
+    )
+    return _as_dtype
+
+
+_EXPR_AS_DTYPE_METHODS = DataType._constructor_names()
+
+for _dtype_name in _EXPR_AS_DTYPE_METHODS:
+    _method_name = f"as_{_dtype_name}"
+    if not hasattr(Expression, _method_name):
+        setattr(Expression, _method_name, _make_expr_as_dtype_method(_dtype_name))

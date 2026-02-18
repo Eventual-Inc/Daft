@@ -29,10 +29,6 @@ impl AsImageObj for ImageArray {
         }
 
         let da = self.data_array();
-        let ca = self.channel_array();
-        let ha = self.height_array();
-        let wa = self.width_array();
-        let ma = self.mode_array();
 
         let offsets = da.offsets();
 
@@ -49,10 +45,10 @@ impl AsImageObj for ImageArray {
             .unwrap();
         let slice_data = Cow::Borrowed(&values.values().as_slice()[start..end] as &'a [u8]);
 
-        let c = ca.value(idx);
-        let h = ha.value(idx);
-        let w = wa.value(idx);
-        let m: ImageMode = ImageMode::from_u8(ma.value(idx)).unwrap();
+        let c = self.channels().values()[idx];
+        let h = self.heights().values()[idx];
+        let w = self.widths().values()[idx];
+        let m: ImageMode = ImageMode::from_u8(self.modes().values()[idx]).unwrap();
         assert_eq!(m.num_channels(), c);
         let result = CowImage::from_raw(&m, w, h, slice_data);
 

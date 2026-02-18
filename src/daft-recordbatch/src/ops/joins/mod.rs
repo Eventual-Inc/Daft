@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::{collections::HashSet, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
@@ -173,8 +172,8 @@ impl RecordBatch {
 
                 for (li, ri) in lidx.into_iter().zip(ridx.into_iter()) {
                     match (li, ri) {
-                        (Some(i), _) => growable.extend(0, *i as usize, 1),
-                        (None, Some(i)) => growable.extend(1, *i as usize, 1),
+                        (Some(i), _) => growable.extend(0, i as usize, 1),
+                        (None, Some(i)) => growable.extend(1, i as usize, 1),
                         (None, None) => unreachable!("Join should not have None for both sides"),
                     }
                 }
@@ -202,7 +201,7 @@ impl RecordBatch {
                 .flat_map(|i| std::iter::repeat_n(i, inner_len))
                 .collect::<Vec<_>>();
 
-            let idx_arr = UInt64Array::from(("inner_indices", idx));
+            let idx_arr = UInt64Array::from_vec("inner_indices", idx);
             input.take(&idx_arr)
         }
 

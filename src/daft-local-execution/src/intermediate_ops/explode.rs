@@ -9,7 +9,7 @@ use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_functions_list::explode;
 use daft_micropartition::MicroPartition;
 use itertools::Itertools;
-use opentelemetry::{KeyValue, global};
+use opentelemetry::{KeyValue, metrics::Meter};
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{
@@ -25,14 +25,13 @@ pub struct ExplodeStats {
 }
 
 impl ExplodeStats {
-    pub fn new(id: usize) -> Self {
-        let meter = global::meter("daft.local.node_stats");
+    pub fn new(meter: &Meter, id: usize) -> Self {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, CPU_US_KEY, None),
-            rows_in: Counter::new(&meter, ROWS_IN_KEY, None),
-            rows_out: Counter::new(&meter, ROWS_OUT_KEY, None),
+            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
             node_kv,
         }
     }
@@ -150,8 +149,8 @@ impl IntermediateOperator for ExplodeOperator {
         NodeType::Explode
     }
 
-    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(ExplodeStats::new(id))
+    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(ExplodeStats::new(meter, id))
     }
     fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
         Ok(crate::dynamic_batching::StaticBatchingStrategy::new(

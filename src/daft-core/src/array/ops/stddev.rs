@@ -1,5 +1,4 @@
 use common_error::DaftResult;
-use daft_arrow::array::PrimitiveArray;
 
 use crate::{
     array::{
@@ -15,11 +14,12 @@ impl DaftStddevAggable for DataArray<Float64Type> {
 
     fn stddev(&self) -> Self::Output {
         let stats = stats::calculate_stats(self)?;
-        let values = self.into_iter().flatten().copied();
+        let values = self.into_iter().flatten();
         let stddev = stats::calculate_stddev(stats, values);
-        let field = self.field.clone();
-        let data = PrimitiveArray::<f64>::from([stddev]).boxed();
-        Self::new(field, data)
+        Ok(Self::from_iter(
+            self.field().clone(),
+            std::iter::once(stddev),
+        ))
     }
 
     fn grouped_stddev(&self, groups: &GroupIndices) -> Self::Output {
@@ -27,8 +27,7 @@ impl DaftStddevAggable for DataArray<Float64Type> {
             let values = group.iter().filter_map(|&index| self.get(index as _));
             stats::calculate_stddev(stats, values)
         });
-        let field = self.field.clone();
-        let data = PrimitiveArray::<f64>::from_iter(grouped_stddevs_iter).boxed();
-        Self::new(field, data)
+
+        Ok(Self::from_iter(self.field().clone(), grouped_stddevs_iter))
     }
 }

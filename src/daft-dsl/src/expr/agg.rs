@@ -36,6 +36,7 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                 }
                 AggExpr::Mean(e) => AggExpr::Mean(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Stddev(e) => AggExpr::Stddev(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Var(e, ddof) => AggExpr::Var(Expr::Alias(e, name.clone()).into(), ddof),
                 AggExpr::Min(e) => AggExpr::Min(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Max(e) => AggExpr::Max(Expr::Alias(e, name.clone()).into()),
                 AggExpr::BoolAnd(e) => AggExpr::BoolAnd(Expr::Alias(e, name.clone()).into()),
@@ -45,7 +46,9 @@ pub fn extract_agg_expr(expr: &ExprRef) -> DaftResult<AggExpr> {
                 }
                 AggExpr::List(e) => AggExpr::List(Expr::Alias(e, name.clone()).into()),
                 AggExpr::Set(e) => AggExpr::Set(Expr::Alias(e, name.clone()).into()),
-                AggExpr::Concat(e) => AggExpr::Concat(Expr::Alias(e, name.clone()).into()),
+                AggExpr::Concat(e, delimiter) => {
+                    AggExpr::Concat(Expr::Alias(e, name.clone()).into(), delimiter)
+                }
                 AggExpr::Skew(e) => AggExpr::Skew(Expr::Alias(e, name.clone()).into()),
                 AggExpr::MapGroups { func, inputs } => AggExpr::MapGroups {
                     func,

@@ -16,6 +16,8 @@ Daft currently supports:
 
 6. **Cache tuning**: Configure `index_cache_size` and `metadata_cache_size_bytes` to optimize index page caching and metadata retrieval for large datasets
 
+7. **REST API support**: Connect to Lance tables managed by REST-compliant services like LanceDB Cloud, Apache Gravitino, and other catalog systems using the Lance REST Namespace specification
+
 ## Installing Daft with Lance Support
 
 Daft integrates Lance through an optional dependency:
@@ -24,9 +26,17 @@ Daft integrates Lance through an optional dependency:
 pip install -U "daft[lance]"
 ```
 
+For REST API support, you'll also need the Lance namespace packages:
+
+```bash
+pip install lance-namespace lance-namespace-urllib3-client
+```
+
 ## Reading a Table
 
-Use [`daft.read_lance`][daft.read_lance] to read a Lance dataset. You can pass either a local path or a cloud object store URI.
+Use [`daft.read_lance`][daft.read_lance] to read a Lance dataset. You can pass either a local path, a cloud object store URI, or a REST endpoint.
+
+### File-based Reading
 
 === "🐍 Python"
 
@@ -39,6 +49,34 @@ Use [`daft.read_lance`][daft.read_lance] to read a Lance dataset. You can pass e
 
     # Read a specific version or a time slice
     df_v1 = daft.read_lance("/data/my_lance_dataset", version=1)
+    ```
+
+### REST-based Reading
+
+=== "🐍 Python"
+
+    ```python
+    # Read a Lance table via REST API
+    import daft
+    from daft.io.lance import LanceRestConfig
+
+    # Configure REST connection
+    rest_config = LanceRestConfig(
+        base_url="https://api.lancedb.com",
+        api_key="your-api-key"
+    )
+
+    # Read from REST endpoint
+    df_rest = daft.read_lance(
+        "rest://my_namespace/my_table",
+        rest_config=rest_config
+    )
+
+    # Read from root namespace
+    df_root = daft.read_lance(
+        "rest:///my_table",
+        rest_config=rest_config
+    )
     ```
 
 To access public S3/GCS buckets, configure IO options for authentication and endpoints:
@@ -105,7 +143,9 @@ filtered.show()
 
 ## Writing to Lance
 
-Use [`df.write_lance()`][daft.dataframe.DataFrame.write_lance] to write a DataFrame to a Lance dataset. Supported modes include `create`, `append`, and `overwrite`. Additional write parameters (e.g., maximum file size) are passed through to the underlying writer.
+Use [`df.write_lance()`][daft.dataframe.DataFrame.write_lance] to write a DataFrame to a Lance dataset. Supported modes include `create`, `append`, and `overwrite`. You can write to both file-based and REST-based Lance tables.
+
+### File-based Writing
 
 === "🐍 Python"
 
@@ -124,7 +164,48 @@ meta2.show()
 meta3 = df.write_lance("/tmp/lance/my_table.lance", mode="append")
 ```
 
-For S3-compatible services (e.g. Volcengine TOS), configure IO options for authentication and endpoints:
+### REST-based Writing
+
+=== "🐍 Python"
+
+```python
+import daft
+from daft.io.lance import LanceRestConfig
+
+# Configure REST connection
+rest_config = LanceRestConfig(
+    base_url="https://api.lancedb.com",
+    api_key="your-api-key"
+)
+
+df = daft.from_pydict({"a": [1, 2, 3, 4]})
+
+# Create a new table via REST
+meta = df.write_lance(
+    "rest://my_namespace/my_table",
+    rest_config=rest_config,
+    mode="create"
+)
+meta.show()
+
+# Append to existing table
+df2 = daft.from_pydict({"a": [5, 6, 7, 8]})
+meta2 = df2.write_lance(
+    "rest://my_namespace/my_table",
+    rest_config=rest_config,
+    mode="append"
+)
+
+# Overwrite table
+df3 = daft.from_pydict({"a": [10, 20], "b": ["x", "y"]})
+meta3 = df3.write_lance(
+    "rest://my_namespace/my_table",
+    rest_config=rest_config,
+    mode="overwrite"
+)
+```
+
+### For S3-compatible services (e.g. Volcengine TOS), configure IO options for authentication and endpoints:
 
 === "🐍 Python"
 
@@ -187,8 +268,90 @@ This ensures that the resulting Lance table uses the exact schema you specify, e
     - If a `pyarrow.Schema` is provided, data will be aligned to that schema before writing (type/order/nullability).
     - If the target dataset already exists and the write is not an overwrite, data is converted to the existing table schema for compatibility.
 
+## REST Configuration and Catalog Management
+
+When working with Lance tables via REST APIs, you can configure authentication and manage table catalogs:
+
+=== "🐍 Python"
+
+```python
+from daft.io.lance import LanceRestConfig, create_lance_table_rest, register_lance_table_rest
+import pyarrow as pa
+
+# Configure REST connection with custom headers
+rest_config = LanceRestConfig(
+    base_url="https://my-lance-service.com",
+    api_key="your-api-key",
+    timeout=60,
+    headers={"Custom-Header": "value"}
+)
+
+# Create a table in the catalog without data
+schema = pa.schema([
+    pa.field("id", pa.int64()),
+    pa.field("name", pa.string()),
+    pa.field("embedding", pa.list_(pa.float32()))
+])
+
+create_lance_table_rest(
+    rest_config=rest_config,
+    namespace="my_namespace",
+    table_name="my_table",
+    schema=schema
+)
+
+# Register an existing Lance table with the catalog
+register_lance_table_rest(
+    rest_config=rest_config,
+    namespace="my_namespace",
+    table_name="existing_table",
+    table_uri="s3://my-bucket/lance-data/existing_table"
+)
+```
+
+### Supported REST Services
+
+The Lance REST implementation is compatible with any service that implements the [Lance REST Namespace specification](https://lance.org/format/namespace/rest/catalog-spec/), including:
+
+- **LanceDB Cloud**: Managed Lance service with enterprise features
+- **LanceDB Enterprise**: Self-hosted enterprise deployment
+- **Apache Gravitino**: Multi-modal metadata service with Lance support
+- **Custom implementations**: Any service implementing the Lance REST Namespace OpenAPI spec
+
 ## Advanced Usage
 
+
+### Vector Search
+
+Daft can push Lance's vector search options through `default_scan_options`. This lets
+you express nearest-neighbor queries at scan time while keeping the rest of your
+pipeline in Daft.
+
+=== "🐍 Python"
+
+    ```python
+    import daft
+    import pyarrow as pa
+
+    # Example: dataset with a fixed-size list or embedding column named "vector"
+    query = pa.array([0.0, 0.0], type=pa.float32())
+
+    df = daft.read_lance(
+        "/data/my_lance_vectors",
+        # Forward Lance's `nearest` options into the underlying scanner
+        default_scan_options={
+            "nearest": {
+                "column": "vector",  # Lance vector column name
+                "q": query,           # Query vector (any Lance-compatible QueryVectorLike)
+                "k": 5,               # Top-K neighbors to return
+            },
+        },
+    )
+
+    # The resulting DataFrame contains the K nearest rows according to Lance,
+    # and you can continue working with it using normal Daft APIs.
+    df.select("vector").show()
+    ```
 
 ### Data Evolution
 

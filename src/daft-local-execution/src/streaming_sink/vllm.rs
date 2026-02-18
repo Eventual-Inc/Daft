@@ -197,7 +197,7 @@ impl VLLMSink {
     fn poll_tasks(&self, state: &VLLMState) -> DaftResult<Option<Arc<MicroPartition>>> {
         Ok(state.executor.poll()?.map(|(outputs, rows)| {
             let output_series =
-                Utf8Array::from((self.output_column_name.as_ref(), outputs.as_slice()))
+                Utf8Array::from_slice(self.output_column_name.as_ref(), outputs.as_slice())
                     .into_series();
 
             let rb = rows
@@ -344,16 +344,17 @@ impl VLLMSink {
         let prompts = batch.eval_expression(&expr_input)?;
 
         // TODO: handle nulls
-        prompts
+        Ok(prompts
             .utf8()
-            .cloned()
             .map_err(|_| {
                 DaftError::type_error(format!(
                     "Expected input to `prompt` to be string, got {}",
                     prompts.data_type()
                 ))
             })?
-            .into_values()
+            .values()?
+            .map(str::to_string)
+            .collect())
     }
 }
 

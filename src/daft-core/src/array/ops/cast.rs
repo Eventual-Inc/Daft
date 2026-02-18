@@ -1,17 +1,13 @@
-#![allow(deprecated, reason = "arrow2->arrow migration")]
 use std::{
-    iter::repeat_n,
     ops::{Div, Mul},
     sync::Arc,
 };
 
+use arrow::buffer::{OffsetBuffer, ScalarBuffer};
 use common_error::{DaftError, DaftResult};
-use daft_arrow::{
-    compute::{
-        self,
-        cast::{CastOptions, can_cast_types, cast},
-    },
-    offset::Offsets,
+use daft_arrow::compute::{
+    self,
+    cast::{CastOptions, can_cast_types, cast},
 };
 use indexmap::IndexMap;
 #[cfg(feature = "python")]
@@ -199,7 +195,12 @@ impl DateArray {
                         (Some(y), Some(m), Some(d)) => Some(format!("{y}-{m}-{d}")),
                     })
                     .collect();
-                Ok(Utf8Array::from((self.name(), Box::new(date_str))).into_series())
+                Ok(Utf8Array::new(
+                    Field::new(self.name(), DataType::Utf8).into(),
+                    Box::new(date_str),
+                )
+                .unwrap()
+                .into_series())
             }
             DataType::Timestamp(tu, _) => {
                 let days_to_unit: i64 = match tu {
@@ -209,7 +210,7 @@ impl DateArray {
                     TimeUnit::Seconds => 24 * 3_600,
                 };
 
-                let units_per_day = Int64Array::from(("units", vec![days_to_unit])).into_series();
+                let units_per_day = Int64Array::from_slice("units", &[days_to_unit]).into_series();
                 let unit_since_epoch = ((&self.physical.clone().into_series()) * &units_per_day)?;
                 unit_since_epoch.cast(dtype)
             }
@@ -267,12 +268,12 @@ impl TimestampArray {
                     std::cmp::Ordering::Greater => {
                         let factor = tu.to_scale_factor() / self_tu.to_scale_factor();
                         self.physical
-                            .mul(&Int64Array::from(("factor", vec![factor])))?
+                            .mul(&Int64Array::from_slice("factor", &[factor]))?
                     }
                     std::cmp::Ordering::Less => {
                         let factor = self_tu.to_scale_factor() / tu.to_scale_factor();
                         self.physical
-                            .div(&Int64Array::from(("factor", vec![factor])))?
+                            .div(&Int64Array::from_slice("factor", &[factor]))?
                     }
                 };
                 Ok(
@@ -313,7 +314,12 @@ impl TimestampArray {
                     },
                 );
 
-                Ok(Utf8Array::from((self.name(), Box::new(str_array))).into_series())
+                Ok(Utf8Array::new(
+                    Field::new(self.name(), DataType::Utf8).into(),
+                    Box::new(str_array),
+                )
+                .unwrap()
+                .into_series())
             }
             dtype if dtype.is_numeric() => self.physical.cast(dtype),
             #[cfg(feature = "python")]
@@ -342,12 +348,12 @@ impl TimeArray {
                     std::cmp::Ordering::Greater => {
                         let factor = tu.to_scale_factor() / self_tu.to_scale_factor();
                         self.physical
-                            .mul(&Int64Array::from(("factor", vec![factor])))?
+                            .mul(&Int64Array::from_slice("factor", &[factor]))?
                     }
                     std::cmp::Ordering::Less => {
                         let factor = self_tu.to_scale_factor() / tu.to_scale_factor();
                         self.physical
-                            .div(&Int64Array::from(("factor", vec![factor])))?
+                            .div(&Int64Array::from_slice("factor", &[factor]))?
                     }
                 };
                 Ok(TimeArray::new(Field::new(self.name(), dtype.clone()), physical).into_series())
@@ -365,7 +371,12 @@ impl TimeArray {
                         })
                     })
                     .collect();
-                Ok(Utf8Array::from((self.name(), Box::new(time_str))).into_series())
+                Ok(Utf8Array::new(
+                    Field::new(self.name(), DataType::Utf8).into(),
+                    Box::new(time_str),
+                )
+                .unwrap()
+                .into_series())
             }
             dtype if dtype.is_numeric() => self.physical.cast(dtype),
             #[cfg(feature = "python")]
@@ -405,15 +416,15 @@ impl DurationArray {
             TimeUnit::Seconds => self.physical.clone(),
             TimeUnit::Milliseconds => self
                 .physical
-                .div(&Int64Array::from(("MillisecondsPerSecond", vec![1000])))?,
-            TimeUnit::Microseconds => self.physical.div(&Int64Array::from((
+                .div(&Int64Array::from_slice("MillisecondsPerSecond", &[1000]))?,
+            TimeUnit::Microseconds => self.physical.div(&Int64Array::from_slice(
                 "MicrosecondsPerSecond",
-                vec![1_000_000],
-            )))?,
-            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+                &[1_000_000],
+            ))?,
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from_slice(
                 "NanosecondsPerSecond",
-                vec![1_000_000_000],
-            )))?,
+                &[1_000_000_000],
+            ))?,
         };
         Ok(seconds)
     }
@@ -426,16 +437,16 @@ impl DurationArray {
         let milliseconds = match tu {
             TimeUnit::Seconds => self
                 .physical
-                .mul(&Int64Array::from(("MillisecondsPerSecond", vec![1000])))?,
+                .mul(&Int64Array::from_slice("MillisecondsPerSecond", &[1000]))?,
             TimeUnit::Milliseconds => self.physical.clone(),
-            TimeUnit::Microseconds => self.physical.div(&Int64Array::from((
+            TimeUnit::Microseconds => self.physical.div(&Int64Array::from_slice(
                 "MicrosecondsPerMillisecond",
-                vec![1_000],
-            )))?,
-            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+                &[1_000],
+            ))?,
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from_slice(
                 "NanosecondsPerMillisecond",
-                vec![1_000_000],
-            )))?,
+                &[1_000_000],
+            ))?,
         };
         Ok(milliseconds)
     }
@@ -446,19 +457,19 @@ impl DurationArray {
             _ => panic!("Wrong dtype for DurationArray: {}", self.data_type()),
         };
         let microseconds = match tu {
-            TimeUnit::Seconds => self.physical.mul(&Int64Array::from((
+            TimeUnit::Seconds => self.physical.mul(&Int64Array::from_slice(
                 "MicrosecondsPerSecond",
-                vec![1_000_000],
-            )))?,
-            TimeUnit::Milliseconds => self.physical.mul(&Int64Array::from((
+                &[1_000_000],
+            ))?,
+            TimeUnit::Milliseconds => self.physical.mul(&Int64Array::from_slice(
                 "MicrosecondsPerMillisecond",
-                vec![1_000],
-            )))?,
+                &[1_000],
+            ))?,
             TimeUnit::Microseconds => self.physical.clone(),
-            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from_slice(
                 "NanosecondsPerMicrosecond",
-                vec![1_000],
-            )))?,
+                &[1_000],
+            ))?,
         };
         Ok(microseconds)
     }
@@ -470,18 +481,18 @@ impl DurationArray {
                 _ => panic!("Wrong dtype for DurationArray: {}", self.data_type()),
             };
             let nanoseconds = match tu {
-                TimeUnit::Seconds => self.physical.mul(&Int64Array::from((
+                TimeUnit::Seconds => self.physical.mul(&Int64Array::from_slice(
                     "NanosecondsPerSecond",
-                    vec![1_000_000_000],
-                )))?,
-                TimeUnit::Milliseconds => self.physical.mul(&Int64Array::from((
+                    &[1_000_000_000],
+                ))?,
+                TimeUnit::Milliseconds => self.physical.mul(&Int64Array::from_slice(
                     "NanosecondsPerMillisecond",
-                    vec![1_000_000],
-                )))?,
-                TimeUnit::Microseconds => self.physical.mul(&Int64Array::from((
+                    &[1_000_000],
+                ))?,
+                TimeUnit::Microseconds => self.physical.mul(&Int64Array::from_slice(
                     "NanosecondsPerMicrosecond",
-                    vec![1_000],
-                )))?,
+                    &[1_000],
+                ))?,
                 TimeUnit::Nanoseconds => self.physical.clone(),
             };
             Ok(nanoseconds)
@@ -495,18 +506,19 @@ impl DurationArray {
         let minutes = match tu {
             TimeUnit::Seconds => self
                 .physical
-                .div(&Int64Array::from(("SecondsInMinute", vec![60])))?,
-            TimeUnit::Milliseconds => self
-                .physical
-                .div(&Int64Array::from(("MillisecondsInMinute", vec![60 * 1000])))?,
-            TimeUnit::Microseconds => self.physical.div(&Int64Array::from((
+                .div(&Int64Array::from_slice("SecondsInMinute", &[60]))?,
+            TimeUnit::Milliseconds => self.physical.div(&Int64Array::from_slice(
+                "MillisecondsInMinute",
+                &[60 * 1000],
+            ))?,
+            TimeUnit::Microseconds => self.physical.div(&Int64Array::from_slice(
                 "MicrosecondsInMinute",
-                vec![60 * 1_000_000],
-            )))?,
-            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+                &[60 * 1_000_000],
+            ))?,
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from_slice(
                 "NanosecondsInMinute",
-                vec![60 * 1_000_000_000],
-            )))?,
+                &[60 * 1_000_000_000],
+            ))?,
         };
         Ok(minutes)
     }
@@ -519,19 +531,19 @@ impl DurationArray {
         let hours = match tu {
             TimeUnit::Seconds => self
                 .physical
-                .div(&Int64Array::from(("SecondsInHour", vec![60 * 60])))?,
-            TimeUnit::Milliseconds => self.physical.div(&Int64Array::from((
+                .div(&Int64Array::from_slice("SecondsInHour", &[60 * 60]))?,
+            TimeUnit::Milliseconds => self.physical.div(&Int64Array::from_slice(
                 "MillisecondsInHour",
-                vec![60 * 60 * 1000],
-            )))?,
-            TimeUnit::Microseconds => self.physical.div(&Int64Array::from((
+                &[60 * 60 * 1000],
+            ))?,
+            TimeUnit::Microseconds => self.physical.div(&Int64Array::from_slice(
                 "MicrosecondsInHour",
-                vec![60 * 60 * 1_000_000],
-            )))?,
-            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+                &[60 * 60 * 1_000_000],
+            ))?,
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from_slice(
                 "NanosecondsInHour",
-                vec![60 * 60 * 1_000_000_000],
-            )))?,
+                &[60 * 60 * 1_000_000_000],
+            ))?,
         };
         Ok(hours)
     }
@@ -544,19 +556,19 @@ impl DurationArray {
         let days = match tu {
             TimeUnit::Seconds => self
                 .physical
-                .div(&Int64Array::from(("SecondsPerDay", vec![60 * 60 * 24])))?,
-            TimeUnit::Milliseconds => self.physical.div(&Int64Array::from((
+                .div(&Int64Array::from_slice("SecondsPerDay", &[60 * 60 * 24]))?,
+            TimeUnit::Milliseconds => self.physical.div(&Int64Array::from_slice(
                 "MillisecondsPerDay",
-                vec![1_000 * 60 * 60 * 24],
-            )))?,
-            TimeUnit::Microseconds => self.physical.div(&Int64Array::from((
+                &[1_000 * 60 * 60 * 24],
+            ))?,
+            TimeUnit::Microseconds => self.physical.div(&Int64Array::from_slice(
                 "MicrosecondsPerDay",
-                vec![1_000_000 * 60 * 60 * 24],
-            )))?,
-            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from((
+                &[1_000_000 * 60 * 60 * 24],
+            ))?,
+            TimeUnit::Nanoseconds => self.physical.div(&Int64Array::from_slice(
                 "NanosecondsPerDay",
-                vec![1_000_000_000 * 60 * 60 * 24],
-            )))?,
+                &[1_000_000_000 * 60 * 60 * 24],
+            ))?,
         };
         Ok(days)
     }
@@ -701,29 +713,30 @@ impl ImageArray {
                 let shape_offsets = (0..=ndim * self.len())
                     .step_by(ndim)
                     .map(|v| v as i64)
-                    .collect::<Vec<i64>>();
+                    .collect::<ScalarBuffer<i64>>();
                 let nulls = self.physical.nulls();
                 let data_series = self
                     .data_array()
                     .clone()
                     .into_series()
                     .cast(&DataType::List(inner_dtype.clone()))?;
-                let ca = self.channel_array();
-                let ha = self.height_array();
-                let wa = self.width_array();
+                let ha = self.heights().values();
+                let wa = self.widths().values();
+                let ca = self.channels().values();
                 for i in 0..self.len() {
-                    shapes.push(ha.value(i) as u64);
-                    shapes.push(wa.value(i) as u64);
-                    shapes.push(ca.value(i) as u64);
+                    shapes.push(ha[i] as u64);
+                    shapes.push(wa[i] as u64);
+                    shapes.push(ca[i] as u64);
                 }
                 let shapes_dtype = DataType::List(Box::new(DataType::UInt64));
-                let shape_offsets = daft_arrow::offset::OffsetsBuffer::try_from(shape_offsets)?;
+                let shape_offsets = OffsetBuffer::new(shape_offsets);
                 let shapes_array = ListArray::new(
                     Field::new("shape", shapes_dtype),
-                    UInt64Array::from((
-                        "shape",
+                    UInt64Array::new(
+                        Field::new("shape", DataType::UInt64).into(),
                         Box::new(daft_arrow::array::PrimitiveArray::from_vec(shapes)),
-                    ))
+                    )
+                    .unwrap()
                     .into_series(),
                     shape_offsets,
                     nulls.cloned(),
@@ -845,7 +858,7 @@ impl TensorArray {
                 let data_iterator = self.data_array().into_iter();
                 let nulls = self.data_array().nulls();
                 let shape_and_data_iter = shape_iterator.zip(data_iterator);
-                let zero_series = Int64Array::from(("item", [0].as_slice())).into_series();
+                let zero_series = Int64Array::from_slice("item", &[0]).into_series();
                 let mut non_zero_values = Vec::new();
                 let mut non_zero_indices = Vec::new();
                 for (i, (shape_series, data_series)) in shape_and_data_iter.enumerate() {
@@ -880,7 +893,7 @@ impl TensorArray {
                                     Some(offset)
                                 })
                                 .collect::<Vec<_>>();
-                            UInt64Array::from(("item", offsets_values)).into_series()
+                            UInt64Array::from_slice("item", offsets_values.as_slice()).into_series()
                         }
                         false => indices,
                     };
@@ -888,8 +901,7 @@ impl TensorArray {
                     non_zero_indices.push(indices_arr);
                 }
 
-                let offsets: Offsets<i64> =
-                    Offsets::try_from_iter(non_zero_values.iter().map(|s| s.len()))?;
+                let offsets = OffsetBuffer::from_lengths(non_zero_values.iter().map(|s| s.len()));
                 let non_zero_values_series =
                     Series::concat(&non_zero_values.iter().collect::<Vec<&Series>>())?;
                 let non_zero_indices_series =
@@ -1069,7 +1081,7 @@ fn cast_sparse_to_dense_for_inner_dtype(
     n_values: usize,
     non_zero_indices_array: &ListArray,
     non_zero_values_array: &ListArray,
-    offsets: &Offsets<i64>,
+    offsets: &OffsetBuffer<i64>,
     use_offset_indices: &bool,
 ) -> DaftResult<Box<dyn daft_arrow::array::Array>> {
     let item: Box<dyn daft_arrow::array::Array> = with_match_numeric_daft_types!(inner_dtype, |$T| {
@@ -1090,7 +1102,7 @@ fn cast_sparse_to_dense_for_inner_dtype(
                     true => {
                         let mut old_idx: u64 = 0;
                         for (idx, val) in index_array.into_iter().zip(values_array.into_iter()) {
-                            let list_start_offset = offsets.start_end(i).0;
+                            let list_start_offset = offsets.inner()[i] as usize;
                             let current_idx = idx.unwrap() + old_idx;
                             old_idx = current_idx;
                             values[list_start_offset + current_idx as usize] = *val.unwrap();
@@ -1098,7 +1110,7 @@ fn cast_sparse_to_dense_for_inner_dtype(
                     },
                     false => {
                         for (idx, val) in index_array.into_iter().zip(values_array.into_iter()) {
-                            let list_start_offset = offsets.start_end(i).0;
+                            let list_start_offset = offsets.inner()[i] as usize;
                             values[list_start_offset + *idx.unwrap() as usize] = *val.unwrap();
                         }
                     }
@@ -1137,7 +1149,7 @@ impl SparseTensorArray {
                         })
                     })
                     .collect();
-                let offsets: Offsets<i64> = Offsets::try_from_iter(sizes_vec.iter().copied())?;
+                let offsets = OffsetBuffer::from_lengths(sizes_vec.iter().copied());
                 let n_values = sizes_vec.iter().sum::<usize>();
                 let nulls = non_zero_indices_array.nulls();
                 let item = cast_sparse_to_dense_for_inner_dtype(
@@ -1232,7 +1244,7 @@ impl FixedShapeSparseTensorArray {
                 let shape_offsets = (0..=ndim * self.len())
                     .step_by(ndim)
                     .map(|v| v as i64)
-                    .collect::<Vec<i64>>();
+                    .collect::<ScalarBuffer<i64>>();
 
                 let nulls = self.physical.nulls();
 
@@ -1244,7 +1256,7 @@ impl FixedShapeSparseTensorArray {
                 let indices_arr = ia.cast(&DataType::List(Box::new(DataType::UInt64)))?;
 
                 // List -> Struct
-                let shape_offsets = daft_arrow::offset::OffsetsBuffer::try_from(shape_offsets)?;
+                let shape_offsets = OffsetBuffer::new(shape_offsets);
                 let shapes_array = ListArray::new(
                     Field::new("shape", DataType::List(Box::new(DataType::UInt64))),
                     Series::try_from((
@@ -1281,12 +1293,14 @@ impl FixedShapeSparseTensorArray {
                     )));
                 }
                 let n_values = size * non_zero_values_array.len();
+                let offsets = OffsetBuffer::from_repeated_length(target_size, self.len());
+
                 let item = cast_sparse_to_dense_for_inner_dtype(
                     inner_dtype,
                     n_values,
                     non_zero_indices_array,
                     non_zero_values_array,
-                    &Offsets::try_from_iter(repeat_n(target_size, self.len()))?,
+                    &offsets,
                     use_offset_indices,
                 )?;
                 let nulls = non_zero_values_array.nulls();
@@ -1325,7 +1339,7 @@ impl FixedShapeTensorArray {
                 let shape_offsets = (0..=ndim * self.len())
                     .step_by(ndim)
                     .map(|v| v as i64)
-                    .collect::<Vec<i64>>();
+                    .collect::<ScalarBuffer<i64>>();
 
                 let physical_arr = &self.physical;
                 let nulls = self.physical.nulls();
@@ -1336,7 +1350,7 @@ impl FixedShapeTensorArray {
                     .rename("data");
 
                 // List -> Struct
-                let shape_offsets = daft_arrow::offset::OffsetsBuffer::try_from(shape_offsets)?;
+                let shape_offsets = OffsetBuffer::new(shape_offsets);
                 let shapes_array = ListArray::new(
                     Field::new("shape", DataType::List(Box::new(DataType::UInt64))),
                     Series::try_from((
@@ -1364,7 +1378,7 @@ impl FixedShapeTensorArray {
             ) => {
                 let physical_arr = &self.physical;
                 let nulls = self.physical.nulls();
-                let zero_series = Int64Array::from(("item", [0].as_slice())).into_series();
+                let zero_series = Int64Array::from_slice("item", &[0]).into_series();
                 let mut non_zero_values = Vec::new();
                 let mut non_zero_indices = Vec::new();
                 for (i, data_series) in physical_arr.into_iter().enumerate() {
@@ -1397,15 +1411,14 @@ impl FixedShapeTensorArray {
                                     Some(offset)
                                 })
                                 .collect::<Vec<_>>();
-                            UInt64Array::from(("item", offsets_values)).into_series()
+                            UInt64Array::from_vec("item", offsets_values).into_series()
                         }
                         false => indices,
                     };
                     non_zero_values.push(data);
                     non_zero_indices.push(indices_arr);
                 }
-                let offsets: Offsets<i64> =
-                    Offsets::try_from_iter(non_zero_values.iter().map(|s| s.len()))?;
+                let offsets = OffsetBuffer::from_lengths(non_zero_values.iter().map(|s| s.len()));
                 let non_zero_values_series =
                     Series::concat(&non_zero_values.iter().collect::<Vec<&Series>>())?;
                 let non_zero_indices_series =
@@ -1473,7 +1486,7 @@ impl FixedSizeListArray {
             DataType::List(child_dtype) => {
                 let element_size = self.fixed_element_len();
                 let casted_child = self.flat_child.cast(child_dtype.as_ref())?;
-                let offsets = Offsets::try_from_iter(repeat_n(element_size, self.len()))?;
+                let offsets = OffsetBuffer::from_repeated_length(element_size, self.len());
                 Ok(ListArray::new(
                     Field::new(self.name().to_string(), dtype.clone()),
                     casted_child,
@@ -1591,8 +1604,8 @@ impl ListArray {
                         // Slice child to match offsets if necessary
                         if casted_child.len() / size > self.len() {
                             casted_child = casted_child.slice(
-                                *self.offsets().first() as usize,
-                                *self.offsets().last() as usize,
+                                *self.offsets().first().unwrap() as usize,
+                                *self.offsets().last().unwrap() as usize,
                             )?;
                         }
                         Ok(FixedSizeListArray::new(
@@ -1616,7 +1629,7 @@ impl ListArray {
                         for (start, end) in nulls.valid_slices() {
                             let len = end - start;
                             child_growable.add_nulls((start - invalid_ptr) * size);
-                            let child_start = self.offsets().start_end(start).0;
+                            let child_start = self.offsets().inner()[start] as usize;
                             child_growable.extend(0, child_start, len * size);
                             invalid_ptr = end;
                         }
@@ -1747,7 +1760,7 @@ impl StructArray {
                     })
                     .collect::<DaftResult<Vec<_>>>()?;
 
-                Ok(ListArray::try_from((self.name(), lists.as_slice()))?.into_series())
+                Ok(ListArray::from_series(self.name(), lists)?.into_series())
             }
             (DataType::Struct(..), DataType::FixedSizeList(child_dtype, length))
                 if *length == self.children.len() =>

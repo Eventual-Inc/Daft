@@ -23,7 +23,11 @@ impl ScalarUDF for Repeat {
         "repeat"
     }
 
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let s = inputs.required((0, "input"))?;
         let n = inputs.required((1, "n"))?;
 
@@ -109,7 +113,7 @@ where
             .zip(n.into_iter())
             .map(|(val, n)| match (val, n) {
                 (Some(val), Some(n)) => {
-                    let n: usize = NumCast::from(*n).ok_or_else(|| {
+                    let n: usize = NumCast::from(n).ok_or_else(|| {
                         DaftError::ComputeError(format!(
                             "Error in repeat: failed to cast rhs as usize {n}"
                         ))

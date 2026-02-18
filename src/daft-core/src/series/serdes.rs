@@ -1,13 +1,11 @@
 use std::{borrow::Cow, sync::Arc};
 
-use daft_arrow::{offset::OffsetsBuffer, types::months_days_ns};
+use arrow::buffer::OffsetBuffer;
+use daft_arrow::types::months_days_ns;
 use serde::{Deserializer, de::Visitor};
 
 use crate::{
-    array::{
-        ListArray, StructArray,
-        ops::{as_arrow::AsArrow, full::FullNull},
-    },
+    array::{ListArray, StructArray, ops::full::FullNull},
     datatypes::{
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
@@ -79,11 +77,12 @@ impl<'d> serde::Deserialize<'d> for Series {
                         map.next_value::<usize>()?,
                     )
                     .into_series()),
-                    DataType::Boolean => Ok(BooleanArray::from((
-                        field.name.as_str(),
-                        map.next_value::<Vec<Option<bool>>>()?.as_slice(),
-                    ))
-                    .into_series()),
+                    DataType::Boolean => Ok(map
+                        .next_value::<Vec<Option<bool>>>()?
+                        .into_iter()
+                        .collect::<BooleanArray>()
+                        .rename(field.name.as_str())
+                        .into_series()),
                     DataType::Int8 => Ok(Int8Array::from_iter(
                         field,
                         map.next_value::<Vec<Option<i8>>>()?.into_iter(),
@@ -191,10 +190,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                             .ok_or_else(|| serde::de::Error::missing_field("offsets"))?
                             .unwrap();
                         let offsets_array = offsets_series.i64().unwrap();
-                        let offsets = OffsetsBuffer::<i64>::try_from(
-                            offsets_array.as_arrow2().values().clone(),
-                        )
-                        .unwrap();
+                        let offsets = OffsetBuffer::new(offsets_array.values());
                         let flat_child = all_series
                             .pop()
                             .ok_or_else(|| serde::de::Error::missing_field("flat_child"))?

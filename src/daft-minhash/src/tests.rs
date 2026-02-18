@@ -61,7 +61,7 @@ fn test_minhash() {
     .unwrap();
     assert_eq!(res2.len(), 16);
     for i in 0..16 {
-        assert_ne!(res1[i], res2[i]);
+        assert_ne!(res1.value(i), res2.value(i));
     }
 
     let res3 = minhash(
@@ -73,7 +73,7 @@ fn test_minhash() {
     )
     .unwrap();
     for i in 0..16 {
-        assert_eq!(res2[i], res3[i]);
+        assert_eq!(res2.value(i), res3.value(i));
     }
 }
 
@@ -171,7 +171,7 @@ fn test_permutation_consistency() {
 
 #[test]
 fn test_edge_cases() {
-    const EMPTY_HASH_VALUE: u32 = 4294967295;
+    const EMPTY_HASH_VALUE: u32 = u32::MAX;
 
     let (perm_a_simd, perm_b_simd) = load_permutations(400, 16);
 
@@ -182,8 +182,8 @@ fn test_edge_cases() {
     let empty_hash = minhash(empty_text, (&perm_a_simd, &perm_b_simd), 16, 3, &hasher).unwrap();
 
     assert_eq!(empty_hash.len(), 16);
-    for hash in empty_hash {
-        assert_eq!(hash, EMPTY_HASH_VALUE);
+    for hash in &empty_hash {
+        assert_eq!(hash, Some(EMPTY_HASH_VALUE));
     }
 }
 

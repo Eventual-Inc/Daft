@@ -322,6 +322,8 @@ pub struct CsvFormatOption {
     pub quote: Option<u8>,
     pub escape: Option<u8>,
     pub header: Option<bool>,
+    pub date_format: Option<String>,
+    pub timestamp_format: Option<String>,
 }
 
 impl Default for CsvFormatOption {
@@ -331,12 +333,28 @@ impl Default for CsvFormatOption {
             quote: Some(b'"'),
             escape: Some(b'\\'),
             header: Some(true),
+            date_format: None,
+            timestamp_format: None,
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct JsonFormatOption {}
+pub struct JsonFormatOption {
+    pub ignore_null_fields: Option<bool>,
+    pub date_format: Option<String>,
+    pub timestamp_format: Option<String>,
+}
+
+impl Default for JsonFormatOption {
+    fn default() -> Self {
+        Self {
+            ignore_null_fields: Some(false),
+            date_format: None,
+            timestamp_format: None,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ParquetFormatOption {}
@@ -353,6 +371,12 @@ impl FormatSinkOption {
         match self {
             Self::Csv(csv) => csv,
             _ => CsvFormatOption::default(),
+        }
+    }
+    pub fn to_json(self) -> JsonFormatOption {
+        match self {
+            Self::Json(json) => json,
+            _ => JsonFormatOption::default(),
         }
     }
 }
@@ -374,6 +398,8 @@ impl PyFormatSinkOption {
         quote: Option<char>,
         escape: Option<char>,
         header: Option<bool>,
+        date_format: Option<String>,
+        timestamp_format: Option<String>,
     ) -> Self {
         let to_u8 = |c: Option<char>| -> Option<u8> {
             c.and_then(|ch| if ch.is_ascii() { Some(ch as u8) } else { None })
@@ -384,14 +410,25 @@ impl PyFormatSinkOption {
                 quote: to_u8(quote),
                 escape: to_u8(escape),
                 header,
+                date_format,
+                timestamp_format,
             }),
         }
     }
 
     #[classmethod]
-    pub fn json(_cls: &pyo3::prelude::Bound<pyo3::types::PyType>) -> Self {
+    pub fn json(
+        _cls: &pyo3::prelude::Bound<pyo3::types::PyType>,
+        ignore_null_fields: Option<bool>,
+        date_format: Option<String>,
+        timestamp_format: Option<String>,
+    ) -> Self {
         Self {
-            inner: FormatSinkOption::Json(JsonFormatOption {}),
+            inner: FormatSinkOption::Json(JsonFormatOption {
+                ignore_null_fields,
+                date_format,
+                timestamp_format,
+            }),
         }
     }
 

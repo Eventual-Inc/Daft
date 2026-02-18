@@ -3,7 +3,7 @@ use std::iter::RepeatN;
 use common_error::{DaftError, DaftResult};
 use daft_core::{
     array::DataArray,
-    prelude::{DaftIntegerType, DaftNumericType, DataType, FullNull, Utf8Array},
+    prelude::{DaftIntegerType, DaftNumericType, DataType, Field, FullNull, Utf8Array},
     series::{IntoSeries, Series},
     with_match_integer_daft_types,
 };
@@ -126,7 +126,11 @@ where
                 })
                 .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>()?;
 
-            Utf8Array::from((arr.name(), Box::new(arrow_result)))
+            Utf8Array::new(
+                Field::new(arr.name(), DataType::Utf8).into(),
+                Box::new(arrow_result),
+            )
+            .unwrap()
         }
         _ => {
             let length_iter = length.into_iter();
@@ -135,7 +139,7 @@ where
                 .zip(padchar_iter)
                 .map(|((val, len), padchar)| match (val, len, padchar) {
                     (Some(val), Some(len), Some(padchar)) => {
-                        let len: usize = NumCast::from(*len).ok_or_else(|| {
+                        let len: usize = NumCast::from(len).ok_or_else(|| {
                             DaftError::ComputeError(format!(
                                 "Error in pad: failed to cast length as usize {len}"
                             ))
@@ -146,7 +150,11 @@ where
                 })
                 .collect::<DaftResult<daft_arrow::array::Utf8Array<i64>>>()?;
 
-            Utf8Array::from((arr.name(), Box::new(arrow_result)))
+            Utf8Array::new(
+                Field::new(arr.name(), DataType::Utf8).into(),
+                Box::new(arrow_result),
+            )
+            .unwrap()
         }
     };
 

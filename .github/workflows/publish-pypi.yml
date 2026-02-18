@@ -10,7 +10,7 @@ permissions: {}
 env:
   PYTHON_VERSION: 3.11
   UV_SYSTEM_PYTHON: 1
-  DAFT_ANALYTICS_ENABLED: '0'
+  DAFT_ANALYTICS_ENABLED: "0"
   DAFT_PROGRESS_BAR: 0
 
 defaults:
@@ -19,7 +19,7 @@ defaults:
 
 jobs:
   build:
-    name: 'Build Daft wheel for ${{ matrix.os }}-${{ matrix.arch }}-lts=${{ matrix.lts }}'
+    name: "Build Daft wheel for ${{ matrix.os }}-${{ matrix.arch }}-lts=${{ matrix.lts }}"
     permissions:
       contents: read
     uses: ./.github/workflows/build-wheel.yml
@@ -48,10 +48,10 @@ jobs:
     environment:
       name: pypi
     permissions:
-      id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing. It is also tied to the name of the workflow file, so do not change the file name without changing the OIDC config.
+      id-token: write # IMPORTANT: this permission is mandatory for trusted publishing. It is also tied to the name of the workflow file, so do not change the file name without changing the OIDC config.
     needs: build
     steps:
-    - uses: actions/download-artifact@v6
+    - uses: actions/download-artifact@v7
       with:
         pattern: wheels-*
         merge-multiple: true
@@ -69,6 +69,9 @@ jobs:
 
     steps:
     - uses: slackapi/slack-github-action@v2.1.1
+      if: ${{ env.SLACK_WEBHOOK_URL }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       with:
         payload: |
           {
@@ -82,5 +85,5 @@ jobs:
               }
             ]
           }
-        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook

@@ -60,8 +60,7 @@ build-release: check-toolchain .venv  ## Compile and install a faster Daft binar
 
 .PHONY: build-whl
 build-whl: check-toolchain .venv  ## Compile Daft for development, only generate whl file without installation
-	cargo clean --target-dir target
-	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin build
+	@unset CONDA_PREFIX && PYO3_PYTHON=$(VENV_BIN)/python $(VENV_BIN)/maturin build --release
 
 .PHONY: test
 test: .venv build  ## Run tests
@@ -80,11 +79,6 @@ dsdgen: .venv ## Generate TPC-DS data
 
 .PHONY: install-docs-deps
 install-docs-deps:
-	@if ! command -v bun >/dev/null 2>&1; then \
-		echo "Installing Bun..."; \
-		curl -fsSL https://bun.sh/install | bash; \
-		export PATH="$$HOME/.bun/bin:$$PATH"; \
-	fi
 	source $(VENV_BIN)/activate && uv sync --all-extras --all-groups
 	source $(VENV_BIN)/activate && uv pip install -e docs/plugins/nav_hide_children
 
@@ -114,12 +108,14 @@ lint: check-toolchain .venv  ## Lint Python and Rust code
 	source $(VENV_BIN)/activate && pre-commit run clippy --all-files
 
 .PHONY: precommit
-precommit:  check-toolchain .venv  ## Run all pre-commit hooks
+precommit: check-toolchain .venv  ## Run all pre-commit hooks
 	source $(VENV_BIN)/activate && pre-commit run --all-files
 
 .PHONY: clean
 clean:
+ifneq ($(SKIP_VENV),true)
 	rm -rf $(VENV)
+endif
 	rm -rf ./target
 	rm -rf ./site
 	rm -f daft/daft.abi3.so

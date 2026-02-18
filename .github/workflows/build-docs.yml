@@ -21,18 +21,25 @@ jobs:
   docgen:
     runs-on: ubuntu-latest
     env:
-      python-version: '3.10'
+      python-version: "3.10"
     steps:
     - name: Free Disk Space
       uses: jlumbroso/free-disk-space@main
       with:
         tool-cache: false
         android: true
-        dotnet: false
+        dotnet: true
         haskell: true
         large-packages: false
-        docker-images: false
+        docker-images: true
         swap-storage: true
+    - name: Additional disk cleanup
+      run: |
+        sudo rm -rf /usr/share/swift || true
+        sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+        sudo rm -rf /opt/hostedtoolcache/go || true
+        sudo rm -rf /opt/hostedtoolcache/Ruby || true
+        sudo rm -rf /opt/hostedtoolcache/node || true
     - uses: actions/checkout@v6
     - uses: moonrepo/setup-rust@v1
       with:
@@ -40,7 +47,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2
       with:
         key: ${{ runner.os }}-build
-        cache-all-crates: 'true'
+        cache-all-crates: "true"
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -67,7 +74,7 @@ jobs:
         maturin develop --uv
         mkdocs build
     - name: Upload built docs
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: html-docs
         path: site

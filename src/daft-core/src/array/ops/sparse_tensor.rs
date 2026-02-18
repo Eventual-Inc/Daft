@@ -41,6 +41,7 @@ impl FixedShapeSparseTensorArray {
 mod tests {
     use std::vec;
 
+    use arrow::buffer::OffsetBuffer;
     use common_error::DaftResult;
 
     use crate::{array::prelude::*, datatypes::prelude::*, series::IntoSeries};
@@ -52,42 +53,24 @@ mod tests {
 
         let values_array = ListArray::new(
             Field::new("values", DataType::List(Box::new(DataType::Int64))),
-            Int64Array::from((
-                "item",
-                Box::new(daft_arrow::array::Int64Array::from_iter(
-                    [Some(1), Some(2), Some(0), Some(3)].iter(),
-                )),
-            ))
-            .into_series(),
-            daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 2, 3, 4])?,
+            Int64Array::from_slice("item", &[1, 2, 0, 3]).into_series(),
+            OffsetBuffer::new(vec![0, 2, 3, 4].into()),
             Some(nulls.clone()),
         )
         .into_series();
 
         let indices_array = ListArray::new(
             Field::new("indices", DataType::List(Box::new(DataType::UInt64))),
-            UInt64Array::from((
-                "item",
-                Box::new(daft_arrow::array::UInt64Array::from_iter(
-                    [Some(1), Some(2), Some(0), Some(2)].iter(),
-                )),
-            ))
-            .into_series(),
-            daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 2, 3, 4])?,
+            UInt64Array::from_slice("item", &[1, 2, 0, 2]).into_series(),
+            OffsetBuffer::new(vec![0, 2, 3, 4].into()),
             Some(nulls.clone()),
         )
         .into_series();
 
         let shapes_array = ListArray::new(
             Field::new("shape", DataType::List(Box::new(DataType::UInt64))),
-            UInt64Array::from((
-                "item",
-                Box::new(daft_arrow::array::UInt64Array::from_iter(
-                    [Some(3), Some(3), Some(3)].iter(),
-                )),
-            ))
-            .into_series(),
-            daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 2, 3])?,
+            UInt64Array::from_slice("item", &[3, 3, 3]).into_series(),
+            OffsetBuffer::new(vec![0, 1, 2, 3].into()),
             Some(nulls.clone()),
         )
         .into_series();
@@ -106,10 +89,13 @@ mod tests {
             sparse_tensor_array.cast(&fixed_shape_sparse_tensor_dtype)?;
         let roundtrip_tensor = fixed_shape_sparse_tensor_array.cast(&dtype)?;
 
-        let round_trip_tensor_arrow = roundtrip_tensor.to_arrow2();
-        let sparse_tensor_array_arrow = sparse_tensor_array.to_arrow2();
+        let round_trip_tensor_arrow = roundtrip_tensor.to_arrow()?;
+        let sparse_tensor_array_arrow = sparse_tensor_array.to_arrow()?;
 
-        assert_eq!(round_trip_tensor_arrow, sparse_tensor_array_arrow);
+        assert_eq!(
+            round_trip_tensor_arrow.to_data(),
+            sparse_tensor_array_arrow.to_data()
+        );
 
         Ok(())
     }

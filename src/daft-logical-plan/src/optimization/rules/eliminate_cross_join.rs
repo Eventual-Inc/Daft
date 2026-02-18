@@ -6,9 +6,9 @@ use common_treenode::{Transformed, TreeNode};
 use daft_algebra::boolean::combine_conjunction;
 use daft_core::{
     join::JoinType,
-    prelude::{Schema, SchemaRef, TimeUnit},
+    prelude::{Operator, Schema, SchemaRef, TimeUnit},
 };
-use daft_dsl::{Expr, ExprRef, Operator, optimization::get_required_columns};
+use daft_dsl::{Expr, ExprRef, optimization::get_required_columns};
 use daft_schema::dtype::DataType;
 
 use super::OptimizerRule;

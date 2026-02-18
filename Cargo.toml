@@ -133,7 +133,7 @@ ignored = ["lzma-sys"]
 
 [patch.crates-io]
 arrow2 = {path = "src/arrow2"}
-parquet-format-safe = {path = "src/parquet-format-safe"}
+parquet-format-safe = {git = "https://github.com/Eventual-Inc/parquet-format-safe", tag = "patched-parquet-format-safe"}
 parquet2 = {path = "src/parquet2"}
 
 [profile.bench]
@@ -222,12 +222,10 @@ members = [
   "src/daft-writers",
   "src/hyperloglog",
   "src/parquet2",
-  "src/parquet-format-safe",
   "src/daft-cli"
 ]
 
 [workspace.dependencies]
-ahash = "0.8.12"
 arrow = "57.1.0"
 arrow-array = {version = "57.1.0", features = ["chrono-tz"]}
 arrow-buffer = "57.1.0"
@@ -236,6 +234,7 @@ arrow-data = "57.1.0"
 arrow-flight = "57.1.0"
 arrow-ipc = "57.1.0"
 arrow-json = "57.1.0"
+arrow-row = "57.1.0"
 arrow-schema = "57.1.0"
 approx = "0.5.1"
 arc-swap = "1.7.1"
@@ -373,7 +372,8 @@ version = "0.4.29"
 
 [workspace.dependencies.parquet-format-safe]
 features = ['async']
-path = "src/parquet-format-safe"
+git = "https://github.com/Eventual-Inc/parquet-format-safe"
+tag = "patched-parquet-format-safe"
 
 [workspace.dependencies.parquet2]
 features = ['async']

@@ -3,7 +3,7 @@ use std::sync::{Arc, atomic::Ordering};
 use common_metrics::{
     CPU_US_KEY, Counter, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, snapshot::DefaultSnapshot,
 };
-use opentelemetry::{KeyValue, global};
+use opentelemetry::{KeyValue, metrics::Meter};
 
 // ----------------------- General Traits for Runtime Stat Collection ----------------------- //
 
@@ -34,14 +34,13 @@ pub struct DefaultRuntimeStats {
 }
 
 impl DefaultRuntimeStats {
-    pub fn new(id: usize) -> Self {
-        let meter = global::meter("daft.local.node_stats");
+    pub fn new(meter: &Meter, id: usize) -> Self {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, CPU_US_KEY, None),
-            rows_in: Counter::new(&meter, ROWS_IN_KEY, None),
-            rows_out: Counter::new(&meter, ROWS_OUT_KEY, None),
+            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
             node_kv,
         }
     }

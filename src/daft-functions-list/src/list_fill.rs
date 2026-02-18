@@ -26,7 +26,11 @@ impl ScalarUDF for ListFill {
         "list_fill"
     }
 
-    fn call(&self, inputs: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        inputs: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let Args { elem, input: num } = inputs.try_into()?;
 
         let num = num.cast(&DataType::Int64)?;
@@ -62,13 +66,13 @@ pub fn list_fill(elem: ExprRef, n: ExprRef) -> ExprRef {
 #[cfg(test)]
 #[allow(deprecated)]
 mod tests {
-    use daft_arrow::offset::OffsetsBuffer;
+    use arrow::buffer::OffsetBuffer;
     use daft_core::{
         array::ListArray,
         datatypes::{Int8Array, Utf8Array},
         series::IntoSeries,
     };
-    use daft_dsl::{lit, null_lit};
+    use daft_dsl::{functions::scalar::EvalContext, lit, null_lit};
 
     use super::*;
 
@@ -123,9 +127,11 @@ mod tests {
         )
         .into_series();
 
+        let ctx = EvalContext {
+            row_count: num.len(),
+        };
         let args = FunctionArgs::new_unnamed(vec![num]);
-
-        let error = fill.call(args).unwrap_err();
+        let error = fill.call(args, &ctx).unwrap_err();
         assert_eq!(
             error.to_string(),
             "DaftError::ValueError Required argument `input` not found"
@@ -142,9 +148,13 @@ mod tests {
         .into_series();
         let str = Utf8Array::from_iter("s2", vec![None, Some("hello"), Some("world")].into_iter())
             .into_series();
+        let ctx = EvalContext {
+            row_count: num.len(),
+        };
         let args = FunctionArgs::new_unnamed(vec![str, num]);
-        let error =
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| fill.call(args).unwrap()));
+        let error = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            fill.call(args, &ctx).unwrap()
+        }));
         assert!(error.is_err());
     }
 
@@ -158,8 +168,11 @@ mod tests {
         .into_series();
         let str = Utf8Array::from_iter("s2", vec![None, Some("hello"), Some("world")].into_iter())
             .into_series();
+        let ctx = EvalContext {
+            row_count: num.len(),
+        };
         let args = FunctionArgs::new_unnamed(vec![str, num]);
-        let result = fill.call(args)?;
+        let result = fill.call(args, &ctx)?;
         // the expected result should be a list of strings: [[None], [], ["world", "world", "world"]]
         let flat_child = Utf8Array::from_iter(
             "s2",
@@ -167,7 +180,7 @@ mod tests {
         )
         .into_series();
         let offsets = vec![0, 1, 1, 4];
-        let offsets = OffsetsBuffer::try_from(offsets).unwrap();
+        let offsets = OffsetBuffer::new(offsets.into());
         let expected = ListArray::new(
             Field::new("s2", DataType::List(Box::new(DataType::Utf8))),
             flat_child,

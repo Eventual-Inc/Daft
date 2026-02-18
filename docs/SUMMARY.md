@@ -14,8 +14,10 @@
         * [Images](modalities/images.md)
         * [Audio](modalities/audio.md)
         * [Videos](modalities/videos.md)
+        * [Documents](modalities/documents.md)
         * [JSON and Nested Data](modalities/json.md)
-        * [URLs and Files](modalities/urls.md)
+        * [Files and URLs](modalities/files.md)
+        * [Embeddings](modalities/embeddings.md)
         * [Custom Modalities](modalities/custom.md)
     * Scale Custom Python Code
         * [New UDF Overview](custom-code/index.md)
@@ -55,10 +57,6 @@
         * [Partitioning and Batching](optimization/partitioning.md)
         * [Observability](optimization/observability.md)
         * [Logging](optimization/logging.md)
-    * Contributing
-        * [Overview](contributing/overview.md)
-        * [Development Guide](contributing/development.md)
-        * [Contributing AI Functions](contributing/contributing-ai-functions.md)
     * [Sessions, Catalogs, and Tables](configuration/sessions-usage.md)
     * [Roadmap](roadmap.md)
     * [Benchmarks](benchmarks/index.md)
@@ -67,6 +65,8 @@
     * [Usage Telemetry](telemetry.md)
 * Examples
     * [Examples](examples/index.md)
+    * [Multimodal Structured Outputs: Evaluating Image Understanding](examples/mm_structured_outputs.md)
+    * [Voice AI Analytics with Faster-Whisper and embed_text](examples/voice-ai-analytics.md)
     * [Web Text Deduplication](examples/minhash-dedupe.md)
     * [Voice AI Analytics](examples/voice-ai-analytics.md)
     * [Audio Transcription](examples/audio-transcription.md)
@@ -87,7 +87,8 @@
     * [Functions](api/functions/)
     * [User-Defined Functions](api/udf.md)
     * Data Types
-        * [DataType](api/datatypes/index.md)
+        * [DataType](api/datatypes/all_datatypes.md)
+        * [File Types](api/datatypes/file_types.md)
         * [Type Conversions](api/datatypes/type_conversions.md)
         * [Casting](api/datatypes/casting.md)
     * [Window](api/window.md)
@@ -106,6 +107,10 @@
         * [USE](sql/statements/use.md)
     * [Data Types](sql/datatypes.md)
     * [Window Functions](sql/window_functions.md)
+* Contributing
+    * [Overview](contributing/overview.md)
+    * [Development Guide](contributing/development.md)
+    * [Contributing AI Functions](contributing/contributing-ai-functions.md)
 * [Daft Cloud](https://www.daft.ai/cloud)
 
 <!--

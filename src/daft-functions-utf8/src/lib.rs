@@ -1,6 +1,6 @@
 #![allow(deprecated, reason = "arrow2 migration")]
-
 mod capitalize;
+mod case;
 mod contains;
 mod count_matches;
 mod endswith;
@@ -33,6 +33,7 @@ mod upper;
 pub(crate) mod utils;
 
 pub use capitalize::*;
+pub use case::*;
 pub use contains::*;
 pub use count_matches::*;
 pub use endswith::*;
@@ -66,12 +67,14 @@ pub struct Utf8Functions;
 
 impl daft_dsl::functions::FunctionModule for Utf8Functions {
     fn register(parent: &mut daft_dsl::functions::FunctionRegistry) {
+        parent.add_fn(CamelCase);
         parent.add_fn(Capitalize);
         parent.add_fn(Contains);
         parent.add_fn(CountMatches);
         parent.add_fn(EndsWith);
         parent.add_fn(Find);
         parent.add_fn(ILike);
+        parent.add_fn(KebabCase);
         parent.add_fn(Left);
         parent.add_fn(LengthBytes);
         parent.add_fn(Like);
@@ -83,19 +86,24 @@ impl daft_dsl::functions::FunctionModule for Utf8Functions {
         parent.add_fn(RegexpExtract);
         parent.add_fn(RegexpExtractAll);
         parent.add_fn(RegexpMatch);
+        parent.add_fn(RegexpReplace);
+        parent.add_fn(RegexpSplit);
         parent.add_fn(Repeat);
         parent.add_fn(Replace);
-        parent.add_fn(RegexpReplace);
         parent.add_fn(Reverse);
         parent.add_fn(Right);
         parent.add_fn(RPad);
         parent.add_fn(RStrip);
+        parent.add_fn(SnakeCase);
         parent.add_fn(Split);
-        parent.add_fn(RegexpSplit);
         parent.add_fn(StartsWith);
         parent.add_fn(Substr);
+        parent.add_fn(TitleCase);
         parent.add_fn(ToDate);
         parent.add_fn(ToDatetime);
         parent.add_fn(Upper);
+        parent.add_fn(UpperCamelCase);
+        parent.add_fn(UpperKebabCase);
+        parent.add_fn(UpperSnakeCase);
     }
 }

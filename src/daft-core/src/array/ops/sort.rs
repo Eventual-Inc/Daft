@@ -1,11 +1,17 @@
 use std::sync::Arc;
 
-use arrow::array::{Array, ArrowPrimitiveType};
-use common_error::DaftResult;
+use arrow::{
+    array::{
+        Array, ArrayRef, ArrowPrimitiveType, Float32Array as ArrowFloat32Array,
+        Float64Array as ArrowFloat64Array, make_comparator,
+    },
+    compute::SortOptions,
+};
+use common_error::{DaftError, DaftResult};
 use daft_arrow::{
     array::ord::{self, DynComparator},
     // A real tragedy. Arrow-rs has all these functions but uses 32 bit indices instead of 64 bit indices.
-    compute::sort::{SortOptions, sort, sort_to_indices},
+    compute::sort::{sort, sort_to_indices},
     types::Index,
 };
 
@@ -30,7 +36,7 @@ use crate::{
         },
     },
     file::DaftMediaType,
-    kernels::search_sorted::{build_nulls_first_compare_with_nulls, cmp_float},
+    kernels::search_sorted::cmp_float,
     prelude::UInt64Array,
     series::Series,
 };
@@ -41,6 +47,31 @@ pub fn build_multi_array_compare(
     nulls_first: &[bool],
 ) -> DaftResult<DynComparator> {
     build_multi_array_bicompare(arrays, arrays, descending, nulls_first)
+}
+
+/// Canonicalize negative NaN to positive NaN so arrow-rs total ordering sorts them correctly.
+///
+/// arrow-rs `make_comparator` uses IEEE 754 total ordering where -NaN < -Inf < ... < +Inf < +NaN.
+/// Daft's sort contract treats ALL NaN as greater than regular values, so we normalize
+/// negative NaN to positive NaN before comparison.
+///
+/// TODO: Replace this with a custom `cmp_float`-based comparator to avoid the allocation.
+fn canonicalize_nan(array: ArrayRef) -> ArrayRef {
+    if let Some(f64_arr) = array.as_any().downcast_ref::<ArrowFloat64Array>() {
+        let canonical: ArrowFloat64Array = f64_arr
+            .iter()
+            .map(|v| v.map(|x| if x.is_nan() { f64::NAN } else { x }))
+            .collect();
+        Arc::new(canonical)
+    } else if let Some(f32_arr) = array.as_any().downcast_ref::<ArrowFloat32Array>() {
+        let canonical: ArrowFloat32Array = f32_arr
+            .iter()
+            .map(|v| v.map(|x| if x.is_nan() { f32::NAN } else { x }))
+            .collect();
+        Arc::new(canonical)
+    } else {
+        array
+    }
 }
 
 pub fn build_multi_array_bicompare(
@@ -57,12 +88,16 @@ pub fn build_multi_array_bicompare(
         .zip(descending.iter())
         .zip(nulls_first.iter())
     {
-        cmp_list.push(build_nulls_first_compare_with_nulls(
-            l.to_arrow2().as_ref(),
-            r.to_arrow2().as_ref(),
-            *desc,
-            *nf,
-        )?);
+        let l_arrow = canonicalize_nan(l.to_arrow()?);
+        let r_arrow = canonicalize_nan(r.to_arrow()?);
+        cmp_list.push(
+            make_comparator(
+                l_arrow.as_ref(),
+                r_arrow.as_ref(),
+                SortOptions::new(*desc, *nf),
+            )
+            .map_err(DaftError::ArrowRsError)?,
+        );
     }
 
     let combined_comparator = Box::new(move |a_idx: usize, b_idx: usize| -> std::cmp::Ordering {
@@ -447,14 +482,18 @@ impl NullArray {
 
 impl BooleanArray {
     pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
-        let options = SortOptions {
+        let options = daft_arrow::compute::sort::SortOptions {
             descending,
             nulls_first,
         };
 
         let result = sort_to_indices::<u64>(self.data(), &options, None)?;
 
-        Ok(UInt64Array::from((self.name(), Box::new(result))))
+        Ok(UInt64Array::new(
+            Field::new(self.name(), DataType::UInt64).into(),
+            Box::new(result),
+        )
+        .unwrap())
     }
 
     pub fn argsort_multikey(
@@ -512,7 +551,7 @@ impl BooleanArray {
     }
 
     pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
-        let options = SortOptions {
+        let options = daft_arrow::compute::sort::SortOptions {
             descending,
             nulls_first,
         };
@@ -527,14 +566,18 @@ macro_rules! impl_binary_like_sort {
     ($da:ident) => {
         impl $da {
             pub fn argsort(&self, descending: bool, nulls_first: bool) -> DaftResult<UInt64Array> {
-                let options = SortOptions {
+                let options = daft_arrow::compute::sort::SortOptions {
                     descending,
                     nulls_first,
                 };
 
                 let result = sort_to_indices::<u64>(self.data(), &options, None)?;
 
-                Ok(UInt64Array::from((self.name(), Box::new(result))))
+                Ok(UInt64Array::new(
+                    Field::new(self.name(), DataType::UInt64).into(),
+                    Box::new(result),
+                )
+                .unwrap())
             }
 
             pub fn argsort_multikey(
@@ -594,7 +637,7 @@ macro_rules! impl_binary_like_sort {
             }
 
             pub fn sort(&self, descending: bool, nulls_first: bool) -> DaftResult<Self> {
-                let options = SortOptions {
+                let options = daft_arrow::compute::sort::SortOptions {
                     descending,
                     nulls_first,
                 };

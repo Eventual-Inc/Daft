@@ -65,10 +65,6 @@ jobs:
         fi
         uv pip install twine yq setuptools_scm
 
-    - uses: oven-sh/setup-bun@v2
-      with:
-        bun-version: latest
-
     - name: Patch package version
       run: |
         VERSION="$(python -m setuptools_scm | sed 's/\.dev/-dev/'g)" # replace ".dev" with "-dev" to comply with Cargo SemVer rules
@@ -94,13 +90,15 @@ jobs:
     - name: Setup Node
       uses: actions/setup-node@v6
       with:
-        node-version: 20
+        node-version: "22"
+        cache: "npm"
+        cache-dependency-path: src/daft-dashboard/frontend/package-lock.json
 
-    - name: Build dashboard with Bun
+    - name: Build dashboard
       working-directory: ./src/daft-dashboard/frontend
       run: |
-        bun install
-        bun run build
+        npm ci
+        npm run build
 
     - name: Build wheels - Mac and Windows x86
       if: ${{ ((inputs.os == 'macos') || (inputs.os == 'windows')) && (inputs.arch == 'x86_64')  }}
@@ -146,7 +144,7 @@ jobs:
         GITHUB_ACTIONS: true
 
     - name: Upload wheels
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: wheels-${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-lto=${{ inputs.use_lto }}
         path: dist
@@ -166,7 +164,7 @@ jobs:
     steps:
     - uses: actions/checkout@v6
     - name: Download built wheels
-      uses: actions/download-artifact@v6
+      uses: actions/download-artifact@v7
       with:
         pattern: wheels-${{ inputs.os }}-${{ inputs.arch }}-lts=${{ inputs.lts }}-lto=${{ inputs.use_lto }}
         merge-multiple: true
@@ -187,7 +185,7 @@ jobs:
         retry_wait_seconds: 10
         command: |
           source venv/bin/activate
-          pip install ray pytest pandas dist/*.whl --force-reinstall
+          pip install ray pytest pandas pytz numpy pyarrow dist/*.whl --force-reinstall
           rm -rf daft
     - name: Run dataframe tests
       run: |

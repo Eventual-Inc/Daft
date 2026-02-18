@@ -1812,7 +1812,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow",
  "arrow-schema",
- "daft-arrow",
  "pyo3",
 ]
 
@@ -1928,7 +1927,6 @@ dependencies = [
  "atomic_float",
  "bincode",
  "common-py-serde",
- "daft-schema",
  "enum_dispatch",
  "indicatif 0.17.11",
  "itertools 0.14.0",
@@ -1964,6 +1962,7 @@ name = "common-pattern"
 version = "0.3.0-dev0"
 dependencies = [
  "regex",
+ "regex-syntax 0.8.8",
 ]
 
 [[package]]
@@ -2031,6 +2030,7 @@ name = "common-tracing"
 version = "0.3.0-dev0"
 dependencies = [
  "common-runtime",
+ "log",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
@@ -2543,6 +2543,7 @@ dependencies = [
  "clap",
  "console 0.16.2",
  "daft-dashboard",
+ "libc",
  "pyo3",
  "tokio",
  "tracing-subscriber",
@@ -2576,6 +2577,7 @@ dependencies = [
  "log",
  "pyo3",
  "reqwest 0.12.28",
+ "uuid 1.19.0",
 ]
 
 [[package]]
@@ -2583,6 +2585,7 @@ name = "daft-core"
 version = "0.3.0-dev0"
 dependencies = [
  "arrow",
+ "arrow-row",
  "bincode",
  "chrono",
  "chrono-tz",
@@ -2690,7 +2693,6 @@ dependencies = [
 name = "daft-distributed"
 version = "0.3.0-dev0"
 dependencies = [
- "bincode",
  "common-daft-config",
  "common-display",
  "common-error",
@@ -2703,6 +2705,7 @@ dependencies = [
  "common-runtime",
  "common-scan-info",
  "common-treenode",
+ "daft-context",
  "daft-dsl",
  "daft-local-plan",
  "daft-logical-plan",
@@ -2717,6 +2720,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
+ "smallvec",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -2774,6 +2778,7 @@ dependencies = [
 name = "daft-functions"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
  "common-error",
  "daft-core",
  "daft-dsl",
@@ -2783,6 +2788,7 @@ dependencies = [
  "serde",
  "snafu",
  "typetag",
+ "uuid 1.19.0",
 ]
 
 [[package]]
@@ -2875,6 +2881,7 @@ dependencies = [
 name = "daft-functions-uri"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
  "async-trait",
  "bytes",
  "common-error",
@@ -2894,16 +2901,15 @@ dependencies = [
 name = "daft-functions-utf8"
 version = "0.3.0-dev0"
 dependencies = [
- "ahash",
  "aho-corasick",
  "arrow",
  "chrono",
  "chrono-tz",
  "common-error",
- "common-pattern",
  "daft-arrow",
  "daft-core",
  "daft-dsl",
+ "heck 0.5.0",
  "itertools 0.14.0",
  "num-traits",
  "regex",
@@ -3027,7 +3033,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "arc-swap",
  "async-trait",
- "bincode",
  "capitalize",
  "common-daft-config",
  "common-display",
@@ -3082,8 +3087,12 @@ dependencies = [
 name = "daft-local-plan"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow-array",
+ "arrow-schema",
+ "bincode",
  "common-error",
  "common-io-config",
+ "common-metrics",
  "common-py-serde",
  "common-resource-request",
  "common-scan-info",
@@ -3093,6 +3102,7 @@ dependencies = [
  "daft-functions",
  "daft-functions-list",
  "daft-logical-plan",
+ "daft-recordbatch",
  "indexmap 2.13.0",
  "log",
  "pyo3",
@@ -3177,6 +3187,7 @@ name = "daft-minhash"
 version = "0.3.0-dev0"
 dependencies = [
  "approx",
+ "arrow",
  "common-error",
  "daft-hash",
  "fastrand 2.3.0",
@@ -3190,11 +3201,11 @@ dependencies = [
 name = "daft-parquet"
 version = "0.3.0-dev0"
 dependencies = [
+ "arrow",
  "async-compat",
  "async-stream",
  "bincode",
  "bytes",
- "common-arrow-ffi",
  "common-error",
  "common-runtime",
  "daft-arrow",
@@ -3449,6 +3460,8 @@ dependencies = [
  "arrow-json",
  "arrow-schema",
  "async-trait",
+ "chrono",
+ "chrono-tz",
  "common-daft-config",
  "common-error",
  "common-file-formats",
@@ -6081,10 +6094,10 @@ dependencies = [
 [[package]]
 name = "parquet-format-safe"
 version = "0.2.4"
+source = "git+https://github.com/Eventual-Inc/parquet-format-safe?tag=patched-parquet-format-safe#29ba7466ab3eb2c521304420e28eabc6cdaa5749"
 dependencies = [
  "async-trait",
  "futures",
- "tokio",
 ]
 
 [[package]]

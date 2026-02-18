@@ -8,7 +8,7 @@ use crate::prelude::PythonArray;
 use crate::{
     datatypes::{
         BinaryArray, BooleanArray, DaftLogicalType, DaftPrimitiveType, DataType, ExtensionArray,
-        FixedSizeBinaryArray, Int64Array, IntervalArray, NullArray, Utf8Array,
+        Field, FixedSizeBinaryArray, Int64Array, IntervalArray, NullArray, Utf8Array,
         logical::LogicalArray,
     },
     series::{IntoSeries, Series},
@@ -171,8 +171,9 @@ impl serde::Serialize for StructArray {
         values.extend(self.children.iter().map(Some));
 
         let nulls = self.nulls().map(|b| {
-            let bitmap = daft_arrow::buffer::from_null_buffer(b.clone());
-            BooleanArray::from(("validity", bitmap)).into_series()
+            BooleanArray::from_null_buffer("validity", b)
+                .unwrap()
+                .into_series()
         });
         values.push(nulls.as_ref());
 
@@ -191,18 +192,26 @@ impl serde::Serialize for ListArray {
         let mut values = Vec::with_capacity(3);
 
         values.push(Some(&self.flat_child));
-
+        let scalar_buffer = self.offsets().inner().clone();
+        let buffer: arrow::buffer::Buffer = scalar_buffer.into();
+        let arrow2_buffer: daft_arrow::buffer::Buffer<i64> = buffer.into();
         let arrow2_offsets = daft_arrow::array::Int64Array::new(
             daft_arrow::datatypes::DataType::Int64,
-            self.offsets().buffer().clone(),
+            arrow2_buffer,
             None,
         );
-        let offsets = Int64Array::from(("offsets", Box::new(arrow2_offsets))).into_series();
+        let offsets = Int64Array::new(
+            Field::new("offsets", DataType::Int64).into(),
+            Box::new(arrow2_offsets),
+        )
+        .unwrap()
+        .into_series();
         values.push(Some(&offsets));
 
         let nulls = self.nulls().map(|b| {
-            let bitmap = daft_arrow::buffer::from_null_buffer(b.clone());
-            BooleanArray::from(("validity", bitmap)).into_series()
+            BooleanArray::from_null_buffer("validity", b)
+                .unwrap()
+                .into_series()
         });
         values.push(nulls.as_ref());
 
@@ -220,8 +229,9 @@ impl serde::Serialize for FixedSizeListArray {
         let mut s = serializer.serialize_map(Some(2))?;
 
         let nulls = self.nulls().map(|b| {
-            let bitmap = daft_arrow::buffer::from_null_buffer(b.clone());
-            BooleanArray::from(("validity", bitmap)).into_series()
+            BooleanArray::from_null_buffer("validity", b)
+                .unwrap()
+                .into_series()
         });
         let values = vec![Some(&self.flat_child), nulls.as_ref()];
         s.serialize_entry("field", self.field.as_ref())?;

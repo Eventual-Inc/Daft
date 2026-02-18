@@ -86,3 +86,12 @@ def test_list_list_sort_multi_desc(fixed):
         [40, 30],
     ]
     assert res.to_pylist() == expected
+
+
+def test_list_contains_series():
+    data = Series.from_pylist([[1, 2], [3, 4], None, []])
+    items = Series.from_pylist([2, 5, 1, 1])
+
+    result = data.list.contains(items)
+
+    assert result.to_pylist() == [True, False, None, False]

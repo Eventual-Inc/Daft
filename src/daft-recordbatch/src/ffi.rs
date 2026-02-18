@@ -1,10 +1,7 @@
+use common_arrow_ffi::{FromPyArrow, ToPyArrow};
 use common_error::DaftResult;
-use daft_core::{
-    prelude::SchemaRef,
-    series::Series,
-    utils::arrow::{cast_array_for_daft_if_needed, cast_array_from_daft_if_needed},
-};
-use pyo3::{exceptions::PyValueError, prelude::*, types::PyList};
+use daft_core::prelude::SchemaRef;
+use pyo3::prelude::*;
 
 use crate::RecordBatch;
 
@@ -18,45 +15,41 @@ pub fn record_batch_from_arrow(
         return Ok(RecordBatch::empty(Some(schema)));
     }
 
-    let names = schema.field_names().collect::<Vec<_>>();
     let num_batches = batches.len();
-    // First extract all the arrays at once while holding the GIL
-    let mut extracted_arrow_arrays: Vec<(Vec<Box<dyn daft_arrow::array::Array>>, usize)> =
-        Vec::with_capacity(num_batches);
-
+    // Extract all arrow RecordBatches while holding the GIL
+    let mut arrow_batches = Vec::with_capacity(num_batches);
     for rb in batches {
-        let pycolumns = rb.getattr(pyo3::intern!(py, "columns"))?;
-        let columns = pycolumns
-            .cast::<PyList>()?
-            .into_iter()
-            .map(|col| common_arrow_ffi::array_to_rust(py, col))
-            .collect::<PyResult<Vec<_>>>()?;
-        if names.len() != columns.len() {
-            return Err(PyValueError::new_err(format!(
-                "Error when converting Arrow Record Batches to Daft Table. Expected: {} columns, got: {}",
-                names.len(),
-                columns.len()
-            )));
-        }
-        extracted_arrow_arrays.push((columns, rb.len()?));
+        let arrow_batch = arrow::record_batch::RecordBatch::from_pyarrow_bound(rb)?;
+        arrow_batches.push(arrow_batch);
     }
+
     // Now do the heavy lifting (casting and concats) without the GIL.
     py.detach(|| {
         let mut tables: Vec<RecordBatch> = Vec::with_capacity(num_batches);
-        for (cols, num_rows) in extracted_arrow_arrays {
-            let columns = cols
-                .into_iter()
-                .enumerate()
-                .map(|(i, array)| {
-                    let cast_array = cast_array_for_daft_if_needed(array);
-                    Series::try_from((names[i], cast_array))
-                })
-                .collect::<DaftResult<Vec<_>>>()?;
-            tables.push(RecordBatch::new_with_size(
-                schema.clone(),
-                columns,
-                num_rows,
-            )?);
+        for rb in arrow_batches {
+            let arrow_schema = rb.schema();
+            let daft_schema = daft_core::prelude::Schema::try_from(arrow_schema.as_ref())?;
+            let target_arrow_schema = daft_schema.to_arrow()?;
+
+            // Cast columns if the coerced schema differs from the input schema
+            let arrays: Vec<_> = if target_arrow_schema != *arrow_schema.as_ref() {
+                rb.columns()
+                    .iter()
+                    .zip(target_arrow_schema.fields())
+                    .map(|(array, target_field)| {
+                        if array.data_type() != target_field.data_type() {
+                            arrow::compute::cast(array, target_field.data_type())
+                                .map_err(common_error::DaftError::from)
+                        } else {
+                            Ok(array.clone())
+                        }
+                    })
+                    .collect::<DaftResult<_>>()?
+            } else {
+                rb.columns().to_vec()
+            };
+
+            tables.push(RecordBatch::from_arrow(daft_schema, arrays)?);
         }
         Ok(RecordBatch::concat(tables.as_slice())?)
     })
@@ -73,11 +66,9 @@ pub fn record_batch_to_arrow(
 
     for i in 0..table.num_columns() {
         let s = table.get_column(i);
-        #[allow(deprecated, reason = "arrow2 migration")]
-        let arrow_array = s.to_arrow2();
-        let arrow_array = cast_array_from_daft_if_needed(arrow_array.to_boxed());
-        let py_array = common_arrow_ffi::to_py_array(py, arrow_array, &pyarrow)?;
-        arrays.push(py_array);
+        let pyarrow_array = s.to_pyarrow(py)?;
+
+        arrays.push(pyarrow_array);
         names.push(s.name().to_string());
     }
 

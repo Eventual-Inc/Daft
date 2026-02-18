@@ -1,6 +1,6 @@
 use std::{iter::repeat_n, sync::Arc};
 
-use daft_arrow::offset::OffsetsBuffer;
+use arrow::buffer::OffsetBuffer;
 #[cfg(feature = "python")]
 use pyo3::Python;
 
@@ -31,11 +31,11 @@ where
             T::get_dtype()
         );
 
-        let arrow_dtype = dtype.to_arrow2();
+        let arrow_dtype = dtype.to_arrow();
         match arrow_dtype {
-            Ok(arrow_dtype) => Self::new(
+            Ok(arrow_dtype) => Self::from_arrow(
                 Arc::new(Field::new(name.to_string(), dtype.clone())),
-                daft_arrow::array::new_null_array(arrow_dtype, length),
+                arrow::array::new_null_array(&arrow_dtype, length),
             )
             .unwrap(),
             Err(e) => panic!("Cannot create DataArray from non-arrow dtype: {e}"),
@@ -43,11 +43,11 @@ where
     }
 
     fn empty(name: &str, dtype: &DataType) -> Self {
-        let arrow_dtype = dtype.to_arrow2();
+        let arrow_dtype = dtype.to_arrow();
         match arrow_dtype {
-            Ok(arrow_dtype) => Self::new(
+            Ok(arrow_dtype) => Self::from_arrow(
                 Arc::new(Field::new(name.to_string(), dtype.clone())),
-                daft_arrow::array::new_empty_array(arrow_dtype),
+                arrow::array::new_empty_array(&arrow_dtype),
             )
             .unwrap(),
             Err(e) => panic!("Cannot create DataArray from non-arrow dtype: {e}"),
@@ -117,7 +117,7 @@ impl FullNull for ListArray {
                 Self::new(
                     Field::new(name, dtype.clone()),
                     empty_flat_child,
-                    OffsetsBuffer::try_from(repeat_n(0, length + 1).collect::<Vec<_>>()).unwrap(),
+                    OffsetBuffer::new_zeroed(length),
                     Some(nulls),
                 )
             }
@@ -133,7 +133,7 @@ impl FullNull for ListArray {
             DataType::List(child_dtype) => {
                 let field = Field::new(name, dtype.clone());
                 let empty_child = Series::empty("list", child_dtype.as_ref());
-                Self::new(field, empty_child, OffsetsBuffer::default(), None)
+                Self::new(field, empty_child, OffsetBuffer::default(), None)
             }
             _ => panic!("Cannot create empty ListArray with dtype: {}", dtype),
         }

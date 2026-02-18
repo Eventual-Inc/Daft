@@ -14,16 +14,23 @@ def bucket(minio_io_config):
     # For some reason s3fs is having trouble cleaning up MinIO
     # folders created by pyarrow write_parquet. We just write to
     # paths with random UUIDs to work around this.
-    BUCKET = "my-bucket"
+    bucket_name = f"bucket-{uuid.uuid4()}"
 
     fs = s3fs.S3FileSystem(
         key=minio_io_config.s3.key_id,
         password=minio_io_config.s3.access_key,
         client_kwargs={"endpoint_url": minio_io_config.s3.endpoint_url},
     )
-    if not fs.exists(BUCKET):
-        fs.mkdir(BUCKET)
-    yield BUCKET
+    if not fs.exists(bucket_name):
+        fs.mkdir(bucket_name)
+    try:
+        yield bucket_name
+    finally:
+        try:
+            fs.rm(bucket_name, recursive=True)
+        except FileNotFoundError:
+            # Bucket may have already been deleted, which is fine
+            pass
 
 
 @pytest.mark.integration()
@@ -47,8 +54,7 @@ def test_writing_parquet(minio_io_config, bucket, protocol):
 @pytest.mark.integration()
 @pytest.mark.parametrize("protocol", ["s3://", "s3a://", "s3n://"])
 def test_writing_parquet_anonymous_mode(anonymous_minio_io_config, minio_io_config, protocol):
-    bucket_name = "my-public-bucket"
-    with minio_create_public_bucket(minio_io_config=minio_io_config, bucket_name=bucket_name):
+    with minio_create_public_bucket(minio_io_config=minio_io_config) as bucket_name:
         data = {
             "foo": [1, 2, 3],
             "bar": ["a", "b", "c"],

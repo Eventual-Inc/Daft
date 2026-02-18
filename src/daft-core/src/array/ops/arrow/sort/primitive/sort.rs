@@ -18,9 +18,9 @@
 use arrow::{
     array::{Array, ArrowPrimitiveType, NullBufferBuilder, PrimitiveArray},
     buffer::{Buffer, NullBuffer, ScalarBuffer},
+    compute::SortOptions,
     datatypes::ArrowNativeType,
 };
-use daft_arrow::compute::sort::SortOptions;
 
 /// # Safety
 /// `indices[i] < values.len()` for all i
@@ -164,9 +164,9 @@ where
 mod tests {
     use arrow::{
         array::{ArrowPrimitiveType, PrimitiveArray},
+        compute::SortOptions,
         datatypes::Int8Type,
     };
-    use daft_arrow::compute::sort::SortOptions;
 
     use super::sort_by;
 

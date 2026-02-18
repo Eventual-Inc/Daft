@@ -11,11 +11,10 @@ permissions:
   contents: read
 
 env:
-  DAFT_ANALYTICS_ENABLED: '0'
-  TPCH_SCALE_FACTOR: '4'
-  TPCH_NUM_PARTS: '32'
-  PYTHON_VERSION: '3.10'
-
+  DAFT_ANALYTICS_ENABLED: "0"
+  TPCH_SCALE_FACTOR: "4"
+  TPCH_NUM_PARTS: "32"
+  PYTHON_VERSION: "3.10"
 
 jobs:
   profile-daft:
@@ -29,7 +28,7 @@ jobs:
     - uses: Swatinem/rust-cache@v2
       with:
         key: ${{ runner.os }}-profile
-        cache-all-crates: 'true'
+        cache-all-crates: "true"
 
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
@@ -50,21 +49,23 @@ jobs:
         max_attempts: 3
         retry_wait_seconds: 10
         command: uv sync --no-install-project --all-extras --all-groups
-    - uses: oven-sh/setup-bun@v2
+    - uses: actions/setup-node@v6
       with:
-        bun-version: latest
-    - name: Build dashboard with Bun
+        node-version: "22"
+        cache: "npm"
+        cache-dependency-path: src/daft-dashboard/frontend/package-lock.json
+    - name: Build dashboard
       working-directory: ./src/daft-dashboard/frontend
       run: |
-        bun install
-        bun run build
+        npm ci
+        npm run build
 
     - name: Build Rust Library
       run: |
         source activate
         maturin develop --release --uv
 
-    - uses: actions/cache@v4
+    - uses: actions/cache@v5
       env:
         cache-name: profiling-cache-tpch-data
       with:
@@ -82,16 +83,17 @@ jobs:
       run: |
         py-spy record --native --function --gil -o tpch-gil-${{github.run_id}}.txt -f speedscope -- python benchmarking/tpch/__main__.py --scale_factor=${{ env.TPCH_SCALE_FACTOR }} --num_parts=${{ env.TPCH_NUM_PARTS }} --skip_warmup --skip_questions=11,12,13,14,15,16,17,18,19,20,21,22 || true
 
-
     - name: Upload Profile
-      uses: actions/upload-artifact@v5
+      uses: actions/upload-artifact@v6
       with:
         name: speedscope-profile
         path: tpch-*.txt
 
     - name: Send Slack notification on failure
       uses: slackapi/slack-github-action@v2.1.1
-      if: ${{ failure() && (github.ref == 'refs/heads/main') }}
+      if: ${{ env.SLACK_WEBHOOK_URL && failure() && (github.ref == 'refs/heads/main') }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       with:
         payload: |
           {
@@ -105,5 +107,5 @@ jobs:
               }
             ]
           }
-        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook

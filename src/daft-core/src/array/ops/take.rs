@@ -1,4 +1,7 @@
-use arrow::{array::NullBufferBuilder, buffer::NullBuffer};
+use arrow::{
+    array::NullBufferBuilder,
+    buffer::{NullBuffer, OffsetBuffer},
+};
 use common_error::DaftResult;
 use daft_arrow::types::Index;
 
@@ -55,18 +58,18 @@ impl FixedSizeListArray {
             match i {
                 None => {
                     nulls_builder.append_null();
-                    child_indices.extend(std::iter::repeat_n(0, fixed_size));
+                    child_indices.extend(std::iter::repeat_n(0, fixed_size as _));
                 }
                 Some(i) => {
                     let i = i.to_usize();
                     nulls_builder.append(self.is_valid(i));
-                    let start = i * fixed_size;
-                    child_indices.extend(start..start + fixed_size);
+                    let start: u64 = i as u64 * fixed_size as u64;
+                    child_indices.extend(start..start + fixed_size as u64);
                 }
             }
         }
 
-        let child_idx = UInt64Array::from_iter_values(child_indices.into_iter().map(|i| i as u64));
+        let child_idx = UInt64Array::from_vec("", child_indices);
         let new_child = self.flat_child.take(&child_idx)?;
 
         Ok(Self::new(
@@ -92,7 +95,8 @@ impl ListArray {
                     new_offsets.push(*new_offsets.last().unwrap());
                 }
                 Some(i) => {
-                    let (start, end) = self.offsets().start_end(i.to_usize());
+                    let start = self.offsets()[i as usize] as usize;
+                    let end = self.offsets()[i as usize + 1] as usize;
                     child_indices.extend(start..end);
                     new_offsets.push(*new_offsets.last().unwrap() + (end - start) as i64);
                     nulls_builder.append(self.is_valid(i.to_usize()));
@@ -101,13 +105,13 @@ impl ListArray {
         }
         let nulls = nulls_builder.finish();
 
-        let child_idx = UInt64Array::from_iter_values(child_indices.into_iter().map(|i| i as u64));
+        let child_idx = UInt64Array::from_values("", child_indices.into_iter().map(|i| i as u64));
         let new_child = self.flat_child.take(&child_idx)?;
 
         Ok(Self::new(
             self.field.clone(),
             new_child,
-            new_offsets.try_into()?,
+            OffsetBuffer::new(new_offsets.into()),
             nulls,
         ))
     }

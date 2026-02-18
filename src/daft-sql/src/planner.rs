@@ -10,7 +10,7 @@ use common_error::{DaftError, DaftResult};
 use daft_catalog::Identifier;
 use daft_core::prelude::*;
 use daft_dsl::{
-    Column, Expr, ExprRef, Operator, PlanRef, Subquery, UnresolvedColumn,
+    Column, Expr, ExprRef, PlanRef, Subquery, UnresolvedColumn,
     functions::{FunctionExpr, ScalarUDF, scalar::ScalarFn, struct_::StructExpr},
     has_agg, lit, null_lit, resolved_col, unresolved_col,
 };
@@ -457,7 +457,9 @@ impl SQLPlanner<'_> {
                 }
 
                 match &order_by.kind {
-                    ast::OrderByKind::Expressions(exprs) => self.plan_order_by_exprs(exprs),
+                    ast::OrderByKind::Expressions(exprs) => {
+                        self.plan_order_by_exprs(projections.as_slice(), exprs)
+                    }
                     ast::OrderByKind::All(_) => {
                         unsupported_sql_err!("ORDER BY ALL is not supported")
                     }
@@ -731,6 +733,7 @@ impl SQLPlanner<'_> {
 
     fn plan_order_by_exprs(
         &self,
+        select_items: &[ExprRef],
         expr: &[sqlparser::ast::OrderByExpr],
     ) -> SQLPlannerResult<OrderByExprs> {
         if expr.is_empty() {
@@ -785,7 +788,32 @@ impl SQLPlanner<'_> {
             if order_by_expr.with_fill.is_some() {
                 unsupported_sql_err!("WITH FILL");
             }
-            let expr = self.plan_expr(&order_by_expr.expr)?;
+            let expr = if let ast::Expr::Value(ast::ValueWithSpan {
+                value: ast::Value::Number(number, _),
+                ..
+            }) = &order_by_expr.expr
+            {
+                let pos: usize = match number.parse() {
+                    Ok(p) => p,
+                    Err(_) => invalid_argument_err!(
+                        "ORDER BY position '{}' is not a valid non-negative integer",
+                        number
+                    ),
+                };
+                if pos == 0 {
+                    invalid_argument_err!("ORDER BY position must be >= 1 (1-based index)");
+                }
+                if pos > select_items.len() {
+                    invalid_argument_err!(
+                        "ORDER BY position {} is out of range (only {} select items)",
+                        pos,
+                        select_items.len()
+                    );
+                }
+                select_items[pos - 1].clone()
+            } else {
+                self.plan_expr(&order_by_expr.expr)?
+            };
 
             exprs.push(expr);
         }

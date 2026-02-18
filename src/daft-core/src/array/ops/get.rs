@@ -169,7 +169,8 @@ impl ListArray {
         );
         let valid = self.is_valid(idx);
         if valid {
-            let (start, end) = self.offsets().start_end(idx);
+            let start = self.offsets()[idx] as usize;
+            let end = self.offsets()[idx + 1] as usize;
             Some(self.flat_child.slice(start, end).unwrap())
         } else {
             None
@@ -232,7 +233,7 @@ mod tests {
     #[test]
     fn test_fixed_size_list_get_all_valid() -> DaftResult<()> {
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
-        let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
+        let flat_child = Int32Array::from_vec("foo", (0..9).collect::<Vec<i32>>());
         let nulls = None;
         let arr = FixedSizeListArray::new(field, flat_child.into_series(), nulls);
         assert_eq!(arr.len(), 3);
@@ -246,10 +247,7 @@ mod tests {
             assert_eq!(element.data_type(), &DataType::Int32);
 
             let element = element.i32()?;
-            let data = element
-                .into_iter()
-                .map(|x| x.copied())
-                .collect::<Vec<Option<i32>>>();
+            let data = element.into_iter().collect::<Vec<Option<i32>>>();
             let expected = ((i * 3) as i32..((i + 1) * 3) as i32)
                 .map(Some)
                 .collect::<Vec<Option<i32>>>();
@@ -262,7 +260,7 @@ mod tests {
     #[test]
     fn test_fixed_size_list_get_some_valid() -> DaftResult<()> {
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
-        let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
+        let flat_child = Int32Array::from_vec("foo", (0..9).collect::<Vec<i32>>());
         let raw_nulls = vec![true, false, true];
         let nulls = Some(daft_arrow::buffer::NullBuffer::from(raw_nulls.as_slice()));
         let arr = FixedSizeListArray::new(field, flat_child.into_series(), nulls);
@@ -274,10 +272,7 @@ mod tests {
         assert_eq!(element.len(), 3);
         assert_eq!(element.data_type(), &DataType::Int32);
         let element = element.i32()?;
-        let data = element
-            .into_iter()
-            .map(|x| x.copied())
-            .collect::<Vec<Option<i32>>>();
+        let data = element.into_iter().collect::<Vec<Option<i32>>>();
         let expected = vec![Some(0), Some(1), Some(2)];
         assert_eq!(data, expected);
 
@@ -290,10 +285,7 @@ mod tests {
         assert_eq!(element.len(), 3);
         assert_eq!(element.data_type(), &DataType::Int32);
         let element = element.i32()?;
-        let data = element
-            .into_iter()
-            .map(|x| x.copied())
-            .collect::<Vec<Option<i32>>>();
+        let data = element.into_iter().collect::<Vec<Option<i32>>>();
         let expected = vec![Some(6), Some(7), Some(8)];
         assert_eq!(data, expected);
 
@@ -303,7 +295,7 @@ mod tests {
     #[test]
     fn test_list_get_some_valid() -> DaftResult<()> {
         let field = Field::new("foo", DataType::FixedSizeList(Box::new(DataType::Int32), 3));
-        let flat_child = Int32Array::from(("foo", (0..9).collect::<Vec<i32>>()));
+        let flat_child = Int32Array::from_vec("foo", (0..9).collect::<Vec<i32>>());
         let raw_nulls = vec![true, false, true];
         let nulls = Some(daft_arrow::buffer::NullBuffer::from(raw_nulls.as_slice()));
         let arr = FixedSizeListArray::new(field, flat_child.into_series(), nulls);
@@ -312,18 +304,12 @@ mod tests {
         let l = list_arr.list()?;
         let element = l.get(0).unwrap();
         let element = element.i32()?;
-        let data = element
-            .into_iter()
-            .map(|x| x.copied())
-            .collect::<Vec<Option<i32>>>();
+        let data = element.into_iter().collect::<Vec<Option<i32>>>();
         let expected = vec![Some(0), Some(1), Some(2)];
         assert_eq!(data, expected);
         let element = l.get(2).unwrap();
         let element = element.i32()?;
-        let data = element
-            .into_iter()
-            .map(|x| x.copied())
-            .collect::<Vec<Option<i32>>>();
+        let data = element.into_iter().collect::<Vec<Option<i32>>>();
         let expected = vec![Some(6), Some(7), Some(8)];
         assert_eq!(data, expected);
 

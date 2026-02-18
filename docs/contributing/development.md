@@ -2,7 +2,7 @@
 
 > **💡 Already set up?**
 >
->  See our quick [tutorial](#adding-new-expressions) on how to add a new expression to Daft.
+> See our quick [tutorial](#adding-new-expressions) on how to add a new expression to Daft.
 
 ## Development Environment
 
@@ -10,7 +10,7 @@ To set up your development environment:
 
 1. Install [uv](https://docs.astral.sh/uv/). You can run `curl -LsSf https://astral.sh/uv/install.sh | sh` on macOS and Linux.
 2. [Install the Rust compilation toolchain](https://www.rust-lang.org/tools/install)
-3. Install [bun](https://bun.sh/) in order to build docs and the daft-dashboard functionality.
+3. Install [Node.js](https://nodejs.org/) (22.x LTS) and npm in order to build docs and the daft-dashboard functionality.
 4. Install [cmake](https://cmake.org/). If you use [homebrew](https://brew.sh), you can run `brew install cmake`.
 5. Install [protoc](https://protobuf.dev/installation/). You will need this for release builds -- `make build-release`. With homebrew, installation is `brew install protobuf`.
 6. Clone the Daft repo: `git clone git@github.com:Eventual-Inc/Daft.git`
@@ -30,10 +30,11 @@ To set up your development environment:
 9. `make precommit`: run all pre-commit hooks, must install pre-commit first(pip install pre-commit)
 10. `make build-release`: perform a full release build of Daft
 11. `make build-whl`: recompile your code after modifying any Rust code in `src/` for development, only generate `whl` file without installation
+12. `make clean`: clean all build artifacts, including the python virtual environment. You can skip cleaning the virtual environment by setting `SKIP_VENV=true`
 
 ### Note about Developing `daft-dashboard`
 
-If you wish to enable, or work on the daft-dashboard functionality, it does have an additional dependency of [bun.sh](https://bun.sh/). You simply need to install bun, and everything else should work out of the box!
+If you wish to enable, or work on the daft-dashboard functionality, it requires [Node.js](https://nodejs.org/) (LTS) and npm. Install Node.js, then run `npm install` and `npm run build` in the `src/daft-dashboard/frontend` directory.
 
 Next (_make sure Daft is installed_), you can launch the dashboard using the `daft dashboard` command, for example:
 
@@ -161,21 +162,20 @@ DAFT_RUNNER=native pytest tests/dataframe/test_limit_offset.py::test_limit -s --
 DAFT_RUNNER=native make test EXTRA_ARGS="tests/dataframe/test_limit_offset.py::test_limit -s --log-cli-level=DEBUG"
 ```
 
-
 ### Rust tests
 
 Our rust tests are distributed across crates, you can run all tests with `cargo test --no-default-features --workspace`.
 
-To run rust tests that call into Python, the `--features python` flag and libpython3.*.so dynamic libraries are required. Please ensure that these are installed, here's a table of common locations on different os:
+To run rust tests that call into Python, the `--features python` flag and libpython3.\*.so dynamic libraries are required. Please ensure that these are installed, here's a table of common locations on different os:
 
-| Operating System        | Package Manager | Architecture      | Library Path Pattern                          |
-|-------------------------|----------------|-------------------|-----------------------------------------------|
-| **Ubuntu/Debian**       | apt            | x86_64            | `/usr/lib/x86_64-linux-gnu/libpython3.x.so.1.0` |
-|                         |                | Other             | `/usr/lib/libpython3.x.so.1.0`                |
-| **Red Hat/CentOS**      | yum/dnf        | x86_64            | `/usr/lib64/libpython3.x.so.1.0`               |
-| **macOS (Homebrew)**    | Homebrew       | Intel             | `/usr/local/opt/python@3.x/lib/libpython3.x.dylib` |
-|                         |                | Apple Silicon     | `/opt/homebrew/opt/python@3.x/lib/libpython3.x.dylib` |
-| **macOS (System)**      | Installer      | All               | `/Library/Frameworks/Python.framework/Versions/3.x/lib/libpython3.x.dylib` |
+| Operating System     | Package Manager | Architecture  | Library Path Pattern                                                       |
+| -------------------- | --------------- | ------------- | -------------------------------------------------------------------------- |
+| **Ubuntu/Debian**    | apt             | x86_64        | `/usr/lib/x86_64-linux-gnu/libpython3.x.so.1.0`                            |
+|                      |                 | Other         | `/usr/lib/libpython3.x.so.1.0`                                             |
+| **Red Hat/CentOS**   | yum/dnf         | x86_64        | `/usr/lib64/libpython3.x.so.1.0`                                           |
+| **macOS (Homebrew)** | Homebrew        | Intel         | `/usr/local/opt/python@3.x/lib/libpython3.x.dylib`                         |
+|                      |                 | Apple Silicon | `/opt/homebrew/opt/python@3.x/lib/libpython3.x.dylib`                      |
+| **macOS (System)**   | Installer       | All           | `/Library/Frameworks/Python.framework/Versions/3.x/lib/libpython3.x.dylib` |
 
 Tip: you can run the following python command to get the full path to the pylib
 
@@ -236,7 +236,7 @@ impl ScalarUDF for MyToUpperCase {
     }
 
     // Then we add an implementation for it.
-    fn call(&self, inputs: FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(&self, inputs: FunctionArgs<Series>, _ctx: &daft_dsl::functions::scalar::EvalContext) -> DaftResult<Series> {
         let s = inputs.required(0)?;
         // Note: using into_iter is not the most performant way of implementing this, but for this example, we don't care about performance.
         let arr = s
@@ -419,37 +419,32 @@ For the best chance of having your pull request accepted, please follow these gu
 
 - **Keep changes focused.** Aim to solve one problem per pull request and avoid unrelated changes.
 
-- **Review before submitting.** Whenever possible, ask another contributor to review your code first or perform a thorough self-review. Ask yourself: *Is it clear why these changes are being made? Are they easy to understand?*
+- **Review before submitting.** Whenever possible, ask another contributor to review your code first or perform a thorough self-review. Ask yourself: _Is it clear why these changes are being made? Are they easy to understand?_
 
 - **Use Conventional Commit messages** for pull request titles. For example:
-    - New feature: `feat: adding API`
-    - Bug fix: `fix: issue with API`
-    - Documentation: `docs: adding API documentation`
+  - New feature: `feat: adding API`
+  - Bug fix: `fix: issue with API`
+  - Documentation: `docs: adding API documentation`
 
 - **Test error cases.** Ensure your tests cover failure scenarios and provide clear, user-friendly error messages.
 
 ### Review process
 
 1. **Draft vs. Open status**
-
-    - Leave your pull request in Draft status if it is still a work in progress.
-    - Mark it as Open once it is ready for review.
+   - Leave your pull request in Draft status if it is still a work in progress.
+   - Mark it as Open once it is ready for review.
 
 2. **Checks on GitHub**
-
-    - Ensure all automated checks have passed. PRs with failing checks will not be prioritized for review.
+   - Ensure all automated checks have passed. PRs with failing checks will not be prioritized for review.
 
 3. **Reviewer assignment**
-
-    - Contributors with write access: add a reviewer to the Assignee field.
-    - Other contributors: reviewers will be assigned to your PR shortly.
+   - Contributors with write access: add a reviewer to the Assignee field.
+   - Other contributors: reviewers will be assigned to your PR shortly.
 
 4. **During review**
-
-    - Assignees will review your PR and provide feedback if changes are needed.
-    - Address review comments promptly to keep momentum. PRs without author engagement for more than a week may lose priority.
-    - Iterate until assignees approve your PR.
+   - Assignees will review your PR and provide feedback if changes are needed.
+   - Address review comments promptly to keep momentum. PRs without author engagement for more than a week may lose priority.
+   - Iterate until assignees approve your PR.
 
 5. **Merging**
-
-    - Once the build is passing and approvals are in place, committers will merge the PR.
+   - Once the build is passing and approvals are in place, committers will merge the PR.

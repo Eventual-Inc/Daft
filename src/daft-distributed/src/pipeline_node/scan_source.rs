@@ -1,14 +1,18 @@
-use std::sync::Arc;
+use std::sync::{Arc, atomic::Ordering};
 
 use common_display::{DisplayAs, DisplayLevel};
-use common_error::DaftResult;
 #[cfg(feature = "python")]
 use common_file_formats::FileFormatConfig;
-use common_metrics::{CPU_US_KEY, Counter, ROWS_OUT_KEY, StatSnapshot};
+use common_metrics::{
+    CPU_US_KEY, Counter, ROWS_OUT_KEY, StatSnapshot,
+    ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot::SourceSnapshot,
+};
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, stats::StatsState};
 use daft_schema::schema::SchemaRef;
+use futures::{StreamExt, stream};
 use opentelemetry::{KeyValue, metrics::Meter};
 
 use super::{
@@ -19,7 +23,6 @@ use crate::{
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::task::SwordfishTaskBuilder,
     statistics::{RuntimeStats, stats::RuntimeStatsRef},
-    utils::channel::{Sender, create_channel},
 };
 
 pub struct SourceStats {
@@ -42,7 +45,7 @@ impl SourceStats {
 }
 
 impl RuntimeStats for SourceStats {
-    fn handle_worker_node_stats(&self, snapshot: &StatSnapshot) {
+    fn handle_worker_node_stats(&self, _node_info: &NodeInfo, snapshot: &StatSnapshot) {
         let StatSnapshot::Source(snapshot) = snapshot else {
             return;
         };
@@ -51,6 +54,14 @@ impl RuntimeStats for SourceStats {
             .add(snapshot.rows_out, self.node_kv.as_slice());
         self.bytes_read
             .add(snapshot.bytes_read, self.node_kv.as_slice());
+    }
+
+    fn export_snapshot(&self) -> StatSnapshot {
+        StatSnapshot::Source(SourceSnapshot {
+            cpu_us: self.cpu_us.load(Ordering::Relaxed),
+            rows_out: self.rows_out.load(Ordering::Relaxed),
+            bytes_read: self.bytes_read.load(Ordering::Relaxed),
+        })
     }
 }
 
@@ -76,6 +87,8 @@ impl ScanSourceNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::ScanTask,
+            NodeCategory::Source,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -96,37 +109,7 @@ impl ScanSourceNode {
         DistributedPipelineNode::new(Arc::new(self))
     }
 
-    async fn execution_loop(
-        self: Arc<Self>,
-        result_tx: Sender<SwordfishTaskBuilder>,
-    ) -> DaftResult<()> {
-        if self.scan_tasks.is_empty() {
-            let transformed_plan = LocalPhysicalPlan::empty_scan(
-                self.config.schema.clone(),
-                LocalNodeContext {
-                    origin_node_id: Some(self.node_id() as usize),
-                    additional: None,
-                },
-            );
-            let empty_scan_task = SwordfishTaskBuilder::new(transformed_plan, self.as_ref());
-            let _ = result_tx.send(empty_scan_task).await;
-            return Ok(());
-        }
-
-        for scan_task in self.scan_tasks.iter() {
-            let builder = self.make_source_task(scan_task.clone())?;
-            if result_tx.send(builder).await.is_err() {
-                return Ok(());
-            }
-        }
-
-        Ok(())
-    }
-
-    fn make_source_task(
-        self: &Arc<Self>,
-        scan_task: ScanTaskLikeRef,
-    ) -> DaftResult<SwordfishTaskBuilder> {
+    fn make_source_task(self: &Arc<Self>, scan_task: ScanTaskLikeRef) -> SwordfishTaskBuilder {
         let scan_tasks = Arc::new(vec![scan_task]);
         let physical_scan = LocalPhysicalPlan::physical_scan(
             scan_tasks,
@@ -139,8 +122,7 @@ impl ScanSourceNode {
             },
         );
 
-        let builder = SwordfishTaskBuilder::new(physical_scan, self.as_ref());
-        Ok(builder)
+        SwordfishTaskBuilder::new(physical_scan, self.as_ref())
     }
 }
 
@@ -233,12 +215,23 @@ impl PipelineNodeImpl for ScanSourceNode {
 
     fn produce_tasks(
         self: Arc<Self>,
-        plan_context: &mut PlanExecutionContext,
+        _plan_context: &mut PlanExecutionContext,
     ) -> TaskBuilderStream {
-        let (result_tx, result_rx) = create_channel(1);
-        let execution_loop = self.execution_loop(result_tx);
-        plan_context.spawn(execution_loop);
-
-        TaskBuilderStream::from(result_rx)
+        if self.scan_tasks.is_empty() {
+            let transformed_plan = LocalPhysicalPlan::empty_scan(
+                self.config.schema.clone(),
+                LocalNodeContext {
+                    origin_node_id: Some(self.node_id() as usize),
+                    additional: None,
+                },
+            );
+            let empty_scan_task = SwordfishTaskBuilder::new(transformed_plan, self.as_ref());
+            TaskBuilderStream::new(stream::iter(std::iter::once(empty_scan_task)).boxed())
+        } else {
+            let slf = self.clone();
+            let builders_iter = (0..self.scan_tasks.len())
+                .map(move |i| slf.make_source_task(slf.scan_tasks[i].clone()));
+            TaskBuilderStream::new(stream::iter(builders_iter).boxed())
+        }
     }
 }

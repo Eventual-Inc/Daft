@@ -7,7 +7,7 @@ use common_metrics::{
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
-use opentelemetry::{KeyValue, global};
+use opentelemetry::{KeyValue, metrics::Meter};
 use tracing::{Span, instrument};
 
 use super::intermediate_op::{
@@ -24,15 +24,14 @@ pub struct FilterStats {
 }
 
 impl FilterStats {
-    pub fn new(id: usize) -> Self {
-        let meter = global::meter("daft.local.node_stats");
+    pub fn new(meter: &Meter, id: usize) -> Self {
         let node_kv = vec![KeyValue::new("node_id", id.to_string())];
 
         Self {
-            cpu_us: Counter::new(&meter, CPU_US_KEY, None),
-            rows_in: Counter::new(&meter, ROWS_IN_KEY, None),
-            rows_out: Counter::new(&meter, ROWS_OUT_KEY, None),
-            selectivity: Gauge::new(&meter, "selectivity", None),
+            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
+            selectivity: Gauge::new(meter, "selectivity", None),
             node_kv,
         }
     }
@@ -129,8 +128,8 @@ impl IntermediateOperator for FilterOperator {
         NodeType::Filter
     }
 
-    fn make_runtime_stats(&self, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(FilterStats::new(id))
+    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<dyn RuntimeStats> {
+        Arc::new(FilterStats::new(meter, id))
     }
 
     fn make_state(&self) -> Self::State {}
@@ -145,12 +144,14 @@ impl IntermediateOperator for FilterOperator {
 mod tests {
     use std::sync::atomic::Ordering;
 
+    use opentelemetry::global;
+
     use super::FilterStats;
     use crate::runtime_stats::RuntimeStats;
 
     #[test]
     fn selectivity_updates_after_rows_events() {
-        let stats = FilterStats::new(42);
+        let stats = FilterStats::new(&global::meter("test_stats"), 42);
 
         stats.add_rows_in(200);
         stats.add_rows_out(50);
@@ -166,7 +167,7 @@ mod tests {
 
     #[test]
     fn selectivity_defaults_to_100_percent_on_zero_rows_in() {
-        let stats = FilterStats::new(1);
+        let stats = FilterStats::new(&global::meter("test_stats"), 1);
 
         stats.add_rows_out(10);
 
@@ -180,7 +181,7 @@ mod tests {
 
     #[test]
     fn selectivity_handles_multiple_updates() {
-        let stats = FilterStats::new(99);
+        let stats = FilterStats::new(&global::meter("test_stats"), 99);
 
         stats.add_rows_in(100);
         stats.add_rows_out(40);

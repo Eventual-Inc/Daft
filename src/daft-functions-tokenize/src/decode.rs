@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
@@ -31,7 +30,11 @@ struct DecodeArgs<T> {
 
 #[typetag::serde]
 impl ScalarUDF for TokenizeDecodeFunction {
-    fn call(&self, args: daft_dsl::functions::FunctionArgs<Series>) -> DaftResult<Series> {
+    fn call(
+        &self,
+        args: daft_dsl::functions::FunctionArgs<Series>,
+        _ctx: &daft_dsl::functions::scalar::EvalContext,
+    ) -> DaftResult<Series> {
         let DecodeArgs {
             input,
             _varargs,

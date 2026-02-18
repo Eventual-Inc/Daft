@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_metrics::ops::{NodeCategory, NodeType};
 use common_runtime::OrderedJoinSet;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{partitioning::UnknownClusteringConfig, stats::StatsState};
@@ -44,6 +45,8 @@ impl IntoPartitionsNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::IntoPartitions,
+            NodeCategory::BlockingSink,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -234,9 +237,30 @@ impl IntoPartitionsNode {
 
         match num_input_tasks.cmp(&self.num_partitions) {
             std::cmp::Ordering::Equal => {
-                // Exact match - pass through as-is
-                for builder in input_builders {
-                    let _ = result_tx.send(builder).await;
+                if self
+                    .config
+                    .execution_config
+                    .enable_scan_task_split_and_merge
+                {
+                    let node_id = self.node_id();
+                    for builder in input_builders {
+                        let builder = builder.map_plan(self.as_ref(), |plan| {
+                            LocalPhysicalPlan::into_partitions(
+                                plan,
+                                1,
+                                StatsState::NotMaterialized,
+                                LocalNodeContext {
+                                    origin_node_id: Some(node_id as usize),
+                                    additional: None,
+                                },
+                            )
+                        });
+                        let _ = result_tx.send(builder).await;
+                    }
+                } else {
+                    for builder in input_builders {
+                        let _ = result_tx.send(builder).await;
+                    }
                 }
             }
             std::cmp::Ordering::Greater => {

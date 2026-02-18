@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2->arrow migration")]
 use std::borrow::Cow;
 
 use common_error::DaftResult;
@@ -13,7 +12,6 @@ use crate::{
         growable::{Growable, GrowableArray},
     },
     datatypes::{BooleanArray, DaftArrayType, DaftArrowBackedType, DataType},
-    prelude::FromArrow,
 };
 
 impl<T> DataArray<T>
@@ -21,8 +19,9 @@ where
     T: DaftArrowBackedType,
 {
     pub fn filter(&self, mask: &BooleanArray) -> DaftResult<Self> {
-        let result = daft_arrow::compute::filter::filter(self.data(), mask.as_arrow2())?;
-        Self::from_arrow2(self.field.clone(), result)
+        let result = arrow::compute::filter(self.to_arrow().as_ref(), &mask.as_arrow()?)?;
+
+        Self::from_arrow(self.field().clone(), result)
     }
 }
 

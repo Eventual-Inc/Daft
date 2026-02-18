@@ -7,14 +7,13 @@ chrono-tz = {workspace = true}
 common-error = {path = "../common/error", default-features = false}
 daft-core = {path = "../daft-core", default-features = false}
 daft-dsl = {path = "../daft-dsl", default-features = false}
+heck = "0.5.0"
 itertools = {workspace = true}
 num-traits = {workspace = true}
-common-pattern = {path = "../common/pattern"}
 regex = {workspace = true}
 serde = {workspace = true}
 typetag = {workspace = true}
 unicode-normalization = "0.1.25"
-ahash = {workspace = true}
 
 [features]
 python = [

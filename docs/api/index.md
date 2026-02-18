@@ -49,7 +49,7 @@ Welcome to Daft Python API Documentation. For Daft User Guide, head to [User Gui
 
     Daft can display your DataFrame's schema without materializing it by performing intelligent sampling of your data to determine appropriate schema.
 
-- [**Data Types**](datatypes/index.md)
+- [**Data Types**](datatypes/all_datatypes.md)
 
     Daft provides simple DataTypes that are ubiquituous in many DataFrames such as numbers, strings, dates, tensors, and images.
 

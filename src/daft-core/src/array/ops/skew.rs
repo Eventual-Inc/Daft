@@ -1,5 +1,4 @@
 use common_error::DaftResult;
-use daft_arrow::array::PrimitiveArray;
 
 use crate::{
     array::{
@@ -15,11 +14,10 @@ impl DaftSkewAggable for DataArray<Float64Type> {
 
     fn skew(&self) -> Self::Output {
         let stats = stats::calculate_stats(self)?;
-        let values = self.into_iter().flatten().copied();
+        let values = self.into_iter().flatten();
         let skew = stats::calculate_skew(stats, values);
-        let field = self.field.clone();
-        let data = PrimitiveArray::<f64>::from([skew]).boxed();
-        Self::new(field, data)
+
+        Ok(Self::from_iter(self.field().clone(), std::iter::once(skew)))
     }
 
     fn grouped_skew(&self, groups: &GroupIndices) -> Self::Output {
@@ -29,8 +27,6 @@ impl DaftSkewAggable for DataArray<Float64Type> {
             stats::calculate_skew(stats, values)
         });
 
-        let field = self.field.clone();
-        let data = PrimitiveArray::<f64>::from_iter(grouped_skew_iter).boxed();
-        Self::new(field, data)
+        Ok(Self::from_iter(self.field().clone(), grouped_skew_iter))
     }
 }
