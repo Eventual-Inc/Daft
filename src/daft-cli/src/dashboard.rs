@@ -36,29 +36,29 @@ enum DashboardCommand {
 struct StartArgs {
     /// The address to launch the dashboard on
     #[arg(short, long, default_value = "0.0.0.0")]
-    pub addr: IpAddr,
+    addr: IpAddr,
     /// The port to launch the dashboard on
     #[arg(short, long, default_value_t = daft_dashboard::DEFAULT_SERVER_PORT)]
-    pub port: u16,
+    port: u16,
     /// Log HTTP requests and responses from server
     #[arg(short, long)]
-    pub verbose: bool,
+    verbose: bool,
     /// Run the dashboard in daemon mode
     #[arg(short, long)]
-    pub daemon: bool,
+    daemon: bool,
     /// The directory used to store the PID file
     #[arg(long)]
-    pub pid_dir: Option<String>,
+    pid_dir: Option<String>,
     /// The directory used to store the LOG file
     #[arg(long)]
-    pub log_dir: Option<String>,
+    log_dir: Option<String>,
 }
 
 #[derive(Args)]
 struct StopArgs {
     /// The directory used to store the PID file
     #[arg(long)]
-    pub pid_dir: Option<String>,
+    pid_dir: Option<String>,
 }
 
 pub fn run(py: Python, args: DashboardArgs) {
