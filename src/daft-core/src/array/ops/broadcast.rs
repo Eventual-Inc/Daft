@@ -26,6 +26,12 @@ pub trait Broadcastable {
 
 impl Broadcastable for NullArray {
     fn broadcast(&self, num: usize) -> DaftResult<Self> {
+        if self.len() != 1 {
+            return Err(DaftError::ValueError(format!(
+                "Attempting to broadcast non-unit length Array named: {}",
+                self.name()
+            )));
+        }
         Ok(Self::full_null(self.name(), self.data_type(), num))
     }
 }
@@ -87,9 +93,7 @@ impl Broadcastable for DataArray<IntervalType> {
             let arrow_array = self.as_arrow()?;
             let value = arrow_array.value(0);
             let mut builder = IntervalMonthDayNanoBuilder::with_capacity(num);
-            for _ in 0..num {
-                builder.append_value(value);
-            }
+            builder.append_value_n(value, num);
             Self::from_arrow(self.field.clone(), Arc::new(builder.finish()))
         } else {
             Ok(Self::full_null(self.name(), self.data_type(), num))
