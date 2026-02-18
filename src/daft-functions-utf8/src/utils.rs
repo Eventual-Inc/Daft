@@ -4,7 +4,7 @@ use arrow::array::{Datum, Scalar};
 use common_error::{DaftError, DaftResult, ensure};
 use daft_arrow::ArrowError;
 use daft_core::{
-    array::DataArray,
+    array::{DataArray, iterator::Utf8Iter},
     prelude::{BooleanArray, DaftPhysicalType, DataType, Field, FullNull, Schema, Utf8Array},
     series::{IntoSeries, Series},
 };
@@ -13,13 +13,7 @@ use itertools::Itertools;
 
 pub(crate) enum BroadcastedStrIter<'a> {
     Repeat(std::iter::RepeatN<Option<&'a str>>),
-    NonRepeat(
-        daft_arrow::bitmap::utils::ZipValidity<
-            &'a str,
-            daft_arrow::array::ArrayValuesIter<'a, daft_arrow::array::Utf8Array<i64>>,
-            daft_arrow::bitmap::utils::BitmapIter<'a>,
-        >,
-    ),
+    NonRepeat(Utf8Iter<'a>),
 }
 
 impl<'a> Iterator for BroadcastedStrIter<'a> {

@@ -1,10 +1,10 @@
-#![allow(deprecated, reason = "arrow2 migration")]
-
 use std::{iter::repeat_n, sync::Arc};
 
-use arrow::array::{BooleanBufferBuilder, BooleanBuilder, make_comparator};
+use arrow::{
+    array::{ArrayRef, AsArray, BooleanBufferBuilder, BooleanBuilder, make_comparator},
+    buffer::OffsetBuffer,
+};
 use common_error::DaftResult;
-use daft_arrow::offset::{Offsets, OffsetsBuffer};
 use daft_core::{
     array::{
         FixedSizeListArray, ListArray, StructArray,
@@ -12,8 +12,7 @@ use daft_core::{
     },
     datatypes::{try_mean_aggregation_supertype, try_sum_supertype},
     prelude::{
-        AsArrow, BooleanArray, CountMode, DataType, Field, Int64Array, MapArray, UInt64Array,
-        Utf8Array,
+        BooleanArray, CountMode, DataType, Field, Int64Array, MapArray, UInt64Array, Utf8Array,
     },
     series::{IntoSeries, Series},
     utils::identity_hash_set::IdentityBuildHasher,
@@ -46,7 +45,7 @@ pub fn list_fill(elem: &Series, num_array: &Int64Array) -> DaftResult<ListArray>
     let generated = general_list_fill_helper(elem, num_array)?;
     let generated_refs: Vec<&Series> = generated.iter().collect();
     let lengths = generated.iter().map(|arr| arr.len());
-    let offsets = Offsets::try_from_lengths(lengths)?;
+    let offsets = OffsetBuffer::from_lengths(lengths);
     let flat_child = if generated_refs.is_empty() {
         // when there's no output, we should create an empty series
         Series::empty(elem.name(), elem.data_type())
@@ -56,7 +55,7 @@ pub fn list_fill(elem: &Series, num_array: &Int64Array) -> DaftResult<ListArray>
     Ok(ListArray::new(
         elem.field().to_list_field(),
         flat_child,
-        offsets.into(),
+        offsets,
         None,
     ))
 }
@@ -94,7 +93,13 @@ impl ListArrayExtension for ListArray {
         offsets.push(0_i64);
 
         let mut map: IndexMap<IndexRef, u64, IdentityBuildHasher> = IndexMap::default();
-        for range in self.offsets().ranges() {
+
+        for range in self.offsets().windows(2).map(|w| {
+            let from = w[0];
+            let to = w[1];
+            debug_assert!(from <= to, "offsets must be monotonically increasing");
+            from..to
+        }) {
             map.clear();
 
             for index in range {
@@ -141,15 +146,10 @@ impl ListArrayExtension for ListArray {
 
         let keys = self.flat_child.filter(&include_mask)?;
 
-        let keys = Series::try_from_field_and_arrow_array(
-            Field::new("key", key_type.clone()),
-            keys.to_arrow2(),
-        )?;
+        let keys = Series::from_arrow(Field::new("key", key_type.clone()), keys.to_arrow()?)?;
 
-        let values = Series::try_from_field_and_arrow_array(
-            Field::new("value", count_type.clone()),
-            values.to_arrow2(),
-        )?;
+        let values =
+            Series::from_arrow(Field::new("value", count_type.clone()), values.to_arrow()?)?;
 
         let struct_type = DataType::Struct(vec![
             Field::new("key", key_type.clone()),
@@ -164,7 +164,7 @@ impl ListArrayExtension for ListArray {
 
         let list_type = DataType::List(Box::new(struct_type));
 
-        let offsets = OffsetsBuffer::try_from(offsets)?;
+        let offsets = OffsetBuffer::new(offsets.into());
 
         let list_array = Self::new(
             Arc::new(Field::new("entries", list_type)),
@@ -256,7 +256,7 @@ impl ListArrayExtension for ListArray {
         } else {
             assert_eq!(delimiter.len(), self.len());
 
-            Box::new(delimiter.as_arrow2().iter())
+            Box::new(delimiter.into_iter())
         };
         let self_iter = (0..self.len()).map(|i| self.get(i));
 
@@ -264,16 +264,13 @@ impl ListArrayExtension for ListArray {
             .zip(delimiter_iter)
             .map(|(list_element, delimiter)| {
                 join_arrow_list_of_utf8s(
-                    list_element.as_ref().map(|l| l.utf8().unwrap().data()),
+                    list_element.as_ref().map(|l| l.utf8().unwrap().to_arrow()),
                     delimiter.unwrap_or(""),
                 )
-            });
+            })
+            .collect::<Utf8Array>();
 
-        Ok(Utf8Array::new(
-            Field::new(self.name(), DataType::Utf8).into(),
-            Box::new(daft_arrow::array::Utf8Array::<i64>::from_iter(result)),
-        )
-        .unwrap())
+        Ok(result.rename(self.name()))
     }
 
     fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series> {
@@ -333,8 +330,9 @@ impl ListArrayExtension for ListArray {
                 )?
             }
         } else {
-            let desc_iter = desc.as_arrow2().values_iter();
-            let nulls_first_iter = nulls_first.as_arrow2().values_iter();
+            let desc_iter = desc.values()?;
+
+            let nulls_first_iter = nulls_first.values()?;
             if let Some(nulls) = self.nulls() {
                 list_sort_helper(
                     &self.flat_child,
@@ -363,12 +361,12 @@ impl ListArrayExtension for ListArray {
 
         // Calculate new offsets based on the lengths of the sorted series.
         let lengths = child_series.iter().map(|s| s.len());
-        let new_offsets = Offsets::try_from_lengths(lengths)?;
+        let new_offsets = OffsetBuffer::from_lengths(lengths);
 
         Ok(Self::new(
             self.field.clone(),
             child,
-            new_offsets.into(),
+            new_offsets,
             self.nulls().cloned(),
         ))
     }
@@ -404,9 +402,8 @@ impl ListArrayExtension for ListArray {
             let mut all_true = true;
             let bool_slice = slice.bool()?;
             let bool_nulls = bool_slice.nulls();
-            let bool_data = bool_slice.as_arrow2().values();
             for j in 0..bool_slice.len() {
-                if bool_nulls.is_none_or(|v| v.is_valid(j)) && !bool_data.get_bit(j) {
+                if bool_nulls.is_none_or(|v| v.is_valid(j)) && !bool_slice.get(j).unwrap() {
                     all_true = false;
                     break;
                 }
@@ -455,9 +452,9 @@ impl ListArrayExtension for ListArray {
             let mut any_true = false;
             let bool_slice = slice.bool()?;
             let bool_nulls = bool_slice.nulls();
-            let bool_data = bool_slice.as_arrow2().values();
+
             for j in 0..bool_slice.len() {
-                if bool_nulls.is_none_or(|v| v.is_valid(j)) && bool_data.get_bit(j) {
+                if bool_nulls.is_none_or(|v| v.is_valid(j)) && bool_slice.get(j).unwrap() {
                     any_true = true;
                     break;
                 }
@@ -503,7 +500,17 @@ impl ListArrayExtension for ListArray {
         )
         .unwrap();
 
-        for (list_idx, range) in self.offsets().ranges().enumerate() {
+        for (list_idx, range) in self
+            .offsets()
+            .windows(2)
+            .map(|w| {
+                let from = w[0];
+                let to = w[1];
+                debug_assert!(from <= to, "offsets must be monotonically increasing");
+                from..to
+            })
+            .enumerate()
+        {
             if list_nulls.is_some_and(|nulls| nulls.is_null(list_idx)) {
                 builder.append_null();
                 continue;
@@ -612,7 +619,7 @@ impl ListArrayExtension for FixedSizeListArray {
             Box::new(repeat_n(delimiter.get(0), self.len()))
         } else {
             assert_eq!(delimiter.len(), self.len());
-            Box::new(delimiter.as_arrow2().iter())
+            Box::new(delimiter.into_iter())
         };
         let self_iter = (0..self.len()).map(|i| self.get(i));
 
@@ -620,16 +627,13 @@ impl ListArrayExtension for FixedSizeListArray {
             .zip(delimiter_iter)
             .map(|(list_element, delimiter)| {
                 join_arrow_list_of_utf8s(
-                    list_element.as_ref().map(|l| l.utf8().unwrap().data()),
+                    list_element.as_ref().map(|l| l.utf8().unwrap().to_arrow()),
                     delimiter.unwrap_or(""),
                 )
-            });
+            })
+            .collect::<Utf8Array>();
 
-        Ok(Utf8Array::new(
-            Field::new(self.name(), DataType::Utf8).into(),
-            Box::new(daft_arrow::array::Utf8Array::<i64>::from_iter(result)),
-        )
-        .unwrap())
+        Ok(result.rename(self.name()))
     }
 
     fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series> {
@@ -724,8 +728,8 @@ impl ListArrayExtension for FixedSizeListArray {
                 )?
             }
         } else {
-            let desc_iter = desc.as_arrow2().values_iter();
-            let nulls_first_iter = nulls_first.as_arrow2().values_iter();
+            let desc_iter = desc.values()?;
+            let nulls_first_iter = nulls_first.values()?;
             if let Some(nulls) = self.nulls() {
                 list_sort_helper_fixed_size(
                     &self.flat_child,
@@ -755,16 +759,11 @@ impl ListArrayExtension for FixedSizeListArray {
     }
 }
 
-fn join_arrow_list_of_utf8s(
-    list_element: Option<&dyn daft_arrow::array::Array>,
-    delimiter_str: &str,
-) -> Option<String> {
+fn join_arrow_list_of_utf8s(list_element: Option<ArrayRef>, delimiter_str: &str) -> Option<String> {
     list_element
         .map(|list_element| {
             list_element
-                .as_any()
-                .downcast_ref::<daft_arrow::array::Utf8Array<i64>>()
-                .unwrap()
+                .as_string::<i64>()
                 .iter()
                 .fold(String::new(), |acc, str_item| {
                     acc + str_item.unwrap_or("") + delimiter_str
@@ -789,7 +788,7 @@ fn create_iter<'a>(arr: &'a Int64Array, len: usize) -> Box<dyn Iterator<Item = i
         1 => Box::new(repeat_n(arr.get(0).unwrap(), len)),
         arr_len => {
             assert_eq!(arr_len, len);
-            Box::new(arr.as_arrow2().iter().map(|x| *x.unwrap()))
+            Box::new(arr.into_iter().map(|x| x.unwrap()))
         }
     }
 }
@@ -841,7 +840,7 @@ fn get_chunks_helper(
         Ok(ListArray::new(
             inner_list_field.to_list_field(),
             inner_list.into_series(),
-            daft_arrow::offset::OffsetsBuffer::try_from(new_offsets)?,
+            OffsetBuffer::new(new_offsets.into()),
             nulls.cloned(), // Copy the parent's nulls.
         )
         .into_series())
@@ -865,7 +864,7 @@ fn get_chunks_helper(
         Ok(ListArray::new(
             inner_list_field.to_list_field(),
             inner_list.into_series(),
-            daft_arrow::offset::OffsetsBuffer::try_from(new_offsets)?,
+            OffsetBuffer::new(new_offsets.into()),
             nulls.cloned(), // Copy the parent's nulls.
         )
         .into_series())
@@ -874,7 +873,7 @@ fn get_chunks_helper(
 
 fn list_sort_helper(
     flat_child: &Series,
-    offsets: &OffsetsBuffer<i64>,
+    offsets: &OffsetBuffer<i64>,
     desc_iter: impl Iterator<Item = bool>,
     nulls_first_iter: impl Iterator<Item = bool>,
     nulls: impl Iterator<Item = bool>,
@@ -1041,3 +1040,613 @@ macro_rules! impl_aggs_list_array {
 }
 impl_aggs_list_array!(ListArray, list_agg_helper);
 impl_aggs_list_array!(FixedSizeListArray, fsl_agg_helper);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── helpers ──────────────────────────────────────────────────────────
+
+    fn make_list_i64(name: &str, data: Vec<Option<Vec<i64>>>) -> ListArray {
+        ListArray::from_vec(name, data)
+    }
+
+    fn make_list_utf8(name: &str, data: Vec<Option<Vec<&str>>>) -> ListArray {
+        let series_data: Vec<Option<Series>> = data
+            .into_iter()
+            .map(|opt| opt.map(|v| Utf8Array::from_values("item", v).into_series()))
+            .collect();
+        ListArray::from_series(name, series_data).unwrap()
+    }
+
+    fn make_list_bool(name: &str, data: Vec<Option<Vec<Option<bool>>>>) -> ListArray {
+        let series_data: Vec<Option<Series>> = data
+            .into_iter()
+            .map(|opt| opt.map(|v| BooleanArray::from_iter("item", v.into_iter()).into_series()))
+            .collect();
+        ListArray::from_series(name, series_data).unwrap()
+    }
+
+    fn make_fsl_i64(name: &str, data: &[i64], size: usize) -> FixedSizeListArray {
+        let child = Int64Array::from_values("item", data.iter().copied()).into_series();
+        let field = Field::new(
+            name,
+            DataType::FixedSizeList(Box::new(DataType::Int64), size),
+        );
+        FixedSizeListArray::new(field, child, None)
+    }
+
+    // ── count ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_list_count_all() {
+        let arr = make_list_i64(
+            "a",
+            vec![Some(vec![1, 2, 3]), Some(vec![4, 5]), Some(vec![]), None],
+        );
+        let result = arr.count(CountMode::All).unwrap();
+        assert_eq!(result.get(0), Some(3));
+        assert_eq!(result.get(1), Some(2));
+        assert_eq!(result.get(2), Some(0));
+        assert!(!result.is_valid(3));
+    }
+
+    #[test]
+    fn test_list_count_valid() {
+        let child = Int64Array::from_iter(
+            Field::new("item", DataType::Int64),
+            vec![Some(1), None, Some(3), Some(4)],
+        )
+        .into_series();
+        let offsets = OffsetBuffer::from_lengths([3, 1]);
+        let field = child.field().to_list_field();
+        let arr = ListArray::new(field, child, offsets, None);
+
+        let result = arr.count(CountMode::Valid).unwrap();
+        assert_eq!(result.get(0), Some(2));
+        assert_eq!(result.get(1), Some(1));
+    }
+
+    #[test]
+    fn test_list_count_null() {
+        let child = Int64Array::from_iter(
+            Field::new("item", DataType::Int64),
+            vec![Some(1), None, None, Some(4)],
+        )
+        .into_series();
+        let offsets = OffsetBuffer::from_lengths([3, 1]);
+        let field = child.field().to_list_field();
+        let arr = ListArray::new(field, child, offsets, None);
+
+        let result = arr.count(CountMode::Null).unwrap();
+        assert_eq!(result.get(0), Some(2));
+        assert_eq!(result.get(1), Some(0));
+    }
+
+    #[test]
+    fn test_fsl_count_all() {
+        let arr = make_fsl_i64("a", &[1, 2, 3, 4, 5, 6], 3);
+        let result = arr.count(CountMode::All).unwrap();
+        assert_eq!(result.get(0), Some(3));
+        assert_eq!(result.get(1), Some(3));
+    }
+
+    // ── explode ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_list_explode() {
+        let arr = make_list_i64(
+            "a",
+            vec![Some(vec![1, 2]), Some(vec![3]), Some(vec![]), None],
+        );
+        let result = arr.explode().unwrap();
+        // [1,2] + [3] + null(empty list) + null(null row) = 5
+        assert_eq!(result.len(), 5);
+        assert_eq!(result.i64().unwrap().get(0), Some(1));
+        assert_eq!(result.i64().unwrap().get(1), Some(2));
+        assert_eq!(result.i64().unwrap().get(2), Some(3));
+        assert!(!result.is_valid(3)); // empty list -> null
+        assert!(!result.is_valid(4)); // null row -> null
+    }
+
+    #[test]
+    fn test_fsl_explode() {
+        let arr = make_fsl_i64("a", &[10, 20, 30, 40], 2);
+        let result = arr.explode().unwrap();
+        assert_eq!(result.len(), 4);
+        assert_eq!(result.i64().unwrap().get(0), Some(10));
+        assert_eq!(result.i64().unwrap().get(3), Some(40));
+    }
+
+    // ── join ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_list_join_single_delimiter() {
+        let arr = make_list_utf8(
+            "a",
+            vec![
+                Some(vec!["hello", "world"]),
+                Some(vec!["foo", "bar", "baz"]),
+            ],
+        );
+        let delim = Utf8Array::from_slice("d", &[","]);
+        let result = arr.join(&delim).unwrap();
+        assert_eq!(result.get(0), Some("hello,world"));
+        assert_eq!(result.get(1), Some("foo,bar,baz"));
+    }
+
+    #[test]
+    fn test_list_join_per_row_delimiter() {
+        let arr = make_list_utf8("a", vec![Some(vec!["a", "b"]), Some(vec!["c", "d"])]);
+        let delim = Utf8Array::from_slice("d", &["-", " "]);
+        let result = arr.join(&delim).unwrap();
+        assert_eq!(result.get(0), Some("a-b"));
+        assert_eq!(result.get(1), Some("c d"));
+    }
+
+    #[test]
+    fn test_list_join_empty_list() {
+        let arr = make_list_utf8("a", vec![Some(vec![]), Some(vec!["x"])]);
+        let delim = Utf8Array::from_slice("d", &[","]);
+        let result = arr.join(&delim).unwrap();
+        assert_eq!(result.get(0), Some(""));
+        assert_eq!(result.get(1), Some("x"));
+    }
+
+    // ── get_children ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_list_get_children_positive_idx() {
+        let arr = make_list_i64("a", vec![Some(vec![10, 20, 30]), Some(vec![40, 50])]);
+        let idx = Int64Array::from_values("idx", [0i64]);
+        let default = Int64Array::from_values("default", [-1i64]).into_series();
+        let result = arr.get_children(&idx, &default).unwrap();
+        assert_eq!(result.i64().unwrap().get(0), Some(10));
+        assert_eq!(result.i64().unwrap().get(1), Some(40));
+    }
+
+    #[test]
+    fn test_list_get_children_negative_idx() {
+        let arr = make_list_i64("a", vec![Some(vec![10, 20, 30]), Some(vec![40, 50])]);
+        let idx = Int64Array::from_values("idx", [-1i64]);
+        let default = Int64Array::from_values("default", [0i64]).into_series();
+        let result = arr.get_children(&idx, &default).unwrap();
+        assert_eq!(result.i64().unwrap().get(0), Some(30));
+        assert_eq!(result.i64().unwrap().get(1), Some(50));
+    }
+
+    #[test]
+    fn test_list_get_children_out_of_bounds() {
+        let arr = make_list_i64("a", vec![Some(vec![1, 2])]);
+        let idx = Int64Array::from_values("idx", [10i64]);
+        let default = Int64Array::from_values("default", [-1i64]).into_series();
+        let result = arr.get_children(&idx, &default).unwrap();
+        assert_eq!(result.i64().unwrap().get(0), Some(-1));
+    }
+
+    #[test]
+    fn test_fsl_get_children() {
+        let arr = make_fsl_i64("a", &[10, 20, 30, 40], 2);
+        let idx = Int64Array::from_values("idx", [1i64]);
+        let default = Int64Array::from_values("default", [-1i64]).into_series();
+        let result = arr.get_children(&idx, &default).unwrap();
+        assert_eq!(result.i64().unwrap().get(0), Some(20));
+        assert_eq!(result.i64().unwrap().get(1), Some(40));
+    }
+
+    // ── get_chunks ──────────────────────────────────────────────────────
+
+    #[test]
+    fn test_list_get_chunks_even() {
+        let arr = make_list_i64("a", vec![Some(vec![1, 2, 3, 4])]);
+        let result = arr.get_chunks(2).unwrap();
+        // Result is a list of fixed-size-lists of size 2
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_list_get_chunks_with_remainder() {
+        let arr = make_list_i64("a", vec![Some(vec![1, 2, 3, 4, 5])]);
+        let result = arr.get_chunks(2).unwrap();
+        // 5 elements chunked by 2 = 2 full chunks, 1 element discarded
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_fsl_get_chunks() {
+        let arr = make_fsl_i64("a", &[1, 2, 3, 4, 5, 6], 6);
+        let result = arr.get_chunks(3).unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    // ── list_sort ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_list_sort_ascending() {
+        let arr = make_list_i64("a", vec![Some(vec![3, 1, 2]), Some(vec![6, 4, 5])]);
+        let desc = BooleanArray::from_slice("desc", &[false]);
+        let nulls_first = BooleanArray::from_slice("nf", &[false]);
+        let result = arr.list_sort(&desc, &nulls_first).unwrap();
+
+        let row0 = result.get(0).unwrap();
+        assert_eq!(row0.i64().unwrap().get(0), Some(1));
+        assert_eq!(row0.i64().unwrap().get(1), Some(2));
+        assert_eq!(row0.i64().unwrap().get(2), Some(3));
+
+        let row1 = result.get(1).unwrap();
+        assert_eq!(row1.i64().unwrap().get(0), Some(4));
+        assert_eq!(row1.i64().unwrap().get(1), Some(5));
+        assert_eq!(row1.i64().unwrap().get(2), Some(6));
+    }
+
+    #[test]
+    fn test_list_sort_descending() {
+        let arr = make_list_i64("a", vec![Some(vec![1, 3, 2])]);
+        let desc = BooleanArray::from_slice("desc", &[true]);
+        let nulls_first = BooleanArray::from_slice("nf", &[false]);
+        let result = arr.list_sort(&desc, &nulls_first).unwrap();
+
+        let row = result.get(0).unwrap();
+        assert_eq!(row.i64().unwrap().get(0), Some(3));
+        assert_eq!(row.i64().unwrap().get(1), Some(2));
+        assert_eq!(row.i64().unwrap().get(2), Some(1));
+    }
+
+    #[test]
+    fn test_list_sort_with_null_row() {
+        let arr = make_list_i64("a", vec![None, Some(vec![2, 1])]);
+        let desc = BooleanArray::from_slice("desc", &[false]);
+        let nulls_first = BooleanArray::from_slice("nf", &[false]);
+        let result = arr.list_sort(&desc, &nulls_first).unwrap();
+
+        assert!(!result.is_valid(0));
+        let row1 = result.get(1).unwrap();
+        assert_eq!(row1.i64().unwrap().get(0), Some(1));
+        assert_eq!(row1.i64().unwrap().get(1), Some(2));
+    }
+
+    #[test]
+    fn test_fsl_sort_ascending() {
+        let arr = make_fsl_i64("a", &[3, 1, 2, 6, 4, 5], 3);
+        let desc = BooleanArray::from_slice("desc", &[false]);
+        let nulls_first = BooleanArray::from_slice("nf", &[false]);
+        let result = arr.list_sort(&desc, &nulls_first).unwrap();
+
+        let list = result.to_list();
+        let row0 = list.get(0).unwrap();
+        assert_eq!(row0.i64().unwrap().get(0), Some(1));
+        assert_eq!(row0.i64().unwrap().get(1), Some(2));
+        assert_eq!(row0.i64().unwrap().get(2), Some(3));
+    }
+
+    // ── list_bool_and ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_list_bool_and_all_true() {
+        let arr = make_list_bool("a", vec![Some(vec![Some(true), Some(true), Some(true)])]);
+        let result = arr.list_bool_and().unwrap();
+        assert_eq!(result.get(0), Some(true));
+    }
+
+    #[test]
+    fn test_list_bool_and_has_false() {
+        let arr = make_list_bool("a", vec![Some(vec![Some(true), Some(false), Some(true)])]);
+        let result = arr.list_bool_and().unwrap();
+        assert_eq!(result.get(0), Some(false));
+    }
+
+    #[test]
+    fn test_list_bool_and_empty() {
+        let arr = make_list_bool("a", vec![Some(vec![])]);
+        let result = arr.list_bool_and().unwrap();
+        assert!(!result.is_valid(0));
+    }
+
+    #[test]
+    fn test_list_bool_and_null_row() {
+        // Construct a single-element list array where that element is null.
+        // We can't use make_list_bool with only None since concat needs >= 1 series.
+        let arr = make_list_bool("a", vec![Some(vec![Some(true)]), None]);
+        // We only care about the null row (index 1)
+        let result = arr.list_bool_and().unwrap();
+        assert_eq!(result.get(0), Some(true));
+        assert!(!result.is_valid(1));
+    }
+
+    #[test]
+    fn test_list_bool_and_with_null_elements() {
+        // null elements should be ignored; [true, null, true] => true
+        let arr = make_list_bool("a", vec![Some(vec![Some(true), None, Some(true)])]);
+        let result = arr.list_bool_and().unwrap();
+        assert_eq!(result.get(0), Some(true));
+    }
+
+    // ── list_bool_or ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_list_bool_or_has_true() {
+        let arr = make_list_bool("a", vec![Some(vec![Some(false), Some(true), Some(false)])]);
+        let result = arr.list_bool_or().unwrap();
+        assert_eq!(result.get(0), Some(true));
+    }
+
+    #[test]
+    fn test_list_bool_or_all_false() {
+        let arr = make_list_bool("a", vec![Some(vec![Some(false), Some(false)])]);
+        let result = arr.list_bool_or().unwrap();
+        assert_eq!(result.get(0), Some(false));
+    }
+
+    #[test]
+    fn test_list_bool_or_empty() {
+        let arr = make_list_bool("a", vec![Some(vec![])]);
+        let result = arr.list_bool_or().unwrap();
+        assert!(!result.is_valid(0));
+    }
+
+    #[test]
+    fn test_list_bool_or_null_row() {
+        let arr = make_list_bool("a", vec![Some(vec![Some(false)]), None]);
+        let result = arr.list_bool_or().unwrap();
+        assert_eq!(result.get(0), Some(false));
+        assert!(!result.is_valid(1));
+    }
+
+    // ── list_contains ───────────────────────────────────────────────────
+
+    #[test]
+    fn test_list_contains_found() {
+        let arr = make_list_i64("a", vec![Some(vec![1, 2, 3]), Some(vec![4, 5, 6])]);
+        let item = Int64Array::from_values("item", [2i64, 6]).into_series();
+        let result = arr.list_contains(&item).unwrap();
+        assert_eq!(result.get(0), Some(true));
+        assert_eq!(result.get(1), Some(true));
+    }
+
+    #[test]
+    fn test_list_contains_not_found() {
+        let arr = make_list_i64("a", vec![Some(vec![1, 2, 3]), Some(vec![4, 5, 6])]);
+        let item = Int64Array::from_values("item", [99i64, 0]).into_series();
+        let result = arr.list_contains(&item).unwrap();
+        assert_eq!(result.get(0), Some(false));
+        assert_eq!(result.get(1), Some(false));
+    }
+
+    #[test]
+    fn test_list_contains_null_row() {
+        let arr = make_list_i64("a", vec![None, Some(vec![1])]);
+        let item = Int64Array::from_values("item", [1i64, 1]).into_series();
+        let result = arr.list_contains(&item).unwrap();
+        assert!(!result.is_valid(0));
+        assert_eq!(result.get(1), Some(true));
+    }
+
+    #[test]
+    fn test_list_contains_null_item() {
+        let arr = make_list_i64("a", vec![Some(vec![1, 2])]);
+        let item =
+            Int64Array::from_iter(Field::new("item", DataType::Int64), vec![None]).into_series();
+        let result = arr.list_contains(&item).unwrap();
+        assert!(!result.is_valid(0));
+    }
+
+    // ── value_counts ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_list_value_counts_basic() {
+        let arr = make_list_i64("a", vec![Some(vec![1, 2, 1, 3, 2, 1])]);
+        let result = arr.value_counts().unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn test_list_value_counts_multiple_rows() {
+        let arr = make_list_i64("a", vec![Some(vec![1, 1]), Some(vec![2, 3, 2])]);
+        let result = arr.value_counts().unwrap();
+        assert_eq!(result.len(), 2);
+    }
+
+    // ── list_fill ───────────────────────────────────────────────────────
+
+    #[test]
+    fn test_list_fill_basic() {
+        let elem = Int64Array::from_values("e", [10i64, 20, 30]).into_series();
+        let num = Int64Array::from_values("n", [2i64, 3, 1]);
+        let result = list_fill(&elem, &num).unwrap();
+        assert_eq!(result.len(), 3);
+
+        let row0 = result.get(0).unwrap();
+        assert_eq!(row0.len(), 2);
+        assert_eq!(row0.i64().unwrap().get(0), Some(10));
+        assert_eq!(row0.i64().unwrap().get(1), Some(10));
+
+        let row1 = result.get(1).unwrap();
+        assert_eq!(row1.len(), 3);
+
+        let row2 = result.get(2).unwrap();
+        assert_eq!(row2.len(), 1);
+        assert_eq!(row2.i64().unwrap().get(0), Some(30));
+    }
+
+    #[test]
+    fn test_list_fill_broadcast_num() {
+        let elem = Int64Array::from_values("e", [5i64, 6]).into_series();
+        let num = Int64Array::from_values("n", [3i64]);
+        let result = list_fill(&elem, &num).unwrap();
+        assert_eq!(result.len(), 2);
+
+        let row0 = result.get(0).unwrap();
+        assert_eq!(row0.len(), 3);
+        assert_eq!(row0.i64().unwrap().get(0), Some(5));
+
+        let row1 = result.get(1).unwrap();
+        assert_eq!(row1.len(), 3);
+        assert_eq!(row1.i64().unwrap().get(0), Some(6));
+    }
+
+    // ── aggregation: sum ────────────────────────────────────────────────
+
+    #[test]
+    fn test_list_sum() {
+        let arr = make_list_i64("a", vec![Some(vec![1, 2, 3]), Some(vec![10, 20])]);
+        let result = arr.sum().unwrap();
+        assert_eq!(result.i64().unwrap().get(0), Some(6));
+        assert_eq!(result.i64().unwrap().get(1), Some(30));
+    }
+
+    #[test]
+    fn test_list_sum_empty() {
+        let arr = make_list_i64("a", vec![Some(vec![])]);
+        let result = arr.sum().unwrap();
+        assert_eq!(result.len(), 1);
+    }
+
+    // ── aggregation: mean ───────────────────────────────────────────────
+
+    #[test]
+    fn test_list_mean() {
+        let arr = make_list_i64("a", vec![Some(vec![2, 4, 6])]);
+        let result = arr.mean().unwrap();
+        let val = result.f64().unwrap().get(0).unwrap();
+        assert!((val - 4.0).abs() < f64::EPSILON);
+    }
+
+    // ── aggregation: min / max ──────────────────────────────────────────
+
+    #[test]
+    fn test_list_min() {
+        let arr = make_list_i64("a", vec![Some(vec![3, 1, 2]), Some(vec![6, 4, 5])]);
+        let result = arr.min().unwrap();
+        assert_eq!(result.i64().unwrap().get(0), Some(1));
+        assert_eq!(result.i64().unwrap().get(1), Some(4));
+    }
+
+    #[test]
+    fn test_list_max() {
+        let arr = make_list_i64("a", vec![Some(vec![3, 1, 2]), Some(vec![6, 4, 5])]);
+        let result = arr.max().unwrap();
+        assert_eq!(result.i64().unwrap().get(0), Some(3));
+        assert_eq!(result.i64().unwrap().get(1), Some(6));
+    }
+
+    // ── fsl aggregation ─────────────────────────────────────────────────
+
+    #[test]
+    fn test_fsl_sum() {
+        let arr = make_fsl_i64("a", &[1, 2, 3, 4, 5, 6], 3);
+        let result = arr.sum().unwrap();
+        assert_eq!(result.i64().unwrap().get(0), Some(6));
+        assert_eq!(result.i64().unwrap().get(1), Some(15));
+    }
+
+    #[test]
+    fn test_fsl_min() {
+        let arr = make_fsl_i64("a", &[3, 1, 2, 6, 4, 5], 3);
+        let result = arr.min().unwrap();
+        assert_eq!(result.i64().unwrap().get(0), Some(1));
+        assert_eq!(result.i64().unwrap().get(1), Some(4));
+    }
+
+    #[test]
+    fn test_fsl_max() {
+        let arr = make_fsl_i64("a", &[3, 1, 2, 6, 4, 5], 3);
+        let result = arr.max().unwrap();
+        assert_eq!(result.i64().unwrap().get(0), Some(3));
+        assert_eq!(result.i64().unwrap().get(1), Some(6));
+    }
+
+    #[test]
+    fn test_fsl_mean() {
+        let arr = make_fsl_i64("a", &[2, 4, 6], 3);
+        let result = arr.mean().unwrap();
+        let val = result.f64().unwrap().get(0).unwrap();
+        assert!((val - 4.0).abs() < f64::EPSILON);
+    }
+
+    // ── per-row desc/nulls_first for list_sort ──────────────────────────
+
+    #[test]
+    fn test_list_sort_per_row_desc() {
+        let arr = make_list_i64("a", vec![Some(vec![3, 1, 2]), Some(vec![6, 4, 5])]);
+        let desc = BooleanArray::from_slice("desc", &[false, true]);
+        let nulls_first = BooleanArray::from_slice("nf", &[false, false]);
+        let result = arr.list_sort(&desc, &nulls_first).unwrap();
+
+        let row0 = result.get(0).unwrap();
+        assert_eq!(row0.i64().unwrap().get(0), Some(1)); // asc
+
+        let row1 = result.get(1).unwrap();
+        assert_eq!(row1.i64().unwrap().get(0), Some(6)); // desc
+    }
+
+    // ── fsl list_bool_and / list_bool_or ────────────────────────────────
+
+    #[test]
+    fn test_fsl_bool_and() {
+        let child = BooleanArray::from_slice("item", &[true, true, true, false]).into_series();
+        let field = Field::new("a", DataType::FixedSizeList(Box::new(DataType::Boolean), 2));
+        let arr = FixedSizeListArray::new(field, child, None);
+        let result = arr.list_bool_and().unwrap();
+        assert_eq!(result.get(0), Some(true));
+        assert_eq!(result.get(1), Some(false));
+    }
+
+    #[test]
+    fn test_fsl_bool_or() {
+        let child = BooleanArray::from_slice("item", &[false, false, false, true]).into_series();
+        let field = Field::new("a", DataType::FixedSizeList(Box::new(DataType::Boolean), 2));
+        let arr = FixedSizeListArray::new(field, child, None);
+        let result = arr.list_bool_or().unwrap();
+        assert_eq!(result.get(0), Some(false));
+        assert_eq!(result.get(1), Some(true));
+    }
+
+    // ── fsl list_contains ───────────────────────────────────────────────
+
+    #[test]
+    fn test_fsl_list_contains() {
+        let arr = make_fsl_i64("a", &[1, 2, 3, 4], 2);
+        let item = Int64Array::from_values("item", [2i64, 5]).into_series();
+        let result = arr.list_contains(&item).unwrap();
+        assert_eq!(result.get(0), Some(true));
+        assert_eq!(result.get(1), Some(false));
+    }
+
+    // ── fsl value_counts ────────────────────────────────────────────────
+
+    #[test]
+    fn test_fsl_value_counts() {
+        let arr = make_fsl_i64("a", &[1, 1, 2, 2, 2, 3], 3);
+        let result = arr.value_counts().unwrap();
+        assert_eq!(result.len(), 2);
+    }
+
+    // ── fsl join ────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_fsl_join() {
+        let child = Utf8Array::from_values("item", ["a", "b", "c", "d"]).into_series();
+        let field = Field::new("a", DataType::FixedSizeList(Box::new(DataType::Utf8), 2));
+        let arr = FixedSizeListArray::new(field, child, None);
+        let delim = Utf8Array::from_slice("d", &[","]);
+        let result = arr.join(&delim).unwrap();
+        assert_eq!(result.get(0), Some("a,b"));
+        assert_eq!(result.get(1), Some("c,d"));
+    }
+
+    // ── fsl explode ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_fsl_explode_with_nulls() {
+        let child = Int64Array::from_values("item", [1i64, 2, 3, 4]).into_series();
+        let field = Field::new("a", DataType::FixedSizeList(Box::new(DataType::Int64), 2));
+        let nulls = daft_arrow::buffer::NullBuffer::from(&[true, false]);
+        let arr = FixedSizeListArray::new(field, child, Some(nulls));
+        let result = arr.explode().unwrap();
+        // valid row: 2 elements, null row: 1 null sentinel
+        assert_eq!(result.len(), 3);
+        assert_eq!(result.i64().unwrap().get(0), Some(1));
+        assert_eq!(result.i64().unwrap().get(1), Some(2));
+        assert!(!result.is_valid(2));
+    }
+}

@@ -44,7 +44,10 @@ def iceberg_catalog(tmp_path_factory):
 def global_sess(iceberg_catalog):
     daft.attach_catalog(iceberg_catalog, alias=CATALOG_ALIAS)
     yield daft.current_session()
-    daft.detach_catalog(alias=CATALOG_ALIAS)
+    try:
+        daft.detach_catalog(alias=CATALOG_ALIAS)
+    except Exception:
+        pass
 
 
 @pytest.fixture(scope="session")
@@ -52,7 +55,10 @@ def sess(iceberg_catalog):
     sess = Session()
     sess.attach_catalog(iceberg_catalog, alias=CATALOG_ALIAS)
     yield sess
-    sess.detach_catalog(alias=CATALOG_ALIAS)
+    try:
+        sess.detach_catalog(alias=CATALOG_ALIAS)
+    except Exception:
+        pass
 
 
 @pytest.fixture(scope="session")

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import struct
 
 import pyarrow as pa
 import pytest
@@ -8,6 +9,11 @@ import pytest
 import daft
 from daft.datatype import DataType
 from daft.errors import ExpressionTypeError
+
+# Negative NaN: sign bit set, same payload as regular NaN.
+# IEEE 754 total ordering treats -NaN as less than all values,
+# but Daft's sort contract treats all NaN as greater than regular values.
+NEGATIVE_NAN = struct.unpack("d", struct.pack("Q", 0xFFF8000000000000))[0]
 
 ###
 # Validation tests
@@ -504,3 +510,19 @@ def test_sort_with_constant_keys_and_small_partitions(make_df, with_morsel_size)
     out.collect()
     assert len(out) == 4
     assert set(out.to_pydict()["k"]) == {5}
+
+
+def test_negative_nan_single_column_sort():
+    """Negative NaN in single-column sort correctly sorts after regular values."""
+    df = daft.from_pydict({"b": [0.0, NEGATIVE_NAN]})
+    result = df.sort("b").to_pydict()["b"]
+    assert result[0] == 0.0
+    assert math.isnan(result[1])
+
+
+def test_negative_nan_multicolumn_sort():
+    """Negative NaN in multi-column sort should sort after regular values, not before."""
+    df = daft.from_pydict({"a": ["x", "x"], "b": [0.0, NEGATIVE_NAN]})
+    result = df.sort(["a", "b"]).to_pydict()["b"]
+    assert result[0] == 0.0
+    assert math.isnan(result[1])

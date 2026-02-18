@@ -1812,7 +1812,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow",
  "arrow-schema",
- "daft-arrow",
  "pyo3",
 ]
 
@@ -1929,7 +1928,7 @@ dependencies = [
  "bincode",
  "common-py-serde",
  "enum_dispatch",
- "indicatif 0.17.11",
+ "indicatif",
  "itertools 0.14.0",
  "opentelemetry",
  "pyo3",
@@ -2058,19 +2057,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ca0197aee26d1ae37445ee532fefce43251d24cc7c166799f4d46817f1d3973"
 dependencies = [
  "crossbeam-utils",
-]
-
-[[package]]
-name = "console"
-version = "0.15.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "054ccb5b10f9f2cbf51eb355ca1d05c2d279ce1804688d0db74b4733a5aeafd8"
-dependencies = [
- "encode_unicode",
- "libc",
- "once_cell",
- "unicode-width 0.2.2",
- "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2542,8 +2528,9 @@ name = "daft-cli"
 version = "0.3.0-dev0"
 dependencies = [
  "clap",
- "console 0.16.2",
+ "console",
  "daft-dashboard",
+ "libc",
  "pyo3",
  "tokio",
  "tracing-subscriber",
@@ -3047,7 +3034,7 @@ dependencies = [
  "common-scan-info",
  "common-system-info",
  "common-tracing",
- "console 0.16.2",
+ "console",
  "daft-context",
  "daft-core",
  "daft-csv",
@@ -3066,7 +3053,7 @@ dependencies = [
  "daft-writers",
  "futures",
  "indexmap 2.13.0",
- "indicatif 0.18.3",
+ "indicatif",
  "itertools 0.14.0",
  "log",
  "opentelemetry",
@@ -3206,7 +3193,6 @@ dependencies = [
  "async-stream",
  "bincode",
  "bytes",
- "common-arrow-ffi",
  "common-error",
  "common-runtime",
  "daft-arrow",
@@ -5057,24 +5043,11 @@ dependencies = [
 
 [[package]]
 name = "indicatif"
-version = "0.17.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "183b3088984b400f4cfac3620d5e076c84da5364016b4f49473de574b2586235"
-dependencies = [
- "console 0.15.11",
- "number_prefix",
- "portable-atomic",
- "unicode-width 0.2.2",
- "web-time",
-]
-
-[[package]]
-name = "indicatif"
 version = "0.18.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9375e112e4b463ec1b1c6c011953545c65a30164fbab5b581df32b3abf0dcb88"
 dependencies = [
- "console 0.16.2",
+ "console",
  "portable-atomic",
  "unicode-width 0.2.2",
  "unit-prefix",
@@ -5787,12 +5760,6 @@ dependencies = [
  "autocfg",
  "libm",
 ]
-
-[[package]]
-name = "number_prefix"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "830b246a0e5f20af87141b25c173cd1b609bd7779a4617d6ec582abaf90870f3"
 
 [[package]]
 name = "numpy"

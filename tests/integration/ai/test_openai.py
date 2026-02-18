@@ -47,10 +47,9 @@ def _collect_metrics(metrics: RecordBatch | None) -> dict[str, int]:
 
     aggregated: defaultdict[str, int] = defaultdict(int)
 
-    for stats in metrics.to_pylist():
-        for name, value in stats.items():
-            if isinstance(value, (int, float)):
-                aggregated[name] += int(value)
+    for row in metrics.to_pylist():
+        for metric_name, metric_info in row["stats"]:
+            aggregated[metric_name] += int(metric_info["value"])
 
     return dict(aggregated)
 
