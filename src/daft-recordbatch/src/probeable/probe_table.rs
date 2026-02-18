@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    array::ops::as_arrow::AsArrow,
     prelude::SchemaRef,
     utils::{
         dyn_compare::{MultiDynArrayComparator, build_dyn_multi_array_compare},
@@ -19,8 +18,6 @@ pub struct ProbeTable {
     hash_table: HashMap<IndexHash, Vec<u64>, IdentityBuildHasher>,
     tables: Vec<ArrowTableEntry>,
     compare_fn: MultiDynArrayComparator,
-    num_groups: usize,
-    num_rows: usize,
 }
 
 impl ProbeTable {
@@ -55,8 +52,6 @@ impl ProbeTable {
             hash_table,
             tables: vec![],
             compare_fn,
-            num_groups: 0,
-            num_rows: 0,
         })
     }
 
@@ -77,32 +72,37 @@ impl ProbeTable {
         let input_arrays = input
             .columns
             .iter()
-            .map(|s| Ok(s.as_physical()?.to_arrow2()))
+            .map(|s| s.as_physical()?.to_arrow())
             .collect::<DaftResult<Vec<_>>>()?;
 
-        let iter = hashes.as_arrow2().clone().into_iter();
+        // Collect needed: hashes is a local variable, so .iter() borrows it and
+        // the returned iterator would reference a dropped value.
+        #[allow(clippy::needless_collect)]
+        let hash_vec: Vec<Option<u64>> = hashes.iter().collect();
 
-        Ok(Box::new(iter.enumerate().map(move |(idx, h)| match h {
-            Some(h) => {
-                if let Some((_, indices)) = self.hash_table.raw_entry().from_hash(h, |other| {
-                    h == other.hash && {
-                        let other_table_idx = (other.idx >> Self::TABLE_IDX_SHIFT) as usize;
-                        let other_row_idx = (other.idx & Self::LOWER_MASK) as usize;
+        Ok(Box::new(hash_vec.into_iter().enumerate().map(
+            move |(idx, h)| match h {
+                Some(h) => {
+                    if let Some((_, indices)) = self.hash_table.raw_entry().from_hash(h, |other| {
+                        h == other.hash && {
+                            let other_table_idx = (other.idx >> Self::TABLE_IDX_SHIFT) as usize;
+                            let other_row_idx = (other.idx & Self::LOWER_MASK) as usize;
 
-                        let other_table = self.tables.get(other_table_idx).unwrap();
+                            let other_table = self.tables.get(other_table_idx).unwrap();
 
-                        let other_refs = other_table.0.as_slice();
+                            let other_refs = other_table.0.as_slice();
 
-                        (self.compare_fn)(other_refs, &input_arrays, other_row_idx, idx).is_eq()
+                            (self.compare_fn)(other_refs, &input_arrays, other_row_idx, idx).is_eq()
+                        }
+                    }) {
+                        Some(indices.as_slice())
+                    } else {
+                        None
                     }
-                }) {
-                    Some(indices.as_slice())
-                } else {
-                    None
                 }
-            }
-            None => None,
-        })))
+                None => None,
+            },
+        )))
     }
 
     fn add_table(&mut self, table: &RecordBatch) -> DaftResult<()> {
@@ -117,11 +117,11 @@ impl ProbeTable {
         let current_arrays = table
             .columns
             .iter()
-            .map(|s| Ok(s.as_physical()?.to_arrow2()))
+            .map(|s| s.as_physical()?.to_arrow())
             .collect::<DaftResult<Vec<_>>>()?;
         self.tables.push(ArrowTableEntry(current_arrays));
         let current_array_refs = self.tables.last().unwrap().0.as_slice();
-        for (i, h) in hashes.as_arrow2().values_iter().enumerate() {
+        for (i, h) in hashes.values().iter().enumerate() {
             let idx = table_offset | i;
             let entry = self.hash_table.raw_entry_mut().from_hash(*h, |other| {
                 (*h == other.hash) && {
@@ -151,14 +151,12 @@ impl ProbeTable {
                         },
                         vec![idx as u64],
                     );
-                    self.num_groups += 1;
                 }
                 RawEntryMut::Occupied(mut entry) => {
                     entry.get_mut().push(idx as u64);
                 }
             }
         }
-        self.num_rows += table.len();
         Ok(())
     }
 }

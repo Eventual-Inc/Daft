@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{
-    array::ops::as_arrow::AsArrow,
     prelude::SchemaRef,
     utils::{
         dyn_compare::{MultiDynArrayComparator, build_dyn_multi_array_compare},
@@ -13,13 +12,12 @@ use hashbrown::{HashMap, hash_map::RawEntryMut};
 
 use super::{ArrowTableEntry, IndicesMapper, Probeable, ProbeableBuilder};
 use crate::RecordBatch;
+
 pub struct ProbeSet {
     schema: SchemaRef,
     hash_table: HashMap<IndexHash, (), IdentityBuildHasher>,
     tables: Vec<ArrowTableEntry>,
     compare_fn: MultiDynArrayComparator,
-    num_groups: usize,
-    num_rows: usize,
 }
 
 impl ProbeSet {
@@ -56,8 +54,6 @@ impl ProbeSet {
             hash_table,
             tables: vec![],
             compare_fn,
-            num_groups: 0,
-            num_rows: 0,
         })
     }
 
@@ -75,11 +71,14 @@ impl ProbeSet {
         let input_arrays = input
             .columns
             .iter()
-            .map(|s| Ok(s.as_physical()?.to_arrow2()))
+            .map(|s| s.as_physical()?.to_arrow())
             .collect::<DaftResult<Vec<_>>>()?;
-        let iter = hashes.as_arrow2().clone().into_iter();
+        // Collect needed: hashes is a local variable, so .iter() borrows it and
+        // the returned iterator would reference a dropped value.
+        #[allow(clippy::needless_collect)]
+        let hash_vec: Vec<Option<u64>> = hashes.iter().collect();
 
-        Ok(iter.enumerate().map(move |(idx, h)| {
+        Ok(hash_vec.into_iter().enumerate().map(move |(idx, h)| {
             if let Some(h) = h {
                 self.hash_table.raw_entry().from_hash(h, |other| {
                     h == other.hash && {
@@ -113,7 +112,7 @@ impl ProbeSet {
         let current_arrays = table
             .columns
             .iter()
-            .map(|s| Ok(s.as_physical()?.to_arrow2()))
+            .map(|s| s.as_physical()?.to_arrow())
             .collect::<DaftResult<Vec<_>>>()?;
         self.tables.push(ArrowTableEntry(current_arrays));
         let current_array_refs = self.tables.last().unwrap().0.as_slice();
@@ -147,12 +146,10 @@ impl ProbeSet {
                         },
                         (),
                     );
-                    self.num_groups += 1;
                 }
                 RawEntryMut::Occupied(_) => {}
             }
         }
-        self.num_rows += table.len();
         Ok(())
     }
 }
