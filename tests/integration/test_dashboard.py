@@ -36,7 +36,7 @@ def dashboard_url():
         random_port = s.getsockname()[1]
 
     # Start the dashboard server as a subprocess, simulating real user behavior
-    # "daft dashboard --port <port>"
+    # "daft dashboard start --port <port>"
     import os
     import shutil
     import subprocess
@@ -49,7 +49,7 @@ def dashboard_url():
         if not os.path.exists(daft_bin):
             raise RuntimeError("Could not find 'daft' executable")
 
-    cmd = [daft_bin, "dashboard", "--start", "--port", str(random_port)]
+    cmd = [daft_bin, "dashboard", "start", "--port", str(random_port)]
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
     url = f"http://127.0.0.1:{random_port}"
