@@ -80,7 +80,7 @@ impl Source for FlightShuffleReadSource {
         let (tx, rx) = create_channel(1);
         let task = io_runtime
             .spawn(async move {
-                let client_manager = FlightClientManager::new(server_addresses);
+                let mut client_manager = FlightClientManager::new(server_addresses);
 
                 // Fetch the partition data from the flight server with cache_ids
                 let mut stream = client_manager
