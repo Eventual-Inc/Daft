@@ -2,7 +2,7 @@ use std::{iter::repeat_n, sync::Arc};
 
 use arrow::{
     array::{ArrayRef, AsArray, BooleanBufferBuilder, BooleanBuilder, make_comparator},
-    buffer::OffsetBuffer,
+    buffer::{NullBuffer, OffsetBuffer},
 };
 use common_error::DaftResult;
 use daft_core::{
@@ -412,7 +412,7 @@ impl ListArrayExtension for ListArray {
             result_nulls.push(true);
         }
 
-        let null_buffer = daft_arrow::buffer::NullBuffer::from_iter(result_nulls.iter().copied());
+        let null_buffer = NullBuffer::from_iter(result_nulls.iter().copied());
 
         let arrow_array = Arc::new(arrow::array::BooleanArray::new(
             result.finish(),
@@ -463,7 +463,7 @@ impl ListArrayExtension for ListArray {
             result_nulls.push(true);
         }
 
-        let null_buffer = daft_arrow::buffer::NullBuffer::from_iter(result_nulls.iter().copied());
+        let null_buffer = NullBuffer::from_iter(result_nulls.iter().copied());
         BooleanArray::from_values(self.name(), result).with_nulls(Some(null_buffer))
     }
 
@@ -821,7 +821,7 @@ fn create_iter<'a>(arr: &'a Int64Array, len: usize) -> Box<dyn Iterator<Item = i
 fn get_chunks_helper(
     flat_child: &Series,
     field: Arc<Field>,
-    nulls: Option<&daft_arrow::buffer::NullBuffer>,
+    nulls: Option<&NullBuffer>,
     size: usize,
     total_elements_to_skip: usize,
     to_skip: Option<impl Iterator<Item = usize>>,
@@ -1640,7 +1640,7 @@ mod tests {
     fn test_fsl_explode_with_nulls() {
         let child = Int64Array::from_values("item", [1i64, 2, 3, 4]).into_series();
         let field = Field::new("a", DataType::FixedSizeList(Box::new(DataType::Int64), 2));
-        let nulls = daft_arrow::buffer::NullBuffer::from(&[true, false]);
+        let nulls = NullBuffer::from(&[true, false]);
         let arr = FixedSizeListArray::new(field, child, Some(nulls));
         let result = arr.explode().unwrap();
         // valid row: 2 elements, null row: 1 null sentinel

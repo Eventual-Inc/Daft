@@ -2815,7 +2815,6 @@ version = "0.3.0-dev0"
 dependencies = [
  "arrow",
  "common-error",
- "daft-arrow",
  "daft-core",
  "daft-dsl",
  "indexmap 2.13.0",
