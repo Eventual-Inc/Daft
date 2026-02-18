@@ -36,47 +36,36 @@ enum ValueGrower {
 }
 
 /// Select the appropriate ValueGrower variant based on the Daft DataType.
-fn grower_from_dtype(dtype: &DataType) -> ValueGrower {
+/// Temporal types (Date, Timestamp, etc.) are included for the Extension recursive case.
+fn grower_from_dtype(dtype: &DataType, capacity: usize) -> ValueGrower {
+    let fixed_width = |bw: usize| ValueGrower::FixedWidth {
+        buffer: MutableBuffer::new(capacity * bw),
+        byte_width: bw,
+    };
     match dtype {
         DataType::Boolean => ValueGrower::Boolean {
-            builder: BooleanBufferBuilder::new(0),
+            builder: BooleanBufferBuilder::new(capacity),
         },
-        DataType::Int8 | DataType::UInt8 => ValueGrower::FixedWidth {
-            buffer: MutableBuffer::new(0),
-            byte_width: 1,
-        },
-        DataType::Int16 | DataType::UInt16 => ValueGrower::FixedWidth {
-            buffer: MutableBuffer::new(0),
-            byte_width: 2,
-        },
-        DataType::Int32 | DataType::UInt32 | DataType::Float32 | DataType::Date => {
-            ValueGrower::FixedWidth {
-                buffer: MutableBuffer::new(0),
-                byte_width: 4,
-            }
-        }
+        DataType::Int8 | DataType::UInt8 => fixed_width(1),
+        DataType::Int16 | DataType::UInt16 => fixed_width(2),
+        DataType::Int32 | DataType::UInt32 | DataType::Float32 | DataType::Date => fixed_width(4),
         DataType::Int64
         | DataType::UInt64
         | DataType::Float64
         | DataType::Timestamp(..)
         | DataType::Duration(..)
-        | DataType::Time(..) => ValueGrower::FixedWidth {
-            buffer: MutableBuffer::new(0),
-            byte_width: 8,
-        },
-        DataType::Decimal128(..) | DataType::Interval => ValueGrower::FixedWidth {
-            buffer: MutableBuffer::new(0),
-            byte_width: 16,
-        },
+        | DataType::Time(..) => fixed_width(8),
+        DataType::Decimal128(..) | DataType::Interval => fixed_width(16),
         DataType::Utf8 | DataType::Binary => ValueGrower::VarLen {
-            offsets: vec![0i64],
+            offsets: {
+                let mut v = Vec::with_capacity(capacity + 1);
+                v.push(0i64);
+                v
+            },
             values: MutableBuffer::new(0),
         },
-        DataType::FixedSizeBinary(n) => ValueGrower::FixedWidth {
-            buffer: MutableBuffer::new(0),
-            byte_width: *n,
-        },
-        DataType::Extension(_, inner, _) => grower_from_dtype(inner),
+        DataType::FixedSizeBinary(n) => fixed_width(*n),
+        DataType::Extension(_, inner, _) => grower_from_dtype(inner, capacity),
         other => panic!("Unsupported DataType for ArrowGrowable: {other:?}"),
     }
 }
@@ -103,7 +92,7 @@ impl<'a, T: DaftArrowBackedType> ArrowGrowable<'a, T> {
         dtype: &DataType,
         arrays: Vec<&'a DataArray<T>>,
         use_validity: bool,
-        _capacity: usize,
+        capacity: usize,
     ) -> Self {
         let source_data: Vec<ArrayData> = arrays.iter().map(|s| to_data(s.data())).collect();
 
@@ -114,11 +103,11 @@ impl<'a, T: DaftArrowBackedType> ArrowGrowable<'a, T> {
             .map(|d| d.data_type().clone())
             .unwrap_or_else(|| dtype.to_arrow().unwrap_or(arrow::datatypes::DataType::Null));
 
-        let grower = grower_from_dtype(dtype);
+        let grower = grower_from_dtype(dtype, capacity);
 
         let needs_validity = use_validity || source_data.iter().any(|d| d.nulls().is_some());
         let validity = if needs_validity {
-            Some(NullBufferBuilder::new(0))
+            Some(NullBufferBuilder::new(capacity))
         } else {
             None
         };
@@ -148,9 +137,7 @@ where
         // NullBuffer from ArrayData::nulls() has offset baked in, so use logical indices.
         if let Some(ref mut validity) = self.validity {
             if let Some(nulls) = source.nulls() {
-                for i in 0..len {
-                    validity.append(nulls.is_valid(start + i));
-                }
+                validity.append_buffer(&nulls.slice(start, len));
             } else {
                 validity.append_n_non_nulls(len);
             }
@@ -177,6 +164,15 @@ where
                 }
             }
             ValueGrower::VarLen { offsets, values } => {
+                debug_assert!(
+                    matches!(
+                        source.data_type(),
+                        arrow::datatypes::DataType::LargeUtf8
+                            | arrow::datatypes::DataType::LargeBinary
+                    ),
+                    "VarLen grower expects LargeUtf8/LargeBinary but got {:?}",
+                    source.data_type()
+                );
                 let src_offsets: &[i64] = source.buffers()[0].typed_data();
                 let src_values = source.buffers()[1].as_slice();
                 let base = offset + start;
