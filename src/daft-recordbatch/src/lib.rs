@@ -13,7 +13,6 @@ use arrow_array::ArrayRef;
 use common_display::table_display::{StrValue, make_comfy_table};
 use common_error::{DaftError, DaftResult};
 use common_runtime::get_compute_runtime;
-use daft_arrow::array::Array;
 use daft_core::{
     array::ops::{
         DaftApproxCountDistinctAggable, DaftHllSketchAggable, GroupIndices, full::FullNull,
@@ -149,11 +148,8 @@ impl RecordBatch {
         Ok(Self::new_unchecked(schema, columns?, num_rows))
     }
 
-    #[deprecated(note = "arrow2 migration")]
-    pub fn get_inner_arrow_arrays(
-        &self,
-    ) -> impl Iterator<Item = Box<dyn daft_arrow::array::Array>> + '_ {
-        self.columns.iter().map(|s| s.to_arrow2())
+    pub fn get_inner_arrow_arrays(&self) -> impl Iterator<Item = ArrayRef> + '_ {
+        self.columns.iter().map(|s| s.to_arrow().unwrap())
     }
 
     /// Create a new [`RecordBatch`] and validate against `num_rows`
@@ -492,13 +488,14 @@ impl RecordBatch {
             let num_filtered = mask
                 .nulls()
                 .map(|nulls| {
-                    daft_arrow::bitmap::and(
-                        &daft_arrow::buffer::from_null_buffer(nulls.clone()),
-                        mask.as_bitmap(),
+                    arrow::compute::and(
+                        &arrow::array::BooleanArray::new(nulls.inner().clone(), None),
+                        &mask.as_arrow().unwrap(),
                     )
-                    .unset_bits()
+                    .unwrap()
+                    .false_count()
                 })
-                .unwrap_or_else(|| mask.as_bitmap().unset_bits());
+                .unwrap_or_else(|| mask.as_arrow().unwrap().false_count());
             mask.len() - num_filtered
         };
 
@@ -1623,30 +1620,17 @@ impl TryFrom<RecordBatch> for FileInfos {
 
         let file_paths = get_column_by_name("path")?
             .utf8()?
-            .data()
-            .as_any()
-            .downcast_ref::<daft_arrow::array::Utf8Array<i64>>()
-            .unwrap()
-            .iter()
-            .map(|s| s.unwrap().to_string())
+            .values()?
+            .map(str::to_string)
             .collect::<Vec<_>>();
+
         let file_sizes = get_column_by_name("size")?
             .i64()?
-            .data()
-            .as_any()
-            .downcast_ref::<daft_arrow::array::Int64Array>()
-            .unwrap()
-            .iter()
-            .map(|n| n.copied())
+            .into_iter()
             .collect::<Vec<_>>();
         let num_rows = get_column_by_name("num_rows")?
             .i64()?
-            .data()
-            .as_any()
-            .downcast_ref::<daft_arrow::array::Int64Array>()
-            .unwrap()
-            .iter()
-            .map(|n| n.copied())
+            .into_iter()
             .collect::<Vec<_>>();
         Ok(Self::new_internal(file_paths, file_sizes, num_rows))
     }
@@ -1657,19 +1641,17 @@ impl TryFrom<&FileInfos> for RecordBatch {
 
     fn try_from(file_info: &FileInfos) -> DaftResult<Self> {
         let columns = vec![
-            Series::try_from((
-                "path",
-                daft_arrow::array::Utf8Array::<i64>::from_iter_values(file_info.file_paths.iter())
-                    .to_boxed(),
-            ))?,
-            Series::try_from((
-                "size",
-                daft_arrow::array::PrimitiveArray::<i64>::from(&file_info.file_sizes).to_boxed(),
-            ))?,
-            Series::try_from((
-                "num_rows",
-                daft_arrow::array::PrimitiveArray::<i64>::from(&file_info.num_rows).to_boxed(),
-            ))?,
+            Utf8Array::from_slice("path", file_info.file_paths.as_ref()).into_series(),
+            Int64Array::from_iter(
+                Field::new("size", DataType::Int64),
+                file_info.file_sizes.iter().copied(),
+            )
+            .into_series(),
+            Int64Array::from_iter(
+                Field::new("num_rows", DataType::Int64),
+                file_info.num_rows.iter().copied(),
+            )
+            .into_series(),
         ];
         Self::from_nonempty_columns(columns)
     }

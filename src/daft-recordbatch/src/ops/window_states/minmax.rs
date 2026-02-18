@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 
+use arrow::array::NullBufferBuilder;
 use common_error::DaftResult;
 use daft_core::prelude::*;
 
@@ -10,7 +11,7 @@ pub struct MinMaxWindowState {
     deque: VecDeque<usize>,
     cur_idx: usize,
     result_idxs: Vec<u64>,
-    null_builder: daft_arrow::buffer::NullBufferBuilder,
+    null_builder: NullBufferBuilder,
     is_min: bool,
 }
 
@@ -22,7 +23,7 @@ impl MinMaxWindowState {
             deque: VecDeque::new(),
             cur_idx: 0,
             result_idxs: Vec::with_capacity(total_length),
-            null_builder: daft_arrow::buffer::NullBufferBuilder::new(total_length),
+            null_builder: NullBufferBuilder::new(total_length),
             is_min,
         }
     }
