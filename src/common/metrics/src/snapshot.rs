@@ -7,7 +7,8 @@ use itertools::Itertools as _;
 use smallvec::SmallVec;
 
 use crate::{
-    BYTES_WRITTEN_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, ROWS_WRITTEN_KEY, Stat, Stats, TASK_DURATION_KEY,
+    BYTES_READ_KEY, BYTES_WRITTEN_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, ROWS_WRITTEN_KEY, Stat, Stats,
+    TASK_DURATION_KEY,
 };
 
 macro_rules! stats {
@@ -61,7 +62,7 @@ impl StatSnapshotImpl for SourceSnapshot {
         stats![
             TASK_DURATION_KEY; Stat::Duration(Duration::from_micros(self.cpu_us)),
             ROWS_OUT_KEY; Stat::Count(self.rows_out),
-            "bytes_read"; Stat::Bytes(self.bytes_read),
+            BYTES_READ_KEY; Stat::Bytes(self.bytes_read),
         ]
     }
 
