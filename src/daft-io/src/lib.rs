@@ -10,6 +10,7 @@ mod local;
 pub mod multipart;
 mod object_io;
 mod object_store_glob;
+mod range_expansion;
 mod retry;
 pub mod s3_like;
 mod stats;
