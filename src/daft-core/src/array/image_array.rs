@@ -1,6 +1,6 @@
 use std::vec;
 
-use arrow::buffer::OffsetBuffer;
+use arrow::buffer::{NullBuffer, OffsetBuffer};
 use common_error::DaftResult;
 
 use crate::{
@@ -14,7 +14,7 @@ pub struct ImageArraySidecarData {
     pub heights: Vec<u32>,
     pub widths: Vec<u32>,
     pub modes: Vec<u8>,
-    pub nulls: Option<daft_arrow::buffer::NullBuffer>,
+    pub nulls: Option<NullBuffer>,
 }
 
 impl ImageArray {

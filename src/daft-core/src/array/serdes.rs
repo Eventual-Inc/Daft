@@ -58,7 +58,7 @@ impl<T: DaftPrimitiveType> serde::Serialize for DataArray<T> {
     {
         let mut s = serializer.serialize_map(Some(2))?;
         s.serialize_entry("field", self.field())?;
-        s.serialize_entry("values", &IterSer::new(self.as_arrow2().iter()))?;
+        s.serialize_entry("values", &IterSer::new(self.iter()))?;
         s.end()
     }
 }

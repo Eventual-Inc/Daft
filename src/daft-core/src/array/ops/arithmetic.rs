@@ -377,13 +377,13 @@ where
     let (result_child, nulls) = match (lhs_len, rhs_len) {
         (a, b) if a == b => Ok((
             kernel(lhs_child, rhs_child)?,
-            daft_arrow::buffer::NullBuffer::union(lhs.nulls(), rhs.nulls()),
+            NullBuffer::union(lhs.nulls(), rhs.nulls()),
         )),
         (l, 1) => {
             let nulls = if rhs.is_valid(0) {
                 lhs.nulls().cloned()
             } else {
-                Some(daft_arrow::buffer::NullBuffer::new_null(l))
+                Some(NullBuffer::new_null(l))
             };
             Ok((kernel(lhs_child, &rhs_child.repeat(lhs_len)?)?, nulls))
         }
@@ -391,7 +391,7 @@ where
             let nulls = if lhs.is_valid(0) {
                 rhs.nulls().cloned()
             } else {
-                Some(daft_arrow::buffer::NullBuffer::new_null(r))
+                Some(NullBuffer::new_null(r))
             };
             Ok((kernel(&lhs_child.repeat(lhs_len)?, rhs_child)?, nulls))
         }
