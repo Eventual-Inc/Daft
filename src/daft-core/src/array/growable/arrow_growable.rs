@@ -17,21 +17,12 @@ use crate::{
     series::{IntoSeries, Series},
 };
 
-/// Interpret a Buffer's raw bytes as `&[i64]` for offset access.
-///
-/// # Safety
-/// Caller must ensure the buffer was originally written as aligned i64 values.
-/// This is safe for arrow offset buffers, which are guaranteed 64-byte aligned.
-#[allow(clippy::cast_ptr_alignment)]
-unsafe fn buffer_as_i64_slice(buf: &Buffer) -> &[i64] {
-    unsafe { std::slice::from_raw_parts(buf.as_ptr().cast::<i64>(), buf.len() / 8) }
-}
-
-/// Handles four physical buffer layouts for direct buffer manipulation.
+/// Handles three physical buffer layouts for direct buffer manipulation.
 /// Selected at construction time based on Daft `DataType`.
 enum ValueGrower {
-    /// Fixed-width primitives (Int8-64, UInt8-64, Float32/64, Decimal128, Interval, temporals).
-    Primitive {
+    /// Fixed-width types: primitives, decimal, interval, temporals, and fixed-size binary.
+    /// Single contiguous buffer of elements with known byte width.
+    FixedWidth {
         buffer: MutableBuffer,
         byte_width: usize,
     },
@@ -42,11 +33,6 @@ enum ValueGrower {
         offsets: Vec<i64>,
         values: MutableBuffer,
     },
-    /// Fixed-size binary: contiguous buffer with known element size.
-    FixedBinary {
-        buffer: MutableBuffer,
-        element_size: usize,
-    },
 }
 
 /// Select the appropriate ValueGrower variant based on the Daft DataType.
@@ -55,16 +41,16 @@ fn grower_from_dtype(dtype: &DataType) -> ValueGrower {
         DataType::Boolean => ValueGrower::Boolean {
             builder: BooleanBufferBuilder::new(0),
         },
-        DataType::Int8 | DataType::UInt8 => ValueGrower::Primitive {
+        DataType::Int8 | DataType::UInt8 => ValueGrower::FixedWidth {
             buffer: MutableBuffer::new(0),
             byte_width: 1,
         },
-        DataType::Int16 | DataType::UInt16 => ValueGrower::Primitive {
+        DataType::Int16 | DataType::UInt16 => ValueGrower::FixedWidth {
             buffer: MutableBuffer::new(0),
             byte_width: 2,
         },
         DataType::Int32 | DataType::UInt32 | DataType::Float32 | DataType::Date => {
-            ValueGrower::Primitive {
+            ValueGrower::FixedWidth {
                 buffer: MutableBuffer::new(0),
                 byte_width: 4,
             }
@@ -74,11 +60,11 @@ fn grower_from_dtype(dtype: &DataType) -> ValueGrower {
         | DataType::Float64
         | DataType::Timestamp(..)
         | DataType::Duration(..)
-        | DataType::Time(..) => ValueGrower::Primitive {
+        | DataType::Time(..) => ValueGrower::FixedWidth {
             buffer: MutableBuffer::new(0),
             byte_width: 8,
         },
-        DataType::Decimal128(..) | DataType::Interval => ValueGrower::Primitive {
+        DataType::Decimal128(..) | DataType::Interval => ValueGrower::FixedWidth {
             buffer: MutableBuffer::new(0),
             byte_width: 16,
         },
@@ -86,9 +72,9 @@ fn grower_from_dtype(dtype: &DataType) -> ValueGrower {
             offsets: vec![0i64],
             values: MutableBuffer::new(0),
         },
-        DataType::FixedSizeBinary(n) => ValueGrower::FixedBinary {
+        DataType::FixedSizeBinary(n) => ValueGrower::FixedWidth {
             buffer: MutableBuffer::new(0),
-            element_size: *n,
+            byte_width: *n,
         },
         DataType::Extension(_, inner, _) => grower_from_dtype(inner),
         other => panic!("Unsupported DataType for ArrowGrowable: {other:?}"),
@@ -99,7 +85,7 @@ fn grower_from_dtype(dtype: &DataType) -> ValueGrower {
 ///
 /// Instead of deferring operations to `MutableArrayData` (which uses internal
 /// function-pointer dispatch), this copies directly into raw buffers using
-/// `extend_from_slice` — ~2x faster than arrow2's growable.
+/// `extend_from_slice` - about 2x faster than arrow2's growable.
 pub struct ArrowGrowable<'a, T: DaftArrowBackedType> {
     name: String,
     dtype: DataType,
@@ -175,7 +161,7 @@ where
         // so we must add source.offset() for physical byte access.
         let offset = source.offset();
         match &mut self.grower {
-            ValueGrower::Primitive { buffer, byte_width } => {
+            ValueGrower::FixedWidth { buffer, byte_width } => {
                 let bw = *byte_width;
                 let src = source.buffers()[0].as_slice();
                 let byte_start = (offset + start) * bw;
@@ -191,8 +177,7 @@ where
                 }
             }
             ValueGrower::VarLen { offsets, values } => {
-                // SAFETY: arrow offset buffers are 64-byte aligned; i64 requires 8.
-                let src_offsets = unsafe { buffer_as_i64_slice(&source.buffers()[0]) };
+                let src_offsets: &[i64] = source.buffers()[0].typed_data();
                 let src_values = source.buffers()[1].as_slice();
                 let base = offset + start;
                 for i in 0..len {
@@ -202,15 +187,6 @@ where
                     values.extend_from_slice(&src_values[val_start..val_end]);
                     offsets.push(offsets.last().unwrap() + (val_end - val_start) as i64);
                 }
-            }
-            ValueGrower::FixedBinary {
-                buffer,
-                element_size,
-            } => {
-                let es = *element_size;
-                let src = source.buffers()[0].as_slice();
-                let byte_start = (offset + start) * es;
-                buffer.extend_from_slice(&src[byte_start..byte_start + len * es]);
             }
         }
 
@@ -224,7 +200,7 @@ where
         }
 
         match &mut self.grower {
-            ValueGrower::Primitive { buffer, byte_width } => {
+            ValueGrower::FixedWidth { buffer, byte_width } => {
                 buffer.resize(buffer.len() + additional * *byte_width, 0);
             }
             ValueGrower::Boolean { builder } => {
@@ -234,12 +210,6 @@ where
                 let last = *offsets.last().unwrap();
                 offsets.resize(offsets.len() + additional, last);
             }
-            ValueGrower::FixedBinary {
-                buffer,
-                element_size,
-            } => {
-                buffer.resize(buffer.len() + additional * *element_size, 0);
-            }
         }
 
         self.len += additional;
@@ -248,55 +218,31 @@ where
     fn build(&mut self) -> DaftResult<Series> {
         let null_buffer = self.validity.as_mut().and_then(|v| v.finish());
 
-        let data = match &mut self.grower {
-            ValueGrower::Primitive { buffer, .. } => {
-                let buf: Buffer = std::mem::replace(buffer, MutableBuffer::new(0)).into();
-                // SAFETY: buffers are constructed correctly by extend/add_nulls.
-                unsafe {
-                    ArrayData::builder(self.arrow_dtype.clone())
-                        .len(self.len)
-                        .add_buffer(buf)
-                        .nulls(null_buffer)
-                        .build_unchecked()
-                }
+        // Collect buffers from the grower, then build ArrayData.
+        let buffers: Vec<Buffer> = match &mut self.grower {
+            ValueGrower::FixedWidth { buffer, .. } => {
+                vec![std::mem::replace(buffer, MutableBuffer::new(0)).into()]
             }
             ValueGrower::Boolean { builder } => {
-                let bool_buf = builder.finish();
-                // SAFETY: boolean buffer is constructed correctly by extend/add_nulls.
-                unsafe {
-                    ArrayData::builder(self.arrow_dtype.clone())
-                        .len(self.len)
-                        .add_buffer(bool_buf.into_inner())
-                        .nulls(null_buffer)
-                        .build_unchecked()
-                }
+                vec![builder.finish().into_inner()]
             }
             ValueGrower::VarLen { offsets, values } => {
                 let offsets_vec = std::mem::replace(offsets, vec![0i64]);
-                let offsets_buf: Buffer = ScalarBuffer::from(offsets_vec).into_inner();
-                let values_buf: Buffer = std::mem::replace(values, MutableBuffer::new(0)).into();
-                // SAFETY: offsets and values are constructed correctly by extend/add_nulls.
-                unsafe {
-                    ArrayData::builder(self.arrow_dtype.clone())
-                        .len(self.len)
-                        .add_buffer(offsets_buf)
-                        .add_buffer(values_buf)
-                        .nulls(null_buffer)
-                        .build_unchecked()
-                }
-            }
-            ValueGrower::FixedBinary { buffer, .. } => {
-                let buf: Buffer = std::mem::replace(buffer, MutableBuffer::new(0)).into();
-                // SAFETY: buffer is constructed correctly by extend/add_nulls.
-                unsafe {
-                    ArrayData::builder(self.arrow_dtype.clone())
-                        .len(self.len)
-                        .add_buffer(buf)
-                        .nulls(null_buffer)
-                        .build_unchecked()
-                }
+                vec![
+                    ScalarBuffer::from(offsets_vec).into_inner(),
+                    std::mem::replace(values, MutableBuffer::new(0)).into(),
+                ]
             }
         };
+
+        // SAFETY: buffers are constructed correctly by extend/add_nulls.
+        let mut builder = ArrayData::builder(self.arrow_dtype.clone())
+            .len(self.len)
+            .nulls(null_buffer);
+        for buf in buffers {
+            builder = builder.add_buffer(buf);
+        }
+        let data = unsafe { builder.build_unchecked() };
 
         self.len = 0;
 
@@ -347,7 +293,7 @@ impl Growable for ArrowNullGrowable {
 mod tests {
     use super::*;
 
-    /// Extends from a non-zero start to catch off-by-one errors in physical buffer access.
+    /// Verifies that extend with a non-zero start correctly offsets into the source buffer.
     #[test]
     fn test_extend_from_nonzero_start() {
         let field = Field::new("test", DataType::Int32);
