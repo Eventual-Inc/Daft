@@ -2,7 +2,7 @@ use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
 use common_metrics::{
-    BYTES_WRITTEN_KEY, Counter, ROWS_IN_KEY, ROWS_WRITTEN_KEY, StatSnapshot, TASK_DURATION_KEY,
+    BYTES_WRITTEN_KEY, Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_WRITTEN_KEY, StatSnapshot,
     ops::{NodeInfo, NodeType},
     snapshot::WriteSnapshot,
 };
@@ -23,7 +23,7 @@ use crate::{
 };
 
 struct WriteStats {
-    cpu_us: Counter,
+    duration_us: Counter,
     rows_in: Counter,
     rows_written: Counter,
     bytes_written: Counter,
@@ -36,7 +36,7 @@ impl WriteStats {
         let node_kv = key_values_from_node_info(node_info);
 
         Self {
-            cpu_us: Counter::new(meter, TASK_DURATION_KEY, None),
+            duration_us: Counter::new(meter, DURATION_KEY, None),
             rows_in: Counter::new(meter, ROWS_IN_KEY, None),
             rows_written: Counter::new(meter, ROWS_WRITTEN_KEY, None),
             bytes_written: Counter::new(meter, BYTES_WRITTEN_KEY, None),
@@ -61,7 +61,7 @@ impl RuntimeStats for WriteStats {
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
-        let cpu_us = self.cpu_us.load(ordering);
+        let cpu_us = self.duration_us.load(ordering);
         let rows_in = self.rows_in.load(ordering);
         let rows_written = self.rows_written.load(ordering);
         let bytes_written = self.bytes_written.load(ordering);
@@ -82,7 +82,7 @@ impl RuntimeStats for WriteStats {
     fn add_rows_out(&self, _rows: u64) {}
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
+        self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 

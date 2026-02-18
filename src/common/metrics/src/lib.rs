@@ -116,11 +116,13 @@ impl IntoIterator for Stats {
 }
 
 // Common statistic names
-pub const BYTES_READ_KEY: &str = "bytes_read";
-pub const BYTES_WRITTEN_KEY: &str = "bytes_written";
+pub const BYTES_READ_KEY: &str = "bytes.read";
+pub const BYTES_WRITTEN_KEY: &str = "bytes.written";
+pub const DURATION_KEY: &str = "duration";
 pub const ROWS_IN_KEY: &str = "rows.in";
 pub const ROWS_OUT_KEY: &str = "rows.out";
-// Swordfish-specific: tracks intermediate output rows produced before finalize.
+// Swordfish: rows.written are updated during execution while rows.out are not
+// while in Flotilla rows.written and rows.out are both updated during execution.
 pub const ROWS_WRITTEN_KEY: &str = "rows.written";
 
 // Task metrics
@@ -128,7 +130,6 @@ pub const TASK_ACTIVE_KEY: &str = "task.active";
 pub const TASK_COMPLETED_KEY: &str = "task.completed";
 pub const TASK_FAILED_KEY: &str = "task.failed";
 pub const TASK_CANCELLED_KEY: &str = "task.cancelled";
-pub const TASK_DURATION_KEY: &str = "task.duration_us";
 
 // Execution attributes
 pub const ATTR_EXECUTION_RUNNER: &str = "execution.runner";

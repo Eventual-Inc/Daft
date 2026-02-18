@@ -6,7 +6,7 @@ use std::{
 
 use common_error::DaftResult;
 use common_metrics::{
-    Counter, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, TASK_DURATION_KEY,
+    Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::DefaultSnapshot,
 };
@@ -34,7 +34,7 @@ const FIRST_LIMIT_STAGE: &str = "0";
 const SECOND_LIMIT_STAGE: &str = "1";
 
 pub struct LimitStats {
-    cpu_us: Counter,
+    duration_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
     node_kv: Vec<KeyValue>,
@@ -44,7 +44,7 @@ impl LimitStats {
     pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
         let node_kv = key_values_from_context(context);
         Self {
-            cpu_us: Counter::new(meter, TASK_DURATION_KEY, None),
+            duration_us: Counter::new(meter, DURATION_KEY, None),
             rows_in: Counter::new(meter, ROWS_IN_KEY, None),
             rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
             node_kv,
@@ -52,7 +52,7 @@ impl LimitStats {
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
+        self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
     fn add_rows_in(&self, rows: u64) {
         self.rows_in.add(rows, self.node_kv.as_slice());
@@ -90,7 +90,7 @@ impl RuntimeStats for LimitStats {
 
     fn export_snapshot(&self) -> StatSnapshot {
         StatSnapshot::Default(DefaultSnapshot {
-            cpu_us: self.cpu_us.load(std::sync::atomic::Ordering::SeqCst),
+            cpu_us: self.duration_us.load(std::sync::atomic::Ordering::SeqCst),
             rows_in: self.rows_in.load(std::sync::atomic::Ordering::SeqCst),
             rows_out: self.rows_out.load(std::sync::atomic::Ordering::SeqCst),
         })

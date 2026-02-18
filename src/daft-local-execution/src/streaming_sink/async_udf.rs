@@ -7,7 +7,7 @@ use std::{
 
 use common_error::DaftResult;
 use common_metrics::{
-    Counter, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, TASK_DURATION_KEY,
+    Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot,
     operator_metrics::OperatorCounter,
     ops::{NodeInfo, NodeType},
     snapshot::UdfSnapshot,
@@ -46,7 +46,7 @@ struct AsyncUdfParams {
 struct AsyncUdfRuntimeStats {
     meter: Meter,
     node_kv: Vec<KeyValue>,
-    cpu_us: Counter,
+    duration_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
     custom_counters: Mutex<HashMap<Arc<str>, Counter>>,
@@ -61,7 +61,7 @@ impl RuntimeStats for AsyncUdfRuntimeStats {
         let counters = self.custom_counters.lock().unwrap();
 
         StatSnapshot::Udf(UdfSnapshot {
-            cpu_us: self.cpu_us.load(ordering),
+            cpu_us: self.duration_us.load(ordering),
             rows_in: self.rows_in.load(ordering),
             rows_out: self.rows_out.load(ordering),
             custom_counters: counters
@@ -80,7 +80,7 @@ impl RuntimeStats for AsyncUdfRuntimeStats {
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
+        self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
@@ -90,7 +90,7 @@ impl AsyncUdfRuntimeStats {
 
         Self {
             meter: meter.clone(), // Cheap to clone, Arc under the hood
-            cpu_us: Counter::new(meter, TASK_DURATION_KEY, None),
+            duration_us: Counter::new(meter, DURATION_KEY, None),
             rows_in: Counter::new(meter, ROWS_IN_KEY, None),
             rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
             custom_counters: Mutex::new(HashMap::new()),

@@ -1,7 +1,7 @@
 use std::sync::{Arc, atomic::Ordering};
 
 use common_metrics::{
-    Counter, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, TASK_DURATION_KEY,
+    Counter, DURATION_KEY, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::FilterSnapshot,
 };
@@ -21,7 +21,7 @@ use crate::{
 };
 
 pub struct FilterStats {
-    cpu_us: Counter,
+    duration_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
     selectivity: Gauge,
@@ -32,7 +32,7 @@ impl FilterStats {
     pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
         let node_kv = key_values_from_context(context);
         Self {
-            cpu_us: Counter::new(meter, TASK_DURATION_KEY, None),
+            duration_us: Counter::new(meter, DURATION_KEY, None),
             rows_in: Counter::new(meter, ROWS_IN_KEY, None),
             rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
             selectivity: Gauge::new(meter, "selectivity", None),
@@ -54,7 +54,8 @@ impl RuntimeStats for FilterStats {
         let StatSnapshot::Filter(snapshot) = snapshot else {
             return;
         };
-        self.cpu_us.add(snapshot.cpu_us, self.node_kv.as_slice());
+        self.duration_us
+            .add(snapshot.cpu_us, self.node_kv.as_slice());
         self.rows_in.add(snapshot.rows_in, self.node_kv.as_slice());
         self.rows_out
             .add(snapshot.rows_out, self.node_kv.as_slice());
@@ -69,7 +70,7 @@ impl RuntimeStats for FilterStats {
         let rows_out = self.rows_out.load(Ordering::SeqCst);
         let selectivity = Self::selectivity(rows_in, rows_out);
         StatSnapshot::Filter(FilterSnapshot {
-            cpu_us: self.cpu_us.load(Ordering::SeqCst),
+            cpu_us: self.duration_us.load(Ordering::SeqCst),
             rows_in,
             rows_out,
             selectivity,

@@ -2,7 +2,7 @@ use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
 use common_metrics::{
-    Counter, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, TASK_DURATION_KEY,
+    Counter, DURATION_KEY, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot,
     ops::{NodeInfo, NodeType},
     snapshot::FilterSnapshot,
 };
@@ -20,7 +20,7 @@ use crate::{
 };
 
 pub struct FilterStats {
-    cpu_us: Counter,
+    duration_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
     selectivity: Gauge,
@@ -32,7 +32,7 @@ impl FilterStats {
         let node_kv = key_values_from_node_info(node_info);
 
         Self {
-            cpu_us: Counter::new(meter, TASK_DURATION_KEY, None),
+            duration_us: Counter::new(meter, DURATION_KEY, None),
             rows_in: Counter::new(meter, ROWS_IN_KEY, None),
             rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
             selectivity: Gauge::new(meter, "selectivity", None),
@@ -57,7 +57,7 @@ impl RuntimeStats for FilterStats {
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
-        let cpu_us = self.cpu_us.load(ordering);
+        let cpu_us = self.duration_us.load(ordering);
         let rows_in = self.rows_in.load(ordering);
         let rows_out = self.rows_out.load(ordering);
         let selectivity = self.selectivity.load(ordering);
@@ -81,7 +81,7 @@ impl RuntimeStats for FilterStats {
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
+        self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 

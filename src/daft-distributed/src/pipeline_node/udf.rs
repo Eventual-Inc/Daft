@@ -4,7 +4,7 @@ use std::{
 };
 
 use common_metrics::{
-    Counter, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, TASK_DURATION_KEY,
+    Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::UdfSnapshot,
 };
@@ -26,7 +26,7 @@ use crate::{
 };
 
 pub struct UdfStats {
-    cpu_us: Counter,
+    duration_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
     custom_counters: Mutex<HashMap<Arc<str>, Counter>>,
@@ -38,7 +38,7 @@ impl UdfStats {
     pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
         let node_kv = key_values_from_context(context);
         Self {
-            cpu_us: Counter::new(meter, TASK_DURATION_KEY, None),
+            duration_us: Counter::new(meter, DURATION_KEY, None),
             rows_in: Counter::new(meter, ROWS_IN_KEY, None),
             rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
             custom_counters: Mutex::new(HashMap::new()),
@@ -53,7 +53,8 @@ impl RuntimeStats for UdfStats {
         let StatSnapshot::Udf(snapshot) = snapshot else {
             return;
         };
-        self.cpu_us.add(snapshot.cpu_us, self.node_kv.as_slice());
+        self.duration_us
+            .add(snapshot.cpu_us, self.node_kv.as_slice());
         self.rows_in.add(snapshot.rows_in, self.node_kv.as_slice());
         self.rows_out
             .add(snapshot.rows_out, self.node_kv.as_slice());
@@ -71,7 +72,7 @@ impl RuntimeStats for UdfStats {
 
     fn export_snapshot(&self) -> StatSnapshot {
         StatSnapshot::Udf(UdfSnapshot {
-            cpu_us: self.cpu_us.load(Ordering::Relaxed),
+            cpu_us: self.duration_us.load(Ordering::Relaxed),
             rows_in: self.rows_in.load(Ordering::Relaxed),
             rows_out: self.rows_out.load(Ordering::Relaxed),
             custom_counters: self

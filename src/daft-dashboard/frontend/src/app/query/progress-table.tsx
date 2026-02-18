@@ -3,7 +3,7 @@ import { ExecutingState, OperatorStatus, Stat } from "./types";
 
 const ROWS_IN_STAT_KEY = "rows.in";
 const ROWS_OUT_STAT_KEY = "rows.out";
-const DURATION_US_STAT_KEY = "task.duration_us";
+const DURATION_US_STAT_KEY = "duration";
 
 const getStatusIcon = (status: OperatorStatus) => {
   switch (status) {

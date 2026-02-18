@@ -5,7 +5,7 @@ use std::{
 
 use common_error::DaftResult;
 use common_metrics::{
-    QueryID, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, Stats, TASK_DURATION_KEY, snapshot::StatSnapshotImpl,
+    DURATION_KEY, QueryID, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, Stats, snapshot::StatSnapshotImpl,
 };
 use daft_context::get_context;
 
@@ -71,7 +71,7 @@ impl StatisticsSubscriber for DashboardStatisticsSubscriber {
                         let mapped_key = match key.as_ref() {
                             "rows_in" => ROWS_IN_KEY,
                             "rows_out" => ROWS_OUT_KEY,
-                            "duration_us" => TASK_DURATION_KEY,
+                            "duration_us" => DURATION_KEY,
                             _ => key.as_ref(),
                         };
                         let arc_key: Arc<str> = Arc::from(mapped_key);

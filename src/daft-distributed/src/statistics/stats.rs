@@ -1,8 +1,8 @@
 use std::sync::{Arc, atomic::Ordering};
 
 use common_metrics::{
-    Counter, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, TASK_ACTIVE_KEY, TASK_CANCELLED_KEY,
-    TASK_COMPLETED_KEY, TASK_DURATION_KEY, TASK_FAILED_KEY, normalize_name, ops::NodeInfo,
+    Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, TASK_ACTIVE_KEY,
+    TASK_CANCELLED_KEY, TASK_COMPLETED_KEY, TASK_FAILED_KEY, normalize_name, ops::NodeInfo,
     snapshot::DefaultSnapshot,
 };
 use opentelemetry::{
@@ -105,7 +105,7 @@ impl DefaultRuntimeStats {
             node_kv,
             completed_rows_in: Counter::new(meter, ROWS_IN_KEY, None),
             completed_rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
-            completed_cpu_us: Counter::new(meter, TASK_DURATION_KEY, None),
+            completed_cpu_us: Counter::new(meter, DURATION_KEY, None),
         }
     }
 }

@@ -304,7 +304,7 @@ mod tests {
     use async_trait::async_trait;
     use common_error::DaftResult;
     use common_metrics::{
-        NodeID, QueryPlan, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, Stats, TASK_DURATION_KEY,
+        DURATION_KEY, NodeID, QueryPlan, ROWS_IN_KEY, ROWS_OUT_KEY, Stat, StatSnapshot, Stats,
     };
     use daft_context::{QueryMetadata, QueryResult, Subscriber};
     use daft_micropartition::MicroPartitionRef;
@@ -672,7 +672,7 @@ mod tests {
         assert_eq!(
             event[0],
             (
-                TASK_DURATION_KEY.into(),
+                DURATION_KEY.into(),
                 Stat::Duration(Duration::from_millis(1))
             )
         );

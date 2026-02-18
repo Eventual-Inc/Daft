@@ -4,7 +4,7 @@ use common_display::{DisplayAs, DisplayLevel};
 #[cfg(feature = "python")]
 use common_file_formats::FileFormatConfig;
 use common_metrics::{
-    BYTES_READ_KEY, Counter, ROWS_OUT_KEY, StatSnapshot, TASK_DURATION_KEY,
+    BYTES_READ_KEY, Counter, DURATION_KEY, ROWS_OUT_KEY, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::SourceSnapshot,
 };
@@ -26,7 +26,7 @@ use crate::{
 };
 
 pub struct SourceStats {
-    cpu_us: Counter,
+    duration_us: Counter,
     rows_out: Counter,
     bytes_read: Counter,
     node_kv: Vec<KeyValue>,
@@ -36,7 +36,7 @@ impl SourceStats {
     pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
         let node_kv = key_values_from_context(context);
         Self {
-            cpu_us: Counter::new(meter, TASK_DURATION_KEY, None),
+            duration_us: Counter::new(meter, DURATION_KEY, None),
             rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
             bytes_read: Counter::new(meter, BYTES_READ_KEY, None),
             node_kv,
@@ -49,7 +49,8 @@ impl RuntimeStats for SourceStats {
         let StatSnapshot::Source(snapshot) = snapshot else {
             return;
         };
-        self.cpu_us.add(snapshot.cpu_us, self.node_kv.as_slice());
+        self.duration_us
+            .add(snapshot.cpu_us, self.node_kv.as_slice());
         self.rows_out
             .add(snapshot.rows_out, self.node_kv.as_slice());
         self.bytes_read
@@ -58,7 +59,7 @@ impl RuntimeStats for SourceStats {
 
     fn export_snapshot(&self) -> StatSnapshot {
         StatSnapshot::Source(SourceSnapshot {
-            cpu_us: self.cpu_us.load(Ordering::Relaxed),
+            cpu_us: self.duration_us.load(Ordering::Relaxed),
             rows_out: self.rows_out.load(Ordering::Relaxed),
             bytes_read: self.bytes_read.load(Ordering::Relaxed),
         })

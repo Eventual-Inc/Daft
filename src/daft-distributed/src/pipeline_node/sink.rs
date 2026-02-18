@@ -2,7 +2,7 @@ use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
 use common_metrics::{
-    BYTES_WRITTEN_KEY, Counter, ROWS_IN_KEY, ROWS_WRITTEN_KEY, StatSnapshot, TASK_DURATION_KEY,
+    BYTES_WRITTEN_KEY, Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_WRITTEN_KEY, StatSnapshot,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::WriteSnapshot,
 };
@@ -29,7 +29,7 @@ use crate::{
 };
 
 pub struct WriteStats {
-    cpu_us: Counter,
+    duration_us: Counter,
     rows_in: Counter,
     rows_written: Counter,
     bytes_written: Counter,
@@ -40,7 +40,7 @@ impl WriteStats {
     pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
         let node_kv = key_values_from_context(context);
         Self {
-            cpu_us: Counter::new(meter, TASK_DURATION_KEY, None),
+            duration_us: Counter::new(meter, DURATION_KEY, None),
             rows_in: Counter::new(meter, ROWS_IN_KEY, None),
             rows_written: Counter::new(meter, ROWS_WRITTEN_KEY, None),
             bytes_written: Counter::new(meter, BYTES_WRITTEN_KEY, None),
@@ -54,7 +54,8 @@ impl RuntimeStats for WriteStats {
         let StatSnapshot::Write(snapshot) = snapshot else {
             return;
         };
-        self.cpu_us.add(snapshot.cpu_us, self.node_kv.as_slice());
+        self.duration_us
+            .add(snapshot.cpu_us, self.node_kv.as_slice());
         self.rows_in.add(snapshot.rows_in, self.node_kv.as_slice());
         self.rows_written
             .add(snapshot.rows_written, self.node_kv.as_slice());
@@ -64,7 +65,7 @@ impl RuntimeStats for WriteStats {
 
     fn export_snapshot(&self) -> StatSnapshot {
         StatSnapshot::Write(WriteSnapshot {
-            cpu_us: self.cpu_us.load(Ordering::Relaxed),
+            cpu_us: self.duration_us.load(Ordering::Relaxed),
             rows_in: self.rows_in.load(Ordering::Relaxed),
             rows_written: self.rows_written.load(Ordering::Relaxed),
             bytes_written: self.bytes_written.load(Ordering::Relaxed),
