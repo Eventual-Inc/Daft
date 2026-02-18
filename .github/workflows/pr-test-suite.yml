@@ -169,10 +169,17 @@ jobs:
         command: |
           uv sync --no-install-project --all-extras --all-groups
 
-    - name: Override pyarrow
+    - name: Override pyarrow and pyiceberg
       run: |
         source .venv/bin/activate
-        uv pip install pyarrow==${{ matrix.pyarrow-version }}
+        PYARROW_VERSION="${{ matrix.pyarrow-version }}"
+        PYARROW_MAJOR="${PYARROW_VERSION%%.*}"
+
+        uv pip install pyarrow==${PYARROW_VERSION}
+
+        if [ "$PYARROW_MAJOR" -le 17 ]; then
+          uv pip install "pyiceberg==0.7.0"
+        fi
 
     - name: Build library and Test with pytest (with coverage)
       if: matrix.coverage != false
