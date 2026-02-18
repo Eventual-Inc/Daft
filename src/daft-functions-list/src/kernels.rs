@@ -212,6 +212,7 @@ impl ListArrayExtension for ListArray {
         UInt64Array::from_values(self.name(), counts).with_nulls(self.nulls().cloned())
     }
 
+    // TODO(desmond): Migrate this to arrow-rs after migrating growable internals.
     fn explode(&self) -> DaftResult<Series> {
         let offsets = self.offsets();
 
@@ -585,6 +586,7 @@ impl ListArrayExtension for FixedSizeListArray {
         counts.with_nulls(self.nulls().cloned())
     }
 
+    // TODO(desmond): Migrate this to arrow-rs after migrating growable internals.
     fn explode(&self) -> DaftResult<Series> {
         let list_size = self.fixed_element_len();
         let total_capacity = if list_size == 0 {
@@ -636,6 +638,7 @@ impl ListArrayExtension for FixedSizeListArray {
         Ok(result.rename(self.name()))
     }
 
+    // TODO(desmond): Migrate this to arrow-rs after migrating growable internals.
     fn get_children(&self, idx: &Int64Array, default: &Series) -> DaftResult<Series> {
         let idx_iter = create_iter(idx, self.len());
 
@@ -845,6 +848,7 @@ fn get_chunks_helper(
         )
         .into_series())
     } else {
+        // TODO(desmond): Migrate this to arrow-rs after migrating growable internals.
         let mut growable: Box<dyn Growable> = make_growable(
             &field.name,
             &field.to_exploded_field()?.dtype,
@@ -925,6 +929,7 @@ fn list_sort_helper_fixed_size(
         .collect()
 }
 
+// TODO(desmond): Migrate this to arrow-rs after migrating growable internals.
 fn get_children_helper(
     arr: &ListArray,
     idx_iter: impl Iterator<Item = i64>,
@@ -968,6 +973,7 @@ fn get_children_helper(
     growable.build()
 }
 
+// TODO(desmond): Migrate this to arrow-rs after migrating growable internals.
 fn general_list_fill_helper(element: &Series, num_array: &Int64Array) -> DaftResult<Vec<Series>> {
     let num_iter = create_iter(num_array, element.len());
     let mut result = Vec::with_capacity(element.len());

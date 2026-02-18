@@ -1616,6 +1616,7 @@ impl ListArray {
                         .into_series())
                     }
                     // Some invalids, we need to insert nulls into the child
+                    // TODO(desmond): Migrate this to arrow-rs after migrating growable internals.
                     Some(nulls) => {
                         let mut child_growable = make_growable(
                             "item",

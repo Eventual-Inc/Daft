@@ -144,6 +144,7 @@ where
     }
 }
 
+// TODO(desmond): Migrate this to arrow-rs after migrating growable internals.
 #[cfg(feature = "python")]
 impl PythonArray {
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
