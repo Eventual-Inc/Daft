@@ -147,13 +147,11 @@ fn regex_extract_all_matches<'a>(
                             .filter_map(|v| v.get(index).map(|v| Some(v.as_str()))),
                     );
                 }
-                // null_builder.append_non_null();
             }
             (_, _) => {
                 list_builder.append_null();
             }
         }
-        list_builder.append(true);
     }
     let arr = list_builder.finish();
     ListArray::from_arrow(
