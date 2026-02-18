@@ -133,7 +133,6 @@ fn regex_extract_all_matches<'a>(
     let mut list_builder = LargeListBuilder::with_capacity(matches, len);
 
     for (val, re) in arr_iter.zip(regex_iter) {
-        // let mut num_matches = 0i64;
         match (val, re) {
             (Some(val), Some(re)) => {
                 // https://docs.rs/regex/latest/regex/struct.Regex.html#method.captures_iter
