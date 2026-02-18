@@ -1,7 +1,8 @@
-use std::{marker::PhantomData, sync::Arc};
+use std::sync::Arc;
 
+use arrow::array::{ArrayData, MutableArrayData, make_array};
 use common_error::DaftResult;
-use daft_arrow::types::months_days_ns;
+use daft_arrow::array::to_data;
 
 use super::Growable;
 use crate::{
@@ -10,212 +11,151 @@ use crate::{
     series::{IntoSeries, Series},
 };
 
-pub struct ArrowBackedDataArrayGrowable<
-    'a,
-    T: DaftArrowBackedType,
-    G: daft_arrow::array::growable::Growable<'a>,
-> {
-    name: String,
-    dtype: DataType,
-    arrow2_growable: G,
-    _phantom: PhantomData<&'a T>,
+/// Operation recorded by `extend`/`add_nulls` and replayed in `build()`.
+///
+/// We record ops instead of writing directly to a `MutableArrayData` because
+/// `MutableArrayData` borrows `&ArrayData`, and converting our arrow2-backed
+/// sources to `ArrayData` produces owned values — combining both in one struct
+/// would require `unsafe`.
+// TODO(desmond): Once Daft stores arrow-rs arrays natively, remove GrowOp and
+// write directly to a `MutableArrayData` field.
+enum GrowOp {
+    Extend {
+        index: usize,
+        start: usize,
+        len: usize,
+    },
+    AddNulls(usize),
 }
 
-impl<'a, T: DaftArrowBackedType, G: daft_arrow::array::growable::Growable<'a>> Growable
-    for ArrowBackedDataArrayGrowable<'a, T, G>
+/// Single generic growable for all `DaftArrowBackedType` variants (bool, int, float, string,
+/// binary, decimal, interval, extension, etc.).
+pub struct ArrowGrowable<'a, T: DaftArrowBackedType> {
+    name: String,
+    dtype: DataType,
+    sources: Vec<&'a DataArray<T>>,
+    ops: Vec<GrowOp>,
+    use_validity: bool,
+    capacity: usize,
+}
+
+impl<'a, T: DaftArrowBackedType> ArrowGrowable<'a, T> {
+    pub fn new(
+        name: &str,
+        dtype: &DataType,
+        arrays: Vec<&'a DataArray<T>>,
+        use_validity: bool,
+        capacity: usize,
+    ) -> Self {
+        Self {
+            name: name.to_string(),
+            dtype: dtype.clone(),
+            sources: arrays,
+            ops: Vec::new(),
+            use_validity,
+            capacity,
+        }
+    }
+}
+
+impl<T: DaftArrowBackedType> Growable for ArrowGrowable<'_, T>
 where
     DataArray<T>: IntoSeries,
 {
     #[inline]
     fn extend(&mut self, index: usize, start: usize, len: usize) {
-        self.arrow2_growable.extend(index, start, len);
+        self.ops.push(GrowOp::Extend { index, start, len });
     }
 
     #[inline]
     fn add_nulls(&mut self, additional: usize) {
-        self.arrow2_growable.extend_validity(additional);
+        self.ops.push(GrowOp::AddNulls(additional));
     }
 
-    #[inline]
     fn build(&mut self) -> DaftResult<Series> {
-        let arrow_array = self.arrow2_growable.as_box();
-        let field = Arc::new(Field::new(self.name.clone(), self.dtype.clone()));
-        Ok(DataArray::<T>::from_arrow2(field, arrow_array)?.into_series())
-    }
-}
+        // Convert sources to ArrayData (owned).
+        let array_data: Vec<ArrayData> = self.sources.iter().map(|s| to_data(s.data())).collect();
+        let array_data_refs: Vec<&ArrayData> = array_data.iter().collect();
 
-pub type ArrowNullGrowable<'a> =
-    ArrowBackedDataArrayGrowable<'a, NullType, daft_arrow::array::growable::GrowableNull>;
+        let mut mutable = MutableArrayData::new(array_data_refs, self.use_validity, self.capacity);
 
-impl ArrowNullGrowable<'_> {
-    pub fn new(name: &str, dtype: &DataType) -> Self {
-        let arrow2_growable =
-            daft_arrow::array::growable::GrowableNull::new(dtype.to_arrow2().unwrap());
-        Self {
-            name: name.to_string(),
-            dtype: dtype.clone(),
-            arrow2_growable,
-            _phantom: PhantomData,
-        }
-    }
-}
-
-macro_rules! impl_arrow_backed_data_array_growable {
-    ($growable_name:ident, $daft_type:ty, $arrow2_growable_type:ty) => {
-        pub type $growable_name<'a> =
-            ArrowBackedDataArrayGrowable<'a, $daft_type, $arrow2_growable_type>;
-
-        impl<'a> $growable_name<'a> {
-            pub fn new(
-                name: &str,
-                dtype: &DataType,
-                arrays: Vec<&'a <$daft_type as DaftDataType>::ArrayType>,
-                use_validity: bool,
-                capacity: usize,
-            ) -> Self {
-                let ref_arrays = arrays.to_vec();
-                let ref_arrow_arrays = ref_arrays
-                    .iter()
-                    .map(|&a| a.as_arrow2())
-                    .collect::<Vec<_>>();
-                let arrow2_growable =
-                    <$arrow2_growable_type>::new(ref_arrow_arrays, use_validity, capacity);
-                Self {
-                    name: name.to_string(),
-                    dtype: dtype.clone(),
-                    arrow2_growable,
-                    _phantom: PhantomData,
+        // Replay recorded operations.
+        // Note: MutableArrayData::extend takes (index, start, end) not (index, start, len).
+        for op in self.ops.drain(..) {
+            match op {
+                GrowOp::Extend { index, start, len } => {
+                    mutable.extend(index, start, start + len);
+                }
+                GrowOp::AddNulls(n) => {
+                    mutable.extend_nulls(n);
                 }
             }
         }
-    };
+
+        let data = mutable.freeze();
+        let arrow_array = make_array(data);
+        let field = Arc::new(Field::new(self.name.clone(), self.dtype.clone()));
+        Ok(DataArray::<T>::from_arrow(field, arrow_array)?.into_series())
+    }
 }
 
-impl_arrow_backed_data_array_growable!(
-    ArrowBooleanGrowable,
-    BooleanType,
-    daft_arrow::array::growable::GrowableBoolean<'a>
-);
-impl_arrow_backed_data_array_growable!(
-    ArrowInt8Growable,
-    Int8Type,
-    daft_arrow::array::growable::GrowablePrimitive<'a, i8>
-);
-impl_arrow_backed_data_array_growable!(
-    ArrowInt16Growable,
-    Int16Type,
-    daft_arrow::array::growable::GrowablePrimitive<'a, i16>
-);
-impl_arrow_backed_data_array_growable!(
-    ArrowInt32Growable,
-    Int32Type,
-    daft_arrow::array::growable::GrowablePrimitive<'a, i32>
-);
-impl_arrow_backed_data_array_growable!(
-    ArrowInt64Growable,
-    Int64Type,
-    daft_arrow::array::growable::GrowablePrimitive<'a, i64>
-);
-impl_arrow_backed_data_array_growable!(
-    ArrowUInt8Growable,
-    UInt8Type,
-    daft_arrow::array::growable::GrowablePrimitive<'a, u8>
-);
-impl_arrow_backed_data_array_growable!(
-    ArrowUInt16Growable,
-    UInt16Type,
-    daft_arrow::array::growable::GrowablePrimitive<'a, u16>
-);
-impl_arrow_backed_data_array_growable!(
-    ArrowUInt32Growable,
-    UInt32Type,
-    daft_arrow::array::growable::GrowablePrimitive<'a, u32>
-);
-impl_arrow_backed_data_array_growable!(
-    ArrowUInt64Growable,
-    UInt64Type,
-    daft_arrow::array::growable::GrowablePrimitive<'a, u64>
-);
-impl_arrow_backed_data_array_growable!(
-    ArrowFloat32Growable,
-    Float32Type,
-    daft_arrow::array::growable::GrowablePrimitive<'a, f32>
-);
-impl_arrow_backed_data_array_growable!(
-    ArrowFloat64Growable,
-    Float64Type,
-    daft_arrow::array::growable::GrowablePrimitive<'a, f64>
-);
-impl_arrow_backed_data_array_growable!(
-    ArrowBinaryGrowable,
-    BinaryType,
-    daft_arrow::array::growable::GrowableBinary<'a, i64>
-);
-impl_arrow_backed_data_array_growable!(
-    ArrowFixedSizeBinaryGrowable,
-    FixedSizeBinaryType,
-    daft_arrow::array::growable::GrowableFixedSizeBinary<'a>
-);
-impl_arrow_backed_data_array_growable!(
-    ArrowUtf8Growable,
-    Utf8Type,
-    daft_arrow::array::growable::GrowableUtf8<'a, i64>
-);
-impl_arrow_backed_data_array_growable!(
-    ArrowMonthDayNanoIntervalGrowable,
-    IntervalType,
-    daft_arrow::array::growable::GrowablePrimitive<'a, months_days_ns>
-);
-
-impl_arrow_backed_data_array_growable!(
-    ArrowDecimal128Growable,
-    Decimal128Type,
-    daft_arrow::array::growable::GrowablePrimitive<'a, i128>
-);
-
-/// ExtensionTypes are slightly different, because they have a dynamic inner type
-pub struct ArrowExtensionGrowable<'a> {
+/// Simplified null growable — just tracks a length counter.
+/// No sources or MutableArrayData needed since every element is null.
+pub struct ArrowNullGrowable {
     name: String,
     dtype: DataType,
-    child_growable: Box<dyn daft_arrow::array::growable::Growable<'a> + 'a>,
+    len: usize,
 }
 
-impl<'a> ArrowExtensionGrowable<'a> {
-    pub fn new(
-        name: &str,
-        dtype: &DataType,
-        arrays: Vec<&'a ExtensionArray>,
-        use_validity: bool,
-        capacity: usize,
-    ) -> Self {
-        assert!(matches!(dtype, DataType::Extension(..)));
-        let child_ref_arrays = arrays.iter().map(|&a| a.data()).collect::<Vec<_>>();
-        let child_growable = daft_arrow::array::growable::make_growable(
-            child_ref_arrays.as_slice(),
-            use_validity,
-            capacity,
-        );
+impl ArrowNullGrowable {
+    pub fn new(name: &str, dtype: &DataType) -> Self {
         Self {
             name: name.to_string(),
             dtype: dtype.clone(),
-            child_growable,
+            len: 0,
         }
     }
 }
 
-impl Growable for ArrowExtensionGrowable<'_> {
+impl Growable for ArrowNullGrowable {
     #[inline]
-    fn extend(&mut self, index: usize, start: usize, len: usize) {
-        self.child_growable.extend(index, start, len);
+    fn extend(&mut self, _index: usize, _start: usize, len: usize) {
+        self.len += len;
     }
+
     #[inline]
     fn add_nulls(&mut self, additional: usize) {
-        self.child_growable.extend_validity(additional);
+        self.len += additional;
     }
+
     #[inline]
     fn build(&mut self) -> DaftResult<Series> {
-        let arr = self.child_growable.as_box();
-        let field = Arc::new(Field::new(self.name.clone(), self.dtype.clone()));
-        Ok(ExtensionArray::from_arrow2(field, arr)?.into_series())
+        let len = self.len;
+        self.len = 0;
+        Ok(NullArray::full_null(&self.name, &self.dtype, len).into_series())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Extends from a non-zero start to catch start+len vs start..len confusion
+    /// in the MutableArrayData::extend call (which takes (index, start, end)).
+    #[test]
+    fn test_extend_from_nonzero_start() {
+        let field = Field::new("test", DataType::Int32);
+        let src = Int32Array::from_iter(
+            field.clone(),
+            vec![Some(10), Some(20), Some(30), Some(40), Some(50)],
+        );
+        let mut growable =
+            ArrowGrowable::<Int32Type>::new("test", &DataType::Int32, vec![&src], false, 0);
+        // Take elements at indices 2..4 → [30, 40]
+        growable.extend(0, 2, 2);
+        let result = growable.build().unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result.i32().unwrap().get(0), Some(30));
+        assert_eq!(result.i32().unwrap().get(1), Some(40));
     }
 }
