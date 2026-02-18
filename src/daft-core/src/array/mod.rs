@@ -8,7 +8,7 @@ mod list_array;
 pub mod ops;
 mod serdes;
 mod struct_array;
-pub mod utf8;
+pub mod values;
 
 use arrow::{array::make_array, compute::cast};
 use daft_arrow::{

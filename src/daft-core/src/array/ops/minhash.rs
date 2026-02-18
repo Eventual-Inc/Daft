@@ -80,7 +80,7 @@ impl DaftMinHash for Utf8Array {
         }
 
         let output_series = Series::from_arrow(
-            Field::new(self.name(), DataType::UInt32).into(),
+            Field::new(self.name(), DataType::UInt32),
             Arc::new(output.finish()),
         )?;
         let field = Field::new(

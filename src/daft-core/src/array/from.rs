@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use arrow::{
     array::{ArrowPrimitiveType, BooleanBuilder},
-    buffer::{BooleanBuffer, NullBuffer, ScalarBuffer},
+    buffer::{BooleanBuffer, NullBuffer, OffsetBuffer, ScalarBuffer},
 };
 use common_error::DaftResult;
 use daft_arrow::types::months_days_ns;
@@ -41,9 +41,8 @@ impl ListArray {
         .into_series();
 
         let lengths = data.iter().map(|d| d.as_ref().map_or(0, |d| d.len()));
-        let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)
-            .unwrap()
-            .into();
+
+        let offsets = OffsetBuffer::from_lengths(lengths);
 
         let nulls = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
@@ -61,8 +60,8 @@ impl ListArray {
     /// The child series are concatenated into a single flat child array.
     pub fn from_series(name: &str, data: Vec<Option<Series>>) -> DaftResult<Self> {
         let lengths = data.iter().map(|s| s.as_ref().map_or(0, |s| s.len()));
-        let offsets = daft_arrow::offset::Offsets::try_from_lengths(lengths)?.into();
 
+        let offsets = OffsetBuffer::from_lengths(lengths);
         let nulls = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
 
         let flat_child = Series::concat(&data.iter().flatten().collect::<Vec<_>>())?;
@@ -206,22 +205,6 @@ where
     T: DaftNumericType,
 {
     /// Creates a non-nullable `DataArray` from an iterator of non-null values. Single-pass.
-    ///
-    /// Prefer this over [`from_vec`](Self::from_vec) when you already have an iterator,
-    /// as `from_vec` internally iterates the Vec again.
-    ///
-    /// # Anti-pattern
-    /// ```ignore
-    /// // BAD: builds a Vec, then from_vec iterates it again (double iteration)
-    /// let mut v = Vec::new();
-    /// for x in source { v.push(x); }
-    /// Array::from_vec("col", v);
-    ///
-    /// // GOOD: single-pass with from_values
-    /// Array::from_values("col", source);
-    ///
-    /// // BEST: use arrow builders directly for full control
-    /// ```
     pub fn from_values<
         I: IntoIterator<
             Item = <<T::Native as NumericNative>::ARROWTYPE as ArrowPrimitiveType>::Native,
@@ -285,6 +268,13 @@ impl Utf8Array {
 
         Self::from_arrow(Field::new(name, DataType::Utf8), Arc::new(arrow_array)).unwrap()
     }
+
+    /// Creates a non-nullable `Utf8Array` from an iterator of string-like values. Single-pass.
+    pub fn from_values<S: AsRef<str>>(name: &str, iter: impl IntoIterator<Item = S>) -> Self {
+        let arrow_array = arrow::array::LargeStringArray::from_iter_values(iter);
+        Self::from_arrow(Field::new(name, DataType::Utf8), Arc::new(arrow_array)).unwrap()
+    }
+
     /// Creates a nullable `Utf8Array` from an iterator of optional strings. Single-pass.
     pub fn from_iter<S: AsRef<str>>(name: &str, iter: impl IntoIterator<Item = Option<S>>) -> Self {
         let arrow_array = arrow::array::LargeStringArray::from_iter(iter);

@@ -63,8 +63,8 @@ pub(crate) trait IntermediateOperator: Send + Sync {
     /// The maximum number of concurrent workers that can be spawned for this operator.
     /// Each worker will has its own IntermediateOperatorState.
     /// This method should be overridden if the operator needs to limit the number of concurrent workers, i.e. UDFs with resource requests.
-    fn max_concurrency(&self) -> DaftResult<usize> {
-        Ok(get_compute_pool_num_threads())
+    fn max_concurrency(&self) -> usize {
+        get_compute_pool_num_threads()
     }
 
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
@@ -76,7 +76,7 @@ pub(crate) trait IntermediateOperator: Send + Sync {
 
 pub struct IntermediateNode<Op: IntermediateOperator> {
     intermediate_op: Arc<Op>,
-    children: Vec<Box<dyn PipelineNode>>,
+    child: Box<dyn PipelineNode>,
     runtime_stats: Arc<dyn RuntimeStats>,
     plan_stats: StatsState,
     morsel_size_requirement: MorselSizeRequirement,
@@ -107,7 +107,7 @@ struct ExecutionContext<Op: IntermediateOperator> {
 impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
     pub(crate) fn new(
         intermediate_op: Arc<Op>,
-        children: Vec<Box<dyn PipelineNode>>,
+        child: Box<dyn PipelineNode>,
         plan_stats: StatsState,
         ctx: &BuilderContext,
         context: &LocalNodeContext,
@@ -125,7 +125,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
             .unwrap_or_default();
         Self {
             intermediate_op,
-            children,
+            child,
             runtime_stats,
             plan_stats,
             morsel_size_requirement,
@@ -236,7 +236,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
         mut receiver: Receiver<Arc<MicroPartition>>,
         ctx: &mut ExecutionContext<Op>,
         stats_manager: &RuntimeStatsManagerHandle,
-    ) -> DaftResult<OperatorControlFlow> {
+    ) -> DaftResult<()> {
         let (lower, upper) = ctx.batch_manager.initial_requirements().values();
         let mut buffer = RowBasedBuffer::new(lower, upper);
         let mut input_closed = false;
@@ -250,7 +250,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
                 Some(join_result) = ctx.task_set.join_next(), if !ctx.task_set.is_empty() => {
                     let control = Self::handle_task_completion(join_result??, ctx).await?;
                     if !control.should_continue() {
-                        return Ok(OperatorControlFlow::Break);
+                        return Ok(()); // Break
                     }
 
                     // After completing a task, update bounds and try to spawn more tasks
@@ -304,14 +304,14 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
             while let Some(join_result) = ctx.task_set.join_next().await {
                 let control = Self::handle_task_completion(join_result??, ctx).await?;
                 if !control.should_continue() {
-                    return Ok(OperatorControlFlow::Break);
+                    return Ok(()); // Break
                 }
             }
         }
 
         debug_assert_eq!(ctx.task_set.len(), 0, "TaskSet should be empty after loop");
 
-        Ok(OperatorControlFlow::Continue)
+        Ok(())
     }
 }
 
@@ -365,20 +365,17 @@ impl<Op: IntermediateOperator + 'static> TreeDisplay for IntermediateNode<Op> {
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {
-        self.children.iter().map(|v| v.as_tree_display()).collect()
+        vec![self.child.as_tree_display()]
     }
 }
 
 impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
     fn children(&self) -> Vec<&dyn PipelineNode> {
-        self.children
-            .iter()
-            .map(std::convert::AsRef::as_ref)
-            .collect()
+        vec![self.child.as_ref()]
     }
 
     fn boxed_children(&self) -> Vec<&Box<dyn PipelineNode>> {
-        self.children.iter().collect()
+        vec![&self.child]
     }
 
     fn name(&self) -> Arc<str> {
@@ -396,12 +393,10 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
             downstream_requirement,
         );
         self.morsel_size_requirement = combined_morsel_size_requirement;
-        for child in &mut self.children {
-            child.propagate_morsel_size_requirement(
-                combined_morsel_size_requirement,
-                default_requirement,
-            );
-        }
+        self.child.propagate_morsel_size_requirement(
+            combined_morsel_size_requirement,
+            default_requirement,
+        );
     }
 
     fn start(
@@ -410,16 +405,9 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
         // 1. Start children and wrap receivers
-        let mut child_result_receivers = Vec::with_capacity(self.children.len());
-        for child in &self.children {
-            let child_result_receiver = child.start(maintain_order, runtime_handle)?;
-            child_result_receivers.push(child_result_receiver);
-        }
+        let child_result_receiver = self.child.start(maintain_order, runtime_handle)?;
         // 2. Setup
         let op = self.intermediate_op.clone();
-        let max_concurrency = op.max_concurrency().context(PipelineExecutionSnafu {
-            node_name: self.name().to_string(),
-        })?;
         let (destination_sender, destination_receiver) = create_channel(1);
 
         // 3. Create task spawner
@@ -438,10 +426,9 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         runtime_handle.spawn(
             async move {
                 // Initialize state pool with max_concurrency states
-                let mut state_pool = HashMap::new();
-                for i in 0..max_concurrency {
-                    state_pool.insert(i, op.make_state());
-                }
+                let state_pool = (0..op.max_concurrency())
+                    .map(|i| (i, op.make_state()))
+                    .collect();
 
                 // Create batch manager and task set
                 let batch_manager = Arc::new(BatchManager::new(op.batching_strategy().context(
@@ -461,14 +448,8 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
                     batch_manager,
                     runtime_stats,
                 };
-                for receiver in child_result_receivers {
-                    if !Self::process_input(node_id, receiver, &mut ctx, &stats_manager)
-                        .await?
-                        .should_continue()
-                    {
-                        break;
-                    }
-                }
+                Self::process_input(node_id, child_result_receiver, &mut ctx, &stats_manager)
+                    .await?;
 
                 // Finalize node after processing completes
                 stats_manager.finalize_node(node_id);
