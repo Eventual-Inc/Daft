@@ -4,6 +4,7 @@ mod concat;
 mod dynamic_batching;
 mod intermediate_ops;
 mod join;
+mod metrics;
 mod pipeline;
 mod resource_manager;
 mod run;

@@ -10,7 +10,7 @@ use common_display::{
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use common_metrics::{
-    QueryID,
+    ATTR_QUERY_ID, QueryID,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
 use daft_core::{join::JoinSide, prelude::Schema};
@@ -201,8 +201,8 @@ impl BuilderContext {
     }
 
     pub fn new_with_context(query_id: QueryID, context: HashMap<String, String>) -> Self {
-        let scope = InstrumentationScope::builder("daft.local.node_stats")
-            .with_attributes(vec![KeyValue::new("query_id", query_id.to_string())])
+        let scope = InstrumentationScope::builder("daft.execution.local")
+            .with_attributes(vec![KeyValue::new(ATTR_QUERY_ID, query_id.to_string())])
             .build();
         let meter = global::meter_with_scope(scope);
 

@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_metrics::{
-    CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, meters::Counter, ops::NodeType,
+    ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, TASK_DURATION_KEY,
+    meters::Counter,
+    ops::{NodeInfo, NodeType},
     snapshot::ExplodeSnapshot,
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -15,7 +17,10 @@ use tracing::{Span, instrument};
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
+use crate::{
+    ExecutionTaskSpawner, metrics::key_values_from_node_info, pipeline::NodeName,
+    runtime_stats::RuntimeStats,
+};
 
 pub struct ExplodeStats {
     cpu_us: Counter,
@@ -25,11 +30,11 @@ pub struct ExplodeStats {
 }
 
 impl ExplodeStats {
-    pub fn new(meter: &Meter, id: usize) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+    pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+        let node_kv = key_values_from_node_info(node_info);
 
         Self {
-            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            cpu_us: Counter::new(meter, TASK_DURATION_KEY, None),
             rows_in: Counter::new(meter, ROWS_IN_KEY, None),
             rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
             node_kv,
@@ -140,8 +145,8 @@ impl IntermediateOperator for ExplodeOperator {
         NodeType::Explode
     }
 
-    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(ExplodeStats::new(meter, id))
+    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
+        Arc::new(ExplodeStats::new(meter, node_info))
     }
     fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
         Ok(crate::dynamic_batching::StaticBatchingStrategy::new(

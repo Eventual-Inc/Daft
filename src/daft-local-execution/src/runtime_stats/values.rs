@@ -1,9 +1,12 @@
 use std::sync::{Arc, atomic::Ordering};
 
 use common_metrics::{
-    CPU_US_KEY, Counter, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, snapshot::DefaultSnapshot,
+    Counter, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, TASK_DURATION_KEY, ops::NodeInfo,
+    snapshot::DefaultSnapshot,
 };
 use opentelemetry::{KeyValue, metrics::Meter};
+
+use crate::metrics::key_values_from_node_info;
 
 // ----------------------- General Traits for Runtime Stat Collection ----------------------- //
 
@@ -34,11 +37,11 @@ pub struct DefaultRuntimeStats {
 }
 
 impl DefaultRuntimeStats {
-    pub fn new(meter: &Meter, id: usize) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+    pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+        let node_kv = key_values_from_node_info(node_info);
 
         Self {
-            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            cpu_us: Counter::new(meter, TASK_DURATION_KEY, None),
             rows_in: Counter::new(meter, ROWS_IN_KEY, None),
             rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
             node_kv,

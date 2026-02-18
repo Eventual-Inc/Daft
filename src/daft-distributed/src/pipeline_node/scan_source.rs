@@ -4,7 +4,7 @@ use common_display::{DisplayAs, DisplayLevel};
 #[cfg(feature = "python")]
 use common_file_formats::FileFormatConfig;
 use common_metrics::{
-    CPU_US_KEY, Counter, ROWS_OUT_KEY, StatSnapshot,
+    BYTES_READ_KEY, Counter, ROWS_OUT_KEY, StatSnapshot, TASK_DURATION_KEY,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::SourceSnapshot,
 };
@@ -19,7 +19,7 @@ use super::{
     NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
 };
 use crate::{
-    pipeline_node::{DistributedPipelineNode, NodeID},
+    pipeline_node::{DistributedPipelineNode, NodeID, metrics::key_values_from_context},
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::task::SwordfishTaskBuilder,
     statistics::{RuntimeStats, stats::RuntimeStatsRef},
@@ -33,12 +33,12 @@ pub struct SourceStats {
 }
 
 impl SourceStats {
-    pub fn new(meter: &Meter, node_id: NodeID) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", node_id.to_string())];
+    pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
+        let node_kv = key_values_from_context(context);
         Self {
-            cpu_us: Counter::new(meter, CPU_US_KEY, None),
+            cpu_us: Counter::new(meter, TASK_DURATION_KEY, None),
             rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
-            bytes_read: Counter::new(meter, "bytes read", None),
+            bytes_read: Counter::new(meter, BYTES_READ_KEY, None),
             node_kv,
         }
     }
@@ -210,7 +210,7 @@ impl PipelineNodeImpl for ScanSourceNode {
     }
 
     fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
-        Arc::new(SourceStats::new(meter, self.node_id()))
+        Arc::new(SourceStats::new(meter, self.context()))
     }
 
     fn produce_tasks(
