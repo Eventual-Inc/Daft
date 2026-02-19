@@ -12,8 +12,11 @@ use std::{
 
 use common_error::{DaftError, DaftResult};
 use common_metrics::{
-    CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, meters::Counter,
-    operator_metrics::OperatorCounter, ops::NodeType, snapshot::UdfSnapshot,
+    DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
+    meters::Counter,
+    operator_metrics::OperatorCounter,
+    ops::{NodeInfo, NodeType},
+    snapshot::UdfSnapshot,
 };
 use common_resource_request::ResourceRequest;
 use common_runtime::get_compute_pool_num_threads;
@@ -47,7 +50,7 @@ use crate::{
 struct UdfRuntimeStats {
     meter: Meter,
     node_kv: Vec<KeyValue>,
-    cpu_us: Counter,
+    duration_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
     custom_counters: Mutex<HashMap<Arc<str>, Counter>>,
@@ -63,7 +66,7 @@ impl RuntimeStats for UdfRuntimeStats {
 
         let rows_in = self.rows_in.load(ordering);
         let rows_out = self.rows_out.load(ordering);
-        let cpu_us = self.cpu_us.load(ordering);
+        let cpu_us = self.duration_us.load(ordering);
         let custom_counters = counters
             .iter()
             .map(|(name, counter)| (name.clone(), counter.load(ordering)))
@@ -86,18 +89,18 @@ impl RuntimeStats for UdfRuntimeStats {
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
+        self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
 impl UdfRuntimeStats {
-    fn new(meter: &Meter, id: usize) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+        let node_kv = node_info.to_key_values();
 
         Self {
-            cpu_us: Counter::new(meter, CPU_US_KEY, None),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
+            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
             custom_counters: Mutex::new(HashMap::new()),
             node_kv,
             meter: meter.clone(), // Cheap to clone, Arc under the hood
@@ -122,7 +125,7 @@ impl UdfRuntimeStats {
                 }
                 None => {
                     let counter =
-                        Counter::new(&self.meter, name.clone(), description.map(Cow::Owned));
+                        Counter::new(&self.meter, name.clone(), description.map(Cow::Owned), None);
                     counter.add(value, key_values.as_slice());
                     counters.insert(name.into(), counter);
                 }
@@ -478,8 +481,8 @@ impl IntermediateOperator for UdfOperator {
         NodeType::UDFProject
     }
 
-    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(UdfRuntimeStats::new(meter, id))
+    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
+        Arc::new(UdfRuntimeStats::new(meter, node_info))
     }
 
     fn multiline_display(&self) -> Vec<String> {
