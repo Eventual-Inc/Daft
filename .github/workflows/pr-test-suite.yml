@@ -299,10 +299,8 @@ jobs:
     - uses: moonrepo/setup-rust@v1
       with:
         cache: false
-    - uses: Swatinem/rust-cache@v2
-      with:
-        prefix-key: ${{ runner.os }}-integration-build
-        cache-all-crates: "true"
+    - name: Run sccache-cache
+      uses: mozilla-actions/sccache-action@v0.0.9
     - uses: actions/setup-node@v6
       with:
         node-version: "22"
@@ -319,6 +317,9 @@ jobs:
       run: |
         source .venv/bin/activate
         maturin build --release --compatibility linux --out dist
+      env:
+        SCCACHE_GHA_ENABLED: "true"
+        RUSTC_WRAPPER: "sccache"
     - name: Upload wheels
       uses: actions/upload-artifact@v6
       with:
