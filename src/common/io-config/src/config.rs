@@ -1,9 +1,12 @@
-use std::fmt::{Display, Formatter};
+use std::{
+    collections::BTreeMap,
+    fmt::{Display, Formatter},
+};
 
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AzureConfig, GCSConfig, HTTPConfig, S3Config, gravitino::GravitinoConfig,
+    AzureConfig, CosConfig, GCSConfig, HTTPConfig, S3Config, gravitino::GravitinoConfig,
     huggingface::HuggingFaceConfig, tos::TosConfig, unity::UnityConfig,
 };
 #[derive(Clone, Default, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
@@ -18,6 +21,10 @@ pub struct IOConfig {
     /// disable suffix range requests, please use range with offset
     pub disable_suffix_range: bool,
     pub tos: TosConfig,
+    pub cos: CosConfig,
+    /// Additional backends configured via OpenDAL.
+    /// Keys are scheme names (e.g. "oss", "cos"), values are key-value config maps.
+    pub opendal_backends: BTreeMap<String, BTreeMap<String, String>>,
 }
 
 impl IOConfig {
@@ -60,6 +67,13 @@ impl IOConfig {
             "TOS config = {{ {} }}",
             self.tos.multiline_display().join(", ")
         ));
+        res.push(format!(
+            "COS config = {{ {} }}",
+            self.cos.multiline_display().join(", ")
+        ));
+        if !self.opendal_backends.is_empty() {
+            res.push(format!("OpenDAL backends = {:?}", self.opendal_backends));
+        }
         res
     }
 }
@@ -76,8 +90,17 @@ impl Display for IOConfig {
 {}
 {}
 {}
+{}
 {}",
-            self.s3, self.azure, self.gcs, self.tos, self.http, self.unity, self.gravitino, self.hf,
+            self.s3,
+            self.azure,
+            self.gcs,
+            self.tos,
+            self.cos,
+            self.http,
+            self.unity,
+            self.gravitino,
+            self.hf,
         )
     }
 }

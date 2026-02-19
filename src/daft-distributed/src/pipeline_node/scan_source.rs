@@ -1,9 +1,14 @@
-use std::sync::Arc;
+use std::sync::{Arc, atomic::Ordering};
 
 use common_display::{DisplayAs, DisplayLevel};
 #[cfg(feature = "python")]
 use common_file_formats::FileFormatConfig;
-use common_metrics::{CPU_US_KEY, Counter, ROWS_OUT_KEY, StatSnapshot};
+use common_metrics::{
+    BYTES_READ_KEY, Counter, DURATION_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_BYTES,
+    UNIT_MICROSECONDS, UNIT_ROWS,
+    ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot::SourceSnapshot,
+};
 use common_scan_info::{Pushdowns, ScanTaskLikeRef};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, stats::StatsState};
@@ -15,41 +20,50 @@ use super::{
     NodeName, PipelineNodeConfig, PipelineNodeContext, PipelineNodeImpl, TaskBuilderStream,
 };
 use crate::{
-    pipeline_node::{DistributedPipelineNode, NodeID},
+    pipeline_node::{DistributedPipelineNode, NodeID, metrics::key_values_from_context},
     plan::{PlanConfig, PlanExecutionContext},
     scheduling::task::SwordfishTaskBuilder,
     statistics::{RuntimeStats, stats::RuntimeStatsRef},
 };
 
 pub struct SourceStats {
-    cpu_us: Counter,
+    duration_us: Counter,
     rows_out: Counter,
     bytes_read: Counter,
     node_kv: Vec<KeyValue>,
 }
 
 impl SourceStats {
-    pub fn new(meter: &Meter, node_id: NodeID) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", node_id.to_string())];
+    pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
+        let node_kv = key_values_from_context(context);
         Self {
-            cpu_us: Counter::new(meter, CPU_US_KEY, None),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
-            bytes_read: Counter::new(meter, "bytes read", None),
+            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
+            bytes_read: Counter::new(meter, BYTES_READ_KEY, None, Some(UNIT_BYTES.into())),
             node_kv,
         }
     }
 }
 
 impl RuntimeStats for SourceStats {
-    fn handle_worker_node_stats(&self, snapshot: &StatSnapshot) {
+    fn handle_worker_node_stats(&self, _node_info: &NodeInfo, snapshot: &StatSnapshot) {
         let StatSnapshot::Source(snapshot) = snapshot else {
             return;
         };
-        self.cpu_us.add(snapshot.cpu_us, self.node_kv.as_slice());
+        self.duration_us
+            .add(snapshot.cpu_us, self.node_kv.as_slice());
         self.rows_out
             .add(snapshot.rows_out, self.node_kv.as_slice());
         self.bytes_read
             .add(snapshot.bytes_read, self.node_kv.as_slice());
+    }
+
+    fn export_snapshot(&self) -> StatSnapshot {
+        StatSnapshot::Source(SourceSnapshot {
+            cpu_us: self.duration_us.load(Ordering::Relaxed),
+            rows_out: self.rows_out.load(Ordering::Relaxed),
+            bytes_read: self.bytes_read.load(Ordering::Relaxed),
+        })
     }
 }
 
@@ -75,6 +89,8 @@ impl ScanSourceNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::ScanTask,
+            NodeCategory::Source,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -196,7 +212,7 @@ impl PipelineNodeImpl for ScanSourceNode {
     }
 
     fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
-        Arc::new(SourceStats::new(meter, self.node_id()))
+        Arc::new(SourceStats::new(meter, self.context()))
     }
 
     fn produce_tasks(

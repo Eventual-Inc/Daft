@@ -1,6 +1,5 @@
 # Working with Images
 
-
 Daft is built to work comfortably with images. This guide shows you how to accomplish common image processing tasks with Daft:
 
 - [Downloading and decoding images](#quickstart)
@@ -12,7 +11,6 @@ It also explains some concepts on [Dynamic execution for multimodal workloads](#
 ## Quickstart
 
 To setup this example, let's read a Parquet file from a public S3 bucket containing sample dog owners, use [`daft.col()`][daft.expressions.col] with the [`df.with_column`][daft.DataFrame.with_column] method to create a new column `full_name`, and join the contents from the `last_name` column to the `first_name` column. Then, let's create a `dogs` DataFrame from a Python dictionary and use [`df.join`][daft.DataFrame.join] to join this with our dataframe of owners:
-
 
 ```python
 import daft
@@ -232,6 +230,7 @@ The `return_dtype` argument in `@daft.func` or `@daft.udf` is crucial. It tells 
 Returning native arrays (NumPy or PyTorch) is generally more performant than returning Python objects like `PIL.Image`, especially when `return_dtype` is set to a Tensor type.
 
 #### Why?
+
 - **Zero-copy / Low-overhead**: Daft can often manage memory for Arrow/Tensor types more efficiently.
 - **Serialization**: `PIL.Image` objects are pickled/unpickled when moved between processes, which is slow. Tensors have efficient binary representations.
 
@@ -332,7 +331,6 @@ from daft.functions.ai import embed_image
 )
 ```
 
-
 ## Classify Images
 
 We'll define a function that uses a pre-trained PyTorch model: [ResNet50](https://pytorch.org/vision/main/models/generated/torchvision.models.resnet50.html) to classify the dog pictures. We'll pass the contents of the image `urls` column and send the classification predictions to a new column `classify_breed`.
@@ -409,6 +407,7 @@ Now you're ready to call this function on the `urls` column and store the output
 !!! note "Note"
 
     Execute in notebook to see properly rendered images.
+
 ### Zero Shot Classification
 
 For zero shot classification, you can use our built in `classify_image` function to classify images
@@ -451,7 +450,6 @@ For zero shot classification, you can use our built in `classify_image` function
 (Showing first 5 of 5 rows)
 ```
 
-
 <!-- todo(docs - jay): Insert table of dog urls? or new UDF example? This was from the original 10-min quickstart with multimodal -->
 
 ## Dynamic Execution for Multimodal Workloads
@@ -466,13 +464,12 @@ This is necessary because multimodal data such as images, videos, and audio file
 
 **Vectorized Operations:** Operations that can operate on many rows in parallel, such as byte decoding / encoding, aggregations, and scalar projections, will use larger batch sizes that can take advantage of vectorized execution using SIMD.
 
-
 === "🐍 Python"
-    ```python
+`python
     # Each operation uses different batch sizes automatically
     df = daft.read_parquet("metadata.parquet") # Large batches
           .with_column("image_data", col("urls").download())  # Small batches
           .with_column("resized", col("image_data").resize(224, 224))  # Medium batches
-    ```
+    `
 
 This approach allows processing of datasets larger than available memory, while maintaining optimal performance for each operation type.

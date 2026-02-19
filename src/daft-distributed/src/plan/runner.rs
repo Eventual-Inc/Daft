@@ -53,6 +53,7 @@ pub(crate) struct PlanExecutionContext {
     scheduler_handle: SchedulerHandle<SwordfishTask>,
     joinset: JoinSet<DaftResult<()>>,
     task_id_counter: TaskIDCounter,
+    shuffle_dirs: Vec<String>,
 }
 
 impl PlanExecutionContext {
@@ -63,6 +64,7 @@ impl PlanExecutionContext {
             scheduler_handle,
             joinset,
             task_id_counter: TaskIDCounter::new(),
+            shuffle_dirs: Vec::new(),
         }
     }
 
@@ -76,6 +78,11 @@ impl PlanExecutionContext {
 
     pub fn task_id_counter(&self) -> TaskIDCounter {
         self.task_id_counter.clone()
+    }
+
+    /// Register shuffle directories for cleanup when the plan completes
+    pub fn register_shuffle_dirs(&mut self, dirs: Vec<String>) {
+        self.shuffle_dirs.extend(dirs);
     }
 }
 
@@ -142,6 +149,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         let mut plan_context = PlanExecutionContext::new(query_idx, scheduler_handle.clone());
 
         let running_node = pipeline_node.produce_tasks(&mut plan_context);
+        let shuffle_dirs = std::mem::take(&mut plan_context.shuffle_dirs);
         let running_stage = RunningPlan::new(running_node, plan_context);
 
         let mut materialized_result_stream = running_stage.materialize(scheduler_handle);
@@ -150,6 +158,15 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
                 break;
             }
         }
+
+        // Clean up shuffle directories via Ray remote functions
+        #[cfg(feature = "python")]
+        if !shuffle_dirs.is_empty()
+            && let Err(e) = crate::python::ray::clear_shuffle_dirs_on_all_nodes(shuffle_dirs).await
+        {
+            tracing::warn!("Failed to clear flight shuffle directories: {}", e);
+        }
+
         Ok(())
     }
 
@@ -174,6 +191,7 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
         let runtime = get_or_init_runtime();
         let (result_sender, result_receiver) = create_channel(1);
         let this = self.clone();
+        let statistics_manager_clone = statistics_manager.clone();
         let joinset = runtime.block_on_current_thread(async move {
             let mut joinset = create_join_set();
             let scheduler_handle = spawn_scheduler_actor(
@@ -188,6 +206,10 @@ impl<W: Worker<Task = SwordfishTask>> PlanRunner<W> {
             });
             joinset
         });
-        Ok(PlanResult::new(joinset, result_receiver))
+        Ok(PlanResult::new(
+            joinset,
+            result_receiver,
+            statistics_manager_clone,
+        ))
     }
 }

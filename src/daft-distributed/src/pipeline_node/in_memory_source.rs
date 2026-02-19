@@ -1,5 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
+use common_metrics::ops::{NodeCategory, NodeType};
 use common_partitioning::PartitionRef;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{ClusteringSpec, InMemoryInfo, stats::StatsState};
@@ -37,6 +38,8 @@ impl InMemorySourceNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::InMemoryScan,
+            NodeCategory::Source,
         );
 
         let num_partitions = input_psets.values().map(|pset| pset.len()).sum::<usize>();
@@ -129,6 +132,6 @@ impl PipelineNodeImpl for InMemorySourceNode {
     }
 
     fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
-        Arc::new(SourceStats::new(meter, self.node_id()))
+        Arc::new(SourceStats::new(meter, self.context()))
     }
 }

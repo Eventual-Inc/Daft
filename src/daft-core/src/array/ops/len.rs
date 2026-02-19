@@ -1,8 +1,4 @@
-use std::cmp::min;
-
-#[cfg(feature = "python")]
-use common_py_serde::pickle_dumps;
-use rand::{SeedableRng, rngs::StdRng};
+use arrow::buffer::{NullBuffer, OffsetBuffer};
 
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
@@ -17,7 +13,10 @@ where
     T: DaftArrowBackedType + 'static,
 {
     pub fn size_bytes(&self) -> usize {
-        daft_arrow::compute::aggregate::estimated_bytes_size(self.data())
+        let data = self.to_data();
+        let buffers: usize = data.buffers().iter().map(|b| b.len()).sum();
+        let nulls = data.nulls().map(|n| n.buffer().len()).unwrap_or(0);
+        buffers + nulls
     }
 }
 
@@ -25,8 +24,11 @@ where
 impl PythonArray {
     /// Estimate the size of this list by sampling and pickling its objects.
     pub fn size_bytes(&self) -> usize {
+        use std::cmp::min;
+
+        use common_py_serde::pickle_dumps;
         use pyo3::Python;
-        use rand::seq::IndexedRandom;
+        use rand::{SeedableRng, rngs::StdRng, seq::IndexedRandom};
 
         // Sample up to 1MB or 10000 items to determine total size.
         const MAX_SAMPLE_QUANTITY: usize = 10000;
@@ -85,13 +87,13 @@ impl PythonArray {
     }
 }
 
-/// From arrow2 private method (arrow2::compute::aggregate::validity_size)
-fn null_buffer_size(nulls: Option<&daft_arrow::buffer::NullBuffer>) -> usize {
+fn null_buffer_size(nulls: Option<&NullBuffer>) -> usize {
     nulls.map(|b| b.buffer().len()).unwrap_or(0)
 }
 
-fn offset_size(offsets: &daft_arrow::offset::OffsetsBuffer<i64>) -> usize {
-    offsets.len_proxy() * std::mem::size_of::<i64>()
+fn offset_size(offsets: &OffsetBuffer<i64>) -> usize {
+    // OffsetBuffer::len() returns the number of offset values (N+1 for N rows)
+    offsets.len() * std::mem::size_of::<i64>()
 }
 
 impl FixedSizeListArray {

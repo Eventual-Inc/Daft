@@ -10,7 +10,7 @@ use common_display::{
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use common_metrics::{
-    QueryID,
+    ATTR_QUERY_ID, QueryID,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
 use daft_core::{join::JoinSide, prelude::Schema};
@@ -49,6 +49,7 @@ use crate::{
         blocking_sink::BlockingSinkNode,
         commit_write::CommitWriteSink,
         dedup::DedupSink,
+        flight_shuffle_write::FlightShuffleWriteSink,
         grouped_aggregate::GroupedAggregateSink,
         into_partitions::IntoPartitionsSink,
         pivot::PivotSink,
@@ -61,7 +62,10 @@ use crate::{
         window_partition_only::WindowPartitionOnlySink,
         write::{WriteFormat, WriteSink},
     },
-    sources::{empty_scan::EmptyScanSource, in_memory::InMemorySource, source::SourceNode},
+    sources::{
+        empty_scan::EmptyScanSource, flight_shuffle_read::FlightShuffleReadSource,
+        in_memory::InMemorySource, source::SourceNode,
+    },
     streaming_sink::{
         async_udf::AsyncUdfSink, base::StreamingSinkNode, limit::LimitSink,
         monotonically_increasing_id::MonotonicallyIncreasingIdSink, sample::SampleSink,
@@ -201,8 +205,8 @@ impl BuilderContext {
     }
 
     pub fn new_with_context(query_id: QueryID, context: HashMap<String, String>) -> Self {
-        let scope = InstrumentationScope::builder("daft.local.node_stats")
-            .with_attributes(vec![KeyValue::new("query_id", query_id.to_string())])
+        let scope = InstrumentationScope::builder("daft.execution.local")
+            .with_attributes(vec![KeyValue::new(ATTR_QUERY_ID, query_id.to_string())])
             .build();
         let meter = global::meter_with_scope(scope);
 
@@ -690,12 +694,17 @@ fn physical_plan_to_pipeline(
         LocalPhysicalPlan::Explode(Explode {
             input,
             to_explode,
+            ignore_empty_and_null,
             index_column,
             stats_state,
             context,
             ..
         }) => {
-            let explode_op = ExplodeOperator::new(to_explode.clone(), index_column.clone());
+            let explode_op = ExplodeOperator::new(
+                to_explode.clone(),
+                *ignore_empty_and_null,
+                index_column.clone(),
+            );
             let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
             IntermediateNode::new(
                 Arc::new(explode_op),
@@ -1388,6 +1397,63 @@ fn physical_plan_to_pipeline(
                 context,
             )
             .boxed()
+        }
+        LocalPhysicalPlan::FlightShuffleWrite(daft_local_plan::FlightShuffleWrite {
+            input,
+            num_partitions,
+            partition_by,
+            shuffle_id,
+            shuffle_dirs,
+            compression,
+            stats_state,
+            context,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, psets, cfg, ctx)?;
+            // Get cache_id (task_id) from context
+            let cache_id = ctx
+                .context
+                .get("task_id")
+                .cloned()
+                .expect("task_id must be set in context");
+            let flight_shuffle_write_sink = FlightShuffleWriteSink::try_new(
+                *num_partitions,
+                partition_by.clone(),
+                *shuffle_id,
+                shuffle_dirs.clone(),
+                compression.clone(),
+                cache_id,
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: physical_plan.name(),
+            })?;
+
+            BlockingSinkNode::new(
+                Arc::new(flight_shuffle_write_sink),
+                child_node,
+                stats_state.clone(),
+                ctx,
+                context,
+            )
+            .boxed()
+        }
+        LocalPhysicalPlan::FlightShuffleRead(daft_local_plan::FlightShuffleRead {
+            shuffle_id,
+            partition_idx,
+            server_addresses,
+            server_cache_mapping,
+            schema,
+            stats_state,
+            context,
+        }) => {
+            let source = FlightShuffleReadSource::new(
+                *shuffle_id,
+                *partition_idx,
+                server_addresses.clone(),
+                server_cache_mapping.clone(),
+                schema.clone(),
+            );
+            SourceNode::new(Arc::new(source), stats_state.clone(), ctx, context).boxed()
         }
         LocalPhysicalPlan::GlobScan(GlobScan {
             glob_paths,

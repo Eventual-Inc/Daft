@@ -4,7 +4,7 @@ import threading
 import weakref
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar
 from uuid import uuid4
 
 from daft.daft import PyMicroPartitionSet
@@ -211,10 +211,14 @@ class PartitionSet(Generic[PartitionT]):
     def _get_preview_micropartitions(self, num_rows: int) -> list[MicroPartition]:
         raise NotImplementedError()
 
-    def to_pydict(self, schema: Schema) -> dict[str, list[Any]]:
+    def to_pydict(
+        self,
+        schema: Schema,
+        maps_as_pydicts: Literal["lossy", "strict"] | None = None,
+    ) -> dict[str, list[Any]]:
         """Retrieves all the data in a PartitionSet as a Python dictionary. Values are the raw data from each Block."""
         merged_partition = self._get_merged_micropartition(schema)
-        return merged_partition.to_pydict()
+        return merged_partition._to_pydict_impl(maps_as_pydicts=maps_as_pydicts)
 
     def to_pandas(
         self,

@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use arrow::{
     array::{Array, ArrayRef},
+    buffer::{NullBuffer, OffsetBuffer, ScalarBuffer},
     compute::kernels::concat::concat,
 };
 use common_error::{DaftError, DaftResult};
-use daft_arrow::offset::OffsetsBuffer;
 
 use crate::{
     datatypes::{DaftArrayType, DataType, Field},
@@ -18,7 +18,7 @@ pub struct FixedSizeListArray {
     pub field: Arc<Field>,
     /// contains all the elements of the nested lists flattened into a single contiguous array.
     pub flat_child: Series,
-    nulls: Option<daft_arrow::buffer::NullBuffer>,
+    nulls: Option<NullBuffer>,
 }
 
 impl DaftArrayType for FixedSizeListArray {
@@ -31,7 +31,7 @@ impl FixedSizeListArray {
     pub fn new<F: Into<Arc<Field>>>(
         field: F,
         flat_child: Series,
-        nulls: Option<daft_arrow::buffer::NullBuffer>,
+        nulls: Option<NullBuffer>,
     ) -> Self {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
@@ -65,7 +65,7 @@ impl FixedSizeListArray {
         }
     }
 
-    pub fn nulls(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
+    pub fn nulls(&self) -> Option<&NullBuffer> {
         self.nulls.as_ref()
     }
 
@@ -183,7 +183,7 @@ impl FixedSizeListArray {
         }
     }
 
-    pub fn with_nulls(&self, nulls: Option<daft_arrow::buffer::NullBuffer>) -> DaftResult<Self> {
+    pub fn with_nulls(&self, nulls: Option<NullBuffer>) -> DaftResult<Self> {
         if let Some(v) = &nulls
             && v.len() != self.len()
         {
@@ -201,16 +201,16 @@ impl FixedSizeListArray {
         ))
     }
 
-    fn generate_offsets(&self) -> OffsetsBuffer<i64> {
+    fn generate_offsets(&self) -> OffsetBuffer<i64> {
         let size = self.fixed_element_len();
         let len = self.len();
 
         // Create new offsets
-        let offsets: Vec<i64> = (0..=len)
+        let offsets: ScalarBuffer<i64> = (0..=len)
             .map(|i| i64::try_from(i * size).unwrap())
             .collect();
 
-        OffsetsBuffer::try_from(offsets).expect("Failed to create OffsetsBuffer")
+        OffsetBuffer::new(offsets)
     }
 
     pub fn to_list(&self) -> ListArray {
@@ -294,6 +294,7 @@ impl ExactSizeIterator for FixedSizeListArrayIter<'_> {
 mod tests {
     use std::sync::Arc;
 
+    use arrow::buffer::NullBuffer;
     use common_error::DaftResult;
 
     use super::FixedSizeListArray;
@@ -312,7 +313,7 @@ mod tests {
         FixedSizeListArray::new(
             field,
             flat_child.into_series(),
-            Some(daft_arrow::buffer::NullBuffer::from(nulls)),
+            Some(NullBuffer::from(nulls)),
         )
     }
 

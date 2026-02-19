@@ -661,6 +661,35 @@ def test_without_source_columns_and_with_duplicate_window_functions(make_df):
     )
 
 
+def test_literal_agg_over_window(make_df):
+    """Test aggregation of literal values over window partitions.
+
+    Regression test for https://github.com/Eventual-Inc/Daft/issues/5685.
+    Aggregating a literal (e.g., count(lit(1)), sum(lit(1))) over a window
+    should produce per-partition counts/sums equal to the partition size.
+    """
+    df = make_df({"a": [1, 1, 2], "i": [0, 1, 2]})
+
+    window = Window().partition_by("a")
+    result = df.select(
+        col("a"),
+        col("i"),
+        daft.functions.count(daft.lit(1)).over(window).alias("count_lit"),
+        daft.functions.sum(daft.lit(1)).over(window).alias("sum_lit"),
+    ).collect()
+
+    expected = pd.DataFrame(
+        {
+            "a": [1, 1, 2],
+            "i": [0, 1, 2],
+            "count_lit": pd.array([2, 2, 1], dtype="uint64"),
+            "sum_lit": [2, 2, 1],
+        }
+    )
+
+    assert_df_equals(result.to_pandas(), expected, sort_key=["a", "i"])
+
+
 @pytest.mark.skipif(
     get_tests_daft_runner_name() != "ray",
     reason="Tests Flotilla-specific behavior with repartition",

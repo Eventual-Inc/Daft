@@ -1,21 +1,101 @@
-use std::{cmp::Ordering, collections::VecDeque, sync::Arc};
+use std::{
+    cmp::Ordering,
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+};
 
 use common_error::DaftResult;
+use common_metrics::{
+    Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
+    ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot::DefaultSnapshot,
+};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
 use daft_schema::schema::SchemaRef;
 use futures::StreamExt;
+use opentelemetry::{KeyValue, metrics::Meter};
 
 use super::{DistributedPipelineNode, MaterializedOutput, PipelineNodeImpl, TaskBuilderStream};
 use crate::{
-    pipeline_node::{NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext},
+    pipeline_node::{
+        NodeID, NodeName, PipelineNodeConfig, PipelineNodeContext, metrics::key_values_from_context,
+    },
     plan::{PlanConfig, PlanExecutionContext, TaskIDCounter},
     scheduling::{
         scheduler::SchedulerHandle,
         task::{SwordfishTask, SwordfishTaskBuilder},
     },
+    statistics::{RuntimeStats, stats::RuntimeStatsRef},
     utils::channel::{Sender, create_channel},
 };
+
+const FIRST_LIMIT_STAGE: &str = "0";
+const SECOND_LIMIT_STAGE: &str = "1";
+
+pub struct LimitStats {
+    duration_us: Counter,
+    rows_in: Counter,
+    rows_out: Counter,
+    node_kv: Vec<KeyValue>,
+}
+
+impl LimitStats {
+    pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
+        let node_kv = key_values_from_context(context);
+        Self {
+            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
+            node_kv,
+        }
+    }
+
+    fn add_cpu_us(&self, cpu_us: u64) {
+        self.duration_us.add(cpu_us, self.node_kv.as_slice());
+    }
+    fn add_rows_in(&self, rows: u64) {
+        self.rows_in.add(rows, self.node_kv.as_slice());
+    }
+    fn add_rows_out(&self, rows: u64) {
+        self.rows_out.add(rows, self.node_kv.as_slice());
+    }
+}
+
+impl RuntimeStats for LimitStats {
+    fn handle_worker_node_stats(&self, node_info: &NodeInfo, snapshot: &StatSnapshot) {
+        match snapshot {
+            StatSnapshot::Default(snapshot) => {
+                self.add_cpu_us(snapshot.cpu_us);
+                if let Some(stage) = node_info.context.get("stage") {
+                    // The first limit is used for pruning, the second limit is for the final output
+                    if stage == FIRST_LIMIT_STAGE {
+                        self.add_rows_in(snapshot.rows_in);
+                    } else if stage == SECOND_LIMIT_STAGE {
+                        self.add_rows_out(snapshot.rows_out);
+                    }
+                }
+            }
+            StatSnapshot::Source(snapshot) => {
+                self.add_cpu_us(snapshot.cpu_us);
+                if let Some(stage) = node_info.context.get("stage")
+                    && stage == SECOND_LIMIT_STAGE
+                {
+                    self.add_rows_out(snapshot.rows_out);
+                }
+            }
+            _ => {} // Limit don't receive stats from other Swordfish nodes
+        }
+    }
+
+    fn export_snapshot(&self) -> StatSnapshot {
+        StatSnapshot::Default(DefaultSnapshot {
+            cpu_us: self.duration_us.load(std::sync::atomic::Ordering::SeqCst),
+            rows_in: self.rows_in.load(std::sync::atomic::Ordering::SeqCst),
+            rows_out: self.rows_out.load(std::sync::atomic::Ordering::SeqCst),
+        })
+    }
+}
 
 /// Keeps track of the remaining skip and take.
 ///
@@ -87,6 +167,8 @@ impl LimitNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::Limit,
+            NodeCategory::StreamingSink,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -130,25 +212,44 @@ impl LimitNode {
                 Ordering::Less | Ordering::Equal => {
                     limit_state.decrement_take(num_rows);
                     let materialized_outputs = vec![next_input];
-                    let (in_memory_scan, psets) =
-                        MaterializedOutput::into_in_memory_scan_with_psets(
-                            materialized_outputs,
-                            self.config.schema.clone(),
-                            self.node_id(),
-                        );
-                    let plan = if skip_num_rows > 0 {
-                        LocalPhysicalPlan::limit(
-                            in_memory_scan,
-                            num_rows as u64,
-                            Some(skip_num_rows as u64),
-                            StatsState::NotMaterialized,
-                            LocalNodeContext {
-                                origin_node_id: Some(self.node_id() as usize),
-                                additional: None,
-                            },
+
+                    let (plan, psets) = if skip_num_rows > 0 {
+                        let (in_memory_scan, psets) =
+                            MaterializedOutput::into_in_memory_scan_with_psets(
+                                materialized_outputs,
+                                self.config.schema.clone(),
+                                self.node_id(),
+                            );
+
+                        (
+                            LocalPhysicalPlan::limit(
+                                in_memory_scan,
+                                num_rows as u64,
+                                Some(skip_num_rows as u64),
+                                StatsState::NotMaterialized,
+                                LocalNodeContext {
+                                    origin_node_id: Some(self.node_id() as usize),
+                                    additional: Some(HashMap::from([(
+                                        "stage".to_string(),
+                                        SECOND_LIMIT_STAGE.to_string(),
+                                    )])),
+                                },
+                            ),
+                            psets,
                         )
                     } else {
-                        in_memory_scan
+                        let (in_memory_scan, psets) =
+                            MaterializedOutput::into_in_memory_scan_with_psets_and_context(
+                                materialized_outputs,
+                                self.config.schema.clone(),
+                                self.node_id(),
+                                Some(HashMap::from([(
+                                    "stage".to_string(),
+                                    SECOND_LIMIT_STAGE.to_string(),
+                                )])),
+                            );
+
+                        (in_memory_scan, psets)
                     };
                     SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets)
                 }
@@ -168,7 +269,10 @@ impl LimitNode {
                         StatsState::NotMaterialized,
                         LocalNodeContext {
                             origin_node_id: Some(self.node_id() as usize),
-                            additional: None,
+                            additional: Some(HashMap::from([(
+                                "stage".to_string(),
+                                SECOND_LIMIT_STAGE.to_string(),
+                            )])),
                         },
                     );
                     let task = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
@@ -212,7 +316,10 @@ impl LimitNode {
                             StatsState::NotMaterialized,
                             LocalNodeContext {
                                 origin_node_id: Some(node_id as usize),
-                                additional: None,
+                                additional: Some(HashMap::from([(
+                                    "stage".to_string(),
+                                    FIRST_LIMIT_STAGE.to_string(),
+                                )])),
                             },
                         )
                     });
@@ -287,6 +394,10 @@ impl PipelineNodeImpl for LimitNode {
 
     fn children(&self) -> Vec<DistributedPipelineNode> {
         vec![self.child.clone()]
+    }
+
+    fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
+        Arc::new(LimitStats::new(meter, self.context()))
     }
 
     fn multiline_display(&self, _verbose: bool) -> Vec<String> {

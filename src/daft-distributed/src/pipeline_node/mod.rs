@@ -13,7 +13,10 @@ use common_display::{
     tree::TreeDisplay,
 };
 use common_error::DaftResult;
-use common_metrics::QueryID;
+use common_metrics::{
+    QueryID,
+    ops::{NodeCategory, NodeType},
+};
 use common_partitioning::PartitionRef;
 use common_treenode::ConcreteTreeNode;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
@@ -27,7 +30,7 @@ use crate::{
     plan::{PlanExecutionContext, QueryIdx, TaskIDCounter},
     scheduling::{
         scheduler::SchedulerHandle,
-        task::{SwordfishTask, SwordfishTaskBuilder},
+        task::{SwordfishTask, SwordfishTaskBuilder, TaskID},
         worker::WorkerId,
     },
     statistics::stats::{DefaultRuntimeStats, RuntimeStatsRef},
@@ -48,6 +51,7 @@ mod into_partitions;
 mod join;
 mod limit;
 pub(crate) mod materialize;
+pub(crate) mod metrics;
 mod monotonically_increasing_id;
 mod pivot;
 mod project;
@@ -75,13 +79,22 @@ pub(crate) type NodeName = &'static str;
 pub(crate) struct MaterializedOutput {
     partition: Vec<PartitionRef>,
     worker_id: WorkerId,
+    ip_address: String,
+    task_id: TaskID,
 }
 
 impl MaterializedOutput {
-    pub fn new(partition: Vec<PartitionRef>, worker_id: WorkerId) -> Self {
+    pub fn new(
+        partition: Vec<PartitionRef>,
+        worker_id: WorkerId,
+        ip_address: String,
+        task_id: TaskID,
+    ) -> Self {
         Self {
             partition,
             worker_id,
+            ip_address,
+            task_id,
         }
     }
 
@@ -94,14 +107,28 @@ impl MaterializedOutput {
         &self.worker_id
     }
 
-    pub fn into_inner(self) -> (Vec<PartitionRef>, WorkerId) {
-        (self.partition, self.worker_id)
+    #[allow(dead_code)]
+    pub fn ip_address(&self) -> &String {
+        &self.ip_address
+    }
+
+    pub fn task_id(&self) -> TaskID {
+        self.task_id
+    }
+
+    pub fn into_inner(self) -> (Vec<PartitionRef>, WorkerId, String) {
+        (self.partition, self.worker_id, self.ip_address)
     }
 
     pub fn split_into_materialized_outputs(&self) -> Vec<Self> {
         self.partition
             .iter()
-            .map(|partition| Self::new(vec![partition.clone()], self.worker_id.clone()))
+            .map(|partition| Self {
+                partition: vec![partition.clone()],
+                worker_id: self.worker_id.clone(),
+                ip_address: self.ip_address.clone(),
+                task_id: self.task_id,
+            })
             .collect()
     }
 
@@ -123,6 +150,20 @@ impl MaterializedOutput {
         materialized_outputs: Vec<Self>,
         schema: SchemaRef,
         node_id: NodeID,
+    ) -> (LocalPhysicalPlanRef, HashMap<String, Vec<PartitionRef>>) {
+        Self::into_in_memory_scan_with_psets_and_context(
+            materialized_outputs,
+            schema,
+            node_id,
+            None,
+        )
+    }
+
+    pub fn into_in_memory_scan_with_psets_and_context(
+        materialized_outputs: Vec<Self>,
+        schema: SchemaRef,
+        node_id: NodeID,
+        additional: Option<HashMap<String, String>>,
     ) -> (LocalPhysicalPlanRef, HashMap<String, Vec<PartitionRef>>) {
         let total_size_bytes = materialized_outputs
             .iter()
@@ -149,7 +190,7 @@ impl MaterializedOutput {
             StatsState::NotMaterialized,
             LocalNodeContext {
                 origin_node_id: Some(node_id as usize),
-                additional: None,
+                additional,
             },
         );
 
@@ -190,6 +231,8 @@ pub(super) struct PipelineNodeContext {
     pub query_id: QueryID,
     pub node_id: NodeID,
     pub node_name: NodeName,
+    pub node_type: NodeType,
+    pub node_category: NodeCategory,
 }
 
 impl PipelineNodeContext {
@@ -198,12 +241,16 @@ impl PipelineNodeContext {
         query_id: QueryID,
         node_id: NodeID,
         node_name: NodeName,
+        node_type: NodeType,
+        node_category: NodeCategory,
     ) -> Self {
         Self {
             query_idx,
             query_id,
             node_id,
             node_name,
+            node_type,
+            node_category,
         }
     }
 
@@ -220,7 +267,7 @@ pub(crate) trait PipelineNodeImpl: Send + Sync {
     fn context(&self) -> &PipelineNodeContext;
     fn config(&self) -> &PipelineNodeConfig;
     fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
-        Arc::new(DefaultRuntimeStats::new(meter, self.node_id()))
+        Arc::new(DefaultRuntimeStats::new(meter, self.context()))
     }
 
     fn children(&self) -> Vec<DistributedPipelineNode>;
@@ -247,7 +294,7 @@ impl DistributedPipelineNode {
         Self { op, children }
     }
 
-    fn context(&self) -> &PipelineNodeContext {
+    pub fn context(&self) -> &PipelineNodeContext {
         self.op.context()
     }
     fn config(&self) -> &PipelineNodeConfig {

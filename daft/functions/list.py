@@ -34,13 +34,9 @@ def value_counts(list_expr: Expression) -> Expression:
         │ ---          ┆ ---                 │
         │ List[String] ┆ Map[String: UInt64] │
         ╞══════════════╪═════════════════════╡
-        │ [a, b, a]    ┆ [{key: a,           │
-        │              ┆ value: 2,           │
-        │              ┆ }, {key: …          │
+        │ [a, b, a]    ┆ {"a": 2, "b": 1}    │
         ├╌╌╌╌╌╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
-        │ [b, c, b, c] ┆ [{key: b,           │
-        │              ┆ value: 2,           │
-        │              ┆ }, {key: …          │
+        │ [b, c, b, c] ┆ {"b": 2, "c": 2}    │
         ╰──────────────┴─────────────────────╯
         <BLANKLINE>
         (Showing first 2 of 2 rows)
@@ -335,7 +331,7 @@ def list_map(list_expr: Expression, mapper: Expression) -> Expression:
     return Expression._call_builtin_scalar_fn("list_map", list_expr, mapper)
 
 
-def explode(list_expr: Expression) -> Expression:
+def explode(list_expr: Expression, ignore_empty_and_null: bool = False) -> Expression:
     """Explode a list expression.
 
     A row is created for each item in the lists, and the other non-exploded output columns are broadcasted to match.
@@ -348,6 +344,8 @@ def explode(list_expr: Expression) -> Expression:
 
     Args:
         list_expr (List Expression): expression to explode.
+        ignore_empty_and_null: If True, drops rows where the list is empty or null.
+            If False (default), empty lists and null values each produce a single row with a null value.
 
     Returns:
         Expression: Expression representing the exploded list.
@@ -424,7 +422,9 @@ def explode(list_expr: Expression) -> Expression:
         >>> #             .alias("split_on_a")
         >>> # ).show()
     """
-    return Expression._call_builtin_scalar_fn("explode", list_expr)
+    from daft.expressions import lit
+
+    return Expression._call_builtin_scalar_fn("explode", list_expr, lit(ignore_empty_and_null))
 
 
 def list_append(list_expr: Expression, other: Expression) -> Expression:
