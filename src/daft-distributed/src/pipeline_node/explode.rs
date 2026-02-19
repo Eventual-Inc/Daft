@@ -79,6 +79,7 @@ pub(crate) struct ExplodeNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     to_explode: Vec<BoundExpr>,
+    ignore_empty_and_null: bool,
     index_column: Option<String>,
     child: DistributedPipelineNode,
 }
@@ -90,6 +91,7 @@ impl ExplodeNode {
         node_id: NodeID,
         plan_config: &PlanConfig,
         to_explode: Vec<BoundExpr>,
+        ignore_empty_and_null: bool,
         index_column: Option<String>,
         schema: SchemaRef,
         child: DistributedPipelineNode,
@@ -111,6 +113,7 @@ impl ExplodeNode {
             config,
             context,
             to_explode,
+            ignore_empty_and_null,
             index_column,
             child,
         }
@@ -159,10 +162,12 @@ impl PipelineNodeImpl for ExplodeNode {
         let index_column = self.index_column.clone();
         let schema = self.config.schema.clone();
         let node_id = self.node_id();
+        let ignore_empty_and_null = self.ignore_empty_and_null;
         input_node.pipeline_instruction(self, move |input| {
             LocalPhysicalPlan::explode(
                 input,
                 to_explode.clone(),
+                ignore_empty_and_null,
                 index_column.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,

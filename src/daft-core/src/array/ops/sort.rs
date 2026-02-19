@@ -1,13 +1,10 @@
 use std::sync::Arc;
 
 use arrow::{
-    array::{
-        Array, ArrayRef, ArrowPrimitiveType, Float32Array as ArrowFloat32Array,
-        Float64Array as ArrowFloat64Array, make_comparator,
-    },
+    array::{Array, ArrowPrimitiveType},
     compute::SortOptions,
 };
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_arrow::{
     array::ord::{self, DynComparator},
     // A real tragedy. Arrow-rs has all these functions but uses 32 bit indices instead of 64 bit indices.
@@ -36,7 +33,7 @@ use crate::{
         },
     },
     file::DaftMediaType,
-    kernels::search_sorted::cmp_float,
+    kernels::search_sorted::{cmp_float, make_daft_comparator},
     prelude::UInt64Array,
     series::Series,
 };
@@ -47,31 +44,6 @@ pub fn build_multi_array_compare(
     nulls_first: &[bool],
 ) -> DaftResult<DynComparator> {
     build_multi_array_bicompare(arrays, arrays, descending, nulls_first)
-}
-
-/// Canonicalize negative NaN to positive NaN so arrow-rs total ordering sorts them correctly.
-///
-/// arrow-rs `make_comparator` uses IEEE 754 total ordering where -NaN < -Inf < ... < +Inf < +NaN.
-/// Daft's sort contract treats ALL NaN as greater than regular values, so we normalize
-/// negative NaN to positive NaN before comparison.
-///
-/// TODO: Replace this with a custom `cmp_float`-based comparator to avoid the allocation.
-fn canonicalize_nan(array: ArrayRef) -> ArrayRef {
-    if let Some(f64_arr) = array.as_any().downcast_ref::<ArrowFloat64Array>() {
-        let canonical: ArrowFloat64Array = f64_arr
-            .iter()
-            .map(|v| v.map(|x| if x.is_nan() { f64::NAN } else { x }))
-            .collect();
-        Arc::new(canonical)
-    } else if let Some(f32_arr) = array.as_any().downcast_ref::<ArrowFloat32Array>() {
-        let canonical: ArrowFloat32Array = f32_arr
-            .iter()
-            .map(|v| v.map(|x| if x.is_nan() { f32::NAN } else { x }))
-            .collect();
-        Arc::new(canonical)
-    } else {
-        array
-    }
 }
 
 pub fn build_multi_array_bicompare(
@@ -88,16 +60,13 @@ pub fn build_multi_array_bicompare(
         .zip(descending.iter())
         .zip(nulls_first.iter())
     {
-        let l_arrow = canonicalize_nan(l.to_arrow()?);
-        let r_arrow = canonicalize_nan(r.to_arrow()?);
-        cmp_list.push(
-            make_comparator(
-                l_arrow.as_ref(),
-                r_arrow.as_ref(),
-                SortOptions::new(*desc, *nf),
-            )
-            .map_err(DaftError::ArrowRsError)?,
-        );
+        let l_arrow = l.to_arrow()?;
+        let r_arrow = r.to_arrow()?;
+        cmp_list.push(make_daft_comparator(
+            l_arrow.as_ref(),
+            r_arrow.as_ref(),
+            SortOptions::new(*desc, *nf),
+        )?);
     }
 
     let combined_comparator = Box::new(move |a_idx: usize, b_idx: usize| -> std::cmp::Ordering {

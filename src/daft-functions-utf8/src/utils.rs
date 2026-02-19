@@ -2,7 +2,6 @@ use std::{borrow::Cow, sync::Arc};
 
 use arrow::array::{Datum, Scalar};
 use common_error::{DaftError, DaftResult, ensure};
-use daft_arrow::ArrowError;
 use daft_core::{
     array::{DataArray, iterator::Utf8Iter},
     prelude::{BooleanArray, DaftPhysicalType, DataType, Field, FullNull, Schema, Utf8Array},
@@ -30,7 +29,7 @@ impl<'a> Iterator for BroadcastedStrIter<'a> {
 pub(crate) fn utf8_compare_op(
     arr: &Series,
     pattern: &Series,
-    op: impl Fn(&dyn Datum, &dyn Datum) -> Result<arrow::array::BooleanArray, ArrowError>,
+    op: impl Fn(&dyn Datum, &dyn Datum) -> arrow::error::Result<arrow::array::BooleanArray>,
 ) -> DaftResult<Series> {
     let name = arr.name();
     let arr = arr.utf8()?.to_arrow();

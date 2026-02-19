@@ -31,7 +31,7 @@ impl FixedSizeListArray {
     pub fn new<F: Into<Arc<Field>>>(
         field: F,
         flat_child: Series,
-        nulls: Option<daft_arrow::buffer::NullBuffer>,
+        nulls: Option<NullBuffer>,
     ) -> Self {
         let field: Arc<Field> = field.into();
         match &field.as_ref().dtype {
@@ -65,7 +65,7 @@ impl FixedSizeListArray {
         }
     }
 
-    pub fn nulls(&self) -> Option<&daft_arrow::buffer::NullBuffer> {
+    pub fn nulls(&self) -> Option<&NullBuffer> {
         self.nulls.as_ref()
     }
 
@@ -183,7 +183,7 @@ impl FixedSizeListArray {
         }
     }
 
-    pub fn with_nulls(&self, nulls: Option<daft_arrow::buffer::NullBuffer>) -> DaftResult<Self> {
+    pub fn with_nulls(&self, nulls: Option<NullBuffer>) -> DaftResult<Self> {
         if let Some(v) = &nulls
             && v.len() != self.len()
         {
@@ -294,6 +294,7 @@ impl ExactSizeIterator for FixedSizeListArrayIter<'_> {
 mod tests {
     use std::sync::Arc;
 
+    use arrow::buffer::NullBuffer;
     use common_error::DaftResult;
 
     use super::FixedSizeListArray;
@@ -312,7 +313,7 @@ mod tests {
         FixedSizeListArray::new(
             field,
             flat_child.into_series(),
-            Some(daft_arrow::buffer::NullBuffer::from(nulls)),
+            Some(NullBuffer::from(nulls)),
         )
     }
 

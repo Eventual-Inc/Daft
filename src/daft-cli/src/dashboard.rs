@@ -10,84 +10,65 @@ use std::{
     sync::OnceLock,
 };
 
-use clap::Args;
+use clap::{Args, Subcommand};
 use pyo3::prelude::*;
 use tracing_subscriber::{self, filter::Directive, layer::SubscriberExt, util::SubscriberInitExt};
 
 const ENV_DAFT_DASHBOARD_PID_DIR: &str = "DAFT_DASHBOARD_PID_DIR";
 const ENV_DAFT_DASHBOARD_LOG_DIR: &str = "DAFT_DASHBOARD_LOG_DIR";
 
+/// Dashboard command: holds the start/stop subcommand.
 #[derive(Args)]
 pub(crate) struct DashboardArgs {
+    #[command(subcommand)]
+    command: DashboardCommand,
+}
+
+#[derive(Subcommand)]
+enum DashboardCommand {
+    /// Start the dashboard server
+    Start(StartArgs),
+    /// Stop a currently running background dashboard server
+    Stop(StopArgs),
+}
+
+#[derive(Args)]
+struct StartArgs {
     /// The address to launch the dashboard on
     #[arg(short, long, default_value = "0.0.0.0")]
     addr: IpAddr,
-    #[arg(short, long, default_value_t = daft_dashboard::DEFAULT_SERVER_PORT)]
     /// The port to launch the dashboard on
+    #[arg(short, long, default_value_t = daft_dashboard::DEFAULT_SERVER_PORT)]
     port: u16,
-    /// Start to run dashboard server
-    #[arg(short, long, conflicts_with = "stop")]
-    start: bool,
-    /// Stop the currently running dashboard server
-    #[arg(long, conflicts_with = "start")]
-    stop: bool,
-    #[arg(short, long)]
     /// Log HTTP requests and responses from server
+    #[arg(short, long)]
     verbose: bool,
     /// Run the dashboard in daemon mode
-    #[arg(short, long, conflicts_with = "stop")]
+    #[arg(short, long)]
     daemon: bool,
     /// The directory used to store the PID file
     #[arg(long)]
     pid_dir: Option<String>,
     /// The directory used to store the LOG file
-    #[arg(long, conflicts_with = "stop")]
+    #[arg(long)]
     log_dir: Option<String>,
 }
 
-struct StartOptions {
-    pub addr: IpAddr,
-    pub port: u16,
-    pub verbose: bool,
-    pub daemon: bool,
-    pub pid_dir: Option<String>,
-    pub log_dir: Option<String>,
-}
-
-struct StopOptions {
-    pub pid_dir: Option<String>,
+#[derive(Args)]
+struct StopArgs {
+    /// The directory used to store the PID file
+    #[arg(long)]
+    pid_dir: Option<String>,
 }
 
 pub fn run(py: Python, args: DashboardArgs) {
-    if args.start {
-        start(
-            py,
-            StartOptions {
-                addr: args.addr,
-                port: args.port,
-                verbose: args.verbose,
-                daemon: args.daemon,
-                pid_dir: args.pid_dir,
-                log_dir: args.log_dir,
-            },
-        );
-    } else if args.stop {
-        stop(StopOptions {
-            pid_dir: args.pid_dir,
-        });
-    } else {
-        eprintln!(
-            "{}",
-            console::style(
-                "❌ Invalid parameter. Try 'daft dashboard --help' for more information."
-            )
-            .red()
-            .bold()
-        );
+    match args.command {
+        DashboardCommand::Start(opts) => start(py, opts),
+        DashboardCommand::Stop(opts) => stop(opts),
     }
 }
 
-fn start(py: Python, opts: StartOptions) {
+fn start(py: Python, opts: StartArgs) {
     let pid_path = get_pid_filepath(opts.pid_dir.clone());
     if pid_path.exists() {
         println!(
@@ -113,7 +94,7 @@ fn start(py: Python, opts: StartOptions) {
             cmd.arg("-m")
                 .arg("daft.cli")
                 .arg("dashboard")
-                .arg("--start")
+                .arg("start")
                 .arg("--addr")
                 .arg(opts.addr.to_string())
                 .arg("--port")
@@ -240,7 +221,7 @@ fn start(py: Python, opts: StartOptions) {
     }
 }
 
-fn stop(opts: StopOptions) {
+fn stop(opts: StopArgs) {
     let pid_path = get_pid_filepath(opts.pid_dir.clone());
     let pid = match read_pid(opts.pid_dir) {
         Ok(pid) => pid,
