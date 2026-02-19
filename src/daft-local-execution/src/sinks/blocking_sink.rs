@@ -61,8 +61,8 @@ pub(crate) trait BlockingSink: Send + Sync {
     fn op_type(&self) -> NodeType;
     fn multiline_display(&self) -> Vec<String>;
     fn make_state(&self) -> DaftResult<Self::State>;
-    fn make_runtime_stats(&self, meter: &Meter, name: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(DefaultRuntimeStats::new(meter, name))
+    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
+        Arc::new(DefaultRuntimeStats::new(meter, node_info))
     }
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()
@@ -105,7 +105,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
     ) -> Self {
         let name: Arc<str> = op.name().into();
         let node_info = ctx.next_node_info(name, op.op_type(), NodeCategory::BlockingSink, context);
-        let runtime_stats = op.make_runtime_stats(&ctx.meter, node_info.id);
+        let runtime_stats = op.make_runtime_stats(&ctx.meter, &node_info);
 
         Self {
             op,

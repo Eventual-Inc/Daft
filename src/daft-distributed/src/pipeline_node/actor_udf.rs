@@ -274,7 +274,7 @@ impl PipelineNodeImpl for ActorUDF {
     }
 
     fn runtime_stats(&self, meter: &Meter) -> RuntimeStatsRef {
-        Arc::new(UdfStats::new(meter, self.node_id()))
+        Arc::new(UdfStats::new(meter, self.context()))
     }
 
     fn produce_tasks(

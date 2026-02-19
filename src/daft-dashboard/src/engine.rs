@@ -6,7 +6,7 @@ use axum::{
     http::StatusCode,
     routing::post,
 };
-use common_metrics::{QueryEndState, QueryID, QueryPlan, Stat};
+use common_metrics::{QueryEndState, QueryID, QueryPlan, ROWS_IN_KEY, ROWS_OUT_KEY, Stat};
 use daft_recordbatch::RecordBatch;
 use serde::{Deserialize, Serialize};
 
@@ -332,11 +332,11 @@ fn apply_exec_emit_stats(
             }
 
             if op.node_info.node_type.contains("Repartition") {
-                let rows_in = aggregated_stats.get("rows in").and_then(|s| match s {
+                let rows_in = aggregated_stats.get(ROWS_IN_KEY).and_then(|s| match s {
                     Stat::Count(v) => Some(*v),
                     _ => None,
                 });
-                let rows_out = aggregated_stats.get("rows out").and_then(|s| match s {
+                let rows_out = aggregated_stats.get(ROWS_OUT_KEY).and_then(|s| match s {
                     Stat::Count(v) => Some(*v),
                     _ => None,
                 });
@@ -344,7 +344,7 @@ fn apply_exec_emit_stats(
                     && rows_out > rows_in
                 {
                     aggregated_stats
-                        .insert("rows out".to_string(), Stat::Count(rows_out - rows_in));
+                        .insert(ROWS_OUT_KEY.to_string(), Stat::Count(rows_out - rows_in));
                 }
             }
 

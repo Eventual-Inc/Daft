@@ -8,7 +8,7 @@ use arrow_array::{
     },
 };
 use common_error::{DaftError, DaftResult};
-use common_metrics::{CPU_US_KEY, Stat, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl};
+use common_metrics::{DURATION_KEY, Stat, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl};
 use daft_core::prelude::{DataType, Field, Schema, TimeUnit};
 use daft_recordbatch::RecordBatch;
 
@@ -46,7 +46,7 @@ impl ExecutionEngineFinalResult {
             Field::new("name", DataType::Utf8),
             Field::new("type", DataType::Utf8),
             Field::new("category", DataType::Utf8),
-            Field::new("cpu us", DataType::Duration(TimeUnit::Microseconds)),
+            Field::new("duration us", DataType::Duration(TimeUnit::Microseconds)),
             Field::new(
                 "stats",
                 DataType::Map {
@@ -63,7 +63,7 @@ impl ExecutionEngineFinalResult {
         let mut names = LargeStringBuilder::new();
         let mut types = LargeStringBuilder::new();
         let mut categories = LargeStringBuilder::new();
-        let mut cpu_us_values = DurationMicrosecondBuilder::new();
+        let mut duration_us_values = DurationMicrosecondBuilder::new();
         let stats_values = StructBuilder::from_fields(
             vec![
                 arrow_schema::Field::new("value", arrow_schema::DataType::Float64, false),
@@ -81,11 +81,11 @@ impl ExecutionEngineFinalResult {
             for (name, value) in stat_snapshot.to_stats() {
                 // Note: Always expect one stat for duration by the execution engine
                 // TODO: Add checks just in case
-                if name.as_ref() == CPU_US_KEY {
-                    let Stat::Duration(cpu_us) = value else {
-                        panic!("cpu us is always a Duration in stats");
+                if name.as_ref() == DURATION_KEY {
+                    let Stat::Duration(duration_us) = value else {
+                        panic!("duration us is always a Duration in stats");
                     };
-                    cpu_us_values.append_value(cpu_us.as_micros() as i64);
+                    duration_us_values.append_value(duration_us.as_micros() as i64);
                     continue;
                 }
 
@@ -112,7 +112,7 @@ impl ExecutionEngineFinalResult {
                 Arc::new(names.finish()) as ArrayRef,
                 Arc::new(types.finish()) as ArrayRef,
                 Arc::new(categories.finish()) as ArrayRef,
-                Arc::new(cpu_us_values.finish()) as ArrayRef,
+                Arc::new(duration_us_values.finish()) as ArrayRef,
                 Arc::new(stats.finish()) as ArrayRef,
             ],
         )
