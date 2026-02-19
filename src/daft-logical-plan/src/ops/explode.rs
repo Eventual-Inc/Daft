@@ -24,6 +24,7 @@ pub struct Explode {
     pub input: Arc<LogicalPlan>,
     // Expressions to explode. e.g. col("a")
     pub to_explode: Vec<ExprRef>,
+    pub ignore_empty_and_null: bool,
     // Optional name for an index column that tracks position within each list
     pub index_column: Option<String>,
     pub exploded_schema: SchemaRef,
@@ -34,13 +35,15 @@ impl Explode {
     pub(crate) fn try_new(
         input: Arc<LogicalPlan>,
         to_explode: Vec<ExprRef>,
+        ignore_empty_and_null: bool,
         index_column: Option<String>,
     ) -> logical_plan::Result<Self> {
         let exploded_schema = {
+            let ignore_empty_and_null_expr = daft_dsl::lit(ignore_empty_and_null);
             let explode_exprs = to_explode
                 .iter()
                 .cloned()
-                .map(daft_functions_list::explode)
+                .map(|e| daft_functions_list::explode(e, ignore_empty_and_null_expr.clone()))
                 .collect::<Vec<_>>();
 
             let explode_schema = exprs_to_schema(&explode_exprs, input.schema())?;
@@ -64,6 +67,7 @@ impl Explode {
             node_id: None,
             input,
             to_explode,
+            ignore_empty_and_null,
             index_column,
             exploded_schema,
             stats_state: StatsState::NotMaterialized,

@@ -346,6 +346,7 @@ impl LocalPhysicalPlan {
     pub fn explode(
         input: LocalPhysicalPlanRef,
         to_explode: Vec<BoundExpr>,
+        ignore_empty_and_null: bool,
         index_column: Option<String>,
         schema: SchemaRef,
         stats_state: StatsState,
@@ -354,6 +355,7 @@ impl LocalPhysicalPlan {
         Self::Explode(Explode {
             input,
             to_explode,
+            ignore_empty_and_null,
             index_column,
             schema,
             stats_state,
@@ -1331,6 +1333,7 @@ impl LocalPhysicalPlan {
                 ),
                 Self::Explode(Explode {
                     to_explode,
+                    ignore_empty_and_null,
                     index_column,
                     schema,
                     context,
@@ -1338,6 +1341,7 @@ impl LocalPhysicalPlan {
                 }) => Self::explode(
                     new_child.clone(),
                     to_explode.clone(),
+                    *ignore_empty_and_null,
                     index_column.clone(),
                     schema.clone(),
                     StatsState::NotMaterialized,
@@ -1894,6 +1898,7 @@ pub struct Limit {
 pub struct Explode {
     pub input: LocalPhysicalPlanRef,
     pub to_explode: Vec<BoundExpr>,
+    pub ignore_empty_and_null: bool,
     pub index_column: Option<String>,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
