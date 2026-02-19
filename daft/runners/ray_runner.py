@@ -32,6 +32,7 @@ if TYPE_CHECKING:
     import dask.dataframe
 
     import daft
+    from daft.execution.metadata import ExecutionMetadata
 
 
 logger = logging.getLogger(__name__)
@@ -548,7 +549,7 @@ class RayRunner(Runner[ray.ObjectRef]):
 
     def run_iter(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
-    ) -> Generator[RayMaterializedResult, None, RecordBatch]:
+    ) -> Generator[RayMaterializedResult, None, ExecutionMetadata]:
         track_runner_on_scarf(runner=self.name)
 
         # Grab and freeze the current context
@@ -623,7 +624,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                         total_rows += result.metadata().num_rows
                     yield result
             except StopIteration as e:
-                metrics = e.value
+                metadata: ExecutionMetadata = e.value
 
             # Mark all operators as finished to clean up the Dashboard UI before notify_exec_end
             if should_notify:
@@ -659,7 +660,7 @@ class RayRunner(Runner[ray.ObjectRef]):
                 ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Failed, str(e)))
             raise
 
-        return metrics
+        return metadata
 
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
@@ -668,11 +669,11 @@ class RayRunner(Runner[ray.ObjectRef]):
             yield ray.get(result.partition())
 
     def _collect_into_cache(
-        self, results_iter: Generator[RayMaterializedResult, None, RecordBatch]
-    ) -> tuple[PartitionCacheEntry, RecordBatch | None]:
+        self, results_iter: Generator[RayMaterializedResult, None, ExecutionMetadata]
+    ) -> tuple[PartitionCacheEntry, ExecutionMetadata | None]:
         result_pset = RayPartitionSet()
 
-        metrics: RecordBatch | None = None
+        metadata: ExecutionMetadata | None = None
         i = 0
         try:
             while True:
@@ -680,12 +681,12 @@ class RayRunner(Runner[ray.ObjectRef]):
                 result_pset.set_partition(i, result)
                 i += 1
         except StopIteration as e:
-            metrics = e.value
+            metadata = e.value
 
         pset_entry = self._part_set_cache.put_partition_set(result_pset)
-        return pset_entry, metrics
+        return pset_entry, metadata
 
-    def run(self, builder: LogicalPlanBuilder) -> tuple[PartitionCacheEntry, RecordBatch | None]:
+    def run(self, builder: LogicalPlanBuilder) -> tuple[PartitionCacheEntry, ExecutionMetadata | None]:
         results_iter = self.run_iter(builder)
         return self._collect_into_cache(results_iter)
 
