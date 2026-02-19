@@ -2,7 +2,7 @@ use std::{any::Any, collections::HashMap, future::Future, sync::Arc};
 
 use common_daft_config::PyDaftExecutionConfig;
 use common_partitioning::{Partition, PartitionRef};
-use daft_local_plan::{ExecutionEngineFinalResult, PyLocalPhysicalPlan};
+use daft_local_plan::{ExecutionMetadata, PyLocalPhysicalPlan};
 use pyo3::{Py, PyAny, PyResult, Python, pyclass, pymethods};
 
 use crate::{
@@ -93,8 +93,7 @@ impl TaskResultHandle for RayTaskResultHandle {
 
             match ray_task_result {
                 Ok(RayTaskResult::Success(ray_part_refs, stats_serialized)) => {
-                    let stats: ExecutionEngineFinalResult =
-                        ExecutionEngineFinalResult::decode(&stats_serialized);
+                    let stats: ExecutionMetadata = ExecutionMetadata::decode(&stats_serialized);
                     let materialized_output = MaterializedOutput::new(
                         ray_part_refs
                             .into_iter()

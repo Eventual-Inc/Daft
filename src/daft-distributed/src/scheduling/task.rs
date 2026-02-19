@@ -4,7 +4,7 @@ use common_daft_config::DaftExecutionConfig;
 use common_error::DaftError;
 use common_partitioning::PartitionRef;
 use common_resource_request::ResourceRequest;
-use daft_local_plan::{ExecutionEngineFinalResult, LocalPhysicalPlanRef};
+use daft_local_plan::{ExecutionMetadata, LocalPhysicalPlanRef};
 use tokio_util::sync::CancellationToken;
 
 use super::worker::WorkerId;
@@ -408,7 +408,7 @@ impl SwordfishTaskBuilder {
 pub(crate) enum TaskStatus {
     Success {
         result: MaterializedOutput,
-        stats: ExecutionEngineFinalResult,
+        stats: ExecutionMetadata,
     },
     Failed {
         error: DaftError,
@@ -683,7 +683,7 @@ pub(super) mod tests {
                 }
                 TaskStatus::Success {
                     result: task.task_result,
-                    stats: ExecutionEngineFinalResult::new(vec![]),
+                    stats: ExecutionMetadata::new("".into(), vec![]),
                 }
             }
         }

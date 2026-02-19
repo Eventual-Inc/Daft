@@ -8,7 +8,7 @@ use std::{
 use common_error::DaftResult;
 use common_metrics::{QueryID, ops::NodeInfo};
 use common_treenode::{TreeNode, TreeNodeRecursion};
-use daft_local_plan::ExecutionEngineFinalResult;
+use daft_local_plan::ExecutionMetadata;
 use opentelemetry::{InstrumentationScope, KeyValue, global};
 pub use stats::RuntimeStats;
 
@@ -33,7 +33,7 @@ pub(crate) enum TaskEvent {
     },
     Completed {
         context: TaskContext,
-        stats: ExecutionEngineFinalResult,
+        stats: ExecutionMetadata,
     },
     Failed {
         context: TaskContext,
@@ -150,12 +150,12 @@ impl StatisticsManager {
 
     /// Collects accumulated stats from each node manager and returns them as an
     /// ExecutionEngineFinalResult for export to the driver (e.g. after the partition stream is done).
-    pub fn export_metrics(&self) -> ExecutionEngineFinalResult {
+    pub fn export_metrics(&self) -> ExecutionMetadata {
         let nodes: Vec<(Arc<NodeInfo>, _)> = self
             .runtime_node_managers
             .values()
             .map(RuntimeNodeManager::export_snapshot)
             .collect();
-        ExecutionEngineFinalResult::new(nodes)
+        ExecutionMetadata::new("".into(), nodes)
     }
 }

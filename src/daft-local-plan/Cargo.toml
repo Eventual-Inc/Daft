@@ -16,6 +16,7 @@ arrow-array = {workspace = true}
 log = {workspace = true}
 pyo3 = {workspace = true, optional = true}
 serde = {workspace = true}
+serde_json = {workspace = true}
 strum = {version = "0.27", features = ["derive"]}
 indexmap = {workspace = true}
 daft-functions = {path = "../daft-functions", default-features = false}

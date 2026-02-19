@@ -2098,19 +2098,6 @@ class NativeExecutor:
     def repr_mermaid(
         builder: LogicalPlanBuilder, daft_execution_config: PyDaftExecutionConfig, options: MermaidOptions
     ) -> str: ...
-    @staticmethod
-    def get_relationship_info(
-        logical_plan_builder: LogicalPlanBuilder,
-        daft_execution_config: PyDaftExecutionConfig,
-    ) -> RelationshipInformation: ...
-
-class RelationshipInformation:
-    ids: list[RelationshipNode]
-    plan_id: str
-
-class RelationshipNode:
-    id: int
-    parent_id: int | None
 
 class PyDaftExecutionConfig:
     @staticmethod

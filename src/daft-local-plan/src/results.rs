@@ -8,38 +8,51 @@ use arrow_array::{
     },
 };
 use common_error::{DaftError, DaftResult};
-use common_metrics::{CPU_US_KEY, Stat, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl};
+use common_metrics::{
+    CPU_US_KEY, QueryID, Stat, StatSnapshot, ops::NodeInfo, snapshot::StatSnapshotImpl,
+};
 use daft_core::prelude::{DataType, Field, Schema, TimeUnit};
 use daft_recordbatch::RecordBatch;
 
 #[derive(Debug, Clone)]
-pub struct ExecutionEngineFinalResult {
+pub struct ExecutionMetadata {
+    pub query_id: QueryID,
+    pub query_plan: Option<serde_json::Value>,
     pub nodes: Vec<(Arc<NodeInfo>, StatSnapshot)>,
 }
 
-impl ExecutionEngineFinalResult {
-    pub fn new(mut nodes: Vec<(Arc<NodeInfo>, StatSnapshot)>) -> Self {
+impl ExecutionMetadata {
+    pub fn new(query_id: QueryID, mut nodes: Vec<(Arc<NodeInfo>, StatSnapshot)>) -> Self {
         nodes.sort_by_key(|(node_info, _)| node_info.id);
-        Self { nodes }
+        Self {
+            query_id,
+            query_plan: None,
+            nodes,
+        }
     }
 
+    /// Encode the ExecutionMetadata into a binary format for transmission to scheduler
     pub fn encode(&self) -> Vec<u8> {
         bincode::encode_to_vec(&self.nodes, bincode::config::legacy())
-            .expect("Failed to encode ExecutionEngineFinalResult")
+            .expect("Failed to encode ExecutionMetadata")
     }
 
+    /// Decode the ExecutionMetadata from a binary format received from scheduler
     pub fn decode(bytes: &[u8]) -> Self {
         let (nodes, _): (Vec<(Arc<NodeInfo>, StatSnapshot)>, usize) =
             bincode::decode_from_slice(bytes, bincode::config::legacy())
                 .map_err(|e| {
-                    DaftError::InternalError(format!(
-                        "Failed to decode ExecutionEngineFinalResult: {e}"
-                    ))
+                    DaftError::InternalError(format!("Failed to decode ExecutionMetadata: {e}"))
                 })
                 .unwrap();
-        Self { nodes }
+        Self {
+            query_id: "".into(),
+            query_plan: None,
+            nodes,
+        }
     }
 
+    /// Convert the ExecutionMetadata into a RecordBatch for visualization
     pub fn to_recordbatch(&self) -> DaftResult<RecordBatch> {
         let schema = Schema::new(vec![
             Field::new("id", DataType::UInt64),

@@ -167,8 +167,6 @@ pub(crate) trait PipelineNode: Sync + Send + TreeDisplay {
 
     fn as_tree_display(&self) -> &dyn TreeDisplay;
 
-    /// Unique id to identify which plan all nodes belong to
-    fn plan_id(&self) -> Arc<str>;
     /// Unique id to identify the node.
     fn node_id(&self) -> usize;
     // General Node Info
@@ -264,61 +262,6 @@ pub fn viz_pipeline_mermaid(
         MermaidDisplayVisitor::new(&mut output, display_type, bottom_up, subgraph_options);
     visitor.fmt(root.as_tree_display()).unwrap();
     output
-}
-
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "python", pyo3::pyclass)]
-#[allow(dead_code)]
-pub struct RelationshipNode {
-    pub id: usize,
-    pub parent_id: Option<usize>,
-}
-
-#[derive(Debug, Clone)]
-#[cfg_attr(feature = "python", pyo3::pyclass)]
-#[allow(dead_code)]
-pub struct RelationshipInformation {
-    pub ids: Vec<RelationshipNode>,
-    pub plan_id: Arc<str>,
-}
-/// Performs a depth first pre-order traversal of the pipeline tree.
-/// Returning a list of ids for each node traversed
-/// For example, given the following pipeline with ids of:
-/// ```
-///                  1
-///              /   |   \
-///             2    3    4
-///           /  \   |   / \
-///          5    6  7  8   10
-///                    /
-///                   9
-/// ```
-/// The result would be [1, 2, 5, 6, 3, 7, 4, 8, 9, 10]
-/// as we visit each node in pre-order traversal.
-pub fn get_pipeline_relationship_mapping(root: &dyn PipelineNode) -> RelationshipInformation {
-    let mut nodes = Vec::new();
-
-    fn traverse(
-        node: &dyn PipelineNode,
-        parent_id: Option<usize>,
-        nodes: &mut Vec<RelationshipNode>,
-    ) {
-        let current_id = node.node_id();
-        nodes.push(RelationshipNode {
-            id: current_id,
-            parent_id,
-        });
-
-        for child in node.children() {
-            traverse(child, Some(current_id), nodes);
-        }
-    }
-
-    traverse(root, None, &mut nodes);
-    RelationshipInformation {
-        ids: nodes,
-        plan_id: root.plan_id(),
-    }
 }
 
 pub fn viz_pipeline_ascii(root: &dyn PipelineNode, simple: bool) -> String {

@@ -18,5 +18,5 @@ pub use plan::{
 };
 #[cfg(feature = "python")]
 pub use python::{PyLocalPhysicalPlan, register_modules};
-pub use results::ExecutionEngineFinalResult;
+pub use results::ExecutionMetadata;
 pub use translate::translate;

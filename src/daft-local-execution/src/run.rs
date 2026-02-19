@@ -12,7 +12,7 @@ use common_error::DaftResult;
 use common_runtime::RuntimeTask;
 use common_tracing::flush_opentelemetry_providers;
 use daft_context::{DaftContext, Subscriber};
-use daft_local_plan::{ExecutionEngineFinalResult, LocalPhysicalPlanRef, translate};
+use daft_local_plan::{ExecutionMetadata, LocalPhysicalPlanRef, translate};
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::{
     MicroPartition, MicroPartitionRef,
@@ -37,8 +37,8 @@ use crate::{
     ExecutionRuntimeContext,
     channel::{Receiver, create_channel},
     pipeline::{
-        BuilderContext, RelationshipInformation, get_pipeline_relationship_mapping,
-        translate_physical_plan_to_pipeline, viz_pipeline_ascii, viz_pipeline_mermaid,
+        BuilderContext, translate_physical_plan_to_pipeline, viz_pipeline_ascii,
+        viz_pipeline_mermaid,
     },
     resource_manager::get_or_init_memory_manager,
     runtime_stats::{QueryEndState, RuntimeStatsManager},
@@ -158,17 +158,6 @@ impl PyNativeExecutor {
             &logical_plan_builder.builder,
             cfg.config,
             options,
-        ))
-    }
-
-    #[staticmethod]
-    pub fn get_relationship_info(
-        logical_plan_builder: &PyLogicalPlanBuilder,
-        cfg: PyDaftExecutionConfig,
-    ) -> PyResult<RelationshipInformation> {
-        Ok(NativeExecutor::get_relationship_info(
-            &logical_plan_builder.builder,
-            cfg.config,
         ))
     }
 }
@@ -345,22 +334,6 @@ impl NativeExecutor {
             options.subgraph_options,
         )
     }
-    fn get_relationship_info(
-        logical_plan_builder: &LogicalPlanBuilder,
-        cfg: Arc<DaftExecutionConfig>,
-    ) -> RelationshipInformation {
-        let logical_plan = logical_plan_builder.build();
-        let physical_plan = translate(&logical_plan).unwrap();
-        let ctx = BuilderContext::new();
-        let pipeline_node = translate_physical_plan_to_pipeline(
-            &physical_plan,
-            &InMemoryPartitionSetCache::empty(),
-            &cfg,
-            &ctx,
-        )
-        .unwrap();
-        get_pipeline_relationship_mapping(&*pipeline_node)
-    }
 }
 
 impl Drop for NativeExecutor {
@@ -381,7 +354,7 @@ fn should_enable_explain_analyze() -> bool {
 }
 
 pub struct ExecutionEngineResult {
-    handle: RuntimeTask<DaftResult<ExecutionEngineFinalResult>>,
+    handle: RuntimeTask<DaftResult<ExecutionMetadata>>,
     receiver: Receiver<Arc<MicroPartition>>,
 }
 
@@ -390,7 +363,7 @@ impl ExecutionEngineResult {
         self.receiver.recv().await
     }
 
-    async fn finish(self) -> DaftResult<ExecutionEngineFinalResult> {
+    async fn finish(self) -> DaftResult<ExecutionMetadata> {
         drop(self.receiver);
         let result = self.handle.await;
         match result {
@@ -404,7 +377,7 @@ impl ExecutionEngineResult {
     pub fn into_stream(self) -> impl Stream<Item = DaftResult<Arc<MicroPartition>>> {
         struct StreamState {
             receiver: Receiver<Arc<MicroPartition>>,
-            handle: Option<RuntimeTask<DaftResult<ExecutionEngineFinalResult>>>,
+            handle: Option<RuntimeTask<DaftResult<ExecutionMetadata>>>,
         }
 
         let state = StreamState {

@@ -6,7 +6,7 @@ use daft_recordbatch::python::PyRecordBatch;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{ExecutionEngineFinalResult, LocalPhysicalPlanRef, translate};
+use crate::{ExecutionMetadata, LocalPhysicalPlanRef, translate};
 
 #[pyclass(module = "daft.daft", name = "LocalPhysicalPlan")]
 #[derive(Debug, Serialize, Deserialize)]
@@ -30,7 +30,7 @@ impl_bincode_py_state_serialization!(PyLocalPhysicalPlan);
 
 #[pyclass(module = "daft.daft", name = "PyExecutionEngineFinalResult", frozen)]
 pub struct PyExecutionEngineFinalResult {
-    inner: Arc<ExecutionEngineFinalResult>,
+    inner: Arc<ExecutionMetadata>,
 }
 
 #[pymethods]
@@ -44,8 +44,8 @@ impl PyExecutionEngineFinalResult {
     }
 }
 
-impl From<ExecutionEngineFinalResult> for PyExecutionEngineFinalResult {
-    fn from(inner: ExecutionEngineFinalResult) -> Self {
+impl From<ExecutionMetadata> for PyExecutionEngineFinalResult {
+    fn from(inner: ExecutionMetadata) -> Self {
         Self {
             inner: Arc::new(inner),
         }
