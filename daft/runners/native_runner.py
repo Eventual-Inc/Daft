@@ -17,7 +17,7 @@ from daft.daft import (
 from daft.errors import UDFException
 from daft.execution.native_executor import NativeExecutor
 from daft.filesystem import glob_path_with_stats
-from daft.recordbatch import MicroPartition, RecordBatch
+from daft.recordbatch import MicroPartition
 from daft.runners import runner_io
 from daft.runners.partitioning import (
     LocalMaterializedResult,
@@ -31,6 +31,7 @@ from daft.scarf_telemetry import track_runner_on_scarf
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterator
 
+    from daft.execution.metadata import ExecutionMetadata
     from daft.logical.builder import LogicalPlanBuilder
 
 logger = logging.getLogger(__name__)
@@ -72,7 +73,7 @@ class NativeRunner(Runner[MicroPartition]):
     def runner_io(self) -> NativeRunnerIO:
         return NativeRunnerIO()
 
-    def run(self, builder: LogicalPlanBuilder) -> tuple[PartitionCacheEntry, RecordBatch]:
+    def run(self, builder: LogicalPlanBuilder) -> tuple[PartitionCacheEntry, ExecutionMetadata]:
         results_gen = self.run_iter(builder)
         result_pset = LocalPartitionSet()
 
@@ -83,16 +84,16 @@ class NativeRunner(Runner[MicroPartition]):
                 result_pset.set_partition(i, result)
                 i += 1
         except StopIteration as e:
-            metrics = e.value
+            metadata = e.value
 
         pset_entry = self.put_partition_set_into_cache(result_pset)
-        return pset_entry, metrics
+        return pset_entry, metadata
 
     def run_iter(
         self,
         builder: LogicalPlanBuilder,
         results_buffer_size: int | None = None,
-    ) -> Generator[LocalMaterializedResult, None, RecordBatch]:
+    ) -> Generator[LocalMaterializedResult, None, ExecutionMetadata]:
         track_runner_on_scarf(runner=self.name)
 
         # NOTE: Freeze and use this same execution config for the entire execution
@@ -152,6 +153,7 @@ class NativeRunner(Runner[MicroPartition]):
         except StopIteration as e:
             query_result = PyQueryResult(QueryEndState.Finished, "Query finished")
             ctx._notify_query_end(query_id, query_result)
+            e.value.write_mermaid()
             return e.value
         except KeyboardInterrupt as e:
             query_result = PyQueryResult(QueryEndState.Canceled, "Query canceled by the user.")

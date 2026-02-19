@@ -35,6 +35,19 @@ pub struct PyExecutionMetadata {
 
 #[pymethods]
 impl PyExecutionMetadata {
+    #[getter]
+    pub fn query_id(&self) -> String {
+        self.inner.query_id.to_string()
+    }
+
+    #[getter]
+    pub fn query_plan(&self) -> Option<String> {
+        self.inner
+            .query_plan
+            .clone()
+            .map(|plan| serde_json::to_string(&plan).expect("Failed to serialize query plan"))
+    }
+
     fn encode(&self) -> Vec<u8> {
         self.inner.encode()
     }

@@ -1,9 +1,6 @@
 use std::{
     collections::HashMap,
-    fs::File,
-    io::Write,
     sync::{Arc, OnceLock},
-    time::{SystemTime, UNIX_EPOCH},
 };
 
 use common_daft_config::DaftExecutionConfig;
@@ -213,7 +210,6 @@ impl NativeExecutor {
             translate_physical_plan_to_pipeline(local_physical_plan, psets, &exec_cfg, &ctx)?;
 
         let (tx, rx) = create_channel(results_buffer_size.unwrap_or(1));
-        let enable_explain_analyze = self.enable_explain_analyze;
 
         // Spawn execution on the global runtime - returns immediately
         let handle = get_global_runtime();
@@ -258,25 +254,6 @@ impl NativeExecutor {
             // Finish the stats manager
             let final_stats = stats_manager.finish(finish_status).await;
 
-            // TODO: Move into a runtime stats subscriber
-            if enable_explain_analyze {
-                let curr_ms = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .expect("Time went backwards")
-                    .as_millis();
-                let file_name = format!("explain-analyze-{curr_ms}-mermaid.md");
-                let mut file = File::create(file_name)?;
-                writeln!(
-                    file,
-                    "```mermaid\n{}\n```",
-                    viz_pipeline_mermaid(
-                        pipeline.as_ref(),
-                        DisplayLevel::Verbose,
-                        true,
-                        Default::default()
-                    )
-                )?;
-            }
             flush_opentelemetry_providers();
             result.map(|()| final_stats)
         };

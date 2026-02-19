@@ -165,12 +165,18 @@ impl TreeDisplay for SourceNode {
     }
 
     fn repr_json(&self) -> serde_json::Value {
-        serde_json::json!({
+        let mut json = serde_json::json!({
             "id": self.node_id(),
             "category": "Source",
             "type": self.source.op_type().to_string(),
             "name": self.name(),
-        })
+        });
+
+        if let StatsState::Materialized(stats) = &self.plan_stats {
+            json["approx_stats"] = serde_json::json!(stats);
+        }
+
+        json
     }
 
     fn get_children(&self) -> Vec<&dyn TreeDisplay> {

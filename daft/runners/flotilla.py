@@ -23,8 +23,8 @@ from daft.daft import (
     start_flight_server,
 )
 from daft.event_loop import set_event_loop
+from daft.execution.metadata import ExecutionMetadata
 from daft.expressions import Expression, ExpressionsProjection
-from daft.recordbatch import RecordBatch
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.partitioning import (
     PartitionMetadata,
@@ -332,7 +332,7 @@ class RemoteFlotillaRunner:
         self.curr_plans[plan.idx()] = plan
         self.curr_result_gens[plan.idx()] = self.plan_runner.run_plan(plan, psets)
 
-    async def get_next_partition(self, plan_id: str) -> RayMaterializedResult | RecordBatch | None:
+    async def get_next_partition(self, plan_id: str) -> RayMaterializedResult | ExecutionMetadata | None:
         from daft.runners.ray_runner import (
             PartitionMetadataAccessor,
             RayMaterializedResult,
@@ -344,10 +344,10 @@ class RemoteFlotillaRunner:
             next_partition_ref = None
 
         if next_partition_ref is None:
-            metrics = self.curr_result_gens[plan_id].finish()  # type: ignore[attr-defined]
+            metadata = self.curr_result_gens[plan_id].finish()  # type: ignore[attr-defined]
             self.curr_plans.pop(plan_id, None)
             self.curr_result_gens.pop(plan_id, None)
-            return RecordBatch._from_pyrecordbatch(metrics.to_recordbatch())
+            return ExecutionMetadata._from_py_execution_metadata(metadata)
 
         metadata_accessor = PartitionMetadataAccessor.from_metadata_list(
             [PartitionMetadata(next_partition_ref.num_rows, next_partition_ref.size_bytes)]
@@ -438,12 +438,12 @@ class FlotillaRunner:
         self,
         plan: DistributedPhysicalPlan,
         partition_sets: dict[str, PartitionSet[RayMaterializedResult]],
-    ) -> Generator[RayMaterializedResult, None, RecordBatch]:
+    ) -> Generator[RayMaterializedResult, None, ExecutionMetadata]:
         plan_id = plan.idx()
         ray.get(self.runner.run_plan.remote(plan, partition_sets))
 
         while True:
             result = ray.get(self.runner.get_next_partition.remote(plan_id))
-            if isinstance(result, RecordBatch):
+            if isinstance(result, ExecutionMetadata):
                 return result
             yield result

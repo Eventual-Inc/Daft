@@ -13,7 +13,8 @@ from daft.daft import (
 )
 from daft.dataframe.display import MermaidOptions
 from daft.event_loop import get_or_init_event_loop
-from daft.recordbatch import MicroPartition, RecordBatch
+from daft.execution.metadata import ExecutionMetadata
+from daft.recordbatch import MicroPartition
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Generator
@@ -38,7 +39,7 @@ class NativeExecutor:
         ctx: DaftContext,
         results_buffer_size: int | None,
         context: dict[str, str] | None,
-    ) -> Generator[LocalMaterializedResult, None, RecordBatch]:
+    ) -> Generator[LocalMaterializedResult, None, ExecutionMetadata]:
         from daft.runners.partitioning import LocalMaterializedResult
 
         psets_mp = {
@@ -77,7 +78,7 @@ class NativeExecutor:
         else:
             event_loop.run(async_exec.aclose())
             assert result is not None
-            return RecordBatch._from_pyrecordbatch(result.to_recordbatch())
+            return ExecutionMetadata._from_py_execution_metadata(result)
 
     def pretty_print(
         self,
