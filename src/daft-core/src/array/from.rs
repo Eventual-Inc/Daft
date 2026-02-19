@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use arrow::{
-    array::{ArrowPrimitiveType, BooleanBuilder},
+    array::{ArrowPrimitiveType, BooleanBuilder, IntervalMonthDayNanoArray},
     buffer::{BooleanBuffer, NullBuffer, OffsetBuffer, ScalarBuffer},
+    datatypes::IntervalMonthDayNano,
 };
 use common_error::DaftResult;
-use daft_arrow::types::months_days_ns;
 #[cfg(feature = "python")]
 use pyo3::{Py, PyAny};
 
@@ -44,7 +44,7 @@ impl ListArray {
 
         let offsets = OffsetBuffer::from_lengths(lengths);
 
-        let nulls = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
+        let nulls = NullBuffer::from_iter(data.iter().map(Option::is_some));
 
         Self::new(
             flat_child.field().to_list_field().rename(name),
@@ -62,7 +62,7 @@ impl ListArray {
         let lengths = data.iter().map(|s| s.as_ref().map_or(0, |s| s.len()));
 
         let offsets = OffsetBuffer::from_lengths(lengths);
-        let nulls = daft_arrow::buffer::NullBuffer::from_iter(data.iter().map(Option::is_some));
+        let nulls = NullBuffer::from_iter(data.iter().map(Option::is_some));
 
         let flat_child = Series::concat(&data.iter().flatten().collect::<Vec<_>>())?;
 
@@ -347,14 +347,13 @@ impl FromIterator<Option<bool>> for BooleanArray {
 }
 
 impl IntervalArray {
-    pub fn from_iter<S: Into<months_days_ns>>(
+    pub fn from_iter<S: Into<IntervalMonthDayNano>>(
         name: &str,
-        iter: impl daft_arrow::trusted_len::TrustedLen<Item = Option<S>>,
+        iter: impl Iterator<Item = Option<S>>,
     ) -> Self {
-        let arrow_array = Box::new(daft_arrow::array::MonthsDaysNsArray::from_trusted_len_iter(
-            iter.map(|x| x.map(|x| x.into())),
-        ));
-        Self::new(Field::new(name, DataType::Interval).into(), arrow_array).unwrap()
+        let arr = IntervalMonthDayNanoArray::from_iter(iter.map(|x| x.map(|x| x.into())));
+
+        Self::from_arrow(Field::new(name, DataType::Interval), Arc::new(arr)).unwrap()
     }
 }
 
@@ -367,7 +366,7 @@ impl PythonArray {
         name: &str,
         iter: impl ExactSizeIterator<Item = Option<Arc<Py<PyAny>>>>,
     ) -> Self {
-        use daft_arrow::buffer::NullBufferBuilder;
+        use arrow::array::NullBufferBuilder;
         use pyo3::Python;
 
         let (_, upper) = iter.size_hint();
@@ -411,7 +410,7 @@ impl PythonArray {
         I: ExactSizeIterator<Item = Option<T>>,
         T: AsRef<[u8]>,
     {
-        use daft_arrow::buffer::NullBufferBuilder;
+        use arrow::array::NullBufferBuilder;
         use pyo3::Python;
 
         let (_, upper) = iter.size_hint();

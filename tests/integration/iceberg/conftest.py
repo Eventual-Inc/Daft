@@ -78,7 +78,7 @@ def azure_iceberg_catalog() -> Iterator[tuple[str, Catalog]]:
         "default",
         **{
             "uri": "sqlite:///tests/assets/pyiceberg_catalog.db",
-            "adlfs.account-name": "dafttestdata",
+            "adls.account-name": "dafttestdata",
         },
     )
 
