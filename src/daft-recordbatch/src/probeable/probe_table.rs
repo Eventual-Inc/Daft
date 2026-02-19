@@ -2,11 +2,9 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use daft_core::{
+    array::ops::arrow::comparison::build_multi_array_is_equal_from_arrays,
     prelude::SchemaRef,
-    utils::{
-        dyn_compare::{MultiDynArrayComparator, build_dyn_multi_array_compare},
-        identity_hash_set::{IdentityBuildHasher, IndexHash},
-    },
+    utils::identity_hash_set::{IdentityBuildHasher, IndexHash},
 };
 use hashbrown::{HashMap, hash_map::RawEntryMut};
 
@@ -17,7 +15,8 @@ pub struct ProbeTable {
     schema: SchemaRef,
     hash_table: HashMap<IndexHash, Vec<u64>, IdentityBuildHasher>,
     tables: Vec<ArrowTableEntry>,
-    compare_fn: MultiDynArrayComparator,
+    nulls_equal: Vec<bool>,
+    nans_equal: Vec<bool>,
 }
 
 impl ProbeTable {
@@ -42,16 +41,16 @@ impl ProbeTable {
                 null_equal_aware.len()
             )));
         }
-        let default_nulls_equal = vec![false; schema.len()];
-        let nulls_equal = null_equal_aware.unwrap_or_else(|| default_nulls_equal.as_ref());
-        let nans_equal = &vec![false; schema.len()];
-        let compare_fn =
-            build_dyn_multi_array_compare(&schema, nulls_equal.as_slice(), nans_equal.as_slice())?;
+        let nulls_equal = null_equal_aware
+            .cloned()
+            .unwrap_or_else(|| vec![false; schema.len()]);
+        let nans_equal = vec![false; schema.len()];
         Ok(Self {
             schema,
             hash_table,
             tables: vec![],
-            compare_fn,
+            nulls_equal,
+            nans_equal,
         })
     }
 
@@ -75,6 +74,21 @@ impl ProbeTable {
             .map(|s| s.as_physical()?.to_arrow())
             .collect::<DaftResult<Vec<_>>>()?;
 
+        // Pre-create comparators for each stored table vs input.
+        // Each comparator captures typed arrays via Arc, avoiding per-row downcasts.
+        let comparators: Vec<_> = self
+            .tables
+            .iter()
+            .map(|table| {
+                build_multi_array_is_equal_from_arrays(
+                    &table.0,
+                    &input_arrays,
+                    &self.nulls_equal,
+                    &self.nans_equal,
+                )
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+
         // Collect needed: hashes is a local variable, so .iter() borrows it and
         // the returned iterator would reference a dropped value.
         #[allow(clippy::needless_collect)]
@@ -87,12 +101,7 @@ impl ProbeTable {
                         h == other.hash && {
                             let other_table_idx = (other.idx >> Self::TABLE_IDX_SHIFT) as usize;
                             let other_row_idx = (other.idx & Self::LOWER_MASK) as usize;
-
-                            let other_table = self.tables.get(other_table_idx).unwrap();
-
-                            let other_refs = other_table.0.as_slice();
-
-                            (self.compare_fn)(other_refs, &input_arrays, other_row_idx, idx).is_eq()
+                            comparators[other_table_idx](other_row_idx, idx)
                         }
                     }) {
                         Some(indices.as_slice())
@@ -119,26 +128,37 @@ impl ProbeTable {
             .iter()
             .map(|s| s.as_physical()?.to_arrow())
             .collect::<DaftResult<Vec<_>>>()?;
+
+        // Pre-create comparators: current table vs each existing table + self.
+        // Comparators capture array data via Arc, so they remain valid after the move below.
+        let mut comparators: Vec<Box<dyn Fn(usize, usize) -> bool + Send + Sync>> = self
+            .tables
+            .iter()
+            .map(|other_table| {
+                build_multi_array_is_equal_from_arrays(
+                    &current_arrays,
+                    &other_table.0,
+                    &self.nulls_equal,
+                    &self.nans_equal,
+                )
+            })
+            .collect::<DaftResult<Vec<_>>>()?;
+        comparators.push(build_multi_array_is_equal_from_arrays(
+            &current_arrays,
+            &current_arrays,
+            &self.nulls_equal,
+            &self.nans_equal,
+        )?);
+
         self.tables.push(ArrowTableEntry(current_arrays));
-        let current_array_refs = self.tables.last().unwrap().0.as_slice();
+
         for (i, h) in hashes.values().iter().enumerate() {
             let idx = table_offset | i;
             let entry = self.hash_table.raw_entry_mut().from_hash(*h, |other| {
                 (*h == other.hash) && {
-                    let j_idx = other.idx;
-                    let j_table_idx = (j_idx >> Self::TABLE_IDX_SHIFT) as usize;
-                    let j_row_idx = (j_idx & Self::LOWER_MASK) as usize;
-
-                    if table_idx == j_table_idx {
-                        (self.compare_fn)(current_array_refs, current_array_refs, i, j_row_idx)
-                            .is_eq()
-                    } else {
-                        let j_table = self.tables.get(j_table_idx).unwrap();
-
-                        let array_refs = j_table.0.as_slice();
-
-                        (self.compare_fn)(current_array_refs, array_refs, i, j_row_idx).is_eq()
-                    }
+                    let j_table_idx = (other.idx >> Self::TABLE_IDX_SHIFT) as usize;
+                    let j_row_idx = (other.idx & Self::LOWER_MASK) as usize;
+                    comparators[j_table_idx](i, j_row_idx)
                 }
             });
             match entry {
