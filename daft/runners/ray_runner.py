@@ -548,7 +548,7 @@ class RayRunner(Runner[ray.ObjectRef]):
 
     def run_iter(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
-    ) -> Iterator[RayMaterializedResult]:
+    ) -> Generator[RayMaterializedResult, None, RecordBatch]:
         track_runner_on_scarf(runner=self.name)
 
         # Grab and freeze the current context
@@ -613,12 +613,17 @@ class RayRunner(Runner[ray.ObjectRef]):
                 self.flotilla_plan_runner = FlotillaRunner()
 
             total_rows = 0
-            for result in self.flotilla_plan_runner.stream_plan(
+            result_gen = self.flotilla_plan_runner.stream_plan(
                 distributed_plan, self._part_set_cache.get_all_partition_sets()
-            ):
-                if result.metadata() is not None:
-                    total_rows += result.metadata().num_rows
-                yield result
+            )
+            try:
+                while True:
+                    result = next(result_gen)
+                    if result.metadata() is not None:
+                        total_rows += result.metadata().num_rows
+                    yield result
+            except StopIteration as e:
+                metrics = e.value
 
             # Mark all operators as finished to clean up the Dashboard UI before notify_exec_end
             if should_notify:
@@ -654,25 +659,35 @@ class RayRunner(Runner[ray.ObjectRef]):
                 ctx._notify_query_end(query_id, PyQueryResult(QueryEndState.Failed, str(e)))
             raise
 
+        return metrics
+
     def run_iter_tables(
         self, builder: LogicalPlanBuilder, results_buffer_size: int | None = None
     ) -> Iterator[MicroPartition]:
         for result in self.run_iter(builder, results_buffer_size=results_buffer_size):
             yield ray.get(result.partition())
 
-    def _collect_into_cache(self, results_iter: Iterator[RayMaterializedResult]) -> PartitionCacheEntry:
+    def _collect_into_cache(
+        self, results_iter: Generator[RayMaterializedResult, None, RecordBatch]
+    ) -> tuple[PartitionCacheEntry, RecordBatch | None]:
         result_pset = RayPartitionSet()
 
-        for i, result in enumerate(results_iter):
-            result_pset.set_partition(i, result)
+        metrics: RecordBatch | None = None
+        i = 0
+        try:
+            while True:
+                result = next(results_iter)
+                result_pset.set_partition(i, result)
+                i += 1
+        except StopIteration as e:
+            metrics = e.value
 
         pset_entry = self._part_set_cache.put_partition_set(result_pset)
-
-        return pset_entry
+        return pset_entry, metrics
 
     def run(self, builder: LogicalPlanBuilder) -> tuple[PartitionCacheEntry, RecordBatch | None]:
         results_iter = self.run_iter(builder)
-        return self._collect_into_cache(results_iter), None
+        return self._collect_into_cache(results_iter)
 
     def put_partition_set_into_cache(self, pset: PartitionSet[ray.ObjectRef]) -> PartitionCacheEntry:
         if isinstance(pset, LocalPartitionSet):

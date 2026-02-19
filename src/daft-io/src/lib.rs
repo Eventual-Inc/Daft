@@ -10,6 +10,7 @@ mod local;
 pub mod multipart;
 mod object_io;
 mod object_store_glob;
+mod opendal_source;
 mod retry;
 pub mod s3_like;
 mod stats;
@@ -27,6 +28,7 @@ use google_cloud::GCSSource;
 #[cfg(feature = "python")]
 use gravitino::GravitinoSource;
 use huggingface::HFSource;
+use opendal_source::OpenDALSource;
 use tos::TosSource;
 #[cfg(feature = "python")]
 use unity::UnitySource;
@@ -244,7 +246,7 @@ impl IOClient {
             return Ok((client.clone(), path.to_string()));
         }
 
-        let new_source = match source_type {
+        let new_source = match &source_type {
             SourceType::File => LocalSource::get_client().await? as Arc<dyn ObjectSource>,
             SourceType::Http => {
                 let url = url::Url::parse(&path).context(InvalidUrlSnafu { path: input })?;
@@ -296,6 +298,15 @@ impl IOClient {
                 {
                     unimplemented!("Gravitino source currently requires Python");
                 }
+            }
+            SourceType::OpenDAL { scheme } => {
+                let empty_config = std::collections::BTreeMap::new();
+                let backend_config = self
+                    .config
+                    .opendal_backends
+                    .get(scheme)
+                    .unwrap_or(&empty_config);
+                OpenDALSource::get_client(scheme, backend_config).await? as Arc<dyn ObjectSource>
             }
         };
 
@@ -436,7 +447,7 @@ impl IOClient {
     }
 }
 
-#[derive(Debug, Hash, PartialEq, std::cmp::Eq, Clone, Copy)]
+#[derive(Debug, Hash, PartialEq, std::cmp::Eq, Clone)]
 pub enum SourceType {
     File,
     Http,
@@ -447,6 +458,7 @@ pub enum SourceType {
     Unity,
     Tos,
     Gravitino,
+    OpenDAL { scheme: String },
 }
 
 impl std::fmt::Display for SourceType {
@@ -461,6 +473,7 @@ impl std::fmt::Display for SourceType {
             Self::Unity => write!(f, "UnityCatalog"),
             Self::Tos => write!(f, "tos"),
             Self::Gravitino => write!(f, "Gravitino"),
+            Self::OpenDAL { scheme } => write!(f, "opendal({})", scheme),
         }
     }
 }
@@ -469,7 +482,10 @@ impl SourceType {
     /// Whether source support write parquet/json/csv files via native IO,
     /// if the source is object store, it should support multipart part upload currently.
     pub fn supports_native_writer(&self) -> bool {
-        matches!(self, Self::File | Self::S3 | Self::Tos | Self::Gravitino)
+        matches!(
+            self,
+            Self::File | Self::S3 | Self::Tos | Self::Gravitino | Self::OpenDAL { .. }
+        )
     }
 }
 
@@ -552,7 +568,7 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         _ if scheme.len() == 1 && ("a" <= scheme.as_str() && (scheme.as_str() <= "z")) => {
             Ok((SourceType::File, Cow::Owned(format!("file://{input}"))))
         }
-        _ => Err(Error::NotImplementedSource { store: scheme }),
+        _ => Ok((SourceType::OpenDAL { scheme }, fixed_input)),
     }
 }
 type CacheKey = (bool, Arc<IOConfig>);

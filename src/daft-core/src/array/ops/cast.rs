@@ -1,17 +1,13 @@
-#![allow(deprecated, reason = "arrow2->arrow migration")]
 use std::{
-    iter::repeat_n,
     ops::{Div, Mul},
     sync::Arc,
 };
 
+use arrow::buffer::{OffsetBuffer, ScalarBuffer};
 use common_error::{DaftError, DaftResult};
-use daft_arrow::{
-    compute::{
-        self,
-        cast::{CastOptions, can_cast_types, cast},
-    },
-    offset::Offsets,
+use daft_arrow::compute::{
+    self,
+    cast::{CastOptions, can_cast_types, cast},
 };
 use indexmap::IndexMap;
 #[cfg(feature = "python")]
@@ -717,7 +713,7 @@ impl ImageArray {
                 let shape_offsets = (0..=ndim * self.len())
                     .step_by(ndim)
                     .map(|v| v as i64)
-                    .collect::<Vec<i64>>();
+                    .collect::<ScalarBuffer<i64>>();
                 let nulls = self.physical.nulls();
                 let data_series = self
                     .data_array()
@@ -733,7 +729,7 @@ impl ImageArray {
                     shapes.push(ca[i] as u64);
                 }
                 let shapes_dtype = DataType::List(Box::new(DataType::UInt64));
-                let shape_offsets = daft_arrow::offset::OffsetsBuffer::try_from(shape_offsets)?;
+                let shape_offsets = OffsetBuffer::new(shape_offsets);
                 let shapes_array = ListArray::new(
                     Field::new("shape", shapes_dtype),
                     UInt64Array::new(
@@ -905,8 +901,7 @@ impl TensorArray {
                     non_zero_indices.push(indices_arr);
                 }
 
-                let offsets: Offsets<i64> =
-                    Offsets::try_from_iter(non_zero_values.iter().map(|s| s.len()))?;
+                let offsets = OffsetBuffer::from_lengths(non_zero_values.iter().map(|s| s.len()));
                 let non_zero_values_series =
                     Series::concat(&non_zero_values.iter().collect::<Vec<&Series>>())?;
                 let non_zero_indices_series =
@@ -1086,7 +1081,7 @@ fn cast_sparse_to_dense_for_inner_dtype(
     n_values: usize,
     non_zero_indices_array: &ListArray,
     non_zero_values_array: &ListArray,
-    offsets: &Offsets<i64>,
+    offsets: &OffsetBuffer<i64>,
     use_offset_indices: &bool,
 ) -> DaftResult<Box<dyn daft_arrow::array::Array>> {
     let item: Box<dyn daft_arrow::array::Array> = with_match_numeric_daft_types!(inner_dtype, |$T| {
@@ -1107,7 +1102,7 @@ fn cast_sparse_to_dense_for_inner_dtype(
                     true => {
                         let mut old_idx: u64 = 0;
                         for (idx, val) in index_array.into_iter().zip(values_array.into_iter()) {
-                            let list_start_offset = offsets.start_end(i).0;
+                            let list_start_offset = offsets.inner()[i] as usize;
                             let current_idx = idx.unwrap() + old_idx;
                             old_idx = current_idx;
                             values[list_start_offset + current_idx as usize] = *val.unwrap();
@@ -1115,7 +1110,7 @@ fn cast_sparse_to_dense_for_inner_dtype(
                     },
                     false => {
                         for (idx, val) in index_array.into_iter().zip(values_array.into_iter()) {
-                            let list_start_offset = offsets.start_end(i).0;
+                            let list_start_offset = offsets.inner()[i] as usize;
                             values[list_start_offset + *idx.unwrap() as usize] = *val.unwrap();
                         }
                     }
@@ -1154,7 +1149,7 @@ impl SparseTensorArray {
                         })
                     })
                     .collect();
-                let offsets: Offsets<i64> = Offsets::try_from_iter(sizes_vec.iter().copied())?;
+                let offsets = OffsetBuffer::from_lengths(sizes_vec.iter().copied());
                 let n_values = sizes_vec.iter().sum::<usize>();
                 let nulls = non_zero_indices_array.nulls();
                 let item = cast_sparse_to_dense_for_inner_dtype(
@@ -1249,7 +1244,7 @@ impl FixedShapeSparseTensorArray {
                 let shape_offsets = (0..=ndim * self.len())
                     .step_by(ndim)
                     .map(|v| v as i64)
-                    .collect::<Vec<i64>>();
+                    .collect::<ScalarBuffer<i64>>();
 
                 let nulls = self.physical.nulls();
 
@@ -1261,7 +1256,7 @@ impl FixedShapeSparseTensorArray {
                 let indices_arr = ia.cast(&DataType::List(Box::new(DataType::UInt64)))?;
 
                 // List -> Struct
-                let shape_offsets = daft_arrow::offset::OffsetsBuffer::try_from(shape_offsets)?;
+                let shape_offsets = OffsetBuffer::new(shape_offsets);
                 let shapes_array = ListArray::new(
                     Field::new("shape", DataType::List(Box::new(DataType::UInt64))),
                     Series::try_from((
@@ -1298,12 +1293,14 @@ impl FixedShapeSparseTensorArray {
                     )));
                 }
                 let n_values = size * non_zero_values_array.len();
+                let offsets = OffsetBuffer::from_repeated_length(target_size, self.len());
+
                 let item = cast_sparse_to_dense_for_inner_dtype(
                     inner_dtype,
                     n_values,
                     non_zero_indices_array,
                     non_zero_values_array,
-                    &Offsets::try_from_iter(repeat_n(target_size, self.len()))?,
+                    &offsets,
                     use_offset_indices,
                 )?;
                 let nulls = non_zero_values_array.nulls();
@@ -1342,7 +1339,7 @@ impl FixedShapeTensorArray {
                 let shape_offsets = (0..=ndim * self.len())
                     .step_by(ndim)
                     .map(|v| v as i64)
-                    .collect::<Vec<i64>>();
+                    .collect::<ScalarBuffer<i64>>();
 
                 let physical_arr = &self.physical;
                 let nulls = self.physical.nulls();
@@ -1353,7 +1350,7 @@ impl FixedShapeTensorArray {
                     .rename("data");
 
                 // List -> Struct
-                let shape_offsets = daft_arrow::offset::OffsetsBuffer::try_from(shape_offsets)?;
+                let shape_offsets = OffsetBuffer::new(shape_offsets);
                 let shapes_array = ListArray::new(
                     Field::new("shape", DataType::List(Box::new(DataType::UInt64))),
                     Series::try_from((
@@ -1421,8 +1418,7 @@ impl FixedShapeTensorArray {
                     non_zero_values.push(data);
                     non_zero_indices.push(indices_arr);
                 }
-                let offsets: Offsets<i64> =
-                    Offsets::try_from_iter(non_zero_values.iter().map(|s| s.len()))?;
+                let offsets = OffsetBuffer::from_lengths(non_zero_values.iter().map(|s| s.len()));
                 let non_zero_values_series =
                     Series::concat(&non_zero_values.iter().collect::<Vec<&Series>>())?;
                 let non_zero_indices_series =
@@ -1490,7 +1486,7 @@ impl FixedSizeListArray {
             DataType::List(child_dtype) => {
                 let element_size = self.fixed_element_len();
                 let casted_child = self.flat_child.cast(child_dtype.as_ref())?;
-                let offsets = Offsets::try_from_iter(repeat_n(element_size, self.len()))?;
+                let offsets = OffsetBuffer::from_repeated_length(element_size, self.len());
                 Ok(ListArray::new(
                     Field::new(self.name().to_string(), dtype.clone()),
                     casted_child,
@@ -1608,8 +1604,8 @@ impl ListArray {
                         // Slice child to match offsets if necessary
                         if casted_child.len() / size > self.len() {
                             casted_child = casted_child.slice(
-                                *self.offsets().first() as usize,
-                                *self.offsets().last() as usize,
+                                *self.offsets().first().unwrap() as usize,
+                                *self.offsets().last().unwrap() as usize,
                             )?;
                         }
                         Ok(FixedSizeListArray::new(
@@ -1620,6 +1616,7 @@ impl ListArray {
                         .into_series())
                     }
                     // Some invalids, we need to insert nulls into the child
+                    // TODO(desmond): Migrate this to arrow-rs after migrating growable internals.
                     Some(nulls) => {
                         let mut child_growable = make_growable(
                             "item",
@@ -1633,7 +1630,7 @@ impl ListArray {
                         for (start, end) in nulls.valid_slices() {
                             let len = end - start;
                             child_growable.add_nulls((start - invalid_ptr) * size);
-                            let child_start = self.offsets().start_end(start).0;
+                            let child_start = self.offsets().inner()[start] as usize;
                             child_growable.extend(0, child_start, len * size);
                             invalid_ptr = end;
                         }
@@ -2008,13 +2005,7 @@ mod tests {
             .cast(&DataType::Int32)
             .expect("Failed to cast Utf8 to Int32");
 
-        let values: Vec<Option<i32>> = result
-            .i32()
-            .unwrap()
-            .as_arrow2()
-            .iter()
-            .map(|v| v.copied())
-            .collect();
+        let values: Vec<Option<i32>> = result.i32().unwrap().into_iter().collect();
         assert_eq!(values, vec![Some(42), Some(-1), Some(100), None]);
     }
 
@@ -2028,13 +2019,7 @@ mod tests {
             .cast(&DataType::Int64)
             .expect("Failed to cast Utf8 to Int64");
 
-        let values: Vec<Option<i64>> = result
-            .i64()
-            .unwrap()
-            .as_arrow2()
-            .iter()
-            .map(|v| v.copied())
-            .collect();
+        let values: Vec<Option<i64>> = result.i64().unwrap().into_iter().collect();
         assert_eq!(values, vec![Some(42), Some(-9999999999), Some(123)]);
     }
 
@@ -2048,13 +2033,7 @@ mod tests {
             .cast(&DataType::Float64)
             .expect("Failed to cast Utf8 to Float64");
 
-        let values: Vec<Option<f64>> = result
-            .f64()
-            .unwrap()
-            .as_arrow2()
-            .iter()
-            .map(|v| v.copied())
-            .collect();
+        let values: Vec<Option<f64>> = result.f64().unwrap().into_iter().collect();
         assert_eq!(values, vec![Some(3.14), Some(-2.5), Some(1e10), None]);
     }
 
@@ -2066,13 +2045,7 @@ mod tests {
             .cast(&DataType::Float32)
             .expect("Failed to cast Utf8 to Float32");
 
-        let values: Vec<Option<f32>> = result
-            .f32()
-            .unwrap()
-            .as_arrow2()
-            .iter()
-            .map(|v| v.copied())
-            .collect();
+        let values: Vec<Option<f32>> = result.f32().unwrap().into_iter().collect();
         assert_eq!(values, vec![Some(3.14_f32), Some(-2.5_f32)]);
     }
 
@@ -2087,13 +2060,7 @@ mod tests {
             .cast(&DataType::Int32)
             .expect("Failed to cast Utf8 to Int32");
 
-        let values: Vec<Option<i32>> = result
-            .i32()
-            .unwrap()
-            .as_arrow2()
-            .iter()
-            .map(|v| v.copied())
-            .collect();
+        let values: Vec<Option<i32>> = result.i32().unwrap().into_iter().collect();
         assert_eq!(values, vec![Some(42), None, None]);
     }
 
@@ -2119,12 +2086,7 @@ mod tests {
         // Date is stored as days since epoch (1970-01-01)
         // 2024-01-01 = 19723 days, 2024-06-15 = 19889 days, 2024-12-31 = 20088 days
         let date_array = result.date().unwrap();
-        let values: Vec<Option<i32>> = date_array
-            .as_arrow2()
-            .values()
-            .iter()
-            .map(|&v| Some(v))
-            .collect();
+        let values: Vec<Option<i32>> = date_array.physical.into_iter().collect();
         // Check that we got valid dates (not None from failed parse)
         assert!(values[0].is_some(), "First date should parse successfully");
         assert!(values[1].is_some(), "Second date should parse successfully");

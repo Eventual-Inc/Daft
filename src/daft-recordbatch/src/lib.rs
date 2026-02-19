@@ -150,7 +150,6 @@ impl RecordBatch {
     }
 
     #[deprecated(note = "arrow2 migration")]
-    #[allow(deprecated, reason = "arrow2 migration")]
     pub fn get_inner_arrow_arrays(
         &self,
     ) -> impl Iterator<Item = Box<dyn daft_arrow::array::Array>> + '_ {
@@ -606,38 +605,40 @@ impl RecordBatch {
         Ok(Self::new_unchecked(new_schema, new_columns, self.num_rows))
     }
 
+    /// Evaluates an expression and broadcasts the result to match `self.len()` if needed.
+    /// This is necessary for literal expressions which evaluate to a single-element Series,
+    /// but aggregation functions expect the input to have as many elements as the RecordBatch.
+    fn eval_agg_child(&self, expr: &ExprRef) -> DaftResult<Series> {
+        let result = self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))?;
+        if result.len() != self.len() {
+            result.broadcast(self.len())
+        } else {
+            Ok(result)
+        }
+    }
+
     fn eval_agg_expression(
         &self,
         agg_expr: &BoundAggExpr,
         groups: Option<&GroupIndices>,
     ) -> DaftResult<Series> {
         match agg_expr.as_ref() {
-            &AggExpr::Count(ref expr, mode) => self
-                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                .count(groups, mode),
-            AggExpr::CountDistinct(expr) => self
-                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                .count_distinct(groups),
-            AggExpr::Sum(expr) => self
-                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                .sum(groups),
-            AggExpr::Product(expr) => self
-                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                .product(groups),
+            &AggExpr::Count(ref expr, mode) => self.eval_agg_child(expr)?.count(groups, mode),
+            AggExpr::CountDistinct(expr) => self.eval_agg_child(expr)?.count_distinct(groups),
+            AggExpr::Sum(expr) => self.eval_agg_child(expr)?.sum(groups),
+            AggExpr::Product(expr) => self.eval_agg_child(expr)?.product(groups),
             &AggExpr::ApproxPercentile(ApproxPercentileParams {
                 child: ref expr,
                 ref percentiles,
                 force_list_output,
             }) => {
                 let percentiles = percentiles.iter().map(|p| p.0).collect::<Vec<f64>>();
-                self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                self.eval_agg_child(expr)?
                     .approx_sketch(groups)?
                     .sketch_percentile(&percentiles, force_list_output)
             }
             AggExpr::ApproxCountDistinct(expr) => {
-                let hashed = self
-                    .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                    .hash_with_nulls(None)?;
+                let hashed = self.eval_agg_child(expr)?.hash_with_nulls(None)?;
                 let series = groups
                     .map_or_else(
                         || hashed.approx_count_distinct(),
@@ -647,13 +648,11 @@ impl RecordBatch {
                 Ok(series)
             }
             &AggExpr::ApproxSketch(ref expr, sketch_type) => {
-                let evaled = self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))?;
+                let evaled = self.eval_agg_child(expr)?;
                 match sketch_type {
                     SketchType::DDSketch => evaled.approx_sketch(groups),
                     SketchType::HyperLogLog => {
-                        let hashed = self
-                            .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                            .hash_with_nulls(None)?;
+                        let hashed = evaled.hash_with_nulls(None)?;
                         let series = groups
                             .map_or_else(
                                 || hashed.hll_sketch(),
@@ -665,48 +664,28 @@ impl RecordBatch {
                 }
             }
             &AggExpr::MergeSketch(ref expr, sketch_type) => {
-                let evaled = self.eval_expression(&BoundExpr::new_unchecked(expr.clone()))?;
+                let evaled = self.eval_agg_child(expr)?;
                 match sketch_type {
                     SketchType::DDSketch => evaled.merge_sketch(groups),
                     SketchType::HyperLogLog => evaled.hll_merge(groups),
                 }
             }
-            AggExpr::Mean(expr) => self
-                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                .mean(groups),
-            AggExpr::Stddev(expr) => self
-                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                .stddev(groups),
-            AggExpr::Var(expr, ddof) => self
-                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                .var(groups, *ddof),
-            AggExpr::Min(expr) => self
-                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                .min(groups),
-            AggExpr::Max(expr) => self
-                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                .max(groups),
-            AggExpr::BoolAnd(expr) => self
-                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                .bool_and(groups),
-            AggExpr::BoolOr(expr) => self
-                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                .bool_or(groups),
-            &AggExpr::AnyValue(ref expr, ignore_nulls) => self
-                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                .any_value(groups, ignore_nulls),
-            AggExpr::List(expr) => self
-                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                .agg_list(groups),
-            AggExpr::Set(expr) => self
-                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                .agg_set(groups),
+            AggExpr::Mean(expr) => self.eval_agg_child(expr)?.mean(groups),
+            AggExpr::Stddev(expr) => self.eval_agg_child(expr)?.stddev(groups),
+            AggExpr::Var(expr, ddof) => self.eval_agg_child(expr)?.var(groups, *ddof),
+            AggExpr::Min(expr) => self.eval_agg_child(expr)?.min(groups),
+            AggExpr::Max(expr) => self.eval_agg_child(expr)?.max(groups),
+            AggExpr::BoolAnd(expr) => self.eval_agg_child(expr)?.bool_and(groups),
+            AggExpr::BoolOr(expr) => self.eval_agg_child(expr)?.bool_or(groups),
+            &AggExpr::AnyValue(ref expr, ignore_nulls) => {
+                self.eval_agg_child(expr)?.any_value(groups, ignore_nulls)
+            }
+            AggExpr::List(expr) => self.eval_agg_child(expr)?.agg_list(groups),
+            AggExpr::Set(expr) => self.eval_agg_child(expr)?.agg_set(groups),
             AggExpr::Concat(expr, delimiter) => self
-                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
+                .eval_agg_child(expr)?
                 .agg_concat(groups, delimiter.as_deref()),
-            AggExpr::Skew(expr) => self
-                .eval_expression(&BoundExpr::new_unchecked(expr.clone()))?
-                .skew(groups),
+            AggExpr::Skew(expr) => self.eval_agg_child(expr)?.skew(groups),
             AggExpr::MapGroups { .. } => Err(DaftError::ValueError(
                 "MapGroups not supported via aggregation, use map_groups instead".to_string(),
             )),
@@ -1616,7 +1595,6 @@ impl RecordBatch {
 impl TryFrom<RecordBatch> for arrow_array::RecordBatch {
     type Error = DaftError;
 
-    #[allow(deprecated, reason = "arrow2 migration")]
     fn try_from(record_batch: RecordBatch) -> DaftResult<Self> {
         let schema = Arc::new(record_batch.schema.to_arrow2()?.into());
         let columns = record_batch
