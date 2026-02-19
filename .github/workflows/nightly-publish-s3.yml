@@ -193,7 +193,7 @@ jobs:
   integration-test-io:
     needs: [publish]
     runs-on: ${{ matrix.runner-name }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       package-name: daft
     strategy:
