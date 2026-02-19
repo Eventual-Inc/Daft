@@ -72,22 +72,15 @@ impl<'py> IntoPyObject<'py> for Literal {
 
                 match tz {
                     None => naive_dt.into_bound_py_any(py),
-                    Some(tz_str)
-                        if let Ok(fixed_offset) = daft_schema::time_unit::parse_offset(&tz_str) =>
-                    {
-                        fixed_offset
-                            .from_utc_datetime(&naive_dt)
-                            .into_bound_py_any(py)
+                    Some(tz_str) => {
+                        let tz_parsed =
+                            daft_schema::time_unit::parse_timezone(&tz_str).map_err(|_| {
+                                DaftError::ValueError(format!(
+                                    "Failed to parse timezone string: {tz_str}"
+                                ))
+                            })?;
+                        tz_parsed.from_utc_datetime(&naive_dt).into_bound_py_any(py)
                     }
-                    Some(tz_str)
-                        if let Ok(tz) = daft_schema::time_unit::parse_offset_tz(&tz_str) =>
-                    {
-                        tz.from_utc_datetime(&naive_dt).into_bound_py_any(py)
-                    }
-                    Some(tz_str) => Err(DaftError::ValueError(format!(
-                        "Failed to parse timezone string: {tz_str}"
-                    ))
-                    .into()),
                 }
             }
             Self::Date(val) => DateTime::from_timestamp((val as i64) * 24 * 60 * 60, 0)

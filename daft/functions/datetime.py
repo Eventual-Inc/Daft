@@ -1121,6 +1121,37 @@ def to_datetime(expr: Expression, format: str, timezone: str | None = None) -> E
     return Expression._call_builtin_scalar_fn("to_datetime", expr, format=format, timezone=timezone)
 
 
+def convert_time_zone(expr: Expression, to_timezone: str, from_timezone: str | None = None) -> Expression:
+    """Converts a timestamp to another timezone while preserving the instant in time.
+
+    If the timestamp has no timezone, `from_timezone` must be provided to interpret the local time before converting to `to_timezone`.
+
+    Args:
+        expr: Timestamp expression to convert.
+        to_timezone: Target timezone (e.g. "UTC", "+02:00", "America/New_York").
+        from_timezone: Source timezone for timestamps without a timezone.
+
+    Returns:
+        Expression: Timestamp expression with the target timezone.
+    """
+    return Expression._call_builtin_scalar_fn("convert_time_zone", expr, to_timezone, from_timezone)
+
+
+def replace_time_zone(expr: Expression, timezone: str | None = None) -> Expression:
+    """Replaces the timezone of a timestamp while preserving the local time.
+
+    If `timezone` is not provided, the timezone is removed.
+
+    Args:
+        expr: Timestamp expression to update.
+        timezone: New timezone (e.g. "UTC", "+02:00", "America/New_York").
+
+    Returns:
+        Expression: Timestamp expression with the updated timezone.
+    """
+    return Expression._call_builtin_scalar_fn("replace_time_zone", expr, timezone)
+
+
 def date_trunc(interval: str, expr: Expression, relative_to: Expression | None = None) -> Expression:
     """Truncates the datetime column to the specified interval.
 

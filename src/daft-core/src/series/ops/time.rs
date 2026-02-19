@@ -376,4 +376,34 @@ impl Series {
             ))),
         }
     }
+
+    pub fn dt_convert_time_zone(
+        &self,
+        to_timezone: &str,
+        from_timezone: Option<&str>,
+    ) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::Timestamp(..) => {
+                let ts_array = self.timestamp()?;
+                Ok(ts_array
+                    .convert_time_zone(to_timezone, from_timezone)?
+                    .into_series())
+            }
+            ty => Err(DaftError::ComputeError(format!(
+                "Can only run convert_time_zone() operation on timestamp types, got {ty}"
+            ))),
+        }
+    }
+
+    pub fn dt_replace_time_zone(&self, timezone: Option<&str>) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::Timestamp(..) => {
+                let ts_array = self.timestamp()?;
+                Ok(ts_array.replace_time_zone(timezone)?.into_series())
+            }
+            ty => Err(DaftError::ComputeError(format!(
+                "Can only run replace_time_zone() operation on timestamp types, got {ty}"
+            ))),
+        }
+    }
 }

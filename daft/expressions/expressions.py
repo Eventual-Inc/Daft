@@ -1881,6 +1881,26 @@ class Expression:
 
         return to_datetime(self, format, timezone)
 
+    def convert_time_zone(self, to_timezone: builtins.str, from_timezone: builtins.str | None = None) -> Expression:
+        """Converts a timestamp to another timezone while preserving the instant in time.
+
+        Tip: See Also
+            [`daft.functions.convert_time_zone`](https://docs.daft.ai/en/stable/api/functions/convert_time_zone/)
+        """
+        from daft.functions import convert_time_zone
+
+        return convert_time_zone(self, to_timezone, from_timezone)
+
+    def replace_time_zone(self, timezone: builtins.str | None = None) -> Expression:
+        """Replaces the timezone of a timestamp while preserving the local time.
+
+        Tip: See Also
+            [`daft.functions.replace_time_zone`](https://docs.daft.ai/en/stable/api/functions/replace_time_zone/)
+        """
+        from daft.functions import replace_time_zone
+
+        return replace_time_zone(self, timezone)
+
     def contains(self, substr: builtins.str | Expression) -> Expression:
         """Checks whether each string contains the given pattern in a string column.
 

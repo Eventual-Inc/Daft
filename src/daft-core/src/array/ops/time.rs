@@ -6,9 +6,13 @@ use common_error::{DaftError, DaftResult};
 use daft_arrow::{
     self,
     array::{Array, PrimitiveArray},
-    compute::arithmetics::time::{add_interval, sub_interval},
+    compute::arithmetics::time::{add_interval, mul_interval, sub_interval},
     datatypes::ArrowDataType,
     types::months_days_ns,
+};
+use daft_schema::time_unit::{
+    ParsedTimezone, datetime_to_timestamp, naive_datetime_to_timestamp, naive_local_to_timestamp,
+    parse_timezone, timestamp_to_datetime, timestamp_to_naive_datetime, timestamp_to_naive_local,
 };
 
 use super::as_arrow::AsArrow;
@@ -114,57 +118,36 @@ impl TimestampArray {
     }
 
     pub fn date(&self) -> DaftResult<DateArray> {
-        let physical = self.physical.as_arrow()?;
         let DataType::Timestamp(timeunit, tz) = self.data_type() else {
             unreachable!("Timestamp array must have Timestamp datatype")
         };
+        let physical = self.physical.as_arrow()?;
         let tu = *timeunit;
         let epoch_date = NaiveDate::from_ymd_opt(1970, 1, 1).unwrap();
         let field = Field::new(self.name(), DataType::Int32);
         let date_physical = match tz {
             Some(tz) => {
-                if let Ok(tz) = daft_schema::time_unit::parse_offset(tz) {
-                    Ok(DataArray::<Int32Type>::from_iter(
-                        field,
-                        physical.iter().map(|ts| {
-                            ts.map(|ts| {
-                                (daft_schema::time_unit::timestamp_to_datetime(ts, tu, &tz)
-                                    .date_naive()
-                                    - epoch_date)
-                                    .num_days() as i32
-                            })
-                        }),
-                    ))
-                } else if let Ok(tz) = daft_schema::time_unit::parse_offset_tz(tz) {
-                    Ok(DataArray::<Int32Type>::from_iter(
-                        field,
-                        physical.iter().map(|ts| {
-                            ts.map(|ts| {
-                                (daft_schema::time_unit::timestamp_to_datetime(ts, tu, &tz)
-                                    .date_naive()
-                                    - epoch_date)
-                                    .num_days() as i32
-                            })
-                        }),
-                    ))
-                } else {
-                    Err(DaftError::TypeError(format!(
-                        "Cannot parse timezone in Timestamp datatype: {}",
-                        tz
-                    )))
-                }
+                let tz_parsed = parse_timezone(tz)?;
+                Int32Array::from_iter(
+                    field,
+                    physical.iter().map(|ts| {
+                        ts.map(|ts| {
+                            let local = timestamp_to_naive_local(ts, tu, &tz_parsed);
+                            (local.date() - epoch_date).num_days() as i32
+                        })
+                    }),
+                )
             }
-            None => Ok(DataArray::<Int32Type>::from_iter(
+            None => Int32Array::from_iter(
                 field,
                 physical.iter().map(|ts| {
                     ts.map(|ts| {
-                        (daft_schema::time_unit::timestamp_to_naive_datetime(ts, tu).date()
-                            - epoch_date)
-                            .num_days() as i32
+                        let naive = timestamp_to_naive_datetime(ts, tu);
+                        (naive.date() - epoch_date).num_days() as i32
                     })
                 }),
-            )),
-        }?;
+            ),
+        };
         Ok(DateArray::new(
             Field::new(self.name(), DataType::Date),
             date_physical,
@@ -172,11 +155,9 @@ impl TimestampArray {
     }
 
     pub fn time(&self, timeunit_for_cast: &TimeUnit) -> DaftResult<TimeArray> {
-        let physical = self.physical.as_arrow()?;
         let DataType::Timestamp(timeunit, tz) = self.data_type() else {
             unreachable!("Timestamp array must have Timestamp datatype")
         };
-        let tu = *timeunit;
         if !matches!(
             timeunit_for_cast,
             TimeUnit::Microseconds | TimeUnit::Nanoseconds
@@ -185,61 +166,27 @@ impl TimestampArray {
                 "Only microseconds and nanoseconds time units are supported for the Time dtype, but got {timeunit_for_cast}"
             )));
         }
+        let physical = self.physical.as_arrow()?;
+        let tu = *timeunit;
         let field = Field::new(self.name(), DataType::Int64);
-        let time_physical = match tz {
-            Some(tz) => {
-                if let Ok(tz) = daft_schema::time_unit::parse_offset(tz) {
-                    Ok(DataArray::<Int64Type>::from_iter(
-                        field,
-                        physical.iter().map(|ts| {
-                            ts.map(|ts| {
-                                let dt = daft_schema::time_unit::timestamp_to_datetime(ts, tu, &tz);
-                                let time_delta = dt.time() - NaiveTime::from_hms_opt(0,0,0).unwrap();
-                                match timeunit_for_cast {
-                                    TimeUnit::Microseconds => time_delta.num_microseconds().unwrap(),
-                                    TimeUnit::Nanoseconds => time_delta.num_nanoseconds().unwrap(),
-                                    _ => unreachable!("Only microseconds and nanoseconds time units are supported for the Time dtype, but got {timeunit_for_cast}"),
-                                }
-                            })
-                        }),
-                    ))
-                } else if let Ok(tz) = daft_schema::time_unit::parse_offset_tz(tz) {
-                    Ok(DataArray::<Int64Type>::from_iter(
-                        field,
-                        physical.iter().map(|ts| {
-                            ts.map(|ts| {
-                                let dt = daft_schema::time_unit::timestamp_to_datetime(ts, tu, &tz);
-                                let time_delta = dt.time() - NaiveTime::from_hms_opt(0,0,0).unwrap();
-                                match timeunit_for_cast {
-                                    TimeUnit::Microseconds => time_delta.num_microseconds().unwrap(),
-                                    TimeUnit::Nanoseconds => time_delta.num_nanoseconds().unwrap(),
-                                    _ => unreachable!("Only microseconds and nanoseconds time units are supported for the Time dtype, but got {timeunit_for_cast}"),
-                                }
-                            })
-                        }),
-                    ))
-                } else {
-                    Err(DaftError::TypeError(format!(
-                        "Cannot parse timezone in Timestamp datatype: {}",
-                        tz
-                    )))
-                }
-            },
-            None => Ok(DataArray::<Int64Type>::from_iter(
-                field,
-                physical.iter().map(|ts| {
-                    ts.map(|ts| {
-                        let dt = daft_schema::time_unit::timestamp_to_naive_datetime(ts, tu);
-                        let time_delta = dt.time() - NaiveTime::from_hms_opt(0,0,0).unwrap();
-                        match timeunit_for_cast {
-                            TimeUnit::Microseconds => time_delta.num_microseconds().unwrap(),
-                            TimeUnit::Nanoseconds => time_delta.num_nanoseconds().unwrap(),
-                            _ => unreachable!("Only microseconds and nanoseconds time units are supported for the Time dtype, but got {timeunit_for_cast}"),
-                        }
-                    })
-                }),
-            )),
-        }?;
+        let tz_parsed = tz.as_deref().map(parse_timezone).transpose()?;
+        let time_physical = Int64Array::from_iter(
+            field,
+            physical.iter().map(|ts| {
+                ts.map(|ts| {
+                    let naive_time = match &tz_parsed {
+                        Some(tz) => timestamp_to_naive_local(ts, tu, tz).time(),
+                        None => timestamp_to_naive_datetime(ts, tu).time(),
+                    };
+                    let time_delta = naive_time - NaiveTime::from_hms_opt(0, 0, 0).unwrap();
+                    match timeunit_for_cast {
+                        TimeUnit::Microseconds => time_delta.num_microseconds().unwrap(),
+                        TimeUnit::Nanoseconds => time_delta.num_nanoseconds().unwrap(),
+                        _ => unreachable!("Only microseconds and nanoseconds time units are supported for the Time dtype, but got {timeunit_for_cast}"),
+                    }
+                })
+            }),
+        );
         Ok(TimeArray::new(
             Field::new(self.name(), DataType::Time(*timeunit_for_cast)),
             time_physical,
@@ -247,11 +194,12 @@ impl TimestampArray {
     }
 
     pub fn truncate(&self, interval: &str, relative_to: Option<i64>) -> DaftResult<Self> {
-        let physical = self.physical.as_arrow()?;
         let DataType::Timestamp(timeunit, tz) = self.data_type() else {
             unreachable!("Timestamp array must have Timestamp datatype")
         };
+        let physical = self.physical.as_arrow()?;
         let duration = process_interval(interval, *timeunit)?;
+        let tz_parsed = tz.as_deref().map(parse_timezone).transpose()?;
 
         fn truncate_single_ts<T>(
             ts: i64,
@@ -265,43 +213,12 @@ impl TimestampArray {
         {
             match tz {
                 Some(tz) => {
-                    let original_dt = daft_schema::time_unit::timestamp_to_datetime(ts, tu, &tz);
-                    let naive_ts = match tu {
-                        TimeUnit::Seconds => original_dt.naive_local().and_utc().timestamp(),
-                        TimeUnit::Milliseconds => {
-                            original_dt.naive_local().and_utc().timestamp_millis()
-                        }
-                        TimeUnit::Microseconds => {
-                            original_dt.naive_local().and_utc().timestamp_micros()
-                        }
-                        TimeUnit::Nanoseconds => original_dt
-                            .naive_local()
-                            .and_utc()
-                            .timestamp_nanos_opt()
-                            .ok_or(DaftError::ValueError(format!(
-                                "Error truncating timestamp {ts} in nanosecond units"
-                            )))?,
-                    };
-
+                    let original_dt = timestamp_to_datetime(ts, tu, &tz);
+                    let naive_ts = naive_datetime_to_timestamp(original_dt.naive_local(), tu)?;
                     let mut truncate_by_amount = match relative_to {
                         Some(rt) => {
-                            let rt_dt = daft_schema::time_unit::timestamp_to_datetime(rt, tu, &tz);
-                            let naive_rt_ts = match tu {
-                                TimeUnit::Seconds => rt_dt.naive_local().and_utc().timestamp(),
-                                TimeUnit::Milliseconds => {
-                                    rt_dt.naive_local().and_utc().timestamp_millis()
-                                }
-                                TimeUnit::Microseconds => {
-                                    rt_dt.naive_local().and_utc().timestamp_micros()
-                                }
-                                TimeUnit::Nanoseconds => {
-                                    rt_dt.naive_local().and_utc().timestamp_nanos_opt().ok_or(
-                                        DaftError::ValueError(format!(
-                                            "Error truncating timestamp {ts} in nanosecond units"
-                                        )),
-                                    )?
-                                }
-                            };
+                            let rt_dt = timestamp_to_datetime(rt, tu, &tz);
+                            let naive_rt_ts = naive_datetime_to_timestamp(rt_dt.naive_local(), tu)?;
                             (naive_ts - naive_rt_ts) % duration
                         }
                         None => naive_ts % duration,
@@ -315,20 +232,8 @@ impl TimestampArray {
                         TimeUnit::Microseconds => Duration::microseconds(truncate_by_amount),
                         TimeUnit::Nanoseconds => Duration::nanoseconds(truncate_by_amount),
                     };
-
                     let truncated_dt = original_dt - truncate_by_duration;
-                    match tu {
-                        TimeUnit::Seconds => Ok(truncated_dt.timestamp()),
-                        TimeUnit::Milliseconds => Ok(truncated_dt.timestamp_millis()),
-                        TimeUnit::Microseconds => Ok(truncated_dt.timestamp_micros()),
-                        TimeUnit::Nanoseconds => {
-                            truncated_dt
-                                .timestamp_nanos_opt()
-                                .ok_or(DaftError::ValueError(format!(
-                                    "Error truncating timestamp {ts} in nanosecond units"
-                                )))
-                        }
-                    }
+                    datetime_to_timestamp(truncated_dt, tu)
                 }
                 None => {
                     let mut truncate_by_amount = match relative_to {
@@ -348,18 +253,12 @@ impl TimestampArray {
             match ts {
                 None => builder.append_null(),
                 Some(ts) => {
-                    let truncated_ts = match tz {
-                        Some(tz) => {
-                            if let Ok(tz) = daft_schema::time_unit::parse_offset(tz) {
-                                truncate_single_ts(ts, *timeunit, Some(tz), duration, relative_to)
-                            } else if let Ok(tz) = daft_schema::time_unit::parse_offset_tz(tz) {
-                                truncate_single_ts(ts, *timeunit, Some(tz), duration, relative_to)
-                            } else {
-                                Err(DaftError::TypeError(format!(
-                                    "Cannot parse timezone in Timestamp datatype: {}",
-                                    tz
-                                )))
-                            }
+                    let truncated_ts = match tz_parsed {
+                        Some(ParsedTimezone::Fixed(offset)) => {
+                            truncate_single_ts(ts, *timeunit, Some(offset), duration, relative_to)
+                        }
+                        Some(ParsedTimezone::Tz(tz)) => {
+                            truncate_single_ts(ts, *timeunit, Some(tz), duration, relative_to)
                         }
                         None => truncate_single_ts(
                             ts,
@@ -379,6 +278,114 @@ impl TimestampArray {
         )?;
         Ok(TimestampArray::new(
             Field::new(self.name(), self.data_type().clone()),
+            physical,
+        ))
+    }
+
+    pub fn convert_time_zone(
+        &self,
+        to_timezone: &str,
+        from_timezone: Option<&str>,
+    ) -> DaftResult<Self> {
+        let physical = self.physical.as_arrow()?;
+        let DataType::Timestamp(time_unit, tz) = self.data_type() else {
+            unreachable!("Timestamp array must have Timestamp datatype")
+        };
+
+        parse_timezone(to_timezone)?;
+
+        if tz.is_some() {
+            return Ok(Self::new(
+                Field::new(
+                    self.name(),
+                    DataType::Timestamp(*time_unit, Some(to_timezone.to_string())),
+                ),
+                self.physical.clone(),
+            ));
+        }
+
+        let Some(from_tz) = from_timezone else {
+            return Err(DaftError::ValueError(
+                "from_timezone must be provided for timestamps without a timezone".to_string(),
+            ));
+        };
+
+        let from_tz_parsed = parse_timezone(from_tz)?;
+
+        let mut builder = arrow::array::Int64Builder::with_capacity(physical.len());
+        for ts in &physical {
+            match ts {
+                None => builder.append_null(),
+                Some(ts_val) => {
+                    let naive = timestamp_to_naive_datetime(ts_val, *time_unit);
+                    let new_ts =
+                        naive_local_to_timestamp(naive, *time_unit, &from_tz_parsed, from_tz)?;
+                    builder.append_value(new_ts);
+                }
+            }
+        }
+        let physical = Int64Array::from_arrow(
+            Field::new(self.name(), DataType::Int64),
+            Arc::new(builder.finish()),
+        )?;
+
+        Ok(TimestampArray::new(
+            Field::new(
+                self.name(),
+                DataType::Timestamp(*time_unit, Some(to_timezone.to_string())),
+            ),
+            physical,
+        ))
+    }
+
+    pub fn replace_time_zone(&self, timezone: Option<&str>) -> DaftResult<Self> {
+        let physical = self.physical.as_arrow()?;
+        let DataType::Timestamp(timeunit, tz) = self.data_type() else {
+            unreachable!("Timestamp array must have Timestamp datatype")
+        };
+
+        if tz.as_deref() == timezone {
+            return Ok(self.clone());
+        }
+
+        let tz_in = tz.as_deref().map(parse_timezone).transpose()?;
+        let tz_out = timezone.map(parse_timezone).transpose()?;
+
+        let mut builder = arrow::array::Int64Builder::with_capacity(physical.len());
+        for ts in &physical {
+            match ts {
+                None => builder.append_null(),
+                Some(ts_val) => {
+                    let naive_local = match &tz_in {
+                        Some(tz_in) => timestamp_to_naive_local(ts_val, *timeunit, tz_in),
+                        None => timestamp_to_naive_datetime(ts_val, *timeunit),
+                    };
+                    let new_ts = match &tz_out {
+                        Some(tz_out) => naive_local_to_timestamp(
+                            naive_local,
+                            *timeunit,
+                            tz_out,
+                            timezone.expect("timezone checked above"),
+                        )?,
+                        None => {
+                            let datetime = naive_local.and_utc();
+                            datetime_to_timestamp(datetime, *timeunit)?
+                        }
+                    };
+                    builder.append_value(new_ts);
+                }
+            }
+        }
+        let physical = Int64Array::from_arrow(
+            Field::new(self.name(), DataType::Int64),
+            Arc::new(builder.finish()),
+        )?;
+
+        Ok(TimestampArray::new(
+            Field::new(
+                self.name(),
+                DataType::Timestamp(*timeunit, timezone.map(|tz| tz.to_string())),
+            ),
             physical,
         ))
     }
@@ -443,7 +450,7 @@ impl TimestampArray {
         let physical = self.physical.as_arrow()?;
         let date_arrow = physical.iter().map(|ts| {
             ts.map(|ts| {
-                let datetime = daft_schema::time_unit::timestamp_to_datetime(ts, *tu, &chrono::Utc);
+                let datetime = timestamp_to_datetime(ts, *tu, &chrono::Utc);
                 datetime
                     .date_naive()
                     .signed_duration_since(UNIX_EPOCH_DATE)
@@ -451,7 +458,7 @@ impl TimestampArray {
             })
         });
 
-        Ok(DataArray::<UInt64Type>::from_iter(
+        Ok(UInt64Array::from_iter(
             Field::new(self.name(), DataType::UInt64),
             date_arrow,
         ))
@@ -462,8 +469,7 @@ impl IntervalArray {
     pub fn mul(&self, factor: &Int32Array) -> DaftResult<Self> {
         let arrow_interval = self.as_arrow2();
         let arrow_factor = factor.as_arrow2();
-        let result =
-            daft_arrow::compute::arithmetics::time::mul_interval(arrow_interval, arrow_factor)?;
+        let result = mul_interval(arrow_interval, arrow_factor)?;
         Self::new(self.field.clone(), Box::new(result))
     }
 }
