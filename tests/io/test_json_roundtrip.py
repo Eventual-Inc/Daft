@@ -267,7 +267,7 @@ def test_roundtrip_ndjson_with_mismatched_schema_between_files(tmp_path, compres
     write_ndjson_file(path1, data1, compression)
     write_ndjson_file(path2, data2, compression)
 
-    df = daft.read_json([str(path1), str(path2)]).sort("name")
+    df = daft.read_json([str(path1), str(path2)])
     assert df.to_pydict() == {
         "name": ["Alice", "Bob", "Charlie", "David"],
         "age": [30, 25, 35, 40],

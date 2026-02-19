@@ -13,7 +13,7 @@ def test_dataframe_running_in_async_context():
             return x + 1
 
         df = (
-            daft.range(100)
+            daft.range(100, partitions=10)
             .where(daft.col("id") % 2 == 0)
             .with_column("id", add_one(daft.col("id")))
             .limit(10)

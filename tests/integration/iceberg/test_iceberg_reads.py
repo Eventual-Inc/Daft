@@ -52,10 +52,10 @@ WORKING_SHOW_COLLECT = [
 ]
 
 SORT_KEYS = {
-    "test_all_types": ["longCol"],
-    "test_limit": ["idx"],
-    "test_null_nan": ["idx"],
-    "test_null_nan_rewritten": ["idx"],
+    "test_all_types": [],
+    "test_limit": [],
+    "test_null_nan": [],
+    "test_null_nan_rewritten": [],
     "test_partitioned_by_bucket": ["number"],
     "test_partitioned_by_days": ["number"],
     "test_partitioned_by_hours": ["number"],
@@ -65,14 +65,14 @@ SORT_KEYS = {
     "test_partitioned_by_years": ["number"],
     "test_positional_mor_deletes": ["number"],
     "test_positional_mor_double_deletes": ["number"],
-    "test_table_sanitized_character": ["letter/abc"],
-    "test_table_version": ["number"],
+    "test_table_sanitized_character": [],
+    "test_table_version": [],
     "test_uuid_and_fixed_unpartitioned": ["fixed_col"],
-    "test_add_new_column": ["idx", "name"],
-    "test_new_column_with_no_data": ["idx"],
-    "test_table_rename": ["idx_renamed"],
-    "test_overlapping_deletes": ["id"],
-    "test_mixed_delete_types": ["id"],
+    "test_add_new_column": ["idx"],
+    "test_new_column_with_no_data": [],
+    "test_table_rename": [],
+    "test_overlapping_deletes": [],
+    "test_mixed_delete_types": [],
 }
 
 
@@ -107,7 +107,7 @@ def test_daft_iceberg_table_renamed_filtered_collect_correct(local_iceberg_catal
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     iceberg_pandas = iceberg_pandas[iceberg_pandas["idx_renamed"] <= 1]
-    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["idx_renamed"])
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
 
 
 @pytest.mark.integration()
@@ -119,7 +119,7 @@ def test_daft_iceberg_table_renamed_column_pushdown_collect_correct(local_iceber
     daft_pandas = df.to_pandas()
     iceberg_pandas = tab.scan().to_arrow().to_pandas()
     iceberg_pandas = iceberg_pandas[["idx_renamed"]]
-    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["idx_renamed"])
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
 
 
 @pytest.mark.integration()
@@ -204,7 +204,7 @@ def test_daft_iceberg_table_read_table_snapshot(local_iceberg_catalog):
         # TODO: Provide read_table API for reading iceberg with snapshot ID
         daft_pandas = daft.read_iceberg(tab, snapshot_id=snapshot.snapshot_id).to_pandas()
         iceberg_pandas = tab.scan(snapshot_id=snapshot.snapshot_id).to_pandas()
-        assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["idx"])
+        assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
 
 
 @pytest.mark.integration()
@@ -218,11 +218,10 @@ def test_daft_iceberg_table_mor_limit_collect_correct(table_name, local_iceberg_
     daft_pandas = df.to_pandas()
 
     iceberg_arrow = tab.scan().to_arrow()
+    iceberg_arrow = iceberg_arrow.slice(length=10)
     iceberg_pandas = iceberg_arrow.to_pandas()
 
-    # Limit without sort returns arbitrary rows; verify count and that rows are valid
-    assert len(daft_pandas) == min(10, len(iceberg_pandas))
-    assert sorted(daft_pandas.columns.tolist()) == sorted(iceberg_pandas.columns.tolist())
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
 
 
 @pytest.mark.integration()
@@ -239,7 +238,7 @@ def test_daft_iceberg_table_mor_predicate_collect_correct(table_name, local_iceb
     iceberg_arrow = iceberg_arrow.filter(pc.field("number") > 5)
     iceberg_pandas = iceberg_arrow.to_pandas()
 
-    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=["number"])
+    assert_df_equals(daft_pandas, iceberg_pandas, sort_key=[])
 
 
 class TestIcebergCountPushdown:

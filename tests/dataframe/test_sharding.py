@@ -97,15 +97,13 @@ def test_sharding_consistency(tmpdir) -> None:
         canonical_result = (
             daft.read_parquet(f"{tmpdir}/**/*.parquet", file_path_column="file_path")
             ._shard(strategy="file", world_size=world_size, rank=rank)
-            .sort("row_id")
             .to_arrow()
         )
-        # Shard contents should be consistent across runs.
+        # Shard contents and order should be consistent across runs.
         for _ in range(3):
             new_result = (
                 daft.read_parquet(f"{tmpdir}/**/*.parquet", file_path_column="file_path")
                 ._shard(strategy="file", world_size=world_size, rank=rank)
-                .sort("row_id")
                 .to_arrow()
             )
             assert canonical_result == new_result, "Sharding result is inconsistent between runs"
