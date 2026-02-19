@@ -241,6 +241,10 @@ class RaySwordfishActorHandle:
         ray.kill(self.actor_handle)
 
 
+# TODO: Consider making configurable depending on real-world behavior
+ACTOR_STARTUP_TIMEOUT = 120
+
+
 def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
     actors = []
     for node in ray.nodes():
@@ -264,7 +268,7 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
             actors.append((node, actor))
 
     # Batch all IP address retrievals into a single ray.get call
-    ip_addresses = ray.get([actor.get_address.remote() for _, actor in actors])
+    ip_addresses = ray.get([actor.get_address.remote() for _, actor in actors], timeout=ACTOR_STARTUP_TIMEOUT)
 
     handles = []
     for (node, actor), ip_address in zip(actors, ip_addresses):

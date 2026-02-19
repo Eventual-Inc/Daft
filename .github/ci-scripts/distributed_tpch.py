@@ -68,7 +68,6 @@ def main():
     metadata = get_run_metadata()
     scale_factor = int(os.getenv("TPCH_SCALE_FACTOR"))
     num_workers = int(os.getenv("RAY_NUM_WORKERS"))
-    shuffle_algorithm = os.getenv("DAFT_SHUFFLE_ALGORITHM", "auto")
 
     print("Starting warmup run...")
     run_benchmark(up_to_query=5)
@@ -80,7 +79,8 @@ def main():
         **metadata,
         "scale factor": scale_factor,
         "num workers": num_workers,
-        "shuffle algorithm": shuffle_algorithm,
+        # TODO: Add column to Google sheet before uncommenting this
+        # "shuffle algorithm": os.getenv("DAFT_SHUFFLE_ALGORITHM", "auto"),
         **results,
     }
 
