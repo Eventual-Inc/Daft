@@ -31,10 +31,24 @@ impl LogicalPlanToPipelineNodeTranslator {
             RepartitionSpec::IntoPartitions(config) => config.num_partitions,
         };
 
+        let use_pre_shuffle_merge = self.should_use_pre_shuffle_merge(&child, num_partitions)?;
+
         // Check if we should use flight shuffle
         if self.plan_config.config.shuffle_algorithm.as_str() == "flight_shuffle" {
             let shuffle_dirs = self.plan_config.config.flight_shuffle_dirs.clone();
             let compression = None;
+            let child = if use_pre_shuffle_merge {
+                PreShuffleMergeNode::new(
+                    self.get_next_pipeline_node_id(),
+                    &self.plan_config,
+                    self.plan_config.config.pre_shuffle_merge_threshold,
+                    schema.clone(),
+                    child,
+                )
+                .into_node()
+            } else {
+                child
+            };
             return Ok(FlightShuffleNode::new(
                 self.get_next_pipeline_node_id(),
                 &self.plan_config,
@@ -47,8 +61,6 @@ impl LogicalPlanToPipelineNodeTranslator {
             )
             .into_node());
         }
-
-        let use_pre_shuffle_merge = self.should_use_pre_shuffle_merge(&child, num_partitions)?;
 
         if use_pre_shuffle_merge {
             // Create merge node first
@@ -89,19 +101,16 @@ impl LogicalPlanToPipelineNodeTranslator {
         child: &DistributedPipelineNode,
         target_num_partitions: usize,
     ) -> DaftResult<bool> {
-        let input_num_partitions = child.config().clustering_spec.num_partitions();
-
-        match self.plan_config.config.shuffle_algorithm.as_str() {
-            "pre_shuffle_merge" => Ok(true),
-            "map_reduce" => Ok(false),
-            "flight_shuffle" => Ok(false), // Flight shuffle will be handled separately
-            "auto" => {
+        match self.plan_config.config.pre_shuffle_merge {
+            Some(true) => Ok(true),
+            Some(false) => Ok(false),
+            None => {
+                let input_num_partitions = child.config().clustering_spec.num_partitions();
                 let total_num_partitions = input_num_partitions * target_num_partitions;
                 let geometric_mean = (total_num_partitions as f64).sqrt() as usize;
                 const PARTITION_THRESHOLD_TO_USE_PRE_SHUFFLE_MERGE: usize = 200;
                 Ok(geometric_mean > PARTITION_THRESHOLD_TO_USE_PRE_SHUFFLE_MERGE)
             }
-            _ => Ok(false), // Default to naive map_reduce for unknown strategies
         }
     }
 

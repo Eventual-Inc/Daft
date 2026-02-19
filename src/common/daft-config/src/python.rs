@@ -110,6 +110,7 @@ impl PyDaftExecutionConfig {
         read_sql_partition_size_bytes=None,
         default_morsel_size=None,
         shuffle_algorithm=None,
+        pre_shuffle_merge=None,
         pre_shuffle_merge_threshold=None,
         scantask_max_parallel=None,
         native_parquet_writer=None,
@@ -143,6 +144,7 @@ impl PyDaftExecutionConfig {
         read_sql_partition_size_bytes: Option<usize>,
         default_morsel_size: Option<usize>,
         shuffle_algorithm: Option<&str>,
+        pre_shuffle_merge: Option<bool>,
         pre_shuffle_merge_threshold: Option<usize>,
         scantask_max_parallel: Option<usize>,
         native_parquet_writer: Option<bool>,
@@ -224,15 +226,15 @@ impl PyDaftExecutionConfig {
                 })?;
         }
         if let Some(shuffle_algorithm) = shuffle_algorithm {
-            if !matches!(
-                shuffle_algorithm,
-                "map_reduce" | "pre_shuffle_merge" | "flight_shuffle" | "auto"
-            ) {
+            if !matches!(shuffle_algorithm, "map_reduce" | "flight_shuffle") {
                 return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                    "shuffle_algorithm must be 'auto', 'map_reduce', 'pre_shuffle_merge', or 'flight_shuffle'",
+                    "shuffle_algorithm must be 'map_reduce' or 'flight_shuffle'",
                 ));
             }
             config.shuffle_algorithm = shuffle_algorithm.to_string();
+        }
+        if let Some(pre_shuffle_merge) = pre_shuffle_merge {
+            config.pre_shuffle_merge = Some(pre_shuffle_merge);
         }
         if let Some(pre_shuffle_merge_threshold) = pre_shuffle_merge_threshold {
             config.pre_shuffle_merge_threshold = pre_shuffle_merge_threshold;
@@ -378,6 +380,10 @@ impl PyDaftExecutionConfig {
     #[getter]
     fn shuffle_algorithm(&self) -> PyResult<&str> {
         Ok(self.config.shuffle_algorithm.as_str())
+    }
+    #[getter]
+    fn pre_shuffle_merge(&self) -> PyResult<Option<bool>> {
+        Ok(self.config.pre_shuffle_merge)
     }
     #[getter]
     fn pre_shuffle_merge_threshold(&self) -> PyResult<usize> {

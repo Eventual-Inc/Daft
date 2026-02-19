@@ -129,6 +129,7 @@ pub struct DaftExecutionConfig {
     pub read_sql_partition_size_bytes: usize,
     pub default_morsel_size: NonZeroUsize,
     pub shuffle_algorithm: String,
+    pub pre_shuffle_merge: Option<bool>,
     pub pre_shuffle_merge_threshold: usize,
     pub scantask_max_parallel: usize,
     pub native_parquet_writer: bool,
@@ -171,7 +172,8 @@ impl Default for DaftExecutionConfig {
             high_cardinality_aggregation_threshold: 0.8,
             read_sql_partition_size_bytes: 512 * 1024 * 1024, // 512MB
             default_morsel_size: NonZeroUsize::new(128 * 1024).unwrap(),
-            shuffle_algorithm: "auto".to_string(),
+            shuffle_algorithm: "map_reduce".to_string(),
+            pre_shuffle_merge: None,
             pre_shuffle_merge_threshold: 1024 * 1024 * 1024, // 1GB
             scantask_max_parallel: 8,
             native_parquet_writer: true,
@@ -346,16 +348,16 @@ mod tests {
         // ENV_DAFT_SHUFFLE_ALGORITHM
         {
             let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.shuffle_algorithm, "auto");
+            assert_eq!(cfg.shuffle_algorithm, "map_reduce");
 
             unsafe {
                 std::env::set_var(
                     DaftExecutionConfig::ENV_DAFT_SHUFFLE_ALGORITHM,
-                    "pre_shuffle_merge  ",
+                    "flight_shuffle  ",
                 );
             }
             let cfg = DaftExecutionConfig::from_env();
-            assert_eq!(cfg.shuffle_algorithm, "pre_shuffle_merge");
+            assert_eq!(cfg.shuffle_algorithm, "flight_shuffle");
 
             unsafe {
                 std::env::set_var(

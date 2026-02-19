@@ -2138,6 +2138,7 @@ class PyDaftExecutionConfig:
         read_sql_partition_size_bytes: int | None = None,
         default_morsel_size: int | None = None,
         shuffle_algorithm: str | None = None,
+        pre_shuffle_merge: bool | None = None,
         pre_shuffle_merge_threshold: int | None = None,
         scantask_max_parallel: int | None = None,
         native_parquet_writer: bool | None = None,
@@ -2190,6 +2191,8 @@ class PyDaftExecutionConfig:
     def default_morsel_size(self) -> int: ...
     @property
     def shuffle_algorithm(self) -> str: ...
+    @property
+    def pre_shuffle_merge(self) -> bool | None: ...
     @property
     def pre_shuffle_merge_threshold(self) -> int: ...
     @property

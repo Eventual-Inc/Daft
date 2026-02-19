@@ -178,6 +178,7 @@ def set_execution_config(
     read_sql_partition_size_bytes: int | None = None,
     default_morsel_size: int | None = None,
     shuffle_algorithm: str | None = None,
+    pre_shuffle_merge: bool | None = None,
     pre_shuffle_merge_threshold: int | None = None,
     scantask_max_parallel: int | None = None,
     native_parquet_writer: bool | None = None,
@@ -221,7 +222,8 @@ def set_execution_config(
         high_cardinality_aggregation_threshold: Threshold selectivity for performing high cardinality aggregations on the Native Runner. Defaults to 0.8.
         read_sql_partition_size_bytes: Target size of partition when reading from SQL databases. Defaults to 512MB
         default_morsel_size: Default size of morsels used for the new local executor. Defaults to 131072 rows.
-        shuffle_algorithm: The shuffle algorithm to use. Defaults to "auto", which will let Daft determine the algorithm. Options are "map_reduce", "pre_shuffle_merge", and "flight_shuffle".
+        shuffle_algorithm: The shuffle algorithm to use. Defaults to "map_reduce". Options are "map_reduce" and "flight_shuffle".
+        pre_shuffle_merge: Whether to use pre-shuffle merge before shuffling. Defaults to None (auto: use heuristic based on partition counts). Set True to enable, False to disable.
         pre_shuffle_merge_threshold: Memory threshold in bytes for pre-shuffle merge. Defaults to 1GB
         scantask_max_parallel: Set the max parallelism for running scan tasks simultaneously. Currently, this only works for Native Runner. If set to 0, all available CPUs will be used. Defaults to 8.
         native_parquet_writer: Whether to use the native parquet writer vs the pyarrow parquet writer. Defaults to `True`.
@@ -232,6 +234,17 @@ def set_execution_config(
         dynamic_batching_strategy: The strategy to use for dynamic batching. Defaults to 'auto'.
         flight_shuffle_dirs: Directories to use for flight shuffle. Defaults to None.
     """
+    if shuffle_algorithm == "pre_shuffle_merge":
+        import warnings
+
+        warnings.warn(
+            "shuffle_algorithm='pre_shuffle_merge' is deprecated and will become invalid in v0.8.0. Use shuffle_algorithm='map_reduce' with pre_shuffle_merge=True instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        shuffle_algorithm = "map_reduce"
+        pre_shuffle_merge = True
+
     # Replace values in the DaftExecutionConfig with user-specified overrides
     ctx = get_context()
     with ctx._lock:
@@ -259,6 +272,7 @@ def set_execution_config(
             read_sql_partition_size_bytes=read_sql_partition_size_bytes,
             default_morsel_size=default_morsel_size,
             shuffle_algorithm=shuffle_algorithm,
+            pre_shuffle_merge=pre_shuffle_merge,
             pre_shuffle_merge_threshold=pre_shuffle_merge_threshold,
             scantask_max_parallel=scantask_max_parallel,
             native_parquet_writer=native_parquet_writer,
