@@ -185,7 +185,7 @@ impl FullNull for PythonArray {
 
     fn empty(name: &str, dtype: &DataType) -> Self {
         let field = Arc::new(Field::new(name, dtype.clone()));
-        Self::new(field, daft_arrow::buffer::Buffer::new(), None)
+        Self::new(field, Vec::new().into(), None)
     }
 }
 
