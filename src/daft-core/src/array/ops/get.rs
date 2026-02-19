@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use daft_arrow::types::months_days_ns;
 
-use super::as_arrow::AsArrow;
 #[cfg(feature = "python")]
 use crate::prelude::PythonArray;
 use crate::{
@@ -39,7 +38,7 @@ where
     }
 }
 
-// Default get implementation for DataArray-backed types that still require arrow2 for value access.
+// Get implementation for DataArray types that use value_unchecked for value access.
 macro_rules! impl_dataarray_get {
     ($ArrayT:ty, $output:ty) => {
         impl $ArrayT {
@@ -52,8 +51,8 @@ macro_rules! impl_dataarray_get {
                     self.len()
                 );
                 if self.nulls().is_none_or(|nulls| nulls.is_valid(idx)) {
-                    let arrow_array = self.as_arrow2();
-                    Some(unsafe { arrow_array.value_unchecked(idx) })
+                    // Safety: bounds checked by the assert above, null checked by the if.
+                    Some(unsafe { self.value_unchecked(idx) })
                 } else {
                     None
                 }
@@ -62,7 +61,7 @@ macro_rules! impl_dataarray_get {
     };
 }
 
-// Default get implementation for LogicalArray-backed primitive types (nulls live on the physical array).
+// Get implementation for LogicalArray-backed primitive types (nulls live on the physical array).
 macro_rules! impl_logicalarray_get {
     ($ArrayT:ty, $output:ty) => {
         impl $ArrayT {
@@ -96,10 +95,42 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
 }
 
 impl_dataarray_get!(Utf8Array, &str);
-impl_dataarray_get!(BooleanArray, bool);
 impl_dataarray_get!(BinaryArray, &[u8]);
 impl_dataarray_get!(FixedSizeBinaryArray, &[u8]);
-impl_dataarray_get!(IntervalArray, months_days_ns);
+
+impl BooleanArray {
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<bool> {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+        if self.nulls().is_none_or(|nulls| nulls.is_valid(idx)) {
+            Some(self.as_bitmap().get_bit(idx))
+        } else {
+            None
+        }
+    }
+}
+
+impl IntervalArray {
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<months_days_ns> {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+        if self.nulls().is_none_or(|nulls| nulls.is_valid(idx)) {
+            Some(self.as_slice()[idx])
+        } else {
+            None
+        }
+    }
+}
 
 impl_logicalarray_get!(DateArray, i32);
 impl_logicalarray_get!(TimeArray, i64);
@@ -128,8 +159,7 @@ impl ExtensionArray {
             idx,
             self.len()
         );
-        let is_valid = self.nulls().is_none_or(|nulls| nulls.is_valid(idx));
-        if is_valid {
+        if self.nulls().is_none_or(|nulls| nulls.is_valid(idx)) {
             Some(daft_arrow::scalar::new_scalar(self.data(), idx))
         } else {
             None

@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 
-use crate::prelude::{AsArrow, BinaryArray, BooleanArray, Utf8Array};
+use crate::prelude::{AsArrow, BinaryArray, BooleanArray, FixedSizeBinaryArray, Utf8Array};
 
 impl Utf8Array {
     /// Returns an iterator of `&str` over the non-null values in this array.
@@ -15,6 +15,15 @@ impl Utf8Array {
             ));
         }
         Ok(arrow2_arr.values_iter())
+    }
+
+    /// Returns the value at `idx` without bounds or null checks.
+    ///
+    /// # Safety
+    /// Caller must ensure `idx < self.len()` and the element is valid (not null).
+    pub(crate) unsafe fn value_unchecked(&self, idx: usize) -> &str {
+        // Safety: caller guarantees idx < len and element is valid.
+        unsafe { self.as_arrow2().value_unchecked(idx) }
     }
 }
 
@@ -31,6 +40,26 @@ impl BinaryArray {
             ));
         }
         Ok(arrow2_arr.values_iter())
+    }
+
+    /// Returns the value at `idx` without bounds or null checks.
+    ///
+    /// # Safety
+    /// Caller must ensure `idx < self.len()` and the element is valid (not null).
+    pub(crate) unsafe fn value_unchecked(&self, idx: usize) -> &[u8] {
+        // Safety: caller guarantees idx < len and element is valid.
+        unsafe { self.as_arrow2().value_unchecked(idx) }
+    }
+}
+
+impl FixedSizeBinaryArray {
+    /// Returns the value at `idx` without bounds or null checks.
+    ///
+    /// # Safety
+    /// Caller must ensure `idx < self.len()` and the element is valid (not null).
+    pub(crate) unsafe fn value_unchecked(&self, idx: usize) -> &[u8] {
+        // Safety: caller guarantees idx < len and element is valid.
+        unsafe { self.as_arrow2().value_unchecked(idx) }
     }
 }
 

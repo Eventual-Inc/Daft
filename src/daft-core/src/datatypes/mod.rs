@@ -474,3 +474,9 @@ impl<T: DaftPrimitiveType> DataArray<T> {
         ScalarBuffer::from(arrow_buffer)
     }
 }
+
+impl IntervalArray {
+    pub fn as_slice(&self) -> &[daft_arrow::types::months_days_ns] {
+        self.as_arrow2().values().as_slice()
+    }
+}
