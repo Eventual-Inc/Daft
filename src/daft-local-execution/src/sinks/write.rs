@@ -3,6 +3,7 @@ use std::sync::{Arc, atomic::Ordering};
 use common_error::DaftResult;
 use common_metrics::{
     BYTES_WRITTEN_KEY, Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_WRITTEN_KEY, StatSnapshot,
+    UNIT_BYTES, UNIT_MICROSECONDS, UNIT_ROWS,
     ops::{NodeInfo, NodeType},
     snapshot::WriteSnapshot,
 };
@@ -17,10 +18,7 @@ use tracing::{Span, instrument};
 use super::blocking_sink::{
     BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
 };
-use crate::{
-    ExecutionTaskSpawner, metrics::key_values_from_node_info, pipeline::NodeName,
-    runtime_stats::RuntimeStats,
-};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
 
 struct WriteStats {
     duration_us: Counter,
@@ -33,13 +31,13 @@ struct WriteStats {
 
 impl WriteStats {
     pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
-        let node_kv = key_values_from_node_info(node_info);
+        let node_kv = node_info.to_key_values();
 
         Self {
-            duration_us: Counter::new(meter, DURATION_KEY, None),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
-            rows_written: Counter::new(meter, ROWS_WRITTEN_KEY, None),
-            bytes_written: Counter::new(meter, BYTES_WRITTEN_KEY, None),
+            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
+            rows_written: Counter::new(meter, ROWS_WRITTEN_KEY, None, Some(UNIT_ROWS.into())),
+            bytes_written: Counter::new(meter, BYTES_WRITTEN_KEY, None, Some(UNIT_BYTES.into())),
 
             node_kv,
         }

@@ -4,7 +4,8 @@ use common_display::{DisplayAs, DisplayLevel};
 #[cfg(feature = "python")]
 use common_file_formats::FileFormatConfig;
 use common_metrics::{
-    BYTES_READ_KEY, Counter, DURATION_KEY, ROWS_OUT_KEY, StatSnapshot,
+    BYTES_READ_KEY, Counter, DURATION_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_BYTES,
+    UNIT_MICROSECONDS, UNIT_ROWS,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::SourceSnapshot,
 };
@@ -36,9 +37,9 @@ impl SourceStats {
     pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
         let node_kv = key_values_from_context(context);
         Self {
-            duration_us: Counter::new(meter, DURATION_KEY, None),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
-            bytes_read: Counter::new(meter, BYTES_READ_KEY, None),
+            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
+            bytes_read: Counter::new(meter, BYTES_READ_KEY, None, Some(UNIT_BYTES.into())),
             node_kv,
         }
     }

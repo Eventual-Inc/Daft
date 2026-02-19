@@ -2,8 +2,8 @@ use std::sync::{Arc, atomic::Ordering};
 
 use common_metrics::{
     Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, TASK_ACTIVE_KEY,
-    TASK_CANCELLED_KEY, TASK_COMPLETED_KEY, TASK_FAILED_KEY, normalize_name, ops::NodeInfo,
-    snapshot::DefaultSnapshot,
+    TASK_CANCELLED_KEY, TASK_COMPLETED_KEY, TASK_FAILED_KEY, UNIT_MICROSECONDS, UNIT_ROWS,
+    UNIT_TASKS, normalize_name, ops::NodeInfo, snapshot::DefaultSnapshot,
 };
 use opentelemetry::{
     KeyValue,
@@ -11,10 +11,7 @@ use opentelemetry::{
 };
 
 use crate::{
-    pipeline_node::{
-        PipelineNodeContext,
-        metrics::{key_values_from_context, key_values_from_node_info},
-    },
+    pipeline_node::{PipelineNodeContext, metrics::key_values_from_context},
     statistics::TaskEvent,
 };
 
@@ -38,7 +35,7 @@ pub struct RuntimeNodeManager {
 
 impl RuntimeNodeManager {
     pub fn new(meter: &Meter, runtime_stats: RuntimeStatsRef, node_info: Arc<NodeInfo>) -> Self {
-        let node_kv = key_values_from_node_info(node_info.as_ref());
+        let node_kv = node_info.to_key_values();
         Self {
             node_info,
             node_kv,
@@ -46,9 +43,9 @@ impl RuntimeNodeManager {
             active_tasks: meter
                 .i64_up_down_counter(normalize_name(TASK_ACTIVE_KEY))
                 .build(),
-            completed_tasks: Counter::new(meter, TASK_COMPLETED_KEY, None),
-            failed_tasks: Counter::new(meter, TASK_FAILED_KEY, None),
-            cancelled_tasks: Counter::new(meter, TASK_CANCELLED_KEY, None),
+            completed_tasks: Counter::new(meter, TASK_COMPLETED_KEY, None, Some(UNIT_TASKS.into())),
+            failed_tasks: Counter::new(meter, TASK_FAILED_KEY, None, Some(UNIT_TASKS.into())),
+            cancelled_tasks: Counter::new(meter, TASK_CANCELLED_KEY, None, Some(UNIT_TASKS.into())),
         }
     }
 
@@ -103,9 +100,14 @@ impl DefaultRuntimeStats {
 
         Self {
             node_kv,
-            completed_rows_in: Counter::new(meter, ROWS_IN_KEY, None),
-            completed_rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
-            completed_cpu_us: Counter::new(meter, DURATION_KEY, None),
+            completed_rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
+            completed_rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
+            completed_cpu_us: Counter::new(
+                meter,
+                DURATION_KEY,
+                None,
+                Some(UNIT_MICROSECONDS.into()),
+            ),
         }
     }
 }

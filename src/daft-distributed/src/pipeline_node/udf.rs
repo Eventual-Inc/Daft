@@ -4,7 +4,7 @@ use std::{
 };
 
 use common_metrics::{
-    Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot,
+    Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::UdfSnapshot,
 };
@@ -38,9 +38,9 @@ impl UdfStats {
     pub fn new(meter: &Meter, context: &PipelineNodeContext) -> Self {
         let node_kv = key_values_from_context(context);
         Self {
-            duration_us: Counter::new(meter, DURATION_KEY, None),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
+            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
             custom_counters: Mutex::new(HashMap::new()),
             meter: meter.clone(),
             node_kv,
@@ -64,7 +64,7 @@ impl RuntimeStats for UdfStats {
         for (name, value) in &snapshot.custom_counters {
             let counter = custom_counters.entry(name.clone()).or_insert_with(|| {
                 let name = name.as_ref().to_string();
-                Counter::new(&self.meter, name, None)
+                Counter::new(&self.meter, name, None, None)
             });
             counter.add(*value, self.node_kv.as_slice());
         }

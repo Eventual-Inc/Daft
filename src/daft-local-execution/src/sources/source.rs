@@ -5,7 +5,7 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
-    Counter, DURATION_KEY, ROWS_OUT_KEY, StatSnapshot,
+    Counter, DURATION_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::{SourceSnapshot, StatSnapshotImpl},
 };
@@ -19,7 +19,6 @@ use opentelemetry::{KeyValue, metrics::Meter};
 
 use crate::{
     ExecutionRuntimeContext,
-    metrics::key_values_from_node_info,
     pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineNode},
     runtime_stats::RuntimeStats,
 };
@@ -36,11 +35,11 @@ pub(crate) struct SourceStats {
 
 impl SourceStats {
     pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
-        let node_kv = key_values_from_node_info(node_info);
+        let node_kv = node_info.to_key_values();
 
         Self {
-            duration_us: Counter::new(meter, DURATION_KEY, None),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
+            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
             io_stats: IOStatsRef::default(),
 
             node_kv,

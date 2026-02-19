@@ -1,9 +1,10 @@
 use std::{collections::HashMap, fmt::Display, sync::Arc};
 
 use bincode::{Decode, Encode};
+use opentelemetry::KeyValue;
 use serde::{Deserialize, Serialize};
 
-use crate::NodeID;
+use crate::{ATTR_NODE_ID, ATTR_NODE_TYPE, NodeID};
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, Encode, Decode)]
 pub enum NodeType {
@@ -92,4 +93,13 @@ pub struct NodeInfo {
     pub node_type: NodeType,
     pub node_category: NodeCategory,
     pub context: HashMap<String, String>,
+}
+
+impl NodeInfo {
+    pub fn to_key_values(&self) -> Vec<KeyValue> {
+        vec![
+            KeyValue::new(ATTR_NODE_ID, self.id.to_string()),
+            KeyValue::new(ATTR_NODE_TYPE, self.node_type.to_string()),
+        ]
+    }
 }

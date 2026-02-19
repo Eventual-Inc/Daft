@@ -2,7 +2,8 @@ use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
 use common_metrics::{
-    Counter, DURATION_KEY, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot,
+    Counter, DURATION_KEY, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS,
+    UNIT_ROWS,
     ops::{NodeInfo, NodeType},
     snapshot::FilterSnapshot,
 };
@@ -14,10 +15,7 @@ use tracing::{Span, instrument};
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{
-    ExecutionTaskSpawner, metrics::key_values_from_node_info, pipeline::NodeName,
-    runtime_stats::RuntimeStats,
-};
+use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
 
 pub struct FilterStats {
     duration_us: Counter,
@@ -29,12 +27,12 @@ pub struct FilterStats {
 
 impl FilterStats {
     pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
-        let node_kv = key_values_from_node_info(node_info);
+        let node_kv = node_info.to_key_values();
 
         Self {
-            duration_us: Counter::new(meter, DURATION_KEY, None),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
+            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
             selectivity: Gauge::new(meter, "selectivity", None),
             node_kv,
         }

@@ -7,7 +7,7 @@ use std::{
 
 use common_error::DaftResult;
 use common_metrics::{
-    Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot,
+    Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
     operator_metrics::OperatorCounter,
     ops::{NodeInfo, NodeType},
     snapshot::UdfSnapshot,
@@ -30,7 +30,6 @@ use super::base::{
 };
 use crate::{
     ExecutionTaskSpawner,
-    metrics::key_values_from_node_info,
     pipeline::{MorselSizeRequirement, NodeName},
     runtime_stats::RuntimeStats,
 };
@@ -86,13 +85,13 @@ impl RuntimeStats for AsyncUdfRuntimeStats {
 
 impl AsyncUdfRuntimeStats {
     fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
-        let node_kv = key_values_from_node_info(node_info);
+        let node_kv = node_info.to_key_values();
 
         Self {
             meter: meter.clone(), // Cheap to clone, Arc under the hood
-            duration_us: Counter::new(meter, DURATION_KEY, None),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
+            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
             custom_counters: Mutex::new(HashMap::new()),
             node_kv,
         }
@@ -116,7 +115,7 @@ impl AsyncUdfRuntimeStats {
                 }
                 None => {
                     let counter =
-                        Counter::new(&self.meter, name.clone(), description.map(Cow::Owned));
+                        Counter::new(&self.meter, name.clone(), description.map(Cow::Owned), None);
                     counter.add(value, key_values.as_slice());
                     counters.insert(name.into(), counter);
                 }

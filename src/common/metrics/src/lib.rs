@@ -121,8 +121,6 @@ pub const BYTES_WRITTEN_KEY: &str = "bytes.written";
 pub const DURATION_KEY: &str = "duration";
 pub const ROWS_IN_KEY: &str = "rows.in";
 pub const ROWS_OUT_KEY: &str = "rows.out";
-// Swordfish: rows.written are updated during execution while rows.out are not
-// while in Flotilla rows.written and rows.out are both updated during execution.
 pub const ROWS_WRITTEN_KEY: &str = "rows.written";
 
 // Task metrics
@@ -140,6 +138,12 @@ pub const ATTR_QUERY_ID: &str = "query.id";
 // Node attributes
 pub const ATTR_NODE_ID: &str = "node.id";
 pub const ATTR_NODE_TYPE: &str = "node.type";
+
+// Units (UCUM)
+pub const UNIT_ROWS: &str = "{row}";
+pub const UNIT_BYTES: &str = "By";
+pub const UNIT_MICROSECONDS: &str = "us";
+pub const UNIT_TASKS: &str = "{task}";
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {

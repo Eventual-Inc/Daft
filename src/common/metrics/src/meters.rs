@@ -25,11 +25,17 @@ impl Counter {
         meter: &Meter,
         name: impl Into<Cow<'static, str>>,
         description: Option<Cow<'static, str>>,
+        unit: Option<Cow<'static, str>>,
     ) -> Self {
         let normalized_name = normalize_name(name);
         let builder = meter.u64_counter(normalized_name);
         let builder = if let Some(description) = description {
             builder.with_description(description)
+        } else {
+            builder
+        };
+        let builder = if let Some(unit) = unit {
+            builder.with_unit(unit)
         } else {
             builder
         };
