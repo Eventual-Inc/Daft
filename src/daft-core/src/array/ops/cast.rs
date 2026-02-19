@@ -130,12 +130,20 @@ where
                     }
                 }
 
+                // Extension types don't have an arrow-rs equivalent; use their storage type.
+                let resolve_arrow_type = |dt: &DataType| -> DaftResult<arrow::datatypes::DataType> {
+                    match dt {
+                        DataType::Extension(_, storage, _) => storage.to_arrow(),
+                        _ => dt.to_arrow(),
+                    }
+                };
+
                 let target_physical_type = dtype.to_physical();
-                let target_arrow_type = dtype.to_arrow()?;
-                let target_arrow_physical_type = target_physical_type.to_arrow()?;
+                let target_arrow_type = resolve_arrow_type(dtype)?;
+                let target_arrow_physical_type = resolve_arrow_type(&target_physical_type)?;
                 let self_physical_type = self.data_type().to_physical();
-                let self_arrow_type = self.data_type().to_arrow()?;
-                let self_physical_arrow_type = self_physical_type.to_arrow()?;
+                let self_arrow_type = resolve_arrow_type(self.data_type())?;
+                let self_physical_arrow_type = resolve_arrow_type(&self_physical_type)?;
 
                 // Special case: Utf8 -> numeric/temporal needs whitespace trimming
                 // This matches Python/Pandas/NumPy behavior
