@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
 
@@ -129,6 +131,40 @@ impl CosConfig {
                 (None, DEFAULT_REGION.to_string())
             }
         }
+    }
+
+    /// Convert CosConfig into an OpenDAL-compatible configuration map.
+    ///
+    /// This allows the generic OpenDAL backend to be used instead of a dedicated COS source,
+    /// while preserving the friendly CosConfig API (region auto-derivation, env var scanning, etc.).
+    pub fn to_opendal_config(&self, bucket: &str) -> BTreeMap<String, String> {
+        let mut config = BTreeMap::new();
+
+        config.insert("bucket".to_string(), bucket.to_string());
+
+        let (endpoint, region) = self.endpoint_and_region();
+        if let Some(ep) = endpoint {
+            config.insert("endpoint".to_string(), ep);
+        }
+        config.insert("region".to_string(), region);
+
+        if let Some(secret_id) = &self.secret_id {
+            config.insert("secret_id".to_string(), secret_id.clone());
+        }
+        if let Some(secret_key) = &self.secret_key {
+            config.insert("secret_key".to_string(), secret_key.as_string().clone());
+        }
+        if let Some(security_token) = &self.security_token {
+            config.insert(
+                "security_token".to_string(),
+                security_token.as_string().clone(),
+            );
+        }
+
+        // Allow OpenDAL to also load from environment variables
+        config.insert("disable_config_load".to_string(), "false".to_string());
+
+        config
     }
 }
 

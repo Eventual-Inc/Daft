@@ -1,6 +1,5 @@
 #![feature(if_let_guard)]
 mod azure_blob;
-mod cos;
 mod counting_reader;
 mod google_cloud;
 #[cfg(feature = "python")]
@@ -24,7 +23,6 @@ use std::sync::LazyLock;
 
 use azure_blob::AzureBlobSource;
 use common_file_formats::FileFormat;
-use cos::CosSource;
 pub use counting_reader::CountingReader;
 use google_cloud::GCSSource;
 #[cfg(feature = "python")]
@@ -290,9 +288,6 @@ impl IOClient {
             SourceType::Tos => {
                 TosSource::get_client(&self.config.tos).await? as Arc<dyn ObjectSource>
             }
-            SourceType::Cos => {
-                CosSource::get_client(&self.config.cos, &path).await? as Arc<dyn ObjectSource>
-            }
             SourceType::Gravitino => {
                 #[cfg(feature = "python")]
                 {
@@ -306,12 +301,28 @@ impl IOClient {
             }
             SourceType::OpenDAL { scheme } => {
                 let empty_config = std::collections::BTreeMap::new();
-                let backend_config = self
-                    .config
-                    .opendal_backends
-                    .get(scheme)
-                    .unwrap_or(&empty_config);
-                OpenDALSource::get_client(scheme, backend_config).await? as Arc<dyn ObjectSource>
+                let backend_config = if scheme == "cos" {
+                    // Extract bucket from the URL for COS config
+                    let parsed_url =
+                        url::Url::parse(&path).context(InvalidUrlSnafu { path: input })?;
+                    let bucket = parsed_url.host_str().unwrap_or_default();
+                    let cos_config = self.config.cos.to_opendal_config(bucket);
+                    // Merge user-provided opendal_backends on top (if any)
+                    let mut merged = cos_config;
+                    if let Some(extra) = self.config.opendal_backends.get(scheme) {
+                        for (k, v) in extra {
+                            merged.insert(k.clone(), v.clone());
+                        }
+                    }
+                    merged
+                } else {
+                    self.config
+                        .opendal_backends
+                        .get(scheme)
+                        .unwrap_or(&empty_config)
+                        .clone()
+                };
+                OpenDALSource::get_client(scheme, &backend_config).await? as Arc<dyn ObjectSource>
             }
         };
 
@@ -462,7 +473,6 @@ pub enum SourceType {
     HF,
     Unity,
     Tos,
-    Cos,
     Gravitino,
     OpenDAL { scheme: String },
 }
@@ -478,7 +488,6 @@ impl std::fmt::Display for SourceType {
             Self::HF => write!(f, "hf"),
             Self::Unity => write!(f, "UnityCatalog"),
             Self::Tos => write!(f, "tos"),
-            Self::Cos => write!(f, "cos"),
             Self::Gravitino => write!(f, "Gravitino"),
             Self::OpenDAL { scheme } => write!(f, "opendal({})", scheme),
         }
@@ -491,7 +500,7 @@ impl SourceType {
     pub fn supports_native_writer(&self) -> bool {
         matches!(
             self,
-            Self::File | Self::S3 | Self::Tos | Self::Cos | Self::Gravitino | Self::OpenDAL { .. }
+            Self::File | Self::S3 | Self::Tos | Self::Gravitino | Self::OpenDAL { .. }
         )
     }
 }
@@ -569,7 +578,12 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
         "hf" => Ok((SourceType::HF, fixed_input)),
         "tos" => Ok((SourceType::Tos, fixed_input)),
-        "cos" | "cosn" => Ok((SourceType::Cos, fixed_input)),
+        "cos" | "cosn" => Ok((
+            SourceType::OpenDAL {
+                scheme: "cos".to_string(),
+            },
+            fixed_input,
+        )),
         "vol+dbfs" | "dbfs" => Ok((SourceType::Unity, fixed_input)),
         "gvfs" => Ok((SourceType::Gravitino, fixed_input)),
         #[cfg(target_env = "msvc")]
