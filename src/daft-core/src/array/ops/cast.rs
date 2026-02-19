@@ -87,10 +87,8 @@ where
                 // Arrow-rs doesn't support numeric/float ↔ binary casts directly.
                 // Route through Utf8 as an intermediate to preserve string representation.
                 let src = self.data_type();
-                let is_binary_target =
-                    matches!(dtype, DataType::Binary | DataType::FixedSizeBinary(..));
-                let is_binary_source =
-                    matches!(src, DataType::Binary | DataType::FixedSizeBinary(..));
+                let is_binary_target = matches!(dtype, DataType::Binary);
+                let is_binary_source = matches!(src, DataType::Binary);
 
                 if src.is_boolean() && is_binary_target {
                     // bool → binary: cast to UInt8 first to get 1/0, then to Utf8, then binary
