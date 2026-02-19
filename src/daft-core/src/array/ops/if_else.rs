@@ -1,5 +1,4 @@
 use common_error::DaftResult;
-use daft_arrow::array::Array;
 
 use super::as_arrow::AsArrow;
 #[cfg(feature = "python")]
@@ -38,7 +37,6 @@ fn generic_if_else<T: GrowableArray + FullNull + Clone + IntoSeries>(
     }
 
     // Build the result using a Growable
-    let predicate = predicate.as_arrow2();
     let mut growable = T::make_growable(
         name,
         dtype,
@@ -48,12 +46,12 @@ fn generic_if_else<T: GrowableArray + FullNull + Clone + IntoSeries>(
     );
     // CASE 2: predicate is not broadcastable, and contains nulls
     //
-    // NOTE: we iterate through the predicate+validity which is slightly slower than using a SlicesIterator approach.
+    // NOTE: we iterate through the predicate+validity which is slightly slower than using a set_slices approach.
     // An alternative is to naively apply the raw predicate values (without considering validity), and then applying
     // validity afterwards. However this could use more memory than required, since we copy even values that will
     // later then be considered null.
     if predicate.null_count() > 0 {
-        for (i, pred) in predicate.into_iter().enumerate() {
+        for (i, pred) in predicate.iter().enumerate() {
             match pred {
                 None => {
                     growable.add_nulls(1);
@@ -91,20 +89,18 @@ fn generic_if_else<T: GrowableArray + FullNull + Clone + IntoSeries>(
             }
         };
 
-        // Iterate through the predicate using SlicesIterator, which is a much faster way of iterating through a bitmap
+        // Iterate through the predicate using set_slices(), which is a much faster way of iterating through a bitmap
+        let predicate_arrow = predicate.as_arrow()?;
         let mut start_falsy = 0;
-        let mut total_len = 0;
-        for (start, len) in daft_arrow::bitmap::utils::SlicesIterator::new(predicate.values()) {
+        for (start, len) in predicate_arrow.values().set_slices() {
             if start != start_falsy {
                 extend(false, start_falsy, start - start_falsy);
-                total_len += start - start_falsy;
             }
             extend(true, start, len);
-            total_len += len;
             start_falsy = start + len;
         }
-        if total_len != predicate.len() {
-            extend(false, total_len, predicate.len() - total_len);
+        if start_falsy != predicate.len() {
+            extend(false, start_falsy, predicate.len() - start_falsy);
         }
     }
 
