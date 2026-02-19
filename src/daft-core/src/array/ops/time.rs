@@ -402,12 +402,7 @@ impl TimestampArray {
         } else {
             op(&ts_array, &interval_array)?
         };
-        let result_i64 = arrow::compute::cast(result.as_ref(), &arrow::datatypes::DataType::Int64)?;
-        let physical_field = Arc::new(Field::new(self.name(), DataType::Int64));
-        Ok(Self::new(
-            self.field.clone(),
-            Int64Array::from_arrow(physical_field, result_i64)?,
-        ))
+        Self::from_arrow(self.field.clone(), result)
     }
 
     pub fn day_of_month(&self) -> DaftResult<UInt32Array> {
