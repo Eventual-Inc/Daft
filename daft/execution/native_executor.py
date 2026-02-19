@@ -6,7 +6,7 @@ from daft.daft import (
     Input,
     LocalPhysicalPlan,
     PyDaftExecutionConfig,
-    PyExecutionEngineFinalResult,
+    PyExecutionMetadata,
     PyMicroPartition,
 )
 from daft.daft import (
@@ -41,7 +41,7 @@ class NativeExecutor:
             LocalMaterializedResult,
         )
 
-        result: PyExecutionEngineFinalResult | None = None
+        result: PyExecutionMetadata | None = None
 
         async def stream_results() -> AsyncGenerator[PyMicroPartition | None, None]:
             result_handle = await self._executor.run(

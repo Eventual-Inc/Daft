@@ -86,13 +86,13 @@ impl<'py> FromPyObject<'_, 'py> for Input {
     }
 }
 
-#[pyclass(module = "daft.daft", name = "PyExecutionEngineFinalResult", frozen)]
-pub struct PyExecutionEngineFinalResult {
+#[pyclass(module = "daft.daft", name = "PyExecutionMetadata", frozen)]
+pub struct PyExecutionMetadata {
     inner: Arc<ExecutionMetadata>,
 }
 
 #[pymethods]
-impl PyExecutionEngineFinalResult {
+impl PyExecutionMetadata {
     fn encode(&self) -> Vec<u8> {
         self.inner.encode()
     }
@@ -102,7 +102,7 @@ impl PyExecutionEngineFinalResult {
     }
 }
 
-impl From<ExecutionMetadata> for PyExecutionEngineFinalResult {
+impl From<ExecutionMetadata> for PyExecutionMetadata {
     fn from(inner: ExecutionMetadata) -> Self {
         Self {
             inner: Arc::new(inner),
@@ -113,6 +113,6 @@ impl From<ExecutionMetadata> for PyExecutionEngineFinalResult {
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {
     parent.add_class::<PyLocalPhysicalPlan>()?;
     parent.add_class::<PyInput>()?;
-    parent.add_class::<PyExecutionEngineFinalResult>()?;
+    parent.add_class::<PyExecutionMetadata>()?;
     Ok(())
 }
