@@ -208,7 +208,7 @@ impl<'py> IntoPyObject<'py> for Literal {
                     .to_literals()
                     .into_iter()
                     .zip(values.to_literals())
-                    .collect::<Vec<(Literal, Literal)>>();
+                    .collect::<Vec<(Self, Self)>>();
                 Ok(PyList::new(py, entries)?.into_any())
             }
             Self::Tensor { data, shape } => data
@@ -262,11 +262,11 @@ impl<'py> IntoPyObject<'py> for Literal {
 }
 
 impl Literal {
-    pub(crate) fn into_pyobject_with_map_conversion<'py>(
+    pub(crate) fn into_pyobject_with_map_conversion(
         self,
-        py: Python<'py>,
+        py: Python<'_>,
         maps_as_pydicts: PyMapConversionMode,
-    ) -> PyResult<Bound<'py, PyAny>> {
+    ) -> PyResult<Bound<'_, PyAny>> {
         if maps_as_pydicts == PyMapConversionMode::AssociationList {
             return self.into_pyobject(py);
         }

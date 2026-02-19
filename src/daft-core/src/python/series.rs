@@ -53,7 +53,7 @@ impl PySeries {
         Ok(series.into())
     }
 
-    pub fn to_pylist_impl<'a>(
+    pub(crate) fn to_pylist_impl<'a>(
         &self,
         py: Python<'a>,
         maps_as_pydicts: PyMapConversionMode,
