@@ -20,7 +20,7 @@ use crate::{
     array::ops::DaftLogical,
     count_mode::CountMode,
     datatypes::{DataType, Field},
-    lit::Literal,
+    lit::{Literal, python::PyMapConversionMode},
     prelude::PythonArray,
     series::{
         self, IntoSeries, Series,
@@ -51,6 +51,24 @@ impl PySeries {
         let series = arr.cast(&dtype)?;
 
         Ok(series.into())
+    }
+
+    pub(crate) fn to_pylist_impl<'a>(
+        &self,
+        py: Python<'a>,
+        maps_as_pydicts: PyMapConversionMode,
+    ) -> PyResult<Bound<'a, PyList>> {
+        let literals = self.series.to_literals();
+
+        if maps_as_pydicts != PyMapConversionMode::AssociationList {
+            let converted = literals
+                .into_iter()
+                .map(|lit| lit.into_pyobject_with_map_conversion(py, maps_as_pydicts))
+                .collect::<PyResult<Vec<_>>>()?;
+            PyList::new(py, converted)
+        } else {
+            PyList::new(py, literals)
+        }
     }
 }
 
@@ -140,8 +158,24 @@ impl PySeries {
         Ok(series.into())
     }
 
-    pub fn to_pylist<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyList>> {
-        PyList::new(py, self.series.to_literals())
+    #[pyo3(signature = (maps_as_pydicts = None))]
+    pub fn to_pylist<'a>(
+        &self,
+        py: Python<'a>,
+        maps_as_pydicts: Option<&str>,
+    ) -> PyResult<Bound<'a, PyList>> {
+        let maps_as_pydicts = match maps_as_pydicts {
+            None => PyMapConversionMode::AssociationList,
+            Some("lossy") => PyMapConversionMode::DictLossy,
+            Some("strict") => PyMapConversionMode::DictStrict,
+            Some(other) => {
+                return Err(PyValueError::new_err(format!(
+                    "Invalid maps_as_pydicts value: {other}. Expected one of: None, 'lossy', 'strict'"
+                )));
+            }
+        };
+
+        self.to_pylist_impl(py, maps_as_pydicts)
     }
 
     pub fn to_arrow<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {

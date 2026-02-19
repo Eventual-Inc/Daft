@@ -891,6 +891,93 @@ class TosConfig:
         TOS_SECURITY_TOKEN: Security token for TOS authentication.
         """
 
+class CosConfig:
+    """I/O configuration for accessing Tencent Cloud COS (Cloud Object Storage).
+
+    Args:
+        region (str, optional): Name of the region, e.g. "ap-guangzhou", "ap-beijing". Defaults to None.
+        endpoint (str, optional): URL to the COS endpoint. Defaults to None, will be inferred from region.
+        secret_id (str, optional): Tencent Cloud SecretId. Defaults to None.
+        secret_key (str, optional): Tencent Cloud SecretKey. Defaults to None.
+        security_token (str, optional): Security token for temporary credentials (STS). Defaults to None.
+        anonymous (bool, optional): Whether to use anonymous access. Defaults to False.
+        max_retries (int, optional): Maximum number of retries for failed requests. Defaults to 3.
+        retry_timeout_ms (int, optional): Timeout duration for retry attempts in milliseconds. Defaults to 30000ms.
+        connect_timeout_ms (int, optional): Timeout duration to make a connection in milliseconds. Defaults to 10000ms.
+        read_timeout_ms (int, optional): Timeout duration to read the first byte in milliseconds. Defaults to 30000ms.
+        max_concurrent_requests (int, optional): Maximum number of concurrent requests. Defaults to 50.
+        max_connections (int, optional): Maximum number of connections per IO thread. Defaults to 50.
+
+    Examples:
+        >>> # For Tencent Cloud COS, refer to https://cloud.tencent.com/document/product/436
+        >>> # for endpoint and region information.
+        >>>
+        >>> io_config = IOConfig(
+        ...     cos=CosConfig(
+        ...         region="ap-guangzhou",
+        ...         secret_id="your-secret-id",
+        ...         secret_key="your-secret-key",
+        ...     )
+        ... )
+        >>> daft.read_parquet("cos://some-bucket/some-path", io_config=io_config)
+    """
+
+    region: str | None
+    endpoint: str | None
+    secret_id: str | None
+    secret_key: str | None
+    security_token: str | None
+    anonymous: bool
+    max_retries: int
+    retry_timeout_ms: int
+    connect_timeout_ms: int
+    read_timeout_ms: int
+    max_concurrent_requests: int
+    max_connections: int
+
+    def __init__(
+        self,
+        region: str | None = None,
+        endpoint: str | None = None,
+        secret_id: str | None = None,
+        secret_key: str | None = None,
+        security_token: str | None = None,
+        anonymous: bool | None = None,
+        max_retries: int | None = None,
+        retry_timeout_ms: int | None = None,
+        connect_timeout_ms: int | None = None,
+        read_timeout_ms: int | None = None,
+        max_concurrent_requests: int | None = None,
+        max_connections: int | None = None,
+    ): ...
+    def replace(
+        self,
+        region: str | None = None,
+        endpoint: str | None = None,
+        secret_id: str | None = None,
+        secret_key: str | None = None,
+        security_token: str | None = None,
+        anonymous: bool | None = None,
+        max_retries: int | None = None,
+        retry_timeout_ms: int | None = None,
+        connect_timeout_ms: int | None = None,
+        read_timeout_ms: int | None = None,
+        max_concurrent_requests: int | None = None,
+        max_connections: int | None = None,
+    ) -> CosConfig:
+        """Replaces values if provided, returning a new CosConfig."""
+        ...
+    @staticmethod
+    def from_env() -> CosConfig:
+        """Creates a CosConfig, retrieving credentials and configurations from the current environment.
+
+        COS_ENDPOINT: Endpoint of the COS service.
+        COS_REGION or TENCENTCLOUD_REGION: Region of the COS service.
+        COS_SECRET_ID or TENCENTCLOUD_SECRET_ID: SecretId for COS authentication.
+        COS_SECRET_KEY or TENCENTCLOUD_SECRET_KEY: SecretKey for COS authentication.
+        COS_SECURITY_TOKEN or TENCENTCLOUD_SECURITY_TOKEN: Security token for COS authentication.
+        """
+
 class IOConfig:
     """Configuration for the native I/O layer, e.g. credentials for accessing cloud storage systems."""
 
@@ -903,6 +990,7 @@ class IOConfig:
     disable_suffix_range: bool
     tos: TosConfig
     gravitino: GravitinoConfig
+    cos: CosConfig
     opendal_backends: dict[str, dict[str, str]]
 
     def __init__(
@@ -916,6 +1004,7 @@ class IOConfig:
         disable_suffix_range: bool | None = None,
         tos: TosConfig | None = None,
         gravitino: GravitinoConfig | None = None,
+        cos: CosConfig | None = None,
         opendal_backends: dict[str, dict[str, str]] | None = None,
     ): ...
     def replace(
@@ -929,6 +1018,7 @@ class IOConfig:
         disable_suffix_range: bool | None = None,
         tos: TosConfig | None = None,
         gravitino: GravitinoConfig | None = None,
+        cos: CosConfig | None = None,
         opendal_backends: dict[str, dict[str, str]] | None = None,
     ) -> IOConfig:
         """Replaces values if provided, returning a new IOConfig."""
@@ -1570,7 +1660,7 @@ class PySeries:
     def from_arrow(name: str, pyarrow_array: pa.Array, dtype: PyDataType | None = None) -> PySeries: ...
     @staticmethod
     def from_pylist(pylist: list[Any], name: str | None = None, dtype: PyDataType | None = None) -> PySeries: ...
-    def to_pylist(self) -> list[Any]: ...
+    def to_pylist(self, maps_as_pydicts: Literal["lossy", "strict"] | None = None) -> list[Any]: ...
     def to_arrow(self) -> pa.Array: ...
     def __iter__(self) -> PySeriesIterator: ...
     def __getitem__(self, index: int) -> Any: ...
@@ -1924,7 +2014,9 @@ class LogicalPlanBuilder:
     def limit(self, limit: int, eager: bool) -> LogicalPlanBuilder: ...
     def offset(self, offset: int) -> LogicalPlanBuilder: ...
     def shard(self, strategy: str, world_size: int, rank: int) -> LogicalPlanBuilder: ...
-    def explode(self, to_explode: list[PyExpr], index_column: str | None = None) -> LogicalPlanBuilder: ...
+    def explode(
+        self, to_explode: list[PyExpr], index_column: str | None = None, ignore_empty_and_null: bool = False
+    ) -> LogicalPlanBuilder: ...
     def unpivot(
         self,
         ids: list[PyExpr],

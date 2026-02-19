@@ -1745,7 +1745,7 @@ mod tests {
     use super::*;
     use crate::{
         datatypes::DataArray,
-        prelude::{Decimal128Type, Float64Array},
+        prelude::{Decimal128Array, Decimal128Type, Float64Array},
     };
 
     fn create_test_decimal_array(
@@ -1753,15 +1753,11 @@ mod tests {
         precision: usize,
         scale: usize,
     ) -> DataArray<Decimal128Type> {
-        let arrow_array = arrow::array::Decimal128Array::from(values)
-            .with_precision_and_scale(precision as u8, scale as i8)
-            .unwrap();
         let field = Arc::new(Field::new(
             "test_decimal",
             DataType::Decimal128(precision, scale),
         ));
-        DataArray::<Decimal128Type>::from_arrow(field, Arc::new(arrow_array))
-            .expect("Failed to create test decimal array")
+        Decimal128Array::from_field_and_values(field, values)
     }
 
     fn create_test_f64_array(values: Vec<f64>) -> Float64Array {

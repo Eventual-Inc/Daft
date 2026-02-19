@@ -234,8 +234,11 @@ impl Intersect {
             let fill_and_explodes = left_cols
                 .iter()
                 .map(|column| {
-                    explode(list_fill(column.clone(), resolved_col(V_MIN_COUNT)))
-                        .alias(column.name())
+                    explode(
+                        list_fill(column.clone(), resolved_col(V_MIN_COUNT)),
+                        lit(false),
+                    )
+                    .alias(column.name())
                 })
                 .collect::<Vec<_>>();
             let project_plan = Project::try_new(min_count_plan.into(), fill_and_explodes)?;
@@ -517,8 +520,11 @@ impl Except {
             let fill_and_explodes = left_cols
                 .iter()
                 .map(|column| {
-                    explode(list_fill(column.clone(), resolved_col(virtual_sum)))
-                        .alias(column.name())
+                    explode(
+                        list_fill(column.clone(), resolved_col(virtual_sum)),
+                        lit(false),
+                    )
+                    .alias(column.name())
                 })
                 .collect::<Vec<_>>();
             let project_plan = Project::try_new(filter_plan.into(), fill_and_explodes)?;

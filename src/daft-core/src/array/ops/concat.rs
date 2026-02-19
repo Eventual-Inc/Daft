@@ -105,7 +105,9 @@ where
 #[cfg(feature = "python")]
 impl PythonArray {
     pub fn concat(arrays: &[&Self]) -> DaftResult<Self> {
-        use daft_arrow::buffer::{Buffer, NullBufferBuilder};
+        use daft_arrow::buffer::NullBufferBuilder;
+
+        use crate::datatypes::python::PythonBuffer;
         if arrays.is_empty() {
             return Err(DaftError::ValueError(
                 "Need at least 1 array to perform concat".to_string(),
@@ -138,7 +140,10 @@ impl PythonArray {
             None
         };
 
-        let values = Buffer::from_iter(arrays.iter().flat_map(|a| a.values().iter().cloned()));
+        let values: PythonBuffer = arrays
+            .iter()
+            .flat_map(|a| a.values().iter().cloned())
+            .collect();
 
         Ok(Self::new(field, values, nulls))
     }

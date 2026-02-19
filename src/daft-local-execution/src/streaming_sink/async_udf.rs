@@ -7,8 +7,10 @@ use std::{
 
 use common_error::DaftResult;
 use common_metrics::{
-    CPU_US_KEY, Counter, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot,
-    operator_metrics::OperatorCounter, ops::NodeType, snapshot::UdfSnapshot,
+    Counter, DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
+    operator_metrics::OperatorCounter,
+    ops::{NodeInfo, NodeType},
+    snapshot::UdfSnapshot,
 };
 use common_runtime::JoinSet;
 use daft_core::{prelude::SchemaRef, series::Series};
@@ -43,7 +45,7 @@ struct AsyncUdfParams {
 struct AsyncUdfRuntimeStats {
     meter: Meter,
     node_kv: Vec<KeyValue>,
-    cpu_us: Counter,
+    duration_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
     custom_counters: Mutex<HashMap<Arc<str>, Counter>>,
@@ -58,7 +60,7 @@ impl RuntimeStats for AsyncUdfRuntimeStats {
         let counters = self.custom_counters.lock().unwrap();
 
         StatSnapshot::Udf(UdfSnapshot {
-            cpu_us: self.cpu_us.load(ordering),
+            cpu_us: self.duration_us.load(ordering),
             rows_in: self.rows_in.load(ordering),
             rows_out: self.rows_out.load(ordering),
             custom_counters: counters
@@ -77,19 +79,19 @@ impl RuntimeStats for AsyncUdfRuntimeStats {
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
+        self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
 impl AsyncUdfRuntimeStats {
-    fn new(meter: &Meter, id: usize) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+    fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+        let node_kv = node_info.to_key_values();
 
         Self {
             meter: meter.clone(), // Cheap to clone, Arc under the hood
-            cpu_us: Counter::new(meter, CPU_US_KEY, None),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
+            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
             custom_counters: Mutex::new(HashMap::new()),
             node_kv,
         }
@@ -113,7 +115,7 @@ impl AsyncUdfRuntimeStats {
                 }
                 None => {
                     let counter =
-                        Counter::new(&self.meter, name.clone(), description.map(Cow::Owned));
+                        Counter::new(&self.meter, name.clone(), description.map(Cow::Owned), None);
                     counter.add(value, key_values.as_slice());
                     counters.insert(name.into(), counter);
                 }
@@ -358,8 +360,8 @@ impl StreamingSink for AsyncUdfSink {
         })
     }
 
-    fn make_runtime_stats(&self, meter: &Meter, node_id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(AsyncUdfRuntimeStats::new(meter, node_id))
+    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
+        Arc::new(AsyncUdfRuntimeStats::new(meter, node_info))
     }
 
     fn max_concurrency(&self) -> usize {

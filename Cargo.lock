@@ -3242,7 +3242,6 @@ dependencies = [
  "common-metrics",
  "common-py-serde",
  "common-runtime",
- "daft-arrow",
  "daft-core",
  "daft-dsl",
  "daft-functions-list",

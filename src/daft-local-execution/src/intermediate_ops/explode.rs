@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use common_error::DaftResult;
 use common_metrics::{
-    CPU_US_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, meters::Counter, ops::NodeType,
+    DURATION_KEY, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
+    meters::Counter,
+    ops::{NodeInfo, NodeType},
     snapshot::ExplodeSnapshot,
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -18,20 +20,20 @@ use super::intermediate_op::{
 use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
 
 pub struct ExplodeStats {
-    cpu_us: Counter,
+    duration_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
     node_kv: Vec<KeyValue>,
 }
 
 impl ExplodeStats {
-    pub fn new(meter: &Meter, id: usize) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+    pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+        let node_kv = node_info.to_key_values();
 
         Self {
-            cpu_us: Counter::new(meter, CPU_US_KEY, None),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
+            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
             node_kv,
         }
     }
@@ -43,7 +45,7 @@ impl RuntimeStats for ExplodeStats {
     }
 
     fn build_snapshot(&self, ordering: std::sync::atomic::Ordering) -> StatSnapshot {
-        let cpu_us = self.cpu_us.load(ordering);
+        let cpu_us = self.duration_us.load(ordering);
         let rows_in = self.rows_in.load(ordering);
         let rows_out = self.rows_out.load(ordering);
 
@@ -70,7 +72,7 @@ impl RuntimeStats for ExplodeStats {
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
+        self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
@@ -80,12 +82,21 @@ pub struct ExplodeOperator {
 }
 
 impl ExplodeOperator {
-    pub fn new(to_explode: Vec<BoundExpr>, index_column: Option<String>) -> Self {
+    pub fn new(
+        to_explode: Vec<BoundExpr>,
+        ignore_empty_and_null: bool,
+        index_column: Option<String>,
+    ) -> Self {
         Self {
             to_explode: Arc::new(
                 to_explode
                     .into_iter()
-                    .map(|expr| BoundExpr::new_unchecked(explode(expr.inner().clone())))
+                    .map(|expr| {
+                        BoundExpr::new_unchecked(explode(
+                            expr.inner().clone(),
+                            daft_dsl::lit(ignore_empty_and_null),
+                        ))
+                    })
                     .collect(),
             ),
             index_column,
@@ -140,8 +151,8 @@ impl IntermediateOperator for ExplodeOperator {
         NodeType::Explode
     }
 
-    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(ExplodeStats::new(meter, id))
+    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
+        Arc::new(ExplodeStats::new(meter, node_info))
     }
     fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
         Ok(crate::dynamic_batching::StaticBatchingStrategy::new(

@@ -2,7 +2,9 @@ use std::sync::{Arc, atomic::Ordering};
 
 use common_error::DaftResult;
 use common_metrics::{
-    CPU_US_KEY, Counter, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, ops::NodeType,
+    Counter, DURATION_KEY, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS,
+    UNIT_ROWS,
+    ops::{NodeInfo, NodeType},
     snapshot::FilterSnapshot,
 };
 use daft_dsl::expr::bound_expr::BoundExpr;
@@ -16,7 +18,7 @@ use super::intermediate_op::{
 use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
 
 pub struct FilterStats {
-    cpu_us: Counter,
+    duration_us: Counter,
     rows_in: Counter,
     rows_out: Counter,
     selectivity: Gauge,
@@ -24,13 +26,13 @@ pub struct FilterStats {
 }
 
 impl FilterStats {
-    pub fn new(meter: &Meter, id: usize) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+    pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+        let node_kv = node_info.to_key_values();
 
         Self {
-            cpu_us: Counter::new(meter, CPU_US_KEY, None),
-            rows_in: Counter::new(meter, ROWS_IN_KEY, None),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
+            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
+            rows_in: Counter::new(meter, ROWS_IN_KEY, None, Some(UNIT_ROWS.into())),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
             selectivity: Gauge::new(meter, "selectivity", None),
             node_kv,
         }
@@ -53,7 +55,7 @@ impl RuntimeStats for FilterStats {
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
-        let cpu_us = self.cpu_us.load(ordering);
+        let cpu_us = self.duration_us.load(ordering);
         let rows_in = self.rows_in.load(ordering);
         let rows_out = self.rows_out.load(ordering);
         let selectivity = self.selectivity.load(ordering);
@@ -77,7 +79,7 @@ impl RuntimeStats for FilterStats {
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
+        self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
@@ -128,8 +130,8 @@ impl IntermediateOperator for FilterOperator {
         NodeType::Filter
     }
 
-    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<dyn RuntimeStats> {
-        Arc::new(FilterStats::new(meter, id))
+    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
+        Arc::new(FilterStats::new(meter, node_info))
     }
 
     fn make_state(&self) -> Self::State {}
@@ -144,14 +146,22 @@ impl IntermediateOperator for FilterOperator {
 mod tests {
     use std::sync::atomic::Ordering;
 
+    use common_metrics::ops::NodeInfo;
     use opentelemetry::global;
 
     use super::FilterStats;
     use crate::runtime_stats::RuntimeStats;
 
+    fn node_info_from_id(id: usize) -> NodeInfo {
+        NodeInfo {
+            id,
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn selectivity_updates_after_rows_events() {
-        let stats = FilterStats::new(&global::meter("test_stats"), 42);
+        let stats = FilterStats::new(&global::meter("test_stats"), &node_info_from_id(42));
 
         stats.add_rows_in(200);
         stats.add_rows_out(50);
@@ -167,7 +177,7 @@ mod tests {
 
     #[test]
     fn selectivity_defaults_to_100_percent_on_zero_rows_in() {
-        let stats = FilterStats::new(&global::meter("test_stats"), 1);
+        let stats = FilterStats::new(&global::meter("test_stats"), &node_info_from_id(1));
 
         stats.add_rows_out(10);
 
@@ -181,7 +191,7 @@ mod tests {
 
     #[test]
     fn selectivity_handles_multiple_updates() {
-        let stats = FilterStats::new(&global::meter("test_stats"), 99);
+        let stats = FilterStats::new(&global::meter("test_stats"), &node_info_from_id(99));
 
         stats.add_rows_in(100);
         stats.add_rows_out(40);
