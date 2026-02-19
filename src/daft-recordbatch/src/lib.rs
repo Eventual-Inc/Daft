@@ -465,15 +465,12 @@ impl RecordBatch {
     }
 
     pub fn mask_filter(&self, mask: &Series) -> DaftResult<Self> {
-        if *mask.data_type() != DataType::Boolean {
-            return Err(DaftError::ValueError(format!(
-                "We can only mask a RecordBatch with a Boolean Series, but we got {}",
-                mask.data_type()
-            )));
-        }
-
-        let mask = mask.downcast::<BooleanArray>().unwrap();
-        let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.filter(mask)).collect();
+        let mask = mask.bool()?;
+        let new_series = self
+            .columns
+            .iter()
+            .map(|s| s.filter(mask))
+            .collect::<DaftResult<Vec<_>>>()?;
 
         // The number of rows post-filter should be the number of 'true' values in the mask
         let num_rows = if mask.len() == 1 {
@@ -485,26 +482,21 @@ impl RecordBatch {
             }
         } else {
             // num_filtered is the number of 'false' or null values in the mask
-            let num_filtered = mask
-                .nulls()
-                .map(|nulls| {
-                    arrow::compute::and(
-                        &arrow::array::BooleanArray::new(nulls.inner().clone(), None),
-                        &mask.as_arrow().unwrap(),
-                    )
-                    .unwrap()
-                    .false_count()
-                })
-                .unwrap_or_else(|| mask.as_arrow().unwrap().false_count());
+            let num_filtered = mask.null_count() + mask.false_count();
+
             mask.len() - num_filtered
         };
 
-        Self::new_with_size(self.schema.clone(), new_series?, num_rows)
+        Self::new_with_size(self.schema.clone(), new_series, num_rows)
     }
 
     pub fn take(&self, idx: &UInt64Array) -> DaftResult<Self> {
-        let new_series: DaftResult<Vec<_>> = self.columns.iter().map(|s| s.take(idx)).collect();
-        Self::new_with_size(self.schema.clone(), new_series?, idx.len())
+        let new_series = self
+            .columns
+            .iter()
+            .map(|s| s.take(idx))
+            .collect::<DaftResult<Vec<_>>>()?;
+        Self::new_with_size(self.schema.clone(), new_series, idx.len())
     }
 
     pub fn concat_or_empty<T: AsRef<Self>>(

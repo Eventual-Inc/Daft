@@ -1,4 +1,4 @@
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use logical::{
     EmbeddingArray, FixedShapeSparseTensorArray, FixedShapeTensorArray, SparseTensorArray,
     TensorArray,
@@ -21,13 +21,11 @@ impl Series {
     pub fn downcast<Arr: DaftArrayType>(&self) -> DaftResult<&Arr> {
         match self.inner.as_any().downcast_ref() {
             Some(ArrayWrapper(arr)) => Ok(arr),
-            None => {
-                panic!(
-                    "Attempting to downcast {:?} to {:?}",
-                    self.data_type(),
-                    std::any::type_name::<Arr>(),
-                )
-            }
+            None => Err(DaftError::ValueError(format!(
+                "Attempting to downcast {:?} to {:?}",
+                self.data_type(),
+                std::any::type_name::<Arr>(),
+            ))),
         }
     }
 
