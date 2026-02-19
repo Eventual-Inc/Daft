@@ -1,4 +1,4 @@
-use std::{borrow::Cow, sync::Arc};
+use std::borrow::Cow;
 
 use arrow::array::NullBufferBuilder;
 use common_error::DaftResult;
@@ -184,10 +184,7 @@ pub fn fixed_image_array_from_img_buffers(
     let data = data_ref.concat();
     let nulls = null_builder.finish();
 
-    let flat_child = Series::from_arrow(
-        Field::new("data", DataType::UInt8),
-        Arc::new(arrow::array::UInt8Array::from(data)),
-    )?;
+    let flat_child = UInt8Array::from_vec("data", data).into_series();
     let daft_dtype = DataType::FixedSizeList(Box::new(DataType::UInt8), list_size);
     let physical_array = FixedSizeListArray::new(Field::new(name, daft_dtype), flat_child, nulls);
     let logical_dtype = DataType::FixedShapeImage(*image_mode, height, width);
