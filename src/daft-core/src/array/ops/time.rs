@@ -1,8 +1,10 @@
 use std::sync::Arc;
 
 use arrow::{
+    array::ArrayRef,
     compute::{DatePart, date_part},
     datatypes::IntervalMonthDayNano,
+    error::ArrowError,
 };
 use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
 use common_error::{DaftError, DaftResult};
@@ -380,30 +382,25 @@ impl TimestampArray {
     }
 
     pub fn add_interval(&self, interval: &IntervalArray) -> DaftResult<Self> {
-        let ts_array = self.to_arrow()?;
-        let interval_array = interval.to_arrow();
-        let result = if interval_array.len() == 1 {
-            let scalar = arrow::array::Scalar::new(interval_array);
-            arrow::compute::kernels::numeric::add(&ts_array, &scalar)?
-        } else {
-            arrow::compute::kernels::numeric::add(&ts_array, &interval_array)?
-        };
-        let result_i64 = arrow::compute::cast(result.as_ref(), &arrow::datatypes::DataType::Int64)?;
-        let physical_field = Arc::new(Field::new(self.name(), DataType::Int64));
-        Ok(Self::new(
-            self.field.clone(),
-            Int64Array::from_arrow(physical_field, result_i64)?,
-        ))
+        self.interval_op(interval, arrow::compute::kernels::numeric::add)
     }
 
     pub fn sub_interval(&self, interval: &IntervalArray) -> DaftResult<Self> {
+        self.interval_op(interval, arrow::compute::kernels::numeric::sub)
+    }
+
+    fn interval_op(
+        &self,
+        interval: &IntervalArray,
+        op: fn(&dyn arrow::array::Datum, &dyn arrow::array::Datum) -> Result<ArrayRef, ArrowError>,
+    ) -> DaftResult<Self> {
         let ts_array = self.to_arrow()?;
         let interval_array = interval.to_arrow();
         let result = if interval_array.len() == 1 {
             let scalar = arrow::array::Scalar::new(interval_array);
-            arrow::compute::kernels::numeric::sub(&ts_array, &scalar)?
+            op(&ts_array, &scalar)?
         } else {
-            arrow::compute::kernels::numeric::sub(&ts_array, &interval_array)?
+            op(&ts_array, &interval_array)?
         };
         let result_i64 = arrow::compute::cast(result.as_ref(), &arrow::datatypes::DataType::Int64)?;
         let physical_field = Arc::new(Field::new(self.name(), DataType::Int64));
