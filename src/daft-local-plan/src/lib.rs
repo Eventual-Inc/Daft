@@ -20,7 +20,7 @@ pub use plan::{
 };
 #[cfg(feature = "python")]
 pub use python::{PyLocalPhysicalPlan, register_modules};
-pub use results::ExecutionEngineFinalResult;
+pub use results::ExecutionMetadata;
 use serde::{Deserialize, Serialize};
 pub use translate::translate;
 

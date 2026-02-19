@@ -580,10 +580,6 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
         self.node_info.id
     }
 
-    fn plan_id(&self) -> Arc<str> {
-        Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
-    }
-
     fn node_info(&self) -> Arc<NodeInfo> {
         self.node_info.clone()
     }

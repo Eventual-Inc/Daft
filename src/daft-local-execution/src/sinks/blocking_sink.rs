@@ -378,9 +378,6 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
     fn node_id(&self) -> usize {
         self.node_info.id
     }
-    fn plan_id(&self) -> Arc<str> {
-        Arc::from(self.node_info.context.get("plan_id").unwrap().clone())
-    }
     fn node_info(&self) -> Arc<NodeInfo> {
         self.node_info.clone()
     }
