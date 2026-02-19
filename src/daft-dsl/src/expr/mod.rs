@@ -20,9 +20,9 @@ use common_hashable_float_wrapper::FloatWrapper;
 use common_treenode::{Transformed, TreeNode};
 use daft_core::{
     datatypes::{
-        InferDataType, try_mean_aggregation_supertype, try_product_supertype,
-        try_skew_aggregation_supertype, try_stddev_aggregation_supertype, try_sum_supertype,
-        try_variance_aggregation_supertype,
+        InferDataType, try_mean_aggregation_supertype, try_percentile_aggregation_supertype,
+        try_product_supertype, try_skew_aggregation_supertype, try_stddev_aggregation_supertype,
+        try_sum_supertype, try_variance_aggregation_supertype,
     },
     join::JoinSide,
     lit::Literal,
@@ -415,6 +415,12 @@ pub enum AggExpr {
     #[display("mean({_0})")]
     Mean(ExprRef),
 
+    #[display("percentile({_0}, percentile={_1:?})")]
+    Percentile(ExprRef, FloatWrapper<f64>),
+
+    #[display("median({_0})")]
+    Median(ExprRef),
+
     #[display("stddev({_0})")]
     Stddev(ExprRef),
 
@@ -540,6 +546,8 @@ impl AggExpr {
             Self::ApproxSketch(_, _) => "Approx Sketch",
             Self::MergeSketch(_, _) => "Merge Sketch",
             Self::Mean(_) => "Mean",
+            Self::Percentile(_, _) => "Percentile",
+            Self::Median(_) => "Median",
             Self::Stddev(_) => "Stddev",
             Self::Var(_, _) => "Var",
             Self::Min(_) => "Min",
@@ -566,6 +574,8 @@ impl AggExpr {
             | Self::ApproxSketch(expr, _)
             | Self::MergeSketch(expr, _)
             | Self::Mean(expr)
+            | Self::Percentile(expr, _)
+            | Self::Median(expr)
             | Self::Stddev(expr)
             | Self::Var(expr, _)
             | Self::Min(expr)
@@ -630,6 +640,17 @@ impl AggExpr {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_mean()"))
             }
+            Self::Percentile(expr, percentile) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!(
+                    "{child_id}.local_percentile(percentile={})",
+                    percentile.0
+                ))
+            }
+            Self::Median(expr) => {
+                let child_id = expr.semantic_id(schema);
+                FieldID::new(format!("{child_id}.local_median()"))
+            }
             Self::Stddev(expr) => {
                 let child_id = expr.semantic_id(schema);
                 FieldID::new(format!("{child_id}.local_stddev()"))
@@ -691,6 +712,8 @@ impl AggExpr {
             | Self::ApproxSketch(expr, _)
             | Self::MergeSketch(expr, _)
             | Self::Mean(expr)
+            | Self::Percentile(expr, _)
+            | Self::Median(expr)
             | Self::Stddev(expr)
             | Self::Var(expr, _)
             | Self::Min(expr)
@@ -719,6 +742,8 @@ impl AggExpr {
             Self::Sum(_) => Self::Sum(first_child()),
             Self::Product(_) => Self::Product(first_child()),
             Self::Mean(_) => Self::Mean(first_child()),
+            Self::Percentile(_, percentile) => Self::Percentile(first_child(), percentile.clone()),
+            Self::Median(_) => Self::Median(first_child()),
             Self::Stddev(_) => Self::Stddev(first_child()),
             &Self::Var(_, ddof) => Self::Var(first_child(), ddof),
             Self::Min(_) => Self::Min(first_child()),
@@ -840,6 +865,20 @@ impl AggExpr {
                 Ok(Field::new(
                     field.name.as_str(),
                     try_mean_aggregation_supertype(&field.dtype)?,
+                ))
+            }
+            Self::Percentile(expr, _) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(
+                    field.name.as_str(),
+                    try_percentile_aggregation_supertype(&field.dtype)?,
+                ))
+            }
+            Self::Median(expr) => {
+                let field = expr.to_field(schema)?;
+                Ok(Field::new(
+                    field.name.as_str(),
+                    try_percentile_aggregation_supertype(&field.dtype)?,
                 ))
             }
             Self::Stddev(expr) => {
@@ -1151,6 +1190,14 @@ impl Expr {
 
     pub fn mean(self: ExprRef) -> ExprRef {
         Self::Agg(AggExpr::Mean(self)).into()
+    }
+
+    pub fn percentile(self: ExprRef, percentage: f64) -> ExprRef {
+        Self::Agg(AggExpr::Percentile(self, FloatWrapper(percentage))).into()
+    }
+
+    pub fn median(self: ExprRef) -> ExprRef {
+        Self::Agg(AggExpr::Median(self)).into()
     }
 
     pub fn stddev(self: ExprRef) -> ExprRef {

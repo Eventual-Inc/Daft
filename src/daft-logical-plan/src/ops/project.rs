@@ -593,6 +593,16 @@ fn replace_column_with_semantic_id_aggexpr(
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Mean, |_| e)
         }
+        AggExpr::Percentile(ref child, ref percentile) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema).map_yes_no(
+                |transformed_child| AggExpr::Percentile(transformed_child, percentile.clone()),
+                |_| e.clone(),
+            )
+        }
+        AggExpr::Median(ref child) => {
+            replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
+                .map_yes_no(AggExpr::Median, |_| e)
+        }
         AggExpr::Stddev(ref child) => {
             replace_column_with_semantic_id(child.clone(), subexprs_to_replace, schema)
                 .map_yes_no(AggExpr::Stddev, |_| e)
