@@ -246,10 +246,10 @@ impl PythonArray {
         self.slice(0, num)
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = Option<&Arc<Py<PyAny>>>> {
-        let nulls = self.nulls.clone();
+    pub fn iter(&self) -> impl Iterator<Item = Option<&Arc<Py<PyAny>>>> + '_ {
+        let nulls = self.nulls.as_ref();
         self.values.iter().enumerate().map(move |(i, v)| {
-            if nulls.as_ref().is_none_or(|n| n.is_valid(i)) {
+            if nulls.is_none_or(|n| n.is_valid(i)) {
                 Some(v)
             } else {
                 None
