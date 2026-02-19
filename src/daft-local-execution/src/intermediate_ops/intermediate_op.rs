@@ -29,7 +29,6 @@ use crate::{
     runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
 #[cfg_attr(debug_assertions, derive(Debug))]
-#[derive(Clone)]
 pub enum IntermediateOperatorResult {
     NeedMoreInput(Option<Arc<MicroPartition>>),
     #[allow(dead_code)]
