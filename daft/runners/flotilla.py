@@ -268,7 +268,10 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
             actors.append((node, actor))
 
     # Batch all IP address retrievals into a single ray.get call
-    ip_addresses = ray.get([actor.get_address.remote() for _, actor in actors], timeout=ACTOR_STARTUP_TIMEOUT)
+    try:
+        ip_addresses = ray.get([actor.get_address.remote() for _, actor in actors], timeout=ACTOR_STARTUP_TIMEOUT)
+    except ray.exceptions.GetTimeoutError:
+        raise RuntimeError(f"Failed to get IP addresses for actors within {ACTOR_STARTUP_TIMEOUT} seconds")
 
     handles = []
     for (node, actor), ip_address in zip(actors, ip_addresses):
