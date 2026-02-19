@@ -1,6 +1,6 @@
 use std::{borrow::Cow, sync::Arc};
 
-use arrow::array::ArrayRef;
+use arrow::array::{ArrayRef, NullBufferBuilder};
 use common_error::DaftResult;
 use common_image::CowImage;
 use num_traits::FromPrimitive;
@@ -110,7 +110,7 @@ where
     let mut widths = Vec::with_capacity(inputs.len());
     let mut offsets = Vec::with_capacity(inputs.len() + 1);
     offsets.push(0i64);
-    let mut null_builder = daft_arrow::buffer::NullBufferBuilder::new(inputs.len());
+    let mut null_builder = NullBufferBuilder::new(inputs.len());
 
     for ib in inputs {
         null_builder.append(ib.is_some());
@@ -171,7 +171,7 @@ pub fn fixed_image_array_from_img_buffers(
 
     let num_channels = image_mode.num_channels();
     let mut data_ref = Vec::with_capacity(inputs.len());
-    let mut null_builder = daft_arrow::buffer::NullBufferBuilder::new(inputs.len());
+    let mut null_builder = NullBufferBuilder::new(inputs.len());
     let list_size = (height * width * u32::from(num_channels)) as usize;
     let null_list = vec![0u8; list_size];
     for ib in inputs {
@@ -185,6 +185,8 @@ pub fn fixed_image_array_from_img_buffers(
     let data = data_ref.concat();
     let nulls = null_builder.finish();
 
+    // Construct FixedSizeListArray directly via arrow-rs: no Daft equivalent for
+    // zero-copy fixed-size-list construction from raw buffers + null bitmap.
     let values: ArrayRef = Arc::new(arrow::array::UInt8Array::from(data));
     let arrow_field = Arc::new(arrow::datatypes::Field::new(
         "data",
