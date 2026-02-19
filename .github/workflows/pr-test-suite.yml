@@ -284,6 +284,11 @@ jobs:
       with:
         submodules: true
         fetch-depth: 0
+    - name: Restore file mtimes for cargo fingerprinting
+      run: |
+        git log --raw --no-renames --no-merges --pretty=%ct --reverse \
+          | awk '/^[0-9]+$/{t=$0;next} /^:[0-9]/{f=substr($0,index($0,"\t")+1); c[f]=t} END{for(f in c) printf "%s\t%s\n",c[f],f}' \
+          | while IFS=$'\t' read -r ts file; do [ -f "$file" ] && touch -d "@$ts" "$file"; done
     - name: Setup Python and uv
       uses: astral-sh/setup-uv@v7
       with:
@@ -301,8 +306,9 @@ jobs:
         cache: false
     - uses: Swatinem/rust-cache@v2
       with:
-        prefix-key: ${{ runner.os }}-integration-build
+        shared-key: ${{ runner.os }}-integration-build
         cache-all-crates: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
     - uses: actions/setup-node@v6
       with:
         node-version: "22"
