@@ -5,7 +5,7 @@ use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
 use common_error::DaftResult;
 use common_metrics::{
-    CPU_US_KEY, Counter, ROWS_OUT_KEY, StatSnapshot,
+    Counter, DURATION_KEY, ROWS_OUT_KEY, StatSnapshot, UNIT_MICROSECONDS, UNIT_ROWS,
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::{SourceSnapshot, StatSnapshotImpl},
 };
@@ -26,7 +26,7 @@ use crate::{
 pub type SourceStream<'a> = BoxStream<'a, DaftResult<Arc<MicroPartition>>>;
 
 pub(crate) struct SourceStats {
-    cpu_us: Counter,
+    duration_us: Counter,
     rows_out: Counter,
     io_stats: IOStatsRef,
 
@@ -34,12 +34,12 @@ pub(crate) struct SourceStats {
 }
 
 impl SourceStats {
-    pub fn new(meter: &Meter, id: usize) -> Self {
-        let node_kv = vec![KeyValue::new("node_id", id.to_string())];
+    pub fn new(meter: &Meter, node_info: &NodeInfo) -> Self {
+        let node_kv = node_info.to_key_values();
 
         Self {
-            cpu_us: Counter::new(meter, CPU_US_KEY, None),
-            rows_out: Counter::new(meter, ROWS_OUT_KEY, None),
+            duration_us: Counter::new(meter, DURATION_KEY, None, Some(UNIT_MICROSECONDS.into())),
+            rows_out: Counter::new(meter, ROWS_OUT_KEY, None, Some(UNIT_ROWS.into())),
             io_stats: IOStatsRef::default(),
 
             node_kv,
@@ -53,7 +53,7 @@ impl RuntimeStats for SourceStats {
     }
 
     fn build_snapshot(&self, ordering: Ordering) -> StatSnapshot {
-        let cpu_us = self.cpu_us.load(ordering);
+        let cpu_us = self.duration_us.load(ordering);
         let rows_out = self.rows_out.load(ordering);
         let bytes_read = self.io_stats.load_bytes_read() as u64;
         StatSnapshot::Source(SourceSnapshot {
@@ -72,7 +72,7 @@ impl RuntimeStats for SourceStats {
     }
 
     fn add_cpu_us(&self, cpu_us: u64) {
-        self.cpu_us.add(cpu_us, self.node_kv.as_slice());
+        self.duration_us.add(cpu_us, self.node_kv.as_slice());
     }
 }
 
@@ -80,8 +80,8 @@ impl RuntimeStats for SourceStats {
 pub trait Source: Send + Sync {
     fn name(&self) -> NodeName;
     fn op_type(&self) -> NodeType;
-    fn make_runtime_stats(&self, meter: &Meter, id: usize) -> Arc<SourceStats> {
-        Arc::new(SourceStats::new(meter, id))
+    fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<SourceStats> {
+        Arc::new(SourceStats::new(meter, node_info))
     }
     fn multiline_display(&self) -> Vec<String>;
     async fn get_data(
@@ -114,7 +114,7 @@ impl SourceNode {
             NodeCategory::Source,
             context,
         );
-        let runtime_stats = source.make_runtime_stats(&ctx.meter, info.id);
+        let runtime_stats = source.make_runtime_stats(&ctx.meter, &info);
         Self {
             source,
             runtime_stats,

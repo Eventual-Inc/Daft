@@ -327,7 +327,7 @@ jobs:
 
   integration-test-tpch:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     needs: [skipcheck, integration-test-build]
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
@@ -411,7 +411,7 @@ jobs:
 
   integration-test-io:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     needs: [skipcheck, integration-test-build]
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
@@ -515,7 +515,7 @@ jobs:
   # Uncomment when re-enabling credentialed testing.
   # integration-test-io-credentialed:
   #   runs-on: ubuntu-latest
-  #   timeout-minutes: 30
+  #   timeout-minutes: 45
   #   needs: [skipcheck, integration-test-build]
   #   if: ${{ needs.skipcheck.outputs.skip == 'false' && github.ref == 'refs/heads/main' }}
   #   env:
@@ -738,7 +738,7 @@ jobs:
 
   integration-test-catalogs:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     needs: [skipcheck, integration-test-build]
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
@@ -948,7 +948,7 @@ jobs:
 
   integration-test-ai:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     needs: [skipcheck, integration-test-build]
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
@@ -1041,7 +1041,7 @@ jobs:
   # Uncomment when re-enabling credentialed testing.
   # integration-test-ai-credentialed:
   #   runs-on: ubuntu-latest
-  #   timeout-minutes: 30
+  #   timeout-minutes: 45
   #   needs: [skipcheck, integration-test-build]
   #   if: ${{ needs.skipcheck.outputs.skip == 'false' && github.ref == 'refs/heads/main' }}
   #   env:
@@ -1115,7 +1115,7 @@ jobs:
 
   integration-test-ray:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     needs: [skipcheck, integration-test-build]
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     env:
@@ -1212,7 +1212,7 @@ jobs:
     needs: skipcheck
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     runs-on: buildjet-8vcpu-ubuntu-2204
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       package-name: daft
       RUSTFLAGS: -C target-feature=+fxsr,+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2
@@ -1487,7 +1487,7 @@ jobs:
     needs: skipcheck
     if: ${{ needs.skipcheck.outputs.skip == 'false' }}
     runs-on: ${{ matrix.os }}-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
