@@ -213,7 +213,6 @@ pub struct CosConfig {
 #[pymethods]
 impl IOConfig {
     #[new]
-    #[must_use]
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (
         s3=None,
@@ -226,7 +225,8 @@ impl IOConfig {
         tos=None,
         gravitino=None,
         cos=None,
-        opendal_backends=None
+        opendal_backends=None,
+        protocol_aliases=None
     ))]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -241,30 +241,36 @@ impl IOConfig {
         gravitino: Option<GravitinoConfig>,
         cos: Option<CosConfig>,
         opendal_backends: Option<HashMap<String, HashMap<String, String>>>,
-    ) -> Self {
-        Self {
-            config: config::IOConfig {
-                s3: s3.unwrap_or_default().config,
-                azure: azure.unwrap_or_default().config,
-                gcs: gcs.unwrap_or_default().config,
-                http: http.unwrap_or_default().config,
-                unity: unity.unwrap_or_default().config,
-                hf: hf.unwrap_or_default().config,
-                disable_suffix_range: disable_suffix_range.unwrap_or_default(),
-                tos: tos.unwrap_or_default().config,
-                gravitino: gravitino.unwrap_or_default().config,
-                cos: cos.unwrap_or_default().config,
-                opendal_backends: opendal_backends
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(|(k, v)| (k, v.into_iter().collect()))
-                    .collect(),
-            },
-        }
+        protocol_aliases: Option<HashMap<String, String>>,
+    ) -> PyResult<Self> {
+        let cfg = config::IOConfig {
+            s3: s3.unwrap_or_default().config,
+            azure: azure.unwrap_or_default().config,
+            gcs: gcs.unwrap_or_default().config,
+            http: http.unwrap_or_default().config,
+            unity: unity.unwrap_or_default().config,
+            hf: hf.unwrap_or_default().config,
+            disable_suffix_range: disable_suffix_range.unwrap_or_default(),
+            tos: tos.unwrap_or_default().config,
+            gravitino: gravitino.unwrap_or_default().config,
+            cos: cos.unwrap_or_default().config,
+            opendal_backends: opendal_backends
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(k, v)| (k, v.into_iter().collect()))
+                .collect(),
+            protocol_aliases: protocol_aliases
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(k, v)| (k.to_lowercase(), v.to_lowercase()))
+                .collect(),
+        };
+        cfg.validate_protocol_aliases()
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
+        Ok(Self { config: cfg })
     }
 
     #[allow(clippy::too_many_arguments)]
-    #[must_use]
     #[pyo3(signature = (
         s3=None,
         azure=None,
@@ -276,7 +282,8 @@ impl IOConfig {
         tos=None,
         gravitino=None,
         cos=None,
-        opendal_backends=None
+        opendal_backends=None,
+        protocol_aliases=None
     ))]
     #[allow(clippy::too_many_arguments)]
     pub fn replace(
@@ -292,47 +299,55 @@ impl IOConfig {
         gravitino: Option<GravitinoConfig>,
         cos: Option<CosConfig>,
         opendal_backends: Option<HashMap<String, HashMap<String, String>>>,
-    ) -> Self {
-        Self {
-            config: config::IOConfig {
-                s3: s3
-                    .map(|s3| s3.config)
-                    .unwrap_or_else(|| self.config.s3.clone()),
-                azure: azure
-                    .map(|azure| azure.config)
-                    .unwrap_or_else(|| self.config.azure.clone()),
-                gcs: gcs
-                    .map(|gcs| gcs.config)
-                    .unwrap_or_else(|| self.config.gcs.clone()),
-                http: http
-                    .map(|http| http.config)
-                    .unwrap_or_else(|| self.config.http.clone()),
-                unity: unity
-                    .map(|unity| unity.config)
-                    .unwrap_or_else(|| self.config.unity.clone()),
-                hf: hf
-                    .map(|hf| hf.config)
-                    .unwrap_or_else(|| self.config.hf.clone()),
-                disable_suffix_range: disable_suffix_range
-                    .unwrap_or(self.config.disable_suffix_range),
-                tos: tos
-                    .map(|tos| tos.config)
-                    .unwrap_or_else(|| self.config.tos.clone()),
-                gravitino: gravitino
-                    .map(|gravitino| gravitino.config)
-                    .unwrap_or_else(|| self.config.gravitino.clone()),
-                cos: cos
-                    .map(|cos| cos.config)
-                    .unwrap_or_else(|| self.config.cos.clone()),
-                opendal_backends: opendal_backends
-                    .map(|b| {
-                        b.into_iter()
-                            .map(|(k, v)| (k, v.into_iter().collect()))
-                            .collect()
-                    })
-                    .unwrap_or_else(|| self.config.opendal_backends.clone()),
-            },
-        }
+        protocol_aliases: Option<HashMap<String, String>>,
+    ) -> PyResult<Self> {
+        let cfg = config::IOConfig {
+            s3: s3
+                .map(|s3| s3.config)
+                .unwrap_or_else(|| self.config.s3.clone()),
+            azure: azure
+                .map(|azure| azure.config)
+                .unwrap_or_else(|| self.config.azure.clone()),
+            gcs: gcs
+                .map(|gcs| gcs.config)
+                .unwrap_or_else(|| self.config.gcs.clone()),
+            http: http
+                .map(|http| http.config)
+                .unwrap_or_else(|| self.config.http.clone()),
+            unity: unity
+                .map(|unity| unity.config)
+                .unwrap_or_else(|| self.config.unity.clone()),
+            hf: hf
+                .map(|hf| hf.config)
+                .unwrap_or_else(|| self.config.hf.clone()),
+            disable_suffix_range: disable_suffix_range.unwrap_or(self.config.disable_suffix_range),
+            tos: tos
+                .map(|tos| tos.config)
+                .unwrap_or_else(|| self.config.tos.clone()),
+            gravitino: gravitino
+                .map(|gravitino| gravitino.config)
+                .unwrap_or_else(|| self.config.gravitino.clone()),
+            cos: cos
+                .map(|cos| cos.config)
+                .unwrap_or_else(|| self.config.cos.clone()),
+            opendal_backends: opendal_backends
+                .map(|b| {
+                    b.into_iter()
+                        .map(|(k, v)| (k, v.into_iter().collect()))
+                        .collect()
+                })
+                .unwrap_or_else(|| self.config.opendal_backends.clone()),
+            protocol_aliases: protocol_aliases
+                .map(|a| {
+                    a.into_iter()
+                        .map(|(k, v)| (k.to_lowercase(), v.to_lowercase()))
+                        .collect()
+                })
+                .unwrap_or_else(|| self.config.protocol_aliases.clone()),
+        };
+        cfg.validate_protocol_aliases()
+            .map_err(pyo3::exceptions::PyValueError::new_err)?;
+        Ok(Self { config: cfg })
     }
 
     pub fn __repr__(&self) -> PyResult<String> {
@@ -412,6 +427,17 @@ impl IOConfig {
                     v.iter().map(|(k2, v2)| (k2.clone(), v2.clone())).collect(),
                 )
             })
+            .collect())
+    }
+
+    /// Protocol aliases mapping custom scheme names to existing schemes
+    #[getter]
+    pub fn protocol_aliases(&self) -> PyResult<HashMap<String, String>> {
+        Ok(self
+            .config
+            .protocol_aliases
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
             .collect())
     }
 
