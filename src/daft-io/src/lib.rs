@@ -45,7 +45,7 @@ use std::{borrow::Cow, collections::HashMap, hash::Hash, sync::Arc};
 
 use common_error::{DaftError, DaftResult};
 pub use common_io_config::{
-    AzureConfig, GCSConfig, GravitinoConfig, HTTPConfig, IOConfig, S3Config, TosConfig,
+    AzureConfig, CosConfig, GCSConfig, GravitinoConfig, HTTPConfig, IOConfig, S3Config, TosConfig,
 };
 use futures::{FutureExt, stream::BoxStream};
 use object_io::StreamingRetryParams;
@@ -301,12 +301,28 @@ impl IOClient {
             }
             SourceType::OpenDAL { scheme } => {
                 let empty_config = std::collections::BTreeMap::new();
-                let backend_config = self
-                    .config
-                    .opendal_backends
-                    .get(scheme)
-                    .unwrap_or(&empty_config);
-                OpenDALSource::get_client(scheme, backend_config).await? as Arc<dyn ObjectSource>
+                let backend_config = if scheme == "cos" {
+                    // Extract bucket from the URL for COS config
+                    let parsed_url =
+                        url::Url::parse(&path).context(InvalidUrlSnafu { path: input })?;
+                    let bucket = parsed_url.host_str().unwrap_or_default();
+                    let cos_config = self.config.cos.to_opendal_config(bucket);
+                    // Merge user-provided opendal_backends on top (if any)
+                    let mut merged = cos_config;
+                    if let Some(extra) = self.config.opendal_backends.get(scheme) {
+                        for (k, v) in extra {
+                            merged.insert(k.clone(), v.clone());
+                        }
+                    }
+                    merged
+                } else {
+                    self.config
+                        .opendal_backends
+                        .get(scheme)
+                        .unwrap_or(&empty_config)
+                        .clone()
+                };
+                OpenDALSource::get_client(scheme, &backend_config).await? as Arc<dyn ObjectSource>
             }
         };
 
@@ -562,6 +578,12 @@ pub fn parse_url(input: &str) -> Result<(SourceType, Cow<'_, str>)> {
         "gcs" | "gs" => Ok((SourceType::GCS, fixed_input)),
         "hf" => Ok((SourceType::HF, fixed_input)),
         "tos" => Ok((SourceType::Tos, fixed_input)),
+        "cos" | "cosn" => Ok((
+            SourceType::OpenDAL {
+                scheme: "cos".to_string(),
+            },
+            fixed_input,
+        )),
         "vol+dbfs" | "dbfs" => Ok((SourceType::Unity, fixed_input)),
         "gvfs" => Ok((SourceType::Gravitino, fixed_input)),
         #[cfg(target_env = "msvc")]
