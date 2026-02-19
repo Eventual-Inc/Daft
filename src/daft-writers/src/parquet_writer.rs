@@ -97,7 +97,7 @@ pub(crate) fn create_native_parquet_writer(
     // Parse the root directory and add partition values if present.
     let (source_type, root_dir) = parse_url(root_dir)?;
     let filename = build_filename(
-        source_type,
+        &source_type,
         root_dir.as_ref(),
         partition_values,
         file_idx,
