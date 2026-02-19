@@ -204,6 +204,10 @@ impl Series {
         self.inner.nulls()
     }
 
+    pub fn null_count(&self) -> usize {
+        self.nulls().map(|n| n.null_count()).unwrap_or(0)
+    }
+
     pub fn is_valid(&self, idx: usize) -> bool {
         let Some(nulls) = self.nulls() else {
             return true;
