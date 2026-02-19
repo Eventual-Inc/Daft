@@ -89,15 +89,17 @@ fn generic_if_else<T: GrowableArray + FullNull + Clone + IntoSeries>(
             }
         };
 
-        // Iterate through the predicate using set_slices(), which is a much faster way of iterating through a bitmap
+        // Iterate through the predicate using set_slices(), which is a much faster way of iterating through a bitmap.
+        // set_slices() yields (start, end) ranges of contiguous set bits.
         let predicate_arrow = predicate.as_arrow()?;
         let mut start_falsy = 0;
-        for (start, len) in predicate_arrow.values().set_slices() {
+        for (start, end) in predicate_arrow.values().set_slices() {
+            let len = end - start;
             if start != start_falsy {
                 extend(false, start_falsy, start - start_falsy);
             }
             extend(true, start, len);
-            start_falsy = start + len;
+            start_falsy = end;
         }
         if start_falsy != predicate.len() {
             extend(false, start_falsy, predicate.len() - start_falsy);
