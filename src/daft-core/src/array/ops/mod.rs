@@ -219,8 +219,8 @@ pub trait DaftMeanAggable {
 
 pub trait DaftStddevAggable {
     type Output;
-    fn stddev(&self) -> Self::Output;
-    fn grouped_stddev(&self, groups: &GroupIndices) -> Self::Output;
+    fn stddev(&self, ddof: usize) -> Self::Output;
+    fn grouped_stddev(&self, groups: &GroupIndices, ddof: usize) -> Self::Output;
 }
 
 pub trait DaftVarianceAggable {
