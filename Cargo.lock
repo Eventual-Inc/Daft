@@ -3059,6 +3059,7 @@ dependencies = [
  "daft-parquet",
  "daft-recordbatch",
  "daft-scan",
+ "daft-shuffles",
  "daft-warc",
  "daft-writers",
  "futures",
@@ -3357,7 +3358,6 @@ dependencies = [
  "common-error",
  "common-runtime",
  "daft-core",
- "daft-dsl",
  "daft-io",
  "daft-micropartition",
  "daft-recordbatch",
@@ -3366,7 +3366,6 @@ dependencies = [
  "futures",
  "itertools 0.14.0",
  "pyo3",
- "pyo3-async-runtimes",
  "tokio",
  "tonic",
 ]
