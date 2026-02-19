@@ -31,6 +31,11 @@ impl ExecutionMetadata {
         }
     }
 
+    pub fn with_query_plan(mut self, query_plan: serde_json::Value) -> Self {
+        self.query_plan = Some(query_plan);
+        self
+    }
+
     /// Encode the ExecutionMetadata into a binary format for transmission to scheduler
     pub fn encode(&self) -> Vec<u8> {
         bincode::encode_to_vec(&self.nodes, bincode::config::legacy())

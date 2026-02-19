@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from daft.daft import (
     LocalPhysicalPlan,
     PyDaftExecutionConfig,
-    PyExecutionEngineFinalResult,
+    PyExecutionMetadata,
     PyMicroPartition,
 )
 from daft.daft import (
@@ -52,7 +52,7 @@ class NativeExecutor:
             context,
         )
 
-        result: PyExecutionEngineFinalResult | None = None
+        result: PyExecutionMetadata | None = None
 
         async def stream_results() -> AsyncGenerator[PyMicroPartition | None, None]:
             nonlocal result

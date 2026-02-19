@@ -27,7 +27,7 @@ use tokio_util::sync::CancellationToken;
 use {
     common_daft_config::PyDaftExecutionConfig,
     daft_context::python::PyDaftContext,
-    daft_local_plan::python::PyExecutionEngineFinalResult,
+    daft_local_plan::python::PyExecutionMetadata,
     daft_logical_plan::PyLogicalPlanBuilder,
     daft_micropartition::python::PyMicroPartition,
     pyo3::{Bound, IntoPyObject, PyRef, PyResult, Python, pyclass, pymethods},
@@ -442,7 +442,7 @@ impl PyExecutionEngineResult {
                 .expect("ExecutionEngineResult.finish() should not be called more than once.")
                 .finish()
                 .await?;
-            Ok(PyExecutionEngineFinalResult::from(stats))
+            Ok(PyExecutionMetadata::from(stats))
         })
     }
 }

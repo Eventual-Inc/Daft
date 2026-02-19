@@ -7,7 +7,7 @@ use common_daft_config::PyDaftExecutionConfig;
 use common_display::{DisplayLevel, tree::TreeDisplay};
 use common_partitioning::Partition;
 use common_py_serde::impl_bincode_py_state_serialization;
-use daft_local_plan::python::PyExecutionEngineFinalResult;
+use daft_local_plan::python::PyExecutionMetadata;
 use daft_logical_plan::PyLogicalPlanBuilder;
 use dashboard::DashboardStatisticsSubscriber;
 use futures::StreamExt;
@@ -63,9 +63,9 @@ impl PythonPartitionRefStream {
         })
     }
 
-    fn finish(&self) -> PyResult<PyExecutionEngineFinalResult> {
+    fn finish(&self) -> PyResult<PyExecutionMetadata> {
         let result = self.statistics_manager.export_metrics();
-        Ok(PyExecutionEngineFinalResult::from(result))
+        Ok(PyExecutionMetadata::from(result))
     }
 }
 
