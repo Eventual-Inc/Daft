@@ -1,7 +1,7 @@
 use std::{borrow::Cow, sync::Arc};
 
 use arrow::array::{ArrayRef, NullBufferBuilder};
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_image::CowImage;
 use num_traits::FromPrimitive;
 
@@ -133,7 +133,6 @@ where
                 widths.push(0u32);
                 modes.push(ImageMode::L as u8);
                 channels.push(ImageMode::L.num_channels());
-                data.extend_from_slice(&[] as &[u8]);
                 offsets.push(*offsets.last().unwrap());
             }
         }
@@ -196,9 +195,7 @@ pub fn fixed_image_array_from_img_buffers(
     let arrow_array: ArrayRef = Arc::new(arrow::array::FixedSizeListArray::try_new(
         arrow_field,
         i32::try_from(list_size).map_err(|_| {
-            common_error::DaftError::ComputeError(format!(
-                "Image buffer size {list_size} exceeds i32::MAX"
-            ))
+            DaftError::ComputeError(format!("Image buffer size {list_size} exceeds i32::MAX"))
         })?,
         values,
         nulls,
