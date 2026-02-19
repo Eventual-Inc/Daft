@@ -1,6 +1,7 @@
 use std::{fmt::Display, str::FromStr};
 
 use arrow_schema::TimeUnit as ArrowTimeUnit;
+use chrono::{LocalResult, TimeZone};
 use common_error::DaftError;
 use daft_arrow::{datatypes::TimeUnit as Arrow2TimeUnit, error::Error};
 use serde::{Deserialize, Serialize};
@@ -81,13 +82,13 @@ impl From<&Arrow2TimeUnit> for TimeUnit {
     }
 }
 
-impl From<&arrow_schema::TimeUnit> for TimeUnit {
-    fn from(tu: &arrow_schema::TimeUnit) -> Self {
+impl From<&ArrowTimeUnit> for TimeUnit {
+    fn from(tu: &ArrowTimeUnit) -> Self {
         match tu {
-            arrow_schema::TimeUnit::Nanosecond => Self::Nanoseconds,
-            arrow_schema::TimeUnit::Microsecond => Self::Microseconds,
-            arrow_schema::TimeUnit::Millisecond => Self::Milliseconds,
-            arrow_schema::TimeUnit::Second => Self::Seconds,
+            ArrowTimeUnit::Nanosecond => Self::Nanoseconds,
+            ArrowTimeUnit::Microsecond => Self::Microseconds,
+            ArrowTimeUnit::Millisecond => Self::Milliseconds,
+            ArrowTimeUnit::Second => Self::Seconds,
         }
     }
 }
@@ -114,7 +115,7 @@ pub fn format_string_has_offset(format: &str) -> bool {
         || format == "%+"
 }
 
-/// Converts a timestamp in `time_unit` and `timezone` into [`chrono::DateTime`].
+/// Converts a timestamp in `time_unit` into [`chrono::NaiveDateTime`].
 #[inline]
 pub fn timestamp_to_naive_datetime(timestamp: i64, time_unit: TimeUnit) -> chrono::NaiveDateTime {
     match time_unit {
@@ -135,7 +136,7 @@ pub fn timestamp_to_naive_datetime(timestamp: i64, time_unit: TimeUnit) -> chron
     }
 }
 
-/// Converts a timestamp in `time_unit` and `timezone` into [`chrono::DateTime`].
+/// Converts a timestamp in `time_unit` into a [`chrono::DateTime`] in `timezone`.
 #[inline]
 pub fn timestamp_to_datetime<T: chrono::TimeZone>(
     timestamp: i64,
@@ -143,6 +144,33 @@ pub fn timestamp_to_datetime<T: chrono::TimeZone>(
     timezone: &T,
 ) -> chrono::DateTime<T> {
     timezone.from_utc_datetime(&timestamp_to_naive_datetime(timestamp, time_unit))
+}
+
+/// Converts a [`chrono::DateTime`] into a timestamp in `time_unit`.
+#[inline]
+pub fn datetime_to_timestamp<T: chrono::TimeZone>(
+    datetime: chrono::DateTime<T>,
+    time_unit: TimeUnit,
+) -> Result<i64, DaftError> {
+    match time_unit {
+        TimeUnit::Seconds => Ok(datetime.timestamp()),
+        TimeUnit::Milliseconds => Ok(datetime.timestamp_millis()),
+        TimeUnit::Microseconds => Ok(datetime.timestamp_micros()),
+        TimeUnit::Nanoseconds => datetime.timestamp_nanos_opt().ok_or_else(|| {
+            DaftError::ValueError(
+                "Error converting timestamp to nanoseconds; datetime out of bounds".to_string(),
+            )
+        }),
+    }
+}
+
+/// Converts a naive datetime (interpreted as UTC) into a timestamp in `time_unit`.
+#[inline]
+pub fn naive_datetime_to_timestamp(
+    naive: chrono::NaiveDateTime,
+    time_unit: TimeUnit,
+) -> Result<i64, DaftError> {
+    datetime_to_timestamp(naive.and_utc(), time_unit)
 }
 
 /// Parses an offset of the form `"+WX:YZ"` or `"UTC"` into [`FixedOffset`].
@@ -176,10 +204,95 @@ pub fn parse_offset(offset: &str) -> Result<chrono::FixedOffset, Error> {
     )
 }
 
-pub fn parse_offset_tz(timezone: &str) -> Result<chrono_tz::Tz, Error> {
-    timezone.parse::<chrono_tz::Tz>().map_err(|_| {
-        Error::InvalidArgumentError(format!("timezone \"{timezone}\" cannot be parsed"))
-    })
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParsedTimezone {
+    Fixed(chrono::FixedOffset),
+    Tz(chrono_tz::Tz),
+}
+
+impl Display for ParsedTimezone {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Fixed(offset) => write!(f, "{offset}"),
+            Self::Tz(tz) => write!(f, "{tz}"),
+        }
+    }
+}
+
+impl ParsedTimezone {
+    /// Converts a UTC [`NaiveDateTime`] to a [`DateTime`] with a fixed offset in this timezone.
+    #[inline]
+    pub fn from_utc_datetime(
+        &self,
+        naive: &chrono::NaiveDateTime,
+    ) -> chrono::DateTime<chrono::FixedOffset> {
+        match self {
+            Self::Fixed(offset) => offset.from_utc_datetime(naive).fixed_offset(),
+            Self::Tz(tz) => tz.from_utc_datetime(naive).fixed_offset(),
+        }
+    }
+
+    /// Converts a local [`NaiveDateTime`] to a [`DateTime`] with a fixed offset in this timezone.
+    ///
+    /// Returns `LocalResult` to handle ambiguous or nonexistent local times (e.g., during DST transitions).
+    #[inline]
+    pub fn from_local_datetime(
+        &self,
+        naive: &chrono::NaiveDateTime,
+    ) -> LocalResult<chrono::DateTime<chrono::FixedOffset>> {
+        match self {
+            Self::Fixed(offset) => offset
+                .from_local_datetime(naive)
+                .map(|dt| dt.fixed_offset()),
+            Self::Tz(tz) => tz.from_local_datetime(naive).map(|dt| dt.fixed_offset()),
+        }
+    }
+}
+
+/// Parses either a fixed offset or tz database name into [`ParsedTimezone`].
+pub fn parse_timezone(tz: &str) -> Result<ParsedTimezone, Error> {
+    if let Ok(offset) = parse_offset(tz) {
+        Ok(ParsedTimezone::Fixed(offset))
+    } else if let Ok(tz) = tz.parse::<chrono_tz::Tz>() {
+        Ok(ParsedTimezone::Tz(tz))
+    } else {
+        Err(Error::InvalidArgumentError(format!(
+            "Unable to parse timezone string {tz}"
+        )))
+    }
+}
+
+/// Resolves a naive local datetime in `tz` into a timestamp in `timeunit`.
+pub fn naive_local_to_timestamp(
+    naive: chrono::NaiveDateTime,
+    timeunit: TimeUnit,
+    tz: &ParsedTimezone,
+    tz_name: &str,
+) -> Result<i64, DaftError> {
+    let datetime = match tz.from_local_datetime(&naive) {
+        LocalResult::Single(dt) => dt,
+        LocalResult::Ambiguous(_, _) => {
+            return Err(DaftError::ValueError(format!(
+                "Ambiguous local datetime {naive} in timezone {tz_name}"
+            )));
+        }
+        LocalResult::None => {
+            return Err(DaftError::ValueError(format!(
+                "Nonexistent local datetime {naive} in timezone {tz_name}"
+            )));
+        }
+    };
+    datetime_to_timestamp(datetime, timeunit)
+}
+
+/// Converts a timestamp to the naive local datetime in `tz`.
+pub fn timestamp_to_naive_local(
+    timestamp: i64,
+    timeunit: TimeUnit,
+    tz: &ParsedTimezone,
+) -> chrono::NaiveDateTime {
+    let naive_utc = timestamp_to_naive_datetime(timestamp, timeunit);
+    tz.from_utc_datetime(&naive_utc).naive_local()
 }
 
 #[cfg(test)]
