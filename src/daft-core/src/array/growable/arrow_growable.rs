@@ -1,14 +1,10 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use arrow::{
-    array::{ArrayData, make_array},
+    array::{ArrayData, BooleanBufferBuilder, NullBufferBuilder, make_array},
     buffer::{Buffer, MutableBuffer, ScalarBuffer},
 };
 use common_error::DaftResult;
-use daft_arrow::{
-    array::to_data,
-    buffer::{BooleanBufferBuilder, NullBufferBuilder},
-};
 
 use super::Growable;
 use crate::{
@@ -94,7 +90,7 @@ impl<'a, T: DaftArrowBackedType> ArrowGrowable<'a, T> {
         use_validity: bool,
         capacity: usize,
     ) -> Self {
-        let source_data: Vec<ArrayData> = arrays.iter().map(|s| to_data(s.data())).collect();
+        let source_data: Vec<ArrayData> = arrays.iter().map(|s| s.to_data()).collect();
 
         // Get arrow dtype from first source (handles extension types correctly,
         // since Extension dtype cannot go through DataType::to_arrow()).
