@@ -1,7 +1,7 @@
 use std::{borrow::Cow, sync::Arc};
 
-use arrow::array::{ArrayRef, NullBufferBuilder};
-use common_error::{DaftError, DaftResult};
+use arrow::array::NullBufferBuilder;
+use common_error::DaftResult;
 use common_image::CowImage;
 use num_traits::FromPrimitive;
 
@@ -184,25 +184,12 @@ pub fn fixed_image_array_from_img_buffers(
     let data = data_ref.concat();
     let nulls = null_builder.finish();
 
-    // Construct FixedSizeListArray directly via arrow-rs: no Daft equivalent for
-    // zero-copy fixed-size-list construction from raw buffers + null bitmap.
-    let values: ArrayRef = Arc::new(arrow::array::UInt8Array::from(data));
-    let arrow_field = Arc::new(arrow::datatypes::Field::new(
-        "data",
-        arrow::datatypes::DataType::UInt8,
-        true,
-    ));
-    let arrow_array: ArrayRef = Arc::new(arrow::array::FixedSizeListArray::try_new(
-        arrow_field,
-        i32::try_from(list_size).map_err(|_| {
-            DaftError::ComputeError(format!("Image buffer size {list_size} exceeds i32::MAX"))
-        })?,
-        values,
-        nulls,
-    )?);
+    let flat_child = Series::from_arrow(
+        Field::new("data", DataType::UInt8),
+        Arc::new(arrow::array::UInt8Array::from(data)),
+    )?;
     let daft_dtype = DataType::FixedSizeList(Box::new(DataType::UInt8), list_size);
-    let physical_array =
-        FixedSizeListArray::from_arrow(Arc::new(Field::new(name, daft_dtype)), arrow_array)?;
+    let physical_array = FixedSizeListArray::new(Field::new(name, daft_dtype), flat_child, nulls);
     let logical_dtype = DataType::FixedShapeImage(*image_mode, height, width);
     Ok(FixedShapeImageArray::new(
         Field::new(name, logical_dtype),
