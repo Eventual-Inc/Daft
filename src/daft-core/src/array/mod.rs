@@ -8,14 +8,10 @@ mod list_array;
 pub mod ops;
 mod serdes;
 mod struct_array;
-pub mod utf8;
+pub mod values;
 
-use arrow::{array::make_array, compute::cast};
-use daft_arrow::{
-    array::to_data,
-    buffer::{NullBuffer, wrap_null_buffer},
-    compute::cast::utf8_to_large_utf8,
-};
+use arrow::{array::make_array, buffer::NullBuffer, compute::cast};
+use daft_arrow::{array::to_data, buffer::wrap_null_buffer, compute::cast::utf8_to_large_utf8};
 pub use fixed_size_list_array::FixedSizeListArray;
 pub use list_array::ListArray;
 pub use struct_array::StructArray;
@@ -32,7 +28,7 @@ use crate::datatypes::{DaftArrayType, DaftPhysicalType, DataType, Field};
 pub struct DataArray<T> {
     pub field: Arc<Field>,
     data: Box<dyn daft_arrow::array::Array>,
-    nulls: Option<daft_arrow::buffer::NullBuffer>,
+    nulls: Option<NullBuffer>,
     marker_: PhantomData<T>,
 }
 

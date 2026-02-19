@@ -972,6 +972,8 @@ class DataFrame:
         partition_cols: list[ColumnInputType] | None = None,
         io_config: IOConfig | None = None,
         ignore_null_fields: bool | None = False,
+        date_format: str | None = None,
+        timestamp_format: str | None = None,
     ) -> "DataFrame":
         """Writes the DataFrame as JSON files, returning a new DataFrame with paths to the files that were written.
 
@@ -983,6 +985,8 @@ class DataFrame:
             partition_cols (Optional[List[ColumnInputType]], optional): How to subpartition each partition further. Defaults to None.
             io_config (Optional[IOConfig], optional): configurations to use when interacting with remote storage.
             ignore_null_fields (Optional[bool], optional): Whether to ignore fields with null values when writing JSON. Defaults to False.
+            date_format (Optional[str], optional): Format string for date columns. Uses chrono strftime format (e.g., "%Y-%m-%d", "%d/%m/%Y"). Defaults to None (ISO 8601 format).
+            timestamp_format (Optional[str], optional): Format string for timestamp columns. Uses chrono strftime format (e.g., "%Y-%m-%d %H:%M:%S", "%+"). Defaults to None (ISO 8601 format).
 
         Returns:
             DataFrame: The filenames that were written out as strings.
@@ -990,10 +994,35 @@ class DataFrame:
         Note:
             This call is **blocking** and will execute the DataFrame when called
 
+        **Timezone handling**: For timezone-aware timestamp columns, the timestamps are converted
+        to the target timezone before formatting. For example, a timestamp stored as UTC but with
+        timezone "America/New_York" will be formatted in Eastern Time, not UTC. If the timezone
+        string is invalid, an error will be raised.
+
         Examples:
+            Basic usage:
+
             >>> import daft
             >>> df = daft.from_pydict({"x": [1, 2, 3], "y": ["a", "b", "c"]})
             >>> df.write_json("output_dir", write_mode="overwrite")  # doctest: +SKIP
+
+            Custom date format (e.g., DD/MM/YYYY):
+
+            >>> import datetime
+            >>> df = daft.from_pydict({"date": [datetime.date(2024, 1, 15)]})
+            >>> df.write_json("output_dir", date_format="%d/%m/%Y")  # doctest: +SKIP
+            # Output: "15/01/2024"
+
+            Custom timestamp format:
+
+            >>> df = daft.from_pydict({"ts": [datetime.datetime(2024, 1, 15, 10, 30, 45)]})
+            >>> df.write_json("output_dir", timestamp_format="%Y-%m-%d %H:%M:%S")  # doctest: +SKIP
+            # Output: "2024-01-15 10:30:45"
+
+            ISO 8601 / RFC 3339 timestamp format:
+
+            >>> df.write_json("output_dir", timestamp_format="%+")  # doctest: +SKIP
+            # Output: "2024-01-15T10:30:45+00:00"
 
         Warning:
             Currently only supported with the Native runner!
@@ -1011,7 +1040,11 @@ class DataFrame:
         if partition_cols is not None:
             cols = column_inputs_to_expressions(tuple(partition_cols))
 
-        file_format_option = PyFormatSinkOption.json(ignore_null_fields=ignore_null_fields)
+        file_format_option = PyFormatSinkOption.json(
+            ignore_null_fields=ignore_null_fields,
+            date_format=date_format,
+            timestamp_format=timestamp_format,
+        )
         builder = self._builder.write_tabular(
             root_dir=root_dir,
             partition_cols=cols,
@@ -3181,16 +3214,24 @@ class DataFrame:
         return self.where(~reduce(lambda x, y: x | y, (x.is_null() for x in columns)))
 
     @DataframePublicAPI
-    def explode(self, *columns: ColumnInputType, index_column: ColumnInputType | None = None) -> "DataFrame":
+    def explode(
+        self,
+        *columns: ColumnInputType,
+        index_column: ColumnInputType | None = None,
+        ignore_empty_and_null: bool = False,
+    ) -> "DataFrame":
         """Explodes a List column, where every element in each row's List becomes its own row, and all other columns in the DataFrame are duplicated across rows.
 
         If multiple columns are specified, each row must contain the same number of items in each specified column.
 
-        Exploding Null values or empty lists will create a single Null entry (see example below).
+        By default, exploding Null values or empty lists will create a single Null entry (see example below).
+        Set ``ignore_empty_and_null=True`` to drop these rows instead.
 
         Args:
             *columns (ColumnInputType): columns to explode
             index_column (ColumnInputType | None): optional name for an index column that tracks the position of each element within its original list
+            ignore_empty_and_null (bool): If True, drops rows where the list is empty or null.
+                If False (default), empty lists and null values each produce a single row with a null value.
 
         Returns:
             DataFrame: DataFrame with exploded column
@@ -3274,6 +3315,23 @@ class DataFrame:
             <BLANKLINE>
             (Showing first 5 of 5 rows)
 
+            Example with ignore_empty_and_null=True:
+
+            >>> df2.explode(df2["values"], df2["labels"], ignore_empty_and_null=True).collect()
+            ╭───────┬────────┬────────╮
+            │ id    ┆ values ┆ labels │
+            │ ---   ┆ ---    ┆ ---    │
+            │ Int64 ┆ Int64  ┆ String │
+            ╞═══════╪════════╪════════╡
+            │ 1     ┆ 1      ┆ a      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 1     ┆ 2      ┆ b      │
+            ├╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌┤
+            │ 4     ┆ 3      ┆ c      │
+            ╰───────┴────────┴────────╯
+            <BLANKLINE>
+            (Showing first 3 of 3 rows)
+
             Example with index_column to track element positions:
 
             >>> df3 = daft.from_pydict({"a": [[1, 2], [3, 4, 3]]})
@@ -3299,7 +3357,9 @@ class DataFrame:
         """
         parsed_exprs = column_inputs_to_expressions(columns)
         index_col_name = column_input_to_expression(index_column).name() if index_column is not None else None
-        builder = self._builder.explode(parsed_exprs, index_col_name)
+        builder = self._builder.explode(
+            parsed_exprs, ignore_empty_and_null=ignore_empty_and_null, index_column=index_col_name
+        )
         return DataFrame(builder)
 
     @DataframePublicAPI

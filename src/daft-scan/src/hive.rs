@@ -15,7 +15,6 @@ fn parse_hive_value_to_dtype(
     if value.is_empty() {
         return Ok(Series::full_null(field_name, target_dtype, 1));
     }
-    #[allow(deprecated, reason = "arrow2 migration")]
     let arrow_dtype = target_dtype.to_arrow2().map_err(|e| {
         common_error::DaftError::ValueError(format!("Failed to convert dtype to arrow: {}", e))
     })?;

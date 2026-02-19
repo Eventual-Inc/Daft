@@ -1,6 +1,10 @@
-use std::sync::Arc;
+use std::sync::{Arc, atomic::Ordering};
 
-use common_metrics::{CPU_US_KEY, Counter, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot};
+use common_metrics::{
+    CPU_US_KEY, Counter, Gauge, ROWS_IN_KEY, ROWS_OUT_KEY, StatSnapshot,
+    ops::{NodeCategory, NodeInfo, NodeType},
+    snapshot::ExplodeSnapshot,
+};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::stats::StatsState;
@@ -33,10 +37,18 @@ impl ExplodeStats {
             node_kv,
         }
     }
+
+    fn amplification(rows_in: u64, rows_out: u64) -> f64 {
+        if rows_in == 0 {
+            1.0
+        } else {
+            rows_out as f64 / rows_in as f64
+        }
+    }
 }
 
 impl RuntimeStats for ExplodeStats {
-    fn handle_worker_node_stats(&self, snapshot: &StatSnapshot) {
+    fn handle_worker_node_stats(&self, _node_info: &NodeInfo, snapshot: &StatSnapshot) {
         let StatSnapshot::Explode(snapshot) = snapshot else {
             return;
         };
@@ -45,13 +57,21 @@ impl RuntimeStats for ExplodeStats {
         self.rows_out
             .add(snapshot.rows_out, self.node_kv.as_slice());
 
-        let amplification = if snapshot.rows_in == 0 {
-            1.0
-        } else {
-            snapshot.rows_out as f64 / snapshot.rows_in as f64
-        };
+        let amplification = Self::amplification(snapshot.rows_in, snapshot.rows_out);
         self.amplification
             .update(amplification, self.node_kv.as_slice());
+    }
+
+    fn export_snapshot(&self) -> StatSnapshot {
+        let rows_in = self.rows_in.load(Ordering::SeqCst);
+        let rows_out = self.rows_out.load(Ordering::SeqCst);
+        let amplification = Self::amplification(rows_in, rows_out);
+        StatSnapshot::Explode(ExplodeSnapshot {
+            cpu_us: self.cpu_us.load(Ordering::SeqCst),
+            rows_in,
+            rows_out,
+            amplification,
+        })
     }
 }
 
@@ -59,6 +79,7 @@ pub(crate) struct ExplodeNode {
     config: PipelineNodeConfig,
     context: PipelineNodeContext,
     to_explode: Vec<BoundExpr>,
+    ignore_empty_and_null: bool,
     index_column: Option<String>,
     child: DistributedPipelineNode,
 }
@@ -70,6 +91,7 @@ impl ExplodeNode {
         node_id: NodeID,
         plan_config: &PlanConfig,
         to_explode: Vec<BoundExpr>,
+        ignore_empty_and_null: bool,
         index_column: Option<String>,
         schema: SchemaRef,
         child: DistributedPipelineNode,
@@ -79,6 +101,8 @@ impl ExplodeNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::Explode,
+            NodeCategory::Intermediate,
         );
         let config = PipelineNodeConfig::new(
             schema,
@@ -89,6 +113,7 @@ impl ExplodeNode {
             config,
             context,
             to_explode,
+            ignore_empty_and_null,
             index_column,
             child,
         }
@@ -137,10 +162,12 @@ impl PipelineNodeImpl for ExplodeNode {
         let index_column = self.index_column.clone();
         let schema = self.config.schema.clone();
         let node_id = self.node_id();
+        let ignore_empty_and_null = self.ignore_empty_and_null;
         input_node.pipeline_instruction(self, move |input| {
             LocalPhysicalPlan::explode(
                 input,
                 to_explode.clone(),
+                ignore_empty_and_null,
                 index_column.clone(),
                 schema.clone(),
                 StatsState::NotMaterialized,

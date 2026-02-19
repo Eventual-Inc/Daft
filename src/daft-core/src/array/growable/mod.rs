@@ -93,7 +93,7 @@ pub trait GrowableArray {
 }
 
 impl GrowableArray for NullArray {
-    type GrowableType<'a> = arrow_growable::ArrowNullGrowable<'a>;
+    type GrowableType<'a> = arrow_growable::ArrowNullGrowable;
 
     fn make_growable<'a>(
         name: &str,
@@ -102,7 +102,7 @@ impl GrowableArray for NullArray {
         _use_validity: bool,
         _capacity: usize,
     ) -> Self::GrowableType<'a> {
-        Self::GrowableType::new(name, dtype)
+        arrow_growable::ArrowNullGrowable::new(name, dtype)
     }
 }
 
@@ -149,25 +149,31 @@ impl GrowableArray for ListArray {
     }
 }
 
-impl_growable_array!(BooleanArray, arrow_growable::ArrowBooleanGrowable<'a>);
-impl_growable_array!(Int8Array, arrow_growable::ArrowInt8Growable<'a>);
-impl_growable_array!(Int16Array, arrow_growable::ArrowInt16Growable<'a>);
-impl_growable_array!(Int32Array, arrow_growable::ArrowInt32Growable<'a>);
-impl_growable_array!(Int64Array, arrow_growable::ArrowInt64Growable<'a>);
-impl_growable_array!(Decimal128Array, arrow_growable::ArrowDecimal128Growable<'a>);
-impl_growable_array!(UInt8Array, arrow_growable::ArrowUInt8Growable<'a>);
-impl_growable_array!(UInt16Array, arrow_growable::ArrowUInt16Growable<'a>);
-impl_growable_array!(UInt32Array, arrow_growable::ArrowUInt32Growable<'a>);
-impl_growable_array!(UInt64Array, arrow_growable::ArrowUInt64Growable<'a>);
-impl_growable_array!(Float32Array, arrow_growable::ArrowFloat32Growable<'a>);
-impl_growable_array!(Float64Array, arrow_growable::ArrowFloat64Growable<'a>);
-impl_growable_array!(BinaryArray, arrow_growable::ArrowBinaryGrowable<'a>);
+impl_growable_array!(BooleanArray, arrow_growable::ArrowGrowable<'a, BooleanType>);
+impl_growable_array!(Int8Array, arrow_growable::ArrowGrowable<'a, Int8Type>);
+impl_growable_array!(Int16Array, arrow_growable::ArrowGrowable<'a, Int16Type>);
+impl_growable_array!(Int32Array, arrow_growable::ArrowGrowable<'a, Int32Type>);
+impl_growable_array!(Int64Array, arrow_growable::ArrowGrowable<'a, Int64Type>);
+impl_growable_array!(
+    Decimal128Array,
+    arrow_growable::ArrowGrowable<'a, Decimal128Type>
+);
+impl_growable_array!(UInt8Array, arrow_growable::ArrowGrowable<'a, UInt8Type>);
+impl_growable_array!(UInt16Array, arrow_growable::ArrowGrowable<'a, UInt16Type>);
+impl_growable_array!(UInt32Array, arrow_growable::ArrowGrowable<'a, UInt32Type>);
+impl_growable_array!(UInt64Array, arrow_growable::ArrowGrowable<'a, UInt64Type>);
+impl_growable_array!(Float32Array, arrow_growable::ArrowGrowable<'a, Float32Type>);
+impl_growable_array!(Float64Array, arrow_growable::ArrowGrowable<'a, Float64Type>);
+impl_growable_array!(BinaryArray, arrow_growable::ArrowGrowable<'a, BinaryType>);
 impl_growable_array!(
     FixedSizeBinaryArray,
-    arrow_growable::ArrowFixedSizeBinaryGrowable<'a>
+    arrow_growable::ArrowGrowable<'a, FixedSizeBinaryType>
 );
-impl_growable_array!(Utf8Array, arrow_growable::ArrowUtf8Growable<'a>);
-impl_growable_array!(ExtensionArray, arrow_growable::ArrowExtensionGrowable<'a>);
+impl_growable_array!(Utf8Array, arrow_growable::ArrowGrowable<'a, Utf8Type>);
+impl_growable_array!(
+    ExtensionArray,
+    arrow_growable::ArrowGrowable<'a, ExtensionType>
+);
 impl_growable_array!(
     FixedSizeListArray,
     fixed_size_list_growable::FixedSizeListGrowable<'a>
@@ -181,7 +187,7 @@ impl_growable_array!(DurationArray, logical_growable::LogicalDurationGrowable<'a
 
 impl_growable_array!(
     IntervalArray,
-    arrow_growable::ArrowMonthDayNanoIntervalGrowable<'a>
+    arrow_growable::ArrowGrowable<'a, IntervalType>
 );
 
 impl_growable_array!(DateArray, logical_growable::LogicalDateGrowable<'a>);

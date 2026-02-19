@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import shutil
 import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NamedTuple
@@ -19,9 +20,11 @@ from daft.daft import (
     RaySwordfishWorker,
     RayTaskResult,
     set_compute_runtime_num_worker_threads,
+    start_flight_server,
 )
 from daft.event_loop import set_event_loop
 from daft.expressions import Expression, ExpressionsProjection
+from daft.recordbatch import RecordBatch
 from daft.recordbatch.micropartition import MicroPartition
 from daft.runners.partitioning import (
     PartitionMetadata,
@@ -30,7 +33,7 @@ from daft.runners.partitioning import (
 from daft.runners.profiler import profile
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, AsyncIterator, Iterator
+    from collections.abc import AsyncGenerator, AsyncIterator, Generator
 
     from daft.runners.ray_runner import RayMaterializedResult
 
@@ -47,6 +50,45 @@ class SwordfishTaskMetadata(NamedTuple):
     stats: bytes
 
 
+@ray.remote  # type: ignore[untyped-decorator]
+def _clear_flight_shuffle_dirs(shuffle_dirs: list[str]) -> None:
+    """Clear flight shuffle directories on a worker node.
+
+    Args:
+        shuffle_dirs: List of shuffle directories to clear (full paths)
+    """
+    for shuffle_dir in shuffle_dirs:
+        if os.path.exists(shuffle_dir):
+            try:
+                shutil.rmtree(shuffle_dir)
+                logger.info("Cleared flight shuffle directory: %s", shuffle_dir)
+            except Exception as e:
+                logger.warning("Failed to clear flight shuffle directory %s: %s", shuffle_dir, e)
+
+
+async def clear_flight_shuffle_dirs_on_all_nodes(shuffle_dirs: list[str]) -> None:
+    """Clear flight shuffle directories on all Ray nodes with CPU resources.
+
+    Args:
+        shuffle_dirs: List of shuffle directories to clear (full paths)
+    """
+    if not shuffle_dirs:
+        return
+
+    await asyncio.gather(
+        *[
+            _clear_flight_shuffle_dirs.options(
+                scheduling_strategy=ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
+                    node_id=node["NodeID"],
+                    soft=False,
+                )
+            ).remote(shuffle_dirs)
+            for node in ray.nodes()
+            if "Resources" in node and "CPU" in node["Resources"] and node["Resources"]["CPU"] > 0
+        ]
+    )
+
+
 @ray.remote
 class RaySwordfishActor:
     """RaySwordfishActor is a ray actor that runs local physical plans on swordfish.
@@ -61,6 +103,12 @@ class RaySwordfishActor:
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
         set_compute_runtime_num_worker_threads(num_cpus)
         set_event_loop(asyncio.get_running_loop())
+        self.ip = ray.util.get_node_ip_address()
+        self.server = start_flight_server(self.ip)
+        self.port = self.server.port()
+
+    def get_address(self) -> str:
+        return f"grpc://{self.ip}:{self.port}"
 
     async def run_plan(
         self,
@@ -179,8 +227,10 @@ class RaySwordfishActorHandle:
 
     def submit_task(self, task: RaySwordfishTask) -> RaySwordfishTaskHandle:
         psets = {k: [v.object_ref for v in v] for k, v in task.psets().items()}
+        context = task.context()
+        context["task_id"] = str(task.id())
         result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(
-            task.plan(), task.config(), psets, task.context()
+            task.plan(), task.config(), psets, context
         )
         return RaySwordfishTaskHandle(
             result_handle,
@@ -191,8 +241,12 @@ class RaySwordfishActorHandle:
         ray.kill(self.actor_handle)
 
 
+# TODO: Consider making configurable depending on real-world behavior
+ACTOR_STARTUP_TIMEOUT = 120
+
+
 def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker]:
-    handles = []
+    actors = []
     for node in ray.nodes():
         if (
             "Resources" in node
@@ -211,16 +265,27 @@ def start_ray_workers(existing_worker_ids: list[str]) -> list[RaySwordfishWorker
                 num_cpus=int(node["Resources"]["CPU"]),
                 num_gpus=int(node["Resources"].get("GPU", 0)),
             )
-            actor_handle = RaySwordfishActorHandle(actor)
-            handles.append(
-                RaySwordfishWorker(
-                    node["NodeID"],
-                    actor_handle,
-                    int(node["Resources"]["CPU"]),
-                    int(node["Resources"].get("GPU", 0)),
-                    int(node["Resources"]["memory"]),
-                )
+            actors.append((node, actor))
+
+    # Batch all IP address retrievals into a single ray.get call
+    try:
+        ip_addresses = ray.get([actor.get_address.remote() for _, actor in actors], timeout=ACTOR_STARTUP_TIMEOUT)
+    except ray.exceptions.GetTimeoutError:
+        raise RuntimeError(f"Failed to get IP addresses for actors within {ACTOR_STARTUP_TIMEOUT} seconds")
+
+    handles = []
+    for (node, actor), ip_address in zip(actors, ip_addresses):
+        actor_handle = RaySwordfishActorHandle(actor)
+        handles.append(
+            RaySwordfishWorker(
+                node["NodeID"],
+                actor_handle,
+                int(node["Resources"]["CPU"]),
+                int(node["Resources"].get("GPU", 0)),
+                int(node["Resources"]["memory"]),
+                ip_address,
             )
+        )
 
     return handles
 
@@ -267,14 +332,11 @@ class RemoteFlotillaRunner:
         self.curr_plans[plan.idx()] = plan
         self.curr_result_gens[plan.idx()] = self.plan_runner.run_plan(plan, psets)
 
-    async def get_next_partition(self, plan_id: str) -> RayMaterializedResult | None:
+    async def get_next_partition(self, plan_id: str) -> RayMaterializedResult | RecordBatch | None:
         from daft.runners.ray_runner import (
             PartitionMetadataAccessor,
             RayMaterializedResult,
         )
-
-        if plan_id not in self.curr_result_gens:
-            return None
 
         try:
             next_partition_ref = await self.curr_result_gens[plan_id].__anext__()
@@ -282,9 +344,10 @@ class RemoteFlotillaRunner:
             next_partition_ref = None
 
         if next_partition_ref is None:
+            metrics = self.curr_result_gens[plan_id].finish()  # type: ignore[attr-defined]
             self.curr_plans.pop(plan_id, None)
             self.curr_result_gens.pop(plan_id, None)
-            return None
+            return RecordBatch._from_pyrecordbatch(metrics.to_recordbatch())
 
         metadata_accessor = PartitionMetadataAccessor.from_metadata_list(
             [PartitionMetadata(next_partition_ref.num_rows, next_partition_ref.size_bytes)]
@@ -375,12 +438,12 @@ class FlotillaRunner:
         self,
         plan: DistributedPhysicalPlan,
         partition_sets: dict[str, PartitionSet[RayMaterializedResult]],
-    ) -> Iterator[RayMaterializedResult]:
+    ) -> Generator[RayMaterializedResult, None, RecordBatch]:
         plan_id = plan.idx()
         ray.get(self.runner.run_plan.remote(plan, partition_sets))
 
         while True:
             result = ray.get(self.runner.get_next_partition.remote(plan_id))
-            if result is None:
-                break
+            if isinstance(result, RecordBatch):
+                return result
             yield result

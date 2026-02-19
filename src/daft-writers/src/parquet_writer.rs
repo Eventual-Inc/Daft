@@ -7,6 +7,7 @@ use daft_core::prelude::*;
 use daft_io::{IOConfig, SourceType, parse_url, utils::ObjectPath};
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
+#[allow(deprecated)]
 use parquet::{
     arrow::{
         ArrowSchemaConverter,
@@ -96,7 +97,7 @@ pub(crate) fn create_native_parquet_writer(
     // Parse the root directory and add partition values if present.
     let (source_type, root_dir) = parse_url(root_dir)?;
     let filename = build_filename(
-        source_type,
+        &source_type,
         root_dir.as_ref(),
         partition_values,
         file_idx,
@@ -240,6 +241,7 @@ impl<B: StorageBackend> ParquetWriter<B> {
         record_batches: &[RecordBatch],
     ) -> DaftResult<VecDeque<Pin<Box<ColumnWriterFuture>>>> {
         // Get leaf column writers. For example, a struct<int, int> column produces two leaf column writers.
+        #[allow(deprecated)]
         let column_writers = get_column_writers(
             &self.parquet_schema,
             &self.writer_properties,
