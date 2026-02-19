@@ -13,6 +13,8 @@ from tests.conftest import assert_df_equals
 def skip_no_credential(pytestconfig):
     if not pytestconfig.getoption("--credentials"):
         pytest.skip(reason="Test requires Hugging Face credentials and `--credentials` flag")
+    if os.environ.get("HF_TOKEN") is None:
+        pytest.skip(reason="Test requires the HF_TOKEN environment variable")
 
 
 def token():

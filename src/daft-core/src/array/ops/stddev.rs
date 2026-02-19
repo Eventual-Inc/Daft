@@ -14,7 +14,7 @@ impl DaftStddevAggable for DataArray<Float64Type> {
 
     fn stddev(&self) -> Self::Output {
         let stats = stats::calculate_stats(self)?;
-        let values = self.into_iter().flatten().copied();
+        let values = self.into_iter().flatten();
         let stddev = stats::calculate_stddev(stats, values);
         Ok(Self::from_iter(
             self.field().clone(),

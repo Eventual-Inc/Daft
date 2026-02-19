@@ -184,10 +184,9 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                                                 ))?
                                                 .broadcast(partition.len())?
                                                 .rename(name.clone());
-                                            partition.append_column(
-                                                params.original_schema.clone(),
-                                                new_col,
-                                            )?
+                                            let agg_batch =
+                                                RecordBatch::from_nonempty_columns(vec![new_col])?;
+                                            partition.union(&agg_batch)?
                                         }
                                         WindowExpr::RowNumber => {
                                             partition.window_row_number(name.clone())?

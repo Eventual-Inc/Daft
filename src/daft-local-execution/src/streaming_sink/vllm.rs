@@ -344,16 +344,17 @@ impl VLLMSink {
         let prompts = batch.eval_expression(&expr_input)?;
 
         // TODO: handle nulls
-        prompts
+        Ok(prompts
             .utf8()
-            .cloned()
             .map_err(|_| {
                 DaftError::type_error(format!(
                     "Expected input to `prompt` to be string, got {}",
                     prompts.data_type()
                 ))
             })?
-            .into_values()
+            .values()?
+            .map(str::to_string)
+            .collect())
     }
 }
 
