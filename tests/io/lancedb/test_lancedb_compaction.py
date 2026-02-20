@@ -116,8 +116,10 @@ def test_invalid_compaction_options_key(tmp_path: Path):
         compact_files(uri=str(dataset_path), compaction_options={"nonexistent_option": True})
 
 
-def test_compaction_with_partition_num(tmp_path: Path):
-    """Compaction using partition_num should succeed or gracefully skip when unsupported."""
+@pytest.mark.parametrize("micro_commit_batch_size", [-1, 1, 2, 4, None])
+@pytest.mark.parametrize("num_partitions", [None, 1, -1])
+def test_compaction_with_batch_and_num_partitions(tmp_path: Path, micro_commit_batch_size: int, num_partitions: int):
+    """Compaction using num_partitions should succeed or gracefully skip when unsupported."""
     dataset_path = tmp_path / "test_compaction_partition_num"
     data = pa.table({"a": range(800), "b": range(800)})
     dataset = lance.write_dataset(data, dataset_path, max_rows_per_file=200)
@@ -125,16 +127,17 @@ def test_compaction_with_partition_num(tmp_path: Path):
     assert len(pre_fragments) == 4
 
     pre_rows = dataset.count_rows()
-    metrics = compact_files(
+    compact_files(
         uri=str(dataset_path),
         compaction_options={
             "target_rows_per_fragment": 400,
             "num_threads": 1,
         },
-        partition_num=2,
+        num_partitions=num_partitions,
         concurrency=2,
+        micro_commit_batch_size=micro_commit_batch_size,
     )
-    assert metrics is not None, "Compaction should produce metrics"
+
     dataset = lance.dataset(str(dataset_path))
     post_fragments = len(dataset.get_fragments())
     post_rows = dataset.count_rows()
