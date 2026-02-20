@@ -278,6 +278,7 @@ class IcebergScanOperator(ScanOperator):
                 size_bytes=8,
                 pushdowns=pushdowns,
                 stats=None,
+                source_name=self.display_name(),
             )
         except Exception as e:
             logger.error("Failed to create Iceberg count pushdown task: %s, now falling back to regular scan", e)

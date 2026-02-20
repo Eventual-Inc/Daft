@@ -580,7 +580,7 @@ pub mod pylib {
             size_bytes=None,
             pushdowns=None,
             stats=None,
-            source_type=None
+            source_name=None
         ))]
         pub fn python_factory_func_scan_task(
             module: String,
@@ -591,7 +591,7 @@ pub mod pylib {
             size_bytes: Option<u64>,
             pushdowns: Option<PyPushdowns>,
             stats: Option<PyRecordBatch>,
-            source_type: Option<String>,
+            source_name: Option<String>,
         ) -> PyResult<Self> {
             let statistics = stats
                 .map(|s| TableStatistics::from_stats_table(&s.record_batch))
@@ -612,7 +612,7 @@ pub mod pylib {
 
             // Create enhanced FileFormatConfig with context information
             let file_format_config = Arc::new(FileFormatConfig::PythonFunction {
-                source_type,
+                source_name,
                 module_name: Some(module),
                 function_name: Some(func_name),
             });
