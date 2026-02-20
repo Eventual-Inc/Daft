@@ -105,17 +105,6 @@ impl Series {
         Ok(probe_table)
     }
 
-    /// Exports this Series into an Arrow arrow that is corrected for the Arrow type system.
-    /// For example, Daft's TimestampArray is a logical type that is backed by an Int64Array Physical array.
-    /// If we were to call `.as_arrow2()` or `.physical`on the TimestampArray, we would get an Int64Array that represented the time units.
-    /// However if we want to export our Timestamp array to another arrow system like arrow2 kernels or python, duckdb or more.
-    /// We should convert it back to the canonical arrow dtype of Timestamp rather than Int64.
-    /// To get the internal physical type without conversion, see `as_arrow2()`.
-    #[deprecated(note = "arrow2 migration")]
-    pub fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
-        self.inner.to_arrow2()
-    }
-
     pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
         self.inner.to_arrow()
     }

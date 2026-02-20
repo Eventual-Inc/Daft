@@ -713,9 +713,10 @@ mod tests {
         // Roundtrip schema with Daft for casting.
         let schema = Schema::try_from(&schema).unwrap();
         assert_eq!(out.schema.as_ref(), &schema);
-        let out_columns = (0..out.num_columns())
-            .map(|i| out.get_column(i).to_arrow2())
-            .collect::<Vec<_>>();
+        let out_columns: Vec<Box<dyn daft_arrow::array::Array>> = (0..out.num_columns())
+            .map(|i| Ok(out.get_column(i).to_arrow()?.into()))
+            .collect::<DaftResult<Vec<_>>>()
+            .unwrap();
         assert_eq!(out_columns, columns);
     }
 
