@@ -3,7 +3,10 @@ use std::{
     sync::Arc,
 };
 
-use arrow::buffer::{OffsetBuffer, ScalarBuffer};
+use arrow::{
+    array::Array as ArrowArray,
+    buffer::{OffsetBuffer, ScalarBuffer},
+};
 use common_error::{DaftError, DaftResult};
 use indexmap::IndexMap;
 #[cfg(feature = "python")]
@@ -113,7 +116,6 @@ where
                 if let DataType::FixedSizeBinary(target_size) = dtype
                     && is_binary_source
                 {
-                    use arrow::array::Array as ArrowArray;
                     let arrow_arr = self.to_arrow();
                     let binary_arr = arrow_arr
                         .as_any()
@@ -149,20 +151,33 @@ where
 
                 // Special case: Utf8 -> numeric/temporal needs whitespace trimming
                 // This matches Python/Pandas/NumPy behavior
-                let trimmed_utf8: Option<Utf8Array>;
                 let data_to_cast: arrow::array::ArrayRef = if self.data_type() == &DataType::Utf8
                     && (dtype.is_numeric() || dtype.is_temporal())
                 {
-                    let arrow_arr = self.to_arrow();
-                    let utf8_array = arrow_arr
+                    let source = self.to_arrow();
+                    let utf8_arr = source
                         .as_any()
                         .downcast_ref::<arrow::array::LargeStringArray>()
-                        .expect("Expected LargeUtf8 array for Utf8 DataType");
-                    trimmed_utf8 = Some(Utf8Array::from_iter(
-                        self.name(),
-                        utf8_array.iter().map(|opt_s| opt_s.map(|s| s.trim())),
-                    ));
-                    trimmed_utf8.as_ref().unwrap().to_arrow()
+                        .expect("Expected LargeString array for Utf8 DataType");
+                    // Trim via .value(i) which skips per-element null checks
+                    let trimmed = arrow::array::LargeStringArray::from_iter_values(
+                        (0..utf8_arr.len()).map(|i| utf8_arr.value(i).trim()),
+                    );
+                    if self.null_count() == 0 {
+                        Arc::new(trimmed)
+                    } else {
+                        // Reapply original null bitmap
+                        // SAFETY: trimmed was built from valid UTF-8 (trim preserves validity),
+                        // and null buffer comes from a valid array.
+                        let data = unsafe {
+                            trimmed
+                                .into_data()
+                                .into_builder()
+                                .nulls(source.nulls().cloned())
+                                .build_unchecked()
+                        };
+                        Arc::new(arrow::array::LargeStringArray::from(data))
+                    }
                 } else {
                     self.to_arrow()
                 };
@@ -1095,7 +1110,8 @@ impl SparseTensorArray {
                     .into_iter()
                     .map(|shape| {
                         shape.map_or(0, |shape| {
-                            shape.u64().unwrap().into_iter().flatten().product::<u64>() as usize
+                            let shape = shape.u64().unwrap();
+                            shape.values().into_iter().product::<u64>() as usize
                         })
                     })
                     .collect();
