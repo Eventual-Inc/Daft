@@ -5,12 +5,7 @@ use crate::datatypes::BooleanArray;
 
 impl BooleanArray {
     pub fn to_bitmap(&self) -> BooleanBuffer {
-        self.to_arrow()
-            .as_any()
-            .downcast_ref::<arrow::array::BooleanArray>()
-            .expect("BooleanArray data is always boolean")
-            .values()
-            .clone()
+        self.as_arrow().expect("BooleanArray").values().clone()
     }
     pub fn false_count(&self) -> usize {
         self.as_arrow().expect("BooleanArray").false_count()
