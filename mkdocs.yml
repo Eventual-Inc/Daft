@@ -151,7 +151,9 @@ plugins:
       resources/architecture.md: architecture/index.md
       advanced/memory.md: optimization/memory.md
       advanced/partitioning.md: optimization/partitioning.md
-      advanced/observability.md: optimization/observability.md
+      advanced/observability.md: observability/progress-indicators.md
+      optimization/observability.md: observability/progress-indicators.md
+      optimization/logging.md: observability/logging.md
       resources/telemetry.md: telemetry.md
       resources/engine_comparison.md: index.md
       resources/tutorials.md: examples/index.md
