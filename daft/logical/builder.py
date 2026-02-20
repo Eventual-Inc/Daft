@@ -339,6 +339,7 @@ class LogicalPlanBuilder:
         write_mode: WriteMode,
         file_format: FileFormat,
         io_config: IOConfig,
+        write_success_file: bool = False,
         file_format_option: PyFormatSinkOption | None = None,
         partition_cols: list[Expression] | None = None,
         compression: str | None = None,
@@ -347,6 +348,7 @@ class LogicalPlanBuilder:
         builder = self._builder.table_write(
             str(root_dir),
             write_mode,
+            write_success_file,
             file_format,
             file_format_option,
             part_cols_pyexprs,
