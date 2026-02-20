@@ -84,31 +84,27 @@ where
                     )));
                 }
 
-                // Arrow-rs doesn't support all numeric/bool <-> binary casts directly.
-                // Integer -> Binary is natively supported, but bool/float -> Binary and
-                // Binary -> numeric/bool are not. Route unsupported pairs through Utf8.
+                // Arrow-rs numeric/bool <-> binary casts have different semantics from
+                // arrow2. Arrow-rs integer -> binary copies raw bytes (1i32 -> b'\x01\x00\x00\x00'),
+                // while arrow2 routed through string (1i32 -> b'1'). We preserve the arrow2
+                // string-representation semantics by routing all numeric/bool <-> binary
+                // casts through Utf8.
                 let src = self.data_type();
                 let is_binary_target = matches!(dtype, DataType::Binary);
                 let is_binary_source = matches!(src, DataType::Binary);
 
                 if src.is_boolean() && is_binary_target {
-                    // bool -> binary: we need b"1"/b"0", but arrow-rs cast(Bool, Utf8)
-                    // produces "true"/"false". The arrow-rs docs for cast_with_options
-                    // claim Bool->Utf8 yields "1"/"0", but the implementation uses
-                    // Rust's Display for bool which gives "true"/"false". Route through
-                    // UInt8 first to get the numeric string representation.
+                    // bool -> binary: arrow-rs cast(Bool, Utf8) produces "true"/"false"
+                    // but we want b"1"/b"0". Route through UInt8 first.
                     let int_series = self.cast(&DataType::UInt8)?;
                     let utf8_series = int_series.cast(&DataType::Utf8)?;
                     return utf8_series.cast(dtype);
                 }
-                if src.is_floating() && is_binary_target {
-                    // float -> binary: cast to Utf8 first, then to binary
-                    // (integer -> binary is natively supported by arrow-rs)
+                if src.is_numeric() && is_binary_target {
                     let utf8_series = self.cast(&DataType::Utf8)?;
                     return utf8_series.cast(dtype);
                 }
                 if is_binary_source && (dtype.is_numeric() || dtype.is_boolean()) {
-                    // binary -> numeric/bool: cast to Utf8 first, then to target
                     let utf8_series = self.cast(&DataType::Utf8)?;
                     return utf8_series.cast(dtype);
                 }
