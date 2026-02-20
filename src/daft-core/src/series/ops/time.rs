@@ -369,6 +369,7 @@ impl Series {
                         .with_date_format(format)
                         .with_datetime_format(format)
                         .with_timestamp_format(format)
+                        .with_timestamp_tz_format(format)
                         .with_time_format(format),
                 };
 
@@ -470,6 +471,27 @@ mod tests {
         assert_eq!(arr.get(0).unwrap(), "2023-01-01");
         assert_eq!(arr.get(1).unwrap(), "2023-01-02");
         assert_eq!(arr.get(2).unwrap(), "2023-01-03");
+        Ok(())
+    }
+
+    #[test]
+    fn strftime_timestamp_with_timezone() -> DaftResult<()> {
+        // 2023-01-01T12:00:00 in seconds since epoch
+        let ts_secs: Vec<i64> = vec![1672574400];
+        let physical = Int64Array::from_slice("ts", &ts_secs);
+        let ts = TimestampArray::new(
+            Field::new(
+                "ts",
+                DataType::Timestamp(TimeUnit::Seconds, Some("UTC".to_string())),
+            ),
+            physical,
+        );
+        let series = ts.into_series();
+        let result = series.dt_strftime(Some("%Y-%m-%d %H:%M:%S"))?;
+
+        assert_eq!(*result.data_type(), DataType::Utf8);
+        let arr = result.utf8()?;
+        assert_eq!(arr.get(0).unwrap(), "2023-01-01 12:00:00");
         Ok(())
     }
 
