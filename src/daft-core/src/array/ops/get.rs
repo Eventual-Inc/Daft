@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
-use daft_arrow::types::months_days_ns;
+use arrow::{
+    array::{Array, ArrayRef, Scalar},
+    datatypes::IntervalMonthDayNano,
+};
 
 use super::as_arrow::AsArrow;
 #[cfg(feature = "python")]
@@ -30,12 +33,17 @@ where
             idx,
             self.len()
         );
-        let arrow_array = self.as_arrow2();
-        let is_valid = arrow_array
-            .validity()
-            .is_none_or(|nulls| nulls.get_bit(idx));
+        let arrow_array = self.as_arrow().unwrap();
+        let is_valid = arrow_array.nulls().is_none_or(|nulls| nulls.is_valid(idx));
         if is_valid {
-            Some(unsafe { arrow_array.value_unchecked(idx) })
+            Some(unsafe {
+                // SAFETY:
+                // T::Native is guaranteed to also be `ArrowPrimitiveType::Native`.
+                // so the transmute_copy is safe.
+                //
+                // Additionally the `value_unchecked` is safe as we already did bounds checks
+                std::mem::transmute_copy::<_, T::Native>(&arrow_array.value_unchecked(idx))
+            })
         } else {
             None
         }
@@ -55,10 +63,8 @@ macro_rules! impl_array_arrow_get {
                     self.len()
                 );
 
-                let arrow_array = self.as_arrow2();
-                let is_valid = arrow_array
-                    .validity()
-                    .is_none_or(|nulls| nulls.get_bit(idx));
+                let arrow_array = self.as_arrow().unwrap();
+                let is_valid = arrow_array.nulls().is_none_or(|nulls| nulls.is_valid(idx));
                 if is_valid {
                     Some(unsafe { arrow_array.value_unchecked(idx) })
                 } else {
@@ -76,14 +82,70 @@ impl<L: DaftLogicalType> LogicalArrayImpl<L, FixedSizeListArray> {
     }
 }
 
-impl_array_arrow_get!(Utf8Array, &str);
+impl Utf8Array {
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<&str> {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+        // todo(arrow2 migration): use .as_arrow once 'data' is backed by arrow-rs arrays
+        // Can't return a reference if we need to create an owned value by converting to arrow-rs
+        let arrow_array = self.as_arrow2();
+        let is_valid = self.nulls().is_none_or(|nulls| nulls.is_valid(idx));
+        if is_valid {
+            Some(unsafe { arrow_array.value_unchecked(idx) })
+        } else {
+            None
+        }
+    }
+}
+impl BinaryArray {
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<&[u8]> {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+        // todo(arrow2 migration): use .as_arrow once 'data' is backed by arrow-rs arrays
+        let arrow_array = self.as_arrow2();
+        let is_valid = self.nulls().is_none_or(|nulls| nulls.is_valid(idx));
+        if is_valid {
+            Some(unsafe { arrow_array.value_unchecked(idx) })
+        } else {
+            None
+        }
+    }
+}
+impl FixedSizeBinaryArray {
+    #[inline]
+    pub fn get(&self, idx: usize) -> Option<&[u8]> {
+        assert!(
+            idx < self.len(),
+            "Out of bounds: {} vs len: {}",
+            idx,
+            self.len()
+        );
+        // todo(arrow2 migration): use .as_arrow once 'data' is backed by arrow-rs arrays
+        // Can't return a reference if we need to create an owned value by converting to arrow-rs
+        let arrow_array = self.as_arrow2();
+        let is_valid = self.nulls().is_none_or(|nulls| nulls.is_valid(idx));
+        if is_valid {
+            Some(unsafe { arrow_array.value_unchecked(idx) })
+        } else {
+            None
+        }
+    }
+}
+impl_array_arrow_get!(IntervalArray, IntervalMonthDayNano);
 impl_array_arrow_get!(BooleanArray, bool);
-impl_array_arrow_get!(BinaryArray, &[u8]);
-impl_array_arrow_get!(FixedSizeBinaryArray, &[u8]);
 impl_array_arrow_get!(DateArray, i32);
 impl_array_arrow_get!(TimeArray, i64);
 impl_array_arrow_get!(DurationArray, i64);
-impl_array_arrow_get!(IntervalArray, months_days_ns);
 impl_array_arrow_get!(TimestampArray, i64);
 
 impl NullArray {
@@ -101,16 +163,18 @@ impl NullArray {
 
 impl ExtensionArray {
     #[inline]
-    pub fn get(&self, idx: usize) -> Option<Box<dyn daft_arrow::scalar::Scalar>> {
+    pub fn get(&self, idx: usize) -> Option<Scalar<ArrayRef>> {
         assert!(
             idx < self.len(),
             "Out of bounds: {} vs len: {}",
             idx,
             self.len()
         );
-        let is_valid = self.data.validity().is_none_or(|nulls| nulls.get_bit(idx));
+        let is_valid = self.nulls().is_none_or(|nulls| nulls.is_valid(idx));
         if is_valid {
-            Some(daft_arrow::scalar::new_scalar(self.data(), idx))
+            let scalar = self.slice(idx, idx + 1).unwrap();
+            let scalar = Scalar::new(scalar.to_arrow());
+            Some(scalar)
         } else {
             None
         }

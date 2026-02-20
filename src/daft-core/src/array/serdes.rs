@@ -223,7 +223,9 @@ impl serde::Serialize for IntervalArray {
         s.serialize_entry("field", self.field())?;
         s.serialize_entry(
             "values",
-            &IterSer::new((0..self.len()).map(|i| self.get(i))),
+            &IterSer::new(
+                (0..self.len()).map(|i| self.get(i).map(|i| (i.months, i.days, i.nanoseconds))),
+            ),
         )?;
         s.end()
     }

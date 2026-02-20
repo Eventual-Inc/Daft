@@ -2,11 +2,7 @@ mod agg_ops;
 mod infer_datatype;
 mod matching;
 
-use arrow::{
-    array::ArrowNumericType,
-    buffer::{Buffer, ScalarBuffer},
-    datatypes::ArrowNativeType,
-};
+use arrow::{array::ArrowNumericType, buffer::ScalarBuffer, datatypes::ArrowNativeType};
 pub use infer_datatype::InferDataType;
 pub mod prelude;
 use std::ops::{Add, Div, Mul, Rem, Sub};
@@ -470,7 +466,7 @@ impl<T: DaftPrimitiveType> DataArray<T> {
 
     pub fn values(&self) -> ScalarBuffer<T::Native> {
         // this is fully zero copy to convert the values into an arrow-rs ScalarBuffer
-        let arrow_buffer = Buffer::from(self.as_arrow2().values().clone());
-        ScalarBuffer::from(arrow_buffer)
+        let buffer = self.as_arrow().unwrap().values().clone();
+        ScalarBuffer::from(buffer.into_inner())
     }
 }

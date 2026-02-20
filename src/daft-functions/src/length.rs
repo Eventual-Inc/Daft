@@ -81,42 +81,6 @@ impl ScalarUDF for Length {
                 )));
             }
         })
-
-        // let (offsets, validity) = match input.data_type() {
-        //     DataType::Binary => {
-        //         let arrow_arr = input.binary()?.as_arrow2();
-        //         (arrow_arr.offsets(), arrow_arr.validity())
-        //     }
-        //     DataType::List(_) => {
-        //         let list_arr = input.list()?;
-        //         (list_arr.offsets(), list_arr.validity())
-        //     }
-        //     DataType::FixedSizeBinary(length) | DataType::FixedSizeList(_, length) => {
-        //         let validity = input.validity();
-
-        //         let length_arr =
-        //             UInt64Array::from((input.name(), vec![*length as u64; input.len()]))
-        //                 .with_validity(validity.cloned())?;
-
-        //         return Ok(length_arr.into_series());
-        //     }
-        //     DataType::Utf8 => {
-        //         let arrow_arr = input.utf8()?.as_arrow2();
-        //         (arrow_arr.offsets(), arrow_arr.validity())
-        //     }
-        //     DataType::Null => return Ok(input),
-        //     dtype => {
-        //         return Err(DaftError::TypeError(format!(
-        //             "Expected input to 'length' function to be utf8, binary, or list, but received {}",
-        //             dtype
-        //         )));
-        //     }
-        // };
-
-        // let length_vec = offsets.lengths().map(|l| l as u64).collect::<Vec<_>>();
-        // let length_arr =
-        //     UInt64Array::from((input.name(), length_vec)).with_validity(validity.cloned())?;
-        // Ok(length_arr.into_series())
     }
 
     fn get_return_field(

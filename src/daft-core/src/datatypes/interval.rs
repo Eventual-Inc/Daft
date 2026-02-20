@@ -1,5 +1,6 @@
 use std::{fmt::Display, ops::Neg};
 
+use arrow::datatypes::IntervalMonthDayNano;
 use common_error::DaftResult;
 use daft_arrow::types::months_days_ns;
 #[cfg(feature = "python")]
@@ -231,6 +232,15 @@ impl From<months_days_ns> for IntervalValue {
             months: value.months(),
             days: value.days(),
             nanoseconds: value.ns(),
+        }
+    }
+}
+impl From<IntervalMonthDayNano> for IntervalValue {
+    fn from(value: IntervalMonthDayNano) -> Self {
+        Self {
+            months: value.months,
+            days: value.days,
+            nanoseconds: value.nanoseconds,
         }
     }
 }
