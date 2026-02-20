@@ -286,6 +286,36 @@ jobs:
         fetch-depth: 0
     - name: Restore file mtimes for cargo fingerprinting
       run: |
+        # actions/checkout sets all file mtimes to the checkout time, which
+        # invalidates cargo fingerprints and forces a full rebuild even when
+        # the cached target/ dir is restored.
+        #
+        # This pipeline walks the full git history to restore each file's
+        # mtime to its last-commit timestamp so cargo fingerprints match.
+        #
+        # git log outputs commits oldest-first (--reverse), each as:
+        #   <unix timestamp>       (--pretty=%ct: committer date in epoch seconds)
+        #   :<mode info> M\tfile   (--raw: one line per file touched in that commit)
+        #
+        # --no-merges: skips merge commits, whose combined diff omits cleanly
+        #   merged files — regular commits on each branch reliably list all
+        #   files they touched.
+        # --no-renames: prevents git from collapsing renames into a single
+        #   "R old\tnew" line that would break the awk tab parsing.
+        #
+        # awk processes line by line:
+        #   /^[0-9]+$/  — timestamp line: save in variable t
+        #   /^:[0-9]/   — raw diff line: extract filename (everything after
+        #                  the first tab) and map it to t in associative array c.
+        #                  Later commits overwrite earlier ones, so each file
+        #                  ends up with its most recent commit timestamp.
+        #   END         — print all "timestamp\tfilename" pairs.
+        #
+        # while loop reads each pair and touches the file with that timestamp.
+        #   IFS=$'\t'   — split on tab into ts and file
+        #   -r          — don't interpret backslashes in filenames as escapes
+        #   [ -f ]      — skip files that no longer exist on disk (deletions)
+        #   @$ts        — the @ tells touch to interpret the value as epoch seconds
         git log --raw --no-renames --no-merges --pretty=%ct --reverse \
           | awk '/^[0-9]+$/{t=$0;next} /^:[0-9]/{f=substr($0,index($0,"\t")+1); c[f]=t} END{for(f in c) printf "%s\t%s\n",c[f],f}' \
           | while IFS=$'\t' read -r ts file; do [ -f "$file" ] && touch -d "@$ts" "$file"; done
