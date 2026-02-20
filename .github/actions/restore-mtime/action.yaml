@@ -37,7 +37,7 @@ runs:
       # while loop reads each pair and touches the file with that timestamp.
       #   IFS=$'\t'   — split on tab into ts and file
       #   -r          — don't interpret backslashes in filenames as escapes
-      #   [ -f ]      — skip files that no longer exist on disk (deletions)
+      #   if [ -f ]   — skip files that no longer exist on disk (deletions)
       #
       # touch -d "@epoch" is GNU-specific (Linux). macOS/BSD touch doesn't
       # support -d, so we fall back to touch -t with a formatted timestamp.
@@ -52,4 +52,4 @@ runs:
       rm -f "$_tf"
       git log --raw --no-renames --no-merges --pretty=%ct --reverse \
         | awk '/^[0-9]+$/{t=$0;next} /^:[0-9]/{f=substr($0,index($0,"\t")+1); c[f]=t} END{for(f in c) printf "%s\t%s\n",c[f],f}' \
-        | while IFS=$'\t' read -r ts file; do [ -f "$file" ] && touch_epoch "$ts" "$file"; done
+        | while IFS=$'\t' read -r ts file; do if [ -f "$file" ]; then touch_epoch "$ts" "$file"; fi; done
