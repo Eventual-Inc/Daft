@@ -1,4 +1,6 @@
+use arrow::util::display::FormatOptions;
 use common_error::{DaftError, DaftResult};
+use daft_schema::field::Field;
 
 use crate::{
     datatypes::{DataType, TimeUnit},
@@ -357,17 +359,202 @@ impl Series {
         self.cast(&cast_to)?.cast(&DataType::Int64)
     }
 
-    pub fn dt_strftime(&self, _format: Option<&str>) -> DaftResult<Self> {
-        todo!()
-        // match self.data_type() {
+    pub fn dt_strftime(&self, format: Option<&str>) -> DaftResult<Self> {
+        match self.data_type() {
+            DataType::Timestamp(..) | DataType::Date | DataType::Time(_) => {
+                let arrow_arr = self.to_arrow()?;
+                let cast_options = arrow::compute::CastOptions {
+                    safe: true,
+                    format_options: FormatOptions::new()
+                        .with_date_format(format)
+                        .with_datetime_format(format)
+                        .with_timestamp_format(format)
+                        .with_timestamp_tz_format(format)
+                        .with_time_format(format),
+                };
 
-        //         // Self::from_arrow2(arc_field, out.to_boxed())
-        //     }
+                let out = arrow::compute::cast_with_options(
+                    arrow_arr.as_ref(),
+                    &DataType::Utf8.to_arrow().unwrap(),
+                    &cast_options,
+                )?;
 
-        //     _ => Err(DaftError::ComputeError(format!(
-        //         "Can only run to_string() operation on temporal types, got {}",
-        //         self.data_type()
-        //     ))),
-        // }
+                let field = Field::new(self.name().to_string(), DataType::Utf8);
+                Self::from_arrow(field, out)
+            }
+
+            _ => Err(DaftError::ComputeError(format!(
+                "Can only run to_string() operation on temporal types, got {}",
+                self.data_type()
+            ))),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use common_error::DaftResult;
+    use daft_schema::field::Field;
+
+    use crate::{
+        datatypes::{DataType, Int32Array, Int64Array, TimeUnit},
+        prelude::{DateArray, TimeArray, TimestampArray},
+        series::IntoSeries,
+    };
+
+    #[test]
+    fn strftime_timestamp_default_format() -> DaftResult<()> {
+        // 2023-01-01T12:00:00 in seconds since epoch
+        let ts_secs: Vec<i64> = vec![1672574400];
+        let physical = Int64Array::from_slice("ts", &ts_secs);
+        let ts = TimestampArray::new(
+            Field::new("ts", DataType::Timestamp(TimeUnit::Seconds, None)),
+            physical,
+        );
+        let series = ts.into_series();
+        let result = series.dt_strftime(None)?;
+
+        assert_eq!(*result.data_type(), DataType::Utf8);
+        assert_eq!(result.len(), 1);
+        let arr = result.utf8()?;
+        assert_eq!(arr.get(0).unwrap(), "2023-01-01T12:00:00");
+        Ok(())
+    }
+
+    #[test]
+    fn strftime_timestamp_custom_format() -> DaftResult<()> {
+        // 2023-01-01T12:00:00 in seconds since epoch
+        let ts_secs: Vec<i64> = vec![1672574400];
+        let physical = Int64Array::from_slice("ts", &ts_secs);
+        let ts = TimestampArray::new(
+            Field::new("ts", DataType::Timestamp(TimeUnit::Seconds, None)),
+            physical,
+        );
+        let series = ts.into_series();
+        let result = series.dt_strftime(Some("%Y/%m/%d %H:%M:%S"))?;
+
+        let arr = result.utf8()?;
+        assert_eq!(arr.get(0).unwrap(), "2023/01/01 12:00:00");
+        Ok(())
+    }
+
+    #[test]
+    fn strftime_timestamp_microseconds() -> DaftResult<()> {
+        // 2023-01-01T12:00:00 in microseconds since epoch
+        let ts_us: Vec<i64> = vec![1672574400_000_000];
+        let physical = Int64Array::from_slice("ts", &ts_us);
+        let ts = TimestampArray::new(
+            Field::new("ts", DataType::Timestamp(TimeUnit::Microseconds, None)),
+            physical,
+        );
+        let series = ts.into_series();
+        let result = series.dt_strftime(None)?;
+
+        let arr = result.utf8()?;
+        assert_eq!(arr.get(0).unwrap(), "2023-01-01T12:00:00");
+        Ok(())
+    }
+
+    #[test]
+    fn strftime_timestamp_multiple_values() -> DaftResult<()> {
+        // 2023-01-01T00:00:00, 2023-01-02T00:00:00, 2023-01-03T00:00:00 in seconds
+        let ts_secs: Vec<i64> = vec![1672531200, 1672617600, 1672704000];
+        let physical = Int64Array::from_slice("ts", &ts_secs);
+        let ts = TimestampArray::new(
+            Field::new("ts", DataType::Timestamp(TimeUnit::Seconds, None)),
+            physical,
+        );
+        let series = ts.into_series();
+        let result = series.dt_strftime(Some("%Y-%m-%d"))?;
+
+        let arr = result.utf8()?;
+        assert_eq!(arr.get(0).unwrap(), "2023-01-01");
+        assert_eq!(arr.get(1).unwrap(), "2023-01-02");
+        assert_eq!(arr.get(2).unwrap(), "2023-01-03");
+        Ok(())
+    }
+
+    #[test]
+    fn strftime_timestamp_with_timezone() -> DaftResult<()> {
+        // 2023-01-01T12:00:00 in seconds since epoch
+        let ts_secs: Vec<i64> = vec![1672574400];
+        let physical = Int64Array::from_slice("ts", &ts_secs);
+        let ts = TimestampArray::new(
+            Field::new(
+                "ts",
+                DataType::Timestamp(TimeUnit::Seconds, Some("UTC".to_string())),
+            ),
+            physical,
+        );
+        let series = ts.into_series();
+        let result = series.dt_strftime(Some("%Y-%m-%d %H:%M:%S"))?;
+
+        assert_eq!(*result.data_type(), DataType::Utf8);
+        let arr = result.utf8()?;
+        assert_eq!(arr.get(0).unwrap(), "2023-01-01 12:00:00");
+        Ok(())
+    }
+
+    #[test]
+    fn strftime_date_default_format() -> DaftResult<()> {
+        // Days since epoch: 2023-01-01 = 19358
+        let days: Vec<i32> = vec![19358];
+        let physical = Int32Array::from_slice("d", &days);
+        let date = DateArray::new(Field::new("d", DataType::Date), physical);
+        let series = date.into_series();
+        let result = series.dt_strftime(None)?;
+
+        assert_eq!(*result.data_type(), DataType::Utf8);
+        let arr = result.utf8()?;
+        assert_eq!(arr.get(0).unwrap(), "2023-01-01");
+        Ok(())
+    }
+
+    #[test]
+    fn strftime_date_custom_format() -> DaftResult<()> {
+        // 2023-01-01, 2023-01-02, 2023-01-03
+        let days: Vec<i32> = vec![19358, 19359, 19360];
+        let physical = Int32Array::from_slice("d", &days);
+        let date = DateArray::new(Field::new("d", DataType::Date), physical);
+        let series = date.into_series();
+        let result = series.dt_strftime(Some("%m/%d/%Y"))?;
+
+        let arr = result.utf8()?;
+        assert_eq!(arr.get(0).unwrap(), "01/01/2023");
+        assert_eq!(arr.get(1).unwrap(), "01/02/2023");
+        assert_eq!(arr.get(2).unwrap(), "01/03/2023");
+        Ok(())
+    }
+
+    #[test]
+    fn strftime_time_custom_format() -> DaftResult<()> {
+        // 01:02:03 = 3723 seconds = 3723 * 1_000_000 microseconds
+        let time_us: Vec<i64> = vec![3_723_000_000];
+        let physical = Int64Array::from_slice("t", &time_us);
+        let time = TimeArray::new(
+            Field::new("t", DataType::Time(TimeUnit::Microseconds)),
+            physical,
+        );
+        let series = time.into_series();
+        let result = series.dt_strftime(Some("%H:%M:%S"))?;
+
+        assert_eq!(*result.data_type(), DataType::Utf8);
+        let arr = result.utf8()?;
+        assert_eq!(arr.get(0).unwrap(), "01:02:03");
+        Ok(())
+    }
+
+    #[test]
+    fn strftime_invalid_type_returns_error() {
+        let a = Int64Array::from_slice("a", &[1, 2, 3]);
+        let series = a.into_series();
+        let result = series.dt_strftime(None);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Can only run to_string() operation on temporal types")
+        );
     }
 }
