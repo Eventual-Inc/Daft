@@ -50,7 +50,7 @@ where
     }
 }
 
-// Default implementations of get ops for DataArray and LogicalArray.
+// Default implementations of get ops for DataArray
 macro_rules! impl_array_arrow_get {
     ($ArrayT:ty, $output:ty) => {
         impl $ArrayT {
@@ -67,6 +67,31 @@ macro_rules! impl_array_arrow_get {
                 let is_valid = arrow_array.nulls().is_none_or(|nulls| nulls.is_valid(idx));
                 if is_valid {
                     Some(unsafe { arrow_array.value_unchecked(idx) })
+                } else {
+                    None
+                }
+            }
+        }
+    };
+}
+// Get implementation for LogicalArray-backed primitive types (nulls live on the physical array).
+macro_rules! impl_logicalarray_get {
+    ($ArrayT:ty, $output:ty) => {
+        impl $ArrayT {
+            #[inline]
+            pub fn get(&self, idx: usize) -> Option<$output> {
+                assert!(
+                    idx < self.len(),
+                    "Out of bounds: {} vs len: {}",
+                    idx,
+                    self.len()
+                );
+                if self
+                    .physical
+                    .nulls()
+                    .is_none_or(|nulls| nulls.is_valid(idx))
+                {
+                    Some(self.physical.as_slice()[idx])
                 } else {
                     None
                 }
@@ -121,6 +146,7 @@ impl BinaryArray {
         }
     }
 }
+
 impl FixedSizeBinaryArray {
     #[inline]
     pub fn get(&self, idx: usize) -> Option<&[u8]> {
@@ -143,10 +169,10 @@ impl FixedSizeBinaryArray {
 }
 impl_array_arrow_get!(IntervalArray, IntervalMonthDayNano);
 impl_array_arrow_get!(BooleanArray, bool);
-impl_array_arrow_get!(DateArray, i32);
-impl_array_arrow_get!(TimeArray, i64);
-impl_array_arrow_get!(DurationArray, i64);
-impl_array_arrow_get!(TimestampArray, i64);
+impl_logicalarray_get!(DateArray, i32);
+impl_logicalarray_get!(TimeArray, i64);
+impl_logicalarray_get!(DurationArray, i64);
+impl_logicalarray_get!(TimestampArray, i64);
 
 impl NullArray {
     #[inline]
