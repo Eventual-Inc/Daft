@@ -338,6 +338,7 @@ jobs:
       with:
         shared-key: ${{ runner.os }}-integration-build
         cache-all-crates: "true"
+        cache-workspace-crates: "true"
         save-if: ${{ github.ref == 'refs/heads/main' }}
     - uses: actions/setup-node@v6
       with:
