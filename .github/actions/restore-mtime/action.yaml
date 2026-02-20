@@ -41,11 +41,15 @@ runs:
       #
       # touch -d "@epoch" is GNU-specific (Linux). macOS/BSD touch doesn't
       # support -d, so we fall back to touch -t with a formatted timestamp.
-      if touch -d @0 /dev/null 2>/dev/null; then
+      # Detection uses a temp file because /dev/null is root-owned and
+      # utimensat() requires ownership to change timestamps.
+      _tf=$(mktemp)
+      if touch -d @0 "$_tf" 2>/dev/null; then
         touch_epoch() { touch -d "@$1" "$2"; }
       else
         touch_epoch() { touch -t "$(date -r "$1" +%Y%m%d%H%M.%S)" "$2"; }
       fi
+      rm -f "$_tf"
       git log --raw --no-renames --no-merges --pretty=%ct --reverse \
         | awk '/^[0-9]+$/{t=$0;next} /^:[0-9]/{f=substr($0,index($0,"\t")+1); c[f]=t} END{for(f in c) printf "%s\t%s\n",c[f],f}' \
         | while IFS=$'\t' read -r ts file; do [ -f "$file" ] && touch_epoch "$ts" "$file"; done
