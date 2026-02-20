@@ -1,6 +1,6 @@
 use std::iter::{FusedIterator, RepeatN, repeat_n};
 
-use arrow::buffer::NullBuffer;
+use arrow::buffer::{BooleanBuffer, NullBuffer};
 
 use crate::{
     array::{
@@ -137,9 +137,7 @@ impl<A, T> FusedIterator for GenericArrayIter<'_, A, T> {}
 /// Reads bits directly from the underlying bitmap, avoiding per-element bounds checks.
 #[derive(Clone)]
 pub struct BooleanIter<'a> {
-    // TODO(arrow2): Uses arrow2 Bitmap because there's no safe way to convert an
-    // arrow2 &Bitmap into an arrow-rs &BooleanBuffer. Once BooleanArray is backed by arrow-rs, then this needs to be changed.
-    values: &'a daft_arrow::bitmap::Bitmap,
+    values: BooleanBuffer,
     nulls: Option<&'a NullBuffer>,
     index: usize,
     len: usize,
@@ -156,7 +154,7 @@ impl Iterator for BooleanIter<'_> {
         let i = self.index;
         self.index += 1;
         Some(if self.nulls.is_none_or(|n| n.is_valid(i)) {
-            Some(self.values.get_bit(i))
+            Some(self.values.value(i))
         } else {
             None
         })
@@ -177,7 +175,7 @@ impl DoubleEndedIterator for BooleanIter<'_> {
         self.len -= 1;
         let i = self.len;
         Some(if self.nulls.is_none_or(|n| n.is_valid(i)) {
-            Some(self.values.get_bit(i))
+            Some(self.values.value(i))
         } else {
             None
         })
@@ -190,7 +188,7 @@ impl FusedIterator for BooleanIter<'_> {}
 impl BooleanArray {
     pub fn iter(&self) -> BooleanIter<'_> {
         BooleanIter {
-            values: self.as_bitmap(),
+            values: self.to_bitmap(),
             nulls: self.nulls(),
             index: 0,
             len: self.len(),
