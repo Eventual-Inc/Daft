@@ -151,17 +151,6 @@ impl PythonArray {
         .map_err(DaftError::from)
     }
 
-    #[deprecated(note = "arrow2 migration")]
-    pub fn to_arrow2(&self) -> DaftResult<Box<dyn daft_arrow::array::Array>> {
-        let arrow_logical_type = self.data_type().to_arrow2().unwrap();
-        let physical_arrow_array = self.to_pickled_arrow2()?;
-        let logical_arrow_array = daft_arrow::array::Array::convert_logical_type(
-            &physical_arrow_array,
-            arrow_logical_type,
-        );
-        Ok(logical_arrow_array)
-    }
-
     pub fn to_arrow(&self) -> DaftResult<ArrayRef> {
         // unlike arrow2, the extension type is stored in the field, so we can just directly return the physical array
         self.to_pickled_arrow().map(|arr| Arc::new(arr) as _)
