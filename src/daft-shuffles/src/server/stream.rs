@@ -1,7 +1,9 @@
-use std::io::Read;
+use std::io::ErrorKind;
 
 use arrow_flight::FlightData;
 use common_error::{DaftError, DaftResult};
+use futures::Stream;
+use tokio::io::{AsyncRead, AsyncReadExt};
 
 /// Reading state maintenance
 struct ReadState<R> {
@@ -29,14 +31,14 @@ const CONTINUATION_MARKER: [u8; 4] = [0xff; 4];
 /// over flight. This is an optimization where we skip converting the ipc files to RecordBatches
 /// and instead read the data directly into FlightData, since we already know that the data is in
 /// arrow ipc stream format.
-pub struct FlightDataStreamReader<R: Read> {
+pub struct FlightDataStreamReader<R: AsyncRead + Unpin> {
     state: Option<ReadState<R>>,
 }
 
-impl<R: Read> FlightDataStreamReader<R> {
-    pub fn try_new(mut reader: R) -> DaftResult<Self> {
+impl<R: AsyncRead + Unpin> FlightDataStreamReader<R> {
+    pub async fn try_new(mut reader: R) -> DaftResult<Self> {
         // Skip stream metadata in the file since we don't need it when sending data over flight
-        skip_stream_metadata(&mut reader)?;
+        skip_stream_metadata(&mut reader).await?;
         Ok(Self {
             state: Some(ReadState {
                 reader,
@@ -45,39 +47,33 @@ impl<R: Read> FlightDataStreamReader<R> {
             }),
         })
     }
-}
 
-impl<R: Read> Iterator for FlightDataStreamReader<R> {
-    type Item = DaftResult<FlightData>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let state = self.state.take()?;
-
-        match process_next(state) {
-            Ok(StreamState::Ready((state, data))) => {
-                self.state = Some(state);
-                Some(Ok(data))
+    pub fn into_stream(self) -> impl Stream<Item = DaftResult<FlightData>> {
+        futures::stream::unfold(self.state, |state| async move {
+            let mut current = state?;
+            loop {
+                match process_next(current).await {
+                    Ok(StreamState::Ready((next_state, data))) => {
+                        return Some((Ok(data), Some(next_state)));
+                    }
+                    Ok(StreamState::Continue(next_state)) => {
+                        current = next_state;
+                    }
+                    Ok(StreamState::Done) => return None,
+                    Err(e) => return Some((Err(e), None)),
+                }
             }
-            Ok(StreamState::Continue(state)) => {
-                self.state = Some(state);
-                self.next() // Recursive call to continue processing
-            }
-            Ok(StreamState::Done) => None,
-            Err(e) => {
-                self.state = None;
-                Some(Err(e))
-            }
-        }
+        })
     }
 }
 
 /// Skip stream metadata on reader. We don't need it when sending data over flight.
-pub fn skip_stream_metadata<R: Read>(reader: &mut R) -> DaftResult<()> {
+pub async fn skip_stream_metadata<R: AsyncRead + Unpin>(reader: &mut R) -> DaftResult<()> {
     let mut meta_buf = [0u8; 4];
-    reader.read_exact(&mut meta_buf)?;
+    AsyncReadExt::read_exact(reader, &mut meta_buf).await?;
 
     if meta_buf == CONTINUATION_MARKER {
-        reader.read_exact(&mut meta_buf)?;
+        AsyncReadExt::read_exact(reader, &mut meta_buf).await?;
     }
     let meta_len = i32::from_le_bytes(meta_buf);
 
@@ -86,25 +82,25 @@ pub fn skip_stream_metadata<R: Read>(reader: &mut R) -> DaftResult<()> {
         .map_err(|_| arrow_schema::ArrowError::IpcError("NegativeFooterLength".to_string()))?;
 
     let mut meta_buffer = vec![0u8; meta_len];
-    reader.read_exact(&mut meta_buffer)?;
+    AsyncReadExt::read_exact(reader, &mut meta_buffer).await?;
 
     Ok(())
 }
 
 /// Process next IPC message into FlightData
-fn process_next<R: Read>(mut state: ReadState<R>) -> DaftResult<StreamState<R>> {
+async fn process_next<R: AsyncRead + Unpin>(mut state: ReadState<R>) -> DaftResult<StreamState<R>> {
     let mut meta_buf = [0u8; 4];
 
-    match state.reader.read_exact(&mut meta_buf) {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+    match AsyncReadExt::read_exact(&mut state.reader, &mut meta_buf).await {
+        Ok(_) => {}
+        Err(e) if e.kind() == ErrorKind::UnexpectedEof => {
             return Ok(StreamState::Continue(state));
         }
         Err(e) => return Err(DaftError::from(e)),
     }
 
     if meta_buf == CONTINUATION_MARKER {
-        state.reader.read_exact(&mut meta_buf)?;
+        AsyncReadExt::read_exact(&mut state.reader, &mut meta_buf).await?;
     }
     let meta_length = i32::from_le_bytes(meta_buf);
 
@@ -118,7 +114,7 @@ fn process_next<R: Read>(mut state: ReadState<R>) -> DaftResult<StreamState<R>> 
 
     // Read message header
     state.message_buffer.resize(meta_length, 0);
-    state.reader.read_exact(&mut state.message_buffer)?;
+    AsyncReadExt::read_exact(&mut state.reader, &mut state.message_buffer).await?;
 
     // Read message body length
     let message = arrow_ipc::root_as_message(&state.message_buffer)
@@ -131,7 +127,7 @@ fn process_next<R: Read>(mut state: ReadState<R>) -> DaftResult<StreamState<R>> 
 
     // Read message body
     state.data_buffer.resize(body_length, 0);
-    state.reader.read_exact(&mut state.data_buffer)?;
+    AsyncReadExt::read_exact(&mut state.reader, &mut state.data_buffer).await?;
 
     let message_buffer = std::mem::take(&mut state.message_buffer);
     let data_buffer = std::mem::take(&mut state.data_buffer);
