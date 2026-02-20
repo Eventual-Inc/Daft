@@ -338,7 +338,10 @@ jobs:
       with:
         shared-key: ${{ runner.os }}-integration-build
         cache-all-crates: "true"
-        save-if: ${{ github.ref == 'refs/heads/main' }}
+        cache-workspace-crates: "true"
+        # TODO: revert to main-only before merge:
+        # save-if: ${{ github.ref == 'refs/heads/main' }}
+        save-if: true
     - uses: actions/setup-node@v6
       with:
         node-version: "22"
