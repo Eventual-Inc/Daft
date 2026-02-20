@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
 use arrow::array::{
-    Array, ArrayRef, BooleanBufferBuilder, FixedSizeBinaryArray as ArrowFixedSizeBinaryArray,
-    LargeBinaryArray, LargeStringArray, OffsetBufferBuilder,
+    Array, ArrayRef, BooleanBufferBuilder, LargeBinaryArray, LargeStringArray, OffsetBufferBuilder,
 };
 use common_error::DaftResult;
 use daft_core::{
     datatypes::{BinaryArray, FixedSizeBinaryArray},
-    prelude::{DataType, Field, Utf8Array},
+    prelude::{AsArrow, DataType, Field, Utf8Array},
 };
 
 pub trait BinaryArrayExtension: Sized {
@@ -30,7 +29,7 @@ impl BinaryArrayExtension for BinaryArray {
     where
         Transform: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
-        let input = LargeBinaryArray::from(self.to_data());
+        let input = self.as_arrow()?;
         let buffer = input.values();
         let nulls = input.nulls().cloned();
 
@@ -58,7 +57,7 @@ impl BinaryArrayExtension for BinaryArray {
     where
         Transform: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
-        let input = LargeBinaryArray::from(self.to_data());
+        let input = self.as_arrow()?;
 
         let buffer = input.values();
         let nulls = input.nulls().cloned();
@@ -106,7 +105,7 @@ impl BinaryArrayExtension for BinaryArray {
     where
         Decoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
-        let input = LargeBinaryArray::from(self.to_data());
+        let input = self.as_arrow()?;
 
         let buffer = input.values();
         let nulls = input.nulls().cloned();
@@ -133,7 +132,7 @@ impl BinaryArrayExtension for BinaryArray {
     where
         Decoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
-        let input = LargeBinaryArray::from(self.to_data());
+        let input = self.as_arrow()?;
 
         let buffer = input.values();
         let nulls = input.nulls().cloned();
@@ -184,7 +183,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
     where
         Transform: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
-        let input = ArrowFixedSizeBinaryArray::from(self.to_data());
+        let input = self.as_arrow()?;
         let size = input.value_length() as usize;
 
         let buffer = input.values();
@@ -214,7 +213,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
     where
         Transform: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
-        let input = ArrowFixedSizeBinaryArray::from(self.to_data());
+        let input = self.as_arrow()?;
         let size = input.value_length() as usize;
         let buffer = input.values();
         let chunks = buffer.len() / size;
@@ -264,7 +263,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
     where
         Decoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
-        let input = ArrowFixedSizeBinaryArray::from(self.to_data());
+        let input = self.as_arrow()?;
         let size = input.value_length() as usize;
         let buffer = input.values();
         let chunks = buffer.len() / size;
@@ -291,7 +290,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
     where
         Decoder: Fn(&[u8]) -> DaftResult<Vec<u8>>,
     {
-        let input = ArrowFixedSizeBinaryArray::from(self.to_data());
+        let input = self.as_arrow()?;
         let size = input.value_length() as usize;
         let buffer = input.values();
         let chunks = buffer.len() / size;
