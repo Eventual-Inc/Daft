@@ -145,7 +145,7 @@ pub fn read_json_array_impl(
         .zip(daft_fields)
         .map(|(mut ma, fld)| {
             let arr = ma.as_box();
-            Series::try_from_field_and_arrow_array(fld, cast_array_for_daft_if_needed(arr))
+            Series::from_arrow(fld, cast_array_for_daft_if_needed(arr).into())
         })
         .collect::<DaftResult<Vec<_>>>()?;
 
@@ -331,7 +331,7 @@ impl<'a> JsonReader<'a> {
             .zip(daft_fields)
             .map(|(mut ma, fld)| {
                 let arr = ma.as_box();
-                Series::try_from_field_and_arrow_array(fld, cast_array_for_daft_if_needed(arr))
+                Series::from_arrow(fld, cast_array_for_daft_if_needed(arr).into())
             })
             .collect::<DaftResult<Vec<_>>>()?;
 

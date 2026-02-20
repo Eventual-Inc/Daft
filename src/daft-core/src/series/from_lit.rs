@@ -2,14 +2,7 @@ use std::sync::Arc;
 
 use common_error::{DaftError, DaftResult};
 use common_image::CowImage;
-use daft_arrow::{
-    array::{
-        MutableArray, MutableBinaryArray, MutableBooleanArray, MutablePrimitiveArray,
-        MutableUtf8Array,
-    },
-    trusted_len::TrustedLen,
-    types::{NativeType, months_days_ns},
-};
+use daft_arrow::trusted_len::TrustedLen;
 use indexmap::IndexMap;
 use itertools::Itertools;
 
@@ -170,91 +163,57 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
         };
     }
 
-    #[inline(always)]
-    fn from_mutable_primitive<T: NativeType, I: Iterator<Item = (usize, DaftResult<Literal>)>>(
-        values: I,
-        values_len: usize,
-        field: Field,
-        mut f: impl FnMut(DaftResult<Literal>, usize) -> Option<T>,
-    ) -> DaftResult<Series> {
-        let mut arr = MutablePrimitiveArray::<T>::with_capacity(values_len);
-
-        for (i, value) in values {
-            let value = f(value, i);
-
-            arr.push(value);
-        }
-
-        Series::from_arrow2(Arc::new(field), arr.as_box())
-    }
-
     let s = match downcasted.clone() {
         DataType::Null => NullArray::full_null("literal", &dtype, len).into_series(),
-        DataType::Boolean => {
-            let mut arr = MutableBooleanArray::with_capacity(len);
-
-            for (i, value) in values {
-                let value = unwrap_inner!(value, i, Boolean);
-                arr.push(value);
+        DataType::Boolean => BooleanArray::from_iter(
+            "literal",
+            values.map(|(i, value)| unwrap_inner!(value, i, Boolean)),
+        )
+        .into_series(),
+        DataType::Utf8 => Utf8Array::from_iter(
+            "literal",
+            values.map(|(i, value)| unwrap_inner!(value, i, Utf8)),
+        )
+        .into_series(),
+        DataType::Binary => BinaryArray::from_iter(
+            "literal",
+            values.map(|(i, value)| unwrap_inner!(value, i, Binary)),
+        )
+        .into_series(),
+        DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16
+        | DataType::Int32 | DataType::UInt32 | DataType::Int64 | DataType::UInt64
+        | DataType::Float32 | DataType::Float64 => {
+            macro_rules! primitive_arm {
+                ($($dt:ident => $arr:ident),+ $(,)?) => {
+                    match &downcasted {
+                        $(DataType::$dt => $arr::from_iter(
+                            field,
+                            values.map(|(i, value)| unwrap_inner!(value, i, $dt)),
+                        ).into_series(),)+
+                        _ => unreachable!(),
+                    }
+                };
             }
-            Series::from_arrow2(Arc::new(field), arr.as_box())?
+            primitive_arm!(
+                Int8 => Int8Array,
+                UInt8 => UInt8Array,
+                Int16 => Int16Array,
+                UInt16 => UInt16Array,
+                Int32 => Int32Array,
+                UInt32 => UInt32Array,
+                Int64 => Int64Array,
+                UInt64 => UInt64Array,
+                Float32 => Float32Array,
+                Float64 => Float64Array,
+            )
         }
-        DataType::Utf8 => {
-            let mut arr = MutableUtf8Array::<i64>::with_capacity(len);
-
-            for (i, value) in values {
-                let value = unwrap_inner!(value, i, Utf8);
-
-                arr.push(value);
-            }
-            Series::from_arrow2(Arc::new(field), arr.as_box())?
-        }
-        DataType::Binary => {
-            let mut arr = MutableBinaryArray::<i64>::with_capacity(len);
-
-            for (i, value) in values {
-                let value = unwrap_inner!(value, i, Binary);
-                arr.push(value);
-            }
-            Series::from_arrow2(Arc::new(field), arr.as_box())?
-        }
-        DataType::Int8 => {
-            from_mutable_primitive(values, len, field, |v, i| unwrap_inner!(v, i, Int8))?
-        }
-
-        DataType::UInt8 => {
-            from_mutable_primitive(values, len, field, |v, i| unwrap_inner!(v, i, UInt8))?
-        }
-        DataType::Int16 => {
-            from_mutable_primitive(values, len, field, |v, i| unwrap_inner!(v, i, Int16))?
-        }
-        DataType::UInt16 => {
-            from_mutable_primitive(values, len, field, |v, i| unwrap_inner!(v, i, UInt16))?
-        }
-        DataType::Int32 => {
-            from_mutable_primitive(values, len, field, |v, i| unwrap_inner!(v, i, Int32))?
-        }
-        DataType::UInt32 => {
-            from_mutable_primitive(values, len, field, |v, i| unwrap_inner!(v, i, UInt32))?
-        }
-        DataType::Int64 => {
-            from_mutable_primitive(values, len, field, |v, i| unwrap_inner!(v, i, Int64))?
-        }
-        DataType::UInt64 => {
-            from_mutable_primitive(values, len, field, |v, i| unwrap_inner!(v, i, UInt64))?
-        }
-        DataType::Float32 => {
-            from_mutable_primitive(values, len, field, |v, i| unwrap_inner!(v, i, Float32))?
-        }
-        DataType::Float64 => {
-            from_mutable_primitive(values, len, field, |v, i| unwrap_inner!(v, i, Float64))?
-        }
-        DataType::Interval => from_mutable_primitive(
-            values,
-            len,
-            field,
-            |v, i| unwrap_inner!(v, i, Literal::Interval(v) => months_days_ns::from(v)),
-        )?,
+        DataType::Interval => IntervalArray::from_iter(
+            "literal",
+            values.map(|(i, value)| {
+                unwrap_inner!(value, i, Literal::Interval(v) => arrow::datatypes::IntervalMonthDayNano::new(v.months, v.days, v.nanoseconds))
+            }),
+        )
+        .into_series(),
 
         DataType::Decimal128 { .. } => Decimal128Array::from_iter(
             field,
@@ -262,29 +221,18 @@ pub fn series_from_literals_iter<I: ExactSizeIterator<Item = DaftResult<Literal>
         )
         .into_series(),
         DataType::Timestamp(_, _) => {
-            let mut arr = MutablePrimitiveArray::<i64>::with_capacity(len);
+            let iter =
+                values.map(|(i, value)| unwrap_inner!(value, i, Literal::Timestamp(ts, ..) => ts));
 
-            for (i, value) in values {
-                let value = unwrap_inner!(value, i, Literal::Timestamp(ts, ..) => ts);
-                arr.push(value);
-            }
-            let physical = Int64Array::from_arrow2(
-                Arc::new(Field::new("literal", DataType::Int64)),
-                arr.as_box(),
-            )?;
+            let physical =
+                Int64Array::from_iter(Arc::new(Field::new("literal", DataType::Int64)), iter);
             TimestampArray::new(field, physical).into_series()
         }
         DataType::Date => {
-            let mut arr = MutablePrimitiveArray::<i32>::with_capacity(len);
+            let iter = values.map(|(i, value)| unwrap_inner!(value, i, Literal::Date(d) => d));
 
-            for (i, value) in values {
-                let value = unwrap_inner!(value, i, Literal::Date(d) => d);
-                arr.push(value);
-            }
-            let physical = Int32Array::from_arrow2(
-                Arc::new(Field::new("literal", DataType::Int32)),
-                arr.as_box(),
-            )?;
+            let physical =
+                Int32Array::from_iter(Arc::new(Field::new("literal", DataType::Int32)), iter);
 
             DateArray::new(field, physical).into_series()
         }

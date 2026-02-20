@@ -1,8 +1,7 @@
-use std::sync::Arc;
-
 use common_error::{DaftError, DaftResult};
 use daft_arrow::{
     array::Utf8Array as ArrowUtf8Array,
+    arrow_array::ArrayRef,
     datatypes::DataType as ArrowDataType,
     io::json::{
         read::{self, json_deserializer::Value},
@@ -28,8 +27,9 @@ pub(crate) fn deserialize(input: &Utf8Array, dtype: &DataType) -> DaftResult<Ser
     let arrow2_field = field.to_arrow2()?;
     let arrow2_dtype = ArrowDataType::LargeList(Box::new(arrow2_field));
     let arrow2_array = read::deserialize(&json_array, arrow2_dtype)?;
+    let arrow_array: ArrayRef = arrow2_array.into();
     // convert the arrow2 Array into a Daft Series.
-    Series::from_arrow2(Arc::new(field), arrow2_array)
+    Series::from_arrow(field, arrow_array)
 }
 
 // Parses a single item.
@@ -50,8 +50,10 @@ pub fn try_deserialize(input: &Utf8Array, dtype: &DataType) -> DaftResult<Series
     let arrow2_field = field.to_arrow2()?;
     let arrow2_dtype = ArrowDataType::LargeList(Box::new(arrow2_field));
     let arrow2_array = read::deserialize(&json_array, arrow2_dtype)?;
+    let arrow_array: ArrayRef = arrow2_array.into();
+
     // convert the arrow2 Array into a Daft Series.
-    Series::from_arrow2(Arc::new(field), arrow2_array)
+    Series::from_arrow(field, arrow_array)
 }
 
 /// Parses a single item, inserting null on any parsing failure.

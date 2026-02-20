@@ -19,9 +19,9 @@ fn parse_hive_value_to_dtype(
         common_error::DaftError::ValueError(format!("Failed to convert dtype to arrow: {}", e))
     })?;
     let arrow_array = deserialize_single_value_to_arrow(value.as_bytes(), arrow_dtype)?;
-    Series::try_from_field_and_arrow_array(
+    Series::from_arrow(
         Field::new(field_name, target_dtype.clone()),
-        arrow_array,
+        arrow_array.into(),
     )
 }
 

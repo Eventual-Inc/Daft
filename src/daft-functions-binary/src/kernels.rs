@@ -6,7 +6,6 @@ use arrow::array::{
 };
 use common_error::DaftResult;
 use daft_core::{
-    array::ops::from_arrow::FromArrow,
     datatypes::{BinaryArray, FixedSizeBinaryArray},
     prelude::{DataType, Field, Utf8Array},
 };
@@ -51,7 +50,7 @@ impl BinaryArrayExtension for BinaryArray {
         let array = LargeBinaryArray::new(offsets.finish(), values.into(), nulls);
         let array: ArrayRef = Arc::new(array);
 
-        Self::from_arrow2(self.field.clone(), array.into())
+        Self::from_arrow(self.field.clone(), array)
     }
 
     /// For binary-to-binary transformations, but inserts null on failures.
@@ -99,7 +98,7 @@ impl BinaryArrayExtension for BinaryArray {
             LargeBinaryArray::new(offsets.finish(), values.into(), Some(nulls.finish().into()));
         let array: ArrayRef = Arc::new(array);
 
-        Self::from_arrow2(self.field.clone(), array.into())
+        Self::from_arrow(self.field.clone(), array)
     }
 
     /// For binary-to-text decoding.
@@ -126,10 +125,7 @@ impl BinaryArrayExtension for BinaryArray {
         let array = LargeStringArray::new(offsets.into(), values.into(), nulls);
         let array: ArrayRef = Arc::new(array);
 
-        Utf8Array::from_arrow2(
-            Arc::new(Field::new(self.name(), DataType::Utf8)),
-            array.into(),
-        )
+        Utf8Array::from_arrow(Arc::new(Field::new(self.name(), DataType::Utf8)), array)
     }
 
     /// For binary-to-text decoding, but inserts null on failures.
@@ -178,10 +174,7 @@ impl BinaryArrayExtension for BinaryArray {
             LargeStringArray::new(offsets.into(), values.into(), Some(nulls.finish().into()));
         let array: ArrayRef = Arc::new(array);
 
-        Utf8Array::from_arrow2(
-            Arc::new(Field::new(self.name(), DataType::Utf8)),
-            array.into(),
-        )
+        Utf8Array::from_arrow(Arc::new(Field::new(self.name(), DataType::Utf8)), array)
     }
 }
 
@@ -213,7 +206,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
         let array = LargeBinaryArray::new(offsets.finish(), values.into(), nulls);
         let array: ArrayRef = Arc::new(array);
 
-        BinaryArray::from_arrow2(self.field.clone(), array.into())
+        BinaryArray::from_arrow(self.field.clone(), array)
     }
 
     /// For binary-to-binary transformations, but inserts null on failures.
@@ -263,7 +256,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
             LargeBinaryArray::new(offsets.finish(), values.into(), Some(nulls.finish().into()));
         let array: ArrayRef = Arc::new(array);
 
-        BinaryArray::from_arrow2(self.field.clone(), array.into())
+        BinaryArray::from_arrow(self.field.clone(), array)
     }
 
     /// For binary-to-text decoding.
@@ -290,10 +283,7 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
         let array = LargeStringArray::new(offsets.into(), values.into(), nulls);
         let array: ArrayRef = Arc::new(array);
 
-        Utf8Array::from_arrow2(
-            Arc::new(Field::new(self.name(), DataType::Utf8)),
-            array.into(),
-        )
+        Utf8Array::from_arrow(Arc::new(Field::new(self.name(), DataType::Utf8)), array)
     }
 
     /// For binary-to-text decoding, but inserts null on failures.
@@ -347,9 +337,6 @@ impl BinaryArrayExtension for FixedSizeBinaryArray {
         );
         let array: ArrayRef = Arc::new(array);
 
-        Utf8Array::from_arrow2(
-            Arc::new(Field::new(self.name(), DataType::Utf8)),
-            array.into(),
-        )
+        Utf8Array::from_arrow(Arc::new(Field::new(self.name(), DataType::Utf8)), array)
     }
 }
