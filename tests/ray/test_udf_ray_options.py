@@ -105,7 +105,7 @@ def test_udf_with_conda_inject_dependencies(input_df):
                     }
                 }
             }
-        ).with_concurrency(1)
+        )
         input_df.with_column("email", gen_email_udf(col("name"))).collect()
 
     value = str(exc_info.value)
@@ -123,7 +123,7 @@ def test_udf_with_conda_inject_dependencies(input_df):
                 }
             }
         }
-    ).with_concurrency(1)
+    )
     df = input_df.with_column("email", gen_email_udf(col("name"))).select("email")
     assert 1024 == df.count_rows()
 
@@ -156,9 +156,7 @@ def test_udf_with_prepared_conda_env(input_df):
         ]
         subprocess.run(" ".join(prepare_conda_env_cmd), check=True, capture_output=True, shell=True)
 
-        gen_email_udf = gen_email.override_options(
-            ray_options={"runtime_env": {"conda": conda_env_name}}
-        ).with_concurrency(1)
+        gen_email_udf = gen_email.override_options(ray_options={"runtime_env": {"conda": conda_env_name}})
         df = input_df.with_column("email", gen_email_udf(col("name"))).select("email")
         assert 1024 == df.count_rows()
     except Exception as e:
