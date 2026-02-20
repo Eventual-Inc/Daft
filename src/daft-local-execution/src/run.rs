@@ -17,6 +17,7 @@ use daft_local_plan::{
 };
 use daft_logical_plan::LogicalPlanBuilder;
 use daft_micropartition::MicroPartition;
+use daft_shuffles::client::FlightClientManager;
 use futures::{FutureExt, Stream, future::BoxFuture};
 use tokio::{runtime::Handle, sync::Mutex};
 use tokio_util::sync::CancellationToken;
@@ -162,12 +163,14 @@ impl PyNativeExecutor {
 
 pub(crate) struct NativeExecutor {
     cancel: CancellationToken,
+    flight_client_manager: Arc<tokio::sync::Mutex<FlightClientManager>>,
 }
 
 impl NativeExecutor {
     pub fn new() -> Self {
         Self {
             cancel: CancellationToken::new(),
+            flight_client_manager: Arc::new(tokio::sync::Mutex::new(FlightClientManager::new())),
         }
     }
 
@@ -194,8 +197,12 @@ impl NativeExecutor {
             .into();
 
         let ctx = BuilderContext::new_with_context(query_id.clone(), additional_context);
-        let (mut pipeline, input_senders) =
-            translate_physical_plan_to_pipeline(local_physical_plan.as_ref(), &exec_cfg, &ctx)?;
+        let (mut pipeline, input_senders) = translate_physical_plan_to_pipeline(
+            local_physical_plan.as_ref(),
+            &exec_cfg,
+            &ctx,
+            self.flight_client_manager.clone(),
+        )?;
 
         let (tx, rx) = create_channel(1);
         let enable_explain_analyze = should_enable_explain_analyze();
@@ -300,8 +307,10 @@ impl NativeExecutor {
         let logical_plan = logical_plan_builder.build();
         let (physical_plan, _) = translate(&logical_plan, &HashMap::new()).unwrap();
         let ctx = BuilderContext::new();
+        let flight_client_manager = Arc::new(tokio::sync::Mutex::new(FlightClientManager::new()));
         let (pipeline_node, _) =
-            translate_physical_plan_to_pipeline(&physical_plan, &cfg, &ctx).unwrap();
+            translate_physical_plan_to_pipeline(&physical_plan, &cfg, &ctx, flight_client_manager)
+                .unwrap();
 
         viz_pipeline_ascii(pipeline_node.as_ref(), simple)
     }
@@ -314,8 +323,10 @@ impl NativeExecutor {
         let logical_plan = logical_plan_builder.build();
         let (physical_plan, _) = translate(&logical_plan, &HashMap::new()).unwrap();
         let ctx = BuilderContext::new();
+        let flight_client_manager = Arc::new(tokio::sync::Mutex::new(FlightClientManager::new()));
         let (pipeline_node, _) =
-            translate_physical_plan_to_pipeline(&physical_plan, &cfg, &ctx).unwrap();
+            translate_physical_plan_to_pipeline(&physical_plan, &cfg, &ctx, flight_client_manager)
+                .unwrap();
 
         let display_type = if options.simple {
             DisplayLevel::Compact
@@ -336,8 +347,10 @@ impl NativeExecutor {
         let logical_plan = logical_plan_builder.build();
         let (physical_plan, _) = translate(&logical_plan, &HashMap::new()).unwrap();
         let ctx = BuilderContext::new();
+        let flight_client_manager = Arc::new(tokio::sync::Mutex::new(FlightClientManager::new()));
         let (pipeline_node, _) =
-            translate_physical_plan_to_pipeline(&physical_plan, &cfg, &ctx).unwrap();
+            translate_physical_plan_to_pipeline(&physical_plan, &cfg, &ctx, flight_client_manager)
+                .unwrap();
         get_pipeline_relationship_mapping(&*pipeline_node)
     }
 }
