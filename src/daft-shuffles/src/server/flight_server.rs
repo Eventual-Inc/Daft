@@ -281,7 +281,6 @@ pub async fn register_shuffle_cache(
         .await
 }
 
-#[allow(clippy::result_large_err)]
 pub fn start_flight_server(ip: &str) -> FlightServerConnectionHandle {
     let io_runtime = common_runtime::get_io_runtime(true);
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();

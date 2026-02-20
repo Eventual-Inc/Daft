@@ -117,10 +117,7 @@ impl Stream for FlightRecordBatchStreamToDaftRecordBatchStream {
                     .fields
                     .iter()
                     .zip(batch.columns())
-                    .map(|(field, array)| {
-                        let arrow2_array = array.as_ref().into();
-                        Series::try_from_field_and_arrow_array(field.clone(), arrow2_array)
-                    })
+                    .map(|(field, array)| Series::from_arrow(field.clone(), array.clone()))
                     .collect::<DaftResult<Vec<_>>>()?;
                 let rb =
                     RecordBatch::new_with_size(this.schema.clone(), columns, batch.num_rows())?;
