@@ -50,8 +50,9 @@ impl PythonArray {
             None => mask.to_bitmap(),
             Some(nulls) => &mask.to_bitmap() & nulls.inner(),
         };
+        let num_set_bits = keep_bitmap.count_set_bits();
 
-        let num_invalid = keep_bitmap.len() - keep_bitmap.count_set_bits();
+        let num_invalid = keep_bitmap.len() - num_set_bits;
         if num_invalid == 0 {
             return Ok(self.clone());
         } else if num_invalid == mask.len() {
@@ -63,7 +64,7 @@ impl PythonArray {
             self.data_type(),
             vec![self],
             false,
-            keep_bitmap.count_set_bits(),
+            num_set_bits,
         );
 
         for (start, end) in keep_bitmap.set_slices() {
