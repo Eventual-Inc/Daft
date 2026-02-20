@@ -186,7 +186,7 @@ impl DateArray {
                 let year_array = compute::temporal::year(&date_array)?;
                 let month_array = compute::temporal::month(&date_array)?;
                 let day_array = compute::temporal::day(&date_array)?;
-                let date_str: daft_arrow::array::Utf8Array<i64> = year_array
+                let date_str: Utf8Array = year_array
                     .iter()
                     .zip(month_array.iter())
                     .zip(day_array.iter())
@@ -195,12 +195,8 @@ impl DateArray {
                         (Some(y), Some(m), Some(d)) => Some(format!("{y}-{m}-{d}")),
                     })
                     .collect();
-                Ok(Utf8Array::new(
-                    Field::new(self.name(), DataType::Utf8).into(),
-                    Box::new(date_str),
-                )
-                .unwrap()
-                .into_series())
+
+                Ok(date_str.rename(self.name()).into_series())
             }
             DataType::Timestamp(tu, _) => {
                 let days_to_unit: i64 = match tu {
@@ -288,38 +284,32 @@ impl TimestampArray {
                     panic!("Wrong dtype for TimestampArray: {}", self.data_type())
                 };
 
-                let str_array: daft_arrow::array::Utf8Array<i64> = timezone.as_ref().map_or_else(
+                let str_array: Utf8Array = timezone.as_ref().map_or_else(
                     || {
-                        self.as_arrow2()
+                        self.physical
                             .iter()
-                            .map(|val| val.map(|val| timestamp_to_str_naive(*val, unit)))
+                            .map(|val| val.map(|val| timestamp_to_str_naive(val, unit)))
                             .collect()
                     },
                     |timezone| {
                         if let Ok(offset) = daft_schema::time_unit::parse_offset(timezone) {
-                            self.as_arrow2()
+                            self.physical
                                 .iter()
                                 .map(|val| {
-                                    val.map(|val| timestamp_to_str_offset(*val, unit, &offset))
+                                    val.map(|val| timestamp_to_str_offset(val, unit, &offset))
                                 })
                                 .collect()
                         } else if let Ok(tz) = daft_schema::time_unit::parse_offset_tz(timezone) {
-                            self.as_arrow2()
+                            self.physical
                                 .iter()
-                                .map(|val| val.map(|val| timestamp_to_str_tz(*val, unit, &tz)))
+                                .map(|val| val.map(|val| timestamp_to_str_tz(val, unit, &tz)))
                                 .collect()
                         } else {
                             panic!("Unable to parse timezone string {}", timezone)
                         }
                     },
                 );
-
-                Ok(Utf8Array::new(
-                    Field::new(self.name(), DataType::Utf8).into(),
-                    Box::new(str_array),
-                )
-                .unwrap()
-                .into_series())
+                Ok(str_array.rename(self.name()).into_series())
             }
             dtype if dtype.is_numeric() => self.physical.cast(dtype),
             #[cfg(feature = "python")]
@@ -359,24 +349,19 @@ impl TimeArray {
                 Ok(TimeArray::new(Field::new(self.name(), dtype.clone()), physical).into_series())
             }
             DataType::Utf8 => {
-                let time_array = self.as_arrow2();
-                let time_str: daft_arrow::array::Utf8Array<i64> = time_array
+                let time_str: Utf8Array = self
+                    .physical
                     .iter()
                     .map(|val| {
                         val.map(|val| {
                             let DataType::Time(unit) = &self.field.dtype else {
                                 panic!("Wrong dtype for TimeArray: {}", self.field.dtype)
                             };
-                            display_time64(*val, unit)
+                            display_time64(val, unit)
                         })
                     })
                     .collect();
-                Ok(Utf8Array::new(
-                    Field::new(self.name(), DataType::Utf8).into(),
-                    Box::new(time_str),
-                )
-                .unwrap()
-                .into_series())
+                Ok(time_str.rename(self.name()).into_series())
             }
             dtype if dtype.is_numeric() => self.physical.cast(dtype),
             #[cfg(feature = "python")]
@@ -603,41 +588,6 @@ where
     }
 }
 
-// impl Decimal128Array {
-//     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
-//         match dtype {
-//             #[cfg(feature = "python")]
-//             DataType::Python => cast_logical_to_python_array(self, dtype),
-//             DataType::Int128 => Ok(self.physical.clone().into_series()),
-//             dtype if dtype.is_numeric() => self.physical.cast(dtype),
-//             DataType::Decimal128(_, _) => {
-//                 // Use the arrow2 Decimal128 casting logic.
-//                 let target_arrow_type = dtype.to_arrow()?;
-//                 let arrow_decimal_array = self
-//                     .as_arrow2()
-//                     .clone()
-//                     .to(self.data_type().to_arrow()?)
-//                     .to_boxed();
-//                 let casted_arrow_array = cast(
-//                     arrow_decimal_array.as_ref(),
-//                     &target_arrow_type,
-//                     CastOptions {
-//                         wrapped: true,
-//                         partial: false,
-//                     },
-//                 )?;
-
-//                 let new_field = Arc::new(Field::new(self.name(), dtype.clone()));
-//                 Series::from_arrow(new_field, casted_arrow_array)
-//             }
-//             _ => Err(DaftError::TypeError(format!(
-//                 "Cannot cast Decimal128 to {}",
-//                 dtype
-//             ))),
-//         }
-//     }
-// }
-
 #[cfg(feature = "python")]
 impl PythonArray {
     pub fn cast(&self, dtype: &DataType) -> DaftResult<Series> {
@@ -812,15 +762,10 @@ impl TensorArray {
             DataType::FixedShapeTensor(inner_dtype, shape) => {
                 let da = self.data_array();
                 let sa = self.shape_array();
-                if !(0..self.len()).map(|i| sa.get(i)).all(|s| {
-                    s.is_none_or(|s| {
-                        s.u64()
-                            .unwrap()
-                            .as_arrow2()
-                            .iter()
-                            .eq(shape.iter().map(Some))
-                    })
-                }) {
+                if !(0..self.len())
+                    .map(|i| sa.get(i))
+                    .all(|s| s.is_none_or(|s| s.u64().unwrap().as_slice().eq(shape.as_slice())))
+                {
                     return Err(DaftError::TypeError(format!(
                         "Can not cast Tensor array to FixedShapeTensor array with type {:?}: Tensor array has shapes different than {:?};",
                         dtype, shape,
@@ -967,7 +912,7 @@ impl TensorArray {
                             return false;
                         }
                         if let Some(mode) = mode
-                            && s.u64().unwrap().as_arrow2().get(s.len() - 1).unwrap()
+                            && s.u64().unwrap().get(s.len() - 1).unwrap()
                                 != mode.num_channels() as u64
                         {
                             // If type-level mode is defined, each image must have the implied number of channels.
@@ -1083,8 +1028,8 @@ fn cast_sparse_to_dense_for_inner_dtype(
     non_zero_values_array: &ListArray,
     offsets: &OffsetBuffer<i64>,
     use_offset_indices: &bool,
-) -> DaftResult<Box<dyn daft_arrow::array::Array>> {
-    let item: Box<dyn daft_arrow::array::Array> = with_match_numeric_daft_types!(inner_dtype, |$T| {
+) -> DaftResult<Series> {
+    let item = with_match_numeric_daft_types!(inner_dtype, |$T| {
             let mut values = vec![0 as <$T as DaftNumericType>::Native; n_values];
             let nulls = non_zero_values_array.nulls();
             for i in 0..non_zero_values_array.len() {
@@ -1093,30 +1038,32 @@ fn cast_sparse_to_dense_for_inner_dtype(
                     continue;
                 }
                 let index_series: Series = non_zero_indices_array.get(i).unwrap().cast(&DataType::UInt64)?;
-                let index_array = index_series.u64().unwrap().as_arrow2();
+                let index_array = index_series.u64().unwrap();
                 let values_series: Series = non_zero_values_array.get(i).unwrap();
                 let values_array = values_series.downcast::<<$T as DaftDataType>::ArrayType>()
-                .unwrap()
-                .as_arrow2();
+                .unwrap();
                 match use_offset_indices {
                     true => {
                         let mut old_idx: u64 = 0;
-                        for (idx, val) in index_array.into_iter().zip(values_array.into_iter()) {
+                        for (idx, val) in index_array.into_iter().zip(values_array.into_iter())
+                        {
                             let list_start_offset = offsets.inner()[i] as usize;
                             let current_idx = idx.unwrap() + old_idx;
                             old_idx = current_idx;
-                            values[list_start_offset + current_idx as usize] = *val.unwrap();
+                            values[list_start_offset + current_idx as usize] = val.unwrap();
                         }
-                    },
+                    }
                     false => {
-                        for (idx, val) in index_array.into_iter().zip(values_array.into_iter()) {
+                        for (idx, val) in index_array.into_iter().zip(values_array.into_iter())
+                        {
                             let list_start_offset = offsets.inner()[i] as usize;
-                            values[list_start_offset + *idx.unwrap() as usize] = *val.unwrap();
+                            values[list_start_offset + idx.unwrap() as usize] = val.unwrap();
                         }
                     }
                 };
             }
-            Box::new(daft_arrow::array::PrimitiveArray::from_vec(values))
+            DataArray::<$T>::from_vec("", values).into_series()
+
     });
     Ok(item)
 }
@@ -1144,8 +1091,8 @@ impl SparseTensorArray {
                     .into_iter()
                     .map(|shape| {
                         shape.map_or(0, |shape| {
-                            let shape = shape.u64().unwrap().as_arrow2();
-                            shape.values().clone().into_iter().product::<u64>() as usize
+                            let shape = shape.u64().unwrap();
+                            shape.values().into_iter().product::<u64>() as usize
                         })
                     })
                     .collect();
@@ -1165,7 +1112,7 @@ impl SparseTensorArray {
                         "data",
                         DataType::List(Box::new(inner_dtype.as_ref().clone())),
                     ),
-                    Series::try_from(("item", item))?,
+                    item.rename("item"),
                     offsets.into(),
                     nulls.cloned(),
                 )
@@ -1188,15 +1135,10 @@ impl SparseTensorArray {
                 let sa = self.shape_array();
                 let va = self.values_array();
                 let ia = self.indices_array();
-                if !(0..self.len()).map(|i| sa.get(i)).all(|s| {
-                    s.is_none_or(|s| {
-                        s.u64()
-                            .unwrap()
-                            .as_arrow2()
-                            .iter()
-                            .eq(shape.iter().map(Some))
-                    })
-                }) {
+                if !(0..self.len())
+                    .map(|i| sa.get(i))
+                    .all(|s| s.is_none_or(|s| s.u64().unwrap().as_slice().eq(shape.as_slice())))
+                {
                     return Err(DaftError::TypeError(format!(
                         "Can not cast SparseTensor array to FixedShapeSparseTensor array with type {:?}: Tensor array has shapes different than {:?};",
                         dtype, shape,
@@ -1309,7 +1251,7 @@ impl FixedShapeSparseTensorArray {
                         self.name(),
                         DataType::FixedSizeList(Box::new(inner_dtype.as_ref().clone()), size),
                     ),
-                    Series::try_from(("item", item))?,
+                    item.rename("item"),
                     nulls.cloned(),
                 );
                 let fixed_shape_tensor_array =
@@ -1801,13 +1743,12 @@ impl StructArray {
 
 #[cfg(test)]
 mod tests {
-    use daft_arrow::array::PrimitiveArray;
     use rand::{Rng, rng};
 
     use super::*;
     use crate::{
         datatypes::DataArray,
-        prelude::{Decimal128Type, Float64Array, FromArrow},
+        prelude::{Decimal128Array, Decimal128Type, Float64Array},
     };
 
     fn create_test_decimal_array(
@@ -1815,30 +1756,19 @@ mod tests {
         precision: usize,
         scale: usize,
     ) -> DataArray<Decimal128Type> {
-        let arrow_array = PrimitiveArray::from_vec(values)
-            .to(daft_arrow::datatypes::DataType::Decimal(precision, scale));
         let field = Arc::new(Field::new(
             "test_decimal",
             DataType::Decimal128(precision, scale),
         ));
-        DataArray::<Decimal128Type>::from_arrow2(field, Box::new(arrow_array))
-            .expect("Failed to create test decimal array")
+        Decimal128Array::from_field_and_values(field, values)
     }
 
     fn create_test_f64_array(values: Vec<f64>) -> Float64Array {
-        let arrow_array =
-            PrimitiveArray::from_vec(values).to(daft_arrow::datatypes::DataType::Float64);
-        let field = Arc::new(Field::new("test_float", DataType::Float64));
-        Float64Array::from_arrow2(field, Box::new(arrow_array))
-            .expect("Failed to create test float array")
+        Float64Array::from_vec("test_float", values)
     }
 
     fn create_test_i64_array(values: Vec<i64>) -> Int64Array {
-        let arrow_array =
-            PrimitiveArray::from_vec(values).to(daft_arrow::datatypes::DataType::Int64);
-        let field = Arc::new(Field::new("test_int", DataType::Int64));
-        Int64Array::from_arrow2(field, Box::new(arrow_array))
-            .expect("Failed to create test int array")
+        Int64Array::from_vec("test_int", values)
     }
 
     // For a Decimal(p, s) to be valid, p, s, and max_val must satisfy:
