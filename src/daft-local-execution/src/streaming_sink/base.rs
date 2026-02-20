@@ -448,10 +448,13 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
     }
 
     fn start(
-        &self,
+        self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+        let node_id = self.node_id();
+        let name = self.name();
+
         let child_result_receiver = self.child.start(maintain_order, runtime_handle)?;
 
         let (destination_sender, destination_receiver) = create_channel(1);
@@ -491,7 +494,6 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
             runtime_stats: self.runtime_stats.clone(),
             stats_manager: runtime_handle.stats_manager(),
         };
-        let node_id = self.node_id();
         runtime_handle.spawn(
             async move {
                 Self::process_input(node_id, child_result_receiver, &mut ctx).await?;
@@ -524,7 +526,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                 ctx.stats_manager.finalize_node(node_id);
                 Ok(())
             },
-            &self.name(),
+            &name,
         );
         Ok(destination_receiver)
     }

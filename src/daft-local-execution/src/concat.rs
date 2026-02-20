@@ -166,17 +166,19 @@ impl PipelineNode for ConcatNode {
     }
 
     fn start(
-        &self,
+        self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+        let node_id = self.node_id();
+        let name = self.name();
+
         let left_receiver = self.left.start(maintain_order, runtime_handle)?;
         let right_receiver = self.right.start(maintain_order, runtime_handle)?;
 
         let (destination_sender, destination_receiver) = create_channel(1);
 
         let stats_manager = runtime_handle.stats_manager();
-        let node_id = self.node_id();
         let runtime_stats = self.runtime_stats.clone();
         let left_sender = destination_sender.clone();
         let right_sender = destination_sender;
@@ -217,7 +219,7 @@ impl PipelineNode for ConcatNode {
                 stats_manager.finalize_node(node_id);
                 Ok(())
             },
-            &self.name(),
+            &name,
         );
 
         Ok(destination_receiver)

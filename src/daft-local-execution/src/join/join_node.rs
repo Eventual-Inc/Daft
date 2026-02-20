@@ -467,10 +467,13 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
     }
 
     fn start(
-        &self,
+        self: Box<Self>,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<Arc<MicroPartition>>> {
+        let node_id = self.node_id();
+        let op_name = self.op.name().to_string();
+
         let build_child_receiver = self.left.start(false, runtime_handle)?;
         let probe_child_receiver = self.right.start(maintain_order, runtime_handle)?;
 
@@ -497,9 +500,7 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
         );
 
         let stats_manager = runtime_handle.stats_manager();
-        let node_id = self.node_id();
         let runtime_stats = self.runtime_stats.clone();
-        let op_name = self.op.name().to_string();
         let op = self.op.clone();
         runtime_handle.spawn(
             async move {
