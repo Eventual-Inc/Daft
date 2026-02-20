@@ -29,9 +29,7 @@ macro_rules! impl_series_like_for_logical_array {
             fn into_series(&self) -> Series {
                 self.0.clone().into_series()
             }
-            fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
-                self.0.to_arrow2()
-            }
+
             fn to_arrow(&self) -> DaftResult<ArrayRef> {
                 self.0.to_arrow()
             }
@@ -211,9 +209,7 @@ where
     fn into_series(&self) -> Series {
         self.0.clone().into_series()
     }
-    fn to_arrow2(&self) -> Box<dyn daft_arrow::array::Array> {
-        self.0.to_arrow2()
-    }
+
     fn to_arrow(&self) -> DaftResult<ArrayRef> {
         self.0.to_arrow()
     }
