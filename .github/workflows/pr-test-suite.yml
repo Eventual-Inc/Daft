@@ -24,6 +24,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Temporary job to verify restore-mtime works on both Linux and macOS.
+  # TODO: Remove this job once verified.
+  test-restore-mtime:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+    - uses: ./.github/actions/restore-mtime
+    - name: Verify file mtimes were restored
+      shell: bash
+      run: |
+        # Pick a file that has existed for a long time and check its mtime
+        # is older than the checkout time (i.e., restore-mtime did something)
+        checkout_time=$(date +%s)
+        file_mtime=$(stat -c %Y Cargo.toml 2>/dev/null || stat -f %m Cargo.toml)
+        echo "Cargo.toml mtime: $file_mtime ($(date -r "$file_mtime" 2>/dev/null || date -d "@$file_mtime" 2>/dev/null))"
+        echo "Checkout time:    $checkout_time"
+        if [ "$file_mtime" -ge "$checkout_time" ]; then
+          echo "ERROR: Cargo.toml mtime ($file_mtime) >= checkout time ($checkout_time)"
+          echo "restore-mtime did not work!"
+          exit 1
+        fi
+        echo "OK: Cargo.toml mtime is in the past, restore-mtime worked."
+
   skipcheck:
     runs-on: ubuntu-latest
     outputs:
