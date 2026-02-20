@@ -63,8 +63,8 @@ impl Source for FlightShuffleReadSource {
     }
 
     #[instrument(skip_all, name = "FlightShuffleReadSource::get_data")]
-    async fn get_data(
-        &self,
+    fn get_data(
+        &mut self,
         _maintain_order: bool,
         _io_stats: IOStatsRef,
         _chunk_size: usize,

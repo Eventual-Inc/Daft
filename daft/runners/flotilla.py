@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, NamedTuple
 from daft.daft import (
     DistributedPhysicalPlan,
     DistributedPhysicalPlanRunner,
+    Input,
     LocalPhysicalPlan,
     NativeExecutor,
     PyDaftExecutionConfig,
@@ -103,6 +104,7 @@ class RaySwordfishActor:
         # Configure the number of worker threads for swordfish, according to the number of CPUs visible to ray.
         set_compute_runtime_num_worker_threads(num_cpus)
         set_event_loop(asyncio.get_running_loop())
+        self.native_executor = NativeExecutor()
         self.ip = ray.util.get_node_ip_address()
         self.server = start_flight_server(self.ip)
         self.port = self.server.port()
@@ -114,22 +116,39 @@ class RaySwordfishActor:
         self,
         plan: LocalPhysicalPlan,
         exec_cfg: PyDaftExecutionConfig,
-        psets: dict[str, list[ray.ObjectRef]],
         context: dict[str, str] | None,
+        **inputs: (
+            Input | list[ray.ObjectRef]
+        ),  # PyMicroPartitions are separated from Inputs because they are Ray ObjectRefs, which will be resolved by Ray.
     ) -> AsyncGenerator[MicroPartition | SwordfishTaskMetadata, None]:
         """Run a plan on swordfish and yield partitions."""
         # We import PyDaftContext inside the function because PyDaftContext is not serializable.
         from daft.daft import PyDaftContext
 
         with profile():
-            psets = {k: await asyncio.gather(*v) for k, v in psets.items()}
-            psets_mp = {k: [v._micropartition for v in v] for k, v in psets.items()}
+            # create the resolved inputs from the micropartitions and the other inputs
+            resolved_inputs: dict[int, Input | list[PyMicroPartition]] = {}
+            list_items = [(source_id, part) for source_id, part in inputs.items() if isinstance(part, list)]
+            non_list_items = [(source_id, part) for source_id, part in inputs.items() if not isinstance(part, list)]
+            if list_items:
+                list_results = await asyncio.gather(*[asyncio.gather(*part) for _, part in list_items])
+                for (source_id, _), mps in zip(list_items, list_results):
+                    resolved_inputs[int(source_id)] = [mp._micropartition for mp in mps]
 
-            metas = []
-            native_executor = NativeExecutor()
+            for source_id, part in non_list_items:
+                resolved_inputs[int(source_id)] = part
+
             ctx = PyDaftContext()
             ctx._daft_execution_config = exec_cfg
-            result_handle = native_executor.run(plan, psets_mp, ctx, None, context)
+            task_id = int(context.get("task_id", "0")) if context else 0
+            result_handle = await self.native_executor.run(
+                plan,
+                ctx,
+                task_id,
+                resolved_inputs,
+                context,
+            )
+            metas = []
             async for partition in result_handle:
                 if partition is None:
                     break
@@ -153,7 +172,11 @@ def get_boundaries_remote(
 
     mp = MicroPartition.concat(list(samples))
     nulls_first = nulls_first if nulls_first is not None else descending
-    merged_sorted = mp.sort(sort_by_exprs.to_column_expressions(), descending=descending, nulls_first=nulls_first)
+    merged_sorted = mp.sort(
+        sort_by_exprs.to_column_expressions(),
+        descending=descending,
+        nulls_first=nulls_first,
+    )
 
     result = merged_sorted.quantiles(num_quantiles)
     return result._micropartition
@@ -226,11 +249,16 @@ class RaySwordfishActorHandle:
         self.actor_handle = actor_handle
 
     def submit_task(self, task: RaySwordfishTask) -> RaySwordfishTaskHandle:
-        psets = {k: [v.object_ref for v in v] for k, v in task.psets().items()}
-        context = task.context()
-        context["task_id"] = str(task.id())
+        inputs: dict[str, Input | list[ray.ObjectRef]] = {}
+        for source_id, py_input in task.inputs().items():
+            inputs[str(source_id)] = py_input
+        for source_id, refs in task.psets().items():
+            inputs[str(source_id)] = [ref.object_ref for ref in refs]
         result_handle = self.actor_handle.run_plan.options(name=task.name()).remote(
-            task.plan(), task.config(), psets, context
+            task.plan(),
+            task.config(),
+            task.context(),
+            **inputs,
         )
         return RaySwordfishTaskHandle(
             result_handle,
@@ -423,7 +451,7 @@ class FlotillaRunner:
             name=get_flotilla_runner_actor_name(),
             namespace=FLOTILLA_RUNNER_NAMESPACE,
             get_if_exists=True,
-            runtime_env={"env_vars": {"DAFT_DASHBOARD_URL": dashboard_url}} if dashboard_url else None,
+            runtime_env=({"env_vars": {"DAFT_DASHBOARD_URL": dashboard_url}} if dashboard_url else None),
             scheduling_strategy=(
                 ray.util.scheduling_strategies.NodeAffinitySchedulingStrategy(
                     node_id=head_node_id,

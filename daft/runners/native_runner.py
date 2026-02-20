@@ -66,6 +66,8 @@ class NativeRunner(Runner[MicroPartition]):
         if num_threads is not None:
             set_compute_runtime_num_worker_threads(num_threads)
 
+        self.native_executor = NativeExecutor()
+
     def initialize_partition_set_cache(self) -> PartitionSetCache:
         return LOCAL_PARTITION_SET_CACHE
 
@@ -130,14 +132,16 @@ class NativeRunner(Runner[MicroPartition]):
             logger.warning("Failed to send optimization end notification: %s", e)
             pass
 
-        plan = LocalPhysicalPlan.from_logical_plan_builder(builder._builder)
+        psets = {
+            k: [v.micropartition()._micropartition for v in v.values()]
+            for k, v in self._part_set_cache.get_all_partition_sets().items()
+        }
+        plan, inputs = LocalPhysicalPlan.from_logical_plan_builder(builder._builder, psets)
 
-        executor = NativeExecutor()
-        results_gen = executor.run(
+        results_gen = self.native_executor.run(
             plan,
-            {k: v.values() for k, v in self._part_set_cache.get_all_partition_sets().items()},
+            inputs,
             ctx,
-            results_buffer_size,
             {"query_id": query_id},
         )
 

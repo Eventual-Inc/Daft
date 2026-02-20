@@ -3100,6 +3100,7 @@ dependencies = [
  "daft-functions",
  "daft-functions-list",
  "daft-logical-plan",
+ "daft-micropartition",
  "daft-recordbatch",
  "indexmap 2.13.0",
  "log",

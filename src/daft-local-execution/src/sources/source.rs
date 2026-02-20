@@ -16,9 +16,10 @@ use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use futures::{StreamExt, stream::BoxStream};
 use opentelemetry::{KeyValue, metrics::Meter};
+use snafu::ResultExt;
 
 use crate::{
-    ExecutionRuntimeContext,
+    ExecutionRuntimeContext, PipelineExecutionSnafu,
     pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineNode},
     runtime_stats::RuntimeStats,
 };
@@ -84,8 +85,8 @@ pub trait Source: Send + Sync {
         Arc::new(SourceStats::new(meter, node_info))
     }
     fn multiline_display(&self) -> Vec<String>;
-    async fn get_data(
-        &self,
+    fn get_data(
+        &mut self,
         maintain_order: bool,
         io_stats: IOStatsRef,
         chunk_size: usize,
@@ -94,7 +95,7 @@ pub trait Source: Send + Sync {
 }
 
 pub(crate) struct SourceNode {
-    source: Arc<dyn Source>,
+    source: Box<dyn Source>,
     runtime_stats: Arc<SourceStats>,
     plan_stats: StatsState,
     node_info: Arc<NodeInfo>,
@@ -103,7 +104,7 @@ pub(crate) struct SourceNode {
 
 impl SourceNode {
     pub fn new(
-        source: Arc<dyn Source>,
+        source: Box<dyn Source>,
         plan_stats: StatsState,
         ctx: &BuilderContext,
         context: &LocalNodeContext,
@@ -199,11 +200,10 @@ impl PipelineNode for SourceNode {
         self.morsel_size_requirement = downstream_requirement;
     }
     fn start(
-        &self,
+        &mut self,
         maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<crate::channel::Receiver<Arc<MicroPartition>>> {
-        let source = self.source.clone();
         let io_stats = self.runtime_stats.io_stats.clone();
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
@@ -214,13 +214,17 @@ impl PipelineNode for SourceNode {
             MorselSizeRequirement::Flexible(_, upper) => upper,
         };
 
+        let mut source_stream = self
+            .source
+            .get_data(maintain_order, io_stats, chunk_size.into())
+            .with_context(|_| PipelineExecutionSnafu {
+                node_name: self.name().to_string(),
+            })?;
         let runtime_stats = self.runtime_stats.clone();
+        let schema = self.source.schema().clone();
         runtime_handle.spawn(
             async move {
                 let mut has_data = false;
-                let mut source_stream = source
-                    .get_data(maintain_order, io_stats, chunk_size.get())
-                    .await?;
                 stats_manager.activate_node(node_id);
 
                 while let Some(part) = source_stream.next().await {
@@ -228,13 +232,11 @@ impl PipelineNode for SourceNode {
                     let part = part?;
                     runtime_stats.add_rows_out(part.len() as u64);
                     if destination_sender.send(part).await.is_err() {
-                        stats_manager.finalize_node(node_id);
-                        return Ok(());
+                        break;
                     }
                 }
                 if !has_data {
-                    stats_manager.activate_node(node_id);
-                    let empty = Arc::new(MicroPartition::empty(Some(source.schema().clone())));
+                    let empty = Arc::new(MicroPartition::empty(Some(schema.clone())));
                     let _ = destination_sender.send(empty).await;
                     runtime_stats.add_rows_out(0);
                 }

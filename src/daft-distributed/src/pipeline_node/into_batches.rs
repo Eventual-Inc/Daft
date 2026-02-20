@@ -118,7 +118,8 @@ impl IntoBatchesNode {
                             additional: None,
                         },
                     );
-                    let builder = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+                    let builder = SwordfishTaskBuilder::new(plan, self.as_ref())
+                        .with_psets(self.node_id(), psets);
                     if result_tx.send(builder).await.is_err() {
                         break;
                     }
@@ -142,7 +143,8 @@ impl IntoBatchesNode {
                     additional: None,
                 },
             );
-            let builder = SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(psets);
+            let builder =
+                SwordfishTaskBuilder::new(plan, self.as_ref()).with_psets(self.node_id(), psets);
             let _ = result_tx.send(builder).await;
         }
         Ok(())
