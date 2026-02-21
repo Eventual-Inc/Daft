@@ -10,8 +10,7 @@ use crate::{ATTR_NODE_ID, ATTR_NODE_TYPE, NodeID};
 pub enum NodeType {
     // Sources
     // Produces MicroPartitions, never consumes
-    #[default] // For testing purposes
-    EmptyScan,
+    #[default]
     GlobScan,
     InMemoryScan,
     ScanTask,
