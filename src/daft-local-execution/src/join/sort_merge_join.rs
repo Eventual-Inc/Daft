@@ -138,25 +138,8 @@ impl JoinOperator for SortMergeJoinOperator {
         &self,
         input: Arc<MicroPartition>,
         state: Self::ProbeState,
-        _spawner: &ExecutionTaskSpawner,
+        spawner: &ExecutionTaskSpawner,
     ) -> ProbeResult<Self> {
-        // For sort merge join, probe is synchronous, so we need to handle initialization differently
-        // Since we can't await in a non-async function, we'll need to spawn a task or handle it synchronously
-        // But sort_merge_join doesn't spawn tasks, so we need a different approach
-
-        // Actually, looking at the implementation, probe is called synchronously and returns immediately.
-        // The initialization needs to happen before we can use the state. Since we can't await here,
-        // we'll need to make probe async or handle initialization differently.
-
-        // For now, let's make probe spawn a task for initialization if needed, even though it's simple
-        // Or we can use a blocking approach with tokio::runtime::Handle::current().block_on()
-        // But that's not ideal. Let's check if we can make the state initialization lazy in a different way.
-
-        // Actually, the simplest is to use tokio::task::block_in_place or handle.current().block_on()
-        // But that's blocking. The better approach is to spawn a task even for this simple case.
-
-        // Let's use a simpler approach: spawn a task that initializes and then processes
-        let spawner = _spawner.clone();
         spawner
             .spawn(
                 async move {

@@ -10,22 +10,22 @@ use common_display::{
 use common_error::{DaftError, DaftResult};
 use common_file_formats::FileFormat;
 use common_metrics::{
-    QueryID,
+    ATTR_QUERY_ID, QueryID,
     ops::{NodeCategory, NodeInfo, NodeType},
 };
 use common_scan_info::ScanTaskLikeRef;
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
-    CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput,
-    FlightShuffleWrite, GlobScan, HashAggregate, HashJoin, InMemoryScan, InputId, IntoBatches,
-    Limit, LocalNodeContext, LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan,
-    PhysicalWrite, Pivot, Project, Sample, Sort, SortMergeJoin, SourceId, TopN, UDFProject,
-    UnGroupedAggregate, Unpivot, VLLMProject, WindowOrderByOnly,
-    WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy, WindowPartitionOnly,
+    CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleReadInput, GlobScan,
+    HashAggregate, HashJoin, InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext,
+    LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project,
+    Sample, Sort, SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot,
+    VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
+    WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
-use daft_micropartition::{MicroPartition, MicroPartitionRef};
+use daft_micropartition::MicroPartitionRef;
 use daft_shuffles::client::FlightClientManager;
 use daft_writers::make_physical_writer_factory;
 use indexmap::IndexSet;
@@ -207,8 +207,8 @@ impl BuilderContext {
     }
 
     pub fn new_with_context(query_id: QueryID, context: HashMap<String, String>) -> Self {
-        let scope = InstrumentationScope::builder("daft.local.node_stats")
-            .with_attributes(vec![KeyValue::new("query_id", query_id.to_string())])
+        let scope = InstrumentationScope::builder("daft.execution.local")
+            .with_attributes(vec![KeyValue::new(ATTR_QUERY_ID, query_id.to_string())])
             .build();
         let meter = global::meter_with_scope(scope);
 

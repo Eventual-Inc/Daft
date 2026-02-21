@@ -68,6 +68,7 @@ fn get_global_runtime() -> &'static Handle {
 }
 
 /// Message sent to the execution task to enqueue inputs
+#[derive(Clone)]
 pub(crate) struct EnqueueInputMessage {
     /// The input_id for this enqueue operation
     input_id: InputId,

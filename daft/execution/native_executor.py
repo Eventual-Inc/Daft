@@ -47,8 +47,8 @@ class NativeExecutor:
             result_handle = await self._executor.run(
                 local_physical_plan,
                 ctx._ctx,
-                dict(inputs),
                 0,
+                dict(inputs),
                 context,
             )
             nonlocal result

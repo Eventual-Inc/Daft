@@ -31,14 +31,14 @@ use runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle, TimedFuture};
 use snafu::{ResultExt, Snafu, futures::TryFutureExt};
 use tracing::Instrument;
 
-/// Simple control flow indicator for processing loops.
-/// Messages are sent directly by handlers, not returned.
+/// Control flow indicator for processing loops.
+/// Used to signal whether processing should continue or break out of a loop.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ControlFlow {
+pub(crate) enum OperatorControlFlow {
     /// Continue processing - caller should proceed with the next iteration
     Continue,
-    /// Stop processing - caller should exit the loop
-    Stop,
+    /// Break processing - caller should exit the loop immediately
+    Break,
 }
 
 /// The `OperatorOutput` enum represents the output of an operator.

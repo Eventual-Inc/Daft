@@ -19,7 +19,7 @@ use opentelemetry::metrics::Meter;
 use tracing::info_span;
 
 use crate::{
-    ControlFlow, ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
+    OperatorControlFlow, ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},
@@ -160,11 +160,11 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
     }
 
     #[inline]
-    async fn send(&self, msg: PipelineMessage) -> ControlFlow {
+    async fn send(&self, msg: PipelineMessage) -> OperatorControlFlow {
         if self.output_sender.send(msg).await.is_err() {
-            ControlFlow::Stop
+            OperatorControlFlow::Break
         } else {
-            ControlFlow::Continue
+            OperatorControlFlow::Continue
         }
     }
 
@@ -227,25 +227,25 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
         Ok(())
     }
 
-    async fn try_flush_input(&mut self, input_id: InputId) -> DaftResult<ControlFlow> {
+    async fn try_flush_input(&mut self, input_id: InputId) -> DaftResult<OperatorControlFlow> {
         let input_state = self
             .input_states
             .get_mut(&input_id)
             .expect("Input should be present");
         if input_state.can_flush() {
             self.input_states.remove(&input_id);
-            if self.send(PipelineMessage::Flush(input_id)).await == ControlFlow::Stop {
-                return Ok(ControlFlow::Stop);
+            if self.send(PipelineMessage::Flush(input_id)).await == OperatorControlFlow::Break {
+                return Ok(OperatorControlFlow::Break);
             }
-            return Ok(ControlFlow::Continue);
+            return Ok(OperatorControlFlow::Continue);
         }
-        Ok(ControlFlow::Continue)
+        Ok(OperatorControlFlow::Continue)
     }
 
     async fn handle_task_completed(
         &mut self,
         task_result: ExecutionTaskResult<Op::State>,
-    ) -> DaftResult<ControlFlow> {
+    ) -> DaftResult<OperatorControlFlow> {
         let ExecutionTaskResult {
             input_id,
             state,
@@ -268,9 +268,9 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
                     partition: mp.clone(),
                 })
                 .await
-                == ControlFlow::Stop
+                == OperatorControlFlow::Break
             {
-                return Ok(ControlFlow::Stop);
+                return Ok(OperatorControlFlow::Break);
             }
         }
 
@@ -295,7 +295,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
                     &self.op,
                     &self.task_spawner,
                 );
-                Ok(ControlFlow::Continue)
+                Ok(OperatorControlFlow::Continue)
             }
         }
     }
@@ -323,7 +323,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
         self.try_spawn_tasks()
     }
 
-    async fn handle_flush(&mut self, input_id: InputId) -> DaftResult<ControlFlow> {
+    async fn handle_flush(&mut self, input_id: InputId) -> DaftResult<OperatorControlFlow> {
         let Some(input) = self.input_states.get_mut(&input_id) else {
             // Never seen this input_id, forward flush immediately.
             return Ok(self.send(PipelineMessage::Flush(input_id)).await);
@@ -333,7 +333,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
         self.try_flush_input(input_id).await
     }
 
-    async fn handle_input_closed(&mut self) -> DaftResult<ControlFlow> {
+    async fn handle_input_closed(&mut self) -> DaftResult<OperatorControlFlow> {
         for input_state in self.input_states.values_mut() {
             input_state.pending_flush = true;
         }
@@ -341,11 +341,11 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
         let mut input_ids: Vec<InputId> = self.input_states.keys().copied().collect();
         input_ids.sort_unstable();
         for input_id in input_ids {
-            if self.try_flush_input(input_id).await? == ControlFlow::Stop {
-                return Ok(ControlFlow::Stop);
+            if self.try_flush_input(input_id).await? == OperatorControlFlow::Break {
+                return Ok(OperatorControlFlow::Break);
             }
         }
-        Ok(ControlFlow::Continue)
+        Ok(OperatorControlFlow::Continue)
     }
 
     async fn process_input(&mut self, receiver: &mut Receiver<PipelineMessage>) -> DaftResult<()> {
@@ -368,12 +368,12 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
                     partition,
                 } => {
                     self.handle_morsel(input_id, partition)?;
-                    ControlFlow::Continue
+                    OperatorControlFlow::Continue
                 }
                 PipelineEvent::Flush(input_id) => self.handle_flush(input_id).await?,
                 PipelineEvent::InputClosed => self.handle_input_closed().await?,
             };
-            if cf == ControlFlow::Stop {
+            if cf == OperatorControlFlow::Break {
                 return Ok(());
             }
         }

@@ -280,7 +280,7 @@ impl DistributedPipelineNode {
         Self { op, children }
     }
 
-    pub(crate) fn context(&self) -> &PipelineNodeContext {
+    pub fn context(&self) -> &PipelineNodeContext {
         self.op.context()
     }
     fn config(&self) -> &PipelineNodeConfig {
