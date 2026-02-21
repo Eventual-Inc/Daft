@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, hash_map::Entry},
     ops::ControlFlow,
     sync::Arc,
     time::{Duration, Instant},
@@ -294,9 +294,9 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
                                 PipelineMessage::Flush(input_id) => *input_id,
                             };
 
-                            if !per_input_senders.contains_key(&input_id) {
+                            if let Entry::Vacant(e) = per_input_senders.entry(input_id) {
                                 let (tx, rx) = create_channel(1);
-                                per_input_senders.insert(input_id, tx);
+                                e.insert(tx);
 
                                 let op = op.clone();
                                 let task_spawner = task_spawner.clone();

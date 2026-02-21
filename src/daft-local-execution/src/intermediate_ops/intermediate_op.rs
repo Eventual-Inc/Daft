@@ -19,7 +19,7 @@ use opentelemetry::metrics::Meter;
 use tracing::info_span;
 
 use crate::{
-    OperatorControlFlow, ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorControlFlow, OperatorOutput,
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},

@@ -1,14 +1,18 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, hash_map::Entry},
     sync::{Arc, Mutex},
 };
 
 use common_error::DaftResult;
 use common_runtime::JoinSet;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::watch;
 
 use crate::{
-    channel::{create_channel, Receiver, Sender}, join::join_operator::JoinOperator, pipeline_message::{InputId, PipelineMessage}, runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle}, ExecutionTaskSpawner
+    ExecutionTaskSpawner,
+    channel::{Receiver, Sender, create_channel},
+    join::join_operator::JoinOperator,
+    pipeline_message::{InputId, PipelineMessage},
+    runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle},
 };
 
 /// Bridge for communicating finalized build state between build and probe sides.
@@ -107,7 +111,7 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
     }
 
     pub(crate) async fn process_build_input(
-        &mut self,
+        &self,
         receiver: Receiver<PipelineMessage>,
     ) -> DaftResult<()> {
         let mut receiver = receiver;
@@ -135,9 +139,9 @@ impl<Op: JoinOperator + 'static> BuildExecutionContext<Op> {
                         PipelineMessage::Flush(input_id) => *input_id,
                     };
 
-                    if !per_input_senders.contains_key(&input_id) {
+                    if let Entry::Vacant(e) = per_input_senders.entry(input_id) {
                         let (tx, rx) = create_channel(1);
-                        per_input_senders.insert(input_id, tx);
+                        e.insert(tx);
 
                         let op = self.op.clone();
                         let task_spawner = self.task_spawner.clone();

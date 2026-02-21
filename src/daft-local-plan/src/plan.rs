@@ -600,9 +600,7 @@ impl LocalPhysicalPlan {
                 schema.hash(hasher);
             }
             Self::FlightShuffleRead(FlightShuffleRead {
-                source_id,
-                schema,
-                ..
+                source_id, schema, ..
             }) => {
                 source_id.hash(hasher);
                 schema.hash(hasher);

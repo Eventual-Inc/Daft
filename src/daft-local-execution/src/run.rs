@@ -313,7 +313,7 @@ impl NativeExecutor {
             .as_ref()
             .and_then(|c| c.get("query_id"))
             .map(|s| QueryID::from(s.as_str()))
-            .unwrap_or(QueryID::from(""));
+            .unwrap_or_else(|| QueryID::from(""));
         let plan_fingerprint = local_physical_plan.fingerprint();
         let fingerprint = plan_key(plan_fingerprint, query_id.clone());
         let enable_explain_analyze = should_enable_explain_analyze();
@@ -535,8 +535,7 @@ impl NativeExecutor {
                 // Drop the sender so the exec task sees input exhaustion
                 drop(enqueue_input_sender);
                 // Await the exec task for its final result (includes stats)
-                let result = task_handle.await?;
-                result
+                task_handle.await?
             }
             .boxed())
         } else {

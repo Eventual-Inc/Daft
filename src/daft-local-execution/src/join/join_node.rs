@@ -192,7 +192,7 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
         let stats_manager = runtime_handle.stats_manager();
 
         // Initialize build side
-        let mut build_ctx = BuildExecutionContext::new(
+        let build_ctx = BuildExecutionContext::new(
             self.op.clone(),
             build_task_spawner,
             build_state_bridge.clone(),
@@ -202,7 +202,7 @@ impl<Op: JoinOperator + 'static> PipelineNode for JoinNode<Op> {
         );
 
         // Initialize probe side
-        let mut probe_ctx = ProbeExecutionContext::new(
+        let probe_ctx = ProbeExecutionContext::new(
             self.op.clone(),
             probe_task_spawner,
             probe_finalize_spawner,

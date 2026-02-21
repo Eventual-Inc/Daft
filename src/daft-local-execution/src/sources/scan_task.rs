@@ -45,7 +45,7 @@ impl ScanTaskSource {
         receiver: UnboundedReceiver<(InputId, Vec<ScanTaskLikeRef>)>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
-        cfg: &DaftExecutionConfig,
+        _cfg: &DaftExecutionConfig,
     ) -> Self {
         let num_cpus = get_compute_pool_num_threads();
         let num_parallel_tasks = num_cpus;

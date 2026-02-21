@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, hash_map::Entry},
     ops::ControlFlow,
     sync::Arc,
     time::{Duration, Instant},
@@ -7,6 +7,7 @@ use std::{
 
 use common_error::DaftResult;
 use common_runtime::JoinSet;
+
 use crate::{
     ExecutionTaskSpawner,
     buffer::RowBasedBuffer,
@@ -40,14 +41,10 @@ async fn process_single_input<Op: JoinOperator + 'static>(
         })
         .collect();
 
-    let (lower, upper) = op
-        .morsel_size_requirement()
-        .unwrap_or_default()
-        .values();
+    let (lower, upper) = op.morsel_size_requirement().unwrap_or_default().values();
     let mut buffer = RowBasedBuffer::new(lower, upper);
 
-    let mut task_set: JoinSet<DaftResult<(Op::ProbeState, ProbeOutput, Duration)>> =
-        JoinSet::new();
+    let mut task_set: JoinSet<DaftResult<(Op::ProbeState, ProbeOutput, Duration)>> = JoinSet::new();
     let mut input_closed = false;
 
     while !input_closed || !task_set.is_empty() {
@@ -60,8 +57,7 @@ async fn process_single_input<Op: JoinOperator + 'static>(
                 let task_spawner = task_spawner.clone();
                 task_set.spawn(async move {
                     let now = Instant::now();
-                    let (new_state, result) =
-                        op.probe(partition, state, &task_spawner).await??;
+                    let (new_state, result) = op.probe(partition, state, &task_spawner).await??;
                     Ok((new_state, result, now.elapsed()))
                 });
             } else {
@@ -131,8 +127,7 @@ async fn process_single_input<Op: JoinOperator + 'static>(
         let mut state = states.pop().unwrap();
         loop {
             let now = Instant::now();
-            let (new_state, result) =
-                op.probe(partition, state, &task_spawner).await??;
+            let (new_state, result) = op.probe(partition, state, &task_spawner).await??;
             let elapsed = now.elapsed();
             runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
 
@@ -222,7 +217,7 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
     }
 
     pub(crate) async fn process_probe_input(
-        &mut self,
+        &self,
         receiver: Receiver<PipelineMessage>,
     ) -> DaftResult<()> {
         let mut receiver = receiver;
@@ -244,9 +239,9 @@ impl<Op: JoinOperator + 'static> ProbeExecutionContext<Op> {
                         PipelineMessage::Flush(input_id) => *input_id,
                     };
 
-                    if !per_input_senders.contains_key(&input_id) {
+                    if let Entry::Vacant(e) = per_input_senders.entry(input_id) {
                         let (tx, rx) = create_channel(1);
-                        per_input_senders.insert(input_id, tx);
+                        e.insert(tx);
 
                         let op = self.op.clone();
                         let task_spawner = self.task_spawner.clone();

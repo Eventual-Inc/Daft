@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, hash_map::Entry},
     ops::ControlFlow,
     sync::Arc,
     time::{Duration, Instant},
@@ -219,46 +219,44 @@ async fn process_single_input<Op: StreamingSink + 'static>(
     }
 
     // Drain remaining buffer
-    if !finished {
-        if let Some(mut partition) = buffer.pop_all()? {
-            let mut state = states.pop().unwrap();
-            loop {
-                let now = Instant::now();
-                let (new_state, result) = op.execute(partition, state, &task_spawner).await??;
-                let elapsed = now.elapsed();
-                runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
+    if !finished && let Some(mut partition) = buffer.pop_all()? {
+        let mut state = states.pop().unwrap();
+        loop {
+            let now = Instant::now();
+            let (new_state, result) = op.execute(partition, state, &task_spawner).await??;
+            let elapsed = now.elapsed();
+            runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
 
-                if let Some(mp) = result.output() {
-                    runtime_stats.add_rows_out(mp.len() as u64);
-                    batch_manager.record_execution_stats(runtime_stats.as_ref(), mp.len(), elapsed);
-                    if output_sender
-                        .send(PipelineMessage::Morsel {
-                            input_id,
-                            partition: mp.clone(),
-                        })
-                        .await
-                        .is_err()
-                    {
-                        return Ok(ControlFlow::Break(()));
-                    }
+            if let Some(mp) = result.output() {
+                runtime_stats.add_rows_out(mp.len() as u64);
+                batch_manager.record_execution_stats(runtime_stats.as_ref(), mp.len(), elapsed);
+                if output_sender
+                    .send(PipelineMessage::Morsel {
+                        input_id,
+                        partition: mp.clone(),
+                    })
+                    .await
+                    .is_err()
+                {
+                    return Ok(ControlFlow::Break(()));
                 }
+            }
 
-                let new_requirements = batch_manager.calculate_batch_size();
-                buffer.update_bounds(new_requirements);
+            let new_requirements = batch_manager.calculate_batch_size();
+            buffer.update_bounds(new_requirements);
 
-                match result {
-                    StreamingSinkOutput::NeedMoreInput(_) => {
-                        states.push(new_state);
-                        break;
-                    }
-                    StreamingSinkOutput::HasMoreOutput { input, .. } => {
-                        partition = input;
-                        state = new_state;
-                    }
-                    StreamingSinkOutput::Finished(_) => {
-                        finished = true;
-                        break;
-                    }
+            match result {
+                StreamingSinkOutput::NeedMoreInput(_) => {
+                    states.push(new_state);
+                    break;
+                }
+                StreamingSinkOutput::HasMoreOutput { input, .. } => {
+                    partition = input;
+                    state = new_state;
+                }
+                StreamingSinkOutput::Finished(_) => {
+                    finished = true;
+                    break;
                 }
             }
         }
@@ -497,9 +495,9 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                                 PipelineMessage::Flush(input_id) => *input_id,
                             };
 
-                            if !per_input_senders.contains_key(&input_id) {
+                            if let Entry::Vacant(e) = per_input_senders.entry(input_id) {
                                 let (tx, rx) = create_channel(1);
-                                per_input_senders.insert(input_id, tx);
+                                e.insert(tx);
 
                                 let op = op.clone();
                                 let task_spawner = task_spawner.clone();
