@@ -1,13 +1,14 @@
 use std::{collections::HashSet, sync::Arc};
 
 use async_trait::async_trait;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_io_config::IOConfig;
 use common_metrics::ops::NodeType;
-use common_runtime::get_io_runtime;
+use common_runtime::{combine_stream, get_io_runtime};
 use common_scan_info::Pushdowns;
 use daft_core::prelude::*;
 use daft_io::{IOStatsRef, get_io_client};
+use daft_local_plan::InputId;
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use futures::{FutureExt, StreamExt, TryStreamExt};
@@ -16,11 +17,14 @@ use log::warn;
 use tracing::instrument;
 
 use super::source::Source;
-use crate::{channel::create_channel, pipeline::NodeName, sources::source::SourceStream};
+use crate::{
+    channel::{Sender, UnboundedReceiver, create_channel},
+    pipeline::NodeName,
+    sources::source::SourceStream,
+};
 
-#[allow(dead_code)]
 pub struct GlobScanSource {
-    glob_paths: Arc<Vec<String>>,
+    receiver: Option<UnboundedReceiver<(InputId, Vec<String>)>>,
     pushdowns: Pushdowns,
     schema: SchemaRef,
     io_config: Option<IOConfig>,
@@ -28,48 +32,37 @@ pub struct GlobScanSource {
 
 impl GlobScanSource {
     pub fn new(
-        glob_paths: Arc<Vec<String>>,
+        receiver: UnboundedReceiver<(InputId, Vec<String>)>,
         pushdowns: Pushdowns,
         schema: SchemaRef,
         io_config: Option<IOConfig>,
     ) -> Self {
         Self {
-            glob_paths,
+            receiver: Some(receiver),
             pushdowns,
             schema,
             io_config,
         }
     }
 
-    pub fn arced(self) -> Arc<dyn Source> {
-        Arc::new(self) as Arc<dyn Source>
-    }
-}
-
-#[async_trait]
-impl Source for GlobScanSource {
-    #[instrument(name = "GlobScanSource::get_data", level = "info", skip_all)]
-    async fn get_data(
+    /// Spawns the background task that continuously reads glob paths from receiver and processes them
+    fn spawn_glob_path_processor(
         &self,
-        _maintain_order: bool,
+        mut receiver: UnboundedReceiver<(InputId, Vec<String>)>,
+        output_sender: Sender<Arc<MicroPartition>>,
         io_stats: IOStatsRef,
         chunk_size: usize,
-    ) -> DaftResult<SourceStream<'static>> {
-        let io_config = self.io_config.clone().unwrap_or_default();
-        let io_client = get_io_client(true, Arc::new(io_config))?;
+    ) -> common_runtime::RuntimeTask<DaftResult<()>> {
         let io_runtime = get_io_runtime(true);
+        let pushdowns = self.pushdowns.clone();
         let schema = self.schema.clone();
-        let glob_paths = self.glob_paths.clone();
-        let limit = self.pushdowns.limit;
+        let io_config = self.io_config.clone();
 
-        // Spawn a task to stream out the record batches from the glob paths
-        let (tx, rx) = create_channel(1);
-        let task = io_runtime
-            .spawn(async move {
-                let io_client = io_client.clone();
-                let io_stats = io_stats.clone();
-
-                let mut remaining_rows = limit;
+        io_runtime.spawn(async move {
+            let io_client = get_io_client(true, Arc::new(io_config.unwrap_or_default()))?;
+            while let Some((_input_id, glob_paths)) = receiver.recv().await {
+                let mut remaining_rows = pushdowns.limit;
+                let mut has_results = false;
 
                 // Iterate over the unique glob paths and stream out the record batches
                 let unique_glob_paths = glob_paths.iter().unique().collect::<Vec<_>>();
@@ -79,19 +72,17 @@ impl Source for GlobScanSource {
                 } else {
                     None
                 };
-                let mut has_results = false;
+
                 for glob_path in unique_glob_paths {
                     let (source, path) = io_client.get_source_and_path(glob_path).await?;
-                    let io_stats = io_stats.clone();
-                    let schema = schema.clone();
 
                     let stream = source
                         .glob(
                             &path,
-                            None,  // fanout_limit
-                            None,  // page_size
-                            limit, // limit
-                            Some(io_stats),
+                            None,            // fanout_limit
+                            None,            // page_size
+                            pushdowns.limit, // limit
+                            Some(io_stats.clone()),
                             None, // file_format
                         )
                         .await?
@@ -120,7 +111,7 @@ impl Source for GlobScanSource {
                                     Err(daft_io::Error::NotFound { path, .. }) => {
                                         warn!("File not found: {}", path);
                                     }
-                                    Err(e) => return Err(e.into()),
+                                    Err(e) => return Err(DaftError::from(e)),
                                 }
                             }
 
@@ -160,8 +151,10 @@ impl Source for GlobScanSource {
                             (_, None) => futures::future::ready(Ok(true)),
                         }
                     });
-                    while let Some(batch) = stream.next().await {
-                        if tx.send(batch).await.is_err() {
+
+                    while let Some(result) = stream.next().await {
+                        let partition = result?;
+                        if output_sender.send(partition).await.is_err() {
                             break;
                         }
                     }
@@ -170,20 +163,38 @@ impl Source for GlobScanSource {
                         break;
                     }
                 }
+
                 // If no files were found, return an error
                 if !has_results {
-                    return Err(common_error::DaftError::FileNotFound {
+                    return Err(DaftError::FileNotFound {
                         path: glob_paths.join(","),
                         source: "No files found".into(),
                     });
                 }
-                Ok(())
-            })
-            .map(|x| x?);
+            }
+            Ok(())
+        })
+    }
+}
 
-        let receiver_stream = rx.into_stream();
-        let combined_stream = common_runtime::combine_stream(receiver_stream, task);
-        Ok(combined_stream.boxed())
+#[async_trait]
+impl Source for GlobScanSource {
+    #[instrument(name = "GlobScanSource::get_data", level = "info", skip_all)]
+    fn get_data(
+        &mut self,
+        _maintain_order: bool,
+        io_stats: IOStatsRef,
+        chunk_size: usize,
+    ) -> DaftResult<SourceStream<'static>> {
+        let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(1);
+        let input_reiver = self.receiver.take().expect("Receiver not found");
+
+        let processor_task =
+            self.spawn_glob_path_processor(input_reiver, output_sender, io_stats, chunk_size);
+
+        let result_stream = output_receiver.into_stream().map(Ok);
+        let combined_stream = combine_stream(result_stream, processor_task.map(|x| x?));
+        Ok(Box::pin(combined_stream))
     }
 
     fn name(&self) -> NodeName {
@@ -198,10 +209,10 @@ impl Source for GlobScanSource {
         let mut res = vec![];
         res.push("Glob Scan:".to_string());
         res.push(format!("Schema = {}", self.schema.short_string()));
-        res.push(format!("Glob paths = {:?}", self.glob_paths));
         if let Some(io_config) = &self.io_config {
             res.push(format!("IO Config = {:?}", io_config));
         }
+        res.extend(self.pushdowns.multiline_display());
         res
     }
 

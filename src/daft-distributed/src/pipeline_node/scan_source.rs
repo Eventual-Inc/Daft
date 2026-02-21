@@ -112,9 +112,8 @@ impl ScanSourceNode {
     }
 
     fn make_source_task(self: &Arc<Self>, scan_task: ScanTaskLikeRef) -> SwordfishTaskBuilder {
-        let scan_tasks = Arc::new(vec![scan_task]);
         let physical_scan = LocalPhysicalPlan::physical_scan(
-            scan_tasks,
+            self.node_id(),
             self.pushdowns.clone(),
             self.config.schema.clone(),
             StatsState::NotMaterialized,
@@ -125,6 +124,7 @@ impl ScanSourceNode {
         );
 
         SwordfishTaskBuilder::new(physical_scan, self.as_ref())
+            .with_scan_tasks(self.node_id(), vec![scan_task])
     }
 }
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from daft.daft import (
+    Input,
     LocalPhysicalPlan,
     PyDaftExecutionConfig,
     PyExecutionEngineFinalResult,
@@ -16,14 +17,12 @@ from daft.event_loop import get_or_init_event_loop
 from daft.recordbatch import MicroPartition, RecordBatch
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncGenerator, Generator
+    from collections.abc import AsyncGenerator, Generator, Mapping
 
     from daft.context import DaftContext
     from daft.logical.builder import LogicalPlanBuilder
     from daft.runners.partitioning import (
         LocalMaterializedResult,
-        MaterializedResult,
-        PartitionT,
     )
 
 
@@ -34,27 +33,24 @@ class NativeExecutor:
     def run(
         self,
         local_physical_plan: LocalPhysicalPlan,
-        psets: dict[str, list[MaterializedResult[PartitionT]]],
+        inputs: Mapping[int, Input | list[PyMicroPartition]],
         ctx: DaftContext,
-        results_buffer_size: int | None,
         context: dict[str, str] | None,
     ) -> Generator[LocalMaterializedResult, None, RecordBatch]:
-        from daft.runners.partitioning import LocalMaterializedResult
-
-        psets_mp = {
-            part_id: [part.micropartition()._micropartition for part in parts] for part_id, parts in psets.items()
-        }
-        result_handle = self._executor.run(
-            local_physical_plan,
-            psets_mp,
-            ctx._ctx,
-            results_buffer_size,
-            context,
+        from daft.runners.partitioning import (
+            LocalMaterializedResult,
         )
 
         result: PyExecutionEngineFinalResult | None = None
 
         async def stream_results() -> AsyncGenerator[PyMicroPartition | None, None]:
+            result_handle = await self._executor.run(
+                local_physical_plan,
+                ctx._ctx,
+                0,
+                dict(inputs),
+                context,
+            )
             nonlocal result
             try:
                 async for batch in result_handle:

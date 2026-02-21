@@ -3,27 +3,12 @@ use std::sync::Arc;
 use common_error::{DaftError, DaftResult};
 use common_ndarray::NdArray;
 use daft_arrow::datatypes::ArrowDataType;
-use daft_schema::{dtype::DaftDataType, field::DaftField};
+use daft_schema::dtype::DaftDataType;
 
 use super::Series;
-use crate::{
-    array::ops::from_arrow::FromArrow, datatypes::Field, prelude::*,
-    series::array_impl::IntoSeries, with_match_daft_types,
-};
+use crate::{datatypes::Field, prelude::*, series::array_impl::IntoSeries};
 
 impl Series {
-    pub fn try_from_field_and_arrow_array(
-        field: impl Into<Arc<DaftField>>,
-        array: Box<dyn daft_arrow::array::Array>,
-    ) -> DaftResult<Self> {
-        let field = field.into();
-        let dtype = &field.dtype;
-
-        with_match_daft_types!(dtype, |$T| {
-            Ok(<$T as DaftDataType>::ArrayType::from_arrow2(field, array)?.into_series())
-        })
-    }
-
     pub fn from_ndarray_flattened(arr: NdArray) -> Self {
         // set a default name for convenience. you can rename if you want a different name
         let name = "ndarray";
@@ -63,7 +48,7 @@ impl TryFrom<(&str, Box<dyn daft_arrow::array::Array>)> for Series {
         let dtype = DaftDataType::from(source_arrow_type);
 
         let field = Arc::new(Field::new(name, dtype));
-        Self::try_from_field_and_arrow_array(field, array)
+        Self::from_arrow(field, array.into())
     }
 }
 

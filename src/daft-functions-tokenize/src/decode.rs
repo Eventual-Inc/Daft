@@ -77,7 +77,15 @@ fn decode_list(series: &Series, bpe: &DaftBPE) -> DaftResult<String> {
         )));
     }
     let series = series.cast(&DataType::UInt32)?;
-    let tokens: &[u32] = series.u32()?.as_slice();
+    let u32_arr = series.u32()?;
+    // Arrow-rs nullifies out-of-range values (e.g. negative tokens) during cast.
+    // Check for nulls that indicate bad tokens.
+    if u32_arr.null_count() > 0 {
+        return Err(DaftError::ValueError(
+            "Input has bad token: value out of range for UInt32".to_string(),
+        ));
+    }
+    let tokens: &[u32] = u32_arr.as_slice();
     bpe.decode(tokens)
 }
 
