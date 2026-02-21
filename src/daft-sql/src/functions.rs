@@ -23,7 +23,7 @@ use crate::{
     invalid_operation_err,
     modules::{
         SQLModule, SQLModuleAggs, SQLModuleConfig, SQLModuleMap, SQLModulePartitioning,
-        SQLModulePython, SQLModuleSketch, SQLModuleStructs, SQLModuleWindow,
+        SQLModulePython, SQLModuleSketch, SQLModuleStructs, SQLModuleTemporal, SQLModuleWindow,
     },
     planner::SQLPlanner,
     unsupported_sql_err,
@@ -74,18 +74,18 @@ pub(crate) static SQL_FUNCTIONS: LazyLock<SQLFunctions> = LazyLock::new(|| {
     functions.register::<SQLModuleSketch>();
     functions.register::<SQLModuleStructs>();
     functions.register::<SQLModuleConfig>();
+    functions.register::<SQLModuleTemporal>();
     functions.register::<SQLModuleWindow>();
     functions.add_fn("concat", SQLConcat);
     functions.add_fn("element", SQLElement);
     for (name, function_factory) in FUNCTION_REGISTRY.read().unwrap().entries() {
-        // Note:
-        //  FunctionModule came from SQLModule, but SQLModule still remains.
-        //  We must add all functions from the registry to the SQLModule, but
-        //  now the FunctionModule has the ability to represent both logical
-        //  and physical via ScalarFunctionFactory. This is an easy migration
-        //  because, like the python API, we've only had dynamic functions on
-        //  the SQL side. The solution is to add all `DynamicScalarFunction`
-        //  by calling get_function with empty arguments and only adding the ok's.
+        // Auto-register all functions from the registry as generic SQL
+        // passthroughs, but skip names that already have a custom SQLFunction
+        // wrapper (e.g. SQLDateTrunc for "truncate"). Custom wrappers handle
+        // SQL-specific argument reordering that the generic passthrough can't.
+        if functions.map.contains_key(name) {
+            continue;
+        }
         let args = FunctionArgs::empty();
         let schema = Schema::empty();
         if let Ok(function) = function_factory.get_function(args, &schema) {
