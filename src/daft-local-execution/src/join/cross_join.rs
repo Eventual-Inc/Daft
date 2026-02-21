@@ -21,9 +21,9 @@ pub(crate) struct CrossJoinBuildState {
 }
 
 pub(crate) struct CrossJoinProbeState {
-    pub(crate) collect_tables: Vec<RecordBatch>,
-    pub(crate) stream_idx: usize,
-    pub(crate) collect_idx: usize,
+    collect_tables: Vec<RecordBatch>,
+    stream_idx: usize,
+    collect_idx: usize,
 }
 
 pub struct CrossJoinOperator {
@@ -82,23 +82,26 @@ impl JoinOperator for CrossJoinOperator {
         mut state: Self::ProbeState,
         spawner: &ExecutionTaskSpawner,
     ) -> ProbeResult<Self> {
+        // If there are no input tables or collect tables, return an empty output
+        if input.is_empty() || state.collect_tables.is_empty() {
+            let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
+            return Ok((state, ProbeOutput::NeedMoreInput(Some(empty)))).into();
+        }
+        // If we've finished processing all stream tables, move to next input
+        if state.stream_idx >= input.record_batches().len() {
+            // Finished processing all stream tables, move to next input
+            state.stream_idx = 0;
+            state.collect_idx = 0;
+            let empty = Arc::new(MicroPartition::empty(Some(self.output_schema.clone())));
+            return Ok((state, ProbeOutput::NeedMoreInput(Some(empty)))).into();
+        }
+
         let output_schema = self.output_schema.clone();
         let stream_side = self.stream_side;
 
         spawner
             .spawn(
                 async move {
-                    if input.is_empty() || state.collect_tables.is_empty() {
-                        let empty = Arc::new(MicroPartition::empty(Some(output_schema)));
-                        return Ok((state, ProbeOutput::NeedMoreInput(Some(empty))));
-                    }
-                    if state.stream_idx >= input.record_batches().len() {
-                        state.stream_idx = 0;
-                        state.collect_idx = 0;
-                        let empty = Arc::new(MicroPartition::empty(Some(output_schema)));
-                        return Ok((state, ProbeOutput::NeedMoreInput(Some(empty))));
-                    }
-
                     let stream_tables = input.record_batches();
                     let stream_tbl = &stream_tables[state.stream_idx];
                     let collect_tbl = &state.collect_tables[state.collect_idx];
@@ -116,18 +119,22 @@ impl JoinOperator for CrossJoinOperator {
                         None,
                     ));
 
+                    // Increment inner loop index
                     state.collect_idx = (state.collect_idx + 1) % state.collect_tables.len();
 
                     if state.collect_idx == 0 {
+                        // Finished the inner loop, increment outer loop index
                         state.stream_idx = (state.stream_idx + 1) % stream_tables.len();
                     }
 
                     let result = if state.stream_idx == 0 && state.collect_idx == 0 {
+                        // Finished the outer loop, move onto next input
                         ProbeOutput::NeedMoreInput(Some(output_morsel))
                     } else {
+                        // Still looping through tables
                         ProbeOutput::HasMoreOutput {
                             input,
-                            output: Some(output_morsel),
+                            output: output_morsel,
                         }
                     };
                     Ok((state, result))
@@ -158,5 +165,9 @@ impl JoinOperator for CrossJoinOperator {
             "Cross Join".to_string(),
             format!("Stream Side = {:?}", self.stream_side),
         ]
+    }
+
+    fn needs_probe_finalization(&self) -> bool {
+        false
     }
 }

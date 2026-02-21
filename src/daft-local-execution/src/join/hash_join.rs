@@ -39,13 +39,6 @@ pub(crate) struct HashJoinProbeState {
     pub(crate) bitmap_builder: Option<IndexBitmapBuilder>,
 }
 
-impl HashJoinProbeState {
-    /// Extract the probe_state and bitmap_builder.
-    pub(crate) fn into_initialized(self) -> (ProbeState, Option<IndexBitmapBuilder>) {
-        (self.probe_state, self.bitmap_builder)
-    }
-}
-
 impl HashJoinBuildState {
     fn new(
         key_schema: &SchemaRef,
@@ -215,7 +208,6 @@ impl JoinOperator for HashJoinOperator {
 
         let needs_bitmap = self.needs_bitmap();
         let params = self.params.clone();
-
         spawner
             .spawn(
                 async move {
@@ -245,10 +237,8 @@ impl JoinOperator for HashJoinOperator {
                                 &state.probe_state,
                                 &params,
                             )?;
-                            return Ok((
-                                state,
-                                ProbeOutput::NeedMoreInput(None),
-                            ));
+                            // When using bitmap, we don't return data from probe - finalize will produce it
+                            return Ok((state, ProbeOutput::NeedMoreInput(None)));
                         }
                         JoinType::Anti | JoinType::Semi => {
                             probe_anti_semi(&input, &state.probe_state, &params)?
@@ -266,10 +256,14 @@ impl JoinOperator for HashJoinOperator {
         states: Vec<Self::ProbeState>,
         spawner: &ExecutionTaskSpawner,
     ) -> ProbeFinalizeResult {
-        // For joins that don't need finalization (e.g., inner joins), do nothing
-        if !self.needs_bitmap() {
-            return Ok(None).into();
-        }
+        debug_assert!(
+            self.needs_bitmap(),
+            "Hash join probe finalize should need a bitmap"
+        );
+        debug_assert!(
+            self.needs_probe_finalization(),
+            "Hash join probe finalize should only be called if the probe phase needs finalization"
+        );
 
         let params = self.params.clone();
         match self.params.join_type {
@@ -370,5 +364,10 @@ impl JoinOperator for HashJoinOperator {
             ));
         }
         display
+    }
+
+    /// Probe phase for hash joins needs finalization if it needs a bitmap.
+    fn needs_probe_finalization(&self) -> bool {
+        self.needs_bitmap()
     }
 }

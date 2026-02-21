@@ -21,8 +21,8 @@ pub(crate) struct SortMergeJoinBuildState {
 }
 
 pub(crate) struct SortMergeJoinProbeState {
-    pub(crate) build_contents: Vec<Arc<MicroPartition>>,
-    pub(crate) probe_contents: Vec<Arc<MicroPartition>>,
+    build_contents: Vec<Arc<MicroPartition>>,
+    probe_contents: Vec<Arc<MicroPartition>>,
 }
 
 pub struct SortMergeJoinOperator {
@@ -107,10 +107,6 @@ impl JoinOperator for SortMergeJoinOperator {
             .into_iter()
             .next()
             .expect("Expect exactly one state for SortMergeJoin probe finalize");
-
-        let build_contents = state.build_contents;
-        let probe_contents = state.probe_contents;
-
         let left_on = self.left_on.clone();
         let right_on = self.right_on.clone();
         let left_schema = self.left_schema.clone();
@@ -120,8 +116,10 @@ impl JoinOperator for SortMergeJoinOperator {
         spawner
             .spawn(
                 async move {
-                    let left_mp = MicroPartition::concat_or_empty(&build_contents, left_schema)?;
-                    let right_mp = MicroPartition::concat_or_empty(&probe_contents, right_schema)?;
+                    let left_mp =
+                        MicroPartition::concat_or_empty(&state.build_contents, left_schema)?;
+                    let right_mp =
+                        MicroPartition::concat_or_empty(&state.probe_contents, right_schema)?;
 
                     // TODO: Handle pre-sorted?
                     let joined = left_mp
@@ -145,7 +143,11 @@ impl JoinOperator for SortMergeJoinOperator {
         vec!["Sort Merge Join".to_string()]
     }
 
-    fn max_concurrency(&self) -> usize {
+    fn max_probe_concurrency(&self) -> usize {
         1
+    }
+
+    fn needs_probe_finalization(&self) -> bool {
+        true
     }
 }

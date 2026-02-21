@@ -43,7 +43,7 @@ async fn process_single_input<Op: JoinOperator + 'static>(
         FinalizedBuildStateReceiver::Ready(v) => v,
     };
 
-    let max_concurrency = op.max_concurrency();
+    let max_concurrency = op.max_probe_concurrency();
     let mut states: Vec<Op::ProbeState> = (0..max_concurrency)
         .map(|_| op.make_probe_state(finalized.clone()))
         .collect();
@@ -84,7 +84,11 @@ async fn process_single_input<Op: JoinOperator + 'static>(
                 runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
 
                 // Send output if present
-                if let Some(mp) = result.output() {
+                let output_mp = match &result {
+                    ProbeOutput::NeedMoreInput(mp) => mp.as_ref(),
+                    ProbeOutput::HasMoreOutput { output, .. } => Some(output),
+                };
+                if let Some(mp) = output_mp {
                     runtime_stats.add_rows_out(mp.len() as u64);
                     if output_sender
                         .send(PipelineMessage::Morsel {
@@ -138,7 +142,11 @@ async fn process_single_input<Op: JoinOperator + 'static>(
             let elapsed = now.elapsed();
             runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
 
-            if let Some(mp) = result.output() {
+            let output_mp = match &result {
+                ProbeOutput::NeedMoreInput(mp) => mp.as_ref(),
+                ProbeOutput::HasMoreOutput { output, .. } => Some(output),
+            };
+            if let Some(mp) = output_mp {
                 runtime_stats.add_rows_out(mp.len() as u64);
                 if output_sender
                     .send(PipelineMessage::Morsel {
@@ -166,7 +174,9 @@ async fn process_single_input<Op: JoinOperator + 'static>(
     }
 
     // Finalize
-    if let Some(mp) = op.finalize_probe(states, &finalize_spawner).await?? {
+    if op.needs_probe_finalization()
+        && let Some(mp) = op.finalize_probe(states, &finalize_spawner).await??
+    {
         runtime_stats.add_rows_out(mp.len() as u64);
         if output_sender
             .send(PipelineMessage::Morsel {
