@@ -51,7 +51,9 @@ print(daft.runners._get_runner().name)
     """
 
     with with_null_env():
-        result = subprocess.run([sys.executable, "-c", implicit_set_runner_script], capture_output=True)
+        # Use a clean env without RAY_* vars so Ray auto-detection doesn't trigger
+        clean_env = {k: v for k, v in os.environ.items() if not k.startswith("RAY_")}
+        result = subprocess.run([sys.executable, "-c", implicit_set_runner_script], capture_output=True, env=clean_env)
         assert result.stdout.decode().strip() == "None\nnative"
 
 

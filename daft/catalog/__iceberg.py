@@ -10,6 +10,7 @@ from pyiceberg.exceptions import NoSuchNamespaceError, NoSuchTableError
 from pyiceberg.io.pyarrow import _pyarrow_to_schema_without_ids
 from pyiceberg.partitioning import PartitionField as PyIcebergPartitionField
 from pyiceberg.partitioning import PartitionSpec as PyIcebergPartitionSpec
+from pyiceberg.partitioning import _PartitionNameGenerator
 from pyiceberg.schema import Schema as PyIcebergSchema
 from pyiceberg.schema import assign_fresh_schema_ids
 from pyiceberg.table import Table as InnerTable
@@ -67,30 +68,70 @@ class IcebergCatalog(Catalog):
         # Convert Daft schema → PyArrow schema → PyIceberg schema (with IDs)
         iceberg_partition_fields = []
         for idx, pf in enumerate(partition_fields):
+            source_field = iceberg_schema.find_field(pf.field.name)
+            source_id = source_field.field_id
+            source_name = source_field.name
+            field_id = 1000 + idx
             if pf.transform is None or pf.transform.is_identity():
                 transform = IdentityTransform()
+                pf_name = _PartitionNameGenerator().identity(
+                    field_id=field_id,
+                    source_name=source_name,
+                    source_id=source_id,
+                )
             elif pf.transform.is_year():
                 transform = YearTransform()
+                pf_name = _PartitionNameGenerator().year(
+                    field_id=field_id,
+                    source_name=source_name,
+                    source_id=source_id,
+                )
             elif pf.transform.is_month():
                 transform = MonthTransform()
+                pf_name = _PartitionNameGenerator().month(
+                    field_id=field_id,
+                    source_name=source_name,
+                    source_id=source_id,
+                )
             elif pf.transform.is_day():
                 transform = DayTransform()
+                pf_name = _PartitionNameGenerator().day(
+                    field_id=field_id,
+                    source_name=source_name,
+                    source_id=source_id,
+                )
             elif pf.transform.is_hour():
                 transform = HourTransform()
+                pf_name = _PartitionNameGenerator().hour(
+                    field_id=field_id,
+                    source_name=source_name,
+                    source_id=source_id,
+                )
             elif pf.transform.is_iceberg_bucket():
                 transform = BucketTransform(num_buckets=pf.transform.num_buckets)
+                pf_name = _PartitionNameGenerator().bucket(
+                    field_id=field_id,
+                    source_name=source_name,
+                    source_id=source_id,
+                    num_buckets=pf.transform.num_buckets,
+                )
             elif pf.transform.is_iceberg_truncate():
                 transform = TruncateTransform(width=pf.transform.width)
+                pf_name = _PartitionNameGenerator().truncate(
+                    field_id=field_id,
+                    source_name=source_name,
+                    source_id=source_id,
+                    width=pf.transform.width,
+                )
             else:
                 raise NotImplementedError(f"Unsupported partition transform: {pf.transform}")
 
-            source_field = iceberg_schema.find_field(pf.field.name)
             iceberg_partition_fields.append(
                 PyIcebergPartitionField(
-                    source_id=source_field.field_id,
-                    field_id=1000 + idx,
+                    source_id=source_id,
+                    field_id=field_id,
                     transform=transform,
-                    name=pf.field.name,
+                    name=pf_name,
                 )
             )
         return PyIcebergPartitionSpec(*iceberg_partition_fields)

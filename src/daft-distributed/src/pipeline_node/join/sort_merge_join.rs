@@ -1,6 +1,7 @@
 use std::{future, sync::Arc};
 
 use common_error::DaftResult;
+use common_metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{JoinType, stats::StatsState};
@@ -63,6 +64,8 @@ impl SortMergeJoinNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::SortMergeJoin,
+            NodeCategory::StreamingSink,
         );
         let config = PipelineNodeConfig::new(
             output_schema,

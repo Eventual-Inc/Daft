@@ -1,7 +1,6 @@
 [dependencies]
 arrow = {workspace = true, features = ["ffi"]}
 arrow-schema = {workspace = true}
-daft-arrow = {path = "../../daft-arrow"}
 pyo3 = {workspace = true}
 
 [lints]

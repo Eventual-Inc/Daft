@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+from numbers import Integral
 from typing import TYPE_CHECKING
 from urllib.error import HTTPError
 from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen
 
 import deltalake
+from deltalake.exceptions import TableNotFoundError
 from deltalake.table import DeltaTable
 from packaging.version import parse
 
@@ -130,7 +132,17 @@ class DeltaLakeScanOperator(ScanOperator):
         )
 
         if version is not None:
-            self._table.load_as_version(version)
+            if isinstance(version, Integral) and not isinstance(version, bool):
+                requested_version = int(version)
+                latest_version = self._table.version()
+                if requested_version < 0 or requested_version > latest_version:
+                    raise TableNotFoundError(
+                        f"Requested Delta Lake table version {requested_version} does not exist. "
+                        f"Latest available version is {latest_version}."
+                    )
+                self._table.load_as_version(requested_version)
+            else:
+                self._table.load_as_version(version)
 
         self._storage_config = storage_config
 

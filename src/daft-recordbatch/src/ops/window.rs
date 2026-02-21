@@ -1,5 +1,5 @@
+use arrow::{array::NullBufferBuilder, buffer::NullBuffer};
 use common_error::{DaftError, DaftResult};
-use daft_arrow::buffer::NullBufferBuilder;
 use daft_core::{
     array::ops::{IntoGroups, arrow::comparison::build_multi_array_is_equal},
     prelude::*,
@@ -426,7 +426,7 @@ impl RecordBatch {
 
         let nulls = null_builder.finish();
         let agg_state = agg_state.build()?.rename(name);
-        let nulls = daft_arrow::buffer::NullBuffer::union(nulls.as_ref(), agg_state.nulls());
+        let nulls = NullBuffer::union(nulls.as_ref(), agg_state.nulls());
 
         // Build the final result series
         let renamed_result = agg_state.with_nulls(nulls)?;
@@ -549,7 +549,7 @@ impl RecordBatch {
 
         let nulls = null_builder.finish();
         let agg_state = agg_state.build()?.rename(name);
-        let nulls = daft_arrow::buffer::NullBuffer::union(nulls.as_ref(), agg_state.nulls());
+        let nulls = NullBuffer::union(nulls.as_ref(), agg_state.nulls());
 
         // Build the final result series
         let renamed_result = agg_state.with_nulls(nulls)?;

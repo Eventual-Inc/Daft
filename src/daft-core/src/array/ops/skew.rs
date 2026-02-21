@@ -14,7 +14,7 @@ impl DaftSkewAggable for DataArray<Float64Type> {
 
     fn skew(&self) -> Self::Output {
         let stats = stats::calculate_stats(self)?;
-        let values = self.into_iter().flatten().copied();
+        let values = self.into_iter().flatten();
         let skew = stats::calculate_skew(stats, values);
 
         Ok(Self::from_iter(self.field().clone(), std::iter::once(skew)))

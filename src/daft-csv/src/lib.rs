@@ -1,4 +1,5 @@
 #![allow(deprecated, reason = "arrow2 migration")]
+
 use common_error::DaftError;
 use snafu::Snafu;
 

@@ -6,7 +6,7 @@ fn ci_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
     if !std::path::Path::new(&frontend_dir).is_dir() {
         if cfg!(debug_assertions) || std::env::var("DAFT_DASHBOARD_SKIP_BUILD").is_ok() {
             println!("Dashboard assets not found in {frontend_dir}, skipping dashboard build.");
-            println!("To build dashboard assets: `bun run build` in src/daft-dashboard/frontend.");
+            println!("To build dashboard assets: `npm run build` in src/daft-dashboard/frontend.");
             return Ok(());
         } else {
             panic!("Dashboard assets are required for release builds");
@@ -32,32 +32,32 @@ fn default_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("cargo:rerun-if-changed=frontend/src/");
-    println!("cargo:rerun-if-changed=frontend/bun.lock");
+    println!("cargo:rerun-if-changed=frontend/package-lock.json");
     println!("cargo:rerun-if-changed=build.rs");
 
-    // Check if bun is installed
-    let bun_available = Command::new("bun")
+    // Check if npm is installed
+    let npm_available = Command::new("npm")
         .arg("--version")
         .output()
         .map(|_| true)
         .unwrap_or(false);
 
-    // if bun is not available, we can't build the frontend assets
+    // if npm is not available, we can't build the frontend assets
     // so we just print a warning and return
     // but if we're in release mode, we panic
-    if !bun_available {
+    if !npm_available {
         if cfg!(debug_assertions) {
-            println!("cargo:warning=Bun not found, skipping dashboard frontend assets");
+            println!("cargo:warning=npm not found, skipping dashboard frontend assets");
             return Ok(());
         } else {
-            panic!("Bun is required for release builds");
+            panic!("Node/npm is required for release builds");
         }
     }
 
     // Install dependencies
-    let install_status = Command::new("bun")
+    let install_status = Command::new("npm")
         .current_dir("./frontend")
-        .args(["install", "--frozen-lockfile"])
+        .args(["ci"])
         .status()?;
 
     if cfg!(debug_assertions) {
@@ -68,16 +68,11 @@ fn default_main(out_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
         assert!(install_status.success(), "Failed to install dependencies");
     }
 
-    // Run `bun run build`
-    let mut cmd = Command::new("bun");
-    let status = cmd.current_dir("./frontend");
-
-    let status = if cfg!(debug_assertions) {
-        status.args(["run", "build", "--no-mangling"])
-    } else {
-        status.args(["run", "build"])
-    };
-    let status = status.status()?;
+    // Run `npm run build`
+    let status = Command::new("npm")
+        .current_dir("./frontend")
+        .args(["run", "build"])
+        .status()?;
 
     if cfg!(debug_assertions) {
         if !status.success() {

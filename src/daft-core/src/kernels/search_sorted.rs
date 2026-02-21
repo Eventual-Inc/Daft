@@ -243,6 +243,92 @@ pub fn cmp_float<F: Float>(l: &F, r: &F) -> std::cmp::Ordering {
     }
 }
 
+/// Build a NaN-aware comparator for float arrays without allocation.
+///
+/// Arrow-rs `make_comparator` uses IEEE 754 total ordering where -NaN sorts before -Inf.
+/// Daft treats ALL NaN as greater than regular values regardless of sign. This function
+/// builds a comparator using `cmp_float` for float types and delegates to `make_comparator`
+/// for all other types.
+fn build_nan_aware_comparator<T>(
+    left: PrimitiveArray<T>,
+    right: PrimitiveArray<T>,
+    sort_options: SortOptions,
+) -> Box<dyn Fn(usize, usize) -> Ordering + Send + Sync>
+where
+    T: ArrowPrimitiveType,
+    T::Native: Float,
+{
+    let SortOptions {
+        descending,
+        nulls_first,
+    } = sort_options;
+
+    // Fast path: no nulls in either array, skip per-element validity bitmap checks.
+    if left.null_count() == 0 && right.null_count() == 0 {
+        let left_values = left.values().clone();
+        let right_values = right.values().clone();
+        Box::new(move |i: usize, j: usize| {
+            let cmp = cmp_float(&left_values[i], &right_values[j]);
+            if descending { cmp.reverse() } else { cmp }
+        })
+    } else {
+        Box::new(
+            move |i: usize, j: usize| match (left.is_valid(i), right.is_valid(j)) {
+                (true, true) => {
+                    let cmp = cmp_float(&left.value(i), &right.value(j));
+                    if descending { cmp.reverse() } else { cmp }
+                }
+                (false, false) => Ordering::Equal,
+                (false, _) => {
+                    if nulls_first {
+                        Ordering::Less
+                    } else {
+                        Ordering::Greater
+                    }
+                }
+                (_, false) => {
+                    if nulls_first {
+                        Ordering::Greater
+                    } else {
+                        Ordering::Less
+                    }
+                }
+            },
+        )
+    }
+}
+
+/// Build a comparator that respects Daft's NaN ordering contract.
+///
+/// For float types, builds a zero-allocation comparator using `cmp_float`.
+/// For all other types, delegates to arrow-rs `make_comparator`.
+pub(crate) fn make_daft_comparator(
+    left: &dyn Array,
+    right: &dyn Array,
+    sort_options: SortOptions,
+) -> DaftResult<Box<dyn Fn(usize, usize) -> Ordering + Send + Sync>> {
+    macro_rules! downcast_float {
+        ($t:ty) => {{
+            let left = left
+                .as_any()
+                .downcast_ref::<PrimitiveArray<$t>>()
+                .unwrap()
+                .clone();
+            let right = right
+                .as_any()
+                .downcast_ref::<PrimitiveArray<$t>>()
+                .unwrap()
+                .clone();
+            Ok(build_nan_aware_comparator(left, right, sort_options))
+        }};
+    }
+    match left.data_type() {
+        DataType::Float32 => downcast_float!(Float32Type),
+        DataType::Float64 => downcast_float!(Float64Type),
+        _ => Ok(make_comparator(left, right, sort_options)?),
+    }
+}
+
 /// Compare the values at two arbitrary indices in two arrays.
 pub type DynPartialComparator = Box<dyn Fn(usize, usize) -> Option<Ordering> + Send + Sync>;
 
@@ -252,7 +338,7 @@ pub fn build_partial_compare_with_nulls(
     reversed: bool,
 ) -> DaftResult<DynPartialComparator> {
     // `reversed` is ambiguous, but based on historical behaviour, the default is to sort in ascending order and nulls last.
-    let comparator = make_comparator(
+    let comparator = make_daft_comparator(
         left,
         right,
         SortOptions::new(
@@ -311,7 +397,7 @@ pub fn search_sorted_multi_array(
     }
     let mut cmp_list = Vec::with_capacity(sorted_arrays.len());
     for ((sorted_arr, key_arr), reversed) in zip(sorted_arrays, key_arrays).zip(input_reversed) {
-        cmp_list.push(make_comparator(
+        cmp_list.push(make_daft_comparator(
             *sorted_arr,
             *key_arr,
             SortOptions::new(*reversed, *reversed),
@@ -684,5 +770,82 @@ mod tests {
         assert_eq!(result.len(), 2);
         assert_eq!(result.value(0), 1); // [3,4,5] goes at index 1 (between [1,2,3] and [4,5,6])
         assert_eq!(result.value(1), 3); // [7,8,9] goes at index 3 (after [7,8,9] at index 2)
+    }
+
+    #[test]
+    fn test_search_sorted_multi_array_negative_nan() {
+        use arrow::array::StringArray;
+
+        // Negative NaN: sign bit set, same payload as regular NaN.
+        // IEEE 754 total ordering treats -NaN as less than all values,
+        // but Daft's sort contract treats all NaN as greater than regular values.
+        let negative_nan = f64::from_bits(0xFFF8000000000000u64);
+
+        // Sorted boundaries: primary key "a" with secondary key [0.0, 1.0]
+        let sorted_str = StringArray::from(vec!["a", "a"]);
+        let sorted_f64 = Float64Array::from(vec![0.0, 1.0]);
+
+        // Key to search: "a" with -NaN
+        // Should insert AFTER all regular values (NaN > any number)
+        let key_str = StringArray::from(vec!["a"]);
+        let key_f64 = Float64Array::from(vec![negative_nan]);
+
+        let result = search_sorted_multi_array(
+            &vec![&sorted_str as &dyn Array, &sorted_f64 as &dyn Array],
+            &vec![&key_str as &dyn Array, &key_f64 as &dyn Array],
+            &vec![false, false],
+        )
+        .unwrap();
+
+        // -NaN should sort after all regular values, so insertion point should be 2 (after both)
+        assert_eq!(result.value(0), 2);
+    }
+
+    #[test]
+    fn test_search_sorted_multi_array_positive_nan() {
+        use arrow::array::StringArray;
+
+        let sorted_str = StringArray::from(vec!["a", "a"]);
+        let sorted_f64 = Float64Array::from(vec![0.0, 1.0]);
+
+        let key_str = StringArray::from(vec!["a"]);
+        let key_f64 = Float64Array::from(vec![f64::NAN]);
+
+        let result = search_sorted_multi_array(
+            &vec![&sorted_str as &dyn Array, &sorted_f64 as &dyn Array],
+            &vec![&key_str as &dyn Array, &key_f64 as &dyn Array],
+            &vec![false, false],
+        )
+        .unwrap();
+
+        // +NaN should also sort after all regular values
+        assert_eq!(result.value(0), 2);
+    }
+
+    #[test]
+    fn test_search_sorted_multi_array_nan_with_nulls() {
+        use arrow::array::StringArray;
+
+        let negative_nan = f64::from_bits(0xFFF8000000000000u64);
+
+        // Sorted: primary key [None, None] with secondary [0.0, null]
+        // In ascending with nulls last: 0.0 < null
+        let sorted_str = StringArray::from(vec![None::<&str>, None]);
+        let sorted_f64 = Float64Array::from(vec![Some(0.0), None]);
+
+        // Key: [None] with [-NaN]
+        // NaN > 0.0 but NaN < null, so insertion point = 1
+        let key_str = StringArray::from(vec![None::<&str>]);
+        let key_f64 = Float64Array::from(vec![negative_nan]);
+
+        let result = search_sorted_multi_array(
+            &vec![&sorted_str as &dyn Array, &sorted_f64 as &dyn Array],
+            &vec![&key_str as &dyn Array, &key_f64 as &dyn Array],
+            &vec![false, false],
+        )
+        .unwrap();
+
+        // NaN should sort after 0.0 but before null
+        assert_eq!(result.value(0), 1);
     }
 }

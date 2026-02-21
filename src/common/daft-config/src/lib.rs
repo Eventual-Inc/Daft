@@ -137,6 +137,7 @@ pub struct DaftExecutionConfig {
     pub maintain_order: bool,
     pub enable_dynamic_batching: bool,
     pub dynamic_batching_strategy: String,
+    pub flight_shuffle_dirs: Vec<String>,
 }
 
 #[cfg(not(debug_assertions))]
@@ -179,6 +180,7 @@ impl Default for DaftExecutionConfig {
             maintain_order: true,
             enable_dynamic_batching: false,
             dynamic_batching_strategy: "auto".to_string(),
+            flight_shuffle_dirs: Vec::new(),
         }
     }
 }

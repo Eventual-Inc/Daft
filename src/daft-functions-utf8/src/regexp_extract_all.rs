@@ -1,8 +1,10 @@
+use std::sync::Arc;
+
+use arrow::array::{LargeListBuilder, LargeStringBuilder};
 use common_error::{DaftError, DaftResult, ensure};
-use daft_arrow::array::Array;
 use daft_core::{
     array::ListArray,
-    prelude::{DataType, Field, FullNull, Schema, Utf8Array},
+    prelude::{DataType, Field, FromArrow, FullNull, Schema, Utf8Array},
     series::{IntoSeries, Series},
 };
 use daft_dsl::{
@@ -127,50 +129,34 @@ fn regex_extract_all_matches<'a>(
     len: usize,
     name: &str,
 ) -> DaftResult<ListArray> {
-    let mut matches = daft_arrow::array::MutableUtf8Array::new();
-    let mut offsets = daft_arrow::offset::Offsets::new();
-    let mut null_builder = daft_arrow::buffer::NullBufferBuilder::new(len);
+    let matches = LargeStringBuilder::new();
+    let mut list_builder = LargeListBuilder::with_capacity(matches, len);
 
     for (val, re) in arr_iter.zip(regex_iter) {
-        let mut num_matches = 0i64;
         match (val, re) {
             (Some(val), Some(re)) => {
                 // https://docs.rs/regex/latest/regex/struct.Regex.html#method.captures_iter
                 // regex::find_iter is faster than regex::captures_iter but only returns the full match, not the capture groups.
                 // So, use regex::find_iter if index == 0, otherwise use regex::captures.
                 if index == 0 {
-                    for m in re?.find_iter(val) {
-                        matches.push(Some(m.as_str()));
-                        num_matches += 1;
-                    }
+                    list_builder.append_value(re?.find_iter(val).map(|m| Some(m.as_str())));
                 } else {
-                    for captures in re?.captures_iter(val) {
-                        if let Some(capture) = captures.get(index) {
-                            matches.push(Some(capture.as_str()));
-                            num_matches += 1;
-                        }
-                    }
+                    list_builder.append_value(
+                        re?.captures_iter(val)
+                            .filter_map(|v| v.get(index).map(|v| Some(v.as_str()))),
+                    );
                 }
-                null_builder.append_non_null();
             }
             (_, _) => {
-                null_builder.append_null();
+                list_builder.append_null();
             }
         }
-        offsets.try_push(num_matches)?;
     }
-
-    let matches: daft_arrow::array::Utf8Array<i64> = matches.into();
-    let offsets: daft_arrow::offset::OffsetsBuffer<i64> = offsets.into();
-    let nulls = null_builder.finish();
-    let flat_child = Series::try_from(("matches", matches.to_boxed()))?;
-
-    Ok(ListArray::new(
+    let arr = list_builder.finish();
+    ListArray::from_arrow(
         Field::new(name, DataType::List(Box::new(DataType::Utf8))),
-        flat_child,
-        offsets,
-        nulls,
-    ))
+        Arc::new(arr),
+    )
 }
 
 #[must_use]

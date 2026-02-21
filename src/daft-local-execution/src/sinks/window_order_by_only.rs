@@ -185,7 +185,7 @@ impl BlockingSink for WindowOrderByOnlySink {
     }
 
     fn op_type(&self) -> NodeType {
-        NodeType::WindowOrderByOnly
+        NodeType::Window
     }
 
     fn multiline_display(&self) -> Vec<String> {

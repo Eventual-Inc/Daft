@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use arrow::{
-    array::{Array, ArrowPrimitiveType, make_comparator},
+    array::{Array, ArrowPrimitiveType},
     compute::SortOptions,
 };
-use common_error::{DaftError, DaftResult};
+use common_error::DaftResult;
 use daft_arrow::{
     array::ord::{self, DynComparator},
     // A real tragedy. Arrow-rs has all these functions but uses 32 bit indices instead of 64 bit indices.
@@ -33,7 +33,7 @@ use crate::{
         },
     },
     file::DaftMediaType,
-    kernels::search_sorted::cmp_float,
+    kernels::search_sorted::{cmp_float, make_daft_comparator},
     prelude::UInt64Array,
     series::Series,
 };
@@ -60,14 +60,13 @@ pub fn build_multi_array_bicompare(
         .zip(descending.iter())
         .zip(nulls_first.iter())
     {
-        cmp_list.push(
-            make_comparator(
-                l.to_arrow()?.as_ref(),
-                r.to_arrow()?.as_ref(),
-                SortOptions::new(*desc, *nf),
-            )
-            .map_err(DaftError::ArrowRsError)?,
-        );
+        let l_arrow = l.to_arrow()?;
+        let r_arrow = r.to_arrow()?;
+        cmp_list.push(make_daft_comparator(
+            l_arrow.as_ref(),
+            r_arrow.as_ref(),
+            SortOptions::new(*desc, *nf),
+        )?);
     }
 
     let combined_comparator = Box::new(move |a_idx: usize, b_idx: usize| -> std::cmp::Ordering {

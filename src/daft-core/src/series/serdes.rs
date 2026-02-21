@@ -1,13 +1,13 @@
 use std::{borrow::Cow, sync::Arc};
 
-use daft_arrow::{offset::OffsetsBuffer, types::months_days_ns};
+use arrow::{
+    buffer::OffsetBuffer, compute::kernels::cast_utils::MonthDayNano,
+    datatypes::IntervalMonthDayNano,
+};
 use serde::{Deserializer, de::Visitor};
 
 use crate::{
-    array::{
-        ListArray, StructArray,
-        ops::{as_arrow::AsArrow, full::FullNull},
-    },
+    array::{ListArray, StructArray, ops::full::FullNull},
     datatypes::{
         logical::{
             DateArray, DurationArray, EmbeddingArray, FixedShapeImageArray,
@@ -178,7 +178,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                             .map(|s| s.unwrap())
                             .collect::<Vec<_>>();
 
-                        let nulls = nulls.map(|v| v.bool().unwrap().as_bitmap().clone().into());
+                        let nulls = nulls.map(|v| v.bool().unwrap().to_bitmap().into());
                         Ok(StructArray::new(Arc::new(field), children, nulls).into_series())
                     }
                     DataType::List(..) => {
@@ -186,16 +186,13 @@ impl<'d> serde::Deserialize<'d> for Series {
                         let nulls = all_series
                             .pop()
                             .ok_or_else(|| serde::de::Error::missing_field("validity"))?;
-                        let nulls = nulls.map(|v| v.bool().unwrap().as_bitmap().clone().into());
+                        let nulls = nulls.map(|v| v.bool().unwrap().to_bitmap().into());
                         let offsets_series = all_series
                             .pop()
                             .ok_or_else(|| serde::de::Error::missing_field("offsets"))?
                             .unwrap();
                         let offsets_array = offsets_series.i64().unwrap();
-                        let offsets = OffsetsBuffer::<i64>::try_from(
-                            offsets_array.as_arrow2().values().clone(),
-                        )
-                        .unwrap();
+                        let offsets = OffsetBuffer::new(offsets_array.values());
                         let flat_child = all_series
                             .pop()
                             .ok_or_else(|| serde::de::Error::missing_field("flat_child"))?
@@ -212,7 +209,7 @@ impl<'d> serde::Deserialize<'d> for Series {
                             .ok_or_else(|| serde::de::Error::missing_field("flat_child"))?
                             .unwrap();
 
-                        let nulls = nulls.map(|v| v.bool().unwrap().as_bitmap().clone().into());
+                        let nulls = nulls.map(|v| v.bool().unwrap().to_bitmap().into());
                         Ok(FixedSizeListArray::new(field, flat_child, nulls).into_series())
                     }
                     DataType::Decimal128(..) => Ok(Decimal128Array::from_iter(
@@ -259,7 +256,9 @@ impl<'d> serde::Deserialize<'d> for Series {
                     }
                     DataType::Interval => Ok(IntervalArray::from_iter(
                         field.name.as_str(),
-                        map.next_value::<Vec<Option<months_days_ns>>>()?.into_iter(),
+                        map.next_value::<Vec<Option<MonthDayNano>>>()?
+                            .into_iter()
+                            .map(|opt| opt.map(|v| IntervalMonthDayNano::new(v.0, v.1, v.2))),
                     )
                     .into_series()),
 

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arrow::array::{ArrowPrimitiveType, LargeStringArray};
+use arrow::array::ArrowPrimitiveType;
 use common_error::DaftResult;
 
 use super::{DaftCompareAggable, GroupIndices, full::FullNull};
@@ -118,16 +118,15 @@ where
         });
         Ok(Utf8Array::from_iter(data_array.name(), cmp_values_iter))
     } else {
-        let arrow_result = LargeStringArray::from_iter_values(groups.iter().map(|g| {
-            g.iter()
-                .map(|i| data_array.get(*i as usize).unwrap())
-                .reduce(|l, r| op(l, r))
-                .unwrap()
-        }));
-        Utf8Array::from_arrow(
-            Field::new(data_array.name(), DataType::Utf8),
-            Arc::new(arrow_result),
-        )
+        Ok(Utf8Array::from_values(
+            data_array.name(),
+            groups.iter().map(|g| {
+                g.iter()
+                    .map(|i| data_array.get(*i as usize).unwrap())
+                    .reduce(|l, r| op(l, r))
+                    .unwrap()
+            }),
+        ))
     }
 }
 

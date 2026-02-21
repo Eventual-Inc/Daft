@@ -1,4 +1,3 @@
-use common_arrow_ffi::ArrayRef;
 use pyo3::prelude::*;
 
 pub mod pylib {
@@ -336,7 +335,7 @@ pub mod pylib {
 
 fn to_py_array<'py>(
     py: Python<'py>,
-    array: ArrayRef,
+    array: Box<dyn daft_arrow::array::Array>,
     pyarrow: &Bound<'py, PyModule>,
 ) -> PyResult<Bound<'py, PyAny>> {
     let field = daft_arrow::datatypes::Field::new("", array.data_type().clone(), true);

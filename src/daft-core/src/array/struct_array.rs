@@ -4,7 +4,7 @@ use arrow::array::ArrayRef;
 use common_error::{DaftError, DaftResult};
 
 use crate::{
-    array::growable::{Growable, GrowableArray},
+    array::ops::from_arrow::FromArrow,
     datatypes::{DaftArrayType, DataType, Field},
     series::Series,
 };
@@ -112,26 +112,23 @@ impl StructArray {
             ));
         }
 
-        let first_array = arrays.first().unwrap();
-        let mut growable = <Self as GrowableArray>::make_growable(
-            first_array.field.name.as_str(),
-            &first_array.field.dtype,
-            arrays.to_vec(),
-            arrays
-                .iter()
-                .map(|a| a.nulls.as_ref().map_or(0usize, |v| v.null_count()))
-                .sum::<usize>()
-                > 0,
-            arrays.iter().map(|a| a.len()).sum(),
-        );
-
-        for (i, arr) in arrays.iter().enumerate() {
-            growable.extend(i, 0, arr.len());
+        if arrays.len() == 1 {
+            return Ok((*arrays.first().unwrap()).clone());
         }
 
-        growable
-            .build()
-            .map(|s| s.downcast::<Self>().unwrap().clone())
+        let first_array = arrays.first().unwrap();
+        let field = first_array.field.clone();
+
+        let arrow_arrs = arrays
+            .iter()
+            .map(|arr| arr.to_arrow())
+            .collect::<DaftResult<Vec<_>>>()?;
+        let arrow_refs = arrow_arrs
+            .iter()
+            .map(|arr| arr.as_ref())
+            .collect::<Vec<_>>();
+        let concatenated = arrow::compute::concat(&arrow_refs)?;
+        Self::from_arrow(field, concatenated)
     }
 
     pub fn len(&self) -> usize {

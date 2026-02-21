@@ -156,7 +156,7 @@ where
                 _ => {
                     let length_iter = length.into_iter().map(|l| match l {
                         Some(l) => {
-                            let l: usize = NumCast::from(*l).ok_or_else(|| {
+                            let l: usize = NumCast::from(l).ok_or_else(|| {
                                 DaftError::ComputeError(format!(
                                     "Error in repeat: failed to cast length as usize {l}"
                                 ))
@@ -191,7 +191,7 @@ where
         _ => {
             let start_iter = start.into_iter().map(|s| match s {
                 Some(s) => {
-                    let s: usize = NumCast::from(*s).ok_or_else(|| {
+                    let s: usize = NumCast::from(s).ok_or_else(|| {
                         DaftError::ComputeError(format!(
                             "Error in repeat: failed to cast length as usize {s}"
                         ))

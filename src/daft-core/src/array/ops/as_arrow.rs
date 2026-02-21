@@ -1,5 +1,5 @@
 use daft_arrow::{
-    array::{self, MonthsDaysNsArray},
+    array::{self},
     types::months_days_ns,
 };
 
@@ -151,7 +151,7 @@ impl_asarrow_dataarray!(
 impl_asarrow_dataarray!(
     IntervalArray,
     array::PrimitiveArray<months_days_ns>,
-    MonthsDaysNsArray
+    arrow::array::IntervalMonthDayNanoArray
 );
 
 impl_asarrow_logicalarray!(

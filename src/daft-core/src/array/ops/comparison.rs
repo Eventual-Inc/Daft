@@ -1,4 +1,3 @@
-#![allow(deprecated, reason = "arrow2->arrow migration")]
 use std::{
     cmp::Ordering,
     ops::{BitAnd, BitOr, BitXor, Not},

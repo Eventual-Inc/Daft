@@ -359,7 +359,7 @@ async fn get_delete_map(
                     .map(|(file, pos)| {
                         (
                             file.expect("file should not be null in iceberg delete files"),
-                            *pos.expect("pos should not be null in iceberg delete files"),
+                            pos.expect("pos should not be null in iceberg delete files"),
                         )
                     })
                 {

@@ -9,7 +9,7 @@ import pytest
 # Skip if google-genai is not installed
 pytest.importorskip("google.genai")
 
-import requests
+import httpx
 from google.genai import errors as genai_errors
 from pydantic import BaseModel
 
@@ -20,14 +20,10 @@ from daft.ai.utils import RetryAfterError
 
 
 def _api_error(status: int, retry_after: str) -> genai_errors.APIError:
-    response = requests.Response()
-    response.status_code = status
-    response._content = b"{}"
-    response.headers["Retry-After"] = retry_after
-    response.reason = "error"
+    response = httpx.Response(status, headers={"Retry-After": retry_after}, json={})
     if status >= 500:
-        return genai_errors.ServerError(status, response)
-    return genai_errors.ClientError(status, response)
+        return genai_errors.ServerError(status, {}, response)
+    return genai_errors.ClientError(status, {}, response)
 
 
 def run_async(coro):

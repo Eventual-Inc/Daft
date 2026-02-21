@@ -18,6 +18,7 @@ impl TensorArray {
 mod tests {
     use std::vec;
 
+    use arrow::buffer::OffsetBuffer;
     use common_error::DaftResult;
 
     use crate::{array::prelude::*, datatypes::prelude::*, series::IntoSeries};
@@ -30,7 +31,7 @@ mod tests {
         let list_array = ListArray::new(
             Field::new("data", DataType::List(Box::new(DataType::Int64))),
             flat_child,
-            daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 3, 6, 9])?,
+            OffsetBuffer::new(vec![0, 3, 6, 9].into()),
             Some(nulls.clone()),
         )
         .into_series();
@@ -39,7 +40,7 @@ mod tests {
         let shapes_array = ListArray::new(
             Field::new("shape", DataType::List(Box::new(DataType::UInt64))),
             flat_child,
-            daft_arrow::offset::OffsetsBuffer::<i64>::try_from(vec![0, 1, 2, 3])?,
+            OffsetBuffer::new(vec![0, 1, 2, 3].into()),
             Some(nulls.clone()),
         )
         .into_series();

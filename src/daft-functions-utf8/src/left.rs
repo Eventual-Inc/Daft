@@ -123,7 +123,7 @@ where
                 .zip(nchars.into_iter())
                 .map(|(val, n)| match (val, n) {
                     (Some(val), Some(nchar)) => {
-                        let nchar: usize = NumCast::from(*nchar).ok_or_else(|| {
+                        let nchar: usize = NumCast::from(nchar).ok_or_else(|| {
                             DaftError::ComputeError(format!(
                                 "Error in left: failed to cast rhs as usize {nchar}"
                             ))

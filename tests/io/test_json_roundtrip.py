@@ -4,6 +4,7 @@ import datetime
 import decimal
 import gzip
 import json
+import os
 
 import pyarrow as pa
 import pytest
@@ -273,3 +274,270 @@ def test_roundtrip_ndjson_with_mismatched_schema_between_files(tmp_path, compres
         "city": ["New York", "San Francisco", None, None],  # second file is missing city
         "state": ["New York", "California", "California", "New York"],
     }
+
+
+def _read_first_json_file_text(root: str) -> str:
+    """Read the text content of the first JSON file in the directory."""
+    files = [os.path.join(root, f) for f in os.listdir(root)]
+    files = [f for f in files if os.path.isfile(f)]
+    assert len(files) > 0
+    with open(files[0], encoding="utf-8") as fh:
+        return fh.read()
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
+)
+def test_write_json_custom_date_format(tmp_path):
+    """Test custom date formatting when writing JSON files."""
+    dates = [datetime.date(2024, 1, 15), datetime.date(2024, 12, 31), None]
+    df = daft.from_pydict({"id": [1, 2, 3], "date": dates})
+
+    # Test with custom date format dd/MM/yyyy
+    df.write_json(str(tmp_path), write_mode="overwrite", date_format="%d/%m/%Y")
+    text = _read_first_json_file_text(str(tmp_path))
+
+    # Check that dates are formatted correctly
+    assert "15/01/2024" in text
+    assert "31/12/2024" in text
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
+)
+def test_write_json_custom_timestamp_format(tmp_path):
+    """Test custom timestamp formatting when writing JSON files."""
+    timestamps = [
+        datetime.datetime(2024, 1, 15, 10, 30, 45),
+        datetime.datetime(2024, 12, 31, 23, 59, 59),
+        None,
+    ]
+    df = daft.from_pydict({"id": [1, 2, 3], "timestamp": timestamps})
+
+    # Test with custom timestamp format
+    df.write_json(str(tmp_path), write_mode="overwrite", timestamp_format="%Y-%m-%d %H:%M:%S")
+    text = _read_first_json_file_text(str(tmp_path))
+
+    # Check that timestamps are formatted correctly
+    assert "2024-01-15 10:30:45" in text
+    assert "2024-12-31 23:59:59" in text
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
+)
+def test_write_json_custom_date_and_timestamp_format(tmp_path):
+    """Test both custom date and timestamp formatting when writing JSON files."""
+    dates = [datetime.date(2024, 1, 15), datetime.date(2024, 12, 31), None]
+    timestamps = [
+        datetime.datetime(2024, 1, 15, 10, 30, 45),
+        datetime.datetime(2024, 12, 31, 23, 59, 59),
+        None,
+    ]
+    df = daft.from_pydict({"id": [1, 2, 3], "date": dates, "timestamp": timestamps})
+
+    # Test with both custom formats
+    df.write_json(
+        str(tmp_path),
+        write_mode="overwrite",
+        date_format="%d/%m/%Y",
+        timestamp_format="%Y-%m-%d %H:%M:%S",
+    )
+    text = _read_first_json_file_text(str(tmp_path))
+
+    # Check that dates are formatted correctly
+    assert "15/01/2024" in text
+    assert "31/12/2024" in text
+
+    # Check that timestamps are formatted correctly
+    assert "2024-01-15 10:30:45" in text
+    assert "2024-12-31 23:59:59" in text
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
+)
+def test_write_json_iso8601_timestamp_format(tmp_path):
+    """Test ISO 8601 / RFC 3339 timestamp formatting."""
+    timestamps = [
+        datetime.datetime(2024, 1, 15, 10, 30, 45),
+        datetime.datetime(2024, 12, 31, 23, 59, 59),
+        None,
+    ]
+    df = daft.from_pydict({"id": [1, 2, 3], "timestamp": timestamps})
+
+    # Test with ISO 8601 format (%+)
+    df.write_json(str(tmp_path), write_mode="overwrite", timestamp_format="%+")
+    text = _read_first_json_file_text(str(tmp_path))
+
+    # Check that timestamps are formatted in ISO 8601 format
+    # The format should be like "2024-01-15T10:30:45+00:00"
+    assert "2024-01-15T10:30:45" in text
+    assert "2024-12-31T23:59:59" in text
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
+)
+def test_write_json_timezone_aware_timestamp(tmp_path):
+    """Test that timezone-aware timestamps are formatted in their timezone."""
+    # Create timezone-aware timestamps
+    df = daft.from_arrow(
+        pa.table(
+            {
+                "id": [1, 2, 3],
+                "timestamp": pa.array(
+                    [
+                        datetime.datetime(1994, 1, 1, tzinfo=datetime.timezone.utc),
+                        datetime.datetime(1995, 1, 1, tzinfo=datetime.timezone.utc),
+                        None,
+                    ],
+                    type=pa.timestamp("us", tz="America/New_York"),
+                ),
+            }
+        )
+    )
+
+    # Write with custom format
+    df.write_json(str(tmp_path), write_mode="overwrite", timestamp_format="%Y-%m-%d %H:%M:%S %Z")
+    text = _read_first_json_file_text(str(tmp_path))
+
+    # Timestamps should be formatted in New York time, not UTC
+    # 1994-01-01 00:00:00 UTC = 1993-12-31 19:00:00 EST
+    assert "1993-12-31 19:00:00" in text or "EST" in text or "EDT" in text
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
+)
+def test_write_json_invalid_timezone_raises_error(tmp_path):
+    """Test that invalid timezone strings raise an error instead of silently using UTC."""
+    # Create timestamps with an invalid timezone string
+    df = daft.from_arrow(
+        pa.table(
+            {
+                "id": [1, 2, 3],
+                "timestamp": pa.array(
+                    [
+                        datetime.datetime(1994, 1, 1, tzinfo=datetime.timezone.utc),
+                        datetime.datetime(1995, 1, 1, tzinfo=datetime.timezone.utc),
+                        None,
+                    ],
+                    type=pa.timestamp("us", tz="America/New_Yrok"),  # Typo: should be New_York
+                ),
+            }
+        )
+    )
+
+    # Should raise an error about invalid timezone
+    with pytest.raises(Exception, match="Invalid timezone"):
+        df.write_json(str(tmp_path), write_mode="overwrite", timestamp_format="%Y-%m-%d %H:%M:%S")
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
+)
+def test_write_json_date64_with_timestamp_format(tmp_path):
+    """Test that Date64 (which Daft converts to Timestamp[ms]) uses timestamp_format."""
+    # Date64 is converted to Timestamp[ms] internally by Daft
+    df = daft.from_arrow(
+        pa.table(
+            {
+                "id": [1, 2, 3],
+                "date": pa.array(
+                    [
+                        datetime.date(2024, 1, 15),
+                        datetime.date(2024, 12, 31),
+                        None,
+                    ],
+                    type=pa.date64(),
+                ),
+            }
+        )
+    )
+
+    # Since Date64 becomes Timestamp[ms], we need to use timestamp_format
+    df.write_json(str(tmp_path), write_mode="overwrite", timestamp_format="%d/%m/%Y")
+    text = _read_first_json_file_text(str(tmp_path))
+
+    assert "15/01/2024" in text
+    assert "31/12/2024" in text
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
+)
+@pytest.mark.parametrize("time_unit", ["s", "ms", "us", "ns"])
+def test_write_json_timestamp_all_time_units(tmp_path, time_unit):
+    """Test timestamp formatting works for all time units (second, millisecond, microsecond, nanosecond)."""
+    df = daft.from_arrow(
+        pa.table(
+            {
+                "id": [1, 2],
+                "timestamp": pa.array(
+                    [
+                        datetime.datetime(2024, 1, 15, 10, 30, 45),
+                        datetime.datetime(2024, 12, 31, 23, 59, 59),
+                    ],
+                    type=pa.timestamp(time_unit),
+                ),
+            }
+        )
+    )
+
+    df.write_json(str(tmp_path), write_mode="overwrite", timestamp_format="%Y-%m-%d %H:%M:%S")
+    text = _read_first_json_file_text(str(tmp_path))
+
+    assert "2024-01-15 10:30:45" in text
+    assert "2024-12-31 23:59:59" in text
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
+)
+def test_write_json_no_custom_format_preserves_default(tmp_path):
+    """Test that not providing custom formats preserves default Arrow JSON behavior."""
+    dates = [datetime.date(2024, 1, 15), datetime.date(2024, 12, 31)]
+    timestamps = [
+        datetime.datetime(2024, 1, 15, 10, 30, 45),
+        datetime.datetime(2024, 12, 31, 23, 59, 59),
+    ]
+    df = daft.from_pydict({"id": [1, 2], "date": dates, "timestamp": timestamps})
+
+    # Write without custom formats - should use Arrow's default formatting
+    df.write_json(str(tmp_path), write_mode="overwrite")
+    text = _read_first_json_file_text(str(tmp_path))
+
+    # Default format should still contain the date/timestamp data
+    assert "2024-01-15" in text
+    assert "2024-12-31" in text
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
+)
+def test_write_json_invalid_date_format_raises_error(tmp_path):
+    """Test that invalid date format strings raise a clear error."""
+    dates = [datetime.date(2024, 1, 15)]
+    df = daft.from_pydict({"date": dates})
+
+    with pytest.raises(Exception) as exc_info:
+        df.write_json(str(tmp_path), date_format="%Q")
+
+    # Check that the error message is clear about the invalid format
+    assert "Invalid date format string" in str(exc_info.value)
+
+
+@pytest.mark.skipif(
+    get_tests_daft_runner_name() != "native", reason="JSON writes are only implemented in the native runner"
+)
+def test_write_json_invalid_timestamp_format_raises_error(tmp_path):
+    """Test that invalid timestamp format strings raise a clear error."""
+    timestamps = [datetime.datetime(2024, 1, 15, 10, 30, 45)]
+    df = daft.from_pydict({"timestamp": timestamps})
+
+    with pytest.raises(Exception) as exc_info:
+        df.write_json(str(tmp_path), timestamp_format="%Q")
+
+    # Check that the error message is clear about the invalid format
+    assert "Invalid timestamp format string" in str(exc_info.value)

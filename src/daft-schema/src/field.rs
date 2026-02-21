@@ -93,7 +93,6 @@ impl Field {
     }
 
     #[deprecated(note = "use .to_arrow")]
-    #[allow(deprecated, reason = "arrow2 migration")]
     pub fn to_arrow2(&self) -> DaftResult<ArrowField> {
         Ok(
             ArrowField::new(self.name.clone(), self.dtype.to_arrow2()?, true)

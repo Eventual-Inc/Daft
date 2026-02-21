@@ -1,6 +1,5 @@
 use common_error::DaftResult;
 
-use super::as_arrow::AsArrow;
 use crate::{
     array::DataArray,
     datatypes::{BooleanArray, DaftNumericType, NullArray, UInt64Type, Utf8Array},
@@ -21,16 +20,16 @@ where
         let mut left_idx = vec![];
         let mut right_idx = vec![];
 
-        for (i, l) in self.as_arrow2().iter().enumerate() {
+        for (i, l) in self.iter().enumerate() {
             if l.is_none() {
                 continue;
             }
-            let l = *l.unwrap();
-            for (j, r) in other.as_arrow2().iter().enumerate() {
+            let l = l.unwrap();
+            for (j, r) in other.iter().enumerate() {
                 match r {
                     None => {}
                     Some(r) => {
-                        if func(l, *r) {
+                        if func(l, r) {
                             left_idx.push(i as u64);
                             right_idx.push(j as u64);
                         }
@@ -38,8 +37,8 @@ where
                 }
             }
         }
-        let left_series = DataArray::<UInt64Type>::from_slice(self.name(), left_idx.as_slice());
-        let right_series = DataArray::<UInt64Type>::from_slice(other.name(), right_idx.as_slice());
+        let left_series = DataArray::<UInt64Type>::from_vec(self.name(), left_idx);
+        let right_series = DataArray::<UInt64Type>::from_vec(other.name(), right_idx);
         Ok((left_series, right_series))
     }
 }
@@ -56,12 +55,12 @@ impl Utf8Array {
         let mut left_idx = vec![];
         let mut right_idx = vec![];
 
-        for (i, l) in self.as_arrow2().iter().enumerate() {
+        for (i, l) in self.iter().enumerate() {
             if l.is_none() {
                 continue;
             }
             let l = l.unwrap();
-            for (j, r) in other.as_arrow2().iter().enumerate() {
+            for (j, r) in other.iter().enumerate() {
                 match r {
                     None => {}
                     Some(r) => {
@@ -73,8 +72,8 @@ impl Utf8Array {
                 }
             }
         }
-        let left_series = DataArray::<UInt64Type>::from_slice(self.name(), left_idx.as_slice());
-        let right_series = DataArray::<UInt64Type>::from_slice(other.name(), right_idx.as_slice());
+        let left_series = DataArray::<UInt64Type>::from_vec(self.name(), left_idx);
+        let right_series = DataArray::<UInt64Type>::from_vec(other.name(), right_idx);
         Ok((left_series, right_series))
     }
 }
@@ -91,12 +90,12 @@ impl BooleanArray {
         let mut left_idx = vec![];
         let mut right_idx = vec![];
 
-        for (i, l) in self.as_arrow2().iter().enumerate() {
+        for (i, l) in self.iter().enumerate() {
             if l.is_none() {
                 continue;
             }
             let l = l.unwrap();
-            for (j, r) in other.as_arrow2().iter().enumerate() {
+            for (j, r) in other.iter().enumerate() {
                 match r {
                     None => {}
                     Some(r) => {
@@ -108,8 +107,8 @@ impl BooleanArray {
                 }
             }
         }
-        let left_series = DataArray::<UInt64Type>::from_slice(self.name(), left_idx.as_slice());
-        let right_series = DataArray::<UInt64Type>::from_slice(other.name(), right_idx.as_slice());
+        let left_series = DataArray::<UInt64Type>::from_vec(self.name(), left_idx);
+        let right_series = DataArray::<UInt64Type>::from_vec(other.name(), right_idx);
         Ok((left_series, right_series))
     }
 }
@@ -125,8 +124,8 @@ impl NullArray {
     {
         let left_idx = vec![];
         let right_idx = vec![];
-        let left_series = DataArray::<UInt64Type>::from_slice(self.name(), left_idx.as_slice());
-        let right_series = DataArray::<UInt64Type>::from_slice(other.name(), right_idx.as_slice());
+        let left_series = DataArray::<UInt64Type>::from_vec(self.name(), left_idx);
+        let right_series = DataArray::<UInt64Type>::from_vec(other.name(), right_idx);
         Ok((left_series, right_series))
     }
 }

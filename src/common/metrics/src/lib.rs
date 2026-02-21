@@ -8,7 +8,7 @@ pub mod snapshot;
 use std::{ops::Index, sync::Arc, time::Duration};
 
 use indicatif::{HumanBytes, HumanCount, HumanDuration, HumanFloatCount};
-pub use meters::{Counter, Gauge};
+pub use meters::{Counter, Gauge, normalize_name};
 pub use operator_metrics::{
     MetricsCollector, NoopMetricsCollector, OperatorCounter, OperatorMetrics,
 };
@@ -116,9 +116,34 @@ impl IntoIterator for Stats {
 }
 
 // Common statistic names
-pub const ROWS_IN_KEY: &str = "rows in";
-pub const ROWS_OUT_KEY: &str = "rows out";
-pub const CPU_US_KEY: &str = "cpu us";
+pub const BYTES_READ_KEY: &str = "bytes.read";
+pub const BYTES_WRITTEN_KEY: &str = "bytes.written";
+pub const DURATION_KEY: &str = "duration";
+pub const ROWS_IN_KEY: &str = "rows.in";
+pub const ROWS_OUT_KEY: &str = "rows.out";
+pub const ROWS_WRITTEN_KEY: &str = "rows.written";
+
+// Task metrics
+pub const TASK_ACTIVE_KEY: &str = "task.active";
+pub const TASK_COMPLETED_KEY: &str = "task.completed";
+pub const TASK_FAILED_KEY: &str = "task.failed";
+pub const TASK_CANCELLED_KEY: &str = "task.cancelled";
+
+// Execution attributes
+pub const ATTR_EXECUTION_RUNNER: &str = "execution.runner";
+
+// Query attributes
+pub const ATTR_QUERY_ID: &str = "query.id";
+
+// Node attributes
+pub const ATTR_NODE_ID: &str = "node.id";
+pub const ATTR_NODE_TYPE: &str = "node.type";
+
+// Units (UCUM)
+pub const UNIT_ROWS: &str = "{row}";
+pub const UNIT_BYTES: &str = "By";
+pub const UNIT_MICROSECONDS: &str = "us";
+pub const UNIT_TASKS: &str = "{task}";
 
 #[cfg(feature = "python")]
 pub fn register_modules(parent: &Bound<PyModule>) -> PyResult<()> {

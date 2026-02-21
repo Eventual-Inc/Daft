@@ -61,11 +61,14 @@ jobs:
             echo "No broken links detected."
           fi
   notify_on_failure:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     if: failure()
     needs: check-links
     steps:
     - name: Send Slack notification on failure
+      if: ${{ env.SLACK_WEBHOOK_URL }}
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       uses: slackapi/slack-github-action@v2.1.1
       with:
         payload: |
@@ -80,5 +83,5 @@ jobs:
               }
             ]
           }
-        webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+        webhook: ${{ env.SLACK_WEBHOOK_URL }}
         webhook-type: incoming-webhook

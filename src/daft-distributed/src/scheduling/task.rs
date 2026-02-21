@@ -567,13 +567,20 @@ pub(super) mod tests {
     impl MockTaskBuilder {
         /// Create a new MockTaskBuilder with required parameters
         pub fn new(partition_ref: PartitionRef) -> Self {
+            let task_context = TaskContext::default();
+            let task_id = task_context.task_id;
             Self {
-                task_context: TaskContext::default(),
+                task_context,
                 task_name: "".into(),
                 priority: MockTaskPriority { priority: 0 },
                 scheduling_strategy: SchedulingStrategy::Spread,
                 resource_request: TaskResourceRequest::new(ResourceRequest::default()),
-                task_result: MaterializedOutput::new(vec![partition_ref], "".into()),
+                task_result: MaterializedOutput::new(
+                    vec![partition_ref],
+                    "".into(),
+                    "".into(),
+                    task_id,
+                ),
                 cancel_notifier: Arc::new(Mutex::new(None)),
                 sleep_duration: None,
                 failure: None,

@@ -1168,7 +1168,7 @@ def date_trunc(interval: str, expr: Expression, relative_to: Expression | None =
 def to_unix_epoch(expr: Expression, time_unit: str | TimeUnit | None = None) -> Expression:
     """Converts a datetime column to a Unix timestamp with the specified time unit. (default: seconds).
 
-    See [daft.datatype.TimeUnit](https://docs.daft.ai/en/stable/api/datatypes/#daft.datatype.DataType.timeunit) for more information on time units and valid values.
+    See [daft.datatype.TimeUnit](https://docs.daft.ai/en/stable/api/datatypes/all_datatypes/#daft.datatype.DataType.timeunit) for more information on time units and valid values.
 
     Examples:
         >>> import daft

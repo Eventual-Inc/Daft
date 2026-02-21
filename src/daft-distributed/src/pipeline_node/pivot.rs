@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use common_metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::expr::bound_expr::{BoundAggExpr, BoundExpr};
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan, LocalPhysicalPlanRef};
 use daft_logical_plan::stats::StatsState;
@@ -44,6 +45,8 @@ impl PivotNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::Pivot,
+            NodeCategory::BlockingSink,
         );
         let config = PipelineNodeConfig::new(
             schema,

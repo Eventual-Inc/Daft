@@ -583,6 +583,7 @@ fn translate_helper(
                 LocalPhysicalPlan::explode(
                     input_plan,
                     to_explode,
+                    explode.ignore_empty_and_null,
                     explode.index_column.clone(),
                     explode.exploded_schema.clone(),
                     explode.stats_state.clone(),

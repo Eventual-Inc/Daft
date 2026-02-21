@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use common_error::DaftResult;
+use common_metrics::ops::{NodeCategory, NodeType};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_local_plan::{LocalNodeContext, LocalPhysicalPlan};
 use daft_logical_plan::{JoinType, stats::StatsState};
@@ -57,6 +58,8 @@ impl BroadcastJoinNode {
             plan_config.query_id.clone(),
             node_id,
             Self::NODE_NAME,
+            NodeType::BroadcastJoin,
+            NodeCategory::BlockingSink,
         );
 
         // For broadcast joins, we use the receiver's clustering spec since the broadcaster

@@ -23,6 +23,7 @@ TABLE_NAMES = [
     "region",
 ]
 
+daft.set_execution_config(flight_shuffle_dirs=["/opt/ray/spill"])
 
 def lowercase_column_names(df):
     return df.select(*[col(name).alias(name.lower()) for name in df.column_names])

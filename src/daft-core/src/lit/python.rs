@@ -27,6 +27,13 @@ use crate::{
     file::FileReference, python::PySeries, series::Series, utils::display::display_decimal128,
 };
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PyMapConversionMode {
+    AssociationList,
+    DictLossy,
+    DictStrict,
+}
+
 /// All Daft to Python type conversion logic should go through this implementation.
 ///
 /// The behavior here should be documented in `docs/api/datatypes.md`
@@ -166,7 +173,9 @@ impl<'py> IntoPyObject<'py> for Literal {
                 .import(intern!(py, "decimal"))?
                 .getattr(intern!(py, "Decimal"))?
                 .call1((display_decimal128(val, p, s),)),
-            Self::List(series) => Ok(PySeries { series }.to_pylist(py)?.into_any()),
+            Self::List(series) => Ok(PySeries { series }
+                .to_pylist_impl(py, PyMapConversionMode::AssociationList)?
+                .into_any()),
             Self::Python(val) => val.0.as_ref().into_bound_py_any(py),
             Self::Struct(entries) => entries
                 .into_iter()
@@ -195,7 +204,12 @@ impl<'py> IntoPyObject<'py> for Literal {
                     "Key and value counts should be equal in map literal"
                 );
 
-                Ok(PyList::new(py, keys.to_literals().zip(values.to_literals()))?.into_any())
+                let entries = keys
+                    .to_literals()
+                    .into_iter()
+                    .zip(values.to_literals())
+                    .collect::<Vec<(Self, Self)>>();
+                Ok(PyList::new(py, entries)?.into_any())
             }
             Self::Tensor { data, shape } => data
                 .to_pyarrow(py)?
@@ -248,6 +262,72 @@ impl<'py> IntoPyObject<'py> for Literal {
 }
 
 impl Literal {
+    pub(crate) fn into_pyobject_with_map_conversion(
+        self,
+        py: Python<'_>,
+        maps_as_pydicts: PyMapConversionMode,
+    ) -> PyResult<Bound<'_, PyAny>> {
+        if maps_as_pydicts == PyMapConversionMode::AssociationList {
+            return self.into_pyobject(py);
+        }
+
+        match self {
+            Self::List(series) => Ok(PySeries { series }
+                .to_pylist_impl(py, maps_as_pydicts)?
+                .into_any()),
+            Self::Struct(entries) => {
+                let dict = PyDict::new(py);
+                for (key, value) in entries
+                    .into_iter()
+                    .filter(|(k, v)| !(k.is_empty() && *v == Self::Null))
+                {
+                    dict.set_item(
+                        key,
+                        value.into_pyobject_with_map_conversion(py, maps_as_pydicts)?,
+                    )?;
+                }
+                Ok(dict.into_any())
+            }
+            Self::Map { keys, values } => {
+                assert_eq!(
+                    keys.len(),
+                    values.len(),
+                    "Key and value counts should be equal in map literal"
+                );
+
+                let map = PyDict::new(py);
+                let mut warned_on_duplicate = false;
+                for (key, value) in keys.to_literals().into_iter().zip(values.to_literals()) {
+                    let key_py = key.into_pyobject_with_map_conversion(py, maps_as_pydicts)?;
+                    let value_py = value.into_pyobject_with_map_conversion(py, maps_as_pydicts)?;
+
+                    let duplicate_key = map.contains(&key_py)?;
+                    if duplicate_key {
+                        if maps_as_pydicts == PyMapConversionMode::DictStrict {
+                            return Err(PyValueError::new_err(
+                                "Duplicate key encountered while converting Map to Python dict with maps_as_pydicts='strict'",
+                            ));
+                        }
+
+                        if !warned_on_duplicate {
+                            py.import(intern!(py, "warnings"))?.call_method1(
+                                intern!(py, "warn"),
+                                (
+                                    "Duplicate key encountered while converting Map to Python dict with maps_as_pydicts='lossy'; keeping the last value",
+                                ),
+                            )?;
+                            warned_on_duplicate = true;
+                        }
+                    }
+
+                    map.set_item(key_py, value_py)?;
+                }
+                Ok(map.into_any())
+            }
+            lit => lit.into_pyobject(py),
+        }
+    }
+
     /// Convert a Python object into a Daft Literal.
     ///
     /// NOTE: Make sure this matches the logic in `DataType.infer_from_type` in Python

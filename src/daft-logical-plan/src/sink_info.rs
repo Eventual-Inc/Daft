@@ -342,12 +342,16 @@ impl Default for CsvFormatOption {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct JsonFormatOption {
     pub ignore_null_fields: Option<bool>,
+    pub date_format: Option<String>,
+    pub timestamp_format: Option<String>,
 }
 
 impl Default for JsonFormatOption {
     fn default() -> Self {
         Self {
             ignore_null_fields: Some(false),
+            date_format: None,
+            timestamp_format: None,
         }
     }
 }
@@ -416,9 +420,15 @@ impl PyFormatSinkOption {
     pub fn json(
         _cls: &pyo3::prelude::Bound<pyo3::types::PyType>,
         ignore_null_fields: Option<bool>,
+        date_format: Option<String>,
+        timestamp_format: Option<String>,
     ) -> Self {
         Self {
-            inner: FormatSinkOption::Json(JsonFormatOption { ignore_null_fields }),
+            inner: FormatSinkOption::Json(JsonFormatOption {
+                ignore_null_fields,
+                date_format,
+                timestamp_format,
+            }),
         }
     }
 

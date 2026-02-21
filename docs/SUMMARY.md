@@ -14,8 +14,10 @@
         * [Images](modalities/images.md)
         * [Audio](modalities/audio.md)
         * [Videos](modalities/videos.md)
+        * [Documents](modalities/documents.md)
         * [JSON and Nested Data](modalities/json.md)
-        * [URLs and Files](modalities/urls.md)
+        * [Files and URLs](modalities/files.md)
+        * [Embeddings](modalities/embeddings.md)
         * [Custom Modalities](modalities/custom.md)
     * Scale Custom Python Code
         * [New UDF Overview](custom-code/index.md)
@@ -50,11 +52,13 @@
         * [Running on Ray](distributed/ray.md)
     * Architecture
         * [Architecture](architecture/index.md)
-    * Optimization and Debugging
+    * Optimization
         * [Managing Memory Usage](optimization/memory.md)
         * [Partitioning and Batching](optimization/partitioning.md)
-        * [Observability](optimization/observability.md)
-        * [Logging](optimization/logging.md)
+    * Observability
+        * [Progress Indicators](observability/progress-indicators.md)
+        * [Logging](observability/logging.md)
+        * [Telemetry](observability/telemetry.md)
     * [Sessions, Catalogs, and Tables](configuration/sessions-usage.md)
     * [Roadmap](roadmap.md)
     * [Benchmarks](benchmarks/index.md)
@@ -86,7 +90,7 @@
     * [User-Defined Functions](api/udf.md)
     * Data Types
         * [DataType](api/datatypes/all_datatypes.md)
-        * [daft.File Types](api/datatypes/daft_file_types.md)
+        * [File Types](api/datatypes/file_types.md)
         * [Type Conversions](api/datatypes/type_conversions.md)
         * [Casting](api/datatypes/casting.md)
     * [Window](api/window.md)

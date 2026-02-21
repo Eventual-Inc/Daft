@@ -17,11 +17,11 @@ use common_scan_info::ScanTaskLikeRef;
 use daft_core::{join::JoinSide, prelude::Schema};
 use daft_dsl::{common_treenode::ConcreteTreeNode, join::get_common_join_cols};
 use daft_local_plan::{
-    CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, GlobScan, HashAggregate, HashJoin,
-    InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext, LocalPhysicalPlan,
-    MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project, Sample, Sort,
-    SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot, VLLMProject,
-    WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
+    CommitWrite, Concat, CrossJoin, Dedup, Explode, Filter, FlightShuffleRead, FlightShuffleWrite,
+    GlobScan, HashAggregate, HashJoin, InMemoryScan, InputId, IntoBatches, Limit, LocalNodeContext,
+    LocalPhysicalPlan, MonotonicallyIncreasingId, PhysicalScan, PhysicalWrite, Pivot, Project,
+    Sample, Sort, SortMergeJoin, SourceId, TopN, UDFProject, UnGroupedAggregate, Unpivot,
+    VLLMProject, WindowOrderByOnly, WindowPartitionAndDynamicFrame, WindowPartitionAndOrderBy,
     WindowPartitionOnly,
 };
 use daft_logical_plan::{JoinType, stats::StatsState};
@@ -50,6 +50,7 @@ use crate::{
         blocking_sink::BlockingSinkNode,
         commit_write::CommitWriteSink,
         dedup::DedupSink,
+        flight_shuffle_write::FlightShuffleWriteSink,
         grouped_aggregate::GroupedAggregateSink,
         into_partitions::IntoPartitionsSink,
         pivot::PivotSink,
@@ -63,8 +64,8 @@ use crate::{
         write::{WriteFormat, WriteSink},
     },
     sources::{
-        glob_scan::GlobScanSource, in_memory::InMemorySource, scan_task::ScanTaskSource,
-        source::SourceNode,
+        flight_shuffle_read::FlightShuffleReadSource, glob_scan::GlobScanSource,
+        in_memory::InMemorySource, scan_task::ScanTaskSource, source::SourceNode,
     },
     streaming_sink::{
         async_udf::AsyncUdfSink, base::StreamingSinkNode, limit::LimitSink,
@@ -710,12 +711,17 @@ fn physical_plan_to_pipeline(
         LocalPhysicalPlan::Explode(Explode {
             input,
             to_explode,
+            ignore_empty_and_null,
             index_column,
             stats_state,
             context,
             ..
         }) => {
-            let explode_op = ExplodeOperator::new(to_explode.clone(), index_column.clone());
+            let explode_op = ExplodeOperator::new(
+                to_explode.clone(),
+                *ignore_empty_and_null,
+                index_column.clone(),
+            );
             let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
             IntermediateNode::new(
                 Arc::new(explode_op),
@@ -1432,6 +1438,57 @@ fn physical_plan_to_pipeline(
                 context,
             )
             .boxed()
+        }
+        LocalPhysicalPlan::FlightShuffleWrite(FlightShuffleWrite {
+            input,
+            num_partitions,
+            partition_by,
+            shuffle_id,
+            shuffle_dirs,
+            compression,
+            stats_state,
+            context,
+            ..
+        }) => {
+            let child_node = physical_plan_to_pipeline(input, cfg, ctx, input_senders)?;
+            let cache_id = format!("{}", shuffle_id);
+            let flight_shuffle_write = FlightShuffleWriteSink::try_new(
+                *num_partitions,
+                partition_by.clone(),
+                *shuffle_id,
+                shuffle_dirs.clone(),
+                compression.clone(),
+                cache_id,
+            )
+            .with_context(|_| PipelineCreationSnafu {
+                plan_name: "FlightShuffleWrite",
+            })?;
+            BlockingSinkNode::new(
+                Arc::new(flight_shuffle_write),
+                child_node,
+                stats_state.clone(),
+                ctx,
+                context,
+            )
+            .boxed()
+        }
+        LocalPhysicalPlan::FlightShuffleRead(FlightShuffleRead {
+            shuffle_id,
+            partition_idx,
+            server_addresses,
+            server_cache_mapping,
+            schema,
+            stats_state,
+            context,
+        }) => {
+            let source = FlightShuffleReadSource::new(
+                *shuffle_id,
+                *partition_idx,
+                server_addresses.clone(),
+                server_cache_mapping.clone(),
+                schema.clone(),
+            );
+            SourceNode::new(Box::new(source), stats_state.clone(), ctx, context).boxed()
         }
     };
 

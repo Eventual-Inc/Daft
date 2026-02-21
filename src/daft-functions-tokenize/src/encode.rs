@@ -1,7 +1,9 @@
-#![allow(deprecated, reason = "arrow2 migration")]
 use std::sync::Arc;
 
-use arrow::array::{ArrayBuilder, ArrayRef, UInt32Builder};
+use arrow::{
+    array::{ArrayBuilder, ArrayRef, UInt32Builder},
+    buffer::OffsetBuffer,
+};
 use common_error::DaftResult;
 use daft_core::prelude::*;
 use daft_dsl::functions::prelude::*;
@@ -110,7 +112,7 @@ fn tokenize_encode_array(
     Ok(ListArray::new(
         Field::new(arr.name(), DataType::List(Box::new(DataType::UInt32))),
         child_series,
-        offsets.try_into()?,
+        OffsetBuffer::new(offsets.into()),
         arr.nulls().cloned(),
     ))
 }

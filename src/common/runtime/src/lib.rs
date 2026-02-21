@@ -263,7 +263,7 @@ pub fn get_compute_pool_num_threads() -> usize {
     get_or_init_compute_runtime_num_worker_threads()
 }
 
-// Helper function to combine a stream with a future that returns a result
+/// Helper function to combine a stream with a future that returns a result
 pub fn combine_stream<T, E>(
     stream: impl futures::Stream<Item = Result<T, E>> + Unpin,
     future: impl Future<Output = Result<(), E>>,
