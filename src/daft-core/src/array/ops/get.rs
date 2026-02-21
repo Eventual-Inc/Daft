@@ -108,7 +108,7 @@ impl ExtensionArray {
             idx,
             self.len()
         );
-        let is_valid = self.data.validity().is_none_or(|nulls| nulls.get_bit(idx));
+        let is_valid = self.nulls().is_none_or(|nulls| nulls.is_valid(idx));
         if is_valid {
             Some(daft_arrow::scalar::new_scalar(self.data(), idx))
         } else {

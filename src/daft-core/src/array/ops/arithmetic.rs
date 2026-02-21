@@ -240,7 +240,7 @@ where
 {
     type Output = DaftResult<DataArray<T>>;
     fn rem(self, rhs: Self) -> Self::Output {
-        if rhs.data().null_count() == 0 {
+        if rhs.null_count() == 0 {
             arithmetic_helper(self, rhs, |l, r| l % r)
         } else {
             match (self.len(), rhs.len()) {
@@ -280,7 +280,7 @@ where
 {
     type Output = DaftResult<DataArray<T>>;
     fn div(self, rhs: Self) -> Self::Output {
-        if rhs.data().null_count() == 0 {
+        if rhs.null_count() == 0 {
             arithmetic_helper(self, rhs, |l, r| l / r)
         } else {
             match (self.len(), rhs.len()) {
@@ -323,7 +323,7 @@ impl Div for &Decimal128Array {
         };
         let scale = 10i128.pow(*s as u32);
 
-        if rhs.data().null_count() == 0 {
+        if rhs.null_count() == 0 {
             arithmetic_helper(self, rhs, |l, r| (l * scale) / r)
         } else {
             match (self.len(), rhs.len()) {
