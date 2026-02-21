@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    ops::ControlFlow,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -20,7 +21,7 @@ use snafu::ResultExt;
 use tracing::info_span;
 
 use crate::{
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorControlFlow, OperatorOutput,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
     PipelineExecutionSnafu,
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
@@ -87,6 +88,53 @@ pub struct IntermediateNode<Op: IntermediateOperator> {
     node_info: Arc<NodeInfo>,
 }
 
+type StateId = usize;
+
+struct ExecutionTaskResult<S> {
+    state_id: StateId,
+    input_id: InputId,
+    state: S,
+    result: IntermediateOperatorResult,
+    elapsed: Duration,
+}
+
+struct InputState {
+    buffer: RowBasedBuffer,
+    in_flight: usize,
+    pending_flush: bool,
+}
+
+impl InputState {
+    fn can_flush(&self) -> bool {
+        self.pending_flush && self.in_flight == 0 && self.buffer.is_empty()
+    }
+
+    fn next_batch_if_ready(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
+        let batch = self.buffer.next_batch_if_ready()?;
+        if batch.is_some() {
+            Ok(batch)
+        } else if self.pending_flush {
+            self.buffer.pop_all()
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+struct ExecutionContext<Op: IntermediateOperator> {
+    op: Arc<Op>,
+    task_spawner: ExecutionTaskSpawner,
+    task_set: OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
+    state_pool: HashMap<StateId, Op::State>,
+    output_sender: Sender<PipelineMessage>,
+    batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
+    runtime_stats: Arc<dyn RuntimeStats>,
+    input_states: HashMap<InputId, InputState>,
+    stats_manager: RuntimeStatsManagerHandle,
+    node_id: usize,
+    node_initialized: bool,
+}
+
 // ========== IntermediateNode Implementation ==========
 
 impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
@@ -123,57 +171,13 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
     }
 }
 
-struct ExecutionTaskResult<S> {
-    input_id: InputId,
-    state: S,
-    result: IntermediateOperatorResult,
-    elapsed: Duration,
-}
-
-struct InputState {
-    buffer: RowBasedBuffer,
-    in_flight: usize,
-    pending_flush: bool,
-}
-
-impl InputState {
-    fn can_flush(&self) -> bool {
-        self.pending_flush && self.in_flight == 0 && self.buffer.is_empty()
-    }
-
-    fn next_batch_if_ready(&mut self) -> DaftResult<Option<Arc<MicroPartition>>> {
-        let batch = self.buffer.next_batch_if_ready()?;
-        if batch.is_some() {
-            Ok(batch)
-        } else if self.pending_flush {
-            self.buffer.pop_all()
-        } else {
-            Ok(None)
-        }
-    }
-}
-
-struct IntermediateOpProcessor<Op: IntermediateOperator> {
-    task_set: OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
-    available_states: Vec<Op::State>,
-    input_states: HashMap<InputId, InputState>,
-    batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
-    op: Arc<Op>,
-    task_spawner: ExecutionTaskSpawner,
-    runtime_stats: Arc<dyn RuntimeStats>,
-    output_sender: Sender<PipelineMessage>,
-    stats_manager: RuntimeStatsManagerHandle,
-    node_id: usize,
-    node_initialized: bool,
-}
-
 /// input_id lifecycle (no finalize step):
 ///
 /// 1. BUFFER  — morsel arrives, data buffered
 /// 2. EXECUTE — tasks spawned while batch_size met AND under max_concurrency
 /// 3. FLUSH   — flush received → pending_flush=true → pop_all for remaining buffer
 /// 4. CLEANUP — buffer empty + no in-flight → remove input_id → propagate flush downstream
-impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
+impl<Op: IntermediateOperator + 'static> ExecutionContext<Op> {
     fn new(
         maintain_order: bool,
         op: Arc<Op>,
@@ -188,16 +192,16 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
                 node_name: op.name().to_string(),
             },
         )?));
-        let available_states = (0..op.max_concurrency()).map(|_| op.make_state()).collect();
+        let state_pool = (0..op.max_concurrency()).map(|i| (i, op.make_state())).collect();
         Ok(Self {
-            task_set: OrderingAwareJoinSet::new(maintain_order),
-            available_states,
-            input_states: HashMap::new(),
-            batch_manager,
             op,
             task_spawner,
-            runtime_stats,
+            task_set: OrderingAwareJoinSet::new(maintain_order),
+            state_pool,
             output_sender,
+            batch_manager,
+            runtime_stats,
+            input_states: HashMap::new(),
             stats_manager,
             node_id,
             node_initialized: false,
@@ -205,16 +209,17 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
     }
 
     #[inline]
-    async fn send(&self, msg: PipelineMessage) -> OperatorControlFlow {
+    async fn send(&self, msg: PipelineMessage) -> ControlFlow<(), ()> {
         if self.output_sender.send(msg).await.is_err() {
-            OperatorControlFlow::Break
+            ControlFlow::Break(())
         } else {
-            OperatorControlFlow::Continue
+            ControlFlow::Continue(())
         }
     }
 
     /// Spawn a single task for the given input_id, consuming a state from the pool.
     fn spawn_execution_task(
+        state_id: StateId,
         input_id: InputId,
         op_state: Op::State,
         batch: Arc<MicroPartition>,
@@ -229,6 +234,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
             let (new_op_state, result) = op.execute(batch, op_state, &task_spawner).await??;
             let elapsed = now.elapsed();
             Ok(ExecutionTaskResult {
+                state_id,
                 input_id,
                 state: new_op_state,
                 result,
@@ -241,8 +247,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
         let mut input_ids: Vec<InputId> = self.input_states.keys().copied().collect();
         input_ids.sort_unstable();
         for input_id in input_ids {
-            if self.task_set.len() >= self.op.max_concurrency() || self.available_states.is_empty()
-            {
+            if self.task_set.len() >= self.op.max_concurrency() || self.state_pool.is_empty() {
                 break;
             }
             self.try_spawn_tasks_for_input(input_id)?;
@@ -255,12 +260,21 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
             .input_states
             .get_mut(&input_id)
             .expect("Input should be present");
-        while !self.available_states.is_empty()
+        while !self.state_pool.is_empty()
             && let Some(input) = input_state.next_batch_if_ready()?
         {
-            let op_state = self.available_states.pop().unwrap();
+            let state_id = *self
+                .state_pool
+                .keys()
+                .next()
+                .expect("State pool should have states when non-empty");
+            let op_state = self
+                .state_pool
+                .remove(&state_id)
+                .expect("State pool should have states when non-empty");
             input_state.in_flight += 1;
             Self::spawn_execution_task(
+                state_id,
                 input_id,
                 op_state,
                 input,
@@ -272,26 +286,27 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
         Ok(())
     }
 
-    async fn try_flush_input(&mut self, input_id: InputId) -> DaftResult<OperatorControlFlow> {
+    async fn try_flush_input(&mut self, input_id: InputId) -> DaftResult<ControlFlow<(), ()>> {
         let input_state = self
             .input_states
             .get_mut(&input_id)
             .expect("Input should be present");
         if input_state.can_flush() {
             self.input_states.remove(&input_id);
-            if self.send(PipelineMessage::Flush(input_id)).await == OperatorControlFlow::Break {
-                return Ok(OperatorControlFlow::Break);
+            if self.send(PipelineMessage::Flush(input_id)).await.is_break() {
+                return Ok(ControlFlow::Break(()));
             }
-            return Ok(OperatorControlFlow::Continue);
+            return Ok(ControlFlow::Continue(()));
         }
-        Ok(OperatorControlFlow::Continue)
+        Ok(ControlFlow::Continue(()))
     }
 
     async fn handle_task_completion(
         &mut self,
         task_result: ExecutionTaskResult<Op::State>,
-    ) -> DaftResult<OperatorControlFlow> {
+    ) -> DaftResult<ControlFlow<(), ()>> {
         let ExecutionTaskResult {
+            state_id,
             input_id,
             state,
             result,
@@ -313,9 +328,9 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
                     partition: mp.clone(),
                 })
                 .await
-                == OperatorControlFlow::Break
+                .is_break()
             {
-                return Ok(OperatorControlFlow::Break);
+                return Ok(ControlFlow::Break(()));
             }
         }
 
@@ -327,12 +342,13 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
         match result {
             IntermediateOperatorResult::NeedMoreInput(_) => {
                 self.input_states.get_mut(&input_id).unwrap().in_flight -= 1;
-                self.available_states.push(state);
+                self.state_pool.insert(state_id, state);
                 self.try_spawn_tasks()?;
                 self.try_flush_input(input_id).await
             }
             IntermediateOperatorResult::HasMoreOutput { input, .. } => {
                 Self::spawn_execution_task(
+                    state_id,
                     input_id,
                     state,
                     input,
@@ -340,7 +356,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
                     &self.op,
                     &self.task_spawner,
                 );
-                Ok(OperatorControlFlow::Continue)
+                Ok(ControlFlow::Continue(()))
             }
         }
     }
@@ -368,7 +384,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
         self.try_spawn_tasks()
     }
 
-    async fn handle_flush(&mut self, input_id: InputId) -> DaftResult<OperatorControlFlow> {
+    async fn handle_flush(&mut self, input_id: InputId) -> DaftResult<ControlFlow<(), ()>> {
         let Some(input) = self.input_states.get_mut(&input_id) else {
             // Never seen this input_id, forward flush immediately.
             return Ok(self.send(PipelineMessage::Flush(input_id)).await);
@@ -378,7 +394,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
         self.try_flush_input(input_id).await
     }
 
-    async fn handle_input_closed(&mut self) -> DaftResult<OperatorControlFlow> {
+    async fn handle_input_closed(&mut self) -> DaftResult<ControlFlow<(), ()>> {
         for input_state in self.input_states.values_mut() {
             input_state.pending_flush = true;
         }
@@ -386,11 +402,11 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
         let mut input_ids: Vec<InputId> = self.input_states.keys().copied().collect();
         input_ids.sort_unstable();
         for input_id in input_ids {
-            if self.try_flush_input(input_id).await? == OperatorControlFlow::Break {
-                return Ok(OperatorControlFlow::Break);
+            if self.try_flush_input(input_id).await?.is_break() {
+                return Ok(ControlFlow::Break(()));
             }
         }
-        Ok(OperatorControlFlow::Continue)
+        Ok(ControlFlow::Continue(()))
     }
 
     async fn process_input(&mut self, receiver: &mut Receiver<PipelineMessage>) -> DaftResult<()> {
@@ -413,12 +429,12 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
                     partition,
                 } => {
                     self.handle_morsel(input_id, partition)?;
-                    OperatorControlFlow::Continue
+                    ControlFlow::Continue(())
                 }
                 PipelineEvent::Flush(input_id) => self.handle_flush(input_id).await?,
                 PipelineEvent::InputClosed => self.handle_input_closed().await?,
             };
-            if cf == OperatorControlFlow::Break {
+            if cf.is_break() {
                 return Ok(());
             }
         }
@@ -527,9 +543,11 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
     ) -> crate::Result<Receiver<PipelineMessage>> {
         // 1. Start children and wrap receivers
         let mut child_result_receiver = self.child.start(maintain_order, runtime_handle)?;
+        // 2. Setup
+        let op = self.intermediate_op.clone();
         let (destination_sender, destination_receiver) = create_channel(1);
 
-        // 2. Create task spawner
+        // 3. Create task spawner
         let compute_runtime = get_compute_runtime();
         let task_spawner = ExecutionTaskSpawner::new(
             compute_runtime,
@@ -538,13 +556,13 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
             info_span!("IntermediateOp::execute"),
         );
 
-        let op = self.intermediate_op.clone();
-        let runtime_stats = self.runtime_stats.clone();
-        let node_id = self.node_id();
+        // 4. Spawn process_input task
         let stats_manager = runtime_handle.stats_manager();
+        let node_id = self.node_id();
+        let runtime_stats = self.runtime_stats.clone();
         runtime_handle.spawn(
             async move {
-                let mut processor = IntermediateOpProcessor::new(
+                let mut ctx = ExecutionContext::new(
                     maintain_order,
                     op,
                     task_spawner,
@@ -554,7 +572,7 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
                     node_id,
                 )?;
 
-                processor.process_input(&mut child_result_receiver).await?;
+                ctx.process_input(&mut child_result_receiver).await?;
 
                 stats_manager.finalize_node(node_id);
                 Ok(())

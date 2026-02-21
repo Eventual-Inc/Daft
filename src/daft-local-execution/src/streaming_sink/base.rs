@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, hash_map::Entry},
+    ops::ControlFlow,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -19,7 +20,7 @@ use opentelemetry::metrics::Meter;
 use tracing::info_span;
 
 use crate::{
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorControlFlow, OperatorOutput,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},
@@ -161,7 +162,7 @@ async fn process_single_input<Op: StreamingSink + 'static>(
     output_sender: Sender<PipelineMessage>,
     batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
     _maintain_order: bool,
-) -> DaftResult<OperatorControlFlow> {
+) -> DaftResult<ControlFlow<(), ()>> {
     let mut states: Vec<Op::State> = (0..op.max_concurrency())
         .map(|_| op.make_state())
         .collect::<DaftResult<_>>()?;
@@ -219,7 +220,7 @@ async fn process_single_input<Op: StreamingSink + 'static>(
                         .await
                         .is_err()
                     {
-                        return Ok(OperatorControlFlow::Break);
+                        return Ok(ControlFlow::Break(()));
                     }
                 }
 
@@ -281,7 +282,7 @@ async fn process_single_input<Op: StreamingSink + 'static>(
                     .await
                     .is_err()
                 {
-                    return Ok(OperatorControlFlow::Break);
+                    return Ok(ControlFlow::Break(()));
                 }
             }
 
@@ -323,7 +324,7 @@ async fn process_single_input<Op: StreamingSink + 'static>(
                             .await
                             .is_err()
                         {
-                            return Ok(OperatorControlFlow::Break);
+                            return Ok(ControlFlow::Break(()));
                         }
                     }
                     states = new_states;
@@ -339,7 +340,7 @@ async fn process_single_input<Op: StreamingSink + 'static>(
                             .await
                             .is_err()
                         {
-                            return Ok(OperatorControlFlow::Break);
+                            return Ok(ControlFlow::Break(()));
                         }
                     }
                     break;
@@ -354,9 +355,9 @@ async fn process_single_input<Op: StreamingSink + 'static>(
         .await
         .is_err()
     {
-        return Ok(OperatorControlFlow::Break);
+        return Ok(ControlFlow::Break(()));
     }
-    Ok(OperatorControlFlow::Continue)
+    Ok(ControlFlow::Continue(()))
 }
 
 impl<Op: StreamingSink + 'static> TreeDisplay for StreamingSinkNode<Op> {
@@ -473,7 +474,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
             async move {
                 let mut per_input_senders: HashMap<InputId, Sender<PipelineMessage>> =
                     HashMap::new();
-                let mut processor_set: JoinSet<DaftResult<OperatorControlFlow>> = JoinSet::new();
+                let mut processor_set: JoinSet<DaftResult<ControlFlow<(), ()>>> = JoinSet::new();
                 let mut node_initialized = false;
                 let mut input_closed = false;
 
@@ -525,7 +526,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                             }
                         }
                         Some(result) = processor_set.join_next(), if !processor_set.is_empty() => {
-                            if result?? == OperatorControlFlow::Break {
+                            if result??.is_break() {
                                 break;
                             }
                         }
