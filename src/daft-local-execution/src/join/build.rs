@@ -5,7 +5,7 @@ use std::{
 
 use common_error::DaftResult;
 use common_runtime::JoinSet;
-use tokio::sync::watch;
+use tokio::sync::oneshot;
 
 use crate::{
     ExecutionTaskSpawner,
@@ -15,10 +15,22 @@ use crate::{
     runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle},
 };
 
+/// Slot for one input_id: either probe will receive (sender stored) or build already sent (value stored).
+enum BuildStateSlot<T> {
+    Sender(oneshot::Sender<T>),
+    Ready(T),
+}
+
+/// Result of subscribing for finalized build state: either await the receiver or use the ready value.
+pub(crate) enum FinalizedBuildStateReceiver<Op: JoinOperator> {
+    Receiver(oneshot::Receiver<Op::FinalizedBuildState>),
+    Ready(Op::FinalizedBuildState),
+}
+
 /// Bridge for communicating finalized build state between build and probe sides.
-/// Uses `watch` channels so that late subscribers still see the last sent value.
+/// Uses oneshot: one send per input_id; probe receives once.
 pub(crate) struct BuildStateBridge<Op: JoinOperator> {
-    channels: Mutex<HashMap<InputId, watch::Sender<Option<Op::FinalizedBuildState>>>>,
+    channels: Mutex<HashMap<InputId, BuildStateSlot<Op::FinalizedBuildState>>>,
 }
 
 impl<Op: JoinOperator> BuildStateBridge<Op> {
@@ -34,23 +46,34 @@ impl<Op: JoinOperator> BuildStateBridge<Op> {
         finalized: Op::FinalizedBuildState,
     ) {
         let mut channels = self.channels.lock().unwrap();
-        let sender = channels.entry(input_id).or_insert_with(|| {
-            let (sender, _receiver) = watch::channel(None);
-            sender
-        });
-        sender.send_modify(|v| *v = Some(finalized));
+        if let Some(slot) = channels.remove(&input_id) {
+            if let BuildStateSlot::Sender(tx) = slot {
+                let _ = tx.send(finalized);
+            }
+        } else {
+            channels.insert(input_id, BuildStateSlot::Ready(finalized));
+        }
     }
 
-    pub(crate) fn subscribe(
-        &self,
-        input_id: InputId,
-    ) -> watch::Receiver<Option<Op::FinalizedBuildState>> {
+    pub(crate) fn subscribe(&self, input_id: InputId) -> FinalizedBuildStateReceiver<Op> {
         let mut channels = self.channels.lock().unwrap();
-        let sender = channels.entry(input_id).or_insert_with(|| {
-            let (sender, _receiver) = watch::channel(None);
-            sender
-        });
-        sender.subscribe()
+        let (tx, rx) = oneshot::channel();
+        match channels.entry(input_id) {
+            Entry::Vacant(e) => {
+                e.insert(BuildStateSlot::Sender(tx));
+                FinalizedBuildStateReceiver::Receiver(rx)
+            }
+            Entry::Occupied(e) => {
+                let slot = e.remove();
+                match slot {
+                    BuildStateSlot::Ready(v) => FinalizedBuildStateReceiver::Ready(v),
+                    BuildStateSlot::Sender(_) => {
+                        channels.insert(input_id, BuildStateSlot::Sender(tx));
+                        FinalizedBuildStateReceiver::Receiver(rx)
+                    }
+                }
+            }
+        }
     }
 }
 

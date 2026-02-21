@@ -13,7 +13,7 @@ use crate::{
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
     join::{
-        build::BuildStateBridge,
+        build::{BuildStateBridge, FinalizedBuildStateReceiver},
         join_operator::{JoinOperator, ProbeOutput},
     },
     pipeline_message::{InputId, PipelineMessage},
@@ -33,12 +33,19 @@ async fn process_single_input<Op: JoinOperator + 'static>(
     build_state_bridge: Arc<BuildStateBridge<Op>>,
     _maintain_order: bool,
 ) -> DaftResult<ControlFlow<()>> {
+    let finalized = match build_state_bridge.subscribe(input_id) {
+        FinalizedBuildStateReceiver::Receiver(rx) => rx.await.map_err(|e| {
+            common_error::DaftError::ValueError(format!(
+                "Failed to receive finalized build state: {}",
+                e
+            ))
+        })?,
+        FinalizedBuildStateReceiver::Ready(v) => v,
+    };
+
     let max_concurrency = op.max_concurrency();
     let mut states: Vec<Op::ProbeState> = (0..max_concurrency)
-        .map(|_| {
-            let build_rx = build_state_bridge.subscribe(input_id);
-            op.make_probe_state(build_rx)
-        })
+        .map(|_| op.make_probe_state(finalized.clone()))
         .collect();
 
     let (lower, upper) = op.morsel_size_requirement().unwrap_or_default().values();

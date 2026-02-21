@@ -5,7 +5,6 @@ use common_metrics::ops::NodeType;
 use daft_core::{join::JoinType, prelude::SchemaRef};
 use daft_dsl::expr::bound_expr::BoundExpr;
 use daft_micropartition::MicroPartition;
-use tokio::sync::watch;
 use tracing::Span;
 
 use crate::{
@@ -21,59 +20,9 @@ pub(crate) struct SortMergeJoinBuildState {
     tables: Vec<Arc<MicroPartition>>,
 }
 
-pub(crate) enum SortMergeJoinProbeState {
-    Uninitialized(watch::Receiver<Option<Vec<Arc<MicroPartition>>>>),
-    Initialized {
-        build_contents: Vec<Arc<MicroPartition>>,
-        probe_contents: Vec<Arc<MicroPartition>>,
-    },
-}
-
-impl SortMergeJoinProbeState {
-    /// Initialize the state by awaiting the receiver if uninitialized.
-    /// Returns the initialized state.
-    pub(crate) async fn initialize(self) -> common_error::DaftResult<Self> {
-        match self {
-            Self::Uninitialized(mut receiver) => {
-                let finalized_ref = receiver.wait_for(|v| v.is_some()).await.map_err(|e| {
-                    common_error::DaftError::ValueError(format!(
-                        "Failed to receive finalized build state: {}",
-                        e
-                    ))
-                })?;
-                let finalized = finalized_ref.as_ref().unwrap().clone();
-                drop(finalized_ref);
-
-                Ok(Self::Initialized {
-                    build_contents: finalized,
-                    probe_contents: Vec::new(),
-                })
-            }
-            Self::Initialized { .. } => Ok(self),
-        }
-    }
-
-    /// Extract build_contents and probe_contents from an Initialized state.
-    /// Panics if the state is Uninitialized.
-    pub(crate) fn into_initialized(self) -> (Vec<Arc<MicroPartition>>, Vec<Arc<MicroPartition>>) {
-        match self {
-            Self::Initialized {
-                build_contents,
-                probe_contents,
-            } => (build_contents, probe_contents),
-            Self::Uninitialized(_) => {
-                panic!("State must be initialized before extracting fields")
-            }
-        }
-    }
-
-    /// Get a mutable reference to probe_contents if initialized.
-    pub(crate) fn probe_contents_mut(&mut self) -> Option<&mut Vec<Arc<MicroPartition>>> {
-        match self {
-            Self::Initialized { probe_contents, .. } => Some(probe_contents),
-            Self::Uninitialized(_) => None,
-        }
-    }
+pub(crate) struct SortMergeJoinProbeState {
+    pub(crate) build_contents: Vec<Arc<MicroPartition>>,
+    pub(crate) probe_contents: Vec<Arc<MicroPartition>>,
 }
 
 pub struct SortMergeJoinOperator {
@@ -129,35 +78,24 @@ impl JoinOperator for SortMergeJoinOperator {
 
     fn make_probe_state(
         &self,
-        receiver: watch::Receiver<Option<Self::FinalizedBuildState>>,
+        finalized_build_state: Self::FinalizedBuildState,
     ) -> Self::ProbeState {
-        SortMergeJoinProbeState::Uninitialized(receiver)
+        SortMergeJoinProbeState {
+            build_contents: finalized_build_state,
+            probe_contents: Vec::new(),
+        }
     }
 
     fn probe(
         &self,
         input: Arc<MicroPartition>,
-        state: Self::ProbeState,
-        spawner: &ExecutionTaskSpawner,
+        mut state: Self::ProbeState,
+        _spawner: &ExecutionTaskSpawner,
     ) -> ProbeResult<Self> {
-        spawner
-            .spawn(
-                async move {
-                    // Initialize state if needed
-                    let mut state = state.initialize().await?;
-
-                    // Add input to probe_contents if not empty
-                    if let Some(probe_contents) = state.probe_contents_mut()
-                        && !input.is_empty()
-                    {
-                        probe_contents.push(input);
-                    }
-
-                    Ok((state, ProbeOutput::NeedMoreInput(None)))
-                },
-                Span::current(),
-            )
-            .into()
+        if !input.is_empty() {
+            state.probe_contents.push(input);
+        }
+        Ok((state, ProbeOutput::NeedMoreInput(None))).into()
     }
 
     fn finalize_probe(
@@ -170,8 +108,8 @@ impl JoinOperator for SortMergeJoinOperator {
             .next()
             .expect("Expect exactly one state for SortMergeJoin probe finalize");
 
-        // Extract Initialized state
-        let (build_contents, probe_contents) = state.into_initialized();
+        let build_contents = state.build_contents;
+        let probe_contents = state.probe_contents;
 
         let left_on = self.left_on.clone();
         let right_on = self.right_on.clone();
