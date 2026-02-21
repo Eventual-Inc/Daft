@@ -151,7 +151,7 @@ impl<T> DataArray<T> {
     }
 
     pub fn null_count(&self) -> usize {
-        self.data().null_count()
+        self.data.null_count()
     }
 
     pub fn data_type(&self) -> &DataType {
@@ -163,27 +163,24 @@ impl<T> DataArray<T> {
     }
 
     pub fn with_nulls_slice(&self, nulls: &[bool]) -> DaftResult<Self> {
-        if nulls.len() != self.data.len() {
+        if nulls.len() != self.len() {
             return Err(DaftError::ValueError(format!(
                 "nulls length does not match DataArray length, {} vs {}",
                 nulls.len(),
-                self.data.len()
+                self.len()
             )));
         }
-        let with_bitmap = self
-            .data
-            .with_validity(wrap_null_buffer(Some(NullBuffer::from(nulls))));
-        Self::new(self.field.clone(), with_bitmap)
+        self.with_nulls(Some(NullBuffer::from(nulls)))
     }
 
     pub fn with_nulls(&self, nulls: Option<NullBuffer>) -> DaftResult<Self> {
         if let Some(v) = &nulls
-            && v.len() != self.data.len()
+            && v.len() != self.len()
         {
             return Err(DaftError::ValueError(format!(
                 "validity mask length does not match DataArray length, {} vs {}",
                 v.len(),
-                self.data.len()
+                self.len()
             )));
         }
         let with_bitmap = self.data.with_validity(wrap_null_buffer(nulls));
