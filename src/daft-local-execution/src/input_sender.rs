@@ -1,6 +1,6 @@
 use common_error::{DaftError, DaftResult};
 use common_scan_info::ScanTaskLikeRef;
-use daft_local_plan::{Input, InputId};
+use daft_local_plan::{FlightShuffleReadInput, Input, InputId};
 use daft_micropartition::MicroPartitionRef;
 
 use crate::channel::UnboundedSender;
@@ -11,6 +11,7 @@ pub(crate) enum InputSender {
     ScanTasks(UnboundedSender<(InputId, Vec<ScanTaskLikeRef>)>),
     InMemory(UnboundedSender<(InputId, Vec<MicroPartitionRef>)>),
     GlobPaths(UnboundedSender<(InputId, Vec<String>)>),
+    FlightShuffle(UnboundedSender<(InputId, Vec<FlightShuffleReadInput>)>),
 }
 
 impl InputSender {
@@ -25,6 +26,9 @@ impl InputSender {
             (Self::GlobPaths(sender), Input::GlobPaths(glob_paths)) => sender
                 .send((input_id, glob_paths))
                 .map_err(|e| DaftError::ValueError(e.to_string())),
+            (Self::FlightShuffle(sender), Input::FlightShuffle(inputs)) => sender
+                .send((input_id, inputs))
+                .map_err(|e| DaftError::ValueError(e.to_string())),
             _ => unreachable!("Invalid input sender for input type"),
         }
     }
@@ -38,6 +42,9 @@ impl InputSender {
                 .send((input_id, vec![]))
                 .map_err(|e| DaftError::ValueError(e.to_string())),
             Self::GlobPaths(sender) => sender
+                .send((input_id, vec![]))
+                .map_err(|e| DaftError::ValueError(e.to_string())),
+            Self::FlightShuffle(sender) => sender
                 .send((input_id, vec![]))
                 .map_err(|e| DaftError::ValueError(e.to_string())),
         }

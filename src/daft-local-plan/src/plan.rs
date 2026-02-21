@@ -600,13 +600,11 @@ impl LocalPhysicalPlan {
                 schema.hash(hasher);
             }
             Self::FlightShuffleRead(FlightShuffleRead {
-                shuffle_id,
-                partition_idx,
+                source_id,
                 schema,
                 ..
             }) => {
-                shuffle_id.hash(hasher);
-                partition_idx.hash(hasher);
+                source_id.hash(hasher);
                 schema.hash(hasher);
             }
         }
@@ -1496,39 +1494,13 @@ impl LocalPhysicalPlan {
     }
 
     pub fn flight_shuffle_read(
-        shuffle_id: u64,
-        partition_idx: usize,
-        server_addresses: Vec<String>,
+        source_id: SourceId,
         schema: SchemaRef,
         stats_state: StatsState,
         context: LocalNodeContext,
     ) -> LocalPhysicalPlanRef {
         Self::FlightShuffleRead(FlightShuffleRead {
-            shuffle_id,
-            partition_idx,
-            server_addresses,
-            server_cache_mapping: HashMap::new(),
-            schema,
-            stats_state,
-            context,
-        })
-        .arced()
-    }
-
-    pub fn flight_shuffle_read_with_cache_ids(
-        shuffle_id: u64,
-        partition_idx: usize,
-        server_cache_mapping: HashMap<String, Vec<u32>>,
-        schema: SchemaRef,
-        stats_state: StatsState,
-        context: LocalNodeContext,
-    ) -> LocalPhysicalPlanRef {
-        let server_addresses: Vec<String> = server_cache_mapping.keys().cloned().collect();
-        Self::FlightShuffleRead(FlightShuffleRead {
-            shuffle_id,
-            partition_idx,
-            server_addresses,
-            server_cache_mapping,
+            source_id,
             schema,
             stats_state,
             context,
@@ -2720,11 +2692,15 @@ pub struct FlightShuffleWrite {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FlightShuffleRead {
-    pub shuffle_id: u64,
-    pub partition_idx: usize,
-    pub server_addresses: Vec<String>,
-    pub server_cache_mapping: HashMap<String, Vec<u32>>,
+    pub source_id: SourceId,
     pub schema: SchemaRef,
     pub stats_state: StatsState,
     pub context: LocalNodeContext,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlightShuffleReadInput {
+    pub shuffle_id: u64,
+    pub partition_idx: usize,
+    pub server_cache_mapping: HashMap<String, Vec<u32>>,
 }
