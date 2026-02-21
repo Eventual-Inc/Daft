@@ -23,7 +23,9 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+};
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 #[derive(Default)]
@@ -114,7 +116,7 @@ impl BlockingSink for DedupSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
+    ) -> BlockingSinkFinalizeResult<Self> {
         let columns = self.columns.clone();
         let num_partitions = self.num_partitions();
         spawner
@@ -155,7 +157,7 @@ impl BlockingSink for DedupSink {
 
                     // Concatenate the results and return
                     let concated = MicroPartition::concat(&results)?;
-                    Ok(vec![Arc::new(concated)])
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(concated)]))
                 },
                 Span::current(),
             )

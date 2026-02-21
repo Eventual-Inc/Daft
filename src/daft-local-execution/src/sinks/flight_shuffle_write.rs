@@ -14,7 +14,9 @@ use daft_shuffles::{
 };
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+};
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub struct FlightShuffleWriteSink {
@@ -99,7 +101,7 @@ impl BlockingSink for FlightShuffleWriteSink {
         &self,
         _states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
+    ) -> BlockingSinkFinalizeResult<Self> {
         let num_partitions = self.num_partitions;
         let shuffle_id = self.shuffle_id;
         let shuffle_cache = self.shuffle_cache.clone();
@@ -136,7 +138,7 @@ impl BlockingSink for FlightShuffleWriteSink {
                     let result_mp =
                         MicroPartition::new_loaded(schema.into(), Arc::new(vec![result]), None);
 
-                    Ok(vec![Arc::new(result_mp)])
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(result_mp)]))
                 },
                 Span::current(),
             )

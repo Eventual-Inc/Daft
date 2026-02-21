@@ -9,7 +9,9 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+};
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) struct RepartitionState {
@@ -98,7 +100,7 @@ impl BlockingSink for RepartitionSink {
         &self,
         mut states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
+    ) -> BlockingSinkFinalizeResult<Self> {
         let num_partitions = self.num_partitions;
         let schema = self.schema.clone();
 
@@ -135,7 +137,7 @@ impl BlockingSink for RepartitionSink {
                         .unwrap()
                         .into_iter()
                         .collect::<DaftResult<Vec<_>>>()?;
-                    Ok(outputs)
+                    Ok(BlockingSinkFinalizeOutput::Finished(outputs))
                 },
                 Span::current(),
             )

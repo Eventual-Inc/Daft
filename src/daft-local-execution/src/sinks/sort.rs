@@ -7,7 +7,9 @@ use daft_micropartition::MicroPartition;
 use itertools::Itertools;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+};
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) enum SortState {
@@ -75,7 +77,7 @@ impl BlockingSink for SortSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
+    ) -> BlockingSinkFinalizeResult<Self> {
         let params = self.params.clone();
         spawner
             .spawn(
@@ -87,7 +89,7 @@ impl BlockingSink for SortSink {
                         &params.descending,
                         &params.nulls_first,
                     )?);
-                    Ok(vec![sorted])
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![sorted]))
                 },
                 Span::current(),
             )

@@ -12,9 +12,7 @@ use common_metrics::{
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::StatSnapshotImpl,
 };
-use common_runtime::{
-    JoinSet, OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime,
-};
+use common_runtime::{OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime};
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
@@ -27,12 +25,22 @@ use crate::{
     channel::{Receiver, Sender, create_channel},
     pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineNode},
     pipeline_message::{InputId, PipelineMessage},
-    runtime_stats::{DefaultRuntimeStats, RuntimeStats},
+    runtime_stats::{DefaultRuntimeStats, RuntimeStats, RuntimeStatsManagerHandle},
 };
+
+pub enum BlockingSinkFinalizeOutput<Op: BlockingSink> {
+    #[allow(dead_code)]
+    HasMoreOutput {
+        states: Vec<Op::State>,
+        output: Vec<Arc<MicroPartition>>,
+    },
+    Finished(Vec<Arc<MicroPartition>>),
+}
 
 pub(crate) type BlockingSinkSinkResult<Op> =
     OperatorOutput<DaftResult<<Op as BlockingSink>::State>>;
-pub(crate) type BlockingSinkFinalizeResult = OperatorOutput<DaftResult<Vec<Arc<MicroPartition>>>>;
+pub(crate) type BlockingSinkFinalizeResult<Op> =
+    OperatorOutput<DaftResult<BlockingSinkFinalizeOutput<Op>>>;
 pub(crate) trait BlockingSink: Send + Sync {
     type State: Send + Sync + Unpin;
 
@@ -48,7 +56,7 @@ pub(crate) trait BlockingSink: Send + Sync {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult
+    ) -> BlockingSinkFinalizeResult<Self>
     where
         Self: Sized;
     fn name(&self) -> NodeName;
@@ -63,83 +71,24 @@ pub(crate) trait BlockingSink: Send + Sync {
     }
 }
 
-/// Process all morsels for a single input_id, finalize, and send output.
-async fn process_single_input<Op: BlockingSink + 'static>(
-    input_id: InputId,
-    mut receiver: Receiver<PipelineMessage>,
+type StateId = usize;
+
+struct ExecutionTaskResult<S> {
+    state_id: StateId,
+    state: S,
+    elapsed: Duration,
+}
+
+struct ExecutionContext<Op: BlockingSink> {
     op: Arc<Op>,
     task_spawner: ExecutionTaskSpawner,
     finalize_spawner: ExecutionTaskSpawner,
-    runtime_stats: Arc<dyn RuntimeStats>,
+    task_set: OrderingAwareJoinSet<DaftResult<ExecutionTaskResult<Op::State>>>,
+    state_pool: HashMap<StateId, Op::State>,
     output_sender: Sender<PipelineMessage>,
-) -> DaftResult<ControlFlow<()>> {
-    let mut state_pool: Vec<Op::State> = (0..op.max_concurrency())
-        .map(|_| {
-            op.make_state().context(PipelineExecutionSnafu {
-                node_name: op.name().to_string(),
-            })
-        })
-        .collect::<Result<Vec<_>, crate::Error>>()
-        .map_err(DaftError::from)?;
-    let mut task_set: JoinSet<DaftResult<(Op::State, Duration)>> = JoinSet::new();
-    let mut input_closed = false;
-
-    while !input_closed || !task_set.is_empty() {
-        tokio::select! {
-            biased;
-
-            // Branch 1: Join completed task (only if tasks exist)
-            Some(result) = task_set.join_next(), if !task_set.is_empty() => {
-                let (state, elapsed) = result??;
-                runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
-                state_pool.push(state);
-            }
-
-            // Branch 2: Receive input (only if states available and receiver open)
-            msg = receiver.recv(), if !state_pool.is_empty() && !input_closed => {
-                match msg {
-                    Some(PipelineMessage::Morsel { partition, .. }) => {
-                        runtime_stats.add_rows_in(partition.len() as u64);
-                        let state = state_pool.pop().unwrap();
-                        let op = op.clone();
-                        let task_spawner = task_spawner.clone();
-                        task_set.spawn(async move {
-                            let now = Instant::now();
-                            let new_state = op.sink(partition, state, &task_spawner).await??;
-                            Ok((new_state, now.elapsed()))
-                        });
-                    }
-                    Some(PipelineMessage::Flush(_)) | None => {
-                        input_closed = true;
-                    }
-                }
-            }
-        }
-    }
-
-    // Finalize
-    let finalized_outputs = op.finalize(state_pool, &finalize_spawner).await??;
-    for partition in finalized_outputs {
-        runtime_stats.add_rows_out(partition.len() as u64);
-        if output_sender
-            .send(PipelineMessage::Morsel {
-                input_id,
-                partition,
-            })
-            .await
-            .is_err()
-        {
-            return Ok(ControlFlow::Break(()));
-        }
-    }
-    if output_sender
-        .send(PipelineMessage::Flush(input_id))
-        .await
-        .is_err()
-    {
-        return Ok(ControlFlow::Break(()));
-    }
-    Ok(ControlFlow::Continue(()))
+    input_id: InputId,
+    runtime_stats: Arc<dyn RuntimeStats>,
+    stats_manager: RuntimeStatsManagerHandle,
 }
 
 pub struct BlockingSinkNode<Op: BlockingSink> {
@@ -172,6 +121,142 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
     }
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
         Box::new(self)
+    }
+
+    // ========== Helper Functions ==========
+
+    fn spawn_execution_task(
+        ctx: &mut ExecutionContext<Op>,
+        input: Arc<MicroPartition>,
+        state: Op::State,
+        state_id: StateId,
+    ) {
+        let op = ctx.op.clone();
+        let task_spawner = ctx.task_spawner.clone();
+        ctx.task_set.spawn(async move {
+            let now = Instant::now();
+            let new_state = op.sink(input, state, &task_spawner).await??;
+            let elapsed = now.elapsed();
+
+            Ok(ExecutionTaskResult {
+                state_id,
+                state: new_state,
+                elapsed,
+            })
+        });
+    }
+
+    async fn process_input(
+        node_id: usize,
+        mut receiver: Receiver<PipelineMessage>,
+        ctx: &mut ExecutionContext<Op>,
+    ) -> DaftResult<ControlFlow<()>> {
+        let mut input_closed = false;
+        let mut node_initialized = false;
+
+        // Main processing loop
+        while !input_closed || !ctx.task_set.is_empty() {
+            tokio::select! {
+                biased;
+
+                // Branch 1: Join completed task (only if tasks exist)
+                Some(result) = ctx.task_set.join_next(), if !ctx.task_set.is_empty() => {
+                    // Record execution stats
+                    let ExecutionTaskResult { state_id, state, elapsed } = result??;
+                    ctx.runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
+
+                    // Return state to pool
+                    ctx.state_pool.insert(state_id, state);
+                }
+
+                // Branch 2: Receive input (only if states available and receiver open)
+                msg = receiver.recv(), if !ctx.state_pool.is_empty() && !input_closed => {
+                    match msg {
+                        Some(PipelineMessage::Morsel { partition, .. }) => {
+                            if !node_initialized {
+                                ctx.stats_manager.activate_node(node_id);
+                                node_initialized = true;
+                            }
+                            ctx.runtime_stats.add_rows_in(partition.len() as u64);
+                            let state_id = *ctx
+                                .state_pool
+                                .keys()
+                                .next()
+                                .expect("State pool should have states when it is not empty");
+                            let state = ctx
+                                .state_pool
+                                .remove(&state_id)
+                                .expect("State pool should have states when it is not empty");
+
+                            Self::spawn_execution_task(ctx, partition, state, state_id);
+                        }
+                        Some(PipelineMessage::Flush(_)) | None => {
+                            input_closed = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // After loop exits, verify invariants
+        debug_assert_eq!(ctx.task_set.len(), 0, "TaskSet should be empty after loop");
+        debug_assert!(input_closed, "Receiver should be closed after loop");
+
+        // Finalize
+        let mut finished_states: Vec<_> =
+            ctx.state_pool.drain().map(|(_, state)| state).collect();
+
+        loop {
+            let finalized_result = ctx
+                .op
+                .finalize(finished_states, &ctx.finalize_spawner)
+                .await??;
+            match finalized_result {
+                BlockingSinkFinalizeOutput::HasMoreOutput { states, output } => {
+                    for partition in output {
+                        ctx.runtime_stats.add_rows_out(partition.len() as u64);
+                        if ctx
+                            .output_sender
+                            .send(PipelineMessage::Morsel {
+                                input_id: ctx.input_id,
+                                partition,
+                            })
+                            .await
+                            .is_err()
+                        {
+                            return Ok(ControlFlow::Break(()));
+                        }
+                    }
+                    finished_states = states;
+                }
+                BlockingSinkFinalizeOutput::Finished(output) => {
+                    for partition in output {
+                        ctx.runtime_stats.add_rows_out(partition.len() as u64);
+                        if ctx
+                            .output_sender
+                            .send(PipelineMessage::Morsel {
+                                input_id: ctx.input_id,
+                                partition,
+                            })
+                            .await
+                            .is_err()
+                        {
+                            return Ok(ControlFlow::Break(()));
+                        }
+                    }
+                    if ctx
+                        .output_sender
+                        .send(PipelineMessage::Flush(ctx.input_id))
+                        .await
+                        .is_err()
+                    {
+                        return Ok(ControlFlow::Break(()));
+                    }
+                    break;
+                }
+            }
+        }
+        Ok(ControlFlow::Continue(()))
     }
 }
 
@@ -259,6 +344,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
         let (destination_sender, destination_receiver) = create_channel(1);
 
         let op = self.op.clone();
+        let max_concurrency = op.max_concurrency();
 
         // Create task spawners
         let task_spawner = ExecutionTaskSpawner::new(
@@ -274,20 +360,22 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
             info_span!("BlockingSink::Finalize"),
         );
 
+        // Spawn process_input task
         let stats_manager = runtime_handle.stats_manager();
         let node_id = self.node_id();
         let runtime_stats = self.runtime_stats.clone();
 
+        // Create task set
+        let mut task_set: OrderingAwareJoinSet<DaftResult<ControlFlow<()>>> =
+            OrderingAwareJoinSet::new(maintain_order);
+
+        // Coordinator state (one process_input task per input_id)
+        let mut per_input_senders: HashMap<InputId, Sender<PipelineMessage>> = HashMap::new();
+        let mut node_initialized = false;
+        let mut input_closed = false;
+
         runtime_handle.spawn(
             async move {
-                // Create task set
-                let mut task_set: OrderingAwareJoinSet<DaftResult<ControlFlow<()>>> =
-                    OrderingAwareJoinSet::new(maintain_order);
-                let mut per_input_senders: HashMap<InputId, Sender<PipelineMessage>> =
-                    HashMap::new();
-                let mut node_initialized = false;
-                let mut input_closed = false;
-
                 while !input_closed || !task_set.is_empty() {
                     tokio::select! {
                         msg = child_results_receiver.recv(), if !input_closed => {
@@ -316,12 +404,33 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
                                 let finalize_spawner = finalize_spawner.clone();
                                 let runtime_stats = runtime_stats.clone();
                                 let output_sender = destination_sender.clone();
+                                let stats_manager = stats_manager.clone();
+
+                                let mut ctx = ExecutionContext {
+                                    op: op.clone(),
+                                    task_spawner: task_spawner.clone(),
+                                    finalize_spawner: finalize_spawner.clone(),
+                                    task_set: OrderingAwareJoinSet::new(maintain_order),
+                                    state_pool: HashMap::new(),
+                                    output_sender: output_sender.clone(),
+                                    input_id,
+                                    runtime_stats: runtime_stats.clone(),
+                                    stats_manager: stats_manager.clone(),
+                                };
+
                                 task_set.spawn(async move {
-                                    process_single_input(
-                                        input_id, rx, op, task_spawner,
-                                        finalize_spawner, runtime_stats, output_sender,
-                                    )
-                                    .await
+                                    for i in 0..max_concurrency {
+                                        ctx.state_pool.insert(
+                                            i,
+                                            ctx.op
+                                                .make_state()
+                                                .context(PipelineExecutionSnafu {
+                                                    node_name: ctx.op.name().to_string(),
+                                                })
+                                                .map_err(DaftError::from)?,
+                                        );
+                                    }
+                                    Self::process_input(node_id, rx, &mut ctx).await
                                 });
                             }
 

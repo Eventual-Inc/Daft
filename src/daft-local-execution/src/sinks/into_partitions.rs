@@ -6,7 +6,9 @@ use daft_core::prelude::SchemaRef;
 use daft_micropartition::MicroPartition;
 use tracing::{Span, instrument};
 
-use super::blocking_sink::{BlockingSink, BlockingSinkFinalizeResult, BlockingSinkSinkResult};
+use super::blocking_sink::{
+    BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+};
 use crate::{ExecutionTaskSpawner, pipeline::NodeName};
 
 pub(crate) enum IntoPartitionsState {
@@ -67,7 +69,7 @@ impl BlockingSink for IntoPartitionsSink {
         &self,
         states: Vec<Self::State>,
         spawner: &ExecutionTaskSpawner,
-    ) -> BlockingSinkFinalizeResult {
+    ) -> BlockingSinkFinalizeResult<Self> {
         let num_partitions = self.num_partitions;
         let schema = self.schema.clone();
 
@@ -101,7 +103,7 @@ impl BlockingSink for IntoPartitionsSink {
                             outputs.push(Arc::new(mp));
                         }
                     }
-                    Ok(outputs)
+                    Ok(BlockingSinkFinalizeOutput::Finished(outputs))
                 },
                 Span::current(),
             )
