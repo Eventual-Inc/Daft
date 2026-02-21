@@ -1,6 +1,5 @@
 use std::{
     collections::{HashMap, hash_map::Entry},
-    ops::ControlFlow,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -20,7 +19,7 @@ use opentelemetry::metrics::Meter;
 use tracing::info_span;
 
 use crate::{
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorControlFlow, OperatorOutput,
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},
@@ -29,31 +28,21 @@ use crate::{
     runtime_stats::{DefaultRuntimeStats, RuntimeStats},
 };
 
-/// Result of executing a streaming sink on a single partition.
-#[derive(Debug)]
-pub(crate) enum StreamingSinkOutput {
-    /// Operator needs more input to continue processing.
+pub enum StreamingSinkOutput {
     NeedMoreInput(Option<Arc<MicroPartition>>),
-
-    /// Operator has more output to produce using the same input.
     #[allow(dead_code)]
     HasMoreOutput {
         input: Arc<MicroPartition>,
         output: Option<Arc<MicroPartition>>,
     },
-
-    /// Operator is finished processing.
     Finished(Option<Arc<MicroPartition>>),
 }
 
-/// Result of finalizing a streaming sink.
-pub(crate) enum StreamingSinkFinalizeOutput<Op: StreamingSink> {
-    /// More finalization work is needed.
+pub enum StreamingSinkFinalizeOutput<Op: StreamingSink> {
     HasMoreOutput {
         states: Vec<Op::State>,
         output: Option<Arc<MicroPartition>>,
     },
-    /// Finalization is complete.
     Finished(Option<Arc<MicroPartition>>),
 }
 
@@ -65,6 +54,9 @@ pub(crate) trait StreamingSink: Send + Sync {
     type State: Send + Sync + Unpin;
     type BatchingStrategy: BatchingStrategy + 'static;
 
+    /// Execute the StreamingSink operator on the morsel of input data,
+    /// received from the child,
+    /// with the given state.
     fn execute(
         &self,
         input: Arc<MicroPartition>,
@@ -72,6 +64,7 @@ pub(crate) trait StreamingSink: Send + Sync {
         spawner: &ExecutionTaskSpawner,
     ) -> StreamingSinkExecuteResult<Self>;
 
+    /// Finalize the StreamingSink operator, with the given states from each worker.
     fn finalize(
         &self,
         states: Vec<Self::State>,
@@ -80,20 +73,70 @@ pub(crate) trait StreamingSink: Send + Sync {
     where
         Self: Sized;
 
+    /// The name of the StreamingSink operator. Used for display purposes.
     fn name(&self) -> NodeName;
+
+    /// The type of the StreamingSink operator.
     fn op_type(&self) -> NodeType;
+
     fn multiline_display(&self) -> Vec<String>;
+
+    /// Create a new worker-local state for this StreamingSink.
     fn make_state(&self) -> DaftResult<Self::State>;
+
+    /// Create a new RuntimeStats for this StreamingSink.
     fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
         Arc::new(DefaultRuntimeStats::new(meter, node_info))
     }
+
+    /// The maximum number of concurrent workers that can be spawned for this sink.
+    /// Each worker will has its own StreamingSinkState.
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()
     }
+
     fn morsel_size_requirement(&self) -> Option<MorselSizeRequirement> {
         None
     }
     fn batching_strategy(&self) -> Self::BatchingStrategy;
+}
+
+pub struct StreamingSinkNode<Op: StreamingSink> {
+    op: Arc<Op>,
+    child: Box<dyn PipelineNode>,
+    runtime_stats: Arc<dyn RuntimeStats>,
+    plan_stats: StatsState,
+    node_info: Arc<NodeInfo>,
+    morsel_size_requirement: MorselSizeRequirement,
+}
+
+impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
+    pub(crate) fn new(
+        op: Arc<Op>,
+        child: Box<dyn PipelineNode>,
+        plan_stats: StatsState,
+        ctx: &BuilderContext,
+        context: &LocalNodeContext,
+    ) -> Self {
+        let name: Arc<str> = op.name().into();
+        let node_info =
+            ctx.next_node_info(name, op.op_type(), NodeCategory::StreamingSink, context);
+        let runtime_stats = op.make_runtime_stats(&ctx.meter, &node_info);
+
+        let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
+        Self {
+            op,
+            child,
+            runtime_stats,
+            plan_stats,
+            node_info: Arc::new(node_info),
+            morsel_size_requirement,
+        }
+    }
+
+    pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
+        Box::new(self)
+    }
 }
 
 impl StreamingSinkOutput {
@@ -118,7 +161,7 @@ async fn process_single_input<Op: StreamingSink + 'static>(
     output_sender: Sender<PipelineMessage>,
     batch_manager: Arc<BatchManager<Op::BatchingStrategy>>,
     _maintain_order: bool,
-) -> DaftResult<ControlFlow<()>> {
+) -> DaftResult<OperatorControlFlow> {
     let mut states: Vec<Op::State> = (0..op.max_concurrency())
         .map(|_| op.make_state())
         .collect::<DaftResult<_>>()?;
@@ -176,7 +219,7 @@ async fn process_single_input<Op: StreamingSink + 'static>(
                         .await
                         .is_err()
                     {
-                        return Ok(ControlFlow::Break(()));
+                        return Ok(OperatorControlFlow::Break);
                     }
                 }
 
@@ -238,7 +281,7 @@ async fn process_single_input<Op: StreamingSink + 'static>(
                     .await
                     .is_err()
                 {
-                    return Ok(ControlFlow::Break(()));
+                    return Ok(OperatorControlFlow::Break);
                 }
             }
 
@@ -280,7 +323,7 @@ async fn process_single_input<Op: StreamingSink + 'static>(
                             .await
                             .is_err()
                         {
-                            return Ok(ControlFlow::Break(()));
+                            return Ok(OperatorControlFlow::Break);
                         }
                     }
                     states = new_states;
@@ -296,7 +339,7 @@ async fn process_single_input<Op: StreamingSink + 'static>(
                             .await
                             .is_err()
                         {
-                            return Ok(ControlFlow::Break(()));
+                            return Ok(OperatorControlFlow::Break);
                         }
                     }
                     break;
@@ -311,47 +354,9 @@ async fn process_single_input<Op: StreamingSink + 'static>(
         .await
         .is_err()
     {
-        return Ok(ControlFlow::Break(()));
+        return Ok(OperatorControlFlow::Break);
     }
-    Ok(ControlFlow::Continue(()))
-}
-
-pub struct StreamingSinkNode<Op: StreamingSink> {
-    op: Arc<Op>,
-    child: Box<dyn PipelineNode>,
-    runtime_stats: Arc<dyn RuntimeStats>,
-    plan_stats: StatsState,
-    node_info: Arc<NodeInfo>,
-    morsel_size_requirement: MorselSizeRequirement,
-}
-
-impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
-    pub(crate) fn new(
-        op: Arc<Op>,
-        child: Box<dyn PipelineNode>,
-        plan_stats: StatsState,
-        ctx: &BuilderContext,
-        context: &LocalNodeContext,
-    ) -> Self {
-        let name: Arc<str> = op.name().into();
-        let node_info =
-            ctx.next_node_info(name, op.op_type(), NodeCategory::StreamingSink, context);
-        let runtime_stats = op.make_runtime_stats(&ctx.meter, &node_info);
-
-        let morsel_size_requirement = op.morsel_size_requirement().unwrap_or_default();
-        Self {
-            op,
-            child,
-            runtime_stats,
-            plan_stats,
-            node_info: Arc::new(node_info),
-            morsel_size_requirement,
-        }
-    }
-
-    pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
-        Box::new(self)
-    }
+    Ok(OperatorControlFlow::Continue)
 }
 
 impl<Op: StreamingSink + 'static> TreeDisplay for StreamingSinkNode<Op> {
@@ -435,10 +440,6 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
             combined_morsel_size_requirement,
             _default_morsel_size,
         );
-        self.child.propagate_morsel_size_requirement(
-            combined_morsel_size_requirement,
-            _default_morsel_size,
-        );
     }
 
     fn start(
@@ -472,7 +473,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
             async move {
                 let mut per_input_senders: HashMap<InputId, Sender<PipelineMessage>> =
                     HashMap::new();
-                let mut processor_set: JoinSet<DaftResult<ControlFlow<()>>> = JoinSet::new();
+                let mut processor_set: JoinSet<DaftResult<OperatorControlFlow>> = JoinSet::new();
                 let mut node_initialized = false;
                 let mut input_closed = false;
 
@@ -524,7 +525,7 @@ impl<Op: StreamingSink + 'static> PipelineNode for StreamingSinkNode<Op> {
                             }
                         }
                         Some(result) = processor_set.join_next(), if !processor_set.is_empty() => {
-                            if result??.is_break() {
+                            if result?? == OperatorControlFlow::Break {
                                 break;
                             }
                         }

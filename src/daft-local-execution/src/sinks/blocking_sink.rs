@@ -7,20 +7,23 @@ use std::{
 
 use capitalize::Capitalize;
 use common_display::tree::TreeDisplay;
-use common_error::DaftResult;
+use common_error::{DaftError, DaftResult};
 use common_metrics::{
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::StatSnapshotImpl,
 };
-use common_runtime::{JoinSet, get_compute_pool_num_threads, get_compute_runtime};
+use common_runtime::{
+    JoinSet, OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime,
+};
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use opentelemetry::metrics::Meter;
+use snafu::ResultExt;
 use tracing::info_span;
 
 use crate::{
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
     channel::{Receiver, Sender, create_channel},
     pipeline::{BuilderContext, MorselSizeRequirement, NodeName, PipelineNode},
     pipeline_message::{InputId, PipelineMessage},
@@ -71,8 +74,13 @@ async fn process_single_input<Op: BlockingSink + 'static>(
     output_sender: Sender<PipelineMessage>,
 ) -> DaftResult<ControlFlow<()>> {
     let mut state_pool: Vec<Op::State> = (0..op.max_concurrency())
-        .map(|_| op.make_state())
-        .collect::<DaftResult<_>>()?;
+        .map(|_| {
+            op.make_state().context(PipelineExecutionSnafu {
+                node_name: op.name().to_string(),
+            })
+        })
+        .collect::<Result<Vec<_>, crate::Error>>()
+        .map_err(DaftError::from)?;
     let mut task_set: JoinSet<DaftResult<(Op::State, Duration)>> = JoinSet::new();
     let mut input_closed = false;
 
@@ -243,13 +251,16 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
 
     fn start(
         &mut self,
-        _maintain_order: bool,
+        maintain_order: bool,
         runtime_handle: &mut ExecutionRuntimeContext,
     ) -> crate::Result<Receiver<PipelineMessage>> {
         let mut child_results_receiver = self.child.start(false, runtime_handle)?;
 
         let (destination_sender, destination_receiver) = create_channel(1);
 
+        let op = self.op.clone();
+
+        // Create task spawners
         let task_spawner = ExecutionTaskSpawner::new(
             get_compute_runtime(),
             runtime_handle.memory_manager(),
@@ -263,19 +274,21 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
             info_span!("BlockingSink::Finalize"),
         );
 
-        let op = self.op.clone();
-        let runtime_stats = self.runtime_stats.clone();
-        let node_id = self.node_id();
         let stats_manager = runtime_handle.stats_manager();
+        let node_id = self.node_id();
+        let runtime_stats = self.runtime_stats.clone();
+
         runtime_handle.spawn(
             async move {
+                // Create task set
+                let mut task_set: OrderingAwareJoinSet<DaftResult<ControlFlow<()>>> =
+                    OrderingAwareJoinSet::new(maintain_order);
                 let mut per_input_senders: HashMap<InputId, Sender<PipelineMessage>> =
                     HashMap::new();
-                let mut processor_set: JoinSet<DaftResult<ControlFlow<()>>> = JoinSet::new();
                 let mut node_initialized = false;
                 let mut input_closed = false;
 
-                while !input_closed || !processor_set.is_empty() {
+                while !input_closed || !task_set.is_empty() {
                     tokio::select! {
                         msg = child_results_receiver.recv(), if !input_closed => {
                             let Some(msg) = msg else {
@@ -303,7 +316,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
                                 let finalize_spawner = finalize_spawner.clone();
                                 let runtime_stats = runtime_stats.clone();
                                 let output_sender = destination_sender.clone();
-                                processor_set.spawn(async move {
+                                task_set.spawn(async move {
                                     process_single_input(
                                         input_id, rx, op, task_spawner,
                                         finalize_spawner, runtime_stats, output_sender,
@@ -318,7 +331,7 @@ impl<Op: BlockingSink + 'static> PipelineNode for BlockingSinkNode<Op> {
                                 per_input_senders.remove(&input_id);
                             }
                         }
-                        Some(result) = processor_set.join_next(), if !processor_set.is_empty() => {
+                        Some(result) = task_set.join_next(), if !task_set.is_empty() => {
                             if result??.is_break() {
                                 break;
                             }

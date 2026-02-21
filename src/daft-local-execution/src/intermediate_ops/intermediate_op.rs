@@ -16,10 +16,12 @@ use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
 use opentelemetry::metrics::Meter;
+use snafu::ResultExt;
 use tracing::info_span;
 
 use crate::{
     ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorControlFlow, OperatorOutput,
+    PipelineExecutionSnafu,
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},
@@ -31,7 +33,7 @@ use crate::{
 
 #[cfg_attr(debug_assertions, derive(Debug))]
 #[derive(Clone)]
-pub(crate) enum IntermediateOperatorResult {
+pub enum IntermediateOperatorResult {
     NeedMoreInput(Option<Arc<MicroPartition>>),
     #[allow(dead_code)]
     HasMoreOutput {
@@ -62,6 +64,9 @@ pub(crate) trait IntermediateOperator: Send + Sync {
     fn make_runtime_stats(&self, meter: &Meter, node_info: &NodeInfo) -> Arc<dyn RuntimeStats> {
         Arc::new(DefaultRuntimeStats::new(meter, node_info))
     }
+    /// The maximum number of concurrent workers that can be spawned for this operator.
+    /// Each worker will has its own IntermediateOperatorState.
+    /// This method should be overridden if the operator needs to limit the number of concurrent workers, i.e. UDFs with resource requests.
     fn max_concurrency(&self) -> usize {
         get_compute_pool_num_threads()
     }
@@ -80,6 +85,42 @@ pub struct IntermediateNode<Op: IntermediateOperator> {
     plan_stats: StatsState,
     morsel_size_requirement: MorselSizeRequirement,
     node_info: Arc<NodeInfo>,
+}
+
+// ========== IntermediateNode Implementation ==========
+
+impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
+    pub(crate) fn new(
+        intermediate_op: Arc<Op>,
+        child: Box<dyn PipelineNode>,
+        plan_stats: StatsState,
+        ctx: &BuilderContext,
+        context: &LocalNodeContext,
+    ) -> Self {
+        let name: Arc<str> = intermediate_op.name().into();
+        let info = ctx.next_node_info(
+            name,
+            intermediate_op.op_type(),
+            NodeCategory::Intermediate,
+            context,
+        );
+        let runtime_stats = intermediate_op.make_runtime_stats(&ctx.meter, &info);
+        let morsel_size_requirement = intermediate_op
+            .morsel_size_requirement()
+            .unwrap_or_default();
+        Self {
+            intermediate_op,
+            child,
+            runtime_stats,
+            plan_stats,
+            morsel_size_requirement,
+            node_info: Arc::new(info),
+        }
+    }
+
+    pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
+        Box::new(self)
+    }
 }
 
 struct ExecutionTaskResult<S> {
@@ -142,7 +183,11 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
         stats_manager: RuntimeStatsManagerHandle,
         node_id: usize,
     ) -> DaftResult<Self> {
-        let batch_manager = Arc::new(BatchManager::new(op.batching_strategy()?));
+        let batch_manager = Arc::new(BatchManager::new(op.batching_strategy().context(
+            PipelineExecutionSnafu {
+                node_name: op.name().to_string(),
+            },
+        )?));
         let available_states = (0..op.max_concurrency()).map(|_| op.make_state()).collect();
         Ok(Self {
             task_set: OrderingAwareJoinSet::new(maintain_order),
@@ -169,7 +214,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
     }
 
     /// Spawn a single task for the given input_id, consuming a state from the pool.
-    fn spawn_task(
+    fn spawn_execution_task(
         input_id: InputId,
         op_state: Op::State,
         batch: Arc<MicroPartition>,
@@ -215,7 +260,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
         {
             let op_state = self.available_states.pop().unwrap();
             input_state.in_flight += 1;
-            Self::spawn_task(
+            Self::spawn_execution_task(
                 input_id,
                 op_state,
                 input,
@@ -242,7 +287,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
         Ok(OperatorControlFlow::Continue)
     }
 
-    async fn handle_task_completed(
+    async fn handle_task_completion(
         &mut self,
         task_result: ExecutionTaskResult<Op::State>,
     ) -> DaftResult<OperatorControlFlow> {
@@ -287,7 +332,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
                 self.try_flush_input(input_id).await
             }
             IntermediateOperatorResult::HasMoreOutput { input, .. } => {
-                Self::spawn_task(
+                Self::spawn_execution_task(
                     input_id,
                     state,
                     input,
@@ -361,7 +406,7 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
             .await?;
             let cf = match event {
                 PipelineEvent::TaskCompleted(task_result) => {
-                    self.handle_task_completed(task_result).await?
+                    self.handle_task_completion(task_result).await?
                 }
                 PipelineEvent::Morsel {
                     input_id,
@@ -378,42 +423,6 @@ impl<Op: IntermediateOperator + 'static> IntermediateOpProcessor<Op> {
             }
         }
         Ok(())
-    }
-}
-
-// ========== IntermediateNode Implementation ==========
-
-impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
-    pub(crate) fn new(
-        intermediate_op: Arc<Op>,
-        child: Box<dyn PipelineNode>,
-        plan_stats: StatsState,
-        ctx: &BuilderContext,
-        context: &LocalNodeContext,
-    ) -> Self {
-        let name: Arc<str> = intermediate_op.name().into();
-        let info = ctx.next_node_info(
-            name,
-            intermediate_op.op_type(),
-            NodeCategory::Intermediate,
-            context,
-        );
-        let runtime_stats = intermediate_op.make_runtime_stats(&ctx.meter, &info);
-        let morsel_size_requirement = intermediate_op
-            .morsel_size_requirement()
-            .unwrap_or_default();
-        Self {
-            intermediate_op,
-            child,
-            runtime_stats,
-            plan_stats,
-            morsel_size_requirement,
-            node_info: Arc::new(info),
-        }
-    }
-
-    pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
-        Box::new(self)
     }
 }
 
@@ -521,8 +530,9 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
         let (destination_sender, destination_receiver) = create_channel(1);
 
         // 2. Create task spawner
+        let compute_runtime = get_compute_runtime();
         let task_spawner = ExecutionTaskSpawner::new(
-            get_compute_runtime(),
+            compute_runtime,
             runtime_handle.memory_manager(),
             self.runtime_stats.clone(),
             info_span!("IntermediateOp::execute"),
