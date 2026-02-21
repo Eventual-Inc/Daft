@@ -15,7 +15,11 @@ use tracing::{Span, instrument};
 use super::intermediate_op::{
     IntermediateOpExecuteResult, IntermediateOperator, IntermediateOperatorResult,
 };
-use crate::{ExecutionTaskSpawner, pipeline::NodeName, runtime_stats::RuntimeStats};
+use crate::{
+    ExecutionTaskSpawner,
+    pipeline::{MorselSizeRequirement, NodeName},
+    runtime_stats::RuntimeStats,
+};
 
 pub struct FilterStats {
     duration_us: Counter,
@@ -50,6 +54,9 @@ impl FilterStats {
 }
 
 impl RuntimeStats for FilterStats {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
     fn as_any_arc(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
         self
     }
@@ -135,9 +142,12 @@ impl IntermediateOperator for FilterOperator {
     }
 
     fn make_state(&self) -> Self::State {}
-    fn batching_strategy(&self) -> DaftResult<Self::BatchingStrategy> {
+    fn batching_strategy(
+        &self,
+        morsel_size_requirement: MorselSizeRequirement,
+    ) -> DaftResult<Self::BatchingStrategy> {
         Ok(crate::dynamic_batching::StaticBatchingStrategy::new(
-            self.morsel_size_requirement().unwrap_or_default(),
+            morsel_size_requirement,
         ))
     }
 }
