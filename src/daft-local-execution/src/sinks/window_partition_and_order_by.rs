@@ -14,7 +14,8 @@ use tracing::{Span, instrument};
 
 use super::{
     blocking_sink::{
-        BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult, BlockingSinkSinkResult,
+        BlockingSink, BlockingSinkFinalizeOutput, BlockingSinkFinalizeResult,
+        BlockingSinkSinkResult,
     },
     window_base::{WindowBaseState, WindowSinkParams},
 };
@@ -238,7 +239,9 @@ impl BlockingSink for WindowPartitionAndOrderBySink {
                         results.into(),
                         None,
                     );
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(final_result)]))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
+                        final_result,
+                    )]))
                 },
                 Span::current(),
             )

@@ -203,8 +203,7 @@ impl<Op: BlockingSink + 'static> BlockingSinkNode<Op> {
         debug_assert!(input_closed, "Receiver should be closed after loop");
 
         // Finalize
-        let mut finished_states: Vec<_> =
-            ctx.state_pool.drain().map(|(_, state)| state).collect();
+        let mut finished_states: Vec<_> = ctx.state_pool.drain().map(|(_, state)| state).collect();
 
         loop {
             let finalized_result = ctx

@@ -157,7 +157,9 @@ impl BlockingSink for DedupSink {
 
                     // Concatenate the results and return
                     let concated = MicroPartition::concat(&results)?;
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(concated)]))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
+                        concated,
+                    )]))
                 },
                 Span::current(),
             )

@@ -12,7 +12,9 @@ use common_metrics::{
     ops::{NodeCategory, NodeInfo, NodeType},
     snapshot::StatSnapshotImpl,
 };
-use common_runtime::{JoinSet, OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime};
+use common_runtime::{
+    JoinSet, OrderingAwareJoinSet, get_compute_pool_num_threads, get_compute_runtime,
+};
 use daft_local_plan::LocalNodeContext;
 use daft_logical_plan::stats::StatsState;
 use daft_micropartition::MicroPartition;
@@ -160,39 +162,6 @@ impl<Op: StreamingSink + 'static> StreamingSinkNode<Op> {
     pub(crate) fn boxed(self) -> Box<dyn PipelineNode> {
         Box::new(self)
     }
-
-    // ========== Helper Functions ==========
-
-    fn spawn_execution_task(
-        ctx: &mut ExecutionContext<Op>,
-        input: Arc<MicroPartition>,
-        state: Op::State,
-        state_id: StateId,
-    ) {
-        spawn_execution_task_impl(ctx, input, state, state_id);
-    }
-
-    fn spawn_ready_batches(
-        buffer: &mut RowBasedBuffer,
-        ctx: &mut ExecutionContext<Op>,
-    ) -> DaftResult<()> {
-        spawn_ready_batches_impl(buffer, ctx)
-    }
-
-    async fn handle_task_completion(
-        result: ExecutionTaskResult<Op::State>,
-        ctx: &mut ExecutionContext<Op>,
-    ) -> DaftResult<ControlFlow<(), ()>> {
-        handle_task_completion_impl(result, ctx).await
-    }
-
-    async fn process_input(
-        node_id: usize,
-        receiver: Receiver<PipelineMessage>,
-        ctx: &mut ExecutionContext<Op>,
-    ) -> DaftResult<ControlFlow<(), ()>> {
-        process_input_impl(node_id, receiver, ctx).await
-    }
 }
 
 fn spawn_execution_task_impl<Op: StreamingSink + 'static>(
@@ -221,7 +190,9 @@ fn spawn_ready_batches_impl<Op: StreamingSink + 'static>(
     buffer: &mut RowBasedBuffer,
     ctx: &mut ExecutionContext<Op>,
 ) -> DaftResult<()> {
-    while !ctx.state_pool.is_empty() && let Some(batch) = buffer.next_batch_if_ready()? {
+    while !ctx.state_pool.is_empty()
+        && let Some(batch) = buffer.next_batch_if_ready()?
+    {
         let state_id = *ctx
             .state_pool
             .keys()
@@ -356,59 +327,57 @@ async fn process_input_impl<Op: StreamingSink + 'static>(
     }
 
     // Drain remaining buffer
-    if !finished {
-        if let Some(mut partition) = buffer.pop_all()? {
-            let mut state = ctx
-                .state_pool
-                .drain()
-                .next()
-                .map(|(_, s)| s)
-                .expect("state_pool non-empty");
-            loop {
-                let now = Instant::now();
-                let (new_state, result) = ctx
-                    .op
-                    .execute(partition, state, &ctx.task_spawner)
-                    .await??;
-                let elapsed = now.elapsed();
-                ctx.runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
+    if !finished && let Some(mut partition) = buffer.pop_all()? {
+        let mut state = ctx
+            .state_pool
+            .drain()
+            .next()
+            .map(|(_, s)| s)
+            .expect("state_pool non-empty");
+        loop {
+            let now = Instant::now();
+            let (new_state, result) = ctx
+                .op
+                .execute(partition, state, &ctx.task_spawner)
+                .await??;
+            let elapsed = now.elapsed();
+            ctx.runtime_stats.add_cpu_us(elapsed.as_micros() as u64);
 
-                if let Some(mp) = result.output() {
-                    ctx.runtime_stats.add_rows_out(mp.len() as u64);
-                    ctx.batch_manager.record_execution_stats(
-                        ctx.runtime_stats.as_ref(),
-                        mp.len(),
-                        elapsed,
-                    );
-                    if ctx
-                        .output_sender
-                        .send(PipelineMessage::Morsel {
-                            input_id: ctx.input_id,
-                            partition: mp.clone(),
-                        })
-                        .await
-                        .is_err()
-                    {
-                        return Ok(ControlFlow::Break(()));
-                    }
+            if let Some(mp) = result.output() {
+                ctx.runtime_stats.add_rows_out(mp.len() as u64);
+                ctx.batch_manager.record_execution_stats(
+                    ctx.runtime_stats.as_ref(),
+                    mp.len(),
+                    elapsed,
+                );
+                if ctx
+                    .output_sender
+                    .send(PipelineMessage::Morsel {
+                        input_id: ctx.input_id,
+                        partition: mp.clone(),
+                    })
+                    .await
+                    .is_err()
+                {
+                    return Ok(ControlFlow::Break(()));
                 }
+            }
 
-                let new_requirements = ctx.batch_manager.calculate_batch_size();
-                buffer.update_bounds(new_requirements);
+            let new_requirements = ctx.batch_manager.calculate_batch_size();
+            buffer.update_bounds(new_requirements);
 
-                match result {
-                    StreamingSinkOutput::NeedMoreInput(_) => {
-                        ctx.state_pool.insert(0, new_state);
-                        break;
-                    }
-                    StreamingSinkOutput::HasMoreOutput { input, .. } => {
-                        partition = input;
-                        state = new_state;
-                    }
-                    StreamingSinkOutput::Finished(_) => {
-                        finished = true;
-                        break;
-                    }
+            match result {
+                StreamingSinkOutput::NeedMoreInput(_) => {
+                    ctx.state_pool.insert(0, new_state);
+                    break;
+                }
+                StreamingSinkOutput::HasMoreOutput { input, .. } => {
+                    partition = input;
+                    state = new_state;
+                }
+                StreamingSinkOutput::Finished(_) => {
+                    finished = true;
+                    break;
                 }
             }
         }

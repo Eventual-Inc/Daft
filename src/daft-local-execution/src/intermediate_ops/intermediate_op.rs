@@ -21,8 +21,7 @@ use snafu::ResultExt;
 use tracing::info_span;
 
 use crate::{
-    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput,
-    PipelineExecutionSnafu,
+    ExecutionRuntimeContext, ExecutionTaskSpawner, OperatorOutput, PipelineExecutionSnafu,
     buffer::RowBasedBuffer,
     channel::{Receiver, Sender, create_channel},
     dynamic_batching::{BatchManager, BatchingStrategy},
@@ -173,13 +172,6 @@ impl<Op: IntermediateOperator + 'static> IntermediateNode<Op> {
 
 // ========== Helper Functions ==========
 
-/// input_id lifecycle (no finalize step):
-///
-/// 1. BUFFER  — morsel arrives, data buffered
-/// 2. EXECUTE — tasks spawned while batch_size met AND under max_concurrency
-/// 3. FLUSH   — flush received → pending_flush=true → pop_all for remaining buffer
-/// 4. CLEANUP — buffer empty + no in-flight → remove input_id → propagate flush downstream
-
 /// Spawn a single task for the given input_id, consuming a state from the pool.
 fn spawn_execution_task<Op: IntermediateOperator + 'static>(
     ctx: &mut ExecutionContext<Op>,
@@ -259,7 +251,12 @@ async fn try_flush_input<Op: IntermediateOperator + 'static>(
         .expect("Input should be present");
     if input_state.can_flush() {
         ctx.input_trackers.remove(&input_id);
-        if ctx.output_sender.send(PipelineMessage::Flush(input_id)).await.is_err() {
+        if ctx
+            .output_sender
+            .send(PipelineMessage::Flush(input_id))
+            .await
+            .is_err()
+        {
             return Ok(ControlFlow::Break(()));
         }
         return Ok(ControlFlow::Continue(()));
@@ -283,11 +280,8 @@ async fn handle_task_completion<Op: IntermediateOperator + 'static>(
 
     if let Some(mp) = result.output() {
         ctx.runtime_stats.add_rows_out(mp.len() as u64);
-        ctx.batch_manager.record_execution_stats(
-            ctx.runtime_stats.as_ref(),
-            mp.len(),
-            elapsed,
-        );
+        ctx.batch_manager
+            .record_execution_stats(ctx.runtime_stats.as_ref(), mp.len(), elapsed);
         if ctx
             .output_sender
             .send(PipelineMessage::Morsel {
@@ -348,16 +342,18 @@ async fn handle_flush<Op: IntermediateOperator + 'static>(
     input_id: InputId,
 ) -> DaftResult<ControlFlow<(), ()>> {
     let Some(input) = ctx.input_trackers.get_mut(&input_id) else {
-        return Ok(if ctx
-            .output_sender
-            .send(PipelineMessage::Flush(input_id))
-            .await
-            .is_err()
-        {
-            ControlFlow::Break(())
-        } else {
-            ControlFlow::Continue(())
-        });
+        return Ok(
+            if ctx
+                .output_sender
+                .send(PipelineMessage::Flush(input_id))
+                .await
+                .is_err()
+            {
+                ControlFlow::Break(())
+            } else {
+                ControlFlow::Continue(())
+            },
+        );
     };
     input.pending_flush = true;
     try_spawn_tasks(ctx)?;
@@ -541,8 +537,9 @@ impl<Op: IntermediateOperator + 'static> PipelineNode for IntermediateNode<Op> {
                         node_name: op.name().to_string(),
                     },
                 )?));
-                let state_pool =
-                    (0..op.max_concurrency()).map(|i| (i, op.make_state())).collect();
+                let state_pool = (0..op.max_concurrency())
+                    .map(|i| (i, op.make_state()))
+                    .collect();
                 let mut ctx = ExecutionContext {
                     op,
                     task_spawner,

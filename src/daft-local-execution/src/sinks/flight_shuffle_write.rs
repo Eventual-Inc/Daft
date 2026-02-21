@@ -138,7 +138,9 @@ impl BlockingSink for FlightShuffleWriteSink {
                     let result_mp =
                         MicroPartition::new_loaded(schema.into(), Arc::new(vec![result]), None);
 
-                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(result_mp)]))
+                    Ok(BlockingSinkFinalizeOutput::Finished(vec![Arc::new(
+                        result_mp,
+                    )]))
                 },
                 Span::current(),
             )
