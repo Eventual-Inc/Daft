@@ -109,20 +109,6 @@ impl Series {
         self.inner.to_arrow()
     }
 
-    /// Creates a Series given an Arrow [`daft_arrow::array::Array`]
-    ///
-    /// TODO chore: consider accepting Into<FieldRef>
-    ///
-    /// This function will check the provided [`Field`] (and all its associated potentially nested fields/dtypes) against
-    /// the provided [`daft_arrow::array::Array`] for compatibility, and returns an error if they do not match.
-    pub fn from_arrow2(
-        field: FieldRef,
-        arrow_arr: Box<dyn daft_arrow::array::Array>,
-    ) -> DaftResult<Self> {
-        with_match_daft_types!(field.dtype, |$T| {
-            Ok(<<$T as DaftDataType>::ArrayType as FromArrow>::from_arrow2(field, arrow_arr)?.into_series())
-        })
-    }
     pub fn from_arrow<F: Into<FieldRef>>(field: F, arrow_arr: ArrayRef) -> DaftResult<Self> {
         let field = field.into();
         with_match_daft_types!(field.dtype, |$T| {

@@ -675,9 +675,9 @@ fn parse_into_column_array_chunk_stream(
                                 fields[*proj_idx].data_type().clone(),
                                 0,
                             );
-                            Series::try_from_field_and_arrow_array(
+                            Series::from_arrow(
                                 read_daft_fields[i].clone(),
-                                cast_array_for_daft_if_needed(deserialized_col?),
+                                cast_array_for_daft_if_needed(deserialized_col?).into(),
                             )
                         })
                         .collect::<DaftResult<Vec<Series>>>()?;

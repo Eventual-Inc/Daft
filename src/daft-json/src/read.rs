@@ -619,9 +619,9 @@ fn parse_into_column_array_chunk_stream(
                         .into_iter()
                         .zip(daft_fields.iter())
                         .map(|(array, field)| {
-                            Series::try_from_field_and_arrow_array(
+                            Series::from_arrow(
                                 field.clone(),
-                                cast_array_for_daft_if_needed(array),
+                                cast_array_for_daft_if_needed(array).into(),
                             )
                         })
                         .collect::<DaftResult<Vec<_>>>()?;
