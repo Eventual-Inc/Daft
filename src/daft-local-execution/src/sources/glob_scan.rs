@@ -7,7 +7,7 @@ use common_metrics::ops::NodeType;
 use common_runtime::{combine_stream, get_io_runtime};
 use daft_core::prelude::*;
 use daft_io::{IOStatsRef, get_io_client};
-use daft_local_plan::InputId;
+// InputId now comes from pipeline_message module
 use daft_micropartition::MicroPartition;
 use daft_recordbatch::RecordBatch;
 use daft_scan::Pushdowns;
@@ -22,6 +22,7 @@ use super::source::Source;
 use crate::{
     channel::{Sender, UnboundedReceiver, create_channel},
     pipeline::NodeName,
+    pipeline_message::{InputId, PipelineMessage},
     sources::source::SourceStream,
 };
 
@@ -51,7 +52,7 @@ impl GlobScanSource {
     fn spawn_glob_path_processor(
         &self,
         mut receiver: UnboundedReceiver<(InputId, Vec<String>)>,
-        output_sender: Sender<Arc<MicroPartition>>,
+        output_sender: Sender<PipelineMessage>,
         io_stats: IOStatsRef,
         chunk_size: usize,
     ) -> common_runtime::RuntimeTask<DaftResult<()>> {
@@ -62,7 +63,7 @@ impl GlobScanSource {
 
         io_runtime.spawn(async move {
             let io_client = get_io_client(true, Arc::new(io_config.unwrap_or_default()))?;
-            while let Some((_input_id, glob_paths)) = receiver.recv().await {
+            while let Some((input_id, glob_paths)) = receiver.recv().await {
                 let remaining_rows = Arc::new(AsyncMutex::new(pushdowns.limit));
                 let seen_paths = Arc::new(DashSet::new());
 
@@ -159,7 +160,10 @@ impl GlobScanSource {
                                 }
                             }
 
-                            if output_sender.send(partition).await.is_err() {
+                            if output_sender.send(PipelineMessage::Morsel {
+                                input_id,
+                                partition,
+                            }).await.is_err() {
                                 break;
                             }
                         }
@@ -177,6 +181,15 @@ impl GlobScanSource {
                         glob_paths.join(", ")
                     );
                 }
+
+                // Send flush signal after processing each input batch
+                if output_sender
+                    .send(PipelineMessage::Flush(input_id))
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
             }
             Ok(())
         })
@@ -192,7 +205,7 @@ impl Source for GlobScanSource {
         io_stats: IOStatsRef,
         chunk_size: usize,
     ) -> DaftResult<SourceStream<'static>> {
-        let (output_sender, output_receiver) = create_channel::<Arc<MicroPartition>>(1);
+        let (output_sender, output_receiver) = create_channel::<PipelineMessage>(1);
         let input_reiver = self.receiver.take().expect("Receiver not found");
 
         let processor_task =

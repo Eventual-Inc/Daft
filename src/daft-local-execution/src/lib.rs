@@ -6,6 +6,8 @@ mod input_sender;
 mod intermediate_ops;
 mod join;
 mod pipeline;
+mod pipeline_execution;
+mod pipeline_message;
 mod resource_manager;
 mod run;
 mod runtime_stats;
@@ -28,23 +30,6 @@ pub use run::ExecutionEngineResult;
 use runtime_stats::{RuntimeStats, RuntimeStatsManagerHandle, TimedFuture};
 use snafu::{ResultExt, Snafu, futures::TryFutureExt};
 use tracing::Instrument;
-
-/// Control flow indicator for processing loops.
-/// Used to signal whether processing should continue or break out of a loop.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum OperatorControlFlow {
-    /// Continue processing - caller should proceed with the next iteration
-    Continue,
-    /// Break processing - caller should exit the loop immediately
-    Break,
-}
-
-impl OperatorControlFlow {
-    /// Returns true if processing should continue
-    pub(crate) fn should_continue(&self) -> bool {
-        matches!(self, Self::Continue)
-    }
-}
 
 /// The `OperatorOutput` enum represents the output of an operator.
 /// It can be either `Ready` or `Pending`.
@@ -119,6 +104,16 @@ impl ExecutionRuntimeContext {
         let node_name = node_name.to_string();
         self.worker_set
             .spawn(task.with_context(|_| PipelineExecutionSnafu { node_name }));
+    }
+
+    #[allow(dead_code)]
+    pub async fn join_next(&mut self) -> Option<DaftResult<()>> {
+        match self.worker_set.join_next().await {
+            Some(Ok(Ok(()))) => Some(Ok(())),
+            Some(Ok(Err(e))) => Some(Err(e.into())),
+            Some(Err(e)) => Some(Err(e)),
+            None => None,
+        }
     }
 
     pub async fn shutdown(&mut self) -> DaftResult<()> {
