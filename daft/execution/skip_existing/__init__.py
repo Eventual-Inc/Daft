@@ -227,6 +227,7 @@ def _prepare_key_filter(
     read_fn: Callable[..., DataFrame],
     key_filter_loading_batch_size: int,
     key_filter_max_concurrency: int,
+    strict_path_check: bool = False,
     read_kwargs: dict[str, Any] | None = None,
 ) -> tuple[list[ActorHandle], PlacementGroup | None]:
     """Build and return key_filter resources for skip_existing.
@@ -239,6 +240,8 @@ def _prepare_key_filter(
     Notes:
         - If no existing partitions are found at `root_dir`, returns ([], None).
         - Raises RuntimeError if runner is not Ray.
+        - If strict_path_check is True and path doesn't exist, raises RuntimeError.
+        - If strict_path_check is False and path doesn't exist, logs warning and returns ([], None).
     """
     if get_or_create_runner().name != "ray":
         raise RuntimeError("skip_existing is only supported on Ray runner")
@@ -261,7 +264,14 @@ def _prepare_key_filter(
         df_keys = read_fn(path=root_dirs_str, io_config=io_config, **(read_kwargs or {}))
         df_keys = df_keys.select(*key_columns)
     except FileNotFoundError as e:
-        raise RuntimeError(f"[skip_existing] keys not found at {root_dirs_str}: {e}") from e
+        if strict_path_check:
+            raise RuntimeError(f"[skip_existing] keys not found at {root_dirs_str}: {e}") from e
+        logger.warning(
+            "[skip_existing] No existing data found at %s, processing all rows. "
+            "Set strict_path_check=True to raise an error instead.",
+            root_dirs_str,
+        )
+        return [], None
     except Exception as e:
         raise RuntimeError(f"[skip_existing] Unable to read keys at {root_dirs_str}: {e}") from e
 

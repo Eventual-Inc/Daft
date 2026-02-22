@@ -2347,6 +2347,7 @@ class DataFrame:
         key_filter_batch_size: int | None = None,
         key_filter_loading_batch_size: int = 100000,
         key_filter_max_concurrency: int = 1,
+        strict_path_check: bool = False,
         **reader_args: Any,
     ) -> "DataFrame":
         """Filter out rows whose key(s) already exist in existing data (i.e., already processed rows).
@@ -2369,6 +2370,8 @@ class DataFrame:
             key_filter_loading_batch_size: Batch size when loading keys from existing data into
                 the key filter actors.
             key_filter_max_concurrency: Maximum concurrency for key filter actor operations.
+            strict_path_check: If True, raise an error when the path doesn't exist.
+                If False (default), log a warning and process all rows (useful for first run).
             **reader_args: Additional arguments passed to the file reader (e.g., delimiter for CSV).
 
         Returns:
@@ -2424,6 +2427,7 @@ class DataFrame:
             key_filter_batch_size=key_filter_batch_size,
             key_filter_loading_batch_size=key_filter_loading_batch_size,
             key_filter_max_concurrency=key_filter_max_concurrency,
+            strict_path_check=strict_path_check,
         )
         return DataFrame(builder)
 

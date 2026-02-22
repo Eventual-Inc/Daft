@@ -27,6 +27,7 @@ pub struct SkipExistingSpec {
     pub key_filter_batch_size: Option<usize>,
     pub key_filter_loading_batch_size: Option<usize>,
     pub key_filter_max_concurrency: Option<usize>,
+    pub strict_path_check: bool,
     #[cfg(feature = "python")]
     pub read_kwargs: PyObjectWrapper,
 }
@@ -93,6 +94,7 @@ impl SkipExistingSpec {
         key_filter_batch_size: Option<usize>,
         key_filter_loading_batch_size: Option<usize>,
         key_filter_max_concurrency: Option<usize>,
+        strict_path_check: bool,
     ) -> DaftResult<Self> {
         Self::validate_inputs(
             &root_dir,
@@ -114,6 +116,7 @@ impl SkipExistingSpec {
             key_filter_batch_size,
             key_filter_loading_batch_size,
             key_filter_max_concurrency,
+            strict_path_check,
         })
     }
 
@@ -129,6 +132,7 @@ impl SkipExistingSpec {
         key_filter_batch_size: Option<usize>,
         key_filter_loading_batch_size: Option<usize>,
         key_filter_max_concurrency: Option<usize>,
+        strict_path_check: bool,
     ) -> DaftResult<Self> {
         Self::validate_inputs(
             &root_dir,
@@ -149,6 +153,7 @@ impl SkipExistingSpec {
             key_filter_batch_size,
             key_filter_loading_batch_size,
             key_filter_max_concurrency,
+            strict_path_check,
         })
     }
 }
@@ -255,6 +260,7 @@ mod tests {
             None,
             None,
             None,
+            false,
         )
         .unwrap();
 
@@ -268,6 +274,7 @@ mod tests {
             None,
             None,
             None,
+            false,
         )
         .unwrap();
 
@@ -312,6 +319,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )
             .unwrap();
 
@@ -326,6 +334,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )
             .unwrap();
 
@@ -340,6 +349,7 @@ mod tests {
                 None,
                 None,
                 None,
+                false,
             )
             .unwrap();
 
@@ -389,6 +399,7 @@ mod tests {
                     Some(10),
                     None,
                     None,
+                    false,
                 )?;
                 scan_builder.skip_existing(spec)
             })?;
@@ -405,6 +416,7 @@ mod tests {
                 Some(10),
                 None,
                 None,
+                false,
             )?;
             scan_builder.skip_existing(spec)?
         };
@@ -449,6 +461,7 @@ mod tests {
             Some(10),
             None,
             None,
+            false,
         )?;
 
         let plan = scan_builder.skip_existing(spec)?.build();
@@ -521,6 +534,11 @@ impl PySkipExistingSpec {
     #[getter]
     pub fn key_filter_max_concurrency(&self) -> Option<usize> {
         self.spec.key_filter_max_concurrency
+    }
+
+    #[getter]
+    pub fn strict_path_check(&self) -> bool {
+        self.spec.strict_path_check
     }
 
     #[getter]

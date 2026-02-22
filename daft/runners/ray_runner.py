@@ -539,6 +539,7 @@ def _maybe_apply_skip_existing(builder: LogicalPlanBuilder) -> tuple[LogicalPlan
             key_filter_batch_size = spec.key_filter_batch_size
             key_filter_loading_batch_size = spec.key_filter_loading_batch_size
             key_filter_max_concurrency = spec.key_filter_max_concurrency
+            strict_path_check = spec.strict_path_check
 
             if num_buckets is None:
                 raise RuntimeError("[skip_existing] num_key_filter_partitions must be provided")
@@ -578,7 +579,12 @@ def _maybe_apply_skip_existing(builder: LogicalPlanBuilder) -> tuple[LogicalPlan
                 read_kwargs=read_kwargs,
                 key_filter_loading_batch_size=key_filter_loading_batch_size,
                 key_filter_max_concurrency=key_filter_max_concurrency,
+                strict_path_check=strict_path_check,
             )
+
+            if not actor_handles:
+                predicates.append(None)
+                continue
 
             key_filter_expr = create_key_filter_udf(
                 num_buckets,

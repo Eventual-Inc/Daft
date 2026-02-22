@@ -459,7 +459,16 @@ def test_skip_existing_missing_keys_raises(tmp_path: Path):
     df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
 
     with pytest.raises(RuntimeError, match=r"\[skip_existing\] keys not found"):
-        df.skip_existing(ckpt_dir, on="id", file_format="parquet").collect()
+        df.skip_existing(ckpt_dir, on="id", file_format="parquet", strict_path_check=True).collect()
+
+
+@pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")
+def test_skip_existing_strict_path_check_false_processes_all_rows(tmp_path: Path):
+    ckpt_dir = tmp_path / "nonexistent_path"
+    df = daft.from_pydict({"id": [1, 2, 3], "val": ["a", "b", "c"]})
+
+    result = df.skip_existing(ckpt_dir, on="id", file_format="parquet").collect()
+    assert result.select("id").to_pydict()["id"] == [1, 2, 3]
 
 
 @pytest.mark.skipif(get_tests_daft_runner_name() != "ray", reason="requires Ray Runner to be in use")

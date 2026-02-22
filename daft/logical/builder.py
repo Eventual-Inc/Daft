@@ -417,6 +417,7 @@ class LogicalPlanBuilder:
         key_filter_batch_size: int | None = None,
         key_filter_loading_batch_size: int | None = None,
         key_filter_max_concurrency: int | None = None,
+        strict_path_check: bool = False,
     ) -> LogicalPlanBuilder:
         builder = self._builder.skip_existing(
             root_dir,
@@ -429,5 +430,6 @@ class LogicalPlanBuilder:
             key_filter_batch_size,
             key_filter_loading_batch_size,
             key_filter_max_concurrency,
+            strict_path_check,
         )
         return LogicalPlanBuilder(builder)

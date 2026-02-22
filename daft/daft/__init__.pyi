@@ -1840,6 +1840,7 @@ class SkipExistingSpec:
     key_filter_batch_size: int | None
     key_filter_loading_batch_size: int | None
     key_filter_max_concurrency: int | None
+    strict_path_check: bool
 
 class LogicalPlanBuilder:
     """A logical plan builder, which simplifies constructing logical plans via a fluent interface.
@@ -1970,6 +1971,7 @@ class LogicalPlanBuilder:
         key_filter_batch_size: int | None = None,
         key_filter_loading_batch_size: int | None = None,
         key_filter_max_concurrency: int | None = None,
+        strict_path_check: bool = False,
     ) -> LogicalPlanBuilder: ...
     def apply_skip_existing_predicates(self, predicates: list[PyExpr | None]) -> LogicalPlanBuilder: ...
     def get_skip_existing_specs(self) -> list[SkipExistingSpec]: ...

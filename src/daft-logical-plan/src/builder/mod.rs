@@ -1182,7 +1182,7 @@ impl PyLogicalPlanBuilder {
         Ok(self.builder.filter(predicate.expr)?.into())
     }
 
-    #[pyo3(signature = (root_dir, file_format, key_column, io_config=None, read_kwargs=None, num_key_filter_partitions=None, num_cpus=None, key_filter_batch_size=None, key_filter_loading_batch_size=None, key_filter_max_concurrency=None))]
+    #[pyo3(signature = (root_dir, file_format, key_column, io_config=None, read_kwargs=None, num_key_filter_partitions=None, num_cpus=None, key_filter_batch_size=None, key_filter_loading_batch_size=None, key_filter_max_concurrency=None, strict_path_check=false))]
     #[allow(clippy::too_many_arguments)]
     pub fn skip_existing(
         &self,
@@ -1197,6 +1197,7 @@ impl PyLogicalPlanBuilder {
         key_filter_batch_size: Option<usize>,
         key_filter_loading_batch_size: Option<usize>,
         key_filter_max_concurrency: Option<usize>,
+        strict_path_check: bool,
     ) -> PyResult<Self> {
         let root_dirs: Vec<String> = if let Ok(s) = root_dir.extract::<String>(py) {
             vec![s]
@@ -1221,6 +1222,7 @@ impl PyLogicalPlanBuilder {
             key_filter_batch_size,
             key_filter_loading_batch_size,
             key_filter_max_concurrency,
+            strict_path_check,
         )?;
         Ok(self.builder.skip_existing(spec)?.into())
     }
