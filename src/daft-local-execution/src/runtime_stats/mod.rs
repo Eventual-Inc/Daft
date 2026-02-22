@@ -30,7 +30,6 @@ pub use values::{DefaultRuntimeStats, RuntimeStats};
 use crate::pipeline::PipelineNode;
 
 /// Message type for the stats manager channel: node lifecycle events and snapshot requests.
-#[allow(dead_code)]
 pub enum StatsManagerMessage {
     NodeEvent(usize, bool),
     SnapshotRequest(oneshot::Sender<ExecutionEngineFinalResult>),
@@ -76,7 +75,6 @@ impl RuntimeStatsManagerHandle {
 
     /// Request a current snapshot from the running stats manager (e.g. when try_finish is called
     /// but the plan is not removed). Returns an error if the manager has already finished.
-    #[allow(dead_code)]
     pub async fn request_snapshot(&self) -> DaftResult<ExecutionEngineFinalResult> {
         let (tx, rx) = oneshot::channel();
         self.0
@@ -289,7 +287,6 @@ impl RuntimeStatsManager {
     }
 
     /// Returns the same handle as `handle()`; used by the executor to request snapshots in try_finish.
-    #[allow(dead_code)]
     pub fn snapshot_handle(&self) -> RuntimeStatsManagerHandle {
         self.handle()
     }
